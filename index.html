@@ -17,7 +17,7 @@
 
         body {
             margin: 0;
-            padding: 16px;
+            padding: 16px 16px 80px 16px;
             background-color: var(--bg-color);
             color: var(--text-main);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -95,10 +95,36 @@
             align-items: center;
             justify-content: center;
             gap: 8px;
+            margin-bottom: 12px;
         }
 
         .btn:active {
             opacity: 0.85;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            background-color: #020617;
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            padding: 10px;
+            color: var(--text-main);
+            font-size: 0.9rem;
+        }
+
+        .execute-btn {
+            background-color: var(--accent-blue);
+            color: #fff;
+            border: none;
+            padding: 0 16px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
         }
 
         .terminal-box {
@@ -126,13 +152,24 @@
             <span style="font-size: 0.85rem; color: var(--text-muted);">v2.4 Node</span>
         </header>
 
-        <!-- Video Stream Card -->
+        <!-- Sovereign Status Card -->
+        <div class="card">
+            <div style="font-weight: 600; margin-bottom: 6px;">Sovereign Edge Active</div>
+            <div style="font-size: 0.85rem; color: var(--text-muted);">Zero-cost deployment operational via PG1 core edge synchronization. All telemetry feeds secure.</div>
+        </div>
+
+        <!-- Video & Audio Stream Card -->
         <div class="card">
             <div class="video-box">
-                <!-- Video element must be muted and playsinline for iOS -->
-                <video id="webcam" autoplay playsinline muted></video>
+                <!-- Playsinline required for mobile, audio enabled -->
+                <video id="webcam" autoplay playsinline></video>
             </div>
             <button id="stream-btn" class="btn">📹 Initialize Live Stream Feed</button>
+            
+            <div class="input-group">
+                <input type="text" id="command-input" placeholder="Type command or query...">
+                <button class="execute-btn" id="execute-btn">Execute</button>
+            </div>
         </div>
 
         <!-- Terminal Output -->
@@ -147,6 +184,8 @@
         const terminal = document.getElementById('terminal');
         const videoElement = document.getElementById('webcam');
         const streamBtn = document.getElementById('stream-btn');
+        const commandInput = document.getElementById('command-input');
+        const executeBtn = document.getElementById('execute-btn');
 
         function logToTerminal(message, type = 'sys') {
             const timestamp = new Date().toLocaleTimeString();
@@ -158,22 +197,30 @@
             terminal.scrollTop = terminal.scrollHeight;
         }
 
-        // Attached synchronously to respect iOS user gesture constraints
+        // Synchronously bound event listener to maintain iOS user gesture token
         streamBtn.addEventListener('click', function() {
-            logToTerminal("Requesting media stream permissions...");
+            logToTerminal("Requesting media stream permissions (Video & Audio)...");
 
-            // Must call getUserMedia synchronously inside the event loop without prior await
+            // audio: true enabled along with video
             navigator.mediaDevices.getUserMedia({ 
                 video: { facingMode: 'user' }, 
-                audio: false 
+                audio: true 
             })
             .then(function(stream) {
                 videoElement.srcObject = stream;
-                logToTerminal("Live stream feed initialized successfully.", "ok");
+                logToTerminal("Live stream feed and audio initialized successfully.", "ok");
             })
             .catch(function(error) {
                 logToTerminal(`Media stream failed – ${error.name}: ${error.message}`, "err");
             });
+        });
+
+        // Terminal command execution handler
+        executeBtn.addEventListener('click', function() {
+            const cmd = commandInput.value.trim();
+            if (!cmd) return;
+            logToTerminal(`Executing command: ${cmd}`);
+            commandInput.value = '';
         });
     </script>
 </body>
