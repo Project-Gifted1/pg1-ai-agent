@@ -134,7 +134,7 @@
             padding: 12px;
             font-family: monospace;
             font-size: 0.85rem;
-            height: 120px;
+            height: 160px;
             overflow-y: auto;
             color: var(--text-muted);
         }
@@ -142,6 +142,14 @@
         .terminal-box .sys { color: var(--accent-blue); }
         .terminal-box .err { color: var(--error-red); }
         .terminal-box .ok { color: var(--success-green); }
+
+        /* View Sections */
+        .view-section {
+            display: none;
+        }
+        .view-section.active {
+            display: block;
+        }
 
         /* Bottom Fixed Navigation Bar */
         .bottom-nav {
@@ -182,42 +190,58 @@
             <span style="font-size: 0.85rem; color: var(--text-muted);">v2.4 Node</span>
         </header>
 
-        <!-- Sovereign Status Card -->
-        <div class="card">
-            <div style="font-weight: 600; margin-bottom: 4px;">Sovereign Edge Active</div>
-            <div style="font-size: 0.8rem; color: var(--text-muted);">Zero-cost deployment operational via PG1 core edge synchronization. All telemetry feeds secure.</div>
-        </div>
-
-        <!-- Video Stream Card -->
-        <div class="card">
-            <div class="video-box">
-                <video id="webcam" autoplay playsinline></video>
+        <!-- DASH VIEW SECTION -->
+        <div id="view-dash" class="view-section active">
+            <div class="card">
+                <div style="font-weight: 600; margin-bottom: 4px;">Sovereign Edge Active</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Zero-cost deployment operational via PG1 core edge synchronization. All telemetry feeds secure.</div>
             </div>
-            <button id="stream-btn" class="btn">📹 Initialize Live Stream Feed</button>
-            
-            <div class="input-group">
-                <input type="text" id="command-input" placeholder="Type command or query...">
-                <button class="execute-btn" id="execute-btn">Execute</button>
+
+            <div class="card">
+                <div class="video-box">
+                    <video id="webcam" autoplay playsinline></video>
+                </div>
+                <button id="stream-btn" class="btn">📹 Initialize Live Stream Feed</button>
             </div>
         </div>
 
-        <!-- Terminal Output Card -->
-        <div class="card">
-            <div id="terminal" class="terminal-box">
-                > [SYSTEM]: Secure terminal initialized. Ready for instructions.<br>
+        <!-- TERMINAL VIEW SECTION -->
+        <div id="view-terminal" class="view-section">
+            <div class="card">
+                <div style="font-weight: 600; margin-bottom: 8px;">PG1.Agent Terminal Interface</div>
+                <div id="terminal" class="terminal-box">
+                    > [SYSTEM]: Secure terminal initialized. Ready for instructions.<br>
+                </div>
+                <div class="input-group" style="margin-top: 12px;">
+                    <input type="text" id="command-input" placeholder="Type command or query...">
+                    <button class="execute-btn" id="execute-btn">Execute</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- NODE VIEW SECTION -->
+        <div id="view-node" class="view-section">
+            <div class="card">
+                <div style="font-weight: 600; margin-bottom: 8px;">Node Status & Details</div>
+                <div style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
+                    <div><strong>Node ID:</strong> PG1-CORE-01</div>
+                    <div><strong>Status:</strong> Online & Syncing</div>
+                    <div><strong>Ownership:</strong> 100% Sovereign</div>
+                    <div><strong>Protocol:</strong> x402 Active</div>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- Bottom Navigation Bar -->
     <nav class="bottom-nav">
-        <button class="nav-item active" onclick="switchTab('dash')">
+        <button class="nav-item active" onclick="switchTab('dash', event)">
             📊 <span>Dash</span>
         </button>
-        <button class="nav-item" onclick="switchTab('terminal')">
+        <button class="nav-item" onclick="switchTab('terminal', event)">
             ⚡ <span>Terminal</span>
         </button>
-        <button class="nav-item" onclick="switchTab('node')">
+        <button class="nav-item" onclick="switchTab('node', event)">
             👤 <span>Node</span>
         </button>
     </nav>
@@ -235,11 +259,13 @@
             if (type === 'err') colorClass = 'err';
             if (type === 'ok') colorClass = 'ok';
             
-            terminal.innerHTML += `> [<span class="${colorClass}">${timestamp}</span>]: ${message}<br>`;
-            terminal.scrollTop = terminal.scrollHeight;
+            if (terminal) {
+                terminal.innerHTML += `> [<span class="${colorClass}">${timestamp}</span>]: ${message}<br>`;
+                terminal.scrollTop = terminal.scrollHeight;
+            }
         }
 
-        // Synchronous handler for iOS Safari camera & audio permissions
+        // Synchronously bound event listener to maintain iOS user gesture token
         streamBtn.addEventListener('click', function() {
             logToTerminal("Requesting media stream permissions...");
 
@@ -264,9 +290,23 @@
             commandInput.value = '';
         });
 
-        function switchTab(tabName) {
+        function switchTab(tabName, event) {
+            // Hide all views
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            // Deactivate all nav buttons
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-            event.currentTarget.classList.add('active');
+
+            // Show target view
+            const targetView = document.getElementById(`view-${tabName}`);
+            if (targetView) {
+                targetView.classList.add('active');
+            }
+
+            // Highlight clicked nav item
+            if (event && event.currentTarget) {
+                event.currentTarget.classList.add('active');
+            }
+
             logToTerminal(`Switched view context to: ${tabName.toUpperCase()}`);
         }
     </script>
