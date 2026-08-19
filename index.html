@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Project Gifted1 | Live Feed</title>
+    <title>Project Gifted1 | Sovereign Node</title>
     <style>
         :root {
             --bg: #000000;
@@ -15,195 +15,97 @@
             --success: #22c55e;
             --accent-gradient: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
         }
-        
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background: var(--bg);
             color: var(--text-main);
-            margin: 0;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            min-height: 100vh;
-            overflow-x: hidden;
+            margin: 0; padding: 0;
+            display: flex; justify-content: center;
+            min-height: 100vh; overflow-x: hidden;
             -webkit-tap-highlight-color: transparent;
         }
         .app-container {
-            width: 100%;
-            max-width: 480px;
-            background: var(--bg);
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-            border-left: 1px solid var(--border);
-            border-right: 1px solid var(--border);
-            position: relative;
-            padding-bottom: 60px;
+            width: 100%; max-width: 480px;
+            background: var(--bg); display: flex; flex-direction: column;
+            min-height: 100vh; border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+            position: relative; padding-bottom: 60px; box-sizing: border-box;
         }
-        
-        /* Header */
         .top-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0.75rem 1rem;
-            border-bottom: 1px solid var(--border);
-            background: #000000;
-            position: sticky;
-            top: 0;
-            z-index: 50;
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0.75rem 1rem; border-bottom: 1px solid var(--border);
+            background: #000; position: sticky; top: 0; z-index: 50;
         }
         .logo {
-            font-weight: 800;
-            font-size: 1.3rem;
-            letter-spacing: -0.5px;
-            background: var(--accent-gradient);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            font-weight: 800; font-size: 1.3rem; letter-spacing: -0.5px;
+            background: var(--accent-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         }
-
-        /* Stories Reel */
         .stories-reel {
-            display: flex;
-            gap: 1rem;
-            padding: 0.75rem 1rem;
-            overflow-x: auto;
-            border-bottom: 1px solid var(--border);
-            background: var(--bg);
+            display: flex; gap: 1rem; padding: 0.75rem 1rem;
+            overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--bg);
             scrollbar-width: none;
         }
         .stories-reel::-webkit-scrollbar { display: none; }
-        .story-item {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 0.35rem;
-            flex-shrink: 0;
-        }
+        .story-item { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; flex-shrink: 0; cursor: pointer; }
         .story-ring {
-            width: 60px; height: 60px;
-            border-radius: 50%;
-            padding: 2px;
-            background: var(--accent-gradient);
-            display: flex; align-items: center; justify-content: center;
-        }
-        .story-ring.live {
-            animation: pulse-ring 2s infinite;
-        }
-        @keyframes pulse-ring {
-            0% { box-shadow: 0 0 0 0 rgba(0, 149, 246, 0.4); }
-            70% { box-shadow: 0 0 0 8px rgba(0, 149, 246, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(0, 149, 246, 0); }
+            width: 60px; height: 60px; border-radius: 50%; padding: 2px;
+            background: var(--accent-gradient); display: flex; align-items: center; justify-content: center;
         }
         .story-avatar {
-            width: 54px; height: 54px;
-            background: #1a1a1a;
-            border-radius: 50%;
-            border: 2px solid #000;
-            display: flex; align-items: center; justify-content: center;
+            width: 54px; height: 54px; background: #1a1a1a; border-radius: 50%;
+            border: 2px solid #000; display: flex; align-items: center; justify-content: center;
             font-size: 0.75rem; font-weight: 700; color: var(--text-main);
         }
-        .story-name {
-            font-size: 0.7rem;
-            color: var(--text-muted);
-        }
+        .story-name { font-size: 0.7rem; color: var(--text-muted); }
 
-        /* Views */
-        .view-section {
-            display: none;
-            flex: 1;
-            flex-direction: column;
-        }
-        .view-section.active {
-            display: flex;
-        }
+        .view-section { display: none; flex: 1; flex-direction: column; }
+        .view-section.active { display: flex; }
 
-        /* Posts */
-        .post {
-            background: var(--bg);
-            margin-bottom: 1rem;
-            border-bottom: 1px solid var(--border);
-        }
-        .post-header {
-            display: flex; align-items: center;
-            padding: 0.75rem 1rem; gap: 0.75rem;
-        }
+        .post { background: var(--bg); margin-bottom: 1rem; border-bottom: 1px solid var(--border); }
+        .post-header { display: flex; align-items: center; padding: 0.75rem 1rem; gap: 0.75rem; }
         .post-avatar {
-            width: 32px; height: 32px;
-            border-radius: 50%;
-            background: var(--accent-gradient);
-            display: flex; align-items: center; justify-content: center;
-            font-size: 0.7rem; font-weight: bold;
+            width: 32px; height: 32px; border-radius: 50%; background: var(--accent-gradient);
+            display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold;
         }
         .post-user { font-size: 0.85rem; font-weight: 600; color: var(--text-main); }
-        
         .post-media {
-            width: 100%;
-            height: 260px;
-            background: #080808;
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            padding: 1.5rem; box-sizing: border-box;
-            text-align: center;
-            color: var(--text-muted);
-            font-size: 0.85rem;
-            border-top: 1px solid var(--border);
-            border-bottom: 1px solid var(--border);
+            width: 100%; height: 240px; background: #080808; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; padding: 1.5rem; box-sizing: border-box;
+            text-align: center; color: var(--text-muted); font-size: 0.85rem;
+            border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
         }
-        .post-actions {
-            display: flex; gap: 1rem;
-            padding: 0.75rem 1rem;
-            font-size: 1.35rem;
-        }
+        .post-actions { display: flex; gap: 1rem; padding: 0.75rem 1rem; font-size: 1.35rem; }
         .action-btn { background: none; border: none; color: var(--text-main); padding: 0; cursor: pointer; }
         .action-btn.red { color: #ef4444; }
-
         .post-caption { padding: 0 1rem 1rem 1rem; font-size: 0.85rem; line-height: 1.4; }
         .post-caption span { font-weight: 600; margin-right: 0.4rem; }
 
-        /* Chat View */
-        .chat-view {
-            display: flex; flex-direction: column;
-            height: calc(100vh - 110px);
-            box-sizing: border-box;
-            padding: 1rem;
+        /* Profile View */
+        .profile-view { padding: 1.5rem 1rem; display: flex; flex-direction: column; align-items: center; text-align: center; }
+        .profile-avatar-large {
+            width: 80px; height: 80px; border-radius: 50%; background: var(--accent-gradient);
+            display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: bold; margin-bottom: 1rem;
         }
-        .chat-messages {
-            flex: 1; overflow-y: auto;
-            display: flex; flex-direction: column; gap: 0.75rem;
-            padding-bottom: 1rem;
-        }
-        .bubble {
-            max-width: 80%;
-            padding: 0.65rem 0.9rem;
-            border-radius: 16px;
-            font-size: 0.85rem;
-            line-height: 1.4;
-        }
-        .bubble.agent {
-            background: #262626; color: var(--text-main); align-self: flex-start; border-bottom-left-radius: 4px;
-        }
-        .bubble.operator {
-            background: var(--accent); color: white; align-self: flex-end; border-bottom-right-radius: 4px;
-        }
-        
-        /* Typing indicator styling */
-        .typing {
-            display: none;
-            align-self: flex-start;
-            background: #262626;
-            padding: 0.5rem 0.8rem;
-            border-radius: 14px;
-            color: var(--text-muted);
-            font-size: 0.75rem;
-            font-style: italic;
-        }
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; width: 100%; margin: 1.5rem 0; }
+        .stat-box { background: var(--card-bg); border: 1px solid var(--border); padding: 0.75rem; border-radius: 8px; }
+        .stat-num { font-size: 1.1rem; font-weight: bold; color: var(--accent); }
+        .stat-label { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem; }
 
-        .chat-input-bar {
-            display: flex; gap: 0.5rem;
-            padding-top: 0.5rem;
-            border-top: 1px solid var(--border);
+        /* Chat View */
+        .chat-view { display: flex; flex-direction: column; height: calc(100vh - 110px); box-sizing: border-box; padding: 1rem; }
+        .chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; padding-bottom: 1rem; }
+        .bubble { max-width: 80%; padding: 0.65rem 0.9rem; border-radius: 16px; font-size: 0.85rem; line-height: 1.4; }
+        .bubble.agent { background: #262626; color: var(--text-main); align-self: flex-start; border-bottom-left-radius: 4px; }
+        .bubble.operator { background: var(--accent); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+        
+        .quick-chips { display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.5rem; scrollbar-width: none; }
+        .quick-chips::-webkit-scrollbar { display: none; }
+        .chip {
+            background: #1a1a1a; border: 1px solid var(--border); color: var(--text-main);
+            padding: 0.4rem 0.8rem; border-radius: 16px; font-size: 0.75rem; white-space: nowrap; cursor: pointer;
         }
+        .chip:active { background: var(--accent); }
+
+        .chat-input-bar { display: flex; gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
         .chat-input-bar input {
             flex: 1; background: #121212; border: 1px solid var(--border);
             border-radius: 20px; padding: 0.65rem 1rem; color: var(--text-main); font-size: 0.9rem;
@@ -214,7 +116,16 @@
             padding: 0.65rem 1.2rem; border-radius: 20px; font-weight: 600; font-size: 0.85rem; cursor: pointer;
         }
 
-        /* Bottom Navigation */
+        /* Story Modal Overlay */
+        .story-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95); z-index: 1000; display: none;
+            flex-direction: column; justify-content: center; align-items: center; padding: 2rem; box-sizing: border-box;
+        }
+        .story-modal-content { font-size: 1.1rem; text-align: center; color: var(--text-main); margin-bottom: 2rem; line-height: 1.5; }
+        .story-close { background: var(--accent); border: none; color: white; padding: 0.75rem 2rem; border-radius: 20px; font-weight: bold; cursor: pointer; }
+
+        /* Bottom Nav */
         .bottom-nav {
             position: fixed; bottom: 0; width: 100%; max-width: 480px; height: 50px;
             background: #000000; border-top: 1px solid var(--border);
@@ -234,15 +145,15 @@
         <!-- FEED VIEW -->
         <div id="feedView" class="view-section active">
             <div class="stories-reel">
-                <div class="story-item">
-                    <div class="story-ring live"><div class="story-avatar">PG1</div></div>
+                <div class="story-item" onclick="openStory('Node Live: All edge nodes synchronized across GitHub pages with 100% uptime.')">
+                    <div class="story-ring"><div class="story-avatar">PG1</div></div>
                     <span class="story-name">Node Live</span>
                 </div>
-                <div class="story-item">
+                <div class="story-item" onclick="openStory('Workflows: Automated creator gifting pipelines and telemetry protocols are active.')">
                     <div class="story-ring"><div class="story-avatar">AI</div></div>
                     <span class="story-name">Workflows</span>
                 </div>
-                <div class="story-item">
+                <div class="story-item" onclick="openStory('Security: Sovereign isolation parameters enforced. Zero tracking or leaks.')">
                     <div class="story-ring"><div class="story-avatar">SEC</div></div>
                     <span class="story-name">Security</span>
                 </div>
@@ -256,7 +167,7 @@
                 <div class="post-media">
                     <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🔒</div>
                     <div>Autonomous Node Deployed Successfully</div>
-                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">GitHub Pages Edge Node Active</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">GitHub Pages Zero-Cost Edge</div>
                 </div>
                 <div class="post-actions">
                     <button class="action-btn" onclick="toggleLike(this)">❤️</button>
@@ -264,7 +175,7 @@
                     <button class="action-btn">↗️</button>
                 </div>
                 <div class="post-caption">
-                    <span>pg1.sovereign</span> Initializing live telemetry and automated creator pipelines. All local systems operational.
+                    <span>pg1.sovereign</span> Full suite features integrated. Tap tabs below to switch between Feed, Chat, and Profile.
                 </div>
             </div>
         </div>
@@ -273,9 +184,15 @@
         <div id="chatView" class="view-section">
             <div class="chat-view">
                 <div class="chat-messages" id="chatLog">
-                    <div class="bubble agent">[PG1-Agent]: Secure channel open. How can I assist with your node configuration today?</div>
+                    <div class="bubble agent">[PG1-Agent]: Sovereign node active. Use the quick chips below or type your instruction.</div>
                 </div>
-                <div class="typing" id="typingIndicator">PG1-Agent is thinking...</div>
+                
+                <div class="quick-chips">
+                    <button class="chip" onclick="sendPreset('Check node status')">📊 Node Status</button>
+                    <button class="chip" onclick="sendPreset('Run security sweep')">🛡️ Security Sweep</button>
+                    <button class="chip" onclick="sendPreset('Creator workflow update')">💡 Workflows</button>
+                </div>
+
                 <div class="chat-input-bar">
                     <input type="text" id="userInput" placeholder="Message agent..." onkeydown="if(event.key === 'Enter') sendDM()">
                     <button onclick="sendDM()">Send</button>
@@ -283,10 +200,41 @@
             </div>
         </div>
 
+        <!-- PROFILE VIEW -->
+        <div id="profileView" class="view-section">
+            <div class="profile-view">
+                <div class="profile-avatar-large">PG1</div>
+                <h2 style="margin: 0; font-size: 1.2rem;">pg1.sovereign</h2>
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.3rem;">Sovereign Infrastructure & Agent Portal</p>
+                
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div class="stat-num">100%</div>
+                        <div class="stat-label">Uptime</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-num">Active</div>
+                        <div class="stat-label">Node Status</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-num">Zero</div>
+                        <div class="stat-label">Overhead</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- STORY MODAL -->
+        <div class="story-modal" id="storyModal">
+            <div class="story-modal-content" id="storyText">Loading telemetry...</div>
+            <button class="story-close" onclick="closeStory()">Close Story</button>
+        </div>
+
         <!-- BOTTOM NAV -->
         <div class="bottom-nav">
             <button class="nav-item active" onclick="switchTab('feed', this)">🏠</button>
             <button class="nav-item" onclick="switchTab('chat', this)">💬</button>
+            <button class="nav-item" onclick="switchTab('profile', this)">👤</button>
         </div>
     </div>
 
@@ -297,6 +245,7 @@
             
             if(tabName === 'feed') document.getElementById('feedView').classList.add('active');
             if(tabName === 'chat') document.getElementById('chatView').classList.add('active');
+            if(tabName === 'profile') document.getElementById('profileView').classList.add('active');
             btn.classList.add('active');
         }
 
@@ -305,10 +254,23 @@
             btn.textContent = btn.classList.contains('red') ? '❤️' : '🤍';
         }
 
+        function openStory(text) {
+            document.getElementById('storyText').textContent = text;
+            document.getElementById('storyModal').style.display = 'flex';
+        }
+
+        function closeStory() {
+            document.getElementById('storyModal').style.display = 'none';
+        }
+
+        function sendPreset(text) {
+            document.getElementById('userInput').value = text;
+            sendDM();
+        }
+
         function sendDM() {
             const input = document.getElementById('userInput');
             const chatLog = document.getElementById('chatLog');
-            const typing = document.getElementById('typingIndicator');
             const text = input.value.trim();
             if (!text) return;
 
@@ -316,22 +278,20 @@
             input.value = '';
             chatLog.scrollTop = chatLog.scrollHeight;
 
-            typing.style.display = 'block';
-            chatLog.scrollTop = chatLog.scrollHeight;
-
             setTimeout(() => {
-                typing.style.display = 'none';
                 let reply = "Telemetry confirmed. Executing parameters securely.";
                 const lower = text.toLowerCase();
                 if (lower.includes('status') || lower.includes('node')) {
-                    reply = "All edge nodes are fully synchronized. Zero leakage.";
+                    reply = "All edge nodes are synchronized. Zero leakage detected.";
+                } else if (lower.includes('security') || lower.includes('sweep')) {
+                    reply = "Security protocols active. Perimeter secure and locked down.";
                 } else if (lower.includes('creator') || lower.includes('workflow')) {
-                    reply = "Creator channels primed and optimized for sovereign agent execution.";
+                    reply = "Creator gifting pipelines primed for automated deployment.";
                 }
 
                 chatLog.innerHTML += `<div class="bubble agent">[PG1-Agent]: ${reply}</div>`;
                 chatLog.scrollTop = chatLog.scrollHeight;
-            }, 800);
+            }, 500);
         }
 
         function escapeHtml(str) {
