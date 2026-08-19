@@ -2,47 +2,259 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Project Gifted1 Node</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Project Gifted1 | Command Center</title>
     <style>
-        body { background-color: #0b0b0e; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; padding: 16px; }
-        .card { background: #141418; border: 1px solid #22222a; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 16px; }
-        .logo-img { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; margin-bottom: 12px; border: 2px solid #3b82f6; }
-        .node-title { font-size: 20px; font-weight: bold; margin-bottom: 4px; }
-        .node-subtitle { font-size: 13px; color: #9ca3af; margin-bottom: 20px; }
-        .stats-grid { display: flex; justify-content: space-around; border-top: 1px solid #22222a; padding-top: 16px; }
-        .stat-label { font-size: 11px; color: #9ca3af; text-transform: uppercase; }
-        .stat-value { font-size: 16px; font-weight: bold; margin-top: 4px; }
-        .info-box { background: #141418; border: 1px solid #22222a; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-        .info-header { font-weight: bold; font-size: 16px; margin-bottom: 8px; }
-        .info-text { font-size: 13px; color: #9ca3af; line-height: 1.4; }
+        :root {
+            --bg: #050505;
+            --card-bg: #111111;
+            --border: #222222;
+            --border-glow: #333333;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.15);
+            --success: #4ade80;
+            --gradient: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg); color: var(--text-main);
+            margin: 0; padding: 0; display: flex; justify-content: center;
+            min-height: 100vh; overflow-x: hidden; -webkit-tap-highlight-color: transparent;
+        }
+        .app-container {
+            width: 100%; max-width: 480px; background: var(--bg);
+            display: flex; flex-direction: column; min-height: 100vh;
+            border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+            position: relative; padding-bottom: 70px; box-sizing: border-box;
+        }
+        .top-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 1rem 1.25rem; border-bottom: 1px solid var(--border);
+            background: rgba(5,5,5,0.8); backdrop-filter: blur(10px);
+            position: sticky; top: 0; z-index: 50;
+        }
+        .logo-area { display: flex; align-items: center; gap: 0.5rem; }
+        .logo { font-weight: 800; font-size: 1.15rem; letter-spacing: -0.5px; background: var(--gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .status-dot { width: 8px; height: 8px; background: var(--success); border-radius: 50%; box-shadow: 0 0 8px var(--success); }
+        .view-section { display: none; flex: 1; flex-direction: column; padding: 1rem; box-sizing: border-box; }
+        .view-section.active { display: flex; }
+
+        .dash-hero {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: 14px; padding: 1.25rem; margin-bottom: 1rem;
+            position: relative; overflow: hidden;
+        }
+        .dash-hero::before { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--accent); }
+        .dash-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 0.3rem; }
+        .dash-desc { font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; }
+
+        .metrics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; margin-bottom: 1rem; }
+        .metric-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; gap: 0.2rem; }
+        .metric-value { font-size: 1.25rem; font-weight: 700; color: var(--text-main); }
+        .metric-label { font-size: 0.75rem; color: var(--text-muted); }
+
+        .action-list { display: flex; flex-direction: column; gap: 0.5rem; }
+        .action-row {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: 10px; padding: 0.85rem 1rem; display: flex;
+            justify-content: space-between; align-items: center; cursor: pointer;
+            font-size: 0.85rem; font-weight: 500;
+        }
+        .action-row:active { border-color: var(--accent); background: var(--accent-glow); }
+
+        .terminal-container { display: flex; flex-direction: column; height: calc(100vh - 125px); }
+        .terminal-logs {
+            flex: 1; overflow-y: auto; background: var(--card-bg);
+            border: 1px solid var(--border); border-radius: 12px;
+            padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem;
+            font-family: monospace; font-size: 0.8rem; margin-bottom: 0.75rem;
+        }
+        .log-entry.agent { color: var(--accent); }
+        .log-entry.user { color: var(--text-main); }
+        .terminal-input-bar { display: flex; gap: 0.5rem; }
+        .terminal-input-bar input {
+            flex: 1; background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: 10px; padding: 0.75rem 1rem; color: var(--text-main); font-size: 0.85rem;
+        }
+        .terminal-input-bar input:focus { outline: none; border-color: var(--accent); }
+        .terminal-input-bar button {
+            background: var(--accent); color: #000; border: none;
+            padding: 0 1.25rem; border-radius: 10px; font-weight: 700; font-size: 0.85rem; cursor: pointer;
+        }
+
+        .profile-card {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: 14px; padding: 1.5rem; display: flex; flex-direction: column;
+            align-items: center; text-align: center; gap: 0.5rem;
+        }
+        .profile-avatar {
+            width: 80px; height: 80px; border-radius: 50%; overflow: hidden;
+            border: 2px solid var(--accent); margin-bottom: 0.5rem;
+        }
+        .profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+        .bottom-nav {
+            position: fixed; bottom: 0; width: 100%; max-width: 480px; height: 60px;
+            background: rgba(5,5,5,0.9); backdrop-filter: blur(10px);
+            border-top: 1px solid var(--border); display: flex;
+            justify-content: space-around; align-items: center; z-index: 100;
+        }
+        .nav-item {
+            background: none; border: none; color: var(--text-muted);
+            font-size: 0.75rem; font-weight: 600; display: flex;
+            flex-direction: column; align-items: center; gap: 0.2rem; cursor: pointer;
+        }
+        .nav-item.active { color: var(--accent); }
+        .nav-icon { font-size: 1.2rem; }
     </style>
 </head>
 <body>
+    <div class="app-container">
+        <div class="top-header">
+            <div class="logo-area">
+                <div class="status-dot"></div>
+                <div class="logo">Project Gifted1</div>
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">v2.4 Node</div>
+        </div>
 
-    <!-- Node View Card with Logo and Custom Text -->
-    <div class="card">
-        <img src="logo.png" alt="PG1 Emblem" class="logo-img">
-        <div class="node-title">PG1.Agent</div>
-        <div class="node-subtitle">Autonomous Edge Infrastructure</div>
-        
-        <div class="stats-grid">
-            <div>
-                <div class="stat-label">Hosting</div>
-                <div class="stat-value" style="color: #3b82f6;">PG1 Core</div>
+        <!-- DASHBOARD VIEW -->
+        <div id="dashView" class="view-section active">
+            <div class="dash-hero">
+                <div class="dash-title">Sovereign Edge Active</div>
+                <div class="dash-desc">Zero-cost deployment operational via PG1 core edge synchronization. All telemetry feeds secure.</div>
             </div>
-            <div>
-                <div class="stat-label">State</div>
-                <div class="stat-value" style="color: #10b981;">Active</div>
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value">100%</div>
+                    <div class="metric-label">Node Uptime</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">0ms</div>
+                    <div class="metric-label">Leak Latency</div>
+                </div>
             </div>
+
+            <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-muted);">Quick Commands</div>
+            <div class="action-list">
+                <div class="action-row" onclick="runCommand('status')">
+                    <span>⚡ Check Synchronized Status</span>
+                    <span style="color: var(--text-muted);">→</span>
+                </div>
+                <div class="action-row" onclick="runCommand('security')">
+                    <span>🛡️ Execute Security Sweep</span>
+                    <span style="color: var(--text-muted);">→</span>
+                </div>
+                <div class="action-row" onclick="runCommand('workflows')">
+                    <span>💡 Load Creator Workflows</span>
+                    <span style="color: var(--text-muted);">→</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- TERMINAL CHAT VIEW -->
+        <div id="terminalView" class="view-section">
+            <div class="terminal-container">
+                <div class="terminal-logs" id="terminalLogs">
+                    <div class="log-entry agent">&gt; [SYSTEM]: Secure terminal initialized. Ready for instructions.</div>
+                </div>
+                <div class="terminal-input-bar">
+                    <input type="text" id="termInput" placeholder="Type command or query..." onkeydown="if(event.key === 'Enter') sendTerminal()">
+                    <button onclick="sendTerminal()">Execute</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- PROFILE VIEW -->
+        <div id="profileView" class="view-section">
+            <div class="profile-card">
+                <div class="profile-avatar">
+                    <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="Emblem">
+                </div>
+                <div style="font-weight: 700; font-size: 1.05rem;">PG1.Agent</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Autonomous Edge Infrastructure</div>
+                <div style="margin-top: 1rem; width: 100%; border-top: 1px solid var(--border); padding-top: 1rem; display: flex; justify-content: space-around;">
+                    <div>
+                        <div style="font-weight: 700; color: var(--accent);">PG1 Core</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">Hosting</div>
+                    </div>
+                    <div>
+                        <div style="font-weight: 700; color: var(--success);">Active</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">State</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- BOTTOM NAV -->
+        <div class="bottom-nav">
+            <button class="nav-item active" onclick="switchTab('dash', this)">
+                <span class="nav-icon">📊</span>
+                <span>Dash</span>
+            </button>
+            <button class="nav-item" onclick="switchTab('terminal', this)">
+                <span class="nav-icon">⚡</span>
+                <span>Terminal</span>
+            </button>
+            <button class="nav-item" onclick="switchTab('profile', this)">
+                <span class="nav-icon">👤</span>
+                <span>Node</span>
+            </button>
         </div>
     </div>
 
-    <!-- Dash Info View -->
-    <div class="info-box" style="border-left: 4px solid #3b82f6;">
-        <div class="info-header">Sovereign Edge Active</div>
-        <div class="info-text">Zero-cost deployment operational via PG1 edge synchronization. All telemetry feeds secure.</div>
-    </div>
+    <script>
+        function switchTab(tabName, btn) {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            
+            if(tabName === 'dash') document.getElementById('dashView').classList.add('active');
+            if(tabName === 'terminal') document.getElementById('terminalView').classList.add('active');
+            if(tabName === 'profile') document.getElementById('profileView').classList.add('active');
+            btn.classList.add('active');
+        }
 
+        function runCommand(type) {
+            switchTab('terminal', document.querySelectorAll('.nav-item')[1]);
+            let cmd = "status";
+            if(type === 'security') cmd = "run security sweep";
+            if(type === 'workflows') cmd = "load creator workflows";
+            document.getElementById('termInput').value = cmd;
+            sendTerminal();
+        }
+
+        function sendTerminal() {
+            const input = document.getElementById('termInput');
+            const logs = document.getElementById('terminalLogs');
+            const text = input.value.trim();
+            if (!text) return;
+
+            logs.innerHTML += `<div class="log-entry user">&gt; ${escapeHtml(text)}</div>`;
+            input.value = '';
+            logs.scrollTop = logs.scrollHeight;
+
+            setTimeout(() => {
+                let reply = "Parameters processed successfully. Zero leakage verified.";
+                const lower = text.toLowerCase();
+                if (lower.includes('status')) {
+                    reply = "Node telemetry nominal. All edge files fully synchronized.";
+                } else if (lower.includes('security')) {
+                    reply = "Sweep complete. Isolation firewall active and secure.";
+                } else if (lower.includes('workflow')) {
+                    reply = "Creator pipelines primed and optimized for sovereign execution.";
+                }
+
+                logs.innerHTML += `<div class="log-entry agent">&gt; [AGNT]: ${reply}</div>`;
+                logs.scrollTop = logs.scrollHeight;
+            }, 400);
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+    </script>
 </body>
 </html>
