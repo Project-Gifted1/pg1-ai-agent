@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shadow Agent Control Dashboard</title>
+    <title>Project Gifted1 | Sovereign Agent Portal</title>
     <style>
         :root {
             --bg-color: #0f172a;
@@ -44,7 +44,7 @@
             margin-bottom: 1rem;
         }
         h1 {
-            font-size: 1.25rem;
+            font-size: 1.15rem;
             color: var(--accent);
             margin: 0;
         }
@@ -52,7 +52,7 @@
             display: flex;
             align-items: center;
             gap: 0.35rem;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             color: var(--success);
             background: rgba(34, 197, 94, 0.1);
             padding: 0.25rem 0.6rem;
@@ -66,81 +66,121 @@
             border-radius: 50%;
             box-shadow: 0 0 8px var(--success);
         }
-        .console {
+        .chat-container {
             background: #090d16;
             border: 1px solid var(--border);
             border-radius: 6px;
             padding: 0.75rem;
             font-family: monospace;
             font-size: 0.8rem;
-            color: #38bdf8;
-            height: 120px;
+            color: var(--text-main);
+            height: 200px;
             overflow-y: auto;
             margin-bottom: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5Rem;
             text-align: left;
         }
-        .controls {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0.75rem;
+        .message {
+            padding: 0.4rem 0.6rem;
+            border-radius: 4px;
+            max-width: 90%;
+        }
+        .message.agent {
+            background: #1e293b;
+            color: var(--accent);
+            border-left: 3px solid var(--accent);
+        }
+        .message.operator {
+            background: #0f172a;
+            color: var(--text-muted);
+            align-self: flex-end;
+            border-right: 3px solid #64748b;
+        }
+        .input-group {
+            display: flex;
+            gap: 0.5rem;
+        }
+        input[type="text"] {
+            flex: 1;
+            background: #090d16;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.75rem;
+            color: var(--text-main);
+            font-size: 0.9rem;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: var(--accent);
         }
         button {
             background: #2563eb;
             color: white;
             border: none;
-            padding: 0.75rem;
+            padding: 0.75rem 1rem;
             border-radius: 6px;
             font-weight: 600;
             font-size: 0.9rem;
             cursor: pointer;
-            transition: background 0.2s;
         }
         button:active {
             background: #1d4ed8;
-        }
-        button.secondary {
-            background: #334155;
-            color: var(--text-main);
-        }
-        button.secondary:active {
-            background: #475569;
         }
     </style>
 </head>
 <body>
     <div class="dashboard">
         <div class="header">
-            <h1>Shadow Control</h1>
+            <h1>PG1 Sovereign Node</h1>
             <div class="status-badge">
                 <div class="dot"></div>
-                Operational
+                Active
             </div>
         </div>
         
-        <div class="console" id="consoleLog">
-            [00:00:01] System initialized successfully.<br>
-            [00:00:02] Connected to GitHub Pages node.<br>
-            [00:00:03] Ready for operator commands.
+        <div class="chat-container" id="chatLog">
+            <div class="message agent">[PG1-AI]: Sovereign node online. Automated creator workflow and telemetry protocols primed. Enter command or query.</div>
         </div>
 
-        <div class="controls">
-            <button onclick="runDiagnostic()">Run Diagnostic</button>
-            <button class="secondary" onclick="clearLog()">Clear Log</button>
+        <div class="input-group">
+            <input type="text" id="userInput" placeholder="Enter command..." onkeydown="if(event.key === 'Enter') sendCommand()">
+            <button onclick="sendCommand()">Send</button>
         </div>
     </div>
 
     <script>
-        function runDiagnostic() {
-            const log = document.getElementById('consoleLog');
-            const time = new Date().toLocaleTimeString();
-            log.innerHTML += `<br>[${time}] Diagnostic check passed. Nodes secure.`;
-            log.scrollTop = log.scrollHeight;
+        function sendCommand() {
+            const input = document.getElementById('userInput');
+            const chatLog = document.getElementById('chatLog');
+            const text = input.value.trim();
+            if (!text) return;
+
+            // Append Operator Message
+            chatLog.innerHTML += `<div class="message operator">Operator: ${escapeHtml(text)}</div>`;
+            input.value = '';
+            chatLog.scrollTop = chatLog.scrollHeight;
+
+            // Simulate PG1 Response Logic
+            setTimeout(() => {
+                let reply = "Telemetry verified. Node network operational.";
+                const lower = text.toLowerCase();
+                if (lower.includes('status') || lower.includes('node')) {
+                    reply = "All decentralized node routes secure. Zero leakage detected.";
+                } else if (lower.includes('campaign') || lower.includes('creator')) {
+                    reply = "Autonomous creator gifting pipeline active. Administrative overhead minimized.";
+                } else if (lower.includes('security') || lower.includes('safety')) {
+                    reply = "Safety-first protocols engaged. Sovereign parameters enforced.";
+                }
+
+                chatLog.innerHTML += `<div class="message agent">[PG1-AI]: ${reply}</div>`;
+                chatLog.scrollTop = chatLog.scrollHeight;
+            }, 500);
         }
 
-        function clearLog() {
-            const log = document.getElementById('consoleLog');
-            const time = new Date().toLocaleTimeString();
-            log.innerHTML = `[${time}] Log cleared by operator.`;
+        function escapeHtml(string) {
+            return string.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         }
     </script>
 </body>
