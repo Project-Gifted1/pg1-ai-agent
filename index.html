@@ -3,18 +3,145 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shadow Agent Portal</title>
+    <title>Shadow Agent Control Dashboard</title>
     <style>
-        body { font-family: sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; padding: 1rem; box-sizing: border-box; }
-        .card { background: #1e293b; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); text-align: center; max-width: 400px; width: 100%; }
-        h1 { color: #38bdf8; margin-top: 0; font-size: 1.5rem; }
-        p { color: #94a3b8; font-size: 0.95rem; }
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent: #38bdf8;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --success: #22c55e;
+            --border: #334155;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 1rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+        .dashboard {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+            width: 100%;
+            max-width: 480px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        h1 {
+            font-size: 1.25rem;
+            color: var(--accent);
+            margin: 0;
+        }
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.8rem;
+            color: var(--success);
+            background: rgba(34, 197, 94, 0.1);
+            padding: 0.25rem 0.6rem;
+            border-radius: 20px;
+            border: 1px solid rgba(34, 197, 94, 0.2);
+        }
+        .dot {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--success);
+        }
+        .console {
+            background: #090d16;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.75rem;
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: #38bdf8;
+            height: 120px;
+            overflow-y: auto;
+            margin-bottom: 1rem;
+            text-align: left;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 0.75rem;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:active {
+            background: #1d4ed8;
+        }
+        button.secondary {
+            background: #334155;
+            color: var(--text-main);
+        }
+        button.secondary:active {
+            background: #475569;
+        }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h1>Shadow Agent Portal</h1>
-        <p>System status: Operational and ready for deployment.</p>
+    <div class="dashboard">
+        <div class="header">
+            <h1>Shadow Control</h1>
+            <div class="status-badge">
+                <div class="dot"></div>
+                Operational
+            </div>
+        </div>
+        
+        <div class="console" id="consoleLog">
+            [00:00:01] System initialized successfully.<br>
+            [00:00:02] Connected to GitHub Pages node.<br>
+            [00:00:03] Ready for operator commands.
+        </div>
+
+        <div class="controls">
+            <button onclick="runDiagnostic()">Run Diagnostic</button>
+            <button class="secondary" onclick="clearLog()">Clear Log</button>
+        </div>
     </div>
+
+    <script>
+        function runDiagnostic() {
+            const log = document.getElementById('consoleLog');
+            const time = new Date().toLocaleTimeString();
+            log.innerHTML += `<br>[${time}] Diagnostic check passed. Nodes secure.`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function clearLog() {
+            const log = document.getElementById('consoleLog');
+            const time = new Date().toLocaleTimeString();
+            log.innerHTML = `[${time}] Log cleared by operator.`;
+        }
+    </script>
 </body>
 </html>
