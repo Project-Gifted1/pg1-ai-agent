@@ -72,7 +72,7 @@
             align-items: center;
             justify-content: center;
             position: relative;
-            margin-bottom: 16px;
+            margin-bottom: 12px;
         }
 
         video {
@@ -95,7 +95,12 @@
             align-items: center;
             justify-content: center;
             gap: 8px;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
+        }
+
+        .btn-secondary {
+            background-color: #1e293b;
+            color: var(--text-main);
         }
 
         .btn:active {
@@ -185,9 +190,10 @@
 <body>
 
     <div class="container">
+        <!-- Persistent Header with Full Branding & Logo Alignment -->
         <header>
             <h1><span class="status-dot"></span> Project Gifted1™</h1>
-            <span style="font-size: 0.85rem; color: var(--text-muted);">v2.4 Node</span>
+            <span style="font-size: 0.85rem; color: var(--text-muted);" id="header-version">v2.4 Node</span>
         </header>
 
         <!-- DASH VIEW SECTION -->
@@ -202,6 +208,7 @@
                     <video id="webcam" autoplay playsinline></video>
                 </div>
                 <button id="stream-btn" class="btn">📹 Initialize Live Stream Feed</button>
+                <button id="flip-btn" class="btn btn-secondary" style="display:none;">🔄 Flip Camera (Front/Back)</button>
             </div>
         </div>
 
@@ -219,11 +226,14 @@
             </div>
         </div>
 
-        <!-- NODE VIEW SECTION -->
+        <!-- NODE VIEW SECTION WITH RESTORED BRANDED HEADER -->
         <div id="view-node" class="view-section">
             <div class="card">
-                <div style="font-weight: 600; margin-bottom: 8px;">Node Status & Details</div>
-                <div style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                    <span class="status-dot"></span>
+                    <strong style="font-size: 1.1rem; color: var(--text-main);">PG1.Agent Node Profile</strong>
+                </div>
+                <div style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.6;">
                     <div><strong>Node ID:</strong> PG1-CORE-01</div>
                     <div><strong>Status:</strong> Online & Syncing</div>
                     <div><strong>Ownership:</strong> 100% Sovereign</div>
@@ -250,8 +260,12 @@
         const terminal = document.getElementById('terminal');
         const videoElement = document.getElementById('webcam');
         const streamBtn = document.getElementById('stream-btn');
+        const flipBtn = document.getElementById('flip-btn');
         const commandInput = document.getElementById('command-input');
         const executeBtn = document.getElementById('execute-btn');
+
+        let currentFacingMode = 'user';
+        let currentStream = null;
 
         function logToTerminal(message, type = 'sys') {
             const timestamp = new Date().toLocaleTimeString();
@@ -265,24 +279,37 @@
             }
         }
 
-        // Synchronously bound event listener to maintain iOS user gesture token
-        streamBtn.addEventListener('click', function() {
-            logToTerminal("Requesting media stream permissions...");
+        function startCamera(facingMode) {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+            }
 
             navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: 'user' }, 
+                video: { facingMode: facingMode }, 
                 audio: true 
             })
             .then(function(stream) {
+                currentStream = stream;
                 videoElement.srcObject = stream;
-                logToTerminal("Live stream feed initialized successfully.", "ok");
+                flipBtn.style.display = 'flex';
+                logToTerminal(`Live stream initialized (${facingMode === 'user' ? 'Front' : 'Back'} Camera).`, "ok");
             })
             .catch(function(error) {
                 logToTerminal(`Media stream failed – ${error.name}: ${error.message}`, "err");
             });
+        }
+
+        streamBtn.addEventListener('click', function() {
+            logToTerminal("Requesting media stream permissions...");
+            startCamera(currentFacingMode);
         });
 
-        // Command execution handler
+        flipBtn.addEventListener('click', function() {
+            currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
+            logToTerminal(`Switching camera to ${currentFacingMode === 'user' ? 'Front' : 'Back'}...`);
+            startCamera(currentFacingMode);
+        });
+
         executeBtn.addEventListener('click', function() {
             const cmd = commandInput.value.trim();
             if (!cmd) return;
@@ -291,18 +318,14 @@
         });
 
         function switchTab(tabName, event) {
-            // Hide all views
             document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
-            // Deactivate all nav buttons
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
 
-            // Show target view
             const targetView = document.getElementById(`view-${tabName}`);
             if (targetView) {
                 targetView.classList.add('active');
             }
 
-            // Highlight clicked nav item
             if (event && event.currentTarget) {
                 event.currentTarget.classList.add('active');
             }
