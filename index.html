@@ -16,31 +16,6 @@
             --accent-gradient: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
         }
         
-        /* Subtle animated background noise */
-        body::before {
-            content: "";
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQMAAADCCAMAAAB6zFdcAAAAElBMVEX/////v7//3jD/yDD/zjD/0jCHkYlPAAAAFHRSTlMAVQECAwQFBgcICQoLDA0ODx+KstkAAAEoSURBVHja7daxDoMwDEVRU/7/05ZomTZxWwu3QhBIXN7y6x8K5fF61u149/N4f/vj/j3+9vX7+Z/X/2y7Z9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brNv26zb9us2/brMv3Xbj1203ft1249dtN37ddtu3P02/AfZ/7vWkAAAAAElFTkSuQmCC');
-            opacity: 0.03; /* Very subtle */
-            pointer-events: none;
-            z-index: -1;
-            animation: grain 8s steps(10) infinite;
-        }
-
-        @keyframes grain {
-            0%, 100% { transform: translate(0, 0); }
-            10% { transform: translate(-5%, -5%); }
-            20% { transform: translate(-10%, 5%); }
-            30% { transform: translate(5%, -10%); }
-            40% { transform: translate(-5%, 15%); }
-            50% { transform: translate(-10%, 5%); }
-            60% { transform: translate(15%, 0%); }
-            70% { transform: translate(0%, 15%); }
-            80% { transform: translate(3%, 3%); }
-            90% { transform: translate(-15%, 10%); }
-        }
-
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background: var(--bg);
@@ -63,7 +38,7 @@
             border-left: 1px solid var(--border);
             border-right: 1px solid var(--border);
             position: relative;
-            padding-bottom: 60px; /* Space for nav */
+            padding-bottom: 60px;
         }
         
         /* Header */
@@ -71,7 +46,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 0.5rem 1rem;
+            padding: 0.75rem 1rem;
             border-bottom: 1px solid var(--border);
             background: #000000;
             position: sticky;
@@ -80,18 +55,12 @@
         }
         .logo {
             font-weight: 800;
-            font-size: 1.4rem;
-            letter-spacing: -1px;
+            font-size: 1.3rem;
+            letter-spacing: -0.5px;
             background: var(--accent-gradient);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
-        .header-icon {
-            font-size: 1.5rem;
-            cursor: pointer;
-            transition: transform 0.2s;
-        }
-        .header-icon:active { transform: scale(0.9); }
 
         /* Stories Reel */
         .stories-reel {
@@ -101,7 +70,7 @@
             overflow-x: auto;
             border-bottom: 1px solid var(--border);
             background: var(--bg);
-            scrollbar-width: none; /* Firefox */
+            scrollbar-width: none;
         }
         .stories-reel::-webkit-scrollbar { display: none; }
         .story-item {
@@ -112,10 +81,9 @@
             flex-shrink: 0;
         }
         .story-ring {
-            width: 64px; height: 64px;
+            width: 60px; height: 60px;
             border-radius: 50%;
-            padding: 3px;
-            /* Apply pulse animation to the live node */
+            padding: 2px;
             background: var(--accent-gradient);
             display: flex; align-items: center; justify-content: center;
         }
@@ -124,42 +92,36 @@
         }
         @keyframes pulse-ring {
             0% { box-shadow: 0 0 0 0 rgba(0, 149, 246, 0.4); }
-            70% { box-shadow: 0 0 0 10px rgba(0, 149, 246, 0); }
+            70% { box-shadow: 0 0 0 8px rgba(0, 149, 246, 0); }
             100% { box-shadow: 0 0 0 0 rgba(0, 149, 246, 0); }
         }
         .story-avatar {
-            width: 58px; height: 58px;
+            width: 54px; height: 54px;
             background: #1a1a1a;
             border-radius: 50%;
             border: 2px solid #000;
             display: flex; align-items: center; justify-content: center;
-            font-size: 0.8rem; font-weight: 700; color: var(--text-main);
+            font-size: 0.75rem; font-weight: 700; color: var(--text-main);
         }
         .story-name {
-            font-size: 0.75rem;
-            color: var(--text-main);
-            font-weight: 500;
+            font-size: 0.7rem;
+            color: var(--text-muted);
         }
 
         /* Views */
         .view-section {
             display: none;
             flex: 1;
-            overflow-y: auto;
-            /* Smooth fade transition between views */
-            opacity: 0;
-            transition: opacity 0.3s ease-in-out;
+            flex-direction: column;
         }
         .view-section.active {
             display: flex;
-            flex-direction: column;
-            opacity: 1;
         }
 
         /* Posts */
         .post {
             background: var(--bg);
-            margin-bottom: 1.5rem;
+            margin-bottom: 1rem;
             border-bottom: 1px solid var(--border);
         }
         .post-header {
@@ -173,133 +135,208 @@
             display: flex; align-items: center; justify-content: center;
             font-size: 0.7rem; font-weight: bold;
         }
-        .post-user-info { display: flex; flex-direction: column; }
-        .post-user { font-size: 0.9rem; font-weight: 600; color: var(--text-main); }
-        .post-location { font-size: 0.7rem; color: var(--text-muted); }
+        .post-user { font-size: 0.85rem; font-weight: 600; color: var(--text-main); }
         
         .post-media {
             width: 100%;
-            aspect-ratio: 1/1; /* Perfect square */
+            height: 260px;
             background: #080808;
             display: flex; flex-direction: column;
             align-items: center; justify-content: center;
-            padding: 2rem; box-sizing: border-box;
+            padding: 1.5rem; box-sizing: border-box;
             text-align: center;
             color: var(--text-muted);
-            font-size: 1rem;
+            font-size: 0.85rem;
             border-top: 1px solid var(--border);
             border-bottom: 1px solid var(--border);
-            position: relative;
         }
-        /* Animated scanline effect on media */
-        .post-media::after {
-            content: "";
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 2px;
-            background: rgba(255, 255, 255, 0.05);
-            animation: scanline 3s linear infinite;
-        }
-        @keyframes scanline {
-            0% { top: 0; }
-            100% { top: 100%; }
-        }
-        
         .post-actions {
             display: flex; gap: 1rem;
             padding: 0.75rem 1rem;
-            font-size: 1.5rem;
+            font-size: 1.35rem;
         }
-        .action-btn {
-            background: none; border: none;
-            color: var(--text-main);
-            padding: 0; cursor: pointer;
-            transition: transform 0.2s;
-            line-height: 1;
-        }
-        .action-btn:active { transform: scale(1.2); }
+        .action-btn { background: none; border: none; color: var(--text-main); padding: 0; cursor: pointer; }
         .action-btn.red { color: #ef4444; }
 
-        .post-likes { font-size: 0.9rem; font-weight: 600; padding: 0 1rem 0.5rem 1rem; }
-        .post-caption { padding: 0 1rem 1rem 1rem; font-size: 0.9rem; line-height: 1.4; }
+        .post-caption { padding: 0 1rem 1rem 1rem; font-size: 0.85rem; line-height: 1.4; }
         .post-caption span { font-weight: 600; margin-right: 0.4rem; }
-        .time-ago { font-size: 0.75rem; color: var(--text-muted); padding: 0 1rem 1rem 1rem; text-transform: uppercase; letter-spacing: 1px;}
 
         /* Chat View */
         .chat-view {
             display: flex; flex-direction: column;
-            height: calc(100vh - 110px); /* Adjust for header/nav */
+            height: calc(100vh - 110px);
             box-sizing: border-box;
-        }
-        .chat-header {
-            display: flex; align-items: center; padding: 0.5rem 1rem;
-            border-bottom: 1px solid var(--border); background: #000000;
-            position: sticky; top: 51px; z-index: 10;
-        }
-        .chat-header-avatar {
-            width: 40px; height: 40px; border-radius: 50%;
-            background: var(--accent-gradient);
-            display: flex; align-items: center; justify-content: center;
-            font-weight: bold; margin-right: 0.75rem;
+            padding: 1rem;
         }
         .chat-messages {
             flex: 1; overflow-y: auto;
-            padding: 1rem;
             display: flex; flex-direction: column; gap: 0.75rem;
-            background: #000000;
+            padding-bottom: 1rem;
         }
         .bubble {
-            max-width: 75%;
-            padding: 0.75rem 1rem;
-            border-radius: 18px;
-            font-size: 0.9rem;
+            max-width: 80%;
+            padding: 0.65rem 0.9rem;
+            border-radius: 16px;
+            font-size: 0.85rem;
             line-height: 1.4;
-            position: relative;
-            word-wrap: break-word;
-            animation: pop-in 0.2s ease-out;
-        }
-        @keyframes pop-in {
-            0% { transform: scale(0.95); opacity: 0; }
-            100% { transform: scale(1); opacity: 1; }
         }
         .bubble.agent {
-            background: #262626;
-            color: var(--text-main);
-            align-self: flex-start;
-            border-bottom-left-radius: 4px;
+            background: #262626; color: var(--text-main); align-self: flex-start; border-bottom-left-radius: 4px;
         }
         .bubble.operator {
-            background: var(--accent);
-            color: white;
-            align-self: flex-end;
-            border-bottom-right-radius: 4px;
+            background: var(--accent); color: white; align-self: flex-end; border-bottom-right-radius: 4px;
         }
         
-        /* Typing Indicator */
-        .typing-indicator {
+        /* Typing indicator styling */
+        .typing {
+            display: none;
             align-self: flex-start;
             background: #262626;
-            padding: 0.75rem 1rem;
-            border-radius: 18px;
-            border-bottom-left-radius: 4px;
-            display: none; /* Hidden by default */
-            gap: 4px;
-        }
-        .typing-indicator.active { display: flex; }
-        .typing-dot {
-            width: 8px; height: 8px; background: var(--text-muted);
-            border-radius: 50%;
-            animation: bounce 1.4s infinite ease-in-out both;
-        }
-        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
-        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
-        @keyframes bounce {
-            0%, 80%, 100% { transform: scale(0); }
-            40% { transform: scale(1.0); }
+            padding: 0.5rem 0.8rem;
+            border-radius: 14px;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            font-style: italic;
         }
 
-        .chat-input-area {
-            padding: 0.75rem; border-top: 1px solid var(--border);
-            background: #000000; display: flex; gap: 0.5rem;
-            position: sticky; bottom: 0;
+        .chat-input-bar {
+            display: flex; gap: 0.5rem;
+            padding-top: 0.5rem;
+            border-top: 1px solid var(--border);
         }
-        .chat-input
+        .chat-input-bar input {
+            flex: 1; background: #121212; border: 1px solid var(--border);
+            border-radius: 20px; padding: 0.65rem 1rem; color: var(--text-main); font-size: 0.9rem;
+        }
+        .chat-input-bar input:focus { outline: none; border-color: var(--text-muted); }
+        .chat-input-bar button {
+            background: var(--accent); color: white; border: none;
+            padding: 0.65rem 1.2rem; border-radius: 20px; font-weight: 600; font-size: 0.85rem; cursor: pointer;
+        }
+
+        /* Bottom Navigation */
+        .bottom-nav {
+            position: fixed; bottom: 0; width: 100%; max-width: 480px; height: 50px;
+            background: #000000; border-top: 1px solid var(--border);
+            display: flex; justify-content: space-around; align-items: center; z-index: 100;
+        }
+        .nav-item { background: none; border: none; color: var(--text-muted); font-size: 1.25rem; cursor: pointer; padding: 0.5rem; }
+        .nav-item.active { color: var(--text-main); }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="top-header">
+            <div class="logo">Project Gifted1</div>
+            <div style="font-size: 1.15rem;">⚡</div>
+        </div>
+
+        <!-- FEED VIEW -->
+        <div id="feedView" class="view-section active">
+            <div class="stories-reel">
+                <div class="story-item">
+                    <div class="story-ring live"><div class="story-avatar">PG1</div></div>
+                    <span class="story-name">Node Live</span>
+                </div>
+                <div class="story-item">
+                    <div class="story-ring"><div class="story-avatar">AI</div></div>
+                    <span class="story-name">Workflows</span>
+                </div>
+                <div class="story-item">
+                    <div class="story-ring"><div class="story-avatar">SEC</div></div>
+                    <span class="story-name">Security</span>
+                </div>
+            </div>
+
+            <div class="post">
+                <div class="post-header">
+                    <div class="post-avatar">PG</div>
+                    <div class="post-user">pg1.sovereign</div>
+                </div>
+                <div class="post-media">
+                    <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🔒</div>
+                    <div>Autonomous Node Deployed Successfully</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">GitHub Pages Edge Node Active</div>
+                </div>
+                <div class="post-actions">
+                    <button class="action-btn" onclick="toggleLike(this)">❤️</button>
+                    <button class="action-btn">💬</button>
+                    <button class="action-btn">↗️</button>
+                </div>
+                <div class="post-caption">
+                    <span>pg1.sovereign</span> Initializing live telemetry and automated creator pipelines. All local systems operational.
+                </div>
+            </div>
+        </div>
+
+        <!-- CHAT VIEW -->
+        <div id="chatView" class="view-section">
+            <div class="chat-view">
+                <div class="chat-messages" id="chatLog">
+                    <div class="bubble agent">[PG1-Agent]: Secure channel open. How can I assist with your node configuration today?</div>
+                </div>
+                <div class="typing" id="typingIndicator">PG1-Agent is thinking...</div>
+                <div class="chat-input-bar">
+                    <input type="text" id="userInput" placeholder="Message agent..." onkeydown="if(event.key === 'Enter') sendDM()">
+                    <button onclick="sendDM()">Send</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- BOTTOM NAV -->
+        <div class="bottom-nav">
+            <button class="nav-item active" onclick="switchTab('feed', this)">🏠</button>
+            <button class="nav-item" onclick="switchTab('chat', this)">💬</button>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tabName, btn) {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            
+            if(tabName === 'feed') document.getElementById('feedView').classList.add('active');
+            if(tabName === 'chat') document.getElementById('chatView').classList.add('active');
+            btn.classList.add('active');
+        }
+
+        function toggleLike(btn) {
+            btn.classList.toggle('red');
+            btn.textContent = btn.classList.contains('red') ? '❤️' : '🤍';
+        }
+
+        function sendDM() {
+            const input = document.getElementById('userInput');
+            const chatLog = document.getElementById('chatLog');
+            const typing = document.getElementById('typingIndicator');
+            const text = input.value.trim();
+            if (!text) return;
+
+            chatLog.innerHTML += `<div class="bubble operator">${escapeHtml(text)}</div>`;
+            input.value = '';
+            chatLog.scrollTop = chatLog.scrollHeight;
+
+            typing.style.display = 'block';
+            chatLog.scrollTop = chatLog.scrollHeight;
+
+            setTimeout(() => {
+                typing.style.display = 'none';
+                let reply = "Telemetry confirmed. Executing parameters securely.";
+                const lower = text.toLowerCase();
+                if (lower.includes('status') || lower.includes('node')) {
+                    reply = "All edge nodes are fully synchronized. Zero leakage.";
+                } else if (lower.includes('creator') || lower.includes('workflow')) {
+                    reply = "Creator channels primed and optimized for sovereign agent execution.";
+                }
+
+                chatLog.innerHTML += `<div class="bubble agent">[PG1-Agent]: ${reply}</div>`;
+                chatLog.scrollTop = chatLog.scrollHeight;
+            }, 800);
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+    </script>
+</body>
+</html>
