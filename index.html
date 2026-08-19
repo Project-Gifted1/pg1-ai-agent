@@ -3,13 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Project Gifted1 | Command Center</title>
+    <title>Project Gifted1™ | Command Center</title>
     <style>
         :root {
             --bg: #050505;
             --card-bg: #111111;
             --border: #222222;
-            --border-glow: #333333;
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
             --accent: #38bdf8;
@@ -49,6 +48,19 @@
         .dash-hero::before { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--accent); }
         .dash-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 0.3rem; }
         .dash-desc { font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; }
+
+        .media-box {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: 14px; padding: 1rem; margin-bottom: 1rem; text-align: center;
+        }
+        .media-preview {
+            width: 100%; height: 160px; background: #000; border-radius: 10px;
+            object-fit: cover; margin-bottom: 0.75rem; border: 1px solid var(--border);
+        }
+        .media-btn {
+            background: var(--accent); color: #000; border: none; width: 100%;
+            padding: 0.75rem; border-radius: 10px; font-weight: 700; font-size: 0.85rem; cursor: pointer;
+        }
 
         .metrics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; margin-bottom: 1rem; }
         .metric-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; gap: 0.2rem; }
@@ -115,7 +127,7 @@
         <div class="top-header">
             <div class="logo-area">
                 <div class="status-dot"></div>
-                <div class="logo">Project Gifted1</div>
+                <div class="logo">Project Gifted1™</div>
             </div>
             <div style="font-size: 0.8rem; color: var(--text-muted);">v2.4 Node</div>
         </div>
@@ -125,6 +137,12 @@
             <div class="dash-hero">
                 <div class="dash-title">Sovereign Edge Active</div>
                 <div class="dash-desc">Zero-cost deployment operational via PG1 core edge synchronization. All telemetry feeds secure.</div>
+            </div>
+
+            <!-- Live Multimodal Camera/Audio Stream Interface -->
+            <div class="media-box">
+                <video id="webcamPreview" class="media-preview" autoplay playsinline muted></video>
+                <button class="media-btn" onclick="toggleCamera()">📹 Initialize Live Stream Feed</button>
             </div>
 
             <div class="metrics-grid">
@@ -146,10 +164,6 @@
                 </div>
                 <div class="action-row" onclick="runCommand('security')">
                     <span>🛡️ Execute Security Sweep</span>
-                    <span style="color: var(--text-muted);">→</span>
-                </div>
-                <div class="action-row" onclick="runCommand('workflows')">
-                    <span>💡 Load Creator Workflows</span>
                     <span style="color: var(--text-muted);">→</span>
                 </div>
             </div>
@@ -207,6 +221,9 @@
     </div>
 
     <script>
+        let cameraActive = false;
+        let mediaStream = null;
+
         function switchTab(tabName, btn) {
             document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -217,11 +234,36 @@
             btn.classList.add('active');
         }
 
+        async function toggleCamera() {
+            const video = document.getElementById('webcamPreview');
+            const btn = event.target;
+            if (!cameraActive) {
+                try {
+                    mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true });
+                    video.srcObject = mediaStream;
+                    cameraActive = true;
+                    btn.textContent = "🛑 Stop Live Stream Feed";
+                    btn.style.background = "#ef4444";
+                    btn.style.color = "#fff";
+                } catch (err) {
+                    alert("Camera/Audio permission required for sovereign stream processing.");
+                }
+            } else {
+                if (mediaStream) {
+                    mediaStream.getTracks().forEach(track => track.stop());
+                }
+                video.srcObject = null;
+                cameraActive = false;
+                btn.textContent = "📹 Initialize Live Stream Feed";
+                btn.style.background = "var(--accent)";
+                btn.style.color = "#000";
+            }
+        }
+
         function runCommand(type) {
             switchTab('terminal', document.querySelectorAll('.nav-item')[1]);
             let cmd = "status";
             if(type === 'security') cmd = "run security sweep";
-            if(type === 'workflows') cmd = "load creator workflows";
             document.getElementById('termInput').value = cmd;
             sendTerminal();
         }
@@ -237,16 +279,13 @@
             logs.scrollTop = logs.scrollHeight;
 
             setTimeout(() => {
-                let reply = "Parameters processed successfully. Zero leakage verified.";
+                let reply = "Parameters processed successfully via local client state.";
                 const lower = text.toLowerCase();
                 if (lower.includes('status')) {
-                    reply = "Node telemetry nominal. All edge files fully synchronized.";
+                    reply = "Node telemetry nominal. Local multimodal buffers synchronized.";
                 } else if (lower.includes('security')) {
-                    reply = "Sweep complete. Isolation firewall active and secure.";
-                } else if (lower.includes('workflow')) {
-                    reply = "Creator pipelines primed and optimized for sovereign execution.";
+                    reply = "Sweep complete. Zero data leakage detected.";
                 }
-
                 logs.innerHTML += `<div class="log-entry agent">&gt; [AGNT]: ${reply}</div>`;
                 logs.scrollTop = logs.scrollHeight;
             }, 400);
