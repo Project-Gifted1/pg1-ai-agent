@@ -3,184 +3,366 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Project Gifted1 | Sovereign Agent Portal</title>
+    <title>Project Gifted1 | Sovereign Feed</title>
     <style>
         :root {
-            --bg-color: #0f172a;
-            --card-bg: #1e293b;
-            --accent: #38bdf8;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --success: #22c55e;
-            --border: #334155;
+            --bg: #000000;
+            --card-bg: #121212;
+            --border: #262626;
+            --text-main: #f5f5f5;
+            --text-muted: #a3a3a3;
+            --accent: #0095f6;
+            --accent-gradient: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: var(--bg-color);
+            background: var(--bg);
             color: var(--text-main);
             margin: 0;
-            padding: 1rem;
+            padding: 0;
             display: flex;
             justify-content: center;
-            align-items: center;
             min-height: 100vh;
-            box-sizing: border-box;
         }
-        .dashboard {
-            background: var(--card-bg);
-            border: 1px solid var(--border);
-            padding: 1.5rem;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+        .app-container {
             width: 100%;
             max-width: 480px;
+            background: var(--bg);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            border-left: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            position: relative;
+            padding-bottom: 60px;
         }
-        .header {
+        /* Top Navigation Header */
+        .top-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            padding: 0.75rem 1rem;
             border-bottom: 1px solid var(--border);
-            padding-bottom: 0.75rem;
-            margin-bottom: 1rem;
+            background: var(--bg);
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
-        h1 {
-            font-size: 1.15rem;
-            color: var(--accent);
-            margin: 0;
+        .logo {
+            font-weight: 700;
+            font-size: 1.2rem;
+            letter-spacing: -0.5px;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
-        .status-badge {
+        /* Stories / Status Reel */
+        .stories-reel {
             display: flex;
-            align-items: center;
-            gap: 0.35rem;
-            font-size: 0.75rem;
-            color: var(--success);
-            background: rgba(34, 197, 94, 0.1);
-            padding: 0.25rem 0.6rem;
-            border-radius: 20px;
-            border: 1px solid rgba(34, 197, 94, 0.2);
+            gap: 1rem;
+            padding: 0.75rem 1rem;
+            overflow-x: auto;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg);
         }
-        .dot {
-            width: 8px;
-            height: 8px;
-            background: var(--success);
-            border-radius: 50%;
-            box-shadow: 0 0 8px var(--success);
-        }
-        .chat-container {
-            background: #090d16;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 0.75rem;
-            font-family: monospace;
-            font-size: 0.8rem;
-            color: var(--text-main);
-            height: 200px;
-            overflow-y: auto;
-            margin-bottom: 1rem;
+        .stories-reel::-webkit-scrollbar { display: none; }
+        .story-item {
             display: flex;
             flex-direction: column;
-            gap: 0.5Rem;
-            text-align: left;
+            align-items: center;
+            gap: 0.25rem;
+            flex-shrink: 0;
+            cursor: pointer;
         }
-        .message {
-            padding: 0.4rem 0.6rem;
-            border-radius: 4px;
-            max-width: 90%;
-        }
-        .message.agent {
-            background: #1e293b;
-            color: var(--accent);
-            border-left: 3px solid var(--accent);
-        }
-        .message.operator {
-            background: #0f172a;
-            color: var(--text-muted);
-            align-self: flex-end;
-            border-right: 3px solid #64748b;
-        }
-        .input-group {
+        .story-ring {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            padding: 2px;
+            background: var(--accent-gradient);
             display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .story-avatar {
+            width: 50px;
+            height: 50px;
+            background: #262626;
+            border-radius: 50%;
+            border: 2px solid var(--bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .story-name {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+        /* Views (Tabs) */
+        .view-section {
+            display: none;
+            flex: 1;
+            overflow-y: auto;
+        }
+        .view-section.active {
+            display: flex;
+            flex-direction: column;
+        }
+        /* Feed Posts */
+        .post {
+            background: var(--card-bg);
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 0.5rem;
+        }
+        .post-header {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem;
             gap: 0.5rem;
         }
-        input[type="text"] {
-            flex: 1;
-            background: #090d16;
-            border: 1px solid var(--border);
-            border-radius: 6px;
+        .post-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--accent-gradient);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+        .post-user {
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .post-media {
+            width: 100%;
+            height: 280px;
+            background: #1a1a1a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            box-sizing: border-box;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+        }
+        .post-actions {
+            display: flex;
+            gap: 1rem;
             padding: 0.75rem;
+            font-size: 1.25rem;
+        }
+        .post-caption {
+            padding: 0 0.75rem 0.75rem 0.75rem;
+            font-size: 0.85rem;
+        }
+        .post-caption span { font-weight: 600; margin-right: 0.35rem; }
+        /* Chat/DM View */
+        .chat-view {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 110px);
+            padding: 1rem;
+            box-sizing: border-box;
+        }
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            padding-bottom: 1rem;
+        }
+        .bubble {
+            max-width: 80%;
+            padding: 0.65rem 0.9rem;
+            border-radius: 16px;
+            font-size: 0.85rem;
+            line-height: 1.35;
+        }
+        .bubble.agent {
+            background: #262626;
+            color: var(--text-main);
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+        .bubble.operator {
+            background: var(--accent);
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+        .chat-input-bar {
+            display: flex;
+            gap: 0.5rem;
+            padding-top: 0.5rem;
+            border-top: 1px solid var(--border);
+        }
+        .chat-input-bar input {
+            flex: 1;
+            background: #121212;
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 0.65rem 1rem;
             color: var(--text-main);
             font-size: 0.9rem;
         }
-        input[type="text"]:focus {
-            outline: none;
-            border-color: var(--accent);
-        }
-        button {
-            background: #2563eb;
+        .chat-input-bar input:focus { outline: none; border-color: var(--text-muted); }
+        .chat-input-bar button {
+            background: var(--accent);
             color: white;
             border: none;
-            padding: 0.75rem 1rem;
-            border-radius: 6px;
+            padding: 0.65rem 1.2rem;
+            border-radius: 20px;
             font-weight: 600;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             cursor: pointer;
         }
-        button:active {
-            background: #1d4ed8;
+        /* Bottom Navigation */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            max-width: 480px;
+            height: 50px;
+            background: var(--bg);
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            z-index: 100;
+        }
+        .nav-item {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.25rem;
+            cursor: pointer;
+            padding: 0.5rem;
+        }
+        .nav-item.active {
+            color: var(--text-main);
         }
     </style>
 </head>
 <body>
-    <div class="dashboard">
-        <div class="header">
-            <h1>PG1 Sovereign Node</h1>
-            <div class="status-badge">
-                <div class="dot"></div>
-                Active
-            </div>
-        </div>
-        
-        <div class="chat-container" id="chatLog">
-            <div class="message agent">[PG1-AI]: Sovereign node online. Automated creator workflow and telemetry protocols primed. Enter command or query.</div>
+    <div class="app-container">
+        <!-- Top Header -->
+        <div class="top-header">
+            <div class="logo">Project Gifted1</div>
+            <div style="font-size: 1.15rem; cursor: pointer;">⚡</div>
         </div>
 
-        <div class="input-group">
-            <input type="text" id="userInput" placeholder="Enter command..." onkeydown="if(event.key === 'Enter') sendCommand()">
-            <button onclick="sendCommand()">Send</button>
+        <!-- FEED VIEW -->
+        <div id="feedView" class="view-section active">
+            <!-- Stories Reel -->
+            <div class="stories-reel">
+                <div class="story-item">
+                    <div class="story-ring"><div class="story-avatar">PG1</div></div>
+                    <span class="story-name">Node Live</span>
+                </div>
+                <div class="story-item">
+                    <div class="story-ring"><div class="story-avatar">AI</div></div>
+                    <span class="story-name">Workflows</span>
+                </div>
+                <div class="story-item">
+                    <div class="story-ring"><div class="story-avatar">SEC</div></div>
+                    <span class="story-name">Security</span>
+                </div>
+                <div class="story-item">
+                    <div class="story-ring"><div class="story-avatar">REV</div></div>
+                    <span class="story-name">Analytics</span>
+                </div>
+            </div>
+
+            <!-- Post 1 -->
+            <div class="post">
+                <div class="post-header">
+                    <div class="post-avatar">PG</div>
+                    <div class="post-user">pg1.sovereign</div>
+                </div>
+                <div class="post-media">
+                    <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🔒</div>
+                    <div>Autonomous Node Deployed Successfully</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">GitHub Pages Zero-Cost Edge Node</div>
+                </div>
+                <div class="post-actions">
+                    <span>❤️</span> <span>💬</span> <span>↗️</span>
+                </div>
+                <div class="post-caption">
+                    <span>pg1.sovereign</span> Initializing automated creator telemetry and secure local execution parameters. All systems operational.
+                </div>
+            </div>
+        </div>
+
+        <!-- CHAT / DM VIEW -->
+        <div id="chatView" class="view-section">
+            <div class="chat-view">
+                <div class="chat-messages" id="chatLog">
+                    <div class="bubble agent">[PG1-Agent]: Sovereign feed active. Direct channel open. How can I assist with your node architecture or workflows today?</div>
+                </div>
+                <div class="chat-input-bar">
+                    <input type="text" id="userInput" placeholder="Message PG1 Agent..." onkeydown="if(event.key === 'Enter') sendDM()">
+                    <button onclick="sendDM()">Send</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Navigation Bar -->
+        <div class="bottom-nav">
+            <button class="nav-item active" onclick="switchTab('feed', this)">🏠</button>
+            <button class="nav-item" onclick="switchTab('chat', this)">💬</button>
         </div>
     </div>
 
     <script>
-        function sendCommand() {
+        function switchTab(tabName, btn) {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            
+            if(tabName === 'feed') {
+                document.getElementById('feedView').classList.add('active');
+            } else if(tabName === 'chat') {
+                document.getElementById('chatView').classList.add('active');
+            }
+            btn.classList.add('active');
+        }
+
+        function sendDM() {
             const input = document.getElementById('userInput');
             const chatLog = document.getElementById('chatLog');
             const text = input.value.trim();
             if (!text) return;
 
-            // Append Operator Message
-            chatLog.innerHTML += `<div class="message operator">Operator: ${escapeHtml(text)}</div>`;
+            chatLog.innerHTML += `<div class="bubble operator">${escapeHtml(text)}</div>`;
             input.value = '';
             chatLog.scrollTop = chatLog.scrollHeight;
 
-            // Simulate PG1 Response Logic
             setTimeout(() => {
-                let reply = "Telemetry verified. Node network operational.";
+                let reply = "Telemetry confirmed. Executing parameters securely.";
                 const lower = text.toLowerCase();
                 if (lower.includes('status') || lower.includes('node')) {
-                    reply = "All decentralized node routes secure. Zero leakage detected.";
-                } else if (lower.includes('campaign') || lower.includes('creator')) {
-                    reply = "Autonomous creator gifting pipeline active. Administrative overhead minimized.";
-                } else if (lower.includes('security') || lower.includes('safety')) {
-                    reply = "Safety-first protocols engaged. Sovereign parameters enforced.";
+                    reply = "All edge nodes are synced. Zero overhead detected.";
+                } else if (lower.includes('creator') || lower.includes('workflow')) {
+                    reply = "Creator gifting channels primed and optimized for agent execution.";
+                } else if (lower.includes('security') || lower.includes('safe')) {
+                    reply = "Sovereign isolation protocols enforced. Safe and locked down.";
                 }
 
-                chatLog.innerHTML += `<div class="message agent">[PG1-AI]: ${reply}</div>`;
+                chatLog.innerHTML += `<div class="bubble agent">[PG1-Agent]: ${reply}</div>`;
                 chatLog.scrollTop = chatLog.scrollHeight;
-            }, 500);
+            }, 600);
         }
 
-        function escapeHtml(string) {
-            return string.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         }
     </script>
 </body>
