@@ -190,7 +190,7 @@
 <body>
 
     <div class="container">
-        <!-- Persistent Header with Full Branding & Logo Alignment -->
+        <!-- Persistent Header Across All Views -->
         <header>
             <h1><span class="status-dot"></span> Project Gifted1™</h1>
             <span style="font-size: 0.85rem; color: var(--text-muted);" id="header-version">v2.4 Node</span>
@@ -226,16 +226,22 @@
             </div>
         </div>
 
-        <!-- NODE VIEW SECTION WITH RESTORED BRANDED HEADER -->
+        <!-- NODE VIEW SECTION: Combined Classic Branding & Telemetry Metrics -->
         <div id="view-node" class="view-section">
-            <div class="card">
-                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-                    <span class="status-dot"></span>
-                    <strong style="font-size: 1.1rem; color: var(--text-main);">PG1.Agent Node Profile</strong>
+            <div class="card" style="text-align: center; padding: 24px 16px;">
+                <!-- Classic Branded Logo Element -->
+                <div style="display: flex; justify-content: center; margin-bottom: 12px;">
+                    <div style="width: 72px; height: 72px; border-radius: 50%; background: radial-gradient(circle, #1e3a8a 0%, #0f172a 100%); border: 2px solid var(--accent-blue); display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: bold; color: var(--accent-blue); box-shadow: 0 0 15px rgba(14, 165, 233, 0.3);">
+                        G1
+                    </div>
                 </div>
-                <div style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.6;">
+                <div style="font-size: 1.2rem; font-weight: bold; color: var(--text-main); margin-bottom: 4px;">PG1.Agent</div>
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 20px;">Autonomous Edge Infrastructure</div>
+
+                <!-- Telemetry Details Grid -->
+                <div style="border-top: 1px solid #1e293b; padding-top: 16px; text-align: left; font-size: 0.85rem; color: var(--text-muted); line-height: 1.8;">
                     <div><strong>Node ID:</strong> PG1-CORE-01</div>
-                    <div><strong>Status:</strong> Online & Syncing</div>
+                    <div><strong>Status:</strong> <span style="color: var(--success-green);">Online & Syncing</span></div>
                     <div><strong>Ownership:</strong> 100% Sovereign</div>
                     <div><strong>Protocol:</strong> x402 Active</div>
                 </div>
@@ -292,7 +298,7 @@
                 currentStream = stream;
                 videoElement.srcObject = stream;
                 flipBtn.style.display = 'flex';
-                logToTerminal(`Live stream initialized (${facingMode === 'user' ? 'Front' : 'Back'} Camera).`, "ok");
+                logToTerminal(`Live stream & audio initialized (${facingMode === 'user' ? 'Front' : 'Back'} Camera).`, "ok");
             })
             .catch(function(error) {
                 logToTerminal(`Media stream failed – ${error.name}: ${error.message}`, "err");
@@ -300,7 +306,7 @@
         }
 
         streamBtn.addEventListener('click', function() {
-            logToTerminal("Requesting media stream permissions...");
+            logToTerminal("Requesting media stream and audio permissions...");
             startCamera(currentFacingMode);
         });
 
