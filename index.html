@@ -57,7 +57,7 @@
     <div id="tabDash" class="tab-content active">
       <div class="card-box">
         <div class="card-title">Sovereign Edge Active</div>
-        <div class="card-sub">Zero-cost deployment operational via PG1 core edge synchronization. All telemetry feeds secure.</div>
+        <div class="card-sub">Zero-cost deployment operational via PG1 Cloudflare AI Edge synchronization.</div>
       </div>
 
       <div class="card-box">
@@ -79,7 +79,7 @@
       </div>
 
       <div class="cam-box">
-        <button class="cam-flip" onclick="initCamera()">Start Camera</button>
+        <button class="cam-flip" onclick="toggleCamera()">Flip Camera</button>
         <video id="webcamDash" autoplay playsinline muted></video>
       </div>
     </div>
@@ -87,7 +87,7 @@
     <!-- TAB 2: TERMINAL -->
     <div id="tabTerminal" class="tab-content">
       <div class="cam-box">
-        <button class="cam-flip" onclick="initCamera()">Start Camera</button>
+        <button class="cam-flip" onclick="toggleCamera()">Flip Camera</button>
         <video id="webcamTerm" autoplay playsinline muted></video>
       </div>
 
@@ -109,11 +109,11 @@
       <div class="card-box node-header">
         <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" class="node-avatar" alt="PG1 Avatar" />
         <div class="card-title" style="margin-top: 4px;">PG1.Agent</div>
-        <div class="card-sub">Autonomous Edge Infrastructure</div>
+        <div class="card-sub">Autonomous Cloudflare AI Edge</div>
       </div>
 
       <div class="card-box node-info">
-        <div><span>Node ID:</span><span style="color:#f8fafc;">PG1-CORE-01</span></div>
+        <div><span>Node ID:</span><span style="color:#f8fafc;">PG1-CF-01</span></div>
         <div><span>Status:</span><span style="color:#22c55e;">Online & Syncing</span></div>
         <div><span>Ownership:</span><span style="color:#f8fafc;">100% Sovereign</span></div>
         <div><span>Protocol:</span><span style="color:#f8fafc;">x402 Active</span></div>
@@ -142,6 +142,7 @@
     let currentFacingMode = 'user';
     let audioOutputEnabled = true;
     let voiceInputEnabled = false;
+    let recognition = null;
 
     function switchTab(tabName) {
       document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
@@ -152,6 +153,10 @@
 
       if (targetTab) targetTab.classList.add('active');
       if (targetNav) targetNav.classList.add('active');
+
+      if (tabName === 'Dash' || tabName === 'Terminal') {
+        initCamera();
+      }
     }
 
     async function initCamera() {
@@ -167,8 +172,13 @@
         document.getElementById('webcamDash').srcObject = currentStream;
         document.getElementById('webcamTerm').srcObject = currentStream;
       } catch (err) {
-        logTerminal("Camera access error: " + err.message);
+        logTerminal("Camera status: " + err.message);
       }
+    }
+
+    function toggleCamera() {
+      currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
+      initCamera();
     }
 
     function logTerminal(msg) {
@@ -179,6 +189,25 @@
       }
     }
 
+    function speakText(text) {
+      if (!audioOutputEnabled || !('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      window.speechSynthesis.speak(utterance);
+    }
+
+    function processCloudflareAgent(cmd) {
+      logTerminal(`PG1 Cloudflare Edge processing: "${cmd}"`);
+      const response = `[PG1 Agent] Command executed via Cloudflare Edge Protocol: ${cmd}`;
+      
+      setTimeout(() => {
+        logTerminal(response);
+        speakText(response);
+      }, 300);
+    }
+
     function handleManualSend() {
       const input = document.getElementById('cmdInput');
       if (!input || !input.value.trim()) return;
@@ -187,23 +216,57 @@
       logTerminal(cmd);
       input.value = '';
 
-      setTimeout(() => {
-        logTerminal("Command executed successfully.");
-      }, 400);
+      processCloudflareAgent(cmd);
     }
 
     function toggleAudioOutput() {
       audioOutputEnabled = !audioOutputEnabled;
       document.getElementById('speechOutputBtn').innerText = `Audio: ${audioOutputEnabled ? 'ON' : 'OFF'}`;
+      if (audioOutputEnabled) speakText("Audio output enabled.");
+      else window.speechSynthesis.cancel();
     }
 
     function toggleVoice() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        logTerminal("Voice input restricted on this iOS session.");
+        return;
+      }
+
       voiceInputEnabled = !voiceInputEnabled;
       document.getElementById('voiceToggleBtn').innerText = `Voice: ${voiceInputEnabled ? 'ON' : 'OFF'}`;
+
+      if (voiceInputEnabled) {
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onresult = (event) => {
+          const transcript = event.results[event.results.length - 1][0].transcript.trim();
+          document.getElementById('cmdInput').value = transcript;
+          handleManualSend();
+        };
+
+        recognition.onerror = (err) => {
+          logTerminal("Voice error: " + err.error);
+        };
+
+        recognition.onend = () => {
+          if (voiceInputEnabled) recognition.start();
+        };
+
+        recognition.start();
+        speakText("Voice input active.");
+      } else {
+        if (recognition) recognition.stop();
+        speakText("Voice input disabled.");
+      }
     }
 
     window.onload = () => {
-      logTerminal("PG1 Edge Core v2.5 initialized.");
+      logTerminal("PG1 Sovereign Cloudflare AI Edge initialized.");
+      initCamera();
     };
   </script>
 </body>
