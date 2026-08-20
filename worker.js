@@ -1,5 +1,6 @@
 export default {
   async fetch(request, env) {
+    // Handle CORS preflight options request
     if (request.method === "OPTIONS") {
       return new Response(null, {
         headers: {
@@ -27,6 +28,7 @@ Always respond strictly as PG1. Be precise, technical, factual, and direct.`;
 
       let userQuery = message;
 
+      // Handle external web/threat feed ingestion requests
       if (message.toLowerCase().startsWith("fetch ") || message.toLowerCase().startsWith("otx ") || message.toLowerCase().startsWith("web ")) {
         const targetUrl = message.split(" ")[1];
         try {
@@ -43,6 +45,7 @@ Always respond strictly as PG1. Be precise, technical, factual, and direct.`;
         }
       }
 
+      // Execute execution payload against non-deprecated active model
       const aiResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
         messages: [
           { role: 'system', content: systemPrompt },
