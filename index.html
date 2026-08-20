@@ -142,6 +142,7 @@
             height: 160px;
             overflow-y: auto;
             color: var(--text-muted);
+            white-space: pre-wrap;
         }
 
         .terminal-box .sys { color: var(--accent-blue); }
@@ -269,13 +270,10 @@
         <div id="view-terminal" class="view-section">
             <div class="card">
                 <div style="font-weight: 600; margin-bottom: 8px;">PG1.Agent Log & Terminal Interface</div>
-                <div id="terminal" class="terminal-box">
-                    > [SYSTEM]: Secure telemetry stream initialized.<br>
-                    > [AGENT]: Handshake protocol x402 active.<br>
-                </div>
+                <div id="terminal" class="terminal-box">> [SYSTEM]: Secure telemetry stream initialized.<br>> [AGENT]: Handshake protocol x402 active.<br></div>
                 <div class="input-group" style="margin-top: 12px;">
-                    <input type="text" id="command-input" placeholder="Type command or query...">
-                    <button class="execute-btn" id="execute-btn">Execute</button>
+                    <input type="text" id="command-input" placeholder="Type command or query..." onkeydown="if(event.key==='Enter') executeCommand()">
+                    <button class="execute-btn" id="execute-btn" onclick="executeCommand()">Execute</button>
                 </div>
             </div>
         </div>
@@ -313,12 +311,12 @@
     </nav>
 
     <script>
+        const WORKER_URL = 'https://pg1-proxy.gnfcw9w5rk.workers.dev';
         const terminal = document.getElementById('terminal');
         const videoElement = document.getElementById('webcam');
         const streamBtn = document.getElementById('stream-btn');
         const flipBtn = document.getElementById('flip-btn');
         const commandInput = document.getElementById('command-input');
-        const executeBtn = document.getElementById('execute-btn');
 
         let currentFacingMode = 'user';
         let currentStream = null;
@@ -382,12 +380,32 @@
             startCamera(currentFacingMode);
         });
 
-        executeBtn.addEventListener('click', function() {
+        async function executeCommand() {
             const cmd = commandInput.value.trim();
             if (!cmd) return;
-            logToTerminal(`Executing command: ${cmd}`);
+
+            logToTerminal(`User: ${cmd}`);
             commandInput.value = '';
-        });
+
+            try {
+                const response = await fetch(WORKER_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: cmd })
+                });
+
+                const data = await response.json();
+                if (data.reply) {
+                    logToTerminal(`PG1 Agent: ${data.reply}`, "ok");
+                } else if (data.error) {
+                    logToTerminal(`Error: ${data.error}`, "err");
+                } else {
+                    logToTerminal(`Response: ${JSON.stringify(data)}`, "sys");
+                }
+            } catch (err) {
+                logToTerminal(`Network Error: ${err.message}`, "err");
+            }
+        }
 
         function switchTab(tabName, event) {
             document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
