@@ -1,386 +1,57 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Project Gifted1™ v2.5 Telemetry</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { background-color: #0b1120; color: #e2e8f0; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 12px; }
-    .app-card { width: 100%; max-width: 440px; background-color: #111827; border: 1px solid #1e293b; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
-    .top-bar { display: flex; justify-content: space-between; align-items: center; }
-    .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.1rem; color: #f8fafc; }
-    .brand-dot { width: 8px; height: 8px; background-color: #22c55e; border-radius: 50%; }
-    .version { font-size: 0.8rem; color: #64748b; }
-    .tab-content { display: none; flex-direction: column; gap: 12px; }
-    .tab-content.active { display: flex; }
-    .card-box { background-color: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 14px; }
-    .card-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 6px; color: #f8fafc; }
-    .card-sub { font-size: 0.8rem; color: #94a3b8; line-height: 1.3; }
-    .metric-group { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
-    .metric-row { display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px; }
-    .progress-bg { width: 100%; height: 6px; background-color: #0f172a; border-radius: 4px; overflow: hidden; }
-    .progress-fill { height: 100%; background-color: #38bdf8; border-radius: 4px; }
-    .progress-fill.green { background-color: #22c55e; }
-    .cam-box { position: relative; width: 100%; height: 180px; background-color: #020617; border: 1px solid #334155; border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-    video { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .cam-overlay-text { color: #64748b; font-size: 0.85rem; font-weight: 600; }
-    .cam-controls { position: absolute; top: 8px; right: 8px; z-index: 10; display: flex; gap: 6px; }
-    .cam-btn { background: rgba(15, 23, 42, 0.85); border: 1px solid #334155; color: #f8fafc; padding: 5px 10px; font-size: 0.75rem; font-weight: 600; border-radius: 6px; cursor: pointer; }
-    .node-header { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 10px 0; }
-    .node-avatar { width: 80px; height: 80px; border-radius: 50%; border: 2px solid #38bdf8; object-fit: cover; }
-    .node-info { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; }
-    .node-info div { display: flex; justify-content: space-between; border-bottom: 1px solid #334155; padding-bottom: 4px; }
-    .terminal-box { height: 200px; background-color: #020617; border: 1px solid #334155; border-radius: 10px; padding: 10px; font-family: monospace; font-size: 0.8rem; color: #38bdf8; overflow-y: auto; white-space: pre-wrap; }
-    .controls-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; }
-    .btn { border: none; border-radius: 8px; padding: 8px; font-weight: 600; font-size: 0.72rem; color: white; cursor: pointer; text-align: center; }
-    .btn-green { background-color: #10b981; }
-    .btn-blue { background-color: #0284c7; }
-    .btn-slate { background-color: #475569; }
-    .btn-red { background-color: #ef4444; }
-    .input-group { display: flex; gap: 8px; }
-    input[type="text"] { flex: 1; background-color: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 8px 12px; color: white; font-size: 0.85rem; outline: none; }
-    .nav-bar { display: flex; justify-content: space-around; border-top: 1px solid #1e293b; padding-top: 10px; margin-top: 4px; }
-    .nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #64748b; font-size: 0.75rem; cursor: pointer; }
-    .nav-item.active { color: #38bdf8; }
-    .nav-icon { font-size: 1.1rem; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PG1 Dashboard</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
-  <div class="app-card">
-    <div class="top-bar">
-      <div class="brand">
-        <div class="brand-dot"></div>
-        <span>Project Gifted1™</span>
-      </div>
-      <span class="version">v2.5 Telemetry</span>
-    </div>
-
-    <!-- TAB 1: DASHBOARD -->
-    <div id="tabDash" class="tab-content active">
-      <div class="card-box">
-        <div class="card-title">Sovereign Edge Active</div>
-        <div class="card-sub">Zero-cost deployment operational via PG1 Autonomous Engine.</div>
-      </div>
-
-      <div class="card-box">
-        <div class="card-title">⚡ Real-Time Edge Telemetry</div>
-        <div class="metric-group">
-          <div>
-            <div class="metric-row"><span>CPU Utilization</span><span>36%</span></div>
-            <div class="progress-bg"><div class="progress-fill" style="width: 36%;"></div></div>
-          </div>
-          <div>
-            <div class="metric-row"><span>Memory Consumption</span><span>49%</span></div>
-            <div class="progress-bg"><div class="progress-fill" style="width: 49%;"></div></div>
-          </div>
-          <div>
-            <div class="metric-row"><span>Network Bandwidth Throughput</span><span>1.8 MB/s</span></div>
-            <div class="progress-bg"><div class="progress-fill green" style="width: 60%;"></div></div>
-          </div>
+    <div class="dashboard-container">
+        <!-- Terminal Header Controls -->
+        <div class="terminal-header">
+            <div class="title">PG1 Agent Control Panel</div>
+            <div class="controls">
+                <button id="btn-video" onclick="toggleVideo()">Video: OFF</button>
+                <button id="btn-audio" onclick="toggleAudio()">Audio: OFF</button>
+                <button id="btn-voice" onclick="toggleVoice()">Voice: OFF</button>
+                <button onclick="copyLogs()">Copy Logs</button>
+                <button onclick="clearLogs()">Clear</button>
+            </div>
         </div>
-      </div>
 
-      <div class="cam-box">
-        <div class="cam-controls">
-          <button class="cam-btn" onclick="toggleCamPower()">📷 Camera</button>
-          <button class="cam-btn" onclick="toggleCameraFacing()">🔄 Flip</button>
+        <!-- Video & Stream Preview Area -->
+        <div id="video-container" class="video-container hidden">
+            <video id="webcam-preview" autoplay playsinline muted></video>
+            <canvas id="frame-canvas" class="hidden"></canvas>
         </div>
-        <video id="webcamDash" autoplay playsinline muted></video>
-        <span id="camPlaceholderDash" class="cam-overlay-text" style="display:none;">Camera Paused</span>
-      </div>
-    </div>
 
-    <!-- TAB 2: TERMINAL -->
-    <div id="tabTerminal" class="tab-content">
-      <div class="cam-box">
-        <div class="cam-controls">
-          <button class="cam-btn" onclick="toggleCamPower()">📷 Camera</button>
-          <button class="cam-btn" onclick="toggleCameraFacing()">🔄 Flip</button>
+        <!-- Main Workspace split into Logs and AI Chat -->
+        <div class="main-workspace">
+            <!-- System Logs Console -->
+            <div class="panel">
+                <h3>System Console Logs</h3>
+                <div id="terminal-logs" class="log-output">
+                    <div>> PG1 System Initialized. Ready for commands.</div>
+                </div>
+            </div>
+
+            <!-- Agent AI Conversation Thread -->
+            <div class="panel">
+                <h3>AI Conversation Thread</h3>
+                <div id="chat-thread" class="chat-output">
+                    <div class="msg ai-msg"><strong>PG1 Agent:</strong> Hello! How can I assist you today?</div>
+                </div>
+            </div>
         </div>
-        <video id="webcamTerm" autoplay playsinline muted></video>
-        <span id="camPlaceholderTerm" class="cam-overlay-text" style="display:none;">Camera Paused</span>
-      </div>
 
-      <div id="terminal" class="terminal-box"></div>
-
-      <div class="controls-grid">
-        <button id="speechOutputBtn" class="btn btn-green" onclick="toggleAudioOutput()">Audio: ON</button>
-        <button id="voiceToggleBtn" class="btn btn-blue" onclick="toggleVoice()">Voice: OFF</button>
-        <button class="btn btn-slate" onclick="copyTerminalHistory()">📋 Copy</button>
-        <button class="btn btn-red" onclick="clearTerminalHistory()">🗑️ Clear</button>
-      </div>
-
-      <div class="input-group">
-        <input type="text" id="cmdInput" placeholder="Type or speak command..." onkeypress="if(event.key==='Enter') handleManualSend()" />
-        <button class="btn btn-blue" onclick="handleManualSend()">Execute</button>
-      </div>
+        <!-- Input Control Bar -->
+        <div class="input-container">
+            <input type="text" id="user-input" placeholder="Enter command or message for PG1 Agent..." onkeydown="handleKeyPress(event)">
+            <button onclick="sendCommand()">Send</button>
+        </div>
     </div>
 
-    <!-- TAB 3: NODE -->
-    <div id="tabNode" class="tab-content">
-      <div class="card-box node-header">
-        <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" class="node-avatar" alt="PG1 Avatar" />
-        <div class="card-title" style="margin-top: 4px;">PG1.Agent</div>
-        <div class="card-sub">Autonomous Edge System</div>
-      </div>
-
-      <div class="card-box node-info">
-        <div><span>Node ID:</span><span style="color:#f8fafc;">PG1-CORE-01</span></div>
-        <div><span>Status:</span><span style="color:#22c55e;">Online & Active</span></div>
-        <div><span>Ownership:</span><span style="color:#f8fafc;">100% Sovereign</span></div>
-        <div><span>Protocol:</span><span style="color:#f8fafc;">x402 Active</span></div>
-      </div>
-    </div>
-
-    <!-- BOTTOM NAVIGATION -->
-    <div class="nav-bar">
-      <div id="navDash" class="nav-item active" onclick="switchTab('Dash')">
-        <div class="nav-icon">📊</div>
-        <span>Dash</span>
-      </div>
-      <div id="navTerminal" class="nav-item" onclick="switchTab('Terminal')">
-        <div class="nav-icon">⚡</div>
-        <span>Terminal</span>
-      </div>
-      <div id="navNode" class="nav-item" onclick="switchTab('Node')">
-        <div class="nav-icon">👤</div>
-        <span>Node</span>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    let currentStream = null;
-    let cameraActive = true;
-    let currentFacingMode = 'user';
-    let audioOutputEnabled = true;
-    let voiceInputEnabled = false;
-    let recognition = null;
-    let availableVoices = [];
-
-    function loadVoices() {
-      if ('speechSynthesis' in window) {
-        availableVoices = window.speechSynthesis.getVoices();
-      }
-    }
-
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.onvoiceschanged = loadVoices;
-      loadVoices();
-    }
-
-    function getMaleVoice() {
-      if (!availableVoices.length) loadVoices();
-      
-      const maleIdentifiers = ['male', 'daniel', 'alex', 'george', 'david', 'james', 'google uk english male', 'google us english male'];
-      
-      for (let id of maleIdentifiers) {
-        const found = availableVoices.find(v => v.name.toLowerCase().includes(id) && v.lang.startsWith('en'));
-        if (found) return found;
-      }
-      
-      return availableVoices.find(v => v.lang.startsWith('en')) || null;
-    }
-
-    function switchTab(tabName) {
-      document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-      document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
-
-      const targetTab = document.getElementById('tab' + tabName);
-      const targetNav = document.getElementById('nav' + tabName);
-
-      if (targetTab) targetTab.classList.add('active');
-      if (targetNav) targetNav.classList.add('active');
-
-      if (tabName === 'Dash' || tabName === 'Terminal') {
-        if (cameraActive) initCamera();
-      } else {
-        stopCameraTracks();
-      }
-    }
-
-    function stopCameraTracks() {
-      if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
-        currentStream = null;
-      }
-    }
-
-    async function initCamera() {
-      stopCameraTracks();
-      if (!cameraActive) return;
-
-      try {
-        currentStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: currentFacingMode },
-          audio: false
-        });
-        document.getElementById('webcamDash').srcObject = currentStream;
-        document.getElementById('webcamTerm').srcObject = currentStream;
-        
-        document.getElementById('webcamDash').style.display = 'block';
-        document.getElementById('webcamTerm').style.display = 'block';
-        document.getElementById('camPlaceholderDash').style.display = 'none';
-        document.getElementById('camPlaceholderTerm').style.display = 'none';
-      } catch (err) {
-        logTerminal("Camera status: " + err.message);
-      }
-    }
-
-    function toggleCamPower() {
-      cameraActive = !cameraActive;
-      if (cameraActive) {
-        initCamera();
-      } else {
-        stopCameraTracks();
-        document.getElementById('webcamDash').style.display = 'none';
-        document.getElementById('webcamTerm').style.display = 'none';
-        document.getElementById('camPlaceholderDash').style.display = 'block';
-        document.getElementById('camPlaceholderTerm').style.display = 'block';
-        logTerminal("Camera stream paused.");
-      }
-    }
-
-    function toggleCameraFacing() {
-      if (!cameraActive) cameraActive = true;
-      currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
-      initCamera();
-    }
-
-    function logTerminal(msg) {
-      const term = document.getElementById('terminal');
-      if (term) {
-        term.innerText += "\n> " + msg;
-        term.scrollTop = term.scrollHeight;
-        localStorage.setItem('pg1_terminal_history', term.innerText);
-      }
-    }
-
-    function loadTerminalHistory() {
-      const term = document.getElementById('terminal');
-      const saved = localStorage.getItem('pg1_terminal_history');
-      if (saved && term) {
-        term.innerText = saved;
-      } else {
-        logTerminal("PG1.Agent Sovereign Autonomous Telemetry Initialized.");
-      }
-    }
-
-    function copyTerminalHistory() {
-      const term = document.getElementById('terminal');
-      if (term && term.innerText) {
-        navigator.clipboard.writeText(term.innerText).then(() => {
-          speakText("Terminal log copied to clipboard.");
-        }).catch(err => {
-          logTerminal("Copy error: " + err);
-        });
-      }
-    }
-
-    function clearTerminalHistory() {
-      const term = document.getElementById('terminal');
-      if (term) {
-        localStorage.removeItem('pg1_terminal_history');
-        term.innerText = "> PG1.Agent Terminal History Cleared.";
-      }
-    }
-
-    function speakText(text) {
-      if (!audioOutputEnabled || !('speechSynthesis' in window)) return;
-      window.speechSynthesis.cancel();
-      
-      const utterance = new SpeechSynthesisUtterance(text);
-      const selectedVoice = getMaleVoice();
-      
-      if (selectedVoice) utterance.voice = selectedVoice;
-      utterance.rate = 0.88;
-      utterance.pitch = 0.95;
-      
-      window.speechSynthesis.speak(utterance);
-    }
-
-    function processPG1Agent(cmd) {
-      logTerminal(`PG1.Agent analyzing command: "${cmd}"`);
-      
-      const input = cmd.toLowerCase();
-      let response = "";
-
-      if (input.includes("status") || input.includes("health")) {
-        response = "[PG1.Agent] Core node operational. CPU at 36 percent, Memory at 49 percent, Bandwidth 1.8 megabytes per second. Protocol x402 active.";
-      } else if (input.includes("automate") || input.includes("task") || input.includes("campaign")) {
-        response = "[PG1.Agent] Autonomous execution pipeline engaged. Reasoning cycle complete. Task queued and executing.";
-      } else {
-        response = `[PG1.Agent] Reasoning complete. Executed action for: "${cmd}"`;
-      }
-      
-      setTimeout(() => {
-        logTerminal(response);
-        speakText(response);
-      }, 300);
-    }
-
-    function handleManualSend() {
-      const input = document.getElementById('cmdInput');
-      if (!input || !input.value.trim()) return;
-
-      const cmd = input.value.trim();
-      logTerminal(cmd);
-      input.value = '';
-
-      processPG1Agent(cmd);
-    }
-
-    function toggleAudioOutput() {
-      audioOutputEnabled = !audioOutputEnabled;
-      document.getElementById('speechOutputBtn').innerText = `Audio: ${audioOutputEnabled ? 'ON' : 'OFF'}`;
-      if (audioOutputEnabled) speakText("Audio output enabled.");
-      else window.speechSynthesis.cancel();
-    }
-
-    function toggleVoice() {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) {
-        logTerminal("Voice input restricted on this session.");
-        return;
-      }
-
-      voiceInputEnabled = !voiceInputEnabled;
-      document.getElementById('voiceToggleBtn').innerText = `Voice: ${voiceInputEnabled ? 'ON' : 'OFF'}`;
-
-      if (voiceInputEnabled) {
-        recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = false;
-        recognition.lang = 'en-US';
-
-        recognition.onresult = (event) => {
-          const transcript = event.results[event.results.length - 1][0].transcript.trim();
-          document.getElementById('cmdInput').value = transcript;
-          handleManualSend();
-        };
-
-        recognition.onerror = (err) => {
-          logTerminal("Voice error: " + err.error);
-        };
-
-        recognition.onend = () => {
-          if (voiceInputEnabled) recognition.start();
-        };
-
-        recognition.start();
-        speakText("Voice input active.");
-      } else {
-        if (recognition) recognition.stop();
-        speakText("Voice input disabled.");
-      }
-    }
-
-    window.onload = () => {
-      loadTerminalHistory();
-      initCamera();
-    };
-  </script>
+    <script src="app.js"></script>
 </body>
 </html>
