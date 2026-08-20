@@ -5,9 +5,6 @@ const terminal = document.getElementById('terminal');
 const micStatus = document.getElementById('micStatus');
 const voiceToggleBtn = document.getElementById('voiceToggleBtn');
 
-// SET YOUR BACKEND URL HERE (e.g., your VPS/DigitalOcean backend server)
-const BACKEND_API_URL = "https://your-backend-domain.com/api/chat";
-
 // Helper to log formatted timestamp messages
 function logTerminal(message) {
   const now = new Date().toTimeString().split(' ')[0];
@@ -17,7 +14,7 @@ function logTerminal(message) {
   terminal.scrollTop = terminal.scrollHeight;
 }
 
-// Initialize STT Engine
+// Initialize Speech-to-Text (STT) Engine
 function initSpeechRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
@@ -26,7 +23,7 @@ function initSpeechRecognition() {
   }
 
   const rec = new SpeechRecognition();
-  rec.continuous = false; // Set to false for iOS WebKit stability
+  rec.continuous = false; // Set false for stability on iOS Safari
   rec.interimResults = false;
   rec.lang = 'en-US';
 
@@ -44,21 +41,15 @@ function initSpeechRecognition() {
   };
 
   rec.onerror = (event) => {
-    // Ignore routine iOS aborts during restart cycle
     if (event.error !== 'aborted') {
       logTerminal(`STT Error: ${event.error}`);
     }
   };
 
   rec.onend = () => {
-    // Re-arm recognition loop on iOS if Voice is still toggled ON
     if (isVoiceActive) {
       setTimeout(() => {
-        try {
-          rec.start();
-        } catch (e) {
-          // Sink active start exceptions
-        }
+        try { recognition.start(); } catch (e) {}
       }, 300);
     } else {
       if (micStatus) micStatus.classList.remove('recording');
@@ -69,7 +60,7 @@ function initSpeechRecognition() {
   return rec;
 }
 
-// Toggle Audio Listening
+// Toggle Voice Listening State
 function toggleVoice() {
   if (!recognition) {
     recognition = initSpeechRecognition();
@@ -82,11 +73,7 @@ function toggleVoice() {
   if (isVoiceActive) {
     voiceToggleBtn.textContent = "Voice: ON";
     voiceToggleBtn.style.backgroundColor = "#dc2626";
-    try {
-      recognition.start();
-    } catch (e) {
-      // Handles cases where engine was already active
-    }
+    try { recognition.start(); } catch (e) {}
   } else {
     voiceToggleBtn.textContent = "Voice: OFF";
     voiceToggleBtn.style.backgroundColor = "#0284c7";
@@ -94,50 +81,28 @@ function toggleVoice() {
   }
 }
 
-// Manual Text Fallback Execution
-function handleManualSend() {
-  const input = document.getElementById('cmdInput');
-  const text = input.value.trim();
-  if (text) {
-    logTerminal(`User (Text): ${text}`);
-    processUserCommand(text);
-    input.value = '';
+// Client-Side Command Processing & Local Response Logic
+function processUserCommand(promptText) {
+  let reply = "";
+  const lower = promptText.toLowerCase();
+
+  // Simple client-side response logic
+  if (lower.includes("can you hear me") || lower.includes("hello") || lower.includes("hey")) {
+    reply = "Yes, I can hear you clearly. How can I assist you?";
+  } else if (lower.includes("status")) {
+    reply = "All system nodes are online and operating normally.";
+  } else {
+    reply = `Command received: "${promptText}". Processing request.`;
   }
+
+  logTerminal(`Agent: ${reply}`);
+  speakAgentResponse(reply);
 }
 
-// Process Command & Trigger Clean Text-to-Speech Output
-async function processUserCommand(promptText) {
-  try {
-    // Determine target URL: use explicit backend URL if hosted on GitHub Pages
-    const endpoint = window.location.hostname.includes('github.io') 
-      ? BACKEND_API_URL 
-      : '/api/chat';
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: promptText })
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP Error status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const reply = data.reply || "Command received.";
-
-    logTerminal(`Agent: ${reply}`);
-    speakAgentResponse(reply);
-
-  } catch (err) {
-    logTerminal(`Execution Error: Failed to reach agent endpoint.`);
-  }
-}
-
-// Synthesize Text-to-Speech Output
+// Client-Side Text-to-Speech Output (Browser Voice)
 function speakAgentResponse(text) {
   if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel();
+    window.speechSynthesis.cancel(); // Clear remaining queue
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
@@ -147,5 +112,7 @@ function speakAgentResponse(text) {
     };
 
     window.speechSynthesis.speak(utterance);
+  } else {
+    logTerminal("ERROR: Browser does not support Text-To-Speech.");
   }
 }
