@@ -119,11 +119,15 @@ async function sendCommand() {
   input.value = '';
 
   try {
-    const response = await fetch(CLOUDFLARE_WORKER_URL, {
+    // Appended timestamp parameter forces Safari to bypass cached API responses
+    const targetEndpoint = `${CLOUDFLARE_WORKER_URL}?nocache=${Date.now()}`;
+    
+    const response = await fetch(targetEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: text })
     });
+    
     const rawText = await response.text();
     let agentReply = null;
     try { 
