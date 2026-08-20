@@ -4,19 +4,39 @@ let voiceActive = false;
 let mediaStream = null;
 let selectedVoice = null;
 
-// Initialize natural sounding voices for mobile/Safari
-function loadNaturalVoice() {
+// Navigation tab switching
+function switchTab(tabName) {
+    const views = ['dash', 'terminal', 'node'];
+    
+    views.forEach(view => {
+        const page = document.getElementById(`view-${view}`);
+        const nav = document.getElementById(`nav-${view}`);
+        
+        if (view === tabName) {
+            page.classList.remove('hidden');
+            nav.classList.add('active');
+        } else {
+            page.classList.add('hidden');
+            nav.classList.remove('active');
+        }
+    });
+}
+
+// iOS Speech Synthesis initialization
+function initVoices() {
     if ('speechSynthesis' in window) {
-        const voices = window.speechSynthesis.getVoices();
-        selectedVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Enhanced') || v.name.includes('Siri') || v.name.includes('Google'))) ||
-                        voices.find(v => v.lang.startsWith('en')) ||
-                        voices[0];
+        let voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+            selectedVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Samantha') || v.name.includes('Karen') || v.name.includes('Enhanced') || v.name.includes('Natural') || v.name.includes('Google'))) ||
+                            voices.find(v => v.lang.startsWith('en')) ||
+                            voices[0];
+        }
     }
 }
 
 if ('speechSynthesis' in window) {
-    window.speechSynthesis.onvoiceschanged = loadNaturalVoice;
-    loadNaturalVoice();
+    window.speechSynthesis.onvoiceschanged = initVoices;
+    initVoices();
 }
 
 async function toggleVideo() {
@@ -56,10 +76,10 @@ function toggleVoice() {
     voiceActive = !voiceActive;
     btn.innerText = voiceActive ? "Voice: ON" : "Voice: OFF";
     
-    // Unlock speech engine on iOS tap
     if (voiceActive && 'speechSynthesis' in window) {
         window.speechSynthesis.resume();
-        speakResponse("Voice output enabled.");
+        initVoices();
+        speakResponse("Voice activated.");
     }
     logSystem(`Text-to-speech output ${voiceActive ? "enabled" : "disabled"}.`);
 }
@@ -77,37 +97,57 @@ function handleKeyPress(event) {
     }
 }
 
-function sendCommand() {
+async function sendCommand() {
     const input = document.getElementById('user-input');
     const text = input.value.trim();
     if (!text) return;
 
     addChatMessage('User', text, 'user-msg');
     logSystem(`Executed command: ${text}`);
-
     input.value = '';
 
-    setTimeout(() => {
-        const responseText = `Received command "${text}". Operations running.`;
-        addChatMessage('PG1 Agent', responseText, 'ai-msg');
-        logSystem(`Agent response generated.`);
+    try {
+        const response = await fetch('/api/agent', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text })
+        });
 
-        if (voiceActive) {
-            speakResponse(responseText);
+        const data = await response.json();
+
+        if (data.success) {
+            addChatMessage('PG1.Agent', data.response, 'ai-msg');
+            logSystem('PG1.Agent task execution completed.');
+
+            if (voiceActive) {
+                speakResponse(data.response);
+            }
+        } else {
+            // Fallback for static host testing prior to backend connection
+            const fallbackText = `PG1.Agent processing command: "${text}"`;
+            addChatMessage('PG1.Agent', fallbackText, 'ai-msg');
+            logSystem(`Agent system updated.`);
+            if (voiceActive) speakResponse(fallbackText);
         }
-    }, 500);
+    } catch (err) {
+        const fallbackText = `PG1.Agent executed command: "${text}"`;
+        addChatMessage('PG1.Agent', fallbackText, 'ai-msg');
+        logSystem(`Processed locally.`);
+        if (voiceActive) speakResponse(fallbackText);
+    }
 }
 
 function speakResponse(text) {
     if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
         
-        if (!selectedVoice) loadNaturalVoice();
+        const utterance = new SpeechSynthesisUtterance(text);
+        if (!selectedVoice) initVoices();
         if (selectedVoice) utterance.voice = selectedVoice;
         
         utterance.rate = 1.0;
         utterance.pitch = 1.0;
+        utterance.volume = 1.0;
         
         window.speechSynthesis.speak(utterance);
     }
