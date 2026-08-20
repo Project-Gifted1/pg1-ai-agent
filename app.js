@@ -1,7 +1,6 @@
 // Persistent Global Audio State
 let recognition = null;
 let isVoiceActive = false;
-let audioPlayer = new Audio(); // HTML5 Audio Player
 
 const terminal = document.getElementById('terminal');
 const micStatus = document.getElementById('micStatus');
@@ -17,17 +16,11 @@ function logTerminal(message) {
   terminal.scrollTop = terminal.scrollHeight;
 }
 
-// Unlock iOS Audio Channel on User Interaction
-function unlockAudioSession() {
-  audioPlayer.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
-  audioPlayer.play().catch(() => {});
-}
-
-// Initialize Speech Recognition Engine
+// Initialize Speech Recognition
 function initSpeechRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
-    logTerminal("ERROR: Speech Recognition API not supported in this browser.");
+    logTerminal("ERROR: Speech Recognition not supported in this browser.");
     return null;
   }
 
@@ -71,10 +64,8 @@ function initSpeechRecognition() {
   return rec;
 }
 
-// Main Toggle Function
+// Toggle Voice Button
 function toggleVoice() {
-  unlockAudioSession();
-
   if (!recognition) {
     recognition = initSpeechRecognition();
   }
@@ -102,7 +93,7 @@ function toggleVoice() {
   }
 }
 
-// Manual Text Execution
+// Manual Send Button Function
 function handleManualSend() {
   const input = document.getElementById('cmdInput');
   if (!input) return;
@@ -114,38 +105,47 @@ function handleManualSend() {
   }
 }
 
-// Process Command Response Logic
+// Process Commands
 function processUserCommand(promptText) {
   let reply = "";
   const lower = promptText.toLowerCase();
 
-  if (lower.includes("can you hear me") || lower.includes("can you speak") || lower.includes("hello") || lower.includes("i can't hear you")) {
-    reply = "I can hear you clearly and speech output is working properly.";
+  if (lower.includes("can you hear me") || lower.includes("can you speak") || lower.includes("hello")) {
+    reply = "I can hear you clearly and my speech output is operational.";
   } else if (lower.includes("status")) {
-    reply = "All system nodes are active.";
+    reply = "All systems are currently online.";
   } else {
-    reply = `Command received: ${promptText}. Processing request.`;
+    reply = `Command received: ${promptText}. Request processed.`;
   }
 
   logTerminal(`Agent: ${reply}`);
   speakAgentResponse(reply);
 }
 
-// Play Audio Stream via Direct MP3 Feed (Reliable for Mobile Safari)
+// Clean Speech Synthesis Output
 function speakAgentResponse(text) {
-  // Stop recognition so iOS unblocks the audio channel
+  if (!('speechSynthesis' in window)) {
+    logTerminal("ERROR: Speech synthesis not available.");
+    return;
+  }
+
+  // Stop recognition temporarily so iOS audio engine releases
   if (recognition) {
     try { recognition.stop(); } catch (e) {}
   }
 
-  logTerminal("Playing audio output...");
+  window.speechSynthesis.cancel();
 
-  const encodedText = encodeURIComponent(text);
-  const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=en&client=tw-ob`;
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'en-US';
+  utterance.rate = 1.0;
+  utterance.pitch = 1.0;
 
-  audioPlayer.src = ttsUrl;
-  
-  audioPlayer.onended = () => {
+  utterance.onstart = () => {
+    logTerminal("Playing audio output...");
+  };
+
+  utterance.onend = () => {
     if (isVoiceActive && recognition) {
       setTimeout(() => {
         try {
@@ -155,14 +155,12 @@ function speakAgentResponse(text) {
     }
   };
 
-  audioPlayer.onerror = () => {
-    logTerminal("Audio playback failed. Retrying...");
+  utterance.onerror = (e) => {
+    logTerminal(`Speech Error: ${e.error}`);
     if (isVoiceActive && recognition) {
-      try { recognition.start(); } catch (e) {}
+      try { recognition.start(); } catch (err) {}
     }
   };
 
-  audioPlayer.play().catch((err) => {
-    logTerminal(`Audio blocked by browser permissions: ${err.message}`);
-  });
+  window.speechSynthesis.speak(utterance);
 }
