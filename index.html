@@ -3,12 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Project Gifted1™</title>
+    <title>Project Gifted1™ Telemetry</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
     <div class="app-container">
-        <!-- Top Telemetry Header -->
+        
+        <!-- HEADER -->
         <header class="app-header">
             <div class="brand">
                 <span class="status-dot"></span>
@@ -18,48 +20,48 @@
         </header>
 
         <!-- PAGE 1: DASHBOARD -->
-        <main id="view-dash" class="view-page active">
+        <main id="view-dash" class="view-page">
             <div class="card">
                 <h2>Sovereign Edge Active</h2>
                 <p class="card-subtext">Zero-cost deployment operational via PG1 core edge synchronization. All telemetry feeds secure.</p>
-            </div>
-
-            <div class="card">
-                <h2>⚡ Real-Time Edge Telemetry</h2>
+                
+                <h2 style="margin-top: 6px;">⚡ Real-Time Edge Telemetry</h2>
                 
                 <div class="metric-group">
                     <div class="metric-header">
                         <span>CPU Utilization</span>
-                        <span>36%</span>
+                        <strong>36%</strong>
                     </div>
-                    <div class="progress-bar"><div class="progress-fill blue" style="width: 36%;"></div></div>
+                    <div class="progress-bar">
+                        <div class="progress-fill blue" style="width: 36%;"></div>
+                    </div>
                 </div>
 
                 <div class="metric-group">
                     <div class="metric-header">
                         <span>Memory Consumption</span>
-                        <span>49%</span>
+                        <strong>49%</strong>
                     </div>
-                    <div class="progress-bar"><div class="progress-fill blue" style="width: 49%;"></div></div>
+                    <div class="progress-bar">
+                        <div class="progress-fill green" style="width: 49%;"></div>
+                    </div>
                 </div>
 
                 <div class="metric-group">
                     <div class="metric-header">
                         <span>Network Bandwidth Throughput</span>
-                        <span>1.8 MB/s</span>
+                        <strong>1.8 MB/s</strong>
                     </div>
-                    <div class="progress-bar"><div class="progress-fill green" style="width: 60%;"></div></div>
+                    <div class="progress-bar">
+                        <div class="progress-fill blue" style="width: 25%;"></div>
+                    </div>
                 </div>
-            </div>
-
-            <!-- Video Stream Container -->
-            <div id="video-container" class="video-container hidden">
-                <video id="webcam-preview" autoplay playsinline muted></video>
             </div>
         </main>
 
-        <!-- PAGE 2: TERMINAL / CONTROL PANEL -->
+        <!-- PAGE 2: TERMINAL & AI AGENT -->
         <main id="view-terminal" class="view-page hidden">
+            <!-- Controls Bar -->
             <div class="controls-bar">
                 <button id="btn-video" onclick="toggleVideo()">Video: OFF</button>
                 <button id="btn-audio" onclick="toggleAudio()">Audio: OFF</button>
@@ -68,7 +70,14 @@
                 <button onclick="clearLogs()">Clear</button>
             </div>
 
+            <!-- Optional Video Stream Container -->
+            <div id="video-container" class="video-container hidden">
+                <video id="webcam-preview" autoplay playsinline muted></video>
+            </div>
+
+            <!-- Workspace Grid -->
             <div class="workspace-grid">
+                <!-- System Console Panel -->
                 <div class="panel">
                     <h3>System Console Logs</h3>
                     <div id="terminal-logs" class="log-output">
@@ -76,16 +85,25 @@
                     </div>
                 </div>
 
+                <!-- Chat & Session Controller Panel -->
                 <div class="panel">
+                    <div class="session-bar" style="display: flex; gap: 6px; margin-bottom: 6px; align-items: center;">
+                        <select id="session-select" onchange="switchSession(this.value)" style="flex: 1; background: #161b22; color: #c9d1d9; border: 1px solid #30363d; padding: 4px; border-radius: 4px; font-size: 11px;">
+                            <option value="session_default">Session 1</option>
+                        </select>
+                        <button onclick="createNewSession()" style="background: #238636; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: bold;">+ New</button>
+                    </div>
+
                     <h3>AI Conversation Thread</h3>
                     <div id="chat-thread" class="chat-output">
-                        <div class="msg ai-msg"><strong>PG1.Agent:</strong> Hello! PG1.Agent online. How can I assist you today?</div>
+                        <!-- Dynamic Messages Rendered Here -->
                     </div>
                 </div>
             </div>
 
+            <!-- Input Bar -->
             <div class="input-container">
-                <input type="text" id="user-input" placeholder="Enter command or search..." onkeydown="handleKeyPress(event)">
+                <input type="text" id="user-input" placeholder="Enter command or search..." onkeypress="handleKeyPress(event)">
                 <button onclick="sendCommand()">Send</button>
             </div>
         </main>
@@ -108,7 +126,7 @@
             </div>
         </main>
 
-        <!-- Bottom Tab Navigation Bar -->
+        <!-- FIXED BOTTOM NAVIGATION BAR -->
         <nav class="bottom-nav">
             <button id="nav-dash" class="nav-item active" onclick="switchTab('dash')">
                 <span class="nav-icon">📊</span>
@@ -123,6 +141,7 @@
                 <span class="nav-label">Node</span>
             </button>
         </nav>
+
     </div>
 
     <script src="app.js"></script>
