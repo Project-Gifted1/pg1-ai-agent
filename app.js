@@ -1,10 +1,13 @@
+const CLOUDFLARE_WORKER_URL = 'https://pg1-agent-worker.gnfcw9w5rk.workers.dev';
+
 let videoActive = false;
 let audioActive = false;
 let voiceActive = false;
 let mediaStream = null;
+let recognition = null;
 let selectedVoice = null;
 
-// Navigation tab switching
+// Navigation Tab Switcher
 function switchTab(tabName) {
     const views = ['dash', 'terminal', 'node'];
     
@@ -22,7 +25,7 @@ function switchTab(tabName) {
     });
 }
 
-// iOS Speech Synthesis initialization
+// Text-to-Speech Engine
 function initVoices() {
     if ('speechSynthesis' in window) {
         let voices = window.speechSynthesis.getVoices();
@@ -39,6 +42,54 @@ if ('speechSynthesis' in window) {
     initVoices();
 }
 
+function speakResponse(text) {
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        if (!selectedVoice) initVoices();
+        if (selectedVoice) utterance.voice = selectedVoice;
+        
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+        
+        window.speechSynthesis.speak(utterance);
+    }
+}
+
+// Speech-to-Text Listening Engine
+function initSpeechRecognition() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        logSystem("Speech recognition not supported on this browser.");
+        return;
+    }
+
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event) => {
+        const transcript = event.results[event.results.length - 1][0].transcript.trim();
+        if (transcript) {
+            document.getElementById('user-input').value = transcript;
+            sendCommand();
+        }
+    };
+
+    recognition.onerror = (event) => {
+        logSystem(`Microphone Error: ${event.error}`);
+    };
+
+    recognition.onend = () => {
+        if (audioActive && recognition) {
+            try { recognition.start(); } catch(e) {}
+        }
+    };
+}
+
+// Control Bar Toggles
 async function toggleVideo() {
     const btn = document.getElementById('btn-video');
     const container = document.getElementById('video-container');
@@ -51,24 +102,41 @@ async function toggleVideo() {
             container.classList.remove('hidden');
             videoActive = true;
             btn.innerText = "Video: ON";
-            logSystem("Video stream enabled.");
+            logSystem("Video stream active.");
         } catch (err) {
-            logSystem("Camera error: " + err.message);
+            logSystem("Camera access error: " + err.message);
         }
     } else {
         stopStreams();
         container.classList.add('hidden');
         videoActive = false;
         btn.innerText = "Video: OFF";
-        logSystem("Video stream disabled.");
+        logSystem("Video stream stopped.");
     }
 }
 
 function toggleAudio() {
     const btn = document.getElementById('btn-audio');
     audioActive = !audioActive;
-    btn.innerText = audioActive ? "Audio: ON" : "Audio: OFF";
-    logSystem(`Microphone input ${audioActive ? "enabled" : "disabled"}.`);
+
+    if (audioActive) {
+        btn.innerText = "Audio: ON";
+        if (!recognition) initSpeechRecognition();
+        if (recognition) {
+            try {
+                recognition.start();
+                logSystem("Microphone active. Listening for commands...");
+            } catch (e) {
+                logSystem("Mic error: " + e.message);
+            }
+        }
+    } else {
+        btn.innerText = "Audio: OFF";
+        if (recognition) {
+            recognition.stop();
+            logSystem("Microphone deactivated.");
+        }
+    }
 }
 
 function toggleVoice() {
@@ -79,9 +147,9 @@ function toggleVoice() {
     if (voiceActive && 'speechSynthesis' in window) {
         window.speechSynthesis.resume();
         initVoices();
-        speakResponse("Voice activated.");
+        speakResponse("Voice synthesis enabled.");
     }
-    logSystem(`Text-to-speech output ${voiceActive ? "enabled" : "disabled"}.`);
+    logSystem(`Voice output ${voiceActive ? "enabled" : "disabled"}.`);
 }
 
 function stopStreams() {
@@ -97,17 +165,18 @@ function handleKeyPress(event) {
     }
 }
 
+// Send Command & Route directly to Cloudflare Worker Endpoint
 async function sendCommand() {
     const input = document.getElementById('user-input');
     const text = input.value.trim();
     if (!text) return;
 
     addChatMessage('User', text, 'user-msg');
-    logSystem(`Executed command: ${text}`);
+    logSystem(`Sending payload: "${text}"`);
     input.value = '';
 
     try {
-        const response = await fetch('/api/agent', {
+        const response = await fetch(CLOUDFLARE_WORKER_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: text })
@@ -115,44 +184,23 @@ async function sendCommand() {
 
         const data = await response.json();
 
-        if (data.success) {
-            addChatMessage('PG1.Agent', data.response, 'ai-msg');
-            logSystem('PG1.Agent task execution completed.');
+        if (data.response || data.text || data.result) {
+            const agentReply = data.response || data.text || data.result;
+            addChatMessage('PG1.Agent', agentReply, 'ai-msg');
+            logSystem('Received live execution response from PG1 Worker.');
 
             if (voiceActive) {
-                speakResponse(data.response);
+                speakResponse(agentReply);
             }
         } else {
-            // Fallback for static host testing prior to backend connection
-            const fallbackText = `PG1.Agent processing command: "${text}"`;
-            addChatMessage('PG1.Agent', fallbackText, 'ai-msg');
-            logSystem(`Agent system updated.`);
-            if (voiceActive) speakResponse(fallbackText);
+            logSystem(`Worker Response Error: Invalid schema returned`);
         }
     } catch (err) {
-        const fallbackText = `PG1.Agent executed command: "${text}"`;
-        addChatMessage('PG1.Agent', fallbackText, 'ai-msg');
-        logSystem(`Processed locally.`);
-        if (voiceActive) speakResponse(fallbackText);
+        logSystem(`Connection Failed: ${err.message}`);
     }
 }
 
-function speakResponse(text) {
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        
-        const utterance = new SpeechSynthesisUtterance(text);
-        if (!selectedVoice) initVoices();
-        if (selectedVoice) utterance.voice = selectedVoice;
-        
-        utterance.rate = 1.0;
-        utterance.pitch = 1.0;
-        utterance.volume = 1.0;
-        
-        window.speechSynthesis.speak(utterance);
-    }
-}
-
+// Utilities
 function addChatMessage(sender, text, className) {
     const chatOutput = document.getElementById('chat-thread');
     const msgDiv = document.createElement('div');
