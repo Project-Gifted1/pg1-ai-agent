@@ -2,8 +2,23 @@ let videoActive = false;
 let audioActive = false;
 let voiceActive = false;
 let mediaStream = null;
+let selectedVoice = null;
 
-// Toggle Camera / Video Stream
+// Initialize natural sounding voices for mobile/Safari
+function loadNaturalVoice() {
+    if ('speechSynthesis' in window) {
+        const voices = window.speechSynthesis.getVoices();
+        selectedVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Enhanced') || v.name.includes('Siri') || v.name.includes('Google'))) ||
+                        voices.find(v => v.lang.startsWith('en')) ||
+                        voices[0];
+    }
+}
+
+if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = loadNaturalVoice;
+    loadNaturalVoice();
+}
+
 async function toggleVideo() {
     const btn = document.getElementById('btn-video');
     const container = document.getElementById('video-container');
@@ -18,7 +33,7 @@ async function toggleVideo() {
             btn.innerText = "Video: ON";
             logSystem("Video stream enabled.");
         } catch (err) {
-            logSystem("Error accessing camera: " + err.message);
+            logSystem("Camera error: " + err.message);
         }
     } else {
         stopStreams();
@@ -29,7 +44,6 @@ async function toggleVideo() {
     }
 }
 
-// Toggle Audio Stream
 function toggleAudio() {
     const btn = document.getElementById('btn-audio');
     audioActive = !audioActive;
@@ -37,12 +51,17 @@ function toggleAudio() {
     logSystem(`Microphone input ${audioActive ? "enabled" : "disabled"}.`);
 }
 
-// Toggle Voice/TTS Output
 function toggleVoice() {
     const btn = document.getElementById('btn-voice');
     voiceActive = !voiceActive;
     btn.innerText = voiceActive ? "Voice: ON" : "Voice: OFF";
-    logSystem(`Text-to-speech voice output ${voiceActive ? "enabled" : "disabled"}.`);
+    
+    // Unlock speech engine on iOS tap
+    if (voiceActive && 'speechSynthesis' in window) {
+        window.speechSynthesis.resume();
+        speakResponse("Voice output enabled.");
+    }
+    logSystem(`Text-to-speech output ${voiceActive ? "enabled" : "disabled"}.`);
 }
 
 function stopStreams() {
@@ -63,29 +82,33 @@ function sendCommand() {
     const text = input.value.trim();
     if (!text) return;
 
-    // Display in chat thread
     addChatMessage('User', text, 'user-msg');
     logSystem(`Executed command: ${text}`);
 
     input.value = '';
 
-    // Simulated Backend Response Processing
     setTimeout(() => {
-        const responseText = `Processed request: "${text}". Tasks executed successfully.`;
+        const responseText = `Received command "${text}". Operations running.`;
         addChatMessage('PG1 Agent', responseText, 'ai-msg');
-        logSystem(`Agent response generated for instruction.`);
+        logSystem(`Agent response generated.`);
 
         if (voiceActive) {
             speakResponse(responseText);
         }
-    }, 600);
+    }, 500);
 }
 
-// Speech Output directly speaking clean response text
 function speakResponse(text) {
     if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel(); // Clear queued speech
+        window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
+        
+        if (!selectedVoice) loadNaturalVoice();
+        if (selectedVoice) utterance.voice = selectedVoice;
+        
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        
         window.speechSynthesis.speak(utterance);
     }
 }
