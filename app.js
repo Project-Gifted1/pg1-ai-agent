@@ -1,4 +1,3 @@
-// Worker Endpoint Configuration
 const CLOUDFLARE_WORKER_URL = 'https://pg1-agent-worker.gnfcw9w5rk.workers.dev';
 
 let currentSessionId = 'session_default';
@@ -12,7 +11,6 @@ document.addEventListener('DOMContentLoaded', () => {
   startLiveDashboardTelemetry();
 });
 
-// Telemetry Simulator
 function startLiveDashboardTelemetry() {
   setInterval(() => {
     const cpuVal = Math.floor(Math.random() * (48 - 22 + 1)) + 22;
@@ -41,7 +39,6 @@ function updateMetric(txtId, barId, val, suffix, max = 100) {
   }
 }
 
-// Navigation Tab Switcher
 function switchTab(tabName) {
   const views = ['dash', 'terminal', 'node'];
   views.forEach(view => {
@@ -54,7 +51,6 @@ function switchTab(tabName) {
   });
 }
 
-// Session Management
 function updateSessionDropdown() {
   const select = document.getElementById('session-select');
   if (!select) return;
@@ -102,7 +98,6 @@ function saveSessions() {
   localStorage.setItem('pg1_sessions', JSON.stringify(sessions)); 
 }
 
-// API Dispatch and Response Handler
 async function sendCommand() {
   const input = document.getElementById('user-input');
   const text = input.value.trim();
@@ -152,7 +147,6 @@ function addChatMessage(sender, text, className, save = true) {
   }
 }
 
-// System Logging & Controls
 function logSystem(text) {
   const logOutput = document.getElementById('terminal-logs');
   if (!logOutput) return;
