@@ -1,7 +1,17 @@
 export default {
   async fetch(request, env) {
+    // Handle CORS preflight requests
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        },
+      });
+    }
+
     const url = new URL(request.url);
-    // Allow reading prompt from URL query string ?prompt=Hello
     let prompt = url.searchParams.get("prompt");
 
     if (!prompt && request.method === "POST") {
