@@ -1,4 +1,4 @@
-// Persistent Global Audio State
+// Global State
 let recognition = null;
 let isVoiceActive = false;
 
@@ -6,7 +6,7 @@ const terminal = document.getElementById('terminal');
 const micStatus = document.getElementById('micStatus');
 const voiceToggleBtn = document.getElementById('voiceToggleBtn');
 
-// Helper to log formatted timestamp messages
+// Helper to log formatted timestamp messages to the terminal view
 function logTerminal(message) {
   if (!terminal) return;
   const now = new Date().toTimeString().split(' ')[0];
@@ -16,7 +16,7 @@ function logTerminal(message) {
   terminal.scrollTop = terminal.scrollHeight;
 }
 
-// Initialize Speech Recognition
+// Initialize Speech Recognition (STT)
 function initSpeechRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
@@ -64,7 +64,7 @@ function initSpeechRecognition() {
   return rec;
 }
 
-// Toggle Voice Button
+// Toggle Voice Listening Mode
 function toggleVoice() {
   if (!recognition) {
     recognition = initSpeechRecognition();
@@ -93,7 +93,7 @@ function toggleVoice() {
   }
 }
 
-// Manual Send Button Function
+// Process Typed Text Input
 function handleManualSend() {
   const input = document.getElementById('cmdInput');
   if (!input) return;
@@ -105,7 +105,7 @@ function handleManualSend() {
   }
 }
 
-// Process Commands
+// Command Processing Engine
 function processUserCommand(promptText) {
   let reply = "";
   const lower = promptText.toLowerCase();
@@ -122,14 +122,14 @@ function processUserCommand(promptText) {
   speakAgentResponse(reply);
 }
 
-// Clean Speech Synthesis Output
+// Enhanced Natural Voice Output (TTS)
 function speakAgentResponse(text) {
   if (!('speechSynthesis' in window)) {
     logTerminal("ERROR: Speech synthesis not available.");
     return;
   }
 
-  // Stop recognition temporarily so iOS audio engine releases hardware lock
+  // Release microphone audio stream temporarily for iOS hardware playback
   if (recognition) {
     try { recognition.stop(); } catch (e) {}
   }
@@ -137,9 +137,19 @@ function speakAgentResponse(text) {
   window.speechSynthesis.cancel();
 
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'en-US';
-  utterance.rate = 1.0;
+  utterance.rate = 0.95;
   utterance.pitch = 1.0;
+
+  // Select the highest quality natural voice available
+  const voices = window.speechSynthesis.getVoices();
+  const naturalVoice = voices.find(v => 
+    v.lang.startsWith('en') && 
+    (v.name.includes('Enhanced') || v.name.includes('Premium') || v.name.includes('Samantha') || v.name.includes('Karen') || v.name.includes('Daniel'))
+  ) || voices.find(v => v.lang.startsWith('en'));
+
+  if (naturalVoice) {
+    utterance.voice = naturalVoice;
+  }
 
   utterance.onstart = () => {
     logTerminal("Playing audio output...");
@@ -163,4 +173,11 @@ function speakAgentResponse(text) {
   };
 
   window.speechSynthesis.speak(utterance);
+}
+
+// Pre-load iOS voices on initial interaction
+if ('speechSynthesis' in window) {
+  window.speechSynthesis.onvoiceschanged = () => {
+    window.speechSynthesis.getVoices();
+  };
 }
