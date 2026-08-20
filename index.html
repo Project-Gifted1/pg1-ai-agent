@@ -28,7 +28,7 @@
 
         .container {
             width: 100%;
-            max-width: 480px;
+            max-width: 520px;
         }
 
         header {
@@ -103,8 +103,12 @@
             color: var(--text-main);
         }
 
-        .btn:active {
-            opacity: 0.85;
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 0.8rem;
+            border-radius: 6px;
+            width: auto;
+            margin-bottom: 0;
         }
 
         .input-group {
@@ -112,14 +116,18 @@
             gap: 8px;
         }
 
-        input[type="text"] {
-            flex: 1;
+        input[type="text"], select, textarea {
             background-color: #020617;
             border: 1px solid #1e293b;
             border-radius: 8px;
             padding: 10px;
             color: var(--text-main);
             font-size: 0.9rem;
+            font-family: inherit;
+        }
+
+        input[type="text"] {
+            flex: 1;
         }
 
         .execute-btn {
@@ -139,7 +147,7 @@
             padding: 12px;
             font-family: monospace;
             font-size: 0.85rem;
-            height: 160px;
+            height: 220px;
             overflow-y: auto;
             color: var(--text-muted);
             white-space: pre-wrap;
@@ -149,7 +157,15 @@
         .terminal-box .err { color: var(--error-red); }
         .terminal-box .ok { color: var(--success-green); }
 
-        /* Telemetry Progress Bars */
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
         .metric-row {
             margin-bottom: 12px;
         }
@@ -173,7 +189,6 @@
             transition: width 0.4s ease;
         }
 
-        /* View Sections */
         .view-section {
             display: none;
         }
@@ -181,7 +196,6 @@
             display: block;
         }
 
-        /* Bottom Fixed Navigation Bar */
         .bottom-nav {
             position: fixed;
             bottom: 0;
@@ -215,20 +229,18 @@
 <body>
 
     <div class="container">
-        <!-- Persistent Header Across All Views -->
         <header>
             <h1><span class="status-dot"></span> Project Gifted1™</h1>
-            <span style="font-size: 0.85rem; color: var(--text-muted);" id="header-version">v2.5 Telemetry</span>
+            <span style="font-size: 0.85rem; color: var(--text-muted);" id="header-version">v3.0 Advanced Edge</span>
         </header>
 
-        <!-- DASH VIEW SECTION (Includes Video Stream + Live Telemetry Metrics) -->
+        <!-- DASH VIEW SECTION -->
         <div id="view-dash" class="view-section active">
             <div class="card">
                 <div style="font-weight: 600; margin-bottom: 4px;">Sovereign Edge Active</div>
                 <div style="font-size: 0.8rem; color: var(--text-muted);">Zero-cost deployment operational via PG1 core edge synchronization. All telemetry feeds secure.</div>
             </div>
 
-            <!-- Real-Time Telemetry Module Card -->
             <div class="card">
                 <div style="font-weight: 600; margin-bottom: 12px; font-size: 0.95rem;">⚡ Real-Time Edge Telemetry</div>
                 
@@ -266,15 +278,31 @@
             </div>
         </div>
 
-        <!-- TERMINAL VIEW SECTION (Includes Log Stream) -->
+        <!-- TERMINAL VIEW SECTION -->
         <div id="view-terminal" class="view-section">
             <div class="card">
-                <div style="font-weight: 600; margin-bottom: 8px;">PG1.Agent Log & Terminal Interface</div>
-                <div id="terminal" class="terminal-box">> [SYSTEM]: Secure telemetry stream initialized.<br>> [AGENT]: Handshake protocol x402 active.<br></div>
+                <div style="font-weight: 600; margin-bottom: 8px;">PG1.Agent Multi-Thread Terminal</div>
+                
+                <div class="toolbar">
+                    <select id="thread-select" onchange="switchThread(this.value)" style="flex:1;">
+                        <!-- Dynamically populated -->
+                    </select>
+                    <button class="btn btn-secondary btn-small" onclick="createNewThread()">+ New</button>
+                    <button class="btn btn-secondary btn-small" onclick="copyTerminalText()">📋 Copy</button>
+                    <button class="btn btn-secondary btn-small" onclick="exportLog()">💾 Export</button>
+                </div>
+
+                <div id="terminal" class="terminal-box"></div>
+
                 <div class="input-group" style="margin-top: 12px;">
                     <input type="text" id="command-input" placeholder="Type command or query..." onkeydown="if(event.key==='Enter') executeCommand()">
                     <button class="execute-btn" id="execute-btn" onclick="executeCommand()">Execute</button>
                 </div>
+            </div>
+
+            <div class="card">
+                <div style="font-weight: 600; margin-bottom: 8px; font-size:0.9rem;">⚙️ Agent System Prompt Directive</div>
+                <textarea id="system-prompt" style="width:100%; height:60px; box-sizing:border-box;" placeholder="Set agent behavior context...">You are PG1 Agent, an autonomous, factual, and direct AI assistant built for high-efficiency infrastructure and operational management. Always identify as PG1 Agent.</textarea>
             </div>
         </div>
 
@@ -297,7 +325,6 @@
         </div>
     </div>
 
-    <!-- Bottom Navigation Bar -->
     <nav class="bottom-nav">
         <button class="nav-item active" onclick="switchTab('dash', event)">
             📊 <span>Dash</span>
@@ -317,23 +344,103 @@
         const streamBtn = document.getElementById('stream-btn');
         const flipBtn = document.getElementById('flip-btn');
         const commandInput = document.getElementById('command-input');
+        const threadSelect = document.getElementById('thread-select');
+        const systemPromptInput = document.getElementById('system-prompt');
 
         let currentFacingMode = 'user';
         let currentStream = null;
+        let threads = {};
+        let activeThreadId = 'Thread-1';
+
+        // Load thread state on boot
+        function initThreads() {
+            const saved = localStorage.getItem('pg1_threads');
+            if (saved) {
+                try {
+                    threads = JSON.parse(saved);
+                } catch(e) { threads = {}; }
+            }
+            if (!Object.keys(threads).length) {
+                threads['Thread-1'] = `> [<span class="sys">${new Date().toLocaleTimeString()}</span>]: System initialized.\n> [<span class="sys">${new Date().toLocaleTimeString()}</span>]: Handshake protocol x402 active.\n`;
+            }
+            activeThreadId = Object.keys(threads)[0];
+            updateThreadSelect();
+            renderActiveThread();
+        }
+
+        function saveThreads() {
+            localStorage.setItem('pg1_threads', JSON.stringify(threads));
+        }
+
+        function updateThreadSelect() {
+            threadSelect.innerHTML = '';
+            Object.keys(threads).forEach(id => {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.innerText = id;
+                if (id === activeThreadId) opt.selected = true;
+                threadSelect.appendChild(opt);
+            });
+        }
+
+        function createNewThread() {
+            const newId = `Thread-${Date.now().toString().slice(-4)}`;
+            threads[newId] = `> [<span class="sys">${new Date().toLocaleTimeString()}</span>]: New session thread created.\n`;
+            activeThreadId = newId;
+            saveThreads();
+            updateThreadSelect();
+            renderActiveThread();
+        }
+
+        function switchThread(threadId) {
+            activeThreadId = threadId;
+            renderActiveThread();
+        }
+
+        function renderActiveThread() {
+            terminal.innerHTML = threads[activeThreadId] || '';
+            terminal.scrollTop = terminal.scrollHeight;
+        }
 
         function logToTerminal(message, type = 'sys') {
             const timestamp = new Date().toLocaleTimeString();
             let colorClass = 'sys';
             if (type === 'err') colorClass = 'err';
             if (type === 'ok') colorClass = 'ok';
-            
-            if (terminal) {
-                terminal.innerHTML += `> [<span class="${colorClass}">${timestamp}</span>]: ${message}<br>`;
-                terminal.scrollTop = terminal.scrollHeight;
-            }
+
+            const entry = `> [<span class="${colorClass}">${timestamp}</span>]: ${formatMarkdown(message)}\n`;
+            threads[activeThreadId] = (threads[activeThreadId] || '') + entry;
+            saveThreads();
+            renderActiveThread();
         }
 
-        // Simulated Live Telemetry Fluctuation Loop
+        function formatMarkdown(str) {
+            return str
+                .replace(/`([^`]+)`/g, '<code style="background:#090d16;padding:2px 4px;border-radius:4px;color:#38bdf8;">$1</code>')
+                .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        }
+
+        function copyTerminalText() {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = threads[activeThreadId] || '';
+            const text = tempDiv.innerText || tempDiv.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Thread logs copied to clipboard.');
+            });
+        }
+
+        function exportLog() {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = threads[activeThreadId] || '';
+            const text = tempDiv.innerText || tempDiv.textContent;
+            const blob = new Blob([text], { type: 'text/plain' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${activeThreadId}_log.txt`;
+            a.click();
+        }
+
+        // Telemetry updates
         setInterval(() => {
             const cpu = Math.floor(20 + Math.random() * 25);
             const mem = Math.floor(45 + Math.random() * 5);
@@ -391,7 +498,10 @@
                 const response = await fetch(WORKER_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: cmd })
+                    body: JSON.stringify({ 
+                        prompt: cmd,
+                        systemPrompt: systemPromptInput.value.trim()
+                    })
                 });
 
                 const data = await response.json();
@@ -422,6 +532,8 @@
 
             logToTerminal(`Switched view context to: ${tabName.toUpperCase()}`);
         }
+
+        initThreads();
     </script>
 </body>
 </html>
