@@ -1,209 +1,118 @@
-Set-Content -Path "app.js" -Value @'
-let recognition = null;
-let isVoiceActive = false;
-let isAudioOutputEnabled = true;
-let currentStream = null;
-let facingMode = "environment";
+let videoActive = false;
+let audioActive = false;
+let voiceActive = false;
+let mediaStream = null;
 
-// MUST BE YOUR EXACT CLOUDFLARE WORKER URL
-const WORKER_PROXY_URL = "https://pg1-agent-worker.your-subdomain.workers.dev";
+// Toggle Camera / Video Stream
+async function toggleVideo() {
+    const btn = document.getElementById('btn-video');
+    const container = document.getElementById('video-container');
+    const video = document.getElementById('webcam-preview');
 
-const terminal = document.getElementById('terminal');
-const voiceToggleBtn = document.getElementById('voiceToggleBtn');
-const speechOutputBtn = document.getElementById('speechOutputBtn');
-const frameCanvas = document.getElementById('frameCanvas');
-
-function switchTab(tabName) {
-  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-
-  const tabEl = document.getElementById(`tab${tabName}`);
-  const navEl = document.getElementById(`nav${tabName}`);
-  if (tabEl) tabEl.classList.add('active');
-  if (navEl) navEl.classList.add('active');
-
-  attachStreamToVideo();
-}
-
-function logTerminal(message) {
-  if (!terminal) return;
-  const now = new Date().toTimeString().split(' ')[0];
-  const logEntry = document.createElement('div');
-  logEntry.textContent = `> [${now}]: ${message}`;
-  terminal.appendChild(logEntry);
-  terminal.scrollTop = terminal.scrollHeight;
-}
-
-async function initCamera() {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    logTerminal("Camera Error: Media devices unavailable.");
-    return;
-  }
-
-  if (currentStream) {
-    currentStream.getTracks().forEach(track => track.stop());
-  }
-
-  try {
-    currentStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: facingMode, width: { ideal: 480 }, height: { ideal: 360 } },
-      audio: false
-    });
-    attachStreamToVideo();
-    logTerminal(`Camera initialized (${facingMode} feed active).`);
-  } catch (err) {
-    logTerminal(`Camera Access Error: ${err.message}`);
-  }
-}
-
-function attachStreamToVideo() {
-  const dashVideo = document.getElementById('webcamDash');
-  const termVideo = document.getElementById('webcamTerm');
-  if (dashVideo) dashVideo.srcObject = currentStream;
-  if (termVideo) termVideo.srcObject = currentStream;
-}
-
-function toggleCamera() {
-  facingMode = (facingMode === "user") ? "environment" : "user";
-  initCamera();
-}
-
-function captureFrame() {
-  const activeVideo = document.getElementById('webcamTerm') || document.getElementById('webcamDash');
-  if (!activeVideo || !currentStream || activeVideo.readyState !== 4) return null;
-  
-  if (!frameCanvas) return null;
-  frameCanvas.width = 320;
-  frameCanvas.height = 240;
-  const ctx = frameCanvas.getContext('2d');
-  ctx.drawImage(activeVideo, 0, 0, 320, 240);
-  return frameCanvas.toDataURL('image/jpeg', 0.4);
-}
-
-function toggleAudioOutput() {
-  isAudioOutputEnabled = !isAudioOutputEnabled;
-  if (speechOutputBtn) {
-    speechOutputBtn.textContent = isAudioOutputEnabled ? "Audio: ON" : "Audio: OFF";
-    speechOutputBtn.style.backgroundColor = isAudioOutputEnabled ? "#10b981" : "#64748b";
-    logTerminal(isAudioOutputEnabled ? "System Mode: Audio output ENABLED." : "System Mode: Text-only (Audio output DISABLED).");
-  }
-}
-
-function initSpeechRecognition() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    logTerminal("ERROR: Speech Recognition unsupported.");
-    return null;
-  }
-
-  const rec = new SpeechRecognition();
-  rec.continuous = false;
-  rec.interimResults = false;
-  rec.lang = 'en-US';
-
-  rec.onstart = () => logTerminal("Live audio stream initialized (Microphone).");
-
-  rec.onresult = (event) => {
-    const transcript = event.results[event.results.length - 1][0].transcript.trim();
-    if (transcript.length > 0) {
-      logTerminal(`User (Voice): ${transcript}`);
-      processUserCommand(transcript);
-    }
-  };
-
-  rec.onerror = (event) => {
-    if (event.error !== 'aborted') logTerminal(`STT Error: ${event.error}`);
-  };
-
-  rec.onend = () => {
-    if (isVoiceActive) {
-      setTimeout(() => { try { if (recognition && isVoiceActive) recognition.start(); } catch(e){} }, 300);
+    if (!videoActive) {
+        try {
+            mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: audioActive });
+            video.srcObject = mediaStream;
+            container.classList.remove('hidden');
+            videoActive = true;
+            btn.innerText = "Video: ON";
+            logSystem("Video stream enabled.");
+        } catch (err) {
+            logSystem("Error accessing camera: " + err.message);
+        }
     } else {
-      logTerminal("Audio stream disconnected.");
+        stopStreams();
+        container.classList.add('hidden');
+        videoActive = false;
+        btn.innerText = "Video: OFF";
+        logSystem("Video stream disabled.");
     }
-  };
-
-  return rec;
 }
 
+// Toggle Audio Stream
+function toggleAudio() {
+    const btn = document.getElementById('btn-audio');
+    audioActive = !audioActive;
+    btn.innerText = audioActive ? "Audio: ON" : "Audio: OFF";
+    logSystem(`Microphone input ${audioActive ? "enabled" : "disabled"}.`);
+}
+
+// Toggle Voice/TTS Output
 function toggleVoice() {
-  if (!recognition) recognition = initSpeechRecognition();
-  if (!recognition) return;
-
-  isVoiceActive = !isVoiceActive;
-
-  if (isVoiceActive) {
-    if (voiceToggleBtn) {
-      voiceToggleBtn.textContent = "Voice: ON";
-      voiceToggleBtn.style.backgroundColor = "#dc2626";
-    }
-    try { recognition.start(); } catch(e){}
-  } else {
-    if (voiceToggleBtn) {
-      voiceToggleBtn.textContent = "Voice: OFF";
-      voiceToggleBtn.style.backgroundColor = "#0284c7";
-    }
-    try { recognition.stop(); } catch(e){}
-  }
+    const btn = document.getElementById('btn-voice');
+    voiceActive = !voiceActive;
+    btn.innerText = voiceActive ? "Voice: ON" : "Voice: OFF";
+    logSystem(`Text-to-speech voice output ${voiceActive ? "enabled" : "disabled"}.`);
 }
 
-function handleManualSend() {
-  const input = document.getElementById('cmdInput');
-  if (!input) return;
-  const text = input.value.trim();
-  if (text) {
-    logTerminal(`User (Text): ${text}`);
-    processUserCommand(text);
+function stopStreams() {
+    if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream = null;
+    }
+}
+
+function handleKeyPress(event) {
+    if (event.key === 'Enter') {
+        sendCommand();
+    }
+}
+
+function sendCommand() {
+    const input = document.getElementById('user-input');
+    const text = input.value.trim();
+    if (!text) return;
+
+    // Display in chat thread
+    addChatMessage('User', text, 'user-msg');
+    logSystem(`Executed command: ${text}`);
+
     input.value = '';
-  }
+
+    // Simulated Backend Response Processing
+    setTimeout(() => {
+        const responseText = `Processed request: "${text}". Tasks executed successfully.`;
+        addChatMessage('PG1 Agent', responseText, 'ai-msg');
+        logSystem(`Agent response generated for instruction.`);
+
+        if (voiceActive) {
+            speakResponse(responseText);
+        }
+    }, 600);
 }
 
-async function processUserCommand(promptText) {
-  const imageFrame = captureFrame();
-
-  try {
-    const response = await fetch(WORKER_PROXY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: promptText, image: imageFrame })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Worker status ${response.status}`);
+// Speech Output directly speaking clean response text
+function speakResponse(text) {
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel(); // Clear queued speech
+        const utterance = new SpeechSynthesisUtterance(text);
+        window.speechSynthesis.speak(utterance);
     }
-
-    const data = await response.json();
-    const reply = data.reply || "Request processed.";
-
-    logTerminal(`Agent: ${reply}`);
-    if (isAudioOutputEnabled) speakAgentResponse(reply);
-
-  } catch (error) {
-    logTerminal(`Agent Error: ${error.message}`);
-    const fallbackReply = "Unable to process request via Cloudflare AI worker.";
-    logTerminal(`Agent: ${fallbackReply}`);
-    if (isAudioOutputEnabled) speakAgentResponse(fallbackReply);
-  }
 }
 
-function speakAgentResponse(text) {
-  if (!('speechSynthesis' in window)) return;
-  if (recognition) { try { recognition.stop(); } catch(e){} }
-
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = 0.95;
-
-  utterance.onend = () => {
-    if (isVoiceActive && recognition) {
-      setTimeout(() => { try { if (isVoiceActive) recognition.start(); } catch(e){} }, 300);
-    }
-  };
-
-  window.speechSynthesis.speak(utterance);
+function addChatMessage(sender, text, className) {
+    const chatOutput = document.getElementById('chat-thread');
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `msg ${className}`;
+    msgDiv.innerHTML = `<strong>${sender}:</strong> ${text}`;
+    chatOutput.appendChild(msgDiv);
+    chatOutput.scrollTop = chatOutput.scrollHeight;
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  initCamera();
-});
-'@ -Encoding UTF8
+function logSystem(text) {
+    const logOutput = document.getElementById('terminal-logs');
+    const logDiv = document.createElement('div');
+    logDiv.innerText = `> ${text}`;
+    logOutput.appendChild(logDiv);
+    logOutput.scrollTop = logOutput.scrollHeight;
+}
+
+function copyLogs() {
+    const logs = document.getElementById('terminal-logs').innerText;
+    navigator.clipboard.writeText(logs);
+    alert('Logs copied to clipboard.');
+}
+
+function clearLogs() {
+    document.getElementById('terminal-logs').innerHTML = '<div>> Logs cleared.</div>';
+}
