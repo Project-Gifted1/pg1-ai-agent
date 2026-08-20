@@ -1,6 +1,8 @@
 // Persistent Global Audio State
 let recognition = null;
 let isVoiceActive = false;
+let systemVoice = null;
+
 const terminal = document.getElementById('terminal');
 const micStatus = document.getElementById('micStatus');
 const voiceToggleBtn = document.getElementById('voiceToggleBtn');
@@ -14,6 +16,30 @@ function logTerminal(message) {
   terminal.scrollTop = terminal.scrollHeight;
 }
 
+// Pre-load available iOS voices
+function loadVoices() {
+  if ('speechSynthesis' in window) {
+    const voices = window.speechSynthesis.getVoices();
+    // Prefer en-US native voices for iOS Safari
+    systemVoice = voices.find(v => v.lang.includes('en') && v.localService) || voices[0] || null;
+  }
+}
+
+if ('speechSynthesis' in window) {
+  window.speechSynthesis.onvoiceschanged = loadVoices;
+  loadVoices();
+}
+
+// Unlock iOS Audio Session on explicit user interaction (Tap)
+function unlockAudioSession() {
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel(); // Clear any pending queued state
+    const silentUtterance = new SpeechSynthesisUtterance('');
+    silentUtterance.volume = 0;
+    window.speechSynthesis.speak(silentUtterance);
+  }
+}
+
 // Initialize Speech-to-Text (STT) Engine
 function initSpeechRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -23,7 +49,7 @@ function initSpeechRecognition() {
   }
 
   const rec = new SpeechRecognition();
-  rec.continuous = false; // Set false for stability on iOS Safari
+  rec.continuous = false; // Set to false for iOS Safari audio stability
   rec.interimResults = false;
   rec.lang = 'en-US';
 
@@ -60,8 +86,11 @@ function initSpeechRecognition() {
   return rec;
 }
 
-// Toggle Voice Listening State
+// Toggle Audio Listening (Acts as the user gesture trigger)
 function toggleVoice() {
+  // Direct gesture unlock for iOS Safari
+  unlockAudioSession();
+
   if (!recognition) {
     recognition = initSpeechRecognition();
   }
@@ -81,38 +110,53 @@ function toggleVoice() {
   }
 }
 
-// Client-Side Command Processing & Local Response Logic
+// Process Command & Generate Spoken Reply
 function processUserCommand(promptText) {
   let reply = "";
   const lower = promptText.toLowerCase();
 
-  // Simple client-side response logic
-  if (lower.includes("can you hear me") || lower.includes("hello") || lower.includes("hey")) {
-    reply = "Yes, I can hear you clearly. How can I assist you?";
+  if (lower.includes("can you hear me") || lower.includes("can you speak") || lower.includes("hello")) {
+    reply = "I can hear you clearly and my voice output is working properly.";
   } else if (lower.includes("status")) {
-    reply = "All system nodes are online and operating normally.";
+    reply = "All nodes are active and functioning normally.";
   } else {
-    reply = `Command received: "${promptText}". Processing request.`;
+    reply = `Command received: ${promptText}. System request processed.`;
   }
 
   logTerminal(`Agent: ${reply}`);
   speakAgentResponse(reply);
 }
 
-// Client-Side Text-to-Speech Output (Browser Voice)
+// Fixed Text-to-Speech Output (iOS Safari Compatible)
 function speakAgentResponse(text) {
-  if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel(); // Clear remaining queue
+  if (!('speechSynthesis' in window)) {
+    logTerminal("ERROR: Speech Synthesis not supported.");
+    return;
+  }
+
+  // Force cancel pending or stuck queue on iOS Safari
+  window.speechSynthesis.cancel();
+
+  setTimeout(() => {
     const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US';
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+
+    // Explicitly assign system voice if loaded
+    if (systemVoice) {
+      utterance.voice = systemVoice;
+    }
 
     utterance.onstart = () => {
       logTerminal("Playing audio output...");
     };
 
+    utterance.onerror = (e) => {
+      logTerminal(`TTS Playback Error: ${e.error}`);
+    };
+
     window.speechSynthesis.speak(utterance);
-  } else {
-    logTerminal("ERROR: Browser does not support Text-To-Speech.");
-  }
+  }, 100);
 }
