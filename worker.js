@@ -1,23 +1,21 @@
 export default {
   async fetch(request, env) {
-    if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        },
-      });
+    const url = new URL(request.url);
+    // Allow reading prompt from URL query string ?prompt=Hello
+    let prompt = url.searchParams.get("prompt");
+
+    if (!prompt && request.method === "POST") {
+      try {
+        const body = await request.json();
+        prompt = body.prompt;
+      } catch (e) {}
     }
 
-    if (request.method !== 'POST') {
-      return new Response('Method not allowed', { status: 405 });
+    if (!prompt) {
+      prompt = "Introduce yourself and verify your status.";
     }
 
     try {
-      const { prompt } = await request.json();
-
-      // Call Cloudflare Workers AI for free using Llama 3.1 or a comparable open model
       const aiResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct-fp8-fast', {
         messages: [
           { 
