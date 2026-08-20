@@ -43,7 +43,7 @@ Always respond strictly as PG1. Be precise, technical, factual, and direct.`;
         }
       }
 
-      // Model ID corrected to active Cloudflare endpoint
+      // Validated active model path
       const aiResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
         messages: [
           { role: 'system', content: systemPrompt },
