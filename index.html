@@ -5,261 +5,41 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Project Gifted1™ v2.5 Telemetry</title>
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-
-    body {
-      background-color: #0b1120;
-      color: #e2e8f0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      padding: 12px;
-    }
-
-    .app-card {
-      width: 100%;
-      max-width: 440px;
-      background-color: #111827;
-      border: 1px solid #1e293b;
-      border-radius: 16px;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-    }
-
-    .top-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-weight: 700;
-      font-size: 1.1rem;
-      color: #f8fafc;
-    }
-
-    .brand-dot {
-      width: 8px;
-      height: 8px;
-      background-color: #22c55e;
-      border-radius: 50%;
-    }
-
-    .version {
-      font-size: 0.8rem;
-      color: #64748b;
-    }
-
-    .tab-content {
-      display: none;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .tab-content.active {
-      display: flex;
-    }
-
-    .card-box {
-      background-color: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 12px;
-      padding: 14px;
-    }
-
-    .card-title {
-      font-weight: 600;
-      font-size: 0.95rem;
-      margin-bottom: 6px;
-      color: #f8fafc;
-    }
-
-    .card-sub {
-      font-size: 0.8rem;
-      color: #94a3b8;
-      line-height: 1.3;
-    }
-
-    .metric-group {
-      margin-top: 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .metric-row {
-      display: flex;
-      justify-content: space-between;
-      font-size: 0.8rem;
-      margin-bottom: 4px;
-    }
-
-    .progress-bg {
-      width: 100%;
-      height: 6px;
-      background-color: #0f172a;
-      border-radius: 4px;
-      overflow: hidden;
-    }
-
-    .progress-fill {
-      height: 100%;
-      background-color: #38bdf8;
-      border-radius: 4px;
-    }
-
-    .progress-fill.green {
-      background-color: #22c55e;
-    }
-
-    .cam-box {
-      position: relative;
-      width: 100%;
-      height: 200px;
-      background-color: #020617;
-      border: 1px solid #334155;
-      border-radius: 12px;
-      overflow: hidden;
-    }
-
-    video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-    }
-
-    .cam-flip {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      z-index: 10;
-      background: rgba(15, 23, 42, 0.85);
-      border: 1px solid #334155;
-      color: #f8fafc;
-      padding: 6px 12px;
-      font-size: 0.75rem;
-      font-weight: 600;
-      border-radius: 6px;
-      cursor: pointer;
-    }
-
-    .node-header {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      text-align: center;
-      padding: 10px 0;
-    }
-
-    .node-avatar {
-      width: 80px;
-      height: 80px;
-      border-radius: 50%;
-      border: 2px solid #38bdf8;
-      object-fit: cover;
-    }
-
-    .node-info {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      font-size: 0.85rem;
-    }
-
-    .node-info div {
-      display: flex;
-      justify-content: space-between;
-      border-bottom: 1px solid #334155;
-      padding-bottom: 4px;
-    }
-
-    .terminal-box {
-      height: 220px;
-      background-color: #020617;
-      border: 1px solid #334155;
-      border-radius: 10px;
-      padding: 10px;
-      font-family: monospace;
-      font-size: 0.8rem;
-      color: #38bdf8;
-      overflow-y: auto;
-      white-space: pre-wrap;
-    }
-
-    .controls-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
-    .btn {
-      border: none;
-      border-radius: 8px;
-      padding: 10px;
-      font-weight: 600;
-      font-size: 0.8rem;
-      color: white;
-      cursor: pointer;
-    }
-
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: #0b1120; color: #e2e8f0; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 12px; }
+    .app-card { width: 100%; max-width: 440px; background-color: #111827; border: 1px solid #1e293b; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
+    .top-bar { display: flex; justify-content: space-between; align-items: center; }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.1rem; color: #f8fafc; }
+    .brand-dot { width: 8px; height: 8px; background-color: #22c55e; border-radius: 50%; }
+    .version { font-size: 0.8rem; color: #64748b; }
+    .tab-content { display: none; flex-direction: column; gap: 12px; }
+    .tab-content.active { display: flex; }
+    .card-box { background-color: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 14px; }
+    .card-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 6px; color: #f8fafc; }
+    .card-sub { font-size: 0.8rem; color: #94a3b8; line-height: 1.3; }
+    .metric-group { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+    .metric-row { display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px; }
+    .progress-bg { width: 100%; height: 6px; background-color: #0f172a; border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; background-color: #38bdf8; border-radius: 4px; }
+    .progress-fill.green { background-color: #22c55e; }
+    .cam-box { position: relative; width: 100%; height: 200px; background-color: #020617; border: 1px solid #334155; border-radius: 12px; overflow: hidden; }
+    video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .cam-flip { position: absolute; top: 10px; right: 10px; z-index: 10; background: rgba(15, 23, 42, 0.85); border: 1px solid #334155; color: #f8fafc; padding: 6px 12px; font-size: 0.75rem; font-weight: 600; border-radius: 6px; cursor: pointer; }
+    .node-header { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 10px 0; }
+    .node-avatar { width: 80px; height: 80px; border-radius: 50%; border: 2px solid #38bdf8; object-fit: cover; }
+    .node-info { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; }
+    .node-info div { display: flex; justify-content: space-between; border-bottom: 1px solid #334155; padding-bottom: 4px; }
+    .terminal-box { height: 220px; background-color: #020617; border: 1px solid #334155; border-radius: 10px; padding: 10px; font-family: monospace; font-size: 0.8rem; color: #38bdf8; overflow-y: auto; white-space: pre-wrap; }
+    .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .btn { border: none; border-radius: 8px; padding: 10px; font-weight: 600; font-size: 0.8rem; color: white; cursor: pointer; }
     .btn-green { background-color: #10b981; }
     .btn-blue { background-color: #0284c7; }
-
-    .input-group {
-      display: flex;
-      gap: 8px;
-    }
-
-    input[type="text"] {
-      flex: 1;
-      background-color: #0f172a;
-      border: 1px solid #334155;
-      border-radius: 8px;
-      padding: 8px 12px;
-      color: white;
-      font-size: 0.85rem;
-      outline: none;
-    }
-
-    .nav-bar {
-      display: flex;
-      justify-content: space-around;
-      border-top: 1px solid #1e293b;
-      padding-top: 10px;
-      margin-top: 4px;
-    }
-
-    .nav-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      color: #64748b;
-      font-size: 0.75rem;
-      cursor: pointer;
-    }
-
-    .nav-item.active {
-      color: #38bdf8;
-    }
-
-    .nav-icon {
-      font-size: 1.1rem;
-    }
+    .input-group { display: flex; gap: 8px; }
+    input[type="text"] { flex: 1; background-color: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 8px 12px; color: white; font-size: 0.85rem; outline: none; }
+    .nav-bar { display: flex; justify-content: space-around; border-top: 1px solid #1e293b; padding-top: 10px; margin-top: 4px; }
+    .nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #64748b; font-size: 0.75rem; cursor: pointer; }
+    .nav-item.active { color: #38bdf8; }
+    .nav-icon { font-size: 1.1rem; }
   </style>
 </head>
 <body>
@@ -299,7 +79,7 @@
       </div>
 
       <div class="cam-box">
-        <button class="cam-flip" onclick="toggleCamera()">Flip Camera</button>
+        <button class="cam-flip" onclick="initCamera()">Start Camera</button>
         <video id="webcamDash" autoplay playsinline muted></video>
       </div>
     </div>
@@ -307,7 +87,7 @@
     <!-- TAB 2: TERMINAL -->
     <div id="tabTerminal" class="tab-content">
       <div class="cam-box">
-        <button class="cam-flip" onclick="toggleCamera()">Flip Camera</button>
+        <button class="cam-flip" onclick="initCamera()">Start Camera</button>
         <video id="webcamTerm" autoplay playsinline muted></video>
       </div>
 
@@ -357,7 +137,74 @@
     </div>
   </div>
 
-  <canvas id="frameCanvas" style="display:none;"></canvas>
-  <script src="app.js"></script>
+  <script>
+    let currentStream = null;
+    let currentFacingMode = 'user';
+    let audioOutputEnabled = true;
+    let voiceInputEnabled = false;
+
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
+
+      const targetTab = document.getElementById('tab' + tabName);
+      const targetNav = document.getElementById('nav' + tabName);
+
+      if (targetTab) targetTab.classList.add('active');
+      if (targetNav) targetNav.classList.add('active');
+    }
+
+    async function initCamera() {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+      }
+
+      try {
+        currentStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: currentFacingMode },
+          audio: false
+        });
+        document.getElementById('webcamDash').srcObject = currentStream;
+        document.getElementById('webcamTerm').srcObject = currentStream;
+      } catch (err) {
+        logTerminal("Camera access error: " + err.message);
+      }
+    }
+
+    function logTerminal(msg) {
+      const term = document.getElementById('terminal');
+      if (term) {
+        term.innerText += "\n> " + msg;
+        term.scrollTop = term.scrollHeight;
+      }
+    }
+
+    function handleManualSend() {
+      const input = document.getElementById('cmdInput');
+      if (!input || !input.value.trim()) return;
+
+      const cmd = input.value.trim();
+      logTerminal(cmd);
+      input.value = '';
+
+      setTimeout(() => {
+        logTerminal("Command executed successfully.");
+      }, 400);
+    }
+
+    function toggleAudioOutput() {
+      audioOutputEnabled = !audioOutputEnabled;
+      document.getElementById('speechOutputBtn').innerText = `Audio: ${audioOutputEnabled ? 'ON' : 'OFF'}`;
+    }
+
+    function toggleVoice() {
+      voiceInputEnabled = !voiceInputEnabled;
+      document.getElementById('voiceToggleBtn').innerText = `Voice: ${voiceInputEnabled ? 'ON' : 'OFF'}`;
+    }
+
+    window.onload = () => {
+      logTerminal("PG1 Edge Core v2.5 initialized.");
+    };
+  </script>
 </body>
 </html>
