@@ -7,14 +7,24 @@ let mediaStream = null;
 let recognition = null;
 let selectedVoice = null;
 
+// Multi-Session Memory State
+let currentSessionId = 'session_default';
+let sessions = JSON.parse(localStorage.getItem('pg1_sessions')) || {
+    'session_default': { name: 'Session 1', messages: [] }
+};
+
+// Initialize App State
+document.addEventListener('DOMContentLoaded', () => {
+    updateSessionDropdown();
+    loadCurrentSession();
+});
+
 // Navigation Tab Switcher
 function switchTab(tabName) {
     const views = ['dash', 'terminal', 'node'];
-    
     views.forEach(view => {
         const page = document.getElementById(`view-${view}`);
         const nav = document.getElementById(`nav-${view}`);
-        
         if (view === tabName) {
             page.classList.remove('hidden');
             nav.classList.add('active');
@@ -23,6 +33,57 @@ function switchTab(tabName) {
             nav.classList.remove('active');
         }
     });
+}
+
+// Session Management Engine
+function updateSessionDropdown() {
+    const select = document.getElementById('session-select');
+    if (!select) return;
+    select.innerHTML = '';
+    
+    Object.keys(sessions).forEach(id => {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.innerText = sessions[id].name;
+        if (id === currentSessionId) opt.selected = true;
+        select.appendChild(opt);
+    });
+}
+
+function createNewSession() {
+    const newId = 'session_' + Date.now();
+    const count = Object.keys(sessions).length + 1;
+    sessions[newId] = { name: `Session ${count}`, messages: [] };
+    currentSessionId = newId;
+    saveSessions();
+    updateSessionDropdown();
+    loadCurrentSession();
+    logSystem(`Created and switched to ${sessions[newId].name}`);
+}
+
+function switchSession(sessionId) {
+    if (!sessions[sessionId]) return;
+    currentSessionId = sessionId;
+    loadCurrentSession();
+    logSystem(`Switched to ${sessions[sessionId].name}`);
+}
+
+function loadCurrentSession() {
+    const chatOutput = document.getElementById('chat-thread');
+    chatOutput.innerHTML = '';
+    const activeMessages = sessions[currentSessionId].messages;
+
+    if (activeMessages.length === 0) {
+        addChatMessage('PG1.Agent', 'Hello! PG1.Agent online. How can I assist you today?', 'ai-msg', false);
+    } else {
+        activeMessages.forEach(msg => {
+            addChatMessage(msg.sender, msg.text, msg.className, false);
+        });
+    }
+}
+
+function saveSessions() {
+    localStorage.setItem('pg1_sessions', JSON.stringify(sessions));
 }
 
 // Text-to-Speech Engine
@@ -43,18 +104,18 @@ if ('speechSynthesis' in window) {
 }
 
 function speakResponse(text) {
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        if (!selectedVoice) initVoices();
-        if (selectedVoice) utterance.voice = selectedVoice;
-        
-        utterance.rate = 1.0;
-        utterance.pitch = 1.0;
-        utterance.volume = 1.0;
-        
-        window.speechSynthesis.speak(utterance);
-    }
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    if (!selectedVoice) initVoices();
+    if (selectedVoice) utterance.voice = selectedVoice;
+
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+
+    window.speechSynthesis.speak(utterance);
 }
 
 // Speech-to-Text Listening Engine
@@ -125,7 +186,7 @@ function toggleAudio() {
         if (recognition) {
             try {
                 recognition.start();
-                logSystem("Microphone active. Listening for commands...");
+                logSystem("Microphone active. Listening...");
             } catch (e) {
                 logSystem("Mic error: " + e.message);
             }
@@ -165,7 +226,7 @@ function handleKeyPress(event) {
     }
 }
 
-// Send Command & Route directly to Cloudflare Worker Endpoint
+// Resilient API Dispatch & Communication Logic
 async function sendCommand() {
     const input = document.getElementById('user-input');
     const text = input.value.trim();
@@ -182,12 +243,20 @@ async function sendCommand() {
             body: JSON.stringify({ message: text })
         });
 
-        const data = await response.json();
+        const rawData = await response.text();
+        let data;
 
-        if (data.response || data.text || data.result) {
-            const agentReply = data.response || data.text || data.result;
+        try {
+            data = JSON.parse(rawData);
+        } catch (e) {
+            data = { response: rawData };
+        }
+
+        const agentReply = data.response || data.text || data.result || data.message || (typeof data === 'string' ? data : null);
+
+        if (agentReply) {
             addChatMessage('PG1.Agent', agentReply, 'ai-msg');
-            logSystem('Received live execution response from PG1 Worker.');
+            logSystem('Live execution response received.');
 
             if (voiceActive) {
                 speakResponse(agentReply);
@@ -200,18 +269,24 @@ async function sendCommand() {
     }
 }
 
-// Utilities
-function addChatMessage(sender, text, className) {
+// UI Utilities & Thread Persistence
+function addChatMessage(sender, text, className, save = true) {
     const chatOutput = document.getElementById('chat-thread');
     const msgDiv = document.createElement('div');
     msgDiv.className = `msg ${className}`;
     msgDiv.innerHTML = `<strong>${sender}:</strong> ${text}`;
     chatOutput.appendChild(msgDiv);
     chatOutput.scrollTop = chatOutput.scrollHeight;
+
+    if (save && sessions[currentSessionId]) {
+        sessions[currentSessionId].messages.push({ sender, text, className });
+        saveSessions();
+    }
 }
 
 function logSystem(text) {
     const logOutput = document.getElementById('terminal-logs');
+    if (!logOutput) return;
     const logDiv = document.createElement('div');
     logDiv.innerText = `> ${text}`;
     logOutput.appendChild(logDiv);
