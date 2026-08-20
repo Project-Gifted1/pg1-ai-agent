@@ -148,6 +148,30 @@
         .terminal-box .err { color: var(--error-red); }
         .terminal-box .ok { color: var(--success-green); }
 
+        /* Telemetry Progress Bars */
+        .metric-row {
+            margin-bottom: 12px;
+        }
+        .metric-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background-color: #020617;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: var(--accent-blue);
+            width: 0%;
+            transition: width 0.4s ease;
+        }
+
         /* View Sections */
         .view-section {
             display: none;
@@ -193,14 +217,43 @@
         <!-- Persistent Header Across All Views -->
         <header>
             <h1><span class="status-dot"></span> Project Gifted1™</h1>
-            <span style="font-size: 0.85rem; color: var(--text-muted);" id="header-version">v2.4 Node</span>
+            <span style="font-size: 0.85rem; color: var(--text-muted);" id="header-version">v2.5 Telemetry</span>
         </header>
 
-        <!-- DASH VIEW SECTION -->
+        <!-- DASH VIEW SECTION (Includes Video Stream + Live Telemetry Metrics) -->
         <div id="view-dash" class="view-section active">
             <div class="card">
                 <div style="font-weight: 600; margin-bottom: 4px;">Sovereign Edge Active</div>
                 <div style="font-size: 0.8rem; color: var(--text-muted);">Zero-cost deployment operational via PG1 core edge synchronization. All telemetry feeds secure.</div>
+            </div>
+
+            <!-- Real-Time Telemetry Module Card -->
+            <div class="card">
+                <div style="font-weight: 600; margin-bottom: 12px; font-size: 0.95rem;">⚡ Real-Time Edge Telemetry</div>
+                
+                <div class="metric-row">
+                    <div class="metric-header">
+                        <span>CPU Utilization</span>
+                        <span id="cpu-val">24%</span>
+                    </div>
+                    <div class="progress-bar"><div class="progress-fill" id="cpu-bar" style="width: 24%;"></div></div>
+                </div>
+
+                <div class="metric-row">
+                    <div class="metric-header">
+                        <span>Memory Consumption</span>
+                        <span id="mem-val">48%</span>
+                    </div>
+                    <div class="progress-bar"><div class="progress-fill" id="mem-bar" style="width: 48%; background-color: #38bdf8;"></div></div>
+                </div>
+
+                <div class="metric-row">
+                    <div class="metric-header">
+                        <span>Network Bandwidth Throughput</span>
+                        <span id="net-val">1.4 MB/s</span>
+                    </div>
+                    <div class="progress-bar"><div class="progress-fill" id="net-bar" style="width: 35%; background-color: var(--success-green);"></div></div>
+                </div>
             </div>
 
             <div class="card">
@@ -212,12 +265,13 @@
             </div>
         </div>
 
-        <!-- TERMINAL VIEW SECTION -->
+        <!-- TERMINAL VIEW SECTION (Includes Log Stream) -->
         <div id="view-terminal" class="view-section">
             <div class="card">
-                <div style="font-weight: 600; margin-bottom: 8px;">PG1.Agent Terminal Interface</div>
+                <div style="font-weight: 600; margin-bottom: 8px;">PG1.Agent Log & Terminal Interface</div>
                 <div id="terminal" class="terminal-box">
-                    > [SYSTEM]: Secure terminal initialized. Ready for instructions.<br>
+                    > [SYSTEM]: Secure telemetry stream initialized.<br>
+                    > [AGENT]: Handshake protocol x402 active.<br>
                 </div>
                 <div class="input-group" style="margin-top: 12px;">
                     <input type="text" id="command-input" placeholder="Type command or query...">
@@ -226,17 +280,15 @@
             </div>
         </div>
 
-        <!-- NODE VIEW SECTION: Using Official Logo Asset & Telemetry Metrics -->
+        <!-- NODE VIEW SECTION -->
         <div id="view-node" class="view-section">
             <div class="card" style="text-align: center; padding: 24px 16px;">
-                <!-- Official Logo Image Asset -->
                 <div style="display: flex; justify-content: center; margin-bottom: 12px;">
                     <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1.Agent Logo" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent-blue); box-shadow: 0 0 15px rgba(14, 165, 233, 0.3);">
                 </div>
                 <div style="font-size: 1.2rem; font-weight: bold; color: var(--text-main); margin-bottom: 4px;">PG1.Agent</div>
                 <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 20px;">Autonomous Edge Infrastructure</div>
 
-                <!-- Telemetry Details Grid -->
                 <div style="border-top: 1px solid #1e293b; padding-top: 16px; text-align: left; font-size: 0.85rem; color: var(--text-muted); line-height: 1.8;">
                     <div><strong>Node ID:</strong> PG1-CORE-01</div>
                     <div><strong>Status:</strong> <span style="color: var(--success-green);">Online & Syncing</span></div>
@@ -282,6 +334,22 @@
                 terminal.scrollTop = terminal.scrollHeight;
             }
         }
+
+        // Simulated Live Telemetry Fluctuation Loop
+        setInterval(() => {
+            const cpu = Math.floor(20 + Math.random() * 25);
+            const mem = Math.floor(45 + Math.random() * 5);
+            const net = (0.8 + Math.random() * 1.5).toFixed(1);
+
+            document.getElementById('cpu-val').innerText = `${cpu}%`;
+            document.getElementById('cpu-bar').style.width = `${cpu}%`;
+
+            document.getElementById('mem-val').innerText = `${mem}%`;
+            document.getElementById('mem-bar').style.width = `${mem}%`;
+
+            document.getElementById('net-val').innerText = `${net} MB/s`;
+            document.getElementById('net-bar').style.width = `${Math.min(net * 25, 100)}%`;
+        }, 3000);
 
         function startCamera(facingMode) {
             if (currentStream) {
