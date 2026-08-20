@@ -13,11 +13,15 @@ export default {
 
     const url = new URL(request.url);
     let prompt = url.searchParams.get("prompt");
+    let systemPrompt = "You are PG1 Agent, an autonomous, factual, and direct AI assistant built for high-efficiency infrastructure and operational management. Always identify as PG1 Agent.";
 
     if (!prompt && request.method === "POST") {
       try {
         const body = await request.json();
         prompt = body.prompt;
+        if (body.systemPrompt) {
+          systemPrompt = body.systemPrompt;
+        }
       } catch (e) {}
     }
 
@@ -30,7 +34,7 @@ export default {
         messages: [
           { 
             role: 'system', 
-            content: 'You are PG1 Agent, an autonomous, factual, and direct AI assistant built for high-efficiency infrastructure and operational management. Always identify as PG1 Agent.' 
+            content: systemPrompt 
           },
           { 
             role: 'user', 
