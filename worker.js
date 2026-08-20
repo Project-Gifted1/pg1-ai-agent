@@ -57,8 +57,8 @@ Always respond strictly as PG1. Be precise, technical, factual, and direct.`;
         }
       }
 
-      // Execute Cloudflare Workers AI Model
-      const aiResponse = await env.AI.run('@cf/meta/llama-3-8b-instruct', {
+      // Execute Active Cloudflare Workers AI Model (Llama 3.1 8B Instruct)
+      const aiResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userQuery }
