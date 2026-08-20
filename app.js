@@ -129,7 +129,7 @@ function speakAgentResponse(text) {
     return;
   }
 
-  // Stop recognition temporarily so iOS audio engine releases
+  // Stop recognition temporarily so iOS audio engine releases hardware lock
   if (recognition) {
     try { recognition.stop(); } catch (e) {}
   }
