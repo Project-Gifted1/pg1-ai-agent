@@ -1,10 +1,12 @@
 // Global State
 let recognition = null;
 let isVoiceActive = false;
+let isAudioOutputEnabled = true; // Audio response toggle
 
 const terminal = document.getElementById('terminal');
 const micStatus = document.getElementById('micStatus');
 const voiceToggleBtn = document.getElementById('voiceToggleBtn');
+const speechOutputBtn = document.getElementById('speechOutputBtn');
 
 // Helper to log formatted timestamp messages to the terminal view
 function logTerminal(message) {
@@ -14,6 +16,25 @@ function logTerminal(message) {
   logEntry.textContent = `> [${now}]: ${message}`;
   terminal.appendChild(logEntry);
   terminal.scrollTop = terminal.scrollHeight;
+}
+
+// Toggle Speech Output On/Off (Text-Only Mode vs Speech Mode)
+function toggleAudioOutput() {
+  isAudioOutputEnabled = !isAudioOutputEnabled;
+  if (speechOutputBtn) {
+    if (isAudioOutputEnabled) {
+      speechOutputBtn.textContent = "Audio: ON";
+      speechOutputBtn.style.backgroundColor = "#10b981";
+      logTerminal("System Mode: Audio output ENABLED.");
+    } else {
+      speechOutputBtn.textContent = "Audio: OFF";
+      speechOutputBtn.style.backgroundColor = "#64748b";
+      logTerminal("System Mode: Text-only (Audio output DISABLED).");
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    }
+  }
 }
 
 // Initialize Speech Recognition (STT)
@@ -105,24 +126,31 @@ function handleManualSend() {
   }
 }
 
-// Command Processing Engine
+// Direct Command Processing Engine
 function processUserCommand(promptText) {
   let reply = "";
   const lower = promptText.toLowerCase();
 
-  if (lower.includes("can you hear me") || lower.includes("can you speak") || lower.includes("hello")) {
-    reply = "I can hear you clearly and my speech output is operational.";
+  if (lower.includes("how do i type") || lower.includes("how to type")) {
+    reply = "You can tap the input field at the bottom right, enter your command, and press Execute.";
+  } else if (lower.includes("can you hear me") || lower.includes("can you speak") || lower.includes("hello")) {
+    reply = "I can hear you clearly and my systems are online.";
   } else if (lower.includes("status")) {
-    reply = "All systems are currently online.";
+    reply = "All system nodes are active and operating normally.";
   } else {
-    reply = `Command received: ${promptText}. Request processed.`;
+    reply = "Standing by for your command.";
   }
 
+  // Print text directly into terminal console
   logTerminal(`Agent: ${reply}`);
-  speakAgentResponse(reply);
+  
+  // Speak response out loud only if Audio Output is ON
+  if (isAudioOutputEnabled) {
+    speakAgentResponse(reply);
+  }
 }
 
-// Enhanced Natural Voice Output (TTS)
+// Natural Male Voice Output (TTS)
 function speakAgentResponse(text) {
   if (!('speechSynthesis' in window)) {
     logTerminal("ERROR: Speech synthesis not available.");
@@ -138,17 +166,20 @@ function speakAgentResponse(text) {
 
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.rate = 0.95;
-  utterance.pitch = 1.0;
+  utterance.pitch = 0.9;
 
-  // Select the highest quality natural voice available
   const voices = window.speechSynthesis.getVoices();
-  const naturalVoice = voices.find(v => 
+
+  // Specifically select natural English male voices available on iOS / Web Speech
+  const maleVoiceNames = ['Daniel', 'Oliver', 'Arthur', 'Aaron', 'Rishi', 'Fred', 'Alex', 'Male'];
+  
+  const selectedVoice = voices.find(v => 
     v.lang.startsWith('en') && 
-    (v.name.includes('Enhanced') || v.name.includes('Premium') || v.name.includes('Samantha') || v.name.includes('Karen') || v.name.includes('Daniel'))
+    maleVoiceNames.some(name => v.name.includes(name))
   ) || voices.find(v => v.lang.startsWith('en'));
 
-  if (naturalVoice) {
-    utterance.voice = naturalVoice;
+  if (selectedVoice) {
+    utterance.voice = selectedVoice;
   }
 
   utterance.onstart = () => {
