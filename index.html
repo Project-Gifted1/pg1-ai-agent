@@ -39,7 +39,7 @@
         }
 
         h1 {
-            font-size: 1.25rem;
+            font-size: 1.15rem;
             margin: 0;
             display: flex;
             align-items: center;
@@ -52,6 +52,16 @@
             background-color: var(--success-green);
             border-radius: 50%;
             display: inline-block;
+        }
+
+        .header-badge {
+            background-color: #1e293b;
+            color: var(--accent-blue);
+            font-size: 0.75rem;
+            padding: 4px 8px;
+            border-radius: 6px;
+            border: 1px solid var(--accent-blue);
+            font-weight: 600;
         }
 
         .card {
@@ -104,7 +114,7 @@
         }
 
         .btn-small {
-            padding: 6px 12px;
+            padding: 6px 10px;
             font-size: 0.8rem;
             border-radius: 6px;
             width: auto;
@@ -134,7 +144,7 @@
             background-color: var(--accent-blue);
             color: #fff;
             border: none;
-            padding: 0 16px;
+            padding: 0 14px;
             border-radius: 8px;
             font-weight: 600;
             cursor: pointer;
@@ -161,7 +171,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             margin-bottom: 10px;
             flex-wrap: wrap;
         }
@@ -229,9 +239,10 @@
 <body>
 
     <div class="container">
+        <!-- Customized Header -->
         <header>
             <h1><span class="status-dot"></span> Project Gifted1™</h1>
-            <span style="font-size: 0.85rem; color: var(--text-muted);" id="header-version">v3.0 Advanced Edge</span>
+            <span class="header-badge" id="header-version">PG1 CORE | 1500 NODES</span>
         </header>
 
         <!-- DASH VIEW SECTION -->
@@ -281,7 +292,7 @@
         <!-- TERMINAL VIEW SECTION -->
         <div id="view-terminal" class="view-section">
             <div class="card">
-                <div style="font-weight: 600; margin-bottom: 8px;">PG1.Agent Multi-Thread Terminal</div>
+                <div style="font-weight: 600; margin-bottom: 8px;">PG1.Agent Voice & Terminal Console</div>
                 
                 <div class="toolbar">
                     <select id="thread-select" onchange="switchThread(this.value)" style="flex:1;">
@@ -290,12 +301,14 @@
                     <button class="btn btn-secondary btn-small" onclick="createNewThread()">+ New</button>
                     <button class="btn btn-secondary btn-small" onclick="copyTerminalText()">📋 Copy</button>
                     <button class="btn btn-secondary btn-small" onclick="exportLog()">💾 Export</button>
+                    <button class="btn btn-secondary btn-small" id="tts-toggle" onclick="toggleAudioOutput()">🔊 Voice: ON</button>
                 </div>
 
                 <div id="terminal" class="terminal-box"></div>
 
                 <div class="input-group" style="margin-top: 12px;">
-                    <input type="text" id="command-input" placeholder="Type command or query..." onkeydown="if(event.key==='Enter') executeCommand()">
+                    <button class="btn btn-secondary btn-small" id="mic-btn" onclick="startVoiceInput()" style="padding:0 12px; font-size:1.1rem;">🎙️</button>
+                    <input type="text" id="command-input" placeholder="Type or speak command..." onkeydown="if(event.key==='Enter') executeCommand()">
                     <button class="execute-btn" id="execute-btn" onclick="executeCommand()">Execute</button>
                 </div>
             </div>
@@ -346,19 +359,72 @@
         const commandInput = document.getElementById('command-input');
         const threadSelect = document.getElementById('thread-select');
         const systemPromptInput = document.getElementById('system-prompt');
+        const micBtn = document.getElementById('mic-btn');
+        const ttsToggle = document.getElementById('tts-toggle');
 
         let currentFacingMode = 'user';
         let currentStream = null;
         let threads = {};
         let activeThreadId = 'Thread-1';
+        let ttsEnabled = true;
 
-        // Load thread state on boot
+        // Hidden canvas helper for grabbing camera frames
+        const frameCanvas = document.createElement('canvas');
+        const frameContext = frameCanvas.getContext('2d');
+
+        // Speech Recognition Setup
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition = null;
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                micBtn.style.backgroundColor = 'var(--error-red)';
+            };
+
+            recognition.onend = () => {
+                micBtn.style.backgroundColor = '#1e293b';
+            };
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                commandInput.value = transcript;
+                executeCommand();
+            };
+        }
+
+        function startVoiceInput() {
+            if (recognition) {
+                recognition.start();
+            } else {
+                alert('Voice recognition is not supported in this browser.');
+            }
+        }
+
+        function speakText(text) {
+            if (!ttsEnabled || !('speechSynthesis' in window)) return;
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function toggleAudioOutput() {
+            ttsEnabled = !ttsEnabled;
+            ttsToggle.innerText = ttsEnabled ? '🔊 Voice: ON' : '🔇 Voice: OFF';
+            if (!ttsEnabled && 'speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
+        }
+
         function initThreads() {
             const saved = localStorage.getItem('pg1_threads');
             if (saved) {
-                try {
-                    threads = JSON.parse(saved);
-                } catch(e) { threads = {}; }
+                try { threads = JSON.parse(saved); } catch(e) { threads = {}; }
             }
             if (!Object.keys(threads).length) {
                 threads['Thread-1'] = `> [<span class="sys">${new Date().toLocaleTimeString()}</span>]: System initialized.\n> [<span class="sys">${new Date().toLocaleTimeString()}</span>]: Handshake protocol x402 active.\n`;
@@ -440,7 +506,6 @@
             a.click();
         }
 
-        // Telemetry updates
         setInterval(() => {
             const cpu = Math.floor(20 + Math.random() * 25);
             const mem = Math.floor(45 + Math.random() * 5);
@@ -487,26 +552,50 @@
             startCamera(currentFacingMode);
         });
 
+        function captureVideoFrame() {
+            if (!currentStream || videoElement.paused || videoElement.ended) {
+                return null;
+            }
+            frameCanvas.width = videoElement.videoWidth || 640;
+            frameCanvas.height = videoElement.videoHeight || 480;
+            frameContext.drawImage(videoElement, 0, 0, frameCanvas.width, frameCanvas.height);
+            return frameCanvas.toDataURL('image/jpeg', 0.7);
+        }
+
         async function executeCommand() {
             const cmd = commandInput.value.trim();
             if (!cmd) return;
 
-            logToTerminal(`User: ${cmd}`);
+            const imageFrame = captureVideoFrame();
+
+            if (imageFrame) {
+                logToTerminal(`User (with visual frame): ${cmd}`);
+            } else {
+                logToTerminal(`User: ${cmd}`);
+            }
+            
             commandInput.value = '';
 
             try {
+                const payload = { 
+                    prompt: cmd,
+                    systemPrompt: systemPromptInput.value.trim()
+                };
+
+                if (imageFrame) {
+                    payload.image = imageFrame;
+                }
+
                 const response = await fetch(WORKER_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        prompt: cmd,
-                        systemPrompt: systemPromptInput.value.trim()
-                    })
+                    body: JSON.stringify(payload)
                 });
 
                 const data = await response.json();
                 if (data.reply) {
                     logToTerminal(`PG1 Agent: ${data.reply}`, "ok");
+                    speakText(data.reply);
                 } else if (data.error) {
                     logToTerminal(`Error: ${data.error}`, "err");
                 } else {
