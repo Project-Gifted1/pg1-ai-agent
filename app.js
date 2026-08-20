@@ -103,6 +103,17 @@ async function sendCommand() {
   const text = input.value.trim();
   if (!text) return;
 
+  if (text === '/reset') {
+    localStorage.removeItem('pg1_sessions');
+    sessions = { 'session_default': { name: 'Session 1', messages: [] } };
+    currentSessionId = 'session_default';
+    updateSessionDropdown();
+    loadCurrentSession();
+    input.value = '';
+    logSystem('Cache and history wiped successfully.');
+    return;
+  }
+
   addChatMessage('User', text, 'user-msg');
   logSystem(`Sending payload: "${text}"`);
   input.value = '';
