@@ -15,24 +15,23 @@ export default {
     }
 
     try {
-      const { type, prompt } = await request.json();
-      let endpoint = 'https://api.openai.com/v1/chat/completions';
-      let payload = {
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }]
-      };
+      const { prompt } = await request.json();
 
-      const apiResponse = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${env.API_KEY}`
-        },
-        body: JSON.stringify(payload)
+      // Call Cloudflare Workers AI for free using Llama 3.1 or a comparable open model
+      const aiResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct-fp8-fast', {
+        messages: [
+          { 
+            role: 'system', 
+            content: 'You are PG1 Agent, an autonomous, factual, and direct AI assistant built for high-efficiency infrastructure and operational management. Always identify as PG1 Agent.' 
+          },
+          { 
+            role: 'user', 
+            content: prompt 
+          }
+        ]
       });
 
-      const data = await apiResponse.json();
-      const reply = data.choices?.[0]?.message?.content || "No response generated.";
+      const reply = aiResponse.response || "No response generated.";
 
       return new Response(JSON.stringify({ reply }), {
         headers: {
@@ -41,7 +40,7 @@ export default {
         },
       });
     } catch (err) {
-      return new Response(JSON.stringify({ reply: "Proxy execution error: " + err.message }), {
+      return new Response(JSON.stringify({ reply: "Worker execution error: " + err.message }), {
         status: 500,
         headers: {
           'Content-Type': 'application/json',
