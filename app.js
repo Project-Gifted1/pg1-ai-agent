@@ -1,11 +1,12 @@
+Set-Content -Path "app.js" -Value @'
 let recognition = null;
 let isVoiceActive = false;
 let isAudioOutputEnabled = true;
 let currentStream = null;
 let facingMode = "environment";
 
-// Set to your Cloudflare Worker URL
-const WORKER_PROXY_URL = "https://your-worker-subdomain.workers.dev";
+// MUST BE YOUR EXACT CLOUDFLARE WORKER URL
+const WORKER_PROXY_URL = "https://pg1-agent-worker.your-subdomain.workers.dev";
 
 const terminal = document.getElementById('terminal');
 const voiceToggleBtn = document.getElementById('voiceToggleBtn');
@@ -16,10 +17,11 @@ function switchTab(tabName) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
 
-  document.getElementById(`tab${tabName}`).classList.add('active');
-  document.getElementById(`nav${tabName}`).classList.add('active');
+  const tabEl = document.getElementById(`tab${tabName}`);
+  const navEl = document.getElementById(`nav${tabName}`);
+  if (tabEl) tabEl.classList.add('active');
+  if (navEl) navEl.classList.add('active');
 
-  // Attach camera stream to current active video tag
   attachStreamToVideo();
 }
 
@@ -44,7 +46,7 @@ async function initCamera() {
 
   try {
     currentStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
+      video: { facingMode: facingMode, width: { ideal: 480 }, height: { ideal: 360 } },
       audio: false
     });
     attachStreamToVideo();
@@ -70,11 +72,12 @@ function captureFrame() {
   const activeVideo = document.getElementById('webcamTerm') || document.getElementById('webcamDash');
   if (!activeVideo || !currentStream || activeVideo.readyState !== 4) return null;
   
-  frameCanvas.width = activeVideo.videoWidth;
-  frameCanvas.height = activeVideo.videoHeight;
+  if (!frameCanvas) return null;
+  frameCanvas.width = 320;
+  frameCanvas.height = 240;
   const ctx = frameCanvas.getContext('2d');
-  ctx.drawImage(activeVideo, 0, 0, frameCanvas.width, frameCanvas.height);
-  return frameCanvas.toDataURL('image/jpeg', 0.7);
+  ctx.drawImage(activeVideo, 0, 0, 320, 240);
+  return frameCanvas.toDataURL('image/jpeg', 0.4);
 }
 
 function toggleAudioOutput() {
@@ -165,6 +168,10 @@ async function processUserCommand(promptText) {
       body: JSON.stringify({ prompt: promptText, image: imageFrame })
     });
 
+    if (!response.ok) {
+      throw new Error(`Worker status ${response.status}`);
+    }
+
     const data = await response.json();
     const reply = data.reply || "Request processed.";
 
@@ -199,3 +206,4 @@ function speakAgentResponse(text) {
 window.addEventListener('DOMContentLoaded', () => {
   initCamera();
 });
+'@ -Encoding UTF8
