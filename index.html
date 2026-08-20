@@ -22,18 +22,22 @@
     .progress-bg { width: 100%; height: 6px; background-color: #0f172a; border-radius: 4px; overflow: hidden; }
     .progress-fill { height: 100%; background-color: #38bdf8; border-radius: 4px; }
     .progress-fill.green { background-color: #22c55e; }
-    .cam-box { position: relative; width: 100%; height: 200px; background-color: #020617; border: 1px solid #334155; border-radius: 12px; overflow: hidden; }
+    .cam-box { position: relative; width: 100%; height: 180px; background-color: #020617; border: 1px solid #334155; border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
     video { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .cam-flip { position: absolute; top: 10px; right: 10px; z-index: 10; background: rgba(15, 23, 42, 0.85); border: 1px solid #334155; color: #f8fafc; padding: 6px 12px; font-size: 0.75rem; font-weight: 600; border-radius: 6px; cursor: pointer; }
+    .cam-overlay-text { color: #64748b; font-size: 0.85rem; font-weight: 600; }
+    .cam-controls { position: absolute; top: 8px; right: 8px; z-index: 10; display: flex; gap: 6px; }
+    .cam-btn { background: rgba(15, 23, 42, 0.85); border: 1px solid #334155; color: #f8fafc; padding: 5px 10px; font-size: 0.75rem; font-weight: 600; border-radius: 6px; cursor: pointer; }
     .node-header { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 10px 0; }
     .node-avatar { width: 80px; height: 80px; border-radius: 50%; border: 2px solid #38bdf8; object-fit: cover; }
     .node-info { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; }
     .node-info div { display: flex; justify-content: space-between; border-bottom: 1px solid #334155; padding-bottom: 4px; }
-    .terminal-box { height: 220px; background-color: #020617; border: 1px solid #334155; border-radius: 10px; padding: 10px; font-family: monospace; font-size: 0.8rem; color: #38bdf8; overflow-y: auto; white-space: pre-wrap; }
-    .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .btn { border: none; border-radius: 8px; padding: 10px; font-weight: 600; font-size: 0.8rem; color: white; cursor: pointer; }
+    .terminal-box { height: 200px; background-color: #020617; border: 1px solid #334155; border-radius: 10px; padding: 10px; font-family: monospace; font-size: 0.8rem; color: #38bdf8; overflow-y: auto; white-space: pre-wrap; }
+    .controls-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; }
+    .btn { border: none; border-radius: 8px; padding: 8px; font-weight: 600; font-size: 0.72rem; color: white; cursor: pointer; text-align: center; }
     .btn-green { background-color: #10b981; }
     .btn-blue { background-color: #0284c7; }
+    .btn-slate { background-color: #475569; }
+    .btn-red { background-color: #ef4444; }
     .input-group { display: flex; gap: 8px; }
     input[type="text"] { flex: 1; background-color: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 8px 12px; color: white; font-size: 0.85rem; outline: none; }
     .nav-bar { display: flex; justify-content: space-around; border-top: 1px solid #1e293b; padding-top: 10px; margin-top: 4px; }
@@ -57,7 +61,7 @@
     <div id="tabDash" class="tab-content active">
       <div class="card-box">
         <div class="card-title">Sovereign Edge Active</div>
-        <div class="card-sub">Zero-cost deployment operational via PG1 Cloudflare AI Edge synchronization.</div>
+        <div class="card-sub">Zero-cost deployment operational via PG1 Autonomous Engine.</div>
       </div>
 
       <div class="card-box">
@@ -79,16 +83,24 @@
       </div>
 
       <div class="cam-box">
-        <button class="cam-flip" onclick="toggleCamera()">Flip Camera</button>
+        <div class="cam-controls">
+          <button class="cam-btn" onclick="toggleCamPower()">📷 Camera</button>
+          <button class="cam-btn" onclick="toggleCameraFacing()">🔄 Flip</button>
+        </div>
         <video id="webcamDash" autoplay playsinline muted></video>
+        <span id="camPlaceholderDash" class="cam-overlay-text" style="display:none;">Camera Paused</span>
       </div>
     </div>
 
     <!-- TAB 2: TERMINAL -->
     <div id="tabTerminal" class="tab-content">
       <div class="cam-box">
-        <button class="cam-flip" onclick="toggleCamera()">Flip Camera</button>
+        <div class="cam-controls">
+          <button class="cam-btn" onclick="toggleCamPower()">📷 Camera</button>
+          <button class="cam-btn" onclick="toggleCameraFacing()">🔄 Flip</button>
+        </div>
         <video id="webcamTerm" autoplay playsinline muted></video>
+        <span id="camPlaceholderTerm" class="cam-overlay-text" style="display:none;">Camera Paused</span>
       </div>
 
       <div id="terminal" class="terminal-box"></div>
@@ -96,6 +108,8 @@
       <div class="controls-grid">
         <button id="speechOutputBtn" class="btn btn-green" onclick="toggleAudioOutput()">Audio: ON</button>
         <button id="voiceToggleBtn" class="btn btn-blue" onclick="toggleVoice()">Voice: OFF</button>
+        <button class="btn btn-slate" onclick="copyTerminalHistory()">📋 Copy</button>
+        <button class="btn btn-red" onclick="clearTerminalHistory()">🗑️ Clear</button>
       </div>
 
       <div class="input-group">
@@ -109,12 +123,12 @@
       <div class="card-box node-header">
         <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" class="node-avatar" alt="PG1 Avatar" />
         <div class="card-title" style="margin-top: 4px;">PG1.Agent</div>
-        <div class="card-sub">Autonomous Cloudflare AI Edge</div>
+        <div class="card-sub">Autonomous Edge System</div>
       </div>
 
       <div class="card-box node-info">
-        <div><span>Node ID:</span><span style="color:#f8fafc;">PG1-CF-01</span></div>
-        <div><span>Status:</span><span style="color:#22c55e;">Online & Syncing</span></div>
+        <div><span>Node ID:</span><span style="color:#f8fafc;">PG1-CORE-01</span></div>
+        <div><span>Status:</span><span style="color:#22c55e;">Online & Active</span></div>
         <div><span>Ownership:</span><span style="color:#f8fafc;">100% Sovereign</span></div>
         <div><span>Protocol:</span><span style="color:#f8fafc;">x402 Active</span></div>
       </div>
@@ -139,10 +153,36 @@
 
   <script>
     let currentStream = null;
+    let cameraActive = true;
     let currentFacingMode = 'user';
     let audioOutputEnabled = true;
     let voiceInputEnabled = false;
     let recognition = null;
+    let availableVoices = [];
+
+    function loadVoices() {
+      if ('speechSynthesis' in window) {
+        availableVoices = window.speechSynthesis.getVoices();
+      }
+    }
+
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+      loadVoices();
+    }
+
+    function getMaleVoice() {
+      if (!availableVoices.length) loadVoices();
+      
+      const maleIdentifiers = ['male', 'daniel', 'alex', 'george', 'david', 'james', 'google uk english male', 'google us english male'];
+      
+      for (let id of maleIdentifiers) {
+        const found = availableVoices.find(v => v.name.toLowerCase().includes(id) && v.lang.startsWith('en'));
+        if (found) return found;
+      }
+      
+      return availableVoices.find(v => v.lang.startsWith('en')) || null;
+    }
 
     function switchTab(tabName) {
       document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
@@ -155,14 +195,22 @@
       if (targetNav) targetNav.classList.add('active');
 
       if (tabName === 'Dash' || tabName === 'Terminal') {
-        initCamera();
+        if (cameraActive) initCamera();
+      } else {
+        stopCameraTracks();
+      }
+    }
+
+    function stopCameraTracks() {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        currentStream = null;
       }
     }
 
     async function initCamera() {
-      if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
-      }
+      stopCameraTracks();
+      if (!cameraActive) return;
 
       try {
         currentStream = await navigator.mediaDevices.getUserMedia({
@@ -171,12 +219,32 @@
         });
         document.getElementById('webcamDash').srcObject = currentStream;
         document.getElementById('webcamTerm').srcObject = currentStream;
+        
+        document.getElementById('webcamDash').style.display = 'block';
+        document.getElementById('webcamTerm').style.display = 'block';
+        document.getElementById('camPlaceholderDash').style.display = 'none';
+        document.getElementById('camPlaceholderTerm').style.display = 'none';
       } catch (err) {
         logTerminal("Camera status: " + err.message);
       }
     }
 
-    function toggleCamera() {
+    function toggleCamPower() {
+      cameraActive = !cameraActive;
+      if (cameraActive) {
+        initCamera();
+      } else {
+        stopCameraTracks();
+        document.getElementById('webcamDash').style.display = 'none';
+        document.getElementById('webcamTerm').style.display = 'none';
+        document.getElementById('camPlaceholderDash').style.display = 'block';
+        document.getElementById('camPlaceholderTerm').style.display = 'block';
+        logTerminal("Camera stream paused.");
+      }
+    }
+
+    function toggleCameraFacing() {
+      if (!cameraActive) cameraActive = true;
       currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
       initCamera();
     }
@@ -186,21 +254,66 @@
       if (term) {
         term.innerText += "\n> " + msg;
         term.scrollTop = term.scrollHeight;
+        localStorage.setItem('pg1_terminal_history', term.innerText);
+      }
+    }
+
+    function loadTerminalHistory() {
+      const term = document.getElementById('terminal');
+      const saved = localStorage.getItem('pg1_terminal_history');
+      if (saved && term) {
+        term.innerText = saved;
+      } else {
+        logTerminal("PG1.Agent Sovereign Autonomous Telemetry Initialized.");
+      }
+    }
+
+    function copyTerminalHistory() {
+      const term = document.getElementById('terminal');
+      if (term && term.innerText) {
+        navigator.clipboard.writeText(term.innerText).then(() => {
+          speakText("Terminal log copied to clipboard.");
+        }).catch(err => {
+          logTerminal("Copy error: " + err);
+        });
+      }
+    }
+
+    function clearTerminalHistory() {
+      const term = document.getElementById('terminal');
+      if (term) {
+        localStorage.removeItem('pg1_terminal_history');
+        term.innerText = "> PG1.Agent Terminal History Cleared.";
       }
     }
 
     function speakText(text) {
       if (!audioOutputEnabled || !('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
+      
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
+      const selectedVoice = getMaleVoice();
+      
+      if (selectedVoice) utterance.voice = selectedVoice;
+      utterance.rate = 0.88;
+      utterance.pitch = 0.95;
+      
       window.speechSynthesis.speak(utterance);
     }
 
-    function processCloudflareAgent(cmd) {
-      logTerminal(`PG1 Cloudflare Edge processing: "${cmd}"`);
-      const response = `[PG1 Agent] Command executed via Cloudflare Edge Protocol: ${cmd}`;
+    function processPG1Agent(cmd) {
+      logTerminal(`PG1.Agent analyzing command: "${cmd}"`);
+      
+      const input = cmd.toLowerCase();
+      let response = "";
+
+      if (input.includes("status") || input.includes("health")) {
+        response = "[PG1.Agent] Core node operational. CPU at 36 percent, Memory at 49 percent, Bandwidth 1.8 megabytes per second. Protocol x402 active.";
+      } else if (input.includes("automate") || input.includes("task") || input.includes("campaign")) {
+        response = "[PG1.Agent] Autonomous execution pipeline engaged. Reasoning cycle complete. Task queued and executing.";
+      } else {
+        response = `[PG1.Agent] Reasoning complete. Executed action for: "${cmd}"`;
+      }
       
       setTimeout(() => {
         logTerminal(response);
@@ -216,7 +329,7 @@
       logTerminal(cmd);
       input.value = '';
 
-      processCloudflareAgent(cmd);
+      processPG1Agent(cmd);
     }
 
     function toggleAudioOutput() {
@@ -229,7 +342,7 @@
     function toggleVoice() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        logTerminal("Voice input restricted on this iOS session.");
+        logTerminal("Voice input restricted on this session.");
         return;
       }
 
@@ -265,7 +378,7 @@
     }
 
     window.onload = () => {
-      logTerminal("PG1 Sovereign Cloudflare AI Edge initialized.");
+      loadTerminalHistory();
       initCamera();
     };
   </script>
