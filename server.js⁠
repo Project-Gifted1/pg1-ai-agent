@@ -1,0 +1,20 @@
+const express = require('express');
+const cors = require('cors');
+const app = express();
+
+// Enable CORS for GitHub Pages origin
+app.use(cors({
+  origin: ['https://project-gifted1.github.io', 'http://localhost:3000']
+}));
+
+app.use(express.json());
+
+app.post('/api/chat', async (req, res) => {
+  const { prompt } = req.body;
+  if (!prompt) return res.status(400).json({ error: "No prompt provided" });
+
+  // Return clean response
+  res.json({ reply: `Agent processed prompt: "${prompt}"` });
+});
+
+app.listen(3000, () => console.log('Backend listening on port 3000'));
