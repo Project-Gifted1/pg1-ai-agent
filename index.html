@@ -30,6 +30,7 @@
     <video id="webcam-preview" autoplay playsinline muted></video>
   </div>
 
+  <!-- Dash Tab -->
   <div id="view-dash" class="tab-content hidden">
     <div class="card">
       <h3>Sovereign Edge Active</h3>
@@ -67,6 +68,7 @@
     </div>
   </div>
 
+  <!-- Terminal Tab -->
   <div id="view-terminal" class="tab-content">
     <div class="card console-card">
       <h3>System Console Logs</h3>
@@ -91,22 +93,34 @@
     </div>
   </div>
 
+  <!-- Node Tab -->
   <div id="view-node" class="tab-content hidden">
-    <div class="card">
-      <h3>Node Infrastructure Status</h3>
-      <p class="subtitle">Edge execution status across sovereign cluster nodes.</p>
-      <div class="node-status-list">
-        <div class="metric-row">
-          <span>Primary Node (Cloudflare Edge)</span>
-          <span class="status-active">ONLINE</span>
+    <div class="card node-profile-card">
+      <div class="node-avatar-wrapper">
+        <img src="logo.png" alt="PG1 Logo" class="node-avatar-img" onError="this.style.display='none'; document.getElementById('avatar-fallback').style.display='flex';">
+        <div id="avatar-fallback" class="avatar-circle-fallback" style="display:none;">PG1</div>
+      </div>
+      <h2 class="node-title">PG1.Agent</h2>
+      <p class="node-subtitle">Autonomous Edge Infrastructure</p>
+      
+      <div class="node-divider"></div>
+
+      <div class="node-info-list">
+        <div class="node-info-row">
+          <span class="node-label">Node ID:</span>
+          <span class="node-val">PG1-CORE-01</span>
         </div>
-        <div class="metric-row">
-          <span>Threat Feeds Engine (OTX)</span>
-          <span class="status-active">INGESTING</span>
+        <div class="node-info-row">
+          <span class="node-label">Status:</span>
+          <span class="node-val status-green">Online & Syncing</span>
         </div>
-        <div class="metric-row">
-          <span>Web Search Module</span>
-          <span class="status-active">READY</span>
+        <div class="node-info-row">
+          <span class="node-label">Ownership:</span>
+          <span class="node-val">100% Sovereign</span>
+        </div>
+        <div class="node-info-row">
+          <span class="node-label">Protocol:</span>
+          <span class="node-val">x402 Active</span>
         </div>
       </div>
     </div>
