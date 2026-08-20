@@ -1,14 +1,20 @@
-// Global State
+// Global State Configuration
 let recognition = null;
 let isVoiceActive = false;
-let isAudioOutputEnabled = true; // Audio response toggle
+let isAudioOutputEnabled = true;
+let currentStream = null;
+let facingMode = "environment";
+
+// Set this to your live Cloudflare Worker URL
+const WORKER_PROXY_URL = "https://your-worker-subdomain.workers.dev";
 
 const terminal = document.getElementById('terminal');
 const micStatus = document.getElementById('micStatus');
 const voiceToggleBtn = document.getElementById('voiceToggleBtn');
 const speechOutputBtn = document.getElementById('speechOutputBtn');
+const videoElement = document.getElementById('webcam');
+const frameCanvas = document.getElementById('frameCanvas');
 
-// Helper to log formatted timestamp messages to the terminal view
 function logTerminal(message) {
   if (!terminal) return;
   const now = new Date().toTimeString().split(' ')[0];
@@ -18,7 +24,45 @@ function logTerminal(message) {
   terminal.scrollTop = terminal.scrollHeight;
 }
 
-// Toggle Speech Output On/Off (Text-Only Mode vs Speech Mode)
+async function initCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    logTerminal("Camera Error: Media Devices API not available.");
+    return;
+  }
+
+  if (currentStream) {
+    currentStream.getTracks().forEach(track => track.stop());
+  }
+
+  try {
+    const constraints = {
+      video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
+      audio: false
+    };
+    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+    videoElement.srcObject = currentStream;
+    logTerminal(`Camera initialized (${facingMode} feed active).`);
+  } catch (err) {
+    logTerminal(`Camera Access Error: ${err.message}`);
+  }
+}
+
+function toggleCamera() {
+  facingMode = (facingMode === "user") ? "environment" : "user";
+  initCamera();
+}
+
+function captureFrame() {
+  if (!videoElement || !currentStream || videoElement.readyState !== 4) {
+    return null;
+  }
+  frameCanvas.width = videoElement.videoWidth;
+  frameCanvas.height = videoElement.videoHeight;
+  const ctx = frameCanvas.getContext('2d');
+  ctx.drawImage(videoElement, 0, 0, frameCanvas.width, frameCanvas.height);
+  return frameCanvas.toDataURL('image/jpeg', 0.7);
+}
+
 function toggleAudioOutput() {
   isAudioOutputEnabled = !isAudioOutputEnabled;
   if (speechOutputBtn) {
@@ -37,7 +81,6 @@ function toggleAudioOutput() {
   }
 }
 
-// Initialize Speech Recognition (STT)
 function initSpeechRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
@@ -85,7 +128,6 @@ function initSpeechRecognition() {
   return rec;
 }
 
-// Toggle Voice Listening Mode
 function toggleVoice() {
   if (!recognition) {
     recognition = initSpeechRecognition();
@@ -114,7 +156,6 @@ function toggleVoice() {
   }
 }
 
-// Process Typed Text Input
 function handleManualSend() {
   const input = document.getElementById('cmdInput');
   if (!input) return;
@@ -126,38 +167,45 @@ function handleManualSend() {
   }
 }
 
-// Direct Command Processing Engine
-function processUserCommand(promptText) {
-  let reply = "";
-  const lower = promptText.toLowerCase();
+async function processUserCommand(promptText) {
+  const imageFrame = captureFrame();
 
-  if (lower.includes("how do i type") || lower.includes("how to type")) {
-    reply = "You can tap the input field at the bottom right, enter your command, and press Execute.";
-  } else if (lower.includes("can you hear me") || lower.includes("can you speak") || lower.includes("hello")) {
-    reply = "I can hear you clearly and my systems are online.";
-  } else if (lower.includes("status")) {
-    reply = "All system nodes are active and operating normally.";
-  } else {
-    reply = "Standing by for your command.";
-  }
+  try {
+    const payload = {
+      prompt: promptText,
+      image: imageFrame
+    };
 
-  // Print text directly into terminal console
-  logTerminal(`Agent: ${reply}`);
-  
-  // Speak response out loud only if Audio Output is ON
-  if (isAudioOutputEnabled) {
-    speakAgentResponse(reply);
+    const response = await fetch(WORKER_PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
+
+    const data = await response.json();
+    const reply = data.reply || "Request processed.";
+
+    logTerminal(`Agent: ${reply}`);
+
+    if (isAudioOutputEnabled) {
+      speakAgentResponse(reply);
+    }
+  } catch (error) {
+    logTerminal(`Agent Error: ${error.message}`);
+    const fallbackReply = "Unable to process request via Cloudflare AI worker.";
+    logTerminal(`Agent: ${fallbackReply}`);
+    if (isAudioOutputEnabled) speakAgentResponse(fallbackReply);
   }
 }
 
-// Natural Male Voice Output (TTS)
 function speakAgentResponse(text) {
   if (!('speechSynthesis' in window)) {
     logTerminal("ERROR: Speech synthesis not available.");
     return;
   }
 
-  // Release microphone audio stream temporarily for iOS hardware playback
   if (recognition) {
     try { recognition.stop(); } catch (e) {}
   }
@@ -169,8 +217,6 @@ function speakAgentResponse(text) {
   utterance.pitch = 0.9;
 
   const voices = window.speechSynthesis.getVoices();
-
-  // Specifically select natural English male voices available on iOS / Web Speech
   const maleVoiceNames = ['Daniel', 'Oliver', 'Arthur', 'Aaron', 'Rishi', 'Fred', 'Alex', 'Male'];
   
   const selectedVoice = voices.find(v => 
@@ -206,9 +252,11 @@ function speakAgentResponse(text) {
   window.speechSynthesis.speak(utterance);
 }
 
-// Pre-load iOS voices on initial interaction
-if ('speechSynthesis' in window) {
-  window.speechSynthesis.onvoiceschanged = () => {
-    window.speechSynthesis.getVoices();
-  };
-}
+window.addEventListener('DOMContentLoaded', () => {
+  initCamera();
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = () => {
+      window.speechSynthesis.getVoices();
+    };
+  }
+});
