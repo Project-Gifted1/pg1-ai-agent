@@ -5,6 +5,9 @@ const terminal = document.getElementById('terminal');
 const micStatus = document.getElementById('micStatus');
 const voiceToggleBtn = document.getElementById('voiceToggleBtn');
 
+// SET YOUR BACKEND URL HERE (e.g., your VPS/DigitalOcean backend server)
+const BACKEND_API_URL = "https://your-backend-domain.com/api/chat";
+
 // Helper to log formatted timestamp messages
 function logTerminal(message) {
   const now = new Date().toTimeString().split(' ')[0];
@@ -23,12 +26,12 @@ function initSpeechRecognition() {
   }
 
   const rec = new SpeechRecognition();
-  rec.continuous = true;
+  rec.continuous = false; // Set to false for iOS WebKit stability
   rec.interimResults = false;
   rec.lang = 'en-US';
 
   rec.onstart = () => {
-    micStatus.classList.add('recording');
+    if (micStatus) micStatus.classList.add('recording');
     logTerminal("Live audio stream initialized (Microphone).");
   };
 
@@ -41,15 +44,24 @@ function initSpeechRecognition() {
   };
 
   rec.onerror = (event) => {
-    logTerminal(`STT Error: ${event.error}`);
+    // Ignore routine iOS aborts during restart cycle
+    if (event.error !== 'aborted') {
+      logTerminal(`STT Error: ${event.error}`);
+    }
   };
 
   rec.onend = () => {
-    // Keep session active if toggle is ON (handles iOS WebKit background drops)
+    // Re-arm recognition loop on iOS if Voice is still toggled ON
     if (isVoiceActive) {
-      rec.start();
+      setTimeout(() => {
+        try {
+          rec.start();
+        } catch (e) {
+          // Sink active start exceptions
+        }
+      }, 300);
     } else {
-      micStatus.classList.remove('recording');
+      if (micStatus) micStatus.classList.remove('recording');
       logTerminal("Audio stream disconnected.");
     }
   };
@@ -69,11 +81,15 @@ function toggleVoice() {
 
   if (isVoiceActive) {
     voiceToggleBtn.textContent = "Voice: ON";
-    voiceToggleBtn.classList.add('active');
-    recognition.start();
+    voiceToggleBtn.style.backgroundColor = "#dc2626";
+    try {
+      recognition.start();
+    } catch (e) {
+      // Handles cases where engine was already active
+    }
   } else {
     voiceToggleBtn.textContent = "Voice: OFF";
-    voiceToggleBtn.classList.remove('active');
+    voiceToggleBtn.style.backgroundColor = "#0284c7";
     recognition.stop();
   }
 }
@@ -92,12 +108,20 @@ function handleManualSend() {
 // Process Command & Trigger Clean Text-to-Speech Output
 async function processUserCommand(promptText) {
   try {
-    // Send clean payload to backend endpoint
-    const response = await fetch('/api/chat', {
+    // Determine target URL: use explicit backend URL if hosted on GitHub Pages
+    const endpoint = window.location.hostname.includes('github.io') 
+      ? BACKEND_API_URL 
+      : '/api/chat';
+
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: promptText })
     });
+
+    if (!response.ok) {
+      throw new Error(`HTTP Error status: ${response.status}`);
+    }
 
     const data = await response.json();
     const reply = data.reply || "Command received.";
@@ -113,7 +137,7 @@ async function processUserCommand(promptText) {
 // Synthesize Text-to-Speech Output
 function speakAgentResponse(text) {
   if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel(); // Clear previous queue
+    window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
