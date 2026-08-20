@@ -1,6 +1,7 @@
 // Persistent Global Audio State
 let recognition = null;
 let isVoiceActive = false;
+let audioPlayer = new Audio(); // HTML5 Audio Player
 
 const terminal = document.getElementById('terminal');
 const micStatus = document.getElementById('micStatus');
@@ -16,14 +17,10 @@ function logTerminal(message) {
   terminal.scrollTop = terminal.scrollHeight;
 }
 
-// Unlock iOS Audio Session on Button Tap
+// Unlock iOS Audio Channel on User Interaction
 function unlockAudioSession() {
-  if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel();
-    const silentUtterance = new SpeechSynthesisUtterance('');
-    silentUtterance.volume = 0;
-    window.speechSynthesis.speak(silentUtterance);
-  }
+  audioPlayer.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+  audioPlayer.play().catch(() => {});
 }
 
 // Initialize Speech Recognition Engine
@@ -87,14 +84,18 @@ function toggleVoice() {
   isVoiceActive = !isVoiceActive;
 
   if (isVoiceActive) {
-    voiceToggleBtn.textContent = "Voice: ON";
-    voiceToggleBtn.style.backgroundColor = "#dc2626";
+    if (voiceToggleBtn) {
+      voiceToggleBtn.textContent = "Voice: ON";
+      voiceToggleBtn.style.backgroundColor = "#dc2626";
+    }
     try {
       recognition.start();
     } catch (e) {}
   } else {
-    voiceToggleBtn.textContent = "Voice: OFF";
-    voiceToggleBtn.style.backgroundColor = "#0284c7";
+    if (voiceToggleBtn) {
+      voiceToggleBtn.textContent = "Voice: OFF";
+      voiceToggleBtn.style.backgroundColor = "#0284c7";
+    }
     try {
       recognition.stop();
     } catch (e) {}
@@ -113,13 +114,13 @@ function handleManualSend() {
   }
 }
 
-// Process Command
+// Process Command Response Logic
 function processUserCommand(promptText) {
   let reply = "";
   const lower = promptText.toLowerCase();
 
   if (lower.includes("can you hear me") || lower.includes("can you speak") || lower.includes("hello") || lower.includes("i can't hear you")) {
-    reply = "I can hear you clearly and my voice output is working.";
+    reply = "I can hear you clearly and speech output is working properly.";
   } else if (lower.includes("status")) {
     reply = "All system nodes are active.";
   } else {
@@ -130,49 +131,38 @@ function processUserCommand(promptText) {
   speakAgentResponse(reply);
 }
 
-// Text-to-Speech Output
+// Play Audio Stream via Direct MP3 Feed (Reliable for Mobile Safari)
 function speakAgentResponse(text) {
-  if (!('speechSynthesis' in window)) {
-    logTerminal("ERROR: Speech Synthesis not supported.");
-    return;
-  }
-
+  // Stop recognition so iOS unblocks the audio channel
   if (recognition) {
-    try {
-      recognition.stop();
-    } catch (e) {}
+    try { recognition.stop(); } catch (e) {}
   }
 
-  window.speechSynthesis.cancel();
+  logTerminal("Playing audio output...");
 
-  setTimeout(() => {
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'en-US';
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
+  const encodedText = encodeURIComponent(text);
+  const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=en&client=tw-ob`;
 
-    utterance.onstart = () => {
-      logTerminal("Playing audio output...");
-    };
+  audioPlayer.src = ttsUrl;
+  
+  audioPlayer.onended = () => {
+    if (isVoiceActive && recognition) {
+      setTimeout(() => {
+        try {
+          if (isVoiceActive) recognition.start();
+        } catch (e) {}
+      }, 300);
+    }
+  };
 
-    utterance.onend = () => {
-      if (isVoiceActive && recognition) {
-        setTimeout(() => {
-          try {
-            if (isVoiceActive) recognition.start();
-          } catch (e) {}
-        }, 300);
-      }
-    };
+  audioPlayer.onerror = () => {
+    logTerminal("Audio playback failed. Retrying...");
+    if (isVoiceActive && recognition) {
+      try { recognition.start(); } catch (e) {}
+    }
+  };
 
-    utterance.onerror = (e) => {
-      logTerminal(`TTS Error: ${e.error}`);
-      if (isVoiceActive && recognition) {
-        try { recognition.start(); } catch (err) {}
-      }
-    };
-
-    window.speechSynthesis.speak(utterance);
-  }, 200);
+  audioPlayer.play().catch((err) => {
+    logTerminal(`Audio blocked by browser permissions: ${err.message}`);
+  });
 }
