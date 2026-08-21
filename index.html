@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ v5.1 Sovereign Engine</title>
+  <title>Project Gifted1™ v5.2 Sovereign Engine</title>
   <style>
     :root {
       --bg-light: #ffffff;
@@ -518,13 +518,14 @@
       bottom: 0;
       margin-top: auto;
       z-index: 10;
+      align-items: center;
     }
 
     .btn-media {
       background: #ffffff;
       border: 1px solid var(--card-border);
       color: var(--sovereign-blue);
-      padding: 6px 10px;
+      padding: 6px 8px;
       font-size: 10px;
       border-radius: 4px;
       display: flex;
@@ -541,6 +542,7 @@
       padding: 0 10px;
       border-radius: 4px;
       font-size: 11px;
+      height: 32px;
     }
 
     .btn-send {
@@ -552,6 +554,7 @@
       font-weight: bold;
       border-radius: 4px;
       cursor: pointer;
+      height: 32px;
     }
 
     .logs-modal {
@@ -634,7 +637,7 @@
       margin-top: 12px;
     }
 
-    /* Video Stream Overlay Modal */
+    /* Video Stream Overlay Modal with Flip Controls */
     .video-modal {
       display: none;
       position: fixed;
@@ -663,6 +666,11 @@
       height: 300px;
       object-fit: cover;
       display: block;
+    }
+    .video-modal-controls {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
     }
 
     .bottom-navbar {
@@ -704,7 +712,7 @@
       <div class="status-dot"></div>
       Project Gifted1™
     </div>
-    <div class="engine-version">v5.1 Sovereign Engine</div>
+    <div class="engine-version">v5.2 Sovereign Engine</div>
   </div>
 
   <!-- Top Controls -->
@@ -845,10 +853,16 @@
       </div>
 
       <div class="terminal-input-bar">
-        <button class="btn-media" onclick="triggerAudioRecordToggle()" id="btn-mic-icon">
+        <button class="btn-media" onclick="triggerAudioRecordToggle()" id="btn-mic-icon" title="Record Audio Clip">
           <span>🎙️</span>
-          <span id="mic-label">Record</span>
+          <span id="mic-label" style="font-size: 8px;">Record</span>
         </button>
+        <button class="btn-media" onclick="document.getElementById('file-upload-input').click()" title="Attach File, Image or Video">
+          <span>📎</span>
+          <span style="font-size: 8px;">Attach</span>
+        </button>
+        <input type="file" id="file-upload-input" style="display: none;" onchange="handleFileAttachment(this)" />
+        
         <input type="text" id="cmd-input" class="text-input" placeholder="Enter command..." onkeypress="handleKeyPress(event)" />
         <button class="btn-send" onclick="sendUserMessage()">Send</button>
       </div>
@@ -933,12 +947,15 @@
 
   </div>
 
-  <!-- VIDEO MODAL STREAM PREVIEW -->
+  <!-- VIDEO MODAL STREAM PREVIEW WITH FLIP TOGGLE -->
   <div class="video-modal" id="video-modal">
     <div class="video-wrapper">
       <video id="camera-stream" autoplay playsinline muted></video>
     </div>
-    <button class="btn-sm btn-green" style="margin-top: 15px; width: 150px; padding: 8px;" onclick="toggleControl('video')">Close Camera</button>
+    <div class="video-modal-controls">
+      <button class="btn-sm btn-green" style="padding: 8px 14px;" onclick="flipCamera()">🔄 Flip Camera</button>
+      <button class="btn-sm" style="padding: 8px 14px; background: #fff; color: var(--danger-red);" onclick="toggleControl('video')">✕ Close Camera</button>
+    </div>
   </div>
 
   <!-- LOGS MODAL -->
@@ -977,6 +994,7 @@
     let mediaRecorder = null;
     let audioChunks = [];
     let cachedVoice = null;
+    let useFrontCamera = true;
 
     window.addEventListener('DOMContentLoaded', () => {
       const savedKey = localStorage.getItem('pg1_api_key');
@@ -986,7 +1004,6 @@
       }
       setInterval(updateLiveTelemetry, 3000);
 
-      // Preload the clearest human-like voice available in the device runtime
       if ('speechSynthesis' in window) {
         loadOptimalVoice();
         window.speechSynthesis.onvoiceschanged = loadOptimalVoice;
@@ -997,7 +1014,6 @@
       const voices = window.speechSynthesis.getVoices();
       if (!voices || voices.length === 0) return;
 
-      // Prioritize high-definition neural/online or natural English voices
       cachedVoice = voices.find(v => 
         (v.name.includes('Natural') || v.name.includes('Neural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Siri')) && v.lang.startsWith('en')
       ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
@@ -1070,29 +1086,57 @@
 
       if (type === 'video') {
         const modal = document.getElementById('video-modal');
-        const videoElement = document.getElementById('camera-stream');
         if (states.video) {
-          try {
-            activeMediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
-            videoElement.srcObject = activeMediaStream;
-            modal.classList.add('open');
-          } catch(err) {
-            alert("Camera access denied or unavailable: " + err.message);
-            states.video = false;
-            btn.classList.remove('active');
-            label.innerText = "Video: OFF";
-          }
+          await startCameraStream();
+          modal.classList.add('open');
         } else {
           modal.classList.remove('open');
-          if (activeMediaStream) {
-            activeMediaStream.getTracks().forEach(track => track.stop());
-            activeMediaStream = null;
-          }
+          stopCameraStream();
         }
       }
     }
 
-    // Real audio recording handler
+    async function startCameraStream() {
+      const videoElement = document.getElementById('camera-stream');
+      if (activeMediaStream) {
+        activeMediaStream.getTracks().forEach(track => track.stop());
+      }
+      try {
+        const constraints = {
+          video: { facingMode: useFrontCamera ? 'user' : { exact: 'environment' } },
+          audio: false
+        };
+        activeMediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        videoElement.srcObject = activeMediaStream;
+      } catch (err) {
+        // Fallback if exact environment camera constraint fails
+        try {
+          activeMediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          videoElement.srcObject = activeMediaStream;
+        } catch (e) {
+          alert("Camera access denied or unavailable: " + e.message);
+          states.video = false;
+          document.getElementById('btn-video').classList.remove('active');
+          document.getElementById('label-video').innerText = "Video: OFF";
+          document.getElementById('video-modal').classList.remove('open');
+        }
+      }
+    }
+
+    function stopCameraStream() {
+      if (activeMediaStream) {
+        activeMediaStream.getTracks().forEach(track => track.stop());
+        activeMediaStream = null;
+      }
+    }
+
+    async function flipCamera() {
+      useFrontCamera = !useFrontCamera;
+      if (states.video) {
+        await startCameraStream();
+      }
+    }
+
     async function triggerAudioRecordToggle() {
       const micLabel = document.getElementById('mic-label');
       const micBtn = document.getElementById('btn-mic-icon');
@@ -1141,20 +1185,46 @@
       }
     }
 
-    // High-clarity, human-like speech synthesis output helper
+    function handleFileAttachment(inputElement) {
+      const file = inputElement.files[0];
+      if (!file) return;
+
+      const chatArea = document.getElementById('terminal-chat-area');
+      const fileBubble = document.createElement('div');
+      fileBubble.className = 'chat-bubble user';
+
+      let previewHTML = `<div class="bubble-text">Attached File: <b>${escapeHtml(file.name)}</b> (${Math.round(file.size/1024)} KB)</div>`;
+      
+      if (file.type.startsWith('image/')) {
+        const imageUrl = URL.createObjectURL(file);
+        previewHTML += `<img src="${imageUrl}" style="max-width:100%; max-height:180px; border-radius:4px; margin-top:6px; display:block;" />`;
+      } else if (file.type.startsWith('video/')) {
+        const videoUrl = URL.createObjectURL(file);
+        previewHTML += `<video controls src="${videoUrl}" style="max-width:100%; max-height:180px; border-radius:4px; margin-top:6px; display:block;"></video>`;
+      }
+
+      fileBubble.innerHTML = `
+        ${previewHTML}
+        <div class="bubble-actions">
+          <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
+        </div>
+      `;
+      chatArea.appendChild(fileBubble);
+      chatArea.scrollTop = chatArea.scrollHeight;
+      inputElement.value = '';
+    }
+
     function speakText(text) {
       if (!states.voice || !('speechSynthesis' in window)) return;
       
       window.speechSynthesis.cancel();
       if (!cachedVoice) loadOptimalVoice();
 
-      // Clean text of technical markup or code blocks for smooth speech flow
       const cleanSpeechText = text.replace(/[`*#_]/g, '').replace(/https?:\/\/\S+/g, 'link');
 
       const utterance = new SpeechSynthesisUtterance(cleanSpeechText);
       if (cachedVoice) utterance.voice = cachedVoice;
       
-      // Natural conversational pacing parameters
       utterance.rate = 0.96; 
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
