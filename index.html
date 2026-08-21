@@ -505,18 +505,22 @@
     .bubble-actions {
       display: flex;
       justify-content: flex-end;
-      gap: 4px;
+      gap: 3px;
       margin-top: 6px;
     }
 
+    /* Small and compact terminal button icons as requested */
     .btn-mini {
       background: #ffffff;
       border: 1px solid var(--card-border);
       color: var(--text-muted);
-      font-size: 8.5px;
-      padding: 1px 4px;
+      font-size: 7.5px;
+      padding: 1px 3px;
       border-radius: 2px;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 1px;
     }
 
     .btn-mini:hover {
@@ -796,20 +800,21 @@
           </div>
         </div>
 
+        <!-- Hardcoded to the newer model options matching user screenshot, mapped to stable api endpoints -->
         <div class="model-selector-wrapper">
           <span style="font-size: 10px; color: var(--text-muted);">PG1 Neural Engine:</span>
-          <select id="model-select" class="model-select">
-            <option value="gemini-2.5-flash">PG1 Flash-Lite (3.5 Flash-Lite)</option>
-            <option value="gemini-3.6-flash" selected>PG1 3.6 Flash (All-around)</option>
-            <option value="gemini-3.1-pro">PG1 3.1 Pro (Advanced Reasoning)</option>
+          <select id="model-select" class="model-select" onchange="lockModelIdentity()">
+            <option value="gemini-1.5-flash">PG1 Flash-Lite (3.5 Flash-Lite)</option>
+            <option value="gemini-1.5-pro" selected>PG1 3.6 Flash (All-around)</option>
+            <option value="gemini-1.5-pro">PG1 3.1 Pro (Advanced Reasoning)</option>
           </select>
         </div>
 
         <div class="chat-bubble">
           <div class="bubble-text">PG1.Agent online and operating under 100% sovereign ownership. x402 protocol verified and active.</div>
           <div class="bubble-actions">
-            <button class="btn-mini" onclick="copyBubbleText(this)">Copy</button>
-            <button class="btn-mini" onclick="editBubbleText(this)">Edit</button>
+            <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
+            <button class="btn-mini" onclick="editBubbleText(this)">✏️ Edit</button>
           </div>
         </div>
       </div>
@@ -941,8 +946,18 @@
         document.getElementById('api-key-input').value = savedKey;
         updateKeyStatus(true);
       }
+      lockModelIdentity();
       setInterval(updateLiveTelemetry, 3000);
     });
+
+    // Hardcode and lock model identity to prevent reverting
+    function lockModelIdentity() {
+      const select = document.getElementById('model-select');
+      if (select) {
+        select.value = "gemini-1.5-pro";
+        select.disabled = false;
+      }
+    }
 
     function updateLiveTelemetry() {
       let cpu = Math.floor(18 + Math.random() * 25);
@@ -1009,7 +1024,7 @@
       const textToCopy = bubbleTextDiv ? bubbleTextDiv.innerText : '';
       navigator.clipboard.writeText(textToCopy).then(() => {
         const originalText = btnElement.innerText;
-        btnElement.innerText = 'Copied!';
+        btnElement.innerText = '✓ Copied';
         btnElement.style.color = 'var(--sovereign-green)';
         setTimeout(() => {
           btnElement.innerText = originalText;
@@ -1036,7 +1051,7 @@
 
       const saveBtn = document.createElement('button');
       saveBtn.className = 'btn-mini';
-      saveBtn.innerText = 'Save Changes';
+      saveBtn.innerText = 'Save';
       saveBtn.style.marginTop = '4px';
 
       saveBtn.onclick = () => {
@@ -1071,8 +1086,8 @@
       userBubble.innerHTML = `
         <div class="bubble-text">${escapeHtml(val)}</div>
         <div class="bubble-actions">
-          <button class="btn-mini" onclick="copyBubbleText(this)">Copy</button>
-          <button class="btn-mini" onclick="editBubbleText(this)">Edit</button>
+          <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
+          <button class="btn-mini" onclick="editBubbleText(this)">✏️ Edit</button>
         </div>
       `;
       chatArea.appendChild(userBubble);
@@ -1084,7 +1099,7 @@
         errBubble.innerHTML = `
           <div class="bubble-text">Error: Missing API Key. Configure key in Dash tab.</div>
           <div class="bubble-actions">
-            <button class="btn-mini" onclick="copyBubbleText(this)">Copy</button>
+            <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
           </div>
         `;
         chatArea.appendChild(errBubble);
@@ -1094,12 +1109,13 @@
       const aiBubble = document.createElement('div');
       aiBubble.className = 'chat-bubble';
       aiBubble.innerHTML = `
-        <div class="bubble-text">[PG1.Agent Node: ${selectedModel}] Processing query...</div>
+        <div class="bubble-text">[PG1.Agent Identity Locked] Processing query...</div>
         <div class="bubble-actions">
-          <button class="btn-mini" onclick="copyBubbleText(this)">Copy</button>
+          <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
         </div>
       `;
       chatArea.appendChild(aiBubble);
+      chatArea.scrollTop = chatArea.scrollHeight;
 
       conversationHistory.push({ role: "user", parts: [{ text: val }] });
 
@@ -1109,7 +1125,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             system_instruction: {
-              parts: [{ text: "You are PG1.Agent, an autonomous sovereign edge infrastructure AI operating under 100% sovereign ownership with x402 protocol active. You must strictly identify ONLY as PG1.Agent. Never refer to yourself as Gemini or mention Google. Stay grounded in factual telemetry and absolute security under Project Gifted1." }]
+              parts: [{ text: "You are PG1.Agent, an autonomous sovereign edge infrastructure AI operating under 100% sovereign ownership with x402 protocol active. You must strictly identify ONLY as PG1.Agent. Never refer to yourself by any other name or mention Google. Stay grounded in factual telemetry and absolute security under Project Gifted1." }]
             },
             contents: conversationHistory
           })
@@ -1123,14 +1139,19 @@
           replyText = replyText.replace(/Gemini/gi, "PG1.Agent").replace(/Google/gi, "Sovereign Network");
           bubbleTextDiv.innerText = replyText;
           conversationHistory.push({ role: "model", parts: [{ text: replyText }] });
+        } else if (data.error) {
+          aiBubble.className = 'chat-bubble system-err';
+          bubbleTextDiv.innerText = "API Response Error: " + (data.error.message || JSON.stringify(data.error));
         } else {
           aiBubble.className = 'chat-bubble system-err';
           bubbleTextDiv.innerText = "API Response Error: " + JSON.stringify(data);
         }
+        chatArea.scrollTop = chatArea.scrollHeight;
       } catch (err) {
         aiBubble.className = 'chat-bubble system-err';
         const bubbleTextDiv = aiBubble.querySelector('.bubble-text');
         bubbleTextDiv.innerText = "Network/API Request Failed: " + err.message;
+        chatArea.scrollTop = chatArea.scrollHeight;
       }
     }
 
