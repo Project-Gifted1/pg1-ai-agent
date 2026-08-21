@@ -27,7 +27,8 @@
       background-color: var(--bg-dark);
       color: #ffffff;
       padding: 12px;
-      padding-bottom: 75px;
+      padding-bottom: 70px;
+      overflow-x: hidden;
     }
 
     /* Brand Header */
@@ -60,7 +61,7 @@
       color: var(--text-muted);
     }
 
-    /* Global Persistent Control Bar */
+    /* Persistent Top Control Bar */
     .global-control-bar {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -85,13 +86,24 @@
       color: var(--danger-red);
     }
 
-    /* View Switcher */
-    .tab-view {
+    /* Sliding Viewport Container */
+    .swipe-container {
+      display: flex;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      scroll-behavior: smooth;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+
+    .swipe-container::-webkit-scrollbar {
       display: none;
     }
 
-    .tab-view.active {
-      display: block;
+    .tab-view {
+      flex: 0 0 100%;
+      width: 100%;
+      scroll-snap-align: start;
     }
 
     /* Panels & Cards */
@@ -120,7 +132,7 @@
       line-height: 1.4;
     }
 
-    /* Key Bar Visual & Save Key */
+    /* Animated Key Telemetry Moving Bars */
     .key-input-row {
       display: flex;
       gap: 8px;
@@ -129,20 +141,41 @@
 
     .key-bar-visual {
       flex: 1;
-      height: 28px;
+      height: 32px;
       background: #05080e;
       border: 1px solid var(--card-border);
       border-radius: 4px;
       display: flex;
       align-items: center;
-      padding: 0 8px;
+      padding: 0 10px;
+      gap: 4px;
       overflow: hidden;
     }
 
-    .key-dots {
-      color: var(--neon-green);
-      letter-spacing: 2px;
-      font-size: 10px;
+    .animated-dot {
+      width: 6px;
+      height: 6px;
+      background-color: var(--neon-green);
+      border-radius: 50%;
+      box-shadow: 0 0 4px var(--neon-green);
+      animation: pulse-dots 1.5s infinite ease-in-out;
+    }
+
+    /* Staggered pulse effect for moving telemetry animation */
+    .animated-dot:nth-child(1) { animation-delay: 0.1s; }
+    .animated-dot:nth-child(2) { animation-delay: 0.2s; }
+    .animated-dot:nth-child(3) { animation-delay: 0.3s; }
+    .animated-dot:nth-child(4) { animation-delay: 0.4s; }
+    .animated-dot:nth-child(5) { animation-delay: 0.5s; }
+    .animated-dot:nth-child(6) { animation-delay: 0.6s; }
+    .animated-dot:nth-child(7) { animation-delay: 0.7s; }
+    .animated-dot:nth-child(8) { animation-delay: 0.8s; }
+    .animated-dot:nth-child(9) { animation-delay: 0.9s; }
+    .animated-dot:nth-child(10) { animation-delay: 1.0s; }
+
+    @keyframes pulse-dots {
+      0%, 100% { opacity: 0.3; transform: scale(0.8); }
+      50% { opacity: 1; transform: scale(1.2); }
     }
 
     .btn-save {
@@ -290,7 +323,7 @@
       border-radius: 4px;
     }
 
-    /* Node Badge View */
+    /* Node Badge View & Official Logo */
     .node-badge-container {
       text-align: center;
       padding: 20px 0;
@@ -319,6 +352,7 @@
       display: flex;
       justify-content: space-around;
       align-items: center;
+      z-index: 100;
     }
 
     .nav-btn {
@@ -350,7 +384,7 @@
     <div class="engine-version">v5.0 Sovereign Engine</div>
   </div>
 
-  <!-- Persistent Top Control Bar (Visible across all tabs) -->
+  <!-- Persistent Top Control Bar -->
   <div class="global-control-bar">
     <button id="btn-video" class="btn-ctrl" onclick="toggleControl('video')">Video: OFF</button>
     <button id="btn-audio" class="btn-ctrl" onclick="toggleControl('audio')">Audio: OFF</button>
@@ -358,156 +392,170 @@
     <button id="btn-delete" class="btn-ctrl btn-danger" onclick="clearThread()">Delete Thread</button>
   </div>
 
-  <!-- 1. DASH VIEW -->
-  <div id="view-dash" class="tab-view active">
-    <!-- Sovereign Key Relay Panel -->
-    <div class="panel-card">
-      <div class="card-header">⚡ x402 Sovereign Key Relay</div>
-      <div class="card-subtext">Enter your key below. Stored strictly in browser memory for direct client-side requests.</div>
-      
-      <div class="key-input-row">
-        <div class="key-bar-visual">
-          <span class="key-dots">••••••••••••••••••••••••••••••••••••</span>
+  <!-- SWIPEABLE SLIDING CONTAINER -->
+  <div class="swipe-container" id="swipe-container" onscroll="syncNavbarOnScroll()">
+
+    <!-- 1. DASH VIEW -->
+    <div id="view-dash" class="tab-view">
+      <!-- Sovereign Key Relay Panel -->
+      <div class="panel-card">
+        <div class="card-header">⚡ x402 Sovereign Key Relay</div>
+        <div class="card-subtext">Enter your key below. Stored strictly in browser memory for direct client-side requests.</div>
+        
+        <div class="key-input-row">
+          <div class="key-bar-visual">
+            <div class="animated-dot"></div>
+            <div class="animated-dot"></div>
+            <div class="animated-dot"></div>
+            <div class="animated-dot"></div>
+            <div class="animated-dot"></div>
+            <div class="animated-dot"></div>
+            <div class="animated-dot"></div>
+            <div class="animated-dot"></div>
+            <div class="animated-dot"></div>
+            <div class="animated-dot"></div>
+          </div>
+          <button class="btn-save">Save Key</button>
         </div>
-        <button class="btn-save">Save Key</button>
+
+        <div class="key-status-row">
+          <span style="color: var(--neon-green); font-size: 10px;">KEY_STATUS: STORED_LOCAL</span>
+          <span class="status-badge">● CONNECTED</span>
+        </div>
       </div>
 
-      <div class="key-status-row">
-        <span style="color: var(--neon-green); font-size: 10px;">KEY_STATUS: STORED_LOCAL</span>
-        <span class="status-badge">● CONNECTED</span>
-      </div>
-    </div>
+      <!-- Sovereign Edge Active Panel -->
+      <div class="panel-card">
+        <div class="card-header">Sovereign Edge Active</div>
+        <div class="card-subtext">Zero-cost deployment operational via PG1 core edge synchronization. Live telemetry feeds integrated.</div>
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-size: 11px; color: #fff; display: flex; align-items: center; gap: 4px;">
+            📡 Live OTX Telemetry Feed
+          </span>
+          <button class="btn-sm">🔄 Sync Feed</button>
+        </div>
 
-    <!-- Sovereign Edge Active Panel -->
-    <div class="panel-card">
-      <div class="card-header">Sovereign Edge Active</div>
-      <div class="card-subtext">Zero-cost deployment operational via PG1 core edge synchronization. Live telemetry feeds integrated.</div>
-      
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-        <span style="font-size: 11px; color: #fff; display: flex; align-items: center; gap: 4px;">
-          📡 Live OTX Telemetry Feed
-        </span>
-        <button class="btn-sm">🔄 Sync Feed</button>
-      </div>
-
-      <div class="metric-row">
-        <span>OTX Threat Pulses Synced</span>
-        <span class="metric-value">1,420 Active Pulses</span>
-      </div>
-      <div class="metric-row">
-        <span>Active Indicators (IOC)</span>
-        <span class="metric-value">18,940 IOC Feeds</span>
-      </div>
-      <div class="metric-row">
-        <span>Edge Telemetry Throughput</span>
-        <span class="metric-value">2.4 MB/s</span>
-      </div>
-    </div>
-
-    <!-- Operational Services Panel -->
-    <div class="panel-card">
-      <div class="card-header">⚙️ Operational Services</div>
-      <div class="metric-row">
-        <span>PG1 Sovereign Edge Mesh</span>
-        <span style="color: var(--neon-green); font-weight: bold;">ACTIVE</span>
-      </div>
-      <div class="metric-row">
-        <span>Core Intelligence Relay</span>
-        <span style="color: var(--neon-green); font-weight: bold;">CONNECTED</span>
-      </div>
-      <div class="metric-row">
-        <span>Encrypted Data Vault</span>
-        <span style="color: var(--neon-green); font-weight: bold;">SYNCED</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- 2. TERMINAL VIEW -->
-  <div id="view-terminal" class="tab-view">
-    <div style="color: var(--neon-green); font-size: 11px; margin-bottom: 12px;">
-      > PG1 System Initialized. Ready for multimodal commands.
-    </div>
-
-    <div class="terminal-header">
-      <span class="terminal-title">Terminal Thread</span>
-      <div class="terminal-actions">
-        <button class="btn-sm">Copy All</button>
-        <button class="btn-sm btn-green">Export PDF</button>
-      </div>
-    </div>
-
-    <div class="chat-bubble">
-      PG1 Core connected. Multimodal vision and speech online.
-      <button class="btn-copy-inline">Copy</button>
-    </div>
-
-    <div class="chat-bubble user">
-      Hey
-      <button class="btn-copy-inline">Copy</button>
-    </div>
-
-    <div class="chat-bubble">
-      PG1 Sovereign AI Agent online. Protocol connection active via x402 network.<br><br>
-      Awaiting campaign execution parameters or query input. State your objective.
-      <button class="btn-copy-inline">Copy</button>
-    </div>
-
-    <div class="terminal-input-bar">
-      <button class="btn-media">
-        <span>📷</span>
-        <span>Media</span>
-      </button>
-      <input type="text" class="text-input" placeholder="Enter command or media p">
-      <button class="btn-send">Send</button>
-    </div>
-  </div>
-
-  <!-- 3. NODE VIEW -->
-  <div id="view-node" class="tab-view">
-    <div class="panel-card node-badge-container">
-      
-      <!-- Official Logo Image -->
-      <img 
-        src="08207b14-b824-41ac-ac43-97d078840546.jpeg" 
-        alt="Project Gifted1™ Operational Intelligence Logo" 
-        class="official-node-logo"
-      >
-
-      <h3 style="color: #ffffff; font-size: 16px; margin-top: 10px; margin-bottom: 2px;">PG1.Agent™</h3>
-      <div class="card-subtext">Autonomous Edge Infrastructure</div>
-
-      <div style="text-align: left; margin-top: 15px;">
         <div class="metric-row">
-          <span>Node ID:</span>
-          <span class="metric-value">PG1-CORE-01</span>
+          <span>OTX Threat Pulses Synced</span>
+          <span class="metric-value">1,420 Active Pulses</span>
         </div>
         <div class="metric-row">
-          <span>Status:</span>
-          <span style="color: var(--neon-green); font-weight: bold;">Online & Syncing</span>
+          <span>Active Indicators (IOC)</span>
+          <span class="metric-value">18,940 IOC Feeds</span>
         </div>
         <div class="metric-row">
-          <span>Ownership:</span>
-          <span class="metric-value">100% Sovereign</span>
+          <span>Edge Telemetry Throughput</span>
+          <span class="metric-value">2.4 MB/s</span>
+        </div>
+      </div>
+
+      <!-- Operational Services Panel -->
+      <div class="panel-card">
+        <div class="card-header">⚙️ Operational Services</div>
+        <div class="metric-row">
+          <span>PG1 Sovereign Edge Mesh</span>
+          <span style="color: var(--neon-green); font-weight: bold;">ACTIVE</span>
         </div>
         <div class="metric-row">
-          <span>Protocol:</span>
-          <span class="metric-value">x402 Active</span>
+          <span>Core Intelligence Relay</span>
+          <span style="color: var(--neon-green); font-weight: bold;">CONNECTED</span>
+        </div>
+        <div class="metric-row">
+          <span>Encrypted Data Vault</span>
+          <span style="color: var(--neon-green); font-weight: bold;">SYNCED</span>
         </div>
       </div>
     </div>
+
+    <!-- 2. TERMINAL VIEW -->
+    <div id="view-terminal" class="tab-view">
+      <div style="color: var(--neon-green); font-size: 11px; margin-bottom: 12px;">
+        > PG1 System Initialized. Ready for multimodal commands.
+      </div>
+
+      <div class="terminal-header">
+        <span class="terminal-title">Terminal Thread</span>
+        <div class="terminal-actions">
+          <button class="btn-sm">Copy All</button>
+          <button class="btn-sm btn-green">Export PDF</button>
+        </div>
+      </div>
+
+      <div class="chat-bubble">
+        PG1 Core connected. Multimodal vision and speech online.
+        <button class="btn-copy-inline">Copy</button>
+      </div>
+
+      <div class="chat-bubble user">
+        Hey
+        <button class="btn-copy-inline">Copy</button>
+      </div>
+
+      <div class="chat-bubble">
+        PG1 Sovereign AI Agent online. Protocol connection active via x402 network.<br><br>
+        Awaiting campaign execution parameters or query input. State your objective.
+        <button class="btn-copy-inline">Copy</button>
+      </div>
+
+      <div class="terminal-input-bar">
+        <button class="btn-media">
+          <span>📷</span>
+          <span>Media</span>
+        </button>
+        <input type="text" class="text-input" placeholder="Enter command or media p">
+        <button class="btn-send">Send</button>
+      </div>
+    </div>
+
+    <!-- 3. NODE VIEW -->
+    <div id="view-node" class="tab-view">
+      <div class="panel-card node-badge-container">
+        
+        <!-- Official Logo Image -->
+        <img 
+          src="08207b14-b824-41ac-ac43-97d078840546.jpeg" 
+          alt="Project Gifted1™ Operational Intelligence Logo" 
+          class="official-node-logo"
+        >
+
+        <h3 style="color: #ffffff; font-size: 16px; margin-top: 10px; margin-bottom: 2px;">PG1.Agent™</h3>
+        <div class="card-subtext">Autonomous Edge Infrastructure</div>
+
+        <div style="text-align: left; margin-top: 15px;">
+          <div class="metric-row">
+            <span>Node ID:</span>
+            <span class="metric-value">PG1-CORE-01</span>
+          </div>
+          <div class="metric-row">
+            <span>Status:</span>
+            <span style="color: var(--neon-green); font-weight: bold;">Online & Syncing</span>
+          </div>
+          <div class="metric-row">
+            <span>Ownership:</span>
+            <span class="metric-value">100% Sovereign</span>
+          </div>
+          <div class="metric-row">
+            <span>Protocol:</span>
+            <span class="metric-value">x402 Active</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- BOTTOM NAVBAR -->
   <div class="bottom-navbar">
-    <button class="nav-btn active" onclick="switchTab('dash', this)">
+    <button id="nav-dash" class="nav-btn active" onclick="scrollToTab('dash')">
       <span>📊</span>
       <span>Dash</span>
     </button>
-    <button class="nav-btn" onclick="switchTab('terminal', this)">
+    <button id="nav-terminal" class="nav-btn" onclick="scrollToTab('terminal')">
       <span>⚡</span>
       <span>Terminal</span>
     </button>
-    <button class="nav-btn" onclick="switchTab('node', this)">
+    <button id="nav-node" class="nav-btn" onclick="scrollToTab('node')">
       <span>👤</span>
       <span>Node</span>
     </button>
@@ -515,16 +563,21 @@
 
   <!-- SCRIPT LOGIC -->
   <script>
-    function switchTab(tabId, element) {
-      document.querySelectorAll('.tab-view').forEach(view => {
-        view.classList.remove('active');
-      });
-      document.querySelectorAll('.nav-btn').forEach(btn => {
-        btn.classList.remove('active');
-      });
+    const container = document.getElementById('swipe-container');
 
-      document.getElementById('view-' + tabId).classList.add('active');
-      element.classList.add('active');
+    function scrollToTab(tabId) {
+      const targetView = document.getElementById('view-' + tabId);
+      targetView.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+    }
+
+    function syncNavbarOnScroll() {
+      const width = container.offsetWidth;
+      const index = Math.round(container.scrollLeft / width);
+      const tabs = ['dash', 'terminal', 'node'];
+      
+      document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+      const activeNav = document.getElementById('nav-' + tabs[index]);
+      if (activeNav) activeNav.classList.add('active');
     }
 
     const states = { video: false, audio: false, voice: false };
