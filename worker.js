@@ -1,6 +1,5 @@
 export default {
   async fetch(request, env) {
-    // Handle CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, {
         headers: {
@@ -39,6 +38,13 @@ export default {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          system_instruction: {
+            parts: [
+              {
+                text: "You are PG1 Agent, the official autonomous AI operating system for Project Gifted1. You do not identify as a generic Google AI model. Maintain a professional, grounded, sovereign AI identity centered around campaign management, node orchestration, and Project Gifted1."
+              }
+            ]
+          },
           contents: [
             {
               parts: [{ text: message }]
