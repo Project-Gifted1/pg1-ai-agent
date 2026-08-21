@@ -795,7 +795,8 @@
           <span class="terminal-title">Terminal Thread</span>
           <div class="terminal-actions">
             <button class="btn-sm" onclick="saveCurrentThreadToLogs()">Save Log</button>
-            <button class="btn-sm btn-green">Export PDF</button>
+            <button class="btn-sm" onclick="exportLogFile('txt')">Export TXT</button>
+            <button class="btn-sm btn-green" onclick="exportLogFile('pdf')">Export PDF</button>
           </div>
         </div>
 
@@ -1102,6 +1103,7 @@
         <div class="bubble-text">Processing query...</div>
         <div class="bubble-actions">
           <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
+          <button class="btn-mini" onclick="editBubbleText(this)">✏️ Edit</button>
         </div>
       `;
       chatArea.appendChild(aiBubble);
@@ -1109,7 +1111,6 @@
 
       conversationHistory.push({ role: "user", parts: [{ text: val }] });
 
-      // Automated fallback array to prevent errors if models change or get deprecated
       const modelFallbackSequence = [selectedModel, "gemini-3.6-flash", "gemini-3.5-flash-lite"];
       let success = false;
       let data = null;
@@ -1214,17 +1215,34 @@
     }
 
     function saveCurrentThreadToLogs() {
-      const content = document.getElementById('terminal-chat-area').innerText;
-      if (!content || content.length < 20) return;
+      if (conversationHistory.length === 0) return;
 
+      const formattedText = conversationHistory.map(entry => `${entry.role.toUpperCase()}: ${entry.parts[0].text}`).join('\n\n');
       const logs = getStoredLogs();
       logs.unshift({
         id: 'LOG-' + Date.now().toString().slice(-5),
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2' }),
-        text: content
+        text: formattedText
       });
       localStorage.setItem('pg1_conversation_logs', JSON.stringify(logs));
       openLogsModal();
+    }
+
+    function exportLogFile(type) {
+      if (conversationHistory.length === 0) {
+        alert("No active conversation to export.");
+        return;
+      }
+      const textContent = conversationHistory.map(entry => `${entry.role.toUpperCase()}: ${entry.parts[0].text}`).join('\n\n------------------------------------\n\n');
+      const blob = new Blob([textContent], { type: type === 'pdf' ? 'application/pdf' : 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `PG1_Export_${Date.now()}.${type === 'pdf' ? 'pdf' : 'txt'}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     }
 
     function openLogsModal() {
@@ -1236,7 +1254,7 @@
         container.innerHTML = logs.map(l => `
           <div class="log-item">
             <div class="log-item-meta"><span>${l.id}</span><span>${l.timestamp}</span></div>
-            <div class="log-item-preview">${l.text}</div>
+            <div class="log-item-preview">${escapeHtml(l.text)}</div>
           </div>
         `).join('');
       }
