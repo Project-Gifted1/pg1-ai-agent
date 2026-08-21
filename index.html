@@ -592,10 +592,10 @@
       
       <div class="panel-card">
         <div class="card-header">⚡ x402 Sovereign Key Relay</div>
-        <div class="card-subtext">Enter your Gemini API key to activate live generative AI interactions.</div>
+        <div class="card-subtext">Inject your Master Key to ignite live generative AI interactions.</div>
         
         <div class="key-input-row">
-          <input type="password" id="api-key-input" class="key-input-field" placeholder="Paste Gemini API Key (AIzaSy...)" />
+          <input type="password" id="api-key-input" class="key-input-field" placeholder="Paste Master Key (AIzaSy...)" />
           <button class="btn-save" onclick="saveApiKey()">Save Key</button>
         </div>
 
@@ -847,7 +847,7 @@
       if (!apiKey) {
         const errBubble = document.createElement('div');
         errBubble.className = 'chat-bubble system-err';
-        errBubble.innerText = "Error: Missing Gemini API Key. Configure key in Dash tab.";
+        errBubble.innerText = "Error: Missing API Key. Configure key in Dash tab.";
         chatArea.appendChild(errBubble);
         return;
       }
