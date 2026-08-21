@@ -60,8 +60,8 @@
       color: var(--text-muted);
     }
 
-    /* Top Control Bar (Inside Dash View Only) */
-    .dash-control-bar {
+    /* Global Persistent Control Bar */
+    .global-control-bar {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 6px;
@@ -290,7 +290,7 @@
       border-radius: 4px;
     }
 
-    /* Node Badge View & Official Logo */
+    /* Node Badge View */
     .node-badge-container {
       text-align: center;
       padding: 20px 0;
@@ -350,17 +350,16 @@
     <div class="engine-version">v5.0 Sovereign Engine</div>
   </div>
 
+  <!-- Persistent Top Control Bar (Visible across all tabs) -->
+  <div class="global-control-bar">
+    <button id="btn-video" class="btn-ctrl" onclick="toggleControl('video')">Video: OFF</button>
+    <button id="btn-audio" class="btn-ctrl" onclick="toggleControl('audio')">Audio: OFF</button>
+    <button id="btn-voice" class="btn-ctrl" onclick="toggleControl('voice')">Voice: OFF</button>
+    <button id="btn-delete" class="btn-ctrl btn-danger" onclick="clearThread()">Delete Thread</button>
+  </div>
+
   <!-- 1. DASH VIEW -->
   <div id="view-dash" class="tab-view active">
-    
-    <!-- Action Bar inside Dash Only -->
-    <div class="dash-control-bar">
-      <button id="btn-video" class="btn-ctrl" onclick="toggleControl('video')">Video: OFF</button>
-      <button id="btn-audio" class="btn-ctrl" onclick="toggleControl('audio')">Audio: OFF</button>
-      <button id="btn-voice" class="btn-ctrl" onclick="toggleControl('voice')">Voice: OFF</button>
-      <button id="btn-delete" class="btn-ctrl btn-danger" onclick="clearThread()">Delete Thread</button>
-    </div>
-
     <!-- Sovereign Key Relay Panel -->
     <div class="panel-card">
       <div class="card-header">⚡ x402 Sovereign Key Relay</div>
