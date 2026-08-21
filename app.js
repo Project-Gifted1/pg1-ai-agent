@@ -1,7 +1,8 @@
 const WORKER_URL = 'https://pg1-agent-worker.gnfcw9w5rk.workers.dev';
+const STORAGE_KEY = 'pg1_sessions_v3'; // Bumped storage version to purge legacy error logs
 
 let currentSessionId = 'session_default';
-let sessions = JSON.parse(localStorage.getItem('pg1_sessions')) || {
+let sessions = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
   'session_default': { name: 'Session 1', messages: [] }
 };
 
@@ -17,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initSpeechRecognition();
 });
 
+// Tab Navigation
 function showTab(tabName, el) {
   document.querySelectorAll('.tab-view').forEach(view => view.classList.remove('active-view'));
   document.querySelectorAll('.nav-item').forEach(btn => btn.classList.remove('active'));
@@ -24,6 +26,7 @@ function showTab(tabName, el) {
   el.classList.add('active');
 }
 
+// Session Management
 function updateSessionDropdown() {
   const select = document.getElementById('session-select');
   if (!select) return;
@@ -80,7 +83,7 @@ function loadCurrentSession() {
 }
 
 function saveSessions() {
-  localStorage.setItem('pg1_sessions', JSON.stringify(sessions));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
 }
 
 // Media & Hardware Controls
@@ -90,7 +93,7 @@ async function toggleVideo() {
     try {
       mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: audioActive });
       const videoEl = document.getElementById('webcam-feed');
-      videoEl.srcObject = mediaStream;
+      if (videoEl) videoEl.srcObject = mediaStream;
       videoActive = true;
       btn.innerText = 'Video: ON';
       btn.classList.add('btn-active');
@@ -114,7 +117,9 @@ async function toggleAudio() {
         audioActive = true;
         btn.innerText = 'Audio: ON';
         btn.classList.add('btn-active');
-      } catch (e) { console.error(e); }
+      } catch (e) { 
+        console.error(e); 
+      }
     } else {
       alert('Speech recognition not supported on this device/browser.');
     }
@@ -159,6 +164,7 @@ function initSpeechRecognition() {
 function captureFrame() {
   if (!videoActive) return null;
   const videoEl = document.getElementById('webcam-feed');
+  if (!videoEl) return null;
   const canvas = document.createElement('canvas');
   canvas.width = videoEl.videoWidth || 320;
   canvas.height = videoEl.videoHeight || 240;
@@ -167,10 +173,21 @@ function captureFrame() {
   return canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
 }
 
+// Command & Messaging Execution
 async function sendCommand() {
   const input = document.getElementById('user-input');
   const text = input.value.trim();
   if (!text) return;
+
+  if (text === '/reset') {
+    localStorage.removeItem(STORAGE_KEY);
+    sessions = { 'session_default': { name: 'Session 1', messages: [] } };
+    currentSessionId = 'session_default';
+    updateSessionDropdown();
+    loadCurrentSession();
+    input.value = '';
+    return;
+  }
 
   addChatMessage('User', text, 'user-msg');
   input.value = '';
