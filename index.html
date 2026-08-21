@@ -1109,7 +1109,6 @@
 
       conversationHistory.push({ role: "user", parts: [{ text: val }] });
 
-      // Automated fallback array to prevent errors if models change or get deprecated
       const modelFallbackSequence = [selectedModel, "gemini-3.6-flash", "gemini-3.5-flash-lite"];
       let success = false;
       let data = null;
