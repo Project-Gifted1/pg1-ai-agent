@@ -2,729 +2,153 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1 Terminal</title>
-  <!-- jsPDF CDN for client-side PDF document generation -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Gifted1™</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
-    html, body { height: 100%; width: 100%; overflow: hidden; background-color: #0B0E14; color: #E2E8F0; }
-    body { display: flex; flex-direction: column; }
-    
-    header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #0B0E14; border-bottom: 1px solid #1E2330; height: 50px; flex-shrink: 0; }
-    header .title { font-size: 16px; font-weight: 700; color: #FFFFFF; display: flex; align-items: center; gap: 8px; }
-    header .status-dot { width: 8px; height: 8px; background: #00FF66; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px #00FF66; }
-    header .version { font-size: 12px; color: #64748B; font-weight: 600; }
-
-    main { flex: 1; overflow-y: auto; padding: 16px; padding-bottom: 75px; -webkit-overflow-scrolling: touch; }
-    .tab-view { display: none; }
-    .tab-view.active-view { display: block; }
-
-    /* Control Buttons Bar */
-    .controls-bar { display: flex; gap: 8px; margin-bottom: 16px; overflow-x: auto; padding-bottom: 4px; }
-    .btn-ctrl { background: rgba(56, 189, 248, 0.1); border: 1px solid #1E293B; color: #38BDF8; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background 0.15s ease; }
-    .btn-ctrl.active-ctrl { background: rgba(0, 255, 102, 0.15); border-color: #00FF66; color: #00FF66; }
-    .btn-ctrl.listening-ctrl { background: rgba(239, 68, 68, 0.2); border-color: #EF4444; color: #EF4444; animation: pulse 1.5s infinite; }
-    .btn-danger { background: rgba(239, 68, 68, 0.1); border: 1px solid #7F1D1D; color: #EF4444; }
-
-    @keyframes pulse {
-      0% { opacity: 1; }
-      50% { opacity: 0.5; }
-      100% { opacity: 1; }
+    /* Global Container Setup */
+    body {
+      background-color: #0b0f19;
+      color: #00ffcc;
+      font-family: monospace;
+      margin: 0;
+      padding: 10px;
     }
 
-    /* Live Video Feed Container */
-    #video-container { display: none; width: 100%; max-height: 220px; background: #000; border: 1px solid #00FF66; border-radius: 8px; overflow: hidden; margin-bottom: 16px; position: relative; }
-    #video-feed { width: 100%; height: 180px; object-fit: cover; }
-    .video-overlay-bar { background: #080C14; padding: 6px 10px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #1E2330; }
-
-    /* Node Interface */
-    .node-card { background: #0E131F; border: 1px solid #1E293B; border-radius: 12px; padding: 32px 20px; text-align: center; margin-top: 10px; }
-    .badge-container { display: flex; justify-content: center; margin-bottom: 20px; }
-    .node-image-badge {
-      width: 110px;
-      height: 110px;
-      border-radius: 50%;
-      border: 2px solid #0099FF;
-      box-shadow: 0 0 20px rgba(0, 153, 255, 0.4);
-      object-fit: cover;
-      background: #080C14;
+    /* Global Header Action Bar (Stays Visible Everywhere) */
+    .global-action-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 15px;
+      justify-content: space-between;
     }
-    .node-title { font-size: 22px; font-weight: 700; color: #FFFFFF; margin-bottom: 6px; }
-    .node-subtitle { font-size: 13px; color: #64748B; margin-bottom: 24px; }
-    .node-divider { height: 1px; background: #1E293B; margin: 0 0 24px 0; }
-    .node-details { text-align: left; display: flex; flex-direction: column; gap: 14px; font-size: 14px; }
-    .node-row { display: flex; justify-content: space-between; }
-    .node-label { color: #FFFFFF; font-weight: 700; }
-    .node-value { color: #94A3B8; font-weight: 500; }
-    .status-online { color: #00FF66; font-weight: 600; }
 
-    /* Terminal View */
-    .console-box { background: #05070A; border: 1px solid #1E2330; border-radius: 8px; padding: 12px; margin-bottom: 16px; font-family: monospace; font-size: 13px; color: #00FF66; }
-    .chat-container { background: #0D111A; border: 1px solid #1E2330; border-radius: 8px; display: flex; flex-direction: column; height: 420px; }
-    .chat-header { padding: 10px 12px; border-bottom: 1px solid #1E2330; display: flex; justify-content: space-between; align-items: center; }
-    .chat-thread { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; line-height: 1.4; -webkit-overflow-scrolling: touch; }
-    .msg-wrapper { display: flex; flex-direction: column; max-width: 90%; gap: 4px; }
-    .msg-wrapper.ai { align-self: flex-start; }
-    .msg-wrapper.user { align-self: flex-end; }
-    .msg { padding: 8px 12px; border-radius: 6px; word-break: break-word; position: relative; }
-    .msg img, .msg video { max-width: 100%; border-radius: 6px; margin-top: 6px; border: 1px solid #1E293B; }
-    .ai-msg { background: #131B2E; color: #00FF66; border-left: 3px solid #00FF66; }
-    .user-msg { background: #1E293B; color: #38BDF8; }
-    .btn-copy-msg { align-self: flex-end; background: #1E293B; border: 1px solid #334155; color: #94A3B8; font-size: 10px; padding: 2px 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s ease; }
-    .btn-copy-msg:active { background: #00FF66; color: #000; }
-    
-    /* Attachment Bar & Inputs */
-    .media-preview-container { display: none; padding: 8px 12px; background: #080C14; border-top: 1px solid #1E2330; align-items: center; justify-content: space-between; font-size: 12px; color: #38BDF8; }
-    .input-bar { padding: 10px; border-top: 1px solid #1E2330; display: flex; gap: 8px; align-items: center; }
-    .input-bar input[type="text"] { flex: 1; background: #05070A; border: 1px solid #1E2330; color: #FFF; padding: 8px 12px; border-radius: 6px; outline: none; font-size: 14px; }
-    .btn-action { background: #00FF66; color: #000; border: none; padding: 8px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; }
-    .btn-sec { background: #1E293B; color: #38BDF8; border: 1px solid #38BDF8; padding: 4px 8px; border-radius: 6px; font-size: 11px; cursor: pointer; }
-    .btn-attach { background: #1E293B; color: #38BDF8; border: 1px solid #38BDF8; padding: 8px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+    .btn-toggle {
+      background-color: #0a192f;
+      border: 1px solid #0055ff;
+      color: #00bfff;
+      padding: 6px 10px;
+      font-size: 12px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
 
-    /* Client Local Storage Key Input Card */
-    .api-card { background: #0E131F; border: 1px solid #1E293B; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-    .key-status-indicator { display: flex; align-items: center; justify-content: space-between; background: #05070A; padding: 10px; border-radius: 6px; border: 1px solid #1E2330; margin-top: 10px; font-family: monospace; font-size: 12px; color: #00FF66; }
-    
-    /* Fixed Bottom Navigation Bar */
-    nav { display: flex; background: #0B0E14; border-top: 1px solid #1E2330; position: fixed; bottom: 0; left: 0; right: 0; height: 60px; z-index: 1000; }
-    .nav-item { flex: 1; text-align: center; padding: 8px 0; color: #64748B; font-size: 11px; text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; }
-    .nav-item.active { color: #38BDF8; }
-    .nav-icon { font-size: 16px; }
+    .btn-danger {
+      border-color: #ff3333;
+      color: #ff3333;
+    }
+
+    /* Tab Content Visibility Logic */
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Bottom Navigation Styling */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: space-around;
+      background: #070a10;
+      border-top: 1px solid #1a2332;
+      padding: 10px 0;
+    }
+
+    .nav-item {
+      color: #556b82;
+      background: none;
+      border: none;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .nav-item.active {
+      color: #00ffcc;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
 
-  <header>
-    <div class="title"><span class="status-dot"></span> Project Gifted1™</div>
-    <div class="version">v5.0 Sovereign Engine</div>
-  </header>
+  <!-- Persistent Global Action Bar -->
+  <div class="global-action-bar">
+    <button class="btn-toggle" id="btn-video" onclick="toggleMedia('video')">Video: OFF</button>
+    <button class="btn-toggle" id="btn-audio" onclick="toggleMedia('audio')">Audio: OFF</button>
+    <button class="btn-toggle" id="btn-voice" onclick="toggleMedia('voice')">Voice: OFF</button>
+    <button class="btn-toggle btn-danger" onclick="deleteThread()">Delete Thread</button>
+  </div>
 
-  <main>
-    <!-- Dash Tab -->
-    <div id="view-dash" class="tab-view active-view">
-      <!-- Status Controls Bar -->
-      <div class="controls-bar">
-        <button id="btn-video" class="btn-ctrl" onclick="toggleVideo()">Video: OFF</button>
-        <button id="btn-audio" class="btn-ctrl" onclick="toggleAudio()">Audio: OFF</button>
-        <button id="btn-voice" class="btn-ctrl" onclick="toggleVoice()">Voice: OFF</button>
-        <button class="btn-ctrl btn-danger" onclick="clearSession()">Delete Thread</button>
-      </div>
-
-      <!-- Live Media Video Preview Window -->
-      <div id="video-container">
-        <video id="video-feed" autoplay playsinline muted></video>
-        <div class="video-overlay-bar">
-          <span style="font-size: 11px; color: #00FF66;">LIVE CAMERA STREAM</span>
-          <button class="btn-ctrl" onclick="captureVideoFrame()" style="padding: 3px 8px; font-size: 10px;">📸 Capture Frame</button>
-        </div>
-      </div>
-
-      <!-- Sovereign Key Relay Input Card -->
-      <div class="api-card">
-        <div style="font-size: 13px; font-weight: 600; color: #FFF;">⚡ x402 Sovereign Key Relay</div>
-        <p style="font-size: 11px; color: #94A3B8; margin-top: 2px;">Enter your key below. Stored strictly in browser memory for direct client-side requests.</p>
-        
-        <div style="display: flex; gap: 8px; margin-top: 10px;">
-          <input type="password" id="local-api-key-input" placeholder="Plug in x402 Key..." style="flex: 1; background: #05070A; border: 1px solid #1E2330; color: #00FF66; padding: 8px 12px; border-radius: 6px; outline: none; font-family: monospace; font-size: 12px;">
-          <button onclick="saveLocalKey()" class="btn-action" style="font-size: 11px; padding: 6px 12px;">Save Key</button>
-        </div>
-        
-        <div class="key-status-indicator">
-          <span id="key-status-label">KEY_STATUS: NOT_SET</span>
-          <span id="key-status-dot" style="color:#EF4444;">● DISCONNECTED</span>
-        </div>
-      </div>
-
-      <!-- Telemetry Card using Real OTX Data -->
-      <div style="background: #0E131F; border: 1px solid #1E293B; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
-        <h3 style="font-size: 16px; font-weight: 700; color: #FFF; margin-bottom: 4px;">Sovereign Edge Active</h3>
-        <p style="font-size: 12px; color: #94A3B8; margin-bottom: 16px; line-height: 1.4;">Zero-cost deployment operational via PG1 core edge synchronization. Live telemetry feeds integrated.</p>
-        
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <div style="font-size: 13px; font-weight: 600; color: #FFF;">📡 Live OTX Telemetry Feed</div>
-          <button onclick="fetchOTXTelemetry()" style="background: none; border: none; color: #38BDF8; font-size: 11px; cursor: pointer;">🔄 Sync Feed</button>
-        </div>
-        
-        <div style="margin-bottom: 12px;">
-          <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
-            <span style="color: #94A3B8;">OTX Threat Pulses Synced</span>
-            <span id="otx-pulses-val" style="color: #FFF; font-weight: 700;">Loading...</span>
-          </div>
-          <div style="background: #1E293B; height: 6px; border-radius: 3px; overflow: hidden;">
-            <div id="otx-pulses-bar" style="background: #3B82F6; width: 0%; height: 100%; transition: width 0.5s ease;"></div>
-          </div>
-        </div>
-
-        <div style="margin-bottom: 12px;">
-          <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
-            <span style="color: #94A3B8;">Active Indicators (IOC)</span>
-            <span id="otx-iocs-val" style="color: #FFF; font-weight: 700;">Syncing...</span>
-          </div>
-          <div style="background: #1E293B; height: 6px; border-radius: 3px; overflow: hidden;">
-            <div id="otx-iocs-bar" style="background: #10B981; width: 0%; height: 100%; transition: width 0.5s ease;"></div>
-          </div>
-        </div>
-
-        <div>
-          <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
-            <span style="color: #94A3B8;">Edge Telemetry Throughput</span>
-            <span id="otx-throughput-val" style="color: #FFF; font-weight: 700;">2.4 MB/s</span>
-          </div>
-          <div style="background: #1E293B; height: 6px; border-radius: 3px; overflow: hidden;">
-            <div id="otx-throughput-bar" style="background: #3B82F6; width: 45%; height: 100%;"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Operational Services -->
-      <div style="background: #0E131F; border: 1px solid #1E293B; border-radius: 12px; padding: 16px;">
-        <div style="font-size: 13px; font-weight: 600; color: #FFF; margin-bottom: 12px;">🔗 Operational Services</div>
-        
-        <div style="display: flex; flex-direction: column; gap: 10px; font-size: 12px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; background: #080C14; padding: 10px; border-radius: 6px; border: 1px solid #1E2330;">
-            <span style="color: #94A3B8;">PG1 Sovereign Edge Mesh</span>
-            <span style="color: #00FF66; font-weight: 600;">ACTIVE</span>
-          </div>
-          <div style="display: flex; justify-content: space-between; align-items: center; background: #080C14; padding: 10px; border-radius: 6px; border: 1px solid #1E2330;">
-            <span style="color: #94A3B8;">Core Intelligence Relay</span>
-            <span style="color: #00FF66; font-weight: 600;">CONNECTED</span>
-          </div>
-          <div style="display: flex; justify-content: space-between; align-items: center; background: #080C14; padding: 10px; border-radius: 6px; border: 1px solid #1E2330;">
-            <span style="color: #94A3B8;">Encrypted Data Vault</span>
-            <span style="color: #00FF66; font-weight: 600;">SYNCED</span>
-          </div>
-        </div>
-      </div>
+  <!-- Tab 1: Dash -->
+  <div id="tab-dash" class="tab-content active">
+    <!-- Key Relay Box & Dashboard Widgets Go Here -->
+    <div style="border: 1px solid #1a2332; padding: 15px; border-radius: 6px;">
+      <h3 style="margin-top:0;">⚡ x402 Sovereign Key Relay</h3>
+      <p style="font-size: 12px; color: #8a99ad;">Stored strictly in browser memory for direct client-side requests.</p>
     </div>
+  </div>
 
-    <!-- Terminal Tab -->
-    <div id="view-terminal" class="tab-view">
-      <div class="console-box" id="console-status">&gt; PG1 System Initialized. Ready for multimodal commands.</div>
-      <div class="chat-container">
-        <div class="chat-header">
-          <span style="font-size: 12px; color: #94A3B8; font-weight: 600;">Terminal Thread</span>
-          <div style="display: flex; gap: 6px;">
-            <button onclick="copyAllThreadText()" class="btn-sec">Copy All</button>
-            <button onclick="generatePDF()" class="btn-action" style="font-size: 11px; padding: 4px 8px;">Export PDF</button>
-          </div>
-        </div>
-        <div id="chat-thread" class="chat-thread">
-          <div class="msg-wrapper ai">
-            <div class="msg ai-msg">PG1 Core connected. Multimodal vision and speech online.</div>
-            <button class="btn-copy-msg" onclick="copySingleMessage(this)">📋 Copy</button>
-          </div>
-        </div>
-
-        <!-- Attachment Preview Bar -->
-        <div id="media-preview-container" class="media-preview-container">
-          <span id="media-preview-label">Attached: File</span>
-          <button onclick="clearAttachment()" style="background:none; border:none; color:#EF4444; font-weight:bold; cursor:pointer;">✕</button>
-        </div>
-
-        <div class="input-bar">
-          <input type="file" id="media-upload-input" accept="image/*,video/*" style="display:none;" onchange="handleFileSelect(event)">
-          <button class="btn-attach" onclick="document.getElementById('media-upload-input').click()">📷 Media</button>
-          <input type="text" id="user-input" placeholder="Enter command or media prompt..." onkeypress="if(event.key==='Enter') sendCommand()">
-          <button class="btn-action" onclick="sendCommand()">Send</button>
-        </div>
-      </div>
+  <!-- Tab 2: Terminal -->
+  <div id="tab-terminal" class="tab-content">
+    <div style="border: 1px solid #1a2332; padding: 15px; border-radius: 6px;">
+      <p style="color: #00ffcc;">> PG1 System Initialized. Ready for multimodal commands.</p>
     </div>
+  </div>
 
-    <!-- Node Tab -->
-    <div id="view-node" class="tab-view">
-      <div class="node-card">
-        <div class="badge-container">
-          <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Logo" class="node-image-badge">
-        </div>
-        <div class="node-title">PG1.Agent</div>
-        <div class="node-subtitle">Autonomous Edge Infrastructure</div>
-        
-        <div class="node-divider"></div>
+  <!-- Tab 3: Node -->
+  <div id="tab-node" class="tab-content">
+    <div style="border: 1px solid #1a2332; padding: 15px; border-radius: 6px; text-align: center;">
+      <h3>PG1.Agent</h3>
+      <p style="color: #00ff88;">Status: Online & Syncing</p>
+    </div>
+  </div>
 
-        <div class="node-details">
-          <div class="node-row"><span class="node-label">Node ID:</span><span class="node-value">PG1-CORE-01</span></div>
-          <div class="node-row"><span class="node-label">Status:</span><span class="node-value status-online">Online & Syncing</span></div>
-          <div class="node-row"><span class="node-label">Ownership:</span><span class="node-value">100% Sovereign</span></div>
-          <div class="node-row"><span class="node-label">Protocol:</span><span class="node-value">x402 Active</span></div>
-        </div>
-      </div>
-    </div>
-  </main>
-
-  <!-- Navigation Bar -->
-  <nav>
-    <div class="nav-item active" onclick="showTab('dash', this)">
-      <span class="nav-icon">📊</span>
-      <span>Dash</span>
-    </div>
-    <div class="nav-item" onclick="showTab('terminal', this)">
-      <span class="nav-icon">⚡</span>
-      <span>Terminal</span>
-    </div>
-    <div class="nav-item" onclick="showTab('node', this)">
-      <span class="nav-icon">👤</span>
-      <span>Node</span>
-    </div>
-  </nav>
-
-  <!-- Hidden Canvas for Video Frame Capture -->
-  <canvas id="frame-canvas" style="display:none;"></canvas>
+  <!-- Persistent Navigation Footer -->
+  <div class="bottom-nav">
+    <button class="nav-item active" onclick="switchTab('dash', this)">Dash</button>
+    <button class="nav-item" onclick="switchTab('terminal', this)">Terminal</button>
+    <button class="nav-item" onclick="switchTab('node', this)">Node</button>
+  </div>
 
   <script>
-    // Tab Navigation System
-    function showTab(tabName, el) {
-      document.querySelectorAll('.tab-view').forEach(tab => tab.classList.remove('active-view'));
-      document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
-      
-      document.getElementById('view-' + tabName).classList.add('active-view');
-      el.classList.add('active');
-    }
-
-    // Media, Speech & API State
-    let videoStream = null;
-    let isVoiceActive = false;
-    let isAudioListening = false;
-    let recognition = null;
-    let pendingMediaData = null;
-
-    document.addEventListener("DOMContentLoaded", () => {
-      // Load saved local key
-      const savedKey = localStorage.getItem('PG1_GEMINI_KEY');
-      if (savedKey) {
-        document.getElementById('local-api-key-input').value = savedKey;
-        updateKeyUI(true);
-      }
-      fetchOTXTelemetry();
-    });
-
-    // Key Management Functions
-    function saveLocalKey() {
-      const keyInput = document.getElementById('local-api-key-input').value.trim();
-      if (keyInput) {
-        localStorage.setItem('PG1_GEMINI_KEY', keyInput);
-        updateKeyUI(true);
-        alert('Key saved locally to browser storage.');
-      } else {
-        localStorage.removeItem('PG1_GEMINI_KEY');
-        updateKeyUI(false);
-        alert('Key removed.');
-      }
-    }
-
-    function updateKeyUI(isConnected) {
-      const label = document.getElementById('key-status-label');
-      const dot = document.getElementById('key-status-dot');
-      if (isConnected) {
-        label.innerText = 'KEY_STATUS: STORED_LOCAL';
-        dot.innerText = '● CONNECTED';
-        dot.style.color = '#00FF66';
-      } else {
-        label.innerText = 'KEY_STATUS: NOT_SET';
-        dot.innerText = '● DISCONNECTED';
-        dot.style.color = '#EF4444';
-      }
-    }
-
-    // Real Live OTX Telemetry Fetcher
-    async function fetchOTXTelemetry() {
-      const pulseVal = document.getElementById('otx-pulses-val');
-      const pulseBar = document.getElementById('otx-pulses-bar');
-      const iocsVal = document.getElementById('otx-iocs-val');
-      const iocsBar = document.getElementById('otx-iocs-bar');
-
-      pulseVal.innerText = "Syncing...";
-      iocsVal.innerText = "Syncing...";
-
-      try {
-        const response = await fetch('https://otx.alienvault.com/api/v1/pulses/subscribed?limit=10');
-        if (response.ok) {
-          const data = await response.json();
-          const pulseCount = data.count || data.results?.length || 128;
-          let totalIocs = 0;
-          if (data.results) {
-            data.results.forEach(p => { totalIocs += (p.indicator_count || 0); });
-          }
-          if (totalIocs === 0) totalIocs = pulseCount * 14;
-
-          pulseVal.innerText = pulseCount.toLocaleString();
-          pulseBar.style.width = Math.min(100, Math.max(15, (pulseCount / 500) * 100)) + '%';
-
-          iocsVal.innerText = totalIocs.toLocaleString();
-          iocsBar.style.width = Math.min(100, Math.max(20, (totalIocs / 5000) * 100)) + '%';
-        } else {
-          throw new Error("Telemetry offline");
-        }
-      } catch (err) {
-        pulseVal.innerText = "1,420 Active Pulses";
-        pulseBar.style.width = '68%';
-        iocsVal.innerText = "18,940 IOC Feeds";
-        iocsBar.style.width = '82%';
-      }
-    }
-
-    // Speech-To-Text (STT) Initialization
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (SpeechRecognition) {
-      recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = false;
-      recognition.lang = 'en-US';
-
-      recognition.onresult = (event) => {
-        const lastIndex = event.results.length - 1;
-        const transcript = event.results[lastIndex][0].transcript.trim();
-        if (transcript) {
-          document.getElementById('user-input').value = transcript;
-          sendCommand(transcript);
-        }
-      };
-
-      recognition.onerror = (event) => {
-        if (event.error === 'not-allowed') stopListening();
-      };
-
-      recognition.onend = () => {
-        if (isAudioListening) recognition.start();
-      };
-    }
-
-    // Video Toggle & Controls
-    async function toggleVideo() {
-      const btn = document.getElementById('btn-video');
-      const container = document.getElementById('video-container');
-      const video = document.getElementById('video-feed');
-
-      if (!videoStream) {
-        try {
-          videoStream = await navigator.mediaDevices.getUserMedia({ 
-            video: { width: { ideal: 640 }, height: { ideal: 360 } }, 
-            audio: false 
-          });
-          video.srcObject = videoStream;
-          container.style.display = 'block';
-          btn.innerText = 'Video: ON';
-          btn.classList.add('active-ctrl');
-        } catch (err) {
-          alert('Camera access denied or unavailable.');
-        }
-      } else {
-        videoStream.getTracks().forEach(track => track.stop());
-        videoStream = null;
-        container.style.display = 'none';
-        btn.innerText = 'Video: OFF';
-        btn.classList.remove('active-ctrl');
-      }
-    }
-
-    // Frame Capture from Live Webcam
-    function captureVideoFrame() {
-      const video = document.getElementById('video-feed');
-      const canvas = document.getElementById('frame-canvas');
-      if (!videoStream || !video.videoWidth) {
-        alert('Live camera feed is not active.');
-        return;
-      }
-
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      
-      const base64Image = canvas.toDataURL('image/jpeg', 0.85);
-      pendingMediaData = {
-        mimeType: 'image/jpeg',
-        base64: base64Image.split(',')[1],
-        previewUrl: base64Image,
-        type: 'image'
-      };
-
-      showAttachmentPreview('Captured Webcam Frame');
-      showTab('terminal', document.querySelectorAll('.nav-item')[1]);
-    }
-
-    // Media File Attachment
-    function handleFileSelect(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const result = e.target.result;
-        const mimeType = file.type;
-        const base64Data = result.split(',')[1];
-
-        pendingMediaData = {
-          mimeType: mimeType,
-          base64: base64Data,
-          previewUrl: result,
-          type: mimeType.startsWith('video') ? 'video' : 'image'
-        };
-
-        showAttachmentPreview(`Attached: ${file.name}`);
-      };
-      reader.readAsDataURL(file);
-    }
-
-    function showAttachmentPreview(label) {
-      const previewContainer = document.getElementById('media-preview-container');
-      const previewLabel = document.getElementById('media-preview-label');
-      previewLabel.innerText = label;
-      previewContainer.style.display = 'flex';
-    }
-
-    function clearAttachment() {
-      pendingMediaData = null;
-      document.getElementById('media-preview-container').style.display = 'none';
-      document.getElementById('media-upload-input').value = '';
-    }
-
-    // STT Listening Toggle
-    function toggleAudio() {
-      const btn = document.getElementById('btn-audio');
-      const consoleBox = document.getElementById('console-status');
-
-      if (!SpeechRecognition) {
-        alert('Speech recognition is not supported on this browser.');
-        return;
-      }
-
-      if (!isAudioListening) {
-        isAudioListening = true;
-        try {
-          recognition.start();
-          btn.innerText = 'Listening...';
-          btn.classList.add('listening-ctrl');
-          consoleBox.innerText = '> Voice Listener Active. Speak into microphone...';
-        } catch (e) {
-          console.error(e);
-        }
-      } else {
-        stopListening();
-      }
-    }
-
-    function stopListening() {
-      isAudioListening = false;
-      const btn = document.getElementById('btn-audio');
-      const consoleBox = document.getElementById('console-status');
-      if (recognition) recognition.stop();
-      btn.innerText = 'Audio: OFF';
-      btn.classList.remove('listening-ctrl', 'active-ctrl');
-      consoleBox.innerText = '> PG1 System Initialized. Ready for commands.';
-    }
-
-    // TTS Voice Output Toggle
-    function toggleVoice() {
-      const btn = document.getElementById('btn-voice');
-      isVoiceActive = !isVoiceActive;
-      if (isVoiceActive) {
-        btn.innerText = 'Voice: ON';
-        btn.classList.add('active-ctrl');
-        speakText("Voice response synthesis activated.");
-      } else {
-        btn.innerText = 'Voice: OFF';
-        btn.classList.remove('active-ctrl');
-        window.speechSynthesis.cancel();
-      }
-    }
-
-    function speakText(text) {
-      if (!isVoiceActive || !('speechSynthesis' in window)) return;
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      window.speechSynthesis.speak(utterance);
-    }
-
-    // Sovereign AI Fetcher configured to gemini-3.6-flash
-    async function fetchGeminiMultimodalResponse(promptText, mediaData) {
-      const apiKey = localStorage.getItem('PG1_GEMINI_KEY') || "";
-      if (!apiKey) {
-        return "⚠️ Key missing. Plug in your key in the x402 Sovereign Key Relay card.";
-      }
-
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
-
-      const contentsParts = [];
-      if (promptText) contentsParts.push({ text: promptText });
-      if (mediaData) {
-        contentsParts.push({
-          inline_data: {
-            mime_type: mediaData.mimeType,
-            data: mediaData.base64
-          }
-        });
-      }
-
-      const requestBody = {
-        system_instruction: {
-          parts: [
-            {
-              text: "You are the Project Gifted1 (PG1) Sovereign AI Agent running on the x402 protocol network. Respond strictly within the PG1 framework, maintaining absolute grounded accuracy, sovereign campaign execution logic, and protocol precision. Do not break character."
-            }
-          ]
-        },
-        contents: [
-          {
-            parts: contentsParts
-          }
-        ]
-      };
-
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody)
-        });
-
-        const data = await response.json();
-        if (data.error) return `API Error: ${data.error.message}`;
-
-        return data.candidates[0].content.parts[0].text;
-      } catch (err) {
-        return "Network Error: Unable to communicate with Gemini API endpoint.";
-      }
-    }
-
-    async function sendCommand(overrideText) {
-      const input = document.getElementById('user-input');
-      const thread = document.getElementById('chat-thread');
-      const text = overrideText || input.value.trim();
-
-      if (!text && !pendingMediaData) return;
-
-      const msgWrapper = document.createElement('div');
-      msgWrapper.className = 'msg-wrapper user';
-
-      const userMsg = document.createElement('div');
-      userMsg.className = 'msg user-msg';
-      userMsg.innerText = text || (pendingMediaData ? "[Sent Media Content]" : "");
-
-      if (pendingMediaData) {
-        if (pendingMediaData.type === 'image') {
-          const img = document.createElement('img');
-          img.src = pendingMediaData.previewUrl;
-          userMsg.appendChild(img);
-        } else if (pendingMediaData.type === 'video') {
-          const vid = document.createElement('video');
-          vid.src = pendingMediaData.previewUrl;
-          vid.controls = true;
-          userMsg.appendChild(vid);
-        }
-      }
-
-      const copyBtn = document.createElement('button');
-      copyBtn.className = 'btn-copy-msg';
-      copyBtn.innerText = '📋 Copy';
-      copyBtn.onclick = function() { copySingleMessage(this); };
-
-      msgWrapper.appendChild(userMsg);
-      msgWrapper.appendChild(copyBtn);
-      thread.appendChild(msgWrapper);
-
-      const currentMediaData = pendingMediaData;
-      clearAttachment();
-      input.value = '';
-      thread.scrollTop = thread.scrollHeight;
-
-      const aiWrapper = document.createElement('div');
-      aiWrapper.className = 'msg-wrapper ai';
-
-      const loadingMsg = document.createElement('div');
-      loadingMsg.className = 'msg ai-msg';
-      loadingMsg.innerText = 'PG1 v5.0 Sovereign Engine processing...';
-
-      const aiCopyBtn = document.createElement('button');
-      aiCopyBtn.className = 'btn-copy-msg';
-      aiCopyBtn.innerText = '📋 Copy';
-      aiCopyBtn.onclick = function() { copySingleMessage(this); };
-
-      aiWrapper.appendChild(loadingMsg);
-      aiWrapper.appendChild(aiCopyBtn);
-      thread.appendChild(aiWrapper);
-      thread.scrollTop = thread.scrollHeight;
-
-      const responseText = await fetchGeminiMultimodalResponse(text, currentMediaData);
-      
-      loadingMsg.innerText = responseText;
-      thread.scrollTop = thread.scrollHeight;
-
-      speakText(responseText);
-    }
-
-    // Copy Functions
-    function copySingleMessage(btnElement) {
-      const msgDiv = btnElement.parentElement.querySelector('.msg');
-      if (msgDiv) {
-        navigator.clipboard.writeText(msgDiv.innerText).then(() => {
-          const originalText = btnElement.innerText;
-          btnElement.innerText = '✓ Copied!';
-          setTimeout(() => { btnElement.innerText = originalText; }, 1500);
-        }).catch(err => {
-          alert('Failed to copy text.');
-        });
-      }
-    }
-
-    function copyAllThreadText() {
-      const messages = document.querySelectorAll('#chat-thread .msg');
-      let fullThread = [];
-      messages.forEach(msg => {
-        fullThread.push(msg.innerText);
-      });
-      if (fullThread.length === 0) return;
-
-      navigator.clipboard.writeText(fullThread.join('\n\n')).then(() => {
-        alert('All thread messages copied to clipboard!');
-      }).catch(err => {
-        alert('Failed to copy thread.');
-      });
-    }
-
-    function clearSession() {
-      const thread = document.getElementById('chat-thread');
-      thread.innerHTML = `
-        <div class="msg-wrapper ai">
-          <div class="msg ai-msg">PG1 Session cleared. Sovereign Engine reset complete.</div>
-          <button class="btn-copy-msg" onclick="copySingleMessage(this)">📋 Copy</button>
-        </div>`;
-    }
-
-    // PDF Document Export
-    function generatePDF() {
-      const { jsPDF } = window.jspdf;
-      const doc = new jsPDF();
-      
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(16);
-      doc.text('Project Gifted1 - Terminal Session Report', 14, 20);
-      
-      doc.setFontSize(10);
-      doc.setFont('Helvetica', 'normal');
-      doc.text('Generated on: ' + new Date().toLocaleString(), 14, 28);
-      doc.text('Engine: v5.0 Sovereign Engine | Node: PG1-CORE-01', 14, 34);
-      
-      doc.line(14, 38, 196, 38);
-
-      const messages = document.querySelectorAll('#chat-thread .msg');
-      let y = 46;
-
-      messages.forEach((msg) => {
-        if (y > 270) {
-          doc.addPage();
-          y = 20;
-        }
-        const text = msg.innerText;
-        const lines = doc.splitTextToSize(text, 180);
-        doc.text(lines, 14, y);
-        y += (lines.length * 6) + 4;
+    // Tab Router Switcher
+    function switchTab(tabName, btnElement) {
+      // Hide all tabs
+      document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
       });
 
-      doc.save('PG1_v5_Session_Report.pdf');
+      // Remove active status from all navigation items
+      document.querySelectorAll('.nav-item').forEach(nav => {
+        nav.classList.remove('active');
+      });
+
+      // Show selected tab and highlight nav button
+      document.getElementById('tab-' + tabName).classList.add('active');
+      btnElement.classList.add('active');
+    }
+
+    // Media Toggle Handler
+    const mediaStates = { video: false, audio: false, voice: false };
+
+    function toggleMedia(type) {
+      mediaStates[type] = !mediaStates[type];
+      const btn = document.getElementById(`btn-${type}`);
+      const label = type.charAt(0).toUpperCase() + type.slice(1);
+      
+      btn.innerText = `${label}: ${mediaStates[type] ? 'ON' : 'OFF'}`;
+      btn.style.borderColor = mediaStates[type] ? '#00ffcc' : '#0055ff';
+      btn.style.color = mediaStates[type] ? '#00ffcc' : '#00bfff';
+    }
+
+    function deleteThread() {
+      if (confirm('Are you sure you want to delete this thread?')) {
+        console.log('Thread cleared');
+      }
     }
   </script>
 </body>
