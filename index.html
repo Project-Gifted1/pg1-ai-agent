@@ -67,7 +67,7 @@
       color: var(--text-muted);
     }
 
-    /* Top Control Bar with Animated Active State */
+    /* Top Control Bar */
     .global-control-bar {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -83,7 +83,7 @@
       background: rgba(14, 21, 34, 0.8);
       border: 1px solid rgba(0, 102, 255, 0.3);
       color: #a0aec0;
-      padding: 5px 0;
+      padding: 6px 0;
       font-size: 9.5px;
       font-weight: 500;
       letter-spacing: 0.3px;
@@ -98,6 +98,7 @@
     }
 
     .btn-ctrl-icon {
+      font-size: 11px;
       display: inline-block;
       transition: transform 0.2s ease;
     }
@@ -170,49 +171,22 @@
       line-height: 1.4;
     }
 
-    /* Key Relay Dots */
+    /* Key Input */
     .key-input-row {
       display: flex;
       gap: 8px;
       margin-bottom: 10px;
     }
 
-    .key-bar-visual {
+    .key-input-field {
       flex: 1;
-      height: 32px;
       background: #05080e;
       border: 1px solid var(--card-border);
-      border-radius: 4px;
-      display: flex;
-      align-items: center;
+      color: var(--neon-green);
       padding: 0 10px;
-      gap: 4px;
-      overflow: hidden;
-    }
-
-    .animated-dot {
-      width: 6px;
-      height: 6px;
-      background-color: var(--neon-green);
-      border-radius: 50%;
-      box-shadow: 0 0 4px var(--neon-green);
-      animation: pulse-dots 1.5s infinite ease-in-out;
-    }
-
-    .animated-dot:nth-child(1) { animation-delay: 0.1s; }
-    .animated-dot:nth-child(2) { animation-delay: 0.2s; }
-    .animated-dot:nth-child(3) { animation-delay: 0.3s; }
-    .animated-dot:nth-child(4) { animation-delay: 0.4s; }
-    .animated-dot:nth-child(5) { animation-delay: 0.5s; }
-    .animated-dot:nth-child(6) { animation-delay: 0.6s; }
-    .animated-dot:nth-child(7) { animation-delay: 0.7s; }
-    .animated-dot:nth-child(8) { animation-delay: 0.8s; }
-    .animated-dot:nth-child(9) { animation-delay: 0.9s; }
-    .animated-dot:nth-child(10) { animation-delay: 1.0s; }
-
-    @keyframes pulse-dots {
-      0%, 100% { opacity: 0.3; transform: scale(0.8); }
-      50% { opacity: 1; transform: scale(1.2); }
+      border-radius: 4px;
+      font-size: 11px;
+      outline: none;
     }
 
     .btn-save {
@@ -233,23 +207,26 @@
       font-size: 10px;
     }
 
-    /* Live Telemetry Radar & Flow */
+    /* Telemetry & Metrics */
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      font-size: 11px;
+    }
+
+    .metric-value {
+      color: var(--neon-cyan);
+      font-weight: bold;
+    }
+
     .radar-icon {
       display: inline-block;
       animation: rotate-radar 4s linear infinite;
     }
 
     @keyframes rotate-radar {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
-    }
-
-    .sync-icon-spin {
-      display: inline-block;
-      animation: spin-once 0.8s ease-in-out;
-    }
-
-    @keyframes spin-once {
       from { transform: rotate(0deg); }
       to { transform: rotate(360deg); }
     }
@@ -277,20 +254,7 @@
       100% { left: 100%; }
     }
 
-    .metric-row {
-      display: flex;
-      justify-content: space-between;
-      padding: 8px 0;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-      font-size: 11px;
-    }
-
-    .metric-value {
-      color: var(--neon-cyan);
-      font-weight: bold;
-    }
-
-    /* Node View Specific Styles */
+    /* Node Card Elements */
     .node-header-card {
       text-align: center;
       padding: 18px 12px;
@@ -367,11 +331,7 @@
       text-align: center;
     }
 
-    .btn-node-act:active {
-      background: var(--card-border);
-    }
-
-    /* Terminal View & Scoped Input Bar */
+    /* Terminal View */
     #view-terminal {
       display: flex;
       flex-direction: column;
@@ -427,6 +387,7 @@
       font-size: 11px;
       color: var(--neon-green);
       position: relative;
+      white-space: pre-wrap;
     }
 
     .chat-bubble.user {
@@ -436,16 +397,10 @@
       margin-left: 20px;
     }
 
-    .btn-copy-inline {
-      position: absolute;
-      right: 6px;
-      bottom: 6px;
-      background: #050a12;
-      border: 1px solid var(--card-border);
-      color: var(--text-muted);
-      font-size: 9px;
-      padding: 2px 6px;
-      border-radius: 3px;
+    .chat-bubble.system-err {
+      border-color: var(--danger-red);
+      color: var(--danger-red);
+      background: rgba(255, 51, 68, 0.05);
     }
 
     .terminal-input-bar {
@@ -492,7 +447,7 @@
       cursor: pointer;
     }
 
-    /* Functional Logs Modal Window */
+    /* Logs Modal */
     .logs-modal {
       display: none;
       position: fixed;
@@ -500,7 +455,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(4, 6, 10, 0.92);
+      background: rgba(4, 6, 10, 0.95);
       backdrop-filter: blur(6px);
       z-index: 200;
       padding: 16px;
@@ -556,9 +511,8 @@
     .log-item-preview {
       color: var(--neon-green);
       white-space: pre-wrap;
-      max-height: 80px;
+      max-height: 100px;
       overflow: hidden;
-      text-overflow: ellipsis;
     }
 
     .logs-actions {
@@ -611,7 +565,7 @@
     <div class="engine-version">v5.0 Sovereign Engine</div>
   </div>
 
-  <!-- Sleek Top Controls with Animated Icons -->
+  <!-- Top Controls -->
   <div class="global-control-bar">
     <button id="btn-video" class="btn-ctrl" onclick="toggleControl('video')">
       <span class="btn-ctrl-icon">📹</span>
@@ -636,34 +590,21 @@
     <!-- DASH VIEW -->
     <div id="view-dash" class="tab-view">
       
-      <!-- Key Relay Panel -->
       <div class="panel-card">
         <div class="card-header">⚡ x402 Sovereign Key Relay</div>
-        <div class="card-subtext">Enter your key below. Stored strictly in browser memory for direct client-side requests.</div>
+        <div class="card-subtext">Enter your Gemini API key to activate live generative AI interactions.</div>
         
         <div class="key-input-row">
-          <div class="key-bar-visual">
-            <div class="animated-dot"></div>
-            <div class="animated-dot"></div>
-            <div class="animated-dot"></div>
-            <div class="animated-dot"></div>
-            <div class="animated-dot"></div>
-            <div class="animated-dot"></div>
-            <div class="animated-dot"></div>
-            <div class="animated-dot"></div>
-            <div class="animated-dot"></div>
-            <div class="animated-dot"></div>
-          </div>
-          <button class="btn-save">Save Key</button>
+          <input type="password" id="api-key-input" class="key-input-field" placeholder="Paste Gemini API Key (AIzaSy...)" />
+          <button class="btn-save" onclick="saveApiKey()">Save Key</button>
         </div>
 
         <div class="key-status-row">
-          <span style="color: var(--neon-green); font-size: 10px;">KEY_STATUS: STORED_LOCAL</span>
-          <span style="color: var(--neon-green); font-weight: bold;">● CONNECTED</span>
+          <span id="key-status-text" style="color: var(--text-muted);">KEY_STATUS: NOT_SET</span>
+          <span id="key-conn-text" style="color: var(--danger-red); font-weight: bold;">● DISCONNECTED</span>
         </div>
       </div>
 
-      <!-- Sovereign Edge Panel -->
       <div class="panel-card">
         <div class="card-header">
           <span class="status-dot"></span> Sovereign Edge Active
@@ -674,9 +615,7 @@
           <span style="font-size: 11px; color: #fff; display: flex; align-items: center; gap: 6px;">
             <span class="radar-icon">📡</span> Live OTX Telemetry Feed
           </span>
-          <button class="btn-sm" id="sync-btn" onclick="triggerSync()">
-            <span id="sync-icon">🔄</span> Sync Feed
-          </button>
+          <button class="btn-sm" onclick="triggerSync()">Sync Feed</button>
         </div>
 
         <div class="metric-row">
@@ -697,22 +636,6 @@
         </div>
       </div>
 
-      <!-- Operational Services -->
-      <div class="panel-card">
-        <div class="card-header">⚙️ Operational Services</div>
-        <div class="metric-row">
-          <span>PG1 Sovereign Edge Mesh</span>
-          <span style="color: var(--neon-green); font-weight: bold;">ACTIVE</span>
-        </div>
-        <div class="metric-row">
-          <span>Core Intelligence Relay</span>
-          <span style="color: var(--neon-green); font-weight: bold;">CONNECTED</span>
-        </div>
-        <div class="metric-row">
-          <span>Encrypted Data Vault</span>
-          <span style="color: var(--neon-green); font-weight: bold;">SYNCED</span>
-        </div>
-      </div>
     </div>
 
     <!-- TERMINAL VIEW -->
@@ -732,29 +655,16 @@
         </div>
 
         <div class="chat-bubble">
-          PG1 Core connected. Multimodal vision and speech online.
-          <button class="btn-copy-inline">Copy</button>
-        </div>
-
-        <div class="chat-bubble user">
-          Hey
-          <button class="btn-copy-inline">Copy</button>
-        </div>
-
-        <div class="chat-bubble">
-          PG1 Sovereign AI Agent online. Protocol connection active via x402 network.<br><br>
-          Awaiting campaign execution parameters or query input. State your objective.
-          <button class="btn-copy-inline">Copy</button>
+          PG1 Sovereign AI Agent online. Input your API Key under Dash to establish real-time processing.
         </div>
       </div>
 
-      <!-- INPUT BAR -->
       <div class="terminal-input-bar">
         <button class="btn-media">
           <span>📷</span>
           <span>Media</span>
         </button>
-        <input type="text" id="cmd-input" class="text-input" placeholder="Enter command or media p">
+        <input type="text" id="cmd-input" class="text-input" placeholder="Enter command..." onkeypress="handleKeyPress(event)" />
         <button class="btn-send" onclick="sendUserMessage()">Send</button>
       </div>
 
@@ -763,15 +673,10 @@
     <!-- NODE VIEW -->
     <div id="view-node" class="tab-view">
       
-      <!-- Primary Node Identity Card -->
       <div class="panel-card node-header-card">
         <div class="official-node-wrapper">
           <div class="node-aura"></div>
-          <img 
-            src="08207b14-b824-41ac-ac43-97d078840546.jpeg" 
-            alt="Project Gifted1™ Logo" 
-            class="official-node-logo"
-          >
+          <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="Project Gifted1™ Logo" class="official-node-logo">
         </div>
         <h3 style="color: #ffffff; font-size: 16px; margin-bottom: 2px;">PG1.Agent™</h3>
         <div class="card-subtext">Autonomous Edge Infrastructure</div>
@@ -796,7 +701,6 @@
         </div>
       </div>
 
-      <!-- System Telemetry Panel -->
       <div class="panel-card">
         <div class="card-header">📊 Node System Telemetry</div>
         
@@ -813,10 +717,10 @@
         <div style="margin-bottom: 10px;">
           <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
             <span>RAM Allocation</span>
-            <span id="ram-val" style="color: var(--neon-cyan);">42%</span>
+            <span id="ram-val" style="color: var(--neon-cyan);">45%</span>
           </div>
           <div class="resource-bar-bg">
-            <div class="resource-bar-fill" id="ram-bar" style="width: 42%;"></div>
+            <div class="resource-bar-fill" id="ram-bar" style="width: 45%;"></div>
           </div>
         </div>
 
@@ -831,13 +735,11 @@
         </div>
       </div>
 
-      <!-- Node Management Actions -->
       <div class="panel-card">
         <div class="card-header">⚡ Node Controls</div>
         <div class="node-action-grid">
           <button class="btn-node-act" onclick="triggerSync()">🔄 Restart Node</button>
           <button class="btn-node-act" onclick="triggerSync()">🧹 Purge Cache</button>
-          <!-- FUNCTIONAL LOGS BUTTON -->
           <button class="btn-node-act" onclick="openLogsModal()">📋 Logs</button>
         </div>
       </div>
@@ -852,9 +754,7 @@
       <div class="logs-title">📋 Encrypted Conversation Logs</div>
       <button class="btn-sm" onclick="closeLogsModal()">✕ Close</button>
     </div>
-    <div class="logs-body" id="logs-list">
-      <!-- Dynamic Logs Render Here -->
-    </div>
+    <div class="logs-body" id="logs-list"></div>
     <div class="logs-actions">
       <button class="btn-sm btn-green" style="flex:1" onclick="saveCurrentThreadToLogs()">+ Save Current Active Thread</button>
       <button class="btn-sm" style="color: var(--danger-red); border-color: rgba(255,51,68,0.3)" onclick="clearAllLogs()">Purge Storage</button>
@@ -877,76 +777,50 @@
     </button>
   </div>
 
-  <!-- SCRIPT -->
   <script>
-    const container = document.getElementById('swipe-container');
+    let conversationHistory = [];
 
-    function scrollToTab(tabId) {
-      const targetView = document.getElementById('view-' + tabId);
-      targetView.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
-    }
-
-    function syncNavbarOnScroll() {
-      const width = container.offsetWidth;
-      const index = Math.round(container.scrollLeft / width);
-      const tabs = ['dash', 'terminal', 'node'];
-      
-      document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
-      const activeNav = document.getElementById('nav-' + tabs[index]);
-      if (activeNav) activeNav.classList.add('active');
-    }
-
-    // Dynamic Telemetry Updates
-    let pulseBase = 1420;
-    let iocBase = 18940;
-
-    setInterval(() => {
-      pulseBase += Math.floor(Math.random() * 7) - 3;
-      iocBase += Math.floor(Math.random() * 15) - 7;
-      const tpVar = (2.2 + Math.random() * 0.6).toFixed(1);
-
-      const pulsesEl = document.getElementById('pulses-val');
-      const iocEl = document.getElementById('ioc-val');
-      const tpEl = document.getElementById('throughput-val');
-
-      if (pulsesEl) pulsesEl.innerText = `${pulseBase.toLocaleString()} Active Pulses`;
-      if (iocEl) iocEl.innerText = `${iocBase.toLocaleString()} IOC Feeds`;
-      if (tpEl) tpEl.innerText = `${tpVar} MB/s`;
-
-      const cpuUsage = Math.floor(18 + Math.random() * 15);
-      const ramUsage = Math.floor(40 + Math.random() * 6);
-
-      const cpuVal = document.getElementById('cpu-val');
-      const cpuBar = document.getElementById('cpu-bar');
-      const ramVal = document.getElementById('ram-val');
-      const ramBar = document.getElementById('ram-bar');
-
-      if (cpuVal && cpuBar) {
-        cpuVal.innerText = `${cpuUsage}%`;
-        cpuBar.style.width = `${cpuUsage}%`;
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedKey = localStorage.getItem('pg1_gemini_api_key');
+      if (savedKey) {
+        document.getElementById('api-key-input').value = savedKey;
+        updateKeyStatus(true);
       }
-      if (ramVal && ramBar) {
-        ramVal.innerText = `${ramUsage}%`;
-        ramBar.style.width = `${ramUsage}%`;
-      }
-    }, 2500);
+    });
 
-    function triggerSync() {
-      const icon = document.getElementById('sync-icon');
-      if (icon) {
-        icon.classList.add('sync-icon-spin');
-        setTimeout(() => icon.classList.remove('sync-icon-spin'), 800);
+    function saveApiKey() {
+      const key = document.getElementById('api-key-input').value.trim();
+      if (key) {
+        localStorage.setItem('pg1_gemini_api_key', key);
+        updateKeyStatus(true);
+      } else {
+        localStorage.removeItem('pg1_gemini_api_key');
+        updateKeyStatus(false);
       }
     }
 
-    // Control Toggle Logic
+    function updateKeyStatus(isConnected) {
+      const statusText = document.getElementById('key-status-text');
+      const connText = document.getElementById('key-conn-text');
+      if (isConnected) {
+        statusText.innerText = "KEY_STATUS: STORED_LOCAL";
+        statusText.style.color = "var(--neon-green)";
+        connText.innerText = "● CONNECTED";
+        connText.style.color = "var(--neon-green)";
+      } else {
+        statusText.innerText = "KEY_STATUS: NOT_SET";
+        statusText.style.color = "var(--text-muted)";
+        connText.innerText = "● DISCONNECTED";
+        connText.style.color = "var(--danger-red)";
+      }
+    }
+
+    // Controls
     const states = { video: false, audio: false, voice: false };
-
     function toggleControl(type) {
       states[type] = !states[type];
       const btn = document.getElementById(`btn-${type}`);
       const label = document.getElementById(`label-${type}`);
-      
       label.innerText = `${type.charAt(0).toUpperCase() + type.slice(1)}: ${states[type] ? 'ON' : 'OFF'}`;
       if (states[type]) {
         btn.classList.add('active');
@@ -955,91 +829,129 @@
       }
     }
 
-    // Chat Logic
-    function sendUserMessage() {
+    // Terminal AI Logic
+    async function sendUserMessage() {
       const input = document.getElementById('cmd-input');
       const val = input.value.trim();
       if (!val) return;
 
+      const apiKey = localStorage.getItem('pg1_gemini_api_key');
       const chatArea = document.getElementById('terminal-chat-area');
+
       const userBubble = document.createElement('div');
       userBubble.className = 'chat-bubble user';
-      userBubble.innerHTML = `${val} <button class="btn-copy-inline">Copy</button>`;
+      userBubble.innerText = val;
       chatArea.appendChild(userBubble);
-
       input.value = '';
 
-      setTimeout(() => {
-        const aiBubble = document.createElement('div');
-        aiBubble.className = 'chat-bubble';
-        aiBubble.innerHTML = `Command received and logged: "${val}". Protocol active.<button class="btn-copy-inline">Copy</button>`;
-        chatArea.appendChild(aiBubble);
-      }, 600);
+      if (!apiKey) {
+        const errBubble = document.createElement('div');
+        errBubble.className = 'chat-bubble system-err';
+        errBubble.innerText = "Error: Missing Gemini API Key. Configure key in Dash tab.";
+        chatArea.appendChild(errBubble);
+        return;
+      }
+
+      const aiBubble = document.createElement('div');
+      aiBubble.className = 'chat-bubble';
+      aiBubble.innerText = "Processing query...";
+      chatArea.appendChild(aiBubble);
+
+      conversationHistory.push({ role: "user", parts: [{ text: val }] });
+
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: conversationHistory })
+        });
+
+        const data = await response.json();
+
+        if (data.candidates && data.candidates[0].content.parts[0].text) {
+          const replyText = data.candidates[0].content.parts[0].text;
+          aiBubble.innerText = replyText;
+          conversationHistory.push({ role: "model", parts: [{ text: replyText }] });
+        } else {
+          aiBubble.className = 'chat-bubble system-err';
+          aiBubble.innerText = "API Response Error: " + JSON.stringify(data);
+        }
+      } catch (err) {
+        aiBubble.className = 'chat-bubble system-err';
+        aiBubble.innerText = "Network/API Request Failed: " + err.message;
+      }
+    }
+
+    function handleKeyPress(e) {
+      if (e.key === 'Enter') sendUserMessage();
     }
 
     function clearThread() {
-      const chatArea = document.getElementById('terminal-chat-area');
-      chatArea.innerHTML = `
+      conversationHistory = [];
+      document.getElementById('terminal-chat-area').innerHTML = `
         <div style="color: var(--neon-green); font-size: 11px; margin-bottom: 12px;">
-          > PG1 System Thread Cleared. Ready for multimodal commands.
-        </div>
-        <div class="terminal-header">
-          <span class="terminal-title">Terminal Thread</span>
-          <div class="terminal-actions">
-            <button class="btn-sm" onclick="saveCurrentThreadToLogs()">Save Log</button>
-            <button class="btn-sm btn-green">Export PDF</button>
-          </div>
+          > PG1 System Thread Cleared. Ready for commands.
         </div>
       `;
     }
 
-    // Functional Conversation Logs via LocalStorage
+    // Dynamic Navigation
+    function scrollToTab(tabId) {
+      document.getElementById('view-' + tabId).scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function syncNavbarOnScroll() {
+      const container = document.getElementById('swipe-container');
+      const width = container.offsetWidth;
+      const index = Math.round(container.scrollLeft / width);
+      const tabs = ['dash', 'terminal', 'node'];
+      document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+      const activeNav = document.getElementById('nav-' + tabs[index]);
+      if (activeNav) activeNav.classList.add('active');
+    }
+
+    function triggerSync() {
+      let cpu = Math.floor(18 + Math.random() * 15);
+      let ram = Math.floor(40 + Math.random() * 6);
+      document.getElementById('cpu-val').innerText = cpu + '%';
+      document.getElementById('cpu-bar').style.width = cpu + '%';
+      document.getElementById('ram-val').innerText = ram + '%';
+      document.getElementById('ram-bar').style.width = ram + '%';
+    }
+
+    // Functional Logs Management
     function getStoredLogs() {
       const data = localStorage.getItem('pg1_conversation_logs');
       return data ? JSON.parse(data) : [];
     }
 
     function saveCurrentThreadToLogs() {
-      const chatArea = document.getElementById('terminal-chat-area');
-      const content = chatArea.innerText;
-
+      const content = document.getElementById('terminal-chat-area').innerText;
       if (!content || content.length < 20) return;
 
       const logs = getStoredLogs();
-      const newLog = {
+      logs.unshift({
         id: 'LOG-' + Date.now().toString().slice(-5),
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         text: content
-      };
-
-      logs.unshift(newLog);
+      });
       localStorage.setItem('pg1_conversation_logs', JSON.stringify(logs));
-      renderLogs();
       openLogsModal();
     }
 
-    function renderLogs() {
+    function openLogsModal() {
       const container = document.getElementById('logs-list');
       const logs = getStoredLogs();
-
       if (logs.length === 0) {
-        container.innerHTML = `<div style="color: var(--text-muted); font-size: 11px; text-align: center; margin-top: 20px;">No saved logs found. Click "Save Current Active Thread" to archive past conversations.</div>`;
-        return;
-      }
-
-      container.innerHTML = logs.map(log => `
-        <div class="log-item">
-          <div class="log-item-meta">
-            <span>${log.id}</span>
-            <span>${log.timestamp}</span>
+        container.innerHTML = `<div style="color: var(--text-muted); font-size: 11px; text-align: center; margin-top: 20px;">No saved logs found.</div>`;
+      } else {
+        container.innerHTML = logs.map(l => `
+          <div class="log-item">
+            <div class="log-item-meta"><span>${l.id}</span><span>${l.timestamp}</span></div>
+            <div class="log-item-preview">${l.text}</div>
           </div>
-          <div class="log-item-preview">${log.text}</div>
-        </div>
-      `).join('');
-    }
-
-    function openLogsModal() {
-      renderLogs();
+        `).join('');
+      }
       document.getElementById('logs-modal').classList.add('open');
     }
 
@@ -1049,7 +961,7 @@
 
     function clearAllLogs() {
       localStorage.removeItem('pg1_conversation_logs');
-      renderLogs();
+      openLogsModal();
     }
   </script>
 </body>
