@@ -570,7 +570,7 @@
       background: #04060a;
       border-top: 1px solid var(--card-border);
       display: flex;
-      justify-style: space-around;
+      justify-content: space-around;
       align-items: center;
       z-index: 100;
     }
@@ -586,6 +586,7 @@
       gap: 3px;
       cursor: pointer;
       transition: color 0.2s ease;
+      flex: 1;
     }
 
     .nav-btn.active {
@@ -632,7 +633,7 @@
       
       <div class="panel-card">
         <div class="card-header">⚡ x402 Sovereign Key Relay</div>
-        <div class="card-subtext">Inject your Master Key to ignite live generative AI interactions.</div>
+        <div class="card-subtext">Inject your Master Key to ignite live PG1.Agent node interactions.</div>
         
         <div class="key-input-row">
           <input type="password" id="api-key-input" class="key-input-field" placeholder="Paste Master Key (AIzaSy...)" />
@@ -683,7 +684,7 @@
       
       <div class="terminal-chat-area" id="terminal-chat-area">
         <div style="color: var(--neon-green); font-size: 11px; margin-bottom: 12px;">
-          > PG1 System Initialized. Ready for multimodal commands.
+          > PG1 System Initialized. Ready for sovereign agent commands.
         </div>
 
         <div class="terminal-header">
@@ -695,7 +696,7 @@
         </div>
 
         <div class="chat-bubble">
-          PG1 Sovereign AI Agent online. Input your API Key under Dash to establish real-time processing.
+          PG1 Sovereign Agent online. Input your API Key under Dash to establish real-time processing.
         </div>
       </div>
 
