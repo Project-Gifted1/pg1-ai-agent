@@ -27,7 +27,7 @@
       background-color: var(--bg-dark);
       color: #ffffff;
       padding: 12px;
-      padding-bottom: 70px;
+      padding-bottom: 90px;
       overflow-x: hidden;
     }
 
@@ -97,6 +97,10 @@
       gap: 3px;
     }
 
+    .btn-ctrl:active, .btn-node-act:active, .btn-save:active, .btn-sm:active {
+      transform: scale(0.96);
+    }
+
     .btn-ctrl-icon {
       font-size: 11px;
       display: inline-block;
@@ -132,6 +136,7 @@
       scroll-behavior: smooth;
       -webkit-overflow-scrolling: touch;
       scrollbar-width: none;
+      padding-bottom: 20px;
     }
 
     .swipe-container::-webkit-scrollbar {
@@ -187,6 +192,12 @@
       border-radius: 4px;
       font-size: 11px;
       outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .key-input-field:focus {
+      border-color: var(--neon-cyan);
+      box-shadow: 0 0 6px rgba(0, 242, 254, 0.2);
     }
 
     .btn-save {
@@ -198,6 +209,11 @@
       font-size: 11px;
       font-weight: bold;
       cursor: pointer;
+      transition: filter 0.2s ease, transform 0.1s ease;
+    }
+
+    .btn-save:hover {
+      filter: brightness(1.1);
     }
 
     .key-status-row {
@@ -219,6 +235,17 @@
     .metric-value {
       color: var(--neon-cyan);
       font-weight: bold;
+      text-shadow: 0 0 6px rgba(0, 242, 254, 0.4);
+      transition: color 0.3s ease, transform 0.2s ease;
+    }
+
+    .metric-value.updated {
+      animation: metric-flash 0.4s ease-in-out;
+    }
+
+    @keyframes metric-flash {
+      0% { color: var(--neon-green); transform: scale(1.08); }
+      100% { color: var(--neon-cyan); transform: scale(1); }
     }
 
     .radar-icon {
@@ -233,7 +260,7 @@
 
     .telemetry-track {
       width: 100%;
-      height: 3px;
+      height: 4px;
       background: #05080e;
       border-radius: 2px;
       overflow: hidden;
@@ -244,9 +271,10 @@
     .telemetry-bar-fill {
       width: 40%;
       height: 100%;
-      background: linear-gradient(90deg, transparent, var(--neon-cyan), var(--neon-green), transparent);
+      background: linear-gradient(90deg, transparent, var(--accent-blue), var(--neon-cyan), var(--neon-green), transparent);
       position: absolute;
-      animation: flow-telemetry 2s linear infinite;
+      animation: flow-telemetry 1.8s linear infinite;
+      box-shadow: 0 0 8px var(--neon-cyan);
     }
 
     @keyframes flow-telemetry {
@@ -329,6 +357,12 @@
       border-radius: 4px;
       cursor: pointer;
       text-align: center;
+      transition: all 0.2s ease;
+    }
+
+    .btn-node-act:hover {
+      border-color: var(--neon-cyan);
+      background: rgba(0, 242, 254, 0.05);
     }
 
     /* Terminal View */
@@ -369,6 +403,11 @@
       font-size: 10px;
       border-radius: 3px;
       cursor: pointer;
+      transition: background 0.2s ease;
+    }
+
+    .btn-sm:hover {
+      background: #1a273d;
     }
 
     .btn-green {
@@ -531,7 +570,7 @@
       background: #04060a;
       border-top: 1px solid var(--card-border);
       display: flex;
-      justify-content: space-around;
+      justify-style: space-around;
       align-items: center;
       z-index: 100;
     }
@@ -546,6 +585,7 @@
       align-items: center;
       gap: 3px;
       cursor: pointer;
+      transition: color 0.2s ease;
     }
 
     .nav-btn.active {
@@ -615,7 +655,7 @@
           <span style="font-size: 11px; color: #fff; display: flex; align-items: center; gap: 6px;">
             <span class="radar-icon">📡</span> Live OTX Telemetry Feed
           </span>
-          <button class="btn-sm" onclick="triggerSync()">Sync Feed</button>
+          <button class="btn-sm" id="btn-sync-feed" onclick="triggerSync()">Sync Feed</button>
         </div>
 
         <div class="metric-row">
@@ -911,12 +951,36 @@
     }
 
     function triggerSync() {
-      let cpu = Math.floor(18 + Math.random() * 15);
-      let ram = Math.floor(40 + Math.random() * 6);
-      document.getElementById('cpu-val').innerText = cpu + '%';
-      document.getElementById('cpu-bar').style.width = cpu + '%';
-      document.getElementById('ram-val').innerText = ram + '%';
-      document.getElementById('ram-bar').style.width = ram + '%';
+      const pulsesEl = document.getElementById('pulses-val');
+      const iocEl = document.getElementById('ioc-val');
+      const tpEl = document.getElementById('throughput-val');
+      const btn = document.getElementById('btn-sync-feed');
+
+      if (btn) btn.innerText = "Syncing...";
+
+      setTimeout(() => {
+        let pulses = (1400 + Math.floor(Math.random() * 80)).toLocaleString();
+        let ioc = (18900 + Math.floor(Math.random() * 150)).toLocaleString();
+        let tp = (2.1 + (Math.random() * 0.8)).toFixed(1);
+
+        pulsesEl.innerText = pulses + ' Active Pulses';
+        iocEl.innerText = ioc + ' IOC Feeds';
+        tpEl.innerText = tp + ' MB/s';
+
+        [pulsesEl, iocEl, tpEl].forEach(el => {
+          el.classList.add('updated');
+          setTimeout(() => el.classList.remove('updated'), 400);
+        });
+
+        let cpu = Math.floor(18 + Math.random() * 15);
+        let ram = Math.floor(40 + Math.random() * 6);
+        document.getElementById('cpu-val').innerText = cpu + '%';
+        document.getElementById('cpu-bar').style.width = cpu + '%';
+        document.getElementById('ram-val').innerText = ram + '%';
+        document.getElementById('ram-bar').style.width = ram + '%';
+
+        if (btn) btn.innerText = "Sync Feed";
+      }, 300);
     }
 
     // Functional Logs Management
