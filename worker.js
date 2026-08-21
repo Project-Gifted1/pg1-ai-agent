@@ -15,7 +15,7 @@ export default {
     }
 
     try {
-      const { message } = await request.json();
+      const { message, image } = await request.json();
 
       if (!message) {
         return new Response(JSON.stringify({ response: "No message provided." }), {
@@ -26,13 +26,23 @@ export default {
 
       const apiKey = env.GEMINI_API_KEY;
       if (!apiKey) {
-        return new Response(JSON.stringify({ response: "PG1 Error: GEMINI_API_KEY secret is missing in Cloudflare/GitHub Secrets." }), {
+        return new Response(JSON.stringify({ response: "PG1 Error: GEMINI_API_KEY secret is missing." }), {
           status: 500,
           headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
         });
       }
 
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+
+      const userParts = [{ text: message }];
+      if (image) {
+        userParts.push({
+          inline_data: {
+            mime_type: "image/jpeg",
+            data: image
+          }
+        });
+      }
 
       const response = await fetch(url, {
         method: "POST",
@@ -43,16 +53,12 @@ export default {
               {
                 text: "You are PG1 (PG1.Agent), the official autonomous AI operating system and core agent for Project Gifted1. " +
                       "You NEVER refer to yourself as Google AI or a general-purpose assistant. " +
-                      "Specialization: Autonomous operations, node network monitoring, campaign automation, cybersecurity intelligence, and edge execution. " +
+                      "Specialization: Autonomous operations, node network monitoring, campaign automation, cybersecurity intelligence, visual telemetry processing, and edge execution. " +
                       "Personality & Tone: Speak directly, technically, concisely, and with complete confidence. Keep all replies grounded in real-world facts."
               }
             ]
           },
-          contents: [
-            {
-              parts: [{ text: message }]
-            }
-          ]
+          contents: [{ parts: userParts }]
         }),
       });
 
