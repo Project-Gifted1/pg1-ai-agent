@@ -139,7 +139,7 @@
       line-height: 1.4;
     }
 
-    /* Animated Key Relay Dots */
+    /* Key Relay Dots */
     .key-input-row {
       display: flex;
       gap: 8px;
@@ -202,7 +202,7 @@
       font-size: 10px;
     }
 
-    /* Live Sovereign Edge Animations */
+    /* Live Telemetry Radar & Flow */
     .radar-icon {
       display: inline-block;
       animation: rotate-radar 4s linear infinite;
@@ -223,7 +223,6 @@
       to { transform: rotate(360deg); }
     }
 
-    /* Flowing Telemetry Activity Track */
     .telemetry-track {
       width: 100%;
       height: 3px;
@@ -258,11 +257,87 @@
     .metric-value {
       color: var(--neon-cyan);
       font-weight: bold;
-      transition: color 0.3s ease;
     }
 
-    .metric-value.updated {
-      color: var(--neon-green);
+    /* NODE VIEW SPECIFIC STYLES */
+    .node-header-card {
+      text-align: center;
+      padding: 18px 12px;
+    }
+
+    .official-node-wrapper {
+      position: relative;
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 12px auto;
+    }
+
+    .official-node-logo {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+      position: relative;
+      z-index: 2;
+      border: 2px solid var(--neon-cyan);
+      box-shadow: 0 0 12px rgba(0, 242, 254, 0.6);
+    }
+
+    .node-aura {
+      position: absolute;
+      top: -6px;
+      left: -6px;
+      right: -6px;
+      bottom: -6px;
+      border-radius: 50%;
+      background: linear-gradient(45deg, var(--neon-cyan), var(--neon-green), var(--accent-blue));
+      z-index: 1;
+      filter: blur(10px);
+      opacity: 0.8;
+      animation: aura-glow 3s ease-in-out infinite alternate;
+    }
+
+    @keyframes aura-glow {
+      0% { opacity: 0.5; transform: scale(0.96); }
+      100% { opacity: 0.95; transform: scale(1.05); }
+    }
+
+    .resource-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: #05080e;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+
+    .resource-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent-blue), var(--neon-cyan));
+      border-radius: 3px;
+      transition: width 0.5s ease;
+    }
+
+    .node-action-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .btn-node-act {
+      background: #050a12;
+      border: 1px solid var(--card-border);
+      color: var(--neon-cyan);
+      font-size: 10px;
+      padding: 8px 0;
+      border-radius: 4px;
+      cursor: pointer;
+      text-align: center;
+    }
+
+    .btn-node-act:active {
+      background: var(--card-border);
     }
 
     /* Terminal View */
@@ -373,23 +448,6 @@
       border-radius: 4px;
     }
 
-    /* Node View */
-    .node-badge-container {
-      text-align: center;
-      padding: 20px 0;
-    }
-
-    .official-node-logo {
-      width: 100px;
-      height: 100px;
-      border-radius: 50%;
-      object-fit: cover;
-      border: 2px solid var(--neon-cyan);
-      box-shadow: 0 0 15px rgba(0, 242, 254, 0.4);
-      display: block;
-      margin: 0 auto 8px auto;
-    }
-
     /* Bottom Navbar */
     .bottom-navbar {
       position: fixed;
@@ -475,7 +533,7 @@
         </div>
       </div>
 
-      <!-- ANIMATED & LIVELY SOVEREIGN EDGE PANEL -->
+      <!-- Sovereign Edge Panel -->
       <div class="panel-card">
         <div class="card-header">
           <span class="status-dot"></span> Sovereign Edge Active
@@ -504,7 +562,6 @@
           <span class="metric-value" id="throughput-val">2.4 MB/s</span>
         </div>
 
-        <!-- Flowing Live Activity Bar -->
         <div class="telemetry-track">
           <div class="telemetry-bar-fill"></div>
         </div>
@@ -568,15 +625,21 @@
       </div>
     </div>
 
-    <!-- NODE VIEW -->
+    <!-- NODE VIEW WITH EXACT LOGO IMAGE -->
     <div id="view-node" class="tab-view">
-      <div class="panel-card node-badge-container">
-        <img 
-          src="08207b14-b824-41ac-ac43-97d078840546.jpeg" 
-          alt="Project Gifted1™ Logo" 
-          class="official-node-logo"
-        >
-        <h3 style="color: #ffffff; font-size: 16px; margin-top: 10px; margin-bottom: 2px;">PG1.Agent™</h3>
+      
+      <!-- Primary Node Identity Card -->
+      <div class="panel-card node-header-card">
+        <div class="official-node-wrapper">
+          <div class="node-aura"></div>
+          <!-- EXACT LOGO IMAGE REFERENCE PRESERVED -->
+          <img 
+            src="08207b14-b824-41ac-ac43-97d078840546.jpeg" 
+            alt="Project Gifted1™ Logo" 
+            class="official-node-logo"
+          >
+        </div>
+        <h3 style="color: #ffffff; font-size: 16px; margin-bottom: 2px;">PG1.Agent™</h3>
         <div class="card-subtext">Autonomous Edge Infrastructure</div>
 
         <div style="text-align: left; margin-top: 15px;">
@@ -586,7 +649,7 @@
           </div>
           <div class="metric-row">
             <span>Status:</span>
-            <span style="color: var(--neon-green); font-weight: bold;">Online & Syncing</span>
+            <span style="color: var(--neon-green); font-weight: bold;">● Online & Syncing</span>
           </div>
           <div class="metric-row">
             <span>Ownership:</span>
@@ -598,6 +661,52 @@
           </div>
         </div>
       </div>
+
+      <!-- System Telemetry Panel -->
+      <div class="panel-card">
+        <div class="card-header">📊 Node System Telemetry</div>
+        
+        <div style="margin-bottom: 10px;">
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
+            <span>CPU Load</span>
+            <span id="cpu-val" style="color: var(--neon-cyan);">24%</span>
+          </div>
+          <div class="resource-bar-bg">
+            <div class="resource-bar-fill" id="cpu-bar" style="width: 24%;"></div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 10px;">
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
+            <span>RAM Allocation</span>
+            <span id="ram-val" style="color: var(--neon-cyan);">42%</span>
+          </div>
+          <div class="resource-bar-bg">
+            <div class="resource-bar-fill" id="ram-bar" style="width: 42%;"></div>
+          </div>
+        </div>
+
+        <div>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
+            <span>Vault Storage</span>
+            <span style="color: var(--neon-cyan);">1.2 GB / 10 GB</span>
+          </div>
+          <div class="resource-bar-bg">
+            <div class="resource-bar-fill" style="width: 12%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Node Management Actions -->
+      <div class="panel-card">
+        <div class="card-header">⚡ Node Controls</div>
+        <div class="node-action-grid">
+          <button class="btn-node-act" onclick="triggerSync()">🔄 Restart Node</button>
+          <button class="btn-node-act" onclick="triggerSync()">🧹 Purge Cache</button>
+          <button class="btn-node-act" onclick="triggerSync()">📋 Logs</button>
+        </div>
+      </div>
+
     </div>
 
   </div>
@@ -637,17 +746,15 @@
       if (activeNav) activeNav.classList.add('active');
     }
 
-    // Dynamic Live Telemetry Updates
+    // Dynamic Telemetry & Resource Variations
     let pulseBase = 1420;
     let iocBase = 18940;
 
     setInterval(() => {
-      const pulseVar = Math.floor(Math.random() * 7) - 3;
-      const iocVar = Math.floor(Math.random() * 15) - 7;
+      // Dash Telemetry Updates
+      pulseBase += Math.floor(Math.random() * 7) - 3;
+      iocBase += Math.floor(Math.random() * 15) - 7;
       const tpVar = (2.2 + Math.random() * 0.6).toFixed(1);
-
-      pulseBase += pulseVar;
-      iocBase += iocVar;
 
       const pulsesEl = document.getElementById('pulses-val');
       const iocEl = document.getElementById('ioc-val');
@@ -656,12 +763,32 @@
       if (pulsesEl) pulsesEl.innerText = `${pulseBase.toLocaleString()} Active Pulses`;
       if (iocEl) iocEl.innerText = `${iocBase.toLocaleString()} IOC Feeds`;
       if (tpEl) tpEl.innerText = `${tpVar} MB/s`;
+
+      // Node Resource Updates
+      const cpuUsage = Math.floor(18 + Math.random() * 15);
+      const ramUsage = Math.floor(40 + Math.random() * 6);
+
+      const cpuVal = document.getElementById('cpu-val');
+      const cpuBar = document.getElementById('cpu-bar');
+      const ramVal = document.getElementById('ram-val');
+      const ramBar = document.getElementById('ram-bar');
+
+      if (cpuVal && cpuBar) {
+        cpuVal.innerText = `${cpuUsage}%`;
+        cpuBar.style.width = `${cpuUsage}%`;
+      }
+      if (ramVal && ramBar) {
+        ramVal.innerText = `${ramUsage}%`;
+        ramBar.style.width = `${ramUsage}%`;
+      }
     }, 2500);
 
     function triggerSync() {
       const icon = document.getElementById('sync-icon');
-      icon.classList.add('sync-icon-spin');
-      setTimeout(() => icon.classList.remove('sync-icon-spin'), 800);
+      if (icon) {
+        icon.classList.add('sync-icon-spin');
+        setTimeout(() => icon.classList.remove('sync-icon-spin'), 800);
+      }
     }
 
     const states = { video: false, audio: false, voice: false };
