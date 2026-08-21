@@ -21,8 +21,8 @@ export default {
         });
       }
 
-      // Updated to gemini-2.5-flash to prevent free tier rate-limit exhaustion
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      // Updated target model to gemini-3.6-flash
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
       const contents = [];
       const parts = [];
@@ -36,7 +36,7 @@ export default {
         });
       }
 
-      parts.push({ text: message || "Analyze current frame." });
+      parts.push({ text: message || "Analyze current status." });
       contents.push({ parts });
 
       const geminiRes = await fetch(url, {
