@@ -6,15 +6,14 @@
   <title>Project Gifted1™ v5.0 Sovereign Engine</title>
   <style>
     :root {
-      --bg-dark: #090c15;
-      --card-bg: #0d121f;
-      --border-color: #1a2332;
-      --neon-cyan: #00ffcc;
+      --bg-dark: #080c14;
+      --card-bg: #0e1522;
+      --card-border: #1a2536;
+      --neon-cyan: #00f2fe;
       --neon-green: #00ff88;
-      --accent-blue: #0055ff;
-      --accent-light-blue: #00bfff;
-      --danger-red: #ff3333;
-      --text-muted: #8a99ad;
+      --accent-blue: #0066ff;
+      --danger-red: #ff3344;
+      --text-muted: #7e8b9b;
     }
 
     * {
@@ -28,10 +27,10 @@
       background-color: var(--bg-dark);
       color: #ffffff;
       padding: 12px;
-      padding-bottom: 70px;
+      padding-bottom: 75px;
     }
 
-    /* Top Brand Header */
+    /* Brand Header */
     .app-header {
       display: flex;
       justify-content: space-between;
@@ -40,7 +39,7 @@
     }
 
     .brand-title {
-      font-size: 16px;
+      font-size: 15px;
       font-weight: bold;
       color: #ffffff;
       display: flex;
@@ -61,8 +60,8 @@
       color: var(--text-muted);
     }
 
-    /* Persistent Top Control Bar */
-    .global-control-bar {
+    /* Top Control Bar (Inside Dash View Only) */
+    .dash-control-bar {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 6px;
@@ -70,10 +69,10 @@
     }
 
     .btn-ctrl {
-      background: var(--card-bg);
+      background: rgba(14, 21, 34, 0.8);
       border: 1px solid var(--accent-blue);
-      color: var(--accent-light-blue);
-      padding: 8px 4px;
+      color: var(--neon-cyan);
+      padding: 8px 2px;
       font-size: 11px;
       font-weight: 600;
       border-radius: 4px;
@@ -82,11 +81,11 @@
     }
 
     .btn-ctrl.btn-danger {
-      border-color: rgba(255, 51, 51, 0.5);
+      border-color: rgba(255, 51, 68, 0.5);
       color: var(--danger-red);
     }
 
-    /* Main Tab Containers */
+    /* View Switcher */
     .tab-view {
       display: none;
     }
@@ -95,10 +94,10 @@
       display: block;
     }
 
-    /* Common Card Styling */
+    /* Panels & Cards */
     .panel-card {
       background: var(--card-bg);
-      border: 1px solid var(--border-color);
+      border: 1px solid var(--card-border);
       border-radius: 6px;
       padding: 14px;
       margin-bottom: 12px;
@@ -108,7 +107,7 @@
       color: var(--neon-cyan);
       font-size: 13px;
       font-weight: bold;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
       display: flex;
       align-items: center;
       gap: 6px;
@@ -118,14 +117,43 @@
       font-size: 11px;
       color: var(--text-muted);
       margin-bottom: 10px;
+      line-height: 1.4;
     }
 
-    /* Key Input Bar */
-    .key-bar-visual {
-      height: 6px;
-      background: linear-gradient(90deg, var(--neon-green), var(--neon-cyan));
-      border-radius: 3px;
+    /* Key Bar Visual & Save Key */
+    .key-input-row {
+      display: flex;
+      gap: 8px;
       margin-bottom: 10px;
+    }
+
+    .key-bar-visual {
+      flex: 1;
+      height: 28px;
+      background: #05080e;
+      border: 1px solid var(--card-border);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      overflow: hidden;
+    }
+
+    .key-dots {
+      color: var(--neon-green);
+      letter-spacing: 2px;
+      font-size: 10px;
+    }
+
+    .btn-save {
+      background: var(--neon-green);
+      color: #000;
+      border: none;
+      padding: 0 12px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: bold;
+      cursor: pointer;
     }
 
     .key-status-row {
@@ -140,25 +168,13 @@
       font-weight: bold;
     }
 
-    /* Save Key Button */
-    .btn-action {
-      background: var(--neon-green);
-      color: #000;
-      border: none;
-      padding: 6px 12px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: bold;
-      cursor: pointer;
-    }
-
     /* Telemetry Metrics */
     .metric-row {
       display: flex;
       justify-content: space-between;
-      padding: 6px 0;
-      border-bottom: 1px solid rgba(255,255,255,0.05);
-      font-size: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      font-size: 11px;
     }
 
     .metric-value {
@@ -166,27 +182,140 @@
       font-weight: bold;
     }
 
-    /* Terminal Output Box */
-    .terminal-box {
-      background: #05070d;
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      padding: 12px;
-      font-size: 12px;
-      line-height: 1.5;
-      color: var(--neon-green);
-      min-height: 250px;
+    /* Terminal View Specifics */
+    .terminal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
     }
 
-    /* Bottom Navigation Toolbar */
+    .terminal-title {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .terminal-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .btn-sm {
+      background: #121c2d;
+      border: 1px solid var(--accent-blue);
+      color: #ffffff;
+      padding: 4px 8px;
+      font-size: 10px;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+
+    .btn-green {
+      background: var(--neon-green);
+      color: #000;
+      border: none;
+      font-weight: bold;
+    }
+
+    .chat-bubble {
+      background: #09131d;
+      border: 1px solid var(--neon-green);
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 10px;
+      font-size: 11px;
+      color: var(--neon-green);
+      position: relative;
+    }
+
+    .chat-bubble.user {
+      background: #0d1e33;
+      border-color: var(--accent-blue);
+      color: #ffffff;
+      margin-left: 20px;
+    }
+
+    .btn-copy-inline {
+      position: absolute;
+      right: 6px;
+      bottom: 6px;
+      background: #050a12;
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .terminal-input-bar {
+      position: fixed;
+      bottom: 60px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      gap: 6px;
+      background: var(--bg-dark);
+      padding: 4px 0;
+    }
+
+    .btn-media {
+      background: #0d1e33;
+      border: 1px solid var(--accent-blue);
+      color: var(--neon-cyan);
+      padding: 6px 10px;
+      font-size: 10px;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .text-input {
+      flex: 1;
+      background: #05080e;
+      border: 1px solid var(--card-border);
+      color: #ffffff;
+      padding: 0 10px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+
+    .btn-send {
+      background: var(--neon-green);
+      color: #000;
+      border: none;
+      padding: 0 12px;
+      font-size: 11px;
+      font-weight: bold;
+      border-radius: 4px;
+    }
+
+    /* Node Badge View & Official Logo */
+    .node-badge-container {
+      text-align: center;
+      padding: 20px 0;
+    }
+
+    .official-node-logo {
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--neon-cyan);
+      box-shadow: 0 0 15px rgba(0, 242, 254, 0.4);
+      display: block;
+      margin: 0 auto 8px auto;
+    }
+
+    /* Bottom Navigation Bar */
     .bottom-navbar {
       position: fixed;
       bottom: 0;
       left: 0;
       right: 0;
       height: 55px;
-      background: #05070d;
-      border-top: 1px solid var(--border-color);
+      background: #04060a;
+      border-top: 1px solid var(--card-border);
       display: flex;
       justify-content: space-around;
       align-items: center;
@@ -196,7 +325,7 @@
       background: none;
       border: none;
       color: var(--text-muted);
-      font-size: 11px;
+      font-size: 10px;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -212,7 +341,7 @@
 </head>
 <body>
 
-  <!-- App Header -->
+  <!-- Brand Header -->
   <div class="app-header">
     <div class="brand-title">
       <div class="status-dot"></div>
@@ -221,30 +350,47 @@
     <div class="engine-version">v5.0 Sovereign Engine</div>
   </div>
 
-  <!-- PERSISTENT ACTION BAR (Visible across Dash, Terminal, and Node) -->
-  <div class="global-control-bar">
-    <button id="btn-video" class="btn-ctrl" onclick="toggleControl('video')">Video: OFF</button>
-    <button id="btn-audio" class="btn-ctrl" onclick="toggleControl('audio')">Audio: OFF</button>
-    <button id="btn-voice" class="btn-ctrl" onclick="toggleControl('voice')">Voice: OFF</button>
-    <button id="btn-delete" class="btn-ctrl btn-danger" onclick="clearThread()">Delete Thread</button>
-  </div>
-
   <!-- 1. DASH VIEW -->
   <div id="view-dash" class="tab-view active">
+    
+    <!-- Action Bar inside Dash Only -->
+    <div class="dash-control-bar">
+      <button id="btn-video" class="btn-ctrl" onclick="toggleControl('video')">Video: OFF</button>
+      <button id="btn-audio" class="btn-ctrl" onclick="toggleControl('audio')">Audio: OFF</button>
+      <button id="btn-voice" class="btn-ctrl" onclick="toggleControl('voice')">Voice: OFF</button>
+      <button id="btn-delete" class="btn-ctrl btn-danger" onclick="clearThread()">Delete Thread</button>
+    </div>
+
+    <!-- Sovereign Key Relay Panel -->
     <div class="panel-card">
       <div class="card-header">⚡ x402 Sovereign Key Relay</div>
       <div class="card-subtext">Enter your key below. Stored strictly in browser memory for direct client-side requests.</div>
-      <div class="key-bar-visual"></div>
+      
+      <div class="key-input-row">
+        <div class="key-bar-visual">
+          <span class="key-dots">••••••••••••••••••••••••••••••••••••</span>
+        </div>
+        <button class="btn-save">Save Key</button>
+      </div>
+
       <div class="key-status-row">
-        <span>KEY_STATUS: STORED_LOCAL</span>
+        <span style="color: var(--neon-green); font-size: 10px;">KEY_STATUS: STORED_LOCAL</span>
         <span class="status-badge">● CONNECTED</span>
       </div>
     </div>
 
+    <!-- Sovereign Edge Active Panel -->
     <div class="panel-card">
       <div class="card-header">Sovereign Edge Active</div>
-      <div class="card-subtext">Zero-cost deployment operational via PG1 core edge synchronization. Telemetry feeds integrated.</div>
+      <div class="card-subtext">Zero-cost deployment operational via PG1 core edge synchronization. Live telemetry feeds integrated.</div>
       
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <span style="font-size: 11px; color: #fff; display: flex; align-items: center; gap: 4px;">
+          📡 Live OTX Telemetry Feed
+        </span>
+        <button class="btn-sm">🔄 Sync Feed</button>
+      </div>
+
       <div class="metric-row">
         <span>OTX Threat Pulses Synced</span>
         <span class="metric-value">1,420 Active Pulses</span>
@@ -258,24 +404,79 @@
         <span class="metric-value">2.4 MB/s</span>
       </div>
     </div>
+
+    <!-- Operational Services Panel -->
+    <div class="panel-card">
+      <div class="card-header">⚙️ Operational Services</div>
+      <div class="metric-row">
+        <span>PG1 Sovereign Edge Mesh</span>
+        <span style="color: var(--neon-green); font-weight: bold;">ACTIVE</span>
+      </div>
+      <div class="metric-row">
+        <span>Core Intelligence Relay</span>
+        <span style="color: var(--neon-green); font-weight: bold;">CONNECTED</span>
+      </div>
+      <div class="metric-row">
+        <span>Encrypted Data Vault</span>
+        <span style="color: var(--neon-green); font-weight: bold;">SYNCED</span>
+      </div>
+    </div>
   </div>
 
   <!-- 2. TERMINAL VIEW -->
   <div id="view-terminal" class="tab-view">
-    <div class="terminal-box" id="terminal-output">
-      > PG1 System Initialized. Ready for multimodal commands.<br><br>
-      <span style="color: #ffffff;">[PG1 Core]: Connected. Multimodal vision and speech online.</span><br><br>
-      > Awaiting campaign execution parameters or query input. State your objective.
+    <div style="color: var(--neon-green); font-size: 11px; margin-bottom: 12px;">
+      > PG1 System Initialized. Ready for multimodal commands.
+    </div>
+
+    <div class="terminal-header">
+      <span class="terminal-title">Terminal Thread</span>
+      <div class="terminal-actions">
+        <button class="btn-sm">Copy All</button>
+        <button class="btn-sm btn-green">Export PDF</button>
+      </div>
+    </div>
+
+    <div class="chat-bubble">
+      PG1 Core connected. Multimodal vision and speech online.
+      <button class="btn-copy-inline">Copy</button>
+    </div>
+
+    <div class="chat-bubble user">
+      Hey
+      <button class="btn-copy-inline">Copy</button>
+    </div>
+
+    <div class="chat-bubble">
+      PG1 Sovereign AI Agent online. Protocol connection active via x402 network.<br><br>
+      Awaiting campaign execution parameters or query input. State your objective.
+      <button class="btn-copy-inline">Copy</button>
+    </div>
+
+    <div class="terminal-input-bar">
+      <button class="btn-media">
+        <span>📷</span>
+        <span>Media</span>
+      </button>
+      <input type="text" class="text-input" placeholder="Enter command or media p">
+      <button class="btn-send">Send</button>
     </div>
   </div>
 
   <!-- 3. NODE VIEW -->
   <div id="view-node" class="tab-view">
-    <div class="panel-card" style="text-align: center;">
-      <div style="font-size: 24px; margin-bottom: 8px;">⚙️</div>
-      <h3 style="color: #fff; margin-bottom: 4px;">PG1.Agent</h3>
-      <div class="card-subtext">Autonomous Edge Infrastructure</div>
+    <div class="panel-card node-badge-container">
       
+      <!-- Official Logo Image -->
+      <img 
+        src="08207b14-b824-41ac-ac43-97d078840546.jpeg" 
+        alt="Project Gifted1™ Operational Intelligence Logo" 
+        class="official-node-logo"
+      >
+
+      <h3 style="color: #ffffff; font-size: 16px; margin-top: 10px; margin-bottom: 2px;">PG1.Agent™</h3>
+      <div class="card-subtext">Autonomous Edge Infrastructure</div>
+
       <div style="text-align: left; margin-top: 15px;">
         <div class="metric-row">
           <span>Node ID:</span>
@@ -297,7 +498,7 @@
     </div>
   </div>
 
-  <!-- BOTTOM NAVIGATION TOOLBAR -->
+  <!-- BOTTOM NAVBAR -->
   <div class="bottom-navbar">
     <button class="nav-btn active" onclick="switchTab('dash', this)">
       <span>📊</span>
@@ -313,9 +514,8 @@
     </button>
   </div>
 
-  <!-- ROUTING & CONTROL LOGIC -->
+  <!-- SCRIPT LOGIC -->
   <script>
-    // Tab Navigation Handler
     function switchTab(tabId, element) {
       document.querySelectorAll('.tab-view').forEach(view => {
         view.classList.remove('active');
@@ -328,7 +528,6 @@
       element.classList.add('active');
     }
 
-    // Toggle States Logic
     const states = { video: false, audio: false, voice: false };
 
     function toggleControl(type) {
@@ -338,14 +537,10 @@
       
       btn.innerText = `${label}: ${states[type] ? 'ON' : 'OFF'}`;
       btn.style.borderColor = states[type] ? 'var(--neon-cyan)' : 'var(--accent-blue)';
-      btn.style.color = states[type] ? 'var(--neon-cyan)' : 'var(--accent-light-blue)';
     }
 
     function clearThread() {
-      const output = document.getElementById('terminal-output');
-      if (output) {
-        output.innerHTML = '> Thread cleared.<br>> PG1 System Initialized.';
-      }
+      console.log("Thread cleared");
     }
   </script>
 </body>
