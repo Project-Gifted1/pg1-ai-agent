@@ -4,34 +4,43 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Project Gifted1 Terminal</title>
+  <!-- jsPDF CDN for client-side PDF document generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background-color: #0B0E14; color: #E2E8F0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
     
-    header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #0B0E14; border-bottom: 1px solid #1E2330; }
+    header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #0B0E14; border-bottom: 1px solid #1E2330; height: 50px; flex-shrink: 0; }
     header .title { font-size: 16px; font-weight: 700; color: #FFFFFF; display: flex; align-items: center; gap: 8px; }
     header .status-dot { width: 8px; height: 8px; background: #00FF66; border-radius: 50%; display: inline-block; }
     header .version { font-size: 12px; color: #64748B; }
 
-    main { flex: 1; overflow-y: auto; padding: 16px; }
+    main { flex: 1; overflow-y: auto; padding: 16px; padding-bottom: 80px; }
     .tab-view { display: none; }
     .tab-view.active-view { display: block; }
 
-    /* Node Interface */
+    /* Control Buttons Bar */
+    .controls-bar { display: flex; gap: 8px; margin-bottom: 16px; overflow-x: auto; padding-bottom: 4px; }
+    .btn-ctrl { background: rgba(56, 189, 248, 0.1); border: 1px solid #1E293B; color: #38BDF8; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .btn-ctrl.active-ctrl { background: rgba(0, 255, 102, 0.15); border-color: #00FF66; color: #00FF66; }
+    .btn-danger { background: rgba(239, 68, 68, 0.1); border: 1px solid #7F1D1D; color: #EF4444; }
+
+    /* Live Video Feed Container */
+    #video-container { display: none; width: 100%; max-height: 200px; background: #000; border: 1px solid #00FF66; border-radius: 8px; overflow: hidden; margin-bottom: 16px; position: relative; }
+    #video-feed { width: 100%; height: 200px; object-fit: cover; }
+
+    /* Node Interface with GitHub Image Asset */
     .node-card { background: #0E131F; border: 1px solid #1E293B; border-radius: 12px; padding: 32px 20px; text-align: center; margin-top: 10px; }
     .badge-container { display: flex; justify-content: center; margin-bottom: 20px; }
-    .node-circle-badge {
+    .node-image-badge {
       width: 110px;
       height: 110px;
       border-radius: 50%;
       border: 2px solid #0099FF;
-      box-shadow: 0 0 20px rgba(0, 153, 255, 0.3);
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      box-shadow: 0 0 20px rgba(0, 153, 255, 0.4);
+      object-fit: cover;
       background: #080C14;
     }
-    .node-circle-badge span { font-size: 28px; font-weight: 800; color: #0099FF; letter-spacing: -1px; }
     .node-title { font-size: 22px; font-weight: 700; color: #FFFFFF; margin-bottom: 6px; }
     .node-subtitle { font-size: 13px; color: #64748B; margin-bottom: 24px; }
     .node-divider { height: 1px; background: #1E293B; margin: 0 0 24px 0; }
@@ -43,7 +52,7 @@
 
     /* Terminal View */
     .console-box { background: #05070A; border: 1px solid #1E2330; border-radius: 8px; padding: 12px; margin-bottom: 16px; font-family: monospace; font-size: 13px; color: #00FF66; }
-    .chat-container { background: #0D111A; border: 1px solid #1E2330; border-radius: 8px; display: flex; flex-direction: column; height: 420px; }
+    .chat-container { background: #0D111A; border: 1px solid #1E2330; border-radius: 8px; display: flex; flex-direction: column; height: 380px; }
     .chat-header { padding: 10px 12px; border-bottom: 1px solid #1E2330; display: flex; justify-content: space-between; align-items: center; }
     .chat-thread { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; line-height: 1.4; }
     .msg { padding: 8px 12px; border-radius: 6px; }
@@ -51,10 +60,10 @@
     .user-msg { background: #1E293B; color: #38BDF8; align-self: flex-start; }
     .input-bar { padding: 10px; border-top: 1px solid #1E2330; display: flex; gap: 8px; }
     .input-bar input { flex: 1; background: #05070A; border: 1px solid #1E2330; color: #FFF; padding: 8px 12px; border-radius: 6px; outline: none; }
-    .btn-send { background: #00FF66; color: #000; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+    .btn-action { background: #00FF66; color: #000; border: none; padding: 8px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; }
     
-    /* Navigation Bar */
-    nav { display: flex; background: #0B0E14; border-top: 1px solid #1E2330; }
+    /* Fixed Bottom Navigation Bar */
+    nav { display: flex; background: #0B0E14; border-top: 1px solid #1E2330; position: fixed; bottom: 0; left: 0; right: 0; height: 60px; z-index: 1000; }
     .nav-item { flex: 1; text-align: center; padding: 10px 0; color: #64748B; font-size: 11px; text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; }
     .nav-item.active { color: #38BDF8; }
     .nav-icon { font-size: 16px; }
@@ -70,13 +79,20 @@
   <main>
     <!-- Dash Tab -->
     <div id="view-dash" class="tab-view active-view">
-      <div style="display: flex; gap: 8px; margin-bottom: 16px; overflow-x: auto;">
-        <button style="background: rgba(56, 189, 248, 0.1); border: 1px solid #1E293B; color: #38BDF8; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;">Video: OFF</button>
-        <button style="background: rgba(56, 189, 248, 0.1); border: 1px solid #1E293B; color: #38BDF8; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;">Audio: OFF</button>
-        <button style="background: rgba(56, 189, 248, 0.1); border: 1px solid #1E293B; color: #38BDF8; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;">Voice: OFF</button>
-        <button style="background: rgba(239, 68, 68, 0.1); border: 1px solid #7F1D1D; color: #EF4444; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;">Delete Thread</button>
+      <!-- Status Controls Bar -->
+      <div class="controls-bar">
+        <button id="btn-video" class="btn-ctrl" onclick="toggleVideo()">Video: OFF</button>
+        <button id="btn-audio" class="btn-ctrl" onclick="toggleAudio()">Audio: OFF</button>
+        <button id="btn-voice" class="btn-ctrl" onclick="toggleVoice()">Voice: OFF</button>
+        <button class="btn-ctrl btn-danger" onclick="clearSession()">Delete Thread</button>
       </div>
 
+      <!-- Live Media Video Preview Window -->
+      <div id="video-container">
+        <video id="video-feed" autoplay playsinline muted></video>
+      </div>
+
+      <!-- Telemetry Card -->
       <div style="background: #0E131F; border: 1px solid #1E293B; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
         <h3 style="font-size: 16px; font-weight: 700; color: #FFF; margin-bottom: 4px;">Sovereign Edge Active</h3>
         <p style="font-size: 12px; color: #94A3B8; margin-bottom: 16px; line-height: 1.4;">Zero-cost deployment operational via PG1 core edge synchronization. All telemetry feeds secure.</p>
@@ -114,6 +130,7 @@
         </div>
       </div>
 
+      <!-- Operational Services -->
       <div style="background: #0E131F; border: 1px solid #1E293B; border-radius: 12px; padding: 16px;">
         <div style="font-size: 13px; font-weight: 600; color: #FFF; margin-bottom: 12px;">🔗 Operational Services</div>
         
@@ -139,29 +156,30 @@
       <div class="console-box">&gt; PG1 System Initialized. Ready for commands.</div>
       <div class="chat-container">
         <div class="chat-header">
-          <select id="session-select" onchange="switchSession(this.value)" style="background:#05070A; color:#FFF; border:1px solid #1E2330; padding:4px; border-radius:4px;"></select>
-          <button onclick="createNewSession()" style="background:#00FF66; border:none; padding:4px 8px; border-radius:4px; font-weight:bold; cursor:pointer;">+ New</button>
+          <span style="font-size: 12px; color: #94A3B8; font-weight: 600;">Terminal Thread</span>
+          <button onclick="generatePDF()" class="btn-action" style="font-size: 11px; padding: 4px 8px;">Export PDF</button>
         </div>
-        <div id="chat-thread" class="chat-thread"></div>
+        <div id="chat-thread" class="chat-thread">
+          <div class="msg ai-msg">PG1 Core connected. Awaiting input.</div>
+        </div>
         <div class="input-bar">
-          <input type="text" id="user-input" placeholder="Enter command..." onkeypress="handleKeyPress(event)">
-          <button class="btn-send" onclick="sendCommand()">Send</button>
+          <input type="text" id="user-input" placeholder="Enter command or search..." onkeypress="if(event.key==='Enter') sendCommand()">
+          <button class="btn-action" onclick="sendCommand()">Send</button>
         </div>
       </div>
     </div>
 
     <!-- Node Tab -->
     <div id="view-node" class="tab-view">
-      <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="08207b14-b824-41ac-ac43-97d078840546" id="node-asset-id" style="display: none;">
       <div class="node-card">
         <div class="badge-container">
-          <div class="node-circle-badge">
-            <span>G1</span>
-          </div>
+          <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Logo" class="node-image-badge">
         </div>
         <div class="node-title">PG1.Agent</div>
         <div class="node-subtitle">Autonomous Edge Infrastructure</div>
+        
         <div class="node-divider"></div>
+
         <div class="node-details">
           <div class="node-row"><span class="node-label">Node ID:</span><span class="node-value">PG1-CORE-01</span></div>
           <div class="node-row"><span class="node-label">Status:</span><span class="node-value status-online">Online & Syncing</span></div>
@@ -172,6 +190,7 @@
     </div>
   </main>
 
+  <!-- Navigation Bar -->
   <nav>
     <div class="nav-item active" onclick="showTab('dash', this)">
       <span class="nav-icon">📊</span>
@@ -187,6 +206,149 @@
     </div>
   </nav>
 
-  <script src="app.js"></script>
+  <script>
+    // Tab Navigation System
+    function showTab(tabName, el) {
+      document.querySelectorAll('.tab-view').forEach(tab => tab.classList.remove('active-view'));
+      document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+      
+      document.getElementById('view-' + tabName).classList.add('active-view');
+      el.classList.add('active');
+    }
+
+    // Hardware Media Features
+    let videoStream = null;
+    let isVoiceActive = false;
+
+    async function toggleVideo() {
+      const btn = document.getElementById('btn-video');
+      const container = document.getElementById('video-container');
+      const video = document.getElementById('video-feed');
+
+      if (!videoStream) {
+        try {
+          videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          video.srcObject = videoStream;
+          container.style.display = 'block';
+          btn.innerText = 'Video: ON';
+          btn.classList.add('active-ctrl');
+        } catch (err) {
+          alert('Camera access denied or unavailable.');
+        }
+      } else {
+        videoStream.getTracks().forEach(track => track.stop());
+        videoStream = null;
+        container.style.display = 'none';
+        btn.innerText = 'Video: OFF';
+        btn.classList.remove('active-ctrl');
+      }
+    }
+
+    async function toggleAudio() {
+      const btn = document.getElementById('btn-audio');
+      if (btn.innerText.includes('OFF')) {
+        try {
+          await navigator.mediaDevices.getUserMedia({ audio: true });
+          btn.innerText = 'Audio: ON';
+          btn.classList.add('active-ctrl');
+        } catch (err) {
+          alert('Microphone access denied.');
+        }
+      } else {
+        btn.innerText = 'Audio: OFF';
+        btn.classList.remove('active-ctrl');
+      }
+    }
+
+    function toggleVoice() {
+      const btn = document.getElementById('btn-voice');
+      isVoiceActive = !isVoiceActive;
+      if (isVoiceActive) {
+        btn.innerText = 'Voice: ON';
+        btn.classList.add('active-ctrl');
+        speakText("Voice response synthesis activated.");
+      } else {
+        btn.innerText = 'Voice: OFF';
+        btn.classList.remove('active-ctrl');
+        window.speechSynthesis.cancel();
+      }
+    }
+
+    function speakText(text) {
+      if (!isVoiceActive || !('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      window.speechSynthesis.speak(utterance);
+    }
+
+    // Messaging Engine
+    function sendCommand() {
+      const input = document.getElementById('user-input');
+      const thread = document.getElementById('chat-thread');
+      const text = input.value.trim();
+
+      if (!text) return;
+
+      const userMsg = document.createElement('div');
+      userMsg.className = 'msg user-msg';
+      userMsg.innerText = text;
+      thread.appendChild(userMsg);
+
+      input.value = '';
+      thread.scrollTop = thread.scrollHeight;
+
+      // Simulated PG1 Core Processing Response
+      setTimeout(() => {
+        const aiResponse = "PG1.Agent received: " + text + ". Core synchronization optimal.";
+        const aiMsg = document.createElement('div');
+        aiMsg.className = 'msg ai-msg';
+        aiMsg.innerText = aiResponse;
+        thread.appendChild(aiMsg);
+        thread.scrollTop = thread.scrollHeight;
+
+        speakText(aiResponse);
+      }, 600);
+    }
+
+    function clearSession() {
+      const thread = document.getElementById('chat-thread');
+      thread.innerHTML = '<div class="msg ai-msg">PG1 Session cleared. Core reset complete.</div>';
+    }
+
+    // Document Generation (PDF Export)
+    function generatePDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.text('Project Gifted1 - Terminal Session Report', 14, 20);
+      
+      doc.setFontSize(10);
+      doc.setFont('Helvetica', 'normal');
+      doc.text('Generated on: ' + new Date().toLocaleString(), 14, 28);
+      doc.text('Status: Active | Node: PG1-CORE-01', 14, 34);
+      
+      doc.line(14, 38, 196, 38);
+
+      const messages = document.querySelectorAll('#chat-thread .msg');
+      let y = 46;
+
+      messages.forEach((msg) => {
+        if (y > 270) {
+          doc.addPage();
+          y = 20;
+        }
+        const text = msg.innerText;
+        const lines = doc.splitTextToSize(text, 180);
+        doc.text(lines, 14, y);
+        y += (lines.length * 6) + 4;
+      });
+
+      doc.save('PG1_Session_Report.pdf');
+    }
+  </script>
 </body>
 </html>
