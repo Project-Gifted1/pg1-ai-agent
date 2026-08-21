@@ -114,13 +114,13 @@
         </div>
       </div>
 
-      <!-- Option 2 Local Storage Key Input Card -->
+      <!-- Sovereign Key Relay Input Card -->
       <div class="api-card">
         <div style="font-size: 13px; font-weight: 600; color: #FFF;">⚡ x402 Sovereign Key Relay</div>
-        <p style="font-size: 11px; color: #94A3B8; margin-top: 2px;">Enter your Gemini API key below. It is stored securely in your browser's local storage and used directly for client-side API requests.</p>
+        <p style="font-size: 11px; color: #94A3B8; margin-top: 2px;">Enter your key below. Stored strictly in browser memory for direct client-side requests.</p>
         
         <div style="display: flex; gap: 8px; margin-top: 10px;">
-          <input type="password" id="local-api-key-input" placeholder="Paste GEMINI_API_KEY..." style="flex: 1; background: #05070A; border: 1px solid #1E2330; color: #00FF66; padding: 8px 12px; border-radius: 6px; outline: none; font-family: monospace; font-size: 12px;">
+          <input type="password" id="local-api-key-input" placeholder="Plug in x402 Key..." style="flex: 1; background: #05070A; border: 1px solid #1E2330; color: #00FF66; padding: 8px 12px; border-radius: 6px; outline: none; font-family: monospace; font-size: 12px;">
           <button onclick="saveLocalKey()" class="btn-action" style="font-size: 11px; padding: 6px 12px;">Save Key</button>
         </div>
         
@@ -277,7 +277,7 @@
     let pendingMediaData = null;
 
     document.addEventListener("DOMContentLoaded", () => {
-      // Load saved local API key
+      // Load saved local key
       const savedKey = localStorage.getItem('PG1_GEMINI_KEY');
       if (savedKey) {
         document.getElementById('local-api-key-input').value = savedKey;
@@ -286,13 +286,13 @@
       fetchOTXTelemetry();
     });
 
-    // Option 2 Key Management Functions
+    // Key Management Functions
     function saveLocalKey() {
       const keyInput = document.getElementById('local-api-key-input').value.trim();
       if (keyInput) {
         localStorage.setItem('PG1_GEMINI_KEY', keyInput);
         updateKeyUI(true);
-        alert('API Key saved locally to browser storage.');
+        alert('Key saved locally to browser storage.');
       } else {
         localStorage.removeItem('PG1_GEMINI_KEY');
         updateKeyUI(false);
@@ -531,7 +531,7 @@
     async function fetchGeminiMultimodalResponse(promptText, mediaData) {
       const apiKey = localStorage.getItem('PG1_GEMINI_KEY') || "";
       if (!apiKey) {
-        return "⚠️ API Key missing. Enter and save your GEMINI_API_KEY in the x402 Key Relay card.";
+        return "⚠️ Key missing. Plug in your key in the x402 Sovereign Key Relay card.";
       }
 
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
