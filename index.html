@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ v5.2 Sovereign Engine</title>
+  <title>Project Gifted1™ v5.6 Sovereign Engine</title>
   <style>
     :root {
       --bg-light: #ffffff;
@@ -637,7 +637,6 @@
       margin-top: 12px;
     }
 
-    /* Video Stream Overlay Modal with Flip Controls */
     .video-modal {
       display: none;
       position: fixed;
@@ -712,7 +711,7 @@
       <div class="status-dot"></div>
       Project Gifted1™
     </div>
-    <div class="engine-version">v5.2 Sovereign Engine</div>
+    <div class="engine-version">v5.6 Sovereign Engine</div>
   </div>
 
   <!-- Top Controls -->
@@ -995,6 +994,7 @@
     let audioChunks = [];
     let cachedVoice = null;
     let useFrontCamera = true;
+    let speechUnlocked = false;
 
     window.addEventListener('DOMContentLoaded', () => {
       const savedKey = localStorage.getItem('pg1_api_key');
@@ -1010,12 +1010,31 @@
       }
     });
 
+    function unlockSpeechSynthesis() {
+      if (speechUnlocked || !('speechSynthesis' in window)) return;
+      try {
+        const dummy = new SpeechSynthesisUtterance('');
+        dummy.volume = 0;
+        window.speechSynthesis.speak(dummy);
+        speechUnlocked = true;
+      } catch (e) {}
+    }
+
     function loadOptimalVoice() {
       const voices = window.speechSynthesis.getVoices();
       if (!voices || voices.length === 0) return;
 
+      // Filter specifically for clear male English voices (Microsoft David, Google UK English Male, Alex, Daniel, etc.)
       cachedVoice = voices.find(v => 
-        (v.name.includes('Natural') || v.name.includes('Neural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Siri')) && v.lang.startsWith('en')
+        v.lang.startsWith('en') && (
+          v.name.toLowerCase().includes('david') ||
+          v.name.toLowerCase().includes('male') ||
+          v.name.toLowerCase().includes('alex') ||
+          v.name.toLowerCase().includes('daniel') ||
+          v.name.toLowerCase().includes('oliver') ||
+          v.name.toLowerCase().includes('george') ||
+          v.name.toLowerCase().includes('ryan')
+        )
       ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
     }
 
@@ -1040,6 +1059,7 @@
     }
 
     function saveApiKey() {
+      unlockSpeechSynthesis();
       const key = document.getElementById('api-key-input').value.trim();
       try {
         if (key) {
@@ -1073,6 +1093,7 @@
     const states = { video: false, audio: false, voice: false };
     
     async function toggleControl(type) {
+      unlockSpeechSynthesis();
       states[type] = !states[type];
       const btn = document.getElementById(`btn-${type}`);
       const label = document.getElementById(`label-${type}`);
@@ -1080,6 +1101,9 @@
       
       if (states[type]) {
         btn.classList.add('active');
+        if (type === 'voice') {
+          speakText("Voice response mode active. Ready.");
+        }
       } else {
         btn.classList.remove('active');
       }
@@ -1137,6 +1161,7 @@
     }
 
     async function triggerAudioRecordToggle() {
+      unlockSpeechSynthesis();
       const micLabel = document.getElementById('mic-label');
       const micBtn = document.getElementById('btn-mic-icon');
 
@@ -1144,21 +1169,15 @@
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           
-          // Select optimal mobile container MIME type to prevent error states
-          const mimeType = MediaRecorder.isTypeSupported('audio/mp4') 
-              ? 'audio/mp4' 
-              : (MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '');
-
-          mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+          mediaRecorder = new MediaRecorder(stream);
           audioChunks = [];
 
           mediaRecorder.ondataavailable = e => {
             if (e.data.size > 0) audioChunks.push(e.data);
           };
 
-          mediaRecorder.onstop = () => {
-            const blobType = mimeType || 'audio/mp4';
-            const audioBlob = new Blob(audioChunks, { type: blobType });
+          mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/mp4' });
             const audioUrl = URL.createObjectURL(audioBlob);
             
             const chatArea = document.getElementById('terminal-chat-area');
@@ -1174,6 +1193,8 @@
             chatArea.appendChild(audioBubble);
             chatArea.scrollTop = chatArea.scrollHeight;
             stream.getTracks().forEach(track => track.stop());
+
+            await sendTextPromptToGemini("User recorded a voice audio instruction snippet. Acknowledge and execute operational requirements.");
           };
 
           mediaRecorder.start();
@@ -1192,6 +1213,7 @@
     }
 
     function handleFileAttachment(inputElement) {
+      unlockSpeechSynthesis();
       const file = inputElement.files[0];
       if (!file) return;
 
@@ -1223,7 +1245,9 @@
     function speakText(text) {
       if (!states.voice || !('speechSynthesis' in window)) return;
       
+      unlockSpeechSynthesis();
       window.speechSynthesis.cancel();
+      
       if (!cachedVoice) loadOptimalVoice();
 
       const cleanSpeechText = text.replace(/[`*#_]/g, '').replace(/https?:\/\/\S+/g, 'link');
@@ -1231,14 +1255,18 @@
       const utterance = new SpeechSynthesisUtterance(cleanSpeechText);
       if (cachedVoice) utterance.voice = cachedVoice;
       
+      // Natural cadence settings
       utterance.rate = 0.96; 
-      utterance.pitch = 1.0;
+      utterance.pitch = 0.92; // Slightly deeper male modulation
       utterance.volume = 1.0;
 
-      window.speechSynthesis.speak(utterance);
+      setTimeout(() => {
+        window.speechSynthesis.speak(utterance);
+      }, 50);
     }
 
     function copyBubbleText(btnElement) {
+      unlockSpeechSynthesis();
       const bubbleTextDiv = btnElement.closest('.chat-bubble').querySelector('.bubble-text');
       const textToCopy = bubbleTextDiv ? bubbleTextDiv.innerText : '';
       navigator.clipboard.writeText(textToCopy).then(() => {
@@ -1253,6 +1281,7 @@
     }
 
     function editBubbleText(btnElement) {
+      unlockSpeechSynthesis();
       const bubble = btnElement.closest('.chat-bubble');
       const textDiv = bubble.querySelector('.bubble-text');
       const currentText = textDiv.innerText;
@@ -1288,14 +1317,12 @@
     }
 
     async function sendUserMessage() {
+      unlockSpeechSynthesis();
       const input = document.getElementById('cmd-input');
       const val = input.value.trim();
       if (!val) return;
 
-      const apiKey = localStorage.getItem('pg1_api_key');
       const chatArea = document.getElementById('terminal-chat-area');
-      const selectedModel = document.getElementById('model-select').value;
-
       const userBubble = document.createElement('div');
       userBubble.className = 'chat-bubble user';
       userBubble.innerHTML = `
@@ -1307,6 +1334,14 @@
       `;
       chatArea.appendChild(userBubble);
       input.value = '';
+
+      await sendTextPromptToGemini(val);
+    }
+
+    async function sendTextPromptToGemini(promptText) {
+      const apiKey = localStorage.getItem('pg1_api_key');
+      const chatArea = document.getElementById('terminal-chat-area');
+      const selectedModel = document.getElementById('model-select').value;
 
       if (!apiKey) {
         const errBubble = document.createElement('div');
@@ -1328,7 +1363,7 @@
       chatArea.appendChild(aiBubble);
       chatArea.scrollTop = chatArea.scrollHeight;
 
-      conversationHistory.push({ role: "user", parts: [{ text: val }] });
+      conversationHistory.push({ role: "user", parts: [{ text: promptText }] });
 
       const modelFallbackSequence = [selectedModel, "gemini-3.6-flash", "gemini-3.5-flash-lite"];
       let success = false;
@@ -1379,6 +1414,7 @@
     }
 
     function clearThread() {
+      unlockSpeechSynthesis();
       conversationHistory = [];
       document.getElementById('terminal-chat-area').innerHTML = `
         <div style="color: var(--sovereign-green); font-size: 11px; margin-bottom: 12px; font-weight: bold;">
@@ -1388,6 +1424,7 @@
     }
 
     function scrollToTab(tabId) {
+      unlockSpeechSynthesis();
       document.getElementById('view-' + tabId).scrollIntoView({ behavior: 'smooth' });
     }
 
@@ -1402,6 +1439,7 @@
     }
 
     function triggerSync() {
+      unlockSpeechSynthesis();
       const pulsesEl = document.getElementById('pulses-val');
       const iocEl = document.getElementById('ioc-val');
       const tpEl = document.getElementById('throughput-val');
@@ -1433,6 +1471,7 @@
     }
 
     function saveCurrentThreadToLogs() {
+      unlockSpeechSynthesis();
       try {
         const bubbles = document.querySelectorAll('#terminal-chat-area .chat-bubble');
         if (!bubbles || bubbles.length === 0) {
@@ -1477,6 +1516,7 @@
     }
 
     function reopenLogById(logId) {
+      unlockSpeechSynthesis();
       const logs = getStoredLogs();
       const target = logs.find(l => l.id === logId);
       if (!target) return;
@@ -1538,6 +1578,7 @@
     }
 
     function exportLogFile(type) {
+      unlockSpeechSynthesis();
       const bubbles = document.querySelectorAll('#terminal-chat-area .chat-bubble');
       if (!bubbles || bubbles.length === 0) {
         alert("No active conversation to export.");
@@ -1566,6 +1607,7 @@
     }
 
     function openLogsModal() {
+      unlockSpeechSynthesis();
       const container = document.getElementById('logs-list');
       const logs = getStoredLogs();
       if (!logs || logs.length === 0) {
@@ -1590,6 +1632,7 @@
     }
 
     function clearAllLogs() {
+      unlockSpeechSynthesis();
       try { localStorage.removeItem('pg1_conversation_logs'); } catch(e) {}
       memoryLogFallback = [];
       openLogsModal();
