@@ -539,14 +539,14 @@
       window.speechSynthesis.speak(utterance);
     }
 
-    // Sovereign AI Fetcher with System Instruction Identity
+    // Sovereign AI Fetcher configured to gemini-3.6-flash
     async function fetchGeminiMultimodalResponse(promptText, mediaData) {
       const apiKey = localStorage.getItem('PG1_GEMINI_KEY') || "";
       if (!apiKey) {
         return "⚠️ Key missing. Plug in your key in the x402 Sovereign Key Relay card.";
       }
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
       const contentsParts = [];
       if (promptText) contentsParts.push({ text: promptText });
