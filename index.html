@@ -631,14 +631,8 @@
     .log-item-preview {
       color: var(--text-main);
       white-space: pre-wrap;
-      max-height: 100px;
-      overflow: hidden;
-    }
-
-    .logs-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 12px;
+      max-height: 120px;
+      overflow-y: auto;
     }
 
     .bottom-navbar {
@@ -915,9 +909,9 @@
       <button class="btn-sm" onclick="closeLogsModal()">✕ Close</button>
     </div>
     <div class="logs-body" id="logs-list"></div>
-    <div class="logs-actions">
-      <button class="btn-sm btn-green" style="flex:1" onclick="saveCurrentThreadToLogs()">+ Save Current Active Thread</button>
-      <button class="btn-sm" style="color: var(--danger-red); border-color: rgba(204,0,34,0.3)" onclick="clearAllLogs()">Purge Storage</button>
+    <div style="display: flex; gap: 8px; margin-top: 12px;">
+      <button class="btn-sm btn-green" style="flex:1; padding: 8px;" onclick="saveCurrentThreadToLogs()">+ Save Current Active Thread</button>
+      <button class="btn-sm" style="color: var(--danger-red); border-color: rgba(204,0,34,0.3); padding: 8px;" onclick="clearAllLogs()">Purge Storage</button>
     </div>
   </div>
 
@@ -1163,11 +1157,12 @@
 
     function clearThread() {
       conversationHistory = [];
-      document.getElementById('terminal-chat-area').innerHTML = `
-        <div style="color: var(--sovereign-green); font-size: 11px; margin-bottom: 12px; font-weight: bold;">
-          > PG1 System Thread Cleared. Ready for commands.
-        </div>
-      `;
+      const chatArea = document.getElementById('terminal-chat-area');
+      chatArea.querySelectorAll('.chat-bubble').forEach(b => b.remove());
+      const initNotice = document.createElement('div');
+      initNotice.style.cssText = "color: var(--sovereign-green); font-size: 11px; margin-bottom: 12px; font-weight: bold;";
+      initNotice.innerText = "> PG1 System Thread Cleared. Ready for commands.";
+      chatArea.insertBefore(initNotice, chatArea.firstChild);
     }
 
     function scrollToTab(tabId) {
@@ -1213,14 +1208,26 @@
     }
 
     function saveCurrentThreadToLogs() {
-      const content = document.getElementById('terminal-chat-area').innerText;
-      if (!content || content.length < 20) return;
+      const bubbleElements = document.querySelectorAll('#terminal-chat-area .chat-bubble');
+      if.length === 0;
+      
+      let formattedThread = "";
+      bubbleElements.forEach(bubble => {
+        const isUser = bubble.classList.contains('user');
+        const textEl = bubble.querySelector('.bubble-text');
+        if (textEl) {
+          const sender = isUser ? "USER" : "PG1.AGENT";
+          formattedThread += `[${sender}]: ${textEl.innerText}\n\n`;
+        }
+      });
+
+      if (!formattedThread.trim()) return;
 
       const logs = getStoredLogs();
       logs.unshift({
         id: 'LOG-' + Date.now().toString().slice(-5),
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2' }),
-        text: content
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2' }) + ' (' + new Date().toLocaleDateString() + ')',
+        text: formattedThread.trim()
       });
       localStorage.setItem('pg1_conversation_logs', JSON.stringify(logs));
       openLogsModal();
@@ -1234,8 +1241,8 @@
       } else {
         container.innerHTML = logs.map(l => `
           <div class="log-item">
-            <div class="log-item-meta"><span>${l.id}</span><span>${l.timestamp}</span></div>
-            <div class="log-item-preview">${l.text}</div>
+            <div class="log-item-meta"><span><b>${l.id}</b></span><span>${l.timestamp}</span></div>
+            <div class="log-item-preview">${escapeHtml(l.text)}</div>
           </div>
         `).join('');
       }
