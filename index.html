@@ -3,151 +3,348 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Project Gifted1™</title>
+  <title>Project Gifted1™ v5.0 Sovereign Engine</title>
   <style>
-    /* Global Container Setup */
-    body {
-      background-color: #0b0f19;
-      color: #00ffcc;
-      font-family: monospace;
+    :root {
+      --bg-dark: #090c15;
+      --card-bg: #0d121f;
+      --border-color: #1a2332;
+      --neon-cyan: #00ffcc;
+      --neon-green: #00ff88;
+      --accent-blue: #0055ff;
+      --accent-light-blue: #00bfff;
+      --danger-red: #ff3333;
+      --text-muted: #8a99ad;
+    }
+
+    * {
+      box-sizing: border-box;
       margin: 0;
-      padding: 10px;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
     }
 
-    /* Global Header Action Bar (Stays Visible Everywhere) */
-    .global-action-bar {
+    body {
+      background-color: var(--bg-dark);
+      color: #ffffff;
+      padding: 12px;
+      padding-bottom: 70px;
+    }
+
+    /* Top Brand Header */
+    .app-header {
       display: flex;
-      gap: 8px;
-      margin-bottom: 15px;
       justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
     }
 
-    .btn-toggle {
-      background-color: #0a192f;
-      border: 1px solid #0055ff;
-      color: #00bfff;
-      padding: 6px 10px;
-      font-size: 12px;
+    .brand-title {
+      font-size: 16px;
+      font-weight: bold;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background-color: var(--neon-green);
+      border-radius: 50%;
+      box-shadow: 0 0 6px var(--neon-green);
+    }
+
+    .engine-version {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    /* Persistent Top Control Bar */
+    .global-control-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+
+    .btn-ctrl {
+      background: var(--card-bg);
+      border: 1px solid var(--accent-blue);
+      color: var(--accent-light-blue);
+      padding: 8px 4px;
+      font-size: 11px;
+      font-weight: 600;
       border-radius: 4px;
       cursor: pointer;
+      text-align: center;
     }
 
-    .btn-danger {
-      border-color: #ff3333;
-      color: #ff3333;
+    .btn-ctrl.btn-danger {
+      border-color: rgba(255, 51, 51, 0.5);
+      color: var(--danger-red);
     }
 
-    /* Tab Content Visibility Logic */
-    .tab-content {
+    /* Main Tab Containers */
+    .tab-view {
       display: none;
     }
 
-    .tab-content.active {
+    .tab-view.active {
       display: block;
     }
 
-    /* Bottom Navigation Styling */
-    .bottom-nav {
+    /* Common Card Styling */
+    .panel-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+
+    .card-header {
+      color: var(--neon-cyan);
+      font-size: 13px;
+      font-weight: bold;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .card-subtext {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+
+    /* Key Input Bar */
+    .key-bar-visual {
+      height: 6px;
+      background: linear-gradient(90deg, var(--neon-green), var(--neon-cyan));
+      border-radius: 3px;
+      margin-bottom: 10px;
+    }
+
+    .key-status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 10px;
+    }
+
+    .status-badge {
+      color: var(--neon-green);
+      font-weight: bold;
+    }
+
+    /* Save Key Button */
+    .btn-action {
+      background: var(--neon-green);
+      color: #000;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    /* Telemetry Metrics */
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      font-size: 12px;
+    }
+
+    .metric-value {
+      color: var(--neon-cyan);
+      font-weight: bold;
+    }
+
+    /* Terminal Output Box */
+    .terminal-box {
+      background: #05070d;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 12px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--neon-green);
+      min-height: 250px;
+    }
+
+    /* Bottom Navigation Toolbar */
+    .bottom-navbar {
       position: fixed;
       bottom: 0;
       left: 0;
       right: 0;
+      height: 55px;
+      background: #05070d;
+      border-top: 1px solid var(--border-color);
       display: flex;
       justify-content: space-around;
-      background: #070a10;
-      border-top: 1px solid #1a2332;
-      padding: 10px 0;
+      align-items: center;
     }
 
-    .nav-item {
-      color: #556b82;
+    .nav-btn {
       background: none;
       border: none;
-      font-size: 14px;
+      color: var(--text-muted);
+      font-size: 11px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
       cursor: pointer;
     }
 
-    .nav-item.active {
-      color: #00ffcc;
+    .nav-btn.active {
+      color: var(--neon-cyan);
       font-weight: bold;
     }
   </style>
 </head>
 <body>
 
-  <!-- Persistent Global Action Bar -->
-  <div class="global-action-bar">
-    <button class="btn-toggle" id="btn-video" onclick="toggleMedia('video')">Video: OFF</button>
-    <button class="btn-toggle" id="btn-audio" onclick="toggleMedia('audio')">Audio: OFF</button>
-    <button class="btn-toggle" id="btn-voice" onclick="toggleMedia('voice')">Voice: OFF</button>
-    <button class="btn-toggle btn-danger" onclick="deleteThread()">Delete Thread</button>
+  <!-- App Header -->
+  <div class="app-header">
+    <div class="brand-title">
+      <div class="status-dot"></div>
+      Project Gifted1™
+    </div>
+    <div class="engine-version">v5.0 Sovereign Engine</div>
   </div>
 
-  <!-- Tab 1: Dash -->
-  <div id="tab-dash" class="tab-content active">
-    <!-- Key Relay Box & Dashboard Widgets Go Here -->
-    <div style="border: 1px solid #1a2332; padding: 15px; border-radius: 6px;">
-      <h3 style="margin-top:0;">⚡ x402 Sovereign Key Relay</h3>
-      <p style="font-size: 12px; color: #8a99ad;">Stored strictly in browser memory for direct client-side requests.</p>
+  <!-- PERSISTENT ACTION BAR (Visible across Dash, Terminal, and Node) -->
+  <div class="global-control-bar">
+    <button id="btn-video" class="btn-ctrl" onclick="toggleControl('video')">Video: OFF</button>
+    <button id="btn-audio" class="btn-ctrl" onclick="toggleControl('audio')">Audio: OFF</button>
+    <button id="btn-voice" class="btn-ctrl" onclick="toggleControl('voice')">Voice: OFF</button>
+    <button id="btn-delete" class="btn-ctrl btn-danger" onclick="clearThread()">Delete Thread</button>
+  </div>
+
+  <!-- 1. DASH VIEW -->
+  <div id="view-dash" class="tab-view active">
+    <div class="panel-card">
+      <div class="card-header">⚡ x402 Sovereign Key Relay</div>
+      <div class="card-subtext">Enter your key below. Stored strictly in browser memory for direct client-side requests.</div>
+      <div class="key-bar-visual"></div>
+      <div class="key-status-row">
+        <span>KEY_STATUS: STORED_LOCAL</span>
+        <span class="status-badge">● CONNECTED</span>
+      </div>
+    </div>
+
+    <div class="panel-card">
+      <div class="card-header">Sovereign Edge Active</div>
+      <div class="card-subtext">Zero-cost deployment operational via PG1 core edge synchronization. Telemetry feeds integrated.</div>
+      
+      <div class="metric-row">
+        <span>OTX Threat Pulses Synced</span>
+        <span class="metric-value">1,420 Active Pulses</span>
+      </div>
+      <div class="metric-row">
+        <span>Active Indicators (IOC)</span>
+        <span class="metric-value">18,940 IOC Feeds</span>
+      </div>
+      <div class="metric-row">
+        <span>Edge Telemetry Throughput</span>
+        <span class="metric-value">2.4 MB/s</span>
+      </div>
     </div>
   </div>
 
-  <!-- Tab 2: Terminal -->
-  <div id="tab-terminal" class="tab-content">
-    <div style="border: 1px solid #1a2332; padding: 15px; border-radius: 6px;">
-      <p style="color: #00ffcc;">> PG1 System Initialized. Ready for multimodal commands.</p>
+  <!-- 2. TERMINAL VIEW -->
+  <div id="view-terminal" class="tab-view">
+    <div class="terminal-box" id="terminal-output">
+      > PG1 System Initialized. Ready for multimodal commands.<br><br>
+      <span style="color: #ffffff;">[PG1 Core]: Connected. Multimodal vision and speech online.</span><br><br>
+      > Awaiting campaign execution parameters or query input. State your objective.
     </div>
   </div>
 
-  <!-- Tab 3: Node -->
-  <div id="tab-node" class="tab-content">
-    <div style="border: 1px solid #1a2332; padding: 15px; border-radius: 6px; text-align: center;">
-      <h3>PG1.Agent</h3>
-      <p style="color: #00ff88;">Status: Online & Syncing</p>
+  <!-- 3. NODE VIEW -->
+  <div id="view-node" class="tab-view">
+    <div class="panel-card" style="text-align: center;">
+      <div style="font-size: 24px; margin-bottom: 8px;">⚙️</div>
+      <h3 style="color: #fff; margin-bottom: 4px;">PG1.Agent</h3>
+      <div class="card-subtext">Autonomous Edge Infrastructure</div>
+      
+      <div style="text-align: left; margin-top: 15px;">
+        <div class="metric-row">
+          <span>Node ID:</span>
+          <span class="metric-value">PG1-CORE-01</span>
+        </div>
+        <div class="metric-row">
+          <span>Status:</span>
+          <span style="color: var(--neon-green); font-weight: bold;">Online & Syncing</span>
+        </div>
+        <div class="metric-row">
+          <span>Ownership:</span>
+          <span class="metric-value">100% Sovereign</span>
+        </div>
+        <div class="metric-row">
+          <span>Protocol:</span>
+          <span class="metric-value">x402 Active</span>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Persistent Navigation Footer -->
-  <div class="bottom-nav">
-    <button class="nav-item active" onclick="switchTab('dash', this)">Dash</button>
-    <button class="nav-item" onclick="switchTab('terminal', this)">Terminal</button>
-    <button class="nav-item" onclick="switchTab('node', this)">Node</button>
+  <!-- BOTTOM NAVIGATION TOOLBAR -->
+  <div class="bottom-navbar">
+    <button class="nav-btn active" onclick="switchTab('dash', this)">
+      <span>📊</span>
+      <span>Dash</span>
+    </button>
+    <button class="nav-btn" onclick="switchTab('terminal', this)">
+      <span>⚡</span>
+      <span>Terminal</span>
+    </button>
+    <button class="nav-btn" onclick="switchTab('node', this)">
+      <span>👤</span>
+      <span>Node</span>
+    </button>
   </div>
 
+  <!-- ROUTING & CONTROL LOGIC -->
   <script>
-    // Tab Router Switcher
-    function switchTab(tabName, btnElement) {
-      // Hide all tabs
-      document.querySelectorAll('.tab-content').forEach(tab => {
-        tab.classList.remove('active');
+    // Tab Navigation Handler
+    function switchTab(tabId, element) {
+      document.querySelectorAll('.tab-view').forEach(view => {
+        view.classList.remove('active');
+      });
+      document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.classList.remove('active');
       });
 
-      // Remove active status from all navigation items
-      document.querySelectorAll('.nav-item').forEach(nav => {
-        nav.classList.remove('active');
-      });
-
-      // Show selected tab and highlight nav button
-      document.getElementById('tab-' + tabName).classList.add('active');
-      btnElement.classList.add('active');
+      document.getElementById('view-' + tabId).classList.add('active');
+      element.classList.add('active');
     }
 
-    // Media Toggle Handler
-    const mediaStates = { video: false, audio: false, voice: false };
+    // Toggle States Logic
+    const states = { video: false, audio: false, voice: false };
 
-    function toggleMedia(type) {
-      mediaStates[type] = !mediaStates[type];
+    function toggleControl(type) {
+      states[type] = !states[type];
       const btn = document.getElementById(`btn-${type}`);
       const label = type.charAt(0).toUpperCase() + type.slice(1);
       
-      btn.innerText = `${label}: ${mediaStates[type] ? 'ON' : 'OFF'}`;
-      btn.style.borderColor = mediaStates[type] ? '#00ffcc' : '#0055ff';
-      btn.style.color = mediaStates[type] ? '#00ffcc' : '#00bfff';
+      btn.innerText = `${label}: ${states[type] ? 'ON' : 'OFF'}`;
+      btn.style.borderColor = states[type] ? 'var(--neon-cyan)' : 'var(--accent-blue)';
+      btn.style.color = states[type] ? 'var(--neon-cyan)' : 'var(--accent-light-blue)';
     }
 
-    function deleteThread() {
-      if (confirm('Are you sure you want to delete this thread?')) {
-        console.log('Thread cleared');
+    function clearThread() {
+      const output = document.getElementById('terminal-output');
+      if (output) {
+        output.innerHTML = '> Thread cleared.<br>> PG1 System Initialized.';
       }
     }
   </script>
