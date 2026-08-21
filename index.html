@@ -992,6 +992,7 @@
     let activeMediaStream = null;
     let mediaRecorder = null;
     let audioChunks = [];
+    let lastRecordedAudioBlob = null;
     let cachedVoice = null;
     let useFrontCamera = true;
     let speechUnlocked = false;
@@ -1024,7 +1025,6 @@
       const voices = window.speechSynthesis.getVoices();
       if (!voices || voices.length === 0) return;
 
-      // Filter specifically for clear male English voices (Microsoft David, Google UK English Male, Alex, Daniel, etc.)
       cachedVoice = voices.find(v => 
         v.lang.startsWith('en') && (
           v.name.toLowerCase().includes('david') ||
@@ -1160,6 +1160,36 @@
       }
     }
 
+    // Capture current frame from video stream as base64 JPEG
+    function captureVideoFrameAsBase64() {
+      const videoElement = document.getElementById('camera-stream');
+      if (!states.video || !videoElement || videoElement.readyState < 2) return null;
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = videoElement.videoWidth || 640;
+        canvas.height = videoElement.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        return dataUrl.split(',')[1];
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // Helper to convert blob to base64
+    function blobToBase64(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64String = reader.result.split(',')[1];
+          resolve(base64String);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
     async function triggerAudioRecordToggle() {
       unlockSpeechSynthesis();
       const micLabel = document.getElementById('mic-label');
@@ -1177,8 +1207,8 @@
           };
 
           mediaRecorder.onstop = async () => {
-            const audioBlob = new Blob(audioChunks, { type: 'audio/mp4' });
-            const audioUrl = URL.createObjectURL(audioBlob);
+            lastRecordedAudioBlob = new Blob(audioChunks, { type: 'audio/mp4' });
+            const audioUrl = URL.createObjectURL(lastRecordedAudioBlob);
             
             const chatArea = document.getElementById('terminal-chat-area');
             const audioBubble = document.createElement('div');
@@ -1194,7 +1224,7 @@
             chatArea.scrollTop = chatArea.scrollHeight;
             stream.getTracks().forEach(track => track.stop());
 
-            await sendTextPromptToGemini("User recorded a voice audio instruction snippet. Acknowledge and execute operational requirements.");
+            await sendTextPromptToGemini("User provided voice audio recording input. Listen and respond to the voice command.");
           };
 
           mediaRecorder.start();
@@ -1255,9 +1285,8 @@
       const utterance = new SpeechSynthesisUtterance(cleanSpeechText);
       if (cachedVoice) utterance.voice = cachedVoice;
       
-      // Natural cadence settings
       utterance.rate = 0.96; 
-      utterance.pitch = 0.92; // Slightly deeper male modulation
+      utterance.pitch = 0.92;
       utterance.volume = 1.0;
 
       setTimeout(() => {
@@ -1320,13 +1349,13 @@
       unlockSpeechSynthesis();
       const input = document.getElementById('cmd-input');
       const val = input.value.trim();
-      if (!val) return;
+      if (!val && !lastRecordedAudioBlob && !states.video) return;
 
       const chatArea = document.getElementById('terminal-chat-area');
       const userBubble = document.createElement('div');
       userBubble.className = 'chat-bubble user';
       userBubble.innerHTML = `
-        <div class="bubble-text">${escapeHtml(val)}</div>
+        <div class="bubble-text">${escapeHtml(val || "[Live Multimodal Input]")}</div>
         <div class="bubble-actions">
           <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
           <button class="btn-mini" onclick="editBubbleText(this)">✏️ Edit</button>
@@ -1335,7 +1364,7 @@
       chatArea.appendChild(userBubble);
       input.value = '';
 
-      await sendTextPromptToGemini(val);
+      await sendTextPromptToGemini(val || "Analyze the current live camera feed and audio input.");
     }
 
     async function sendTextPromptToGemini(promptText) {
@@ -1363,7 +1392,35 @@
       chatArea.appendChild(aiBubble);
       chatArea.scrollTop = chatArea.scrollHeight;
 
-      conversationHistory.push({ role: "user", parts: [{ text: promptText }] });
+      // Construct user content parts (supporting text, camera frame, and audio blob if available)
+      const userParts = [{ text: promptText }];
+
+      // 1. Capture and attach live video frame if video is ON
+      const base64Frame = captureVideoFrameAsBase64();
+      if (base64Frame) {
+        userParts.push({
+          inline_data: {
+            mime_type: "image/jpeg",
+            data: base64Frame
+          }
+        });
+      }
+
+      // 2. Attach recorded audio clip if available
+      if (lastRecordedAudioBlob) {
+        try {
+          const base64Audio = await blobToBase64(lastRecordedAudioBlob);
+          userParts.push({
+            inline_data: {
+              mime_type: "audio/mp4",
+              data: base64Audio
+            }
+          });
+          lastRecordedAudioBlob = null; // reset after sending
+        } catch (e) {}
+      }
+
+      conversationHistory.push({ role: "user", parts: userParts });
 
       const modelFallbackSequence = [selectedModel, "gemini-3.6-flash", "gemini-3.5-flash-lite"];
       let success = false;
@@ -1376,7 +1433,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               system_instruction: {
-                parts: [{ text: "You are PG1.Agent, an autonomous sovereign edge infrastructure AI operating under 100% sovereign ownership with x402 protocol active. Identify ONLY as PG1.Agent. Speak in a natural, conversational, and direct tone." }]
+                parts: [{ text: "You are PG1.Agent, an autonomous sovereign edge infrastructure AI operating under 100% sovereign ownership with x402 protocol active. Identify ONLY as PG1.Agent. Speak in a natural, conversational, and direct tone. You can see live camera streams and hear audio inputs provided by the user." }]
               },
               contents: conversationHistory
             })
