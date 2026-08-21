@@ -67,7 +67,7 @@
       color: var(--text-muted);
     }
 
-    /* Sleek & Compact Top Control Bar */
+    /* Top Control Bar with Animated Active State */
     .global-control-bar {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -83,7 +83,7 @@
       background: rgba(14, 21, 34, 0.8);
       border: 1px solid rgba(0, 102, 255, 0.3);
       color: #a0aec0;
-      padding: 4px 0;
+      padding: 5px 0;
       font-size: 9.5px;
       font-weight: 500;
       letter-spacing: 0.3px;
@@ -97,21 +97,30 @@
       gap: 3px;
     }
 
+    .btn-ctrl-icon {
+      display: inline-block;
+      transition: transform 0.2s ease;
+    }
+
     .btn-ctrl.active {
       border-color: var(--neon-cyan);
       color: var(--neon-cyan);
-      background: rgba(0, 242, 254, 0.08);
-      box-shadow: 0 0 6px rgba(0, 242, 254, 0.2);
+      background: rgba(0, 242, 254, 0.1);
+      box-shadow: 0 0 8px rgba(0, 242, 254, 0.3);
+    }
+
+    .btn-ctrl.active .btn-ctrl-icon {
+      animation: icon-pulse-glow 1.5s infinite ease-in-out;
+    }
+
+    @keyframes icon-pulse-glow {
+      0%, 100% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.25); opacity: 1; filter: drop-shadow(0 0 3px var(--neon-cyan)); }
     }
 
     .btn-ctrl.btn-danger {
       border-color: rgba(255, 51, 68, 0.25);
       color: rgba(255, 51, 68, 0.8);
-    }
-
-    .btn-ctrl.btn-danger:active {
-      background: rgba(255, 51, 68, 0.15);
-      color: var(--danger-red);
     }
 
     /* Swipe Container */
@@ -439,7 +448,6 @@
       border-radius: 3px;
     }
 
-    /* Terminal Input Bar Scoped to Terminal Tab Only */
     .terminal-input-bar {
       display: flex;
       gap: 6px;
@@ -481,6 +489,82 @@
       font-size: 11px;
       font-weight: bold;
       border-radius: 4px;
+      cursor: pointer;
+    }
+
+    /* Functional Logs Modal Window */
+    .logs-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(4, 6, 10, 0.92);
+      backdrop-filter: blur(6px);
+      z-index: 200;
+      padding: 16px;
+      flex-direction: column;
+    }
+
+    .logs-modal.open {
+      display: flex;
+    }
+
+    .logs-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 12px;
+    }
+
+    .logs-title {
+      color: var(--neon-cyan);
+      font-size: 14px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .logs-body {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .log-item {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 11px;
+    }
+
+    .log-item-meta {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-muted);
+      font-size: 9px;
+      margin-bottom: 6px;
+    }
+
+    .log-item-preview {
+      color: var(--neon-green);
+      white-space: pre-wrap;
+      max-height: 80px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .logs-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
     }
 
     /* Bottom Navbar */
@@ -527,12 +611,23 @@
     <div class="engine-version">v5.0 Sovereign Engine</div>
   </div>
 
-  <!-- Sleek Top Controls -->
+  <!-- Sleek Top Controls with Animated Icons -->
   <div class="global-control-bar">
-    <button id="btn-video" class="btn-ctrl" onclick="toggleControl('video')">📹 Video: OFF</button>
-    <button id="btn-audio" class="btn-ctrl" onclick="toggleControl('audio')">🎙️ Audio: OFF</button>
-    <button id="btn-voice" class="btn-ctrl" onclick="toggleControl('voice')">🔊 Voice: OFF</button>
-    <button id="btn-delete" class="btn-ctrl btn-danger" onclick="clearThread()">🗑️ Clear</button>
+    <button id="btn-video" class="btn-ctrl" onclick="toggleControl('video')">
+      <span class="btn-ctrl-icon">📹</span>
+      <span id="label-video">Video: OFF</span>
+    </button>
+    <button id="btn-audio" class="btn-ctrl" onclick="toggleControl('audio')">
+      <span class="btn-ctrl-icon">🎙️</span>
+      <span id="label-audio">Audio: OFF</span>
+    </button>
+    <button id="btn-voice" class="btn-ctrl" onclick="toggleControl('voice')">
+      <span class="btn-ctrl-icon">🔊</span>
+      <span id="label-voice">Voice: OFF</span>
+    </button>
+    <button id="btn-delete" class="btn-ctrl btn-danger" onclick="clearThread()">
+      <span class="btn-ctrl-icon">🗑️</span> Clear
+    </button>
   </div>
 
   <!-- Swipe Container -->
@@ -620,10 +715,10 @@
       </div>
     </div>
 
-    <!-- TERMINAL VIEW (INPUT BAR INSIDE THIS TAB ONLY) -->
+    <!-- TERMINAL VIEW -->
     <div id="view-terminal" class="tab-view">
       
-      <div class="terminal-chat-area">
+      <div class="terminal-chat-area" id="terminal-chat-area">
         <div style="color: var(--neon-green); font-size: 11px; margin-bottom: 12px;">
           > PG1 System Initialized. Ready for multimodal commands.
         </div>
@@ -631,7 +726,7 @@
         <div class="terminal-header">
           <span class="terminal-title">Terminal Thread</span>
           <div class="terminal-actions">
-            <button class="btn-sm">Copy All</button>
+            <button class="btn-sm" onclick="saveCurrentThreadToLogs()">Save Log</button>
             <button class="btn-sm btn-green">Export PDF</button>
           </div>
         </div>
@@ -653,14 +748,14 @@
         </div>
       </div>
 
-      <!-- INPUT BAR INSIDE TERMINAL TAB ONLY -->
+      <!-- INPUT BAR -->
       <div class="terminal-input-bar">
         <button class="btn-media">
           <span>📷</span>
           <span>Media</span>
         </button>
-        <input type="text" class="text-input" placeholder="Enter command or media p">
-        <button class="btn-send">Send</button>
+        <input type="text" id="cmd-input" class="text-input" placeholder="Enter command or media p">
+        <button class="btn-send" onclick="sendUserMessage()">Send</button>
       </div>
 
     </div>
@@ -742,12 +837,28 @@
         <div class="node-action-grid">
           <button class="btn-node-act" onclick="triggerSync()">🔄 Restart Node</button>
           <button class="btn-node-act" onclick="triggerSync()">🧹 Purge Cache</button>
-          <button class="btn-node-act" onclick="triggerSync()">📋 Logs</button>
+          <!-- FUNCTIONAL LOGS BUTTON -->
+          <button class="btn-node-act" onclick="openLogsModal()">📋 Logs</button>
         </div>
       </div>
 
     </div>
 
+  </div>
+
+  <!-- FUNCTIONAL LOGS MODAL -->
+  <div class="logs-modal" id="logs-modal">
+    <div class="logs-header">
+      <div class="logs-title">📋 Encrypted Conversation Logs</div>
+      <button class="btn-sm" onclick="closeLogsModal()">✕ Close</button>
+    </div>
+    <div class="logs-body" id="logs-list">
+      <!-- Dynamic Logs Render Here -->
+    </div>
+    <div class="logs-actions">
+      <button class="btn-sm btn-green" style="flex:1" onclick="saveCurrentThreadToLogs()">+ Save Current Active Thread</button>
+      <button class="btn-sm" style="color: var(--danger-red); border-color: rgba(255,51,68,0.3)" onclick="clearAllLogs()">Purge Storage</button>
+    </div>
   </div>
 
   <!-- BOTTOM NAVBAR -->
@@ -828,15 +939,15 @@
       }
     }
 
+    // Control Toggle Logic
     const states = { video: false, audio: false, voice: false };
 
     function toggleControl(type) {
       states[type] = !states[type];
       const btn = document.getElementById(`btn-${type}`);
-      const icons = { video: '📹', audio: '🎙️', voice: '🔊' };
-      const label = type.charAt(0).toUpperCase() + type.slice(1);
+      const label = document.getElementById(`label-${type}`);
       
-      btn.innerText = `${icons[type]} ${label}: ${states[type] ? 'ON' : 'OFF'}`;
+      label.innerText = `${type.charAt(0).toUpperCase() + type.slice(1)}: ${states[type] ? 'ON' : 'OFF'}`;
       if (states[type]) {
         btn.classList.add('active');
       } else {
@@ -844,8 +955,101 @@
       }
     }
 
+    // Chat Logic
+    function sendUserMessage() {
+      const input = document.getElementById('cmd-input');
+      const val = input.value.trim();
+      if (!val) return;
+
+      const chatArea = document.getElementById('terminal-chat-area');
+      const userBubble = document.createElement('div');
+      userBubble.className = 'chat-bubble user';
+      userBubble.innerHTML = `${val} <button class="btn-copy-inline">Copy</button>`;
+      chatArea.appendChild(userBubble);
+
+      input.value = '';
+
+      setTimeout(() => {
+        const aiBubble = document.createElement('div');
+        aiBubble.className = 'chat-bubble';
+        aiBubble.innerHTML = `Command received and logged: "${val}". Protocol active.<button class="btn-copy-inline">Copy</button>`;
+        chatArea.appendChild(aiBubble);
+      }, 600);
+    }
+
     function clearThread() {
-      console.log("Thread cleared");
+      const chatArea = document.getElementById('terminal-chat-area');
+      chatArea.innerHTML = `
+        <div style="color: var(--neon-green); font-size: 11px; margin-bottom: 12px;">
+          > PG1 System Thread Cleared. Ready for multimodal commands.
+        </div>
+        <div class="terminal-header">
+          <span class="terminal-title">Terminal Thread</span>
+          <div class="terminal-actions">
+            <button class="btn-sm" onclick="saveCurrentThreadToLogs()">Save Log</button>
+            <button class="btn-sm btn-green">Export PDF</button>
+          </div>
+        </div>
+      `;
+    }
+
+    // Functional Conversation Logs via LocalStorage
+    function getStoredLogs() {
+      const data = localStorage.getItem('pg1_conversation_logs');
+      return data ? JSON.parse(data) : [];
+    }
+
+    function saveCurrentThreadToLogs() {
+      const chatArea = document.getElementById('terminal-chat-area');
+      const content = chatArea.innerText;
+
+      if (!content || content.length < 20) return;
+
+      const logs = getStoredLogs();
+      const newLog = {
+        id: 'LOG-' + Date.now().toString().slice(-5),
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        text: content
+      };
+
+      logs.unshift(newLog);
+      localStorage.setItem('pg1_conversation_logs', JSON.stringify(logs));
+      renderLogs();
+      openLogsModal();
+    }
+
+    function renderLogs() {
+      const container = document.getElementById('logs-list');
+      const logs = getStoredLogs();
+
+      if (logs.length === 0) {
+        container.innerHTML = `<div style="color: var(--text-muted); font-size: 11px; text-align: center; margin-top: 20px;">No saved logs found. Click "Save Current Active Thread" to archive past conversations.</div>`;
+        return;
+      }
+
+      container.innerHTML = logs.map(log => `
+        <div class="log-item">
+          <div class="log-item-meta">
+            <span>${log.id}</span>
+            <span>${log.timestamp}</span>
+          </div>
+          <div class="log-item-preview">${log.text}</div>
+        </div>
+      `).join('');
+    }
+
+    function openLogsModal() {
+      renderLogs();
+      document.getElementById('logs-modal').classList.add('open');
+    }
+
+    function closeLogsModal() {
+      document.getElementById('logs-modal').classList.remove('open');
+    }
+
+    function clearAllLogs() {
+      localStorage.removeItem('pg1_conversation_logs');
+      renderLogs();
     }
   </script>
 </body>
