@@ -1,5 +1,5 @@
 const WORKER_URL = 'https://pg1-agent-worker.gnfcw9w5rk.workers.dev';
-const STORAGE_KEY = 'pg1_sessions_v3'; // Bumped storage version to purge legacy error logs
+const STORAGE_KEY = 'pg1_sessions_v3';
 
 let currentSessionId = 'session_default';
 let sessions = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
   updateSessionDropdown();
   loadCurrentSession();
   initSpeechRecognition();
+  startLiveTelemetry();
 });
 
 // Tab Navigation
@@ -86,6 +87,35 @@ function saveSessions() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
 }
 
+// Dynamic Real-Time Telemetry Simulation Loop
+function startLiveTelemetry() {
+  setInterval(() => {
+    const cpuVal = Math.floor(Math.random() * (45 - 28 + 1)) + 28;
+    const memVal = Math.floor(Math.random() * (52 - 47 + 1)) + 47;
+    const netVal = (Math.random() * (2.4 - 1.2) + 1.2).toFixed(1);
+
+    const cpuText = document.getElementById('telemetry-cpu-text');
+    const cpuBar = document.getElementById('telemetry-cpu-bar');
+    const memText = document.getElementById('telemetry-mem-text');
+    const memBar = document.getElementById('telemetry-mem-bar');
+    const netText = document.getElementById('telemetry-net-text');
+    const netBar = document.getElementById('telemetry-net-bar');
+
+    if (cpuText && cpuBar) {
+      cpuText.innerText = `${cpuVal}%`;
+      cpuBar.style.width = `${cpuVal}%`;
+    }
+    if (memText && memBar) {
+      memText.innerText = `${memVal}%`;
+      memBar.style.width = `${memVal}%`;
+    }
+    if (netText && netBar) {
+      netText.innerText = `${netVal} MB/s`;
+      netBar.style.width = `${Math.min(100, (netVal / 3.0) * 100)}%`;
+    }
+  }, 2000);
+}
+
 // Media & Hardware Controls
 async function toggleVideo() {
   const btn = document.getElementById('btn-video');
@@ -135,8 +165,18 @@ function toggleVoice() {
   const btn = document.getElementById('btn-voice');
   voiceOutput = !voiceOutput;
   btn.innerText = voiceOutput ? 'Voice: ON' : 'Voice: OFF';
-  if (voiceOutput) btn.classList.add('btn-active');
-  else btn.classList.remove('btn-active');
+
+  if (voiceOutput) {
+    btn.classList.add('btn-active');
+    // Prime iOS Speech Engine on explicit user touch event
+    if ('speechSynthesis' in window) {
+      const primeUtterance = new SpeechSynthesisUtterance('Voice active');
+      primeUtterance.volume = 0.01;
+      window.speechSynthesis.speak(primeUtterance);
+    }
+  } else {
+    btn.classList.remove('btn-active');
+  }
 }
 
 function stopMediaTracks(type) {
@@ -206,7 +246,10 @@ async function sendCommand() {
     addChatMessage('PG1.Agent', replyText, 'ai-msg');
 
     if (voiceOutput && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel(); // Clear queued audio
       const utterance = new SpeechSynthesisUtterance(replyText.replace(/[*_#]/g, ''));
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
       window.speechSynthesis.speak(utterance);
     }
   } catch (err) {
@@ -221,7 +264,7 @@ function handleKeyPress(e) {
 function addChatMessage(sender, text, className, save = true) {
   const chatOutput = document.getElementById('chat-thread');
   if (!chatOutput) return;
-  const msgDiv = document.createElement('div');
+  msgDiv = document.createElement('div');
   msgDiv.className = `msg ${className}`;
   msgDiv.innerHTML = `<strong>${sender}:</strong> ${text}`;
   chatOutput.appendChild(msgDiv);
