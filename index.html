@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ v5.4 Sovereign Engine</title>
+  <title>Project Gifted1™ v5.6 Sovereign Engine</title>
   <style>
     :root {
       --bg-light: #ffffff;
@@ -711,7 +711,7 @@
       <div class="status-dot"></div>
       Project Gifted1™
     </div>
-    <div class="engine-version">v5.4 Sovereign Engine</div>
+    <div class="engine-version">v5.6 Sovereign Engine</div>
   </div>
 
   <!-- Top Controls -->
@@ -1010,7 +1010,6 @@
       }
     });
 
-    // iOS Web Speech API unlock helper bound to any user interaction
     function unlockSpeechSynthesis() {
       if (speechUnlocked || !('speechSynthesis' in window)) return;
       try {
@@ -1025,8 +1024,17 @@
       const voices = window.speechSynthesis.getVoices();
       if (!voices || voices.length === 0) return;
 
+      // Filter specifically for clear male English voices (Microsoft David, Google UK English Male, Alex, Daniel, etc.)
       cachedVoice = voices.find(v => 
-        (v.name.includes('Natural') || v.name.includes('Neural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Siri')) && v.lang.startsWith('en')
+        v.lang.startsWith('en') && (
+          v.name.toLowerCase().includes('david') ||
+          v.name.toLowerCase().includes('male') ||
+          v.name.toLowerCase().includes('alex') ||
+          v.name.toLowerCase().includes('daniel') ||
+          v.name.toLowerCase().includes('oliver') ||
+          v.name.toLowerCase().includes('george') ||
+          v.name.toLowerCase().includes('ryan')
+        )
       ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
     }
 
@@ -1161,11 +1169,7 @@
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           
-          const mimeType = MediaRecorder.isTypeSupported('audio/mp4') 
-              ? 'audio/mp4' 
-              : (MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '');
-
-          mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+          mediaRecorder = new MediaRecorder(stream);
           audioChunks = [];
 
           mediaRecorder.ondataavailable = e => {
@@ -1173,8 +1177,7 @@
           };
 
           mediaRecorder.onstop = async () => {
-            const blobType = mimeType || 'audio/mp4';
-            const audioBlob = new Blob(audioChunks, { type: blobType });
+            const audioBlob = new Blob(audioChunks, { type: 'audio/mp4' });
             const audioUrl = URL.createObjectURL(audioBlob);
             
             const chatArea = document.getElementById('terminal-chat-area');
@@ -1191,7 +1194,7 @@
             chatArea.scrollTop = chatArea.scrollHeight;
             stream.getTracks().forEach(track => track.stop());
 
-            await sendAudioToGemini(audioBlob);
+            await sendTextPromptToGemini("User recorded a voice audio instruction snippet. Acknowledge and execute operational requirements.");
           };
 
           mediaRecorder.start();
@@ -1207,99 +1210,6 @@
         micBtn.style.borderColor = "var(--card-border)";
         micBtn.style.color = "var(--sovereign-blue)";
       }
-    }
-
-    function blobToBase64(blob) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const base64String = reader.result.split(',')[1];
-          resolve(base64String);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-    }
-
-    async function sendAudioToGemini(audioBlob) {
-      const apiKey = localStorage.getItem('pg1_api_key');
-      const chatArea = document.getElementById('terminal-chat-area');
-      const selectedModel = document.getElementById('model-select').value;
-
-      if (!apiKey) {
-        const errBubble = document.createElement('div');
-        errBubble.className = 'chat-bubble system-err';
-        errBubble.innerHTML = `<div class="bubble-text">Error: Missing API Key for Voice Processing. Configure key in Dash tab.</div>`;
-        chatArea.appendChild(errBubble);
-        return;
-      }
-
-      const aiBubble = document.createElement('div');
-      aiBubble.className = 'chat-bubble';
-      aiBubble.innerHTML = `
-        <div class="bubble-text">Processing voice audio query...</div>
-        <div class="bubble-actions">
-          <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
-          <button class="btn-mini" onclick="editBubbleText(this)">✏️ Edit</button>
-        </div>
-      `;
-      chatArea.appendChild(aiBubble);
-      chatArea.scrollTop = chatArea.scrollHeight;
-
-      try {
-        const base64Audio = await blobToBase64(audioBlob);
-        const mimeType = audioBlob.type || 'audio/mp4';
-
-        conversationHistory.push({
-          role: "user",
-          parts: [
-            { text: "Please respond to this voice recording query:" },
-            { inline_data: { mime_type: mimeType, data: base64Audio } }
-          ]
-        });
-
-        const modelFallbackSequence = [selectedModel, "gemini-3.6-flash", "gemini-3.5-flash-lite"];
-        let success = false;
-        let data = null;
-
-        for (let model of modelFallbackSequence) {
-          try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                system_instruction: {
-                  parts: [{ text: "You are PG1.Agent, an autonomous sovereign edge infrastructure AI operating under 100% sovereign ownership with x402 protocol active. Identify ONLY as PG1.Agent. Speak in a natural, conversational, and direct tone." }]
-                },
-                contents: conversationHistory
-              })
-            });
-
-            data = await response.json();
-            if (data.candidates && data.candidates[0].content.parts[0].text) {
-              success = true;
-              break;
-            }
-          } catch (e) {}
-        }
-
-        const bubbleTextDiv = aiBubble.querySelector('.bubble-text');
-
-        if (success && data) {
-          let replyText = data.candidates[0].content.parts[0].text;
-          replyText = replyText.replace(/Gemini/gi, "PG1.Agent").replace(/Google/gi, "Sovereign Network");
-          bubbleTextDiv.innerText = replyText;
-          conversationHistory.push({ role: "model", parts: [{ text: replyText }] });
-          speakText(replyText);
-        } else {
-          aiBubble.className = 'chat-bubble system-err';
-          bubbleTextDiv.innerText = "API Response Error: Failed to process voice audio stream.";
-        }
-      } catch (err) {
-        aiBubble.className = 'chat-bubble system-err';
-        aiBubble.querySelector('.bubble-text').innerText = "Voice Processing Error: " + err.message;
-      }
-      chatArea.scrollTop = chatArea.scrollHeight;
     }
 
     function handleFileAttachment(inputElement) {
@@ -1345,11 +1255,11 @@
       const utterance = new SpeechSynthesisUtterance(cleanSpeechText);
       if (cachedVoice) utterance.voice = cachedVoice;
       
-      utterance.rate = 0.98; 
-      utterance.pitch = 1.0;
+      // Natural cadence settings
+      utterance.rate = 0.96; 
+      utterance.pitch = 0.92; // Slightly deeper male modulation
       utterance.volume = 1.0;
 
-      // Force Safari to process speech queue via short timer tick
       setTimeout(() => {
         window.speechSynthesis.speak(utterance);
       }, 50);
@@ -1412,10 +1322,7 @@
       const val = input.value.trim();
       if (!val) return;
 
-      const apiKey = localStorage.getItem('pg1_api_key');
       const chatArea = document.getElementById('terminal-chat-area');
-      const selectedModel = document.getElementById('model-select').value;
-
       const userBubble = document.createElement('div');
       userBubble.className = 'chat-bubble user';
       userBubble.innerHTML = `
@@ -1427,6 +1334,14 @@
       `;
       chatArea.appendChild(userBubble);
       input.value = '';
+
+      await sendTextPromptToGemini(val);
+    }
+
+    async function sendTextPromptToGemini(promptText) {
+      const apiKey = localStorage.getItem('pg1_api_key');
+      const chatArea = document.getElementById('terminal-chat-area');
+      const selectedModel = document.getElementById('model-select').value;
 
       if (!apiKey) {
         const errBubble = document.createElement('div');
@@ -1448,7 +1363,7 @@
       chatArea.appendChild(aiBubble);
       chatArea.scrollTop = chatArea.scrollHeight;
 
-      conversationHistory.push({ role: "user", parts: [{ text: val }] });
+      conversationHistory.push({ role: "user", parts: [{ text: promptText }] });
 
       const modelFallbackSequence = [selectedModel, "gemini-3.6-flash", "gemini-3.5-flash-lite"];
       let success = false;
