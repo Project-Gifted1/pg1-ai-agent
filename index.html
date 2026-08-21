@@ -1209,7 +1209,7 @@
       return memoryLogFallback;
     }
 
-    // ROBUST BULLETPROOF SAVE FUNCTION WITH TRY-CATCH & IN-MEMORY FALLBACK
+    // ROBUST BULLETPROOF SAVE FUNCTION WITH CORRECTED TIMESTAMP CONFIGURATION
     function saveCurrentThreadToLogs() {
       try {
         const bubbles = document.querySelectorAll('#terminal-chat-area .chat-bubble');
@@ -1231,7 +1231,7 @@
 
         const newLogItem = {
           id: 'LOG-' + Date.now().toString().slice(-5),
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2' }),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           text: formattedText.trim()
         };
 
