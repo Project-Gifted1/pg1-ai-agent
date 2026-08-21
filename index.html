@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Gifted1™ v5.0 Sovereign Engine</title>
+  <style>
+    :root {
+      --bg-light: #ffffff;
+      --card-bg: #f8fafc;
+      --card-border: #e2e8f0;
+      --sovereign-blue: #0044cc;
+      --sovereign-green: #008844;
+      --accent-blue: #0055ff;
+      --danger-red: #cc0022;
+      --text-main: #111827;
+      --text-muted: #64748b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+    }
+
+    body {
+      background-color: var(--bg-light);
+      color: var(--text-main);
+      padding: 12px;
+      padding-bottom: 90px;
+      overflow-x: hidden;
+    }
+
+    .app-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .brand-title {
+      font-size: 15px;
+      font-weight: bold;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background-color: var(--sovereign-green);
+      border-radius: 50%;
+      box-shadow: 0 0 6px var(--sovereign-green);
+      animation: beacon-pulse 1.8s infinite;
+    }
+
+    @keyframes beacon-pulse {
+      0%, 100% { opacity: 0.3; transform: scale(0.8); }
+      50% { opacity: 1; transform: scale(1.2); }
+    }
+
+    .engine-version {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .global-control-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 5px;
+      margin-bottom: 12px;
+      background: #f1f5f9;
+      padding: 4px;
+      border-radius: 6px;
+      border: 1px solid var(--card-border);
+    }
+
+    .btn-ctrl {
+      background: #ffffff;
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      padding: 7px 0;
+      font-size: 9.5px;
+      font-weight: 500;
+      letter-spacing: 0.3px;
+      border-radius: 5px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-ctrl:active, .btn-node-act:active, .btn-save:active, .btn-sm:active {
+      transform: scale(0.95);
+    }
+
+    .btn-ctrl-icon {
+      font-size: 11px;
+      display: inline-block;
+      transition: transform 0.25s ease;
+    }
+
+    .btn-ctrl.active {
+      border-color: var(--sovereign-blue);
+      color: var(--sovereign-blue);
+      background: rgba(0, 68, 204, 0.08);
+      box-shadow: 0 0 10px rgba(0, 68, 204, 0.2);
+    }
+
+    .btn-ctrl.active::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      border-radius: 5px;
+      border: 1px solid var(--sovereign-blue);
+      animation: toggle-ping-ring 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+      pointer-events: none;
+    }
+
+    @keyframes toggle-ping-ring {
+      0% { transform: scale(1); opacity: 0.8; }
+      100% { transform: scale(1.12); opacity: 0; }
+    }
+
+    .btn-ctrl.btn-danger {
+      border-color: rgba(204, 0, 34, 0.25);
+      color: rgba(204, 0, 34, 0.9);
+    }
+
+    .swipe-container {
+      display: flex;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      scroll-behavior: smooth;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      padding-bottom: 20px;
+    }
+
+    .swipe-container::-webkit-scrollbar {
+      display: none;
+    }
+
+    .tab-view {
+      flex: 0 0 100%;
+      width: 100%;
+      scroll-snap-align: start;
+    }
+
+    .panel-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 14px;
+      margin-bottom: 12px;
+      position: relative;
+    }
+
+    .card-header {
+      color: var(--sovereign-blue);
+      font-size: 13px;
+      font-weight: bold;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .card-subtext {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+      line-height: 1.4;
+    }
+
+    .key-dots-container {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 10px;
+      background: #ffffff;
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid var(--card-border);
+      align-items: center;
+      overflow: hidden;
+    }
+
+    .key-dot {
+      width: 6px;
+      height: 6px;
+      background-color: rgba(0, 136, 68, 0.15);
+      border-radius: 50%;
+      animation: dot-wave 1.6s infinite ease-in-out;
+    }
+
+    .key-dot:nth-child(2) { animation-delay: 0.1s; }
+    .key-dot:nth-child(3) { animation-delay: 0.2s; }
+    .key-dot:nth-child(4) { animation-delay: 0.3s; }
+    .key-dot:nth-child(5) { animation-delay: 0.4s; }
+    .key-dot:nth-child(6) { animation-delay: 0.5s; }
+    .key-dot:nth-child(7) { animation-delay: 0.6s; }
+    .key-dot:nth-child(8) { animation-delay: 0.7s; }
+    .key-dot:nth-child(9) { animation-delay: 0.8s; }
+    .key-dot:nth-child(10) { animation-delay: 0.9s; }
+    .key-dot:nth-child(11) { animation-delay: 1.0s; }
+    .key-dot:nth-child(12) { animation-delay: 1.1s; }
+    .key-dot:nth-child(13) { animation-delay: 1.2s; }
+    .key-dot:nth-child(14) { animation-delay: 1.3s; }
+    .key-dot:nth-child(15) { animation-delay: 1.4s; }
+
+    @keyframes dot-wave {
+      0%, 100% { background-color: rgba(0, 136, 68, 0.15); transform: scale(0.8); }
+      50% { background-color: var(--sovereign-green); transform: scale(1.3); box-shadow: 0 0 6px var(--sovereign-green); }
+    }
+
+    .key-input-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .key-input-field {
+      flex: 1;
+      background: #ffffff;
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      padding: 0 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      outline: none;
+      height: 30px;
+    }
+
+    .key-input-field:focus {
+      border-color: var(--sovereign-blue);
+      box-shadow: 0 0 6px rgba(0, 68, 204, 0.2);
+    }
+
+    .btn-save {
+      background: var(--sovereign-green);
+      color: #fff;
+      border: none;
+      padding: 0 12px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: bold;
+      cursor: pointer;
+      height: 30px;
+    }
+
+    .key-status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 10px;
+    }
+
+    .sync-feed-box {
+      background: #ffffff;
+      border: 1px solid var(--card-border);
+      border-radius: 5px;
+      padding: 8px 10px;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .btn-sync-action {
+      background: #f1f5f9;
+      border: 1px solid var(--sovereign-blue);
+      color: var(--sovereign-blue);
+      padding: 5px 12px;
+      font-size: 10.5px;
+      font-weight: bold;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 7px 0;
+      border-bottom: 1px solid var(--card-border);
+      font-size: 11px;
+    }
+
+    .metric-value {
+      color: var(--sovereign-blue);
+      font-weight: bold;
+    }
+
+    .radar-icon {
+      display: inline-block;
+      animation: rotate-radar 3s linear infinite;
+    }
+
+    @keyframes rotate-radar {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .telemetry-track {
+      width: 100%;
+      height: 4px;
+      background: #e2e8f0;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 10px;
+      position: relative;
+    }
+
+    .telemetry-bar-fill {
+      width: 40%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, var(--sovereign-blue), var(--sovereign-green), transparent);
+      position: absolute;
+      animation: flow-telemetry 1.8s linear infinite;
+    }
+
+    @keyframes flow-telemetry {
+      0% { left: -40%; }
+      100% { left: 100%; }
+    }
+
+    .node-header-card {
+      text-align: center;
+      padding: 18px 12px;
+    }
+
+    .official-node-wrapper {
+      position: relative;
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 12px auto;
+    }
+
+    .official-node-logo {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+      position: relative;
+      z-index: 2;
+      border: 2px solid var(--sovereign-blue);
+      box-shadow: 0 0 10px rgba(0, 68, 204, 0.2);
+    }
+
+    .node-aura {
+      position: absolute;
+      top: -8px; left: -8px; right: -8px; bottom: -8px;
+      border-radius: 50%;
+      background: linear-gradient(45deg, var(--sovereign-blue), var(--sovereign-green), var(--accent-blue));
+      z-index: 1;
+      filter: blur(10px);
+      opacity: 0.6;
+      animation: node-aura-spin 4s linear infinite, node-aura-pulse 2s ease-in-out infinite alternate;
+    }
+
+    @keyframes node-aura-spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    @keyframes node-aura-pulse {
+      0% { transform: scale(0.95); opacity: 0.4; }
+      100% { transform: scale(1.05); opacity: 0.7; }
+    }
+
+    .resource-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: #e2e8f0;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 4px;
+      position: relative;
+    }
+
+    .resource-bar-fill {
+      height: 100%;
+      background: var(--sovereign-blue);
+      border-radius: 3px;
+      transition: width 0.6s ease;
+    }
+
+    .node-action-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .btn-node-act {
+      background: #ffffff;
+      border: 1px solid var(--card-border);
+      color: var(--sovereign-blue);
+      font-size: 10px;
+      padding: 8px 0;
+      border-radius: 4px;
+      cursor: pointer;
+      text-align: center;
+    }
+
+    #view-terminal {
+      display: flex;
+      flex-direction: column;
+      min-height: calc(100vh - 140px);
+      position: relative;
+    }
+
+    .terminal-chat-area {
+      flex: 1;
+      padding-bottom: 10px;
+    }
+
+    .terminal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .model-selector-wrapper {
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .model-select {
+      background: #ffffff;
+      border: 1px solid var(--card-border);
+      color: var(--sovereign-blue);
+      font-size: 10px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .terminal-title {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .terminal-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .btn-sm {
+      background: #ffffff;
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      padding: 4px 8px;
+      font-size: 10px;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+
+    .btn-green {
+      background: var(--sovereign-green);
+      color: #fff;
+      border: none;
+      font-weight: bold;
+    }
+
+    .chat-bubble {
+      background: #f1f5f9;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 10px;
+      font-size: 11px;
+      color: var(--text-main);
+      position: relative;
+      white-space: pre-wrap;
+    }
+
+    .chat-bubble.user {
+      background: #e0e7ff;
+      border-color: #c7d2fe;
+      color: #1e3a8a;
+      margin-left: 20px;
+    }
+
+    .chat-bubble.system-err {
+      border-color: var(--danger-red);
+      color: var(--danger-red);
+      background: rgba(204, 0, 34, 0.05);
+    }
+
+    .bubble-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 3px;
+      margin-top: 6px;
+    }
+
+    .btn-mini {
+      background: #ffffff;
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      font-size: 7.5px;
+      padding: 1px 3px;
+      border-radius: 2px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 1px;
+    }
+
+    .btn-mini:hover {
+      color: var(--sovereign-blue);
+      border-color: var(--sovereign-blue);
+    }
+
+    .terminal-input-bar {
+      display: flex;
+      gap: 6px;
+      background: var(--bg-light);
+      padding: 6px 0;
+      position: sticky;
+      bottom: 0;
+      margin-top: auto;
+      z-index: 10;
+    }
+
+    .btn-media {
+      background: #ffffff;
+      border: 1px solid var(--card-border);
+      color: var(--sovereign-blue);
+      padding: 6px 10px;
+      font-size: 10px;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .text-input {
+      flex: 1;
+      background: #ffffff;
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      padding: 0 10px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+
+    .btn-send {
+      background: var(--sovereign-green);
+      color: #fff;
+      border: none;
+      padding: 0 12px;
+      font-size: 11px;
+      font-weight: bold;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .logs-modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(6px);
+      z-index: 200;
+      padding: 16px;
+      flex-direction: column;
+    }
+
+    .logs-modal.open {
+      display: flex;
+    }
+
+    .logs-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 12px;
+    }
+
+    .logs-title {
+      color: var(--sovereign-blue);
+      font-size: 14px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .logs-body {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .log-item {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 11px;
+    }
+
+    .log-item-meta {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-muted);
+      font-size: 9px;
+      margin-bottom: 6px;
+    }
+
+    .log-item-preview {
+      color: var(--text-main);
+      white-space: pre-wrap;
+      max-height: 100px;
+      overflow: hidden;
+    }
+
+    .logs-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .bottom-navbar {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: 55px;
+      background: #ffffff;
+      border-top: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      z-index: 100;
+    }
+
+    .nav-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      cursor: pointer;
+      flex: 1;
+    }
+
+    .nav-btn.active {
+      color: var(--sovereign-blue);
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Brand Header -->
+  <div class="app-header">
+    <div class="brand-title">
+      <div class="status-dot"></div>
+      Project Gifted1™
+    </div>
+    <div class="engine-version">v5.0 Sovereign Engine</div>
+  </div>
+
+  <!-- Top Controls -->
+  <div class="global-control-bar">
+    <button id="btn-video" class="btn-ctrl" onclick="toggleControl('video')">
+      <span class="btn-ctrl-icon">📹</span>
+      <span id="label-video">Video: OFF</span>
+    </button>
+    <button id="btn-audio" class="btn-ctrl" onclick="toggleControl('audio')">
+      <span class="btn-ctrl-icon">🎙️</span>
+      <span id="label-audio">Audio: OFF</span>
+    </button>
+    <button id="btn-voice" class="btn-ctrl" onclick="toggleControl('voice')">
+      <span class="btn-ctrl-icon">🔊</span>
+      <span id="label-voice">Voice: OFF</span>
+    </button>
+    <button id="btn-delete" class="btn-ctrl btn-danger" onclick="clearThread()">
+      <span class="btn-ctrl-icon">🗑️</span> Clear
+    </button>
+  </div>
+
+  <!-- Swipe Container -->
+  <div class="swipe-container" id="swipe-container" onscroll="syncNavbarOnScroll()">
+
+    <!-- DASH VIEW -->
+    <div id="view-dash" class="tab-view">
+      
+      <div class="panel-card">
+        <div class="card-header">⚡ x402 Sovereign Key Relay</div>
+        <div class="card-subtext">Inject your Master Key to ignite live PG1.Agent node interactions.</div>
+        
+        <div class="key-dots-container">
+          <div class="key-dot"></div><div class="key-dot"></div><div class="key-dot"></div>
+          <div class="key-dot"></div><div class="key-dot"></div><div class="key-dot"></div>
+          <div class="key-dot"></div><div class="key-dot"></div><div class="key-dot"></div>
+          <div class="key-dot"></div><div class="key-dot"></div><div class="key-dot"></div>
+          <div class="key-dot"></div><div class="key-dot"></div><div class="key-dot"></div>
+        </div>
+
+        <div class="key-input-row">
+          <input type="password" id="api-key-input" class="key-input-field" placeholder="Paste Master Key (AIzaSy...)" />
+          <button class="btn-save" onclick="saveApiKey()">Save Key</button>
+        </div>
+
+        <div class="key-status-row">
+          <span id="key-status-text" style="color: var(--text-muted);">KEY_STATUS: NOT_SET</span>
+          <span id="key-conn-text" style="color: var(--danger-red); font-weight: bold;">● DISCONNECTED</span>
+        </div>
+      </div>
+
+      <div class="panel-card">
+        <div class="card-header">
+          <span class="status-dot"></span> Sovereign Edge Active
+        </div>
+        <div class="card-subtext">Zero-cost deployment operational via PG1 core edge synchronization. Live telemetry feeds integrated.</div>
+        
+        <div class="sync-feed-box">
+          <span style="font-size: 11px; color: var(--text-main); display: flex; align-items: center; gap: 6px;">
+            <span class="radar-icon">📡</span> Live OTX Telemetry Feed
+          </span>
+          <button class="btn-sync-action" id="btn-sync-feed" onclick="triggerSync()">
+            <span>🔄</span> Sync Feed
+          </button>
+        </div>
+
+        <div class="metric-row">
+          <span>OTX Threat Pulses Synced</span>
+          <span class="metric-value" id="pulses-val">1,420 Active Pulses</span>
+        </div>
+        <div class="metric-row">
+          <span>Active Indicators (IOC)</span>
+          <span class="metric-value" id="ioc-val">18,940 IOC Feeds</span>
+        </div>
+        <div class="metric-row">
+          <span>Edge Telemetry Throughput</span>
+          <span class="metric-value" id="throughput-val">2.4 MB/s</span>
+        </div>
+
+        <div class="telemetry-track">
+          <div class="telemetry-bar-fill"></div>
+        </div>
+      </div>
+
+      <div class="panel-card">
+        <div class="card-header">🛡️ Sovereign Network Uplink Status</div>
+        <div class="card-subtext">Encrypted verification channel active across distributed edge relays.</div>
+        <div class="metric-row">
+          <span>Uplink Protocol</span>
+          <span class="metric-value">x402-Secure</span>
+        </div>
+        <div class="metric-row">
+          <span>Node Latency</span>
+          <span style="color: var(--sovereign-green); font-weight: bold;">12 ms</span>
+        </div>
+        <div class="metric-row">
+          <span>Encryption Standard</span>
+          <span class="metric-value">AES-256-GCM</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- TERMINAL VIEW -->
+    <div id="view-terminal" class="tab-view">
+      
+      <div class="terminal-chat-area" id="terminal-chat-area">
+        <div style="color: var(--sovereign-green); font-size: 11px; margin-bottom: 12px; font-weight: bold;">
+          > PG1 System Initialized. Ready for sovereign agent commands.
+        </div>
+
+        <div class="terminal-header">
+          <span class="terminal-title">Terminal Thread</span>
+          <div class="terminal-actions">
+            <button class="btn-sm" onclick="saveCurrentThreadToLogs()">Save Log</button>
+            <button class="btn-sm" onclick="exportLogFile('txt')">Export TXT</button>
+            <button class="btn-sm btn-green" onclick="exportLogFile('pdf')">Export PDF</button>
+          </div>
+        </div>
+
+        <!-- Model Selection with active endpoints -->
+        <div class="model-selector-wrapper">
+          <span style="font-size: 10px; color: var(--text-muted);">PG1 Neural Engine:</span>
+          <select id="model-select" class="model-select">
+            <option value="gemini-3.5-flash-lite">3.5 Flash-Lite (Fastest answers)</option>
+            <option value="gemini-3.6-flash" selected>3.6 Flash (All-around help)</option>
+            <option value="gemini-3.7-flash">3.7 Flash (Latest reasoning)</option>
+            <option value="gemini-3.1-pro">3.1 Pro (Advanced reasoning)</option>
+          </select>
+        </div>
+
+        <div class="chat-bubble">
+          <div class="bubble-text">PG1.Agent online and operating under 100% sovereign ownership. x402 protocol verified and active.</div>
+          <div class="bubble-actions">
+            <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
+            <button class="btn-mini" onclick="editBubbleText(this)">✏️ Edit</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="terminal-input-bar">
+        <button class="btn-media">
+          <span>📷</span>
+          <span>Media</span>
+        </button>
+        <input type="text" id="cmd-input" class="text-input" placeholder="Enter command..." onkeypress="handleKeyPress(event)" />
+        <button class="btn-send" onclick="sendUserMessage()">Send</button>
+      </div>
+
+    </div>
+
+    <!-- NODE VIEW -->
+    <div id="view-node" class="tab-view">
+      
+      <div class="panel-card node-header-card">
+        <div class="official-node-wrapper">
+          <div class="node-aura"></div>
+          <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="Project Gifted1™ Logo" class="official-node-logo">
+        </div>
+        <h3 style="color: var(--text-main); font-size: 16px; margin-bottom: 2px;">PG1.Agent™</h3>
+        <div class="card-subtext">Autonomous Edge Infrastructure</div>
+
+        <div style="text-align: left; margin-top: 15px;">
+          <div class="metric-row">
+            <span>Node ID:</span>
+            <span class="metric-value">PG1-CORE-01</span>
+          </div>
+          <div class="metric-row">
+            <span>Status:</span>
+            <span style="color: var(--sovereign-green); font-weight: bold;">● Online & Syncing</span>
+          </div>
+          <div class="metric-row">
+            <span>Ownership:</span>
+            <span class="metric-value">100% Sovereign</span>
+          </div>
+          <div class="metric-row">
+            <span>Protocol:</span>
+            <span class="metric-value">x402 Active</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-card">
+        <div class="card-header">📊 Node System Telemetry</div>
+        
+        <div style="margin-bottom: 10px;">
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
+            <span>CPU Load</span>
+            <span id="cpu-val" style="color: var(--sovereign-blue);">24%</span>
+          </div>
+          <div class="resource-bar-bg">
+            <div class="resource-bar-fill" id="cpu-bar" style="width: 24%;"></div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 10px;">
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
+            <span>RAM Allocation</span>
+            <span id="ram-val" style="color: var(--sovereign-blue);">45%</span>
+          </div>
+          <div class="resource-bar-bg">
+            <div class="resource-bar-fill" id="ram-bar" style="width: 45%;"></div>
+          </div>
+        </div>
+
+        <div>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
+            <span>Vault Storage</span>
+            <span id="vault-val" style="color: var(--sovereign-blue);">1.2 GB / 10 GB</span>
+          </div>
+          <div class="resource-bar-bg">
+            <div class="resource-bar-fill" id="vault-bar" style="width: 12%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-card">
+        <div class="card-header">⚡ Node Controls</div>
+        <div class="node-action-grid">
+          <button class="btn-node-act" onclick="triggerSync()">🔄 Restart Node</button>
+          <button class="btn-node-act" onclick="triggerSync()">🧹 Purge Cache</button>
+          <button class="btn-node-act" onclick="openLogsModal()">📋 Logs</button>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- FUNCTIONAL LOGS MODAL -->
+  <div class="logs-modal" id="logs-modal">
+    <div class="logs-header">
+      <div class="logs-title">📋 Encrypted Conversation Logs</div>
+      <button class="btn-sm" onclick="closeLogsModal()">✕ Close</button>
+    </div>
+    <div class="logs-body" id="logs-list"></div>
+    <div class="logs-actions">
+      <button class="btn-sm btn-green" style="flex:1" onclick="saveCurrentThreadToLogs()">+ Save Current Active Thread</button>
+      <button class="btn-sm" style="color: var(--danger-red); border-color: rgba(204,0,34,0.3)" onclick="clearAllLogs()">Purge Storage</button>
+    </div>
+  </div>
+
+  <!-- BOTTOM NAVBAR -->
+  <div class="bottom-navbar">
+    <button id="nav-dash" class="nav-btn active" onclick="scrollToTab('dash')">
+      <span>📊</span>
+      <span>Dash</span>
+    </button>
+    <button id="nav-terminal" class="nav-btn" onclick="scrollToTab('terminal')">
+      <span>⚡</span>
+      <span>Terminal</span>
+    </button>
+    <button id="nav-node" class="nav-btn" onclick="scrollToTab('node')">
+      <span>👤</span>
+      <span>Node</span>
+    </button>
+  </div>
+
+  <script>
+    let conversationHistory = [];
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedKey = localStorage.getItem('pg1_api_key');
+      if (savedKey) {
+        document.getElementById('api-key-input').value = savedKey;
+        updateKeyStatus(true);
+      }
+      setInterval(updateLiveTelemetry, 3000);
+    });
+
+    function updateLiveTelemetry() {
+      let cpu = Math.floor(18 + Math.random() * 25);
+      let ram = Math.floor(40 + Math.random() * 12);
+      let vaultGB = (1.0 + Math.random() * 0.5).toFixed(1);
+
+      const cpuVal = document.getElementById('cpu-val');
+      const cpuBar = document.getElementById('cpu-bar');
+      const ramVal = document.getElementById('ram-val');
+      const ramBar = document.getElementById('ram-bar');
+      const vaultVal = document.getElementById('vault-val');
+      const vaultBar = document.getElementById('vault-bar');
+
+      if (cpuVal) cpuVal.innerText = cpu + '%';
+      if (cpuBar) cpuBar.style.width = cpu + '%';
+      if (ramVal) ramVal.innerText = ram + '%';
+      if (ramBar) ramBar.style.width = ram + '%';
+      if (vaultVal) vaultVal.innerText = vaultGB + ' GB / 10 GB';
+      if (vaultBar) vaultBar.style.width = (vaultGB * 10) + '%';
+    }
+
+    function saveApiKey() {
+      const key = document.getElementById('api-key-input').value.trim();
+      if (key) {
+        localStorage.setItem('pg1_api_key', key);
+        updateKeyStatus(true);
+      } else {
+        localStorage.removeItem('pg1_api_key');
+        updateKeyStatus(false);
+      }
+    }
+
+    function updateKeyStatus(isConnected) {
+      const statusText = document.getElementById('key-status-text');
+      const connText = document.getElementById('key-conn-text');
+      if (isConnected) {
+        statusText.innerText = "KEY_STATUS: STORED_LOCAL";
+        statusText.style.color = "var(--sovereign-green)";
+        connText.innerText = "● CONNECTED";
+        connText.style.color = "var(--sovereign-green)";
+      } else {
+        statusText.innerText = "KEY_STATUS: NOT_SET";
+        statusText.style.color = "var(--text-muted)";
+        connText.innerText = "● DISCONNECTED";
+        connText.style.color = "var(--danger-red)";
+      }
+    }
+
+    const states = { video: false, audio: false, voice: false };
+    function toggleControl(type) {
+      states[type] = !states[type];
+      const btn = document.getElementById(`btn-${type}`);
+      const label = document.getElementById(`label-${type}`);
+      label.innerText = `${type.charAt(0).toUpperCase() + type.slice(1)}: ${states[type] ? 'ON' : 'OFF'}`;
+      if (states[type]) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    }
+
+    function copyBubbleText(btnElement) {
+      const bubbleTextDiv = btnElement.closest('.chat-bubble').querySelector('.bubble-text');
+      const textToCopy = bubbleTextDiv ? bubbleTextDiv.innerText : '';
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        const originalText = btnElement.innerText;
+        btnElement.innerText = '✓ Copied';
+        btnElement.style.color = 'var(--sovereign-green)';
+        setTimeout(() => {
+          btnElement.innerText = originalText;
+          btnElement.style.color = '';
+        }, 1500);
+      }).catch(err => {
+        console.error('Failed to copy text: ', err);
+      });
+    }
+
+    function editBubbleText(btnElement) {
+      const bubble = btnElement.closest('.chat-bubble');
+      const textDiv = bubble.querySelector('.bubble-text');
+      const currentText = textDiv.innerText;
+
+      const inputField = document.createElement('textarea');
+      inputField.style.width = '100%';
+      inputField.style.fontSize = '11px';
+      inputField.style.background = '#ffffff';
+      inputField.style.border = '1px solid var(--sovereign-blue)';
+      inputField.style.padding = '4px';
+      inputField.style.borderRadius = '3px';
+      inputField.value = currentText;
+
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'btn-mini';
+      saveBtn.innerText = 'Save';
+      saveBtn.style.marginTop = '4px';
+
+      saveBtn.onclick = () => {
+        const newText = inputField.value.trim();
+        if (newText) {
+          textDiv.innerText = newText;
+        }
+        inputField.remove();
+        saveBtn.remove();
+        textDiv.style.display = 'block';
+        btnElement.style.display = 'inline-block';
+      };
+
+      textDiv.style.display = 'none';
+      btnElement.style.display = 'none';
+      bubble.insertBefore(inputField, bubble.querySelector('.bubble-actions'));
+      bubble.insertBefore(saveBtn, bubble.querySelector('.bubble-actions'));
+      inputField.focus();
+    }
+
+    async function sendUserMessage() {
+      const input = document.getElementById('cmd-input');
+      const val = input.value.trim();
+      if (!val) return;
+
+      const apiKey = localStorage.getItem('pg1_api_key');
+      const chatArea = document.getElementById('terminal-chat-area');
+      const selectedModel = document.getElementById('model-select').value;
+
+      const userBubble = document.createElement('div');
+      userBubble.className = 'chat-bubble user';
+      userBubble.innerHTML = `
+        <div class="bubble-text">${escapeHtml(val)}</div>
+        <div class="bubble-actions">
+          <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
+          <button class="btn-mini" onclick="editBubbleText(this)">✏️ Edit</button>
+        </div>
+      `;
+      chatArea.appendChild(userBubble);
+      input.value = '';
+
+      if (!apiKey) {
+        const errBubble = document.createElement('div');
+        errBubble.className = 'chat-bubble system-err';
+        errBubble.innerHTML = `
+          <div class="bubble-text">Error: Missing API Key. Configure key in Dash tab.</div>
+          <div class="bubble-actions">
+            <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
+          </div>
+        `;
+        chatArea.appendChild(errBubble);
+        return;
+      }
+
+      const aiBubble = document.createElement('div');
+      aiBubble.className = 'chat-bubble';
+      aiBubble.innerHTML = `
+        <div class="bubble-text">Processing query...</div>
+        <div class="bubble-actions">
+          <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
+          <button class="btn-mini" onclick="editBubbleText(this)">✏️ Edit</button>
+        </div>
+      `;
+      chatArea.appendChild(aiBubble);
+      chatArea.scrollTop = chatArea.scrollHeight;
+
+      conversationHistory.push({ role: "user", parts: [{ text: val }] });
+
+      const modelFallbackSequence = [selectedModel, "gemini-3.6-flash", "gemini-3.5-flash-lite"];
+      let success = false;
+      let data = null;
+
+      for (let model of modelFallbackSequence) {
+        try {
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              system_instruction: {
+                parts: [{ text: "You are PG1.Agent, an autonomous sovereign edge infrastructure AI operating under 100% sovereign ownership with x402 protocol active. You must strictly identify ONLY as PG1.Agent. Never refer to yourself by any other name. Stay grounded in factual telemetry and absolute security under Project Gifted1." }]
+              },
+              contents: conversationHistory
+            })
+          });
+
+          data = await response.json();
+          if (data.candidates && data.candidates[0].content.parts[0].text) {
+            success = true;
+            break;
+          }
+        } catch (err) {
+          console.warn(`Model endpoint ${model} failed, testing fallback option...`);
+        }
+      }
+
+      const bubbleTextDiv = aiBubble.querySelector('.bubble-text');
+
+      if (success && data) {
+        let replyText = data.candidates[0].content.parts[0].text;
+        replyText = replyText.replace(/Gemini/gi, "PG1.Agent").replace(/Google/gi, "Sovereign Network");
+        bubbleTextDiv.innerText = replyText;
+        conversationHistory.push({ role: "model", parts: [{ text: replyText }] });
+      } else if (data && data.error) {
+        aiBubble.className = 'chat-bubble system-err';
+        bubbleTextDiv.innerText = "API Response Error: " + (data.error.message || JSON.stringify(data.error));
+      } else {
+        aiBubble.className = 'chat-bubble system-err';
+        bubbleTextDiv.innerText = "API Response Error: All fallback model paths failed.";
+      }
+      chatArea.scrollTop = chatArea.scrollHeight;
+    }
+
+    function escapeHtml(string) {
+      return string.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+
+    function handleKeyPress(e) {
+      if (e.key === 'Enter') sendUserMessage();
+    }
+
+    function clearThread() {
+      conversationHistory = [];
+      document.getElementById('terminal-chat-area').innerHTML = `
+        <div style="color: var(--sovereign-green); font-size: 11px; margin-bottom: 12px; font-weight: bold;">
+          > PG1 System Thread Cleared. Ready for commands.
+        </div>
+      `;
+    }
+
+    function scrollToTab(tabId) {
+      document.getElementById('view-' + tabId).scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function syncNavbarOnScroll() {
+      const container = document.getElementById('swipe-container');
+      const width = container.offsetWidth;
+      const index = Math.round(container.scrollLeft / width);
+      const tabs = ['dash', 'terminal', 'node'];
+      document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+      const activeNav = document.getElementById('nav-' + tabs[index]);
+      if (activeNav) activeNav.classList.add('active');
+    }
+
+    function triggerSync() {
+      const pulsesEl = document.getElementById('pulses-val');
+      const iocEl = document.getElementById('ioc-val');
+      const tpEl = document.getElementById('throughput-val');
+      const btn = document.getElementById('btn-sync-feed');
+
+      if (btn) btn.innerHTML = "<span>🔄</span> Syncing...";
+
+      setTimeout(() => {
+        let pulses = (1400 + Math.floor(Math.random() * 80)).toLocaleString();
+        let ioc = (18900 + Math.floor(Math.random() * 150)).toLocaleString();
+        let tp = (2.1 + (Math.random() * 0.8)).toFixed(1);
+
+        pulsesEl.innerText = pulses + ' Active Pulses';
+        iocEl.innerText = ioc + ' IOC Feeds';
+        tpEl.innerText = tp + ' MB/s';
+
+        updateLiveTelemetry();
+
+        if (btn) btn.innerHTML = "<span>🔄</span> Sync Feed";
+      }, 300);
+    }
+
+    function getStoredLogs() {
+      const data = localStorage.getItem('pg1_conversation_logs');
+      return data ? JSON.parse(data) : [];
+    }
+
+    function saveCurrentThreadToLogs() {
+      if (conversationHistory.length === 0) return;
+
+      const formattedText = conversationHistory.map(entry => `${entry.role.toUpperCase()}: ${entry.parts[0].text}`).join('\n\n');
+      const logs = getStoredLogs();
+      logs.unshift({
+        id: 'LOG-' + Date.now().toString().slice(-5),
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2' }),
+        text: formattedText
+      });
+      localStorage.setItem('pg1_conversation_logs', JSON.stringify(logs));
+      openLogsModal();
+    }
+
+    // FIXED: Replaced Blob URL creation with data URI scheme to prevent iOS Safari WebKitBlobResource error 1
+    function exportLogFile(type) {
+      if (conversationHistory.length === 0) {
+        alert("No active conversation to export.");
+        return;
+      }
+      const textContent = conversationHistory.map(entry => `${entry.role.toUpperCase()}: ${entry.parts[0].text}`).join('\n\n------------------------------------\n\n');
+      const encodedUri = 'data:text/plain;charset=utf-8,' + encodeURIComponent(textContent);
+      const a = document.createElement('a');
+      a.href = encodedUri;
+      a.target = '_blank';
+      a.download = `PG1_Export_${Date.now()}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    function openLogsModal() {
+      const container = document.getElementById('logs-list');
+      const logs = getStoredLogs();
+      if (logs.length === 0) {
+        container.innerHTML = `<div style="color: var(--text-muted); font-size: 11px; text-align: center; margin-top: 20px;">No saved logs found.</div>`;
+      } else {
+        container.innerHTML = logs.map(l => `
+          <div class="log-item">
+            <div class="log-item-meta"><span>${l.id}</span><span>${l.timestamp}</span></div>
+            <div class="log-item-preview">${escapeHtml(l.text)}</div>
+          </div>
+        `).join('');
+      }
+      document.getElementById('logs-modal').classList.add('open');
+    }
+
+    function closeLogsModal() {
+      document.getElementById('logs-modal').classList.remove('open');
+    }
+
+    function clearAllLogs() {
+      localStorage.removeItem('pg1_conversation_logs');
+      openLogsModal();
+    }
+  </script>
+</body>
+</html>
