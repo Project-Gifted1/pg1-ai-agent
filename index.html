@@ -1,41 +1,135 @@
-<!-- DASHBOARD VIEW -->
-<div id="view-dash" class="tab-view active-view">
-  <div class="card">
-    <h3>Sovereign Edge Active</h3>
-    <p class="subtitle">Zero-cost deployment operational via PG1 core edge synchronization. All telemetry feeds secure.</p>
-    
-    <div style="margin-bottom: 15px; font-weight: bold; font-size: 0.9rem; color: #fff;">
-      ⚡ Real-Time Edge Telemetry
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Project Gifted1 Operational Intelligence</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="app-container">
+    <!-- TOP BAR -->
+    <header class="top-bar">
+      <div class="title-area">
+        <span class="status-dot"></span>
+        <h1>Project Gifted1™</h1>
+      </div>
+      <span class="version-tag">v2.5 Telemetry</span>
+    </header>
+
+    <!-- HARDWARE & MEDIA CONTROLS -->
+    <div class="telemetry-bar">
+      <button id="btn-video" onclick="toggleVideo()">Video: OFF</button>
+      <button id="btn-audio" onclick="toggleAudio()">Audio: OFF</button>
+      <button id="btn-voice" onclick="toggleVoice()">Voice: OFF</button>
+      <button class="btn-danger" onclick="deleteCurrentSession()">Delete Thread</button>
     </div>
 
-    <div class="metric-group">
-      <div class="metric-label">
-        <span>CPU Utilization</span>
-        <span id="telemetry-cpu-text">36%</span>
-      </div>
-      <div class="progress-bar">
-        <div id="telemetry-cpu-bar" class="fill" style="width: 36%;"></div>
-      </div>
-    </div>
+    <!-- DASHBOARD VIEW -->
+    <main id="view-dash" class="tab-view active-view">
+      <div class="card">
+        <h3>Sovereign Edge Active</h3>
+        <p class="subtitle">Zero-cost deployment operational via PG1 core edge synchronization. All telemetry feeds secure.</p>
+        
+        <div style="margin-bottom: 15px; font-weight: bold; font-size: 0.9rem; color: #fff;">
+          ⚡ Real-Time Edge Telemetry
+        </div>
 
-    <div class="metric-group">
-      <div class="metric-label">
-        <span>Memory Consumption</span>
-        <span id="telemetry-mem-text">49%</span>
-      </div>
-      <div class="progress-bar">
-        <div id="telemetry-mem-bar" class="fill green" style="width: 49%;"></div>
-      </div>
-    </div>
+        <div class="metric-group">
+          <div class="metric-label">
+            <span>CPU Utilization</span>
+            <span id="telemetry-cpu-text">36%</span>
+          </div>
+          <div class="progress-bar">
+            <div id="telemetry-cpu-bar" class="fill" style="width: 36%;"></div>
+          </div>
+        </div>
 
-    <div class="metric-group">
-      <div class="metric-label">
-        <span>Network Bandwidth Throughput</span>
-        <span id="telemetry-net-text">1.8 MB/s</span>
+        <div class="metric-group">
+          <div class="metric-label">
+            <span>Memory Consumption</span>
+            <span id="telemetry-mem-text">49%</span>
+          </div>
+          <div class="progress-bar">
+            <div id="telemetry-mem-bar" class="fill green" style="width: 49%;"></div>
+          </div>
+        </div>
+
+        <div class="metric-group">
+          <div class="metric-label">
+            <span>Network Bandwidth Throughput</span>
+            <span id="telemetry-net-text">1.8 MB/s</span>
+          </div>
+          <div class="progress-bar">
+            <div id="telemetry-net-bar" class="fill" style="width: 60%;"></div>
+          </div>
+        </div>
       </div>
-      <div class="progress-bar">
-        <div id="telemetry-net-bar" class="fill" style="width: 60%;"></div>
+    </main>
+
+    <!-- TERMINAL VIEW -->
+    <main id="view-terminal" class="tab-view">
+      <div class="card" style="padding: 10px;">
+        <h3 style="font-size: 0.85rem;">System Console Logs</h3>
+        <div class="console-box">
+          &gt; PG1 System Initialized. Ready for commands.
+        </div>
       </div>
-    </div>
+
+      <div class="card" style="display: flex; flex-direction: column; flex: 1;">
+        <div class="session-header">
+          <select id="session-select" onchange="switchSession(this.value)"></select>
+          <button class="btn-primary" onclick="createNewSession()">+ New</button>
+        </div>
+
+        <h3 style="font-size: 0.9rem;">AI Conversation Thread</h3>
+        <div id="chat-thread" class="chat-box"></div>
+
+        <div class="input-row">
+          <input type="text" id="user-input" placeholder="Enter command or search..." onkeypress="handleKeyPress(event)">
+          <button class="btn-primary" onclick="sendCommand()">Send</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- NODE VIEW -->
+    <main id="view-node" class="tab-view">
+      <div class="card node-card">
+        <div class="avatar-ring">
+          <img id="node-avatar" class="avatar-img" src="assets/avatar.png" alt="Node" onerror="this.style.display='none'; this.parentNode.innerText='PG1';">
+        </div>
+        <h3>PG1 Agent Core</h3>
+        <p class="subtitle" style="margin-bottom: 10px;">Primary Autonomous Execution Unit</p>
+        <hr>
+        <div class="node-details">
+          <div><strong>Status:</strong> <span class="text-green">ONLINE</span></div>
+          <div><strong>Tunnel:</strong> Cloudflare Edge Routing</div>
+          <div><strong>Model Target:</strong> Google AI Studio Tunnel</div>
+        </div>
+      </div>
+    </main>
+
+    <!-- WEBCAM HIDDEN FEED CONTAINER -->
+    <video id="webcam-feed" autoplay playsinline style="display:none;"></video>
+
+    <!-- BOTTOM NAVIGATION -->
+    <nav class="bottom-nav">
+      <button class="nav-item active" onclick="showTab('dash', this)">
+        <span class="nav-icon">📊</span>
+        <span>Dash</span>
+      </button>
+      <button class="nav-item" onclick="showTab('terminal', this)">
+        <span class="nav-icon">⚡</span>
+        <span>Terminal</span>
+      </button>
+      <button class="nav-item" onclick="showTab('node', this)">
+        <span class="nav-icon">👤</span>
+        <span>Node</span>
+      </button>
+    </nav>
   </div>
-</div>
+
+  <script src="app.js"></script>
+</body>
+</html>
