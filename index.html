@@ -575,8 +575,7 @@
       display: none;
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(255, 255, 255, 0.96);
-      backdrop-filter: blur(6px);
+      background: #ffffff;
       z-index: 200;
       padding: 16px;
       flex-direction: column;
@@ -1214,27 +1213,51 @@
       return data ? JSON.parse(data) : [];
     }
 
+    // FIXED: Collects conversation directly from active DOM chat bubbles so any visible thread saves successfully
     function saveCurrentThreadToLogs() {
-      if (conversationHistory.length === 0) return;
+      const bubbles = document.querySelectorAll('#terminal-chat-area .chat-bubble');
+      if (bubbles.length === 0) {
+        alert("No active conversation to save.");
+        return;
+      }
 
-      const formattedText = conversationHistory.map(entry => `${entry.role.toUpperCase()}: ${entry.parts[0].text}`).join('\n\n');
+      let formattedText = "";
+      bubbles.forEach(b => {
+        const isUser = b.classList.contains('user');
+        const role = isUser ? "USER" : "PG1.AGENT";
+        const text = b.querySelector('.bubble-text') ? b.querySelector('.bubble-text').innerText : '';
+        if (text) {
+          formattedText += `${role}: ${text}\n\n------------------------------------\n\n`;
+        }
+      });
+
       const logs = getStoredLogs();
       logs.unshift({
         id: 'LOG-' + Date.now().toString().slice(-5),
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2' }),
-        text: formattedText
+        text: formattedText.trim()
       });
       localStorage.setItem('pg1_conversation_logs', JSON.stringify(logs));
       openLogsModal();
     }
 
-    // FIXED: Replaced Blob URL creation with data URI scheme to prevent iOS Safari WebKitBlobResource error 1
     function exportLogFile(type) {
-      if (conversationHistory.length === 0) {
+      const bubbles = document.querySelectorAll('#terminal-chat-area .chat-bubble');
+      if (bubbles.length === 0) {
         alert("No active conversation to export.");
         return;
       }
-      const textContent = conversationHistory.map(entry => `${entry.role.toUpperCase()}: ${entry.parts[0].text}`).join('\n\n------------------------------------\n\n');
+
+      let textContent = "";
+      bubbles.forEach(b => {
+        const isUser = b.classList.contains('user');
+        const role = isUser ? "USER" : "PG1.AGENT";
+        const text = b.querySelector('.bubble-text') ? b.querySelector('.bubble-text').innerText : '';
+        if (text) {
+          textContent += `${role}: ${text}\n\n------------------------------------\n\n`;
+        }
+      });
+
       const encodedUri = 'data:text/plain;charset=utf-8,' + encodeURIComponent(textContent);
       const a = document.createElement('a');
       a.href = encodedUri;
