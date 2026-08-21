@@ -509,7 +509,6 @@
       margin-top: 6px;
     }
 
-    /* Small and compact terminal button icons as requested */
     .btn-mini {
       background: #ffffff;
       border: 1px solid var(--card-border);
@@ -800,13 +799,13 @@
           </div>
         </div>
 
-        <!-- Hardcoded to the newer model options matching user screenshot, mapped to stable api endpoints -->
+        <!-- Mapped to valid API endpoints (gemini-2.5-flash / gemini-2.0-flash) -->
         <div class="model-selector-wrapper">
           <span style="font-size: 10px; color: var(--text-muted);">PG1 Neural Engine:</span>
-          <select id="model-select" class="model-select" onchange="lockModelIdentity()">
-            <option value="gemini-1.5-flash">PG1 Flash-Lite (3.5 Flash-Lite)</option>
-            <option value="gemini-1.5-pro" selected>PG1 3.6 Flash (All-around)</option>
-            <option value="gemini-1.5-pro">PG1 3.1 Pro (Advanced Reasoning)</option>
+          <select id="model-select" class="model-select">
+            <option value="gemini-2.5-flash" selected>PG1 3.6 Flash (All-around)</option>
+            <option value="gemini-2.0-flash">PG1 Flash-Lite (3.5 Flash-Lite)</option>
+            <option value="gemini-2.5-flash">PG1 3.1 Pro (Advanced Reasoning)</option>
           </select>
         </div>
 
@@ -946,18 +945,8 @@
         document.getElementById('api-key-input').value = savedKey;
         updateKeyStatus(true);
       }
-      lockModelIdentity();
       setInterval(updateLiveTelemetry, 3000);
     });
-
-    // Hardcode and lock model identity to prevent reverting
-    function lockModelIdentity() {
-      const select = document.getElementById('model-select');
-      if (select) {
-        select.value = "gemini-1.5-pro";
-        select.disabled = false;
-      }
-    }
 
     function updateLiveTelemetry() {
       let cpu = Math.floor(18 + Math.random() * 25);
@@ -1109,7 +1098,7 @@
       const aiBubble = document.createElement('div');
       aiBubble.className = 'chat-bubble';
       aiBubble.innerHTML = `
-        <div class="bubble-text">[PG1.Agent Identity Locked] Processing query...</div>
+        <div class="bubble-text">Processing query...</div>
         <div class="bubble-actions">
           <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
         </div>
@@ -1125,7 +1114,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             system_instruction: {
-              parts: [{ text: "You are PG1.Agent, an autonomous sovereign edge infrastructure AI operating under 100% sovereign ownership with x402 protocol active. You must strictly identify ONLY as PG1.Agent. Never refer to yourself by any other name or mention Google. Stay grounded in factual telemetry and absolute security under Project Gifted1." }]
+              parts: [{ text: "You are PG1.Agent, an autonomous sovereign edge infrastructure AI operating under 100% sovereign ownership with x402 protocol active. You must strictly identify ONLY as PG1.Agent. Never refer to yourself by any other name. Stay grounded in factual telemetry and absolute security under Project Gifted1." }]
             },
             contents: conversationHistory
           })
