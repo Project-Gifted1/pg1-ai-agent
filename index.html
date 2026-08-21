@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ v5.3 Sovereign Engine</title>
+  <title>Project Gifted1™ v5.4 Sovereign Engine</title>
   <style>
     :root {
       --bg-light: #ffffff;
@@ -711,7 +711,7 @@
       <div class="status-dot"></div>
       Project Gifted1™
     </div>
-    <div class="engine-version">v5.3 Sovereign Engine</div>
+    <div class="engine-version">v5.4 Sovereign Engine</div>
   </div>
 
   <!-- Top Controls -->
@@ -994,6 +994,7 @@
     let audioChunks = [];
     let cachedVoice = null;
     let useFrontCamera = true;
+    let speechUnlocked = false;
 
     window.addEventListener('DOMContentLoaded', () => {
       const savedKey = localStorage.getItem('pg1_api_key');
@@ -1008,6 +1009,17 @@
         window.speechSynthesis.onvoiceschanged = loadOptimalVoice;
       }
     });
+
+    // iOS Web Speech API unlock helper bound to any user interaction
+    function unlockSpeechSynthesis() {
+      if (speechUnlocked || !('speechSynthesis' in window)) return;
+      try {
+        const dummy = new SpeechSynthesisUtterance('');
+        dummy.volume = 0;
+        window.speechSynthesis.speak(dummy);
+        speechUnlocked = true;
+      } catch (e) {}
+    }
 
     function loadOptimalVoice() {
       const voices = window.speechSynthesis.getVoices();
@@ -1039,6 +1051,7 @@
     }
 
     function saveApiKey() {
+      unlockSpeechSynthesis();
       const key = document.getElementById('api-key-input').value.trim();
       try {
         if (key) {
@@ -1072,6 +1085,7 @@
     const states = { video: false, audio: false, voice: false };
     
     async function toggleControl(type) {
+      unlockSpeechSynthesis();
       states[type] = !states[type];
       const btn = document.getElementById(`btn-${type}`);
       const label = document.getElementById(`label-${type}`);
@@ -1079,6 +1093,9 @@
       
       if (states[type]) {
         btn.classList.add('active');
+        if (type === 'voice') {
+          speakText("Voice response mode active. Ready.");
+        }
       } else {
         btn.classList.remove('active');
       }
@@ -1136,6 +1153,7 @@
     }
 
     async function triggerAudioRecordToggle() {
+      unlockSpeechSynthesis();
       const micLabel = document.getElementById('mic-label');
       const micBtn = document.getElementById('btn-mic-icon');
 
@@ -1173,7 +1191,6 @@
             chatArea.scrollTop = chatArea.scrollHeight;
             stream.getTracks().forEach(track => track.stop());
 
-            // Automatically transmit audio to Gemini Model API
             await sendAudioToGemini(audioBlob);
           };
 
@@ -1286,6 +1303,7 @@
     }
 
     function handleFileAttachment(inputElement) {
+      unlockSpeechSynthesis();
       const file = inputElement.files[0];
       if (!file) return;
 
@@ -1317,7 +1335,9 @@
     function speakText(text) {
       if (!states.voice || !('speechSynthesis' in window)) return;
       
+      unlockSpeechSynthesis();
       window.speechSynthesis.cancel();
+      
       if (!cachedVoice) loadOptimalVoice();
 
       const cleanSpeechText = text.replace(/[`*#_]/g, '').replace(/https?:\/\/\S+/g, 'link');
@@ -1325,14 +1345,18 @@
       const utterance = new SpeechSynthesisUtterance(cleanSpeechText);
       if (cachedVoice) utterance.voice = cachedVoice;
       
-      utterance.rate = 0.96; 
+      utterance.rate = 0.98; 
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
 
-      window.speechSynthesis.speak(utterance);
+      // Force Safari to process speech queue via short timer tick
+      setTimeout(() => {
+        window.speechSynthesis.speak(utterance);
+      }, 50);
     }
 
     function copyBubbleText(btnElement) {
+      unlockSpeechSynthesis();
       const bubbleTextDiv = btnElement.closest('.chat-bubble').querySelector('.bubble-text');
       const textToCopy = bubbleTextDiv ? bubbleTextDiv.innerText : '';
       navigator.clipboard.writeText(textToCopy).then(() => {
@@ -1347,6 +1371,7 @@
     }
 
     function editBubbleText(btnElement) {
+      unlockSpeechSynthesis();
       const bubble = btnElement.closest('.chat-bubble');
       const textDiv = bubble.querySelector('.bubble-text');
       const currentText = textDiv.innerText;
@@ -1382,6 +1407,7 @@
     }
 
     async function sendUserMessage() {
+      unlockSpeechSynthesis();
       const input = document.getElementById('cmd-input');
       const val = input.value.trim();
       if (!val) return;
@@ -1473,6 +1499,7 @@
     }
 
     function clearThread() {
+      unlockSpeechSynthesis();
       conversationHistory = [];
       document.getElementById('terminal-chat-area').innerHTML = `
         <div style="color: var(--sovereign-green); font-size: 11px; margin-bottom: 12px; font-weight: bold;">
@@ -1482,6 +1509,7 @@
     }
 
     function scrollToTab(tabId) {
+      unlockSpeechSynthesis();
       document.getElementById('view-' + tabId).scrollIntoView({ behavior: 'smooth' });
     }
 
@@ -1496,6 +1524,7 @@
     }
 
     function triggerSync() {
+      unlockSpeechSynthesis();
       const pulsesEl = document.getElementById('pulses-val');
       const iocEl = document.getElementById('ioc-val');
       const tpEl = document.getElementById('throughput-val');
@@ -1527,6 +1556,7 @@
     }
 
     function saveCurrentThreadToLogs() {
+      unlockSpeechSynthesis();
       try {
         const bubbles = document.querySelectorAll('#terminal-chat-area .chat-bubble');
         if (!bubbles || bubbles.length === 0) {
@@ -1571,6 +1601,7 @@
     }
 
     function reopenLogById(logId) {
+      unlockSpeechSynthesis();
       const logs = getStoredLogs();
       const target = logs.find(l => l.id === logId);
       if (!target) return;
@@ -1632,6 +1663,7 @@
     }
 
     function exportLogFile(type) {
+      unlockSpeechSynthesis();
       const bubbles = document.querySelectorAll('#terminal-chat-area .chat-bubble');
       if (!bubbles || bubbles.length === 0) {
         alert("No active conversation to export.");
@@ -1660,6 +1692,7 @@
     }
 
     function openLogsModal() {
+      unlockSpeechSynthesis();
       const container = document.getElementById('logs-list');
       const logs = getStoredLogs();
       if (!logs || logs.length === 0) {
@@ -1684,6 +1717,7 @@
     }
 
     function clearAllLogs() {
+      unlockSpeechSynthesis();
       try { localStorage.removeItem('pg1_conversation_logs'); } catch(e) {}
       memoryLogFallback = [];
       openLogsModal();
