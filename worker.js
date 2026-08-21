@@ -21,7 +21,6 @@ export default {
         });
       }
 
-      // Updated target model to gemini-3.6-flash
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
       const contents = [];
@@ -39,10 +38,15 @@ export default {
       parts.push({ text: message || "Analyze current status." });
       contents.push({ parts });
 
+      // System instruction grounds PG1 identity
+      const systemInstruction = {
+        parts: [{ text: "You are PG1.Agent, an autonomous AI infrastructure node operating inside Project Gifted1. Answer all user queries strictly from the operational context of Project Gifted1." }]
+      };
+
       const geminiRes = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents })
+        body: JSON.stringify({ contents, systemInstruction })
       });
 
       const data = await geminiRes.json();
