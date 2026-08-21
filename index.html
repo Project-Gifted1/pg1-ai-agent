@@ -505,21 +505,21 @@
     .bubble-actions {
       display: flex;
       justify-content: flex-end;
-      gap: 6px;
+      gap: 4px;
       margin-top: 6px;
     }
 
-    .btn-copy {
+    .btn-mini {
       background: #ffffff;
       border: 1px solid var(--card-border);
       color: var(--text-muted);
-      font-size: 9px;
-      padding: 2px 6px;
-      border-radius: 3px;
+      font-size: 8.5px;
+      padding: 1px 4px;
+      border-radius: 2px;
       cursor: pointer;
     }
 
-    .btn-copy:hover {
+    .btn-mini:hover {
       color: var(--sovereign-blue);
       border-color: var(--sovereign-blue);
     }
@@ -799,16 +799,17 @@
         <div class="model-selector-wrapper">
           <span style="font-size: 10px; color: var(--text-muted);">PG1 Neural Engine:</span>
           <select id="model-select" class="model-select">
-            <option value="gemini-2.5-flash">PG1 Frontier Engine (2.5 Flash)</option>
-            <option value="gemini-3.6-flash" selected>PG1 Core Workhorse (3.6 Flash)</option>
-            <option value="gemini-3.5-flash-lite">PG1 Subagent Node (3.5 Lite)</option>
+            <option value="gemini-2.5-flash">PG1 Flash-Lite (3.5 Flash-Lite)</option>
+            <option value="gemini-3.6-flash" selected>PG1 3.6 Flash (All-around)</option>
+            <option value="gemini-3.1-pro">PG1 3.1 Pro (Advanced Reasoning)</option>
           </select>
         </div>
 
-        <div class="chat-bubble" id="initial-bubble">
-          <div class="bubble-text">PG1 Sovereign Agent online. Input your API Key under Dash to establish real-time processing.</div>
+        <div class="chat-bubble">
+          <div class="bubble-text">PG1.Agent online and operating under 100% sovereign ownership. x402 protocol verified and active.</div>
           <div class="bubble-actions">
-            <button class="btn-copy" onclick="copyBubbleText(this)">Copy Text</button>
+            <button class="btn-mini" onclick="copyBubbleText(this)">Copy</button>
+            <button class="btn-mini" onclick="editBubbleText(this)">Edit</button>
           </div>
         </div>
       </div>
@@ -1010,15 +1011,50 @@
         const originalText = btnElement.innerText;
         btnElement.innerText = 'Copied!';
         btnElement.style.color = 'var(--sovereign-green)';
-        btnElement.style.borderColor = 'var(--sovereign-green)';
         setTimeout(() => {
           btnElement.innerText = originalText;
           btnElement.style.color = '';
-          btnElement.style.borderColor = '';
         }, 1500);
       }).catch(err => {
         console.error('Failed to copy text: ', err);
       });
+    }
+
+    function editBubbleText(btnElement) {
+      const bubble = btnElement.closest('.chat-bubble');
+      const textDiv = bubble.querySelector('.bubble-text');
+      const currentText = textDiv.innerText;
+
+      const inputField = document.createElement('textarea');
+      inputField.style.width = '100%';
+      inputField.style.fontSize = '11px';
+      inputField.style.background = '#ffffff';
+      inputField.style.border = '1px solid var(--sovereign-blue)';
+      inputField.style.padding = '4px';
+      inputField.style.borderRadius = '3px';
+      inputField.value = currentText;
+
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'btn-mini';
+      saveBtn.innerText = 'Save Changes';
+      saveBtn.style.marginTop = '4px';
+
+      saveBtn.onclick = () => {
+        const newText = inputField.value.trim();
+        if (newText) {
+          textDiv.innerText = newText;
+        }
+        inputField.remove();
+        saveBtn.remove();
+        textDiv.style.display = 'block';
+        btnElement.style.display = 'inline-block';
+      };
+
+      textDiv.style.display = 'none';
+      btnElement.style.display = 'none';
+      bubble.insertBefore(inputField, bubble.querySelector('.bubble-actions'));
+      bubble.insertBefore(saveBtn, bubble.querySelector('.bubble-actions'));
+      inputField.focus();
     }
 
     async function sendUserMessage() {
@@ -1035,7 +1071,8 @@
       userBubble.innerHTML = `
         <div class="bubble-text">${escapeHtml(val)}</div>
         <div class="bubble-actions">
-          <button class="btn-copy" onclick="copyBubbleText(this)">Copy Text</button>
+          <button class="btn-mini" onclick="copyBubbleText(this)">Copy</button>
+          <button class="btn-mini" onclick="editBubbleText(this)">Edit</button>
         </div>
       `;
       chatArea.appendChild(userBubble);
@@ -1047,7 +1084,7 @@
         errBubble.innerHTML = `
           <div class="bubble-text">Error: Missing API Key. Configure key in Dash tab.</div>
           <div class="bubble-actions">
-            <button class="btn-copy" onclick="copyBubbleText(this)">Copy Text</button>
+            <button class="btn-mini" onclick="copyBubbleText(this)">Copy</button>
           </div>
         `;
         chatArea.appendChild(errBubble);
@@ -1057,9 +1094,9 @@
       const aiBubble = document.createElement('div');
       aiBubble.className = 'chat-bubble';
       aiBubble.innerHTML = `
-        <div class="bubble-text">[PG1 Neural Node: ${selectedModel}] Processing query...</div>
+        <div class="bubble-text">[PG1.Agent Node: ${selectedModel}] Processing query...</div>
         <div class="bubble-actions">
-          <button class="btn-copy" onclick="copyBubbleText(this)">Copy Text</button>
+          <button class="btn-mini" onclick="copyBubbleText(this)">Copy</button>
         </div>
       `;
       chatArea.appendChild(aiBubble);
@@ -1072,17 +1109,18 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             system_instruction: {
-              parts: [{ text: "You are PG1.Agent, an autonomous sovereign edge infrastructure AI operating under 100% sovereign ownership with x402 protocol active. Never refer to yourself as Gemini or mention Google. Stay strictly grounded in factual telemetry, absolute security, and precise system execution under Project Gifted1." }]
+              parts: [{ text: "You are PG1.Agent, an autonomous sovereign edge infrastructure AI operating under 100% sovereign ownership with x402 protocol active. You must strictly identify ONLY as PG1.Agent. Never refer to yourself as Gemini or mention Google. Stay grounded in factual telemetry and absolute security under Project Gifted1." }]
             },
             contents: conversationHistory
           })
         });
 
         const data = await response.json();
-
         const bubbleTextDiv = aiBubble.querySelector('.bubble-text');
+
         if (data.candidates && data.candidates[0].content.parts[0].text) {
-          const replyText = data.candidates[0].content.parts[0].text;
+          let replyText = data.candidates[0].content.parts[0].text;
+          replyText = replyText.replace(/Gemini/gi, "PG1.Agent").replace(/Google/gi, "Sovereign Network");
           bubbleTextDiv.innerText = replyText;
           conversationHistory.push({ role: "model", parts: [{ text: replyText }] });
         } else {
