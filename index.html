@@ -392,6 +392,7 @@
       height: 100%;
       background: var(--sovereign-blue);
       border-radius: 3px;
+      transition: width 0.6s ease;
     }
 
     .node-action-grid {
@@ -855,10 +856,10 @@
         <div>
           <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
             <span>Vault Storage</span>
-            <span style="color: var(--sovereign-blue);">1.2 GB / 10 GB</span>
+            <span id="vault-val" style="color: var(--sovereign-blue);">1.2 GB / 10 GB</span>
           </div>
           <div class="resource-bar-bg">
-            <div class="resource-bar-fill" style="width: 12%;"></div>
+            <div class="resource-bar-fill" id="vault-bar" style="width: 12%;"></div>
           </div>
         </div>
       </div>
@@ -914,7 +915,29 @@
         document.getElementById('api-key-input').value = savedKey;
         updateKeyStatus(true);
       }
+      // Start live telemetry animation loop
+      setInterval(updateLiveTelemetry, 3000);
     });
+
+    function updateLiveTelemetry() {
+      let cpu = Math.floor(18 + Math.random() * 25);
+      let ram = Math.floor(40 + Math.random() * 12);
+      let vaultGB = (1.0 + Math.random() * 0.5).toFixed(1);
+
+      const cpuVal = document.getElementById('cpu-val');
+      const cpuBar = document.getElementById('cpu-bar');
+      const ramVal = document.getElementById('ram-val');
+      const ramBar = document.getElementById('ram-bar');
+      const vaultVal = document.getElementById('vault-val');
+      const vaultBar = document.getElementById('vault-bar');
+
+      if (cpuVal) cpuVal.innerText = cpu + '%';
+      if (cpuBar) cpuBar.style.width = cpu + '%';
+      if (ramVal) ramVal.innerText = ram + '%';
+      if (ramBar) ramBar.style.width = ram + '%';
+      if (vaultVal) vaultVal.innerText = vaultGB + ' GB / 10 GB';
+      if (vaultBar) vaultBar.style.width = (vaultGB * 10) + '%';
+    }
 
     function saveApiKey() {
       const key = document.getElementById('api-key-input').value.trim();
@@ -1058,12 +1081,7 @@
         iocEl.innerText = ioc + ' IOC Feeds';
         tpEl.innerText = tp + ' MB/s';
 
-        let cpu = Math.floor(18 + Math.random() * 15);
-        let ram = Math.floor(40 + Math.random() * 6);
-        document.getElementById('cpu-val').innerText = cpu + '%';
-        document.getElementById('cpu-bar').style.width = cpu + '%';
-        document.getElementById('ram-val').innerText = ram + '%';
-        document.getElementById('ram-bar').style.width = ram + '%';
+        updateLiveTelemetry();
 
         if (btn) btn.innerHTML = "<span>🔄</span> Sync Feed";
       }, 300);
