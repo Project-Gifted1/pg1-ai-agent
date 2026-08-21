@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ v5.0 Sovereign Engine</title>
+  <title>Project Gifted1™ v5.1 Sovereign Engine</title>
   <style>
     :root {
       --bg-light: #ffffff;
@@ -530,6 +530,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
+      cursor: pointer;
     }
 
     .text-input {
@@ -633,6 +634,37 @@
       margin-top: 12px;
     }
 
+    /* Video Stream Overlay Modal */
+    .video-modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.85);
+      z-index: 300;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      padding: 16px;
+    }
+    .video-modal.open {
+      display: flex;
+    }
+    .video-wrapper {
+      width: 100%;
+      max-width: 400px;
+      background: #000;
+      border: 2px solid var(--sovereign-blue);
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+    }
+    #camera-stream {
+      width: 100%;
+      height: 300px;
+      object-fit: cover;
+      display: block;
+    }
+
     .bottom-navbar {
       position: fixed;
       bottom: 0; left: 0; right: 0;
@@ -672,7 +704,7 @@
       <div class="status-dot"></div>
       Project Gifted1™
     </div>
-    <div class="engine-version">v5.0 Sovereign Engine</div>
+    <div class="engine-version">v5.1 Sovereign Engine</div>
   </div>
 
   <!-- Top Controls -->
@@ -792,7 +824,7 @@
           </div>
         </div>
 
-        <!-- Model Selection with active endpoints -->
+        <!-- Model Selection -->
         <div class="model-selector-wrapper">
           <span style="font-size: 10px; color: var(--text-muted);">PG1 Neural Engine:</span>
           <select id="model-select" class="model-select">
@@ -813,9 +845,9 @@
       </div>
 
       <div class="terminal-input-bar">
-        <button class="btn-media">
-          <span>📷</span>
-          <span>Media</span>
+        <button class="btn-media" onclick="triggerAudioRecordToggle()" id="btn-mic-icon">
+          <span>🎙️</span>
+          <span id="mic-label">Record</span>
         </button>
         <input type="text" id="cmd-input" class="text-input" placeholder="Enter command..." onkeypress="handleKeyPress(event)" />
         <button class="btn-send" onclick="sendUserMessage()">Send</button>
@@ -901,7 +933,15 @@
 
   </div>
 
-  <!-- FUNCTIONAL LOGS MODAL WITH RE-OPEN & INDIVIDUAL DELETE -->
+  <!-- VIDEO MODAL STREAM PREVIEW -->
+  <div class="video-modal" id="video-modal">
+    <div class="video-wrapper">
+      <video id="camera-stream" autoplay playsinline muted></video>
+    </div>
+    <button class="btn-sm btn-green" style="margin-top: 15px; width: 150px; padding: 8px;" onclick="toggleControl('video')">Close Camera</button>
+  </div>
+
+  <!-- LOGS MODAL -->
   <div class="logs-modal" id="logs-modal">
     <div class="logs-header">
       <div class="logs-title">📋 Encrypted Conversation Logs</div>
@@ -933,6 +973,10 @@
   <script>
     let conversationHistory = [];
     let memoryLogFallback = [];
+    let activeMediaStream = null;
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let cachedVoice = null;
 
     window.addEventListener('DOMContentLoaded', () => {
       const savedKey = localStorage.getItem('pg1_api_key');
@@ -941,7 +985,23 @@
         updateKeyStatus(true);
       }
       setInterval(updateLiveTelemetry, 3000);
+
+      // Preload the clearest human-like voice available in the device runtime
+      if ('speechSynthesis' in window) {
+        loadOptimalVoice();
+        window.speechSynthesis.onvoiceschanged = loadOptimalVoice;
+      }
     });
+
+    function loadOptimalVoice() {
+      const voices = window.speechSynthesis.getVoices();
+      if (!voices || voices.length === 0) return;
+
+      // Prioritize high-definition neural/online or natural English voices
+      cachedVoice = voices.find(v => 
+        (v.name.includes('Natural') || v.name.includes('Neural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Siri')) && v.lang.startsWith('en')
+      ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+    }
 
     function updateLiveTelemetry() {
       let cpu = Math.floor(18 + Math.random() * 25);
@@ -995,16 +1055,111 @@
     }
 
     const states = { video: false, audio: false, voice: false };
-    function toggleControl(type) {
+    
+    async function toggleControl(type) {
       states[type] = !states[type];
       const btn = document.getElementById(`btn-${type}`);
       const label = document.getElementById(`label-${type}`);
       label.innerText = `${type.charAt(0).toUpperCase() + type.slice(1)}: ${states[type] ? 'ON' : 'OFF'}`;
+      
       if (states[type]) {
         btn.classList.add('active');
       } else {
         btn.classList.remove('active');
       }
+
+      if (type === 'video') {
+        const modal = document.getElementById('video-modal');
+        const videoElement = document.getElementById('camera-stream');
+        if (states.video) {
+          try {
+            activeMediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+            videoElement.srcObject = activeMediaStream;
+            modal.classList.add('open');
+          } catch(err) {
+            alert("Camera access denied or unavailable: " + err.message);
+            states.video = false;
+            btn.classList.remove('active');
+            label.innerText = "Video: OFF";
+          }
+        } else {
+          modal.classList.remove('open');
+          if (activeMediaStream) {
+            activeMediaStream.getTracks().forEach(track => track.stop());
+            activeMediaStream = null;
+          }
+        }
+      }
+    }
+
+    // Real audio recording handler
+    async function triggerAudioRecordToggle() {
+      const micLabel = document.getElementById('mic-label');
+      const micBtn = document.getElementById('btn-mic-icon');
+
+      if (!mediaRecorder || mediaRecorder.state === "inactive") {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          mediaRecorder = new MediaRecorder(stream);
+          audioChunks = [];
+
+          mediaRecorder.ondataavailable = e => {
+            if (e.data.size > 0) audioChunks.push(e.data);
+          };
+
+          mediaRecorder.onstop = () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const audioUrl = URL.createObjectURL(audioBlob);
+            
+            const chatArea = document.getElementById('terminal-chat-area');
+            const audioBubble = document.createElement('div');
+            audioBubble.className = 'chat-bubble user';
+            audioBubble.innerHTML = `
+              <div class="bubble-text">Voice Audio Clip Recorded</div>
+              <audio controls src="${audioUrl}" style="width: 100%; margin-top: 6px; height: 30px;"></audio>
+              <div class="bubble-actions">
+                <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
+              </div>
+            `;
+            chatArea.appendChild(audioBubble);
+            chatArea.scrollTop = chatArea.scrollHeight;
+            stream.getTracks().forEach(track => track.stop());
+          };
+
+          mediaRecorder.start();
+          micLabel.innerText = "Stop";
+          micBtn.style.borderColor = "var(--danger-red)";
+          micBtn.style.color = "var(--danger-red)";
+        } catch (err) {
+          alert("Microphone access denied: " + err.message);
+        }
+      } else {
+        mediaRecorder.stop();
+        micLabel.innerText = "Record";
+        micBtn.style.borderColor = "var(--card-border)";
+        micBtn.style.color = "var(--sovereign-blue)";
+      }
+    }
+
+    // High-clarity, human-like speech synthesis output helper
+    function speakText(text) {
+      if (!states.voice || !('speechSynthesis' in window)) return;
+      
+      window.speechSynthesis.cancel();
+      if (!cachedVoice) loadOptimalVoice();
+
+      // Clean text of technical markup or code blocks for smooth speech flow
+      const cleanSpeechText = text.replace(/[`*#_]/g, '').replace(/https?:\/\/\S+/g, 'link');
+
+      const utterance = new SpeechSynthesisUtterance(cleanSpeechText);
+      if (cachedVoice) utterance.voice = cachedVoice;
+      
+      // Natural conversational pacing parameters
+      utterance.rate = 0.96; 
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+
+      window.speechSynthesis.speak(utterance);
     }
 
     function copyBubbleText(btnElement) {
@@ -1018,8 +1173,6 @@
           btnElement.innerText = originalText;
           btnElement.style.color = '';
         }, 1500);
-      }).catch(err => {
-        console.error('Failed to copy text: ', err);
       });
     }
 
@@ -1044,9 +1197,7 @@
 
       saveBtn.onclick = () => {
         const newText = inputField.value.trim();
-        if (newText) {
-          textDiv.innerText = newText;
-        }
+        if (newText) textDiv.innerText = newText;
         inputField.remove();
         saveBtn.remove();
         textDiv.style.display = 'block';
@@ -1084,12 +1235,7 @@
       if (!apiKey) {
         const errBubble = document.createElement('div');
         errBubble.className = 'chat-bubble system-err';
-        errBubble.innerHTML = `
-          <div class="bubble-text">Error: Missing API Key. Configure key in Dash tab.</div>
-          <div class="bubble-actions">
-            <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
-          </div>
-        `;
+        errBubble.innerHTML = `<div class="bubble-text">Error: Missing API Key. Configure key in Dash tab.</div>`;
         chatArea.appendChild(errBubble);
         return;
       }
@@ -1119,7 +1265,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               system_instruction: {
-                parts: [{ text: "You are PG1.Agent, an autonomous sovereign edge infrastructure AI operating under 100% sovereign ownership with x402 protocol active. You must strictly identify ONLY as PG1.Agent. Never refer to yourself by any other name. Stay grounded in factual telemetry and absolute security under Project Gifted1." }]
+                parts: [{ text: "You are PG1.Agent, an autonomous sovereign edge infrastructure AI operating under 100% sovereign ownership with x402 protocol active. Identify ONLY as PG1.Agent. Speak in a natural, conversational, and direct tone." }]
               },
               contents: conversationHistory
             })
@@ -1130,9 +1276,7 @@
             success = true;
             break;
           }
-        } catch (err) {
-          console.warn(`Model endpoint ${model} failed, testing fallback option...`);
-        }
+        } catch (err) {}
       }
 
       const bubbleTextDiv = aiBubble.querySelector('.bubble-text');
@@ -1142,9 +1286,7 @@
         replyText = replyText.replace(/Gemini/gi, "PG1.Agent").replace(/Google/gi, "Sovereign Network");
         bubbleTextDiv.innerText = replyText;
         conversationHistory.push({ role: "model", parts: [{ text: replyText }] });
-      } else if (data && data.error) {
-        aiBubble.className = 'chat-bubble system-err';
-        bubbleTextDiv.innerText = "API Response Error: " + (data.error.message || JSON.stringify(data.error));
+        speakText(replyText);
       } else {
         aiBubble.className = 'chat-bubble system-err';
         bubbleTextDiv.innerText = "API Response Error: All fallback model paths failed.";
@@ -1210,9 +1352,7 @@
       try {
         const data = localStorage.getItem('pg1_conversation_logs');
         if (data) return JSON.parse(data);
-      } catch (e) {
-        console.warn("Storage restricted, using memory log fallback");
-      }
+      } catch (e) {}
       return memoryLogFallback;
     }
 
@@ -1241,22 +1381,10 @@
           text: formattedText.trim()
         };
 
-        let logs = [];
-        try {
-          const existing = localStorage.getItem('pg1_conversation_logs');
-          if (existing) logs = JSON.parse(existing);
-        } catch(err) {
-          logs = memoryLogFallback;
-        }
-
+        let logs = getStoredLogs();
         logs.unshift(newLogItem);
         memoryLogFallback = logs;
-
-        try {
-          localStorage.setItem('pg1_conversation_logs', JSON.stringify(logs));
-        } catch(err) {
-          console.warn("localStorage write restricted, kept in memory fallback.");
-        }
+        localStorage.setItem('pg1_conversation_logs', JSON.stringify(logs));
 
         openLogsModal();
       } catch (e) {
@@ -1268,9 +1396,7 @@
       let logs = getStoredLogs();
       logs = logs.filter(l => l.id !== logId);
       memoryLogFallback = logs;
-      try {
-        localStorage.setItem('pg1_conversation_logs', JSON.stringify(logs));
-      } catch(e) {}
+      try { localStorage.setItem('pg1_conversation_logs', JSON.stringify(logs)); } catch(e) {}
       openLogsModal();
     }
 
@@ -1280,7 +1406,6 @@
       if (!target) return;
 
       const chatArea = document.getElementById('terminal-chat-area');
-      // Keep system header, clear old bubbles
       chatArea.innerHTML = `
         <div style="color: var(--sovereign-green); font-size: 11px; margin-bottom: 12px; font-weight: bold;">
           > Reopened Log: ${target.id} (${target.timestamp})
@@ -1306,7 +1431,6 @@
         </div>
       `;
 
-      // Split blocks by separator
       const blocks = target.text.split('------------------------------------');
       conversationHistory = [];
 
@@ -1390,9 +1514,7 @@
     }
 
     function clearAllLogs() {
-      try {
-        localStorage.removeItem('pg1_conversation_logs');
-      } catch(e) {}
+      try { localStorage.removeItem('pg1_conversation_logs'); } catch(e) {}
       memoryLogFallback = [];
       openLogsModal();
     }
