@@ -10,33 +10,25 @@ export default {
       });
     }
 
-    if (request.method !== "POST") {
-      return new Response("Method Not Allowed", { status: 405 });
-    }
-
     try {
       const { message, image } = await request.json();
-
-      if (!message) {
-        return new Response(JSON.stringify({ response: "No message provided." }), {
-          status: 400,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-        });
-      }
-
       const apiKey = env.GEMINI_API_KEY;
+
       if (!apiKey) {
-        return new Response(JSON.stringify({ response: "PG1 Error: GEMINI_API_KEY secret is missing." }), {
+        return new Response(JSON.stringify({ error: "API Key missing in Worker environment." }), {
           status: 500,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
         });
       }
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+      // Updated to gemini-2.5-flash to prevent free tier rate-limit exhaustion
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
-      const userParts = [{ text: message }];
+      const contents = [];
+      const parts = [];
+
       if (image) {
-        userParts.push({
+        parts.push({
           inline_data: {
             mime_type: "image/jpeg",
             data: image
@@ -44,54 +36,36 @@ export default {
         });
       }
 
-      const response = await fetch(url, {
+      parts.push({ text: message || "Analyze current frame." });
+      contents.push({ parts });
+
+      const geminiRes = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system_instruction: {
-            parts: [
-              {
-                text: "You are PG1 (PG1.Agent), the official autonomous AI operating system and core agent for Project Gifted1. " +
-                      "You NEVER refer to yourself as Google AI or a general-purpose assistant. " +
-                      "Specialization: Autonomous operations, node network monitoring, campaign automation, cybersecurity intelligence, visual telemetry processing, and edge execution. " +
-                      "Personality & Tone: Speak directly, technically, concisely, and with complete confidence. Keep all replies grounded in real-world facts."
-              }
-            ]
-          },
-          contents: [{ parts: userParts }]
-        }),
+        body: JSON.stringify({ contents })
       });
 
-      const data = await response.json();
+      const data = await geminiRes.json();
 
-      if (!response.ok || !data.candidates || !data.candidates[0]?.content?.parts[0]?.text) {
-        const errDetail = data.error?.message || response.statusText || "Unknown API issue";
-        return new Response(
-          JSON.stringify({ response: `PG1 Error: Invalid response from Gemini API. (${errDetail})` }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-          }
-        );
+      if (data.error) {
+        return new Response(JSON.stringify({ response: `PG1 Error: ${data.error.message}` }), {
+          status: 200,
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+        });
       }
 
-      const replyText = data.candidates[0].content.parts[0].text;
+      const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "No response received.";
 
-      return new Response(JSON.stringify({ response: replyText }), {
+      return new Response(JSON.stringify({ response: reply }), {
         status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
       });
+
     } catch (err) {
-      return new Response(
-        JSON.stringify({ response: `PG1 System Error: ${err.message}` }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-        }
-      );
+      return new Response(JSON.stringify({ response: `Worker Execution Error: ${err.message}` }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+      });
     }
-  },
+  }
 };
