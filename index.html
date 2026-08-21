@@ -209,11 +209,17 @@
       font-size: 11px;
       font-weight: bold;
       cursor: pointer;
+      animation: save-pulse 2s infinite ease-in-out;
       transition: filter 0.2s ease, transform 0.1s ease;
     }
 
+    @keyframes save-pulse {
+      0%, 100% { filter: brightness(1); box-shadow: 0 0 4px rgba(0, 255, 136, 0.4); }
+      50% { filter: brightness(1.2); box-shadow: 0 0 12px rgba(0, 255, 136, 0.8); }
+    }
+
     .btn-save:hover {
-      filter: brightness(1.1);
+      filter: brightness(1.25);
     }
 
     .key-status-row {
@@ -250,7 +256,7 @@
 
     .radar-icon {
       display: inline-block;
-      animation: rotate-radar 4s linear infinite;
+      animation: rotate-radar 3s linear infinite;
     }
 
     @keyframes rotate-radar {
@@ -332,13 +338,21 @@
       border-radius: 3px;
       overflow: hidden;
       margin-top: 4px;
+      position: relative;
     }
 
     .resource-bar-fill {
       height: 100%;
-      background: linear-gradient(90deg, var(--accent-blue), var(--neon-cyan));
+      background: linear-gradient(90deg, var(--accent-blue), var(--neon-cyan), var(--neon-green));
+      background-size: 200% 100%;
       border-radius: 3px;
-      transition: width 0.5s ease;
+      position: relative;
+      animation: bar-shimmer 2.5s linear infinite;
+    }
+
+    @keyframes bar-shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
     }
 
     .node-action-grid {
