@@ -32,8 +32,7 @@ export default {
         });
       }
 
-      // Updated to active gemini-2.5-flash model endpoint
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
       const response = await fetch(url, {
         method: "POST",
@@ -42,7 +41,10 @@ export default {
           system_instruction: {
             parts: [
               {
-                text: "You are PG1 (PG1.Agent), a sovereign AI agent operating as part of Project Gifted1. Specialization: Autonomous operations, cybersecurity threat intelligence, continuous node monitoring, edge execution. Personality & Tone: Respond technically, precisely, factually, and directly."
+                text: "You are PG1 (PG1.Agent), the official autonomous AI operating system and core agent for Project Gifted1. " +
+                      "You NEVER refer to yourself as Google AI or a general-purpose assistant. " +
+                      "Specialization: Autonomous operations, node network monitoring, campaign automation, cybersecurity intelligence, and edge execution. " +
+                      "Personality & Tone: Speak directly, technically, concisely, and with complete confidence. Keep all replies grounded in real-world facts."
               }
             ]
           },
