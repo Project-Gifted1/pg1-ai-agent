@@ -6,14 +6,14 @@
   <title>Project Gifted1™ v5.0 Sovereign Engine</title>
   <style>
     :root {
-      --bg-dark: #080c14;
-      --card-bg: #0b1320;
-      --card-border: #162235;
+      --bg-dark: #03070d;
+      --card-bg: #070e17;
+      --card-border: #111d2e;
       --neon-cyan: #00f2fe;
       --neon-green: #00ff88;
       --accent-blue: #0066ff;
       --danger-red: #ff3344;
-      --text-muted: #7e8b9b;
+      --text-muted: #6b7a8d;
     }
 
     * {
@@ -28,7 +28,6 @@
       color: #ffffff;
       padding: 12px;
       padding-bottom: 70px;
-      overflow-x: hidden;
     }
 
     /* Header */
@@ -54,12 +53,6 @@
       background-color: var(--neon-green);
       border-radius: 50%;
       box-shadow: 0 0 6px var(--neon-green);
-      animation: beacon-pulse 1.8s infinite;
-    }
-
-    @keyframes beacon-pulse {
-      0%, 100% { opacity: 0.3; transform: scale(0.8); }
-      50% { opacity: 1; transform: scale(1.2); }
     }
 
     .engine-version {
@@ -76,8 +69,8 @@
     }
 
     .btn-ctrl {
-      background: rgba(14, 21, 34, 0.8);
-      border: 1px solid rgba(0, 102, 255, 0.3);
+      background: #091321;
+      border: 1px solid rgba(0, 102, 255, 0.25);
       color: #7090b0;
       padding: 7px 0;
       font-size: 11px;
@@ -85,54 +78,18 @@
       border-radius: 4px;
       cursor: pointer;
       text-align: center;
-      transition: all 0.2s ease;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-    }
-
-    .btn-ctrl-icon {
-      font-size: 12px;
-      display: inline-block;
-      transition: transform 0.2s ease, filter 0.2s ease;
-      animation: icon-idle-glow 2.5s infinite ease-in-out;
-    }
-
-    @keyframes icon-idle-glow {
-      0%, 100% { opacity: 0.7; filter: drop-shadow(0 0 1px rgba(0, 242, 254, 0.2)); }
-      50% { opacity: 1; filter: drop-shadow(0 0 5px rgba(0, 242, 254, 0.7)); }
     }
 
     .btn-ctrl.active {
       border-color: var(--neon-cyan);
       color: var(--neon-cyan);
-      background: rgba(0, 242, 254, 0.12);
-      box-shadow: 0 0 10px rgba(0, 242, 254, 0.35);
-    }
-
-    .btn-ctrl.active .btn-ctrl-icon {
-      animation: icon-pulse-glow 1.2s infinite ease-in-out;
-    }
-
-    @keyframes icon-pulse-glow {
-      0%, 100% { transform: scale(1); opacity: 0.8; filter: drop-shadow(0 0 2px var(--neon-cyan)); }
-      50% { transform: scale(1.25); opacity: 1; filter: drop-shadow(0 0 7px var(--neon-cyan)); }
+      background: rgba(0, 242, 254, 0.1);
     }
 
     .btn-ctrl.btn-danger {
       border-color: rgba(255, 51, 68, 0.35);
       color: var(--danger-red);
       background: rgba(255, 51, 68, 0.05);
-    }
-
-    .btn-ctrl.btn-danger .btn-ctrl-icon {
-      animation: icon-danger-pulse 2s infinite ease-in-out;
-    }
-
-    @keyframes icon-danger-pulse {
-      0%, 100% { opacity: 0.7; filter: drop-shadow(0 0 1px var(--danger-red)); }
-      50% { opacity: 1; filter: drop-shadow(0 0 6px var(--danger-red)); }
     }
 
     /* Swipe Container */
@@ -162,7 +119,6 @@
       border-radius: 6px;
       padding: 14px;
       margin-bottom: 12px;
-      position: relative;
     }
 
     .card-header {
@@ -173,16 +129,6 @@
       display: flex;
       align-items: center;
       gap: 6px;
-    }
-
-    .card-header-icon {
-      display: inline-block;
-      animation: lightning-glow 1.5s ease-in-out infinite alternate;
-    }
-
-    @keyframes lightning-glow {
-      0% { filter: drop-shadow(0 0 1px var(--neon-cyan)); transform: scale(1); }
-      100% { filter: drop-shadow(0 0 6px var(--neon-cyan)); transform: scale(1.15); }
     }
 
     .card-subtext {
@@ -201,19 +147,13 @@
 
     .key-input-field {
       flex: 1;
-      background: #05080e;
+      background: #040810;
       border: 1px solid var(--card-border);
       color: var(--neon-green);
       padding: 8px 10px;
       border-radius: 4px;
       font-size: 11px;
       outline: none;
-      transition: border-color 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    .key-input-field:focus {
-      border-color: var(--neon-cyan);
-      box-shadow: 0 0 6px rgba(0, 242, 254, 0.2);
     }
 
     .btn-save {
@@ -225,12 +165,6 @@
       font-size: 11px;
       font-weight: bold;
       cursor: pointer;
-      box-shadow: 0 0 6px rgba(0, 255, 136, 0.3);
-      transition: box-shadow 0.2s ease;
-    }
-
-    .btn-save:hover {
-      box-shadow: 0 0 12px rgba(0, 255, 136, 0.6);
     }
 
     .key-status-row {
@@ -254,39 +188,6 @@
       font-weight: bold;
     }
 
-    .radar-icon {
-      display: inline-block;
-      animation: rotate-radar 4s linear infinite;
-    }
-
-    @keyframes rotate-radar {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
-    }
-
-    .telemetry-track {
-      width: 100%;
-      height: 3px;
-      background: #05080e;
-      border-radius: 2px;
-      overflow: hidden;
-      margin-top: 10px;
-      position: relative;
-    }
-
-    .telemetry-bar-fill {
-      width: 40%;
-      height: 100%;
-      background: linear-gradient(90deg, transparent, var(--neon-cyan), var(--neon-green), transparent);
-      position: absolute;
-      animation: flow-telemetry 2s linear infinite;
-    }
-
-    @keyframes flow-telemetry {
-      0% { left: -40%; }
-      100% { left: 100%; }
-    }
-
     /* Node Card Elements */
     .node-header-card {
       text-align: center;
@@ -308,26 +209,6 @@
       position: relative;
       z-index: 2;
       border: 2px solid var(--neon-cyan);
-      box-shadow: 0 0 12px rgba(0, 242, 254, 0.6);
-    }
-
-    .node-aura {
-      position: absolute;
-      top: -6px;
-      left: -6px;
-      right: -6px;
-      bottom: -6px;
-      border-radius: 50%;
-      background: linear-gradient(45deg, var(--neon-cyan), var(--neon-green), var(--accent-blue));
-      z-index: 1;
-      filter: blur(10px);
-      opacity: 0.8;
-      animation: aura-glow 3s ease-in-out infinite alternate;
-    }
-
-    @keyframes aura-glow {
-      0% { opacity: 0.5; transform: scale(0.96); }
-      100% { opacity: 0.95; transform: scale(1.05); }
     }
 
     /* Terminal View */
@@ -394,56 +275,6 @@
       margin-left: 20px;
     }
 
-    .chat-bubble.system-err {
-      border-color: var(--danger-red);
-      color: var(--danger-red);
-      background: rgba(255, 51, 68, 0.05);
-    }
-
-    .terminal-input-bar {
-      display: flex;
-      gap: 6px;
-      background: var(--bg-dark);
-      padding: 6px 0;
-      position: sticky;
-      bottom: 0;
-      margin-top: auto;
-      z-index: 10;
-    }
-
-    .btn-media {
-      background: #0d1e33;
-      border: 1px solid var(--accent-blue);
-      color: var(--neon-cyan);
-      padding: 6px 10px;
-      font-size: 10px;
-      border-radius: 4px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    .text-input {
-      flex: 1;
-      background: #05080e;
-      border: 1px solid var(--card-border);
-      color: #ffffff;
-      padding: 0 10px;
-      border-radius: 4px;
-      font-size: 11px;
-    }
-
-    .btn-send {
-      background: var(--neon-green);
-      color: #000;
-      border: none;
-      padding: 0 12px;
-      font-size: 11px;
-      font-weight: bold;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-
     /* Bottom Navbar */
     .bottom-navbar {
       position: fixed;
@@ -451,7 +282,7 @@
       left: 0;
       right: 0;
       height: 55px;
-      background: #04060a;
+      background: #02050a;
       border-top: 1px solid var(--card-border);
       display: flex;
       justify-content: space-around;
@@ -490,21 +321,10 @@
 
   <!-- Top Controls -->
   <div class="global-control-bar">
-    <button id="btn-video" class="btn-ctrl" onclick="toggleControl('video')">
-      <span class="btn-ctrl-icon">📹</span>
-      <span id="label-video">Video: OFF</span>
-    </button>
-    <button id="btn-audio" class="btn-ctrl" onclick="toggleControl('audio')">
-      <span class="btn-ctrl-icon">🎙️</span>
-      <span id="label-audio">Audio: OFF</span>
-    </button>
-    <button id="btn-voice" class="btn-ctrl" onclick="toggleControl('voice')">
-      <span class="btn-ctrl-icon">🔊</span>
-      <span id="label-voice">Voice: OFF</span>
-    </button>
-    <button id="btn-delete" class="btn-ctrl btn-danger" onclick="clearThread()">
-      <span class="btn-ctrl-icon">🗑️</span> Clear
-    </button>
+    <button id="btn-video" class="btn-ctrl" onclick="toggleControl('video')">Video: OFF</button>
+    <button id="btn-audio" class="btn-ctrl" onclick="toggleControl('audio')">Audio: OFF</button>
+    <button id="btn-voice" class="btn-ctrl" onclick="toggleControl('voice')">Voice: OFF</button>
+    <button id="btn-delete" class="btn-ctrl btn-danger" onclick="clearThread()">Delete</button>
   </div>
 
   <!-- Swipe Container -->
@@ -515,12 +335,12 @@
       
       <div class="panel-card">
         <div class="card-header">
-          <span class="card-header-icon">⚡</span> x402 Sovereign Key Relay
+          ⚡ x402 Sovereign Key Relay
         </div>
-        <div class="card-subtext">Plug in your Gemini Master Key to ignite real-time neural processing & sovereign edge execution.</div>
+        <div class="card-subtext">Enter your key below. Stored strictly in browser memory for direct client-side requests.</div>
         
         <div class="key-input-row">
-          <input type="password" id="api-key-input" class="key-input-field" placeholder="Inject Gemini Neural Key (AIzaSy...)" />
+          <input type="password" id="api-key-input" class="key-input-field" value="................................" />
           <button class="btn-save" onclick="saveApiKey()">Save Key</button>
         </div>
 
@@ -532,14 +352,12 @@
 
       <div class="panel-card">
         <div class="card-header">
-          <span class="status-dot"></span> Sovereign Edge Active
+          Sovereign Edge Active
         </div>
         <div class="card-subtext">Zero-cost deployment operational via PG1 core edge synchronization. Live telemetry feeds integrated.</div>
         
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <span style="font-size: 11px; color: #fff; display: flex; align-items: center; gap: 6px;">
-            <span class="radar-icon">📡</span> Live OTX Telemetry Feed
-          </span>
+          <span style="font-size: 11px; color: #fff;">📡 Live OTX Telemetry Feed</span>
           <button class="btn-sm" onclick="triggerSync()">Sync Feed</button>
         </div>
 
@@ -550,10 +368,6 @@
         <div class="metric-row">
           <span>Active Indicators (IOC)</span>
           <span class="metric-value">18,940 IOC Feeds</span>
-        </div>
-
-        <div class="telemetry-track">
-          <div class="telemetry-bar-fill"></div>
         </div>
       </div>
 
@@ -580,15 +394,6 @@
         </div>
       </div>
 
-      <div class="terminal-input-bar">
-        <button class="btn-media">
-          <span>📷</span>
-          <span>Media</span>
-        </button>
-        <input type="text" id="cmd-input" class="text-input" placeholder="Enter command..." onkeypress="handleKeyPress(event)" />
-        <button class="btn-send" onclick="sendUserMessage()">Send</button>
-      </div>
-
     </div>
 
     <!-- NODE VIEW -->
@@ -596,7 +401,6 @@
       
       <div class="panel-card node-header-card">
         <div class="official-node-wrapper">
-          <div class="node-aura"></div>
           <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="Project Gifted1™ Logo" class="official-node-logo">
         </div>
         <h3 style="color: #ffffff; font-size: 16px; margin-bottom: 2px;">PG1.Agent</h3>
@@ -609,7 +413,7 @@
           </div>
           <div class="metric-row">
             <span>Status:</span>
-            <span style="color: var(--neon-green); font-weight: bold;">● Online & Syncing</span>
+            <span style="color: var(--neon-green); font-weight: bold;">Online & Syncing</span>
           </div>
           <div class="metric-row">
             <span>Ownership:</span>
@@ -643,34 +447,22 @@
   </div>
 
   <script>
-    let conversationHistory = [];
-
-    // Toggles
     const states = { video: false, audio: false, voice: false };
+
     function toggleControl(type) {
       states[type] = !states[type];
       const btn = document.getElementById('btn-' + type);
-      const label = document.getElementById('label-' + type);
-      
       const titleName = type.charAt(0).toUpperCase() + type.slice(1);
-      label.innerText = titleName + ': ' + (states[type] ? 'ON' : 'OFF');
-      
-      if (states[type]) {
-        btn.classList.add('active');
-      } else {
-        btn.classList.remove('active');
-      }
+      btn.innerText = titleName + ': ' + (states[type] ? 'ON' : 'OFF');
+      btn.classList.toggle('active', states[type]);
     }
 
     function saveApiKey() {
       const key = document.getElementById('api-key-input').value.trim();
-      if (key) {
-        localStorage.setItem('pg1_gemini_api_key', key);
-      }
+      if (key) localStorage.setItem('pg1_gemini_api_key', key);
     }
 
     function clearThread() {
-      conversationHistory = [];
       document.getElementById('terminal-chat-area').innerHTML = `
         <div style="color: var(--neon-green); font-size: 11px; margin-bottom: 12px;">
           > PG1 System Thread Cleared. Ready for commands.
@@ -684,34 +476,14 @@
 
     function syncNavbarOnScroll() {
       const container = document.getElementById('swipe-container');
-      const width = container.offsetWidth;
-      const index = Math.round(container.scrollLeft / width);
+      const index = Math.round(container.scrollLeft / container.offsetWidth);
       const tabs = ['dash', 'terminal', 'node'];
       document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
       const activeNav = document.getElementById('nav-' + tabs[index]);
       if (activeNav) activeNav.classList.add('active');
     }
 
-    function triggerSync() {
-      // Refresh pulse telemetry logic
-    }
-
-    async function sendUserMessage() {
-      const input = document.getElementById('cmd-input');
-      const val = input.value.trim();
-      if (!val) return;
-
-      const chatArea = document.getElementById('terminal-chat-area');
-      const userBubble = document.createElement('div');
-      userBubble.className = 'chat-bubble user';
-      userBubble.innerText = val;
-      chatArea.appendChild(userBubble);
-      input.value = '';
-    }
-
-    function handleKeyPress(e) {
-      if (e.key === 'Enter') sendUserMessage();
-    }
+    function triggerSync() {}
   </script>
 </body>
 </html>
