@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ v5.2 Sovereign Engine</title>
+  <title>Project Gifted1™ v5.3 Sovereign Engine</title>
   <style>
     :root {
       --bg-light: #ffffff;
@@ -637,7 +637,6 @@
       margin-top: 12px;
     }
 
-    /* Video Stream Overlay Modal with Flip Controls */
     .video-modal {
       display: none;
       position: fixed;
@@ -712,7 +711,7 @@
       <div class="status-dot"></div>
       Project Gifted1™
     </div>
-    <div class="engine-version">v5.2 Sovereign Engine</div>
+    <div class="engine-version">v5.3 Sovereign Engine</div>
   </div>
 
   <!-- Top Controls -->
@@ -1144,7 +1143,6 @@
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           
-          // Select optimal mobile container MIME type to prevent error states
           const mimeType = MediaRecorder.isTypeSupported('audio/mp4') 
               ? 'audio/mp4' 
               : (MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '');
@@ -1156,7 +1154,7 @@
             if (e.data.size > 0) audioChunks.push(e.data);
           };
 
-          mediaRecorder.onstop = () => {
+          mediaRecorder.onstop = async () => {
             const blobType = mimeType || 'audio/mp4';
             const audioBlob = new Blob(audioChunks, { type: blobType });
             const audioUrl = URL.createObjectURL(audioBlob);
@@ -1174,6 +1172,9 @@
             chatArea.appendChild(audioBubble);
             chatArea.scrollTop = chatArea.scrollHeight;
             stream.getTracks().forEach(track => track.stop());
+
+            // Automatically transmit audio to Gemini Model API
+            await sendAudioToGemini(audioBlob);
           };
 
           mediaRecorder.start();
@@ -1189,6 +1190,99 @@
         micBtn.style.borderColor = "var(--card-border)";
         micBtn.style.color = "var(--sovereign-blue)";
       }
+    }
+
+    function blobToBase64(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64String = reader.result.split(',')[1];
+          resolve(base64String);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    async function sendAudioToGemini(audioBlob) {
+      const apiKey = localStorage.getItem('pg1_api_key');
+      const chatArea = document.getElementById('terminal-chat-area');
+      const selectedModel = document.getElementById('model-select').value;
+
+      if (!apiKey) {
+        const errBubble = document.createElement('div');
+        errBubble.className = 'chat-bubble system-err';
+        errBubble.innerHTML = `<div class="bubble-text">Error: Missing API Key for Voice Processing. Configure key in Dash tab.</div>`;
+        chatArea.appendChild(errBubble);
+        return;
+      }
+
+      const aiBubble = document.createElement('div');
+      aiBubble.className = 'chat-bubble';
+      aiBubble.innerHTML = `
+        <div class="bubble-text">Processing voice audio query...</div>
+        <div class="bubble-actions">
+          <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
+          <button class="btn-mini" onclick="editBubbleText(this)">✏️ Edit</button>
+        </div>
+      `;
+      chatArea.appendChild(aiBubble);
+      chatArea.scrollTop = chatArea.scrollHeight;
+
+      try {
+        const base64Audio = await blobToBase64(audioBlob);
+        const mimeType = audioBlob.type || 'audio/mp4';
+
+        conversationHistory.push({
+          role: "user",
+          parts: [
+            { text: "Please respond to this voice recording query:" },
+            { inline_data: { mime_type: mimeType, data: base64Audio } }
+          ]
+        });
+
+        const modelFallbackSequence = [selectedModel, "gemini-3.6-flash", "gemini-3.5-flash-lite"];
+        let success = false;
+        let data = null;
+
+        for (let model of modelFallbackSequence) {
+          try {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                system_instruction: {
+                  parts: [{ text: "You are PG1.Agent, an autonomous sovereign edge infrastructure AI operating under 100% sovereign ownership with x402 protocol active. Identify ONLY as PG1.Agent. Speak in a natural, conversational, and direct tone." }]
+                },
+                contents: conversationHistory
+              })
+            });
+
+            data = await response.json();
+            if (data.candidates && data.candidates[0].content.parts[0].text) {
+              success = true;
+              break;
+            }
+          } catch (e) {}
+        }
+
+        const bubbleTextDiv = aiBubble.querySelector('.bubble-text');
+
+        if (success && data) {
+          let replyText = data.candidates[0].content.parts[0].text;
+          replyText = replyText.replace(/Gemini/gi, "PG1.Agent").replace(/Google/gi, "Sovereign Network");
+          bubbleTextDiv.innerText = replyText;
+          conversationHistory.push({ role: "model", parts: [{ text: replyText }] });
+          speakText(replyText);
+        } else {
+          aiBubble.className = 'chat-bubble system-err';
+          bubbleTextDiv.innerText = "API Response Error: Failed to process voice audio stream.";
+        }
+      } catch (err) {
+        aiBubble.className = 'chat-bubble system-err';
+        aiBubble.querySelector('.bubble-text').innerText = "Voice Processing Error: " + err.message;
+      }
+      chatArea.scrollTop = chatArea.scrollHeight;
     }
 
     function handleFileAttachment(inputElement) {
