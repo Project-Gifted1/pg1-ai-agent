@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Project Gifted1™ v5.0 Sovereign Engine</title>
   <style>
     :root {
@@ -22,6 +22,7 @@
       margin: 0;
       padding: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      -webkit-tap-highlight-color: transparent;
     }
 
     body {
@@ -113,21 +114,6 @@
       color: var(--sovereign-blue);
       background: rgba(0, 68, 204, 0.08);
       box-shadow: 0 0 10px rgba(0, 68, 204, 0.2);
-    }
-
-    .btn-ctrl.active::after {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
-      border-radius: 5px;
-      border: 1px solid var(--sovereign-blue);
-      animation: toggle-ping-ring 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
-      pointer-events: none;
-    }
-
-    @keyframes toggle-ping-ring {
-      0% { transform: scale(1); opacity: 0.8; }
-      100% { transform: scale(1.12); opacity: 0; }
     }
 
     .btn-ctrl.btn-danger {
@@ -939,6 +925,7 @@
 
   <script>
     let conversationHistory = [];
+    let memoryLogFallback = [];
 
     window.addEventListener('DOMContentLoaded', () => {
       const savedKey = localStorage.getItem('pg1_api_key');
@@ -971,12 +958,16 @@
 
     function saveApiKey() {
       const key = document.getElementById('api-key-input').value.trim();
-      if (key) {
-        localStorage.setItem('pg1_api_key', key);
-        updateKeyStatus(true);
-      } else {
-        localStorage.removeItem('pg1_api_key');
-        updateKeyStatus(false);
+      try {
+        if (key) {
+          localStorage.setItem('pg1_api_key', key);
+          updateKeyStatus(true);
+        } else {
+          localStorage.removeItem('pg1_api_key');
+          updateKeyStatus(false);
+        }
+      } catch(e) {
+        if (key) updateKeyStatus(true);
       }
     }
 
@@ -1209,41 +1200,67 @@
     }
 
     function getStoredLogs() {
-      const data = localStorage.getItem('pg1_conversation_logs');
-      return data ? JSON.parse(data) : [];
+      try {
+        const data = localStorage.getItem('pg1_conversation_logs');
+        if (data) return JSON.parse(data);
+      } catch (e) {
+        console.warn("Storage restricted, using memory log fallback");
+      }
+      return memoryLogFallback;
     }
 
-    // FIXED: Collects conversation directly from active DOM chat bubbles so any visible thread saves successfully
+    // ROBUST BULLETPROOF SAVE FUNCTION WITH TRY-CATCH & IN-MEMORY FALLBACK
     function saveCurrentThreadToLogs() {
-      const bubbles = document.querySelectorAll('#terminal-chat-area .chat-bubble');
-      if (bubbles.length === 0) {
-        alert("No active conversation to save.");
-        return;
-      }
-
-      let formattedText = "";
-      bubbles.forEach(b => {
-        const isUser = b.classList.contains('user');
-        const role = isUser ? "USER" : "PG1.AGENT";
-        const text = b.querySelector('.bubble-text') ? b.querySelector('.bubble-text').innerText : '';
-        if (text) {
-          formattedText += `${role}: ${text}\n\n------------------------------------\n\n`;
+      try {
+        const bubbles = document.querySelectorAll('#terminal-chat-area .chat-bubble');
+        if (!bubbles || bubbles.length === 0) {
+          alert("Error: No active conversation bubbles found to save.");
+          return;
         }
-      });
 
-      const logs = getStoredLogs();
-      logs.unshift({
-        id: 'LOG-' + Date.now().toString().slice(-5),
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2' }),
-        text: formattedText.trim()
-      });
-      localStorage.setItem('pg1_conversation_logs', JSON.stringify(logs));
-      openLogsModal();
+        let formattedText = "";
+        bubbles.forEach(b => {
+          const isUser = b.classList.contains('user');
+          const role = isUser ? "USER" : "PG1.AGENT";
+          const textDiv = b.querySelector('.bubble-text');
+          const text = textDiv ? textDiv.innerText : (b.innerText || '');
+          if (text) {
+            formattedText += `${role}: ${text}\n\n------------------------------------\n\n`;
+          }
+        });
+
+        const newLogItem = {
+          id: 'LOG-' + Date.now().toString().slice(-5),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2' }),
+          text: formattedText.trim()
+        };
+
+        let logs = [];
+        try {
+          const existing = localStorage.getItem('pg1_conversation_logs');
+          if (existing) logs = JSON.parse(existing);
+        } catch(err) {
+          logs = memoryLogFallback;
+        }
+
+        logs.unshift(newLogItem);
+        memoryLogFallback = logs;
+
+        try {
+          localStorage.setItem('pg1_conversation_logs', JSON.stringify(logs));
+        } catch(err) {
+          console.warn("localStorage write restricted, kept in memory fallback.");
+        }
+
+        openLogsModal();
+      } catch (e) {
+        alert("Save error encountered: " + e.message);
+      }
     }
 
     function exportLogFile(type) {
       const bubbles = document.querySelectorAll('#terminal-chat-area .chat-bubble');
-      if (bubbles.length === 0) {
+      if (!bubbles || bubbles.length === 0) {
         alert("No active conversation to export.");
         return;
       }
@@ -1252,7 +1269,8 @@
       bubbles.forEach(b => {
         const isUser = b.classList.contains('user');
         const role = isUser ? "USER" : "PG1.AGENT";
-        const text = b.querySelector('.bubble-text') ? b.querySelector('.bubble-text').innerText : '';
+        const textDiv = b.querySelector('.bubble-text');
+        const text = textDiv ? textDiv.innerText : (b.innerText || '');
         if (text) {
           textContent += `${role}: ${text}\n\n------------------------------------\n\n`;
         }
@@ -1271,7 +1289,7 @@
     function openLogsModal() {
       const container = document.getElementById('logs-list');
       const logs = getStoredLogs();
-      if (logs.length === 0) {
+      if (!logs || logs.length === 0) {
         container.innerHTML = `<div style="color: var(--text-muted); font-size: 11px; text-align: center; margin-top: 20px;">No saved logs found.</div>`;
       } else {
         container.innerHTML = logs.map(l => `
@@ -1289,7 +1307,10 @@
     }
 
     function clearAllLogs() {
-      localStorage.removeItem('pg1_conversation_logs');
+      try {
+        localStorage.removeItem('pg1_conversation_logs');
+      } catch(e) {}
+      memoryLogFallback = [];
       openLogsModal();
     }
   </script>
