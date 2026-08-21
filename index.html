@@ -7,8 +7,8 @@
   <style>
     :root {
       --bg-dark: #080c14;
-      --card-bg: #0e1522;
-      --card-border: #1a2536;
+      --card-bg: #0b1320;
+      --card-border: #162235;
       --neon-cyan: #00f2fe;
       --neon-green: #00ff88;
       --accent-blue: #0066ff;
@@ -36,7 +36,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
     }
 
     .brand-title {
@@ -71,22 +71,17 @@
     .global-control-bar {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 5px;
-      margin-bottom: 12px;
-      background: rgba(14, 21, 34, 0.4);
-      padding: 4px;
-      border-radius: 6px;
-      border: 1px solid rgba(26, 37, 54, 0.6);
+      gap: 6px;
+      margin-bottom: 14px;
     }
 
     .btn-ctrl {
       background: rgba(14, 21, 34, 0.8);
       border: 1px solid rgba(0, 102, 255, 0.3);
-      color: #a0aec0;
-      padding: 6px 0;
-      font-size: 9.5px;
+      color: #7090b0;
+      padding: 7px 0;
+      font-size: 11px;
       font-weight: 500;
-      letter-spacing: 0.3px;
       border-radius: 4px;
       cursor: pointer;
       text-align: center;
@@ -94,34 +89,50 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 3px;
+      gap: 4px;
     }
 
     .btn-ctrl-icon {
-      font-size: 11px;
+      font-size: 12px;
       display: inline-block;
-      transition: transform 0.2s ease;
+      transition: transform 0.2s ease, filter 0.2s ease;
+      animation: icon-idle-glow 2.5s infinite ease-in-out;
+    }
+
+    @keyframes icon-idle-glow {
+      0%, 100% { opacity: 0.7; filter: drop-shadow(0 0 1px rgba(0, 242, 254, 0.2)); }
+      50% { opacity: 1; filter: drop-shadow(0 0 5px rgba(0, 242, 254, 0.7)); }
     }
 
     .btn-ctrl.active {
       border-color: var(--neon-cyan);
       color: var(--neon-cyan);
-      background: rgba(0, 242, 254, 0.1);
-      box-shadow: 0 0 8px rgba(0, 242, 254, 0.3);
+      background: rgba(0, 242, 254, 0.12);
+      box-shadow: 0 0 10px rgba(0, 242, 254, 0.35);
     }
 
     .btn-ctrl.active .btn-ctrl-icon {
-      animation: icon-pulse-glow 1.5s infinite ease-in-out;
+      animation: icon-pulse-glow 1.2s infinite ease-in-out;
     }
 
     @keyframes icon-pulse-glow {
-      0%, 100% { transform: scale(1); opacity: 0.8; }
-      50% { transform: scale(1.25); opacity: 1; filter: drop-shadow(0 0 3px var(--neon-cyan)); }
+      0%, 100% { transform: scale(1); opacity: 0.8; filter: drop-shadow(0 0 2px var(--neon-cyan)); }
+      50% { transform: scale(1.25); opacity: 1; filter: drop-shadow(0 0 7px var(--neon-cyan)); }
     }
 
     .btn-ctrl.btn-danger {
-      border-color: rgba(255, 51, 68, 0.25);
-      color: rgba(255, 51, 68, 0.8);
+      border-color: rgba(255, 51, 68, 0.35);
+      color: var(--danger-red);
+      background: rgba(255, 51, 68, 0.05);
+    }
+
+    .btn-ctrl.btn-danger .btn-ctrl-icon {
+      animation: icon-danger-pulse 2s infinite ease-in-out;
+    }
+
+    @keyframes icon-danger-pulse {
+      0%, 100% { opacity: 0.7; filter: drop-shadow(0 0 1px var(--danger-red)); }
+      50% { opacity: 1; filter: drop-shadow(0 0 6px var(--danger-red)); }
     }
 
     /* Swipe Container */
@@ -164,10 +175,20 @@
       gap: 6px;
     }
 
+    .card-header-icon {
+      display: inline-block;
+      animation: lightning-glow 1.5s ease-in-out infinite alternate;
+    }
+
+    @keyframes lightning-glow {
+      0% { filter: drop-shadow(0 0 1px var(--neon-cyan)); transform: scale(1); }
+      100% { filter: drop-shadow(0 0 6px var(--neon-cyan)); transform: scale(1.15); }
+    }
+
     .card-subtext {
       font-size: 11px;
       color: var(--text-muted);
-      margin-bottom: 10px;
+      margin-bottom: 12px;
       line-height: 1.4;
     }
 
@@ -175,7 +196,7 @@
     .key-input-row {
       display: flex;
       gap: 8px;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
     }
 
     .key-input-field {
@@ -183,10 +204,16 @@
       background: #05080e;
       border: 1px solid var(--card-border);
       color: var(--neon-green);
-      padding: 0 10px;
+      padding: 8px 10px;
       border-radius: 4px;
       font-size: 11px;
       outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .key-input-field:focus {
+      border-color: var(--neon-cyan);
+      box-shadow: 0 0 6px rgba(0, 242, 254, 0.2);
     }
 
     .btn-save {
@@ -198,6 +225,12 @@
       font-size: 11px;
       font-weight: bold;
       cursor: pointer;
+      box-shadow: 0 0 6px rgba(0, 255, 136, 0.3);
+      transition: box-shadow 0.2s ease;
+    }
+
+    .btn-save:hover {
+      box-shadow: 0 0 12px rgba(0, 255, 136, 0.6);
     }
 
     .key-status-row {
@@ -207,7 +240,7 @@
       font-size: 10px;
     }
 
-    /* Telemetry & Metrics */
+    /* Metrics */
     .metric-row {
       display: flex;
       justify-content: space-between;
@@ -297,46 +330,11 @@
       100% { opacity: 0.95; transform: scale(1.05); }
     }
 
-    .resource-bar-bg {
-      width: 100%;
-      height: 6px;
-      background: #05080e;
-      border-radius: 3px;
-      overflow: hidden;
-      margin-top: 4px;
-    }
-
-    .resource-bar-fill {
-      height: 100%;
-      background: linear-gradient(90deg, var(--accent-blue), var(--neon-cyan));
-      border-radius: 3px;
-      transition: width 0.5s ease;
-    }
-
-    .node-action-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      margin-top: 10px;
-    }
-
-    .btn-node-act {
-      background: #050a12;
-      border: 1px solid var(--card-border);
-      color: var(--neon-cyan);
-      font-size: 10px;
-      padding: 8px 0;
-      border-radius: 4px;
-      cursor: pointer;
-      text-align: center;
-    }
-
     /* Terminal View */
     #view-terminal {
       display: flex;
       flex-direction: column;
       min-height: calc(100vh - 140px);
-      position: relative;
     }
 
     .terminal-chat-area {
@@ -379,14 +377,13 @@
     }
 
     .chat-bubble {
-      background: #09131d;
+      background: #06111a;
       border: 1px solid var(--neon-green);
       border-radius: 6px;
       padding: 10px;
       margin-bottom: 10px;
       font-size: 11px;
       color: var(--neon-green);
-      position: relative;
       white-space: pre-wrap;
     }
 
@@ -445,80 +442,6 @@
       font-weight: bold;
       border-radius: 4px;
       cursor: pointer;
-    }
-
-    /* Logs Modal */
-    .logs-modal {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(4, 6, 10, 0.95);
-      backdrop-filter: blur(6px);
-      z-index: 200;
-      padding: 16px;
-      flex-direction: column;
-    }
-
-    .logs-modal.open {
-      display: flex;
-    }
-
-    .logs-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding-bottom: 10px;
-      border-bottom: 1px solid var(--card-border);
-      margin-bottom: 12px;
-    }
-
-    .logs-title {
-      color: var(--neon-cyan);
-      font-size: 14px;
-      font-weight: bold;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .logs-body {
-      flex: 1;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .log-item {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 6px;
-      padding: 10px;
-      font-size: 11px;
-    }
-
-    .log-item-meta {
-      display: flex;
-      justify-content: space-between;
-      color: var(--text-muted);
-      font-size: 9px;
-      margin-bottom: 6px;
-    }
-
-    .log-item-preview {
-      color: var(--neon-green);
-      white-space: pre-wrap;
-      max-height: 100px;
-      overflow: hidden;
-    }
-
-    .logs-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 12px;
     }
 
     /* Bottom Navbar */
@@ -591,17 +514,19 @@
     <div id="view-dash" class="tab-view">
       
       <div class="panel-card">
-        <div class="card-header">⚡ x402 Sovereign Key Relay</div>
-        <div class="card-subtext">Enter your Gemini API key to activate live generative AI interactions.</div>
+        <div class="card-header">
+          <span class="card-header-icon">⚡</span> x402 Sovereign Key Relay
+        </div>
+        <div class="card-subtext">Plug in your Gemini Master Key to ignite real-time neural processing & sovereign edge execution.</div>
         
         <div class="key-input-row">
-          <input type="password" id="api-key-input" class="key-input-field" placeholder="Paste Gemini API Key (AIzaSy...)" />
+          <input type="password" id="api-key-input" class="key-input-field" placeholder="Inject Gemini Neural Key (AIzaSy...)" />
           <button class="btn-save" onclick="saveApiKey()">Save Key</button>
         </div>
 
         <div class="key-status-row">
-          <span id="key-status-text" style="color: var(--text-muted);">KEY_STATUS: NOT_SET</span>
-          <span id="key-conn-text" style="color: var(--danger-red); font-weight: bold;">● DISCONNECTED</span>
+          <span id="key-status-text" style="color: var(--neon-green);">KEY_STATUS: STORED_LOCAL</span>
+          <span id="key-conn-text" style="color: var(--neon-green); font-weight: bold;">● CONNECTED</span>
         </div>
       </div>
 
@@ -620,15 +545,11 @@
 
         <div class="metric-row">
           <span>OTX Threat Pulses Synced</span>
-          <span class="metric-value" id="pulses-val">1,420 Active Pulses</span>
+          <span class="metric-value">1,420 Active Pulses</span>
         </div>
         <div class="metric-row">
           <span>Active Indicators (IOC)</span>
-          <span class="metric-value" id="ioc-val">18,940 IOC Feeds</span>
-        </div>
-        <div class="metric-row">
-          <span>Edge Telemetry Throughput</span>
-          <span class="metric-value" id="throughput-val">2.4 MB/s</span>
+          <span class="metric-value">18,940 IOC Feeds</span>
         </div>
 
         <div class="telemetry-track">
@@ -649,13 +570,13 @@
         <div class="terminal-header">
           <span class="terminal-title">Terminal Thread</span>
           <div class="terminal-actions">
-            <button class="btn-sm" onclick="saveCurrentThreadToLogs()">Save Log</button>
+            <button class="btn-sm">Copy All</button>
             <button class="btn-sm btn-green">Export PDF</button>
           </div>
         </div>
 
         <div class="chat-bubble">
-          PG1 Sovereign AI Agent online. Input your API Key under Dash to establish real-time processing.
+          PG1 Core connected. Multimodal vision and speech online.
         </div>
       </div>
 
@@ -678,7 +599,7 @@
           <div class="node-aura"></div>
           <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="Project Gifted1™ Logo" class="official-node-logo">
         </div>
-        <h3 style="color: #ffffff; font-size: 16px; margin-bottom: 2px;">PG1.Agent™</h3>
+        <h3 style="color: #ffffff; font-size: 16px; margin-bottom: 2px;">PG1.Agent</h3>
         <div class="card-subtext">Autonomous Edge Infrastructure</div>
 
         <div style="text-align: left; margin-top: 15px;">
@@ -701,64 +622,8 @@
         </div>
       </div>
 
-      <div class="panel-card">
-        <div class="card-header">📊 Node System Telemetry</div>
-        
-        <div style="margin-bottom: 10px;">
-          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
-            <span>CPU Load</span>
-            <span id="cpu-val" style="color: var(--neon-cyan);">24%</span>
-          </div>
-          <div class="resource-bar-bg">
-            <div class="resource-bar-fill" id="cpu-bar" style="width: 24%;"></div>
-          </div>
-        </div>
-
-        <div style="margin-bottom: 10px;">
-          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
-            <span>RAM Allocation</span>
-            <span id="ram-val" style="color: var(--neon-cyan);">45%</span>
-          </div>
-          <div class="resource-bar-bg">
-            <div class="resource-bar-fill" id="ram-bar" style="width: 45%;"></div>
-          </div>
-        </div>
-
-        <div>
-          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
-            <span>Vault Storage</span>
-            <span style="color: var(--neon-cyan);">1.2 GB / 10 GB</span>
-          </div>
-          <div class="resource-bar-bg">
-            <div class="resource-bar-fill" style="width: 12%;"></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="panel-card">
-        <div class="card-header">⚡ Node Controls</div>
-        <div class="node-action-grid">
-          <button class="btn-node-act" onclick="triggerSync()">🔄 Restart Node</button>
-          <button class="btn-node-act" onclick="triggerSync()">🧹 Purge Cache</button>
-          <button class="btn-node-act" onclick="openLogsModal()">📋 Logs</button>
-        </div>
-      </div>
-
     </div>
 
-  </div>
-
-  <!-- FUNCTIONAL LOGS MODAL -->
-  <div class="logs-modal" id="logs-modal">
-    <div class="logs-header">
-      <div class="logs-title">📋 Encrypted Conversation Logs</div>
-      <button class="btn-sm" onclick="closeLogsModal()">✕ Close</button>
-    </div>
-    <div class="logs-body" id="logs-list"></div>
-    <div class="logs-actions">
-      <button class="btn-sm btn-green" style="flex:1" onclick="saveCurrentThreadToLogs()">+ Save Current Active Thread</button>
-      <button class="btn-sm" style="color: var(--danger-red); border-color: rgba(255,51,68,0.3)" onclick="clearAllLogs()">Purge Storage</button>
-    </div>
   </div>
 
   <!-- BOTTOM NAVBAR -->
@@ -780,48 +645,16 @@
   <script>
     let conversationHistory = [];
 
-    window.addEventListener('DOMContentLoaded', () => {
-      const savedKey = localStorage.getItem('pg1_gemini_api_key');
-      if (savedKey) {
-        document.getElementById('api-key-input').value = savedKey;
-        updateKeyStatus(true);
-      }
-    });
-
-    function saveApiKey() {
-      const key = document.getElementById('api-key-input').value.trim();
-      if (key) {
-        localStorage.setItem('pg1_gemini_api_key', key);
-        updateKeyStatus(true);
-      } else {
-        localStorage.removeItem('pg1_gemini_api_key');
-        updateKeyStatus(false);
-      }
-    }
-
-    function updateKeyStatus(isConnected) {
-      const statusText = document.getElementById('key-status-text');
-      const connText = document.getElementById('key-conn-text');
-      if (isConnected) {
-        statusText.innerText = "KEY_STATUS: STORED_LOCAL";
-        statusText.style.color = "var(--neon-green)";
-        connText.innerText = "● CONNECTED";
-        connText.style.color = "var(--neon-green)";
-      } else {
-        statusText.innerText = "KEY_STATUS: NOT_SET";
-        statusText.style.color = "var(--text-muted)";
-        connText.innerText = "● DISCONNECTED";
-        connText.style.color = "var(--danger-red)";
-      }
-    }
-
-    // Controls
+    // Toggles
     const states = { video: false, audio: false, voice: false };
     function toggleControl(type) {
       states[type] = !states[type];
-      const btn = document.getElementById(`btn-${type}`);
-      const label = document.getElementById(`label-${type}`);
-      label.innerText = `${type.charAt(0).toUpperCase() + type.slice(1)}: ${states[type] ? 'ON' : 'OFF'}`;
+      const btn = document.getElementById('btn-' + type);
+      const label = document.getElementById('label-' + type);
+      
+      const titleName = type.charAt(0).toUpperCase() + type.slice(1);
+      label.innerText = titleName + ': ' + (states[type] ? 'ON' : 'OFF');
+      
       if (states[type]) {
         btn.classList.add('active');
       } else {
@@ -829,61 +662,11 @@
       }
     }
 
-    // Terminal AI Logic
-    async function sendUserMessage() {
-      const input = document.getElementById('cmd-input');
-      const val = input.value.trim();
-      if (!val) return;
-
-      const apiKey = localStorage.getItem('pg1_gemini_api_key');
-      const chatArea = document.getElementById('terminal-chat-area');
-
-      const userBubble = document.createElement('div');
-      userBubble.className = 'chat-bubble user';
-      userBubble.innerText = val;
-      chatArea.appendChild(userBubble);
-      input.value = '';
-
-      if (!apiKey) {
-        const errBubble = document.createElement('div');
-        errBubble.className = 'chat-bubble system-err';
-        errBubble.innerText = "Error: Missing Gemini API Key. Configure key in Dash tab.";
-        chatArea.appendChild(errBubble);
-        return;
+    function saveApiKey() {
+      const key = document.getElementById('api-key-input').value.trim();
+      if (key) {
+        localStorage.setItem('pg1_gemini_api_key', key);
       }
-
-      const aiBubble = document.createElement('div');
-      aiBubble.className = 'chat-bubble';
-      aiBubble.innerText = "Processing query...";
-      chatArea.appendChild(aiBubble);
-
-      conversationHistory.push({ role: "user", parts: [{ text: val }] });
-
-      try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: conversationHistory })
-        });
-
-        const data = await response.json();
-
-        if (data.candidates && data.candidates[0].content.parts[0].text) {
-          const replyText = data.candidates[0].content.parts[0].text;
-          aiBubble.innerText = replyText;
-          conversationHistory.push({ role: "model", parts: [{ text: replyText }] });
-        } else {
-          aiBubble.className = 'chat-bubble system-err';
-          aiBubble.innerText = "API Response Error: " + JSON.stringify(data);
-        }
-      } catch (err) {
-        aiBubble.className = 'chat-bubble system-err';
-        aiBubble.innerText = "Network/API Request Failed: " + err.message;
-      }
-    }
-
-    function handleKeyPress(e) {
-      if (e.key === 'Enter') sendUserMessage();
     }
 
     function clearThread() {
@@ -895,7 +678,6 @@
       `;
     }
 
-    // Dynamic Navigation
     function scrollToTab(tabId) {
       document.getElementById('view-' + tabId).scrollIntoView({ behavior: 'smooth' });
     }
@@ -911,57 +693,24 @@
     }
 
     function triggerSync() {
-      let cpu = Math.floor(18 + Math.random() * 15);
-      let ram = Math.floor(40 + Math.random() * 6);
-      document.getElementById('cpu-val').innerText = cpu + '%';
-      document.getElementById('cpu-bar').style.width = cpu + '%';
-      document.getElementById('ram-val').innerText = ram + '%';
-      document.getElementById('ram-bar').style.width = ram + '%';
+      // Refresh pulse telemetry logic
     }
 
-    // Functional Logs Management
-    function getStoredLogs() {
-      const data = localStorage.getItem('pg1_conversation_logs');
-      return data ? JSON.parse(data) : [];
+    async function sendUserMessage() {
+      const input = document.getElementById('cmd-input');
+      const val = input.value.trim();
+      if (!val) return;
+
+      const chatArea = document.getElementById('terminal-chat-area');
+      const userBubble = document.createElement('div');
+      userBubble.className = 'chat-bubble user';
+      userBubble.innerText = val;
+      chatArea.appendChild(userBubble);
+      input.value = '';
     }
 
-    function saveCurrentThreadToLogs() {
-      const content = document.getElementById('terminal-chat-area').innerText;
-      if (!content || content.length < 20) return;
-
-      const logs = getStoredLogs();
-      logs.unshift({
-        id: 'LOG-' + Date.now().toString().slice(-5),
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        text: content
-      });
-      localStorage.setItem('pg1_conversation_logs', JSON.stringify(logs));
-      openLogsModal();
-    }
-
-    function openLogsModal() {
-      const container = document.getElementById('logs-list');
-      const logs = getStoredLogs();
-      if (logs.length === 0) {
-        container.innerHTML = `<div style="color: var(--text-muted); font-size: 11px; text-align: center; margin-top: 20px;">No saved logs found.</div>`;
-      } else {
-        container.innerHTML = logs.map(l => `
-          <div class="log-item">
-            <div class="log-item-meta"><span>${l.id}</span><span>${l.timestamp}</span></div>
-            <div class="log-item-preview">${l.text}</div>
-          </div>
-        `).join('');
-      }
-      document.getElementById('logs-modal').classList.add('open');
-    }
-
-    function closeLogsModal() {
-      document.getElementById('logs-modal').classList.remove('open');
-    }
-
-    function clearAllLogs() {
-      localStorage.removeItem('pg1_conversation_logs');
-      openLogsModal();
+    function handleKeyPress(e) {
+      if (e.key === 'Enter') sendUserMessage();
     }
   </script>
 </body>
