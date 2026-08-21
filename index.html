@@ -1109,7 +1109,6 @@
         activeMediaStream = await navigator.mediaDevices.getUserMedia(constraints);
         videoElement.srcObject = activeMediaStream;
       } catch (err) {
-        // Fallback if exact environment camera constraint fails
         try {
           activeMediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
           videoElement.srcObject = activeMediaStream;
@@ -1144,7 +1143,13 @@
       if (!mediaRecorder || mediaRecorder.state === "inactive") {
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          mediaRecorder = new MediaRecorder(stream);
+          
+          // Select optimal mobile container MIME type to prevent error states
+          const mimeType = MediaRecorder.isTypeSupported('audio/mp4') 
+              ? 'audio/mp4' 
+              : (MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '');
+
+          mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
           audioChunks = [];
 
           mediaRecorder.ondataavailable = e => {
@@ -1152,7 +1157,8 @@
           };
 
           mediaRecorder.onstop = () => {
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const blobType = mimeType || 'audio/mp4';
+            const audioBlob = new Blob(audioChunks, { type: blobType });
             const audioUrl = URL.createObjectURL(audioBlob);
             
             const chatArea = document.getElementById('terminal-chat-area');
@@ -1160,7 +1166,7 @@
             audioBubble.className = 'chat-bubble user';
             audioBubble.innerHTML = `
               <div class="bubble-text">Voice Audio Clip Recorded</div>
-              <audio controls src="${audioUrl}" style="width: 100%; margin-top: 6px; height: 30px;"></audio>
+              <audio controls playsinline src="${audioUrl}" style="width: 100%; margin-top: 6px; height: 30px;"></audio>
               <div class="bubble-actions">
                 <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
               </div>
@@ -1200,7 +1206,7 @@
         previewHTML += `<img src="${imageUrl}" style="max-width:100%; max-height:180px; border-radius:4px; margin-top:6px; display:block;" />`;
       } else if (file.type.startsWith('video/')) {
         const videoUrl = URL.createObjectURL(file);
-        previewHTML += `<video controls src="${videoUrl}" style="max-width:100%; max-height:180px; border-radius:4px; margin-top:6px; display:block;"></video>`;
+        previewHTML += `<video controls playsinline src="${videoUrl}" style="max-width:100%; max-height:180px; border-radius:4px; margin-top:6px; display:block;"></video>`;
       }
 
       fileBubble.innerHTML = `
