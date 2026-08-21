@@ -7,29 +7,38 @@
   <!-- jsPDF CDN for client-side PDF document generation -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { background-color: #0B0E14; color: #E2E8F0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; width: 100%; overflow: hidden; background-color: #0B0E14; color: #E2E8F0; }
+    body { display: flex; flex-direction: column; }
     
     header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #0B0E14; border-bottom: 1px solid #1E2330; height: 50px; flex-shrink: 0; }
     header .title { font-size: 16px; font-weight: 700; color: #FFFFFF; display: flex; align-items: center; gap: 8px; }
-    header .status-dot { width: 8px; height: 8px; background: #00FF66; border-radius: 50%; display: inline-block; }
+    header .status-dot { width: 8px; height: 8px; background: #00FF66; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px #00FF66; }
     header .version { font-size: 12px; color: #64748B; }
 
-    main { flex: 1; overflow-y: auto; padding: 16px; padding-bottom: 80px; }
+    main { flex: 1; overflow-y: auto; padding: 16px; padding-bottom: 75px; -webkit-overflow-scrolling: touch; }
     .tab-view { display: none; }
     .tab-view.active-view { display: block; }
 
     /* Control Buttons Bar */
     .controls-bar { display: flex; gap: 8px; margin-bottom: 16px; overflow-x: auto; padding-bottom: 4px; }
-    .btn-ctrl { background: rgba(56, 189, 248, 0.1); border: 1px solid #1E293B; color: #38BDF8; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .btn-ctrl { background: rgba(56, 189, 248, 0.1); border: 1px solid #1E293B; color: #38BDF8; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background 0.15s ease; }
     .btn-ctrl.active-ctrl { background: rgba(0, 255, 102, 0.15); border-color: #00FF66; color: #00FF66; }
+    .btn-ctrl.listening-ctrl { background: rgba(239, 68, 68, 0.2); border-color: #EF4444; color: #EF4444; animation: pulse 1.5s infinite; }
     .btn-danger { background: rgba(239, 68, 68, 0.1); border: 1px solid #7F1D1D; color: #EF4444; }
 
-    /* Live Video Feed Container */
-    #video-container { display: none; width: 100%; max-height: 200px; background: #000; border: 1px solid #00FF66; border-radius: 8px; overflow: hidden; margin-bottom: 16px; position: relative; }
-    #video-feed { width: 100%; height: 200px; object-fit: cover; }
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
 
-    /* Node Interface with GitHub Image Asset */
+    /* Live Video Feed Container */
+    #video-container { display: none; width: 100%; max-height: 220px; background: #000; border: 1px solid #00FF66; border-radius: 8px; overflow: hidden; margin-bottom: 16px; position: relative; }
+    #video-feed { width: 100%; height: 180px; object-fit: cover; }
+    .video-overlay-bar { background: #080C14; padding: 6px 10px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #1E2330; }
+
+    /* Node Interface */
     .node-card { background: #0E131F; border: 1px solid #1E293B; border-radius: 12px; padding: 32px 20px; text-align: center; margin-top: 10px; }
     .badge-container { display: flex; justify-content: center; margin-bottom: 20px; }
     .node-image-badge {
@@ -52,19 +61,28 @@
 
     /* Terminal View */
     .console-box { background: #05070A; border: 1px solid #1E2330; border-radius: 8px; padding: 12px; margin-bottom: 16px; font-family: monospace; font-size: 13px; color: #00FF66; }
-    .chat-container { background: #0D111A; border: 1px solid #1E2330; border-radius: 8px; display: flex; flex-direction: column; height: 380px; }
+    .chat-container { background: #0D111A; border: 1px solid #1E2330; border-radius: 8px; display: flex; flex-direction: column; height: 420px; }
     .chat-header { padding: 10px 12px; border-bottom: 1px solid #1E2330; display: flex; justify-content: space-between; align-items: center; }
-    .chat-thread { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; line-height: 1.4; }
-    .msg { padding: 8px 12px; border-radius: 6px; }
-    .ai-msg { background: #131B2E; color: #00FF66; border-left: 3px solid #00FF66; }
-    .user-msg { background: #1E293B; color: #38BDF8; align-self: flex-start; }
-    .input-bar { padding: 10px; border-top: 1px solid #1E2330; display: flex; gap: 8px; }
-    .input-bar input { flex: 1; background: #05070A; border: 1px solid #1E2330; color: #FFF; padding: 8px 12px; border-radius: 6px; outline: none; }
+    .chat-thread { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; line-height: 1.4; -webkit-overflow-scrolling: touch; }
+    .msg { padding: 8px 12px; border-radius: 6px; max-width: 90%; word-break: break-word; }
+    .msg img, .msg video { max-width: 100%; border-radius: 6px; margin-top: 6px; border: 1px solid #1E293B; }
+    .ai-msg { background: #131B2E; color: #00FF66; border-left: 3px solid #00FF66; align-self: flex-start; }
+    .user-msg { background: #1E293B; color: #38BDF8; align-self: flex-end; }
+    
+    /* Attachment Bar & Inputs */
+    .media-preview-container { display: none; padding: 8px 12px; background: #080C14; border-top: 1px solid #1E2330; align-items: center; justify-content: space-between; font-size: 12px; color: #38BDF8; }
+    .input-bar { padding: 10px; border-top: 1px solid #1E2330; display: flex; gap: 8px; align-items: center; }
+    .input-bar input[type="text"] { flex: 1; background: #05070A; border: 1px solid #1E2330; color: #FFF; padding: 8px 12px; border-radius: 6px; outline: none; font-size: 14px; }
     .btn-action { background: #00FF66; color: #000; border: none; padding: 8px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+    .btn-attach { background: #1E293B; color: #38BDF8; border: 1px solid #38BDF8; padding: 8px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+
+    /* Key Configuration Card */
+    .api-card { background: #0E131F; border: 1px solid #1E293B; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .api-card input { width: 100%; background: #05070A; border: 1px solid #1E2330; color: #00FF66; padding: 8px; border-radius: 6px; font-family: monospace; font-size: 12px; margin-top: 8px; outline: none; }
     
     /* Fixed Bottom Navigation Bar */
     nav { display: flex; background: #0B0E14; border-top: 1px solid #1E2330; position: fixed; bottom: 0; left: 0; right: 0; height: 60px; z-index: 1000; }
-    .nav-item { flex: 1; text-align: center; padding: 10px 0; color: #64748B; font-size: 11px; text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; }
+    .nav-item { flex: 1; text-align: center; padding: 8px 0; color: #64748B; font-size: 11px; text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; }
     .nav-item.active { color: #38BDF8; }
     .nav-icon { font-size: 16px; }
   </style>
@@ -90,6 +108,17 @@
       <!-- Live Media Video Preview Window -->
       <div id="video-container">
         <video id="video-feed" autoplay playsinline muted></video>
+        <div class="video-overlay-bar">
+          <span style="font-size: 11px; color: #00FF66;">LIVE CAMERA STREAM</span>
+          <button class="btn-ctrl" onclick="captureVideoFrame()" style="padding: 3px 8px; font-size: 10px;">📸 Capture Frame</button>
+        </div>
+      </div>
+
+      <!-- API Key Setup Card -->
+      <div class="api-card">
+        <div style="font-size: 13px; font-weight: 600; color: #FFF;">🔑 Gemini API Key Status</div>
+        <p style="font-size: 11px; color: #94A3B8; margin-top: 2px;">Stored locally or loaded via environment variable.</p>
+        <input type="password" id="api-key-input" placeholder="Enter Gemini API Key..." onchange="saveApiKey(this.value)">
       </div>
 
       <!-- Telemetry Card -->
@@ -136,15 +165,15 @@
         
         <div style="display: flex; flex-direction: column; gap: 10px; font-size: 12px;">
           <div style="display: flex; justify-content: space-between; align-items: center; background: #080C14; padding: 10px; border-radius: 6px; border: 1px solid #1E2330;">
-            <span style="color: #94A3B8;">Cloudflare Tunnel</span>
+            <span style="color: #94A3B8;">PG1 Sovereign Edge Mesh</span>
             <span style="color: #00FF66; font-weight: 600;">ACTIVE</span>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center; background: #080C14; padding: 10px; border-radius: 6px; border: 1px solid #1E2330;">
-            <span style="color: #94A3B8;">Google AI API Relay</span>
+            <span style="color: #94A3B8;">Core Intelligence Relay</span>
             <span style="color: #00FF66; font-weight: 600;">CONNECTED</span>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center; background: #080C14; padding: 10px; border-radius: 6px; border: 1px solid #1E2330;">
-            <span style="color: #94A3B8;">System Persistence</span>
+            <span style="color: #94A3B8;">Encrypted Data Vault</span>
             <span style="color: #00FF66; font-weight: 600;">SYNCED</span>
           </div>
         </div>
@@ -153,17 +182,26 @@
 
     <!-- Terminal Tab -->
     <div id="view-terminal" class="tab-view">
-      <div class="console-box">&gt; PG1 System Initialized. Ready for commands.</div>
+      <div class="console-box" id="console-status">&gt; PG1 System Initialized. Ready for multimodal commands.</div>
       <div class="chat-container">
         <div class="chat-header">
           <span style="font-size: 12px; color: #94A3B8; font-weight: 600;">Terminal Thread</span>
           <button onclick="generatePDF()" class="btn-action" style="font-size: 11px; padding: 4px 8px;">Export PDF</button>
         </div>
         <div id="chat-thread" class="chat-thread">
-          <div class="msg ai-msg">PG1 Core connected. Awaiting input.</div>
+          <div class="msg ai-msg">PG1 Core connected. Multimodal vision and speech online.</div>
         </div>
+
+        <!-- Attachment Preview Bar -->
+        <div id="media-preview-container" class="media-preview-container">
+          <span id="media-preview-label">Attached: File</span>
+          <button onclick="clearAttachment()" style="background:none; border:none; color:#EF4444; font-weight:bold; cursor:pointer;">✕</button>
+        </div>
+
         <div class="input-bar">
-          <input type="text" id="user-input" placeholder="Enter command or search..." onkeypress="if(event.key==='Enter') sendCommand()">
+          <input type="file" id="media-upload-input" accept="image/*,video/*" style="display:none;" onchange="handleFileSelect(event)">
+          <button class="btn-attach" onclick="document.getElementById('media-upload-input').click()">📷 Media</button>
+          <input type="text" id="user-input" placeholder="Enter command or media prompt..." onkeypress="if(event.key==='Enter') sendCommand()">
           <button class="btn-action" onclick="sendCommand()">Send</button>
         </div>
       </div>
@@ -206,6 +244,9 @@
     </div>
   </nav>
 
+  <!-- Hidden Canvas for Video Frame Capture -->
+  <canvas id="frame-canvas" style="display:none;"></canvas>
+
   <script>
     // Tab Navigation System
     function showTab(tabName, el) {
@@ -216,10 +257,58 @@
       el.classList.add('active');
     }
 
-    // Hardware Media Features
+    // Media, Speech & API State
     let videoStream = null;
     let isVoiceActive = false;
+    let isAudioListening = false;
+    let recognition = null;
+    let pendingMediaData = null; // Stores Base64 media data for API upload
 
+    // Initialize API Key from storage if present
+    document.addEventListener("DOMContentLoaded", () => {
+      const savedKey = localStorage.getItem("GEMINI_API_KEY") || (window.GEMINI_API_KEY || "");
+      if (savedKey) {
+        document.getElementById("api-key-input").value = savedKey;
+      }
+    });
+
+    function saveApiKey(key) {
+      localStorage.setItem("GEMINI_API_KEY", key.trim());
+    }
+
+    function getApiKey() {
+      return localStorage.getItem("GEMINI_API_KEY") || document.getElementById("api-key-input").value.trim() || window.GEMINI_API_KEY || "";
+    }
+
+    // Web Speech API Initialization for Speech-To-Text (STT)
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event) => {
+        const lastIndex = event.results.length - 1;
+        const transcript = event.results[lastIndex][0].transcript.trim();
+        if (transcript) {
+          document.getElementById('user-input').value = transcript;
+          sendCommand(transcript);
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        if (event.error === 'not-allowed') stopListening();
+      };
+
+      recognition.onend = () => {
+        if (isAudioListening) recognition.start();
+      };
+    }
+
+    // Video Toggle & Stream Controls
     async function toggleVideo() {
       const btn = document.getElementById('btn-video');
       const container = document.getElementById('video-container');
@@ -227,7 +316,10 @@
 
       if (!videoStream) {
         try {
-          videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          videoStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { width: { ideal: 640 }, height: { ideal: 360 } }, 
+            audio: false 
+          });
           video.srcObject = videoStream;
           container.style.display = 'block';
           btn.innerText = 'Video: ON';
@@ -244,22 +336,105 @@
       }
     }
 
-    async function toggleAudio() {
+    // Capture Frame from Live Webcam
+    function captureVideoFrame() {
+      const video = document.getElementById('video-feed');
+      const canvas = document.getElementById('frame-canvas');
+      if (!videoStream || !video.videoWidth) {
+        alert('Live camera feed is not active.');
+        return;
+      }
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      const base64Image = canvas.toDataURL('image/jpeg', 0.85);
+      pendingMediaData = {
+        mimeType: 'image/jpeg',
+        base64: base64Image.split(',')[1],
+        previewUrl: base64Image,
+        type: 'image'
+      };
+
+      showAttachmentPreview('Captured Webcam Frame');
+      // Switch to terminal tab automatically to view/send capture
+      showTab('terminal', document.querySelectorAll('.nav-item')[1]);
+    }
+
+    // File Input Handler (Upload Image or Short Video)
+    function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target.result;
+        const mimeType = file.type;
+        const base64Data = result.split(',')[1];
+
+        pendingMediaData = {
+          mimeType: mimeType,
+          base64: base64Data,
+          previewUrl: result,
+          type: mimeType.startsWith('video') ? 'video' : 'image'
+        };
+
+        showAttachmentPreview(`Attached: ${file.name}`);
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function showAttachmentPreview(label) {
+      const previewContainer = document.getElementById('media-preview-container');
+      const previewLabel = document.getElementById('media-preview-label');
+      previewLabel.innerText = label;
+      previewContainer.style.display = 'flex';
+    }
+
+    function clearAttachment() {
+      pendingMediaData = null;
+      document.getElementById('media-preview-container').style.display = 'none';
+      document.getElementById('media-upload-input').value = '';
+    }
+
+    // Audio/Voice Recognition Listening Toggle (STT)
+    function toggleAudio() {
       const btn = document.getElementById('btn-audio');
-      if (btn.innerText.includes('OFF')) {
+      const consoleBox = document.getElementById('console-status');
+
+      if (!SpeechRecognition) {
+        alert('Speech recognition is not supported on this browser.');
+        return;
+      }
+
+      if (!isAudioListening) {
+        isAudioListening = true;
         try {
-          await navigator.mediaDevices.getUserMedia({ audio: true });
-          btn.innerText = 'Audio: ON';
-          btn.classList.add('active-ctrl');
-        } catch (err) {
-          alert('Microphone access denied.');
+          recognition.start();
+          btn.innerText = 'Listening...';
+          btn.classList.add('listening-ctrl');
+          consoleBox.innerText = '> Voice Listener Active. Speak into microphone...';
+        } catch (e) {
+          console.error(e);
         }
       } else {
-        btn.innerText = 'Audio: OFF';
-        btn.classList.remove('active-ctrl');
+        stopListening();
       }
     }
 
+    function stopListening() {
+      isAudioListening = false;
+      const btn = document.getElementById('btn-audio');
+      const consoleBox = document.getElementById('console-status');
+      if (recognition) recognition.stop();
+      btn.innerText = 'Audio: OFF';
+      btn.classList.remove('listening-ctrl', 'active-ctrl');
+      consoleBox.innerText = '> PG1 System Initialized. Ready for commands.';
+    }
+
+    // Voice Synthesis Output Toggle (TTS)
     function toggleVoice() {
       const btn = document.getElementById('btn-voice');
       isVoiceActive = !isVoiceActive;
@@ -283,33 +458,100 @@
       window.speechSynthesis.speak(utterance);
     }
 
-    // Messaging Engine
-    function sendCommand() {
+    // Call Gemini API Multimodal Endpoint
+    async function fetchGeminiMultimodalResponse(promptText, mediaData) {
+      const apiKey = getApiKey();
+      if (!apiKey) {
+        return "⚠️ Gemini API key not detected. Please enter your API Key in the Dash tab.";
+      }
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+      const contentsParts = [];
+      
+      // Add text prompt
+      if (promptText) {
+        contentsParts.push({ text: promptText });
+      } else if (mediaData) {
+        contentsParts.push({ text: "Analyze this media and explain key details." });
+      }
+
+      // Add inline base64 image or video frame data if present
+      if (mediaData) {
+        contentsParts.push({
+          inline_data: {
+            mime_type: mediaData.mimeType,
+            data: mediaData.base64
+          }
+        });
+      }
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: contentsParts }] })
+        });
+
+        const data = await response.json();
+        if (data.error) {
+          return `API Error: ${data.error.message || 'Failed to process request.'}`;
+        }
+
+        return data.candidates[0].content.parts[0].text;
+      } catch (err) {
+        console.error("Gemini API Error:", err);
+        return "Network Error: Unable to reach Gemini API endpoint.";
+      }
+    }
+
+    async function sendCommand(overrideText) {
       const input = document.getElementById('user-input');
       const thread = document.getElementById('chat-thread');
-      const text = input.value.trim();
+      const text = overrideText || input.value.trim();
 
-      if (!text) return;
+      if (!text && !pendingMediaData) return;
 
+      // Construct user UI element
       const userMsg = document.createElement('div');
       userMsg.className = 'msg user-msg';
-      userMsg.innerText = text;
+      userMsg.innerText = text || (pendingMediaData ? "[Sent Media Content]" : "");
+
+      if (pendingMediaData) {
+        if (pendingMediaData.type === 'image') {
+          const img = document.createElement('img');
+          img.src = pendingMediaData.previewUrl;
+          userMsg.appendChild(img);
+        } else if (pendingMediaData.type === 'video') {
+          const vid = document.createElement('video');
+          vid.src = pendingMediaData.previewUrl;
+          vid.controls = true;
+          userMsg.appendChild(vid);
+        }
+      }
+
       thread.appendChild(userMsg);
 
+      // Save references and reset input state
+      const currentMediaData = pendingMediaData;
+      clearAttachment();
       input.value = '';
       thread.scrollTop = thread.scrollHeight;
 
-      // Simulated PG1 Core Processing Response
-      setTimeout(() => {
-        const aiResponse = "PG1.Agent received: " + text + ". Core synchronization optimal.";
-        const aiMsg = document.createElement('div');
-        aiMsg.className = 'msg ai-msg';
-        aiMsg.innerText = aiResponse;
-        thread.appendChild(aiMsg);
-        thread.scrollTop = thread.scrollHeight;
+      // Temporary typing indicator
+      const loadingMsg = document.createElement('div');
+      loadingMsg.className = 'msg ai-msg';
+      loadingMsg.innerText = 'PG1 Core processing query...';
+      thread.appendChild(loadingMsg);
+      thread.scrollTop = thread.scrollHeight;
 
-        speakText(aiResponse);
-      }, 600);
+      // Execute AI API Call
+      const responseText = await fetchGeminiMultimodalResponse(text, currentMediaData);
+      
+      loadingMsg.innerText = responseText;
+      thread.scrollTop = thread.scrollHeight;
+
+      speakText(responseText);
     }
 
     function clearSession() {
