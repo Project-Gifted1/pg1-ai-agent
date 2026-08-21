@@ -95,8 +95,6 @@
       align-items: center;
       justify-content: center;
       gap: 3px;
-      position: relative;
-      overflow: hidden;
     }
 
     .btn-ctrl:active, .btn-node-act:active, .btn-save:active, .btn-sm:active {
@@ -105,8 +103,6 @@
 
     .btn-ctrl-icon {
       font-size: 11px;
-      display: inline-block;
-      transition: transform 0.25s ease;
     }
 
     .btn-ctrl.active {
@@ -616,8 +612,19 @@
     .log-item-preview {
       color: var(--text-main);
       white-space: pre-wrap;
-      max-height: 100px;
-      overflow: hidden;
+      max-height: 120px;
+      overflow-y: auto;
+      margin-bottom: 8px;
+      background: #ffffff;
+      padding: 6px;
+      border-radius: 4px;
+      border: 1px solid var(--card-border);
+    }
+
+    .log-item-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
     }
 
     .logs-actions {
@@ -894,7 +901,7 @@
 
   </div>
 
-  <!-- FUNCTIONAL LOGS MODAL -->
+  <!-- FUNCTIONAL LOGS MODAL WITH RE-OPEN & INDIVIDUAL DELETE -->
   <div class="logs-modal" id="logs-modal">
     <div class="logs-header">
       <div class="logs-title">📋 Encrypted Conversation Logs</div>
@@ -1209,7 +1216,6 @@
       return memoryLogFallback;
     }
 
-    // ROBUST BULLETPROOF SAVE FUNCTION WITH CORRECTED TIMESTAMP CONFIGURATION
     function saveCurrentThreadToLogs() {
       try {
         const bubbles = document.querySelectorAll('#terminal-chat-area .chat-bubble');
@@ -1258,6 +1264,79 @@
       }
     }
 
+    function deleteLogById(logId) {
+      let logs = getStoredLogs();
+      logs = logs.filter(l => l.id !== logId);
+      memoryLogFallback = logs;
+      try {
+        localStorage.setItem('pg1_conversation_logs', JSON.stringify(logs));
+      } catch(e) {}
+      openLogsModal();
+    }
+
+    function reopenLogById(logId) {
+      const logs = getStoredLogs();
+      const target = logs.find(l => l.id === logId);
+      if (!target) return;
+
+      const chatArea = document.getElementById('terminal-chat-area');
+      // Keep system header, clear old bubbles
+      chatArea.innerHTML = `
+        <div style="color: var(--sovereign-green); font-size: 11px; margin-bottom: 12px; font-weight: bold;">
+          > Reopened Log: ${target.id} (${target.timestamp})
+        </div>
+
+        <div class="terminal-header">
+          <span class="terminal-title">Terminal Thread</span>
+          <div class="terminal-actions">
+            <button class="btn-sm" onclick="saveCurrentThreadToLogs()">Save Log</button>
+            <button class="btn-sm" onclick="exportLogFile('txt')">Export TXT</button>
+            <button class="btn-sm btn-green" onclick="exportLogFile('pdf')">Export PDF</button>
+          </div>
+        </div>
+
+        <div class="model-selector-wrapper">
+          <span style="font-size: 10px; color: var(--text-muted);">PG1 Neural Engine:</span>
+          <select id="model-select" class="model-select">
+            <option value="gemini-3.5-flash-lite">3.5 Flash-Lite (Fastest answers)</option>
+            <option value="gemini-3.6-flash" selected>3.6 Flash (All-around help)</option>
+            <option value="gemini-3.7-flash">3.7 Flash (Latest reasoning)</option>
+            <option value="gemini-3.1-pro">3.1 Pro (Advanced reasoning)</option>
+          </select>
+        </div>
+      `;
+
+      // Split blocks by separator
+      const blocks = target.text.split('------------------------------------');
+      conversationHistory = [];
+
+      blocks.forEach(block => {
+        const clean = block.trim();
+        if (!clean) return;
+        const isUser = clean.startsWith('USER:');
+        const content = clean.replace(/^(USER|PG1\.AGENT):\s*/, '');
+
+        const bubble = document.createElement('div');
+        bubble.className = isUser ? 'chat-bubble user' : 'chat-bubble';
+        bubble.innerHTML = `
+          <div class="bubble-text">${escapeHtml(content)}</div>
+          <div class="bubble-actions">
+            <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
+            <button class="btn-mini" onclick="editBubbleText(this)">✏️ Edit</button>
+          </div>
+        `;
+        chatArea.appendChild(bubble);
+
+        conversationHistory.push({
+          role: isUser ? "user" : "model",
+          parts: [{ text: content }]
+        });
+      });
+
+      closeLogsModal();
+      scrollToTab('terminal');
+    }
+
     function exportLogFile(type) {
       const bubbles = document.querySelectorAll('#terminal-chat-area .chat-bubble');
       if (!bubbles || bubbles.length === 0) {
@@ -1296,6 +1375,10 @@
           <div class="log-item">
             <div class="log-item-meta"><span>${l.id}</span><span>${l.timestamp}</span></div>
             <div class="log-item-preview">${escapeHtml(l.text)}</div>
+            <div class="log-item-actions">
+              <button class="btn-sm btn-green" onclick="reopenLogById('${l.id}')">📂 Re-open</button>
+              <button class="btn-sm" style="color: var(--danger-red); border-color: rgba(204,0,34,0.3)" onclick="deleteLogById('${l.id}')">🗑️ Delete</button>
+            </div>
           </div>
         `).join('');
       }
