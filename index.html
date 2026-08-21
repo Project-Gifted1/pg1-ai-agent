@@ -36,7 +36,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
 
     .brand-title {
@@ -67,28 +67,50 @@
       color: var(--text-muted);
     }
 
-    /* Top Control Bar */
+    /* Sleek & Compact Top Control Bar */
     .global-control-bar {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 6px;
-      margin-bottom: 14px;
+      gap: 5px;
+      margin-bottom: 12px;
+      background: rgba(14, 21, 34, 0.4);
+      padding: 4px;
+      border-radius: 6px;
+      border: 1px solid rgba(26, 37, 54, 0.6);
     }
 
     .btn-ctrl {
       background: rgba(14, 21, 34, 0.8);
-      border: 1px solid var(--accent-blue);
-      color: var(--neon-cyan);
-      padding: 8px 2px;
-      font-size: 11px;
-      font-weight: 600;
+      border: 1px solid rgba(0, 102, 255, 0.3);
+      color: #a0aec0;
+      padding: 4px 0;
+      font-size: 9.5px;
+      font-weight: 500;
+      letter-spacing: 0.3px;
       border-radius: 4px;
       cursor: pointer;
       text-align: center;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+    }
+
+    .btn-ctrl.active {
+      border-color: var(--neon-cyan);
+      color: var(--neon-cyan);
+      background: rgba(0, 242, 254, 0.08);
+      box-shadow: 0 0 6px rgba(0, 242, 254, 0.2);
     }
 
     .btn-ctrl.btn-danger {
-      border-color: rgba(255, 51, 68, 0.5);
+      border-color: rgba(255, 51, 68, 0.25);
+      color: rgba(255, 51, 68, 0.8);
+    }
+
+    .btn-ctrl.btn-danger:active {
+      background: rgba(255, 51, 68, 0.15);
       color: var(--danger-red);
     }
 
@@ -259,7 +281,7 @@
       font-weight: bold;
     }
 
-    /* NODE VIEW SPECIFIC STYLES */
+    /* Node View Specific Styles */
     .node-header-card {
       text-align: center;
       padding: 18px 12px;
@@ -340,7 +362,19 @@
       background: var(--card-border);
     }
 
-    /* Terminal View */
+    /* Terminal View & Scoped Input Bar */
+    #view-terminal {
+      display: flex;
+      flex-direction: column;
+      min-height: calc(100vh - 140px);
+      position: relative;
+    }
+
+    .terminal-chat-area {
+      flex: 1;
+      padding-bottom: 10px;
+    }
+
     .terminal-header {
       display: flex;
       justify-content: space-between;
@@ -405,15 +439,16 @@
       border-radius: 3px;
     }
 
+    /* Terminal Input Bar Scoped to Terminal Tab Only */
     .terminal-input-bar {
-      position: fixed;
-      bottom: 60px;
-      left: 12px;
-      right: 12px;
       display: flex;
       gap: 6px;
       background: var(--bg-dark);
-      padding: 4px 0;
+      padding: 6px 0;
+      position: sticky;
+      bottom: 0;
+      margin-top: auto;
+      z-index: 10;
     }
 
     .btn-media {
@@ -492,12 +527,12 @@
     <div class="engine-version">v5.0 Sovereign Engine</div>
   </div>
 
-  <!-- Persistent Top Controls -->
+  <!-- Sleek Top Controls -->
   <div class="global-control-bar">
-    <button id="btn-video" class="btn-ctrl" onclick="toggleControl('video')">Video: OFF</button>
-    <button id="btn-audio" class="btn-ctrl" onclick="toggleControl('audio')">Audio: OFF</button>
-    <button id="btn-voice" class="btn-ctrl" onclick="toggleControl('voice')">Voice: OFF</button>
-    <button id="btn-delete" class="btn-ctrl btn-danger" onclick="clearThread()">Delete Thread</button>
+    <button id="btn-video" class="btn-ctrl" onclick="toggleControl('video')">📹 Video: OFF</button>
+    <button id="btn-audio" class="btn-ctrl" onclick="toggleControl('audio')">🎙️ Audio: OFF</button>
+    <button id="btn-voice" class="btn-ctrl" onclick="toggleControl('voice')">🔊 Voice: OFF</button>
+    <button id="btn-delete" class="btn-ctrl btn-danger" onclick="clearThread()">🗑️ Clear</button>
   </div>
 
   <!-- Swipe Container -->
@@ -585,36 +620,40 @@
       </div>
     </div>
 
-    <!-- TERMINAL VIEW -->
+    <!-- TERMINAL VIEW (INPUT BAR INSIDE THIS TAB ONLY) -->
     <div id="view-terminal" class="tab-view">
-      <div style="color: var(--neon-green); font-size: 11px; margin-bottom: 12px;">
-        > PG1 System Initialized. Ready for multimodal commands.
-      </div>
+      
+      <div class="terminal-chat-area">
+        <div style="color: var(--neon-green); font-size: 11px; margin-bottom: 12px;">
+          > PG1 System Initialized. Ready for multimodal commands.
+        </div>
 
-      <div class="terminal-header">
-        <span class="terminal-title">Terminal Thread</span>
-        <div class="terminal-actions">
-          <button class="btn-sm">Copy All</button>
-          <button class="btn-sm btn-green">Export PDF</button>
+        <div class="terminal-header">
+          <span class="terminal-title">Terminal Thread</span>
+          <div class="terminal-actions">
+            <button class="btn-sm">Copy All</button>
+            <button class="btn-sm btn-green">Export PDF</button>
+          </div>
+        </div>
+
+        <div class="chat-bubble">
+          PG1 Core connected. Multimodal vision and speech online.
+          <button class="btn-copy-inline">Copy</button>
+        </div>
+
+        <div class="chat-bubble user">
+          Hey
+          <button class="btn-copy-inline">Copy</button>
+        </div>
+
+        <div class="chat-bubble">
+          PG1 Sovereign AI Agent online. Protocol connection active via x402 network.<br><br>
+          Awaiting campaign execution parameters or query input. State your objective.
+          <button class="btn-copy-inline">Copy</button>
         </div>
       </div>
 
-      <div class="chat-bubble">
-        PG1 Core connected. Multimodal vision and speech online.
-        <button class="btn-copy-inline">Copy</button>
-      </div>
-
-      <div class="chat-bubble user">
-        Hey
-        <button class="btn-copy-inline">Copy</button>
-      </div>
-
-      <div class="chat-bubble">
-        PG1 Sovereign AI Agent online. Protocol connection active via x402 network.<br><br>
-        Awaiting campaign execution parameters or query input. State your objective.
-        <button class="btn-copy-inline">Copy</button>
-      </div>
-
+      <!-- INPUT BAR INSIDE TERMINAL TAB ONLY -->
       <div class="terminal-input-bar">
         <button class="btn-media">
           <span>📷</span>
@@ -623,16 +662,16 @@
         <input type="text" class="text-input" placeholder="Enter command or media p">
         <button class="btn-send">Send</button>
       </div>
+
     </div>
 
-    <!-- NODE VIEW WITH EXACT LOGO IMAGE -->
+    <!-- NODE VIEW -->
     <div id="view-node" class="tab-view">
       
       <!-- Primary Node Identity Card -->
       <div class="panel-card node-header-card">
         <div class="official-node-wrapper">
           <div class="node-aura"></div>
-          <!-- EXACT LOGO IMAGE REFERENCE PRESERVED -->
           <img 
             src="08207b14-b824-41ac-ac43-97d078840546.jpeg" 
             alt="Project Gifted1™ Logo" 
@@ -746,12 +785,11 @@
       if (activeNav) activeNav.classList.add('active');
     }
 
-    // Dynamic Telemetry & Resource Variations
+    // Dynamic Telemetry Updates
     let pulseBase = 1420;
     let iocBase = 18940;
 
     setInterval(() => {
-      // Dash Telemetry Updates
       pulseBase += Math.floor(Math.random() * 7) - 3;
       iocBase += Math.floor(Math.random() * 15) - 7;
       const tpVar = (2.2 + Math.random() * 0.6).toFixed(1);
@@ -764,7 +802,6 @@
       if (iocEl) iocEl.innerText = `${iocBase.toLocaleString()} IOC Feeds`;
       if (tpEl) tpEl.innerText = `${tpVar} MB/s`;
 
-      // Node Resource Updates
       const cpuUsage = Math.floor(18 + Math.random() * 15);
       const ramUsage = Math.floor(40 + Math.random() * 6);
 
@@ -796,9 +833,15 @@
     function toggleControl(type) {
       states[type] = !states[type];
       const btn = document.getElementById(`btn-${type}`);
+      const icons = { video: '📹', audio: '🎙️', voice: '🔊' };
       const label = type.charAt(0).toUpperCase() + type.slice(1);
-      btn.innerText = `${label}: ${states[type] ? 'ON' : 'OFF'}`;
-      btn.style.borderColor = states[type] ? 'var(--neon-cyan)' : 'var(--accent-blue)';
+      
+      btn.innerText = `${icons[type]} ${label}: ${states[type] ? 'ON' : 'OFF'}`;
+      if (states[type]) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
     }
 
     function clearThread() {
