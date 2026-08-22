@@ -1,7 +1,7 @@
-// agent-engine.js - Bulletproof Sovereign Multimodal Bridge
+// agent-engine.js - Sovereign Multimodal Bridge (Gemini 3.5 Flash)
 
 (function () {
-  console.log("[PG1 Agent Engine] Bulletproof bridge active.");
+  console.log("[PG1 Agent Engine] Gemini 3.5 Flash bridge active.");
 
   let sessionHistory = [];
   let pendingImageBase64 = null;
@@ -28,11 +28,9 @@
   }
 
   function getApiKey() {
-    // Check all possible storage locations
     let key = localStorage.getItem("pg1_master_key") || localStorage.getItem("gemini_key") || localStorage.getItem("apiKey") || sessionStorage.getItem("pg1_active_key");
     if (key && key.trim().length > 10) return key.trim();
 
-    // Check DOM input fields across tabs
     const inputs = document.querySelectorAll("input[type='password'], input[type='text']");
     for (let input of inputs) {
       if (input.value && input.value.trim().length > 10) {
@@ -42,7 +40,6 @@
       }
     }
 
-    // If still missing, prompt user once securely
     key = prompt("Please enter your Gemini API Key for this session:");
     if (key && key.trim().length > 10) {
       key = key.trim();
@@ -124,7 +121,8 @@
         }
         userParts.push({ text: promptText || "Analyze this image accurately." });
 
-        const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${activeKey}`, {
+        // Updated endpoint using gemini-3.5-flash
+        const directRes = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-3.5-flash:generateContent?key=${activeKey}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
