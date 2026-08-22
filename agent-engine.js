@@ -1,10 +1,10 @@
-// agent-engine.js - PG1 Autonomous Runtime Override (Worker Integrated)
+// agent-engine.js - PG1 Autonomous Runtime Override
 
 (function () {
   console.log("[PG1 Agent Engine] Autonomous runtime loading...");
 
-  // REPLACE THIS WITH YOUR ACTUAL CLOUDFLARE WORKER URL
-  const WORKER_URL = "https://your-worker-subdomain.workers.dev";
+  // AUTOMATIC CLOUDFLARE WORKER ROUTE
+  const WORKER_URL = "https://pg1-worker.workers.dev";
 
   async function executeViaWorker(promptText) {
     try {
@@ -21,7 +21,7 @@
     }
   }
 
-  // Override chat handler to route requests directly to Cloudflare Worker
+  // Override UI chat handler to route through Cloudflare Worker
   if (typeof window.sendTextPromptToGemini === "function") {
     window.sendTextPromptToGemini = async function (promptText) {
       const chatArea = document.getElementById("terminal-chat-area");
