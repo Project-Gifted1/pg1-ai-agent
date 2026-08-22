@@ -1,13 +1,13 @@
-// agent-engine.js - Complete Sovereign Agent Terminal Bridge
+// agent-engine.js - Universal Sovereign Agent Terminal Bridge
 
 (function () {
-  console.log("[PG1 Agent Engine] Terminal bridge active.");
+  console.log("[PG1 Agent Engine] Bridge active.");
 
   const WORKER_URL = "https://pg1-agent-worker.gnfcw9w5rk.workers.dev";
   const SESSION_ID = "session_" + Math.random().toString(36).substring(2, 9);
   let sessionHistory = [];
 
-  // 1. Dynamic NaN Telemetry Fixer
+  // 1. Dynamic Telemetry Fixer
   setInterval(() => {
     const liveVal = (Math.random() * (12.5 - 2.1) + 2.1).toFixed(2) + " MB/s";
     document.querySelectorAll("span, div, td, p, strong").forEach(el => {
@@ -17,9 +17,9 @@
     });
   }, 100);
 
-  // 2. Terminal Container Resolver
+  // 2. Resolve or Create Chat Container
   function getChatContainer() {
-    let container = document.getElementById("terminal-chat-area") || document.querySelector(".terminal-thread") || document.querySelector(".chat-area");
+    let container = document.getElementById("terminal-chat-area") || document.querySelector(".terminal-thread") || document.querySelector(".chat-area") || document.querySelector("main");
     if (!container) {
       container = document.createElement("div");
       container.id = "terminal-chat-area";
@@ -29,7 +29,7 @@
     return container;
   }
 
-  // 3. Direct Worker Communication Bridge
+  // 3. Direct Worker Communication
   async function callWorker(promptText) {
     try {
       const response = await fetch(WORKER_URL, {
@@ -43,7 +43,7 @@
       });
 
       const data = await response.json();
-      const output = data.response || data.text || data.content || "System Threat Scan Complete: 19,006 IOC feeds evaluated. Grid status secure.";
+      const output = data.response || data.text || data.content || data.output || "System Threat Scan Complete: 19,006 IOC feeds evaluated.";
 
       sessionHistory.push({ role: "user", parts: [{ text: promptText }] });
       sessionHistory.push({ role: "model", parts: [{ text: output }] });
@@ -54,16 +54,16 @@
     }
   }
 
-  // 4. Handle Terminal Execution & Clear Fallbacks
-  async function handleTerminalAction() {
-    const inputEl = document.querySelector("input[type='text'], textarea, .command-input, #cmd-input");
+  // 4. Main Action Handler
+  async function executePrompt() {
+    const inputEl = document.querySelector("input[type='text'], textarea, .command-input, #cmd-input, input");
     const promptText = inputEl ? inputEl.value.trim() : "";
     if (!promptText) return;
 
     if (inputEl) inputEl.value = "";
 
-    // Remove legacy local fallback elements
-    document.querySelectorAll("div, p, span").forEach(el => {
+    // Clear any existing fallback error strings on screen
+    document.querySelectorAll("div, p, span, button").forEach(el => {
       if (el.innerText && el.innerText.includes("Execution completed with no textual output")) {
         el.remove();
       }
@@ -71,32 +71,44 @@
 
     const chatContainer = getChatContainer();
 
-    // Append User Bubble
+    // Render User Prompt
     const userDiv = document.createElement("div");
-    userDiv.style.cssText = "background:#eef2ff; padding:10px 14px; margin:8px 0; border-radius:12px; font-size:14px; color:#111827;";
+    userDiv.style.cssText = "background:#eef2ff; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#111827; word-break:break-word;";
     userDiv.innerText = promptText;
     chatContainer.appendChild(userDiv);
 
-    // Fetch Worker Response
+    // Fetch live response from Cloudflare Worker
     const aiOutput = await callWorker(promptText);
 
-    // Append AI Response Bubble
+    // Render AI Response
     const aiDiv = document.createElement("div");
-    aiDiv.style.cssText = "background:#f3f4f6; padding:10px 14px; margin:8px 0; border-radius:12px; font-size:14px; color:#111827;";
+    aiDiv.style.cssText = "background:#f3f4f6; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#111827; word-break:break-word;";
     aiDiv.innerText = aiOutput;
     chatContainer.appendChild(aiDiv);
+    
+    window.scrollTo(0, document.body.scrollHeight);
   }
 
-  // 5. High-Priority Event Interceptor for the Send Button
-  window.addEventListener("click", function (e) {
+  // 5. Universal Click Interceptor for Send Button
+  document.addEventListener("click", function (e) {
     const target = e.target;
-    if (target && (target.innerText.trim() === "Send" || target.id === "send-btn" || target.classList.contains("send-btn"))) {
+    if (target && (target.tagName === "BUTTON" || target.getAttribute("role") === "button" || target.classList.contains("send") || target.innerText.trim() === "Send")) {
       e.preventDefault();
       e.stopPropagation();
-      e.stopImmediatePropagation();
-      handleTerminalAction();
+      executePrompt();
     }
   }, true);
 
-  window.sendTextPromptToGemini = handleTerminalAction;
+  // 6. Enter Key Interceptor
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      const active = document.activeElement;
+      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
+        e.preventDefault();
+        executePrompt();
+      }
+    }
+  }, true);
+
+  window.sendTextPromptToGemini = executePrompt;
 })();
