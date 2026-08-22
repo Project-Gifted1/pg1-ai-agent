@@ -1,6 +1,6 @@
-// agent-engine.js - Project Gifted1 Sovereign Bridge
+// Project Gifted1 - Direct Sovereign Engine Bridge
 (function () {
-  console.log("[PG1 Agent Engine] Cloudflare Worker bridge active.");
+  console.log("[PG1 Agent Engine] Direct API bridge active.");
 
   let sessionHistory = [];
   let pendingImageBase64 = null;
@@ -119,21 +119,19 @@
         }
         userParts.push({ text: promptText || "Analyze this image accurately." });
 
-        const workerUrl = "https://pg1-worker.gnfcw9w5rk.workers.dev";
+        // Direct call to Gemini API bypassing Cloudflare proxy blocks
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${activeKey}`;
 
-        const res = await fetch(workerUrl, {
+        const res = await fetch(apiUrl, {
           method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-            "X-Gemini-Key": activeKey
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [...sessionHistory, { role: "user", parts: userParts }]
           })
         });
 
         const data = await res.json();
-        output = data.candidates?.[0]?.content?.parts?.[0]?.text || data.output || `API Error: ${JSON.stringify(data)}`;
+        output = data.candidates?.[0]?.content?.parts?.[0]?.text || `API Error: ${JSON.stringify(data.error || data)}`;
       }
 
       sessionHistory.push({ role: "user", parts: [{ text: promptText || "Image attached" }] });
@@ -150,7 +148,7 @@
       const chatContainer = getChatContainer();
       const errDiv = document.createElement("div");
       errDiv.style.cssText = "background:#fee2e2; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#991b1b; word-break:break-word;";
-      errDiv.innerText = "Cloudflare Proxy Error: " + err.message;
+      errDiv.innerText = "Execution Error: " + err.message;
       chatContainer.appendChild(errDiv);
     }
   }
