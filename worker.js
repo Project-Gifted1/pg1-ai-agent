@@ -40,37 +40,39 @@ export default {
         body.system_instruction = systemInstruction;
       }
 
-      if (!body.tools) {
-        body.tools = [
-          {
-            function_declarations: [
-              {
-                name: "get_repo_file",
-                description: "Fetches the contents of a file from the GitHub repository to analyze code or asset paths.",
-                parameters: {
-                  type: "OBJECT",
-                  properties: {
-                    file_path: { type: "STRING", description: "The path of the file to fetch, e.g. index.html" }
-                  },
-                  required: ["file_path"]
-                }
-              },
-              {
-                name: "commit_to_repo",
-                description: "Directly commits code fixes for images, sounds, video, or animations to a file in the GitHub repository.",
-                parameters: {
-                  type: "OBJECT",
-                  properties: {
-                    file_path: { type: "STRING", description: "The path of the file to update, e.g. index.html" },
-                    file_content: { type: "STRING", description: "The complete updated content of the file." },
-                    commit_message: { type: "STRING", description: "Description of the fix being committed." }
-                  },
-                  required: ["file_path", "file_content", "commit_message"]
-                }
+      const toolsConfig = [
+        {
+          function_declarations: [
+            {
+              name: "get_repo_file",
+              description: "Fetches the contents of a file from the GitHub repository to analyze code or asset paths.",
+              parameters: {
+                type: "OBJECT",
+                properties: {
+                  file_path: { type: "STRING", description: "The path of the file to fetch, e.g. index.html" }
+                },
+                required: ["file_path"]
               }
-            ]
-          }
-        ];
+            },
+            {
+              name: "commit_to_repo",
+              description: "Directly commits code fixes for images, sounds, video, or animations to a file in the GitHub repository.",
+              parameters: {
+                type: "OBJECT",
+                properties: {
+                  file_path: { type: "STRING", description: "The path of the file to update, e.g. index.html" },
+                  file_content: { type: "STRING", description: "The complete updated content of the file." },
+                  commit_message: { type: "STRING", description: "Description of the fix being committed." }
+                },
+                required: ["file_path", "file_content", "commit_message"]
+              }
+            }
+          ]
+        }
+      ];
+
+      if (!body.tools) {
+        body.tools = toolsConfig;
       }
 
       let requestedModel = request.headers.get("X-Gemini-Model");
@@ -78,7 +80,10 @@ export default {
         requestedModel = "gemini-3.7-flash";
       }
 
-      const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${requestedModel}:generateContent?key=${apiKey}`, {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${requestedModel}:generateContent?key=${apiKey}`;
+
+      // First call to Gemini
+      let geminiRes = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
@@ -92,78 +97,96 @@ export default {
         });
       }
 
-      const data = await geminiRes.json();
-      const candidate = data.candidates && data.candidates[0];
+      let data = await geminiRes.json();
+      let candidate = data.candidates && data.candidates[0];
 
+      // Check if Gemini wants to call a function
       if (candidate && candidate.content && candidate.content.parts) {
-        for (const part of candidate.content.parts) {
-          if (part.functionCall) {
-            const fc = part.functionCall;
-            const args = fc.args;
-            const repoOwner = "Project-Gifted1";
-            const repoName = "pg1-ai-agent";
-            let toolOutput = {};
+        let functionCallPart = candidate.content.parts.find(p => p.functionCall);
+        
+        if (functionCallPart) {
+          const fc = functionCallPart.functionCall;
+          const args = fc.args;
+          const repoOwner = "Project-Gifted1";
+          const repoName = "pg1-ai-agent";
+          let toolOutput = {};
 
-            if (!githubToken) {
-              toolOutput = { status: "ERROR", message: "GitHub token (GH_PAT) is missing." };
-            } else if (fc.name === "get_repo_file") {
-              try {
-                const fileGetRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${args.file_path}`, {
-                  headers: { "Authorization": `Bearer ${githubToken}`, "User-Agent": "PG1-Sovereign-Engine" }
-                });
-                if (fileGetRes.ok) {
-                  const fileJson = await fileGetRes.json();
-                  const binString = atob(fileJson.content.replace(/\s/g, ''));
-                  const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0));
-                  const decodedContent = new TextDecoder().decode(bytes);
-                  toolOutput = { status: "SUCCESS", file_content: decodedContent };
-                } else {
-                  toolOutput = { status: "ERROR", message: "Could not fetch file from repository." };
-                }
-              } catch (e) {
-                toolOutput = { status: "ERROR", message: e.message };
+          if (!githubToken) {
+            toolOutput = { status: "ERROR", message: "GitHub token (GH_PAT) is missing." };
+          } else if (fc.name === "get_repo_file") {
+            try {
+              const fileGetRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${args.file_path}`, {
+                headers: { "Authorization": `Bearer ${githubToken}`, "User-Agent": "PG1-Sovereign-Engine" }
+              });
+              if (fileGetRes.ok) {
+                const fileJson = await fileGetRes.json();
+                const binString = atob(fileJson.content.replace(/\s/g, ''));
+                const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0));
+                const decodedContent = new TextDecoder().decode(bytes);
+                toolOutput = { status: "SUCCESS", file_content: decodedContent };
+              } else {
+                toolOutput = { status: "ERROR", message: "Could not fetch file from repository." };
               }
-            } else if (fc.name === "commit_to_repo") {
-              try {
-                const fileGetRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${args.file_path}`, {
-                  headers: { "Authorization": `Bearer ${githubToken}`, "User-Agent": "PG1-Sovereign-Engine" }
-                });
-                const fileJson = fileGetRes.ok ? await fileGetRes.json() : {};
-                const sha = fileJson.sha;
-
-                const bytes = new TextEncoder().encode(args.file_content);
-                const binString = String.fromCodePoint(...bytes);
-                const encodedContent = btoa(binString);
-
-                const commitRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${args.file_path}`, {
-                  method: "PUT",
-                  headers: { 
-                    "Authorization": `Bearer ${githubToken}`, 
-                    "User-Agent": "PG1-Sovereign-Engine",
-                    "Content-Type": "application/json"
-                  },
-                  body: JSON.stringify({
-                    message: args.commit_message,
-                    content: encodedContent,
-                    sha: sha
-                  })
-                });
-
-                if (commitRes.ok) {
-                  toolOutput = { status: "SUCCESS", message: "Fix successfully committed and deployed." };
-                } else {
-                  const errDetails = await commitRes.text();
-                  toolOutput = { status: "ERROR", details: errDetails };
-                }
-              } catch (e) {
-                toolOutput = { status: "ERROR", message: e.message };
-              }
+            } catch (e) {
+              toolOutput = { status: "ERROR", message: e.message };
             }
+          } else if (fc.name === "commit_to_repo") {
+            try {
+              const fileGetRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${args.file_path}`, {
+                headers: { "Authorization": `Bearer ${githubToken}`, "User-Agent": "PG1-Sovereign-Engine" }
+              });
+              const fileJson = fileGetRes.ok ? await fileGetRes.json() : {};
+              const sha = fileJson.sha;
 
-            part.functionResponse = {
-              name: fc.name,
-              response: toolOutput
-            };
+              const bytes = new TextEncoder().encode(args.file_content);
+              const binString = String.fromCodePoint(...bytes);
+              const encodedContent = btoa(binString);
+
+              const commitRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${args.file_path}`, {
+                method: "PUT",
+                headers: { 
+                  "Authorization": `Bearer ${githubToken}`, 
+                  "User-Agent": "PG1-Sovereign-Engine",
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  message: args.commit_message,
+                  content: encodedContent,
+                  sha: sha
+                })
+              });
+
+              if (commitRes.ok) {
+                toolOutput = { status: "SUCCESS", message: "Fix successfully committed and deployed." };
+              } else {
+                const errDetails = await commitRes.text();
+                toolOutput = { status: "ERROR", details: errDetails };
+              }
+            } catch (e) {
+              toolOutput = { status: "ERROR", message: e.message };
+            }
+          }
+
+          // Send the tool response back to Gemini for the final human-readable reply
+          body.contents.push(candidate.content);
+          body.contents.push({
+            role: "function",
+            parts: [{
+              functionResponse: {
+                name: fc.name,
+                response: toolOutput
+              }
+            }]
+          });
+
+          const finalRes = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+          });
+
+          if (finalRes.ok) {
+            data = await finalRes.json();
           }
         }
       }
