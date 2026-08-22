@@ -13,17 +13,17 @@ export default {
     try {
       const { message, image, history, apiKey: payloadKey } = await request.json();
       
-      // Use key sent from browser or fallback to Cloudflare environment variable
       const apiKey = payloadKey || env.GEMINI_API_KEY;
 
       if (!apiKey) {
-        return new Response(JSON.stringify({ response: "PG1 Error: GEMINI_API_KEY missing. Please enter a key in the Dash tab." }), {
+        return new Response(JSON.stringify({ response: "PG1 Error: GEMINI_API_KEY missing in environment." }), {
           status: 200,
           headers: { "Content-Type": "application/json", ...corsHeaders }
         });
       }
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      // Updated endpoint to use gemini-3.6-flash
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
       const tools = [
         {
