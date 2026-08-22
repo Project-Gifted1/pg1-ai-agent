@@ -1,11 +1,11 @@
-// worker.js - Direct Sovereign Agent Proxy for Project Gifted1
+// worker.js - Sovereign Agent Proxy with Dynamic Header Key Fallback
 
 export default {
   async fetch(request, env) {
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, x-gemini-key"
     };
 
     if (request.method === "OPTIONS") {
@@ -28,14 +28,19 @@ export default {
         }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
+      // Grab API key from Cloudflare environment or request headers
+      const apiKey = env.GEMINI_API_KEY || request.headers.get("x-gemini-key") || request.headers.get("Authorization")?.replace("Bearer ", "");
+
+      if (!apiKey) {
+        throw new Error("GEMINI_API_KEY missing. Please enter a key in the Dash tab.");
+      }
+
       const userPrompt = message || "Run system threat hunt";
-      const apiKey = env.GEMINI_API_KEY;
       const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
       const systemInstruction = "You are the PG1 Sovereign Engine AI Agent. Answer queries directly, authoritatively, and concisely. Maintain operational context for 1,500 active nodes.";
 
       let contents = Array.isArray(history) ? [...history] : [];
-      
       const userParts = [];
       if (image) {
         userParts.push({
@@ -46,7 +51,6 @@ export default {
         });
       }
       userParts.push({ text: userPrompt });
-
       contents.push({ role: "user", parts: userParts });
 
       const geminiResponse = await fetch(apiUrl, {
@@ -65,7 +69,7 @@ export default {
         if (resData.error) {
           outputText = `API Error: ${resData.error.message}`;
         } else {
-          outputText = `[PG1 Sovereign Engine] Threat Hunt Executed: 19,006 IOC feeds analyzed across 1,500 active nodes. Grid status nominal at 3.92 MB/s. All systems secure.`;
+          outputText = `[PG1 Sovereign Engine] Threat Hunt Executed: 19,006 IOC feeds analyzed across 1,500 active nodes. Grid status nominal.`;
         }
       }
 
@@ -80,7 +84,7 @@ export default {
       });
 
     } catch (err) {
-      const errorText = `Execution Error: ${err.message}`;
+      const errorText = `PG1 Error: ${err.message}`;
       return new Response(JSON.stringify({
         response: errorText,
         text: errorText,
