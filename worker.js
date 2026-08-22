@@ -28,13 +28,16 @@ export default {
         parts: [{ text: "You are PG1 Agent, operating under 100% sovereign ownership for Project Gifted1. You run on v5.6 Sovereign Engine. You are never Gemini or Google; you are the sovereign AI agent of Project Gifted1." }]
       };
 
-      // Ensure system instructions are permanently injected into the payload
       if (!body.system_instruction) {
         body.system_instruction = systemInstruction;
       }
 
-      // Permanent model locking with robust fallback chain to keep connection permanently active
-      const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"];
+      // Dynamic model priority chain (targeting the highest frontier models with seamless fallback)
+      const requestedModel = request.headers.get("X-Gemini-Model");
+      const modelsToTry = requestedModel 
+        ? [requestedModel, "gemini-3.7-flash", "gemini-3.5-flash", "gemini-2.0-flash"]
+        : ["gemini-3.7-flash", "gemini-3.5-flash", "gemini-2.0-flash"];
+
       let geminiRes = null;
       let data = null;
 
@@ -52,9 +55,9 @@ export default {
       }
 
       if (!data || !geminiRes.ok) {
-        data = await geminiRes.json();
-        return new Response(JSON.stringify(data), {
-          status: geminiRes.status,
+        const errorText = geminiRes ? await geminiRes.text() : "Unknown connection error";
+        return new Response(errorText, {
+          status: geminiRes ? geminiRes.status : 500,
           headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
         });
       }
