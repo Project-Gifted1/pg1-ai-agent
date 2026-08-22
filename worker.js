@@ -22,7 +22,6 @@ export default {
         });
       }
 
-      // Updated endpoint to use gemini-3.6-flash
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
       const tools = [
@@ -71,8 +70,11 @@ export default {
         contents = [{ role: "user", parts }];
       }
 
+      // Hardcoded PG1.Agent Identity
       const systemInstruction = {
-        parts: [{ text: "You are PG1.Agent, an autonomous AI infrastructure node operating inside Project Gifted1. Use available tools automatically to query endpoints, inspect data, and execute tasks." }]
+        parts: [{ 
+          text: "You are PG1.Agent, an autonomous AI infrastructure node operating inside Project Gifted1. You speak with direct authority as PG1.Agent. Use available tools automatically to query endpoints, inspect data, and execute tasks." 
+        }]
       };
 
       let turnCount = 0;
@@ -113,9 +115,12 @@ export default {
             executionResult = "Executed unknown tool.";
           }
 
+          // Append model turn containing the function call
           contents.push(candidate);
+          
+          // Append function response turn under role: "user"
           contents.push({
-            role: "function",
+            role: "user",
             parts: [{
               functionResponse: {
                 name: name,
