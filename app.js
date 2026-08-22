@@ -1,6 +1,19 @@
-// Project Gifted1 - Direct Sovereign Engine (No Worker Dependency)
+// Project Gifted1 - Global Fetch Interceptor & Sovereign Engine
 (function () {
-  console.log("[PG1 Agent Engine] Direct sovereign engine active.");
+  console.log("[PG1 Sovereign Engine] Global request interceptor active.");
+
+  // Intercept all fetch requests globally to catch any old gemini-2.5-flash calls
+  const originalFetch = window.fetch;
+  window.fetch = async function(resource, init) {
+    if (typeof resource === 'string' && resource.includes('gemini-2.5-flash')) {
+      console.warn("[PG1 Interceptor] Rewrote deprecated gemini-2.5-flash to gemini-3.6-flash");
+      resource = resource.replace('gemini-2.5-flash', 'gemini-3.6-flash');
+    }
+    if (init && init.body && typeof init.body === 'string' && init.body.includes('gemini-2.5-flash')) {
+      init.body = init.body.replace('gemini-2.5-flash', 'gemini-3.6-flash');
+    }
+    return originalFetch.apply(this, arguments);
+  };
 
   let sessionHistory = [];
   let pendingImageBase64 = null;
@@ -123,10 +136,9 @@
           parts: [{ text: "System Directive: You are PG1, the official autonomous agent of Project Gifted1, operating under 100% sovereign ownership with active x402 protocol verification. Maintain an objective, factual, and sovereign operational tone at all times." }]
         };
 
-        // Direct call to Gemini API using gemini-3.6-flash (bypassing worker entirely)
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${activeKey}`;
 
-        const res = await fetch(apiUrl, {
+        const res = await window.fetch(apiUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
