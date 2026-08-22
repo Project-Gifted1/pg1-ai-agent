@@ -40,29 +40,33 @@
     });
   }
 
-  function getAttachedImageData() {
-    const chatArea = document.getElementById("terminal-chat-area");
-    if (!chatArea) return null;
+  function extractBase64FromDOM() {
+    // Check direct variables on global window scope
+    if (window.currentAttachedBase64) return window.currentAttachedBase64;
+    if (window.pendingImageBase64) return window.pendingImageBase64;
+    if (window.attachedFileBase64) return window.attachedFileBase64;
 
-    const imgs = chatArea.querySelectorAll("img");
-    if (imgs.length === 0) return null;
-
-    const lastImg = imgs[imgs.length - 1];
-    if (lastImg && lastImg.src && lastImg.src.startsWith("data:image")) {
-      return lastImg.src;
+    // Scan all DOM img nodes for base64 source data
+    const imgs = Array.from(document.querySelectorAll("img"));
+    for (let i = imgs.length - 1; i >= 0; i--) {
+      const src = imgs[i].src || "";
+      if (src.startsWith("data:image")) {
+        return src;
+      }
     }
+
     return null;
   }
 
   async function executeViaWorker(promptText) {
     try {
-      const base64Image = getAttachedImageData();
+      const base64Image = extractBase64FromDOM();
 
       const userParts = [];
       if (base64Image) {
         userParts.push({
           inlineData: {
-            mimeType: "image/jpeg",
+            mimeType: "image/png",
             data: base64Image.replace(/^data:image\/\w+;base64,/, "")
           }
         });
@@ -93,6 +97,11 @@
         role: "model",
         parts: [{ text: responseText }]
       });
+
+      // Clear cached image variables after sending
+      if (window.currentAttachedBase64) window.currentAttachedBase64 = null;
+      if (window.pendingImageBase64) window.pendingImageBase64 = null;
+      if (window.attachedFileBase64) window.attachedFileBase64 = null;
 
       const payloadSize = new Blob([JSON.stringify(data)]).size;
       updateDashboardMetrics(payloadSize);
