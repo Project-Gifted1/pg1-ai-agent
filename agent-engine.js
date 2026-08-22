@@ -5,17 +5,30 @@
 
   const WORKER_URL = "https://pg1-worker.gnfcw9w5rk.workers.dev";
 
+  function getStoredKey() {
+    for (let i = 0; i < localStorage.length; i++) {
+      const value = localStorage.getItem(localStorage.key(i));
+      if (typeof value === "string" && value.startsWith("AIzaSy")) {
+        return value;
+      }
+    }
+    return "";
+  }
+
   async function executeViaWorker(promptText) {
     try {
-      // Retrieve locally saved API key from storage
-      const savedKey = localStorage.getItem("pg1_master_key") || localStorage.getItem("gemini_api_key") || "";
+      const apiKey = getStoredKey();
+
+      if (!apiKey) {
+        return "PG1 Error: No valid key found in browser storage. Please re-enter your key in the Dash tab and click Save Key.";
+      }
 
       const response = await fetch(WORKER_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           message: promptText,
-          apiKey: savedKey
+          apiKey: apiKey
         })
       });
 
@@ -29,7 +42,7 @@
   if (typeof window.sendTextPromptToGemini === "function") {
     window.sendTextPromptToGemini = async function (promptText) {
       const chatArea = document.getElementById("terminal-chat-area");
-      
+
       if (chatArea) {
         const userBubble = document.createElement("div");
         userBubble.className = "chat-bubble user-bubble";
