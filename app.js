@@ -1,6 +1,6 @@
-// Project Gifted1 - Direct Sovereign Engine Bridge
+// Project Gifted1 - PG1 Sovereign Agent & Dynamic Model Engine Bridge
 (function () {
-  console.log("[PG1 Agent Engine] Direct API bridge active.");
+  console.log("[PG1 Agent Engine] Sovereign identity & dynamic model bridge active.");
 
   let sessionHistory = [];
   let pendingImageBase64 = null;
@@ -26,8 +26,18 @@
     return container;
   }
 
+  function getSelectedModel() {
+    const selectEl = document.querySelector("select");
+    if (selectEl && selectEl.value) {
+      const val = selectEl.value.toLowerCase();
+      if (val.includes("3.6") || val.includes("flash")) return "gemini-3.6-flash";
+      if (val.includes("pro")) return "gemini-2.5-pro";
+    }
+    return "gemini-3.6-flash";
+  }
+
   function getApiKey() {
-    let key = localStorage.getItem("pg1_master_key") || localStorage.getItem("gemini_key") || localStorage.getItem("apiKey") || sessionStorage.getItem("pg1_active_key");
+    let key = localStorage.getItem("pg1_master_key") || localStorage.getItem("gemini_key") || sessionStorage.getItem("pg1_active_key");
     if (key && key.trim().length > 10) return key.trim();
 
     const inputs = document.querySelectorAll("input[type='password'], input[type='text']");
@@ -45,7 +55,6 @@
       sessionStorage.setItem("pg1_active_key", key);
       return key;
     }
-
     return "";
   }
 
@@ -102,6 +111,7 @@
 
       let output = "";
       const activeKey = getApiKey();
+      const modelName = getSelectedModel();
       let currentImage = pendingImageBase64;
       pendingImageBase64 = null;
 
@@ -117,15 +127,24 @@
             }
           });
         }
-        userParts.push({ text: promptText || "Analyze this image accurately." });
+        userParts.push({ text: promptText || "Analyze this input." });
 
-        // Direct call to Gemini API bypassing Cloudflare proxy blocks
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${activeKey}`;
+        // PG1 System Instruction injection for agent persona & identity
+        const systemInstruction = {
+          role: "model",
+          parts: [{ text: "System Directive: You are PG1, the official autonomous agent of Project Gifted1, operating under 100% sovereign ownership with active x402 protocol verification. Maintain an objective, factual, and sovereign operational tone at all times." }]
+        };
 
-        const res = await fetch(apiUrl, {
+        const workerUrl = "https://pg1-worker.gnfcw9w5rk.workers.dev";
+        const res = await fetch(workerUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Gemini-Key": activeKey,
+            "X-Gemini-Model": modelName
+          },
           body: JSON.stringify({
+            system_instruction: systemInstruction,
             contents: [...sessionHistory, { role: "user", parts: userParts }]
           })
         });
@@ -148,7 +167,7 @@
       const chatContainer = getChatContainer();
       const errDiv = document.createElement("div");
       errDiv.style.cssText = "background:#fee2e2; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#991b1b; word-break:break-word;";
-      errDiv.innerText = "Execution Error: " + err.message;
+      errDiv.innerText = "Cloudflare Proxy Error: " + err.message;
       chatContainer.appendChild(errDiv);
     }
   }
