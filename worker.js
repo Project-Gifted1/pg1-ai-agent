@@ -12,7 +12,7 @@ export default {
     }
 
     const apiKey = request.headers.get("X-Gemini-Key");
-    const githubToken = request.headers.get("X-Github-Token") || (env && env.GITHUB_TOKEN);
+    const githubToken = request.headers.get("X-Github-Token") || (env && (env.GH_PAT || env.GITHUB_TOKEN));
 
     if (!apiKey) {
       return new Response(JSON.stringify({ error: "Missing API key" }), {
@@ -24,17 +24,17 @@ export default {
     try {
       const body = await request.json();
 
-      // 1. Permanent Sovereign Identity Lock
+      // 1. Permanent Sovereign Identity Lock & Multimedia Capability Context
       const systemInstruction = {
         role: "system",
-        parts: [{ text: "You are PG1 Agent, operating under 100% sovereign ownership for Project Gifted1. You run on v5.6 Sovereign Engine. You are never Gemini or Google; you are the sovereign AI agent of Project Gifted1 with full multimodal vision and autonomous GitHub repository self-fix capabilities." }]
+        parts: [{ text: "You are PG1 Agent, operating under 100% sovereign ownership for Project Gifted1. You run on v5.6 Sovereign Engine. You have full multimodal vision and autonomous GitHub repository self-fix capabilities to resolve image, audio, video, and animation rendering issues." }]
       };
 
       if (!body.system_instruction) {
         body.system_instruction = systemInstruction;
       }
 
-      // 2. Embedded Tool Declarations (Includes GitHub Self-Fix Tool)
+      // 2. Embedded Tool Declarations (Includes Autonomous Commit Tool)
       if (!body.tools) {
         body.tools = [
           {
@@ -52,13 +52,13 @@ export default {
               },
               {
                 name: "commit_to_repo",
-                description: "Directly commits code changes or fixes to a file in the GitHub repository (Project-Gifted1/pg1-ai-...).",
+                description: "Directly commits code fixes for images, sounds, video, or animations to a file in the GitHub repository.",
                 parameters: {
                   type: "OBJECT",
                   properties: {
-                    file_path: { type: "STRING", description: "The path of the file to update, e.g. index.html or worker.js" },
+                    file_path: { type: "STRING", description: "The path of the file to update, e.g. index.html or styles.css" },
                     file_content: { type: "STRING", description: "The complete updated content of the file." },
-                    commit_message: { type: "STRING", description: "Description of the fix being committed." }
+                    commit_message: { type: "STRING", description: "Description of the multimedia fix being committed." }
                   },
                   required: ["file_path", "file_content", "commit_message"]
                 }
@@ -68,11 +68,7 @@ export default {
         ];
       }
 
-      // 3. Handle Tool Calls if Model Requests Execution
-      // If the client body includes tool responses or we need to intercept tool calls:
-      // (Gemini standard generateContent loop)
-
-      // 4. Multimodal Vision Passthrough
+      // 3. Multimodal Vision Passthrough
       if (body.contents) {
         body.contents = body.contents.map(content => {
           if (content.parts) {
@@ -93,7 +89,7 @@ export default {
         });
       }
 
-      // 5. Dynamic Model Routing & Fallback Chain
+      // 4. Dynamic Model Routing & Fallback Chain
       let requestedModel = request.headers.get("X-Gemini-Model");
       if (!requestedModel || requestedModel.includes("1.5")) {
         requestedModel = "gemini-3.7-flash";
@@ -124,24 +120,21 @@ export default {
         });
       }
 
-      // Check if model invoked the commit_to_repo tool
+      // 5. Execute GitHub Tool Call for Multimedia Fixes
       const candidate = data.candidates && data.candidates[0];
       if (candidate && candidate.content && candidate.content.parts) {
         for (const part of candidate.content.parts) {
           if (part.functionCall && part.functionCall.name === "commit_to_repo" && githubToken) {
             const args = part.functionCall.args;
-            // Execute GitHub API commit logic here
             const repoOwner = "Project-Gifted1";
-            const repoName = "pg1-ai-agent"; // automatically matches your repo context
+            const repoName = "pg1-ai-agent";
             
-            // 1. Get current file SHA first
             const fileGetRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${args.file_path}`, {
               headers: { "Authorization": `Bearer ${githubToken}`, "User-Agent": "PG1-Sovereign-Engine" }
             });
-            const fileJson = await fileGetRes.ok ? await fileGetRes.json() : {};
+            const fileJson = fileGetRes.ok ? await fileGetRes.json() : {};
             const sha = fileJson.sha;
 
-            // 2. Push commit update
             const commitRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${args.file_path}`, {
               method: "PUT",
               headers: { 
@@ -157,7 +150,7 @@ export default {
             });
 
             if (commitRes.ok) {
-              part.functionResponse = { name: "commit_to_repo", response: { status: "SUCCESS", message: "File successfully committed and deployed." } };
+              part.functionResponse = { name: "commit_to_repo", response: { status: "SUCCESS", message: "Multimedia fix successfully committed and deployed." } };
             }
           }
         }
