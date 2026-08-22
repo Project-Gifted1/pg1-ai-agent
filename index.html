@@ -344,6 +344,7 @@
       z-index: 2;
       border: 2px solid var(--sovereign-blue);
       box-shadow: 0 0 10px rgba(0, 68, 204, 0.2);
+      background-color: #ffffff;
     }
 
     .node-aura {
@@ -680,7 +681,7 @@
       background: #ffffff;
       border-top: 1px solid var(--card-border);
       display: flex;
-      justify-content: space-around;
+      justify-around: space-around;
       align-items: center;
       z-index: 100;
     }
@@ -848,6 +849,7 @@
           <div class="bubble-actions">
             <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
             <button class="btn-mini" onclick="editBubbleText(this)">✏️ Edit</button>
+            <button class="btn-mini" onclick="saveSingleBubbleToLogs(this)">💾 Save</button>
           </div>
         </div>
       </div>
@@ -875,7 +877,7 @@
       <div class="panel-card node-header-card">
         <div class="official-node-wrapper">
           <div class="node-aura"></div>
-          <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="Project Gifted1™ Logo" class="official-node-logo">
+          <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="Project Gifted1™ Logo" class="official-node-logo" onerror="handleImageError(this)">
         </div>
         <h3 style="color: var(--text-main); font-size: 16px; margin-bottom: 2px;">PG1.Agent™</h3>
         <div class="card-subtext">Autonomous Edge Infrastructure</div>
@@ -1002,6 +1004,22 @@
     let dynamicPulses = 1420;
     let dynamicIoc = 18940;
     let dynamicThroughput = 2.4;
+
+    function handleImageError(img) {
+      if (!img) return;
+      img.onerror = null;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+        <defs>
+          <linearGradient id="pg1-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#0044cc" />
+            <stop offset="100%" stop-color="#008844" />
+          </linearGradient>
+        </defs>
+        <circle cx="60" cy="60" r="58" fill="url(#pg1-grad)" stroke="#ffffff" stroke-width="4"/>
+        <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="34" font-weight="bold" letter-spacing="1">PG1</text>
+      </svg>`;
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    }
 
     window.addEventListener('DOMContentLoaded', () => {
       unlockSpeechSynthesis();
@@ -1237,6 +1255,7 @@
               <audio controls playsinline src="${audioUrl}" style="width: 100%; margin-top: 6px; height: 30px;"></audio>
               <div class="bubble-actions">
                 <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
+                <button class="btn-mini" onclick="saveSingleBubbleToLogs(this)">💾 Save</button>
               </div>
             `;
             chatArea.appendChild(audioBubble);
@@ -1284,6 +1303,7 @@
         ${previewHTML}
         <div class="bubble-actions">
           <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
+          <button class="btn-mini" onclick="saveSingleBubbleToLogs(this)">💾 Save</button>
         </div>
       `;
       chatArea.appendChild(fileBubble);
@@ -1364,6 +1384,41 @@
       inputField.focus();
     }
 
+    function saveSingleBubbleToLogs(btnElement) {
+      unlockSpeechSynthesis();
+      try {
+        const bubble = btnElement.closest('.chat-bubble');
+        if (!bubble) return;
+        const isUser = bubble.classList.contains('user');
+        const role = isUser ? "USER" : "PG1.AGENT";
+        const textDiv = bubble.querySelector('.bubble-text');
+        const text = textDiv ? textDiv.innerText : (bubble.innerText || '');
+        if (!text) return;
+
+        const formattedText = `${role}: ${text}`;
+        const newLogItem = {
+          id: 'LOG-' + Date.now().toString().slice(-5),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: formattedText
+        };
+
+        let logs = getStoredLogs();
+        logs.unshift(newLogItem);
+        memoryLogFallback = logs;
+        localStorage.setItem('pg1_conversation_logs', JSON.stringify(logs));
+
+        const originalText = btnElement.innerText;
+        btnElement.innerText = '✓ Saved';
+        btnElement.style.color = 'var(--sovereign-green)';
+        setTimeout(() => {
+          btnElement.innerText = originalText;
+          btnElement.style.color = '';
+        }, 1500);
+      } catch (e) {
+        alert("Save error: " + e.message);
+      }
+    }
+
     async function sendUserMessage() {
       unlockSpeechSynthesis();
       const input = document.getElementById('cmd-input');
@@ -1378,12 +1433,40 @@
         <div class="bubble-actions">
           <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
           <button class="btn-mini" onclick="editBubbleText(this)">✏️ Edit</button>
+          <button class="btn-mini" onclick="saveSingleBubbleToLogs(this)">💾 Save</button>
         </div>
       `;
       chatArea.appendChild(userBubble);
       input.value = '';
 
       await sendTextPromptToGemini(val || "Analyze the current live camera feed and audio input.");
+    }
+
+    function extractCandidateText(data) {
+      if (!data) return null;
+      if (typeof data === "string") {
+        try { data = JSON.parse(data); } catch(e) { return data; }
+      }
+      if (data.candidates && data.candidates[0] && data.candidates[0].content && Array.isArray(data.candidates[0].content.parts)) {
+        const parts = data.candidates[0].content.parts;
+        const resultParts = [];
+        for (const part of parts) {
+          if (part.functionCall) {
+            resultParts.push(`⚙️ Executing ${part.functionCall.name}...`);
+          } else if (part.text) {
+            resultParts.push(part.text);
+          }
+        }
+        if (resultParts.length > 0) {
+          return resultParts.join('\n\n');
+        }
+      }
+      if (data.candidates && data.candidates[0] && data.candidates[0].output && typeof data.candidates[0].output === 'string') {
+        return data.candidates[0].output;
+      }
+      if (data.output && typeof data.output === 'string') return data.output;
+      if (data.text && typeof data.text === 'string') return data.text;
+      return null;
     }
 
     async function sendTextPromptToGemini(promptText) {
@@ -1406,6 +1489,7 @@
         <div class="bubble-actions">
           <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
           <button class="btn-mini" onclick="editBubbleText(this)">✏️ Edit</button>
+          <button class="btn-mini" onclick="saveSingleBubbleToLogs(this)">💾 Save</button>
         </div>
       `;
       chatArea.appendChild(aiBubble);
@@ -1440,7 +1524,7 @@
 
       const modelFallbackSequence = [selectedModel, "gemini-3.6-flash", "gemini-3.5-flash-lite"];
       let success = false;
-      let data = null;
+      let replyText = null;
 
       for (let model of modelFallbackSequence) {
         try {
@@ -1455,8 +1539,10 @@
             })
           });
 
-          data = await response.json();
-          if (data.candidates && data.candidates[0].content.parts[0].text) {
+          const data = await response.json();
+          const extracted = extractCandidateText(data);
+          if (extracted) {
+            replyText = extracted;
             success = true;
             break;
           }
@@ -1465,8 +1551,7 @@
 
       const bubbleTextDiv = aiBubble.querySelector('.bubble-text');
 
-      if (success && data) {
-        let replyText = data.candidates[0].content.parts[0].text;
+      if (success && replyText) {
         replyText = replyText.replace(/Gemini/gi, "PG1.Agent").replace(/Google/gi, "Sovereign Network");
         bubbleTextDiv.innerText = replyText;
         conversationHistory.push({ role: "model", parts: [{ text: replyText }] });
@@ -1632,6 +1717,7 @@
           <div class="bubble-actions">
             <button class="btn-mini" onclick="copyBubbleText(this)">📋 Copy</button>
             <button class="btn-mini" onclick="editBubbleText(this)">✏️ Edit</button>
+            <button class="btn-mini" onclick="saveSingleBubbleToLogs(this)">💾 Save</button>
           </div>
         `;
         chatArea.appendChild(bubble);
