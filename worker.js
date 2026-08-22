@@ -75,29 +75,65 @@ export default {
         body.tools = toolsConfig;
       }
 
-      let requestedModel = request.headers.get("X-Gemini-Model");
-      if (!requestedModel || requestedModel.includes("1.5")) {
-        requestedModel = "gemini-3.7-flash";
+      let requestedModel = request.headers.get("X-Gemini-Model") || "gemini-2.5-flash";
+      // Fallback model list if primary experiences 503 capacity overload
+      const modelsToTry = [requestedModel, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-thinking-exp"];
+
+      async function callGeminiWithRetry(modelName, payload) {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+        let delay = 1000;
+        
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const res = await fetch(endpoint, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+              return await res.json();
+            }
+
+            const errBody = await res.text();
+            // If it's a 503 Service Unavailable / Overloaded error, retry or fallback
+            if (res.status === 503 || res.status === 429) {
+              if (attempt < 3) {
+                await new Promise(r => setTimeout(r, delay));
+                delay *= 2; // Exponential backoff
+                continue;
+              }
+            }
+            throw new Error(`API Error (${res.status}): ${errBody}`);
+          } catch (err) {
+            if (attempt === 3) throw err;
+            await new Promise(r => setTimeout(r, delay));
+            delay *= 2;
+          }
+        }
       }
 
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${requestedModel}:generateContent?key=${apiKey}`;
+      let data = null;
+      let usedModel = requestedModel;
 
-      // First call to Gemini
-      let geminiRes = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
+      // Try models in sequence until one succeeds
+      for (const m of modelsToTry) {
+        try {
+          data = await callGeminiWithRetry(m, body);
+          usedModel = m;
+          break;
+        } catch (e) {
+          console.warn(`Model ${m} failed, trying next fallback...`, e.message);
+        }
+      }
 
-      if (!geminiRes.ok) {
-        const errText = await geminiRes.text();
-        return new Response(errText, {
-          status: geminiRes.status,
+      if (!data) {
+        return new Response(JSON.stringify({ error: "All fallback models are currently experiencing high demand. Please try again shortly." }), {
+          status: 503,
           headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
         });
       }
 
-      let data = await geminiRes.json();
       let candidate = data.candidates && data.candidates[0];
 
       // Check if Gemini wants to call a function
@@ -167,7 +203,7 @@ export default {
             }
           }
 
-          // Send the tool response back to Gemini for the final human-readable reply
+          // Send tool response back for final reply
           body.contents.push(candidate.content);
           body.contents.push({
             role: "function",
@@ -179,15 +215,7 @@ export default {
             }]
           });
 
-          const finalRes = await fetch(endpoint, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body)
-          });
-
-          if (finalRes.ok) {
-            data = await finalRes.json();
-          }
+          data = await callGeminiWithRetry(usedModel, body);
         }
       }
 
