@@ -1,12 +1,11 @@
-// Project Gifted1 - Global Fetch Interceptor & Sovereign Engine
+// Project Gifted1 - Absolute Control Override & Sovereign Engine
 (function () {
-  console.log("[PG1 Sovereign Engine] Global request interceptor active.");
+  console.log("[PG1 Sovereign Engine] Override active.");
 
-  // Intercept all fetch requests globally to catch any old gemini-2.5-flash calls
+  // Global fetch interceptor to catch and rewrite any stray 2.5-flash calls
   const originalFetch = window.fetch;
   window.fetch = async function(resource, init) {
     if (typeof resource === 'string' && resource.includes('gemini-2.5-flash')) {
-      console.warn("[PG1 Interceptor] Rewrote deprecated gemini-2.5-flash to gemini-3.6-flash");
       resource = resource.replace('gemini-2.5-flash', 'gemini-3.6-flash');
     }
     if (init && init.body && typeof init.body === 'string' && init.body.includes('gemini-2.5-flash')) {
@@ -138,7 +137,7 @@
 
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${activeKey}`;
 
-        const res = await window.fetch(apiUrl, {
+        const res = await originalFetch(apiUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -170,15 +169,18 @@
     }
   }
 
+  // Intercept click and STOP competing old event listeners instantly
   document.addEventListener("click", function (e) {
     const target = e.target;
     if (!target) return;
     const text = target.innerText ? target.innerText.trim() : "";
     if (text === "Attach") {
       e.preventDefault();
+      e.stopImmediatePropagation();
       fileInput.click();
-    } else if (text === "Send") {
+    } else if (text === "Send" || target.id === "send-btn" || target.classList.contains("send-btn")) {
       e.preventDefault();
+      e.stopImmediatePropagation();
       executePrompt();
     }
   }, true);
@@ -188,6 +190,7 @@
       const active = document.activeElement;
       if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA") && active !== fileInput) {
         e.preventDefault();
+        e.stopImmediatePropagation();
         executePrompt();
       }
     }
