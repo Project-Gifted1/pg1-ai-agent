@@ -3,15 +3,20 @@
 (function () {
   console.log("[PG1 Agent Engine] Autonomous runtime loading...");
 
-  // AUTOMATIC CLOUDFLARE WORKER ROUTE
   const WORKER_URL = "https://pg1-worker.gnfcw9w5rk.workers.dev";
 
   async function executeViaWorker(promptText) {
     try {
+      // Retrieve locally saved API key from storage
+      const savedKey = localStorage.getItem("pg1_master_key") || localStorage.getItem("gemini_api_key") || "";
+
       const response = await fetch(WORKER_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: promptText })
+        body: JSON.stringify({ 
+          message: promptText,
+          apiKey: savedKey
+        })
       });
 
       const data = await response.json();
@@ -21,12 +26,10 @@
     }
   }
 
-  // Override UI chat handler to route through Cloudflare Worker
   if (typeof window.sendTextPromptToGemini === "function") {
     window.sendTextPromptToGemini = async function (promptText) {
       const chatArea = document.getElementById("terminal-chat-area");
       
-      // Render user prompt bubble
       if (chatArea) {
         const userBubble = document.createElement("div");
         userBubble.className = "chat-bubble user-bubble";
@@ -34,10 +37,8 @@
         chatArea.appendChild(userBubble);
       }
 
-      // Execute action via worker and fetch response
       const output = await executeViaWorker(promptText);
 
-      // Render agent response bubble
       if (chatArea) {
         const aiBubble = document.createElement("div");
         aiBubble.className = "chat-bubble ai-bubble";
