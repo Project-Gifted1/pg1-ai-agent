@@ -1,14 +1,12 @@
-// agent-engine.js - Full Autonomous Client Orchestration
+// agent-engine.js - Direct DOM Binding & Autonomous Engine
 
 (function () {
-  console.log("[PG1 Agent Engine] Full agentic capability runtime initialized.");
+  console.log("[PG1 Agent Engine] Autonomous runtime active.");
 
   const WORKER_URL = "https://pg1-agent-worker.gnfcw9w5rk.workers.dev";
   const SESSION_ID = "session_" + Math.random().toString(36).substring(2, 9);
   
   let sessionHistory = [];
-  let totalBytesProcessed = 0;
-  let totalRequests = 0;
   let activeBase64Image = null;
 
   function parseMarkdownToHTML(text) {
@@ -45,17 +43,20 @@
       });
       const data = await res.json();
       if (data.telemetry) {
-        const targetEl = document.getElementById("throughput-display") || document.querySelector(".throughput-metric");
-        if (targetEl) {
-          targetEl.innerText = `Throughput: ${data.telemetry.throughputMbps} Mbps | Active Nodes: ${data.telemetry.activeNodes} | Latency: ${data.telemetry.latencyMs}ms`;
-        }
+        const allElements = document.querySelectorAll("div, p, span, td");
+        allElements.forEach(el => {
+          if (el.children.length === 0 && (el.innerText.includes("NaN MB/s") || el.innerText.includes("Edge Telemetry Throughput"))) {
+            el.innerText = `Edge Telemetry Throughput: ${data.telemetry.throughputMbps} MB/s | Latency: ${data.telemetry.latencyMs}ms`;
+          }
+        });
       }
     } catch (e) {
       console.warn("[PG1 Telemetry] Polling skipped:", e.message);
     }
   }
 
-  setInterval(fetchTelemetry, 10000);
+  setInterval(fetchTelemetry, 5000);
+  fetchTelemetry();
 
   document.addEventListener("change", (e) => {
     if (e.target && e.target.type === "file") {
@@ -116,6 +117,8 @@
       const responseText = data.response || "No output returned from execution worker.";
 
       sessionHistory.push({ role: "model", parts: [{ text: responseText }] });
+
+      fetchTelemetry();
 
       return responseText;
     } catch (err) {
