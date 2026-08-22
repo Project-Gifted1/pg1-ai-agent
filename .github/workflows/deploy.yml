@@ -18,6 +18,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy worker.js --name pg1-worker --compatibility-date 2024-01-01
           secrets: |
             GEMINI_API_KEY
         env:
