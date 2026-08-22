@@ -72,7 +72,6 @@ export default {
 
       let contents = [];
 
-      // Process history if available
       if (Array.isArray(history) && history.length > 0) {
         contents = history.map(turn => {
           if (turn.role === "user" && turn.parts) {
@@ -92,7 +91,6 @@ export default {
           return turn;
         });
       } else {
-        // Fallback for single requests
         const parts = [];
         if (image) {
           parts.push({
