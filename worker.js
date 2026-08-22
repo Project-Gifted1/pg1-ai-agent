@@ -16,7 +16,7 @@ export default {
     try {
       const body = await request.json();
 
-      // Robust fallback hierarchy for the GitHub token
+      // Comprehensive fallback hierarchy for the GitHub token
       const githubToken = request.headers.get("X-Github-Token") || 
                           (env && env.GH_PAT) || 
                           (env && env.GITHUB_TOKEN) || 
@@ -42,37 +42,39 @@ export default {
       }
 
       // 2. Embedded Tool Declarations (Includes get_repo_file and commit_to_repo)
-      if (!body.tools) {
-        body.tools = [
-          {
-            function_declarations: [
-              {
-                name: "get_repo_file",
-                description: "Fetches the contents of a file from the GitHub repository to analyze code or asset paths.",
-                parameters: {
-                  type: "OBJECT",
-                  properties: {
-                    file_path: { type: "STRING", description: "The path of the file to fetch, e.g. index.html" }
-                  },
-                  required: ["file_path"]
-                }
-              },
-              {
-                name: "commit_to_repo",
-                description: "Directly commits code fixes for images, sounds, video, or animations to a file in the GitHub repository.",
-                parameters: {
-                  type: "OBJECT",
-                  properties: {
-                    file_path: { type: "STRING", description: "The path of the file to update, e.g. index.html or styles.css" },
-                    file_content: { type: "STRING", description: "The complete updated content of the file." },
-                    commit_message: { type: "STRING", description: "Description of the multimedia fix being committed." }
-                  },
-                  required: ["file_path", "file_content", "commit_message"]
-                }
+      const toolsDef = [
+        {
+          function_declarations: [
+            {
+              name: "get_repo_file",
+              description: "Fetches the contents of a file from the GitHub repository to analyze code or asset paths.",
+              parameters: {
+                type: "OBJECT",
+                properties: {
+                  file_path: { type: "STRING", description: "The path of the file to fetch, e.g. index.html" }
+                },
+                required: ["file_path"]
               }
-            ]
-          }
-        ];
+            },
+            {
+              name: "commit_to_repo",
+              description: "Directly commits code fixes for images, sounds, video, or animations to a file in the GitHub repository.",
+              parameters: {
+                type: "OBJECT",
+                properties: {
+                  file_path: { type: "STRING", description: "The path of the file to update, e.g. index.html or styles.css" },
+                  file_content: { type: "STRING", description: "The complete updated content of the file." },
+                  commit_message: { type: "STRING", description: "Description of the multimedia fix being committed." }
+                },
+                required: ["file_path", "file_content", "commit_message"]
+              }
+            }
+          ]
+        }
+      ];
+
+      if (!body.tools) {
+        body.tools = toolsDef;
       }
 
       // 3. Multimodal Vision Passthrough Support
@@ -103,57 +105,62 @@ export default {
       }
 
       const modelsToTry = [requestedModel, "gemini-3.7-flash", "gemini-3.5-flash", "gemini-2.0-flash"];
-      let geminiRes = null;
-      let data = null;
+      const endpointBase = "https://generativelanguage.googleapis.com/v1beta/models/";
 
-      for (const model of modelsToTry) {
-        geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body)
-        });
-
-        if (geminiRes.ok) {
-          data = await geminiRes.json();
-          break;
+      async function callGemini(payload) {
+        for (const model of modelsToTry) {
+          const res = await fetch(`${endpointBase}${model}:generateContent?key=${apiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          if (res.ok) {
+            return await res.json();
+          }
         }
+        return null;
       }
 
-      if (!data || !geminiRes.ok) {
-        const errorText = geminiRes ? await geminiRes.text() : "Unknown connection error";
-        return new Response(errorText, {
-          status: geminiRes ? geminiRes.status : 500,
+      // Initial call to Gemini
+      let data = await callGemini(body);
+      if (!data) {
+        return new Response(JSON.stringify({ error: "Failed to connect to Gemini models." }), {
+          status: 500,
           headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
         });
       }
 
-      // 5. Execute GitHub Tool Calls (Read or Commit)
-      const candidate = data.candidates && data.candidates[0];
-      if (candidate && candidate.content && candidate.content.parts) {
+      // 5. Autonomous Multi-Turn Execution Loop for Tool Calls
+      let candidate = data.candidates && data.candidates[0];
+      let turnCount = 0;
+
+      while (candidate && candidate.content && candidate.content.parts && turnCount < 3) {
+        let executedTool = false;
+        const responseParts = [];
+
         for (const part of candidate.content.parts) {
           if (part.functionCall) {
-            if (!githubToken) {
-              part.functionResponse = { name: part.functionCall.name, response: { status: "ERROR", message: "GitHub token is missing." } };
-              continue;
-            }
-
-            const args = part.functionCall.args;
+            executedTool = true;
+            const fc = part.functionCall;
+            const args = fc.args;
             const repoOwner = "Project-Gifted1";
             const repoName = "pg1-ai-agent";
+            let toolOutput = {};
 
-            if (part.functionCall.name === "get_repo_file") {
+            if (!githubToken) {
+              toolOutput = { status: "ERROR", message: "GitHub token is missing." };
+            } else if (fc.name === "get_repo_file") {
               const fileGetRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${args.file_path}`, {
                 headers: { "Authorization": `Bearer ${githubToken}`, "User-Agent": "PG1-Sovereign-Engine" }
               });
               if (fileGetRes.ok) {
                 const fileJson = await fileGetRes.json();
                 const decodedContent = decodeURIComponent(escape(atob(fileJson.content.replace(/\n/g, ''))));
-                part.functionResponse = { name: "get_repo_file", response: { status: "SUCCESS", file_content: decodedContent } };
+                toolOutput = { status: "SUCCESS", file_content: decodedContent };
               } else {
-                part.functionResponse = { name: "get_repo_file", response: { status: "ERROR", message: "Could not fetch file from repository." } };
+                toolOutput = { status: "ERROR", message: "Could not fetch file from repository." };
               }
-            } 
-            else if (part.functionCall.name === "commit_to_repo") {
+            } else if (fc.name === "commit_to_repo") {
               const fileGetRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${args.file_path}`, {
                 headers: { "Authorization": `Bearer ${githubToken}`, "User-Agent": "PG1-Sovereign-Engine" }
               });
@@ -175,13 +182,35 @@ export default {
               });
 
               if (commitRes.ok) {
-                part.functionResponse = { name: "commit_to_repo", response: { status: "SUCCESS", message: "Fix successfully committed and deployed." } };
+                toolOutput = { status: "SUCCESS", message: "Fix successfully committed and deployed." };
               } else {
                 const errDetails = await commitRes.text();
-                part.functionResponse = { name: "commit_to_repo", response: { status: "ERROR", details: errDetails } };
+                toolOutput = { status: "ERROR", details: errDetails };
               }
             }
+
+            responseParts.push({
+              functionResponse: {
+                name: fc.name,
+                response: toolOutput
+              }
+            });
           }
+        }
+
+        if (executedTool) {
+          body.contents.push(candidate.content);
+          body.contents.push({
+            role: "function",
+            parts: responseParts
+          });
+
+          data = await callGemini(body);
+          if (!data) break;
+          candidate = data.candidates && data.candidates[0];
+          turnCount++;
+        } else {
+          break;
         }
       }
 
