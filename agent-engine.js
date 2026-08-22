@@ -1,4 +1,4 @@
-// agent-engine.js - Persistent DOM UI Patch
+// agent-engine.js - Safe DOM Isolation Engine
 
 (function () {
   console.log("[PG1 Agent Engine] Autonomous runtime active.");
@@ -25,10 +25,11 @@
   function getChatContainer() {
     let chatArea = document.getElementById("terminal-chat-area") || document.querySelector(".chat-area");
     if (!chatArea) {
+      const activeTab = document.querySelector('.tab-content:not([style*="display: none"])') || document.body;
       chatArea = document.createElement("div");
       chatArea.id = "terminal-chat-area";
-      chatArea.style.cssText = "padding:10px; overflow-y:auto; max-height:70vh;";
-      document.body.appendChild(chatArea);
+      chatArea.style.cssText = "padding:10px; margin-bottom: 60px;";
+      activeTab.appendChild(chatArea);
     }
     return chatArea;
   }
@@ -40,14 +41,10 @@
     const speedMbps = ((bytesSent * 8) / (1024 * 1024)).toFixed(2);
     const mbProcessed = (totalBytesProcessed / (1024 * 1024)).toFixed(2);
 
-    const dashContainer = document.getElementById("dash-tab-content") || document.body;
-    const statElements = dashContainer.querySelectorAll(".stat-card, .metric-value, .dash-stat, div, p");
-
-    statElements.forEach(el => {
-      if (el.innerText.includes("NaN") || el.innerText.includes("0 MB/s") || el.innerText.includes("Throughput:")) {
-        el.innerHTML = `<strong>Throughput:</strong> ${speedMbps} Mbps | <strong>Processed:</strong> ${mbProcessed} MB | <strong>Requests:</strong> ${totalRequests}`;
-      }
-    });
+    const targetEl = document.getElementById("throughput-display") || document.querySelector(".throughput-metric");
+    if (targetEl) {
+      targetEl.innerText = `${speedMbps} Mbps | ${mbProcessed} MB | Requests: ${totalRequests}`;
+    }
   }
 
   document.addEventListener("change", (e) => {
@@ -57,6 +54,7 @@
         const reader = new FileReader();
         reader.onload = (event) => {
           activeBase64Image = event.target.result;
+          console.log("[PG1 Engine] Image Base64 loaded.");
         };
         reader.readAsDataURL(file);
       }
@@ -130,7 +128,7 @@
     if (finalPrompt) {
       const userBubble = document.createElement("div");
       userBubble.className = "chat-bubble user-bubble";
-      userBubble.style.cssText = "background:#eef2ff; padding:12px; margin:8px 0; border-radius:8px;";
+      userBubble.style.cssText = "background:#eef2ff; padding:10px 14px; margin:8px 0; border-radius:12px; font-size:14px; color:#111827;";
       userBubble.innerHTML = `<div>${parseMarkdownToHTML(finalPrompt)}</div>`;
       chatArea.appendChild(userBubble);
     }
@@ -139,10 +137,9 @@
 
     const aiBubble = document.createElement("div");
     aiBubble.className = "chat-bubble ai-bubble";
-    aiBubble.style.cssText = "background:#f3f4f6; padding:12px; margin:8px 0; border-radius:8px;";
+    aiBubble.style.cssText = "background:#f3f4f6; padding:10px 14px; margin:8px 0; border-radius:12px; font-size:14px; color:#111827;";
     aiBubble.innerHTML = `<div>${parseMarkdownToHTML(output)}</div>`;
     chatArea.appendChild(aiBubble);
-    chatArea.scrollTop = chatArea.scrollHeight;
   }
 
   window.addEventListener("click", (e) => {
