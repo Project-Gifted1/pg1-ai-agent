@@ -1,197 +1,21 @@
-// Project Gifted1 - Full Sovereign Engine & Global Fetch Interceptor
-(function () {
-  console.log("[PG1 Sovereign Engine] Full codebase active.");
-
-  // Global fetch interceptor: catches any stray requests to gemini-2.5-flash and upgrades them to gemini-3.6-flash
-  const originalFetch = window.fetch;
-  window.fetch = async function(resource, init) {
-    if (typeof resource === 'string' && resource.includes('gemini-2.5-flash')) {
-      resource = resource.replace('gemini-2.5-flash', 'gemini-3.6-flash');
-    }
-    if (init && init.body && typeof init.body === 'string' && init.body.includes('gemini-2.5-flash')) {
-      init.body = init.body.replace('gemini-2.5-flash', 'gemini-3.6-flash');
-    }
-    return originalFetch.apply(this, arguments);
-  };
-
-  let sessionHistory = [];
-  let pendingImageBase64 = null;
-
-  // 1. Telemetry Fixer
-  setInterval(() => {
-    const liveVal = (Math.random() * (12.5 - 2.1) + 2.1).toFixed(2) + " MB/s";
-    document.querySelectorAll("span, div, td, p, strong").forEach(el => {
-      if (el.children.length === 0 && (el.innerText.includes("NaN") || el.innerText.includes("NaN MB/s"))) {
-        el.innerText = liveVal;
-      }
-    });
-  }, 100);
-
-  function getChatContainer() {
-    let container = document.getElementById("terminal-chat-area");
-    if (!container) {
-      container = document.createElement("div");
-      container.id = "terminal-chat-area";
-      container.style.cssText = "padding:10px; margin-bottom:80px;";
-      document.body.appendChild(container);
-    }
-    return container;
-  }
-
-  function getApiKey() {
-    let key = localStorage.getItem("pg1_master_key") || localStorage.getItem("gemini_key") || sessionStorage.getItem("pg1_active_key");
-    if (key && key.trim().length > 10) return key.trim();
-
-    const inputs = document.querySelectorAll("input[type='password'], input[type='text']");
-    for (let input of inputs) {
-      if (input.value && input.value.trim().length > 10) {
-        key = input.value.trim();
-        sessionStorage.setItem("pg1_active_key", key);
-        return key;
-      }
-    }
-
-    key = prompt("Please enter your Gemini API Key for this session:");
-    if (key && key.trim().length > 10) {
-      key = key.trim();
-      sessionStorage.setItem("pg1_active_key", key);
-      return key;
-    }
-    return "";
-  }
-
-  const fileInput = document.createElement("input");
-  fileInput.type = "file";
-  fileInput.accept = "image/*";
-  fileInput.style.display = "none";
-  document.body.appendChild(fileInput);
-
-  fileInput.addEventListener("change", function (e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function (uploadEvent) {
-      const img = new Image();
-      img.onload = function () {
-        const canvas = document.createElement("canvas");
-        const MAX_WIDTH = 800;
-        const scaleSize = MAX_WIDTH / img.width;
-        canvas.width = MAX_WIDTH;
-        canvas.height = img.height * (scaleSize < 1 ? scaleSize : 1);
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        
-        pendingImageBase64 = canvas.toDataURL("image/jpeg", 0.7);
-        
-        const chatContainer = getChatContainer();
-        const imgPreviewDiv = document.createElement("div");
-        imgPreviewDiv.style.cssText = "background:#eef2ff; padding:12px 16px; margin:10px 0; border-radius:12px; word-break:break-word;";
-        imgPreviewDiv.innerHTML = `<img src="${pendingImageBase64}" style="max-width:220px; border-radius:8px; border:1px solid #d1d5db; display:block; margin-bottom:6px;"/><span style="font-size:12px; color:#4b5563;">[Attached Image Ready]</span>`;
-        chatContainer.appendChild(imgPreviewDiv);
-        window.scrollTo(0, document.body.scrollHeight);
-      };
-      img.src = uploadEvent.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
-
-  async function executePrompt() {
-    try {
-      const inputEl = document.querySelector("input[type='text'], textarea");
-      const promptText = inputEl && inputEl !== fileInput ? inputEl.value.trim() : "";
-      if (inputEl && inputEl !== fileInput) inputEl.value = "";
-
-      const chatContainer = getChatContainer();
-      if (!promptText && !pendingImageBase64) return;
-
-      if (promptText) {
-        const userDiv = document.createElement("div");
-        userDiv.style.cssText = "background:#eef2ff; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#111827; word-break:break-word;";
-        userDiv.innerText = promptText;
-        chatContainer.appendChild(userDiv);
-      }
-
-      let output = "";
-      const activeKey = getApiKey();
-      let currentImage = pendingImageBase64;
-      pendingImageBase64 = null;
-
-      if (!activeKey) {
-        output = "PG1 Error: GEMINI_API_KEY missing.";
+(function(){
+  const btn = document.getElementById("save-key-btn") || Array.from(document.querySelectorAll("button")).find(b => b.innerText.includes("Save Key"));
+  const input = document.querySelector("input[type='password']") || document.querySelector("input[type='text']");
+  if(btn && input) {
+    btn.onclick = function(e) {
+      e.preventDefault();
+      const val = input.value.trim();
+      if(val.length > 10) {
+        localStorage.setItem("pg1_master_key", val);
+        sessionStorage.setItem("pg1_active_key", val);
+        alert("Key saved successfully! Node connected.");
+        location.reload();
       } else {
-        const userParts = [];
-        if (currentImage) {
-          userParts.push({
-            inlineData: {
-              mimeType: "image/jpeg",
-              data: currentImage.replace(/^data:image\/\w+;base64,/, "")
-            }
-          });
-        }
-        userParts.push({ text: promptText || "Analyze this input." });
-
-        const systemInstruction = {
-          role: "model",
-          parts: [{ text: "System Directive: You are PG1, the official autonomous agent of Project Gifted1, operating under 100% sovereign ownership with active x402 protocol verification. Maintain an objective, factual, and sovereign operational tone at all times." }]
-        };
-
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${activeKey}`;
-
-        const res = await window.fetch(apiUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            system_instruction: systemInstruction,
-            contents: [...sessionHistory, { role: "user", parts: userParts }]
-          })
-        });
-
-        const data = await res.json();
-        output = data.candidates?.[0]?.content?.parts?.[0]?.text || `API Error: ${JSON.stringify(data.error || data)}`;
+        alert("Please enter a valid API key.");
       }
-
-      sessionHistory.push({ role: "user", parts: [{ text: promptText || "Image attached" }] });
-      sessionHistory.push({ role: "model", parts: [{ text: output }] });
-
-      const aiDiv = document.createElement("div");
-      aiDiv.style.cssText = "background:#f3f4f6; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#111827; word-break:break-word;";
-      aiDiv.innerText = output;
-      chatContainer.appendChild(aiDiv);
-      
-      window.scrollTo(0, document.body.scrollHeight);
-    } catch (err) {
-      console.error("Execution error:", err);
-      const chatContainer = getChatContainer();
-      const errDiv = document.createElement("div");
-      errDiv.style.cssText = "background:#fee2e2; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#991b1b; word-break:break-word;";
-      errDiv.innerText = "System Error: " + err.message;
-      chatContainer.appendChild(errDiv);
-    }
+    };
+    alert("Save Key handler injected successfully! Now type your key and click Save Key.");
+  } else {
+    alert("Could not find input or button.");
   }
-
-  document.addEventListener("click", function (e) {
-    const target = e.target;
-    if (!target) return;
-    const text = target.innerText ? target.innerText.trim() : "";
-    if (text === "Attach") {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      fileInput.click();
-    } else if (text === "Send" || target.id === "send-btn" || target.classList.contains("send-btn")) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      executePrompt();
-    }
-  }, true);
-
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Enter") {
-      const active = document.activeElement;
-      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA") && active !== fileInput) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        executePrompt();
-      }
-    }
-  }, true);
 })();
