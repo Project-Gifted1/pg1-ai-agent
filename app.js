@@ -1,6 +1,5 @@
-// app.js - Full Sovereign Engine Frontend Agent Handler
 document.addEventListener('DOMContentLoaded', () => {
-    const sendButton = document.querySelector('button#send, .send-btn, #send-btn') || document.querySelector('button:has-text("Send"), button');
+    const sendButton = document.querySelector('button#send, .send-btn, #send-btn, button:has-text("Send")');
     const inputField = document.querySelector('input[type="text"], textarea, #user-input');
     const terminalContainer = document.querySelector('.terminal-container, #terminal, .chat-thread');
 
@@ -10,7 +9,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const promptText = inputField.value.trim();
         if (!promptText) return;
 
-        // Append user card
         appendCard('user', promptText);
         inputField.value = '';
 
@@ -18,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const apiKey = localStorage.getItem('gemini_api_key') || prompt("Enter Gemini API Key:");
             if (apiKey) localStorage.setItem('gemini_api_key', apiKey);
 
-            const response = await fetch('https://project-gifted1-worker.workers.dev', {
+            const response = await fetch('https://pg1-agent-worker.workers.dev', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -58,7 +56,6 @@ document.addEventListener('DOMContentLoaded', () => {
         terminalContainer.scrollTop = terminalContainer.scrollHeight;
     }
 
-    // Attach event listeners
     if (sendButton) {
         sendButton.addEventListener('click', handleAgentDispatch);
     }
