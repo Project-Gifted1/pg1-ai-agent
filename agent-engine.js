@@ -1,16 +1,7 @@
-// agent-engine.js - Auto-Reloading Self-Healing Sovereign Bridge
-(function () {
-  // Force cache-busting reload if not already reloaded in this session
-  const scriptTag = document.querySelector("script[src*='agent-engine.js']");
-  if (scriptTag && !window.PG1_RELOADED) {
-    window.PG1_RELOADED = true;
-    const freshScript = document.createElement("script");
-    freshScript.src = "agent-engine.js?v=" + Date.now();
-    scriptTag.parentNode.replaceChild(freshScript, scriptTag);
-    return;
-  }
+// agent-engine.js - Dynamic Model Discovery & Sovereign Bridge
 
-  console.log("[PG1 Agent Engine] Fresh un-cached bridge active.");
+(function () {
+  console.log("[PG1 Agent Engine] Dynamic bridge active.");
 
   let sessionHistory = [];
   let pendingImageBase64 = null;
@@ -129,40 +120,33 @@
         }
         userParts.push({ text: promptText || "Analyze this image accurately." });
 
-        const requestBody = JSON.stringify({
-          contents: [...sessionHistory, { role: "user", parts: userParts }],
-          systemInstruction: { parts: [{ text: "You are the PG1 Sovereign Engine AI Agent. Answer directly, concisely, and accurately based on the provided image." }] }
+        // Step 1: Dynamically list available models for this key to avoid hardcoded 404s
+        let selectedModel = "gemini-1.5-flash";
+        try {
+          const listRes = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${activeKey}`);
+          const listData = await listRes.json();
+          if (listData.models) {
+            const validModel = listData.models.find(m => m.name.includes("flash") && m.supportedGenerationMethods?.includes("generateContent"));
+            if (validModel) {
+              selectedModel = validModel.name.replace("models/", "");
+            }
+          }
+        } catch (e) {
+          console.warn("Model discovery fallback used", e);
+        }
+
+        // Step 2: Execute generation with the dynamically discovered model
+        const directRes = await fetch(`https://generativelanguage.googleapis.com/v1/models/${selectedModel}:generateContent?key=${activeKey}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [...sessionHistory, { role: "user", parts: userParts }],
+            systemInstruction: { parts: [{ text: "You are the PG1 Sovereign Engine AI Agent. Answer directly, concisely, and accurately." }] }
+          })
         });
 
-        // Using latest stable endpoints with up-to-date models
-        const endpoints = [
-          "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
-          "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent",
-          "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
-        ];
-
-        let success = false;
-        for (let ep of endpoints) {
-          try {
-            const res = await fetch(`${ep}?key=${activeKey}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: requestBody
-            });
-            const data = await res.json();
-            if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-              output = data.candidates[0].content.parts[0].text;
-              success = true;
-              break;
-            }
-          } catch (e) {
-            console.warn("Endpoint failed, trying next...", e);
-          }
-        }
-
-        if (!success) {
-          output = "API Error: Unable to connect via available endpoints. Check network or key.";
-        }
+        const directData = await directRes.json();
+        output = directData.candidates?.[0]?.content?.parts?.[0]?.text || `API Error: ${JSON.stringify(directData)}`;
       }
 
       sessionHistory.push({ role: "user", parts: [{ text: promptText || "Image attached" }] });
