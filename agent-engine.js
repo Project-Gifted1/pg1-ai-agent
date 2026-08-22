@@ -1,13 +1,11 @@
-// agent-engine.js - PG1 Autonomous Runtime Engine
+// agent-engine.js - Direct DOM Base64 Extraction
 
 (function () {
-  console.log("[PG1 Agent Engine] Autonomous runtime active.");
+  console.log("[PG1 Agent Engine] Active.");
 
   const WORKER_URL = "https://pg1-agent-worker.gnfcw9w5rk.workers.dev";
   let sessionHistory = [];
-  let totalBytesProcessed = 0;
-  let totalRequests = 0;
-  let activeBase64Image = null;
+  let stashedImageBase64 = null;
 
   function parseMarkdownToHTML(text) {
     if (!text) return "";
@@ -19,48 +17,27 @@
       .replace(/`([^`]+)`/g, '<code>$1</code>')
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-      .replace(/^\*\s+(.*)$/gbm, '<ul><li>$1</li></ul>')
-      .replace(/<\/ul>\n<ul>/g, '')
       .replace(/\n/g, '<br>');
   }
 
-  function updateDashboardMetrics(bytesSent) {
-    totalRequests++;
-    totalBytesProcessed += bytesSent;
-
-    const speedMbps = ((bytesSent * 8) / (1024 * 1024)).toFixed(2);
-    const mbProcessed = (totalBytesProcessed / (1024 * 1024)).toFixed(2);
-
-    const dashContainer = document.getElementById("dash-tab-content") || document.body;
-    const statElements = dashContainer.querySelectorAll(".stat-card, .metric-value, .dash-stat, div, p");
-
-    statElements.forEach(el => {
-      if (el.innerText.includes("NaN") || el.innerText.includes("0 MB/s") || el.innerText.includes("Throughput:")) {
-        el.innerHTML = `<strong>Throughput:</strong> ${speedMbps} Mbps | <strong>Processed:</strong> ${mbProcessed} MB | <strong>Requests:</strong> ${totalRequests}`;
-      }
-    });
-  }
-
-  // Intercept file selection globally and prevent auto-submit
+  // Intercept file picker directly
   document.addEventListener("change", (e) => {
     if (e.target && e.target.type === "file") {
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-
       const file = e.target.files[0];
       if (file) {
         const reader = new FileReader();
         reader.onload = (event) => {
-          activeBase64Image = event.target.result;
-          console.log("[PG1 Agent Engine] Image loaded into memory. Waiting for Send click.");
+          stashedImageBase64 = event.target.result;
+          console.log("[PG1 Engine] Image base64 captured successfully.");
         };
         reader.readAsDataURL(file);
       }
     }
   }, true);
 
-  function getCurrentImagePayload() {
-    if (activeBase64Image) return activeBase64Image;
+  // Read base64 from preview thumbnail if present
+  function extractBase64FromDOM() {
+    if (stashedImageBase64) return stashedImageBase64;
 
     const imgs = document.querySelectorAll("img");
     for (let i = imgs.length - 1; i >= 0; i--) {
@@ -72,103 +49,71 @@
     return null;
   }
 
-  async function executeViaWorker(promptText) {
-    try {
-      const base64Image = getCurrentImagePayload();
+  async function executeWorker(promptText) {
+    const base64Image = extractBase64FromDOM();
+    const userParts = [];
 
-      const userParts = [];
-      if (base64Image) {
-        userParts.push({
-          inlineData: {
-            mimeType: "image/png",
-            data: base64Image.replace(/^data:image\/\w+;base64,/, "")
-          }
-        });
-      }
-      userParts.push({ text: promptText || "Analyze this attached image." });
-
-      sessionHistory.push({
-        role: "user",
-        parts: userParts
+    if (base64Image) {
+      userParts.push({
+        inlineData: {
+          mimeType: "image/png",
+          data: base64Image.replace(/^data:image\/\w+;base64,/, "")
+        }
       });
-
-      const requestBody = {
-        message: promptText || "Analyze this attached image.",
-        history: sessionHistory,
-        image: base64Image
-      };
-
-      // Reset image state after sending
-      activeBase64Image = null;
-
-      const response = await fetch(WORKER_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody)
-      });
-
-      const data = await response.json();
-      const responseText = data.response || "No output returned from execution worker.";
-
-      sessionHistory.push({
-        role: "model",
-        parts: [{ text: responseText }]
-      });
-
-      const payloadSize = new Blob([JSON.stringify(data)]).size;
-      updateDashboardMetrics(payloadSize);
-
-      return responseText;
-    } catch (err) {
-      return `Execution Bridge Error: ${err.message}`;
     }
+    userParts.push({ text: promptText || "Analyze this image." });
+
+    sessionHistory.push({ role: "user", parts: userParts });
+
+    const requestBody = {
+      message: promptText || "Analyze this image.",
+      history: sessionHistory,
+      image: base64Image
+    };
+
+    stashedImageBase64 = null;
+
+    const response = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody)
+    });
+
+    const data = await response.json();
+    const responseText = data.response || "No response received.";
+
+    sessionHistory.push({
+      role: "model",
+      parts: [{ text: responseText }]
+    });
+
+    return responseText;
   }
 
-  async function handleUserSubmit(e) {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    }
-
+  // Override window function completely
+  window.sendTextPromptToGemini = async function (promptText) {
     const inputEl = document.querySelector("input[type='text'], textarea, .command-input");
-    const promptText = inputEl ? inputEl.value.trim() : "";
-
-    if (!promptText && !activeBase64Image) return;
-
-    if (inputEl) inputEl.value = "";
+    const actualPrompt = promptText || (inputEl ? inputEl.value.trim() : "");
 
     const chatArea = document.getElementById("terminal-chat-area") || document.querySelector(".chat-area");
 
-    if (chatArea) {
+    if (chatArea && actualPrompt) {
       const userBubble = document.createElement("div");
       userBubble.className = "chat-bubble user-bubble";
-      userBubble.innerHTML = `<div class="bubble-text">${parseMarkdownToHTML(promptText || "Sent attached image")}</div>`;
+      userBubble.innerHTML = `<div class="bubble-text">${parseMarkdownToHTML(actualPrompt)}</div>`;
       chatArea.appendChild(userBubble);
     }
 
-    const output = await executeViaWorker(promptText);
+    if (inputEl) inputEl.value = "";
+
+    const responseText = await executeWorker(actualPrompt);
 
     if (chatArea) {
       const aiBubble = document.createElement("div");
       aiBubble.className = "chat-bubble ai-bubble";
-      aiBubble.innerHTML = `<div class="bubble-text">${parseMarkdownToHTML(output)}</div>`;
+      aiBubble.innerHTML = `<div class="bubble-text">${parseMarkdownToHTML(responseText)}</div>`;
       chatArea.appendChild(aiBubble);
       chatArea.scrollTop = chatArea.scrollHeight;
     }
-  }
-
-  // Intercept click on Send button
-  window.addEventListener("click", (e) => {
-    const btn = e.target.closest("button, .send-btn, #send-btn");
-    if (btn && (btn.innerText.includes("Send") || btn.id === "send-btn")) {
-      handleUserSubmit(e);
-    }
-  }, true);
-
-  // Block native auto-trigger
-  window.sendTextPromptToGemini = function () {
-    console.log("[PG1 Agent Engine] Blocked native auto-trigger on image select.");
-    return false;
   };
 })();
