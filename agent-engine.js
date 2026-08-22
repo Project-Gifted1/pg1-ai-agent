@@ -1,7 +1,16 @@
-// agent-engine.js - Self-Healing Sovereign Multimodal Bridge
-
+// agent-engine.js - Auto-Reloading Self-Healing Sovereign Bridge
 (function () {
-  console.log("[PG1 Agent Engine] Self-healing bridge active.");
+  // Force cache-busting reload if not already reloaded in this session
+  const scriptTag = document.querySelector("script[src*='agent-engine.js']");
+  if (scriptTag && !window.PG1_RELOADED) {
+    window.PG1_RELOADED = true;
+    const freshScript = document.createElement("script");
+    freshScript.src = "agent-engine.js?v=" + Date.now();
+    scriptTag.parentNode.replaceChild(freshScript, scriptTag);
+    return;
+  }
+
+  console.log("[PG1 Agent Engine] Fresh un-cached bridge active.");
 
   let sessionHistory = [];
   let pendingImageBase64 = null;
@@ -50,7 +59,6 @@
     return "";
   }
 
-  // Hidden file input for capturing images safely with compression
   const fileInput = document.createElement("input");
   fileInput.type = "file";
   fileInput.accept = "image/*";
@@ -126,12 +134,11 @@
           systemInstruction: { parts: [{ text: "You are the PG1 Sovereign Engine AI Agent. Answer directly, concisely, and accurately based on the provided image." }] }
         });
 
-        // List of endpoints to try automatically if one fails (self-healing fallback)
+        // Using latest stable endpoints with up-to-date models
         const endpoints = [
-          "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent",
-          "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+          "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
           "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent",
-          "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+          "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
         ];
 
         let success = false;
@@ -147,16 +154,14 @@
               output = data.candidates[0].content.parts[0].text;
               success = true;
               break;
-            } else if (data.error) {
-              console.warn(`Endpoint ${ep} returned error, trying next...`, data.error);
             }
           } catch (e) {
-            console.warn(`Endpoint ${ep} failed, trying next...`, e);
+            console.warn("Endpoint failed, trying next...", e);
           }
         }
 
         if (!success) {
-          output = "API Error: All fallback endpoints exhausted. Please check your API key or network connection.";
+          output = "API Error: Unable to connect via available endpoints. Check network or key.";
         }
       }
 
