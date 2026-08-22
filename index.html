@@ -127,7 +127,7 @@
       scroll-behavior: smooth;
       -webkit-overflow-scrolling: touch;
       scrollbar-width: none;
-      padding: 0 12px;
+      padding: 0;
     }
 
     .swipe-container::-webkit-scrollbar {
@@ -135,12 +135,13 @@
     }
 
     .tab-view {
-      flex: 0 0 100%;
-      width: 100%;
+      flex: 0 0 100vw;
+      width: 100vw;
       height: 100%;
       scroll-snap-align: start;
+      scroll-snap-stop: always;
       overflow-y: auto;
-      padding-bottom: 70px;
+      padding: 0 12px 70px 12px;
     }
 
     .panel-card {
