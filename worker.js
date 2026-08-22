@@ -75,53 +75,30 @@ export default {
         body.tools = toolsConfig;
       }
 
-      // Comprehensive fallback pool to completely bypass 503 capacity spikes
       const modelsToTry = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-1.5-flash"];
 
-      async function callGeminiWithRetry(modelName, payload) {
+      async function callGemini(modelName, payload) {
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-        let delay = 1000;
-        
-        for (let attempt = 1; attempt <= 2; attempt++) {
-          try {
-            const res = await fetch(endpoint, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payload)
-            });
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
 
-            if (res.ok) {
-              return await res.json();
-            }
-
-            const errBody = await res.text();
-            if (res.status === 503 || res.status === 429) {
-              if (attempt < 2) {
-                await new Promise(r => setTimeout(r, delay));
-                delay *= 2;
-                continue;
-              }
-            }
-            throw new Error(`API Error (${res.status}): ${errBody}`);
-          } catch (err) {
-            if (attempt === 2) throw err;
-            await new Promise(r => setTimeout(r, delay));
-            delay *= 2;
-          }
+        if (res.ok) {
+          return await res.json();
         }
+        const errText = await res.text();
+        throw new Error(`API Error (${res.status}): ${errText}`);
       }
 
       let data = null;
-      let usedModel = "gemini-3.7-flash";
-
-      // Loop through fallback models automatically on failure
       for (const m of modelsToTry) {
         try {
-          data = await callGeminiWithRetry(m, body);
-          usedModel = m;
+          data = await callGemini(m, body);
           break;
         } catch (e) {
-          console.warn(`Model ${m} unavailable, rotating to fallback...`, e.message);
+          console.warn(`Model ${m} failed:`, e.message);
         }
       }
 
@@ -153,12 +130,17 @@ export default {
               });
               if (fileGetRes.ok) {
                 const fileJson = await fileGetRes.json();
-                const binString = atob(fileJson.content.replace(/\s/g, ''));
-                const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0));
-                const decodedContent = new TextDecoder().decode(bytes);
+                let decodedContent = "";
+                if (fileJson.encoding === "base64") {
+                  const binString = atob(fileJson.content.replace(/\s/g, ''));
+                  const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0));
+                  decodedContent = new TextDecoder().decode(bytes);
+                } else {
+                  decodedContent = fileJson.content || "";
+                }
                 toolOutput = { status: "SUCCESS", file_content: decodedContent };
               } else {
-                toolOutput = { status: "ERROR", message: "Could not fetch file from repository." };
+                toolOutput = { status: "ERROR", message: "File not found or invalid path." };
               }
             } catch (e) {
               toolOutput = { status: "ERROR", message: e.message };
@@ -211,10 +193,9 @@ export default {
             }]
           });
 
-          // Re-run with fallbacks for post-tool completion
           for (const m of modelsToTry) {
             try {
-              data = await callGeminiWithRetry(m, body);
+              data = await callGemini(m, body);
               break;
             } catch (e) {
               console.warn(`Tool completion fallback failed on model ${m}:`, e.message);
@@ -227,8 +208,8 @@ export default {
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
       });
     } catch (err) {
-      return new Response(JSON.stringify({ error: err.message }), {
-        status: 500,
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: `Engine Error: ${err.message}` }] }, role: "model" }] }), {
+        status: 200,
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
       });
     }
