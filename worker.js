@@ -1,8 +1,21 @@
 addEventListener('fetch', event => {
-  event.respondWith(handleRequest(event.request));
+  event.respondWith(handleRequest(event.request).catch(err => new Response(JSON.stringify({ error: err.message }), {
+    status: 500,
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+  })));
 });
 
 async function handleRequest(request) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Gemini-API-Key'
+      }
+    });
+  }
+
   const body = await request.json();
   const apiKey = request.headers.get('X-Gemini-API-Key');
 
@@ -12,9 +25,9 @@ async function handleRequest(request) {
     body: JSON.stringify(body)
   });
 
-  let responseData = await response.json();
+  const responseData = await response.json();
 
-  if (responseData.candidates && responseData.candidates[0].content && responseData.candidates[0].content.parts) {
+  if (responseData?.candidates?.[0]?.content?.parts) {
     const parts = responseData.candidates[0].content.parts;
     const hasFunctionCall = parts.some(part => part.functionCall);
     
