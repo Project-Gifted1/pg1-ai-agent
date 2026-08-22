@@ -7,6 +7,7 @@
   let sessionHistory = [];
   let totalBytesProcessed = 0;
   let totalRequests = 0;
+  let pendingBase64Payload = null;
 
   function parseMarkdownToHTML(text) {
     if (!text) return "";
@@ -40,27 +41,33 @@
     });
   }
 
-  function extractBase64FromDOM() {
-    // Check direct variables on global window scope
-    if (window.currentAttachedBase64) return window.currentAttachedBase64;
-    if (window.pendingImageBase64) return window.pendingImageBase64;
-    if (window.attachedFileBase64) return window.attachedFileBase64;
-
-    // Scan all DOM img nodes for base64 source data
-    const imgs = Array.from(document.querySelectorAll("img"));
-    for (let i = imgs.length - 1; i >= 0; i--) {
-      const src = imgs[i].src || "";
-      if (src.startsWith("data:image")) {
-        return src;
+  // Bind to any file inputs on the page to intercept uploads
+  function bindFileInputListeners() {
+    const fileInputs = document.querySelectorAll("input[type='file']");
+    fileInputs.forEach(input => {
+      if (!input.dataset.pg1Bound) {
+        input.dataset.pg1Bound = "true";
+        input.addEventListener("change", (e) => {
+          const file = e.target.files[0];
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = function (event) {
+              pendingBase64Payload = event.target.result;
+              console.log("[PG1 Agent Engine] Base64 Image Payload Captured.");
+            };
+            reader.readAsDataURL(file);
+          }
+        });
       }
-    }
-
-    return null;
+    });
   }
 
   async function executeViaWorker(promptText) {
     try {
-      const base64Image = extractBase64FromDOM();
+      // Re-scan inputs in case one was dynamically generated
+      bindFileInputListeners();
+
+      const base64Image = pendingBase64Payload;
 
       const userParts = [];
       if (base64Image) {
@@ -84,6 +91,9 @@
         image: base64Image
       };
 
+      // Clear pending payload immediately so subsequent requests don't duplicate it
+      pendingBase64Payload = null;
+
       const response = await fetch(WORKER_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -97,11 +107,6 @@
         role: "model",
         parts: [{ text: responseText }]
       });
-
-      // Clear cached image variables after sending
-      if (window.currentAttachedBase64) window.currentAttachedBase64 = null;
-      if (window.pendingImageBase64) window.pendingImageBase64 = null;
-      if (window.attachedFileBase64) window.attachedFileBase64 = null;
 
       const payloadSize = new Blob([JSON.stringify(data)]).size;
       updateDashboardMetrics(payloadSize);
@@ -134,4 +139,7 @@
       }
     };
   }
+
+  document.addEventListener("DOMContentLoaded", bindFileInputListeners);
+  setInterval(bindFileInputListeners, 1000);
 })();
