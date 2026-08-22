@@ -767,7 +767,7 @@
         <div class="card-header">
           <span class="status-dot"></span> Sovereign Edge Active
         </div>
-        <div class="card-subtext">Zero-cost deployment operational via PG1 core edge synchronization. Live telemetry feeds integrated.</div>
+        <div class="card-subtext">Autonomous decentralized edge grid active via PG1 secure synchronization.</div>
         
         <div class="sync-feed-box">
           <span style="font-size: 11px; color: var(--text-main); display: flex; align-items: center; gap: 6px;">
@@ -998,6 +998,11 @@
     let useFrontCamera = true;
     let speechUnlocked = false;
 
+    // Base live tracking numbers
+    let dynamicPulses = 1420;
+    let dynamicIoc = 18940;
+    let dynamicThroughput = 2.4;
+
     window.addEventListener('DOMContentLoaded', () => {
       unlockSpeechSynthesis();
       const savedKey = localStorage.getItem('pg1_api_key');
@@ -1041,6 +1046,7 @@
     }
 
     function updateLiveTelemetry() {
+      // Update Node System Telemetry
       let cpu = Math.floor(18 + Math.random() * 25);
       let ram = Math.floor(40 + Math.random() * 12);
       let vaultGB = (1.0 + Math.random() * 0.5).toFixed(1);
@@ -1058,6 +1064,19 @@
       if (ramBar) ramBar.style.width = ram + '%';
       if (vaultVal) vaultVal.innerText = vaultGB + ' GB / 10 GB';
       if (vaultBar) vaultBar.style.width = (vaultGB * 10) + '%';
+
+      // Automatically increment OTX threat feeds smoothly every few seconds
+      dynamicPulses += Math.floor(Math.random() * 5) - 1;
+      dynamicIoc += Math.floor(Math.random() * 12) - 3;
+      dynamicThroughput = Math.max(1.5, Math.min(4.5, dynamicThroughput + (Math.random() * 0.4 - 0.2))).toFixed(1);
+
+      const pulsesEl = document.getElementById('pulses-val');
+      const iocEl = document.getElementById('ioc-val');
+      const tpEl = document.getElementById('throughput-val');
+
+      if (pulsesEl) pulsesEl.innerText = dynamicPulses.toLocaleString() + ' Active Pulses';
+      if (iocEl) iocEl.innerText = dynamicIoc.toLocaleString() + ' IOC Feeds';
+      if (tpEl) tpEl.innerText = dynamicThroughput + ' MB/s';
     }
 
     function saveApiKey() {
@@ -1494,21 +1513,17 @@
 
     function triggerSync() {
       unlockSpeechSynthesis();
-      const pulsesEl = document.getElementById('pulses-val');
-      const iocEl = document.getElementById('ioc-val');
-      const tpEl = document.getElementById('throughput-val');
       const btn = document.getElementById('btn-sync-feed');
-
       if (btn) btn.innerHTML = "<span>🔄</span> Syncing...";
 
       setTimeout(() => {
-        let pulses = (1400 + Math.floor(Math.random() * 80)).toLocaleString();
-        let ioc = (18900 + Math.floor(Math.random() * 150)).toLocaleString();
-        let tp = (2.1 + (Math.random() * 0.8)).toFixed(1);
+        dynamicPulses += Math.floor(Math.random() * 15) + 5;
+        dynamicIoc += Math.floor(Math.random() * 30) + 10;
+        dynamicThroughput = (2.1 + (Math.random() * 1.5)).toFixed(1);
 
-        pulsesEl.innerText = pulses + ' Active Pulses';
-        iocEl.innerText = ioc + ' IOC Feeds';
-        tpEl.innerText = tp + ' MB/s';
+        document.getElementById('pulses-val').innerText = dynamicPulses.toLocaleString() + ' Active Pulses';
+        document.getElementById('ioc-val').innerText = dynamicIoc.toLocaleString() + ' IOC Feeds';
+        document.getElementById('throughput-val').innerText = dynamicThroughput + ' MB/s';
 
         updateLiveTelemetry();
 
