@@ -7,7 +7,6 @@
   let sessionHistory = [];
   let totalBytesProcessed = 0;
   let totalRequests = 0;
-  let pendingBase64Payload = null;
 
   function parseMarkdownToHTML(text) {
     if (!text) return "";
@@ -41,33 +40,32 @@
     });
   }
 
-  // Bind to any file inputs on the page to intercept uploads
-  function bindFileInputListeners() {
-    const fileInputs = document.querySelectorAll("input[type='file']");
-    fileInputs.forEach(input => {
-      if (!input.dataset.pg1Bound) {
-        input.dataset.pg1Bound = "true";
-        input.addEventListener("change", (e) => {
-          const file = e.target.files[0];
-          if (file) {
-            const reader = new FileReader();
-            reader.onload = function (event) {
-              pendingBase64Payload = event.target.result;
-              console.log("[PG1 Agent Engine] Base64 Image Payload Captured.");
-            };
-            reader.readAsDataURL(file);
-          }
-        });
+  // Extract base64 from window file object or inline img tag
+  async function resolveImageBase64() {
+    const rawFile = window.attachedFile || window.pendingFile || window.currentFile;
+    if (rawFile && rawFile instanceof File) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(rawFile);
+      });
+    }
+
+    const imgElements = document.querySelectorAll("img");
+    for (let i = imgElements.length - 1; i >= 0; i--) {
+      const src = imgElements[i].src || "";
+      if (src.startsWith("data:image")) {
+        return src;
       }
-    });
+    }
+
+    return null;
   }
 
   async function executeViaWorker(promptText) {
     try {
-      // Re-scan inputs in case one was dynamically generated
-      bindFileInputListeners();
-
-      const base64Image = pendingBase64Payload;
+      const base64Image = await resolveImageBase64();
 
       const userParts = [];
       if (base64Image) {
@@ -91,9 +89,6 @@
         image: base64Image
       };
 
-      // Clear pending payload immediately so subsequent requests don't duplicate it
-      pendingBase64Payload = null;
-
       const response = await fetch(WORKER_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -108,6 +103,10 @@
         parts: [{ text: responseText }]
       });
 
+      window.attachedFile = null;
+      window.pendingFile = null;
+      window.currentFile = null;
+
       const payloadSize = new Blob([JSON.stringify(data)]).size;
       updateDashboardMetrics(payloadSize);
 
@@ -117,29 +116,24 @@
     }
   }
 
-  if (typeof window.sendTextPromptToGemini === "function") {
-    window.sendTextPromptToGemini = async function (promptText) {
-      const chatArea = document.getElementById("terminal-chat-area");
+  window.sendTextPromptToGemini = async function (promptText) {
+    const chatArea = document.getElementById("terminal-chat-area");
 
-      if (chatArea) {
-        const userBubble = document.createElement("div");
-        userBubble.className = "chat-bubble user-bubble";
-        userBubble.innerHTML = `<div class="bubble-text">${parseMarkdownToHTML(promptText)}</div>`;
-        chatArea.appendChild(userBubble);
-      }
+    if (chatArea) {
+      const userBubble = document.createElement("div");
+      userBubble.className = "chat-bubble user-bubble";
+      userBubble.innerHTML = `<div class="bubble-text">${parseMarkdownToHTML(promptText)}</div>`;
+      chatArea.appendChild(userBubble);
+    }
 
-      const output = await executeViaWorker(promptText);
+    const output = await executeViaWorker(promptText);
 
-      if (chatArea) {
-        const aiBubble = document.createElement("div");
-        aiBubble.className = "chat-bubble ai-bubble";
-        aiBubble.innerHTML = `<div class="bubble-text">${parseMarkdownToHTML(output)}</div>`;
-        chatArea.appendChild(aiBubble);
-        chatArea.scrollTop = chatArea.scrollHeight;
-      }
-    };
-  }
-
-  document.addEventListener("DOMContentLoaded", bindFileInputListeners);
-  setInterval(bindFileInputListeners, 1000);
+    if (chatArea) {
+      const aiBubble = document.createElement("div");
+      aiBubble.className = "chat-bubble ai-bubble";
+      aiBubble.innerHTML = `<div class="bubble-text">${parseMarkdownToHTML(output)}</div>`;
+      chatArea.appendChild(aiBubble);
+      chatArea.scrollTop = chatArea.scrollHeight;
+    }
+  };
 })();
