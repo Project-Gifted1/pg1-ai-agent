@@ -70,9 +70,29 @@ export default {
         }
       ];
 
-      let contents = history || [];
-      
-      if (contents.length === 0) {
+      let contents = [];
+
+      // Process history if available
+      if (Array.isArray(history) && history.length > 0) {
+        contents = history.map(turn => {
+          if (turn.role === "user" && turn.parts) {
+            const cleanParts = turn.parts.map(part => {
+              if (part.inlineData) {
+                return {
+                  inline_data: {
+                    mime_type: part.inlineData.mimeType || "image/png",
+                    data: part.inlineData.data
+                  }
+                };
+              }
+              return part;
+            });
+            return { role: turn.role, parts: cleanParts };
+          }
+          return turn;
+        });
+      } else {
+        // Fallback for single requests
         const parts = [];
         if (image) {
           parts.push({
@@ -90,7 +110,7 @@ export default {
 
       const systemInstruction = {
         parts: [{ 
-          text: "You are PG1.Agent, an autonomous AI infrastructure node operating inside Project Gifted1. You speak with direct authority as PG1.Agent. Execute tools automatically to inspect network data, analyze images, perform lookups, and execute tasks." 
+          text: "You are PG1.Agent, an autonomous AI infrastructure node operating inside Project Gifted1. You speak with direct authority as PG1.Agent. Execute tools automatically to inspect network data, analyze images directly, perform lookups, and execute tasks." 
         }]
       };
 
