@@ -998,6 +998,7 @@
     let speechUnlocked = false;
 
     window.addEventListener('DOMContentLoaded', () => {
+      unlockSpeechSynthesis();
       const savedKey = localStorage.getItem('pg1_api_key');
       if (savedKey) {
         document.getElementById('api-key-input').value = savedKey;
@@ -1011,6 +1012,7 @@
       }
     });
 
+    // Explicitly unlock speech engine context for mobile Safari / iOS restrictions
     function unlockSpeechSynthesis() {
       if (speechUnlocked || !('speechSynthesis' in window)) return;
       try {
@@ -1160,7 +1162,6 @@
       }
     }
 
-    // Capture current frame from video stream as base64 JPEG
     function captureVideoFrameAsBase64() {
       const videoElement = document.getElementById('camera-stream');
       if (!states.video || !videoElement || videoElement.readyState < 2) return null;
@@ -1177,7 +1178,6 @@
       }
     }
 
-    // Helper to convert blob to base64
     function blobToBase64(blob) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -1392,10 +1392,8 @@
       chatArea.appendChild(aiBubble);
       chatArea.scrollTop = chatArea.scrollHeight;
 
-      // Construct user content parts (supporting text, camera frame, and audio blob if available)
       const userParts = [{ text: promptText }];
 
-      // 1. Capture and attach live video frame if video is ON
       const base64Frame = captureVideoFrameAsBase64();
       if (base64Frame) {
         userParts.push({
@@ -1406,7 +1404,6 @@
         });
       }
 
-      // 2. Attach recorded audio clip if available
       if (lastRecordedAudioBlob) {
         try {
           const base64Audio = await blobToBase64(lastRecordedAudioBlob);
@@ -1416,7 +1413,7 @@
               data: base64Audio
             }
           });
-          lastRecordedAudioBlob = null; // reset after sending
+          lastRecordedAudioBlob = null;
         } catch (e) {}
       }
 
