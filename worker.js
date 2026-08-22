@@ -49,7 +49,7 @@ export default {
               parameters: {
                 type: "OBJECT",
                 properties: {
-                  file_path: { type: "STRING", description: "The path of the file to fetch, e.g. index.html" }
+                  file_path: { type: "STRING", description: "The path of the file to fetch, e.g. index.html or agent-engine.js" }
                 },
                 required: ["file_path"]
               }
