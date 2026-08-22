@@ -1,7 +1,7 @@
-// agent-engine.js - Complete Sovereign Multimodal Bridge
+// agent-engine.js - Bulletproof Sovereign Multimodal Bridge
 
 (function () {
-  console.log("[PG1 Agent Engine] Complete Multimodal bridge active.");
+  console.log("[PG1 Agent Engine] Bulletproof bridge active.");
 
   let sessionHistory = [];
   let pendingImageBase64 = null;
@@ -28,12 +28,28 @@
   }
 
   function getApiKey() {
-    const stored = localStorage.getItem("pg1_master_key") || localStorage.getItem("gemini_key") || localStorage.getItem("apiKey");
-    if (stored) return stored;
-    const dashInput = document.querySelector("input[type='password'], input[type='text']");
-    if (dashInput && dashInput.value.trim().length > 10) {
-      return dashInput.value.trim();
+    // Check all possible storage locations
+    let key = localStorage.getItem("pg1_master_key") || localStorage.getItem("gemini_key") || localStorage.getItem("apiKey") || sessionStorage.getItem("pg1_active_key");
+    if (key && key.trim().length > 10) return key.trim();
+
+    // Check DOM input fields across tabs
+    const inputs = document.querySelectorAll("input[type='password'], input[type='text']");
+    for (let input of inputs) {
+      if (input.value && input.value.trim().length > 10) {
+        key = input.value.trim();
+        sessionStorage.setItem("pg1_active_key", key);
+        return key;
+      }
     }
+
+    // If still missing, prompt user once securely
+    key = prompt("Please enter your Gemini API Key for this session:");
+    if (key && key.trim().length > 10) {
+      key = key.trim();
+      sessionStorage.setItem("pg1_active_key", key);
+      return key;
+    }
+
     return "";
   }
 
@@ -63,8 +79,8 @@
         
         const chatContainer = getChatContainer();
         const imgPreviewDiv = document.createElement("div");
-        imgPreviewDiv.style.cssText = "margin:10px 0;";
-        imgPreviewDiv.innerHTML = `<img src="${pendingImageBase64}" style="max-width:180px; border-radius:8px; border:1px solid #d1d5db;"/><div style="font-size:12px; color:#4b5563; margin-top:4px;">[Image Ready]</div>`;
+        imgPreviewDiv.style.cssText = "background:#eef2ff; padding:12px 16px; margin:10px 0; border-radius:12px; word-break:break-word;";
+        imgPreviewDiv.innerHTML = `<img src="${pendingImageBase64}" style="max-width:220px; border-radius:8px; border:1px solid #d1d5db; display:block; margin-bottom:6px;"/><span style="font-size:12px; color:#4b5563;">[Attached Image Ready]</span>`;
         chatContainer.appendChild(imgPreviewDiv);
         window.scrollTo(0, document.body.scrollHeight);
       };
@@ -76,17 +92,18 @@
   async function executePrompt() {
     try {
       const inputEl = document.querySelector("input[type='text'], textarea");
-      const promptText = inputEl ? inputEl.value.trim() : "";
+      const promptText = inputEl && inputEl !== fileInput ? inputEl.value.trim() : "";
       if (inputEl && inputEl !== fileInput) inputEl.value = "";
 
       const chatContainer = getChatContainer();
       if (!promptText && !pendingImageBase64) return;
 
-      // User Bubble
-      const userDiv = document.createElement("div");
-      userDiv.style.cssText = "background:#eef2ff; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#111827; word-break:break-word;";
-      userDiv.innerText = promptText || "Sent an image for analysis.";
-      chatContainer.appendChild(userDiv);
+      if (promptText) {
+        const userDiv = document.createElement("div");
+        userDiv.style.cssText = "background:#eef2ff; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#111827; word-break:break-word;";
+        userDiv.innerText = promptText;
+        chatContainer.appendChild(userDiv);
+      }
 
       let output = "";
       const activeKey = getApiKey();
@@ -94,7 +111,7 @@
       pendingImageBase64 = null;
 
       if (!activeKey) {
-        output = "PG1 Error: GEMINI_API_KEY missing. Please enter your key in the Dash tab.";
+        output = "PG1 Error: GEMINI_API_KEY missing. Please enter your key.";
       } else {
         const userParts = [];
         if (currentImage) {
@@ -105,14 +122,14 @@
             }
           });
         }
-        userParts.push({ text: promptText || "Analyze this image." });
+        userParts.push({ text: promptText || "Analyze this image accurately." });
 
         const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${activeKey}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [...sessionHistory, { role: "user", parts: userParts }],
-            systemInstruction: { parts: [{ text: "You are the PG1 Sovereign Engine AI Agent. Answer directly, concisely, and authoritatively." }] }
+            systemInstruction: { parts: [{ text: "You are the PG1 Sovereign Engine AI Agent. Answer directly, concisely, and accurately based on the provided image." }] }
           })
         });
 
