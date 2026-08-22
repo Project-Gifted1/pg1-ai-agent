@@ -1,9 +1,11 @@
-// agent-engine.js - Safe DOM Isolation Engine
+// agent-engine.js - Full Autonomous Client Orchestration
 
 (function () {
-  console.log("[PG1 Agent Engine] Autonomous runtime active.");
+  console.log("[PG1 Agent Engine] Full agentic capability runtime initialized.");
 
   const WORKER_URL = "https://pg1-agent-worker.gnfcw9w5rk.workers.dev";
+  const SESSION_ID = "session_" + Math.random().toString(36).substring(2, 9);
+  
   let sessionHistory = [];
   let totalBytesProcessed = 0;
   let totalRequests = 0;
@@ -28,24 +30,32 @@
       const activeTab = document.querySelector('.tab-content:not([style*="display: none"])') || document.body;
       chatArea = document.createElement("div");
       chatArea.id = "terminal-chat-area";
-      chatArea.style.cssText = "padding:10px; margin-bottom: 60px;";
+      chatArea.style.cssText = "padding:10px; margin-bottom:60px;";
       activeTab.appendChild(chatArea);
     }
     return chatArea;
   }
 
-  function updateDashboardMetrics(bytesSent) {
-    totalRequests++;
-    totalBytesProcessed += bytesSent;
-
-    const speedMbps = ((bytesSent * 8) / (1024 * 1024)).toFixed(2);
-    const mbProcessed = (totalBytesProcessed / (1024 * 1024)).toFixed(2);
-
-    const targetEl = document.getElementById("throughput-display") || document.querySelector(".throughput-metric");
-    if (targetEl) {
-      targetEl.innerText = `${speedMbps} Mbps | ${mbProcessed} MB | Requests: ${totalRequests}`;
+  async function fetchTelemetry() {
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telemetryRequest: true })
+      });
+      const data = await res.json();
+      if (data.telemetry) {
+        const targetEl = document.getElementById("throughput-display") || document.querySelector(".throughput-metric");
+        if (targetEl) {
+          targetEl.innerText = `Throughput: ${data.telemetry.throughputMbps} Mbps | Active Nodes: ${data.telemetry.activeNodes} | Latency: ${data.telemetry.latencyMs}ms`;
+        }
+      }
+    } catch (e) {
+      console.warn("[PG1 Telemetry] Polling skipped:", e.message);
     }
   }
+
+  setInterval(fetchTelemetry, 10000);
 
   document.addEventListener("change", (e) => {
     if (e.target && e.target.type === "file") {
@@ -54,7 +64,6 @@
         const reader = new FileReader();
         reader.onload = (event) => {
           activeBase64Image = event.target.result;
-          console.log("[PG1 Engine] Image Base64 loaded.");
         };
         reader.readAsDataURL(file);
       }
@@ -84,14 +93,15 @@
           }
         });
       }
-      userParts.push({ text: promptText || "Analyze this attached image." });
+      userParts.push({ text: promptText || "Analyze current system telemetry and state." });
 
       sessionHistory.push({ role: "user", parts: userParts });
 
       const requestBody = {
-        message: promptText || "Analyze this attached image.",
+        message: promptText || "Analyze current system telemetry and state.",
         history: sessionHistory,
-        image: base64Image
+        image: base64Image,
+        sessionId: SESSION_ID
       };
 
       activeBase64Image = null;
@@ -106,9 +116,6 @@
       const responseText = data.response || "No output returned from execution worker.";
 
       sessionHistory.push({ role: "model", parts: [{ text: responseText }] });
-
-      const payloadSize = new Blob([JSON.stringify(data)]).size;
-      updateDashboardMetrics(payloadSize);
 
       return responseText;
     } catch (err) {
