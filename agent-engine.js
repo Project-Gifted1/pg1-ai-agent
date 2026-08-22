@@ -1,9 +1,8 @@
-// agent-engine.js - Sovereign Hybrid Bridge with Image Support
+// agent-engine.js - Direct Multimodal Sovereign Bridge
 
 (function () {
-  console.log("[PG1 Agent Engine] Image-enabled bridge active.");
+  console.log("[PG1 Agent Engine] Direct Multimodal active.");
 
-  const WORKER_URL = "https://pg1-agent-worker.gnfcw9w5rk.workers.dev";
   let sessionHistory = [];
   let pendingImageBase64 = null;
 
@@ -53,18 +52,17 @@
 
   async function executePrompt() {
     const inputEl = document.querySelector("input[type='text'], textarea, input");
-    const promptText = inputEl ? inputEl.value.trim() : "Analyze this image";
+    const promptText = inputEl ? inputEl.value.trim() : "";
     if (inputEl) inputEl.value = "";
 
     // Clear old errors/fallbacks
     document.querySelectorAll("div, p, span").forEach(el => {
-      if (el.innerText && (el.innerText.includes("Load failed") || el.innerText.includes("GEMINI_API_KEY missing") || el.innerText.includes("Bridge Connection Error") || el.innerText.includes("Sovereign Node Local Response"))) {
+      if (el.innerText && (el.innerText.includes("Load failed") || el.innerText.includes("GEMINI_API_KEY missing") || el.innerText.includes("Bridge Connection Error") || el.innerText.includes("Sovereign Node Local Response") || el.innerText.includes("Processing query"))) {
         el.remove();
       }
     });
 
     const chatContainer = getChatContainer();
-
     if (!promptText && !pendingImageBase64) return;
 
     // User Bubble
@@ -76,61 +74,40 @@
     let output = "";
     const savedKey = localStorage.getItem("pg1_master_key") || "";
     let currentImage = pendingImageBase64;
-    pendingImageBase64 = null; // Reset after capture
+    pendingImageBase64 = null;
 
-    try {
-      // Try Cloudflare Worker first
-      const response = await fetch(WORKER_URL, {
-        method: "POST",
-        mode: "cors",
-        headers: { 
-          "Content-Type": "application/json",
-          "x-gemini-key": savedKey
-        },
-        body: JSON.stringify({
-          message: promptText,
-          history: sessionHistory,
-          image: currentImage
-        })
-      });
-
-      const data = await response.json();
-      output = data.response || data.text || data.content || data.output;
-      if (!output) throw new Error("Empty worker response");
-    } catch (err) {
-      // Direct Gemini API fallback with multimodal support
-      if (!savedKey) {
-        output = "PG1 Error: GEMINI_API_KEY missing. Please enter your key in the Dash tab.";
-      } else {
-        try {
-          const userParts = [];
-          if (currentImage) {
-            userParts.push({
-              inlineData: {
-                mimeType: "image/jpeg",
-                data: currentImage.replace(/^data:image\/\w+;base64,/, "")
-              }
-            });
-          }
-          userParts.push({ text: promptText });
-
-          const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${savedKey}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [...sessionHistory, { role: "user", parts: userParts }],
-              systemInstruction: { parts: [{ text: "You are the PG1 Sovereign Engine AI Agent. Answer directly, concisely, and authoritatively while inspecting user images." }] }
-            })
+    if (!savedKey) {
+      output = "PG1 Error: GEMINI_API_KEY missing. Please enter your key in the Dash tab.";
+    } else {
+      try {
+        const userParts = [];
+        if (currentImage) {
+          userParts.push({
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: currentImage.replace(/^data:image\/\w+;base64,/, "")
+            }
           });
-          const directData = await directRes.json();
-          output = directData.candidates?.[0]?.content?.parts?.[0]?.text || `API Error: ${JSON.stringify(directData)}`;
-        } catch (apiErr) {
-          output = `PG1 Direct Connection Error: ${apiErr.message}`;
         }
+        userParts.push({ text: promptText || "Analyze this image." });
+
+        const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${savedKey}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [...sessionHistory, { role: "user", parts: userParts }],
+            systemInstruction: { parts: [{ text: "You are the PG1 Sovereign Engine AI Agent. Answer directly, concisely, and authoritatively. You have full vision capabilities to analyze any attached images or screenshots." }] }
+          })
+        });
+
+        const directData = await directRes.json();
+        output = directData.candidates?.[0]?.content?.parts?.[0]?.text || `API Error: ${JSON.stringify(directData)}`;
+      } catch (apiErr) {
+        output = `PG1 Direct Connection Error: ${apiErr.message}`;
       }
     }
 
-    sessionHistory.push({ role: "user", parts: [{ text: promptText }] });
+    sessionHistory.push({ role: "user", parts: [{ text: promptText || "Image attached" }] });
     sessionHistory.push({ role: "model", parts: [{ text: output }] });
 
     const aiDiv = document.createElement("div");
