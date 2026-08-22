@@ -76,7 +76,6 @@ export default {
       }
 
       let requestedModel = request.headers.get("X-Gemini-Model") || "gemini-3.7-flash";
-      // Active, live fallback model stack
       const modelsToTry = [requestedModel, "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"];
 
       async function callGeminiWithRetry(modelName, payload) {
@@ -202,7 +201,7 @@ export default {
 
           body.contents.push(candidate.content);
           body.contents.push({
-            role: "function",
+            role: "user",
             parts: [{
               functionResponse: {
                 name: fc.name,
