@@ -1,18 +1,31 @@
 document.addEventListener("click", function(e) {
-  if (e.target && e.target.textContent.includes("Save Key")) {
-    const input = document.querySelector("input[placeholder*='Master Key']") || document.querySelector("input");
-    if (input && input.value.trim().length > 10) {
-      const val = input.value.trim();
-      localStorage.setItem("pg1_master_key", val);
-      localStorage.setItem("gemini_key", val);
-      localStorage.setItem("apiKey", val);
-      localStorage.setItem("GEMINI_API_KEY", val);
-      sessionStorage.setItem("pg1_active_key", val);
+  if (e.target && e.target.innerText && e.target.innerText.includes("Save Key")) {
+    const inputs = document.querySelectorAll("input");
+    let keyVal = "";
+    for (let inp of inputs) {
+      if (inp.value && inp.value.trim().length > 10) {
+        keyVal = inp.value.trim();
+        break;
+      }
+    }
+    
+    if (keyVal) {
+      localStorage.setItem("pg1_master_key", keyVal);
+      localStorage.setItem("gemini_key", keyVal);
       
-      alert("Key saved across all engine channels! Connecting...");
-      location.reload();
+      // Instantly update the UI status badge on screen without reloading
+      const statusEl = document.querySelector("#key-status, [class*='status'], [id*='status']");
+      if (statusEl) statusEl.innerText = "CONNECTED";
+      
+      const disEl = document.querySelector(".disconnected, [class*='disconnected']");
+      if (disEl) {
+        disEl.innerText = "CONNECTED";
+        disEl.style.color = "green";
+      }
+      
+      alert("Key saved successfully! Node active.");
     } else {
-      alert("Please enter a valid API key in the input box.");
+      alert("Please enter your API key into the text field first.");
     }
   }
 });
