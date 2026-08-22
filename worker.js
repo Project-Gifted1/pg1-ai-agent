@@ -1,4 +1,4 @@
-// worker.js - Complete Sovereign Agent Engine (Tools, Memory, Threat Hunting)
+// worker.js - Complete Sovereign Agent Engine (Tools, Memory, Threat Hunting, Vision)
 
 export default {
   async fetch(request, env) {
@@ -12,7 +12,7 @@ export default {
 
     try {
       const body = await request.json();
-      const { message, history, sessionId, telemetryRequest, threatScanRequest } = body;
+      const { message, history, sessionId, telemetryRequest, threatScanRequest, image } = body;
 
       // Telemetry Polling Endpoint
       if (telemetryRequest) {
@@ -55,7 +55,24 @@ export default {
       const systemInstruction = `You are PG1 Sovereign AI Agent. You possess real-time tool execution capabilities. Always execute tools when queried about telemetry, node pings, or threat hunting. Respond with precise, structured output.`;
 
       const contents = history || [];
-      if (message) contents.push({ role: "user", parts: [{ text: message }] });
+      const userParts = [];
+
+      if (image) {
+        userParts.push({
+          inlineData: {
+            mimeType: "image/png",
+            data: image.replace(/^data:image\/\w+;base64,/, "")
+          }
+        });
+      }
+
+      if (message) {
+        userParts.push({ text: message });
+      }
+
+      if (userParts.length > 0) {
+        contents.push({ role: "user", parts: userParts });
+      }
 
       const geminiPayload = {
         contents: contents,
@@ -75,7 +92,7 @@ export default {
       let resData = await geminiResponse.json();
       let candidatePart = resData.candidates?.[0]?.content?.parts?.[0];
 
-      // Tool Call Execution Loop
+      // Autonomous Tool Call Execution Loop
       if (candidatePart?.functionCall) {
         const call = candidatePart.functionCall;
         let toolOutput = {};
@@ -102,7 +119,7 @@ export default {
 
       const finalOutput = resData.candidates?.[0]?.content?.parts?.[0]?.text || "Execution finished with no text output.";
 
-      // KV Persistent Memory
+      // KV Persistent Memory Operations
       if (env.AGENT_MEMORY && sessionId) {
         let memory = [];
         const rawMemory = await env.AGENT_MEMORY.get(sessionId);
