@@ -1,12 +1,11 @@
-// agent-engine.js - Full Cloudflare Worker Sovereign Bridge
-
+// agent-engine.js - Project Gifted1 Sovereign Bridge
 (function () {
-  console.log("[PG1 Agent Engine] Full Cloudflare Worker bridge active.");
+  console.log("[PG1 Agent Engine] Cloudflare Worker bridge active.");
 
   let sessionHistory = [];
   let pendingImageBase64 = null;
 
-  // 1. Permanent Telemetry Fixer
+  // 1. Telemetry Fixer
   setInterval(() => {
     const liveVal = (Math.random() * (12.5 - 2.1) + 2.1).toFixed(2) + " MB/s";
     document.querySelectorAll("span, div, td, p, strong").forEach(el => {
@@ -50,7 +49,6 @@
     return "";
   }
 
-  // Hidden file input for capturing images safely with compression
   const fileInput = document.createElement("input");
   fileInput.type = "file";
   fileInput.accept = "image/*";
@@ -108,7 +106,7 @@
       pendingImageBase64 = null;
 
       if (!activeKey) {
-        output = "PG1 Error: GEMINI_API_KEY missing. Please enter your key.";
+        output = "PG1 Error: GEMINI_API_KEY missing.";
       } else {
         const userParts = [];
         if (currentImage) {
@@ -121,8 +119,8 @@
         }
         userParts.push({ text: promptText || "Analyze this image accurately." });
 
-        // Update this URL to your actual Cloudflare worker endpoint
-        const workerUrl = "https://your-worker-subdomain.workers.dev";
+        // Configured with your verified Cloudflare Worker URL
+        const workerUrl = "https://pg1-worker.gnfcw9w5rk.workers.dev";
 
         const res = await fetch(workerUrl, {
           method: "POST",
