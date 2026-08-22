@@ -1,4 +1,4 @@
-// agent-engine.js - Complete Native Function Override
+// agent-engine.js - Persistent DOM UI Patch
 
 (function () {
   console.log("[PG1 Agent Engine] Autonomous runtime active.");
@@ -22,6 +22,17 @@
       .replace(/\n/g, '<br>');
   }
 
+  function getChatContainer() {
+    let chatArea = document.getElementById("terminal-chat-area") || document.querySelector(".chat-area");
+    if (!chatArea) {
+      chatArea = document.createElement("div");
+      chatArea.id = "terminal-chat-area";
+      chatArea.style.cssText = "padding:10px; overflow-y:auto; max-height:70vh;";
+      document.body.appendChild(chatArea);
+    }
+    return chatArea;
+  }
+
   function updateDashboardMetrics(bytesSent) {
     totalRequests++;
     totalBytesProcessed += bytesSent;
@@ -39,7 +50,6 @@
     });
   }
 
-  // Intercept file input selection
   document.addEventListener("change", (e) => {
     if (e.target && e.target.type === "file") {
       const file = e.target.files[0];
@@ -47,29 +57,18 @@
         const reader = new FileReader();
         reader.onload = (event) => {
           activeBase64Image = event.target.result;
-          console.log("[PG1 Engine] Image Base64 captured.");
         };
         reader.readAsDataURL(file);
       }
     }
   }, true);
 
-  // Extract base64 image payload from DOM or global memory
   function getCurrentImagePayload() {
     if (activeBase64Image) return activeBase64Image;
-
-    const rawFile = window.attachedFile || window.pendingFile || window.currentFile;
-    if (rawFile && rawFile instanceof File) {
-      const reader = new FileReader();
-      reader.readAsDataURL(rawFile);
-    }
-
     const imgs = document.querySelectorAll("img");
     for (let i = imgs.length - 1; i >= 0; i--) {
       const src = imgs[i].src || "";
-      if (src.startsWith("data:image")) {
-        return src;
-      }
+      if (src.startsWith("data:image")) return src;
     }
     return null;
   }
@@ -89,10 +88,7 @@
       }
       userParts.push({ text: promptText || "Analyze this attached image." });
 
-      sessionHistory.push({
-        role: "user",
-        parts: userParts
-      });
+      sessionHistory.push({ role: "user", parts: userParts });
 
       const requestBody = {
         message: promptText || "Analyze this attached image.",
@@ -101,8 +97,6 @@
       };
 
       activeBase64Image = null;
-      window.attachedFile = null;
-      window.pendingFile = null;
 
       const response = await fetch(WORKER_URL, {
         method: "POST",
@@ -113,10 +107,7 @@
       const data = await response.json();
       const responseText = data.response || "No output returned from execution worker.";
 
-      sessionHistory.push({
-        role: "model",
-        parts: [{ text: responseText }]
-      });
+      sessionHistory.push({ role: "model", parts: [{ text: responseText }] });
 
       const payloadSize = new Blob([JSON.stringify(data)]).size;
       updateDashboardMetrics(payloadSize);
@@ -128,7 +119,7 @@
   }
 
   async function handleExecution(promptText) {
-    const chatArea = document.getElementById("terminal-chat-area") || document.querySelector(".chat-area");
+    const chatArea = getChatContainer();
     const inputEl = document.querySelector("input[type='text'], textarea, .command-input");
     const finalPrompt = promptText || (inputEl ? inputEl.value.trim() : "");
 
@@ -136,25 +127,24 @@
 
     if (inputEl) inputEl.value = "";
 
-    if (chatArea && finalPrompt) {
+    if (finalPrompt) {
       const userBubble = document.createElement("div");
       userBubble.className = "chat-bubble user-bubble";
-      userBubble.innerHTML = `<div class="bubble-text">${parseMarkdownToHTML(finalPrompt)}</div>`;
+      userBubble.style.cssText = "background:#eef2ff; padding:12px; margin:8px 0; border-radius:8px;";
+      userBubble.innerHTML = `<div>${parseMarkdownToHTML(finalPrompt)}</div>`;
       chatArea.appendChild(userBubble);
     }
 
     const output = await executeViaWorker(finalPrompt);
 
-    if (chatArea) {
-      const aiBubble = document.createElement("div");
-      aiBubble.className = "chat-bubble ai-bubble";
-      aiBubble.innerHTML = `<div class="bubble-text">${parseMarkdownToHTML(output)}</div>`;
-      chatArea.appendChild(aiBubble);
-      chatArea.scrollTop = chatArea.scrollHeight;
-    }
+    const aiBubble = document.createElement("div");
+    aiBubble.className = "chat-bubble ai-bubble";
+    aiBubble.style.cssText = "background:#f3f4f6; padding:12px; margin:8px 0; border-radius:8px;";
+    aiBubble.innerHTML = `<div>${parseMarkdownToHTML(output)}</div>`;
+    chatArea.appendChild(aiBubble);
+    chatArea.scrollTop = chatArea.scrollHeight;
   }
 
-  // Intercept Send button clicks in capturing phase to block index.html handlers
   window.addEventListener("click", (e) => {
     const btn = e.target.closest("button, .send-btn, #send-btn");
     if (btn && (btn.innerText.includes("Send") || btn.id === "send-btn")) {
@@ -165,12 +155,7 @@
     }
   }, true);
 
-  // Override window entry points
   window.sendTextPromptToGemini = async function (promptText) {
     handleExecution(promptText);
-  };
-
-  window.handleSendMessage = async function () {
-    handleExecution();
   };
 })();
