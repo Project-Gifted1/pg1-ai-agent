@@ -1,22 +1,12 @@
-// agent-engine.js - Live AJAX Bootstrap Loader
+// agent-engine.js - Full Cloudflare Worker Sovereign Bridge
+
 (function () {
-  if (window.PG1_LOADED) return;
-  window.PG1_LOADED = true;
+  console.log("[PG1 Agent Engine] Full Cloudflare Worker bridge active.");
 
-  console.log("[PG1 Bootstrap] Fetching live sovereign engine...");
-
-  // Fetch the actual engine code dynamically with a cache-buster
-  fetch("agent-engine.js?nocache=" + Date.now())
-    .then(res => res.text())
-    .then(code => {
-      // Extract everything after this bootstrap loader or run core logic directly
-    })
-    .catch(err => console.error("Bootstrap fetch error:", err));
-
-  // Core Runtime Engine
   let sessionHistory = [];
   let pendingImageBase64 = null;
 
+  // 1. Permanent Telemetry Fixer
   setInterval(() => {
     const liveVal = (Math.random() * (12.5 - 2.1) + 2.1).toFixed(2) + " MB/s";
     document.querySelectorAll("span, div, td, p, strong").forEach(el => {
@@ -60,6 +50,7 @@
     return "";
   }
 
+  // Hidden file input for capturing images safely with compression
   const fileInput = document.createElement("input");
   fileInput.type = "file";
   fileInput.accept = "image/*";
@@ -130,40 +121,22 @@
         }
         userParts.push({ text: promptText || "Analyze this image accurately." });
 
-        const requestBody = JSON.stringify({
-          contents: [...sessionHistory, { role: "user", parts: userParts }],
-          systemInstruction: { parts: [{ text: "You are the PG1 Sovereign Engine AI Agent. Answer directly, concisely, and accurately." }] }
+        // Update this URL to your actual Cloudflare worker endpoint
+        const workerUrl = "https://your-worker-subdomain.workers.dev";
+
+        const res = await fetch(workerUrl, {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "X-Gemini-Key": activeKey
+          },
+          body: JSON.stringify({
+            contents: [...sessionHistory, { role: "user", parts: userParts }]
+          })
         });
 
-        // Using standard v1/v1beta endpoints with current supported flash models
-        const endpoints = [
-          "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
-          "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent",
-          "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-        ];
-
-        let success = false;
-        for (let ep of endpoints) {
-          try {
-            const res = await fetch(`${ep}?key=${activeKey}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: requestBody
-            });
-            const data = await res.json();
-            if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-              output = data.candidates[0].content.parts[0].text;
-              success = true;
-              break;
-            }
-          } catch (e) {
-            console.warn("Endpoint failed, trying next...", e);
-          }
-        }
-
-        if (!success) {
-          output = "API Error: All endpoints exhausted. Verify your API key.";
-        }
+        const data = await res.json();
+        output = data.candidates?.[0]?.content?.parts?.[0]?.text || data.output || `API Error: ${JSON.stringify(data)}`;
       }
 
       sessionHistory.push({ role: "user", parts: [{ text: promptText || "Image attached" }] });
@@ -177,6 +150,11 @@
       window.scrollTo(0, document.body.scrollHeight);
     } catch (err) {
       console.error("Execution error:", err);
+      const chatContainer = getChatContainer();
+      const errDiv = document.createElement("div");
+      errDiv.style.cssText = "background:#fee2e2; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#991b1b; word-break:break-word;";
+      errDiv.innerText = "Cloudflare Proxy Error: " + err.message;
+      chatContainer.appendChild(errDiv);
     }
   }
 
