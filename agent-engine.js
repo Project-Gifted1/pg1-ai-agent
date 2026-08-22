@@ -1,138 +1,100 @@
-// agent-engine.js - PG1 Autonomous Agent Execution Engine
+// agent-engine.js - PG1 Autonomous Runtime Override
 
-// 1. Tool Definitions Schema
-const agentTools = [
-  {
+(function () {
+  console.log("[PG1 Agent Engine] Autonomous runtime loading...");
+
+  // 1. Tool Schemas
+  const agentTools = [{
     functionDeclarations: [
       {
         name: "execute_system_action",
-        description: "Sends automated HTTP requests to external APIs, local bridge endpoints, or microservices.",
+        description: "Executes an API request or remote proxy task.",
         parameters: {
           type: "OBJECT",
           properties: {
-            endpoint: { type: "STRING", description: "Target URL or local proxy route" },
+            endpoint: { type: "STRING" },
             method: { type: "STRING", enum: ["GET", "POST", "PUT", "DELETE"] },
-            payload: { type: "STRING", description: "Payload or parameters passed to the endpoint" }
+            payload: { type: "STRING" }
           },
           required: ["endpoint", "method"]
         }
-      },
-      {
-        name: "query_device_telemetry",
-        description: "Queries current system state, memory, or edge node network health.",
-        parameters: {
-          type: "OBJECT",
-          properties: {
-            metric: { type: "STRING", description: "Metric type: 'cpu', 'memory', or 'network'" }
-          },
-          required: ["metric"]
-        }
       }
     ]
-  }
-];
+  }];
 
-// 2. Local Action Handlers
-async function handleLocalExecution(functionName, args) {
-  console.log(`[PG1 Engine] Executing Action: ${functionName}`, args);
-
-  if (functionName === "execute_system_action") {
-    try {
-      const options = {
-        method: args.method,
-        headers: { "Content-Type": "application/json" }
-      };
-      if (args.payload && args.method !== "GET") {
-        options.body = typeof args.payload === "string" ? args.payload : JSON.stringify(args.payload);
+  // 2. Action Runner
+  async function handleLocalExecution(functionName, args) {
+    if (functionName === "execute_system_action") {
+      try {
+        const res = await fetch(args.endpoint, { method: args.method, body: args.payload });
+        return await res.text();
+      } catch (err) {
+        return `Execution Error: ${err.message}`;
       }
-      const res = await fetch(args.endpoint, options);
-      const output = await res.text();
-      return `Status ${res.status}: ${output}`;
-    } catch (err) {
-      return `Execution Error: ${err.message}`;
     }
+    return "Unknown action.";
   }
 
-  if (functionName === "query_device_telemetry") {
-    return JSON.stringify({
-      status: "online",
-      requestedMetric: args.metric,
-      timestamp: new Date().toISOString()
-    });
-  }
+  // 3. Loop Engine
+  async function runAutonomousLoop(userObjective, history = [], turnCount = 0) {
+    if (turnCount >= 5) return "Maximum autonomous steps reached.";
+    
+    const apiKey = localStorage.getItem("pg1_api_key");
+    const selectedModel = document.getElementById("model-select")?.value || "gemini-3.6-flash";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey}`;
 
-  return "Unknown tool execution requested.";
-}
+    const currentHistory = history.length > 0 ? history : [
+      { role: "user", parts: [{ text: userObjective }] }
+    ];
 
-// 3. Autonomous Loop
-async function runAgentTurn(userObjective, history = [], turnCount = 0) {
-  const maxTurns = 5; // Guardrail against infinite tool loops
-  if (turnCount >= maxTurns) {
-    return "Reached maximum autonomous execution steps for this turn.";
-  }
-
-  const apiKey = localStorage.getItem("pg1_api_key");
-  if (!apiKey) return "Error: API Key not configured.";
-
-  const selectedModel = document.getElementById("model-select")?.value || "gemini-3.6-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey}`;
-
-  const currentHistory = history.length > 0 ? history : [
-    { role: "user", parts: [{ text: userObjective }] }
-  ];
-
-  const requestBody = {
-    system_instruction: {
-      parts: [{
-        text: "You are PG1.Agent, an autonomous agent capable of calling tools to complete tasks. Use functions directly to accomplish multi-step objectives."
-      }]
-    },
-    contents: currentHistory,
-    tools: agentTools
-  };
-
-  try {
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody)
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: "You are PG1.Agent. Execute tasks autonomously using available tools." }] },
+        contents: currentHistory,
+        tools: agentTools
+      })
     });
 
     const data = await response.json();
     const candidate = data.candidates?.[0]?.content;
-    if (!candidate) return "Execution error: Empty model response.";
-
-    // Check if model called a tool
-    const functionCallPart = candidate.parts?.find(p => p.functionCall);
+    const functionCallPart = candidate?.parts?.find(p => p.functionCall);
 
     if (functionCallPart) {
       const { name, args } = functionCallPart.functionCall;
-      
-      // Execute the local JavaScript function
       const result = await handleLocalExecution(name, args);
 
-      // Append assistant's call and execution result to chat history
       const updatedHistory = [
         ...currentHistory,
         candidate,
-        {
-          role: "function",
-          parts: [{
-            functionResponse: {
-              name: name,
-              response: { output: result }
-            }
-          }]
-        }
+        { role: "function", parts: [{ functionResponse: { name, response: { output: result } } }] }
       ];
 
-      // Automatically run next step
-      return await runAgentTurn(userObjective, updatedHistory, turnCount + 1);
+      return await runAutonomousLoop(userObjective, updatedHistory, turnCount + 1);
     }
 
-    // Return final text output once all tool calls finish
-    return candidate.parts?.[0]?.text || "Task complete.";
-  } catch (err) {
-    return `Agent Loop Error: ${err.message}`;
+    return candidate?.parts?.[0]?.text || "Task finished.";
   }
-}
+
+  // 4. In-Memory Override (Leaves index.html completely untouched)
+  if (typeof window.sendTextPromptToGemini === "function") {
+    const originalSend = window.sendTextPromptToGemini;
+    
+    window.sendTextPromptToGemini = async function (promptText) {
+      // Intercept and pass execution to the autonomous loop engine
+      const output = await runAutonomousLoop(promptText);
+      
+      // Target existing chat bubble container in index.html to render output
+      const chatArea = document.getElementById("terminal-chat-area");
+      if (chatArea) {
+        const aiBubble = document.createElement("div");
+        aiBubble.className = "chat-bubble";
+        aiBubble.innerHTML = `<div class="bubble-text">${output}</div>`;
+        chatArea.appendChild(aiBubble);
+        chatArea.scrollTop = chatArea.scrollHeight;
+      }
+    };
+    console.log("[PG1 Agent Engine] Hooked into UI successfully.");
+  }
+})();
