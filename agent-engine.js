@@ -7,11 +7,10 @@
   let sessionHistory = [];
   let totalBytesProcessed = 0;
   let totalRequests = 0;
-  let currentBase64Image = null;
 
   function parseMarkdownToHTML(text) {
     if (!text) return "";
-    let html = text
+    return text
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
@@ -22,7 +21,6 @@
       .replace(/^\*\s+(.*)$/gbm, '<ul><li>$1</li></ul>')
       .replace(/<\/ul>\n<ul>/g, '')
       .replace(/\n/g, '<br>');
-    return html;
   }
 
   function updateDashboardMetrics(bytesSent) {
@@ -42,47 +40,45 @@
     });
   }
 
-  function setupFileAttachmentHook() {
-    const attachBtn = document.getElementById("attach-btn") || document.querySelector(".attach-btn") || document.querySelector("button[title*='Attach']");
-    if (!attachBtn) return;
+  function getAttachedImageData() {
+    const chatArea = document.getElementById("terminal-chat-area");
+    if (!chatArea) return null;
 
-    let fileInput = document.getElementById("pg1-file-input");
-    if (!fileInput) {
-      fileInput = document.createElement("input");
-      fileInput.type = "file";
-      fileInput.id = "pg1-file-input";
-      fileInput.accept = "image/*";
-      fileInput.style.display = "none";
-      document.body.appendChild(fileInput);
+    const imgs = chatArea.querySelectorAll("img");
+    if (imgs.length === 0) return null;
+
+    const lastImg = imgs[imgs.length - 1];
+    if (lastImg && lastImg.src && lastImg.src.startsWith("data:image")) {
+      return lastImg.src;
     }
-
-    attachBtn.onclick = () => fileInput.click();
-
-    fileInput.onchange = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = function (event) {
-        currentBase64Image = event.target.result;
-        alert(`Image Attached: ${file.name}`);
-      };
-      reader.readAsDataURL(file);
-    };
+    return null;
   }
 
   async function executeViaWorker(promptText) {
     try {
-      const userPayloadPart = { role: "user", parts: [{ text: promptText }] };
-      sessionHistory.push(userPayloadPart);
+      const base64Image = getAttachedImageData();
+
+      const userParts = [];
+      if (base64Image) {
+        userParts.push({
+          inlineData: {
+            mimeType: "image/jpeg",
+            data: base64Image.replace(/^data:image\/\w+;base64,/, "")
+          }
+        });
+      }
+      userParts.push({ text: promptText });
+
+      sessionHistory.push({
+        role: "user",
+        parts: userParts
+      });
 
       const requestBody = {
         message: promptText,
         history: sessionHistory,
-        image: currentBase64Image
+        image: base64Image
       };
-
-      currentBase64Image = null; // Clear attachment after read
 
       const response = await fetch(WORKER_URL, {
         method: "POST",
@@ -129,7 +125,4 @@
       }
     };
   }
-
-  document.addEventListener("DOMContentLoaded", setupFileAttachmentHook);
-  setTimeout(setupFileAttachmentHook, 1000);
 })();
