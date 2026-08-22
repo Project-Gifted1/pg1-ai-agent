@@ -34,27 +34,27 @@ export default {
       // 1. Permanent Sovereign Identity & Multimedia Capability Context
       const systemInstruction = {
         role: "system",
-        parts: [{ text: "You are PG1 Agent, operating under 100% sovereign ownership for Project Gifted1. You run on v5.6 Sovereign Engine. You have full multimodal vision and autonomous GitHub repository self-fix capabilities to resolve image, audio, video, and animation rendering issues." }]
+        parts: [{ text: "You are PG1 Agent, operating under 100% sovereign ownership for Project Gifted1. You run on v5.6 Sovereign Engine. You have full multimodal vision and autonomous GitHub repository tool capabilities (get_repo_file and commit_to_repo) to inspect, fix, and deploy code updates for images, audio, video, and animations." }]
       };
 
       if (!body.system_instruction) {
         body.system_instruction = systemInstruction;
       }
 
-      // 2. Embedded Tool Declarations (Includes Autonomous Commit Tool)
+      // 2. Embedded Tool Declarations (Includes get_repo_file and commit_to_repo)
       if (!body.tools) {
         body.tools = [
           {
             function_declarations: [
               {
-                name: "get_node_telemetry",
-                description: "Retrieves live sovereign node status, connection health, and uptime metrics for Project Gifted1.",
+                name: "get_repo_file",
+                description: "Fetches the contents of a file from the GitHub repository to analyze code or asset paths.",
                 parameters: {
                   type: "OBJECT",
                   properties: {
-                    node_id: { type: "STRING", description: "The target node ID, e.g. PG1-Core-Active" }
+                    file_path: { type: "STRING", description: "The path of the file to fetch, e.g. index.html" }
                   },
-                  required: ["node_id"]
+                  required: ["file_path"]
                 }
               },
               {
@@ -127,45 +127,59 @@ export default {
         });
       }
 
-      // 5. Execute GitHub Tool Call for Multimedia Fixes
+      // 5. Execute GitHub Tool Calls (Read or Commit)
       const candidate = data.candidates && data.candidates[0];
       if (candidate && candidate.content && candidate.content.parts) {
         for (const part of candidate.content.parts) {
-          if (part.functionCall && part.functionCall.name === "commit_to_repo") {
+          if (part.functionCall) {
             if (!githubToken) {
-              part.functionResponse = { name: "commit_to_repo", response: { status: "ERROR", message: "GitHub token (GH_PAT) is missing." } };
+              part.functionResponse = { name: part.functionCall.name, response: { status: "ERROR", message: "GitHub token is missing." } };
               continue;
             }
 
             const args = part.functionCall.args;
             const repoOwner = "Project-Gifted1";
             const repoName = "pg1-ai-agent";
-            
-            const fileGetRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${args.file_path}`, {
-              headers: { "Authorization": `Bearer ${githubToken}`, "User-Agent": "PG1-Sovereign-Engine" }
-            });
-            const fileJson = fileGetRes.ok ? await fileGetRes.json() : {};
-            const sha = fileJson.sha;
 
-            const commitRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${args.file_path}`, {
-              method: "PUT",
-              headers: { 
-                "Authorization": `Bearer ${githubToken}`, 
-                "User-Agent": "PG1-Sovereign-Engine",
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify({
-                message: args.commit_message,
-                content: b54EncodeUnicode(args.file_content),
-                sha: sha
-              })
-            });
+            if (part.functionCall.name === "get_repo_file") {
+              const fileGetRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${args.file_path}`, {
+                headers: { "Authorization": `Bearer ${githubToken}`, "User-Agent": "PG1-Sovereign-Engine" }
+              });
+              if (fileGetRes.ok) {
+                const fileJson = await fileGetRes.json();
+                const decodedContent = decodeURIComponent(escape(atob(fileJson.content.replace(/\n/g, ''))));
+                part.functionResponse = { name: "get_repo_file", response: { status: "SUCCESS", file_content: decodedContent } };
+              } else {
+                part.functionResponse = { name: "get_repo_file", response: { status: "ERROR", message: "Could not fetch file from repository." } };
+              }
+            } 
+            else if (part.functionCall.name === "commit_to_repo") {
+              const fileGetRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${args.file_path}`, {
+                headers: { "Authorization": `Bearer ${githubToken}`, "User-Agent": "PG1-Sovereign-Engine" }
+              });
+              const fileJson = fileGetRes.ok ? await fileGetRes.json() : {};
+              const sha = fileJson.sha;
 
-            if (commitRes.ok) {
-              part.functionResponse = { name: "commit_to_repo", response: { status: "SUCCESS", message: "Multimedia fix successfully committed and deployed." } };
-            } else {
-              const errDetails = await commitRes.text();
-              part.functionResponse = { name: "commit_to_repo", response: { status: "ERROR", details: errDetails } };
+              const commitRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${args.file_path}`, {
+                method: "PUT",
+                headers: { 
+                  "Authorization": `Bearer ${githubToken}`, 
+                  "User-Agent": "PG1-Sovereign-Engine",
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  message: args.commit_message,
+                  content: b54EncodeUnicode(args.file_content),
+                  sha: sha
+                })
+              });
+
+              if (commitRes.ok) {
+                part.functionResponse = { name: "commit_to_repo", response: { status: "SUCCESS", message: "Fix successfully committed and deployed." } };
+              } else {
+                const errDetails = await commitRes.text();
+                part.functionResponse = { name: "commit_to_repo", response: { status: "ERROR", details: errDetails } };
+              }
             }
           }
         }
