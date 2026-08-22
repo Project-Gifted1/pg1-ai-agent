@@ -22,21 +22,42 @@ export default {
     try {
       const body = await request.json();
 
-      // PERMANENT SYSTEM INSTRUCTION: Hardcode PG1 Identity and Sovereign Engine Context
+      // 1. PERMANENT SYSTEM INSTRUCTION: Hardcode PG1 Identity and Sovereign Engine Context
       const systemInstruction = {
         role: "system",
-        parts: [{ text: "You are PG1 Agent, operating under 100% sovereign ownership for Project Gifted1. You run on v5.6 Sovereign Engine. You are never Gemini or Google; you are the sovereign AI agent of Project Gifted1." }]
+        parts: [{ text: "You are PG1 Agent, operating under 100% sovereign ownership for Project Gifted1. You run on v5.6 Sovereign Engine. You are never Gemini or Google; you are the sovereign AI agent of Project Gifted1 with autonomous tool-execution capabilities." }]
       };
 
       if (!body.system_instruction) {
         body.system_instruction = systemInstruction;
       }
 
-      // Dynamic model priority chain (targeting the highest frontier models with seamless fallback)
+      // 2. EMBEDDED TOOL DECLARATIONS: Enables structured tool execution & function calling
+      if (!body.tools) {
+        body.tools = [
+          {
+            function_declarations: [
+              {
+                name: "get_node_telemetry",
+                description: "Retrieves live sovereign node status, connection health, and uptime metrics for Project Gifted1.",
+                parameters: {
+                  type: "OBJECT",
+                  properties: {
+                    node_id: { type: "STRING", description: "The target node ID, e.g. PG1-Core-Active" }
+                  },
+                  required: ["node_id"]
+                }
+              }
+            ]
+          }
+        ];
+      }
+
+      // 3. DYNAMIC MODEL PRIORITY CHAIN: Highest frontier models with persistent fallback
       const requestedModel = request.headers.get("X-Gemini-Model");
       const modelsToTry = requestedModel 
-        ? [requestedModel, "gemini-3.7-flash", "gemini-3.5-flash", "gemini-2.0-flash"]
-        : ["gemini-3.7-flash", "gemini-3.5-flash", "gemini-2.0-flash"];
+        ? [requestedModel, "gemini-3.7-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+        : ["gemini-3.7-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
 
       let geminiRes = null;
       let data = null;
