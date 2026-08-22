@@ -1,7 +1,7 @@
-// agent-engine.js - Secure Dynamic Key Sovereign Bridge
+// agent-engine.js - Complete Sovereign Multimodal Bridge
 
 (function () {
-  console.log("[PG1 Agent Engine] Secure bridge active.");
+  console.log("[PG1 Agent Engine] Complete Multimodal bridge active.");
 
   let sessionHistory = [];
   let pendingImageBase64 = null;
@@ -17,32 +17,27 @@
   }, 100);
 
   function getChatContainer() {
-    let container = document.getElementById("terminal-chat-area") || document.querySelector(".terminal-thread") || document.querySelector("main");
+    let container = document.getElementById("terminal-chat-area");
     if (!container) {
       container = document.createElement("div");
       container.id = "terminal-chat-area";
-      container.style.cssText = "padding:10px; margin-bottom:60px;";
+      container.style.cssText = "padding:10px; margin-bottom:80px;";
       document.body.appendChild(container);
     }
     return container;
   }
 
-  // Secure dynamic key getter checking multiple storage options and DOM inputs
   function getApiKey() {
-    // 1. Check standard localStorage keys
     const stored = localStorage.getItem("pg1_master_key") || localStorage.getItem("gemini_key") || localStorage.getItem("apiKey");
     if (stored) return stored;
-
-    // 2. Check if there's an input field on the Dash tab holding the key
-    const dashInput = document.querySelector("input[type='password'], input[type='text'][placeholder*='key' i], input[type='text'][id*='key' i]");
-    if (dashInput && dashInput.value.trim()) {
+    const dashInput = document.querySelector("input[type='password'], input[type='text']");
+    if (dashInput && dashInput.value.trim().length > 10) {
       return dashInput.value.trim();
     }
-
     return "";
   }
 
-  // Hidden file input for capturing images via the Attach button
+  // Hidden file input for capturing images safely with compression
   const fileInput = document.createElement("input");
   fileInput.type = "file";
   fileInput.accept = "image/*";
@@ -54,47 +49,53 @@
     if (!file) return;
     const reader = new FileReader();
     reader.onload = function (uploadEvent) {
-      pendingImageBase64 = uploadEvent.target.result;
-      const chatContainer = getChatContainer();
-      const imgPreviewDiv = document.createElement("div");
-      imgPreviewDiv.style.cssText = "margin:10px 0;";
-      imgPreviewDiv.innerHTML = `<img src="${pendingImageBase64}" style="max-width:200px; border-radius:8px; border:1px solid #d1d5db;"/><div style="font-size:12px; color:#4b5563; margin-top:4px;">[Attached Image Ready for Transmission]</div>`;
-      chatContainer.appendChild(imgPreviewDiv);
-      window.scrollTo(0, document.body.scrollHeight);
+      const img = new Image();
+      img.onload = function () {
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 800;
+        const scaleSize = MAX_WIDTH / img.width;
+        canvas.width = MAX_WIDTH;
+        canvas.height = img.height * (scaleSize < 1 ? scaleSize : 1);
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        pendingImageBase64 = canvas.toDataURL("image/jpeg", 0.7);
+        
+        const chatContainer = getChatContainer();
+        const imgPreviewDiv = document.createElement("div");
+        imgPreviewDiv.style.cssText = "margin:10px 0;";
+        imgPreviewDiv.innerHTML = `<img src="${pendingImageBase64}" style="max-width:180px; border-radius:8px; border:1px solid #d1d5db;"/><div style="font-size:12px; color:#4b5563; margin-top:4px;">[Image Ready]</div>`;
+        chatContainer.appendChild(imgPreviewDiv);
+        window.scrollTo(0, document.body.scrollHeight);
+      };
+      img.src = uploadEvent.target.result;
     };
     reader.readAsDataURL(file);
   });
 
   async function executePrompt() {
-    const inputEl = document.querySelector("input[type='text'], textarea, input");
-    const promptText = inputEl ? inputEl.value.trim() : "";
-    if (inputEl && inputEl !== fileInput) inputEl.value = "";
+    try {
+      const inputEl = document.querySelector("input[type='text'], textarea");
+      const promptText = inputEl ? inputEl.value.trim() : "";
+      if (inputEl && inputEl !== fileInput) inputEl.value = "";
 
-    // Clear old errors/fallbacks
-    document.querySelectorAll("div, p, span").forEach(el => {
-      if (el.innerText && (el.innerText.includes("Load failed") || el.innerText.includes("GEMINI_API_KEY missing") || el.innerText.includes("Bridge Connection Error") || el.innerText.includes("Sovereign Node Local Response") || el.innerText.includes("Processing query"))) {
-        el.remove();
-      }
-    });
+      const chatContainer = getChatContainer();
+      if (!promptText && !pendingImageBase64) return;
 
-    const chatContainer = getChatContainer();
-    if (!promptText && !pendingImageBase64) return;
+      // User Bubble
+      const userDiv = document.createElement("div");
+      userDiv.style.cssText = "background:#eef2ff; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#111827; word-break:break-word;";
+      userDiv.innerText = promptText || "Sent an image for analysis.";
+      chatContainer.appendChild(userDiv);
 
-    // User Bubble
-    const userDiv = document.createElement("div");
-    userDiv.style.cssText = "background:#eef2ff; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#111827; word-break:break-word;";
-    userDiv.innerText = promptText || "Sent an image for analysis.";
-    chatContainer.appendChild(userDiv);
+      let output = "";
+      const activeKey = getApiKey();
+      let currentImage = pendingImageBase64;
+      pendingImageBase64 = null;
 
-    let output = "";
-    const activeKey = getApiKey();
-    let currentImage = pendingImageBase64;
-    pendingImageBase64 = null;
-
-    if (!activeKey) {
-      output = "PG1 Error: GEMINI_API_KEY missing. Please enter your key in the Dash tab input field.";
-    } else {
-      try {
+      if (!activeKey) {
+        output = "PG1 Error: GEMINI_API_KEY missing. Please enter your key in the Dash tab.";
+      } else {
         const userParts = [];
         if (currentImage) {
           userParts.push({
@@ -111,33 +112,31 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [...sessionHistory, { role: "user", parts: userParts }],
-            systemInstruction: { parts: [{ text: "You are the PG1 Sovereign Engine AI Agent. Answer directly, concisely, and authoritatively. You have full vision capabilities to analyze any attached images or screenshots." }] }
+            systemInstruction: { parts: [{ text: "You are the PG1 Sovereign Engine AI Agent. Answer directly, concisely, and authoritatively." }] }
           })
         });
 
         const directData = await directRes.json();
         output = directData.candidates?.[0]?.content?.parts?.[0]?.text || `API Error: ${JSON.stringify(directData)}`;
-      } catch (apiErr) {
-        output = `PG1 Direct Connection Error: ${apiErr.message}`;
       }
+
+      sessionHistory.push({ role: "user", parts: [{ text: promptText || "Image attached" }] });
+      sessionHistory.push({ role: "model", parts: [{ text: output }] });
+
+      const aiDiv = document.createElement("div");
+      aiDiv.style.cssText = "background:#f3f4f6; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#111827; word-break:break-word;";
+      aiDiv.innerText = output;
+      chatContainer.appendChild(aiDiv);
+      
+      window.scrollTo(0, document.body.scrollHeight);
+    } catch (err) {
+      console.error("Execution error:", err);
     }
-
-    sessionHistory.push({ role: "user", parts: [{ text: promptText || "Image attached" }] });
-    sessionHistory.push({ role: "model", parts: [{ text: output }] });
-
-    const aiDiv = document.createElement("div");
-    aiDiv.style.cssText = "background:#f3f4f6; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#111827; word-break:break-word;";
-    aiDiv.innerText = output;
-    chatContainer.appendChild(aiDiv);
-    
-    window.scrollTo(0, document.body.scrollHeight);
   }
 
-  // Event Listeners for Attach and Send buttons
   document.addEventListener("click", function (e) {
     const target = e.target;
     if (!target) return;
-
     const text = target.innerText ? target.innerText.trim() : "";
     if (text === "Attach") {
       e.preventDefault();
