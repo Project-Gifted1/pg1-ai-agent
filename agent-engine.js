@@ -1,7 +1,7 @@
-// agent-engine.js - Direct Multimodal Sovereign Bridge
+// agent-engine.js - Secure Dynamic Key Sovereign Bridge
 
 (function () {
-  console.log("[PG1 Agent Engine] Direct Multimodal active.");
+  console.log("[PG1 Agent Engine] Secure bridge active.");
 
   let sessionHistory = [];
   let pendingImageBase64 = null;
@@ -25,6 +25,21 @@
       document.body.appendChild(container);
     }
     return container;
+  }
+
+  // Secure dynamic key getter checking multiple storage options and DOM inputs
+  function getApiKey() {
+    // 1. Check standard localStorage keys
+    const stored = localStorage.getItem("pg1_master_key") || localStorage.getItem("gemini_key") || localStorage.getItem("apiKey");
+    if (stored) return stored;
+
+    // 2. Check if there's an input field on the Dash tab holding the key
+    const dashInput = document.querySelector("input[type='password'], input[type='text'][placeholder*='key' i], input[type='text'][id*='key' i]");
+    if (dashInput && dashInput.value.trim()) {
+      return dashInput.value.trim();
+    }
+
+    return "";
   }
 
   // Hidden file input for capturing images via the Attach button
@@ -53,7 +68,7 @@
   async function executePrompt() {
     const inputEl = document.querySelector("input[type='text'], textarea, input");
     const promptText = inputEl ? inputEl.value.trim() : "";
-    if (inputEl) inputEl.value = "";
+    if (inputEl && inputEl !== fileInput) inputEl.value = "";
 
     // Clear old errors/fallbacks
     document.querySelectorAll("div, p, span").forEach(el => {
@@ -72,12 +87,12 @@
     chatContainer.appendChild(userDiv);
 
     let output = "";
-    const savedKey = localStorage.getItem("pg1_master_key") || "";
+    const activeKey = getApiKey();
     let currentImage = pendingImageBase64;
     pendingImageBase64 = null;
 
-    if (!savedKey) {
-      output = "PG1 Error: GEMINI_API_KEY missing. Please enter your key in the Dash tab.";
+    if (!activeKey) {
+      output = "PG1 Error: GEMINI_API_KEY missing. Please enter your key in the Dash tab input field.";
     } else {
       try {
         const userParts = [];
@@ -91,7 +106,7 @@
         }
         userParts.push({ text: promptText || "Analyze this image." });
 
-        const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${savedKey}`, {
+        const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${activeKey}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -136,7 +151,7 @@
   document.addEventListener("keydown", function (e) {
     if (e.key === "Enter") {
       const active = document.activeElement;
-      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
+      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA") && active !== fileInput) {
         e.preventDefault();
         executePrompt();
       }
