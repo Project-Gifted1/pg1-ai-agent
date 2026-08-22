@@ -28,16 +28,20 @@
     body {
       background-color: var(--bg-light);
       color: var(--text-main);
-      padding: 12px;
-      padding-bottom: 90px;
-      overflow-x: hidden;
+      height: 100vh;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
 
     .app-header {
+      padding: 10px 12px 6px 12px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 10px;
+      background: var(--bg-light);
+      flex-shrink: 0;
     }
 
     .brand-title {
@@ -72,11 +76,9 @@
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 5px;
-      margin-bottom: 12px;
-      background: #f1f5f9;
-      padding: 4px;
-      border-radius: 6px;
-      border: 1px solid var(--card-border);
+      padding: 0 12px 8px 12px;
+      background: var(--bg-light);
+      flex-shrink: 0;
     }
 
     .btn-ctrl {
@@ -118,13 +120,14 @@
     }
 
     .swipe-container {
+      flex: 1;
       display: flex;
       overflow-x: auto;
       scroll-snap-type: x mandatory;
       scroll-behavior: smooth;
       -webkit-overflow-scrolling: touch;
       scrollbar-width: none;
-      padding-bottom: 20px;
+      padding: 0 12px;
     }
 
     .swipe-container::-webkit-scrollbar {
@@ -134,7 +137,10 @@
     .tab-view {
       flex: 0 0 100%;
       width: 100%;
+      height: 100%;
       scroll-snap-align: start;
+      overflow-y: auto;
+      padding-bottom: 70px;
     }
 
     .panel-card {
@@ -398,12 +404,14 @@
     #view-terminal {
       display: flex;
       flex-direction: column;
-      min-height: calc(100vh - 140px);
+      height: 100%;
       position: relative;
     }
 
     .terminal-chat-area {
       flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
       padding-bottom: 10px;
     }
 
@@ -504,20 +512,12 @@
       gap: 1px;
     }
 
-    .btn-mini:hover {
-      color: var(--sovereign-blue);
-      border-color: var(--sovereign-blue);
-    }
-
     .terminal-input-bar {
       display: flex;
       gap: 6px;
       background: var(--bg-light);
-      padding: 6px 0;
-      position: sticky;
-      bottom: 0;
-      margin-top: auto;
-      z-index: 10;
+      padding: 8px 0;
+      flex-shrink: 0;
       align-items: center;
     }
 
@@ -1012,7 +1012,6 @@
       }
     });
 
-    // Explicitly unlock speech engine context for mobile Safari / iOS restrictions
     function unlockSpeechSynthesis() {
       if (speechUnlocked || !('speechSynthesis' in window)) return;
       try {
