@@ -1,12 +1,10 @@
-name: Deploy Worker to Cloudflare
+name: Build and Deploy
 
 on:
   push:
     branches:
       - main
-    paths:
-      - 'worker.js'
-      - 'wrangler.toml'
+      - master
 
 jobs:
   deploy:
@@ -20,7 +18,7 @@ jobs:
         with:
           node-version: 20
 
-      - name: Deploy Worker via Cloudflare Wrangler Action
+      - name: Deploy Worker to Cloudflare
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
