@@ -7,6 +7,7 @@
   let sessionHistory = [];
   let totalBytesProcessed = 0;
   let totalRequests = 0;
+  let activeBase64Image = null;
 
   function parseMarkdownToHTML(text) {
     if (!text) return "";
@@ -40,32 +41,40 @@
     });
   }
 
-  // Extract base64 from window file object or inline img tag
-  async function resolveImageBase64() {
-    const rawFile = window.attachedFile || window.pendingFile || window.currentFile;
-    if (rawFile && rawFile instanceof File) {
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target.result);
-        reader.onerror = () => resolve(null);
-        reader.readAsDataURL(rawFile);
-      });
-    }
+  // Intercept file selection globally and prevent auto-submit
+  document.addEventListener("change", (e) => {
+    if (e.target && e.target.type === "file") {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
 
-    const imgElements = document.querySelectorAll("img");
-    for (let i = imgElements.length - 1; i >= 0; i--) {
-      const src = imgElements[i].src || "";
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          activeBase64Image = event.target.result;
+          console.log("[PG1 Agent Engine] Image loaded into memory. Waiting for Send click.");
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  }, true);
+
+  function getCurrentImagePayload() {
+    if (activeBase64Image) return activeBase64Image;
+
+    const imgs = document.querySelectorAll("img");
+    for (let i = imgs.length - 1; i >= 0; i--) {
+      const src = imgs[i].src || "";
       if (src.startsWith("data:image")) {
         return src;
       }
     }
-
     return null;
   }
 
   async function executeViaWorker(promptText) {
     try {
-      const base64Image = await resolveImageBase64();
+      const base64Image = getCurrentImagePayload();
 
       const userParts = [];
       if (base64Image) {
@@ -76,7 +85,7 @@
           }
         });
       }
-      userParts.push({ text: promptText });
+      userParts.push({ text: promptText || "Analyze this attached image." });
 
       sessionHistory.push({
         role: "user",
@@ -84,10 +93,13 @@
       });
 
       const requestBody = {
-        message: promptText,
+        message: promptText || "Analyze this attached image.",
         history: sessionHistory,
         image: base64Image
       };
+
+      // Reset image state after sending
+      activeBase64Image = null;
 
       const response = await fetch(WORKER_URL, {
         method: "POST",
@@ -103,10 +115,6 @@
         parts: [{ text: responseText }]
       });
 
-      window.attachedFile = null;
-      window.pendingFile = null;
-      window.currentFile = null;
-
       const payloadSize = new Blob([JSON.stringify(data)]).size;
       updateDashboardMetrics(payloadSize);
 
@@ -116,13 +124,26 @@
     }
   }
 
-  window.sendTextPromptToGemini = async function (promptText) {
-    const chatArea = document.getElementById("terminal-chat-area");
+  async function handleUserSubmit(e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }
+
+    const inputEl = document.querySelector("input[type='text'], textarea, .command-input");
+    const promptText = inputEl ? inputEl.value.trim() : "";
+
+    if (!promptText && !activeBase64Image) return;
+
+    if (inputEl) inputEl.value = "";
+
+    const chatArea = document.getElementById("terminal-chat-area") || document.querySelector(".chat-area");
 
     if (chatArea) {
       const userBubble = document.createElement("div");
       userBubble.className = "chat-bubble user-bubble";
-      userBubble.innerHTML = `<div class="bubble-text">${parseMarkdownToHTML(promptText)}</div>`;
+      userBubble.innerHTML = `<div class="bubble-text">${parseMarkdownToHTML(promptText || "Sent attached image")}</div>`;
       chatArea.appendChild(userBubble);
     }
 
@@ -135,5 +156,19 @@
       chatArea.appendChild(aiBubble);
       chatArea.scrollTop = chatArea.scrollHeight;
     }
+  }
+
+  // Intercept click on Send button
+  window.addEventListener("click", (e) => {
+    const btn = e.target.closest("button, .send-btn, #send-btn");
+    if (btn && (btn.innerText.includes("Send") || btn.id === "send-btn")) {
+      handleUserSubmit(e);
+    }
+  }, true);
+
+  // Block native auto-trigger
+  window.sendTextPromptToGemini = function () {
+    console.log("[PG1 Agent Engine] Blocked native auto-trigger on image select.");
+    return false;
   };
 })();
