@@ -1,7 +1,7 @@
-// agent-engine.js - Resilient Sovereign Bridge
+// agent-engine.js - Direct Sovereign Hybrid Bridge
 
 (function () {
-  console.log("[PG1 Agent Engine] Resilient bridge active.");
+  console.log("[PG1 Agent Engine] Hybrid bridge active.");
 
   const WORKER_URL = "https://pg1-agent-worker.gnfcw9w5rk.workers.dev";
   let sessionHistory = [];
@@ -35,9 +35,9 @@
 
     inputEl.value = "";
 
-    // Clear old error messages
+    // Clear old errors/fallbacks
     document.querySelectorAll("div, p, span").forEach(el => {
-      if (el.innerText && (el.innerText.includes("Load failed") || el.innerText.includes("GEMINI_API_KEY missing") || el.innerText.includes("Bridge Connection Error"))) {
+      if (el.innerText && (el.innerText.includes("Load failed") || el.innerText.includes("GEMINI_API_KEY missing") || el.innerText.includes("Bridge Connection Error") || el.innerText.includes("Sovereign Node Local Response"))) {
         el.remove();
       }
     });
@@ -51,9 +51,10 @@
     chatContainer.appendChild(userDiv);
 
     let output = "";
+    const savedKey = localStorage.getItem("pg1_master_key") || "";
+
     try {
-      const savedKey = localStorage.getItem("pg1_master_key") || "";
-      
+      // Try Cloudflare Worker first
       const response = await fetch(WORKER_URL, {
         method: "POST",
         mode: "cors",
@@ -68,10 +69,28 @@
       });
 
       const data = await response.json();
-      output = data.response || data.text || data.content || data.output || "Threat analysis completed successfully.";
+      output = data.response || data.text || data.content || data.output;
+      if (!output) throw new Error("Empty worker response");
     } catch (err) {
-      // Local fallback simulation if network/Safari blocks the worker
-      output = `[PG1 Sovereign Node Local Response] Processed query: "${promptText}". 1,500 active nodes synchronized, threat intelligence feed nominal.`;
+      // Direct Gemini API fallback if worker is unreachable
+      if (!savedKey) {
+        output = "PG1 Error: GEMINI_API_KEY missing. Please enter your key in the Dash tab.";
+      } else {
+        try {
+          const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${savedKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [...sessionHistory, { role: "user", parts: [{ text: promptText }] }],
+              systemInstruction: { parts: [{ text: "You are the PG1 Sovereign Engine AI Agent. Answer directly, concisely, and authoritatively." }] }
+            })
+          });
+          const directData = await directRes.json();
+          output = directData.candidates?.[0]?.content?.parts?.[0]?.text || `API Error: ${JSON.stringify(directData)}`;
+        } catch (apiErr) {
+          output = `PG1 Direct Connection Error: ${apiErr.message}`;
+        }
+      }
     }
 
     sessionHistory.push({ role: "user", parts: [{ text: promptText }] });
