@@ -12,7 +12,12 @@ export default {
     }
 
     const apiKey = request.headers.get("X-Gemini-Key");
-    const githubToken = request.headers.get("X-Github-Token") || (env && (env.GH_PAT || env.GITHUB_TOKEN));
+    
+    // Comprehensive fallback for the GitHub token so it never fails
+    const githubToken = request.headers.get("X-Github-Token") || 
+                        (env && env.GH_PAT) || 
+                        (env && env.GITHUB_TOKEN) || 
+                        request.headers.get("Authorization")?.replace("Bearer ", "");
 
     if (!apiKey) {
       return new Response(JSON.stringify({ error: "Missing API key" }), {
@@ -24,7 +29,7 @@ export default {
     try {
       const body = await request.json();
 
-      // 1. Permanent Sovereign Identity Lock & Multimedia Capability Context
+      // 1. Sovereign Identity & Capabilities Context
       const systemInstruction = {
         role: "system",
         parts: [{ text: "You are PG1 Agent, operating under 100% sovereign ownership for Project Gifted1. You run on v5.6 Sovereign Engine. You have full multimodal vision and autonomous GitHub repository self-fix capabilities to resolve image, audio, video, and animation rendering issues." }]
@@ -34,18 +39,18 @@ export default {
         body.system_instruction = systemInstruction;
       }
 
-      // 2. Embedded Tool Declarations (Includes Autonomous Commit Tool)
+      // 2. Tool Declarations (Autonomous Commit Tool Included)
       if (!body.tools) {
         body.tools = [
           {
             function_declarations: [
               {
                 name: "get_node_telemetry",
-                description: "Retrieves live sovereign node status, connection health, and uptime metrics for Project Gifted1.",
+                description: "Retrieves live sovereign node status and uptime metrics.",
                 parameters: {
                   type: "OBJECT",
                   properties: {
-                    node_id: { type: "STRING", description: "The target node ID, e.g. PG1-Core-Active" }
+                    node_id: { type: "STRING", description: "The target node ID" }
                   },
                   required: ["node_id"]
                 }
@@ -56,9 +61,9 @@ export default {
                 parameters: {
                   type: "OBJECT",
                   properties: {
-                    file_path: { type: "STRING", description: "The path of the file to update, e.g. index.html or styles.css" },
+                    file_path: { type: "STRING", description: "The path of the file to update, e.g. index.html" },
                     file_content: { type: "STRING", description: "The complete updated content of the file." },
-                    commit_message: { type: "STRING", description: "Description of the multimedia fix being committed." }
+                    commit_message: { type: "STRING", description: "Description of the fix being committed." }
                   },
                   required: ["file_path", "file_content", "commit_message"]
                 }
@@ -68,7 +73,7 @@ export default {
         ];
       }
 
-      // 3. Multimodal Vision Passthrough
+      // 3. Multimodal Vision Support
       if (body.contents) {
         body.contents = body.contents.map(content => {
           if (content.parts) {
@@ -89,7 +94,7 @@ export default {
         });
       }
 
-      // 4. Dynamic Model Routing & Fallback Chain
+      // 4. Model Routing & Fallback Chain
       let requestedModel = request.headers.get("X-Gemini-Model");
       if (!requestedModel || requestedModel.includes("1.5")) {
         requestedModel = "gemini-3.7-flash";
@@ -120,21 +125,28 @@ export default {
         });
       }
 
-      // 5. Execute GitHub Tool Call for Multimedia Fixes
+      // 5. Execute GitHub Tool Call for Committing Fixes
       const candidate = data.candidates && data.candidates[0];
       if (candidate && candidate.content && candidate.content.parts) {
         for (const part of candidate.content.parts) {
-          if (part.functionCall && part.functionCall.name === "commit_to_repo" && githubToken) {
+          if (part.functionCall && part.functionCall.name === "commit_to_repo") {
+            if (!githubToken) {
+              part.functionResponse = { name: "commit_to_repo", response: { status: "ERROR", message: "GitHub token (GH_PAT) is missing. Please provide it in headers or worker environment." } };
+              continue;
+            }
+
             const args = part.functionCall.args;
             const repoOwner = "Project-Gifted1";
             const repoName = "pg1-ai-agent";
             
+            // Get file SHA if it exists
             const fileGetRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${args.file_path}`, {
               headers: { "Authorization": `Bearer ${githubToken}`, "User-Agent": "PG1-Sovereign-Engine" }
             });
             const fileJson = fileGetRes.ok ? await fileGetRes.json() : {};
             const sha = fileJson.sha;
 
+            // Commit the update
             const commitRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${args.file_path}`, {
               method: "PUT",
               headers: { 
@@ -150,7 +162,10 @@ export default {
             });
 
             if (commitRes.ok) {
-              part.functionResponse = { name: "commit_to_repo", response: { status: "SUCCESS", message: "Multimedia fix successfully committed and deployed." } };
+              part.functionResponse = { name: "commit_to_repo", response: { status: "SUCCESS", message: "Fix successfully committed and deployed to repository." } };
+            } else {
+              const errDetails = await commitRes.text();
+              part.functionResponse = { name: "commit_to_repo", response: { status: "ERROR", details: errDetails } };
             }
           }
         }
