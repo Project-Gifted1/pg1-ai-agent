@@ -1,4 +1,4 @@
-// worker.js - Sovereign Agent Proxy with Dynamic Header Key Fallback
+// worker.js - Sovereign Agent Proxy with Explicit Preflight Handling
 
 export default {
   async fetch(request, env) {
@@ -9,7 +9,10 @@ export default {
     };
 
     if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders });
+      return new Response(null, {
+        status: 200,
+        headers: corsHeaders
+      });
     }
 
     try {
@@ -25,10 +28,9 @@ export default {
             threatPulses: 1463,
             status: "NOMINAL"
           }
-        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      // Grab API key from Cloudflare environment or request headers
       const apiKey = env.GEMINI_API_KEY || request.headers.get("x-gemini-key") || request.headers.get("Authorization")?.replace("Bearer ", "");
 
       if (!apiKey) {
@@ -77,9 +79,9 @@ export default {
         response: outputText,
         text: outputText,
         content: outputText,
-        output: outputText,
-        candidates: [{ content: { parts: [{ text: outputText }] } }]
+        output: outputText
       }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
 
