@@ -1,7 +1,7 @@
-// agent-engine.js - Sovereign Multimodal Bridge (Gemini 3.5 Flash)
+// agent-engine.js - Sovereign Multimodal Bridge (Stable v1)
 
 (function () {
-  console.log("[PG1 Agent Engine] Gemini 3.5 Flash bridge active.");
+  console.log("[PG1 Agent Engine] Stable v1 bridge active.");
 
   let sessionHistory = [];
   let pendingImageBase64 = null;
@@ -121,8 +121,8 @@
         }
         userParts.push({ text: promptText || "Analyze this image accurately." });
 
-        // Updated endpoint using gemini-3.5-flash
-        const directRes = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-3.5-flash:generateContent?key=${activeKey}`, {
+        // Using stable v1 endpoint with gemini-1.5-flash
+        const directRes = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${activeKey}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
