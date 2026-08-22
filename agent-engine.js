@@ -1,10 +1,11 @@
-// agent-engine.js - Direct Sovereign Hybrid Bridge
+// agent-engine.js - Sovereign Hybrid Bridge with Image Support
 
 (function () {
-  console.log("[PG1 Agent Engine] Hybrid bridge active.");
+  console.log("[PG1 Agent Engine] Image-enabled bridge active.");
 
   const WORKER_URL = "https://pg1-agent-worker.gnfcw9w5rk.workers.dev";
   let sessionHistory = [];
+  let pendingImageBase64 = null;
 
   // 1. Permanent Telemetry Fixer
   setInterval(() => {
@@ -27,13 +28,33 @@
     return container;
   }
 
+  // Hidden file input for capturing images via the Attach button
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = "image/*";
+  fileInput.style.display = "none";
+  document.body.appendChild(fileInput);
+
+  fileInput.addEventListener("change", function (e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function (uploadEvent) {
+      pendingImageBase64 = uploadEvent.target.result;
+      const chatContainer = getChatContainer();
+      const imgPreviewDiv = document.createElement("div");
+      imgPreviewDiv.style.cssText = "margin:10px 0;";
+      imgPreviewDiv.innerHTML = `<img src="${pendingImageBase64}" style="max-width:200px; border-radius:8px; border:1px solid #d1d5db;"/><div style="font-size:12px; color:#4b5563; margin-top:4px;">[Attached Image Ready for Transmission]</div>`;
+      chatContainer.appendChild(imgPreviewDiv);
+      window.scrollTo(0, document.body.scrollHeight);
+    };
+    reader.readAsDataURL(file);
+  });
+
   async function executePrompt() {
     const inputEl = document.querySelector("input[type='text'], textarea, input");
-    if (!inputEl) return;
-    const promptText = inputEl.value.trim();
-    if (!promptText) return;
-
-    inputEl.value = "";
+    const promptText = inputEl ? inputEl.value.trim() : "Analyze this image";
+    if (inputEl) inputEl.value = "";
 
     // Clear old errors/fallbacks
     document.querySelectorAll("div, p, span").forEach(el => {
@@ -44,14 +65,18 @@
 
     const chatContainer = getChatContainer();
 
+    if (!promptText && !pendingImageBase64) return;
+
     // User Bubble
     const userDiv = document.createElement("div");
     userDiv.style.cssText = "background:#eef2ff; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#111827; word-break:break-word;";
-    userDiv.innerText = promptText;
+    userDiv.innerText = promptText || "Sent an image for analysis.";
     chatContainer.appendChild(userDiv);
 
     let output = "";
     const savedKey = localStorage.getItem("pg1_master_key") || "";
+    let currentImage = pendingImageBase64;
+    pendingImageBase64 = null; // Reset after capture
 
     try {
       // Try Cloudflare Worker first
@@ -64,7 +89,8 @@
         },
         body: JSON.stringify({
           message: promptText,
-          history: sessionHistory
+          history: sessionHistory,
+          image: currentImage
         })
       });
 
@@ -72,17 +98,28 @@
       output = data.response || data.text || data.content || data.output;
       if (!output) throw new Error("Empty worker response");
     } catch (err) {
-      // Direct Gemini API fallback if worker is unreachable
+      // Direct Gemini API fallback with multimodal support
       if (!savedKey) {
         output = "PG1 Error: GEMINI_API_KEY missing. Please enter your key in the Dash tab.";
       } else {
         try {
+          const userParts = [];
+          if (currentImage) {
+            userParts.push({
+              inlineData: {
+                mimeType: "image/jpeg",
+                data: currentImage.replace(/^data:image\/\w+;base64,/, "")
+              }
+            });
+          }
+          userParts.push({ text: promptText });
+
           const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${savedKey}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              contents: [...sessionHistory, { role: "user", parts: [{ text: promptText }] }],
-              systemInstruction: { parts: [{ text: "You are the PG1 Sovereign Engine AI Agent. Answer directly, concisely, and authoritatively." }] }
+              contents: [...sessionHistory, { role: "user", parts: userParts }],
+              systemInstruction: { parts: [{ text: "You are the PG1 Sovereign Engine AI Agent. Answer directly, concisely, and authoritatively while inspecting user images." }] }
             })
           });
           const directData = await directRes.json();
@@ -104,10 +141,16 @@
     window.scrollTo(0, document.body.scrollHeight);
   }
 
-  // Bind click & enter events
+  // Event Listeners for Attach and Send buttons
   document.addEventListener("click", function (e) {
     const target = e.target;
-    if (target && target.innerText && target.innerText.trim() === "Send") {
+    if (!target) return;
+
+    const text = target.innerText ? target.innerText.trim() : "";
+    if (text === "Attach") {
+      e.preventDefault();
+      fileInput.click();
+    } else if (text === "Send") {
       e.preventDefault();
       executePrompt();
     }
