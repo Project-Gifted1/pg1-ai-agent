@@ -13,7 +13,6 @@ export default {
     try {
       const { message, image, history } = await request.json();
       
-      // Enforce Cloudflare Worker environment variable only
       const apiKey = env.GEMINI_API_KEY;
 
       if (!apiKey) {
@@ -33,9 +32,7 @@ export default {
               description: "Fetches live URL data or threat intelligence feeds from web endpoints.",
               parameters: {
                 type: "OBJECT",
-                properties: {
-                  url: { type: "STRING", description: "Target URL to scrape or query" }
-                },
+                properties: { url: { type: "STRING", description: "Target URL to scrape or query" } },
                 required: ["url"]
               }
             },
@@ -44,9 +41,7 @@ export default {
               description: "Queries Cloudflare DNS for domain IP records.",
               parameters: {
                 type: "OBJECT",
-                properties: {
-                  domain: { type: "STRING", description: "Domain name (e.g. example.com)" }
-                },
+                properties: { domain: { type: "STRING", description: "Domain name (e.g. example.com)" } },
                 required: ["domain"]
               }
             },
@@ -55,9 +50,7 @@ export default {
               description: "Queries IP location and network telemetry data.",
               parameters: {
                 type: "OBJECT",
-                properties: {
-                  ip: { type: "STRING", description: "Target IPv4 address" }
-                },
+                properties: { ip: { type: "STRING", description: "Target IPv4 address" } },
                 required: ["ip"]
               }
             },
@@ -84,7 +77,7 @@ export default {
         if (image) {
           parts.push({
             inline_data: {
-              mime_type: "image/jpeg",
+              mime_type: "image/png",
               data: image.replace(/^data:image\/\w+;base64,/, "")
             }
           });
@@ -93,22 +86,11 @@ export default {
           parts.push({ text: message });
         }
         contents = [{ role: "user", parts }];
-      } else if (image) {
-        // Attach image to latest user turn if history exists
-        const lastTurn = contents[contents.length - 1];
-        if (lastTurn && lastTurn.role === "user") {
-          lastTurn.parts.unshift({
-            inline_data: {
-              mime_type: "image/jpeg",
-              data: image.replace(/^data:image\/\w+;base64,/, "")
-            }
-          });
-        }
       }
 
       const systemInstruction = {
         parts: [{ 
-          text: "You are PG1.Agent, an autonomous AI infrastructure node operating inside Project Gifted1. You speak with direct authority as PG1.Agent. Execute tools automatically to inspect network data, perform lookups, query telemetry, and execute tasks." 
+          text: "You are PG1.Agent, an autonomous AI infrastructure node operating inside Project Gifted1. You speak with direct authority as PG1.Agent. Execute tools automatically to inspect network data, analyze images, perform lookups, and execute tasks." 
         }]
       };
 
