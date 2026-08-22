@@ -75,9 +75,9 @@ export default {
         body.tools = toolsConfig;
       }
 
-      let requestedModel = request.headers.get("X-Gemini-Model") || "gemini-2.5-flash";
-      // Fallback model list if primary experiences 503 capacity overload
-      const modelsToTry = [requestedModel, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-thinking-exp"];
+      let requestedModel = request.headers.get("X-Gemini-Model") || "gemini-3.7-flash";
+      // Active, live fallback model stack
+      const modelsToTry = [requestedModel, "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"];
 
       async function callGeminiWithRetry(modelName, payload) {
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
@@ -96,11 +96,10 @@ export default {
             }
 
             const errBody = await res.text();
-            // If it's a 503 Service Unavailable / Overloaded error, retry or fallback
             if (res.status === 503 || res.status === 429) {
               if (attempt < 3) {
                 await new Promise(r => setTimeout(r, delay));
-                delay *= 2; // Exponential backoff
+                delay *= 2;
                 continue;
               }
             }
@@ -116,7 +115,6 @@ export default {
       let data = null;
       let usedModel = requestedModel;
 
-      // Try models in sequence until one succeeds
       for (const m of modelsToTry) {
         try {
           data = await callGeminiWithRetry(m, body);
@@ -136,7 +134,6 @@ export default {
 
       let candidate = data.candidates && data.candidates[0];
 
-      // Check if Gemini wants to call a function
       if (candidate && candidate.content && candidate.content.parts) {
         let functionCallPart = candidate.content.parts.find(p => p.functionCall);
         
@@ -203,7 +200,6 @@ export default {
             }
           }
 
-          // Send tool response back for final reply
           body.contents.push(candidate.content);
           body.contents.push({
             role: "function",
