@@ -1,21 +1,58 @@
 // agent-engine.js - PG1 Autonomous Runtime Engine
 
 (function () {
-  console.log("[PG1 Agent Engine] Autonomous runtime loading...");
+  console.log("[PG1 Agent Engine] Autonomous runtime active.");
 
-  // Updated to match the deployed Worker name where GEMINI_API_KEY is active
   const WORKER_URL = "https://pg1-agent-worker.gnfcw9w5rk.workers.dev";
+  let sessionHistory = [];
+  let totalBytesProcessed = 0;
+  let totalRequests = 0;
+
+  function updateDashboardMetrics(bytesSent) {
+    totalRequests++;
+    totalBytesProcessed += bytesSent;
+
+    const speedMbps = ((bytesSent * 8) / (1024 * 1024)).toFixed(2);
+    const mbProcessed = (totalBytesProcessed / (1024 * 1024)).toFixed(2);
+
+    const statElements = document.querySelectorAll(".stat-card, .metric-value, .dash-stat");
+    if (statElements.length > 0) {
+      statElements.forEach(el => {
+        if (el.innerText.includes("NaN") || el.innerText.includes("0 MB/s") || el.innerText.includes("Status")) {
+          el.innerHTML = `<strong>Throughput:</strong> ${speedMbps} Mbps | <strong>Processed:</strong> ${mbProcessed} MB | <strong>Requests:</strong> ${totalRequests}`;
+        }
+      });
+    }
+  }
 
   async function executeViaWorker(promptText) {
     try {
+      sessionHistory.push({
+        role: "user",
+        parts: [{ text: promptText }]
+      });
+
       const response = await fetch(WORKER_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: promptText })
+        body: JSON.stringify({
+          message: promptText,
+          history: sessionHistory
+        })
       });
 
       const data = await response.json();
-      return data.response || "No output returned from execution worker.";
+      const responseText = data.response || "No output returned from execution worker.";
+
+      sessionHistory.push({
+        role: "model",
+        parts: [{ text: responseText }]
+      });
+
+      const payloadSize = new Blob([JSON.stringify(data)]).size;
+      updateDashboardMetrics(payloadSize);
+
+      return responseText;
     } catch (err) {
       return `Execution Bridge Error: ${err.message}`;
     }
@@ -42,6 +79,6 @@
         chatArea.scrollTop = chatArea.scrollHeight;
       }
     };
-    console.log("[PG1 Agent Engine] Hooked into UI successfully.");
+    console.log("[PG1 Agent Engine] Hooked into UI with history persistence and live dashboard telemetry.");
   }
 })();
