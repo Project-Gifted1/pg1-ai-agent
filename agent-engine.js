@@ -1,26 +1,37 @@
-// agent-engine.js - PG1 Autonomous Runtime Override
+// agent-engine.js - Direct Input Bridge
 
 (function () {
   console.log("[PG1 Agent Engine] Autonomous runtime loading...");
 
   const WORKER_URL = "https://pg1-worker.gnfcw9w5rk.workers.dev";
 
-  function getStoredKey() {
-    for (let i = 0; i < localStorage.length; i++) {
-      const value = localStorage.getItem(localStorage.key(i));
-      if (typeof value === "string" && value.startsWith("AIzaSy")) {
-        return value;
+  function extractKey() {
+    // 1. Scan DOM input fields directly
+    const inputs = document.querySelectorAll("input[type='password'], input[type='text']");
+    for (const input of inputs) {
+      if (input.value && input.value.trim().startsWith("AIzaSy")) {
+        return input.value.trim();
       }
     }
+
+    // 2. Scan localStorage items
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      const val = localStorage.getItem(key);
+      if (typeof val === "string" && val.trim().startsWith("AIzaSy")) {
+        return val.trim();
+      }
+    }
+
     return "";
   }
 
   async function executeViaWorker(promptText) {
     try {
-      const apiKey = getStoredKey();
+      const apiKey = extractKey();
 
       if (!apiKey) {
-        return "PG1 Error: No valid key found in browser storage. Please re-enter your key in the Dash tab and click Save Key.";
+        return "PG1 Error: Gemini API Key not detected in UI input or localStorage. Make sure your key starting with 'AIzaSy' is pasted into the input field on the Dash tab.";
       }
 
       const response = await fetch(WORKER_URL, {
