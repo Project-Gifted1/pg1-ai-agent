@@ -11,12 +11,13 @@ export default {
     }
 
     try {
-      const { message, image, history, apiKey: payloadKey } = await request.json();
+      const { message, image, history } = await request.json();
       
-      const apiKey = payloadKey || env.GEMINI_API_KEY;
+      // Enforce Cloudflare Worker environment variable only
+      const apiKey = env.GEMINI_API_KEY;
 
       if (!apiKey) {
-        return new Response(JSON.stringify({ response: "PG1 Error: GEMINI_API_KEY missing in environment." }), {
+        return new Response(JSON.stringify({ response: "PG1 Error: GEMINI_API_KEY environment variable missing on worker." }), {
           status: 200,
           headers: { "Content-Type": "application/json", ...corsHeaders }
         });
@@ -84,12 +85,25 @@ export default {
           parts.push({
             inline_data: {
               mime_type: "image/jpeg",
-              data: image
+              data: image.replace(/^data:image\/\w+;base64,/, "")
             }
           });
         }
-        parts.push({ text: message || "Analyze current status." });
+        if (message) {
+          parts.push({ text: message });
+        }
         contents = [{ role: "user", parts }];
+      } else if (image) {
+        // Attach image to latest user turn if history exists
+        const lastTurn = contents[contents.length - 1];
+        if (lastTurn && lastTurn.role === "user") {
+          lastTurn.parts.unshift({
+            inline_data: {
+              mime_type: "image/jpeg",
+              data: image.replace(/^data:image\/\w+;base64,/, "")
+            }
+          });
+        }
       }
 
       const systemInstruction = {
