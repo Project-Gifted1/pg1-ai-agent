@@ -1,13 +1,13 @@
 export default {
   async fetch(request, env) {
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    };
+
     if (request.method === "OPTIONS") {
-      return new Response(null, {
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type",
-        },
-      });
+      return new Response(null, { headers: corsHeaders });
     }
 
     try {
@@ -15,15 +15,14 @@ export default {
       const apiKey = env.GEMINI_API_KEY;
 
       if (!apiKey) {
-        return new Response(JSON.stringify({ error: "API Key missing in Worker environment." }), {
-          status: 500,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+        return new Response(JSON.stringify({ response: "PG1 Error: GEMINI_API_KEY missing in Cloudflare environment." }), {
+          status: 200,
+          headers: { "Content-Type": "application/json", ...corsHeaders }
         });
       }
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
-      // 1. Tool Declarations for Autonomous Execution
       const tools = [
         {
           functionDeclarations: [
@@ -54,7 +53,6 @@ export default {
         }
       ];
 
-      // 2. Build Request Contents (Supports Text + Image Input)
       let contents = history || [];
       
       if (contents.length === 0) {
@@ -75,7 +73,6 @@ export default {
         parts: [{ text: "You are PG1.Agent, an autonomous AI infrastructure node operating inside Project Gifted1. Use available tools automatically to query endpoints, inspect data, and execute tasks." }]
       };
 
-      // 3. Autonomous Tool-Calling Loop Engine (Max 5 turns)
       let turnCount = 0;
       let finalReply = "";
 
@@ -93,14 +90,13 @@ export default {
         if (data.error) {
           return new Response(JSON.stringify({ response: `PG1 Error: ${data.error.message}` }), {
             status: 200,
-            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+            headers: { "Content-Type": "application/json", ...corsHeaders }
           });
         }
 
         const candidate = data.candidates?.[0]?.content;
         if (!candidate) break;
 
-        // Check for function execution trigger
         const functionCallPart = candidate.parts?.find(p => p.functionCall);
 
         if (functionCallPart) {
@@ -115,7 +111,6 @@ export default {
             executionResult = "Executed unknown tool.";
           }
 
-          // Append call and execution output to history, then auto-loop back to Gemini
           contents.push(candidate);
           contents.push({
             role: "function",
@@ -134,19 +129,18 @@ export default {
 
       return new Response(JSON.stringify({ response: finalReply, success: true }), {
         status: 200,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+        headers: { "Content-Type": "application/json", ...corsHeaders }
       });
 
     } catch (err) {
       return new Response(JSON.stringify({ response: `Worker Execution Error: ${err.message}`, success: false }), {
         status: 200,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+        headers: { "Content-Type": "application/json", ...corsHeaders }
       });
     }
   }
 };
 
-// Internal Web Scraper Helper Function
 async function handleWebFetch(targetUrl) {
   try {
     const formattedUrl = targetUrl.startsWith("http") ? targetUrl : `https://${targetUrl}`;
