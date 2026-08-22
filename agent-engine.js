@@ -7,6 +7,23 @@
   let sessionHistory = [];
   let totalBytesProcessed = 0;
   let totalRequests = 0;
+  let currentBase64Image = null;
+
+  function parseMarkdownToHTML(text) {
+    if (!text) return "";
+    let html = text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+      .replace(/^\*\s+(.*)$/gbm, '<ul><li>$1</li></ul>')
+      .replace(/<\/ul>\n<ul>/g, '')
+      .replace(/\n/g, '<br>');
+    return html;
+  }
 
   function updateDashboardMetrics(bytesSent) {
     totalRequests++;
@@ -15,30 +32,62 @@
     const speedMbps = ((bytesSent * 8) / (1024 * 1024)).toFixed(2);
     const mbProcessed = (totalBytesProcessed / (1024 * 1024)).toFixed(2);
 
-    const statElements = document.querySelectorAll(".stat-card, .metric-value, .dash-stat");
-    if (statElements.length > 0) {
-      statElements.forEach(el => {
-        if (el.innerText.includes("NaN") || el.innerText.includes("0 MB/s") || el.innerText.includes("Status")) {
-          el.innerHTML = `<strong>Throughput:</strong> ${speedMbps} Mbps | <strong>Processed:</strong> ${mbProcessed} MB | <strong>Requests:</strong> ${totalRequests}`;
-        }
-      });
+    const dashContainer = document.getElementById("dash-tab-content") || document.body;
+    const statElements = dashContainer.querySelectorAll(".stat-card, .metric-value, .dash-stat, div, p");
+
+    statElements.forEach(el => {
+      if (el.innerText.includes("NaN") || el.innerText.includes("0 MB/s") || el.innerText.includes("Throughput:")) {
+        el.innerHTML = `<strong>Throughput:</strong> ${speedMbps} Mbps | <strong>Processed:</strong> ${mbProcessed} MB | <strong>Requests:</strong> ${totalRequests}`;
+      }
+    });
+  }
+
+  function setupFileAttachmentHook() {
+    const attachBtn = document.getElementById("attach-btn") || document.querySelector(".attach-btn") || document.querySelector("button[title*='Attach']");
+    if (!attachBtn) return;
+
+    let fileInput = document.getElementById("pg1-file-input");
+    if (!fileInput) {
+      fileInput = document.createElement("input");
+      fileInput.type = "file";
+      fileInput.id = "pg1-file-input";
+      fileInput.accept = "image/*";
+      fileInput.style.display = "none";
+      document.body.appendChild(fileInput);
     }
+
+    attachBtn.onclick = () => fileInput.click();
+
+    fileInput.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (event) {
+        currentBase64Image = event.target.result;
+        alert(`Image Attached: ${file.name}`);
+      };
+      reader.readAsDataURL(file);
+    };
   }
 
   async function executeViaWorker(promptText) {
     try {
-      sessionHistory.push({
-        role: "user",
-        parts: [{ text: promptText }]
-      });
+      const userPayloadPart = { role: "user", parts: [{ text: promptText }] };
+      sessionHistory.push(userPayloadPart);
+
+      const requestBody = {
+        message: promptText,
+        history: sessionHistory,
+        image: currentBase64Image
+      };
+
+      currentBase64Image = null; // Clear attachment after read
 
       const response = await fetch(WORKER_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: promptText,
-          history: sessionHistory
-        })
+        body: JSON.stringify(requestBody)
       });
 
       const data = await response.json();
@@ -65,7 +114,7 @@
       if (chatArea) {
         const userBubble = document.createElement("div");
         userBubble.className = "chat-bubble user-bubble";
-        userBubble.innerHTML = `<div class="bubble-text">${promptText}</div>`;
+        userBubble.innerHTML = `<div class="bubble-text">${parseMarkdownToHTML(promptText)}</div>`;
         chatArea.appendChild(userBubble);
       }
 
@@ -74,11 +123,13 @@
       if (chatArea) {
         const aiBubble = document.createElement("div");
         aiBubble.className = "chat-bubble ai-bubble";
-        aiBubble.innerHTML = `<div class="bubble-text">${output}</div>`;
+        aiBubble.innerHTML = `<div class="bubble-text">${parseMarkdownToHTML(output)}</div>`;
         chatArea.appendChild(aiBubble);
         chatArea.scrollTop = chatArea.scrollHeight;
       }
     };
-    console.log("[PG1 Agent Engine] Hooked into UI with history persistence and live dashboard telemetry.");
   }
+
+  document.addEventListener("DOMContentLoaded", setupFileAttachmentHook);
+  setTimeout(setupFileAttachmentHook, 1000);
 })();
