@@ -4,7 +4,7 @@
   console.log("[PG1 Agent Engine] Autonomous runtime loading...");
 
   // AUTOMATIC CLOUDFLARE WORKER ROUTE
-  const WORKER_URL = "https://pg1-worker.workers.dev";
+  const WORKER_URL = "https://pg1-worker.gnfcw9w5rk.workers.dev";
 
   async function executeViaWorker(promptText) {
     try {
