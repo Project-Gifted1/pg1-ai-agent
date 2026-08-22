@@ -1,8 +1,8 @@
-// Project Gifted1 - Absolute Control Override & Sovereign Engine
+// Project Gifted1 - Full Sovereign Engine & Global Fetch Interceptor
 (function () {
-  console.log("[PG1 Sovereign Engine] Override active.");
+  console.log("[PG1 Sovereign Engine] Full codebase active.");
 
-  // Global fetch interceptor to catch and rewrite any stray 2.5-flash calls
+  // Global fetch interceptor: catches any stray requests to gemini-2.5-flash and upgrades them to gemini-3.6-flash
   const originalFetch = window.fetch;
   window.fetch = async function(resource, init) {
     if (typeof resource === 'string' && resource.includes('gemini-2.5-flash')) {
@@ -137,7 +137,7 @@
 
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${activeKey}`;
 
-        const res = await originalFetch(apiUrl, {
+        const res = await window.fetch(apiUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -169,7 +169,6 @@
     }
   }
 
-  // Intercept click and STOP competing old event listeners instantly
   document.addEventListener("click", function (e) {
     const target = e.target;
     if (!target) return;
