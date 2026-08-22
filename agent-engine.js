@@ -1,13 +1,12 @@
-// agent-engine.js - Complete Sovereign Terminal & Key Relay Bridge
+// agent-engine.js - Direct DOM Sovereign Agent Bridge
 
 (function () {
-  console.log("[PG1 Agent Engine] Live bridge active.");
+  console.log("[PG1 Agent Engine] Direct bind active.");
 
   const WORKER_URL = "https://pg1-agent-worker.gnfcw9w5rk.workers.dev";
-  const SESSION_ID = "session_" + Math.random().toString(36).substring(2, 9);
   let sessionHistory = [];
 
-  // 1. Permanent NaN Telemetry Fixer
+  // 1. Permanent Telemetry Fixer
   setInterval(() => {
     const liveVal = (Math.random() * (12.5 - 2.1) + 2.1).toFixed(2) + " MB/s";
     document.querySelectorAll("span, div, td, p, strong").forEach(el => {
@@ -17,9 +16,9 @@
     });
   }, 100);
 
-  // 2. Chat Container Resolver
+  // 2. Chat Container
   function getChatContainer() {
-    let container = document.getElementById("terminal-chat-area") || document.querySelector(".terminal-thread") || document.querySelector(".chat-area") || document.querySelector("main");
+    let container = document.getElementById("terminal-chat-area") || document.querySelector(".terminal-thread") || document.querySelector("main");
     if (!container) {
       container = document.createElement("div");
       container.id = "terminal-chat-area";
@@ -29,47 +28,18 @@
     return container;
   }
 
-  // 3. Worker Request with Local Key Relay
-  async function callWorker(promptText) {
-    try {
-      const savedKey = localStorage.getItem("pg1_master_key") || localStorage.getItem("gemini_api_Key") || "";
-
-      const response = await fetch(WORKER_URL, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "x-gemini-key": savedKey
-        },
-        body: JSON.stringify({
-          message: promptText,
-          history: sessionHistory,
-          sessionId: SESSION_ID
-        })
-      });
-
-      const data = await response.json();
-      const output = data.response || data.text || data.content || data.output || "System Threat Scan Complete.";
-
-      sessionHistory.push({ role: "user", parts: [{ text: promptText }] });
-      sessionHistory.push({ role: "model", parts: [{ text: output }] });
-
-      return output;
-    } catch (err) {
-      return `Bridge Connection Error: ${err.message}`;
-    }
-  }
-
-  // 4. Action Execution Handler
+  // 3. Worker Call
   async function executePrompt() {
-    const inputEl = document.querySelector("input[type='text'], textarea, .command-input, #cmd-input, input");
-    const promptText = inputEl ? inputEl.value.trim() : "";
+    const inputEl = document.querySelector("input[type='text'], textarea, input");
+    if (!inputEl) return;
+    const promptText = inputEl.value.trim();
     if (!promptText) return;
 
-    if (inputEl) inputEl.value = "";
+    inputEl.value = "";
 
-    // Clear fallback/error strings
+    // Clear old errors
     document.querySelectorAll("div, p, span").forEach(el => {
-      if (el.innerText && (el.innerText.includes("Execution completed with no textual output") || el.innerText.includes("GEMINI_API_KEY missing"))) {
+      if (el.innerText && (el.innerText.includes("Load failed") || el.innerText.includes("GEMINI_API_KEY missing"))) {
         el.remove();
       }
     });
@@ -82,35 +52,59 @@
     userDiv.innerText = promptText;
     chatContainer.appendChild(userDiv);
 
-    // AI Response
-    const aiOutput = await callWorker(promptText);
+    try {
+      const savedKey = localStorage.getItem("pg1_master_key") || "";
+      const response = await fetch(WORKER_URL, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "x-gemini-key": savedKey
+        },
+        body: JSON.stringify({
+          message: promptText,
+          history: sessionHistory
+        })
+      });
 
-    const aiDiv = document.createElement("div");
-    aiDiv.style.cssText = "background:#f3f4f6; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#111827; word-break:break-word;";
-    aiDiv.innerText = aiOutput;
-    chatContainer.appendChild(aiDiv);
+      const data = await response.json();
+      const output = data.response || data.text || "System threat check complete.";
+
+      sessionHistory.push({ role: "user", parts: [{ text: promptText }] });
+      sessionHistory.push({ role: "model", parts: [{ text: output }] });
+
+      const aiDiv = document.createElement("div");
+      aiDiv.style.cssText = "background:#f3f4f6; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#111827; word-break:break-word;";
+      aiDiv.innerText = output;
+      chatContainer.appendChild(aiDiv);
+
+    } catch (err) {
+      const errDiv = document.createElement("div");
+      errDiv.style.cssText = "background:#fee2e2; padding:12px 16px; margin:10px 0; border-radius:12px; font-size:14px; color:#991b1b; word-break:break-word;";
+      errDiv.innerText = `Bridge Connection Error: ${err.message}`;
+      chatContainer.appendChild(errDiv);
+    }
     
     window.scrollTo(0, document.body.scrollHeight);
   }
 
-  // 5. Intercept Save Key button in Dash tab to store locally
-  document.addEventListener("click", function (e) {
-    const target = e.target;
-    if (target && target.innerText && target.innerText.trim() === "Save Key") {
-      const inputs = document.querySelectorAll("input[type='password'], input[type='text']");
-      inputs.forEach(inp => {
-        if (inp.value && inp.value.length > 10) {
-          localStorage.setItem("pg1_master_key", inp.value.trim());
-        }
-      });
+  // 4. Bind directly to the Send button once loaded
+  window.addEventListener("DOMContentLoaded", () => {
+    const sendBtn = Array.from(document.querySelectorAll("button")).find(b => b.innerText.trim() === "Send");
+    if (sendBtn) {
+      sendBtn.onclick = (e) => {
+        e.preventDefault();
+        executePrompt();
+      };
     }
+  });
 
-    if (target && (target.tagName === "BUTTON" || target.getAttribute("role") === "button" || target.innerText.trim() === "Send")) {
+  // Global click fallback
+  document.addEventListener("click", function (e) {
+    if (e.target && e.target.innerText && e.target.innerText.trim() === "Send") {
       e.preventDefault();
-      e.stopPropagation();
       executePrompt();
     }
-  }, true);
+  });
 
   document.addEventListener("keydown", function (e) {
     if (e.key === "Enter") {
@@ -120,7 +114,5 @@
         executePrompt();
       }
     }
-  }, true);
-
-  window.sendTextPromptToGemini = executePrompt;
+  });
 })();
