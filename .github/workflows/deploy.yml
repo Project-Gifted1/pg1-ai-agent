@@ -24,3 +24,9 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy worker.js --name pg1-worker --compatibility-date 2024-01-01
+
+      - name: Sync GitHub Secret to Cloudflare Worker
+        run: |
+          echo "${{ secrets.GH_PAT }}" | npx wrangler secret put GH_PAT --name pg1-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
