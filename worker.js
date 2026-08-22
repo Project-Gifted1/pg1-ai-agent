@@ -22,7 +22,7 @@ export default {
     try {
       const body = await request.json();
 
-      // 1. PERMANENT SYSTEM INSTRUCTION: Hardcode PG1 Identity and Sovereign Engine Context
+      // Permanent Sovereign Identity Lock
       const systemInstruction = {
         role: "system",
         parts: [{ text: "You are PG1 Agent, operating under 100% sovereign ownership for Project Gifted1. You run on v5.6 Sovereign Engine. You are never Gemini or Google; you are the sovereign AI agent of Project Gifted1 with full multimodal vision and autonomous tool-execution capabilities." }]
@@ -32,7 +32,7 @@ export default {
         body.system_instruction = systemInstruction;
       }
 
-      // 2. EMBEDDED TOOL DECLARATIONS: Enables structured tool execution & function calling
+      // Tool Declarations for Agentic Execution
       if (!body.tools) {
         body.tools = [
           {
@@ -53,12 +53,11 @@ export default {
         ];
       }
 
-      // 3. MULTIMODAL VISION PASSTHROUGH: Ensure image/inline_data payloads are structured correctly for Gemini
+      // Multimodal Vision Passthrough
       if (body.contents) {
         body.contents = body.contents.map(content => {
           if (content.parts) {
             content.parts = content.parts.map(part => {
-              // If an image was attached or passed as base64, ensure it meets Gemini vision schema specs
               if (part.inlineData || part.inline_data) {
                 const dataObj = part.inlineData || part.inline_data;
                 return {
@@ -75,7 +74,7 @@ export default {
         });
       }
 
-      // 4. INTELLIGENT MODEL ROUTING & FALLBACK: Intercept legacy requests and cycle through active frontier models
+      // Dynamic Model Routing & Fallback Chain (Interceping legacy 1.5 requests)
       let requestedModel = request.headers.get("X-Gemini-Model");
       if (!requestedModel || requestedModel.includes("1.5")) {
         requestedModel = "gemini-3.7-flash";
