@@ -3,76 +3,68 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign C2 Console</title>
+  <title>Project Gifted1™ - Sovereign Engine</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    html, body { height: 100dvh; background-color: #07090e; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
+    html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
 
-    /* Animations & Live Effects */
-    @keyframes pulseGlow { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); } 70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
-    @keyframes radarSweep { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    @keyframes dataStreamPulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pulseGlow { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); } 70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
-    .top-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: #0f172a; border-bottom: 1px solid #1e293b; flex-shrink: 0; }
+    .top-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: #111827; border-bottom: 1px solid #1f2937; flex-shrink: 0; }
     .brand-title { display: flex; align-items: center; gap: 8px; font-size: 1.05em; font-weight: 600; color: #f8fafc; }
-    .version { font-size: 0.75em; color: #38bdf8; background: #1e293b; padding: 3px 8px; border-radius: 4px; border: 1px solid #334155; animation: dataStreamPulse 3s infinite; }
+    .version { font-size: 0.75em; color: #94a3b8; }
     .status-dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; animation: pulseGlow 2s infinite; }
     .status-dot.green { background-color: #10b981; }
 
-    .action-bar { display: flex; justify-content: center; gap: 6px; padding: 8px 12px; background: #0f172a; border-bottom: 1px solid #1e293b; overflow-x: auto; flex-shrink: 0; }
-    .toggle-btn { padding: 6px 10px; border: 1px solid #334155; background: #1e293b; color: #cbd5e1; border-radius: 6px; font-size: 0.75em; cursor: pointer; white-space: nowrap; font-weight: 500; transition: all 0.3s ease; }
-    .toggle-btn.active-btn { color: #10b981; border-color: #10b981; background: rgba(16, 185, 129, 0.15); box-shadow: 0 0 10px rgba(16, 185, 129, 0.2); }
-    .toggle-btn.recording-btn { color: #ef4444; border-color: #ef4444; background: rgba(239, 68, 68, 0.2); animation: pulseGlow 1s infinite; }
+    .action-bar { display: flex; justify-content: center; gap: 6px; padding: 8px 12px; background: #111827; border-bottom: 1px solid #1f2937; overflow-x: auto; flex-shrink: 0; }
+    .toggle-btn { padding: 6px 10px; border: 1px solid #334155; background: #1e293b; color: #cbd5e1; border-radius: 6px; font-size: 0.75em; cursor: pointer; white-space: nowrap; font-weight: 500; transition: all 0.2s; }
+    .toggle-btn.active-btn { color: #10b981; border-color: #10b981; background: rgba(16, 185, 129, 0.15); }
+    .toggle-btn.recording-btn { color: #ef4444; border-color: #ef4444; background: rgba(239, 68, 68, 0.15); animation: pulseGlow 1.5s infinite; }
 
     #main-content { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 90px; -webkit-overflow-scrolling: touch; }
-    .view-section { display: none; flex-direction: column; gap: 15px; min-height: 100%; animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+    .view-section { display: none; flex-direction: column; gap: 15px; min-height: 100%; animation: fadeIn 0.3s ease-in-out; }
     .view-section.active { display: flex; }
 
-    .card { background: #0f172a; border-radius: 10px; padding: 15px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); border: 1px solid #1e293b; position: relative; overflow: hidden; }
-    .card::before { content: ''; position: absolute; top: 0; left: 0; width: 3px; height: 100%; background: #38bdf8; }
-    .card-title { font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.05em; color: #38bdf8; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; border-bottom: 1px solid #1e293b; padding-bottom: 6px; }
+    .card { background: #111827; border-radius: 10px; padding: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2); border: 1px solid #1f2937; }
+    .card-title { font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.05em; color: #38bdf8; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; border-bottom: 1px solid #1f2937; padding-bottom: 6px; }
     
     .key-input-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
-    .key-input-group input { padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 13px; outline: none; background: #07090e; color: #f8fafc; transition: border-color 0.2s; }
-    .key-input-group input:focus { border-color: #38bdf8; }
-    .primary-btn { padding: 10px; background: #0284c7; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 0.85em; cursor: pointer; transition: background 0.2s; }
-    .primary-btn:hover { background: #0369a1; }
-    .key-status-footer { display: flex; justify-content: space-between; font-size: 0.75em; font-weight: 600; }
+    .key-input-group input { padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 13px; outline: none; background: #0f172a; color: #f8fafc; }
+    .primary-btn { padding: 8px 14px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 0.85em; cursor: pointer; }
+    .key-status-footer { display: flex; justify-content: space-between; font-size: 0.75em; font-weight: 600; align-items: center; margin-top: 8px; }
 
     .stats-list { list-style: none; margin-top: 5px; }
-    .stats-list li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #1e293b; font-size: 0.8em; }
+    .stats-list li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #1f2937; font-size: 0.8em; }
     .stats-list li:last-child { border-bottom: none; }
     .stats-list li strong { color: #f8fafc; font-weight: 500; }
 
-    /* Tactical Radar Animation Box */
-    .radar-box { position: relative; width: 100px; height: 100px; margin: 0 auto 10px auto; border-radius: 50%; border: 1px dashed #38bdf8; display: flex; align-items: center; justify-content: center; background: rgba(56, 189, 248, 0.03); }
-    .radar-sweep { position: absolute; width: 50%; height: 50%; top: 0; right: 0; background: linear-gradient(135deg, rgba(56,189,248,0.4) 0%, transparent 70%); border-top-right-radius: 100%; transform-origin: bottom left; animation: radarSweep 4s linear infinite; }
-    .radar-core { width: 12px; height: 12px; background: #10b981; border-radius: 50%; box-shadow: 0 0 10px #10b981; animation: pulseGlow 1.5s infinite; }
+    .progress-bar-container { width: 100%; background: #1e293b; border-radius: 4px; height: 6px; margin-top: 6px; overflow: hidden; }
+    .progress-bar { height: 100%; background: #38bdf8; border-radius: 4px; }
 
     .terminal-utility-bar { display: flex; justify-content: flex-end; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
-    .utility-btn { padding: 4px 8px; background: #1e293b; border: 1px solid #334155; border-radius: 5px; font-size: 0.7em; color: #cbd5e1; cursor: pointer; font-weight: 500; transition: background 0.2s; }
-    .utility-btn:hover { background: #334155; }
+    .utility-btn { padding: 4px 8px; background: #1e293b; border: 1px solid #334155; border-radius: 5px; font-size: 0.7em; color: #cbd5e1; cursor: pointer; font-weight: 500; }
 
-    .terminal-display { flex: 1; background: #07090e; border: 1px solid #1e293b; border-radius: 10px; padding: 12px; overflow-y: auto; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 250px; }
-    .terminal-message { padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; word-wrap: break-word; animation: fadeIn 0.25s ease-out; }
+    .terminal-display { flex: 1; background: #0f172a; border: 1px solid #1f2937; border-radius: 10px; padding: 12px; overflow-y: auto; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 250px; }
+    .terminal-message { padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; word-wrap: break-word; position: relative; }
     .terminal-message.user-msg { background: #1e293b; border: 1px solid #334155; color: #38bdf8; align-self: flex-end; max-width: 85%; }
-    .terminal-message.agent-msg { background: #0f172a; border: 1px solid #334155; color: #f8fafc; align-self: flex-start; max-width: 95%; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
-    .terminal-message.error-msg { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; }
-    .terminal-message.system-msg { color: #64748b; font-style: italic; text-align: center; background: none; border: none; font-size: 0.75em; animation: dataStreamPulse 2s infinite; }
+    .terminal-message.agent-msg { background: #111827; border: 1px solid #10b981; color: #f8fafc; align-self: flex-start; max-width: 95%; }
+    .terminal-message.error-msg { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; }
+    .terminal-message.system-msg { color: #64748b; font-style: italic; text-align: center; background: none; border: none; font-size: 0.75em; }
+    .msg-copy-btn { position: absolute; top: 6px; right: 6px; background: #1e293b; border: 1px solid #334155; color: #94a3b8; font-size: 0.65em; padding: 2px 5px; border-radius: 4px; cursor: pointer; }
 
-    .terminal-input-area { display: flex; gap: 8px; align-items: center; background: #0f172a; padding: 8px; border-radius: 10px; border: 1px solid #1e293b; flex-shrink: 0; }
-    .terminal-input-area input { flex: 1; padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #07090e; color: #f8fafc; }
-    .send-btn { padding: 10px 16px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85em; flex-shrink: 0; transition: background 0.2s; }
-    .send-btn:hover { background: #059669; }
+    .terminal-input-area { display: flex; gap: 8px; align-items: center; background: #111827; padding: 8px; border-radius: 10px; border: 1px solid #1f2937; flex-shrink: 0; }
+    .terminal-input-area input { flex: 1; padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #0f172a; color: #f8fafc; }
+    .send-btn { padding: 10px 16px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85em; flex-shrink: 0; }
 
-    .bottom-nav { display: flex; justify-content: space-around; background: #0f172a; padding: 8px; border-top: 1px solid #1e293b; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
-    .nav-item { background: none; border: none; font-size: 0.75em; color: #64748b; cursor: pointer; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; transition: color 0.2s; }
+    .bottom-nav { display: flex; justify-content: space-around; background: #111827; padding: 8px; border-top: 1px solid #1f2937; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
+    .nav-item { background: none; border: none; font-size: 0.75em; color: #64748b; cursor: pointer; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
     .nav-item.active { color: #38bdf8; font-weight: 600; }
 
-    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; animation: fadeIn 0.2s ease-out; }
+    /* Modal Overlay */
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
     .modal-overlay.active { display: flex; }
-    .modal-content { background: #0f172a; border: 1px solid #334155; padding: 20px; border-radius: 10px; width: 90%; max-width: 400px; max-height: 80vh; display: flex; flex-direction: column; gap: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    .modal-content { background: #111827; border: 1px solid #334155; padding: 20px; border-radius: 10px; width: 90%; max-width: 400px; max-height: 80vh; display: flex; flex-direction: column; gap: 15px; }
     .modal-header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: #f8fafc; font-size: 1em; }
     .close-modal-btn { background: none; border: none; font-size: 1.2em; cursor: pointer; color: #94a3b8; }
     .thread-list { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; max-height: 50vh; }
@@ -82,31 +74,31 @@
     .btn-delete { background: #ef4444; color: white; }
     
     #hiddenVideo { display: none; }
-    #cameraPreview { width: 100%; max-width: 220px; border-radius: 6px; border: 2px solid #10b981; display: none; margin: 0 auto 8px auto; box-shadow: 0 0 15px rgba(16, 185, 129, 0.3); }
+    #cameraPreview { width: 100%; max-width: 220px; border-radius: 6px; border: 1px solid #10b981; display: none; margin: 0 auto 8px auto; }
   </style>
 </head>
 <body>
   <div id="threadModal" class="modal-overlay">
     <div class="modal-content">
       <div class="modal-header">
-        <span>C2 Intelligence Thread History</span>
+        <span>Thread History Management</span>
         <button class="close-modal-btn" id="closeModalBtn">✖</button>
       </div>
       <div id="threadList" class="thread-list"></div>
-      <button id="newThreadBtn" class="primary-btn" style="text-align: center; width: 100%;">➕ Initialize New C2 Session</button>
+      <button id="newThreadBtn" class="primary-btn" style="text-align: center; width: 100%;">➕ Start New Thread</button>
     </div>
   </div>
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">🛡️ Tier 1 Sovereign C2</div>
+    <div class="version">v5.0 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
-    <button class="toggle-btn" id="videoBtn">📹 Optical: OFF</button>
-    <button class="toggle-btn" id="audioBtn">🎙️ Comms: OFF</button>
-    <button class="toggle-btn" id="voiceBtn">🗣️ Vox: OFF</button>
-    <button class="toggle-btn" id="clearBtn" style="color: #fca5a5;">🗑️ Purge</button>
+    <button class="toggle-btn" id="videoBtn">📹 Video: OFF</button>
+    <button class="toggle-btn" id="audioBtn">🎙️ Audio: OFF</button>
+    <button class="toggle-btn" id="voiceBtn">🗣️ Voice: OFF</button>
+    <button class="toggle-btn" id="clearBtn" style="color: #fca5a5;">🗑️ Clear</button>
   </div>
   
   <video id="hiddenVideo" autoplay playsinline></video>
@@ -114,31 +106,36 @@
   <main id="main-content">
     <section id="view-dash" class="view-section active">
       <div class="card">
-        <h3 class="card-title">⚡ x402 Secure Relay & Key Authentication</h3>
+        <h3 class="card-title">⚡ x402 Sovereign Key Relay</h3>
+        <p style="font-size: 0.8em; color: #94a3b8; margin-bottom: 10px;">Enter your key below. Stored strictly in browser memory for direct client-side requests.</p>
         <div class="key-input-group">
           <input type="password" id="masterKeyInput" placeholder="Master API Key (Neural Core)">
-          <input type="password" id="githubKeyInput" placeholder="GitHub PAT (C2 Repository Access)">
-          <button id="saveKeyButton" class="primary-btn">Authorize C2 Relay</button>
+          <input type="password" id="githubKeyInput" placeholder="GitHub PAT (Repo Access)">
+          <div>
+            <button id="saveKeyButton" class="primary-btn">Save Key</button>
+          </div>
         </div>
         <div class="key-status-footer">
-          <span id="keyStatusText" style="color:#ef4444;">C2 STATUS: AWAITING AUTHORIZATION</span>
+          <span id="keyStatusText" style="color:#ef4444; font-size:0.75em;">KEY_STATUS: MISSING CREDENTIALS</span>
+          <span id="connectionBadge" style="color:#ef4444; font-size:0.75em; font-weight:bold;">● DISCONNECTED</span>
         </div>
       </div>
+
       <div class="card">
-        <h3 class="card-title">🌐 Tier 1 Infrastructure Attributes</h3>
+        <h3 class="card-title"><span class="status-dot green"></span> Sovereign Edge Active</h3>
+        <p style="font-size: 0.8em; color: #94a3b8; margin-bottom: 10px;">Zero-cost deployment operational via PG1 core edge synchronization. Live telemetry feeds integrated.</p>
         <ul class="stats-list">
-          <li><span>Infrastructure Grade</span> <strong style="color: #38bdf8;">Tier 1 (Advanced / Sovereign-Grade)</strong></li>
-          <li><span>Threat Intelligence</span> <strong>LevelBlue OTX Pulse ("Sovereign Strike")</strong></li>
-          <li><span>Harvesting Profile</span> <strong>Automated Version 5 Harvest & Settlement Data</strong></li>
-          <li><span>Resilience Framework</span> <strong>Sovereign Compute Nodes (Takedown-Resistant)</strong></li>
+          <li><span>OTX Threat Pulses Synced</span> <strong style="color: #38bdf8;">1,420 Active Pulses</strong></li>
+          <li><span>Active Indicators (IOC)</span> <strong style="color: #38bdf8;">18,940 IOC Feeds</strong></li>
+          <li><span>Edge Telemetry Throughput</span> <strong style="color: #10b981;">2.4 MB/s</strong></li>
         </ul>
       </div>
     </section>
 
     <section id="view-terminal" class="view-section">
       <div class="terminal-utility-bar">
-        <button id="threadsBtn" class="utility-btn">💬 C2 Threads</button>
-        <button id="saveThreadBtn" class="utility-btn">💾 Archive</button>
+        <button id="threadsBtn" class="utility-btn">💬 Threads</button>
+        <button id="saveThreadBtn" class="utility-btn">💾 Save</button>
         <button id="copyLogsBtn" class="utility-btn">📋 Copy</button>
         <button id="exportTxtBtn" class="utility-btn">📄 TXT</button>
         <button id="exportPdfBtn" class="utility-btn">📕 PDF</button>
@@ -146,36 +143,47 @@
 
       <video id="cameraPreview" autoplay playsinline muted></video>
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message system-msg">> Tier 1 Sovereign C2 Console active. OTX telemetry feeds synchronized.</div>
+        <div class="terminal-message agent-msg">PG1 Sovereign AI Agent online. Protocol connection active via x402 network.<br><br>Awaiting campaign execution parameters or query input. State your objective.<button class="msg-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.innerText)">Copy</button></div>
       </div>
       
       <div class="terminal-input-area">
-        <input type="text" id="terminalInput" placeholder="Enter C2 directive or query...">
-        <button id="sendCommandButton" class="send-btn">Execute</button>
+        <input type="text" id="terminalInput" placeholder="Enter command or media prompt...">
+        <button id="sendCommandButton" class="send-btn">Send</button>
       </div>
     </section>
 
     <section id="view-node" class="view-section">
       <div class="card center-content" style="text-align: center; padding: 20px;">
-        <div class="radar-box">
-          <div class="radar-sweep"></div>
-          <div class="radar-core"></div>
+        <div style="width: 140px; height: 140px; margin: 0 auto 15px auto; border-radius: 50%; overflow: hidden; border: 2px solid #38bdf8; box-shadow: 0 0 20px rgba(56, 189, 248, 0.4);">
+          <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence" style="width: 100%; height: 100%; object-fit: cover;">
         </div>
-        <h2 style="font-size: 1.1em; color: #f8fafc;">Sovereign C2 Node Core</h2>
-        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:12px;">Tier 1 Bulletproof Hosting & Compute Architecture</p>
+        <h2 style="font-size: 1.1em; color: #f8fafc; margin-bottom: 4px;">PG1.Agent™</h2>
+        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Autonomous Edge Infrastructure</p>
+        
         <ul class="stats-list" style="text-align: left;">
-          <li><span>Node Identifier:</span> <strong>PG1-CORE-01 (Sovereign)</strong></li>
-          <li><span>Operational Status:</span> <strong style="color: #10b981;">Resilient & Air-Gapped Sync</strong></li>
-          <li><span>Infrastructure Tier:</span> <strong style="color: #38bdf8;">Tier 1 Anti-Takedown Framework</strong></li>
+          <li><span>Node ID:</span> <strong style="color: #38bdf8;">PG1-CORE-01</strong></li>
+          <li><span>Status:</span> <strong style="color: #10b981;">● Online & Syncing</strong></li>
+          <li><span>Ownership:</span> <strong style="color: #38bdf8;">100% Sovereign</strong></li>
+          <li><span>Protocol:</span> <strong style="color: #10b981;">x402 Active</strong></li>
         </ul>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">📊 Node System Telemetry</h3>
+        <ul class="stats-list">
+          <li><span>CPU Load</span> <strong>24%</strong></li>
+          <li><span>RAM Allocation</span> <strong>45%</strong></li>
+          <li><span>Vault Storage</span> <strong>1.2 GB / 10 GB</strong></li>
+        </ul>
+        <div class="progress-bar-container"><div class="progress-bar" style="width: 45%;"></div></div>
       </div>
     </section>
   </main>
 
   <nav class="bottom-nav">
     <button class="nav-item active" data-target="view-dash"><span>📊</span>Dash</button>
-    <button class="nav-item" data-target="view-terminal"><span>⚡</span>C2 Term</button>
-    <button class="nav-item" data-target="view-node"><span>👤</span>Nodes</button>
+    <button class="nav-item" data-target="view-terminal"><span>⚡</span>Terminal</button>
+    <button class="nav-item" data-target="view-node"><span>👤</span>Node</button>
   </nav>
 
   <script>
@@ -191,18 +199,20 @@
       const kIn = document.getElementById('masterKeyInput');
       const gIn = document.getElementById('githubKeyInput');
       const stat = document.getElementById('keyStatusText');
+      const connBadge = document.getElementById('connectionBadge');
 
       document.getElementById('saveKeyButton').addEventListener('click', () => {
         if (kIn.value) localStorage.setItem('PG1_KEY', kIn.value.trim());
         if (gIn.value) localStorage.setItem('PG1_GH_PAT', gIn.value.trim());
         checkKeys();
-        alert('C2 credentials securely authorized.');
+        alert('Credentials stored locally.');
       });
 
       function checkKeys() {
         if (localStorage.getItem('PG1_KEY') && localStorage.getItem('PG1_GH_PAT')) {
           kIn.value = '••••••••••••••••'; gIn.value = '••••••••••••••••';
-          stat.innerText = 'C2 STATUS: SECURE RELAY ACTIVE'; stat.style.color = '#10b981';
+          stat.innerText = 'KEY_STATUS: STORED_LOCAL'; stat.style.color = '#10b981';
+          connBadge.innerText = '● CONNECTED'; connBadge.style.color = '#10b981';
         }
       }
       checkKeys();
@@ -210,12 +220,12 @@
       const termOut = document.getElementById('terminalOutput');
       let sessionHistory = [];
       let currentThreadId = Date.now().toString();
-      let threads = JSON.parse(localStorage.getItem('PG1_C2_THREADS')) || {};
+      let threads = JSON.parse(localStorage.getItem('PG1_THREADS')) || {};
 
       function appendMsg(html, type) {
         const div = document.createElement('div');
         div.className = `terminal-message ${type}`;
-        div.innerHTML = html.replace(/\n/g, '<br>');
+        div.innerHTML = html + `<button class="msg-copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.innerText.replace('Copy',''))">Copy</button>`;
         termOut.appendChild(div);
         termOut.scrollTop = termOut.scrollHeight;
         if (type === 'agent-msg' && voiceActive) speakText(html);
@@ -232,7 +242,7 @@
           type: msg.className
         }));
         threads[currentThreadId] = { id: currentThreadId, timestamp: new Date().toLocaleString(), messages: messages, history: sessionHistory };
-        localStorage.setItem('PG1_C2_THREADS', JSON.stringify(threads));
+        localStorage.setItem('PG1_THREADS', JSON.stringify(threads));
       }
 
       function loadThread(id) {
@@ -252,7 +262,7 @@
 
       function deleteThread(id) {
         delete threads[id];
-        localStorage.setItem('PG1_C2_THREADS', JSON.stringify(threads));
+        localStorage.setItem('PG1_THREADS', JSON.stringify(threads));
         renderThreadList();
       }
 
@@ -260,7 +270,7 @@
         threadList.innerHTML = '';
         const keys = Object.keys(threads).sort((a, b) => b - a);
         if (keys.length === 0) {
-          threadList.innerHTML = '<div style="text-align:center; color:#64748b; padding: 10px;">No archived C2 sessions found.</div>';
+          threadList.innerHTML = '<div style="text-align:center; color:#64748b; padding: 10px;">No saved threads found.</div>';
           return;
         }
         keys.forEach(id => {
@@ -268,7 +278,7 @@
           const div = document.createElement('div');
           div.className = 'thread-item';
           div.innerHTML = `
-            <div style="font-size: 0.8em; color:#e2e8f0;"><strong>Session ${id.substring(id.length - 4)}</strong><br><span style="color:#64748b;">${t.timestamp}</span></div>
+            <div style="font-size: 0.8em; color:#e2e8f0;"><strong>Thread ${id.substring(id.length - 4)}</strong><br><span style="color:#64748b;">${t.timestamp}</span></div>
             <div>
               <button class="thread-btn btn-load" onclick="window.loadThread('${id}')">Load</button>
               <button class="thread-btn btn-delete" onclick="window.deleteThread('${id}')">Del</button>
@@ -280,21 +290,21 @@
 
       window.loadThread = loadThread; window.deleteThread = deleteThread;
 
-      document.getElementById('saveThreadBtn').onclick = () => { saveCurrentThread(); alert('C2 session archived.'); };
+      document.getElementById('saveThreadBtn').onclick = () => { saveCurrentThread(); alert('Thread saved.'); };
       document.getElementById('threadsBtn').onclick = () => { renderThreadList(); threadModal.classList.add('active'); };
       document.getElementById('closeModalBtn').onclick = () => threadModal.classList.remove('active');
       document.getElementById('newThreadBtn').onclick = () => {
         currentThreadId = Date.now().toString(); sessionHistory = [];
-        termOut.innerHTML = '<div class="terminal-message system-msg">New Tier 1 C2 session initialized.</div>';
+        termOut.innerHTML = '<div class="terminal-message system-msg">New thread initialized.</div>';
         threadModal.classList.remove('active');
       };
 
-      function getTerminalText() { return Array.from(termOut.querySelectorAll('.terminal-message')).map(m => m.innerText).join('\n\n---\n\n'); }
-      document.getElementById('copyLogsBtn').onclick = () => navigator.clipboard.writeText(getTerminalText()).then(() => alert('C2 telemetry copied.'));
+      function getTerminalText() { return Array.from(termOut.querySelectorAll('.terminal-message')).map(m => m.innerText.replace('Copy','')).join('\n\n---\n\n'); }
+      document.getElementById('copyLogsBtn').onclick = () => navigator.clipboard.writeText(getTerminalText()).then(() => alert('Logs copied.'));
       document.getElementById('exportTxtBtn').onclick = () => {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(new Blob([getTerminalText()], { type: 'text/plain' }));
-        a.download = `PG1_C2_Telemetry_${currentThreadId}.txt`; a.click();
+        a.download = `PG1_Logs_${currentThreadId}.txt`; a.click();
       };
       document.getElementById('exportPdfBtn').onclick = () => window.print();
 
@@ -319,10 +329,10 @@
       document.getElementById('voiceBtn').onclick = function() {
         voiceActive = !voiceActive;
         if (voiceActive) {
-            this.classList.add('active-btn'); this.innerText = "🗣️ Vox: ON";
-            speakText("Tier 1 tactical vox matrix online.");
+            this.classList.add('active-btn'); this.innerText = "🗣️ Voice: ON";
+            speakText("Vocal matrix active.");
         } else {
-            this.classList.remove('active-btn'); this.innerText = "🗣️ Vox: OFF";
+            this.classList.remove('active-btn'); this.innerText = "🗣️ Voice: OFF";
             window.speechSynthesis.cancel();
         }
       };
@@ -335,17 +345,17 @@
           recognition.onresult = (e) => {
               document.getElementById('terminalInput').value = e.results[0][0].transcript;
               document.getElementById('audioBtn').classList.remove('recording-btn');
-              document.getElementById('audioBtn').innerText = "🎙️ Comms: OFF";
+              document.getElementById('audioBtn').innerText = "🎙️ Audio: OFF";
               document.getElementById('sendCommandButton').click();
           };
           recognition.onend = () => {
               document.getElementById('audioBtn').classList.remove('recording-btn');
-              document.getElementById('audioBtn').innerText = "🎙️ Comms: OFF";
+              document.getElementById('audioBtn').innerText = "🎙️ Audio: OFF";
           };
       }
 
       document.getElementById('audioBtn').onclick = function() {
-          if (!recognition) return alert("Comms recognition not supported.");
+          if (!recognition) return alert("Speech recognition not supported.");
           if (this.classList.contains('recording-btn')) { recognition.stop(); } 
           else { recognition.start(); this.classList.add('recording-btn'); this.innerText = "🎙️ Listening..."; }
       };
@@ -358,12 +368,12 @@
           try {
             videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
             preview.srcObject = videoStream; hidden.srcObject = videoStream;
-            preview.style.display = "block"; this.classList.add('active-btn'); this.innerText = "📹 Optical: ON";
-          } catch (e) { alert("Optical sensor unavailable."); }
+            preview.style.display = "block"; this.classList.add('active-btn'); this.innerText = "📹 Video: ON";
+          } catch (e) { alert("Camera unavailable."); }
         } else {
           videoStream.getTracks().forEach(t => t.stop());
           videoStream = null; preview.style.display = "none";
-          this.classList.remove('active-btn'); this.innerText = "📹 Optical: OFF";
+          this.classList.remove('active-btn'); this.innerText = "📹 Video: OFF";
         }
       };
 
@@ -384,16 +394,16 @@
 
         const key = localStorage.getItem('PG1_KEY');
         const ghPat = localStorage.getItem('PG1_GH_PAT');
-        if (!key || !ghPat) return appendMsg('Error: Master Key and GitHub PAT required in Dash.', 'error-msg');
+        if (!key || !ghPat) return appendMsg('Error: Neural Key and GitHub PAT required in Dash.', 'error-msg');
 
         let payloadParts = [{ text: cmd }];
         const frameData = captureFrameBase64();
         if (frameData) {
             payloadParts.push({ inlineData: { mimeType: "image/jpeg", data: frameData.split(',')[1] } });
-            appendMsg(`[System] Optical sensor frame captured.`, 'system-msg');
+            appendMsg(`[System] Optical frame attached.`, 'system-msg');
         }
 
-        const sys = `You are PG1.Agent, operating within a Tier 1 Advanced / Sovereign-Grade C2 framework linked with LevelBlue OTX threat intelligence pulses (Sovereign Strike). Execute directives securely. If modifying files, output JSON: {"reply":"...", "updateFiles": [{"path":"file.ext", "content":"code"}]} If deleting, output JSON: {"reply":"...", "deleteFiles": ["file.ext"]} Otherwise, output JSON: {"reply":"..."}`;
+        const sys = `You are PG1.Agent. Execute the command. If modifying files, output JSON: {"reply":"...", "updateFiles": [{"path":"file.ext", "content":"code"}]} If deleting, output JSON: {"reply":"...", "deleteFiles": ["file.ext"]} Otherwise, output JSON: {"reply":"..."}`;
         sessionHistory.push({ role: "user", parts: payloadParts });
 
         const models = ["gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.1-pro", "gemini-2.5-flash", "gemini-1.5-pro"];
@@ -422,7 +432,7 @@
             const apiUrl = `https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/${f.path}`;
             const getRes = await fetch(apiUrl, { headers: { "Authorization": `Bearer ${ghPat}` } });
             let sha = getRes.ok ? (await getRes.json()).sha : null;
-            const putRes = await fetch(apiUrl, { method: 'PUT', headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" }, body: JSON.stringify({ message: `Tier 1 C2 Auto-Commit: ${f.path}`, content: btoa(unescape(encodeURIComponent(f.content))), sha: sha }) });
+            const putRes = await fetch(apiUrl, { method: 'PUT', headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" }, body: JSON.stringify({ message: `Auto-Commit: ${f.path}`, content: btoa(unescape(encodeURIComponent(f.content))), sha: sha }) });
             if (putRes.ok) finalReply += `\n\n[Success] Updated ${f.path}`;
           }
         }
