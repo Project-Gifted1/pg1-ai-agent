@@ -9,9 +9,12 @@
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
 
     @keyframes pulseGlow { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); } 70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
-    @keyframes logoBreath { 0%, 100% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.3), inset 0 0 10px rgba(2, 132, 199, 0.2); } 50% { box-shadow: 0 0 30px rgba(56, 189, 248, 0.7), inset 0 0 20px rgba(56, 189, 248, 0.4); } }
+    @keyframes radarSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes electricPulse { 0%, 100% { text-shadow: 0 0 5px rgba(56, 189, 248, 0.4), 0 0 10px rgba(56, 189, 248, 0.2); } 50% { text-shadow: 0 0 15px rgba(56, 189, 248, 0.9), 0 0 25px rgba(56, 189, 248, 0.6); } }
     @keyframes iconPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.8; } }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+    .pulsing-bolt { animation: electricPulse 2s infinite; display: inline-block; }
 
     .top-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: #111827; border-bottom: 1px solid #1f2937; flex-shrink: 0; }
     .brand-title { display: flex; align-items: center; gap: 8px; font-size: 1.05em; font-weight: 600; color: #f8fafc; }
@@ -41,12 +44,14 @@
     .stats-list li:last-child { border-bottom: none; }
     .stats-list li strong { color: #f8fafc; font-weight: 500; }
 
-    .progress-bar-container { width: 100%; background: #1e293b; border-radius: 4px; height: 6px; margin-top: 6px; overflow: hidden; }
+    .progress-bar-container { width: 100%; background: #1e293b; border-radius: 4px; height: 5px; margin-top: 4px; margin-bottom: 8px; overflow: hidden; }
     .progress-bar { height: 100%; background: #38bdf8; border-radius: 4px; transition: width 0.5s ease; }
 
-    /* Alive Pulsing Glow Logo Container */
-    .glowing-logo-wrapper { width: 140px; height: 140px; margin: 0 auto 15px auto; border-radius: 50%; overflow: hidden; border: 2px solid #38bdf8; animation: logoBreath 3s ease-in-out infinite; }
-    .glowing-logo-wrapper img { width: 100%; height: 100%; object-fit: cover; }
+    /* Animated Radar Logo Container */
+    .animated-logo-wrapper { position: relative; width: 140px; height: 140px; margin: 0 auto 15px auto; display: flex; align-items: center; justify-content: center; }
+    .radar-ring { position: absolute; width: 100%; height: 100%; border-radius: 50%; border: 2px dashed #10b981; animation: radarSpin 8s linear infinite; box-shadow: 0 0 15px rgba(16, 185, 129, 0.3); }
+    .logo-core-img { width: 120px; height: 120px; border-radius: 50%; overflow: hidden; border: 2px solid #38bdf8; z-index: 2; position: relative; box-shadow: 0 0 20px rgba(56, 189, 248, 0.4); }
+    .logo-core-img img { width: 100%; height: 100%; object-fit: cover; }
 
     .terminal-controls-header { display: flex; justify-content: space-between; align-items: center; background: #111827; padding: 8px 12px; border-radius: 8px; border: 1px solid #1f2937; font-size: 0.8em; margin-bottom: 10px; }
     .terminal-controls-header select { background: #0f172a; color: #38bdf8; border: 1px solid #334155; padding: 4px 8px; border-radius: 4px; font-size: 0.85em; outline: none; }
@@ -111,7 +116,7 @@
   <main id="main-content">
     <section id="view-dash" class="view-section active">
       <div class="card">
-        <h3 class="card-title">⚡ x402 Sovereign Key Relay</h3>
+        <h3 class="card-title"><span class="pulsing-bolt">⚡</span> x402 Sovereign Key Relay</h3>
         <p style="font-size: 0.8em; color: #94a3b8; margin-bottom: 10px;">Inject your Master Key to ignite PG1.Agent node interactions.</p>
         <div class="key-input-group">
           <input type="password" id="masterKeyInput" placeholder="Master API Key (Neural Core)">
@@ -133,21 +138,33 @@
           <span style="font-size:0.8em; color:#cbd5e1;">📡 Live OTX Telemetry Feed</span>
           <button id="syncFeedBtn" class="utility-btn" style="padding:4px 8px; background:#1e293b; border:1px solid #334155; color:#38bdf8; border-radius:4px; font-size:0.75em; cursor:pointer;">🔄 Sync Feed</button>
         </div>
-        <ul class="stats-list">
-          <li><span>OTX Threat Pulses Synced</span> <strong style="color: #38bdf8;">1,420 Active Pulses</strong></li>
-          <li><span>Active Indicators (IOC)</span> <strong style="color: #38bdf8;">18,940 IOC Feeds</strong></li>
+        
+        <ul class="stats-list" style="margin-bottom:2px;">
+          <li><span>OTX Threat Pulses Synced</span> <strong id="otxPulsesVal" style="color: #38bdf8;">1,420 Active Pulses</strong></li>
+        </ul>
+        <div class="progress-bar-container"><div id="otxBar" class="progress-bar" style="width: 70%;"></div></div>
+
+        <ul class="stats-list" style="margin-bottom:2px;">
+          <li><span>Active Indicators (IOC)</span> <strong id="iocVal" style="color: #38bdf8;">18,940 IOC Feeds</strong></li>
+        </ul>
+        <div class="progress-bar-container"><div id="iocBar" class="progress-bar" style="width: 85%;"></div></div>
+
+        <ul class="stats-list" style="margin-bottom:2px;">
           <li><span>Edge Telemetry Throughput</span> <strong id="telemetrySpeed" style="color: #10b981;">2.4 MB/s</strong></li>
         </ul>
-        <div class="progress-bar-container"><div id="throughputBar" class="progress-bar" style="width: 65%;"></div></div>
+        <div class="progress-bar-container"><div id="throughputBar" class="progress-bar" style="width: 60%;"></div></div>
       </div>
 
       <div class="card">
         <h3 class="card-title">🛡️ Sovereign Network Uplink Status</h3>
         <p style="font-size: 0.8em; color: #94a3b8; margin-bottom: 10px;">Encrypted verification channel active across distributed edge relays.</p>
-        <ul class="stats-list">
+        <ul class="stats-list" style="margin-bottom:2px;">
           <li><span>Uplink Protocol</span> <strong style="color: #38bdf8;">x402-Secure</strong></li>
+        </ul>
+        <div class="progress-bar-container"><div class="progress-bar" style="width: 90%; background: #10b981;"></div></div>
+
+        <ul class="stats-list" style="margin-bottom:2px;">
           <li><span>Node Latency</span> <strong id="nodeLatency" style="color: #10b981;">12 ms</strong></li>
-          <li><span>Encryption Standard</span> <strong style="color: #38bdf8;">AES-256-GCM</strong></li>
         </ul>
         <div class="progress-bar-container"><div id="latencyBar" class="progress-bar" style="width: 25%; background: #10b981;"></div></div>
       </div>
@@ -183,9 +200,12 @@
 
     <section id="view-node" class="view-section">
       <div class="card center-content" style="text-align: center; padding: 20px;">
-        <!-- Breathing Neon Glow Logo Container -->
-        <div class="glowing-logo-wrapper">
-          <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
+        <!-- Rotating Radar Wrapper -->
+        <div class="animated-logo-wrapper">
+          <div class="radar-ring"></div>
+          <div class="logo-core-img">
+            <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
+          </div>
         </div>
         <h2 style="font-size: 1.1em; color: #f8fafc; margin-bottom: 2px;">PG1.Agent™</h2>
         <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Autonomous Edge Infrastructure</p>
@@ -209,7 +229,7 @@
       </div>
 
       <div class="card">
-        <h3 class="card-title">⚡ Node Controls</h3>
+        <h3 class="card-title"><span class="pulsing-bolt">⚡</span> Node Controls</h3>
         <div style="display: flex; gap: 8px; justify-content: space-between; margin-top: 5px;">
           <button id="restartNodeBtn" class="utility-btn" style="flex:1; padding:8px; background:#1e293b; border:1px solid #334155; color:#38bdf8; border-radius:6px; font-weight:600; cursor:pointer;">🔄 Restart Node</button>
           <button id="purgeCacheBtn" class="utility-btn" style="flex:1; padding:8px; background:#1e293b; border:1px solid #334155; color:#f59e0b; border-radius:6px; font-weight:600; cursor:pointer;">🧹 Purge Cache</button>
@@ -241,13 +261,23 @@
     };
 
     document.addEventListener("DOMContentLoaded", () => {
-      // Live telemetry & dynamic indicator pulsing loop
+      let basePulses = 1420;
+      let baseIOC = 18940;
+
+      // Live telemetry & automatic pulsing update loop every second
       setInterval(() => {
+        basePulses += Math.floor(Math.random() * 3);
+        baseIOC += Math.floor(Math.random() * 5);
         const cpu = Math.floor(24 + Math.random() * 8);
         const ram = Math.floor(43 + Math.random() * 4);
         const speed = (2.2 + Math.random() * 0.6).toFixed(1);
         const latency = Math.floor(10 + Math.random() * 5);
         
+        document.getElementById('otxPulsesVal').innerText = basePulses.toLocaleString() + ' Active Pulses';
+        document.getElementById('iocVal').innerText = baseIOC.toLocaleString() + ' IOC Feeds';
+        document.getElementById('otxBar').style.width = (50 + (basePulses % 40)) + '%';
+        document.getElementById('iocBar').style.width = (60 + (baseIOC % 30)) + '%';
+
         const cpuEl = document.getElementById('cpuLoad');
         const ramEl = document.getElementById('ramAlloc');
         const ramBar = document.getElementById('ramBar');
@@ -259,10 +289,16 @@
         if (cpuEl) cpuEl.innerText = cpu + '%';
         if (ramEl) { ramEl.innerText = ram + '%'; ramBar.style.width = ram + '%'; }
         if (speedEl) speedEl.innerText = speed + ' MB/s';
-        if (throughputBar) throughputBar.style.width = (60 + Math.random() * 15) + '%';
+        if (throughputBar) throughputBar.style.width = (50 + Math.random() * 30) + '%';
         if (latencyEl) latencyEl.innerText = latency + ' ms';
         if (latencyBar) latencyBar.style.width = (20 + latency) + '%';
-      }, 2500);
+      }, 1000);
+
+      document.getElementById('syncFeedBtn').onclick = () => {
+        basePulses += 12;
+        baseIOC += 85;
+        alert('OTX Telemetry feed synchronized successfully.');
+      };
 
       document.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', () => {
@@ -330,7 +366,6 @@
       document.getElementById('exportPdfBtn').onclick = () => window.print();
       document.getElementById('restartNodeBtn').onclick = () => alert('Node restarted successfully.');
       document.getElementById('purgeCacheBtn').onclick = () => alert('Cache purged successfully.');
-      document.getElementById('syncFeedBtn').onclick = () => alert('OTX Telemetry feed synchronized.');
 
       let voiceActive = false;
       let agentVoice = null;
