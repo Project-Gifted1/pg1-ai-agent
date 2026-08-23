@@ -23,7 +23,7 @@ jobs:
           node-version: '20'
 
       - name: Deploy Worker to Cloudflare
-        run: npx wrangler deploy index.js --compatibility-date=2026-04-23
+        run: npx wrangler deploy index.js --name pg1-ai-agent --compatibility-date=2026-04-23 --no-bundle
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
