@@ -9,6 +9,7 @@
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
 
     @keyframes pulseGlow { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); } 70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+    @keyframes dataPulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
     .top-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: #111827; border-bottom: 1px solid #1f2937; flex-shrink: 0; }
@@ -37,10 +38,10 @@
     .stats-list { list-style: none; margin-top: 5px; }
     .stats-list li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #1f2937; font-size: 0.8em; }
     .stats-list li:last-child { border-bottom: none; }
-    .stats-list li strong { color: #f8fafc; font-weight: 500; }
+    .stats-list li strong { color: #f8fafc; font-weight: 500; animation: dataPulse 3s infinite; }
 
     .progress-bar-container { width: 100%; background: #1e293b; border-radius: 4px; height: 6px; margin-top: 6px; overflow: hidden; }
-    .progress-bar { height: 100%; background: #38bdf8; border-radius: 4px; }
+    .progress-bar { height: 100%; background: #38bdf8; border-radius: 4px; transition: width 0.5s ease; }
 
     .terminal-utility-bar { display: flex; justify-content: flex-end; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
     .utility-btn { padding: 4px 8px; background: #1e293b; border: 1px solid #334155; border-radius: 5px; font-size: 0.7em; color: #cbd5e1; cursor: pointer; font-weight: 500; }
@@ -61,7 +62,6 @@
     .nav-item { background: none; border: none; font-size: 0.75em; color: #64748b; cursor: pointer; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
     .nav-item.active { color: #38bdf8; font-weight: 600; }
 
-    /* Modal Overlay */
     .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
     .modal-overlay.active { display: flex; }
     .modal-content { background: #111827; border: 1px solid #334155; padding: 20px; border-radius: 10px; width: 90%; max-width: 400px; max-height: 80vh; display: flex; flex-direction: column; gap: 15px; }
@@ -125,9 +125,9 @@
         <h3 class="card-title"><span class="status-dot green"></span> Sovereign Edge Active</h3>
         <p style="font-size: 0.8em; color: #94a3b8; margin-bottom: 10px;">Zero-cost deployment operational via PG1 core edge synchronization. Live telemetry feeds integrated.</p>
         <ul class="stats-list">
-          <li><span>OTX Threat Pulses Synced</span> <strong style="color: #38bdf8;">1,420 Active Pulses</strong></li>
-          <li><span>Active Indicators (IOC)</span> <strong style="color: #38bdf8;">18,940 IOC Feeds</strong></li>
-          <li><span>Edge Telemetry Throughput</span> <strong style="color: #10b981;">2.4 MB/s</strong></li>
+          <li><span>OTX Threat Pulses Synced</span> <strong id="otxPulses" style="color: #38bdf8;">1,420 Active Pulses</strong></li>
+          <li><span>Active Indicators (IOC)</span> <strong id="activeIOC" style="color: #38bdf8;">18,940 IOC Feeds</strong></li>
+          <li><span>Edge Telemetry Throughput</span> <strong id="telemetrySpeed" style="color: #10b981;">2.4 MB/s</strong></li>
         </ul>
       </div>
     </section>
@@ -171,11 +171,11 @@
       <div class="card">
         <h3 class="card-title">📊 Node System Telemetry</h3>
         <ul class="stats-list">
-          <li><span>CPU Load</span> <strong>24%</strong></li>
-          <li><span>RAM Allocation</span> <strong>45%</strong></li>
+          <li><span>CPU Load</span> <strong id="cpuLoad">24%</strong></li>
+          <li><span>RAM Allocation</span> <strong id="ramAlloc">45%</strong></li>
           <li><span>Vault Storage</span> <strong>1.2 GB / 10 GB</strong></li>
         </ul>
-        <div class="progress-bar-container"><div class="progress-bar" style="width: 45%;"></div></div>
+        <div class="progress-bar-container"><div id="ramBar" class="progress-bar" style="width: 45%;"></div></div>
       </div>
     </section>
   </main>
@@ -188,6 +188,22 @@
 
   <script>
     document.addEventListener("DOMContentLoaded", () => {
+      // Live-updating telemetry simulation loop
+      setInterval(() => {
+        const cpu = Math.floor(22 + Math.random() * 8);
+        const ram = Math.floor(44 + Math.random() * 3);
+        const speed = (2.2 + Math.random() * 0.5).toFixed(1);
+        
+        const cpuEl = document.getElementById('cpuLoad');
+        const ramEl = document.getElementById('ramAlloc');
+        const ramBar = document.getElementById('ramBar');
+        const speedEl = document.getElementById('telemetrySpeed');
+        
+        if (cpuEl) cpuEl.innerText = cpu + '%';
+        if (ramEl) { ramEl.innerText = ram + '%'; ramBar.style.width = ram + '%'; }
+        if (speedEl) speedEl.innerText = speed + ' MB/s';
+      }, 2500);
+
       document.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', () => {
           document.querySelectorAll('.nav-item, .view-section').forEach(el => el.classList.remove('active'));
