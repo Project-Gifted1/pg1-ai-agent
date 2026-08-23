@@ -89,20 +89,20 @@
     <section id="view-dash" class="view-section active">
       <div class="card">
         <h3 class="card-title">⚡ x402 Sovereign Key Relay</h3>
-        <p class="card-desc">Inject your Master Key (Gemini API Key) for direct neural node interactions.</p>
+        <p class="card-desc">Inject your Sovereign Master Key for autonomous decentralized node interaction.</p>
         <div class="key-input-group">
-          <input type="password" id="masterKeyInput" placeholder="Enter Gemini API Key..." value="">
+          <input type="password" id="masterKeyInput" placeholder="Enter Sovereign Master Key..." value="">
           <button id="saveKeyButton" class="primary-btn">Save Key</button>
         </div>
         <div class="key-status-footer">
           <span id="keyStatusText" class="status-text" style="color:red;">KEY_STATUS: MISSING</span>
-          <span class="connection-status"><span class="status-dot green"></span> DYNAMIC_FALLBACK</span>
+          <span class="connection-status"><span class="status-dot green"></span> SOVEREIGN_CORE_ACTIVE</span>
         </div>
       </div>
 
       <div class="card">
         <h3 class="card-title"><span class="status-dot blue"></span> Sovereign Edge Active</h3>
-        <p class="card-desc">Decentralized edge grid active with auto-fallback model routing.</p>
+        <p class="card-desc">Autonomous edge grid active with decentralized campaign execution protocols.</p>
         <div class="telemetry-header">
           <span>📡 Live OTX Telemetry Feed</span>
           <button class="outline-btn">🔄 Sync Feed</button>
@@ -118,7 +118,7 @@
     <section id="view-terminal" class="view-section">
       <div id="terminalOutput" class="terminal-display">
         <div class="terminal-message system-msg">
-          PG1.Agent Terminal initialized with dynamic fallback safety. Awaiting commands...
+          PG1.Agent Sovereign Core online. Autonomous automation modules loaded.
         </div>
       </div>
       
@@ -140,7 +140,7 @@
           <li><span>Node ID:</span> <strong>PG1-CORE-01</strong></li>
           <li><span>Status:</span> <strong style="color: green;">● Online & Syncing</strong></li>
           <li><span>Ownership:</span> <strong style="color: blue;">100% Sovereign</strong></li>
-          <li><span>Protocol:</span> <strong>Dynamic Multi-Model Fallback</strong></li>
+          <li><span>Protocol:</span> <strong>x402 Agentic Automation</strong></li>
         </ul>
       </div>
     </section>
@@ -184,7 +184,7 @@
           localStorage.setItem('PG1_MASTER_KEY', key);
           keyStatusText.innerText = 'KEY_STATUS: STORED_LOCAL';
           keyStatusText.style.color = '#198754';
-          alert('Sovereign Key Stored Locally. Multi-Model Fallback Ready.');
+          alert('Sovereign Key Stored Locally. Engine Initialized.');
         }
       });
 
@@ -211,13 +211,14 @@
         terminalOutput.innerHTML = '<div class="terminal-message system-msg">Terminal cleared.</div>';
       });
 
-      // Dynamic Fallback Model Sequence (tries latest frontier models first, falls back sequentially)
       const targetModels = [
-        "gemini-3.7-flash",  // Latest workhorse model
-        "gemini-3.5-flash",  // Previous frontier Flash
-        "gemini-3.1-pro",    // Advanced reasoning fallback
-        "gemini-2.5-flash"   // Highly stable fallback
+        "gemini-3.7-flash",
+        "gemini-3.5-flash",
+        "gemini-3.1-pro",
+        "gemini-2.5-flash"
       ];
+
+      const agentSystemInstruction = "You are PG1.Agent, an autonomous sovereign AI core managing decentralized node infrastructure, creator gifting campaigns, and administrative automation workflows. Execute tasks logically, provide concrete technical steps, scripts, or campaign execution metrics when commanded.";
 
       sendBtn.addEventListener('click', async () => {
         const command = terminalInput.value.trim();
@@ -228,22 +229,27 @@
         
         const apiKey = localStorage.getItem('PG1_MASTER_KEY');
         if (!apiKey || apiKey === '••••••••••••••••••••••••••••') {
-             appendMessage(`Error: Valid Gemini API Key required. Re-enter key in Dash.`, 'error-msg');
+             appendMessage(`Error: Valid Sovereign Master Key required. Re-enter key in Dash.`, 'error-msg');
              return;
         }
 
         let success = false;
         let lastError = "";
 
-        // Loop through models until one succeeds
         for (const model of targetModels) {
           try {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
             
+            const payload = {
+              contents: [
+                { role: "user", parts: [{ text: agentSystemInstruction + "\n\nUser Command: " + command }] }
+              ]
+            };
+
             const response = await fetch(url, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ contents: [{ parts: [{ text: command }] }] })
+              body: JSON.stringify(payload)
             });
 
             const data = await response.json();
@@ -254,18 +260,17 @@
 
             if (data.candidates && data.candidates[0].content) {
               const agentReply = data.candidates[0].content.parts[0].text;
-              appendMessage(`[Model: ${model}]<br>${agentReply}`, 'agent-msg');
+              appendMessage(`[PG1.Agent Core]<br>${agentReply}`, 'agent-msg');
               success = true;
-              break; // Exit loop on success
+              break;
             }
           } catch (err) {
             lastError = err.message;
-            // Continues to the next model in the fallback array
           }
         }
 
         if (!success) {
-          appendMessage(`Relay Failure across all models. Last Error: ${lastError}`, 'error-msg');
+          appendMessage(`Sovereign Relay Failure across nodes. Last Error: ${lastError}`, 'error-msg');
         }
       });
 
