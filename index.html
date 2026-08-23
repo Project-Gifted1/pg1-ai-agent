@@ -8,84 +8,126 @@
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #f4f6f8; color: #333; display: flex; flex-direction: column; overflow: hidden; }
 
+    /* Animations */
+    @keyframes pulseGlow {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.4); }
+      70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(40, 167, 69, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
+    }
+
+    @keyframes logoPulse {
+      0% { box-shadow: 0 0 15px rgba(0, 64, 133, 0.2); }
+      50% { box-shadow: 0 0 25px rgba(23, 162, 184, 0.4); }
+      100% { box-shadow: 0 0 15px rgba(0, 64, 133, 0.2); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
     .top-header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: white; border-bottom: 1px solid #e0e0e0; flex-shrink: 0; }
     .brand-title { display: flex; align-items: center; gap: 8px; font-size: 1.1em; }
     .version { font-size: 0.8em; color: #888; }
-    .status-dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; }
+    
+    .status-dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; animation: pulseGlow 2s infinite; }
     .status-dot.green { background-color: #28a745; }
     .status-dot.blue { background-color: #007bff; }
 
     .action-bar { display: flex; justify-content: center; gap: 10px; padding: 10px; background: white; border-bottom: 1px solid #e0e0e0; overflow-x: auto; flex-shrink: 0; }
-    .toggle-btn { padding: 8px 12px; border: 1px solid #ddd; background: white; border-radius: 8px; font-size: 0.85em; cursor: pointer; white-space: nowrap; }
+    .toggle-btn { padding: 8px 12px; border: 1px solid #ddd; background: white; border-radius: 8px; font-size: 0.85em; cursor: pointer; white-space: nowrap; transition: background 0.2s; }
+    .toggle-btn:hover { background: #f8f9fa; }
     .clear-btn { color: #dc3545; border-color: #dc3545; background-color: #fff5f5; }
 
     #main-content { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 90px; -webkit-overflow-scrolling: touch; }
-    .view-section { display: none; flex-direction: column; gap: 15px; min-height: 100%; }
+    .view-section { display: none; flex-direction: column; gap: 15px; min-height: 100%; animation: fadeIn 0.3s ease-in-out; }
     .view-section.active { display: flex; }
 
-    .card { background: white; border-radius: 12px; padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #eee; }
+    .card { background: white; border-radius: 12px; padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #eee; transition: box-shadow 0.2s; }
+    .card:hover { box-shadow: 0 4px 10px rgba(0,0,0,0.08); }
     .card-title { font-size: 1em; color: #004085; display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
     .card-desc { font-size: 0.85em; color: #666; margin-bottom: 15px; line-height: 1.4; }
 
     .key-input-group { display: flex; gap: 10px; margin-bottom: 15px; }
-    .key-input-group input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; }
-    .primary-btn { padding: 10px 15px; background: #198754; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+    .key-input-group input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; outline: none; transition: border-color 0.2s; }
+    .key-input-group input:focus { border-color: #007bff; }
+    .primary-btn { padding: 10px 15px; background: #198754; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: background 0.2s; }
+    .primary-btn:hover { background: #157347; }
+    
     .key-status-footer { display: flex; justify-content: space-between; font-size: 0.8em; font-weight: bold; }
     .key-status-footer .status-text { color: #198754; }
     .connection-status { color: #333; }
 
     .telemetry-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 0.9em; font-weight: 500;}
-    .outline-btn { padding: 6px 12px; border: 1px solid #007bff; background: transparent; color: #007bff; border-radius: 6px; font-size: 0.85em; font-weight: bold; }
+    .outline-btn { padding: 6px 12px; border: 1px solid #007bff; background: transparent; color: #007bff; border-radius: 6px; font-size: 0.85em; font-weight: bold; cursor: pointer; transition: background 0.2s; }
+    .outline-btn:hover { background: #f0f6ff; }
+    
     .stats-list { list-style: none; }
     .stats-list li { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.85em; }
     .stats-list li:last-child { border-bottom: none; }
     .stats-list li strong { color: #004085; }
 
+    /* Node View Logo with Professional Animation */
     .center-content { text-align: center; }
-    .logo-placeholder { width: 100px; height: 100px; background: radial-gradient(circle, #17a2b8, #004085); border-radius: 50%; margin: 0 auto 15px; color: white; display: flex; align-items: center; justify-content: center; font-size: 3em; font-weight: bold; border: 4px solid #b8daff;}
+    .logo-placeholder { 
+      width: 100px; height: 100px; 
+      background: radial-gradient(circle, #17a2b8, #004085); 
+      border-radius: 50%; margin: 0 auto 15px; 
+      color: white; display: flex; align-items: center; justify-content: center; 
+      font-size: 3em; font-weight: bold; border: 4px solid #b8daff;
+      animation: logoPulse 3s infinite ease-in-out;
+    }
     .sub-heading { color: #666; font-size: 0.9em; margin-bottom: 20px; }
     .node-details { list-style: none; text-align: left; background: #f8f9fa; padding: 15px; border-radius: 8px; }
     .node-details li { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef; font-size: 0.9em; }
     .node-details li:last-child { border-bottom: none; }
 
+    /* Terminal View */
     #view-terminal { flex: 1; display: none; flex-direction: column; justify-content: space-between; padding-bottom: 15px; min-height: calc(100vh - 220px); }
     #view-terminal.active { display: flex; }
     
     .terminal-display { flex: 1; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 12px; padding: 15px; overflow-y: auto; margin-bottom: 15px; display: flex; flex-direction: column; gap: 10px; }
-    .terminal-message { padding: 12px; border-radius: 8px; font-size: 0.9em; line-height: 1.4; word-wrap: break-word; }
+    .terminal-message { padding: 12px; border-radius: 8px; font-size: 0.9em; line-height: 1.4; word-wrap: break-word; animation: fadeIn 0.2s ease-out; }
     .terminal-message.user-msg { background: #e6f2ff; border: 1px solid #b8daff; color: #004085; align-self: flex-end; max-width: 85%; }
-    .terminal-message.agent-msg { background: white; border: 1px solid #dee2e6; color: #333; align-self: flex-start; max-width: 95%; }
+    .terminal-message.agent-msg { background: white; border: 1px solid #dee2e6; color: #333; align-self: flex-start; max-width: 95%; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
     .terminal-message.error-msg { background: #ffe6e6; border: 1px solid #ffb3b3; color: #cc0000; }
     .terminal-message.system-msg { color: #888; font-style: italic; text-align: center; background: none; border: none; }
 
     .terminal-input-area { display: flex; gap: 8px; align-items: center; background: white; padding: 10px; border-radius: 12px; border: 1px solid #ddd; flex-shrink: 0; }
-    .icon-btn { background: none; border: 1px solid #eee; border-radius: 8px; padding: 5px; font-size: 0.7em; color: #004085; cursor: pointer; width: 45px; flex-shrink: 0; }
-    .terminal-input-area input { flex: 1; padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; }
-    .send-btn { padding: 12px 18px; background: #198754; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; flex-shrink: 0; }
+    .icon-btn { background: none; border: 1px solid #eee; border-radius: 8px; padding: 5px; font-size: 0.7em; color: #004085; cursor: pointer; width: 45px; flex-shrink: 0; transition: background 0.2s; }
+    .icon-btn:hover { background: #f0f0f0; }
+    .terminal-input-area input { flex: 1; padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; outline: none; }
+    .terminal-input-area input:focus { border-color: #007bff; }
+    .send-btn { padding: 12px 18px; background: #198754; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; flex-shrink: 0; transition: background 0.2s; }
+    .send-btn:hover { background: #157347; }
 
+    /* Bottom Navigation */
     .bottom-nav { display: flex; justify-content: space-around; background: white; padding: 10px; border-top: 1px solid #e0e0e0; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
-    .nav-item { background: none; border: none; font-size: 0.8em; color: #666; cursor: pointer; text-align: center; flex: 1; }
+    .nav-item { background: none; border: none; font-size: 0.8em; color: #666; cursor: pointer; text-align: center; flex: 1; transition: color 0.2s; }
     .nav-item.active { color: #007bff; font-weight: bold; }
     .nav-item .icon { font-size: 1.5em; display: block; margin-bottom: 2px; }
   </style>
 </head>
 <body>
+  <!-- Refined Top Header with Top Icons -->
   <header class="top-header">
     <div class="brand-title">
       <span class="status-dot green"></span>
       <strong>Project Gifted1™</strong>
     </div>
-    <div class="version">v5.6 Sovereign Engine</div>
+    <div class="version">🛡️ v5.6 Sovereign Engine</div>
   </header>
 
+  <!-- Clean Action Bar -->
   <div class="action-bar">
-    <button class="toggle-btn">📹 Video: OFF</button>
-    <button class="toggle-btn">🎙️ Audio: OFF</button>
-    <button class="toggle-btn">🔊 Voice: OFF</button>
+    <button class="toggle-btn">📹 Cam: OFF</button>
+    <button class="toggle-btn">🎙️ Mic: OFF</button>
+    <button class="toggle-btn">🔊 Audio: OFF</button>
     <button class="toggle-btn clear-btn" id="clearTerminalBtn">🗑️ Clear</button>
   </div>
 
   <main id="main-content">
+    <!-- DASH VIEW -->
     <section id="view-dash" class="view-section active">
       <div class="card">
         <h3 class="card-title">⚡ x402 Sovereign Key Relay</h3>
@@ -96,7 +138,7 @@
         </div>
         <div class="key-status-footer">
           <span id="keyStatusText" class="status-text" style="color:red;">KEY_STATUS: MISSING</span>
-          <span class="connection-status"><span class="status-dot green"></span> SOVEREIGN_CORE_ACTIVE</span>
+          <span class="connection-status"><span class="status-dot green"></span> SECURE_ACTIVE</span>
         </div>
       </div>
 
@@ -110,11 +152,12 @@
         <ul class="stats-list">
           <li><span>OTX Threat Pulses Synced</span> <strong>1,420 Active Pulses</strong></li>
           <li><span>Active Indicators (IOC)</span> <strong>18,941 IOC Feeds</strong></li>
-          <li><span>Edge Telemetry Throughput</span> <strong>NaN MB/s</strong></li>
+          <li><span>Edge Telemetry Throughput</span> <strong>Optimal (99.9%)</strong></li>
         </ul>
       </div>
     </section>
 
+    <!-- TERMINAL VIEW -->
     <section id="view-terminal" class="view-section">
       <div id="terminalOutput" class="terminal-display">
         <div class="terminal-message system-msg">
@@ -123,13 +166,14 @@
       </div>
       
       <div class="terminal-input-area">
-        <button class="icon-btn">🎙️<br>Record</button>
-        <button class="icon-btn">📎<br>Attach</button>
+        <button class="icon-btn">🎙️<br>Rec</button>
+        <button class="icon-btn">📎<br>File</button>
         <input type="text" id="terminalInput" placeholder="Enter command...">
         <button id="sendCommandButton" class="send-btn">Send</button>
       </div>
     </section>
 
+    <!-- NODE VIEW WITH RESTORED LOGO -->
     <section id="view-node" class="view-section">
       <div class="card center-content">
         <div class="logo-placeholder">G</div>
@@ -146,6 +190,7 @@
     </section>
   </main>
 
+  <!-- Bottom Navigation -->
   <nav class="bottom-nav">
     <button class="nav-item active" data-target="view-dash">
       <span class="icon">📊</span><br>Dash
@@ -154,7 +199,7 @@
       <span class="icon">⚡</span><br>Terminal
     </button>
     <button class="nav-item" data-target="view-node">
-      <span class="icon">👤</span><br>Node
+      <span class="icon">🛡️</span><br>Node
     </button>
   </nav>
 
@@ -218,7 +263,6 @@
         "gemini-2.5-flash"
       ];
 
-      // Clean, professional engineering persona directive
       const agentSystemInstruction = "You are PG1.Agent, an autonomous senior technical partner and sovereign AI core managing decentralized node infrastructure, system automation, and operational workflows. Respond with professional clarity, high precision, concise explanations, and direct technical execution strategies without unnecessary filler.";
 
       sendBtn.addEventListener('click', async () => {
