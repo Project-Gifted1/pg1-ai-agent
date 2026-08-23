@@ -1,16 +1,10 @@
-name: Build and Deploy
+name: Build and Deploy Sovereign Engine
 
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
-    inputs:
-      command:
-        description: 'Command or instructions for the agent'
-        required: false
-        default: 'rebuild interface'
 
-# Grant the token explicit permissions to deploy to Pages
 permissions:
   contents: read
   pages: write
@@ -30,6 +24,59 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Dynamically Inject Worker Code
+        run: |
+          cat << 'EOF' > dynamic-worker.js
+          export default {
+            async fetch(request, env, ctx) {
+              const corsHeaders = {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization"
+              };
+              
+              if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+              if (request.method !== "POST") return new Response("POST required.", { status: 400, headers: corsHeaders });
+              
+              try {
+                const authHeader = request.headers.get("Authorization");
+                const dynamicKey = authHeader ? authHeader.replace("Bearer ", "") : null;
+                const apiKey = dynamicKey || env.GEMINI_API_KEY;
+                
+                if (!apiKey) throw new Error("API Key missing. Inject via Dash.");
+                
+                const { command } = await request.json();
+                if (!command) throw new Error("No command provided.");
+                
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${apiKey}`;
+                const aiResponse = await fetch(url, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ contents: [{ parts: [{ text: command }] }] })
+                });
+                
+                const data = await aiResponse.json();
+                if (data.error) throw new Error(data.error.message);
+                
+                return new Response(JSON.stringify({ response: data.candidates[0].content.parts[0].text }), {
+                  status: 200, 
+                  headers: { ...corsHeaders, "Content-Type": "application/json" }
+                });
+              } catch (error) {
+                return new Response(JSON.stringify({ error: error.message }), { 
+                  status: 500, 
+                  headers: { ...corsHeaders, "Content-Type": "application/json" } 
+                });
+              }
+            }
+          };
+          EOF
+
+      - name: Deploy Worker to Cloudflare
+        run: npx wrangler deploy dynamic-worker.js --name pg1-worker --compatibility-date 2024-01-01
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
