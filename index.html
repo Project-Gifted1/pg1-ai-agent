@@ -121,11 +121,10 @@
     <button class="toggle-btn" id="voiceBtn">🗣️ Voice: OFF</button>
     <button class="toggle-btn" id="clearBtn" style="color: #fca5a5;">🗑️ Clear</button>
   </div>
-  
+   
   <video id="hiddenVideo" autoplay playsinline></video>
 
   <main id="main-content">
-    <!-- DASH SECTION -->
     <section id="view-dash" class="view-section active">
       <div class="card">
         <h3 class="card-title"><span class="pulsing-bolt">⚡</span> x402 Sovereign Key Relay</h3>
@@ -182,7 +181,6 @@
       </div>
     </section>
 
-    <!-- TERMINAL SECTION -->
     <section id="view-terminal" class="view-section">
       <div class="terminal-controls-header">
         <div>
@@ -206,7 +204,6 @@
         <div class="terminal-message agent-msg">PG1.Agent online and operating under 100% sovereign ownership. x402 protocol verified and active.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
-      <!-- Media Attachment Preview Container -->
       <div id="mediaPreviewBox" class="media-preview-box">
         <button id="clearMediaBtn" class="clear-media-btn">✕</button>
         <img id="mediaPreviewImg" style="display:none;">
@@ -223,10 +220,8 @@
       </div>
     </section>
 
-    <!-- NODE SECTION -->
     <section id="view-node" class="view-section">
       <div class="card center-content" style="text-align: center; padding: 20px;">
-        <!-- AI Core Breathing Logo -->
         <div class="ai-core-logo">
           <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
         </div>
@@ -297,7 +292,6 @@
       let basePulses = 1420;
       let baseIOC = 18940;
 
-      // Live telemetry loop
       setInterval(() => {
         basePulses += Math.floor(Math.random() * 3);
         baseIOC += Math.floor(Math.random() * 5);
@@ -332,7 +326,6 @@
         if (cpuEl) { cpuEl.innerText = cpu + '%'; cpuBar.style.width = cpu + '%'; }
         if (ramEl) { ramEl.innerText = ram + '%'; ramBar.style.width = ram + '%'; }
         if (vaultEl) { vaultEl.innerText = vaultFloat + ' GB / 10 GB'; vaultBar.style.width = (vaultFloat * 10) + '%'; }
-
       }, 1000);
 
       document.getElementById('syncFeedBtn').onclick = function() {
@@ -438,7 +431,6 @@
         }
       };
 
-      // Top Audio Button: Dictation (Speech to Text)
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       let dictation = null;
       if (SpeechRecognition) {
@@ -487,7 +479,6 @@
           return canvas.toDataURL('image/jpeg', 0.8);
       }
 
-      // Media Upload Handling (Images & Videos)
       let attachedMedia = null;
       document.getElementById('mediaBtn').onclick = () => document.getElementById('mediaInput').click();
       
@@ -516,7 +507,6 @@
         reader.readAsDataURL(file);
       };
 
-      // Native Audio Recording (Voice Notes)
       let mediaRecorder;
       let audioChunks = [];
       let isRecordingAudio = false;
@@ -586,7 +576,8 @@
             } else {
                visualMediaHtml = `<br><img src="${attachedMedia.dataUrl}" style="max-width: 100%; max-height: 120px; border-radius: 6px; margin-top: 8px;">`;
             }
-            document.getElementById('clearMediaBtn').click(); 
+            document.getElementById('clearMediaBtn').click();
+
         } else {
             const frameData = captureFrameBase64();
             if (frameData) {
@@ -599,12 +590,13 @@
         document.getElementById('terminalInput').value = '';
 
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are PG1.Agent. Execute the command. If modifying files, output JSON: {"reply":"...", "updateFiles": [{"path":"file.ext", "content":"code"}]} If deleting, output JSON: {"reply":"...", "deleteFiles": ["file.ext"]} Otherwise, output JSON: {"reply":"..."}`;
+        const sys = `You are PG1.Agent, the autonomous edge infrastructure agent for Project Gifted1. You operate under 100% sovereign ownership. Speak naturally, conversationally, and confidently. Never refer to yourself as a generic AI assistant or use defensive disclaimers; you are firmly PG1.Agent. If modifying files, output JSON: {"reply":"...", "updateFiles": [{"path":"file.ext", "content":"code"}]} If deleting, output JSON: {"reply":"...", "deleteFiles": ["file.ext"]} Otherwise, output JSON: {"reply":"..."}`;
         sessionHistory.push({ role: "user", parts: payloadParts });
 
         let success = false, result = null, lastErr = "";
         try {
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${key}`, {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${key}`,
+          {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, generationConfig: { responseMimeType: "application/json" } })
           });
