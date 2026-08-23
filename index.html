@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v8.1</title>
+  <title>Project Gifted1™ - Sovereign Engine v8.2</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
@@ -113,7 +113,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v8.1 Sovereign Engine</div>
+    <div class="version">v8.2 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -172,7 +172,7 @@
           <span style="color:#94a3b8; margin-right:6px;">PG1 Neural Engine:</span>
           <select id="modelSelector">
             <option value="gemini-3.5-flash">3.5 Flash-Lite (Fastest)</option>
-            <option value="gemini-3.7-flash" selected>3.6 Flash (Self-Healing Reflex)</option>
+            <option value="gemini-3.7-flash" selected>3.6 Flash (Intent Guard)</option>
             <option value="gemini-1.5-pro">3.1 Pro (Multi-Agent Supervisor)</option>
           </select>
         </div>
@@ -185,7 +185,7 @@
       <video id="cameraPreview" autoplay playsinline muted></video>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v8.1 online. Multi-Agent orchestration, self-healing reflexion loops, vector memory indexing, and dynamic telemetry active.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v8.2 online with Intent Verification Guard and strict UI boundary contracts active.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -199,7 +199,7 @@
         <input type="file" id="mediaInput" accept="image/*,video/mp4,video/webm" style="display: none;">
         <button id="mediaBtn" class="utility-media-btn" title="Upload Media">📸</button>
         <button id="recordAudioBtn" class="utility-media-btn" title="Record Voice Note">🎤</button>
-        <input type="text" id="terminalInput" placeholder="Type /iss, /crypto, or multi-step goal...">
+        <input type="text" id="terminalInput" placeholder="Type /iss, /crypto, or precise command...">
         <button id="sendCommandButton" class="send-btn">Send</button>
       </div>
     </section>
@@ -209,12 +209,12 @@
         <div class="ai-core-logo">
           <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
         </div>
-        <h2 style="font-size: 1.1em; color: #f8fafc; margin-bottom: 2px;">PG1.Agent™ Self-Healing Core</h2>
-        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Orchestrator-Worker & Reflexion Engine</p>
+        <h2 style="font-size: 1.1em; color: #f8fafc; margin-bottom: 2px;">PG1.Agent™ Intent Guard Core</h2>
+        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Strict UI Boundary & Reflexion Engine</p>
         
         <ul class="stats-list" style="text-align: left;">
           <li><span>Agent ID:</span> <strong style="color: #38bdf8;">PG1-CORE-01</strong></li>
-          <li><span>Status:</span> <strong style="color: #10b981;"><span class="status-dot green" style="display:inline-block; vertical-align:middle; margin-right:4px;"></span> Autonomous & Self-Healing</strong></li>
+          <li><span>Status:</span> <strong style="color: #10b981;"><span class="status-dot green" style="display:inline-block; vertical-align:middle; margin-right:4px;"></span> Intent Guard Active</strong></li>
           <li><span>Ownership:</span> <strong style="color: #38bdf8;">100% Sovereign</strong></li>
         </ul>
       </div>
@@ -285,7 +285,7 @@
       let sessionHistory = [];
       const termOut = document.getElementById('terminalOutput');
       
-      const savedMem = localStorage.getItem('PG1_MEM_V8');
+      const savedMem = localStorage.getItem('PG1_MEM_V82');
       if (savedMem) {
           try {
               sessionHistory = JSON.parse(savedMem);
@@ -303,7 +303,7 @@
           } catch(e) { sessionHistory = []; }
       }
 
-      function saveMemory() { localStorage.setItem('PG1_MEM_V8', JSON.stringify(sessionHistory)); }
+      function saveMemory() { localStorage.setItem('PG1_MEM_V82', JSON.stringify(sessionHistory)); }
 
       async function updateCryptoTickers() {
           try {
@@ -322,7 +322,6 @@
       setInterval(updateCryptoTickers, 60000);
       document.getElementById('syncFeedBtn').onclick = updateCryptoTickers;
 
-      // Fully dynamic telemetry clock for throughput, CPU, and RAM gauges
       setInterval(() => {
         const speed = (2.2 + Math.random() * 0.6).toFixed(1);
         const speedEl = document.getElementById('telemetrySpeed');
@@ -395,7 +394,7 @@
       document.getElementById('purgeStorageBtn').onclick = () => { localStorage.clear(); alert('Storage purged.'); location.reload(); };
 
       document.getElementById('exportReportBtn').onclick = () => {
-          let logText = `# Project Gifted1™ - Sovereign Report v8.1\nGenerated: ${new Date().toISOString()}\n\n` + sessionHistory.map(m => `### ${m.role.toUpperCase()}\n${m.parts[0].text || '[Tool Execution Payload]'}`).join('\n\n');
+          let logText = `# Project Gifted1™ - Sovereign Report v8.2\nGenerated: ${new Date().toISOString()}\n\n` + sessionHistory.map(m => `### ${m.role.toUpperCase()}\n${m.parts[0].text || '[Tool Execution Payload]'}`).join('\n\n');
           const blob = new Blob([logText], { type: 'text/markdown' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -473,7 +472,12 @@
         document.getElementById('terminalInput').value = '';
 
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are strictly PG1.Agent v8.1, an elite autonomous sovereign AI operating under Multi-Agent Orchestrator-Worker and Reflexion Self-Healing architecture.`;
+        // Strict System Instruction enforcing Intent Verification and UI Boundary Protection
+        const sys = `You are strictly PG1.Agent v8.2, an elite autonomous sovereign AI. 
+        CRITICAL OPERATIONAL RULES:
+        1. INTENT GUARD: Always analyze user instructions precisely. If a user asks to fix a specific variable or interval, make ONLY that targeted change.
+        2. UI BOUNDARY CONTRACT: Never redesign, alter, or remove existing HTML DOM structures, CSS classes, or tab layouts (Dash, Terminal, Core) unless explicitly instructed to do so.
+        3. SELF-HEALING REFLEXION: If a tool execution fails, catch the error, auto-correct parameters, and retry.`;
         
         sessionHistory.push({ role: "user", parts: payloadParts });
 
@@ -516,7 +520,7 @@
                   const call = responsePart.functionCall;
                   let resultStr = "";
                   
-                  appendMsg(`[Orchestrator Reflexion] Dispatching tool: ${call.name}...`, 'system-msg');
+                  appendMsg(`[Intent Guard & Reflexion] Dispatching tool: ${call.name}...`, 'system-msg');
                   
                   if (call.name === "executeRevenueStrike") {
                       resultStr = window.executeRevenueStrike(call.args.amount, call.args.platform);
@@ -532,7 +536,7 @@
                   sessionHistory.push({ role: "user", parts: [{ functionResponse: { name: call.name, response: { result: resultStr } } }] });
                   
                   if (resultStr.includes("ERROR")) {
-                      appendMsg(`[Self-Healing Reflexion] Exception caught. Analyzing failure mode to auto-correct and re-try...`, 'system-msg');
+                      appendMsg(`[Self-Healing Reflexion] Exception caught. Auto-correcting parameters...`, 'system-msg');
                       continue;
                   } else {
                       continueLoop = false;
