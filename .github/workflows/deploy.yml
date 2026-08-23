@@ -23,9 +23,10 @@ jobs:
           node-version: '20'
 
       - name: Deploy Worker to Cloudflare
-        run: npx wrangler deploy
+        run: npx wrangler deploy index.js
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
+
