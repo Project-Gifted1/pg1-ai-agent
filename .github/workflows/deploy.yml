@@ -17,64 +17,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
-
-      # 1. Dynamically generate the perfect worker file so Wrangler never fails to find it
-      - name: Generate Worker File
-        run: |
-          cat << 'EOF' > pg1-dynamic-worker.js
-          export default {
-            async fetch(request, env, ctx) {
-              const corsHeaders = {
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Authorization"
-              };
-              
-              if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-              if (request.method !== "POST") return new Response("POST required.", { status: 400, headers: corsHeaders });
-              
-              try {
-                const authHeader = request.headers.get("Authorization");
-                const dynamicKey = authHeader ? authHeader.replace("Bearer ", "") : null;
-                const apiKey = dynamicKey || env.GEMINI_API_KEY;
-                
-                if (!apiKey) throw new Error("API Key missing. Inject via Dash.");
-                
-                const { command } = await request.json();
-                if (!command) throw new Error("No command provided.");
-                
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${apiKey}`;
-                const aiResponse = await fetch(url, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ contents: [{ parts: [{ text: command }] }] })
-                });
-                
-                const data = await aiResponse.json();
-                if (data.error) throw new Error(data.error.message);
-                
-                return new Response(JSON.stringify({ response: data.candidates[0].content.parts[0].text }), {
-                  status: 200, 
-                  headers: { ...corsHeaders, "Content-Type": "application/json" }
-                });
-              } catch (error) {
-                return new Response(JSON.stringify({ error: error.message }), { 
-                  status: 500, 
-                  headers: { ...corsHeaders, "Content-Type": "application/json" } 
-                });
-              }
-            }
-          };
-          EOF
-
-      # 2. Deploy using the official action that bypasses the 9106 token error
-      - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy pg1-dynamic-worker.js --name pg1-worker --compatibility-date 2024-01-01
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
