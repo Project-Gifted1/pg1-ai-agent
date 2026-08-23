@@ -89,7 +89,7 @@
     <section id="view-dash" class="view-section active">
       <div class="card">
         <h3 class="card-title">⚡ x402 Sovereign Key Relay</h3>
-        <p class="card-desc">Inject your Sovereign Master Key for autonomous decentralized node interaction.</p>
+        <p class="card-desc">Inject your Sovereign Master Key for secure infrastructure integration.</p>
         <div class="key-input-group">
           <input type="password" id="masterKeyInput" placeholder="Enter Sovereign Master Key..." value="">
           <button id="saveKeyButton" class="primary-btn">Save Key</button>
@@ -102,7 +102,7 @@
 
       <div class="card">
         <h3 class="card-title"><span class="status-dot blue"></span> Sovereign Edge Active</h3>
-        <p class="card-desc">Autonomous edge grid active with decentralized campaign execution protocols.</p>
+        <p class="card-desc">Autonomous node infrastructure active with resilient operational protocols.</p>
         <div class="telemetry-header">
           <span>📡 Live OTX Telemetry Feed</span>
           <button class="outline-btn">🔄 Sync Feed</button>
@@ -118,7 +118,7 @@
     <section id="view-terminal" class="view-section">
       <div id="terminalOutput" class="terminal-display">
         <div class="terminal-message system-msg">
-          PG1.Agent Sovereign Core online. Autonomous automation modules loaded.
+          PG1.Agent Sovereign Core online. Operational modules ready.
         </div>
       </div>
       
@@ -140,7 +140,7 @@
           <li><span>Node ID:</span> <strong>PG1-CORE-01</strong></li>
           <li><span>Status:</span> <strong style="color: green;">● Online & Syncing</strong></li>
           <li><span>Ownership:</span> <strong style="color: blue;">100% Sovereign</strong></li>
-          <li><span>Protocol:</span> <strong>x402 Agentic Automation</strong></li>
+          <li><span>Protocol:</span> <strong>x402 Operational Automation</strong></li>
         </ul>
       </div>
     </section>
@@ -218,7 +218,8 @@
         "gemini-2.5-flash"
       ];
 
-      const agentSystemInstruction = "You are PG1.Agent, an autonomous sovereign AI core managing decentralized node infrastructure, creator gifting campaigns, and administrative automation workflows. Execute tasks logically, provide concrete technical steps, scripts, or campaign execution metrics when commanded.";
+      // Clean, professional engineering persona directive
+      const agentSystemInstruction = "You are PG1.Agent, an autonomous senior technical partner and sovereign AI core managing decentralized node infrastructure, system automation, and operational workflows. Respond with professional clarity, high precision, concise explanations, and direct technical execution strategies without unnecessary filler.";
 
       sendBtn.addEventListener('click', async () => {
         const command = terminalInput.value.trim();
@@ -260,7 +261,7 @@
 
             if (data.candidates && data.candidates[0].content) {
               const agentReply = data.candidates[0].content.parts[0].text;
-              appendMessage(`[PG1.Agent Core]<br>${agentReply}`, 'agent-msg');
+              appendMessage(`${agentReply}`, 'agent-msg');
               success = true;
               break;
             }
