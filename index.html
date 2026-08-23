@@ -1,33 +1,119 @@
-<div class="card">
-  <h3>⚡ x402 Sovereign Key Relay</h3>
-  <p>Inject your Master Key to ignite live PG1.Agent node interactions.</p>
-  
-  <input type="password" id="master-key-input" placeholder="Enter Master Key..." style="width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 5px; border: 1px solid #ccc;" />
-  <button id="save-key-btn" style="background: #00c853; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; width: 100%;">Save Key</button>
-  
-  <div style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center;">
-    <span id="key-status-text">KEY_STATUS: NOT_SET</span>
-    <span id="connection-indicator" style="color: red; font-weight: bold;">● DISCONNECTED</span>
-  </div>
-</div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Gifted1™ - PG1.Agent</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="top-header">
+    <div class="brand-title">
+      <span class="status-dot green"></span>
+      <strong>Project Gifted1™</strong>
+    </div>
+    <div class="version">v5.6 Sovereign Engine</div>
+  </header>
 
-<script>
-  document.getElementById("save-key-btn").addEventListener("click", function() {
-    const keyValue = document.getElementById("master-key-input").value;
-    if (!keyValue) {
-      alert("Please enter a valid key.");
-      return;
-    }
+  <!-- Top Action Bar -->
+  <div class="action-bar">
+    <button class="toggle-btn">📹 Video: OFF</button>
+    <button class="toggle-btn">🎙️ Audio: OFF</button>
+    <button class="toggle-btn">🔊 Voice: OFF</button>
+    <button class="toggle-btn clear-btn" id="clearTerminalBtn">🗑️ Clear</button>
+  </div>
+
+  <!-- Main Content Area -->
+  <main id="main-content">
     
-    // Save to local storage and update UI instantly
-    localStorage.setItem("pg1_master_key", keyValue);
-    document.getElementById("key-status-text").innerText = "KEY_STATUS: ACTIVE";
-    
-    const indicator = document.getElementById("connection-indicator");
-    indicator.innerText = "● CONNECTED";
-    indicator.style.color = "#00c853";
-    
-    alert("Key saved and node successfully connected!");
-  });
-</script>
-// Trigger agent interface rebuild
+    <!-- DASH VIEW -->
+    <section id="view-dash" class="view-section active">
+      <div class="card">
+        <h3 class="card-title">⚡ x402 Sovereign Key Relay</h3>
+        <p class="card-desc">Inject your Master Key to ignite live PG1.Agent node interactions.</p>
+        <div class="key-input-group">
+          <input type="password" id="masterKeyInput" placeholder="Enter Sovereign Key..." value="••••••••••••••••••••••••••••">
+          <button id="saveKeyButton" class="primary-btn">Save Key</button>
+        </div>
+        <div class="key-status-footer">
+          <span id="keyStatusText" class="status-text">KEY_STATUS: STORED_LOCAL</span>
+          <span class="connection-status"><span class="status-dot green"></span> CONNECTED</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title"><span class="status-dot blue"></span> Sovereign Edge Active</h3>
+        <p class="card-desc">Autonomous decentralized edge grid active via PG1 secure synchronization.</p>
+        <div class="telemetry-header">
+          <span>📡 Live OTX Telemetry Feed</span>
+          <button class="outline-btn">🔄 Sync Feed</button>
+        </div>
+        <ul class="stats-list">
+          <li><span>OTX Threat Pulses Synced</span> <strong>1,420 Active Pulses</strong></li>
+          <li><span>Active Indicators (IOC)</span> <strong>18,941 IOC Feeds</strong></li>
+          <li><span>Edge Telemetry Throughput</span> <strong>NaN MB/s</strong></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- TERMINAL VIEW -->
+    <section id="view-terminal" class="view-section">
+      <div id="terminalOutput" class="terminal-display">
+        <div class="terminal-message system-msg">
+          PG1.Agent Terminal initialized. Awaiting commands...
+        </div>
+      </div>
+      
+      <div class="terminal-input-area">
+        <button class="icon-btn">🎙️<br>Record</button>
+        <button class="icon-btn">📎<br>Attach</button>
+        <input type="text" id="terminalInput" placeholder="Enter command...">
+        <button id="sendCommandButton" class="send-btn">Send</button>
+      </div>
+    </section>
+
+    <!-- NODE VIEW -->
+    <section id="view-node" class="view-section">
+      <div class="card center-content">
+        <div class="logo-placeholder">G</div>
+        <h2>PG1.Agent™</h2>
+        <p class="sub-heading">Autonomous Edge Infrastructure</p>
+        
+        <ul class="node-details">
+          <li><span>Node ID:</span> <strong>PG1-CORE-01</strong></li>
+          <li><span>Status:</span> <strong style="color: green;">● Online & Syncing</strong></li>
+          <li><span>Ownership:</span> <strong style="color: blue;">100% Sovereign</strong></li>
+          <li><span>Protocol:</span> <strong>x402 Active</strong></li>
+        </ul>
+      </div>
+      
+      <div class="card">
+        <h3 class="card-title">📊 Node System Telemetry</h3>
+        <div class="progress-bar-container">
+          <div class="progress-label"><span>CPU Load</span> <span>33%</span></div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width: 33%;"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Bottom Navigation -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-target="view-dash">
+      <span class="icon">📊</span><br>Dash
+    </button>
+    <button class="nav-item" data-target="view-terminal">
+      <span class="icon">⚡</span><br>Terminal
+    </button>
+    <button class="nav-item" data-target="view-node">
+      <span class="icon">👤</span><br>Node
+    </button>
+  </nav>
+
+  <script src="app.js"></script>
+</body>
+</html>
