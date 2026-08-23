@@ -1,22 +1,18 @@
 document.addEventListener("DOMContentLoaded", () => {
-  // --- View Switching Logic ---
   const navItems = document.querySelectorAll('.nav-item');
   const views = document.querySelectorAll('.view-section');
 
   navItems.forEach(item => {
     item.addEventListener('click', () => {
-      // Remove active class from all nav items and views
       navItems.forEach(nav => nav.classList.remove('active'));
       views.forEach(view => view.classList.remove('active'));
 
-      // Add active class to clicked item and corresponding view
       item.classList.add('active');
       const targetId = item.getAttribute('data-target');
       document.getElementById(targetId).classList.add('active');
     });
   });
 
-  // --- Key Relay Logic ---
   const saveKeyBtn = document.getElementById('saveKeyButton');
   const keyInput = document.getElementById('masterKeyInput');
   const keyStatusText = document.getElementById('keyStatusText');
@@ -26,31 +22,29 @@ document.addEventListener("DOMContentLoaded", () => {
     if (key) {
       localStorage.setItem('PG1_MASTER_KEY', key);
       keyStatusText.innerText = 'KEY_STATUS: STORED_LOCAL';
+      keyStatusText.style.color = '#198754';
       alert('Sovereign Key Stored Locally.');
     }
   });
 
-  // Load key on init if it exists
   if (localStorage.getItem('PG1_MASTER_KEY')) {
     keyStatusText.innerText = 'KEY_STATUS: STORED_LOCAL';
+    keyStatusText.style.color = '#198754';
   } else {
     keyStatusText.innerText = 'KEY_STATUS: MISSING';
     keyStatusText.style.color = 'red';
   }
 
-  // --- Terminal Execution Logic ---
   const sendBtn = document.getElementById('sendCommandButton');
   const terminalInput = document.getElementById('terminalInput');
   const terminalOutput = document.getElementById('terminalOutput');
   const clearBtn = document.getElementById('clearTerminalBtn');
 
-  // Replace this with your actual deployed worker URL from yesterday
-  const WORKER_URL = 'https://pg1-worker.YOUR_CLOUDFLARE_SUBDOMAIN.workers.dev/'; 
+  const WORKER_URL = 'https://pg1-agent-worker.YOUR_SUBDOMAIN.workers.dev/'; 
 
   function appendMessage(text, type) {
     const msgDiv = document.createElement('div');
     msgDiv.classList.add('terminal-message', type);
-    // Replace newlines with <br> for terminal output formatting
     msgDiv.innerHTML = text.replace(/\n/g, '<br>'); 
     terminalOutput.appendChild(msgDiv);
     terminalOutput.scrollTop = terminalOutput.scrollHeight;
@@ -67,8 +61,6 @@ document.addEventListener("DOMContentLoaded", () => {
     appendMessage(`> ${command}`, 'user-msg');
     terminalInput.value = '';
     
-    // We get the local key, but since your worker already has GEMINI_API_KEY as an env secret,
-    // this header is optional unless you designed the worker to strictly require it.
     const masterKey = localStorage.getItem('PG1_MASTER_KEY') || "";
 
     try {
@@ -97,7 +89,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Allow sending via Enter key
   terminalInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendBtn.click();
   });
