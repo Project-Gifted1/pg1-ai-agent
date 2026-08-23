@@ -1,3 +1,7 @@
-name = "project-gifted1-worker"
+name = "pg1-worker"
 main = "worker.js"
-compatibility_date = "2026-04-01"
+compatibility_date = "2026-08-23"
+
+[vars]
+ENVIRONMENT = "production"
+WORKER_TARGET = "pg1-worker.gnfcw9w5rk.workers.dev"
