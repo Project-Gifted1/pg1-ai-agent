@@ -14,8 +14,6 @@
     @keyframes electricPulse { 0%, 100% { text-shadow: 0 0 5px rgba(56, 189, 248, 0.4), 0 0 10px rgba(56, 189, 248, 0.2); } 50% { text-shadow: 0 0 15px rgba(56, 189, 248, 0.9), 0 0 25px rgba(56, 189, 248, 0.6); } }
     @keyframes iconPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.8; } }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-    
-    /* New Core Breathing Effect for the Logo */
     @keyframes coreBreathe { 0%, 100% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.2); transform: scale(1); } 50% { box-shadow: 0 0 35px rgba(56, 189, 248, 0.6), inset 0 0 15px rgba(56, 189, 248, 0.3); transform: scale(1.03); } }
 
     .pulsing-bolt { animation: electricPulse 2s infinite; display: inline-block; }
@@ -53,7 +51,6 @@
     .progress-bar-container { width: 100%; background: #1e293b; border-radius: 4px; height: 5px; margin-top: 4px; margin-bottom: 8px; overflow: hidden; }
     .progress-bar { height: 100%; background: #38bdf8; border-radius: 4px; transition: width 0.5s ease; }
 
-    /* The New AI Core Breathing Logo */
     .ai-core-logo { width: 130px; height: 130px; margin: 0 auto 15px auto; border-radius: 50%; border: 2px solid #38bdf8; overflow: hidden; animation: coreBreathe 3s ease-in-out infinite; }
     .ai-core-logo img { width: 100%; height: 100%; object-fit: cover; }
 
@@ -73,9 +70,17 @@
     .msg-action-btn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; font-size: 0.65em; padding: 2px 6px; border-radius: 4px; cursor: pointer; font-weight: 600; }
     .msg-action-btn:hover { color: #f8fafc; background: #334155; }
 
-    .terminal-input-area { display: flex; gap: 8px; align-items: center; background: #111827; padding: 8px; border-radius: 10px; border: 1px solid #1f2937; flex-shrink: 0; }
-    .terminal-input-area input { flex: 1; padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #0f172a; color: #f8fafc; }
-    .send-btn { padding: 10px 16px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85em; flex-shrink: 0; }
+    .media-preview-box { display: none; padding: 10px; background: #111827; border: 1px solid #1f2937; border-radius: 10px; margin-bottom: 8px; position: relative; text-align: center; }
+    .media-preview-box img, .media-preview-box video { max-height: 120px; border-radius: 6px; max-width: 100%; border: 1px solid #334155; }
+    .media-preview-box audio { width: 100%; height: 40px; margin-top: 5px; outline: none; }
+    .clear-media-btn { position: absolute; top: -8px; right: -8px; background: #ef4444; color: white; border: none; border-radius: 50%; width: 24px; height: 24px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; z-index: 10; }
+
+    .terminal-input-area { display: flex; gap: 6px; align-items: center; background: #111827; padding: 8px; border-radius: 10px; border: 1px solid #1f2937; flex-shrink: 0; }
+    .terminal-input-area input[type="text"] { flex: 1; padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #0f172a; color: #f8fafc; }
+    .utility-media-btn { padding: 8px 10px; background: #1e293b; border: 1px solid #334155; color: #38bdf8; border-radius: 6px; font-size: 1.1em; cursor: pointer; flex-shrink: 0; transition: background 0.2s; }
+    .utility-media-btn:hover { background: #334155; }
+    .utility-media-btn.recording-btn { background: rgba(239, 68, 68, 0.2); color: #ef4444; border-color: #ef4444; animation: pulseGlow 1.5s infinite; }
+    .send-btn { padding: 10px 14px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85em; flex-shrink: 0; }
 
     .bottom-nav { display: flex; justify-content: space-around; background: #111827; padding: 8px; border-top: 1px solid #1f2937; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
     .nav-item { background: none; border: none; font-size: 0.75em; color: #64748b; cursor: pointer; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
@@ -112,7 +117,7 @@
 
   <div class="action-bar">
     <button class="toggle-btn" id="videoBtn">📹 Video: OFF</button>
-    <button class="toggle-btn" id="audioBtn">🎙️ Audio: OFF</button>
+    <button class="toggle-btn" id="audioBtn" title="Speech to Text">🎙️ Dictate: OFF</button>
     <button class="toggle-btn" id="voiceBtn">🗣️ Voice: OFF</button>
     <button class="toggle-btn" id="clearBtn" style="color: #fca5a5;">🗑️ Clear</button>
   </div>
@@ -183,10 +188,10 @@
         <div>
           <span style="color:#94a3b8; margin-right:6px;">PG1 Neural Engine:</span>
           <select id="modelSelector">
-            <option value="gemini-3.5-flash">3.5 Flash-Lite (Fastest answers)</option>
-            <option value="gemini-3.7-flash" selected>3.6 Flash (All-around help)</option>
-            <option value="gemini-2.5-flash">3.7 Flash (Latest reasoning)</option>
-            <option value="gemini-1.5-pro">3.1 Pro (Advanced reasoning)</option>
+            <option value="gemini-3.5-flash">3.5 Flash-Lite (Fastest)</option>
+            <option value="gemini-3.7-flash" selected>3.6 Flash (All-around)</option>
+            <option value="gemini-2.5-flash">3.7 Flash (Latest)</option>
+            <option value="gemini-1.5-pro">3.1 Pro (Advanced)</option>
           </select>
         </div>
         <div class="terminal-action-links">
@@ -196,11 +201,23 @@
       </div>
 
       <video id="cameraPreview" autoplay playsinline muted></video>
+      
       <div id="terminalOutput" class="terminal-display">
         <div class="terminal-message agent-msg">PG1.Agent online and operating under 100% sovereign ownership. x402 protocol verified and active.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
+      <!-- Media Attachment Preview Container -->
+      <div id="mediaPreviewBox" class="media-preview-box">
+        <button id="clearMediaBtn" class="clear-media-btn">✕</button>
+        <img id="mediaPreviewImg" style="display:none;">
+        <video id="mediaPreviewVid" style="display:none;" controls></video>
+        <audio id="mediaPreviewAudio" style="display:none;" controls></audio>
+      </div>
+
       <div class="terminal-input-area">
+        <input type="file" id="mediaInput" accept="image/*,video/mp4,video/webm" style="display: none;">
+        <button id="mediaBtn" class="utility-media-btn" title="Upload Media">📸</button>
+        <button id="recordAudioBtn" class="utility-media-btn" title="Record Voice Note">🎤</button>
         <input type="text" id="terminalInput" placeholder="Enter command or query...">
         <button id="sendCommandButton" class="send-btn">Send</button>
       </div>
@@ -209,7 +226,7 @@
     <!-- NODE SECTION -->
     <section id="view-node" class="view-section">
       <div class="card center-content" style="text-align: center; padding: 20px;">
-        <!-- NEW AI CORE BREATHING LOGO -->
+        <!-- AI Core Breathing Logo -->
         <div class="ai-core-logo">
           <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
         </div>
@@ -228,7 +245,6 @@
       <div class="card">
         <h3 class="card-title">📊 Node System Telemetry</h3>
         
-        <!-- NEW INDIVIDUAL BARS FOR NODE TELEMETRY -->
         <ul class="stats-list" style="margin-bottom:2px;">
           <li><span>CPU Load</span> <strong id="cpuLoad">26%</strong></li>
         </ul>
@@ -281,9 +297,8 @@
       let basePulses = 1420;
       let baseIOC = 18940;
 
-      // Live telemetry & automatic pulsing update loop every second
+      // Live telemetry loop
       setInterval(() => {
-        // Dash Metrics
         basePulses += Math.floor(Math.random() * 3);
         baseIOC += Math.floor(Math.random() * 5);
         const speed = (2.2 + Math.random() * 0.6).toFixed(1);
@@ -303,7 +318,6 @@
         if (latencyEl) latencyEl.innerText = latency + ' ms';
         if (latencyBar) latencyBar.style.width = (20 + latency) + '%';
 
-        // Node Metrics
         const cpu = Math.floor(24 + Math.random() * 8);
         const ram = Math.floor(43 + Math.random() * 4);
         const vaultFloat = (1.1 + Math.random() * 0.3).toFixed(1);
@@ -321,7 +335,6 @@
 
       }, 1000);
 
-      // Silent sync feed update (removed alert entirely)
       document.getElementById('syncFeedBtn').onclick = function() {
         basePulses += 12;
         baseIOC += 85;
@@ -367,7 +380,7 @@
         div.innerHTML = html + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div>`;
         termOut.appendChild(div);
         termOut.scrollTop = termOut.scrollHeight;
-        if (type === 'agent-msg' && voiceActive) speakText(html);
+        if (type === 'agent-msg' && voiceActive) speakText(html.replace(/<[^>]+>/g, ''));
       }
 
       document.getElementById('clearBtn').onclick = () => termOut.innerHTML = '';
@@ -425,27 +438,27 @@
         }
       };
 
+      // Top Audio Button: Dictation (Speech to Text)
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      let recognition = null;
+      let dictation = null;
       if (SpeechRecognition) {
-          recognition = new SpeechRecognition();
-          recognition.continuous = false; recognition.interimResults = false; recognition.lang = 'en-US';
-          recognition.onresult = (e) => {
+          dictation = new SpeechRecognition();
+          dictation.continuous = false; dictation.interimResults = false; dictation.lang = 'en-US';
+          dictation.onresult = (e) => {
               document.getElementById('terminalInput').value = e.results[0][0].transcript;
               document.getElementById('audioBtn').classList.remove('recording-btn');
-              document.getElementById('audioBtn').innerText = "🎙️ Audio: OFF";
-              document.getElementById('sendCommandButton').click();
+              document.getElementById('audioBtn').innerText = "🎙️ Dictate: OFF";
           };
-          recognition.onend = () => {
+          dictation.onend = () => {
               document.getElementById('audioBtn').classList.remove('recording-btn');
-              document.getElementById('audioBtn').innerText = "🎙️ Audio: OFF";
+              document.getElementById('audioBtn').innerText = "🎙️ Dictate: OFF";
           };
       }
 
       document.getElementById('audioBtn').onclick = function() {
-          if (!recognition) return alert("Speech recognition not supported.");
-          if (this.classList.contains('recording-btn')) { recognition.stop(); } 
-          else { recognition.start(); this.classList.add('recording-btn'); this.innerText = "🎙️ Listening..."; }
+          if (!dictation) return alert("Speech recognition not supported.");
+          if (this.classList.contains('recording-btn')) { dictation.stop(); } 
+          else { dictation.start(); this.classList.add('recording-btn'); this.innerText = "🎙️ Listening..."; }
       };
 
       let videoStream = null;
@@ -474,22 +487,116 @@
           return canvas.toDataURL('image/jpeg', 0.8);
       }
 
+      // Media Upload Handling (Images & Videos)
+      let attachedMedia = null;
+      document.getElementById('mediaBtn').onclick = () => document.getElementById('mediaInput').click();
+      
+      document.getElementById('mediaInput').onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if(file.size > 8 * 1024 * 1024) { alert('File too large. Maximum size is 8MB.'); return; }
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const dataUrl = event.target.result;
+          attachedMedia = { type: file.type, base64: dataUrl.split(',')[1], dataUrl: dataUrl, isVideo: file.type.startsWith('video/') };
+          
+          document.getElementById('mediaPreviewBox').style.display = 'block';
+          document.getElementById('mediaPreviewAudio').style.display = 'none';
+          if(attachedMedia.isVideo) {
+             document.getElementById('mediaPreviewImg').style.display = 'none';
+             document.getElementById('mediaPreviewVid').src = dataUrl;
+             document.getElementById('mediaPreviewVid').style.display = 'block';
+          } else {
+             document.getElementById('mediaPreviewVid').style.display = 'none';
+             document.getElementById('mediaPreviewImg').src = dataUrl;
+             document.getElementById('mediaPreviewImg').style.display = 'block';
+          }
+        };
+        reader.readAsDataURL(file);
+      };
+
+      // Native Audio Recording (Voice Notes)
+      let mediaRecorder;
+      let audioChunks = [];
+      let isRecordingAudio = false;
+
+      document.getElementById('recordAudioBtn').onclick = async function() {
+        if (isRecordingAudio) {
+            mediaRecorder.stop();
+            this.classList.remove('recording-btn');
+            this.innerText = '🎤';
+            isRecordingAudio = false;
+        } else {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const dataUrl = event.target.result;
+                        attachedMedia = { type: audioBlob.type || 'audio/mp4', base64: dataUrl.split(',')[1], dataUrl: dataUrl, isAudio: true };
+                        
+                        document.getElementById('mediaPreviewBox').style.display = 'block';
+                        document.getElementById('mediaPreviewImg').style.display = 'none';
+                        document.getElementById('mediaPreviewVid').style.display = 'none';
+                        document.getElementById('mediaPreviewAudio').src = dataUrl;
+                        document.getElementById('mediaPreviewAudio').style.display = 'block';
+                    };
+                    reader.readAsDataURL(audioBlob);
+                    stream.getTracks().forEach(t => t.stop());
+                };
+                mediaRecorder.start();
+                this.classList.add('recording-btn');
+                this.innerText = '⏹️';
+                isRecordingAudio = true;
+            } catch(err) { alert("Microphone access denied."); }
+        }
+      };
+
+      document.getElementById('clearMediaBtn').onclick = () => {
+        attachedMedia = null;
+        document.getElementById('mediaInput').value = '';
+        document.getElementById('mediaPreviewBox').style.display = 'none';
+        document.getElementById('mediaPreviewAudio').style.display = 'none';
+      };
+
       document.getElementById('sendCommandButton').onclick = async () => {
         const cmd = document.getElementById('terminalInput').value.trim();
-        if (!cmd) return;
-        appendMsg(`> ${cmd}`, 'user-msg');
-        document.getElementById('terminalInput').value = '';
-
+        if (!cmd && !attachedMedia && !captureFrameBase64()) return;
+        
         const key = localStorage.getItem('PG1_KEY');
         const ghPat = localStorage.getItem('PG1_GH_PAT');
         if (!key || !ghPat) return appendMsg('Error: Master Key and GitHub PAT required in Dash tab.', 'error-msg');
 
-        let payloadParts = [{ text: cmd }];
-        const frameData = captureFrameBase64();
-        if (frameData) {
-            payloadParts.push({ inlineData: { mimeType: "image/jpeg", data: frameData.split(',')[1] } });
-            appendMsg(`[System] Optical frame attached.`, 'system-msg');
+        let payloadParts = [];
+        if (cmd) payloadParts.push({ text: cmd });
+
+        let visualMediaHtml = '';
+
+        if (attachedMedia) {
+            payloadParts.push({ inlineData: { mimeType: attachedMedia.type, data: attachedMedia.base64 } });
+            if (attachedMedia.isVideo) {
+               visualMediaHtml = `<br><video src="${attachedMedia.dataUrl}" style="max-width: 100%; max-height: 120px; border-radius: 6px; margin-top: 8px;" controls></video>`;
+            } else if (attachedMedia.isAudio) {
+               visualMediaHtml = `<br><audio src="${attachedMedia.dataUrl}" style="width: 100%; height: 35px; margin-top: 8px;" controls></audio>`;
+            } else {
+               visualMediaHtml = `<br><img src="${attachedMedia.dataUrl}" style="max-width: 100%; max-height: 120px; border-radius: 6px; margin-top: 8px;">`;
+            }
+            document.getElementById('clearMediaBtn').click(); 
+        } else {
+            const frameData = captureFrameBase64();
+            if (frameData) {
+                payloadParts.push({ inlineData: { mimeType: "image/jpeg", data: frameData.split(',')[1] } });
+                appendMsg(`[System] Optical frame attached.`, 'system-msg');
+            }
         }
+
+        appendMsg(`> ${cmd}${visualMediaHtml}`, 'user-msg');
+        document.getElementById('terminalInput').value = '';
 
         const selectedModel = document.getElementById('modelSelector').value;
         const sys = `You are PG1.Agent. Execute the command. If modifying files, output JSON: {"reply":"...", "updateFiles": [{"path":"file.ext", "content":"code"}]} If deleting, output JSON: {"reply":"...", "deleteFiles": ["file.ext"]} Otherwise, output JSON: {"reply":"..."}`;
