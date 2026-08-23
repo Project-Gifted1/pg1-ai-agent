@@ -8,20 +8,9 @@
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #f4f6f8; color: #333; display: flex; flex-direction: column; overflow: hidden; }
 
-    @keyframes pulseGlow {
-      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.4); }
-      70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(40, 167, 69, 0); }
-      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
-    }
-    @keyframes logoPulse {
-      0% { box-shadow: 0 0 15px rgba(0, 64, 133, 0.2); }
-      50% { box-shadow: 0 0 25px rgba(23, 162, 184, 0.4); }
-      100% { box-shadow: 0 0 15px rgba(0, 64, 133, 0.2); }
-    }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(4px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
+    @keyframes pulseGlow { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.4); } 70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(40, 167, 69, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); } }
+    @keyframes logoPulse { 0% { box-shadow: 0 0 15px rgba(0, 64, 133, 0.2); } 50% { box-shadow: 0 0 25px rgba(23, 162, 184, 0.4); } 100% { box-shadow: 0 0 15px rgba(0, 64, 133, 0.2); } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
     .top-header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: white; border-bottom: 1px solid #e0e0e0; flex-shrink: 0; }
     .brand-title { display: flex; align-items: center; gap: 8px; font-size: 1.1em; }
@@ -46,7 +35,6 @@
     .primary-btn { padding: 10px 15px; background: #198754; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
     .key-status-footer { display: flex; justify-content: space-between; font-size: 0.8em; font-weight: bold; }
     .key-status-footer .status-text { color: #198754; }
-    .connection-status { color: #333; }
 
     .telemetry-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 0.9em; font-weight: 500;}
     .outline-btn { padding: 6px 12px; border: 1px solid #007bff; background: transparent; color: #007bff; border-radius: 6px; font-size: 0.85em; font-weight: bold; cursor: pointer; }
@@ -66,7 +54,6 @@
     
     .terminal-utility-bar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 8px; }
     .utility-btn { padding: 5px 10px; background: white; border: 1px solid #ccc; border-radius: 6px; font-size: 0.75em; color: #333; cursor: pointer; font-weight: bold; transition: background 0.2s; }
-    .utility-btn:hover { background: #f0f0f0; }
     
     .terminal-display { flex: 1; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 12px; padding: 15px; overflow-y: auto; margin-bottom: 15px; display: flex; flex-direction: column; gap: 10px; }
     .terminal-message { padding: 12px; border-radius: 8px; font-size: 0.9em; line-height: 1.4; word-wrap: break-word; animation: fadeIn 0.2s ease-out; }
@@ -84,24 +71,17 @@
     .nav-item { background: none; border: none; font-size: 0.8em; color: #666; cursor: pointer; text-align: center; flex: 1; }
     .nav-item.active { color: #007bff; font-weight: bold; }
 
-    /* Thread Modal Overlay */
     .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
     .modal-overlay.active { display: flex; }
     .modal-content { background: white; padding: 20px; border-radius: 12px; width: 90%; max-width: 400px; max-height: 80vh; display: flex; flex-direction: column; gap: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
     .modal-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; color: #004085; font-size: 1.1em; }
-    .close-modal-btn { background: none; border: none; font-size: 1.2em; cursor: pointer; color: #666; transition: color 0.2s; }
-    .close-modal-btn:hover { color: #dc3545; }
+    .close-modal-btn { background: none; border: none; font-size: 1.2em; cursor: pointer; color: #666; }
     .thread-list { overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
     .thread-item { display: flex; justify-content: space-between; align-items: center; background: #f8f9fa; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
-    .thread-info { display: flex; flex-direction: column; font-size: 0.85em; color: #333; }
-    .thread-actions { display: flex; gap: 5px; }
-    .thread-btn { padding: 5px 10px; border: none; border-radius: 4px; font-size: 0.8em; font-weight: bold; cursor: pointer; transition: background 0.2s; }
+    .thread-btn { padding: 5px 10px; border: none; border-radius: 4px; font-size: 0.8em; font-weight: bold; cursor: pointer; }
     .btn-load { background: #007bff; color: white; }
-    .btn-load:hover { background: #0056b3; }
     .btn-delete { background: #dc3545; color: white; }
-    .btn-delete:hover { background: #a71d2a; }
-
-    /* Print Isolation for PDF Export */
+    
     @media print {
       body * { visibility: hidden; }
       #view-terminal, #view-terminal * { visibility: visible; }
@@ -112,16 +92,13 @@
   </style>
 </head>
 <body>
-  <!-- Thread Management Modal -->
   <div id="threadModal" class="modal-overlay">
     <div class="modal-content">
       <div class="modal-header">
         <span>Saved Threads</span>
         <button class="close-modal-btn" id="closeModalBtn">✖</button>
       </div>
-      <div id="threadList" class="thread-list">
-        <!-- Thread items render dynamically here -->
-      </div>
+      <div id="threadList" class="thread-list"></div>
       <button id="newThreadBtn" class="primary-btn" style="text-align: center; width: 100%;">➕ Start New Thread</button>
     </div>
   </div>
@@ -178,7 +155,7 @@
       
       <div id="terminalOutput" class="terminal-display">
         <div class="terminal-message system-msg">
-          PG1.Agent Sovereign Core online. Operational modules ready.
+          PG1.Agent Sovereign Core online. Routing to Cloudflare Engine...
         </div>
       </div>
       
@@ -211,7 +188,6 @@
 
   <script>
     document.addEventListener("DOMContentLoaded", () => {
-      // Navigation
       const navItems = document.querySelectorAll('.nav-item');
       const views = document.querySelectorAll('.view-section');
       navItems.forEach(item => {
@@ -223,7 +199,6 @@
         });
       });
 
-      // Key Management
       const keyInput = document.getElementById('masterKeyInput');
       const keyStatusText = document.getElementById('keyStatusText');
       document.getElementById('saveKeyButton').addEventListener('click', () => {
@@ -240,7 +215,6 @@
         keyInput.value = '••••••••••••••••••••••••••••';
       }
 
-      // Terminal Logic
       const terminalOutput = document.getElementById('terminalOutput');
       const terminalInput = document.getElementById('terminalInput');
       
@@ -259,6 +233,8 @@
       // Thread Management
       let currentThreadId = Date.now().toString();
       let threads = JSON.parse(localStorage.getItem('PG1_THREADS')) || {};
+      let sessionHistory = []; // Tracks live conversation payload
+      
       const threadModal = document.getElementById('threadModal');
       const threadList = document.getElementById('threadList');
 
@@ -268,17 +244,14 @@
           type: msg.classList.contains('user-msg') ? 'user-msg' : (msg.classList.contains('agent-msg') ? 'agent-msg' : (msg.classList.contains('error-msg') ? 'error-msg' : 'system-msg'))
         }));
         
-        threads[currentThreadId] = {
-          id: currentThreadId,
-          timestamp: new Date().toLocaleString(),
-          messages: messages
-        };
+        threads[currentThreadId] = { id: currentThreadId, timestamp: new Date().toLocaleString(), messages: messages, history: sessionHistory };
         localStorage.setItem('PG1_THREADS', JSON.stringify(threads));
       }
 
       function loadThread(id) {
         if (!threads[id]) return;
         currentThreadId = id;
+        sessionHistory = threads[id].history || [];
         terminalOutput.innerHTML = '';
         threads[id].messages.forEach(msg => {
           const msgDiv = document.createElement('div');
@@ -300,7 +273,7 @@
         threadList.innerHTML = '';
         const threadKeys = Object.keys(threads).sort((a, b) => b - a);
         if (threadKeys.length === 0) {
-          threadList.innerHTML = '<div style="text-align:center; color:#888; font-size:0.85em; padding: 10px;">No saved threads found.</div>';
+          threadList.innerHTML = '<div style="text-align:center; color:#888; padding: 10px;">No saved threads found.</div>';
           return;
         }
         threadKeys.forEach(id => {
@@ -308,11 +281,8 @@
           const div = document.createElement('div');
           div.classList.add('thread-item');
           div.innerHTML = `
-            <div class="thread-info">
-              <strong>Thread ${id.substring(id.length - 4)}</strong>
-              <span style="color:#888;">${t.timestamp}</span>
-            </div>
-            <div class="thread-actions">
+            <div style="font-size: 0.85em;"><strong>Thread ${id.substring(id.length - 4)}</strong><br><span style="color:#888;">${t.timestamp}</span></div>
+            <div>
               <button class="thread-btn btn-load" onclick="window.loadThread('${id}')">Load</button>
               <button class="thread-btn btn-delete" onclick="window.deleteThread('${id}')">Del</button>
             </div>
@@ -321,55 +291,28 @@
         });
       }
 
-      window.loadThread = loadThread;
-      window.deleteThread = deleteThread;
+      window.loadThread = loadThread; window.deleteThread = deleteThread;
 
-      document.getElementById('saveThreadBtn').addEventListener('click', () => {
-        saveCurrentThread();
-        alert('Current thread saved securely.');
-      });
-
-      document.getElementById('threadsBtn').addEventListener('click', () => {
-        renderThreadList();
-        threadModal.classList.add('active');
-      });
-
-      document.getElementById('closeModalBtn').addEventListener('click', () => {
-        threadModal.classList.remove('active');
-      });
-
+      document.getElementById('saveThreadBtn').addEventListener('click', () => { saveCurrentThread(); alert('Thread saved.'); });
+      document.getElementById('threadsBtn').addEventListener('click', () => { renderThreadList(); threadModal.classList.add('active'); });
+      document.getElementById('closeModalBtn').addEventListener('click', () => threadModal.classList.remove('active'));
       document.getElementById('newThreadBtn').addEventListener('click', () => {
-        currentThreadId = Date.now().toString();
-        terminalOutput.innerHTML = '<div class="terminal-message system-msg">PG1.Agent Sovereign Core online. New thread initialized.</div>';
+        currentThreadId = Date.now().toString(); sessionHistory = [];
+        terminalOutput.innerHTML = '<div class="terminal-message system-msg">New thread initialized.</div>';
         threadModal.classList.remove('active');
       });
 
       // Export Utilities
-      function getTerminalText() {
-        return Array.from(terminalOutput.querySelectorAll('.terminal-message'))
-                    .map(msg => msg.innerText).join('\n\n---\n\n');
-      }
-
-      document.getElementById('copyLogsBtn').addEventListener('click', () => {
-        navigator.clipboard.writeText(getTerminalText()).then(() => alert('Logs copied to clipboard.'));
-      });
-
+      function getTerminalText() { return Array.from(terminalOutput.querySelectorAll('.terminal-message')).map(msg => msg.innerText).join('\n\n---\n\n'); }
+      document.getElementById('copyLogsBtn').addEventListener('click', () => navigator.clipboard.writeText(getTerminalText()).then(() => alert('Logs copied.')));
       document.getElementById('exportTxtBtn').addEventListener('click', () => {
-        const blob = new Blob([getTerminalText()], { type: 'text/plain' });
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `PG1_Agent_Execution_Logs_${currentThreadId}.txt`;
-        a.click();
+        a.href = URL.createObjectURL(new Blob([getTerminalText()], { type: 'text/plain' }));
+        a.download = `PG1_Logs_${currentThreadId}.txt`; a.click();
       });
+      document.getElementById('exportPdfBtn').addEventListener('click', () => window.print());
 
-      document.getElementById('exportPdfBtn').addEventListener('click', () => {
-        window.print();
-      });
-
-      // Model Execution
-      const targetModels = ["gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.1-pro", "gemini-2.5-flash"];
-      const agentSystemInstruction = "You are PG1.Agent, an autonomous senior technical partner and sovereign AI core. Respond with professional clarity, high precision, concise explanations, and direct technical execution strategies.";
-
+      // Sovereign Cloudflare Backend Execution
       document.getElementById('sendCommandButton').addEventListener('click', async () => {
         const command = terminalInput.value.trim();
         if (!command) return;
@@ -383,34 +326,34 @@
              return;
         }
 
-        let success = false;
-        let lastError = "";
+        const workerUrl = "https://pg1-worker.gnfcw9w5rk.workers.dev";
+        sessionHistory.push({ role: "user", parts: [{ text: command }] });
 
-        for (const model of targetModels) {
-          try {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-            const response = await fetch(url, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ role: "user", parts: [{ text: agentSystemInstruction + "\n\nUser Command: " + command }] }]
-              })
-            });
+        try {
+          const response = await fetch(workerUrl, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'X-Gemini-Key': apiKey 
+            },
+            body: JSON.stringify({ contents: sessionHistory })
+          });
 
-            const data = await response.json();
-            if (data.error) throw new Error(data.error.message);
+          const data = await response.json();
+          
+          if (data.error) throw new Error(data.error);
 
-            if (data.candidates && data.candidates[0].content) {
-              appendMessage(data.candidates[0].content.parts[0].text, 'agent-msg');
-              success = true; break;
-            }
-          } catch (err) { lastError = err.message; }
-        }
-        if (!success) {
-          appendMessage(`Sovereign Relay Failure. Last Error: ${lastError}`, 'error-msg');
+          if (data.candidates && data.candidates[0].content) {
+            const agentReply = data.candidates[0].content.parts[0].text;
+            appendMessage(agentReply, 'agent-msg');
+            sessionHistory.push({ role: "model", parts: [{ text: agentReply }] });
+          } else if (data.output) {
+            appendMessage(data.output, 'agent-msg');
+          }
+        } catch (err) { 
+          appendMessage(`Sovereign Engine Relay Failure: ${err.message}`, 'error-msg');
         }
         
-        // Auto-save the thread after every interaction so context is never lost
         saveCurrentThread();
       });
 
