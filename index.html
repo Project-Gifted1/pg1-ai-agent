@@ -9,7 +9,6 @@
     html, body { height: 100dvh; background-color: #f4f6f8; color: #333; display: flex; flex-direction: column; overflow: hidden; }
 
     @keyframes pulseGlow { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.4); } 70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(40, 167, 69, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); } }
-    @keyframes logoPulse { 0% { box-shadow: 0 0 15px rgba(0, 64, 133, 0.2); } 50% { box-shadow: 0 0 25px rgba(23, 162, 184, 0.4); } 100% { box-shadow: 0 0 15px rgba(0, 64, 133, 0.2); } }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
     .top-header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: white; border-bottom: 1px solid #e0e0e0; flex-shrink: 0; }
@@ -20,344 +19,183 @@
     .status-dot.blue { background-color: #007bff; }
 
     .action-bar { display: flex; justify-content: center; gap: 10px; padding: 10px; background: white; border-bottom: 1px solid #e0e0e0; overflow-x: auto; flex-shrink: 0; }
-    .toggle-btn { padding: 8px 12px; border: 1px solid #ddd; background: white; border-radius: 8px; font-size: 0.85em; cursor: pointer; white-space: nowrap; transition: background 0.2s; }
-    .toggle-btn:hover { background: #f8f9fa; }
+    .toggle-btn { padding: 8px 12px; border: 1px solid #ddd; background: white; border-radius: 8px; font-size: 0.85em; cursor: pointer; white-space: nowrap; }
 
     #main-content { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 90px; -webkit-overflow-scrolling: touch; }
     .view-section { display: none; flex-direction: column; gap: 15px; min-height: 100%; animation: fadeIn 0.3s ease-in-out; }
     .view-section.active { display: flex; }
 
-    .card { background: white; border-radius: 12px; padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #eee; transition: box-shadow 0.2s; }
+    .card { background: white; border-radius: 12px; padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #eee; }
     .card-title { font-size: 1em; color: #004085; display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-    .card-desc { font-size: 0.85em; color: #666; margin-bottom: 15px; line-height: 1.4; }
-    .key-input-group { display: flex; gap: 10px; margin-bottom: 15px; }
-    .key-input-group input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; outline: none; }
+    .key-input-group { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
+    .key-input-group input { padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; outline: none; }
     .primary-btn { padding: 10px 15px; background: #198754; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
     .key-status-footer { display: flex; justify-content: space-between; font-size: 0.8em; font-weight: bold; }
-    .key-status-footer .status-text { color: #198754; }
 
-    .telemetry-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 0.9em; font-weight: 500;}
-    .outline-btn { padding: 6px 12px; border: 1px solid #007bff; background: transparent; color: #007bff; border-radius: 6px; font-size: 0.85em; font-weight: bold; cursor: pointer; }
-    
-    .stats-list { list-style: none; }
-    .stats-list li { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.85em; }
-    .stats-list li strong { color: #004085; }
-
-    .center-content { text-align: center; }
-    .logo-placeholder { width: 100px; height: 100px; background: radial-gradient(circle, #17a2b8, #004085); border-radius: 50%; margin: 0 auto 15px; color: white; display: flex; align-items: center; justify-content: center; font-size: 3em; font-weight: bold; border: 4px solid #b8daff; animation: logoPulse 3s infinite ease-in-out; }
-    .sub-heading { color: #666; font-size: 0.9em; margin-bottom: 20px; }
-    .node-details { list-style: none; text-align: left; background: #f8f9fa; padding: 15px; border-radius: 8px; }
-    .node-details li { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef; font-size: 0.9em; }
-    
     #view-terminal { flex: 1; display: none; flex-direction: column; justify-content: space-between; padding-bottom: 15px; min-height: calc(100vh - 220px); }
     #view-terminal.active { display: flex; }
     
     .terminal-utility-bar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 8px; }
-    .utility-btn { padding: 5px 10px; background: white; border: 1px solid #ccc; border-radius: 6px; font-size: 0.75em; color: #333; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+    .utility-btn { padding: 5px 10px; background: white; border: 1px solid #ccc; border-radius: 6px; font-size: 0.75em; cursor: pointer; font-weight: bold; }
     
     .terminal-display { flex: 1; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 12px; padding: 15px; overflow-y: auto; margin-bottom: 15px; display: flex; flex-direction: column; gap: 10px; }
-    .terminal-message { padding: 12px; border-radius: 8px; font-size: 0.9em; line-height: 1.4; word-wrap: break-word; animation: fadeIn 0.2s ease-out; }
+    .terminal-message { padding: 12px; border-radius: 8px; font-size: 0.9em; line-height: 1.4; word-wrap: break-word; }
     .terminal-message.user-msg { background: #e6f2ff; border: 1px solid #b8daff; color: #004085; align-self: flex-end; max-width: 85%; }
     .terminal-message.agent-msg { background: white; border: 1px solid #dee2e6; color: #333; align-self: flex-start; max-width: 95%; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
     .terminal-message.error-msg { background: #ffe6e6; border: 1px solid #ffb3b3; color: #cc0000; }
     .terminal-message.system-msg { color: #888; font-style: italic; text-align: center; background: none; border: none; }
 
     .terminal-input-area { display: flex; gap: 8px; align-items: center; background: white; padding: 10px; border-radius: 12px; border: 1px solid #ddd; flex-shrink: 0; }
-    .icon-btn { background: none; border: 1px solid #eee; border-radius: 8px; padding: 5px; font-size: 0.7em; color: #004085; cursor: pointer; width: 45px; flex-shrink: 0; }
     .terminal-input-area input { flex: 1; padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; outline: none; }
     .send-btn { padding: 12px 18px; background: #198754; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; flex-shrink: 0; }
 
     .bottom-nav { display: flex; justify-content: space-around; background: white; padding: 10px; border-top: 1px solid #e0e0e0; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
-    .nav-item { background: none; border: none; font-size: 0.8em; color: #666; cursor: pointer; text-align: center; flex: 1; }
+    .nav-item { background: none; border: none; font-size: 0.8em; color: #666; cursor: pointer; flex: 1; }
     .nav-item.active { color: #007bff; font-weight: bold; }
-
-    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
-    .modal-overlay.active { display: flex; }
-    .modal-content { background: white; padding: 20px; border-radius: 12px; width: 90%; max-width: 400px; max-height: 80vh; display: flex; flex-direction: column; gap: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
-    .modal-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; color: #004085; font-size: 1.1em; }
-    .close-modal-btn { background: none; border: none; font-size: 1.2em; cursor: pointer; color: #666; }
-    .thread-list { overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-    .thread-item { display: flex; justify-content: space-between; align-items: center; background: #f8f9fa; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
-    .thread-btn { padding: 5px 10px; border: none; border-radius: 4px; font-size: 0.8em; font-weight: bold; cursor: pointer; }
-    .btn-load { background: #007bff; color: white; }
-    .btn-delete { background: #dc3545; color: white; }
-    
-    @media print {
-      body * { visibility: hidden; }
-      #view-terminal, #view-terminal * { visibility: visible; }
-      #view-terminal { position: absolute; left: 0; top: 0; width: 100%; height: auto; display: block; }
-      .terminal-display { border: none; background: white; }
-      .action-bar, .top-header, .terminal-utility-bar, .terminal-input-area, .bottom-nav { display: none !important; }
-    }
   </style>
 </head>
 <body>
-  <div id="threadModal" class="modal-overlay">
-    <div class="modal-content">
-      <div class="modal-header">
-        <span>Saved Threads</span>
-        <button class="close-modal-btn" id="closeModalBtn">✖</button>
-      </div>
-      <div id="threadList" class="thread-list"></div>
-      <button id="newThreadBtn" class="primary-btn" style="text-align: center; width: 100%;">➕ Start New Thread</button>
-    </div>
-  </div>
-
   <header class="top-header">
-    <div class="brand-title">
-      <span class="status-dot green"></span>
-      <strong>Project Gifted1™</strong>
-    </div>
-    <div class="version">🛡️ v5.6 Sovereign Engine</div>
+    <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
+    <div class="version">🛡️ v5.6 Sovereign Engine (Direct Bridge)</div>
   </header>
-
-  <div class="action-bar">
-    <button class="toggle-btn">📹 Cam: OFF</button>
-    <button class="toggle-btn">🎙️ Mic: OFF</button>
-    <button class="toggle-btn">🔊 Audio: OFF</button>
-    <button class="toggle-btn" id="clearTerminalBtn" style="color: #dc3545;">🗑️ Clear</button>
-  </div>
 
   <main id="main-content">
     <section id="view-dash" class="view-section active">
       <div class="card">
-        <h3 class="card-title">⚡ x402 Sovereign Key Relay</h3>
+        <h3 class="card-title">⚡ x402 Dual-Key Relay</h3>
         <div class="key-input-group">
-          <input type="password" id="masterKeyInput" placeholder="Enter Sovereign Master Key...">
-          <button id="saveKeyButton" class="primary-btn">Save Key</button>
+          <input type="password" id="masterKeyInput" placeholder="Master API Key (Neural Core)">
+          <input type="password" id="githubKeyInput" placeholder="GitHub PAT (Repo Access)">
+          <button id="saveKeyButton" class="primary-btn">Save Credentials</button>
         </div>
         <div class="key-status-footer">
-          <span id="keyStatusText" class="status-text" style="color:red;">KEY_STATUS: MISSING</span>
-          <span class="connection-status"><span class="status-dot green"></span> SECURE_ACTIVE</span>
+          <span id="keyStatusText" style="color:red;">STATUS: MISSING CREDENTIALS</span>
         </div>
-      </div>
-      <div class="card">
-        <h3 class="card-title"><span class="status-dot blue"></span> Sovereign Edge Active</h3>
-        <div class="telemetry-header">
-          <span>📡 Live OTX Telemetry Feed</span>
-          <button class="outline-btn">🔄 Sync Feed</button>
-        </div>
-        <ul class="stats-list">
-          <li><span>OTX Threat Pulses Synced</span> <strong>1,420 Active Pulses</strong></li>
-          <li><span>Edge Telemetry Throughput</span> <strong>Optimal (99.9%)</strong></li>
-        </ul>
       </div>
     </section>
 
     <section id="view-terminal" class="view-section">
-      <div class="terminal-utility-bar">
-        <button id="threadsBtn" class="utility-btn">💬 Threads</button>
-        <button id="saveThreadBtn" class="utility-btn">💾 Save</button>
-        <button id="copyLogsBtn" class="utility-btn">📋 Copy</button>
-        <button id="exportTxtBtn" class="utility-btn">📄 TXT</button>
-        <button id="exportPdfBtn" class="utility-btn">📕 PDF</button>
-      </div>
-      
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message system-msg">
-          PG1.Agent Sovereign Core online. Routing to Cloudflare Engine...
-        </div>
+        <div class="terminal-message system-msg">PG1.Agent Sovereign Core online. Direct API Bridge established.</div>
       </div>
-      
       <div class="terminal-input-area">
-        <button class="icon-btn">🎙️<br>Rec</button>
-        <button class="icon-btn">📎<br>File</button>
         <input type="text" id="terminalInput" placeholder="Enter command...">
         <button id="sendCommandButton" class="send-btn">Send</button>
-      </div>
-    </section>
-
-    <section id="view-node" class="view-section">
-      <div class="card center-content">
-        <div class="logo-placeholder">G</div>
-        <h2>PG1.Agent™</h2>
-        <p class="sub-heading">Autonomous Edge Infrastructure</p>
-        <ul class="node-details">
-          <li><span>Node ID:</span> <strong>PG1-CORE-01</strong></li>
-          <li><span>Ownership:</span> <strong style="color: blue;">100% Sovereign</strong></li>
-        </ul>
       </div>
     </section>
   </main>
 
   <nav class="bottom-nav">
-    <button class="nav-item active" data-target="view-dash"><span>📊</span><br>Dash</button>
-    <button class="nav-item" data-target="view-terminal"><span>⚡</span><br>Terminal</button>
-    <button class="nav-item" data-target="view-node"><span>🛡️</span><br>Node</button>
+    <button class="nav-item active" data-target="view-dash">Dash</button>
+    <button class="nav-item" data-target="view-terminal">Terminal</button>
   </nav>
 
   <script>
     document.addEventListener("DOMContentLoaded", () => {
-      const navItems = document.querySelectorAll('.nav-item');
-      const views = document.querySelectorAll('.view-section');
-      navItems.forEach(item => {
+      document.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', () => {
-          navItems.forEach(nav => nav.classList.remove('active'));
-          views.forEach(view => view.classList.remove('active'));
+          document.querySelectorAll('.nav-item, .view-section').forEach(el => el.classList.remove('active'));
           item.classList.add('active');
           document.getElementById(item.getAttribute('data-target')).classList.add('active');
         });
       });
 
-      const keyInput = document.getElementById('masterKeyInput');
-      const keyStatusText = document.getElementById('keyStatusText');
+      const kIn = document.getElementById('masterKeyInput');
+      const gIn = document.getElementById('githubKeyInput');
+      const stat = document.getElementById('keyStatusText');
+
       document.getElementById('saveKeyButton').addEventListener('click', () => {
-        if (keyInput.value.trim()) {
-          localStorage.setItem('PG1_MASTER_KEY', keyInput.value.trim());
-          keyStatusText.innerText = 'KEY_STATUS: STORED_LOCAL';
-          keyStatusText.style.color = '#198754';
-          alert('Sovereign Key Stored Locally.');
+        if (kIn.value) localStorage.setItem('PG1_KEY', kIn.value.trim());
+        if (gIn.value) localStorage.setItem('PG1_GH_PAT', gIn.value.trim());
+        checkKeys();
+        alert('Credentials stored locally.');
+      });
+
+      function checkKeys() {
+        if (localStorage.getItem('PG1_KEY') && localStorage.getItem('PG1_GH_PAT')) {
+          kIn.value = '••••••••••••••••';
+          gIn.value = '••••••••••••••••';
+          stat.innerText = 'STATUS: FULL RELAY ACTIVE';
+          stat.style.color = '#198754';
         }
-      });
-      if (localStorage.getItem('PG1_MASTER_KEY')) {
-        keyStatusText.innerText = 'KEY_STATUS: STORED_LOCAL';
-        keyStatusText.style.color = '#198754';
-        keyInput.value = '••••••••••••••••••••••••••••';
+      }
+      checkKeys();
+
+      const termOut = document.getElementById('terminalOutput');
+      let sessionHistory = [];
+
+      function appendMsg(html, type) {
+        const div = document.createElement('div');
+        div.className = `terminal-message ${type}`;
+        div.innerHTML = html.replace(/\n/g, '<br>');
+        termOut.appendChild(div);
+        termOut.scrollTop = termOut.scrollHeight;
       }
 
-      const terminalOutput = document.getElementById('terminalOutput');
-      const terminalInput = document.getElementById('terminalInput');
-      
-      function appendMessage(text, type) {
-        const msgDiv = document.createElement('div');
-        msgDiv.classList.add('terminal-message', type);
-        msgDiv.innerHTML = text.replace(/\n/g, '<br>'); 
-        terminalOutput.appendChild(msgDiv);
-        terminalOutput.scrollTop = terminalOutput.scrollHeight;
-      }
-
-      document.getElementById('clearTerminalBtn').addEventListener('click', () => {
-        terminalOutput.innerHTML = '<div class="terminal-message system-msg">Terminal cleared.</div>';
-      });
-
-      // Thread Management
-      let currentThreadId = Date.now().toString();
-      let threads = JSON.parse(localStorage.getItem('PG1_THREADS')) || {};
-      let sessionHistory = []; // Tracks live conversation payload
-      
-      const threadModal = document.getElementById('threadModal');
-      const threadList = document.getElementById('threadList');
-
-      function saveCurrentThread() {
-        const messages = Array.from(terminalOutput.querySelectorAll('.terminal-message')).map(msg => ({
-          html: msg.innerHTML,
-          type: msg.classList.contains('user-msg') ? 'user-msg' : (msg.classList.contains('agent-msg') ? 'agent-msg' : (msg.classList.contains('error-msg') ? 'error-msg' : 'system-msg'))
-        }));
+      document.getElementById('sendCommandButton').onclick = async () => {
+        const cmd = document.getElementById('terminalInput').value.trim();
+        if (!cmd) return;
         
-        threads[currentThreadId] = { id: currentThreadId, timestamp: new Date().toLocaleString(), messages: messages, history: sessionHistory };
-        localStorage.setItem('PG1_THREADS', JSON.stringify(threads));
-      }
-
-      function loadThread(id) {
-        if (!threads[id]) return;
-        currentThreadId = id;
-        sessionHistory = threads[id].history || [];
-        terminalOutput.innerHTML = '';
-        threads[id].messages.forEach(msg => {
-          const msgDiv = document.createElement('div');
-          msgDiv.classList.add('terminal-message', msg.type);
-          msgDiv.innerHTML = msg.html;
-          terminalOutput.appendChild(msgDiv);
-        });
-        terminalOutput.scrollTop = terminalOutput.scrollHeight;
-        threadModal.classList.remove('active');
-      }
-
-      function deleteThread(id) {
-        delete threads[id];
-        localStorage.setItem('PG1_THREADS', JSON.stringify(threads));
-        renderThreadList();
-      }
-
-      function renderThreadList() {
-        threadList.innerHTML = '';
-        const threadKeys = Object.keys(threads).sort((a, b) => b - a);
-        if (threadKeys.length === 0) {
-          threadList.innerHTML = '<div style="text-align:center; color:#888; padding: 10px;">No saved threads found.</div>';
-          return;
-        }
-        threadKeys.forEach(id => {
-          const t = threads[id];
-          const div = document.createElement('div');
-          div.classList.add('thread-item');
-          div.innerHTML = `
-            <div style="font-size: 0.85em;"><strong>Thread ${id.substring(id.length - 4)}</strong><br><span style="color:#888;">${t.timestamp}</span></div>
-            <div>
-              <button class="thread-btn btn-load" onclick="window.loadThread('${id}')">Load</button>
-              <button class="thread-btn btn-delete" onclick="window.deleteThread('${id}')">Del</button>
-            </div>
-          `;
-          threadList.appendChild(div);
-        });
-      }
-
-      window.loadThread = loadThread; window.deleteThread = deleteThread;
-
-      document.getElementById('saveThreadBtn').addEventListener('click', () => { saveCurrentThread(); alert('Thread saved.'); });
-      document.getElementById('threadsBtn').addEventListener('click', () => { renderThreadList(); threadModal.classList.add('active'); });
-      document.getElementById('closeModalBtn').addEventListener('click', () => threadModal.classList.remove('active'));
-      document.getElementById('newThreadBtn').addEventListener('click', () => {
-        currentThreadId = Date.now().toString(); sessionHistory = [];
-        terminalOutput.innerHTML = '<div class="terminal-message system-msg">New thread initialized.</div>';
-        threadModal.classList.remove('active');
-      });
-
-      // Export Utilities
-      function getTerminalText() { return Array.from(terminalOutput.querySelectorAll('.terminal-message')).map(msg => msg.innerText).join('\n\n---\n\n'); }
-      document.getElementById('copyLogsBtn').addEventListener('click', () => navigator.clipboard.writeText(getTerminalText()).then(() => alert('Logs copied.')));
-      document.getElementById('exportTxtBtn').addEventListener('click', () => {
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([getTerminalText()], { type: 'text/plain' }));
-        a.download = `PG1_Logs_${currentThreadId}.txt`; a.click();
-      });
-      document.getElementById('exportPdfBtn').addEventListener('click', () => window.print());
-
-      // Sovereign Cloudflare Backend Execution
-      document.getElementById('sendCommandButton').addEventListener('click', async () => {
-        const command = terminalInput.value.trim();
-        if (!command) return;
-
-        appendMessage(`> ${command}`, 'user-msg');
-        terminalInput.value = '';
+        appendMsg(`> ${cmd}`, 'user-msg');
+        document.getElementById('terminalInput').value = '';
         
-        const apiKey = localStorage.getItem('PG1_MASTER_KEY');
-        if (!apiKey || apiKey === '••••••••••••••••••••••••••••') {
-             appendMessage(`Error: Valid Sovereign Master Key required.`, 'error-msg');
-             return;
-        }
+        const key = localStorage.getItem('PG1_KEY');
+        const ghPat = localStorage.getItem('PG1_GH_PAT');
+        
+        if (!key || !ghPat) return appendMsg('Error: Neural Key and GitHub PAT required in Dash.', 'error-msg');
 
-        const workerUrl = "https://pg1-worker.gnfcw9w5rk.workers.dev";
-        sessionHistory.push({ role: "user", parts: [{ text: command }] });
+        const sys = `You are PG1.Agent. Execute the command. If a file edit in the repo 'Project-Gifted1/pg1-ai-agent' is requested, output raw JSON strictly formatted as: {"reply":"explanation", "updateFile":true, "path":"file.ext", "content":"raw code"}. Otherwise, output: {"reply":"your response", "updateFile":false}.`;
+
+        sessionHistory.push({ role: "user", parts: [{ text: cmd }] });
 
         try {
-          const response = await fetch(workerUrl, {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'X-Gemini-Key': apiKey 
-            },
-            body: JSON.stringify({ contents: sessionHistory })
+          // Direct Call to Gemini (Bypassing Cloudflare)
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${key}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: sessionHistory,
+              systemInstruction: { parts: [{ text: sys }] },
+              generationConfig: { responseMimeType: "application/json" }
+            })
           });
 
-          const data = await response.json();
+          const data = await res.json();
+          if (data.error) throw new Error(data.error.message);
           
-          if (data.error) throw new Error(data.error);
+          const result = JSON.parse(data.candidates[0].content.parts[0].text);
+          let finalReply = result.reply;
 
-          if (data.candidates && data.candidates[0].content) {
-            const agentReply = data.candidates[0].content.parts[0].text;
-            appendMessage(agentReply, 'agent-msg');
-            sessionHistory.push({ role: "model", parts: [{ text: agentReply }] });
-          } else if (data.output) {
-            appendMessage(data.output, 'agent-msg');
+          sessionHistory.push({ role: "model", parts: [{ text: JSON.stringify(result) }] });
+
+          // Direct Call to GitHub API (Bypassing Cloudflare)
+          if (result.updateFile) {
+            appendMsg(`[System] Initiating direct auto-commit to ${result.path}...`, 'system-msg');
+            const apiUrl = `https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/${result.path}`;
+            
+            const getRes = await fetch(apiUrl, { headers: { "Authorization": `Bearer ${ghPat}` } });
+            let sha = getRes.ok ? (await getRes.json()).sha : null;
+
+            const putRes = await fetch(apiUrl, {
+                method: 'PUT',
+                headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    message: `PG1.Agent Auto-Commit: ${result.path}`,
+                    content: btoa(unescape(encodeURIComponent(result.content))),
+                    sha: sha
+                })
+            });
+
+            if (putRes.ok) finalReply += `\n\n[Success] File ${result.path} autonomously updated in repository.`;
+            else finalReply += `\n\n[Error] Commit rejected: ${(await putRes.json()).message}`;
           }
-        } catch (err) { 
-          appendMessage(`Sovereign Engine Relay Failure: ${err.message}`, 'error-msg');
-        }
-        
-        saveCurrentThread();
-      });
 
-      terminalInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') document.getElementById('sendCommandButton').click(); });
+          appendMsg(finalReply, 'agent-msg');
+
+        } catch (e) {
+          appendMsg(`Execution Failure: ${e.message}`, 'error-msg');
+        }
+      };
     });
   </script>
 </body>
