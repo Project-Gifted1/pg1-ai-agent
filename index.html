@@ -1,887 +1,422 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PG1.Agent // Neural Interface</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            cyber: {
-              900: '#06090e',
-              800: '#0d131d',
-              700: '#151e2e',
-              600: '#223049',
-              cyan: '#00f0ff',
-              amber: '#ffaa00',
-              red: '#ff003c',
-              green: '#00ff66'
-            }
-          },
-          fontFamily: {
-            mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
-            sans: ['"Inter"', 'sans-serif']
-          }
-        }
-      }
-    }
-  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Project Gifted1™ - PG1.Agent Enterprise</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@300;400;500;700&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
+
+    @keyframes pulseGlow { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); } 70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+    .top-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: #111827; border-bottom: 1px solid #1f2937; flex-shrink: 0; }
+    .brand-title { display: flex; align-items: center; gap: 8px; font-size: 1.05em; font-weight: 600; color: #f8fafc; }
+    .version { font-size: 0.75em; color: #94a3b8; background: #1e293b; padding: 3px 8px; border-radius: 4px; border: 1px solid #334155; }
+    .status-dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; animation: pulseGlow 2s infinite; }
+    .status-dot.green { background-color: #10b981; }
+
+    .action-bar { display: flex; justify-content: center; gap: 6px; padding: 8px 12px; background: #111827; border-bottom: 1px solid #1f2937; overflow-x: auto; flex-shrink: 0; }
+    .toggle-btn { padding: 6px 10px; border: 1px solid #334155; background: #1e293b; color: #cbd5e1; border-radius: 6px; font-size: 0.75em; cursor: pointer; white-space: nowrap; font-weight: 500; transition: all 0.2s; }
+    .toggle-btn.active-btn { color: #10b981; border-color: #10b981; background: rgba(16, 185, 129, 0.1); }
+    .toggle-btn.recording-btn { color: #ef4444; border-color: #ef4444; background: rgba(239, 68, 68, 0.1); animation: pulseGlow 1.5s infinite; }
+
+    #main-content { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 90px; -webkit-overflow-scrolling: touch; }
+    .view-section { display: none; flex-direction: column; gap: 15px; min-height: 100%; animation: fadeIn 0.3s ease-in-out; }
+    .view-section.active { display: flex; }
+
+    .card { background: #111827; border-radius: 10px; padding: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2); border: 1px solid #1f2937; }
+    .card-title { font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.05em; color: #38bdf8; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; border-bottom: 1px solid #1f2937; padding-bottom: 6px; }
     
-    body {
-      background-color: #06090e;
-      color: #e2e8f0;
-      font-family: 'Inter', sans-serif;
-      overflow: hidden;
-    }
+    .key-input-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+    .key-input-group input { padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 13px; outline: none; background: #0f172a; color: #f8fafc; }
+    .primary-btn { padding: 10px; background: #0284c7; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 0.85em; cursor: pointer; }
+    .key-status-footer { display: flex; justify-content: space-between; font-size: 0.75em; font-weight: 600; }
+
+    .stats-list { list-style: none; margin-top: 5px; }
+    .stats-list li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #1f2937; font-size: 0.8em; }
+    .stats-list li:last-child { border-bottom: none; }
+    .stats-list li strong { color: #f8fafc; font-weight: 500; }
+
+    .terminal-utility-bar { display: flex; justify-content: flex-end; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+    .utility-btn { padding: 4px 8px; background: #1e293b; border: 1px solid #334155; border-radius: 5px; font-size: 0.7em; color: #cbd5e1; cursor: pointer; font-weight: 500; }
+
+    .terminal-display { flex: 1; background: #0f172a; border: 1px solid #1f2937; border-radius: 10px; padding: 12px; overflow-y: auto; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 250px; }
+    .terminal-message { padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; word-wrap: break-word; }
+    .terminal-message.user-msg { background: #1e293b; border: 1px solid #334155; color: #38bdf8; align-self: flex-end; max-width: 85%; }
+    .terminal-message.agent-msg { background: #111827; border: 1px solid #374151; color: #f8fafc; align-self: flex-start; max-width: 95%; }
+    .terminal-message.error-msg { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; }
+    .terminal-message.system-msg { color: #64748b; font-style: italic; text-align: center; background: none; border: none; font-size: 0.75em; }
+
+    .terminal-input-area { display: flex; gap: 8px; align-items: center; background: #111827; padding: 8px; border-radius: 10px; border: 1px solid #1f2937; flex-shrink: 0; }
+    .terminal-input-area input { flex: 1; padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #0f172a; color: #f8fafc; }
+    .send-btn { padding: 10px 16px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85em; flex-shrink: 0; }
+
+    .bottom-nav { display: flex; justify-content: space-around; background: #111827; padding: 8px; border-top: 1px solid #1f2937; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
+    .nav-item { background: none; border: none; font-size: 0.75em; color: #64748b; cursor: pointer; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+    .nav-item.active { color: #38bdf8; font-weight: 600; }
+
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
+    .modal-overlay.active { display: flex; }
+    .modal-content { background: #111827; border: 1px solid #334155; padding: 20px; border-radius: 10px; width: 90%; max-width: 400px; max-height: 80vh; display: flex; flex-direction: column; gap: 15px; }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: #f8fafc; font-size: 1em; }
+    .close-modal-btn { background: none; border: none; font-size: 1.2em; cursor: pointer; color: #94a3b8; }
+    .thread-list { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; max-height: 50vh; }
+    .thread-item { display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 10px; border-radius: 6px; border: 1px solid #334155; }
+    .thread-btn { padding: 4px 8px; border: none; border-radius: 4px; font-size: 0.75em; font-weight: 600; cursor: pointer; }
+    .btn-load { background: #0284c7; color: white; }
+    .btn-delete { background: #ef4444; color: white; }
     
-    .glow-cyan {
-      box-shadow: 0 0 15px rgba(0, 240, 255, 0.25);
-    }
-    .glow-amber {
-      box-shadow: 0 0 15px rgba(255, 170, 0, 0.25);
-    }
-    .border-glow {
-      border-color: rgba(0, 240, 255, 0.4);
-    }
-    .scanline {
-      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
-      background-size: 100% 3px, 6px 100%;
-      pointer-events: none;
-    }
-    
-    /* Custom Scrollbar */
-    ::-webkit-scrollbar {
-      width: 5px;
-      height: 5px;
-    }
-    ::-webkit-scrollbar-track {
-      background: #06090e;
-    }
-    ::-webkit-scrollbar-thumb {
-      background: #223049;
-      border-radius: 2px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-      background: #00f0ff;
-    }
+    #hiddenVideo { display: none; }
+    #cameraPreview { width: 100%; max-width: 220px; border-radius: 6px; border: 1px solid #10b981; display: none; margin: 0 auto 8px auto; }
   </style>
 </head>
-<body class="h-screen w-screen flex flex-col select-none relative">
-  <div class="scanline fixed inset-0 z-50 pointer-events-none opacity-40"></div>
-
-  <!-- Top Utility & Header Bar -->
-  <header class="bg-cyber-800 border-b border-cyber-600 px-4 py-2.5 flex items-center justify-between z-40">
-    <div class="flex items-center space-x-3">
-      <div class="w-3 h-3 rounded-full bg-cyber-cyan animate-pulse"></div>
-      <span class="font-mono font-bold tracking-wider text-cyber-cyan text-sm sm:text-base">PG1.AGENT // v4.8-CORE</span>
-      <span id="active-thread-badge" class="hidden sm:inline-block px-2 py-0.5 text-xs bg-cyber-700 border border-cyber-600 rounded text-gray-300 font-mono">Thread: Default</span>
+<body>
+  <div id="threadModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>Executive Thread History</span>
+        <button class="close-modal-btn" id="closeModalBtn">✖</button>
+      </div>
+      <div id="threadList" class="thread-list"></div>
+      <button id="newThreadBtn" class="primary-btn" style="text-align: center; width: 100%;">➕ Initialize New Thread</button>
     </div>
+  </div>
 
-    <!-- Utility Control Panel -->
-    <div class="flex items-center space-x-1 sm:space-x-2 text-xs font-mono">
-      <!-- Voice Toggle -->
-      <button id="voice-toggle-btn" onclick="toggleVoiceSynthesis()" class="px-2 py-1.5 bg-cyber-700 hover:bg-cyber-600 border border-cyber-600 rounded text-cyber-cyan transition flex items-center gap-1.5" title="Toggle Male Voice Synthesis">
-        <i class="fa-solid fa-volume-high" id="voice-icon"></i>
-        <span class="hidden md:inline">VOX</span>
-      </button>
-
-      <!-- Camera Toggle -->
-      <button id="camera-toggle-btn" onclick="toggleCameraMatrix()" class="px-2 py-1.5 bg-cyber-700 hover:bg-cyber-600 border border-cyber-600 rounded text-cyber-cyan transition flex items-center gap-1.5" title="Toggle Vision Matrix">
-        <i class="fa-solid fa-eye" id="camera-icon"></i>
-        <span class="hidden md:inline">VISION</span>
-      </button>
-
-      <div class="h-4 w-px bg-cyber-600 mx-1"></div>
-
-      <!-- Thread Operations -->
-      <button onclick="saveCurrentThread()" class="px-2 py-1.5 bg-cyber-700 hover:bg-cyber-600 border border-cyber-600 rounded text-gray-200 hover:text-white transition flex items-center gap-1" title="Save Thread">
-        <i class="fa-solid fa-floppy-disk text-cyber-cyan"></i>
-        <span class="hidden lg:inline">Save</span>
-      </button>
-      <button onclick="copyThreadContent()" class="px-2 py-1.5 bg-cyber-700 hover:bg-cyber-600 border border-cyber-600 rounded text-gray-200 hover:text-white transition flex items-center gap-1" title="Copy Active Log">
-        <i class="fa-solid fa-copy text-cyber-amber"></i>
-        <span class="hidden lg:inline">Copy</span>
-      </button>
-      <button onclick="exportTXT()" class="px-2 py-1.5 bg-cyber-700 hover:bg-cyber-600 border border-cyber-600 rounded text-gray-200 hover:text-white transition flex items-center gap-1" title="Export TXT">
-        <i class="fa-solid fa-file-lines text-green-400"></i>
-        <span class="hidden lg:inline">TXT</span>
-      </button>
-      <button onclick="exportPDF()" class="px-2 py-1.5 bg-cyber-700 hover:bg-cyber-600 border border-cyber-600 rounded text-gray-200 hover:text-white transition flex items-center gap-1" title="Export Printable PDF Format">
-        <i class="fa-solid fa-file-pdf text-red-400"></i>
-        <span class="hidden lg:inline">PDF</span>
-      </button>
-      <button onclick="toggleThreadModal()" class="px-2.5 py-1.5 bg-cyber-cyan/10 hover:bg-cyber-cyan/20 border border-cyber-cyan text-cyber-cyan rounded transition flex items-center gap-1.5" title="Thread Manager">
-        <i class="fa-solid fa-layer-group"></i>
-        <span>THREADS</span>
-      </button>
-    </div>
+  <header class="top-header">
+    <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
+    <div class="version">🛡️ PG1.Agent v5.6 Enterprise</div>
   </header>
 
-  <!-- Main Content Layout -->
-  <div class="flex-1 flex overflow-hidden relative">
-    
-    <!-- Main Navigation Bar -->
-    <nav class="w-16 bg-cyber-800 border-r border-cyber-600 flex flex-col items-center py-4 space-y-6 z-30">
-      <button onclick="switchTab('dash')" id="nav-dash" class="nav-btn p-3 rounded-lg text-cyber-cyan bg-cyber-700/60 border border-cyber-cyan/40 transition flex flex-col items-center gap-1 group" title="Telemetry Dashboard">
-        <i class="fa-solid fa-gauge-high text-lg group-hover:scale-110 transition"></i>
-        <span class="text-[9px] font-mono tracking-tighter">DASH</span>
-      </button>
-      <button onclick="switchTab('terminal')" id="nav-terminal" class="nav-btn p-3 rounded-lg text-gray-400 hover:text-cyber-cyan hover:bg-cyber-700/40 transition flex flex-col items-center gap-1 group" title="Terminal Console">
-        <i class="fa-solid fa-terminal text-lg group-hover:scale-110 transition"></i>
-        <span class="text-[9px] font-mono tracking-tighter">TERM</span>
-      </button>
-      <button onclick="switchTab('node')" id="nav-node" class="nav-btn p-3 rounded-lg text-gray-400 hover:text-cyber-cyan hover:bg-cyber-700/40 transition flex flex-col items-center gap-1 group" title="Neural Node Network">
-        <i class="fa-solid fa-diagram-project text-lg group-hover:scale-110 transition"></i>
-        <span class="text-[9px] font-mono tracking-tighter">NODE</span>
-      </button>
-      
-      <div class="mt-auto flex flex-col items-center space-y-3 pb-2">
-        <div class="w-2 h-2 rounded-full bg-cyber-green animate-ping"></div>
-        <span class="text-[8px] font-mono text-gray-500 uppercase rotate-90 my-2">SYNAPSE</span>
-      </div>
-    </nav>
-
-    <!-- Viewport Container -->
-    <main class="flex-1 flex flex-col overflow-hidden relative bg-cyber-900">
-      
-      <!-- TAB 1: DASHBOARD -->
-      <div id="tab-dash" class="tab-content flex-1 p-4 sm:p-6 overflow-y-auto space-y-6">
-        <!-- Top Stat Badges -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div class="bg-cyber-800/80 border border-cyber-600/70 p-4 rounded-lg flex items-center justify-between">
-            <div>
-              <p class="text-xs font-mono text-gray-400 uppercase">Neural Load</p>
-              <h3 class="text-xl font-bold font-mono text-cyber-cyan mt-1" id="dash-cpu">24.8%</h3>
-            </div>
-            <i class="fa-solid fa-microchip text-2xl text-cyber-cyan/40"></i>
-          </div>
-          <div class="bg-cyber-800/80 border border-cyber-600/70 p-4 rounded-lg flex items-center justify-between">
-            <div>
-              <p class="text-xs font-mono text-gray-400 uppercase">Active Synapses</p>
-              <h3 class="text-xl font-bold font-mono text-cyber-amber mt-1" id="dash-synapses">1,048</h3>
-            </div>
-            <i class="fa-solid fa-network-wired text-2xl text-cyber-amber/40"></i>
-          </div>
-          <div class="bg-cyber-800/80 border border-cyber-600/70 p-4 rounded-lg flex items-center justify-between">
-            <div>
-              <p class="text-xs font-mono text-gray-400 uppercase">Vox Engine</p>
-              <h3 class="text-xl font-bold font-mono text-green-400 mt-1" id="dash-vox-status">MALE-HQ</h3>
-            </div>
-            <i class="fa-solid fa-headset text-2xl text-green-400/40"></i>
-          </div>
-          <div class="bg-cyber-800/80 border border-cyber-600/70 p-4 rounded-lg flex items-center justify-between">
-            <div>
-              <p class="text-xs font-mono text-gray-400 uppercase">Vision Matrix</p>
-              <h3 class="text-xl font-bold font-mono text-purple-400 mt-1" id="dash-vision-status">STANDBY</h3>
-            </div>
-            <i class="fa-solid fa-video text-2xl text-purple-400/40"></i>
-          </div>
-        </div>
-
-        <!-- Middle Telemetry Section -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <!-- System Activity Visualizer -->
-          <div class="lg:col-span-2 bg-cyber-800/70 border border-cyber-600 rounded-lg p-4 flex flex-col h-72">
-            <div class="flex justify-between items-center mb-3">
-              <span class="text-xs font-mono text-cyber-cyan uppercase font-bold tracking-wider"><i class="fa-solid fa-wave-square mr-2"></i>Neural Waveform & Telemetry</span>
-              <span class="text-[11px] font-mono text-gray-400" id="realtime-clock">00:00:00 UTC</span>
-            </div>
-            <div class="flex-1 bg-cyber-900/90 rounded border border-cyber-700/80 relative overflow-hidden flex items-center justify-center">
-              <canvas id="telemetryCanvas" class="w-full h-full"></canvas>
-            </div>
-          </div>
-
-          <!-- Quick Action Commands -->
-          <div class="bg-cyber-800/70 border border-cyber-600 rounded-lg p-4 flex flex-col justify-between">
-            <div>
-              <h4 class="text-xs font-mono text-cyber-amber uppercase font-bold tracking-wider mb-3"><i class="fa-solid fa-bolt mr-2"></i>Quick Execute Matrix</h4>
-              <div class="space-y-2">
-                <button onclick="quickCommand('STATUS_DIAGNOSTIC')" class="w-full text-left font-mono text-xs p-2.5 bg-cyber-700/50 hover:bg-cyber-600/60 border border-cyber-600 rounded text-gray-300 hover:text-cyber-cyan transition flex items-center justify-between">
-                  <span>> Run Diagnostic Sweep</span>
-                  <i class="fa-solid fa-chevron-right text-[10px]"></i>
-                </button>
-                <button onclick="quickCommand('SYNC_NODES')" class="w-full text-left font-mono text-xs p-2.5 bg-cyber-700/50 hover:bg-cyber-600/60 border border-cyber-600 rounded text-gray-300 hover:text-cyber-cyan transition flex items-center justify-between">
-                  <span>> Synchronize Sub-Nodes</span>
-                  <i class="fa-solid fa-chevron-right text-[10px]"></i>
-                </button>
-                <button onclick="quickCommand('FLUSH_CACHE')" class="w-full text-left font-mono text-xs p-2.5 bg-cyber-700/50 hover:bg-cyber-600/60 border border-cyber-600 rounded text-gray-300 hover:text-cyber-cyan transition flex items-center justify-between">
-                  <span>> Purge Transient Buffers</span>
-                  <i class="fa-solid fa-chevron-right text-[10px]"></i>
-                </button>
-                <button onclick="speakCurrentStatus()" class="w-full text-left font-mono text-xs p-2.5 bg-cyber-cyan/10 hover:bg-cyber-cyan/20 border border-cyber-cyan/50 rounded text-cyber-cyan transition flex items-center justify-between">
-                  <span>> Audio Briefing (HQ Voice)</span>
-                  <i class="fa-solid fa-volume-high text-[10px]"></i>
-                </button>
-              </div>
-            </div>
-            <div class="mt-4 pt-3 border-t border-cyber-700 flex items-center justify-between text-[11px] font-mono text-gray-400">
-              <span>CORE STABILITY: 99.98%</span>
-              <span class="text-cyber-green">OPTIMAL</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- TAB 2: TERMINAL CONSOLE -->
-      <div id="tab-terminal" class="tab-content flex-1 hidden flex-col h-full bg-cyber-900 p-4">
-        <div class="flex-1 bg-cyber-950/80 border border-cyber-700 rounded-lg p-4 font-mono text-xs sm:text-sm overflow-y-auto flex flex-col space-y-3" id="terminal-messages">
-          <div class="text-gray-500">[SYSTEM STARTUP // PG1.AGENT PROTOCOL ENGAGED]</div>
-          <div class="text-cyber-cyan">> Primary operational nodes online. Male voice synthesis matrix calibrated. Vision module standing by.</div>
-          <div class="text-gray-400">> Type a command or instruction below. Press enter to dispatch.</div>
-        </div>
-        
-        <!-- Input Prompt -->
-        <div class="mt-3 flex items-center space-x-2">
-          <span class="text-cyber-cyan font-mono font-bold">pg1:~$</span>
-          <input type="text" id="terminal-input" onkeydown="handleTerminalInput(event)" placeholder="Enter command or query (e.g., /help, /diagnostics, status)..." class="flex-1 bg-cyber-800 border border-cyber-600 rounded px-3 py-2.5 font-mono text-sm text-cyber-cyan focus:outline-none focus:border-cyber-cyan placeholder-gray-500" />
-          <button onclick="submitTerminalCommand()" class="px-4 py-2.5 bg-cyber-cyan text-cyber-900 font-mono font-bold rounded hover:bg-cyan-300 transition">
-            EXEC
-          </button>
-        </div>
-      </div>
-
-      <!-- TAB 3: NODE GRAPH -->
-      <div id="tab-node" class="tab-content flex-1 hidden flex-col h-full relative bg-cyber-950 p-4">
-        <div class="flex justify-between items-center mb-2">
-          <div class="font-mono text-xs text-cyber-cyan tracking-wider font-bold">NEURAL TOPOLOGY & AGENT NODES</div>
-          <button onclick="resetNodeMesh()" class="text-xs font-mono px-2 py-1 bg-cyber-800 border border-cyber-600 text-gray-300 rounded hover:text-white">Re-align Grid</button>
-        </div>
-        <div class="flex-1 border border-cyber-700/60 rounded-lg relative overflow-hidden bg-cyber-900/40">
-          <canvas id="nodeCanvas" class="w-full h-full block"></canvas>
-        </div>
-      </div>
-
-      <!-- FLOATING VISION MATRIX (CAMERA OVERLAY) -->
-      <div id="vision-matrix-panel" class="hidden fixed bottom-4 right-4 w-72 sm:w-80 bg-cyber-900/95 border-2 border-cyber-cyan rounded-lg overflow-hidden shadow-2xl z-50 glow-cyan transition-all">
-        <div class="bg-cyber-800 px-3 py-1.5 flex items-center justify-between border-b border-cyber-600">
-          <span class="text-xs font-mono font-bold text-cyber-cyan flex items-center gap-1.5">
-            <i class="fa-solid fa-camera animate-pulse text-red-500"></i> LIVE VISION MATRIX
-          </span>
-          <div class="flex items-center space-x-2">
-            <span id="vision-fps" class="text-[10px] font-mono text-cyber-amber">30 FPS</span>
-            <button onclick="toggleCameraMatrix()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
-          </div>
-        </div>
-        <div class="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
-          <video id="webcam-stream" autoplay playsinline muted class="w-full h-full object-cover"></video>
-          <canvas id="vision-overlay-canvas" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
-          <div id="camera-fallback" class="absolute inset-0 flex flex-col items-center justify-center bg-cyber-950/90 text-center p-4 text-xs font-mono text-gray-400">
-            <i class="fa-solid fa-video-slash text-2xl mb-2 text-cyber-red"></i>
-            <p>Awaiting optical feed authorization...</p>
-          </div>
-        </div>
-        <div class="p-2 bg-cyber-800/80 font-mono text-[10px] text-gray-400 flex justify-between items-center">
-          <span>TARGET: SCAN_MODE_ACTIVE</span>
-          <span class="text-cyber-green">LOCKED</span>
-        </div>
-      </div>
-
-    </main>
+  <div class="action-bar">
+    <button class="toggle-btn" id="videoBtn">📹 Video: OFF</button>
+    <button class="toggle-btn" id="audioBtn">🎙️ Mic: OFF</button>
+    <button class="toggle-btn" id="voiceBtn">🗣️ Voice: OFF</button>
+    <button class="toggle-btn" id="clearBtn" style="color: #fca5a5;">🗑️ Clear</button>
   </div>
+  
+  <video id="hiddenVideo" autoplay playsinline></video>
 
-  <!-- THREAD MANAGER MODAL -->
-  <div id="thread-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-cyber-900 border border-cyber-cyan w-full max-w-lg rounded-lg shadow-2xl overflow-hidden flex flex-col">
-      <div class="bg-cyber-800 p-4 border-b border-cyber-600 flex items-center justify-between">
-        <h3 class="font-mono font-bold text-cyber-cyan flex items-center gap-2">
-          <i class="fa-solid fa-layer-group"></i> THREAD REPOSITORY
-        </h3>
-        <button onclick="toggleThreadModal()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+  <main id="main-content">
+    <section id="view-dash" class="view-section active">
+      <div class="card">
+        <h3 class="card-title">⚡ x402 Sovereign Key Relay</h3>
+        <div class="key-input-group">
+          <input type="password" id="masterKeyInput" placeholder="Master API Key (Neural Core)">
+          <input type="password" id="githubKeyInput" placeholder="GitHub PAT (Repo Access)">
+          <button id="saveKeyButton" class="primary-btn">Secure Credentials</button>
+        </div>
+        <div class="key-status-footer">
+          <span id="keyStatusText" style="color:#ef4444;">STATUS: AWAITING CREDENTIALS</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3 class="card-title">🌐 Sovereign Identity & Parameters</h3>
+        <ul class="stats-list">
+          <li><span>Agent Core</span> <strong>PG1.Agent (Global #1 Target)</strong></li>
+          <li><span>Primary Mission</span> <strong>Creator Gifting & Campaign Automation</strong></li>
+          <li><span>Infrastructure</span> <strong>100% Sovereign Node Ownership</strong></li>
+          <li><span>Security Protocol</span> <strong>x402-Secure / AES-256-GCM</strong></li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="view-terminal" class="view-section">
+      <div class="terminal-utility-bar">
+        <button id="threadsBtn" class="utility-btn">💬 Threads</button>
+        <button id="saveThreadBtn" class="utility-btn">💾 Save</button>
+        <button id="copyLogsBtn" class="utility-btn">📋 Copy</button>
+        <button id="exportTxtBtn" class="utility-btn">📄 TXT</button>
+        <button id="exportPdfBtn" class="utility-btn">📕 PDF</button>
+      </div>
+
+      <video id="cameraPreview" autoplay playsinline muted></video>
+      <div id="terminalOutput" class="terminal-display">
+        <div class="terminal-message system-msg">> PG1.Agent Enterprise Core online. Creator automation matrices active.</div>
       </div>
       
-      <!-- Thread List -->
-      <div class="p-4 max-h-80 overflow-y-auto space-y-2" id="threads-list-container">
-        <!-- Injected via JS -->
+      <div class="terminal-input-area">
+        <input type="text" id="terminalInput" placeholder="Enter executive directive or query...">
+        <button id="sendCommandButton" class="send-btn">Execute</button>
       </div>
+    </section>
 
-      <!-- Modal Actions -->
-      <div class="bg-cyber-800/80 p-4 border-t border-cyber-600 flex justify-between items-center">
-        <button onclick="createNewThread()" class="px-3 py-2 bg-cyber-cyan text-cyber-900 font-mono font-bold text-xs rounded hover:bg-cyan-300 transition flex items-center gap-1.5">
-          <i class="fa-solid fa-plus"></i> New Thread
-        </button>
-        <button onclick="toggleThreadModal()" class="px-4 py-2 bg-cyber-700 hover:bg-cyber-600 font-mono text-xs text-gray-200 rounded transition">
-          Close
-        </button>
+    <section id="view-node" class="view-section">
+      <div class="card center-content" style="text-align: center; padding: 20px;">
+        <div class="logo-container" style="margin: 0 auto 12px auto;">
+          <div class="logo-ring"></div>
+          <div class="logo-inner" style="width:70px; height:70px; border-radius:50%; background:#0284c7; display:flex; align-items:center; justify-content:center; color:white; font-weight:bold; font-size:1.5em; margin:0 auto;">G1</div>
+        </div>
+        <h2 style="font-size: 1.1em; color: #f8fafc;">PG1.Agent™ Enterprise Core</h2>
+        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:12px;">Autonomous Edge Creator Gifting Infrastructure</p>
+        <ul class="stats-list" style="text-align: left;">
+          <li><span>Node Identifier:</span> <strong>PG1-CORE-01</strong></li>
+          <li><span>Operational Status:</span> <strong style="color: #10b981;">Online & Sovereign Sync</strong></li>
+          <li><span>Ownership Tier:</span> <strong style="color: #38bdf8;">100% Sovereign Creator Automation</strong></li>
+        </ul>
       </div>
-    </div>
-  </div>
+    </section>
+  </main>
 
-  <!-- Audio Visualizer Floating Bar (Bottom) -->
-  <div id="voice-indicator-bar" class="fixed bottom-2 left-20 z-40 bg-cyber-800/90 border border-cyber-600/80 px-3 py-1 rounded-full text-xs font-mono flex items-center gap-2 opacity-0 transition-opacity pointer-events-none">
-    <span class="w-2 h-2 rounded-full bg-cyber-cyan animate-ping"></span>
-    <span class="text-cyber-cyan" id="voice-indicator-text">VOX SYNTHESIS TRANSMITTING...</span>
-  </div>
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-target="view-dash"><span>📊</span>Dash</button>
+    <button class="nav-item" data-target="view-terminal"><span>⚡</span>Terminal</button>
+    <button class="nav-item" data-target="view-node"><span>👤</span>Node</button>
+  </nav>
 
-  <!-- SCRIPT ENGINE -->
   <script>
-    /* State Management */
-    const state = {
-      currentTab: 'dash',
-      voiceEnabled: true,
-      cameraActive: false,
-      activeThreadId: 'default',
-      threads: {}
-    };
+    document.addEventListener("DOMContentLoaded", () => {
+      document.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', () => {
+          document.querySelectorAll('.nav-item, .view-section').forEach(el => el.classList.remove('active'));
+          item.classList.add('active');
+          document.getElementById(item.getAttribute('data-target')).classList.add('active');
+        });
+      });
 
-    /* Initialize Storage */
-    function initStorage() {
-      const saved = localStorage.getItem('pg1_agent_threads');
-      if (saved) {
-        try {
-          state.threads = JSON.parse(saved);
-        } catch (e) {
-          state.threads = {};
+      const kIn = document.getElementById('masterKeyInput');
+      const gIn = document.getElementById('githubKeyInput');
+      const stat = document.getElementById('keyStatusText');
+
+      document.getElementById('saveKeyButton').addEventListener('click', () => {
+        if (kIn.value) localStorage.setItem('PG1_KEY', kIn.value.trim());
+        if (gIn.value) localStorage.setItem('PG1_GH_PAT', gIn.value.trim());
+        checkKeys();
+        alert('Credentials secured locally.');
+      });
+
+      function checkKeys() {
+        if (localStorage.getItem('PG1_KEY') && localStorage.getItem('PG1_GH_PAT')) {
+          kIn.value = '••••••••••••••••'; gIn.value = '••••••••••••••••';
+          stat.innerText = 'STATUS: FULL RELAY SECURED'; stat.style.color = '#10b981';
         }
       }
-      if (!state.threads['default']) {
-        state.threads['default'] = {
-          id: 'default',
-          name: 'Primary Session',
-          created: new Date().toISOString(),
-          logs: [
-            { sender: 'SYSTEM', text: 'PG1.AGENT Operational Matrix Initialized.' },
-            { sender: 'AGENT', text: 'All sub-systems, voice matrix, and terminal interfaces standing by.' }
-          ]
-        };
-        saveThreadsToStorage();
-      }
-      renderTerminalLogs();
-      updateThreadBadge();
-    }
+      checkKeys();
 
-    function saveThreadsToStorage() {
-      localStorage.setItem('pg1_agent_threads', JSON.stringify(state.threads));
-    }
+      const termOut = document.getElementById('terminalOutput');
+      let sessionHistory = [];
+      let currentThreadId = Date.now().toString();
+      let threads = JSON.parse(localStorage.getItem('PG1_THREADS')) || {};
 
-    /* Tab Switcher */
-    function switchTab(tabId) {
-      state.currentTab = tabId;
-      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-      document.getElementById(`tab-${tabId}`).classList.remove('hidden');
-      if(tabId === 'terminal') {
-        document.getElementById(`tab-${tabId}`).classList.add('flex');
-      }
-
-      document.querySelectorAll('.nav-btn').forEach(btn => {
-        btn.className = 'nav-btn p-3 rounded-lg text-gray-400 hover:text-cyber-cyan hover:bg-cyber-700/40 transition flex flex-col items-center gap-1 group';
-      });
-      const activeBtn = document.getElementById(`nav-${tabId}`);
-      if(activeBtn) {
-        activeBtn.className = 'nav-btn p-3 rounded-lg text-cyber-cyan bg-cyber-700/60 border border-cyber-cyan/40 transition flex flex-col items-center gap-1 group';
-      }
-    }
-
-    /* High-Fidelity Male Voice Synthesis */
-    function synthesizeSpeech(text) {
-      if (!state.voiceEnabled || !('speechSynthesis' in window)) return;
-      window.speechSynthesis.cancel();
-      
-      const utterance = new SpeechSynthesisUtterance(text);
-      const voices = window.speechSynthesis.getVoices();
-      
-      // Pick deep/male high quality voice preference
-      let maleVoice = voices.find(v => 
-        v.name.includes('Male') || 
-        v.name.includes('David') || 
-        v.name.includes('George') || 
-        v.name.includes('Guy') || 
-        v.name.includes('Daniel') ||
-        (v.lang.startsWith('en') && v.name.toLowerCase().includes('google'))
-      );
-      
-      if (!maleVoice && voices.length > 0) {
-        maleVoice = voices[0];
-      }
-      
-      if (maleVoice) utterance.voice = maleVoice;
-      utterance.pitch = 0.82; // Deep resonant masculine timbre
-      utterance.rate = 1.05;  // Crisp authoritative speed
-      
-      const ind = document.getElementById('voice-indicator-bar');
-      utterance.onstart = () => { if(ind) ind.classList.remove('opacity-0'); };
-      utterance.onend = () => { if(ind) ind.classList.add('opacity-0'); };
-      utterance.onerror = () => { if(ind) ind.classList.add('opacity-0'); };
-      
-      window.speechSynthesis.speak(utterance);
-    }
-
-    function toggleVoiceSynthesis() {
-      state.voiceEnabled = !state.voiceEnabled;
-      const icon = document.getElementById('voice-icon');
-      const btn = document.getElementById('voice-toggle-btn');
-      const dashStatus = document.getElementById('dash-vox-status');
-      
-      if (state.voiceEnabled) {
-        icon.className = 'fa-solid fa-volume-high';
-        btn.className = 'px-2 py-1.5 bg-cyber-700 hover:bg-cyber-600 border border-cyber-600 rounded text-cyber-cyan transition flex items-center gap-1.5';
-        if(dashStatus) dashStatus.innerText = 'MALE-HQ';
-        synthesizeSpeech('Voice synthesizer activated.');
-      } else {
-        window.speechSynthesis.cancel();
-        icon.className = 'fa-solid fa-volume-xmark text-cyber-red';
-        btn.className = 'px-2 py-1.5 bg-cyber-700 hover:bg-cyber-600 border border-cyber-600 rounded text-cyber-red transition flex items-center gap-1.5';
-        if(dashStatus) dashStatus.innerText = 'OFFLINE';
-      }
-    }
-
-    function speakCurrentStatus() {
-      const cpu = document.getElementById('dash-cpu').innerText;
-      const synapses = document.getElementById('dash-synapses').innerText;
-      synthesizeSpeech(`System diagnostic report. Neural load is at ${cpu}, with ${synapses} active node synapses running normally.`);
-    }
-
-    /* Live Camera Vision Matrix */
-    let mediaStream = null;
-    let visionInterval = null;
-
-    async function toggleCameraMatrix() {
-      const panel = document.getElementById('vision-matrix-panel');
-      const video = document.getElementById('webcam-stream');
-      const fallback = document.getElementById('camera-fallback');
-      const dashVision = document.getElementById('dash-vision-status');
-      const btn = document.getElementById('camera-toggle-btn');
-
-      state.cameraActive = !state.cameraActive;
-
-      if (state.cameraActive) {
-        panel.classList.remove('hidden');
-        btn.classList.add('border-cyber-cyan', 'text-cyber-cyan');
-        if(dashVision) dashVision.innerText = 'ACTIVE';
-        
-        try {
-          mediaStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 360 } });
-          video.srcObject = mediaStream;
-          fallback.classList.add('hidden');
-          startVisionOverlay();
-          synthesizeSpeech('Vision matrix optical sensor feed established.');
-        } catch (err) {
-          console.warn('Webcam feed unavailable or denied:', err);
-          fallback.classList.remove('hidden');
-          fallback.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-xl text-cyber-amber mb-1"></i><p>Camera access restricted.<br/>Simulating HUD matrix.</p>`;
-          startVisionOverlay();
-        }
-      } else {
-        panel.classList.add('hidden');
-        btn.classList.remove('border-cyber-cyan');
-        if(dashVision) dashVision.innerText = 'STANDBY';
-        if (mediaStream) {
-          mediaStream.getTracks().forEach(track => track.stop());
-          mediaStream = null;
-        }
-        if(visionInterval) clearInterval(visionInterval);
-      }
-    }
-
-    function startVisionOverlay() {
-      const canvas = document.getElementById('vision-overlay-canvas');
-      if(!canvas) return;
-      const ctx = canvas.getContext('2d');
-      let angle = 0;
-      
-      if(visionInterval) clearInterval(visionInterval);
-      
-      visionInterval = setInterval(() => {
-        canvas.width = canvas.parentElement.clientWidth || 320;
-        canvas.height = canvas.parentElement.clientHeight || 180;
-        const w = canvas.width;
-        const h = canvas.height;
-        
-        ctx.clearRect(0, 0, w, h);
-        
-        // Reticle Center
-        ctx.strokeStyle = '#00f0ff';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(w/2, h/2, 28, 0, Math.PI * 2);
-        ctx.stroke();
-        
-        // Rotating Target Brackets
-        angle += 0.05;
-        ctx.save();
-        ctx.translate(w/2, h/2);
-        ctx.rotate(angle);
-        ctx.strokeStyle = 'rgba(0, 240, 255, 0.6)';
-        ctx.beginPath();
-        ctx.moveTo(-40, -40); ctx.lineTo(-30, -40);
-        ctx.moveTo(40, -40); ctx.lineTo(30, -40);
-        ctx.moveTo(-40, 40); ctx.lineTo(-30, 40);
-        ctx.moveTo(40, 40); ctx.lineTo(30, 40);
-        ctx.stroke();
-        ctx.restore();
-        
-        // HUD Scan Grid Line
-        const scanY = (Date.now() / 15) % h;
-        ctx.fillStyle = 'rgba(0, 240, 255, 0.15)';
-        ctx.fillRect(0, scanY, w, 2);
-      }, 33);
-    }
-
-    /* Thread Management & Utility Bar Functions */
-    function saveCurrentThread() {
-      saveThreadsToStorage();
-      synthesizeSpeech('Thread state serialized and committed.');
-      flashNotification('Thread Saved to Matrix Storage');
-    }
-
-    function copyThreadContent() {
-      const current = state.threads[state.activeThreadId];
-      if (!current) return;
-      const text = current.logs.map(l => `[${l.sender}]: ${l.text}`).join('\n');
-      navigator.clipboard.writeText(text).then(() => {
-        flashNotification('Thread Copied to Clipboard');
-        synthesizeSpeech('Thread logs copied.');
-      });
-    }
-
-    function exportTXT() {
-      const current = state.threads[state.activeThreadId];
-      const content = `PG1.AGENT EXPORT LOG\nTHREAD: ${current.name} (ID: ${current.id})\nDATE: ${new Date().toLocaleString()}\n` + 
-        '='.repeat(40) + '\n\n' + 
-        current.logs.map(l => `[${l.sender}] ${l.text}`).join('\n');
-      
-      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `pg1-thread-${current.id}-${Date.now()}.txt`;
-      a.click();
-      URL.revokeObjectURL(url);
-      synthesizeSpeech('Text export generated.');
-    }
-
-    function exportPDF() {
-      const current = state.threads[state.activeThreadId];
-      const printWin = window.open('', '', 'width=800,height=600');
-      const logHtml = current.logs.map(l => `<p style="margin:6px 0; font-family:monospace;"><strong>[${l.sender}]</strong>: ${escapeHtml(l.text)}</p>`).join('');
-      
-      printWin.document.write(`
-        <html>
-          <head><title>PG1.Agent Thread Report - ${current.id}</title></head>
-          <body style="font-family:sans-serif; padding:20px; color:#111;">
-            <h2 style="border-bottom:2px solid #00f0ff; padding-bottom:5px;">PG1.Agent // Session Audit: ${current.name}</h2>
-            <p style="color:#666; font-size:12px;">Generated: ${new Date().toISOString()} | ID: ${current.id}</p>
-            <hr style="border:none; border-top:1px solid #eee; margin:15px 0;"/>
-            <div>${logHtml}</div>
-          </body>
-        </html>
-      `);
-      printWin.document.close();
-      printWin.focus();
-      setTimeout(() => {
-        printWin.print();
-        printWin.close();
-      }, 250);
-      synthesizeSpeech('Preparing print-ready document.');
-    }
-
-    function toggleThreadModal() {
-      const modal = document.getElementById('thread-modal');
-      if (modal.classList.contains('hidden')) {
-        renderThreadList();
-        modal.classList.remove('hidden');
-      } else {
-        modal.classList.add('hidden');
-      }
-    }
-
-    function renderThreadList() {
-      const list = document.getElementById('threads-list-container');
-      list.innerHTML = '';
-      Object.values(state.threads).forEach(th => {
-        const isCurrent = th.id === state.activeThreadId;
-        const item = document.createElement('div');
-        item.className = `p-3 rounded border flex items-center justify-between ${isCurrent ? 'bg-cyber-800 border-cyber-cyan' : 'bg-cyber-950/60 border-cyber-700 hover:border-gray-500'}`;
-        item.innerHTML = `
-          <div class="flex-1 cursor-pointer" onclick="selectThread('${th.id}')">
-            <div class="font-mono text-sm font-semibold ${isCurrent ? 'text-cyber-cyan' : 'text-gray-200'}">
-              ${th.name} ${isCurrent ? '<span class="text-[10px] bg-cyber-cyan/20 text-cyber-cyan px-1.5 py-0.5 rounded ml-2">ACTIVE</span>' : ''}
-            </div>
-            <div class="text-[11px] font-mono text-gray-500">Logs: ${th.logs.length} | Created: ${new Date(th.created).toLocaleDateString()}</div>
-          </div>
-          <div class="flex items-center space-x-2">
-            ${Object.keys(state.threads).length > 1 ? `
-              <button onclick="deleteThread('${th.id}', event)" class="text-gray-500 hover:text-cyber-red p-1.5 transition" title="Delete thread">
-                <i class="fa-solid fa-trash-can"></i>
-              </button>
-            ` : ''}
-          </div>
-        `;
-        list.appendChild(item);
-      });
-    }
-
-    function selectThread(threadId) {
-      state.activeThreadId = threadId;
-      updateThreadBadge();
-      renderTerminalLogs();
-      toggleThreadModal();
-      synthesizeSpeech(`Switched to thread ${state.threads[threadId].name}`);
-    }
-
-    function createNewThread() {
-      const newId = 'th_' + Math.random().toString(36).substr(2, 6);
-      state.threads[newId] = {
-        id: newId,
-        name: `Neural Thread ${Object.keys(state.threads).length + 1}`,
-        created: new Date().toISOString(),
-        logs: [
-          { sender: 'SYSTEM', text: `Thread ${newId} initialized.` }
-        ]
-      };
-      saveThreadsToStorage();
-      selectThread(newId);
-    }
-
-    function deleteThread(threadId, e) {
-      e.stopPropagation();
-      if (Object.keys(state.threads).length <= 1) return;
-      delete state.threads[threadId];
-      if (state.activeThreadId === threadId) {
-        state.activeThreadId = Object.keys(state.threads)[0];
-      }
-      saveThreadsToStorage();
-      renderThreadList();
-      updateThreadBadge();
-      renderTerminalLogs();
-      synthesizeSpeech('Thread deleted.');
-    }
-
-    function updateThreadBadge() {
-      const badge = document.getElementById('active-thread-badge');
-      if (badge && state.threads[state.activeThreadId]) {
-        badge.innerText = `Thread: ${state.threads[state.activeThreadId].name}`;
-      }
-    }
-
-    function renderTerminalLogs() {
-      const container = document.getElementById('terminal-messages');
-      if (!container) return;
-      container.innerHTML = '';
-      const current = state.threads[state.activeThreadId];
-      if (!current) return;
-      current.logs.forEach(log => {
+      function appendMsg(html, type) {
         const div = document.createElement('div');
-        if (log.sender === 'SYSTEM') {
-          div.className = 'text-gray-500';
-          div.innerText = `[SYSTEM] ${log.text}`;
-        } else if (log.sender === 'USER') {
-          div.className = 'text-cyber-amber';
-          div.innerText = `pg1:~$ ${log.text}`;
+        div.className = `terminal-message ${type}`;
+        div.innerHTML = html.replace(/\n/g, '<br>');
+        termOut.appendChild(div);
+        termOut.scrollTop = termOut.scrollHeight;
+        if (type === 'agent-msg' && voiceActive) speakText(html);
+      }
+
+      document.getElementById('clearBtn').onclick = () => termOut.innerHTML = '';
+
+      const threadModal = document.getElementById('threadModal');
+      const threadList = document.getElementById('threadList');
+
+      function saveCurrentThread() {
+        const messages = Array.from(termOut.querySelectorAll('.terminal-message')).map(msg => ({
+          html: msg.innerHTML,
+          type: msg.className
+        }));
+        threads[currentThreadId] = { id: currentThreadId, timestamp: new Date().toLocaleString(), messages: messages, history: sessionHistory };
+        localStorage.setItem('PG1_THREADS', JSON.stringify(threads));
+      }
+
+      function loadThread(id) {
+        if (!threads[id]) return;
+        currentThreadId = id;
+        sessionHistory = threads[id].history || [];
+        termOut.innerHTML = '';
+        threads[id].messages.forEach(msg => {
+          const div = document.createElement('div');
+          div.className = msg.type;
+          div.innerHTML = msg.html;
+          termOut.appendChild(div);
+        });
+        termOut.scrollTop = termOut.scrollHeight;
+        threadModal.classList.remove('active');
+      }
+
+      function deleteThread(id) {
+        delete threads[id];
+        localStorage.setItem('PG1_THREADS', JSON.stringify(threads));
+        renderThreadList();
+      }
+
+      function renderThreadList() {
+        threadList.innerHTML = '';
+        const keys = Object.keys(threads).sort((a, b) => b - a);
+        if (keys.length === 0) {
+          threadList.innerHTML = '<div style="text-align:center; color:#64748b; padding: 10px;">No saved threads found.</div>';
+          return;
+        }
+        keys.forEach(id => {
+          const t = threads[id];
+          const div = document.createElement('div');
+          div.className = 'thread-item';
+          div.innerHTML = `
+            <div style="font-size: 0.8em; color:#e2e8f0;"><strong>Thread ${id.substring(id.length - 4)}</strong><br><span style="color:#64748b;">${t.timestamp}</span></div>
+            <div>
+              <button class="thread-btn btn-load" onclick="window.loadThread('${id}')">Load</button>
+              <button class="thread-btn btn-delete" onclick="window.deleteThread('${id}')">Del</button>
+            </div>
+          `;
+          threadList.appendChild(div);
+        });
+      }
+
+      window.loadThread = loadThread; window.deleteThread = deleteThread;
+
+      document.getElementById('saveThreadBtn').onclick = () => { saveCurrentThread(); alert('Thread archived.'); };
+      document.getElementById('threadsBtn').onclick = () => { renderThreadList(); threadModal.classList.add('active'); };
+      document.getElementById('closeModalBtn').onclick = () => threadModal.classList.remove('active');
+      document.getElementById('newThreadBtn').onclick = () => {
+        currentThreadId = Date.now().toString(); sessionHistory = [];
+        termOut.innerHTML = '<div class="terminal-message system-msg">New executive thread initialized.</div>';
+        threadModal.classList.remove('active');
+      };
+
+      function getTerminalText() { return Array.from(termOut.querySelectorAll('.terminal-message')).map(m => m.innerText).join('\n\n---\n\n'); }
+      document.getElementById('copyLogsBtn').onclick = () => navigator.clipboard.writeText(getTerminalText()).then(() => alert('Logs copied to clipboard.'));
+      document.getElementById('exportTxtBtn').onclick = () => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([getTerminalText()], { type: 'text/plain' }));
+        a.download = `PG1_Executive_Log_${currentThreadId}.txt`; a.click();
+      };
+      document.getElementById('exportPdfBtn').onclick = () => window.print();
+
+      let voiceActive = false;
+      let agentVoice = null;
+      function loadVoices() {
+          const voices = window.speechSynthesis.getVoices();
+          agentVoice = voices.find(v => v.name === "Daniel" || v.name.includes("Daniel")) || voices.find(v => v.lang === 'en-GB' || v.lang === 'en-US');
+      }
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+      loadVoices();
+
+      function speakText(text) {
+          window.speechSynthesis.cancel();
+          const cleanText = text.replace(/<[^>]+>/g, '').replace(/[*#_`]/g, '');
+          const utterance = new SpeechSynthesisUtterance(cleanText);
+          if (agentVoice) utterance.voice = agentVoice;
+          utterance.rate = 1.0; utterance.pitch = 0.95;
+          window.speechSynthesis.speak(utterance);
+      }
+
+      document.getElementById('voiceBtn').onclick = function() {
+        voiceActive = !voiceActive;
+        if (voiceActive) {
+            this.classList.add('active-btn'); this.innerText = "🗣️ Voice: ON";
+            speakText("Enterprise vocal matrix online.");
         } else {
-          div.className = 'text-cyber-cyan';
-          div.innerText = `> ${log.text}`;
+            this.classList.remove('active-btn'); this.innerText = "🗣️ Voice: OFF";
+            window.speechSynthesis.cancel();
         }
-        container.appendChild(div);
-      });
-      container.scrollTop = container.scrollHeight;
-    }
+      };
 
-    /* Terminal Input Processing */
-    function handleTerminalInput(e) {
-      if (e.key === 'Enter') submitTerminalCommand();
-    }
-
-    function submitTerminalCommand() {
-      const input = document.getElementById('terminal-input');
-      const text = input.value.trim();
-      if (!text) return;
-      input.value = '';
-
-      const current = state.threads[state.activeThreadId];
-      current.logs.push({ sender: 'USER', text: text });
-      
-      let reply = processCommand(text);
-      setTimeout(() => {
-        current.logs.push({ sender: 'AGENT', text: reply });
-        saveThreadsToStorage();
-        renderTerminalLogs();
-        synthesizeSpeech(reply);
-      }, 300);
-      
-      renderTerminalLogs();
-    }
-
-    function quickCommand(cmd) {
-      switchTab('terminal');
-      const input = document.getElementById('terminal-input');
-      input.value = `/${cmd.toLowerCase()}`;
-      submitTerminalCommand();
-    }
-
-    function processCommand(cmd) {
-      const lower = cmd.toLowerCase();
-      if (lower.includes('help') || lower.includes('/help')) {
-        return 'Available protocols: /diagnostics, /status, /sync, /nodes, /clear, /vox, /vision.';
-      } else if (lower.includes('status') || lower.includes('diagnostic')) {
-        return 'All PG1.Agent systems nominal. Synapse throughput 4.2 TB/s. Matrix stability locked at 99.98%.';
-      } else if (lower.includes('sync')) {
-        return 'Neural sub-nodes synchronized across 12 distributed edge hubs.';
-      } else if (lower.includes('flush') || lower.includes('purge')) {
-        return 'Transient memory buffers and execution caches successfully purged.';
-      } else if (lower.includes('clear')) {
-        state.threads[state.activeThreadId].logs = [{ sender: 'SYSTEM', text: 'Logs cleared by operator.' }];
-        return 'Terminal display sanitized.';
-      } else {
-        return `Acknowledge query: "${cmd}". Neural agent processed instruction with high priority.`;
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      let recognition = null;
+      if (SpeechRecognition) {
+          recognition = new SpeechRecognition();
+          recognition.continuous = false; recognition.interimResults = false; recognition.lang = 'en-US';
+          recognition.onresult = (e) => {
+              document.getElementById('terminalInput').value = e.results[0][0].transcript;
+              document.getElementById('audioBtn').classList.remove('recording-btn');
+              document.getElementById('audioBtn').innerText = "🎙️ Mic: OFF";
+              document.getElementById('sendCommandButton').click();
+          };
+          recognition.onend = () => {
+              document.getElementById('audioBtn').classList.remove('recording-btn');
+              document.getElementById('audioBtn').innerText = "🎙️ Mic: OFF";
+          };
       }
-    }
 
-    function escapeHtml(string) {
-      return String(string).replace(/[&<>"]/g, s => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[s]));
-    }
+      document.getElementById('audioBtn').onclick = function() {
+          if (!recognition) return alert("Speech recognition not supported.");
+          if (this.classList.contains('recording-btn')) { recognition.stop(); } 
+          else { recognition.start(); this.classList.add('recording-btn'); this.innerText = "🎙️ Listening..."; }
+      };
 
-    function flashNotification(msg) {
-      const ind = document.getElementById('voice-indicator-bar');
-      const txt = document.getElementById('voice-indicator-text');
-      if (ind && txt) {
-        txt.innerText = msg.toUpperCase();
-        ind.classList.remove('opacity-0');
-        setTimeout(() => ind.classList.add('opacity-0'), 2000);
+      let videoStream = null;
+      document.getElementById('videoBtn').onclick = async function() {
+        const preview = document.getElementById('cameraPreview');
+        const hidden = document.getElementById('hiddenVideo');
+        if (!videoStream) {
+          try {
+            videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+            preview.srcObject = videoStream; hidden.srcObject = videoStream;
+            preview.style.display = "block"; this.classList.add('active-btn'); this.innerText = "📹 Video: ON";
+          } catch (e) { alert("Camera unavailable."); }
+        } else {
+          videoStream.getTracks().forEach(t => t.stop());
+          videoStream = null; preview.style.display = "none";
+          this.classList.remove('active-btn'); this.innerText = "📹 Video: OFF";
+        }
+      };
+
+      function captureFrameBase64() {
+          if (!videoStream) return null;
+          const video = document.getElementById('hiddenVideo');
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+          canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+          return canvas.toDataURL('image/jpeg', 0.8);
       }
-    }
 
-    /* Background Telemetry Waveform Engine */
-    function initTelemetryCanvas() {
-      const canvas = document.getElementById('telemetryCanvas');
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      let step = 0;
+      document.getElementById('sendCommandButton').onclick = async () => {
+        const cmd = document.getElementById('terminalInput').value.trim();
+        if (!cmd) return;
+        appendMsg(`> ${cmd}`, 'user-msg');
+        document.getElementById('terminalInput').value = '';
 
-      function draw() {
-        canvas.width = canvas.parentElement.clientWidth;
-        canvas.height = canvas.parentElement.clientHeight;
-        const w = canvas.width;
-        const h = canvas.height;
+        const key = localStorage.getItem('PG1_KEY');
+        const ghPat = localStorage.getItem('PG1_GH_PAT');
+        if (!key || !ghPat) return appendMsg('Error: Neural Key and GitHub PAT required in Dash.', 'error-msg');
 
-        ctx.fillStyle = '#06090e';
-        ctx.fillRect(0, 0, w, h);
-
-        // Grid lines
-        ctx.strokeStyle = '#151e2e';
-        ctx.lineWidth = 1;
-        for (let x = 0; x < w; x += 30) {
-          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
-        }
-        for (let y = 0; y < h; y += 30) {
-          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+        let payloadParts = [{ text: cmd }];
+        const frameData = captureFrameBase64();
+        if (frameData) {
+            payloadParts.push({ inlineData: { mimeType: "image/jpeg", data: frameData.split(',')[1] } });
+            appendMsg(`[System] Optical feed frame captured.`, 'system-msg');
         }
 
-        // Sine Wave 1 (Cyan)
-        ctx.strokeStyle = '#00f0ff';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        for (let x = 0; x < w; x++) {
-          const y = h / 2 + Math.sin((x + step) * 0.03) * 25 + Math.cos((x + step * 0.8) * 0.015) * 15;
-          if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        const sys = `You are PG1.Agent, the elite autonomous AI for Project Gifted1, specializing in creator gifting automation and 100% sovereign node infrastructure. Execute the command. If modifying files, output JSON: {"reply":"...", "updateFiles": [{"path":"file.ext", "content":"code"}]} If deleting, output JSON: {"reply":"...", "deleteFiles": ["file.ext"]} Otherwise, output JSON: {"reply":"..."}`;
+        sessionHistory.push({ role: "user", parts: payloadParts });
+
+        const models = ["gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.1-pro", "gemini-2.5-flash", "gemini-1.5-pro"];
+        let success = false, result = null, lastErr = "";
+
+        for (const m of models) {
+          try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${key}`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, generationConfig: { responseMimeType: "application/json" } })
+            });
+            const data = await res.json();
+            if (data.error) throw new Error(data.error.message);
+            result = JSON.parse(data.candidates[0].content.parts[0].text);
+            success = true; break;
+          } catch (e) { lastErr = e.message; }
         }
-        ctx.stroke();
 
-        // Sine Wave 2 (Amber Secondary)
-        ctx.strokeStyle = 'rgba(255, 170, 0, 0.4)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        for (let x = 0; x < w; x++) {
-          const y = h / 2 + Math.sin((x - step * 1.2) * 0.02) * 35;
-          if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
+        if (!success) return appendMsg(`Error: ${lastErr}`, 'error-msg');
 
-        step += 2;
-        requestAnimationFrame(draw);
-      }
-      draw();
-    }
+        let finalReply = result.reply;
+        sessionHistory.push({ role: "model", parts: [{ text: JSON.stringify(result) }] });
 
-    /* Node Mesh Canvas Engine */
-    let nodes = [];
-    function initNodeMesh() {
-      const canvas = document.getElementById('nodeCanvas');
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      
-      function resetNodes() {
-        canvas.width = canvas.parentElement.clientWidth;
-        canvas.height = canvas.parentElement.clientHeight;
-        nodes = [];
-        const count = Math.floor((canvas.width * canvas.height) / 8000);
-        for (let i = 0; i < count; i++) {
-          nodes.push({
-            x: Math.random() * canvas.width,
-            y: Math.random() * canvas.height,
-            vx: (Math.random() - 0.5) * 1.2,
-            vy: (Math.random() - 0.5) * 1.2,
-            radius: Math.random() * 2.5 + 2,
-            color: Math.random() > 0.8 ? '#ffaa00' : '#00f0ff'
-          });
-        }
-      }
-      window.resetNodeMesh = resetNodes;
-      resetNodes();
-
-      function animate() {
-        canvas.width = canvas.parentElement.clientWidth;
-        canvas.height = canvas.parentElement.clientHeight;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Draw Connections
-        for (let i = 0; i < nodes.length; i++) {
-          for (let j = i + 1; j < nodes.length; j++) {
-            const dx = nodes[i].x - nodes[j].x;
-            const dy = nodes[i].y - nodes[j].y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < 110) {
-              ctx.strokeStyle = `rgba(0, 240, 255, ${0.4 * (1 - dist / 110)})`;
-              ctx.lineWidth = 1;
-              ctx.beginPath();
-              ctx.moveTo(nodes[i].x, nodes[i].y);
-              ctx.lineTo(nodes[j].x, nodes[j].y);
-              ctx.stroke();
-            }
+        if (result.updateFiles) {
+          for (const f of result.updateFiles) {
+            const apiUrl = `https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/${f.path}`;
+            const getRes = await fetch(apiUrl, { headers: { "Authorization": `Bearer ${ghPat}` } });
+            let sha = getRes.ok ? (await getRes.json()).sha : null;
+            const putRes = await fetch(apiUrl, { method: 'PUT', headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" }, body: JSON.stringify({ message: `Enterprise Auto-Commit: ${f.path}`, content: btoa(unescape(encodeURIComponent(f.content))), sha: sha }) });
+            if (putRes.ok) finalReply += `\n\n[Success] Updated ${f.path}`;
           }
         }
 
-        // Draw Node Particles
-        nodes.forEach(n => {
-          n.x += n.vx;
-          n.y += n.vy;
-          if (n.x < 0 || n.x > canvas.width) n.vx *= -1;
-          if (n.y < 0 || n.y > canvas.height) n.vy *= -1;
-
-          ctx.fillStyle = n.color;
-          ctx.beginPath();
-          ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
-          ctx.fill();
-        });
-
-        requestAnimationFrame(animate);
-      }
-      animate();
-    }
-
-    /* Realtime Telemetry Clock */
-    setInterval(() => {
-      const clock = document.getElementById('realtime-clock');
-      if (clock) {
-        const now = new Date();
-        clock.innerText = now.toTimeString().split(' ')[0] + ' UTC';
-      }
-    }, 1000);
-
-    // Boot
-    window.addEventListener('DOMContentLoaded', () => {
-      initStorage();
-      initTelemetryCanvas();
-      initNodeMesh();
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
-      }
+        appendMsg(finalReply, 'agent-msg');
+        saveCurrentThread();
+      };
     });
   </script>
 </body>
