@@ -1,7 +1,3 @@
-name = "pg1-worker"
-main = "worker.js"
-compatibility_date = "2026-08-23"
-
-[vars]
-ENVIRONMENT = "production"
-WORKER_TARGET = "pg1-worker.gnfcw9w5rk.workers.dev"
+name = "pg1-ai-agent"
+main = "index.js"
+compatibility_date = "2026-04-23"
