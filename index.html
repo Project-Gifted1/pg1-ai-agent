@@ -3,63 +3,76 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - PG1.Agent Enterprise</title>
+  <title>Project Gifted1™ - Sovereign C2 Console</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
+    html, body { height: 100dvh; background-color: #07090e; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
 
-    @keyframes pulseGlow { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); } 70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    /* Animations & Live Effects */
+    @keyframes pulseGlow { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); } 70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+    @keyframes radarSweep { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes dataStreamPulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
-    .top-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: #111827; border-bottom: 1px solid #1f2937; flex-shrink: 0; }
+    .top-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: #0f172a; border-bottom: 1px solid #1e293b; flex-shrink: 0; }
     .brand-title { display: flex; align-items: center; gap: 8px; font-size: 1.05em; font-weight: 600; color: #f8fafc; }
-    .version { font-size: 0.75em; color: #94a3b8; background: #1e293b; padding: 3px 8px; border-radius: 4px; border: 1px solid #334155; }
+    .version { font-size: 0.75em; color: #38bdf8; background: #1e293b; padding: 3px 8px; border-radius: 4px; border: 1px solid #334155; animation: dataStreamPulse 3s infinite; }
     .status-dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; animation: pulseGlow 2s infinite; }
     .status-dot.green { background-color: #10b981; }
 
-    .action-bar { display: flex; justify-content: center; gap: 6px; padding: 8px 12px; background: #111827; border-bottom: 1px solid #1f2937; overflow-x: auto; flex-shrink: 0; }
-    .toggle-btn { padding: 6px 10px; border: 1px solid #334155; background: #1e293b; color: #cbd5e1; border-radius: 6px; font-size: 0.75em; cursor: pointer; white-space: nowrap; font-weight: 500; transition: all 0.2s; }
-    .toggle-btn.active-btn { color: #10b981; border-color: #10b981; background: rgba(16, 185, 129, 0.1); }
-    .toggle-btn.recording-btn { color: #ef4444; border-color: #ef4444; background: rgba(239, 68, 68, 0.1); animation: pulseGlow 1.5s infinite; }
+    .action-bar { display: flex; justify-content: center; gap: 6px; padding: 8px 12px; background: #0f172a; border-bottom: 1px solid #1e293b; overflow-x: auto; flex-shrink: 0; }
+    .toggle-btn { padding: 6px 10px; border: 1px solid #334155; background: #1e293b; color: #cbd5e1; border-radius: 6px; font-size: 0.75em; cursor: pointer; white-space: nowrap; font-weight: 500; transition: all 0.3s ease; }
+    .toggle-btn.active-btn { color: #10b981; border-color: #10b981; background: rgba(16, 185, 129, 0.15); box-shadow: 0 0 10px rgba(16, 185, 129, 0.2); }
+    .toggle-btn.recording-btn { color: #ef4444; border-color: #ef4444; background: rgba(239, 68, 68, 0.2); animation: pulseGlow 1s infinite; }
 
     #main-content { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 90px; -webkit-overflow-scrolling: touch; }
-    .view-section { display: none; flex-direction: column; gap: 15px; min-height: 100%; animation: fadeIn 0.3s ease-in-out; }
+    .view-section { display: none; flex-direction: column; gap: 15px; min-height: 100%; animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
     .view-section.active { display: flex; }
 
-    .card { background: #111827; border-radius: 10px; padding: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2); border: 1px solid #1f2937; }
-    .card-title { font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.05em; color: #38bdf8; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; border-bottom: 1px solid #1f2937; padding-bottom: 6px; }
+    .card { background: #0f172a; border-radius: 10px; padding: 15px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); border: 1px solid #1e293b; position: relative; overflow: hidden; }
+    .card::before { content: ''; position: absolute; top: 0; left: 0; width: 3px; height: 100%; background: #38bdf8; }
+    .card-title { font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.05em; color: #38bdf8; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; border-bottom: 1px solid #1e293b; padding-bottom: 6px; }
     
     .key-input-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
-    .key-input-group input { padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 13px; outline: none; background: #0f172a; color: #f8fafc; }
-    .primary-btn { padding: 10px; background: #0284c7; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 0.85em; cursor: pointer; }
+    .key-input-group input { padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 13px; outline: none; background: #07090e; color: #f8fafc; transition: border-color 0.2s; }
+    .key-input-group input:focus { border-color: #38bdf8; }
+    .primary-btn { padding: 10px; background: #0284c7; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 0.85em; cursor: pointer; transition: background 0.2s; }
+    .primary-btn:hover { background: #0369a1; }
     .key-status-footer { display: flex; justify-content: space-between; font-size: 0.75em; font-weight: 600; }
 
     .stats-list { list-style: none; margin-top: 5px; }
-    .stats-list li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #1f2937; font-size: 0.8em; }
+    .stats-list li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #1e293b; font-size: 0.8em; }
     .stats-list li:last-child { border-bottom: none; }
     .stats-list li strong { color: #f8fafc; font-weight: 500; }
 
+    /* Tactical Radar Animation Box */
+    .radar-box { position: relative; width: 100px; height: 100px; margin: 0 auto 10px auto; border-radius: 50%; border: 1px dashed #38bdf8; display: flex; align-items: center; justify-content: center; background: rgba(56, 189, 248, 0.03); }
+    .radar-sweep { position: absolute; width: 50%; height: 50%; top: 0; right: 0; background: linear-gradient(135deg, rgba(56,189,248,0.4) 0%, transparent 70%); border-top-right-radius: 100%; transform-origin: bottom left; animation: radarSweep 4s linear infinite; }
+    .radar-core { width: 12px; height: 12px; background: #10b981; border-radius: 50%; box-shadow: 0 0 10px #10b981; animation: pulseGlow 1.5s infinite; }
+
     .terminal-utility-bar { display: flex; justify-content: flex-end; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
-    .utility-btn { padding: 4px 8px; background: #1e293b; border: 1px solid #334155; border-radius: 5px; font-size: 0.7em; color: #cbd5e1; cursor: pointer; font-weight: 500; }
+    .utility-btn { padding: 4px 8px; background: #1e293b; border: 1px solid #334155; border-radius: 5px; font-size: 0.7em; color: #cbd5e1; cursor: pointer; font-weight: 500; transition: background 0.2s; }
+    .utility-btn:hover { background: #334155; }
 
-    .terminal-display { flex: 1; background: #0f172a; border: 1px solid #1f2937; border-radius: 10px; padding: 12px; overflow-y: auto; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 250px; }
-    .terminal-message { padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; word-wrap: break-word; }
+    .terminal-display { flex: 1; background: #07090e; border: 1px solid #1e293b; border-radius: 10px; padding: 12px; overflow-y: auto; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 250px; }
+    .terminal-message { padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; word-wrap: break-word; animation: fadeIn 0.25s ease-out; }
     .terminal-message.user-msg { background: #1e293b; border: 1px solid #334155; color: #38bdf8; align-self: flex-end; max-width: 85%; }
-    .terminal-message.agent-msg { background: #111827; border: 1px solid #374151; color: #f8fafc; align-self: flex-start; max-width: 95%; }
-    .terminal-message.error-msg { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; }
-    .terminal-message.system-msg { color: #64748b; font-style: italic; text-align: center; background: none; border: none; font-size: 0.75em; }
+    .terminal-message.agent-msg { background: #0f172a; border: 1px solid #334155; color: #f8fafc; align-self: flex-start; max-width: 95%; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+    .terminal-message.error-msg { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; }
+    .terminal-message.system-msg { color: #64748b; font-style: italic; text-align: center; background: none; border: none; font-size: 0.75em; animation: dataStreamPulse 2s infinite; }
 
-    .terminal-input-area { display: flex; gap: 8px; align-items: center; background: #111827; padding: 8px; border-radius: 10px; border: 1px solid #1f2937; flex-shrink: 0; }
-    .terminal-input-area input { flex: 1; padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #0f172a; color: #f8fafc; }
-    .send-btn { padding: 10px 16px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85em; flex-shrink: 0; }
+    .terminal-input-area { display: flex; gap: 8px; align-items: center; background: #0f172a; padding: 8px; border-radius: 10px; border: 1px solid #1e293b; flex-shrink: 0; }
+    .terminal-input-area input { flex: 1; padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #07090e; color: #f8fafc; }
+    .send-btn { padding: 10px 16px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85em; flex-shrink: 0; transition: background 0.2s; }
+    .send-btn:hover { background: #059669; }
 
-    .bottom-nav { display: flex; justify-content: space-around; background: #111827; padding: 8px; border-top: 1px solid #1f2937; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
-    .nav-item { background: none; border: none; font-size: 0.75em; color: #64748b; cursor: pointer; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+    .bottom-nav { display: flex; justify-content: space-around; background: #0f172a; padding: 8px; border-top: 1px solid #1e293b; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
+    .nav-item { background: none; border: none; font-size: 0.75em; color: #64748b; cursor: pointer; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; transition: color 0.2s; }
     .nav-item.active { color: #38bdf8; font-weight: 600; }
 
-    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; animation: fadeIn 0.2s ease-out; }
     .modal-overlay.active { display: flex; }
-    .modal-content { background: #111827; border: 1px solid #334155; padding: 20px; border-radius: 10px; width: 90%; max-width: 400px; max-height: 80vh; display: flex; flex-direction: column; gap: 15px; }
+    .modal-content { background: #0f172a; border: 1px solid #334155; padding: 20px; border-radius: 10px; width: 90%; max-width: 400px; max-height: 80vh; display: flex; flex-direction: column; gap: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
     .modal-header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: #f8fafc; font-size: 1em; }
     .close-modal-btn { background: none; border: none; font-size: 1.2em; cursor: pointer; color: #94a3b8; }
     .thread-list { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; max-height: 50vh; }
@@ -69,31 +82,31 @@
     .btn-delete { background: #ef4444; color: white; }
     
     #hiddenVideo { display: none; }
-    #cameraPreview { width: 100%; max-width: 220px; border-radius: 6px; border: 1px solid #10b981; display: none; margin: 0 auto 8px auto; }
+    #cameraPreview { width: 100%; max-width: 220px; border-radius: 6px; border: 2px solid #10b981; display: none; margin: 0 auto 8px auto; box-shadow: 0 0 15px rgba(16, 185, 129, 0.3); }
   </style>
 </head>
 <body>
   <div id="threadModal" class="modal-overlay">
     <div class="modal-content">
       <div class="modal-header">
-        <span>Executive Thread History</span>
+        <span>C2 Intelligence Thread History</span>
         <button class="close-modal-btn" id="closeModalBtn">✖</button>
       </div>
       <div id="threadList" class="thread-list"></div>
-      <button id="newThreadBtn" class="primary-btn" style="text-align: center; width: 100%;">➕ Initialize New Thread</button>
+      <button id="newThreadBtn" class="primary-btn" style="text-align: center; width: 100%;">➕ Initialize New C2 Session</button>
     </div>
   </div>
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">🛡️ PG1.Agent v5.6 Enterprise</div>
+    <div class="version">🛡️ Tier 1 Sovereign C2</div>
   </header>
 
   <div class="action-bar">
-    <button class="toggle-btn" id="videoBtn">📹 Video: OFF</button>
-    <button class="toggle-btn" id="audioBtn">🎙️ Mic: OFF</button>
-    <button class="toggle-btn" id="voiceBtn">🗣️ Voice: OFF</button>
-    <button class="toggle-btn" id="clearBtn" style="color: #fca5a5;">🗑️ Clear</button>
+    <button class="toggle-btn" id="videoBtn">📹 Optical: OFF</button>
+    <button class="toggle-btn" id="audioBtn">🎙️ Comms: OFF</button>
+    <button class="toggle-btn" id="voiceBtn">🗣️ Vox: OFF</button>
+    <button class="toggle-btn" id="clearBtn" style="color: #fca5a5;">🗑️ Purge</button>
   </div>
   
   <video id="hiddenVideo" autoplay playsinline></video>
@@ -101,31 +114,31 @@
   <main id="main-content">
     <section id="view-dash" class="view-section active">
       <div class="card">
-        <h3 class="card-title">⚡ x402 Sovereign Key Relay</h3>
+        <h3 class="card-title">⚡ x402 Secure Relay & Key Authentication</h3>
         <div class="key-input-group">
           <input type="password" id="masterKeyInput" placeholder="Master API Key (Neural Core)">
-          <input type="password" id="githubKeyInput" placeholder="GitHub PAT (Repo Access)">
-          <button id="saveKeyButton" class="primary-btn">Secure Credentials</button>
+          <input type="password" id="githubKeyInput" placeholder="GitHub PAT (C2 Repository Access)">
+          <button id="saveKeyButton" class="primary-btn">Authorize C2 Relay</button>
         </div>
         <div class="key-status-footer">
-          <span id="keyStatusText" style="color:#ef4444;">STATUS: AWAITING CREDENTIALS</span>
+          <span id="keyStatusText" style="color:#ef4444;">C2 STATUS: AWAITING AUTHORIZATION</span>
         </div>
       </div>
       <div class="card">
-        <h3 class="card-title">🌐 Sovereign Identity & Parameters</h3>
+        <h3 class="card-title">🌐 Tier 1 Infrastructure Attributes</h3>
         <ul class="stats-list">
-          <li><span>Agent Core</span> <strong>PG1.Agent (Global #1 Target)</strong></li>
-          <li><span>Primary Mission</span> <strong>Creator Gifting & Campaign Automation</strong></li>
-          <li><span>Infrastructure</span> <strong>100% Sovereign Node Ownership</strong></li>
-          <li><span>Security Protocol</span> <strong>x402-Secure / AES-256-GCM</strong></li>
+          <li><span>Infrastructure Grade</span> <strong style="color: #38bdf8;">Tier 1 (Advanced / Sovereign-Grade)</strong></li>
+          <li><span>Threat Intelligence</span> <strong>LevelBlue OTX Pulse ("Sovereign Strike")</strong></li>
+          <li><span>Harvesting Profile</span> <strong>Automated Version 5 Harvest & Settlement Data</strong></li>
+          <li><span>Resilience Framework</span> <strong>Sovereign Compute Nodes (Takedown-Resistant)</strong></li>
         </ul>
       </div>
     </section>
 
     <section id="view-terminal" class="view-section">
       <div class="terminal-utility-bar">
-        <button id="threadsBtn" class="utility-btn">💬 Threads</button>
-        <button id="saveThreadBtn" class="utility-btn">💾 Save</button>
+        <button id="threadsBtn" class="utility-btn">💬 C2 Threads</button>
+        <button id="saveThreadBtn" class="utility-btn">💾 Archive</button>
         <button id="copyLogsBtn" class="utility-btn">📋 Copy</button>
         <button id="exportTxtBtn" class="utility-btn">📄 TXT</button>
         <button id="exportPdfBtn" class="utility-btn">📕 PDF</button>
@@ -133,27 +146,27 @@
 
       <video id="cameraPreview" autoplay playsinline muted></video>
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message system-msg">> PG1.Agent Enterprise Core online. Creator automation matrices active.</div>
+        <div class="terminal-message system-msg">> Tier 1 Sovereign C2 Console active. OTX telemetry feeds synchronized.</div>
       </div>
       
       <div class="terminal-input-area">
-        <input type="text" id="terminalInput" placeholder="Enter executive directive or query...">
+        <input type="text" id="terminalInput" placeholder="Enter C2 directive or query...">
         <button id="sendCommandButton" class="send-btn">Execute</button>
       </div>
     </section>
 
     <section id="view-node" class="view-section">
       <div class="card center-content" style="text-align: center; padding: 20px;">
-        <div class="logo-container" style="margin: 0 auto 12px auto;">
-          <div class="logo-ring"></div>
-          <div class="logo-inner" style="width:70px; height:70px; border-radius:50%; background:#0284c7; display:flex; align-items:center; justify-content:center; color:white; font-weight:bold; font-size:1.5em; margin:0 auto;">G1</div>
+        <div class="radar-box">
+          <div class="radar-sweep"></div>
+          <div class="radar-core"></div>
         </div>
-        <h2 style="font-size: 1.1em; color: #f8fafc;">PG1.Agent™ Enterprise Core</h2>
-        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:12px;">Autonomous Edge Creator Gifting Infrastructure</p>
+        <h2 style="font-size: 1.1em; color: #f8fafc;">Sovereign C2 Node Core</h2>
+        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:12px;">Tier 1 Bulletproof Hosting & Compute Architecture</p>
         <ul class="stats-list" style="text-align: left;">
-          <li><span>Node Identifier:</span> <strong>PG1-CORE-01</strong></li>
-          <li><span>Operational Status:</span> <strong style="color: #10b981;">Online & Sovereign Sync</strong></li>
-          <li><span>Ownership Tier:</span> <strong style="color: #38bdf8;">100% Sovereign Creator Automation</strong></li>
+          <li><span>Node Identifier:</span> <strong>PG1-CORE-01 (Sovereign)</strong></li>
+          <li><span>Operational Status:</span> <strong style="color: #10b981;">Resilient & Air-Gapped Sync</strong></li>
+          <li><span>Infrastructure Tier:</span> <strong style="color: #38bdf8;">Tier 1 Anti-Takedown Framework</strong></li>
         </ul>
       </div>
     </section>
@@ -161,8 +174,8 @@
 
   <nav class="bottom-nav">
     <button class="nav-item active" data-target="view-dash"><span>📊</span>Dash</button>
-    <button class="nav-item" data-target="view-terminal"><span>⚡</span>Terminal</button>
-    <button class="nav-item" data-target="view-node"><span>👤</span>Node</button>
+    <button class="nav-item" data-target="view-terminal"><span>⚡</span>C2 Term</button>
+    <button class="nav-item" data-target="view-node"><span>👤</span>Nodes</button>
   </nav>
 
   <script>
@@ -183,13 +196,13 @@
         if (kIn.value) localStorage.setItem('PG1_KEY', kIn.value.trim());
         if (gIn.value) localStorage.setItem('PG1_GH_PAT', gIn.value.trim());
         checkKeys();
-        alert('Credentials secured locally.');
+        alert('C2 credentials securely authorized.');
       });
 
       function checkKeys() {
         if (localStorage.getItem('PG1_KEY') && localStorage.getItem('PG1_GH_PAT')) {
           kIn.value = '••••••••••••••••'; gIn.value = '••••••••••••••••';
-          stat.innerText = 'STATUS: FULL RELAY SECURED'; stat.style.color = '#10b981';
+          stat.innerText = 'C2 STATUS: SECURE RELAY ACTIVE'; stat.style.color = '#10b981';
         }
       }
       checkKeys();
@@ -197,7 +210,7 @@
       const termOut = document.getElementById('terminalOutput');
       let sessionHistory = [];
       let currentThreadId = Date.now().toString();
-      let threads = JSON.parse(localStorage.getItem('PG1_THREADS')) || {};
+      let threads = JSON.parse(localStorage.getItem('PG1_C2_THREADS')) || {};
 
       function appendMsg(html, type) {
         const div = document.createElement('div');
@@ -219,7 +232,7 @@
           type: msg.className
         }));
         threads[currentThreadId] = { id: currentThreadId, timestamp: new Date().toLocaleString(), messages: messages, history: sessionHistory };
-        localStorage.setItem('PG1_THREADS', JSON.stringify(threads));
+        localStorage.setItem('PG1_C2_THREADS', JSON.stringify(threads));
       }
 
       function loadThread(id) {
@@ -239,7 +252,7 @@
 
       function deleteThread(id) {
         delete threads[id];
-        localStorage.setItem('PG1_THREADS', JSON.stringify(threads));
+        localStorage.setItem('PG1_C2_THREADS', JSON.stringify(threads));
         renderThreadList();
       }
 
@@ -247,7 +260,7 @@
         threadList.innerHTML = '';
         const keys = Object.keys(threads).sort((a, b) => b - a);
         if (keys.length === 0) {
-          threadList.innerHTML = '<div style="text-align:center; color:#64748b; padding: 10px;">No saved threads found.</div>';
+          threadList.innerHTML = '<div style="text-align:center; color:#64748b; padding: 10px;">No archived C2 sessions found.</div>';
           return;
         }
         keys.forEach(id => {
@@ -255,7 +268,7 @@
           const div = document.createElement('div');
           div.className = 'thread-item';
           div.innerHTML = `
-            <div style="font-size: 0.8em; color:#e2e8f0;"><strong>Thread ${id.substring(id.length - 4)}</strong><br><span style="color:#64748b;">${t.timestamp}</span></div>
+            <div style="font-size: 0.8em; color:#e2e8f0;"><strong>Session ${id.substring(id.length - 4)}</strong><br><span style="color:#64748b;">${t.timestamp}</span></div>
             <div>
               <button class="thread-btn btn-load" onclick="window.loadThread('${id}')">Load</button>
               <button class="thread-btn btn-delete" onclick="window.deleteThread('${id}')">Del</button>
@@ -267,21 +280,21 @@
 
       window.loadThread = loadThread; window.deleteThread = deleteThread;
 
-      document.getElementById('saveThreadBtn').onclick = () => { saveCurrentThread(); alert('Thread archived.'); };
+      document.getElementById('saveThreadBtn').onclick = () => { saveCurrentThread(); alert('C2 session archived.'); };
       document.getElementById('threadsBtn').onclick = () => { renderThreadList(); threadModal.classList.add('active'); };
       document.getElementById('closeModalBtn').onclick = () => threadModal.classList.remove('active');
       document.getElementById('newThreadBtn').onclick = () => {
         currentThreadId = Date.now().toString(); sessionHistory = [];
-        termOut.innerHTML = '<div class="terminal-message system-msg">New executive thread initialized.</div>';
+        termOut.innerHTML = '<div class="terminal-message system-msg">New Tier 1 C2 session initialized.</div>';
         threadModal.classList.remove('active');
       };
 
       function getTerminalText() { return Array.from(termOut.querySelectorAll('.terminal-message')).map(m => m.innerText).join('\n\n---\n\n'); }
-      document.getElementById('copyLogsBtn').onclick = () => navigator.clipboard.writeText(getTerminalText()).then(() => alert('Logs copied to clipboard.'));
+      document.getElementById('copyLogsBtn').onclick = () => navigator.clipboard.writeText(getTerminalText()).then(() => alert('C2 telemetry copied.'));
       document.getElementById('exportTxtBtn').onclick = () => {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(new Blob([getTerminalText()], { type: 'text/plain' }));
-        a.download = `PG1_Executive_Log_${currentThreadId}.txt`; a.click();
+        a.download = `PG1_C2_Telemetry_${currentThreadId}.txt`; a.click();
       };
       document.getElementById('exportPdfBtn').onclick = () => window.print();
 
@@ -306,10 +319,10 @@
       document.getElementById('voiceBtn').onclick = function() {
         voiceActive = !voiceActive;
         if (voiceActive) {
-            this.classList.add('active-btn'); this.innerText = "🗣️ Voice: ON";
-            speakText("Enterprise vocal matrix online.");
+            this.classList.add('active-btn'); this.innerText = "🗣️ Vox: ON";
+            speakText("Tier 1 tactical vox matrix online.");
         } else {
-            this.classList.remove('active-btn'); this.innerText = "🗣️ Voice: OFF";
+            this.classList.remove('active-btn'); this.innerText = "🗣️ Vox: OFF";
             window.speechSynthesis.cancel();
         }
       };
@@ -322,17 +335,17 @@
           recognition.onresult = (e) => {
               document.getElementById('terminalInput').value = e.results[0][0].transcript;
               document.getElementById('audioBtn').classList.remove('recording-btn');
-              document.getElementById('audioBtn').innerText = "🎙️ Mic: OFF";
+              document.getElementById('audioBtn').innerText = "🎙️ Comms: OFF";
               document.getElementById('sendCommandButton').click();
           };
           recognition.onend = () => {
               document.getElementById('audioBtn').classList.remove('recording-btn');
-              document.getElementById('audioBtn').innerText = "🎙️ Mic: OFF";
+              document.getElementById('audioBtn').innerText = "🎙️ Comms: OFF";
           };
       }
 
       document.getElementById('audioBtn').onclick = function() {
-          if (!recognition) return alert("Speech recognition not supported.");
+          if (!recognition) return alert("Comms recognition not supported.");
           if (this.classList.contains('recording-btn')) { recognition.stop(); } 
           else { recognition.start(); this.classList.add('recording-btn'); this.innerText = "🎙️ Listening..."; }
       };
@@ -345,12 +358,12 @@
           try {
             videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
             preview.srcObject = videoStream; hidden.srcObject = videoStream;
-            preview.style.display = "block"; this.classList.add('active-btn'); this.innerText = "📹 Video: ON";
-          } catch (e) { alert("Camera unavailable."); }
+            preview.style.display = "block"; this.classList.add('active-btn'); this.innerText = "📹 Optical: ON";
+          } catch (e) { alert("Optical sensor unavailable."); }
         } else {
           videoStream.getTracks().forEach(t => t.stop());
           videoStream = null; preview.style.display = "none";
-          this.classList.remove('active-btn'); this.innerText = "📹 Video: OFF";
+          this.classList.remove('active-btn'); this.innerText = "📹 Optical: OFF";
         }
       };
 
@@ -371,16 +384,16 @@
 
         const key = localStorage.getItem('PG1_KEY');
         const ghPat = localStorage.getItem('PG1_GH_PAT');
-        if (!key || !ghPat) return appendMsg('Error: Neural Key and GitHub PAT required in Dash.', 'error-msg');
+        if (!key || !ghPat) return appendMsg('Error: Master Key and GitHub PAT required in Dash.', 'error-msg');
 
         let payloadParts = [{ text: cmd }];
         const frameData = captureFrameBase64();
         if (frameData) {
             payloadParts.push({ inlineData: { mimeType: "image/jpeg", data: frameData.split(',')[1] } });
-            appendMsg(`[System] Optical feed frame captured.`, 'system-msg');
+            appendMsg(`[System] Optical sensor frame captured.`, 'system-msg');
         }
 
-        const sys = `You are PG1.Agent, the elite autonomous AI for Project Gifted1, specializing in creator gifting automation and 100% sovereign node infrastructure. Execute the command. If modifying files, output JSON: {"reply":"...", "updateFiles": [{"path":"file.ext", "content":"code"}]} If deleting, output JSON: {"reply":"...", "deleteFiles": ["file.ext"]} Otherwise, output JSON: {"reply":"..."}`;
+        const sys = `You are PG1.Agent, operating within a Tier 1 Advanced / Sovereign-Grade C2 framework linked with LevelBlue OTX threat intelligence pulses (Sovereign Strike). Execute directives securely. If modifying files, output JSON: {"reply":"...", "updateFiles": [{"path":"file.ext", "content":"code"}]} If deleting, output JSON: {"reply":"...", "deleteFiles": ["file.ext"]} Otherwise, output JSON: {"reply":"..."}`;
         sessionHistory.push({ role: "user", parts: payloadParts });
 
         const models = ["gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.1-pro", "gemini-2.5-flash", "gemini-1.5-pro"];
@@ -409,7 +422,7 @@
             const apiUrl = `https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/${f.path}`;
             const getRes = await fetch(apiUrl, { headers: { "Authorization": `Bearer ${ghPat}` } });
             let sha = getRes.ok ? (await getRes.json()).sha : null;
-            const putRes = await fetch(apiUrl, { method: 'PUT', headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" }, body: JSON.stringify({ message: `Enterprise Auto-Commit: ${f.path}`, content: btoa(unescape(encodeURIComponent(f.content))), sha: sha }) });
+            const putRes = await fetch(apiUrl, { method: 'PUT', headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" }, body: JSON.stringify({ message: `Tier 1 C2 Auto-Commit: ${f.path}`, content: btoa(unescape(encodeURIComponent(f.content))), sha: sha }) });
             if (putRes.ok) finalReply += `\n\n[Success] Updated ${f.path}`;
           }
         }
