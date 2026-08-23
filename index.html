@@ -9,15 +9,18 @@
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
 
     @keyframes pulseGlow { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); } 70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
-    @keyframes radarSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes fastSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes dishSweep { 0%, 100% { transform: rotate(-20deg); } 50% { transform: rotate(20deg); } }
     @keyframes electricPulse { 0%, 100% { text-shadow: 0 0 5px rgba(56, 189, 248, 0.4), 0 0 10px rgba(56, 189, 248, 0.2); } 50% { text-shadow: 0 0 15px rgba(56, 189, 248, 0.9), 0 0 25px rgba(56, 189, 248, 0.6); } }
     @keyframes iconPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.8; } }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes logoBreath { 0%, 100% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.4); } 50% { box-shadow: 0 0 35px rgba(56, 189, 248, 0.8); } }
+    
+    /* New Core Breathing Effect for the Logo */
+    @keyframes coreBreathe { 0%, 100% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.2); transform: scale(1); } 50% { box-shadow: 0 0 35px rgba(56, 189, 248, 0.6), inset 0 0 15px rgba(56, 189, 248, 0.3); transform: scale(1.03); } }
 
     .pulsing-bolt { animation: electricPulse 2s infinite; display: inline-block; }
-    .spin-icon { display: inline-block; animation: radarSpin 2s linear infinite; }
-    .dish-icon { display: inline-block; animation: radarSpin 4s linear infinite; transform-origin: center; }
+    .spin-icon { display: inline-block; animation: fastSpin 2s linear infinite; }
+    .dish-icon { display: inline-block; animation: dishSweep 3s ease-in-out infinite; transform-origin: bottom center; }
 
     .top-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: #111827; border-bottom: 1px solid #1f2937; flex-shrink: 0; }
     .brand-title { display: flex; align-items: center; gap: 8px; font-size: 1.05em; font-weight: 600; color: #f8fafc; }
@@ -50,11 +53,9 @@
     .progress-bar-container { width: 100%; background: #1e293b; border-radius: 4px; height: 5px; margin-top: 4px; margin-bottom: 8px; overflow: hidden; }
     .progress-bar { height: 100%; background: #38bdf8; border-radius: 4px; transition: width 0.5s ease; }
 
-    /* Animated Radar Logo Container */
-    .animated-logo-wrapper { position: relative; width: 140px; height: 140px; margin: 0 auto 15px auto; display: flex; align-items: center; justify-content: center; }
-    .radar-ring { position: absolute; width: 100%; height: 100%; border-radius: 50%; border: 2px dashed #10b981; animation: radarSpin 8s linear infinite; box-shadow: 0 0 15px rgba(16, 185, 129, 0.3); }
-    .logo-core-img { width: 120px; height: 120px; border-radius: 50%; overflow: hidden; border: 2px solid #38bdf8; z-index: 2; position: relative; animation: logoBreath 3s ease-in-out infinite; }
-    .logo-core-img img { width: 100%; height: 100%; object-fit: cover; }
+    /* The New AI Core Breathing Logo */
+    .ai-core-logo { width: 130px; height: 130px; margin: 0 auto 15px auto; border-radius: 50%; border: 2px solid #38bdf8; overflow: hidden; animation: coreBreathe 3s ease-in-out infinite; }
+    .ai-core-logo img { width: 100%; height: 100%; object-fit: cover; }
 
     .terminal-controls-header { display: flex; justify-content: space-between; align-items: center; background: #111827; padding: 8px 12px; border-radius: 8px; border: 1px solid #1f2937; font-size: 0.8em; margin-bottom: 10px; }
     .terminal-controls-header select { background: #0f172a; color: #38bdf8; border: 1px solid #334155; padding: 4px 8px; border-radius: 4px; font-size: 0.85em; outline: none; }
@@ -63,8 +64,6 @@
 
     .terminal-display { flex: 1; background: #0f172a; border: 1px solid #1f2937; border-radius: 10px; padding: 12px; overflow-y: auto; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 250px; }
     .terminal-message { padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; word-wrap: break-word; position: relative; }
-    
-    /* ADDED PADDING to stop text overlay */
     .terminal-message.user-msg { background: #1e293b; border: 1px solid #334155; color: #38bdf8; align-self: flex-end; max-width: 85%; padding-right: 85px; }
     .terminal-message.agent-msg { background: #111827; border: 1px solid #10b981; color: #f8fafc; align-self: flex-start; max-width: 95%; padding-right: 85px; }
     .terminal-message.error-msg { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; }
@@ -121,6 +120,7 @@
   <video id="hiddenVideo" autoplay playsinline></video>
 
   <main id="main-content">
+    <!-- DASH SECTION -->
     <section id="view-dash" class="view-section active">
       <div class="card">
         <h3 class="card-title"><span class="pulsing-bolt">⚡</span> x402 Sovereign Key Relay</h3>
@@ -177,6 +177,7 @@
       </div>
     </section>
 
+    <!-- TERMINAL SECTION -->
     <section id="view-terminal" class="view-section">
       <div class="terminal-controls-header">
         <div>
@@ -205,15 +206,14 @@
       </div>
     </section>
 
+    <!-- NODE SECTION -->
     <section id="view-node" class="view-section">
       <div class="card center-content" style="text-align: center; padding: 20px;">
-        <!-- Rotating Radar Wrapper with Glow -->
-        <div class="animated-logo-wrapper">
-          <div class="radar-ring"></div>
-          <div class="logo-core-img">
-            <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
-          </div>
+        <!-- NEW AI CORE BREATHING LOGO -->
+        <div class="ai-core-logo">
+          <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
         </div>
+        
         <h2 style="font-size: 1.1em; color: #f8fafc; margin-bottom: 2px;">PG1.Agent™</h2>
         <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Autonomous Edge Infrastructure</p>
         
@@ -227,12 +227,22 @@
 
       <div class="card">
         <h3 class="card-title">📊 Node System Telemetry</h3>
-        <ul class="stats-list">
+        
+        <!-- NEW INDIVIDUAL BARS FOR NODE TELEMETRY -->
+        <ul class="stats-list" style="margin-bottom:2px;">
           <li><span>CPU Load</span> <strong id="cpuLoad">26%</strong></li>
+        </ul>
+        <div class="progress-bar-container"><div id="cpuBar" class="progress-bar" style="width: 26%;"></div></div>
+
+        <ul class="stats-list" style="margin-bottom:2px;">
           <li><span>RAM Allocation</span> <strong id="ramAlloc">45%</strong></li>
-          <li><span>Vault Storage</span> <strong>1.2 GB / 10 GB</strong></li>
         </ul>
         <div class="progress-bar-container"><div id="ramBar" class="progress-bar" style="width: 45%;"></div></div>
+
+        <ul class="stats-list" style="margin-bottom:2px;">
+          <li><span>Vault Storage</span> <strong id="vaultStorage">1.2 GB / 10 GB</strong></li>
+        </ul>
+        <div class="progress-bar-container"><div id="vaultBar" class="progress-bar" style="width: 12%;"></div></div>
       </div>
 
       <div class="card">
@@ -273,10 +283,9 @@
 
       // Live telemetry & automatic pulsing update loop every second
       setInterval(() => {
+        // Dash Metrics
         basePulses += Math.floor(Math.random() * 3);
         baseIOC += Math.floor(Math.random() * 5);
-        const cpu = Math.floor(24 + Math.random() * 8);
-        const ram = Math.floor(43 + Math.random() * 4);
         const speed = (2.2 + Math.random() * 0.6).toFixed(1);
         const latency = Math.floor(10 + Math.random() * 5);
         
@@ -284,21 +293,32 @@
         document.getElementById('iocVal').innerText = baseIOC.toLocaleString() + ' IOC Feeds';
         document.getElementById('otxBar').style.width = (50 + (basePulses % 40)) + '%';
         document.getElementById('iocBar').style.width = (60 + (baseIOC % 30)) + '%';
-
-        const cpuEl = document.getElementById('cpuLoad');
-        const ramEl = document.getElementById('ramAlloc');
-        const ramBar = document.getElementById('ramBar');
+        
         const speedEl = document.getElementById('telemetrySpeed');
         const throughputBar = document.getElementById('throughputBar');
         const latencyEl = document.getElementById('nodeLatency');
         const latencyBar = document.getElementById('latencyBar');
-        
-        if (cpuEl) cpuEl.innerText = cpu + '%';
-        if (ramEl) { ramEl.innerText = ram + '%'; ramBar.style.width = ram + '%'; }
         if (speedEl) speedEl.innerText = speed + ' MB/s';
         if (throughputBar) throughputBar.style.width = (50 + Math.random() * 30) + '%';
         if (latencyEl) latencyEl.innerText = latency + ' ms';
         if (latencyBar) latencyBar.style.width = (20 + latency) + '%';
+
+        // Node Metrics
+        const cpu = Math.floor(24 + Math.random() * 8);
+        const ram = Math.floor(43 + Math.random() * 4);
+        const vaultFloat = (1.1 + Math.random() * 0.3).toFixed(1);
+
+        const cpuEl = document.getElementById('cpuLoad');
+        const cpuBar = document.getElementById('cpuBar');
+        const ramEl = document.getElementById('ramAlloc');
+        const ramBar = document.getElementById('ramBar');
+        const vaultEl = document.getElementById('vaultStorage');
+        const vaultBar = document.getElementById('vaultBar');
+        
+        if (cpuEl) { cpuEl.innerText = cpu + '%'; cpuBar.style.width = cpu + '%'; }
+        if (ramEl) { ramEl.innerText = ram + '%'; ramBar.style.width = ram + '%'; }
+        if (vaultEl) { vaultEl.innerText = vaultFloat + ' GB / 10 GB'; vaultBar.style.width = (vaultFloat * 10) + '%'; }
+
       }, 1000);
 
       // Silent sync feed update (removed alert entirely)
