@@ -4,7 +4,73 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Project Gifted1™ - PG1.Agent</title>
-  <link rel="stylesheet" href="style.css">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background-color: #f4f6f8; color: #333; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+    .top-header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: white; border-bottom: 1px solid #e0e0e0; }
+    .brand-title { display: flex; align-items: center; gap: 8px; font-size: 1.1em; }
+    .version { font-size: 0.8em; color: #888; }
+    .status-dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; }
+    .status-dot.green { background-color: #28a745; }
+    .status-dot.blue { background-color: #007bff; }
+
+    .action-bar { display: flex; justify-content: center; gap: 10px; padding: 10px; background: white; border-bottom: 1px solid #e0e0e0; overflow-x: auto; }
+    .toggle-btn { padding: 8px 12px; border: 1px solid #ddd; background: white; border-radius: 8px; font-size: 0.85em; cursor: pointer; white-space: nowrap; }
+    .clear-btn { color: #dc3545; border-color: #dc3545; background-color: #fff5f5; }
+
+    #main-content { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 80px; }
+    .view-section { display: none; flex-direction: column; gap: 15px; height: 100%; }
+    .view-section.active { display: flex; }
+
+    .card { background: white; border-radius: 12px; padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #eee; }
+    .card-title { font-size: 1em; color: #004085; display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .card-desc { font-size: 0.85em; color: #666; margin-bottom: 15px; line-height: 1.4; }
+
+    .key-input-group { display: flex; gap: 10px; margin-bottom: 15px; }
+    .key-input-group input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.9em; }
+    .primary-btn { padding: 10px 15px; background: #198754; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+    .key-status-footer { display: flex; justify-content: space-between; font-size: 0.8em; font-weight: bold; }
+    .key-status-footer .status-text { color: #198754; }
+    .connection-status { color: #333; }
+
+    .telemetry-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 0.9em; font-weight: 500;}
+    .outline-btn { padding: 6px 12px; border: 1px solid #007bff; background: transparent; color: #007bff; border-radius: 6px; font-size: 0.85em; font-weight: bold; }
+    .stats-list { list-style: none; }
+    .stats-list li { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.85em; }
+    .stats-list li:last-child { border-bottom: none; }
+    .stats-list li strong { color: #004085; }
+
+    .center-content { text-align: center; }
+    .logo-placeholder { width: 100px; height: 100px; background: radial-gradient(circle, #17a2b8, #004085); border-radius: 50%; margin: 0 auto 15px; color: white; display: flex; align-items: center; justify-content: center; font-size: 3em; font-weight: bold; border: 4px solid #b8daff;}
+    .sub-heading { color: #666; font-size: 0.9em; margin-bottom: 20px; }
+    .node-details { list-style: none; text-align: left; background: #f8f9fa; padding: 15px; border-radius: 8px; }
+    .node-details li { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef; font-size: 0.9em; }
+    .node-details li:last-child { border-bottom: none; }
+    .progress-bar-container { margin-top: 10px; }
+    .progress-label { display: flex; justify-content: space-between; font-size: 0.85em; margin-bottom: 5px; color: #555;}
+    .progress-track { height: 8px; background: #e9ecef; border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; background: #007bff; }
+
+    #view-terminal { flex: 1; display: none; flex-direction: column; justify-content: space-between; padding-bottom: 15px; min-height: calc(100vh - 220px); }
+    #view-terminal.active { display: flex; }
+    .terminal-display { flex: 1; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 12px; padding: 15px; overflow-y: auto; margin-bottom: 15px; display: flex; flex-direction: column; gap: 10px; }
+    .terminal-message { padding: 12px; border-radius: 8px; font-size: 0.9em; line-height: 1.4; word-wrap: break-word; }
+    .terminal-message.user-msg { background: #e6f2ff; border: 1px solid #b8daff; color: #004085; }
+    .terminal-message.agent-msg { background: white; border: 1px solid #dee2e6; color: #333; }
+    .terminal-message.error-msg { background: #ffe6e6; border: 1px solid #ffb3b3; color: #cc0000; }
+    .terminal-message.system-msg { color: #888; font-style: italic; text-align: center; background: none; border: none; }
+
+    .terminal-input-area { display: flex; gap: 8px; align-items: center; background: white; padding: 10px; border-radius: 12px; border: 1px solid #ddd; flex-shrink: 0; }
+    .icon-btn { background: none; border: 1px solid #eee; border-radius: 8px; padding: 5px; font-size: 0.7em; color: #004085; cursor: pointer; width: 45px; }
+    .terminal-input-area input { flex: 1; padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 0.9em; }
+    .send-btn { padding: 12px 18px; background: #198754; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+
+    .bottom-nav { display: flex; justify-content: space-around; background: white; padding: 10px; border-top: 1px solid #e0e0e0; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; }
+    .nav-item { background: none; border: none; font-size: 0.8em; color: #666; cursor: pointer; text-align: center; flex: 1; }
+    .nav-item.active { color: #007bff; font-weight: bold; }
+    .nav-item .icon { font-size: 1.5em; display: block; margin-bottom: 2px; }
+  </style>
 </head>
 <body>
   <header class="top-header">
@@ -23,7 +89,6 @@
   </div>
 
   <main id="main-content">
-    <!-- DASH VIEW -->
     <section id="view-dash" class="view-section active">
       <div class="card">
         <h3 class="card-title">⚡ x402 Sovereign Key Relay</h3>
@@ -33,7 +98,7 @@
           <button id="saveKeyButton" class="primary-btn">Save Key</button>
         </div>
         <div class="key-status-footer">
-          <span id="keyStatusText" class="status-text">KEY_STATUS: MISSING</span>
+          <span id="keyStatusText" class="status-text" style="color:red;">KEY_STATUS: MISSING</span>
           <span class="connection-status"><span class="status-dot green"></span> CONNECTED</span>
         </div>
       </div>
@@ -53,7 +118,6 @@
       </div>
     </section>
 
-    <!-- TERMINAL VIEW -->
     <section id="view-terminal" class="view-section">
       <div id="terminalOutput" class="terminal-display">
         <div class="terminal-message system-msg">
@@ -69,7 +133,6 @@
       </div>
     </section>
 
-    <!-- NODE VIEW -->
     <section id="view-node" class="view-section">
       <div class="card center-content">
         <div class="logo-placeholder">G</div>
@@ -108,6 +171,99 @@
     </button>
   </nav>
 
-  <script src="app.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const navItems = document.querySelectorAll('.nav-item');
+      const views = document.querySelectorAll('.view-section');
+
+      navItems.forEach(item => {
+        item.addEventListener('click', () => {
+          navItems.forEach(nav => nav.classList.remove('active'));
+          views.forEach(view => view.classList.remove('active'));
+
+          item.classList.add('active');
+          const targetId = item.getAttribute('data-target');
+          document.getElementById(targetId).classList.add('active');
+        });
+      });
+
+      const saveKeyBtn = document.getElementById('saveKeyButton');
+      const keyInput = document.getElementById('masterKeyInput');
+      const keyStatusText = document.getElementById('keyStatusText');
+
+      saveKeyBtn.addEventListener('click', () => {
+        const key = keyInput.value.trim();
+        if (key) {
+          localStorage.setItem('PG1_MASTER_KEY', key);
+          keyStatusText.innerText = 'KEY_STATUS: STORED_LOCAL';
+          keyStatusText.style.color = '#198754';
+          alert('Sovereign Key Stored Locally.');
+        }
+      });
+
+      if (localStorage.getItem('PG1_MASTER_KEY')) {
+        keyStatusText.innerText = 'KEY_STATUS: STORED_LOCAL';
+        keyStatusText.style.color = '#198754';
+      }
+
+      const sendBtn = document.getElementById('sendCommandButton');
+      const terminalInput = document.getElementById('terminalInput');
+      const terminalOutput = document.getElementById('terminalOutput');
+      const clearBtn = document.getElementById('clearTerminalBtn');
+
+      const WORKER_URL = 'https://pg1-worker.gnfcw9w5rk.workers.dev/'; 
+
+      function appendMessage(text, type) {
+        const msgDiv = document.createElement('div');
+        msgDiv.classList.add('terminal-message', type);
+        msgDiv.innerHTML = text.replace(/\n/g, '<br>'); 
+        terminalOutput.appendChild(msgDiv);
+        terminalOutput.scrollTop = terminalOutput.scrollHeight;
+      }
+
+      clearBtn.addEventListener('click', () => {
+        terminalOutput.innerHTML = '<div class="terminal-message system-msg">Terminal cleared.</div>';
+      });
+
+      sendBtn.addEventListener('click', async () => {
+        const command = terminalInput.value.trim();
+        if (!command) return;
+
+        appendMessage(`> ${command}`, 'user-msg');
+        terminalInput.value = '';
+        
+        const masterKey = localStorage.getItem('PG1_MASTER_KEY') || "";
+
+        try {
+          const response = await fetch(WORKER_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${masterKey}` 
+            },
+            body: JSON.stringify({ command })
+          });
+
+          if (!response.ok) {
+            throw new Error(`Server returned status ${response.status}`);
+          }
+
+          const data = await response.json();
+          
+          if (data.error) {
+            appendMessage(`Agent Error: ${data.error}`, 'error-msg');
+          } else {
+            appendMessage(data.response, 'agent-msg');
+          }
+        } catch (error) {
+          appendMessage(`Connection Failure: ${error.message}. Ensure WORKER_URL is correct.`, 'error-msg');
+        }
+      });
+
+      terminalInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendBtn.click();
+      });
+    });
+  </script>
 </body>
 </html>
