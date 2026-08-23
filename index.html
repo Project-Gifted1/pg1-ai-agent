@@ -16,7 +16,6 @@
     .version { font-size: 0.8em; color: #888; }
     .status-dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; animation: pulseGlow 2s infinite; }
     .status-dot.green { background-color: #28a745; }
-    .status-dot.blue { background-color: #007bff; }
 
     .action-bar { display: flex; justify-content: center; gap: 10px; padding: 10px; background: white; border-bottom: 1px solid #e0e0e0; overflow-x: auto; flex-shrink: 0; }
     .toggle-btn { padding: 8px 12px; border: 1px solid #ddd; background: white; border-radius: 8px; font-size: 0.85em; cursor: pointer; white-space: nowrap; }
@@ -34,9 +33,6 @@
 
     #view-terminal { flex: 1; display: none; flex-direction: column; justify-content: space-between; padding-bottom: 15px; min-height: calc(100vh - 220px); }
     #view-terminal.active { display: flex; }
-    
-    .terminal-utility-bar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 8px; }
-    .utility-btn { padding: 5px 10px; background: white; border: 1px solid #ccc; border-radius: 6px; font-size: 0.75em; cursor: pointer; font-weight: bold; }
     
     .terminal-display { flex: 1; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 12px; padding: 15px; overflow-y: auto; margin-bottom: 15px; display: flex; flex-direction: column; gap: 10px; }
     .terminal-message { padding: 12px; border-radius: 8px; font-size: 0.9em; line-height: 1.4; word-wrap: break-word; }
@@ -149,27 +145,49 @@
 
         sessionHistory.push({ role: "user", parts: [{ text: cmd }] });
 
-        try {
-          // Direct Call to Gemini (Bypassing Cloudflare)
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${key}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: sessionHistory,
-              systemInstruction: { parts: [{ text: sys }] },
-              generationConfig: { responseMimeType: "application/json" }
-            })
-          });
+        const targetModels = [
+          "gemini-3.7-flash",
+          "gemini-3.5-flash",
+          "gemini-3.1-pro",
+          "gemini-2.5-flash",
+          "gemini-1.5-pro"
+        ];
 
-          const data = await res.json();
-          if (data.error) throw new Error(data.error.message);
-          
-          const result = JSON.parse(data.candidates[0].content.parts[0].text);
-          let finalReply = result.reply;
+        let success = false;
+        let lastError = "";
+        let result = null;
 
-          sessionHistory.push({ role: "model", parts: [{ text: JSON.stringify(result) }] });
+        for (const model of targetModels) {
+          try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: sessionHistory,
+                systemInstruction: { parts: [{ text: sys }] },
+                generationConfig: { responseMimeType: "application/json" }
+              })
+            });
 
-          // Direct Call to GitHub API (Bypassing Cloudflare)
-          if (result.updateFile) {
+            const data = await res.json();
+            if (data.error) throw new Error(data.error.message);
+            
+            result = JSON.parse(data.candidates[0].content.parts[0].text);
+            success = true;
+            break; 
+          } catch (e) {
+            lastError = e.message;
+          }
+        }
+
+        if (!success) {
+          return appendMsg(`Execution Failure across all neural links: ${lastError}`, 'error-msg');
+        }
+
+        let finalReply = result.reply;
+        sessionHistory.push({ role: "model", parts: [{ text: JSON.stringify(result) }] });
+
+        if (result.updateFile) {
+          try {
             appendMsg(`[System] Initiating direct auto-commit to ${result.path}...`, 'system-msg');
             const apiUrl = `https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/${result.path}`;
             
@@ -188,13 +206,12 @@
 
             if (putRes.ok) finalReply += `\n\n[Success] File ${result.path} autonomously updated in repository.`;
             else finalReply += `\n\n[Error] Commit rejected: ${(await putRes.json()).message}`;
+          } catch (e) {
+            finalReply += `\n\n[System Error] GitHub connection failed: ${e.message}`;
           }
-
-          appendMsg(finalReply, 'agent-msg');
-
-        } catch (e) {
-          appendMsg(`Execution Failure: ${e.message}`, 'error-msg');
         }
+
+        appendMsg(finalReply, 'agent-msg');
       };
     });
   </script>
