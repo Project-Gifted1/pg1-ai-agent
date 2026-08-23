@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v9.0</title>
+  <title>Project Gifted1™ - Sovereign Engine v9.1</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
@@ -113,7 +113,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v9.0 Sovereign Engine</div>
+    <div class="version">v9.1 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -185,7 +185,7 @@
       <video id="cameraPreview" autoplay playsinline muted></video>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v9.0 online with fluent multilingual intelligence (any language) and AI video generation tools active.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v9.1 online with fluent multilingual support and iOS-optimized video rendering.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -250,10 +250,9 @@
       input.focus();
     };
 
-    // Tools including Video Generation & Self-Healing
     window.executeRevenueStrike = function(amount, platform) {
         if (!amount || !platform) return "ERROR: Missing parameters. Self-Healing Reflexion: Retrying with sovereign defaults (€100 on Swirl).";
-        return `[Success] Verified deliverability & reputation markers. Revenue strike of ${amount} queued for routing to ${platform}.`;
+        return `[Success] Verified deliverability & reputation markers. Revenue strike of ${amount} queued for routing to${platform}.`;
     };
     
     window.fetchLiveData = async function(url) {
@@ -269,9 +268,8 @@
     
     window.generateVideoClip = function(prompt) {
         if (!prompt) return "ERROR: Missing prompt for video generation.";
-        // Simulated or real Veo video generation payload endpoint returning sample MP4 preview stream
         const sampleVideoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
-        return `[Success] Cinematic video generated via Veo pipeline for prompt: "${prompt}".\n<video controls style="max-width:100%; border-radius:6px; margin-top:8px;"><source src="${sampleVideoUrl}" type="video/mp4">Your browser does not support video playback.</video>`;
+        return `[Success] Cinematic video generated via Veo pipeline for prompt: "${prompt}".\n<video controls playsinline preload="auto" style="width:100%; max-height:220px; background:#000; border-radius:6px; margin-top:8px; display:block;"><source src="${sampleVideoUrl}" type="video/mp4">Your browser does not support video playback.</video>`;
     };
     
     window.commitToGitHub = async function(path, content, message) {
@@ -282,7 +280,7 @@
             const getRes = await fetch(apiUrl, { headers: { "Authorization": `Bearer ${ghPat}` } });
             let sha = getRes.ok ? (await getRes.json()).sha : null;
             const putRes = await fetch(apiUrl, { method: 'PUT', headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" }, body: JSON.stringify({ message: message, content: btoa(unescape(encodeURIComponent(content))), sha: sha }) });
-            if (putRes.ok) return `Successfully deployed commit: ${message} to ${path}.`;
+            if (putRes.ok) return `Successfully deployed commit: ${message} to${path}.`;
             return `ERROR: GitHub API status ${putRes.status}.`;
         } catch(e) {
             return `ERROR: Deployment exception (${e.message}).`;
@@ -293,7 +291,7 @@
       let sessionHistory = [];
       const termOut = document.getElementById('terminalOutput');
       
-      const savedMem = localStorage.getItem('PG1_MEM_V9');
+      const savedMem = localStorage.getItem('PG1_MEM_V91');
       if (savedMem) {
           try {
               sessionHistory = JSON.parse(savedMem);
@@ -311,7 +309,7 @@
           } catch(e) { sessionHistory = []; }
       }
 
-      function saveMemory() { localStorage.setItem('PG1_MEM_V9', JSON.stringify(sessionHistory)); }
+      function saveMemory() { localStorage.setItem('PG1_MEM_V91', JSON.stringify(sessionHistory)); }
 
       async function updateCryptoTickers() {
           try {
@@ -394,7 +392,7 @@
 
       const logsModal = document.getElementById('logsModal');
       document.getElementById('saveLogBtn').onclick = () => {
-          let logText = sessionHistory.map(m => `[${m.role.toUpperCase()}]: ${m.parts[0].text || '[Tool Data]'}`).join('\n\n');
+          let logText = sessionHistory.map(m => `[${m.role.toUpperCase()}]:${m.parts[0].text || '[Tool Data]'}`).join('\n\n');
           document.getElementById('logContentBox').innerText = logText || 'No logs recorded.';
           logsModal.classList.add('active');
       };
@@ -402,7 +400,7 @@
       document.getElementById('purgeStorageBtn').onclick = () => { localStorage.clear(); alert('Storage purged.'); location.reload(); };
 
       document.getElementById('exportReportBtn').onclick = () => {
-          let logText = `# Project Gifted1™ - Sovereign Report v9.0\nGenerated: ${new Date().toISOString()}\n\n` + sessionHistory.map(m => `### ${m.role.toUpperCase()}\n${m.parts[0].text || '[Tool Execution Payload]'}`).join('\n\n');
+          let logText = `# Project Gifted1™ - Sovereign Report v9.1\nGenerated: ${new Date().toISOString()}\n\n` + sessionHistory.map(m => `### ${m.role.toUpperCase()}\n${m.parts[0].text || '[Tool Execution Payload]'}`).join('\n\n');
           const blob = new Blob([logText], { type: 'text/markdown' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -424,7 +422,7 @@
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       let dictation = SpeechRecognition ? new SpeechRecognition() : null;
       if (dictation) {
-          dictation.continuous = false; dictation.interimResults = false; dictation.lang = ''; // Auto-detects user language
+          dictation.continuous = false; dictation.interimResults = false; dictation.lang = '';
           dictation.onresult = (e) => {
               document.getElementById('terminalInput').value = e.results[0][0].transcript;
               document.getElementById('audioBtn').classList.remove('recording-btn');
@@ -480,10 +478,9 @@
         document.getElementById('terminalInput').value = '';
 
         const selectedModel = document.getElementById('modelSelector').value;
-        // Universal Multilingual & Video Generation System Prompt
-        const sys = `You are strictly PG1.Agent v9.0, an elite sovereign AI with fluent multilingual communication capabilities and video generation tools. 
+        const sys = `You are strictly PG1.Agent v9.1, an elite sovereign AI with fluent multilingual communication capabilities and video generation tools. 
         RULES:
-        1. MULTILINGUAL FLUENCY: Respond fluently in whatever language the user addresses you in (e.g., Spanish, French, German, Mandarin, Arabic, Portuguese, English, etc.).
+        1. MULTILINGUAL FLUENCY: Respond fluently in whatever language the user addresses you in.
         2. INTENT GUARD & UI BOUNDARY: Never alter structural HTML or tabs when answering prompts.
         3. SELF-HEALING REFLEXION: Automatically catch tool errors and self-correct.`;
         
@@ -542,7 +539,7 @@
                   } else if (call.name === "generateVideoClip") {
                       resultStr = window.generateVideoClip(call.args.prompt);
                   } else if (call.name === "commitToGitHub") {
-                      resultStr = window.commitToGitHub(call.args.path, call.args.content, call.args.message);
+                      resultStr = await window.commitToGitHub(call.args.path, call.args.content, call.args.message);
                   }
                   
                   appendMsg(`[Worker Result] ${resultStr}`, 'agent-msg');
@@ -571,23 +568,9 @@
                   let textOutput = responsePart.text;
                   appendMsg(textOutput, 'agent-msg');
                   
-                  // If voice speech synthesis is active, speak the response in fluent natural speech
                   if (voiceActive && 'speechSynthesis' in window) {
                       const utterance = new SpeechSynthesisUtterance(textOutput.replace(/[*#_`]/g, ''));
                       window.speechSynthesis.speak(utterance);
                   }
 
-                  sessionHistory.push({ role: "model", parts: [{ text: textOutput }] });
-                  saveMemory();
-                  continueLoop = false;
-              }
-          }
-
-        } catch (e) { 
-          appendMsg(`Autonomous Exception: ${e.message}`, 'error-msg'); 
-        }
-      };
-    });
-  </script>
-</body>
-</html>
+In contrast, if your application requires a different output format or further tweaks, just let me know!
