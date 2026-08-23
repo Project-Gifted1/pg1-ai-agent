@@ -22,22 +22,5 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Forcefully Create Worker Entry
-        run: |
-          cat << 'EOF' > worker-entry.js
-          export default {
-            async fetch(request, env, ctx) {
-              return new Response("AI Agent active and online!", {
-                headers: { "content-type": "text/plain" }
-              });
-            },
-          };
-          EOF
-
-      - name: Deploy Worker to Cloudflare
-        run: npx wrangler deploy worker-entry.js --name pg1-ai-agent --compatibility-date=2026-04-23
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
