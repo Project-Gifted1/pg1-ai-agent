@@ -1,5 +1,3 @@
-PG1.Agent, execute a hotfix for the functionResponse API schema. Modify "index.html" with the code below to ensure the return payload uses the "user" role and includes error handling for follow-up data. Output the standard JSON payload to commit this to the repository.
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -524,9 +522,9 @@ PG1.Agent, execute a hotfix for the functionResponse API schema. Modify "index.h
           const data = await res.json();
           if (data.error) throw new Error(data.error.message);
           
-          let responsePart = data.candidates[0].content.parts[0];
+          let responsePart = data.candidates && data.candidates[0] && data.candidates[0].content ? data.candidates[0].content.parts[0] : null;
           
-          if (responsePart.functionCall) {
+          if (responsePart && responsePart.functionCall) {
               const call = responsePart.functionCall;
               if (call.name === "executeRevenueStrike") {
                   const resultStr = window.executeRevenueStrike(call.args.amount, call.args.platform);
@@ -534,7 +532,7 @@ PG1.Agent, execute a hotfix for the functionResponse API schema. Modify "index.h
                   
                   sessionHistory.push({ role: "model", parts: [responsePart] });
                   sessionHistory.push({ 
-                      role: "user", 
+                      role: "function", 
                       parts: [{ functionResponse: { name: call.name, response: { result: resultStr } } }] 
                   });
 
@@ -543,33 +541,41 @@ PG1.Agent, execute a hotfix for the functionResponse API schema. Modify "index.h
                     body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
                   });
                   const followUpData = await followupRes.json();
+                  
                   if (followUpData.error) throw new Error(followUpData.error.message);
-                  responsePart = followUpData.candidates[0].content.parts[0];
+                  if (followUpData.candidates && followUpData.candidates[0] && followUpData.candidates[0].content) {
+                      responsePart = followUpData.candidates[0].content.parts[0];
+                  } else {
+                      throw new Error("No valid response received after tool execution.");
+                  }
               }
           }
 
-          let resultText = responsePart.text;
-          try {
-             const parsed = JSON.parse(resultText);
-             if (parsed.reply) {
-                 appendMsg(parsed.reply, 'agent-msg');
-                 if(parsed.updateFiles) {
-                     for (const f of parsed.updateFiles) {
-                         const apiUrl = `https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/${f.path}`;
-                         const getRes = await fetch(apiUrl, { headers: { "Authorization": `Bearer ${ghPat}` } });
-                         let sha = getRes.ok ? (await getRes.json()).sha : null;
-                         const putRes = await fetch(apiUrl, { method: 'PUT', headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" }, body: JSON.stringify({ message: `Auto-Commit: ${f.path}`, content: btoa(unescape(encodeURIComponent(f.content))), sha: sha }) });
-                         if (putRes.ok) appendMsg(`[Success] Deployed update to ${f.path}`, 'system-msg');
+          if (responsePart && responsePart.text) {
+              let resultText = responsePart.text;
+              try {
+                 const parsed = JSON.parse(resultText);
+                 if (parsed.reply) {
+                     appendMsg(parsed.reply, 'agent-msg');
+                     if(parsed.updateFiles) {
+                         for (const f of parsed.updateFiles) {
+                             const apiUrl = `https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/${f.path}`;
+                             const getRes = await fetch(apiUrl, { headers: { "Authorization": `Bearer ${ghPat}` } });
+                             let sha = getRes.ok ? (await getRes.json()).sha : null;
+                             const putRes = await fetch(apiUrl, { method: 'PUT', headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" }, body: JSON.stringify({ message: `Auto-Commit: ${f.path}`, content: btoa(unescape(encodeURIComponent(f.content))), sha: sha }) });
+                             if (putRes.ok) appendMsg(`[Success] Deployed update to ${f.path}`, 'system-msg');
+                         }
                      }
+                 } else {
+                     appendMsg(`<pre>${JSON.stringify(parsed, null, 2)}</pre>`, 'agent-msg');
                  }
-             } else {
-                 appendMsg(`<pre>${JSON.stringify(parsed, null, 2)}</pre>`, 'agent-msg');
-             }
-          } catch(err) {
-             appendMsg(resultText, 'agent-msg');
+              } catch(err) {
+                 appendMsg(resultText, 'agent-msg');
+              }
+              sessionHistory.push({ role: "model", parts: [{ text: resultText }] });
+          } else {
+              throw new Error("No text response returned from model.");
           }
-          
-          sessionHistory.push({ role: "model", parts: [{ text: resultText }] });
 
         } catch (e) { 
           appendMsg(`Error: ${e.message}`, 'error-msg'); 
