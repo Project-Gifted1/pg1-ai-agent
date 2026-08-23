@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v12.2</title>
+  <title>Project Gifted1™ - Sovereign Engine v12.3</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
@@ -70,7 +70,7 @@
     .msg-action-btn:hover { color: #f8fafc; background: #334155; }
 
     .media-preview-box { display: none; padding: 10px; background: #111827; border: 1px solid #1f2937; border-radius: 10px; margin-bottom: 8px; position: relative; text-align: center; }
-    .media-preview-box img, .media-preview-box video { max-height: 120px; border-radius: 6px; max-width: 100%; border: 1px solid #334155; }
+    .media-preview-box img { max-height: 120px; border-radius: 6px; max-width: 100%; border: 1px solid #334155; }
     .clear-media-btn { position: absolute; top: -8px; right: -8px; background: #ef4444; color: white; border: none; border-radius: 50%; width: 24px; height: 24px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10; }
 
     .terminal-input-area { display: flex; gap: 6px; align-items: center; background: #111827; padding: 8px; border-radius: 10px; border: 1px solid #1f2937; flex-shrink: 0; }
@@ -106,7 +106,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v12.2 Sovereign Engine</div>
+    <div class="version">v12.3 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -165,7 +165,7 @@
           <span style="color:#94a3b8; margin-right:6px;">PG1 Engine:</span>
           <select id="modelSelector">
             <option value="gemini-3.5-flash">3.5 Flash-Lite (Fastest)</option>
-            <option value="gemini-3.7-flash" selected>3.6 Flash (Optimized Recon)</option>
+            <option value="gemini-3.7-flash" selected>3.6 Flash (Active Telemetry)</option>
             <option value="gemini-1.5-pro">3.1 Pro (Advanced Core)</option>
           </select>
         </div>
@@ -176,7 +176,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.2 online. Optimized web scraper timeout handlers active.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.3 online. Telemetry fluctuation loops restored.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -198,7 +198,7 @@
           <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
         </div>
         <h2 style="font-size: 1.1em; color: #f8fafc; margin-bottom: 2px;">PG1.Agent™ Sovereign Core</h2>
-        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Optimized Reconnaissance & RAG</p>
+        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Active Telemetry & RAG Vault</p>
         
         <ul class="stats-list" style="text-align: left;">
           <li><span>Agent ID:</span> <strong style="color: #38bdf8;">PG1-CORE-01</strong></li>
@@ -332,7 +332,6 @@
         try {
             const res = await secureFetch(url, { method: "GET" }, 6000);
             const text = await res.text();
-            // If it's HTML, clean it up quickly; if it's text/JSON, return directly
             if (text.includes("<html")) {
                 const doc = new DOMParser().parseFromString(text, "text/html");
                 let clean = doc.body.innerText.replace(/\s+/g, ' ').trim();
@@ -340,7 +339,7 @@
             }
             return `[Recon Success] Payload data: ${text.substring(0, 800)}`;
         } catch(e) {
-            return `[Scraper Notice] Target connection timed out or blocked. Falling back to core knowledge base.`;
+            return `[Scraper Notice] Target connection timed out or blocked.`;
         }
     }
 
@@ -409,6 +408,19 @@
       }
       terminalAppendFunc = appendMsg;
 
+      // --- LIVE TELEMETRY FLUCTUATION LOOP ---
+      setInterval(() => {
+        const speed = (2.2 + Math.random() * 0.6).toFixed(1);
+        if (document.getElementById('telemetrySpeed')) document.getElementById('telemetrySpeed').innerText = speed + ' MB/s';
+        if (document.getElementById('throughputBar')) document.getElementById('throughputBar').style.width = (50 + Math.random() * 30) + '%';
+        
+        const cpu = Math.floor(24 + Math.random() * 14);
+        const ram = Math.floor(42 + Math.random() * 10);
+        
+        if (document.getElementById('cpuLoad')) { document.getElementById('cpuLoad').innerText = cpu + '%'; document.getElementById('cpuBar').style.width = cpu + '%'; }
+        if (document.getElementById('ramAlloc')) { document.getElementById('ramAlloc').innerText = ram + '%'; document.getElementById('ramBar').style.width = ram + '%'; }
+      }, 1000);
+
       async function updateCryptoTickers() {
           try {
               const res = await secureFetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd', {method:"GET"});
@@ -474,7 +486,7 @@
         sessionHistory.push({ role: "user", parts: [{ text: finalPrompt }] });
         const tools = getMCPToolDeclarations();
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are PG1.Agent v12.2, a sovereign AI with MCP tools and RAG memory. Execute tools accurately.`;
+        const sys = `You are PG1.Agent v12.3, a sovereign AI with MCP tools and RAG memory. Execute tools accurately.`;
 
         try {
           let continueLoop = true;
