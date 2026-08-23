@@ -2,9 +2,13 @@ name: Build and Deploy
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      command:
+        description: 'Command or instructions for the agent'
+        required: false
+        default: 'rebuild interface'
 
 jobs:
   deploy:
@@ -16,17 +20,16 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '18'
 
       - name: Deploy Worker to Cloudflare
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy worker.js --name pg1-worker --compatibility-date 2024-01-01
 
       - name: Sync GitHub Secret to Cloudflare Worker
         run: |
-          echo "${{ secrets.GH_PAT }}" | npx wrangler secret put GH_PAT --name pg1-worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          echo "Syncing configuration..."
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
