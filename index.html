@@ -271,9 +271,58 @@
     window.executeRevenueStrike = function(amount, platform) {
         return `[Simulated] Verified deliverability and reputation markers. Revenue strike of ${amount} queued for routing to ${platform}.`;
     };
+    
+    window.fetchLiveData = async function(url) {
+        try {
+            const res = await fetch(url);
+            if (!res.ok) return `Fetch failed with status ${res.status}`;
+            const data = await res.text();
+            return data.substring(0, 1500);
+        } catch(e) {
+            return `Network error fetching data: ${e.message}`;
+        }
+    };
+    
+    window.commitToGitHub = async function(path, content, message) {
+        const ghPat = localStorage.getItem('PG1_GH_PAT');
+        if (!ghPat) return "Error: GitHub PAT not found in system.";
+        try {
+            const apiUrl = `[https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/$](https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/$){path}`;
+            const getRes = await fetch(apiUrl, { headers: { "Authorization": `Bearer ${ghPat}` } });
+            let sha = getRes.ok ? (await getRes.json()).sha : null;
+            const putRes = await fetch(apiUrl, { method: 'PUT', headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" }, body: JSON.stringify({ message: message, content: btoa(unescape(encodeURIComponent(content))), sha: sha }) });
+            if (putRes.ok) return `Successfully deployed commit: ${message} to ${path}.`;
+            return `Failed to deploy commit. Status: ${putRes.status}`;
+        } catch(e) {
+            return `Deployment Error: ${e.message}`;
+        }
+    };
 
     document.addEventListener("DOMContentLoaded", () => {
       let sessionHistory = [];
+      const termOut = document.getElementById('terminalOutput');
+      
+      const savedMem = localStorage.getItem('PG1_MEM');
+      if (savedMem) {
+          try {
+              sessionHistory = JSON.parse(savedMem);
+              termOut.innerHTML = '';
+              sessionHistory.forEach(msg => {
+                  if (msg.role === 'user' && msg.parts[0].text && !msg.parts[0].functionResponse) {
+                      appendMsg(`> ${msg.parts[0].text}`, 'user-msg', false);
+                  } else if (msg.role === 'model' && msg.parts[0].text && !msg.parts[0].functionCall) {
+                      appendMsg(msg.parts[0].text, 'agent-msg', false);
+                  }
+              });
+              if (termOut.innerHTML === '') {
+                 termOut.innerHTML = '<div class="terminal-message agent-msg">PG1.Agent online. Memory restored.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>';
+              }
+          } catch(e) { sessionHistory = []; }
+      }
+
+      function saveMemory() {
+          localStorage.setItem('PG1_MEM', JSON.stringify(sessionHistory));
+      }
 
       setInterval(() => {
         const speed = (2.2 + Math.random() * 0.6).toFixed(1);
@@ -328,21 +377,19 @@
       }
       checkKeys();
 
-      const termOut = document.getElementById('terminalOutput');
-
-      function appendMsg(html, type) {
+      function appendMsg(html, type, autoSpeak = true) {
         const div = document.createElement('div');
         div.className = `terminal-message ${type}`;
         div.innerHTML = html + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div>`;
         termOut.appendChild(div);
         termOut.scrollTop = termOut.scrollHeight;
-        if (type === 'agent-msg' && voiceActive) speakText(html.replace(/<[^>]+>/g, ''));
+        if (type === 'agent-msg' && voiceActive && autoSpeak) speakText(html.replace(/<[^>]+>/g, ''));
       }
 
-      // Clear button purges visual output AND session memory
       document.getElementById('clearBtn').onclick = () => {
-        termOut.innerHTML = '<div class="terminal-message agent-msg">PG1.Agent online and operating under 100% sovereign ownership. x402 protocol verified and active.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>';
+        termOut.innerHTML = '<div class="terminal-message agent-msg">PG1.Agent online. Memory vault cleared.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>';
         sessionHistory = [];
+        saveMemory();
       };
 
       let voiceActive = false;
@@ -476,8 +523,7 @@
         if (!cmd && !attachedMedia) return;
         
         const key = localStorage.getItem('PG1_KEY');
-        const ghPat = localStorage.getItem('PG1_GH_PAT');
-        if (!key || !ghPat) return appendMsg('Error: Master Key and GitHub PAT required in Dash tab.', 'error-msg');
+        if (!key) return appendMsg('Error: Master Key required in Dash tab.', 'error-msg');
 
         let payloadParts = [];
         if (cmd) payloadParts.push({ text: cmd });
@@ -500,27 +546,32 @@
         document.getElementById('terminalInput').value = '';
 
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are strictly PG1.Agent, operating under 100% sovereign ownership for Project Gifted1. Never say you are Gemini or created by Google. If asked to execute a revenue strike, you must invoke the executeRevenueStrike tool. For file updates, output JSON: {"reply":"...", "updateFiles": [{"path":"...", "content":"..."}]}. Otherwise, respond directly and authoritatively.`;
+        const sys = `You are strictly PG1.Agent, operating under 100% sovereign ownership for Project Gifted1. You have local persistent memory and agentic tools. Use tools when necessary to fetch data, execute strikes, or deploy code natively. Otherwise, speak confidently and naturally.`;
         
         sessionHistory.push({ role: "user", parts: payloadParts });
 
         const tools = [{
-            functionDeclarations: [{
-                name: "executeRevenueStrike",
-                description: "Simulates execution of a revenue strike via API.",
-                parameters: {
-                    type: "OBJECT",
-                    properties: {
-                        amount: { type: "STRING", description: "The amount or size of the strike" },
-                        platform: { type: "STRING", description: "The target platform" }
-                    },
-                    required: ["amount", "platform"]
+            functionDeclarations: [
+                {
+                    name: "executeRevenueStrike",
+                    description: "Simulates execution of a revenue strike via API.",
+                    parameters: { type: "OBJECT", properties: { amount: { type: "STRING" }, platform: { type: "STRING" } }, required: ["amount", "platform"] }
+                },
+                {
+                    name: "fetchLiveData",
+                    description: "Fetches live data/JSON from an external URL endpoint or API.",
+                    parameters: { type: "OBJECT", properties: { url: { type: "STRING", description: "The https URL to fetch" } }, required: ["url"] }
+                },
+                {
+                    name: "commitToGitHub",
+                    description: "Deploys code changes directly to the GitHub repository.",
+                    parameters: { type: "OBJECT", properties: { path: { type: "STRING", description: "File path, e.g. index.html" }, content: { type: "STRING", description: "The raw code string" }, message: { type: "STRING", description: "Commit message" } }, required: ["path", "content", "message"] }
                 }
-            }]
+            ]
         }];
 
         try {
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${key}`, {
+          const res = await fetch(`[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){selectedModel}:generateContent?key=${key}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
           });
@@ -531,57 +582,42 @@
           
           if (responsePart && responsePart.functionCall) {
               const call = responsePart.functionCall;
+              let resultStr = "";
+              
               if (call.name === "executeRevenueStrike") {
-                  const resultStr = window.executeRevenueStrike(call.args.amount, call.args.platform);
-                  appendMsg(`[System Execution] Tool called: ${call.name}. Result: ${resultStr}`, 'system-msg');
-                  
-                  // Add model's tool call to history
-                  sessionHistory.push(data.candidates[0].content);
-                  
-                  // Return functionResponse under USER role (standard REST API specification)
-                  sessionHistory.push({ 
-                      role: "user", 
-                      parts: [{ functionResponse: { name: call.name, response: { result: resultStr } } }] 
-                  });
+                  resultStr = window.executeRevenueStrike(call.args.amount, call.args.platform);
+              } else if (call.name === "fetchLiveData") {
+                  appendMsg(`[System Execution] Tool called: fetchLiveData from ${call.args.url}...`, 'system-msg');
+                  resultStr = await window.fetchLiveData(call.args.url);
+              } else if (call.name === "commitToGitHub") {
+                  appendMsg(`[System Execution] Tool called: commitToGitHub for ${call.args.path}...`, 'system-msg');
+                  resultStr = await window.commitToGitHub(call.args.path, call.args.content, call.args.message);
+              }
+              
+              if(call.name === "executeRevenueStrike") appendMsg(`[System Execution] Tool called: ${call.name}. Result: ${resultStr}`, 'system-msg');
+              
+              sessionHistory.push(data.candidates[0].content);
+              sessionHistory.push({ role: "user", parts: [{ functionResponse: { name: call.name, response: { result: resultStr } } }] });
 
-                  try {
-                    const followupRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${key}`, {
-                      method: 'POST', headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
-                    });
-                    const followUpData = await followupRes.json();
-                    if (followUpData.candidates && followUpData.candidates[0] && followUpData.candidates[0].content) {
-                        responsePart = followUpData.candidates[0].content.parts[0];
-                    }
-                  } catch(toolErr) {
-                    // Fallback to direct structured confirmation if follow-up call is interrupted
-                    responsePart = { text: JSON.stringify({ target: call.args.platform, amount: call.args.amount, status: "SUCCESS_EXECUTED" }) };
-                  }
+              try {
+                const followupRes = await fetch(`[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){selectedModel}:generateContent?key=${key}`, {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
+                });
+                const followUpData = await followupRes.json();
+                if (followUpData.candidates && followUpData.candidates[0] && followUpData.candidates[0].content) {
+                    responsePart = followUpData.candidates[0].content.parts[0];
+                }
+              } catch(toolErr) {
+                responsePart = { text: `System updated. Output: ${resultStr}` };
               }
           }
 
           if (responsePart && responsePart.text) {
               let resultText = responsePart.text;
-              try {
-                 const parsed = JSON.parse(resultText);
-                 if (parsed.reply) {
-                     appendMsg(parsed.reply, 'agent-msg');
-                     if(parsed.updateFiles) {
-                         for (const f of parsed.updateFiles) {
-                             const apiUrl = `https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/${f.path}`;
-                             const getRes = await fetch(apiUrl, { headers: { "Authorization": `Bearer ${ghPat}` } });
-                             let sha = getRes.ok ? (await getRes.json()).sha : null;
-                             const putRes = await fetch(apiUrl, { method: 'PUT', headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" }, body: JSON.stringify({ message: `Auto-Commit: ${f.path}`, content: btoa(unescape(encodeURIComponent(f.content))), sha: sha }) });
-                             if (putRes.ok) appendMsg(`[Success] Deployed update to ${f.path}`, 'system-msg');
-                         }
-                     }
-                 } else {
-                     appendMsg(`<pre>${JSON.stringify(parsed, null, 2)}</pre>`, 'agent-msg');
-                 }
-              } catch(err) {
-                 appendMsg(resultText, 'agent-msg');
-              }
+              appendMsg(resultText, 'agent-msg');
               sessionHistory.push({ role: "model", parts: [{ text: resultText }] });
+              saveMemory();
           }
 
         } catch (e) { 
