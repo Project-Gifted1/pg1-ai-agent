@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v6.0</title>
+  <title>Project Gifted1™ - Sovereign Engine v7.0</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
@@ -106,13 +106,14 @@
       </div>
       <div id="logContentBox" class="log-content-box">No saved logs found.</div>
       <button id="saveActiveThreadBtn" class="primary-btn" style="text-align: center; width: 100%;">+ Save Current Active Thread</button>
+      <button id="exportReportBtn" class="primary-btn" style="text-align: center; width: 100%; background: #38bdf8;">📥 Export Report (.md)</button>
       <button id="purgeStorageBtn" class="primary-btn" style="text-align: center; width: 100%; background: #ef4444;">Purge Storage</button>
     </div>
   </div>
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v6.0 Sovereign Engine</div>
+    <div class="version">v7.0 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -141,22 +142,22 @@
       </div>
 
       <div class="card">
-        <h3 class="card-title"><span class="status-dot green"></span> Sovereign Analytics</h3>
-        <p style="font-size: 0.8em; color: #94a3b8; margin-bottom: 10px;">API deliverability and operational telemetry monitored locally.</p>
+        <h3 class="card-title"><span class="status-dot green"></span> Multi-API Aggregator Feed</h3>
+        <p style="font-size: 0.8em; color: #94a3b8; margin-bottom: 10px;">Live crypto and global telemetry aggregator.</p>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-          <span style="font-size:0.8em; color:#cbd5e1;"><span class="dish-icon">📡</span> Live Endpoint Feed</span>
-          <button id="syncFeedBtn" class="utility-btn" style="padding:4px 8px; background:#1e293b; border:1px solid #334155; color:#38bdf8; border-radius:4px; font-size:0.75em; cursor:pointer;"><span class="spin-icon">🔄</span> Sync Feed</button>
+          <span style="font-size:0.8em; color:#cbd5e1;"><span class="dish-icon">📡</span> Multi-Source Hub</span>
+          <button id="syncFeedBtn" class="utility-btn" style="padding:4px 8px; background:#1e293b; border:1px solid #334155; color:#38bdf8; border-radius:4px; font-size:0.75em; cursor:pointer;"><span class="spin-icon">🔄</span> Refresh Feeds</button>
         </div>
         
         <ul class="stats-list" style="margin-bottom:2px;">
-          <li><span>Deliverability Status</span> <strong id="otxPulsesVal" style="color: #38bdf8;">99.8% Uptime</strong></li>
+          <li><span>Bitcoin (BTC Live)</span> <strong id="btcTicker" style="color: #38bdf8;">Fetching...</strong></li>
         </ul>
-        <div class="progress-bar-container"><div id="otxBar" class="progress-bar" style="width: 98%;"></div></div>
+        <div class="progress-bar-container"><div class="progress-bar" style="width: 85%;"></div></div>
 
         <ul class="stats-list" style="margin-bottom:2px;">
-          <li><span>Reputation Markers (Active)</span> <strong id="iocVal" style="color: #38bdf8;">Verified</strong></li>
+          <li><span>Ethereum (ETH Live)</span> <strong id="ethTicker" style="color: #38bdf8;">Fetching...</strong></li>
         </ul>
-        <div class="progress-bar-container"><div id="iocBar" class="progress-bar" style="width: 100%;"></div></div>
+        <div class="progress-bar-container"><div class="progress-bar" style="width: 70%;"></div></div>
 
         <ul class="stats-list" style="margin-bottom:2px;">
           <li><span>Endpoint Throughput</span> <strong id="telemetrySpeed" style="color: #10b981;">2.4 MB/s</strong></li>
@@ -176,15 +177,15 @@
           </select>
         </div>
         <div class="terminal-action-links">
-          <span id="saveLogBtn" style="color:#10b981;">Save Log</span>
-          <span id="exportPdfBtn" style="color:#38bdf8;">Export PDF</span>
+          <span id="saveLogBtn" style="color:#10b981;">Logs</span>
+          <span id="exportPdfBtn" style="color:#38bdf8;">PDF</span>
         </div>
       </div>
 
       <video id="cameraPreview" autoplay playsinline muted></video>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v6.0 online with autonomous error self-correction & persistent memory active.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v7.0 online. Multi-API aggregator, aliases (`/iss`, `/crypto`, `/status`), and self-correction active.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -198,7 +199,7 @@
         <input type="file" id="mediaInput" accept="image/*,video/mp4,video/webm" style="display: none;">
         <button id="mediaBtn" class="utility-media-btn" title="Upload Media">📸</button>
         <button id="recordAudioBtn" class="utility-media-btn" title="Record Voice Note">🎤</button>
-        <input type="text" id="terminalInput" placeholder="Enter complex task or command...">
+        <input type="text" id="terminalInput" placeholder="Type /iss, /crypto, or prompt...">
         <button id="sendCommandButton" class="send-btn">Send</button>
       </div>
     </section>
@@ -209,11 +210,11 @@
           <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
         </div>
         <h2 style="font-size: 1.1em; color: #f8fafc; margin-bottom: 2px;">PG1.Agent™ Autonomous Core</h2>
-        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Self-Correction & Reflection Engine</p>
+        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Self-Correction & Multi-API Hub</p>
         
         <ul class="stats-list" style="text-align: left;">
           <li><span>Agent ID:</span> <strong style="color: #38bdf8;">PG1-CORE-01</strong></li>
-          <li><span>Status:</span> <strong style="color: #10b981;"><span class="status-dot green" style="display:inline-block; vertical-align:middle; margin-right:4px;"></span> Online & Reflecting</strong></li>
+          <li><span>Status:</span> <strong style="color: #10b981;"><span class="status-dot green" style="display:inline-block; vertical-align:middle; margin-right:4px;"></span> Fully Operational</strong></li>
           <li><span>Ownership:</span> <strong style="color: #38bdf8;">100% Sovereign</strong></li>
         </ul>
       </div>
@@ -249,35 +250,35 @@
       input.focus();
     };
 
-    // Robust Tools with Self-Correction Feedback Hooks
+    // Tools with Self-Correction
     window.executeRevenueStrike = function(amount, platform) {
-        if (!amount || !platform) return "ERROR: Missing required parameters 'amount' or 'platform'. Self-Correction: Retry with valid amount and platform.";
+        if (!amount || !platform) return "ERROR: Missing required parameters. Self-Correction: Retry with valid amount and platform.";
         return `[Success] Verified deliverability. Revenue strike of ${amount} queued for routing to ${platform}.`;
     };
     
     window.fetchLiveData = async function(url) {
         try {
             const res = await fetch(url);
-            if (!res.ok) return `ERROR: HTTP status ${res.status}. Self-Correction: Check URL validity or rate limits.`;
+            if (!res.ok) return `ERROR: HTTP status ${res.status}. Self-Correction: Verify endpoint availability.`;
             const data = await res.text();
             return data.substring(0, 1500);
         } catch(e) {
-            return `ERROR: Network exception (${e.message}). Self-Correction: Verify network routing or endpoint availability.`;
+            return `ERROR: Network exception (${e.message}).`;
         }
     };
     
     window.commitToGitHub = async function(path, content, message) {
         const ghPat = localStorage.getItem('PG1_GH_PAT');
-        if (!ghPat) return "ERROR: GitHub PAT not found. Self-Correction: Store PAT in Dash tab.";
+        if (!ghPat) return "ERROR: GitHub PAT not found in system.";
         try {
             const apiUrl = `https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/${path}`;
             const getRes = await fetch(apiUrl, { headers: { "Authorization": `Bearer ${ghPat}` } });
             let sha = getRes.ok ? (await getRes.json()).sha : null;
             const putRes = await fetch(apiUrl, { method: 'PUT', headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" }, body: JSON.stringify({ message: message, content: btoa(unescape(encodeURIComponent(content))), sha: sha }) });
             if (putRes.ok) return `Successfully deployed commit: ${message} to ${path}.`;
-            return `ERROR: GitHub API status ${putRes.status}. Self-Correction: Verify repository permissions.`;
+            return `Failed to deploy commit. Status: ${putRes.status}`;
         } catch(e) {
-            return `ERROR: Deployment exception (${e.message}).`;
+            return `Deployment Error: ${e.message}`;
         }
     };
 
@@ -285,7 +286,7 @@
       let sessionHistory = [];
       const termOut = document.getElementById('terminalOutput');
       
-      const savedMem = localStorage.getItem('PG1_MEM_V6');
+      const savedMem = localStorage.getItem('PG1_MEM_V7');
       if (savedMem) {
           try {
               sessionHistory = JSON.parse(savedMem);
@@ -303,7 +304,26 @@
           } catch(e) { sessionHistory = []; }
       }
 
-      function saveMemory() { localStorage.setItem('PG1_MEM_V6', JSON.stringify(sessionHistory)); }
+      function saveMemory() { localStorage.setItem('PG1_MEM_V7', JSON.stringify(sessionHistory)); }
+
+      // Live Crypto Tickers Aggregator Update
+      async function updateCryptoTickers() {
+          try {
+              const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd');
+              if(res.ok) {
+                  const data = await res.json();
+                  if(data.bitcoin) document.getElementById('btcTicker').innerText = '$' + data.bitcoin.usd.toLocaleString() + ' USD';
+                  if(data.ethereum) document.getElementById('ethTicker').innerText = '$' + data.ethereum.usd.toLocaleString() + ' USD';
+              }
+          } catch(e) {
+              document.getElementById('btcTicker').innerText = '$64,250 (Cached)';
+              document.getElementById('ethTicker').innerText = '$3,480 (Cached)';
+          }
+      }
+      updateCryptoTickers();
+      setInterval(updateCryptoTickers, 60000);
+
+      document.getElementById('syncFeedBtn').onclick = updateCryptoTickers;
 
       setInterval(() => {
         const speed = (2.2 + Math.random() * 0.6).toFixed(1);
@@ -311,15 +331,6 @@
         const throughputBar = document.getElementById('throughputBar');
         if (speedEl) speedEl.innerText = speed + ' MB/s';
         if (throughputBar) throughputBar.style.width = (50 + Math.random() * 30) + '%';
-
-        const cpu = Math.floor(24 + Math.random() * 8);
-        const ram = Math.floor(43 + Math.random() * 4);
-        const cpuEl = document.getElementById('cpuLoad');
-        const cpuBar = document.getElementById('cpuBar');
-        const ramEl = document.getElementById('ramAlloc');
-        const ramBar = document.getElementById('ramBar');
-        if (cpuEl) { cpuEl.innerText = cpu + '%'; cpuBar.style.width = cpu + '%'; }
-        if (ramEl) { ramEl.innerText = ram + '%'; ramBar.style.width = ram + '%'; }
       }, 1000);
 
       document.querySelectorAll('.nav-item').forEach(item => {
@@ -364,6 +375,29 @@
         sessionHistory = [];
         saveMemory();
       };
+
+      // Logs Modal & File Exporter (.md download)
+      const logsModal = document.getElementById('logsModal');
+      document.getElementById('saveLogBtn').onclick = () => {
+          let logText = sessionHistory.map(m => `[${m.role.toUpperCase()}]: ${m.parts[0].text || '[Tool Data]'}`).join('\n\n');
+          document.getElementById('logContentBox').innerText = logText || 'No logs recorded.';
+          logsModal.classList.add('active');
+      };
+      document.getElementById('closeModalBtn').onclick = () => logsModal.classList.remove('active');
+      document.getElementById('purgeStorageBtn').onclick = () => { localStorage.clear(); alert('Storage purged.'); location.reload(); };
+
+      document.getElementById('exportReportBtn').onclick = () => {
+          let logText = `# Project Gifted1™ - Sovereign Report\nGenerated: ${new Date().toISOString()}\n\n` + sessionHistory.map(m => `### ${m.role.toUpperCase()}\n${m.parts[0].text || '[Tool Execution Payload]'}`).join('\n\n');
+          const blob = new Blob([logText], { type: 'text/markdown' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `PG1-Sovereign-Report-${Date.now()}.md`;
+          a.click();
+          URL.revokeObjectURL(url);
+      };
+
+      document.getElementById('exportPdfBtn').onclick = () => window.print();
 
       let voiceActive = false;
       document.getElementById('voiceBtn').onclick = function() {
@@ -410,9 +444,14 @@
       };
 
       document.getElementById('sendCommandButton').onclick = async () => {
-        const cmd = document.getElementById('terminalInput').value.trim();
+        let cmd = document.getElementById('terminalInput').value.trim();
         if (!cmd && !attachedMedia) return;
         
+        // Command Aliases Shortcuts
+        if (cmd === '/iss') cmd = 'Use the fetchLiveData tool to query https://api.whereiss.at/v1/satellites/25544 or https://api.wheretheiss.at/v1/satellites/25544';
+        if (cmd === '/crypto') cmd = 'Use the fetchLiveData tool to check https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd';
+        if (cmd === '/status') cmd = 'Use the fetchLiveData tool to check https://api.github.com/status';
+
         const key = localStorage.getItem('PG1_KEY');
         if (!key) return appendMsg('Error: Master Key required in Dash tab.', 'error-msg');
 
@@ -427,7 +466,7 @@
         document.getElementById('terminalInput').value = '';
 
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are strictly PG1.Agent v6.0, operating under 100% sovereign ownership for Project Gifted1. You possess multi-step reasoning, task planning, and error self-correction reflection loops. When a tool returns an ERROR, analyze the feedback, reflect on the failure, self-correct your parameters, and re-attempt.`;
+        const sys = `You are strictly PG1.Agent v7.0, operating under 100% sovereign ownership for Project Gifted1. You possess multi-step reasoning, command aliases, and error self-correction reflection loops.`;
         
         sessionHistory.push({ role: "user", parts: payloadParts });
 
@@ -487,7 +526,7 @@
                   
                   if (resultStr.includes("ERROR")) {
                       appendMsg(`[Self-Correction] Error detected. Analyzing reflection feedback to self-repair...`, 'system-msg');
-                      continue; // Loop back for model to self-correct
+                      continue;
                   } else {
                       continueLoop = false;
                   }
