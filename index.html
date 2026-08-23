@@ -10,11 +10,15 @@
 
     @keyframes pulseGlow { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); } 70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
     @keyframes radarSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes fastSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes dishSweep { 0%, 100% { transform: rotate(-20deg); } 50% { transform: rotate(20deg); } }
     @keyframes electricPulse { 0%, 100% { text-shadow: 0 0 5px rgba(56, 189, 248, 0.4), 0 0 10px rgba(56, 189, 248, 0.2); } 50% { text-shadow: 0 0 15px rgba(56, 189, 248, 0.9), 0 0 25px rgba(56, 189, 248, 0.6); } }
     @keyframes iconPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.8; } }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
     .pulsing-bolt { animation: electricPulse 2s infinite; display: inline-block; }
+    .spin-icon { display: inline-block; animation: fastSpin 2s linear infinite; }
+    .dish-icon { display: inline-block; animation: dishSweep 3s ease-in-out infinite; transform-origin: bottom center; }
 
     .top-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: #111827; border-bottom: 1px solid #1f2937; flex-shrink: 0; }
     .brand-title { display: flex; align-items: center; gap: 8px; font-size: 1.05em; font-weight: 600; color: #f8fafc; }
@@ -135,8 +139,8 @@
         <h3 class="card-title"><span class="status-dot green"></span> Sovereign Edge Active</h3>
         <p style="font-size: 0.8em; color: #94a3b8; margin-bottom: 10px;">Autonomous decentralized edge grid active via PG1 secure synchronization.</p>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-          <span style="font-size:0.8em; color:#cbd5e1;">📡 Live OTX Telemetry Feed</span>
-          <button id="syncFeedBtn" class="utility-btn" style="padding:4px 8px; background:#1e293b; border:1px solid #334155; color:#38bdf8; border-radius:4px; font-size:0.75em; cursor:pointer;">🔄 Sync Feed</button>
+          <span style="font-size:0.8em; color:#cbd5e1;"><span class="dish-icon">📡</span> Live OTX Telemetry Feed</span>
+          <button id="syncFeedBtn" class="utility-btn" style="padding:4px 8px; background:#1e293b; border:1px solid #334155; color:#38bdf8; border-radius:4px; font-size:0.75em; cursor:pointer; transition: background 0.3s;"><span class="spin-icon">🔄</span> Sync Feed</button>
         </div>
         
         <ul class="stats-list" style="margin-bottom:2px;">
@@ -294,10 +298,12 @@
         if (latencyBar) latencyBar.style.width = (20 + latency) + '%';
       }, 1000);
 
-      document.getElementById('syncFeedBtn').onclick = () => {
+      document.getElementById('syncFeedBtn').onclick = function() {
         basePulses += 12;
         baseIOC += 85;
-        alert('OTX Telemetry feed synchronized successfully.');
+        // Silent update effect (flashes background slightly instead of a popup)
+        this.style.background = 'rgba(16, 185, 129, 0.2)';
+        setTimeout(() => { this.style.background = '#1e293b'; }, 300);
       };
 
       document.querySelectorAll('.nav-item').forEach(item => {
