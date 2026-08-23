@@ -1,3 +1,5 @@
+PG1.Agent, execute a hotfix for the functionResponse API schema. Modify "index.html" with the code below to ensure the return payload uses the "user" role and includes error handling for follow-up data. Output the standard JSON payload to commit this to the repository.
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -62,7 +64,7 @@
     .terminal-display { flex: 1; background: #0f172a; border: 1px solid #1f2937; border-radius: 10px; padding: 12px; overflow-y: auto; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 250px; }
     .terminal-message { padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; word-wrap: break-word; position: relative; }
     .terminal-message.user-msg { background: #1e293b; border: 1px solid #334155; color: #38bdf8; align-self: flex-end; max-width: 85%; padding-right: 85px; }
-    .terminal-message.agent-msg { background: #111827; border: 1px solid #10b981; color: #f8fafc; align-self: flex-start; max-width: 95%; padding-right: 85px; }
+    .terminal-message.agent-msg { background: #111827; border: 1px solid #10b981; color: #f8fafc; align-self: flex-start; max-width: 95%; padding-right: 85px; white-space: pre-wrap; }
     .terminal-message.error-msg { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; }
     .terminal-message.system-msg { color: #64748b; font-style: italic; text-align: center; background: none; border: none; font-size: 0.75em; }
     
@@ -268,17 +270,13 @@
       input.focus();
     };
 
-    // Tool: Execute Revenue Strike locally simulated
     window.executeRevenueStrike = function(amount, platform) {
         return `[Simulated] Verified deliverability. Revenue strike of ${amount} queued for routing to ${platform}.`;
     };
 
     document.addEventListener("DOMContentLoaded", () => {
-      let uptimeFloat = 99.8;
-
       setInterval(() => {
         const speed = (2.2 + Math.random() * 0.6).toFixed(1);
-        
         const speedEl = document.getElementById('telemetrySpeed');
         const throughputBar = document.getElementById('throughputBar');
         if (speedEl) speedEl.innerText = speed + ' MB/s';
@@ -294,7 +292,6 @@
         
         if (cpuEl) { cpuEl.innerText = cpu + '%'; cpuBar.style.width = cpu + '%'; }
         if (ramEl) { ramEl.innerText = ram + '%'; ramBar.style.width = ram + '%'; }
-
       }, 1000);
 
       document.getElementById('syncFeedBtn').onclick = function() {
@@ -504,7 +501,6 @@
         
         sessionHistory.push({ role: "user", parts: payloadParts });
 
-        // Tool Definitions attached to Gemini Payload
         const tools = [{
             functionDeclarations: [{
                 name: "executeRevenueStrike",
@@ -523,43 +519,36 @@
         try {
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${key}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                contents: sessionHistory, 
-                systemInstruction: { parts: [{ text: sys }] }, 
-                tools: tools 
-            })
+            body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
           });
           const data = await res.json();
           if (data.error) throw new Error(data.error.message);
           
           let responsePart = data.candidates[0].content.parts[0];
           
-          // Handle Function Call Interception
           if (responsePart.functionCall) {
               const call = responsePart.functionCall;
               if (call.name === "executeRevenueStrike") {
                   const resultStr = window.executeRevenueStrike(call.args.amount, call.args.platform);
                   appendMsg(`[System Execution] Tool called: ${call.name}. Result: ${resultStr}`, 'system-msg');
                   
-                  // Feed result back to model
                   sessionHistory.push({ role: "model", parts: [responsePart] });
                   sessionHistory.push({ 
-                      role: "function", 
+                      role: "user", 
                       parts: [{ functionResponse: { name: call.name, response: { result: resultStr } } }] 
                   });
 
-                  // Fetch final response
                   const followupRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${key}`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
                   });
                   const followUpData = await followupRes.json();
+                  if (followUpData.error) throw new Error(followUpData.error.message);
                   responsePart = followUpData.candidates[0].content.parts[0];
               }
           }
 
           let resultText = responsePart.text;
-          
           try {
              const parsed = JSON.parse(resultText);
              if (parsed.reply) {
