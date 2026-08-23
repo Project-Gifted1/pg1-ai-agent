@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v12.6</title>
+  <title>Project Gifted1™ - Sovereign Engine v12.7</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
@@ -39,7 +39,7 @@
     .card-title { font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.05em; color: #38bdf8; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; border-bottom: 1px solid #1f2937; padding-bottom: 6px; }
     
     .key-input-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
-    .key-input-group input { padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 13px; outline: none; background: #0f172a; color: #f8fafc; }
+    .key-input-group input, .key-input-group select { padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 13px; outline: none; background: #0f172a; color: #f8fafc; }
     .primary-btn { padding: 8px 14px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 0.85em; cursor: pointer; display: inline-block; text-decoration: none; text-align: center; }
     .key-status-footer { display: flex; justify-content: space-between; font-size: 0.75em; font-weight: 600; align-items: center; margin-top: 8px; }
 
@@ -95,28 +95,45 @@
   </style>
 </head>
 <body>
-  <div id="logsModal" class="modal-overlay">
+  <!-- VOICE SETTINGS MODAL -->
+  <div id="voiceSettingsModal" class="modal-overlay">
     <div class="modal-content">
       <div class="modal-header">
-        <span>Encrypted Conversation Logs</span>
-        <button class="close-modal-btn" id="closeModalBtn">✕ Close</button>
+        <span>🗣️ Neural Voice Configuration</span>
+        <button class="close-modal-btn" id="closeVoiceModalBtn">✕</button>
       </div>
-      <div id="logContentBox" class="log-content-box">No saved logs found.</div>
-      <button id="saveActiveThreadBtn" class="primary-btn" style="text-align: center; width: 100%;">+ Save Current Active Thread</button>
-      <button id="exportReportBtn" class="primary-btn" style="text-align: center; width: 100%; background: #38bdf8;">📥 Export Report (.md)</button>
-      <button id="purgeStorageBtn" class="primary-btn" style="text-align: center; width: 100%; background: #ef4444;">Purge Storage</button>
+      <div class="key-input-group">
+        <label style="font-size: 0.8em; color: #94a3b8;">Target Speech Language:</label>
+        <select id="voiceLangSelect">
+          <option value="auto">Auto-Detect from Prompt</option>
+          <option value="en-US">English (US)</option>
+          <option value="it-IT">Italian (Italy)</option>
+          <option value="es-ES">Spanish (Spain)</option>
+          <option value="fr-FR">French (France)</option>
+          <option value="de-DE">German (Germany)</option>
+        </select>
+        
+        <label style="font-size: 0.8em; color: #94a3b8; margin-top: 6px;">Voice Persona / Quality:</label>
+        <select id="voicePersonaSelect">
+          <option value="best">Best Neural / Enhanced</option>
+          <option value="female">Female Voice Profile</option>
+          <option value="male">Male Voice Profile</option>
+        </select>
+      </div>
+      <button id="saveVoiceSettingsBtn" class="primary-btn" style="width:100%; text-align:center;">Apply Voice Settings</button>
     </div>
   </div>
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v12.6 Sovereign Engine</div>
+    <div class="version">v12.7 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
     <button class="toggle-btn" id="videoBtn">📹 Vid: OFF</button>
     <button class="toggle-btn" id="audioBtn">🎙️ Dictate: OFF</button>
     <button class="toggle-btn" id="voiceBtn">🗣️ Voice: OFF</button>
+    <button class="toggle-btn" id="voiceSettingsBtn" style="color:#38bdf8; border-color:#38bdf8;">⚙️ Voices</button>
     <button class="toggle-btn active-btn" id="sentinelBtn">🛡️ Sentinel: ON</button>
     <button class="toggle-btn" id="chronBtn">⏱️ Chron: OFF</button>
     <button class="toggle-btn" id="clearBtn" style="color: #fca5a5;">🗑️</button>
@@ -172,7 +189,7 @@
           <span style="color:#94a3b8; margin-right:6px;">PG1 Engine:</span>
           <select id="modelSelector">
             <option value="gemini-3.5-flash">3.5 Flash-Lite (Fastest)</option>
-            <option value="gemini-3.7-flash" selected>3.6 Flash (Native Language TTS)</option>
+            <option value="gemini-3.7-flash" selected>3.6 Flash (Neural TTS Core)</option>
             <option value="gemini-1.5-pro">3.1 Pro (Advanced Core)</option>
           </select>
         </div>
@@ -185,7 +202,7 @@
       <video id="cameraPreview" autoplay playsinline muted></video>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.6 online. Native language speech synthesis mapping active.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.7 online. Neural voice fallback selector active.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -207,7 +224,7 @@
           <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
         </div>
         <h2 style="font-size: 1.1em; color: #f8fafc; margin-bottom: 2px;">PG1.Agent™ Sovereign Core</h2>
-        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Multilingual TTS • Multimodal • RAG</p>
+        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Neural Voice Matcher • Multimodal • RAG</p>
         
         <ul class="stats-list" style="text-align: left;">
           <li><span>Agent ID:</span> <strong style="color: #38bdf8;">PG1-CORE-01</strong></li>
@@ -280,6 +297,28 @@
       input.value = currentText;
       input.focus();
     };
+
+    // --- INTELLIGENT VOICE FALLBACK SELECTOR ---
+    function getBestVoice(targetLang, persona) {
+        if (!('speechSynthesis' in window)) return null;
+        const voices = window.speechSynthesis.getVoices();
+        if (!voices || voices.length === 0) return null;
+
+        let langVoices = voices.filter(v => v.lang.toLowerCase().startsWith(targetLang.toLowerCase().substring(0, 2)));
+        if (langVoices.length === 0) langVoices = voices;
+
+        let scored = langVoices.map(v => {
+            let score = 0;
+            const name = v.name.toLowerCase();
+            if (name.includes('enhanced') || name.includes('neural') || name.includes('premium') || name.includes('siri') || name.includes('google')) score += 10;
+            if (persona === 'female' && (name.includes('female') || name.includes('samantha') || name.includes('alice') || name.includes('victoria') || name.includes('moira') || name.includes('karen'))) score += 5;
+            if (persona === 'male' && (name.includes('male') || name.includes('luca') || name.includes('alex') || name.includes('oliver') || name.includes('daniel'))) score += 5;
+            return { voice: v, score };
+        });
+
+        scored.sort((a, b) => b.score - a.score);
+        return scored.length > 0 ? scored[0].voice : null;
+    }
 
     // --- INDEXED_DB RAG VAULT ---
     let db = null;
@@ -463,6 +502,17 @@
         if (document.getElementById('ramAlloc')) { document.getElementById('ramAlloc').innerText = ram + '%'; document.getElementById('ramBar').style.width = ram + '%'; }
       }, 1000);
 
+      // --- VOICE SETTINGS MODAL TOGGLE ---
+      const voiceModal = document.getElementById('voiceSettingsModal');
+      document.getElementById('voiceSettingsBtn').onclick = () => voiceModal.classList.add('active');
+      document.getElementById('closeVoiceModalBtn').onclick = () => voiceModal.classList.remove('active');
+      document.getElementById('saveVoiceSettingsBtn').onclick = () => {
+          localStorage.setItem('PG1_VOICE_LANG', document.getElementById('voiceLangSelect').value);
+          localStorage.setItem('PG1_VOICE_PERSONA', document.getElementById('voicePersonaSelect').value);
+          voiceModal.classList.remove('active');
+          alert('Neural voice settings updated.');
+      };
+
       // --- CAMERA PREVIEW TOGGLE ---
       let cameraStream = null;
       const cameraPreview = document.getElementById('cameraPreview');
@@ -593,7 +643,7 @@
         sessionHistory.push({ role: "user", parts: [{ text: finalPrompt }] });
         const tools = getMCPToolDeclarations();
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are PG1.Agent v12.6, a sovereign AI with MCP tools, RAG memory, and multilingual capabilities. When spoken to in a specific language (e.g. French, Spanish), reply fluently and naturally in that same language.`;
+        const sys = `You are PG1.Agent v12.7, a sovereign AI with MCP tools, RAG memory, and multilingual capabilities. When spoken to in a specific language (e.g. Italian, Spanish, English, French), reply fluently and naturally in that exact same language.`;
 
         try {
           let continueLoop = true;
@@ -639,14 +689,28 @@
                       let speechText = textOutput.replace(/[*#_`~>]/g, '').replace(/[\r\n]+/g, '. ').substring(0, 300);
                       const utterance = new SpeechSynthesisUtterance(speechText);
                       
-                      if (cmd.toLowerCase().includes('bonjour') || textOutput.toLowerCase().includes('état') || textOutput.toLowerCase().includes('système')) {
-                          utterance.lang = 'fr-FR';
-                      } else if (cmd.toLowerCase().includes('español') || cmd.toLowerCase().includes('estado')) {
-                          utterance.lang = 'es-ES';
+                      let overrideLang = localStorage.getItem('PG1_VOICE_LANG') || 'auto';
+                      let persona = localStorage.getItem('PG1_VOICE_PERSONA') || 'best';
+                      
+                      let detectedLang = 'en-US';
+                      if (overrideLang !== 'auto') {
+                          detectedLang = overrideLang;
+                      } else if (cmd.toLowerCase().includes('ciao') || textOutput.toLowerCase().includes('stato')) {
+                          detectedLang = 'it-IT';
+                      } else if (cmd.toLowerCase().includes('hola') || textOutput.toLowerCase().includes('estado')) {
+                          detectedLang = 'es-ES';
+                      } else if (cmd.toLowerCase().includes('bonjour') || textOutput.toLowerCase().includes('état')) {
+                          detectedLang = 'fr-FR';
                       } else if (cmd.toLowerCase().includes('deutsch')) {
-                          utterance.lang = 'de-DE';
+                          detectedLang = 'de-DE';
+                      }
+
+                      const bestVoice = getBestVoice(detectedLang, persona);
+                      if (bestVoice) {
+                          utterance.voice = bestVoice;
+                          utterance.lang = bestVoice.lang;
                       } else {
-                          utterance.lang = 'en-US';
+                          utterance.lang = detectedLang;
                       }
 
                       utterance.rate = 1.0;
