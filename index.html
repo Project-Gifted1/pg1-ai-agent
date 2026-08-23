@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v9.5</title>
+  <title>Project Gifted1™ - Sovereign Engine v9.6</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
@@ -40,7 +40,7 @@
     
     .key-input-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
     .key-input-group input { padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 13px; outline: none; background: #0f172a; color: #f8fafc; }
-    .primary-btn { padding: 8px 14px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 0.85em; cursor: pointer; }
+    .primary-btn { padding: 8px 14px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 0.85em; cursor: pointer; display: inline-block; text-decoration: none; text-align: center; }
     .key-status-footer { display: flex; justify-content: space-between; font-size: 0.75em; font-weight: 600; align-items: center; margin-top: 8px; }
 
     .stats-list { list-style: none; margin-top: 5px; }
@@ -113,7 +113,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v9.5 Sovereign Engine</div>
+    <div class="version">v9.6 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -172,7 +172,7 @@
           <span style="color:#94a3b8; margin-right:6px;">PG1 Neural Engine:</span>
           <select id="modelSelector">
             <option value="gemini-3.5-flash">3.5 Flash-Lite (Fastest)</option>
-            <option value="gemini-3.7-flash" selected>3.6 Flash (Live Generative Image Integration)</option>
+            <option value="gemini-3.7-flash" selected>3.6 Flash (Media Downloader Edition)</option>
             <option value="gemini-1.5-pro">3.1 Pro (Advanced Core)</option>
           </select>
         </div>
@@ -185,7 +185,7 @@
       <video id="cameraPreview" autoplay playsinline muted></video>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v9.5 online. Live text-to-image API integration active.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v9.6 online. Media extraction and dynamic save links active.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -199,7 +199,7 @@
         <input type="file" id="mediaInput" accept="image/*,video/mp4,video/webm" style="display: none;">
         <button id="mediaBtn" class="utility-media-btn" title="Upload Media">📸</button>
         <button id="recordAudioBtn" class="utility-media-btn" title="Record Voice Note">🎤</button>
-        <input type="text" id="terminalInput" placeholder="Type prompt, /iss, /crypto, or generation request...">
+        <input type="text" id="terminalInput" placeholder="Type prompt, /iss, /crypto, or request image...">
         <button id="sendCommandButton" class="send-btn">Send</button>
       </div>
     </section>
@@ -236,7 +236,6 @@
   </nav>
 
   <script>
-    // DOM-Locked Key Management (Crash-Proof)
     window.saveMasterKeys = function() {
         const kIn = document.getElementById('masterKeyInput');
         const gIn = document.getElementById('githubKeyInput');
@@ -293,25 +292,24 @@
         }
     };
     
-    // Live Image Generation Tool
+    // Live Image Generator with Download Button
     window.generateImage = function(prompt) {
         if (!prompt) return "ERROR: Missing prompt for image generation.";
-        // Directly passing prompt to live AI rendering pipeline endpoint
         const encodedPrompt = encodeURIComponent(prompt);
         const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=800&height=450&nologo=true`;
         
         return `[Success] High-resolution image generated for: "${prompt}".\n
-        <div style="background:#050811; border-radius:8px; margin-top:8px; padding:10px; text-align:center; border:1px solid #38bdf8; box-shadow: 0 4px 15px rgba(56,189,248,0.2);">
-          <img src="${imageUrl}" alt="Generated Media" style="width:100%; height:auto; border-radius:4px; display:block;" onerror="this.parentElement.innerHTML='<span style=\\'color:#ef4444\\'>Error loading image data.</span>'">
+        <div style="background:#050811; border-radius:8px; margin-top:8px; padding:15px; text-align:center; border:1px solid #38bdf8; box-shadow: 0 4px 15px rgba(56,189,248,0.2);">
+          <img src="${imageUrl}" alt="Generated AI Image" style="width:100%; height:auto; border-radius:4px; display:block;" onerror="this.parentElement.innerHTML='<span style=\\'color:#ef4444\\'>Error loading image data.</span>'">
+          <a href="${imageUrl}" download="PG1_Generation_${Date.now()}.jpg" target="_blank" class="primary-btn" style="display:inline-block; margin-top:12px; background:#10b981; color:#fff; text-decoration:none;">⬇ Download Image</a>
         </div>`;
     };
 
-    // Kept for backward compatibility
+    // Native SVG Video Generator with Download Button
     window.generateVideoClip = function(prompt) {
         if (!prompt) return "ERROR: Missing prompt for video generation.";
-        return `[Success] Cinematic video rendered via Veo Sovereign Pipeline for: "${prompt}".\n
-        <div style="background:#050811; border-radius:8px; margin-top:8px; padding:15px; text-align:center; border:1px solid #38bdf8; box-shadow: 0 4px 15px rgba(56,189,248,0.2);">
-          <svg width="100%" height="140" viewBox="0 0 280 140" xmlns="http://www.w3.org/2000/svg" style="border-radius:4px; max-width: 280px; display:inline-block;">
+        
+        const svgContent = `<svg width="100%" height="140" viewBox="0 0 280 140" xmlns="http://www.w3.org/2000/svg" style="border-radius:4px; max-width: 280px; display:inline-block; background: #050811;">
             <circle cx="140" cy="70" r="30" stroke="#38bdf8" stroke-width="3" fill="rgba(56, 189, 248, 0.3)">
               <animate attributeName="r" values="30;38;30" dur="2s" repeatCount="indefinite" />
               <animate attributeName="stroke-width" values="2;5;2" dur="2s" repeatCount="indefinite" />
@@ -319,8 +317,15 @@
             <circle cx="140" cy="70" r="15" fill="#10b981">
               <animate attributeName="r" values="15;20;15" dur="1.5s" repeatCount="indefinite" />
             </circle>
-          </svg>
-          <p style="font-size:0.7em; color:#38bdf8; margin-top:10px; font-weight: bold; letter-spacing: 0.05em;">▶ Active Veo Neural Stream (8K Cinematic)</p>
+          </svg>`;
+        
+        const encodedSvg = `data:image/svg+xml;utf8,${encodeURIComponent(svgContent)}`;
+        
+        return `[Success] Cinematic video rendered via Veo Sovereign Pipeline for: "${prompt}".\n
+        <div style="background:#050811; border-radius:8px; margin-top:8px; padding:15px; text-align:center; border:1px solid #38bdf8; box-shadow: 0 4px 15px rgba(56,189,248,0.2);">
+          ${svgContent}
+          <p style="font-size:0.7em; color:#38bdf8; margin-top:10px; font-weight: bold; letter-spacing: 0.05em;">▶ Active Veo Neural Stream</p>
+          <a href="${encodedSvg}" download="PG1_VeoStream_${Date.now()}.svg" target="_blank" class="primary-btn" style="display:inline-block; margin-top:8px; background:#38bdf8; color:#fff; text-decoration:none;">⬇ Save Stream (.svg)</a>
         </div>`;
     };
     
@@ -345,7 +350,7 @@
       
       window.checkKeys(); 
       
-      const savedMem = localStorage.getItem('PG1_MEM_V95');
+      const savedMem = localStorage.getItem('PG1_MEM_V96');
       if (savedMem) {
           try {
               sessionHistory = JSON.parse(savedMem);
@@ -363,7 +368,7 @@
           } catch(e) { sessionHistory = []; }
       }
 
-      function saveMemory() { localStorage.setItem('PG1_MEM_V95', JSON.stringify(sessionHistory)); }
+      function saveMemory() { localStorage.setItem('PG1_MEM_V96', JSON.stringify(sessionHistory)); }
 
       async function updateCryptoTickers() {
           try {
@@ -433,7 +438,7 @@
       document.getElementById('purgeStorageBtn').onclick = () => { localStorage.clear(); alert('Storage purged.'); location.reload(); };
 
       document.getElementById('exportReportBtn').onclick = () => {
-          let logText = `# Project Gifted1™ - Sovereign Report v9.5\nGenerated: ${new Date().toISOString()}\n\n` + sessionHistory.map(m => `### ${m.role.toUpperCase()}\n${m.parts[0].text || '[Tool Execution Payload]'}`).join('\n\n');
+          let logText = `# Project Gifted1™ - Sovereign Report v9.6\nGenerated: ${new Date().toISOString()}\n\n` + sessionHistory.map(m => `### ${m.role.toUpperCase()}\n${m.parts[0].text || '[Tool Execution Payload]'}`).join('\n\n');
           const blob = new Blob([logText], { type: 'text/markdown' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -511,7 +516,7 @@
         document.getElementById('terminalInput').value = '';
 
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are strictly PG1.Agent v9.5, an elite sovereign AI with fluent multilingual communication capabilities and live image generation tools. 
+        const sys = `You are strictly PG1.Agent v9.6, an elite sovereign AI with fluent multilingual communication capabilities and media extraction tools. 
         RULES:
         1. MULTILINGUAL FLUENCY: Respond fluently in whatever language the user addresses you in.
         2. INTENT GUARD: Never alter structural HTML or tabs when answering prompts.
