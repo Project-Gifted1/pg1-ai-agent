@@ -287,7 +287,7 @@
         const ghPat = localStorage.getItem('PG1_GH_PAT');
         if (!ghPat) return "Error: GitHub PAT not found in system.";
         try {
-            const apiUrl = `[https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/$](https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/$){path}`;
+            const apiUrl = `https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/${path}`;
             const getRes = await fetch(apiUrl, { headers: { "Authorization": `Bearer ${ghPat}` } });
             let sha = getRes.ok ? (await getRes.json()).sha : null;
             const putRes = await fetch(apiUrl, { method: 'PUT', headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" }, body: JSON.stringify({ message: message, content: btoa(unescape(encodeURIComponent(content))), sha: sha }) });
@@ -571,7 +571,7 @@
         }];
 
         try {
-          const res = await fetch(`[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){selectedModel}:generateContent?key=${key}`, {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${key}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
           });
@@ -600,7 +600,7 @@
               sessionHistory.push({ role: "user", parts: [{ functionResponse: { name: call.name, response: { result: resultStr } } }] });
 
               try {
-                const followupRes = await fetch(`[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){selectedModel}:generateContent?key=${key}`, {
+                const followupRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${key}`, {
                   method: 'POST', headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
                 });
