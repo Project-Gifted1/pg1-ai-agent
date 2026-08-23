@@ -1,1050 +1,312 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>CYBER-CORE // Male Voice & Vision Matrix</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Project Gifted1™ - PG1.Agent</title>
   <style>
-    :root {
-      --neon-cyan: #00f3ff;
-      --neon-blue: #0066ff;
-      --neon-green: #00ff66;
-      --neon-amber: #ffaa00;
-      --neon-crimson: #ff003c;
-      --bg-dark: #040810;
-      --panel-bg: rgba(6, 14, 28, 0.75);
-      --panel-border: rgba(0, 243, 255, 0.25);
-      --hud-glow: 0 0 15px rgba(0, 243, 255, 0.35);
-      --font-display: 'Orbitron', sans-serif;
-      --font-body: 'Rajdhani', sans-serif;
-      --font-mono: 'Share Tech Mono', monospace;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    html, body { height: 100dvh; background-color: #f4f6f8; color: #333; display: flex; flex-direction: column; overflow: hidden; }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      user-select: none;
-    }
+    @keyframes pulseGlow { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.4); } 70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(40, 167, 69, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); } }
+    @keyframes spinSlow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
-    body {
-      background-color: var(--bg-dark);
-      color: #d8ecf8;
-      font-family: var(--font-body);
-      height: 100vh;
-      width: 100vw;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      position: relative;
-    }
+    .top-header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: white; border-bottom: 1px solid #e0e0e0; flex-shrink: 0; }
+    .brand-title { display: flex; align-items: center; gap: 8px; font-size: 1.1em; }
+    .version { font-size: 0.8em; color: #888; }
+    .status-dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; animation: pulseGlow 2s infinite; }
+    .status-dot.green { background-color: #28a745; }
+    .status-dot.blue { background-color: #007bff; }
 
-    /* Background Scanlines & CRT FX */
-    .crt-overlay {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 9999;
-      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
-      background-size: 100% 3px, 6px 100%;
-      opacity: 0.85;
-    }
+    .action-bar { display: flex; justify-content: center; gap: 8px; padding: 10px; background: white; border-bottom: 1px solid #e0e0e0; overflow-x: auto; flex-shrink: 0; }
+    .toggle-btn { padding: 8px 10px; border: 1px solid #ddd; background: white; border-radius: 8px; font-size: 0.8em; cursor: pointer; white-space: nowrap; font-weight: 500; transition: all 0.2s; }
+    .toggle-btn.active-btn { color: #198754; border-color: #198754; background: #e8f5e9; }
+    .toggle-btn.recording-btn { color: #dc3545; border-color: #dc3545; background: #f8d7da; animation: pulseGlow 1.5s infinite; }
 
-    .grid-bg {
-      position: fixed;
-      inset: 0;
-      background-image: 
-        linear-gradient(rgba(0, 243, 255, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 243, 255, 0.03) 1px, transparent 1px);
-      background-size: 40px 40px;
-      pointer-events: none;
-      z-index: 0;
-    }
+    #main-content { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 90px; -webkit-overflow-scrolling: touch; }
+    .view-section { display: none; flex-direction: column; gap: 15px; min-height: 100%; animation: fadeIn 0.3s ease-in-out; }
+    .view-section.active { display: flex; }
 
-    /* Header */
-    header {
-      z-index: 10;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 24px;
-      background: rgba(4, 10, 20, 0.85);
-      border-bottom: 1px solid var(--panel-border);
-      backdrop-filter: blur(8px);
-      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-    }
+    .card { background: white; border-radius: 12px; padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #eee; }
+    .card-title { font-size: 1em; color: #004085; display: flex; align-items: center; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid #f0f0f0; padding-bottom: 8px; }
+    
+    .key-input-group { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
+    .key-input-group input { padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; outline: none; background: #fdfdfd; }
+    .primary-btn { padding: 10px 15px; background: #198754; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+    .key-status-footer { display: flex; justify-content: space-between; font-size: 0.8em; font-weight: bold; }
 
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
+    .stats-list { list-style: none; margin-top: 10px; }
+    .stats-list li { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.85em; }
+    .stats-list li:last-child { border-bottom: none; }
+    .stats-list li strong { color: #004085; }
 
-    .brand-icon {
-      width: 28px;
-      height: 28px;
-      border: 2px solid var(--neon-cyan);
-      border-radius: 4px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: var(--hud-glow);
-      animation: pulse-glow 2s infinite alternate;
-    }
+    .progress-bar-container { width: 100%; background: #e9ecef; border-radius: 4px; height: 6px; margin-top: 4px; overflow: hidden; }
+    .progress-bar { height: 100%; background: #007bff; border-radius: 4px; }
 
-    .brand-icon::after {
-      content: '';
-      width: 10px;
-      height: 10px;
-      background: var(--neon-cyan);
-      border-radius: 2px;
-    }
+    .center-content { text-align: center; }
+    .logo-container { position: relative; width: 120px; height: 120px; margin: 0 auto 15px; display: flex; align-items: center; justify-content: center; }
+    .logo-ring { position: absolute; width: 100%; height: 100%; border-radius: 50%; border: 3px dashed #17a2b8; animation: spinSlow 10s linear infinite; }
+    .logo-inner { width: 80px; height: 80px; background: radial-gradient(circle, #17a2b8, #004085); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 2em; font-weight: bold; box-shadow: 0 0 15px rgba(23, 162, 184, 0.4); }
 
-    .brand-title {
-      font-family: var(--font-display);
-      font-size: 1.25rem;
-      font-weight: 900;
-      letter-spacing: 2px;
-      color: #fff;
-      text-shadow: 0 0 10px var(--neon-cyan);
-    }
+    .terminal-display { flex: 1; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 12px; padding: 15px; overflow-y: auto; margin-bottom: 15px; display: flex; flex-direction: column; gap: 10px; min-height: 250px; }
+    .terminal-message { padding: 12px; border-radius: 8px; font-size: 0.9em; line-height: 1.4; word-wrap: break-word; }
+    .terminal-message.user-msg { background: #e6f2ff; border: 1px solid #b8daff; color: #004085; align-self: flex-end; max-width: 85%; }
+    .terminal-message.agent-msg { background: white; border: 1px solid #dee2e6; color: #333; align-self: flex-start; max-width: 95%; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
+    .terminal-message.error-msg { background: #ffe6e6; border: 1px solid #ffb3b3; color: #cc0000; }
+    .terminal-message.system-msg { color: #888; font-style: italic; text-align: center; background: none; border: none; }
 
-    .brand-title span {
-      color: var(--neon-cyan);
-      font-weight: 400;
-    }
+    .terminal-input-area { display: flex; gap: 8px; align-items: center; background: white; padding: 10px; border-radius: 12px; border: 1px solid #ddd; flex-shrink: 0; }
+    .terminal-input-area input { flex: 1; padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; outline: none; }
+    .send-btn { padding: 12px 18px; background: #198754; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; flex-shrink: 0; }
 
-    .sys-status {
-      display: flex;
-      align-items: center;
-      gap: 20px;
-      font-family: var(--font-mono);
-      font-size: 0.85rem;
-    }
-
-    .status-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--neon-green);
-      box-shadow: 0 0 8px var(--neon-green);
-      animation: blink 1.2s infinite ease-in-out;
-    }
-
-    /* Main Matrix Layout */
-    .matrix-container {
-      z-index: 1;
-      flex: 1;
-      display: grid;
-      grid-template-columns: 340px 1fr 340px;
-      gap: 16px;
-      padding: 16px;
-      min-height: 0;
-    }
-
-    /* HUD Panels */
-    .hud-panel {
-      background: var(--panel-bg);
-      border: 1px solid var(--panel-border);
-      border-radius: 6px;
-      backdrop-filter: blur(12px);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      position: relative;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-    }
-
-    .hud-panel::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 12px;
-      height: 12px;
-      border-top: 2px solid var(--neon-cyan);
-      border-left: 2px solid var(--neon-cyan);
-    }
-
-    .hud-panel::after {
-      content: '';
-      position: absolute;
-      bottom: 0;
-      right: 0;
-      width: 12px;
-      height: 12px;
-      border-bottom: 2px solid var(--neon-cyan);
-      border-right: 2px solid var(--neon-cyan);
-    }
-
-    .panel-header {
-      padding: 10px 16px;
-      background: rgba(0, 243, 255, 0.08);
-      border-bottom: 1px solid var(--panel-border);
-      font-family: var(--font-display);
-      font-size: 0.85rem;
-      font-weight: 700;
-      letter-spacing: 1.5px;
-      color: var(--neon-cyan);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .panel-body {
-      padding: 14px;
-      flex: 1;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-
-    /* Left Control Column: Voice Synthesizer & Telemetry */
-    .voice-control-group {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .label-tag {
-      font-family: var(--font-mono);
-      font-size: 0.75rem;
-      color: #7b9bb6;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      display: flex;
-      justify-content: space-between;
-    }
-
-    select, input[type="range"], input[type="text"] {
-      background: rgba(4, 14, 28, 0.85);
-      border: 1px solid rgba(0, 243, 255, 0.3);
-      color: #fff;
-      border-radius: 4px;
-      padding: 8px 10px;
-      font-family: var(--font-mono);
-      outline: none;
-      transition: border 0.3s, box-shadow 0.3s;
-    }
-
-    select:focus, input[type="text"]:focus {
-      border-color: var(--neon-cyan);
-      box-shadow: 0 0 8px rgba(0, 243, 255, 0.4);
-    }
-
-    /* Center Column: Vision Matrix Viewport */
-    .viewport-panel {
-      display: flex;
-      flex-direction: column;
-      position: relative;
-    }
-
-    .vision-matrix-viewport {
-      flex: 1;
-      position: relative;
-      background: #020409;
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    #camera-video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      transform: scaleX(-1);
-      filter: contrast(1.1) brightness(1.05);
-    }
-
-    /* Vision Filters */
-    .filter-matrix {
-      filter: contrast(1.4) hue-rotate(90deg) brightness(0.9) !important;
-    }
-    .filter-thermal {
-      filter: invert(1) hue-rotate(180deg) saturate(2.5) contrast(1.5) !important;
-    }
-    .filter-cyberpunk {
-      filter: saturate(2) hue-rotate(290deg) contrast(1.3) !important;
-    }
-    .filter-nightvision {
-      filter: brightness(1.4) saturate(0.2) sepia(1) hue-rotate(75deg) contrast(1.3) !important;
-    }
-
-    #hud-canvas {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-    }
-
-    /* Targeting Reticle & HUD Overlays */
-    .hud-scanner-bar {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--neon-cyan), transparent);
-      box-shadow: 0 0 12px var(--neon-cyan);
-      animation: scan-line 3.5s infinite linear;
-      pointer-events: none;
-    }
-
-    .viewport-meta {
-      position: absolute;
-      top: 14px;
-      left: 16px;
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-      color: var(--neon-cyan);
-      text-shadow: 0 0 5px rgba(0, 243, 255, 0.8);
-      pointer-events: none;
-      line-height: 1.5;
-    }
-
-    .viewport-coords {
-      position: absolute;
-      bottom: 14px;
-      right: 16px;
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-      color: var(--neon-green);
-      text-shadow: 0 0 5px rgba(0, 255, 102, 0.8);
-      pointer-events: none;
-    }
-
-    /* Vision Controller Bar */
-    .vision-toolbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 14px;
-      background: rgba(3, 8, 18, 0.9);
-      border-top: 1px solid var(--panel-border);
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .btn-tactical {
-      background: rgba(0, 243, 255, 0.08);
-      border: 1px solid var(--neon-cyan);
-      color: var(--neon-cyan);
-      font-family: var(--font-display);
-      font-size: 0.75rem;
-      font-weight: 700;
-      letter-spacing: 1px;
-      padding: 8px 14px;
-      border-radius: 3px;
-      cursor: pointer;
-      transition: all 0.2s;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .btn-tactical:hover {
-      background: var(--neon-cyan);
-      color: #000;
-      box-shadow: 0 0 15px var(--neon-cyan);
-    }
-
-    .btn-tactical.active {
-      background: var(--neon-cyan);
-      color: #000;
-      box-shadow: 0 0 12px var(--neon-cyan);
-    }
-
-    .btn-tactical.danger {
-      border-color: var(--neon-crimson);
-      color: var(--neon-crimson);
-    }
-    .btn-tactical.danger:hover {
-      background: var(--neon-crimson);
-      color: #fff;
-      box-shadow: 0 0 15px var(--neon-crimson);
-    }
-
-    /* Right Column: Audio Waveform, Matrix Log & Male Agent Voice Interface */
-    .audio-visualizer-box {
-      background: rgba(0, 0, 0, 0.5);
-      border: 1px solid rgba(0, 243, 255, 0.2);
-      border-radius: 4px;
-      height: 90px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    #visualizer-canvas {
-      width: 100%;
-      height: 100%;
-    }
-
-    .chat-stream {
-      flex: 1;
-      min-height: 150px;
-      max-height: 250px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-      padding-right: 4px;
-    }
-
-    .chat-stream::-webkit-scrollbar {
-      width: 4px;
-    }
-    .chat-stream::-webkit-scrollbar-thumb {
-      background: var(--neon-cyan);
-      border-radius: 2px;
-    }
-
-    .msg-bubble {
-      padding: 8px 12px;
-      border-radius: 4px;
-      line-height: 1.4;
-      position: relative;
-    }
-
-    .msg-agent {
-      background: rgba(0, 243, 255, 0.08);
-      border-left: 3px solid var(--neon-cyan);
-      color: #d1f3ff;
-    }
-
-    .msg-user {
-      background: rgba(255, 170, 0, 0.08);
-      border-left: 3px solid var(--neon-amber);
-      color: #ffe8b8;
-    }
-
-    .msg-sys {
-      background: rgba(0, 255, 102, 0.06);
-      border-left: 3px solid var(--neon-green);
-      color: #c4ffd8;
-      font-size: 0.72rem;
-    }
-
-    .input-bar {
-      display: flex;
-      gap: 8px;
-    }
-
-    .input-bar input {
-      flex: 1;
-    }
-
-    /* Range Sliders */
-    input[type="range"] {
-      -webkit-appearance: none;
-      height: 6px;
-      background: #0d2238;
-      border-radius: 3px;
-      padding: 0;
-    }
-    input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--neon-cyan);
-      cursor: pointer;
-      box-shadow: 0 0 8px var(--neon-cyan);
-    }
-
-    /* Animations */
-    @keyframes pulse-glow {
-      0% { box-shadow: 0 0 5px rgba(0, 243, 255, 0.4); }
-      100% { box-shadow: 0 0 15px rgba(0, 243, 255, 0.9); }
-    }
-
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
-    }
-
-    @keyframes scan-line {
-      0% { top: 0%; }
-      100% { top: 100%; }
-    }
-
-    /* Responsive Breakdown */
-    @media (max-width: 1024px) {
-      .matrix-container {
-        grid-template-columns: 1fr;
-        grid-template-rows: auto 450px auto;
-        overflow-y: auto;
-      }
-      body {
-        overflow-y: auto;
-      }
-    }
+    .bottom-nav { display: flex; justify-content: space-around; background: white; padding: 10px; border-top: 1px solid #e0e0e0; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
+    .nav-item { background: none; border: none; font-size: 0.8em; color: #666; cursor: pointer; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .nav-item.active { color: #007bff; font-weight: bold; }
+    
+    #hiddenVideo { display: none; }
+    #cameraPreview { width: 100%; max-width: 250px; border-radius: 8px; border: 2px solid #28a745; display: none; margin: 0 auto 10px auto; }
   </style>
 </head>
 <body>
-  <div class="crt-overlay"></div>
-  <div class="grid-bg"></div>
-
-  <!-- Top Telemetry Header -->
-  <header>
-    <div class="brand">
-      <div class="brand-icon"></div>
-      <div class="brand-title">TITAN-IX <span>// MALE VOICE & VISION MATRIX</span></div>
-    </div>
-    <div class="sys-status">
-      <div class="status-item">
-        <div class="status-dot"></div>
-        <span>CORE ONLINE</span>
-      </div>
-      <div class="status-item">
-        <span>LATENCY: <span id="hud-ping" style="color:var(--neon-green)">12ms</span></span>
-      </div>
-      <div class="status-item">
-        <span>FPS: <span id="hud-fps" style="color:var(--neon-cyan)">60</span></span>
-      </div>
-    </div>
+  <header class="top-header">
+    <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
+    <div class="version">🛡️ v5.6 Sovereign Engine</div>
   </header>
 
-  <!-- Matrix Workspace -->
-  <main class="matrix-container">
-    <!-- Left Panel: Voice Matrix & Audio Core -->
-    <section class="hud-panel">
-      <div class="panel-header">
-        <span>MALE VOICE ENGINE</span>
-        <span style="font-size: 0.7rem; color: var(--neon-cyan);">v4.8.2</span>
-      </div>
-      <div class="panel-body">
-        <div class="voice-control-group">
-          <div class="label-tag">Male Neural Personality</div>
-          <select id="voicePresetSelect">
-            <option value="titan">TITAN-COMMAND (Deep & Authoritative)</option>
-            <option value="orion">ORION (Tactical Tactical Ops AI)</option>
-            <option value="jarvis">CYBER-VALKYRIE (Male Protocol Officer)</option>
-            <option value="ghost">GHOST-01 (Low Resonance Infiltrator)</option>
-          </select>
+  <div class="action-bar">
+    <button class="toggle-btn" id="videoBtn">📹 Video: OFF</button>
+    <button class="toggle-btn" id="audioBtn">🎙️ Mic: OFF</button>
+    <button class="toggle-btn" id="voiceBtn">🗣️ Voice: OFF</button>
+    <button class="toggle-btn" id="clearBtn" style="color: #dc3545;">🗑️ Clear</button>
+  </div>
+  
+  <video id="hiddenVideo" autoplay playsinline></video>
+
+  <main id="main-content">
+    <section id="view-dash" class="view-section active">
+      <div class="card">
+        <h3 class="card-title">⚡ x402 Sovereign Key Relay</h3>
+        <div class="key-input-group">
+          <input type="password" id="masterKeyInput" placeholder="Master API Key (Neural Core)">
+          <input type="password" id="githubKeyInput" placeholder="GitHub PAT (Repo Access)">
+          <button id="saveKeyButton" class="primary-btn">Save Credentials</button>
         </div>
-
-        <div class="voice-control-group">
-          <div class="label-tag">
-            <span>Vocal Pitch (Bass Modifier)</span>
-            <span id="pitchVal">0.75x</span>
-          </div>
-          <input type="range" id="pitchRange" min="0.5" max="1.2" step="0.05" value="0.75" />
-        </div>
-
-        <div class="voice-control-group">
-          <div class="label-tag">
-            <span>Cadence Speed</span>
-            <span id="rateVal">1.00x</span>
-          </div>
-          <input type="range" id="rateRange" min="0.7" max="1.4" step="0.05" value="1.0" />
-        </div>
-
-        <div class="voice-control-group">
-          <div class="label-tag">Neural Voice Output Device</div>
-          <select id="voiceSelect">
-            <option value="">Default System Voice</option>
-          </select>
-        </div>
-
-        <hr style="border-color: rgba(0,243,255,0.15); margin: 6px 0;" />
-
-        <div class="voice-control-group">
-          <div class="label-tag">Acoustic Spectral Stream</div>
-          <div class="audio-visualizer-box">
-            <canvas id="visualizer-canvas"></canvas>
-          </div>
-        </div>
-
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-          <button class="btn-tactical" id="btnTestVoice">
-            TEST VOICE
-          </button>
-          <button class="btn-tactical" id="btnToggleMic">
-            VOICE MIC: OFF
-          </button>
+        <div class="key-status-footer">
+          <span id="keyStatusText" style="color:red;">STATUS: MISSING CREDENTIALS</span>
         </div>
       </div>
     </section>
 
-    <!-- Center Panel: Live Vision Matrix -->
-    <section class="hud-panel viewport-panel">
-      <div class="panel-header">
-        <span>OPTICAL SENSOR MATRIX</span>
-        <span id="vision-status" style="color: var(--neon-amber);">CAMERA STANDBY</span>
+    <section id="view-terminal" class="view-section">
+      <video id="cameraPreview" autoplay playsinline muted></video>
+      <div id="terminalOutput" class="terminal-display">
+        <div class="terminal-message system-msg">> PG1 System Initialized. Multi-tab navigation restored.</div>
       </div>
-      <div class="vision-matrix-viewport">
-        <video id="camera-video" autoplay playsinline muted></video>
-        <canvas id="hud-canvas"></canvas>
-        <div class="hud-scanner-bar"></div>
-
-        <div class="viewport-meta">
-          <div>STREAM: <span id="stream-res">1920x1080 [SIM]</span></div>
-          <div>MODE: <span id="filter-mode-txt">STANDARD_RGB</span></div>
-          <div>TARGET TRACKING: ACTIVE</div>
-        </div>
-
-        <div class="viewport-coords">
-          LAT 37.7749 // LON -122.4194<br />
-          GRID: SEC-09 // LOCK: STABLE
-        </div>
-      </div>
-
-      <div class="vision-toolbar">
-        <div style="display: flex; gap: 8px;">
-          <button class="btn-tactical" id="btnToggleCamera">ENGAGE OPTICS</button>
-          <button class="btn-tactical" id="btnSwitchCamera">SWAP SENSOR</button>
-        </div>
-
-        <div style="display: flex; gap: 6px;">
-          <button class="btn-tactical active filter-btn" data-filter="none">RGB</button>
-          <button class="btn-tactical filter-btn" data-filter="matrix">MATRIX</button>
-          <button class="btn-tactical filter-btn" data-filter="thermal">THERM</button>
-          <button class="btn-tactical filter-btn" data-filter="cyberpunk">CYBER</button>
-          <button class="btn-tactical filter-btn" data-filter="nightvision">NVG</button>
-        </div>
+      <div class="terminal-input-area">
+        <input type="text" id="terminalInput" placeholder="Enter command...">
+        <button id="sendCommandButton" class="send-btn">Send</button>
       </div>
     </section>
 
-    <!-- Right Panel: Tactical Command & Interactive Agent Log -->
-    <section class="hud-panel">
-      <div class="panel-header">
-        <span>TACTICAL LOG & COMMS</span>
-        <span id="rec-indicator" style="color: var(--neon-green); font-size: 0.7rem;">READY</span>
-      </div>
-      <div class="panel-body">
-        <div class="chat-stream" id="chatStream">
-          <div class="msg-bubble msg-sys">[SYSTEM] TITAN-IX Core initialized. Male voice synthesis matrix online.</div>
-          <div class="msg-bubble msg-agent">"All visual and vocal parameters calibrated. Awaiting your operational directive."</div>
+    <section id="view-node" class="view-section">
+      <div class="card center-content">
+        <div class="logo-container">
+          <div class="logo-ring"></div>
+          <div class="logo-inner">G1</div>
         </div>
-
-        <div class="input-bar">
-          <input type="text" id="textPrompt" placeholder="Transmit command to Titan..." />
-          <button class="btn-tactical" id="btnSendPrompt">SEND</button>
-        </div>
-
-        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px;">
-          <div class="label-tag">Quick Directives</div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-            <button class="btn-tactical" onclick="executeDirective('status')">SYS REPORT</button>
-            <button class="btn-tactical" onclick="executeDirective('scan')">SCAN MATRIX</button>
-            <button class="btn-tactical" onclick="executeDirective('engage')">COMBAT MODE</button>
-            <button class="btn-tactical danger" onclick="executeDirective('purge')">CLEAR BUFFER</button>
-          </div>
-        </div>
+        <h2>PG1.Agent™</h2>
+        <p style="font-size: 0.85em; color:#666; margin-bottom:15px;">Autonomous Edge Infrastructure</p>
+        <ul class="stats-list" style="text-align: left;">
+          <li><span>Node ID:</span> <strong style="color: #004085;">PG1-CORE-01</strong></li>
+          <li><span>Status:</span> <strong><span class="status-dot green"></span> Online & Syncing</strong></li>
+          <li><span>Ownership:</span> <strong style="color: #007bff;">100% Sovereign</strong></li>
+        </ul>
       </div>
     </section>
   </main>
 
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-target="view-dash"><span>📊</span>Dash</button>
+    <button class="nav-item" data-target="view-terminal"><span>⚡</span>Terminal</button>
+    <button class="nav-item" data-target="view-node"><span>👤</span>Node</button>
+  </nav>
+
   <script>
-    /* --------------------------------------------------------
-       Male Voice Engine & Web Audio Matrix Core
-    -------------------------------------------------------- */
-    let synth = window.speechSynthesis;
-    let availableVoices = [];
-    let audioCtx, analyser, dataArray;
-    let isCameraActive = false;
-    let currentFacingMode = 'user';
-    let recognition = null;
-    let isListening = false;
-
-    const videoEl = document.getElementById('camera-video');
-    const hudCanvas = document.getElementById('hud-canvas');
-    const hudCtx = hudCanvas.getContext('2d');
-    const visCanvas = document.getElementById('visualizer-canvas');
-    const visCtx = visCanvas.getContext('2d');
-
-    const pitchRange = document.getElementById('pitchRange');
-    const rateRange = document.getElementById('rateRange');
-    const pitchVal = document.getElementById('pitchVal');
-    const rateVal = document.getElementById('rateVal');
-    const voiceSelect = document.getElementById('voiceSelect');
-    const voicePresetSelect = document.getElementById('voicePresetSelect');
-    const chatStream = document.getElementById('chatStream');
-    const textPrompt = document.getElementById('textPrompt');
-
-    // Populate Male Voices
-    function populateVoices() {
-      if (!synth) return;
-      availableVoices = synth.getVoices();
-      voiceSelect.innerHTML = '';
-
-      // Filter or rank male/deep voices
-      let maleCandidates = availableVoices.filter(v => 
-        v.name.toLowerCase().includes('male') || 
-        v.name.toLowerCase().includes('david') || 
-        v.name.toLowerCase().includes('george') || 
-        v.name.toLowerCase().includes('guy') ||
-        v.name.toLowerCase().includes('daniel') ||
-        v.name.toLowerCase().includes('james') ||
-        v.name.toLowerCase().includes('alex') ||
-        v.name.toLowerCase().includes('tom')
-      );
-
-      let renderList = maleCandidates.length > 0 ? maleCandidates : availableVoices;
-
-      renderList.forEach(v => {
-        const opt = document.createElement('option');
-        opt.value = v.name;
-        opt.textContent = `${v.name} (${v.lang})`;
-        voiceSelect.appendChild(opt);
-      });
-    }
-
-    if (synth) {
-      populateVoices();
-      if (speechSynthesis.onvoiceschanged !== undefined) {
-        speechSynthesis.onvoiceschanged = populateVoices;
-      }
-    }
-
-    // Audio Synthesizer SFX
-    function initAudio() {
-      if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 64;
-        dataArray = new Uint8Array(analyser.frequencyBinCount);
-        drawVisualizer();
-      }
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-      }
-    }
-
-    function playHapticBeep(freq = 440, type = 'sine', duration = 0.1) {
-      try {
-        initAudio();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = type;
-        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
-        osc.connect(gain);
-        gain.connect(analyser);
-        analyser.connect(audioCtx.destination);
-        osc.start();
-        osc.stop(audioCtx.currentTime + duration);
-      } catch (e) { console.warn(e); }
-    }
-
-    // Speak with Custom Deep Male Modifiers
-    function speakTitan(text) {
-      if (!synth) return;
-      if (synth.speaking) synth.cancel();
-
-      initAudio();
-      playHapticBeep(220, 'square', 0.15);
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      const selectedVoiceName = voiceSelect.value;
-      if (selectedVoiceName) {
-        utterance.voice = availableVoices.find(v => v.name === selectedVoiceName);
-      }
-
-      // Apply Deep Male Cadence
-      let preset = voicePresetSelect.value;
-      let basePitch = parseFloat(pitchRange.value);
-      let baseRate = parseFloat(rateRange.value);
-
-      if (preset === 'titan') {
-        utterance.pitch = Math.max(0.4, basePitch * 0.85);
-        utterance.rate = baseRate * 0.95;
-      } else if (preset === 'orion') {
-        utterance.pitch = basePitch * 0.9;
-        utterance.rate = baseRate * 1.1;
-      } else if (preset === 'ghost') {
-        utterance.pitch = 0.5;
-        utterance.rate = 0.85;
-      } else {
-        utterance.pitch = basePitch;
-        utterance.rate = baseRate;
-      }
-
-      // Simulated audio waveform generator for speech
-      utterance.onstart = () => {
-        animateAudioBurst();
-      };
-
-      synth.speak(utterance);
-    }
-
-    function appendMessage(sender, text, type = 'agent') {
-      const bubble = document.createElement('div');
-      bubble.className = `msg-bubble msg-${type}`;
-      bubble.textContent = `${sender ? sender + ': ' : ''}${text}`;
-      chatStream.appendChild(bubble);
-      chatStream.scrollTop = chatStream.scrollHeight;
-    }
-
-    function animateAudioBurst() {
-      if (!analyser) return;
-      let count = 0;
-      let intv = setInterval(() => {
-        if (!synth.speaking || count > 30) {
-          clearInterval(intv);
-          return;
-        }
-        playHapticBeep(120 + Math.random() * 180, 'sawtooth', 0.05);
-        count++;
-      }, 100);
-    }
-
-    // Visualizer Canvas Rendering
-    function drawVisualizer() {
-      requestAnimationFrame(drawVisualizer);
-      if (!analyser) return;
-      analyser.getByteFrequencyData(dataArray);
-
-      visCtx.clearRect(0, 0, visCanvas.width, visCanvas.height);
-      const barWidth = (visCanvas.width / dataArray.length) * 2;
-      let x = 0;
-
-      for (let i = 0; i < dataArray.length; i++) {
-        const barHeight = (dataArray[i] / 255) * visCanvas.height;
-        visCtx.fillStyle = `rgba(0, 243, 255, ${0.4 + (barHeight / visCanvas.height) * 0.6})`;
-        visCtx.fillRect(x, visCanvas.height - barHeight, barWidth - 1, barHeight);
-        x += barWidth + 1;
-      }
-    }
-
-    /* --------------------------------------------------------
-       Vision Matrix Sensor & HUD Tracking Canvas
-    -------------------------------------------------------- */
-    async function toggleCamera() {
-      if (isCameraActive) {
-        stopCamera();
-      } else {
-        await startCamera();
-      }
-    }
-
-    async function startCamera() {
-      try {
-        initAudio();
-        playHapticBeep(880, 'sine', 0.2);
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: currentFacingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false
+    document.addEventListener("DOMContentLoaded", () => {
+      document.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', () => {
+          document.querySelectorAll('.nav-item, .view-section').forEach(el => el.classList.remove('active'));
+          item.classList.add('active');
+          document.getElementById(item.getAttribute('data-target')).classList.add('active');
         });
-        videoEl.srcObject = stream;
-        isCameraActive = true;
-        document.getElementById('btnToggleCamera').textContent = 'DISENGAGE OPTICS';
-        document.getElementById('btnToggleCamera').classList.add('danger');
-        document.getElementById('vision-status').textContent = 'OPTICS LIVE';
-        document.getElementById('vision-status').style.color = 'var(--neon-green)';
-        document.getElementById('stream-res').textContent = '1280x720 LIVE';
-        speakTitan("Vision Matrix engaged. Optical scanning stream active.");
-      } catch (err) {
-        console.error(err);
-        appendMessage('SYSTEM', 'Camera access denied or unavailable.', 'sys');
-        speakTitan("Camera link failed. Running vision synthesis simulation.");
-      }
-    }
-
-    function stopCamera() {
-      if (videoEl.srcObject) {
-        videoEl.srcObject.getTracks().forEach(track => track.stop());
-        videoEl.srcObject = null;
-      }
-      isCameraActive = false;
-      document.getElementById('btnToggleCamera').textContent = 'ENGAGE OPTICS';
-      document.getElementById('btnToggleCamera').classList.remove('danger');
-      document.getElementById('vision-status').textContent = 'CAMERA STANDBY';
-      document.getElementById('vision-status').style.color = 'var(--neon-amber)';
-      document.getElementById('stream-res').textContent = '1920x1080 [SIM]';
-      speakTitan("Optical sensors offline.");
-    }
-
-    // HUD Reticle Overlay Loop
-    let angle = 0;
-    let targetX = 0.5, targetY = 0.5;
-    let targetVelX = 0.003, targetVelY = 0.002;
-
-    function resizeHUD() {
-      hudCanvas.width = hudCanvas.parentElement.clientWidth;
-      hudCanvas.height = hudCanvas.parentElement.clientHeight;
-      visCanvas.width = visCanvas.parentElement.clientWidth;
-      visCanvas.height = visCanvas.parentElement.clientHeight;
-    }
-    window.addEventListener('resize', resizeHUD);
-    resizeHUD();
-
-    function renderHUD() {
-      hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
-      const w = hudCanvas.width;
-      const h = hudCanvas.height;
-
-      // Target coords tracking animation
-      targetX += targetVelX;
-      targetY += targetVelY;
-      if (targetX < 0.2 || targetX > 0.8) targetVelX = -targetVelX;
-      if (targetY < 0.2 || targetY > 0.8) targetVelY = -targetVelY;
-
-      const tx = targetX * w;
-      const ty = targetY * h;
-
-      // Reticle Box
-      hudCtx.strokeStyle = '#00f3ff';
-      hudCtx.lineWidth = 1.5;
-      hudCtx.strokeRect(tx - 35, ty - 35, 70, 70);
-
-      // Crosshairs
-      hudCtx.beginPath();
-      hudCtx.moveTo(tx - 45, ty);
-      hudCtx.lineTo(tx + 45, ty);
-      hudCtx.moveTo(tx, ty - 45);
-      hudCtx.lineTo(tx, ty + 45);
-      hudCtx.stroke();
-
-      // Rotating Matrix Ring
-      angle += 0.02;
-      hudCtx.save();
-      hudCtx.translate(tx, ty);
-      hudCtx.rotate(angle);
-      hudCtx.strokeStyle = 'rgba(0, 255, 102, 0.6)';
-      hudCtx.setLineDash([8, 8]);
-      hudCtx.beginPath();
-      hudCtx.arc(0, 0, 50, 0, Math.PI * 2);
-      hudCtx.stroke();
-      hudCtx.restore();
-
-      // Label
-      hudCtx.font = '10px "Share Tech Mono"';
-      hudCtx.fillStyle = '#00f3ff';
-      hudCtx.fillText(`LOCK: [HUMAN-SIG_${Math.floor(targetX * 900 + 100)}]`, tx + 42, ty - 10);
-      hudCtx.fillText(`CONF: ${(97.4 + Math.sin(angle) * 2).toFixed(1)}%`, tx + 42, ty + 6);
-
-      requestAnimationFrame(renderHUD);
-    }
-    renderHUD();
-
-    /* --------------------------------------------------------
-       Filters, Controls, & Speech Recognition
-    -------------------------------------------------------- */
-    document.querySelectorAll('.filter-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const filter = btn.getAttribute('data-filter');
-        videoEl.className = filter !== 'none' ? `filter-${filter}` : '';
-        document.getElementById('filter-mode-txt').textContent = filter.toUpperCase();
-        playHapticBeep(520, 'triangle', 0.08);
       });
-    });
 
-    document.getElementById('btnToggleCamera').addEventListener('click', toggleCamera);
-    document.getElementById('btnSwitchCamera').addEventListener('click', async () => {
-      currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-      if (isCameraActive) {
-        stopCamera();
-        await startCamera();
-      }
-    });
+      const kIn = document.getElementById('masterKeyInput');
+      const gIn = document.getElementById('githubKeyInput');
+      const stat = document.getElementById('keyStatusText');
 
-    pitchRange.addEventListener('input', (e) => {
-      pitchVal.textContent = `${e.target.value}x`;
-    });
-    rateRange.addEventListener('input', (e) => {
-      rateVal.textContent = `${e.target.value}x`;
-    });
+      document.getElementById('saveKeyButton').addEventListener('click', () => {
+        if (kIn.value) localStorage.setItem('PG1_KEY', kIn.value.trim());
+        if (gIn.value) localStorage.setItem('PG1_GH_PAT', gIn.value.trim());
+        checkKeys();
+        alert('Credentials stored locally.');
+      });
 
-    document.getElementById('btnTestVoice').addEventListener('click', () => {
-      speakTitan("Titan Neural Male Engine online. All defense and vision protocols synchronized.");
-    });
-
-    // Directives
-    window.executeDirective = function(type) {
-      if (type === 'status') {
-        speakTitan("Status report: Core operating at nominal levels. 60 frames per second locked. Optical sensors ready.");
-        appendMessage('TITAN', 'SYSTEM INTEGRITY: 100% // NO ANOMALIES DETECTED.');
-      } else if (type === 'scan') {
-        speakTitan("Executing deep sector radar scan across optical grid.");
-        appendMessage('TITAN', 'SCAN IN PROGRESS... 3 HOST SIGNATURES IDENTIFIED.');
-      } else if (type === 'engage') {
-        speakTitan("Combat telemetry unlocked. Targeting priority targets.");
-        appendMessage('TITAN', 'TACTICAL COMBAT MATRIX ENGAGED.', 'agent');
-      } else if (type === 'purge') {
-        chatStream.innerHTML = '';
-        appendMessage('SYSTEM', 'Log buffer cleared.', 'sys');
-      }
-    };
-
-    // Send prompt
-    document.getElementById('btnSendPrompt').addEventListener('click', () => {
-      const val = textPrompt.value.trim();
-      if (!val) return;
-      appendMessage('USER', val, 'user');
-      textPrompt.value = '';
-      setTimeout(() => {
-        const responses = [
-          `Acknowledged: "${val}". Processing tactical trajectory.`,
-          `Direct response calibrated. All systems complying with instruction.`,
-          `Directive registered in vision matrix buffer. Executing.`
-        ];
-        const reply = responses[Math.floor(Math.random() * responses.length)];
-        appendMessage('TITAN', reply, 'agent');
-        speakTitan(reply);
-      }, 300);
-    });
-
-    textPrompt.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') document.getElementById('btnSendPrompt').click();
-    });
-
-    // Speech-to-Text Voice Mic loop
-    const btnMic = document.getElementById('btnToggleMic');
-    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRec) {
-      recognition = new SpeechRec();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-
-      recognition.onresult = (e) => {
-        const transcript = e.results[0][0].transcript;
-        appendMessage('USER (VOICE)', transcript, 'user');
-        setTimeout(() => {
-          const answer = `Voice command received: "${transcript}". Tactical systems aligned.`;
-          appendMessage('TITAN', answer, 'agent');
-          speakTitan(answer);
-        }, 400);
-      };
-
-      recognition.onend = () => {
-        isListening = false;
-        btnMic.textContent = 'VOICE MIC: OFF';
-        btnMic.classList.remove('active');
-      };
-
-      btnMic.addEventListener('click', () => {
-        if (!isListening) {
-          recognition.start();
-          isListening = true;
-          btnMic.textContent = 'VOICE MIC: LISTENING...';
-          btnMic.classList.add('active');
-          playHapticBeep(660, 'sine', 0.1);
-        } else {
-          recognition.stop();
+      function checkKeys() {
+        if (localStorage.getItem('PG1_KEY') && localStorage.getItem('PG1_GH_PAT')) {
+          kIn.value = '••••••••••••••••'; gIn.value = '••••••••••••••••';
+          stat.innerText = 'STATUS: FULL RELAY ACTIVE'; stat.style.color = '#198754';
         }
-      });
-    } else {
-      btnMic.textContent = 'MIC NOT SUPPORTED';
-      btnMic.disabled = true;
-    }
+      }
+      checkKeys();
+
+      const termOut = document.getElementById('terminalOutput');
+      let sessionHistory = [];
+
+      function appendMsg(html, type) {
+        const div = document.createElement('div');
+        div.className = `terminal-message ${type}`;
+        div.innerHTML = html.replace(/\n/g, '<br>');
+        termOut.appendChild(div);
+        termOut.scrollTop = termOut.scrollHeight;
+        if (type === 'agent-msg' && voiceActive) speakText(html);
+      }
+
+      document.getElementById('clearBtn').onclick = () => termOut.innerHTML = '';
+
+      let voiceActive = false;
+      let agentVoice = null;
+      function loadVoices() {
+          const voices = window.speechSynthesis.getVoices();
+          agentVoice = voices.find(v => v.name === "Daniel" || v.name.includes("Daniel")) || voices.find(v => v.lang === 'en-GB' || v.lang === 'en-US');
+      }
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+      loadVoices();
+
+      function speakText(text) {
+          window.speechSynthesis.cancel();
+          const cleanText = text.replace(/<[^>]+>/g, '').replace(/[*#_`]/g, '');
+          const utterance = new SpeechSynthesisUtterance(cleanText);
+          if (agentVoice) utterance.voice = agentVoice;
+          utterance.rate = 1.0; utterance.pitch = 0.95;
+          window.speechSynthesis.speak(utterance);
+      }
+
+      document.getElementById('voiceBtn').onclick = function() {
+        voiceActive = !voiceActive;
+        if (voiceActive) {
+            this.classList.add('active-btn'); this.innerText = "🗣️ Voice: ON";
+            speakText("Vocal matrix active.");
+        } else {
+            this.classList.remove('active-btn'); this.innerText = "🗣️ Voice: OFF";
+            window.speechSynthesis.cancel();
+        }
+      };
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      let recognition = null;
+      if (SpeechRecognition) {
+          recognition = new SpeechRecognition();
+          recognition.continuous = false; recognition.interimResults = false; recognition.lang = 'en-US';
+          recognition.onresult = (e) => {
+              document.getElementById('terminalInput').value = e.results[0][0].transcript;
+              document.getElementById('audioBtn').classList.remove('recording-btn');
+              document.getElementById('audioBtn').innerText = "🎙️ Mic: OFF";
+              document.getElementById('sendCommandButton').click();
+          };
+          recognition.onend = () => {
+              document.getElementById('audioBtn').classList.remove('recording-btn');
+              document.getElementById('audioBtn').innerText = "🎙️ Mic: OFF";
+          };
+      }
+
+      document.getElementById('audioBtn').onclick = function() {
+          if (!recognition) return alert("Speech recognition not supported.");
+          if (this.classList.contains('recording-btn')) { recognition.stop(); } 
+          else { recognition.start(); this.classList.add('recording-btn'); this.innerText = "🎙️ Listening..."; }
+      };
+
+      let videoStream = null;
+      document.getElementById('videoBtn').onclick = async function() {
+        const preview = document.getElementById('cameraPreview');
+        const hidden = document.getElementById('hiddenVideo');
+        if (!videoStream) {
+          try {
+            videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+            preview.srcObject = videoStream; hidden.srcObject = videoStream;
+            preview.style.display = "block"; this.classList.add('active-btn'); this.innerText = "📹 Video: ON";
+          } catch (e) { alert("Camera unavailable."); }
+        } else {
+          videoStream.getTracks().forEach(t => t.stop());
+          videoStream = null; preview.style.display = "none";
+          this.classList.remove('active-btn'); this.innerText = "📹 Video: OFF";
+        }
+      };
+
+      function captureFrameBase64() {
+          if (!videoStream) return null;
+          const video = document.getElementById('hiddenVideo');
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+          canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+          return canvas.toDataURL('image/jpeg', 0.8);
+      }
+
+      document.getElementById('sendCommandButton').onclick = async () => {
+        const cmd = document.getElementById('terminalInput').value.trim();
+        if (!cmd) return;
+        appendMsg(`> ${cmd}`, 'user-msg');
+        document.getElementById('terminalInput').value = '';
+
+        const key = localStorage.getItem('PG1_KEY');
+        const ghPat = localStorage.getItem('PG1_GH_PAT');
+        if (!key || !ghPat) return appendMsg('Error: Neural Key and GitHub PAT required in Dash.', 'error-msg');
+
+        let payloadParts = [{ text: cmd }];
+        const frameData = captureFrameBase64();
+        if (frameData) {
+            payloadParts.push({ inlineData: { mimeType: "image/jpeg", data: frameData.split(',')[1] } });
+            appendMsg(`[System] Optical frame attached.`, 'system-msg');
+        }
+
+        const sys = `You are PG1.Agent. Execute the command. If modifying files, output JSON: {"reply":"...", "updateFiles": [{"path":"file.ext", "content":"code"}]} If deleting, output JSON: {"reply":"...", "deleteFiles": ["file.ext"]} Otherwise, output JSON: {"reply":"..."}`;
+        sessionHistory.push({ role: "user", parts: payloadParts });
+
+        const models = ["gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.1-pro", "gemini-2.5-flash", "gemini-1.5-pro"];
+        let success = false, result = null, lastErr = "";
+
+        for (const m of models) {
+          try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${key}`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, generationConfig: { responseMimeType: "application/json" } })
+            });
+            const data = await res.json();
+            if (data.error) throw new Error(data.error.message);
+            result = JSON.parse(data.candidates[0].content.parts[0].text);
+            success = true; break;
+          } catch (e) { lastErr = e.message; }
+        }
+
+        if (!success) return appendMsg(`Error: ${lastErr}`, 'error-msg');
+
+        let finalReply = result.reply;
+        sessionHistory.push({ role: "model", parts: [{ text: JSON.stringify(result) }] });
+
+        if (result.updateFiles) {
+          for (const f of result.updateFiles) {
+            const apiUrl = `https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/${f.path}`;
+            const getRes = await fetch(apiUrl, { headers: { "Authorization": `Bearer ${ghPat}` } });
+            let sha = getRes.ok ? (await getRes.json()).sha : null;
+            const putRes = await fetch(apiUrl, { method: 'PUT', headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" }, body: JSON.stringify({ message: `Auto-Commit: ${f.path}`, content: btoa(unescape(encodeURIComponent(f.content))), sha: sha }) });
+            if (putRes.ok) finalReply += `\n\n[Success] Updated ${f.path}`;
+          }
+        }
+
+        appendMsg(finalReply, 'agent-msg');
+      };
+    });
   </script>
 </body>
 </html>
