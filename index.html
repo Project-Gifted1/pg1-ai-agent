@@ -9,7 +9,8 @@
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
 
     @keyframes pulseGlow { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); } 70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
-    @keyframes radarSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes logoBreath { 0%, 100% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.3), inset 0 0 10px rgba(2, 132, 199, 0.2); } 50% { box-shadow: 0 0 30px rgba(56, 189, 248, 0.7), inset 0 0 20px rgba(56, 189, 248, 0.4); } }
+    @keyframes iconPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.8; } }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
     .top-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: #111827; border-bottom: 1px solid #1f2937; flex-shrink: 0; }
@@ -20,7 +21,7 @@
 
     .action-bar { display: flex; justify-content: center; gap: 6px; padding: 8px 12px; background: #111827; border-bottom: 1px solid #1f2937; overflow-x: auto; flex-shrink: 0; }
     .toggle-btn { padding: 6px 10px; border: 1px solid #334155; background: #1e293b; color: #cbd5e1; border-radius: 6px; font-size: 0.75em; cursor: pointer; white-space: nowrap; font-weight: 500; transition: all 0.2s; }
-    .toggle-btn.active-btn { color: #10b981; border-color: #10b981; background: rgba(16, 185, 129, 0.2); box-shadow: 0 0 8px rgba(16,185,129,0.3); }
+    .toggle-btn.active-btn { color: #10b981; border-color: #10b981; background: rgba(16, 185, 129, 0.2); box-shadow: 0 0 8px rgba(16,185,129,0.3); animation: iconPulse 2s infinite; }
     .toggle-btn.recording-btn { color: #ef4444; border-color: #ef4444; background: rgba(239, 68, 68, 0.2); animation: pulseGlow 1s infinite; }
 
     #main-content { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 90px; -webkit-overflow-scrolling: touch; }
@@ -43,11 +44,9 @@
     .progress-bar-container { width: 100%; background: #1e293b; border-radius: 4px; height: 6px; margin-top: 6px; overflow: hidden; }
     .progress-bar { height: 100%; background: #38bdf8; border-radius: 4px; transition: width 0.5s ease; }
 
-    /* Animated Radar Logo Container */
-    .animated-logo-wrapper { position: relative; width: 150px; height: 150px; margin: 0 auto 15px auto; display: flex; align-items: center; justify-content: center; }
-    .radar-ring { position: absolute; width: 100%; height: 100%; border-radius: 50%; border: 2px dashed #10b981; animation: radarSpin 10s linear infinite; box-shadow: 0 0 20px rgba(16, 185, 129, 0.4); }
-    .logo-core-img { width: 130px; height: 130px; border-radius: 50%; overflow: hidden; border: 2px solid #38bdf8; z-index: 2; position: relative; box-shadow: 0 0 15px rgba(56, 189, 248, 0.4); }
-    .logo-core-img img { width: 100%; height: 100%; object-fit: cover; }
+    /* Alive Pulsing Glow Logo Container */
+    .glowing-logo-wrapper { width: 140px; height: 140px; margin: 0 auto 15px auto; border-radius: 50%; overflow: hidden; border: 2px solid #38bdf8; animation: logoBreath 3s ease-in-out infinite; }
+    .glowing-logo-wrapper img { width: 100%; height: 100%; object-fit: cover; }
 
     .terminal-controls-header { display: flex; justify-content: space-between; align-items: center; background: #111827; padding: 8px 12px; border-radius: 8px; border: 1px solid #1f2937; font-size: 0.8em; margin-bottom: 10px; }
     .terminal-controls-header select { background: #0f172a; color: #38bdf8; border: 1px solid #334155; padding: 4px 8px; border-radius: 4px; font-size: 0.85em; outline: none; }
@@ -62,7 +61,6 @@
     .terminal-message.system-msg { color: #64748b; font-style: italic; text-align: center; background: none; border: none; font-size: 0.75em; }
     .msg-btn-group { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
     .msg-action-btn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; font-size: 0.65em; padding: 2px 6px; border-radius: 4px; cursor: pointer; font-weight: 600; }
-    .msg-action-btn:hover { color: #f8fafc; background: #334155; }
 
     .terminal-input-area { display: flex; gap: 8px; align-items: center; background: #111827; padding: 8px; border-radius: 10px; border: 1px solid #1f2937; flex-shrink: 0; }
     .terminal-input-area input { flex: 1; padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #0f172a; color: #f8fafc; }
@@ -72,7 +70,6 @@
     .nav-item { background: none; border: none; font-size: 0.75em; color: #64748b; cursor: pointer; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
     .nav-item.active { color: #38bdf8; font-weight: 600; }
 
-    /* Modal Overlay for Logs */
     .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
     .modal-overlay.active { display: flex; }
     .modal-content { background: #111827; border: 1px solid #334155; padding: 20px; border-radius: 10px; width: 90%; max-width: 400px; max-height: 80vh; display: flex; flex-direction: column; gap: 15px; }
@@ -85,7 +82,6 @@
   </style>
 </head>
 <body>
-  <!-- Logs Modal -->
   <div id="logsModal" class="modal-overlay">
     <div class="modal-content">
       <div class="modal-header">
@@ -142,6 +138,7 @@
           <li><span>Active Indicators (IOC)</span> <strong style="color: #38bdf8;">18,940 IOC Feeds</strong></li>
           <li><span>Edge Telemetry Throughput</span> <strong id="telemetrySpeed" style="color: #10b981;">2.4 MB/s</strong></li>
         </ul>
+        <div class="progress-bar-container"><div id="throughputBar" class="progress-bar" style="width: 65%;"></div></div>
       </div>
 
       <div class="card">
@@ -149,9 +146,10 @@
         <p style="font-size: 0.8em; color: #94a3b8; margin-bottom: 10px;">Encrypted verification channel active across distributed edge relays.</p>
         <ul class="stats-list">
           <li><span>Uplink Protocol</span> <strong style="color: #38bdf8;">x402-Secure</strong></li>
-          <li><span>Node Latency</span> <strong style="color: #10b981;">12 ms</strong></li>
+          <li><span>Node Latency</span> <strong id="nodeLatency" style="color: #10b981;">12 ms</strong></li>
           <li><span>Encryption Standard</span> <strong style="color: #38bdf8;">AES-256-GCM</strong></li>
         </ul>
+        <div class="progress-bar-container"><div id="latencyBar" class="progress-bar" style="width: 25%; background: #10b981;"></div></div>
       </div>
     </section>
 
@@ -185,11 +183,9 @@
 
     <section id="view-node" class="view-section">
       <div class="card center-content" style="text-align: center; padding: 20px;">
-        <div class="animated-logo-wrapper">
-          <div class="radar-ring"></div>
-          <div class="logo-core-img">
-            <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
-          </div>
+        <!-- Breathing Neon Glow Logo Container -->
+        <div class="glowing-logo-wrapper">
+          <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
         </div>
         <h2 style="font-size: 1.1em; color: #f8fafc; margin-bottom: 2px;">PG1.Agent™</h2>
         <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Autonomous Edge Infrastructure</p>
@@ -245,20 +241,27 @@
     };
 
     document.addEventListener("DOMContentLoaded", () => {
-      // Live telemetry loop
+      // Live telemetry & dynamic indicator pulsing loop
       setInterval(() => {
-        const cpu = Math.floor(25 + Math.random() * 8);
-        const ram = Math.floor(44 + Math.random() * 3);
-        const speed = (2.2 + Math.random() * 0.5).toFixed(1);
+        const cpu = Math.floor(24 + Math.random() * 8);
+        const ram = Math.floor(43 + Math.random() * 4);
+        const speed = (2.2 + Math.random() * 0.6).toFixed(1);
+        const latency = Math.floor(10 + Math.random() * 5);
         
         const cpuEl = document.getElementById('cpuLoad');
         const ramEl = document.getElementById('ramAlloc');
         const ramBar = document.getElementById('ramBar');
         const speedEl = document.getElementById('telemetrySpeed');
+        const throughputBar = document.getElementById('throughputBar');
+        const latencyEl = document.getElementById('nodeLatency');
+        const latencyBar = document.getElementById('latencyBar');
         
         if (cpuEl) cpuEl.innerText = cpu + '%';
         if (ramEl) { ramEl.innerText = ram + '%'; ramBar.style.width = ram + '%'; }
         if (speedEl) speedEl.innerText = speed + ' MB/s';
+        if (throughputBar) throughputBar.style.width = (60 + Math.random() * 15) + '%';
+        if (latencyEl) latencyEl.innerText = latency + ' ms';
+        if (latencyBar) latencyBar.style.width = (20 + latency) + '%';
       }, 2500);
 
       document.querySelectorAll('.nav-item').forEach(item => {
@@ -304,7 +307,6 @@
 
       document.getElementById('clearBtn').onclick = () => termOut.innerHTML = '';
 
-      // Logs Modal handling
       const logsModal = document.getElementById('logsModal');
       const logContentBox = document.getElementById('logContentBox');
 
@@ -416,7 +418,7 @@
 
         const key = localStorage.getItem('PG1_KEY');
         const ghPat = localStorage.getItem('PG1_GH_PAT');
-        if (!key || !ghPat) return appendMsg('Error: Master API Key and GitHub PAT required in Dash tab.', 'error-msg');
+        if (!key || !ghPat) return appendMsg('Error: Master Key and GitHub PAT required in Dash tab.', 'error-msg');
 
         let payloadParts = [{ text: cmd }];
         const frameData = captureFrameBase64();
