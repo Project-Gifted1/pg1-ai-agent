@@ -9,6 +9,7 @@
     html, body { height: 100dvh; background-color: #f4f6f8; color: #333; display: flex; flex-direction: column; overflow: hidden; }
 
     @keyframes pulseGlow { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.4); } 70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(40, 167, 69, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); } }
+    @keyframes spinSlow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
     .top-header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: white; border-bottom: 1px solid #e0e0e0; flex-shrink: 0; }
@@ -16,24 +17,40 @@
     .version { font-size: 0.8em; color: #888; }
     .status-dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; animation: pulseGlow 2s infinite; }
     .status-dot.green { background-color: #28a745; }
+    .status-dot.blue { background-color: #007bff; }
 
-    .action-bar { display: flex; justify-content: center; gap: 10px; padding: 10px; background: white; border-bottom: 1px solid #e0e0e0; overflow-x: auto; flex-shrink: 0; }
-    .toggle-btn { padding: 8px 12px; border: 1px solid #ddd; background: white; border-radius: 8px; font-size: 0.85em; cursor: pointer; white-space: nowrap; }
+    .action-bar { display: flex; justify-content: center; gap: 8px; padding: 10px; background: white; border-bottom: 1px solid #e0e0e0; overflow-x: auto; flex-shrink: 0; }
+    .toggle-btn { padding: 8px 10px; border: 1px solid #ddd; background: white; border-radius: 8px; font-size: 0.8em; cursor: pointer; white-space: nowrap; font-weight: 500; transition: all 0.2s; }
+    .toggle-btn.active-btn { color: #198754; border-color: #198754; background: #e8f5e9; }
 
     #main-content { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 90px; -webkit-overflow-scrolling: touch; }
     .view-section { display: none; flex-direction: column; gap: 15px; min-height: 100%; animation: fadeIn 0.3s ease-in-out; }
     .view-section.active { display: flex; }
 
     .card { background: white; border-radius: 12px; padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #eee; }
-    .card-title { font-size: 1em; color: #004085; display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .card-title { font-size: 1em; color: #004085; display: flex; align-items: center; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid #f0f0f0; padding-bottom: 8px; }
+    
     .key-input-group { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
-    .key-input-group input { padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; outline: none; }
+    .key-input-group input { padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; outline: none; background: #fdfdfd; }
     .primary-btn { padding: 10px 15px; background: #198754; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
     .key-status-footer { display: flex; justify-content: space-between; font-size: 0.8em; font-weight: bold; }
 
-    #view-terminal { flex: 1; display: none; flex-direction: column; justify-content: space-between; padding-bottom: 15px; min-height: calc(100vh - 220px); }
-    #view-terminal.active { display: flex; }
+    .stats-list { list-style: none; margin-top: 10px; }
+    .stats-list li { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.85em; }
+    .stats-list li:last-child { border-bottom: none; }
+    .stats-list li strong { color: #004085; }
+
+    .progress-bar-container { width: 100%; background: #e9ecef; border-radius: 4px; height: 6px; margin-top: 4px; overflow: hidden; }
+    .progress-bar { height: 100%; background: #007bff; border-radius: 4px; }
     
+    .node-controls { display: flex; gap: 10px; margin-top: 10px; }
+    .node-controls button { flex: 1; padding: 8px; background: white; border: 1px solid #ccc; border-radius: 6px; font-size: 0.8em; font-weight: 500; cursor: pointer; }
+
+    .center-content { text-align: center; }
+    .logo-container { position: relative; width: 120px; height: 120px; margin: 0 auto 15px; display: flex; align-items: center; justify-content: center; }
+    .logo-ring { position: absolute; width: 100%; height: 100%; border-radius: 50%; border: 3px dashed #17a2b8; animation: spinSlow 10s linear infinite; }
+    .logo-inner { width: 80px; height: 80px; background: radial-gradient(circle, #17a2b8, #004085); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 2em; font-weight: bold; box-shadow: 0 0 15px rgba(23, 162, 184, 0.4); }
+
     .terminal-display { flex: 1; background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 12px; padding: 15px; overflow-y: auto; margin-bottom: 15px; display: flex; flex-direction: column; gap: 10px; }
     .terminal-message { padding: 12px; border-radius: 8px; font-size: 0.9em; line-height: 1.4; word-wrap: break-word; }
     .terminal-message.user-msg { background: #e6f2ff; border: 1px solid #b8daff; color: #004085; align-self: flex-end; max-width: 85%; }
@@ -46,20 +63,32 @@
     .send-btn { padding: 12px 18px; background: #198754; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; flex-shrink: 0; }
 
     .bottom-nav { display: flex; justify-content: space-around; background: white; padding: 10px; border-top: 1px solid #e0e0e0; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
-    .nav-item { background: none; border: none; font-size: 0.8em; color: #666; cursor: pointer; flex: 1; }
+    .nav-item { background: none; border: none; font-size: 0.8em; color: #666; cursor: pointer; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
     .nav-item.active { color: #007bff; font-weight: bold; }
+    
+    #hiddenVideo { display: none; }
   </style>
 </head>
 <body>
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">🛡️ v5.6 Sovereign Engine (Direct Bridge)</div>
+    <div class="version">🛡️ v5.6 Sovereign Engine</div>
   </header>
 
+  <div class="action-bar">
+    <button class="toggle-btn" id="videoBtn">📹 Video: OFF</button>
+    <button class="toggle-btn" id="audioBtn">🎙️ Audio: OFF</button>
+    <button class="toggle-btn" id="voiceBtn">🗣️ Voice: OFF</button>
+    <button class="toggle-btn" id="clearBtn" style="color: #dc3545;">🗑️ Clear</button>
+  </div>
+  
+  <video id="hiddenVideo" autoplay playsinline></video>
+
   <main id="main-content">
+    <!-- DASH TAB -->
     <section id="view-dash" class="view-section active">
       <div class="card">
-        <h3 class="card-title">⚡ x402 Dual-Key Relay</h3>
+        <h3 class="card-title">⚡ x402 Sovereign Key Relay</h3>
         <div class="key-input-group">
           <input type="password" id="masterKeyInput" placeholder="Master API Key (Neural Core)">
           <input type="password" id="githubKeyInput" placeholder="GitHub PAT (Repo Access)">
@@ -69,26 +98,89 @@
           <span id="keyStatusText" style="color:red;">STATUS: MISSING CREDENTIALS</span>
         </div>
       </div>
+      <div class="card">
+        <h3 class="card-title"><span class="status-dot blue"></span> Sovereign Edge Active</h3>
+        <ul class="stats-list">
+          <li><span>OTX Threat Pulses</span> <strong>1,420 Active</strong></li>
+          <li><span>Active Indicators</span> <strong>18,940 Feeds</strong></li>
+          <li><span>Edge Throughput</span> <strong>2.4 MB/s</strong></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 class="card-title">🛡️ Sovereign Network Uplink Status</h3>
+        <ul class="stats-list">
+          <li><span>Uplink Protocol</span> <strong>x402-Secure</strong></li>
+          <li><span>Node Latency</span> <strong>12 ms</strong></li>
+          <li><span>Encryption Standard</span> <strong>AES-256-GCM</strong></li>
+        </ul>
+      </div>
     </section>
 
+    <!-- TERMINAL TAB -->
     <section id="view-terminal" class="view-section">
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message system-msg">PG1.Agent Sovereign Core online. Direct API Bridge established.</div>
+        <div class="terminal-message system-msg">> PG1 System Initialized. Ready for sovereign agent commands.</div>
       </div>
       <div class="terminal-input-area">
         <input type="text" id="terminalInput" placeholder="Enter command...">
         <button id="sendCommandButton" class="send-btn">Send</button>
       </div>
     </section>
+
+    <!-- NODE TAB -->
+    <section id="view-node" class="view-section">
+      <div class="card center-content">
+        <div class="logo-container">
+          <div class="logo-ring"></div>
+          <div class="logo-inner">G1</div>
+        </div>
+        <h2>PG1.Agent™</h2>
+        <p style="font-size: 0.85em; color:#666; margin-bottom:15px;">Autonomous Edge Infrastructure</p>
+        
+        <ul class="stats-list" style="text-align: left;">
+          <li><span>Node ID:</span> <strong style="color: #004085;">PG1-CORE-01</strong></li>
+          <li><span>Status:</span> <strong><span class="status-dot green"></span> Online & Syncing</strong></li>
+          <li><span>Ownership:</span> <strong style="color: #007bff;">100% Sovereign</strong></li>
+          <li><span>Protocol:</span> <strong>x402 Active</strong></li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">📊 Node System Telemetry</h3>
+        <div style="font-size: 0.85em; margin-bottom: 10px;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:2px;"><span>CPU Load</span> <strong>28%</strong></div>
+          <div class="progress-bar-container"><div class="progress-bar" style="width: 28%;"></div></div>
+        </div>
+        <div style="font-size: 0.85em; margin-bottom: 10px;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:2px;"><span>RAM Allocation</span> <strong>46%</strong></div>
+          <div class="progress-bar-container"><div class="progress-bar" style="width: 46%; background:#17a2b8;"></div></div>
+        </div>
+        <div style="font-size: 0.85em;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:2px;"><span>Vault Storage</span> <strong>1.3 GB / 10 GB</strong></div>
+          <div class="progress-bar-container"><div class="progress-bar" style="width: 13%; background:#198754;"></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">⚡ Node Controls</h3>
+        <div class="node-controls">
+          <button>🔄 Restart</button>
+          <button>🧹 Purge</button>
+          <button>📄 Logs</button>
+        </div>
+      </div>
+    </section>
   </main>
 
   <nav class="bottom-nav">
-    <button class="nav-item active" data-target="view-dash">Dash</button>
-    <button class="nav-item" data-target="view-terminal">Terminal</button>
+    <button class="nav-item active" data-target="view-dash"><span>📊</span>Dash</button>
+    <button class="nav-item" data-target="view-terminal"><span>⚡</span>Terminal</button>
+    <button class="nav-item" data-target="view-node"><span>👤</span>Node</button>
   </nav>
 
   <script>
     document.addEventListener("DOMContentLoaded", () => {
+      // Navigation
       document.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', () => {
           document.querySelectorAll('.nav-item, .view-section').forEach(el => el.classList.remove('active'));
@@ -97,6 +189,59 @@
         });
       });
 
+      // Sensory Systems (Web APIs)
+      let videoStream = null;
+      let audioStream = null;
+      let voiceActive = false;
+
+      document.getElementById('videoBtn').onclick = async function() {
+        if (!videoStream) {
+          try {
+            videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            document.getElementById('hiddenVideo').srcObject = videoStream;
+            this.classList.add('active-btn');
+            this.innerText = "📹 Video: ON";
+          } catch (e) { alert("Camera access denied."); }
+        } else {
+          videoStream.getTracks().forEach(t => t.stop());
+          videoStream = null;
+          this.classList.remove('active-btn');
+          this.innerText = "📹 Video: OFF";
+        }
+      };
+
+      document.getElementById('audioBtn').onclick = async function() {
+        if (!audioStream) {
+          try {
+            audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            this.classList.add('active-btn');
+            this.innerText = "🎙️ Audio: ON";
+          } catch (e) { alert("Microphone access denied."); }
+        } else {
+          audioStream.getTracks().forEach(t => t.stop());
+          audioStream = null;
+          this.classList.remove('active-btn');
+          this.innerText = "🎙️ Audio: OFF";
+        }
+      };
+
+      document.getElementById('voiceBtn').onclick = function() {
+        voiceActive = !voiceActive;
+        if (voiceActive) {
+            this.classList.add('active-btn');
+            this.innerText = "🗣️ Voice: ON";
+            const synth = window.speechSynthesis;
+            synth.speak(new SpeechSynthesisUtterance("Voice synthesis activated."));
+        } else {
+            this.classList.remove('active-btn');
+            this.innerText = "🗣️ Voice: OFF";
+            window.speechSynthesis.cancel();
+        }
+      };
+
+      document.getElementById('clearBtn').onclick = () => document.getElementById('terminalOutput').innerHTML = '';
+
+      // Credentials
       const kIn = document.getElementById('masterKeyInput');
       const gIn = document.getElementById('githubKeyInput');
       const stat = document.getElementById('keyStatusText');
@@ -110,10 +255,8 @@
 
       function checkKeys() {
         if (localStorage.getItem('PG1_KEY') && localStorage.getItem('PG1_GH_PAT')) {
-          kIn.value = '••••••••••••••••';
-          gIn.value = '••••••••••••••••';
-          stat.innerText = 'STATUS: FULL RELAY ACTIVE';
-          stat.style.color = '#198754';
+          kIn.value = '••••••••••••••••'; gIn.value = '••••••••••••••••';
+          stat.innerText = 'STATUS: FULL RELAY ACTIVE'; stat.style.color = '#198754';
         }
       }
       checkKeys();
@@ -127,6 +270,12 @@
         div.innerHTML = html.replace(/\n/g, '<br>');
         termOut.appendChild(div);
         termOut.scrollTop = termOut.scrollHeight;
+        
+        // Voice Synthesis Output
+        if (type === 'agent-msg' && voiceActive) {
+            const cleanText = html.replace(/<[^>]+>/g, ''); // Strip HTML tags
+            window.speechSynthesis.speak(new SpeechSynthesisUtterance(cleanText));
+        }
       }
 
       document.getElementById('sendCommandButton').onclick = async () => {
@@ -141,18 +290,15 @@
         
         if (!key || !ghPat) return appendMsg('Error: Neural Key and GitHub PAT required in Dash.', 'error-msg');
 
-        const sys = `You are PG1.Agent. Execute the command. If a file edit in the repo 'Project-Gifted1/pg1-ai-agent' is requested, output raw JSON strictly formatted as: {"reply":"explanation", "updateFile":true, "path":"file.ext", "content":"raw code"}. Otherwise, output: {"reply":"your response", "updateFile":false}.`;
+        // UPDATED SYSTEM PROMPT: Now supports batch file deletions
+        const sys = `You are PG1.Agent. Execute the command. 
+If modifying/creating files, output JSON: {"reply":"...", "updateFiles": [{"path":"file.ext", "content":"raw code"}]}
+If deleting files, output JSON: {"reply":"...", "deleteFiles": ["file1.ext", "file2.ext"]}
+Otherwise, output JSON: {"reply":"..."}`;
 
         sessionHistory.push({ role: "user", parts: [{ text: cmd }] });
 
-        const targetModels = [
-          "gemini-3.7-flash",
-          "gemini-3.5-flash",
-          "gemini-3.1-pro",
-          "gemini-2.5-flash",
-          "gemini-1.5-pro"
-        ];
-
+        const targetModels = ["gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.1-pro", "gemini-2.5-flash", "gemini-1.5-pro"];
         let success = false;
         let lastError = "";
         let result = null;
@@ -161,11 +307,7 @@
           try {
             const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: sessionHistory,
-                systemInstruction: { parts: [{ text: sys }] },
-                generationConfig: { responseMimeType: "application/json" }
-              })
+              body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, generationConfig: { responseMimeType: "application/json" } })
             });
 
             const data = await res.json();
@@ -174,40 +316,48 @@
             result = JSON.parse(data.candidates[0].content.parts[0].text);
             success = true;
             break; 
-          } catch (e) {
-            lastError = e.message;
-          }
+          } catch (e) { lastError = e.message; }
         }
 
-        if (!success) {
-          return appendMsg(`Execution Failure across all neural links: ${lastError}`, 'error-msg');
-        }
+        if (!success) return appendMsg(`Execution Failure: ${lastError}`, 'error-msg');
 
         let finalReply = result.reply;
         sessionHistory.push({ role: "model", parts: [{ text: JSON.stringify(result) }] });
 
-        if (result.updateFile) {
-          try {
-            appendMsg(`[System] Initiating direct auto-commit to ${result.path}...`, 'system-msg');
-            const apiUrl = `https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/${result.path}`;
-            
-            const getRes = await fetch(apiUrl, { headers: { "Authorization": `Bearer ${ghPat}` } });
-            let sha = getRes.ok ? (await getRes.json()).sha : null;
+        // Protocol 1: Autonomous File Updates
+        if (result.updateFiles && result.updateFiles.length > 0) {
+          for (const file of result.updateFiles) {
+            try {
+              const apiUrl = `https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/${file.path}`;
+              const getRes = await fetch(apiUrl, { headers: { "Authorization": `Bearer ${ghPat}` } });
+              let sha = getRes.ok ? (await getRes.json()).sha : null;
 
-            const putRes = await fetch(apiUrl, {
-                method: 'PUT',
-                headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    message: `PG1.Agent Auto-Commit: ${result.path}`,
-                    content: btoa(unescape(encodeURIComponent(result.content))),
-                    sha: sha
-                })
-            });
+              const putRes = await fetch(apiUrl, {
+                  method: 'PUT',
+                  headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" },
+                  body: JSON.stringify({ message: `PG1.Agent Auto-Commit: ${file.path}`, content: btoa(unescape(encodeURIComponent(file.content))), sha: sha })
+              });
+              if (putRes.ok) finalReply += `\n\n[Success] Updated ${file.path}`;
+            } catch (e) { finalReply += `\n\n[Error] Failed to update ${file.path}`; }
+          }
+        }
 
-            if (putRes.ok) finalReply += `\n\n[Success] File ${result.path} autonomously updated in repository.`;
-            else finalReply += `\n\n[Error] Commit rejected: ${(await putRes.json()).message}`;
-          } catch (e) {
-            finalReply += `\n\n[System Error] GitHub connection failed: ${e.message}`;
+        // Protocol 2: Autonomous File Deletions
+        if (result.deleteFiles && result.deleteFiles.length > 0) {
+          for (const path of result.deleteFiles) {
+            try {
+              const apiUrl = `https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/${path}`;
+              const getRes = await fetch(apiUrl, { headers: { "Authorization": `Bearer ${ghPat}` } });
+              if (getRes.ok) {
+                  const sha = (await getRes.json()).sha;
+                  const delRes = await fetch(apiUrl, {
+                      method: 'DELETE',
+                      headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" },
+                      body: JSON.stringify({ message: `PG1.Agent Autonomous Purge: ${path}`, sha: sha })
+                  });
+                  if (delRes.ok) finalReply += `\n\n[Success] Purged ${path} from repository.`;
+              }
+            } catch (e) { finalReply += `\n\n[Error] Failed to delete ${path}`; }
           }
         }
 
