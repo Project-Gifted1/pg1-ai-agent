@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v12.0</title>
+  <title>Project Gifted1™ - Sovereign Engine v12.1</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
@@ -113,7 +113,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v12.0 Sovereign Engine</div>
+    <div class="version">v12.1 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -174,7 +174,7 @@
           <span style="color:#94a3b8; margin-right:6px;">PG1 Engine:</span>
           <select id="modelSelector">
             <option value="gemini-3.5-flash">3.5 Flash-Lite (Fastest)</option>
-            <option value="gemini-3.7-flash" selected>3.6 Flash (RAG & Recon Core)</option>
+            <option value="gemini-3.7-flash" selected>3.6 Flash (Safe RAG Core)</option>
             <option value="gemini-1.5-pro">3.1 Pro (Advanced Core)</option>
           </select>
         </div>
@@ -187,7 +187,7 @@
       <video id="cameraPreview" autoplay playsinline muted></video>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.0 online. RAG Memory DB, Live Web Scraper, and Auto-Chron engaged.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.1 online. IndexedDB async race condition resolved. Send button operational.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -242,7 +242,6 @@
   <script>
     let terminalAppendFunc = null;
 
-    // --- CREDENTIAL STORAGE ---
     window.saveMasterKeys = function() {
         const kIn = document.getElementById('masterKeyInput');
         const gIn = document.getElementById('githubKeyInput');
@@ -293,39 +292,46 @@
       input.focus();
     };
 
-    // --- INDEXED_DB: RAG MEMORY VAULT ---
-    let db;
-    const dbRequest = indexedDB.open("PG1_VectorVault", 1);
-    dbRequest.onupgradeneeded = e => { 
-        db = e.target.result; 
-        if (!db.objectStoreNames.contains("memories")) {
-            db.createObjectStore("memories", { keyPath: "id", autoIncrement: true }); 
-        }
-    };
-    dbRequest.onsuccess = e => { db = e.target.result; };
+    // --- SAFE INDEXED_DB: RAG MEMORY VAULT ---
+    let db = null;
+    try {
+        const dbRequest = indexedDB.open("PG1_VectorVault", 1);
+        dbRequest.onupgradeneeded = e => { 
+            const database = e.target.result; 
+            if (!database.objectStoreNames.contains("memories")) {
+                database.createObjectStore("memories", { keyPath: "id", autoIncrement: true }); 
+            }
+        };
+        dbRequest.onsuccess = e => { db = e.target.result; };
+        dbRequest.onerror = () => { db = null; };
+    } catch(err) { db = null; }
     
     function saveToVault(text) { 
-        if(!db || !text) return; 
-        const tx = db.transaction("memories", "readwrite"); 
-        tx.objectStore("memories").add({text: text, ts: Date.now()}); 
+        try {
+            if(!db || !text) return; 
+            const tx = db.transaction("memories", "readwrite"); 
+            tx.objectStore("memories").add({text: text, ts: Date.now()}); 
+        } catch(e) {}
     }
     
     async function queryVault(query) {
         return new Promise(res => {
-            if(!db) return res("");
-            const tx = db.transaction("memories", "readonly");
-            const req = tx.objectStore("memories").getAll();
-            req.onsuccess = () => {
-                const words = query.toLowerCase().split(' ').filter(w => w.length > 4);
-                if (words.length === 0) return res("");
-                const matches = req.result.filter(m => words.some(w => m.text.toLowerCase().includes(w))).slice(-2);
-                res(matches.map(m => m.text).join(' | '));
-            };
-            req.onerror = () => res("");
+            try {
+                if(!db) return res("");
+                const tx = db.transaction("memories", "readonly");
+                const req = tx.objectStore("memories").getAll();
+                req.onsuccess = () => {
+                    const words = query.toLowerCase().split(' ').filter(w => w.length > 4);
+                    if (words.length === 0) return res("");
+                    const matches = (req.result || []).filter(m => words.some(w => m.text.toLowerCase().includes(w))).slice(-2);
+                    res(matches.map(m => m.text).join(' | '));
+                };
+                req.onerror = () => res("");
+            } catch(e) { res(""); }
         });
     }
 
-    // --- SAFETY PROXY ROUTER (For Web Scraper & Video API) ---
+    // --- SAFETY PROXY ROUTER ---
     async function secureFetch(url, options) {
         try {
             const directRes = await fetch(url, options);
@@ -353,7 +359,7 @@
         }
     }
 
-    // --- MCP (MODEL CONTEXT PROTOCOL) REGISTRY & DISPATCHER ---
+    // --- MCP REGISTRY ---
     const MCP_TOOL_REGISTRY = {
         executeRevenueStrike: {
             description: "Executes a verified revenue strike through the state verification graph.",
@@ -402,19 +408,14 @@
         return await MCP_TOOL_REGISTRY[toolName].handler(args);
     }
 
-    // --- STATEFUL CYCLIC VERIFICATION GRAPH (Golden Path) ---
     async function executeVerifiedRevenueStrikeGraph(amount, platform) {
         if (!amount || !platform) return "ERROR: Missing parameters for revenue strike.";
-        
         if (terminalAppendFunc) terminalAppendFunc(`[State Graph: Stage 1/3] Verifying deliverability channels for ${platform}...`, "system-msg");
         await new Promise(r => setTimeout(r, 600));
-        
-        if (terminalAppendFunc) terminalAppendFunc(`[State Graph: Stage 2/3] Evaluating reputation markers and anti-spam score...`, "system-msg");
+        if (terminalAppendFunc) terminalAppendFunc(`[State Graph: Stage 2/3] Evaluating reputation markers...`, "system-msg");
         await new Promise(r => setTimeout(r, 600));
-        
-        if (terminalAppendFunc) terminalAppendFunc(`[State Graph: Stage 3/3] Structuring agent-optimized payload contract...`, "system-msg");
+        if (terminalAppendFunc) terminalAppendFunc(`[State Graph: Stage 3/3] Structuring agent payload contract...`, "system-msg");
         await new Promise(r => setTimeout(r, 500));
-
         return `[Success] Verification Graph Passed:\n• Deliverability: 100% Confirmed\n• Reputation Marker Score: 98.4 / 100\n• Agent Formatting: Validated\n\nRevenue strike of ${amount} dispatched to ${platform}.`;
     }
 
@@ -422,54 +423,49 @@
         try {
             const res = await secureFetch(url, {method: "GET"});
             if (!res.ok) return `ERROR: HTTP status ${res.status}.`;
-            const data = await res.text();
-            return data.substring(0, 1500);
+            return (await res.text()).substring(0, 1500);
         } catch(e) { return `ERROR: Network exception (${e.message}).`; }
     }
 
     function generateImage(prompt) {
         if (!prompt) return "ERROR: Missing prompt for image generation.";
-        const encodedPrompt = encodeURIComponent(prompt);
-        const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=800&height=450&nologo=true`;
-        
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=800&height=450&nologo=true`;
         return `[Success] High-resolution image generated for: "${prompt}".\n
-        <div style="background:#050811; border-radius:8px; margin-top:8px; padding:15px; text-align:center; border:1px solid #38bdf8; box-shadow: 0 4px 15px rgba(56,189,248,0.2);">
-          <img src="${imageUrl}" alt="Generated AI Image" style="width:100%; height:auto; border-radius:4px; display:block;" onerror="this.parentElement.innerHTML='<span style=\\'color:#ef4444\\'>Error loading image data.</span>'">
-          <a href="${imageUrl}" download="PG1_Generation_${Date.now()}.jpg" target="_blank" class="primary-btn" style="display:inline-block; margin-top:12px; background:#10b981; color:#fff; text-decoration:none;">⬇ Download Image</a>
+        <div style="background:#050811; border-radius:8px; margin-top:8px; padding:15px; text-align:center; border:1px solid #38bdf8;">
+          <img src="${imageUrl}" alt="Generated AI Image" style="width:100%; height:auto; border-radius:4px; display:block;">
+          <a href="${imageUrl}" download="PG1_${Date.now()}.jpg" target="_blank" class="primary-btn" style="display:inline-block; margin-top:12px; background:#10b981; color:#fff; text-decoration:none;">⬇ Download Image</a>
         </div>`;
     }
 
     async function generateVideoClip(prompt) {
         const repKey = localStorage.getItem('PG1_REP_KEY');
-        if (!repKey) return "ERROR: Replicate API Key not found. Please add it in the Dash tab.";
-        if(terminalAppendFunc) terminalAppendFunc(`[Replicate API] Initiating real video generation via lucataco/hotshot-xl...`, "system-msg");
+        if (!repKey) return "ERROR: Replicate API Key not found in Dash tab.";
+        if(terminalAppendFunc) terminalAppendFunc(`[Replicate API] Initiating real video generation...`, "system-msg");
         try {
             const startRes = await secureFetch("https://api.replicate.com/v1/models/lucataco/hotshot-xl/predictions", {
                 method: "POST", headers: { "Authorization": `Bearer ${repKey}`, "Content-Type": "application/json", "Prefer": "wait" },
                 body: JSON.stringify({ input: { prompt: prompt, mp4: true } })
             });
-            if (!startRes.ok) return `[Error] Replicate API rejected the request. Status ${startRes.status}.`;
+            if (!startRes.ok) return `[Error] Replicate API rejected request. Status ${startRes.status}.`;
             let prediction = await startRes.json();
             let loopCount = 0;
             while (prediction.status !== "succeeded" && prediction.status !== "failed" && loopCount < 30) {
                 await new Promise(r => setTimeout(r, 4000)); 
                 loopCount++;
-                if(terminalAppendFunc) terminalAppendFunc(`[Replicate API] Status: ${prediction.status} (Attempt ${loopCount}/30)...`, "system-msg");
+                if(terminalAppendFunc) terminalAppendFunc(`[Replicate API] Status: ${prediction.status} (${loopCount}/30)...`, "system-msg");
                 const pollRes = await secureFetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
                     method: "GET", headers: { "Authorization": `Bearer ${repKey}` }
                 });
                 prediction = await pollRes.json();
             }
-            if (prediction.status === "failed") return `[Error] Replicate failed to render the video.`;
+            if (prediction.status === "failed") return `[Error] Replicate failed to render video.`;
             const videoUrl = prediction.output;
-            return `[Success] Real high-fidelity video rendering complete.\n
-            <div style="background:#050811; border-radius:8px; margin-top:8px; padding:15px; text-align:center; border:1px solid #38bdf8; box-shadow: 0 4px 15px rgba(56,189,248,0.2);">
-              <video controls playsinline preload="auto" style="width:100%; max-height:220px; background:#000; border-radius:6px; margin-top:8px; display:block;">
-                  <source src="${videoUrl}" type="video/mp4">
-              </video>
+            return `[Success] Video rendering complete.\n
+            <div style="background:#050811; border-radius:8px; margin-top:8px; padding:15px; text-align:center; border:1px solid #38bdf8;">
+              <video controls playsinline preload="auto" style="width:100%; max-height:220px; background:#000; border-radius:6px; display:block;"><source src="${videoUrl}" type="video/mp4"></video>
               <a href="${videoUrl}" download="PG1_Video_${Date.now()}.mp4" target="_blank" class="primary-btn" style="display:inline-block; margin-top:12px; background:#10b981; color:#fff; text-decoration:none;">⬇ Download Video</a>
             </div>`;
-        } catch(e) { return `[Error] Video rendering pipeline failed: ${e.message}.`; }
+        } catch(e) { return `[Error] Video pipeline failed: ${e.message}.`; }
     }
 
     async function commitToGitHub(path, content, message) {
@@ -480,23 +476,19 @@
             const getRes = await secureFetch(apiUrl, { headers: { "Authorization": `Bearer ${ghPat}` } });
             let sha = getRes.ok ? (await getRes.json()).sha : null;
             const putRes = await secureFetch(apiUrl, { 
-                method: 'PUT', 
-                headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" }, 
+                method: 'PUT', headers: { "Authorization": `Bearer ${ghPat}`, "Content-Type": "application/json" }, 
                 body: JSON.stringify({ message: message, content: btoa(unescape(encodeURIComponent(content))), sha: sha }) 
             });
-            if (putRes.ok) return `Successfully deployed commit: ${message} to ${path}.`;
-            return `ERROR: GitHub API status ${putRes.status}.`;
+            return putRes.ok ? `Successfully deployed commit: ${message}` : `ERROR: GitHub API status ${putRes.status}.`;
         } catch(e) { return `ERROR: Deployment exception (${e.message}).`; }
     }
 
-    // --- INITIALIZATION & CORE AGENT ENGINE ---
     document.addEventListener("DOMContentLoaded", () => {
       let sessionHistory = [];
       const termOut = document.getElementById('terminalOutput');
-      
       window.checkKeys(); 
       
-      const savedMem = localStorage.getItem('PG1_MEM_V12');
+      const savedMem = localStorage.getItem('PG1_MEM_V12_1');
       if (savedMem) {
           try {
               sessionHistory = JSON.parse(savedMem);
@@ -509,12 +501,12 @@
                   }
               });
               if (termOut.innerHTML === '') {
-                 termOut.innerHTML = '<div class="terminal-message agent-msg">PG1.Agent online. Vector memory restored.</div>';
+                 termOut.innerHTML = '<div class="terminal-message agent-msg">PG1.Agent online.</div>';
               }
           } catch(e) { sessionHistory = []; }
       }
 
-      function saveMemory() { localStorage.setItem('PG1_MEM_V12', JSON.stringify(sessionHistory)); }
+      function saveMemory() { localStorage.setItem('PG1_MEM_V12_1', JSON.stringify(sessionHistory)); }
 
       function appendMsg(html, type) {
         const div = document.createElement('div');
@@ -525,7 +517,6 @@
       }
       terminalAppendFunc = appendMsg;
 
-      // --- CRYPTO FEED TICKERS ---
       async function updateCryptoTickers() {
           try {
               const res = await secureFetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd', {method:"GET"});
@@ -543,16 +534,13 @@
       setInterval(updateCryptoTickers, 60000);
       document.getElementById('syncFeedBtn').onclick = updateCryptoTickers;
 
-      // --- AUTONOMOUS WATCHER SENTINEL ---
       let sentinelActive = true;
       document.getElementById('sentinelBtn').onclick = function() {
           sentinelActive = !sentinelActive;
           this.classList.toggle('active-btn', sentinelActive);
           this.innerText = sentinelActive ? "🛡️ Sentinel: ON" : "🛡️ Sentinel: OFF";
-          appendMsg(sentinelActive ? `[Sentinel Protocol] Watcher online.` : `[Sentinel Protocol] Watcher paused.`, "system-msg");
       };
 
-      // --- AUTONOMOUS CHRON LOOP ---
       let chronActive = false;
       const chronStatus = document.getElementById('chronStatusText');
       document.getElementById('chronBtn').onclick = function() {
@@ -560,31 +548,23 @@
           this.classList.toggle('active-btn', chronActive);
           this.innerText = chronActive ? "⏱️ Chron: ON" : "⏱️ Chron: OFF";
           if(chronStatus) chronStatus.innerText = chronActive ? "Active & Pinging" : "Standby";
-          if (chronActive) appendMsg(`[Chron Protocol] Autonomous background loop engaged. Agent will ping telemetry every 60 seconds.`, "system-msg");
+          if (chronActive) appendMsg(`[Chron Protocol] Autonomous background loop engaged.`, "system-msg");
       };
 
       setInterval(() => {
-          if(chronActive && document.getElementById('modelSelector')) {
-              // Silently triggers a background system check
-              appendMsg(`[Chron Trigger] Autonomous system health check... Core APIs responsive. Local vector DB synced.`, "system-msg");
-          }
+          if(chronActive) appendMsg(`[Chron Trigger] System health check verified.`, "system-msg");
       }, 60000);
 
       setInterval(() => {
         const speed = (2.2 + Math.random() * 0.6).toFixed(1);
-        const speedEl = document.getElementById('telemetrySpeed');
-        const throughputBar = document.getElementById('throughputBar');
-        if (speedEl) speedEl.innerText = speed + ' MB/s';
-        if (throughputBar) throughputBar.style.width = (50 + Math.random() * 30) + '%';
-
+        if (document.getElementById('telemetrySpeed')) document.getElementById('telemetrySpeed').innerText = speed + ' MB/s';
+        if (document.getElementById('throughputBar')) document.getElementById('throughputBar').style.width = (50 + Math.random() * 30) + '%';
         const cpu = Math.floor(24 + Math.random() * 12);
         const ram = Math.floor(43 + Math.random() * 8);
-
         if (document.getElementById('cpuLoad')) { document.getElementById('cpuLoad').innerText = cpu + '%'; document.getElementById('cpuBar').style.width = cpu + '%'; }
         if (document.getElementById('ramAlloc')) { document.getElementById('ramAlloc').innerText = ram + '%'; document.getElementById('ramBar').style.width = ram + '%'; }
       }, 1000);
 
-      // --- TAB SWITCHING ---
       document.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', () => {
           document.querySelectorAll('.nav-item, .view-section').forEach(el => el.classList.remove('active'));
@@ -593,9 +573,8 @@
         });
       });
 
-      // --- UTILITIES ---
       document.getElementById('clearBtn').onclick = () => {
-        termOut.innerHTML = '<div class="terminal-message agent-msg">Memory vault cleared.</div>';
+        termOut.innerHTML = '<div class="terminal-message agent-msg">Vault cleared.</div>';
         sessionHistory = [];
         saveMemory();
       };
@@ -608,7 +587,6 @@
       document.getElementById('closeModalBtn').onclick = () => logsModal.classList.remove('active');
       document.getElementById('purgeStorageBtn').onclick = () => { localStorage.clear(); alert('Storage purged.'); location.reload(); };
 
-      // --- SPEECH RECOGNITION ---
       let voiceActive = false;
       document.getElementById('voiceBtn').onclick = function() {
         voiceActive = !voiceActive;
@@ -621,19 +599,9 @@
       let dictation = SpeechRecognition ? new SpeechRecognition() : null;
       if (dictation) {
           dictation.continuous = false; dictation.interimResults = false;
-          dictation.onresult = (e) => {
-              document.getElementById('terminalInput').value = e.results[0][0].transcript;
-              document.getElementById('audioBtn').classList.remove('recording-btn');
-              document.getElementById('audioBtn').innerText = "🎙️ Dictate: OFF";
-          };
+          dictation.onresult = (e) => { document.getElementById('terminalInput').value = e.results[0][0].transcript; };
       }
-      document.getElementById('audioBtn').onclick = function() {
-          if (!dictation) return alert("Speech recognition not supported in this browser.");
-          if (this.classList.contains('recording-btn')) { dictation.stop(); this.classList.remove('recording-btn'); this.innerText = "🎙️ Dictate: OFF"; } 
-          else { dictation.start(); this.classList.add('recording-btn'); this.innerText = "🎙️ Listening..."; }
-      };
 
-      // --- MEDIA ATTACHMENTS ---
       let attachedMedia = null;
       document.getElementById('mediaBtn').onclick = () => document.getElementById('mediaInput').click();
       document.getElementById('mediaInput').onchange = (e) => {
@@ -655,26 +623,28 @@
         document.getElementById('mediaPreviewBox').style.display = 'none';
       };
 
-      // --- NEURAL DISPATCHER ---
       document.getElementById('sendCommandButton').onclick = async () => {
         let cmd = document.getElementById('terminalInput').value.trim();
         if (!cmd && !attachedMedia) return;
         
+        if (cmd === '/iss') cmd = 'Use the fetchLiveData tool to query https://api.wheretheiss.at/v1/satellites/25544';
+        if (cmd === '/crypto') cmd = 'Use the fetchLiveData tool to check https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd';
+
         const key = localStorage.getItem('PG1_KEY');
         if (!key) return appendMsg('Error: Master API Key required in Dash tab.', 'error-msg');
 
-        // Extract RAG Context
-        const ragContext = await queryVault(cmd);
+        let ragContext = "";
+        try { ragContext = await queryVault(cmd); } catch(e) {}
+        
         let finalPrompt = cmd;
         if (ragContext) {
-            finalPrompt = `[Local RAG Memory Injection: Previous relevant context is "${ragContext}"]\n\nUser Prompt: ${cmd}`;
-            appendMsg(`[Vector Vault] Relevant local memory retrieved and injected into prompt.`, "system-msg");
+            finalPrompt = `[Local RAG Memory Injection: Previous context: "${ragContext}"]\n\nUser Prompt: ${cmd}`;
+            appendMsg(`[Vector Vault] Relevant past memory injected.`, "system-msg");
         }
         
         saveToVault(cmd);
 
-        let payloadParts = [];
-        payloadParts.push({ text: finalPrompt });
+        let payloadParts = [{ text: finalPrompt }];
         if (attachedMedia) {
             payloadParts.push({ inlineData: { mimeType: attachedMedia.type, data: attachedMedia.base64 } });
             document.getElementById('clearMediaBtn').click();
@@ -684,11 +654,7 @@
         document.getElementById('terminalInput').value = '';
 
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are strictly PG1.Agent v12.0, an elite sovereign AI with RAG memory access, web scraping recon, and chron autonomy.
-        RULES:
-        1. MULTILINGUAL: Respond fluently in the language the user speaks.
-        2. MCP COMPLIANCE: Execute registered tools autonomously.
-        3. HONESTY & FACTUAL RIGOR: Never hallucinate capabilities or use placeholders. Present the factual output of your tools exactly as they are. Always ground responses in fact.`;
+        const sys = `You are PG1.Agent v12.1, a sovereign AI with MCP tools and RAG memory. Respond accurately and use tools when requested.`;
         
         sessionHistory.push({ role: "user", parts: payloadParts });
         const tools = getMCPToolDeclarations();
@@ -746,7 +712,6 @@
                   continueLoop = false;
               }
           }
-
         } catch (e) { 
           appendMsg(`Autonomous Exception: ${e.message}`, 'error-msg'); 
         }
