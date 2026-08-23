@@ -6,8 +6,6 @@
   <title>Project Gifted1™ - PG1.Agent</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    
-    /* Dynamic viewport height for mobile Safari compatibility */
     html, body { height: 100dvh; background-color: #f4f6f8; color: #333; display: flex; flex-direction: column; overflow: hidden; }
 
     .top-header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: white; border-bottom: 1px solid #e0e0e0; flex-shrink: 0; }
@@ -21,9 +19,7 @@
     .toggle-btn { padding: 8px 12px; border: 1px solid #ddd; background: white; border-radius: 8px; font-size: 0.85em; cursor: pointer; white-space: nowrap; }
     .clear-btn { color: #dc3545; border-color: #dc3545; background-color: #fff5f5; }
 
-    /* The main content area must be the only thing that scrolls */
     #main-content { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 90px; -webkit-overflow-scrolling: touch; }
-    
     .view-section { display: none; flex-direction: column; gap: 15px; min-height: 100%; }
     .view-section.active { display: flex; }
 
@@ -51,12 +47,7 @@
     .node-details { list-style: none; text-align: left; background: #f8f9fa; padding: 15px; border-radius: 8px; }
     .node-details li { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef; font-size: 0.9em; }
     .node-details li:last-child { border-bottom: none; }
-    .progress-bar-container { margin-top: 10px; }
-    .progress-label { display: flex; justify-content: space-between; font-size: 0.85em; margin-bottom: 5px; color: #555;}
-    .progress-track { height: 8px; background: #e9ecef; border-radius: 4px; overflow: hidden; }
-    .progress-fill { height: 100%; background: #007bff; }
 
-    /* Re-engineered Terminal View */
     #view-terminal { flex: 1; display: none; flex-direction: column; justify-content: space-between; padding-bottom: 15px; min-height: calc(100vh - 220px); }
     #view-terminal.active { display: flex; }
     
@@ -69,10 +60,9 @@
 
     .terminal-input-area { display: flex; gap: 8px; align-items: center; background: white; padding: 10px; border-radius: 12px; border: 1px solid #ddd; flex-shrink: 0; }
     .icon-btn { background: none; border: 1px solid #eee; border-radius: 8px; padding: 5px; font-size: 0.7em; color: #004085; cursor: pointer; width: 45px; flex-shrink: 0; }
-    .terminal-input-area input { flex: 1; padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; /* 16px prevents iOS auto-zoom */ }
+    .terminal-input-area input { flex: 1; padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; }
     .send-btn { padding: 12px 18px; background: #198754; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; flex-shrink: 0; }
 
-    /* Fixed Navigation */
     .bottom-nav { display: flex; justify-content: space-around; background: white; padding: 10px; border-top: 1px solid #e0e0e0; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
     .nav-item { background: none; border: none; font-size: 0.8em; color: #666; cursor: pointer; text-align: center; flex: 1; }
     .nav-item.active { color: #007bff; font-weight: bold; }
@@ -99,20 +89,20 @@
     <section id="view-dash" class="view-section active">
       <div class="card">
         <h3 class="card-title">⚡ x402 Sovereign Key Relay</h3>
-        <p class="card-desc">Inject your Master Key to ignite live PG1.Agent node interactions.</p>
+        <p class="card-desc">Inject your Master Key (Gemini API Key) for direct neural node interactions.</p>
         <div class="key-input-group">
-          <input type="password" id="masterKeyInput" placeholder="Enter Sovereign Key..." value="••••••••••••••••••••••••••••">
+          <input type="password" id="masterKeyInput" placeholder="Enter Gemini API Key..." value="">
           <button id="saveKeyButton" class="primary-btn">Save Key</button>
         </div>
         <div class="key-status-footer">
           <span id="keyStatusText" class="status-text" style="color:red;">KEY_STATUS: MISSING</span>
-          <span class="connection-status"><span class="status-dot green"></span> CONNECTED</span>
+          <span class="connection-status"><span class="status-dot green"></span> DYNAMIC_FALLBACK</span>
         </div>
       </div>
 
       <div class="card">
         <h3 class="card-title"><span class="status-dot blue"></span> Sovereign Edge Active</h3>
-        <p class="card-desc">Autonomous decentralized edge grid active via PG1 secure synchronization.</p>
+        <p class="card-desc">Decentralized edge grid active with auto-fallback model routing.</p>
         <div class="telemetry-header">
           <span>📡 Live OTX Telemetry Feed</span>
           <button class="outline-btn">🔄 Sync Feed</button>
@@ -128,7 +118,7 @@
     <section id="view-terminal" class="view-section">
       <div id="terminalOutput" class="terminal-display">
         <div class="terminal-message system-msg">
-          PG1.Agent Terminal initialized. Awaiting commands...
+          PG1.Agent Terminal initialized with dynamic fallback safety. Awaiting commands...
         </div>
       </div>
       
@@ -150,18 +140,8 @@
           <li><span>Node ID:</span> <strong>PG1-CORE-01</strong></li>
           <li><span>Status:</span> <strong style="color: green;">● Online & Syncing</strong></li>
           <li><span>Ownership:</span> <strong style="color: blue;">100% Sovereign</strong></li>
-          <li><span>Protocol:</span> <strong>x402 Active</strong></li>
+          <li><span>Protocol:</span> <strong>Dynamic Multi-Model Fallback</strong></li>
         </ul>
-      </div>
-      
-      <div class="card">
-        <h3 class="card-title">📊 Node System Telemetry</h3>
-        <div class="progress-bar-container">
-          <div class="progress-label"><span>CPU Load</span> <span>33%</span></div>
-          <div class="progress-track">
-            <div class="progress-fill" style="width: 33%;"></div>
-          </div>
-        </div>
       </div>
     </section>
   </main>
@@ -204,21 +184,20 @@
           localStorage.setItem('PG1_MASTER_KEY', key);
           keyStatusText.innerText = 'KEY_STATUS: STORED_LOCAL';
           keyStatusText.style.color = '#198754';
-          alert('Sovereign Key Stored Locally.');
+          alert('Sovereign Key Stored Locally. Multi-Model Fallback Ready.');
         }
       });
 
       if (localStorage.getItem('PG1_MASTER_KEY')) {
         keyStatusText.innerText = 'KEY_STATUS: STORED_LOCAL';
         keyStatusText.style.color = '#198754';
+        keyInput.value = '••••••••••••••••••••••••••••';
       }
 
       const sendBtn = document.getElementById('sendCommandButton');
       const terminalInput = document.getElementById('terminalInput');
       const terminalOutput = document.getElementById('terminalOutput');
       const clearBtn = document.getElementById('clearTerminalBtn');
-
-      const WORKER_URL = 'https://pg1-worker.gnfcw9w5rk.workers.dev/'; 
 
       function appendMessage(text, type) {
         const msgDiv = document.createElement('div');
@@ -232,6 +211,14 @@
         terminalOutput.innerHTML = '<div class="terminal-message system-msg">Terminal cleared.</div>';
       });
 
+      // Dynamic Fallback Model Sequence (tries latest frontier models first, falls back sequentially)
+      const targetModels = [
+        "gemini-3.7-flash",  // Latest workhorse model
+        "gemini-3.5-flash",  // Previous frontier Flash
+        "gemini-3.1-pro",    // Advanced reasoning fallback
+        "gemini-2.5-flash"   // Highly stable fallback
+      ];
+
       sendBtn.addEventListener('click', async () => {
         const command = terminalInput.value.trim();
         if (!command) return;
@@ -239,31 +226,46 @@
         appendMessage(`> ${command}`, 'user-msg');
         terminalInput.value = '';
         
-        const masterKey = localStorage.getItem('PG1_MASTER_KEY') || "";
+        const apiKey = localStorage.getItem('PG1_MASTER_KEY');
+        if (!apiKey || apiKey === '••••••••••••••••••••••••••••') {
+             appendMessage(`Error: Valid Gemini API Key required. Re-enter key in Dash.`, 'error-msg');
+             return;
+        }
 
-        try {
-          const response = await fetch(WORKER_URL, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${masterKey}` 
-            },
-            body: JSON.stringify({ command })
-          });
+        let success = false;
+        let lastError = "";
 
-          if (!response.ok) {
-            throw new Error(`Server returned status ${response.status}`);
+        // Loop through models until one succeeds
+        for (const model of targetModels) {
+          try {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            
+            const response = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ contents: [{ parts: [{ text: command }] }] })
+            });
+
+            const data = await response.json();
+            
+            if (data.error) {
+              throw new Error(data.error.message);
+            }
+
+            if (data.candidates && data.candidates[0].content) {
+              const agentReply = data.candidates[0].content.parts[0].text;
+              appendMessage(`[Model: ${model}]<br>${agentReply}`, 'agent-msg');
+              success = true;
+              break; // Exit loop on success
+            }
+          } catch (err) {
+            lastError = err.message;
+            // Continues to the next model in the fallback array
           }
+        }
 
-          const data = await response.json();
-          
-          if (data.error) {
-            appendMessage(`Agent Error: ${data.error}`, 'error-msg');
-          } else {
-            appendMessage(data.response, 'agent-msg');
-          }
-        } catch (error) {
-          appendMessage(`Connection Failure: ${error.message}. Ensure WORKER_URL is correct.`, 'error-msg');
+        if (!success) {
+          appendMessage(`Relay Failure across all models. Last Error: ${lastError}`, 'error-msg');
         }
       });
 
