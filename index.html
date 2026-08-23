@@ -2,12 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Project Gifted1™ - PG1.Agent</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Header -->
   <header class="top-header">
     <div class="brand-title">
       <span class="status-dot green"></span>
@@ -16,7 +15,6 @@
     <div class="version">v5.6 Sovereign Engine</div>
   </header>
 
-  <!-- Top Action Bar -->
   <div class="action-bar">
     <button class="toggle-btn">📹 Video: OFF</button>
     <button class="toggle-btn">🎙️ Audio: OFF</button>
@@ -24,9 +22,7 @@
     <button class="toggle-btn clear-btn" id="clearTerminalBtn">🗑️ Clear</button>
   </div>
 
-  <!-- Main Content Area -->
   <main id="main-content">
-    
     <!-- DASH VIEW -->
     <section id="view-dash" class="view-section active">
       <div class="card">
@@ -37,7 +33,7 @@
           <button id="saveKeyButton" class="primary-btn">Save Key</button>
         </div>
         <div class="key-status-footer">
-          <span id="keyStatusText" class="status-text">KEY_STATUS: STORED_LOCAL</span>
+          <span id="keyStatusText" class="status-text">KEY_STATUS: MISSING</span>
           <span class="connection-status"><span class="status-dot green"></span> CONNECTED</span>
         </div>
       </div>
@@ -98,10 +94,8 @@
         </div>
       </div>
     </section>
-
   </main>
 
-  <!-- Bottom Navigation -->
   <nav class="bottom-nav">
     <button class="nav-item active" data-target="view-dash">
       <span class="icon">📊</span><br>Dash
