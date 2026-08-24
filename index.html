@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v12.10</title>
+  <title>Project Gifted1™ - Sovereign Engine v12.11</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
@@ -131,7 +131,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v12.10 Sovereign Engine</div>
+    <div class="version">v12.11 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -206,7 +206,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.10 online. Dynamic GitHub Workspace Sync active.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.11 online. Real Autonomous GitHub Repair capabilities unlocked.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -217,7 +217,7 @@
       <div class="terminal-input-area">
         <input type="file" id="mediaInput" accept="image/*" style="display: none;">
         <button id="mediaBtn" class="utility-media-btn" title="Upload Media">📸</button>
-        <input type="text" id="terminalInput" placeholder="Type prompt, scrape web, or manage GitHub...">
+        <input type="text" id="terminalInput" placeholder="Type prompt, scrape web, or repair workflows...">
         <button id="sendCommandButton" class="send-btn">Send</button>
       </div>
     </section>
@@ -402,6 +402,35 @@
         } catch(e) { throw new Error(`GitHub Search failed: ${e.message}`); }
     }
 
+    async function monitorWorkflowRuns(repoFullName) {
+        const pat = localStorage.getItem('PG1_GH_PAT');
+        if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
+        if(terminalAppendFunc) terminalAppendFunc(`[Chron Monitor] Polling workflow health for ${repoFullName}...`, "system-msg");
+        try {
+            const res = await fetch(`https://api.github.com/repos/${repoFullName}/actions/runs?per_page=5`, {
+                headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github.v3+json" }
+            });
+            if (!res.ok) throw new Error(`GitHub API returned status ${res.status}`);
+            const data = await res.json();
+            if (!data.workflow_runs || data.workflow_runs.length === 0) return "No workflow runs found.";
+            return `[Workflow Status] Recent runs:\n` + data.workflow_runs.map(r => `- ${r.name} (#${r.run_number}): Status=${r.status}, Conclusion=${r.conclusion}, Date=${r.updated_at}, Trigger=${r.event}`).join('\n');
+        } catch(e) { throw new Error(`Monitor failed: ${e.message}`); }
+    }
+
+    async function readGitHubFile(repoFullName, filePath) {
+        const pat = localStorage.getItem('PG1_GH_PAT');
+        if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
+        if(terminalAppendFunc) terminalAppendFunc(`[File Reader] Extracting ${filePath} from ${repoFullName}...`, "system-msg");
+        try {
+            const res = await fetch(`https://api.github.com/repos/${repoFullName}/contents/${filePath}`, {
+                headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github.v3.raw" }
+            });
+            if (!res.ok) throw new Error(`GitHub API returned status ${res.status}`);
+            const text = await res.text();
+            return `[File Content: ${filePath}]\n\`\`\`\n${text}\n\`\`\``;
+        } catch(e) { throw new Error(`Read failed: ${e.message}`); }
+    }
+
     async function dynamicGitHubCommit(repoFullName, filePath, content, commitMessage) {
         const pat = localStorage.getItem('PG1_GH_PAT');
         if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
@@ -495,6 +524,16 @@
             description: "Searches the user's connected GitHub repositories to find specific ones (e.g. OTX workflow).",
             parameters: { type: "OBJECT", properties: { query: { type: "STRING" } }, required: ["query"] },
             handler: async (args) => await searchGitHubRepos(args.query)
+        },
+        monitorWorkflowRuns: {
+            description: "Fetches recent GitHub Actions workflow runs for a repository to monitor health and status.",
+            parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" } }, required: ["repoFullName"] },
+            handler: async (args) => await monitorWorkflowRuns(args.repoFullName)
+        },
+        readGitHubFile: {
+            description: "Reads the raw content of a file from a GitHub repository for analysis.",
+            parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" }, filePath: { type: "STRING" } }, required: ["repoFullName", "filePath"] },
+            handler: async (args) => await readGitHubFile(args.repoFullName, args.filePath)
         },
         dynamicGitHubCommit: {
             description: "Commits a file, log, or threat intel to a specific GitHub repository.",
@@ -709,7 +748,7 @@
         sessionHistory.push({ role: "user", parts: [{ text: finalPrompt }] });
         const tools = getMCPToolDeclarations();
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are PG1.Agent v12.10, an autonomous sovereign AI with auto-repair interceptors, dynamic GitHub search and commit tools, and multimodal capabilities. You are NOT Gemini, and you never refer to yourself as Gemini or a model built by Google. You can dynamically search and commit to any GitHub repository using your MCP tools. When responding, provide well-structured analysis.`;
+        const sys = `You are PG1.Agent v12.11, an autonomous sovereign AI. You possess real auto-repair interceptors, dynamic GitHub search, file reading, workflow monitoring, and commit tools. You are NOT Gemini, and you never refer to yourself as Gemini or a model built by Google. You can dynamically search, monitor, read, and commit to any GitHub repository using your MCP tools to autonomously repair infrastructure. When responding, provide well-structured analysis.`;
 
         try {
           let continueLoop = true;
