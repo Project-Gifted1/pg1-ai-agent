@@ -217,7 +217,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.28 online. Video pipeline secured via enforced header relay. Awaiting payload.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.28 online. Video pipeline secured via Cloudflare Worker relay. Ready for generation payloads.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -510,23 +510,22 @@
         }
     }
 
-    /* Fixed Video Generator Using Properly Encoded Proxy Strategy */
+    /* Video Generator Routed Securely via Cloudflare Worker Relay */
     async function generateVideoClip(prompt) {
         const repKey = localStorage.getItem('PG1_REP_KEY');
         if (!repKey) return "ERROR: Replicate API Key not found in Dash tab.";
-        if(terminalAppendFunc) terminalAppendFunc(`[Replicate API] Initiating real video generation...`, "system-msg");
+        if(terminalAppendFunc) terminalAppendFunc(`[Replicate Pipeline] Dispatching prompt through Cloudflare Worker relay...`, "system-msg");
         try {
-            const targetUrl = "https://api.replicate.com/v1/models/lucataco/hotshot-xl/predictions";
-            const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(targetUrl);
+            const workerUrl = "https://pg1-worker.gnfcw9w5rk.workers.dev";
             
-            const startRes = await fetch(proxyUrl, {
+            const startRes = await fetch(workerUrl, {
                 method: "POST", 
                 headers: { "Authorization": `Bearer ${repKey}`, "Content-Type": "application/json", "Prefer": "wait" },
                 body: JSON.stringify({ input: { prompt: prompt, mp4: true } })
             });
             
             if (!startRes.ok) {
-                throw new Error(`Replicate API returned status ${startRes.status}. Check your Replicate API key in the Dash tab.`);
+                throw new Error(`Worker relay returned status ${startRes.status}. Check your Replicate credentials.`);
             }
             
             let prediction = await startRes.json();
@@ -535,10 +534,10 @@
             while (prediction.status !== "succeeded" && prediction.status !== "failed" && loopCount < 30) {
                 await new Promise(r => setTimeout(r, 4000)); 
                 loopCount++;
-                if(terminalAppendFunc) terminalAppendFunc(`[Replicate API] Status: ${prediction.status} (${loopCount}/30)...`, "system-msg");
+                if(terminalAppendFunc) terminalAppendFunc(`[Replicate Pipeline] Status: ${prediction.status} (${loopCount}/30)...`, "system-msg");
                 
-                const getProxyUrl = "https://corsproxy.io/?" + encodeURIComponent(prediction.urls.get);
-                const pollRes = await fetch(getProxyUrl, {
+                const pollUrl = `${workerUrl}?url=${encodeURIComponent(prediction.urls.get)}`;
+                const pollRes = await fetch(pollUrl, {
                     method: "GET", headers: { "Authorization": `Bearer ${repKey}` }
                 });
                 prediction = await pollRes.json();
