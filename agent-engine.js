@@ -287,7 +287,12 @@
         });
 
         const data = await res.json();
-        output = data.candidates?.[0]?.content?.parts?.[0]?.text || data.output || `API Response: ${JSON.stringify(data)}`;
+        const candidateParts = data.candidates?.[0]?.content?.parts;
+        if (Array.isArray(candidateParts)) {
+          output = candidateParts.map(p => p.text || (p.functionCall ? `[Tool Call: ${p.functionCall.name}]` : '')).filter(Boolean).join('\n\n') || data.output || JSON.stringify(data);
+        } else {
+          output = data.candidates?.[0]?.content?.parts?.[0]?.text || data.output || data.message || `API Response: ${JSON.stringify(data)}`;
+        }
         logToConsole("success", "Response Received", { length: output.length });
       }
 
