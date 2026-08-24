@@ -220,7 +220,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.29 online. Video pipeline hardened with multi-proxy failover cascade.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.29 online. Video pipeline hardened with Cloudflare Worker relay.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -513,47 +513,40 @@
         }
     }
 
-    /* V12.29 Multi-Proxy Failover Video Generator */
+    /* V12.29 Cloudflare Worker Video Generator */
     async function generateVideoClip(prompt) {
         const repKey = localStorage.getItem('PG1_REP_KEY');
         if (!repKey) return "ERROR: Replicate API Key not found in Dash tab.";
-        if(terminalAppendFunc) terminalAppendFunc(`[Video Pipeline] Dispatching prompt through robust proxy cascade...`, "system-msg");
+        if(terminalAppendFunc) terminalAppendFunc(`[Video Pipeline] Dispatching prompt through Cloudflare Worker relay...`, "system-msg");
         
         try {
-            const targetUrl = "https://api.replicate.com/v1/predictions";
+            const workerUrl = "https://pg1-worker.gnfcw9w5rk.workers.dev";
             const payload = {
                 version: "8d952537baedccf15b3c3b0ebf4cbfb49e31d3f94e1d1ebc343468cc02ea1bc8",
                 input: { prompt: prompt, mp4: true }
             };
 
-            const proxyList = [
-                "https://corsproxy.io/?" + encodeURIComponent(targetUrl),
-                "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(targetUrl),
-                "https://thingproxy.freeboard.io/fetch/" + targetUrl
-            ];
+            const postRes = await fetch(workerUrl + "?url=" + encodeURIComponent("https://api.replicate.com/v1/predictions"), {
+                method: "POST",
+                headers: { "Authorization": `Bearer ${repKey}`, "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
 
             let prediction = null;
-            let activeProxy = null;
-
-            for (const proxyUrl of proxyList) {
-                try {
-                    const res = await fetch(proxyUrl, {
-                        method: "POST",
-                        headers: { "Authorization": `Bearer ${repKey}`, "Content-Type": "application/json" },
-                        body: JSON.stringify(payload)
-                    });
-                    if (res.ok) {
-                        prediction = await res.json();
-                        activeProxy = proxyUrl.replace(targetUrl, "").replace(encodeURIComponent(targetUrl), "");
-                        break;
-                    }
-                } catch (err) {
-                    console.log("Proxy iteration failed:", proxyUrl);
-                }
+            if (!postRes.ok) {
+                const fallbackRes = await fetch(workerUrl, {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${repKey}`, "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                if (!fallbackRes.ok) throw new Error(`Worker relay returned HTTP ${postRes.status}`);
+                prediction = await fallbackRes.json();
+            } else {
+                prediction = await postRes.json();
             }
 
-            if (!prediction) {
-                throw new Error("All public proxy bridges refused the connection. Cloudflare deployment strictly required for this endpoint.");
+            if (!prediction || !prediction.urls) {
+                throw new Error("Invalid response received from prediction endpoint.");
             }
             
             let loopCount = 0;
@@ -564,16 +557,17 @@
                 
                 try {
                     const getUrl = prediction.urls.get;
-                    const encodedGetUrl = activeProxy.includes("encode") ? encodeURIComponent(getUrl) : getUrl;
-                    const pollRes = await fetch(activeProxy + encodedGetUrl, {
+                    const pollRes = await fetch(workerUrl + "?url=" + encodeURIComponent(getUrl), {
                         method: "GET", headers: { "Authorization": `Bearer ${repKey}` }
                     });
-                    prediction = await pollRes.json();
+                    if (pollRes.ok) {
+                        prediction = await pollRes.json();
+                    }
                 } catch(e) {}
             }
             
             if (prediction.status === "failed") throw new Error("Replicate video rendering failed internally.");
-            const videoUrl = prediction.output;
+            const videoUrl = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
             return `[Success] Video rendering complete.\n
             <div style="background:#050811; border-radius:8px; margin-top:8px; padding:15px; text-align:center; border:1px solid #38bdf8;">
               <video controls playsinline preload="auto" style="width:100%; max-height:220px; background:#000; border-radius:6px; display:block;"><source src="${videoUrl}" type="video/mp4"></video>
