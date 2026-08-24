@@ -3,17 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v12.15</title>
+  <title>Project Gifted1™ - Sovereign Engine v12.18</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
 
-    @keyframes pulseGlow { 0% { transform: scale(0.96); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.5); } 70% { transform: scale(1.02); box-shadow: 0 0 0 14px rgba(56, 189, 248, 0); } 100% { transform: scale(0.96); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); } }
+    @keyframes pulseGlow { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); } 70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
     @keyframes fastSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     @keyframes dishSweep { 0%, 100% { transform: rotate(-20deg); } 50% { transform: rotate(20deg); } }
     @keyframes electricPulse { 0%, 100% { text-shadow: 0 0 5px rgba(56, 189, 248, 0.4), 0 0 10px rgba(56, 189, 248, 0.2); } 50% { text-shadow: 0 0 15px rgba(56, 189, 248, 0.9), 0 0 25px rgba(56, 189, 248, 0.6); } }
     @keyframes iconPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.8; } }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    
+    @keyframes coreBackgroundBreathe { 
+        0%, 100% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.1); transform: translate(-50%, -50%) scale(1); opacity: 0.5; } 
+        50% { box-shadow: 0 0 45px rgba(56, 189, 248, 0.7); transform: translate(-50%, -50%) scale(1.15); opacity: 1; } 
+    }
 
     .pulsing-bolt { animation: electricPulse 2s infinite; display: inline-block; }
     .spin-icon { display: inline-block; animation: fastSpin 2s linear infinite; }
@@ -50,9 +55,13 @@
     .progress-bar-container { width: 100%; background: #1e293b; border-radius: 4px; height: 5px; margin-top: 4px; margin-bottom: 8px; overflow: hidden; }
     .progress-bar { height: 100%; background: #38bdf8; border-radius: 4px; transition: width 0.5s ease; }
 
-    /* Pulsing AI Core Logo Container */
     .ai-core-container { position: relative; width: 130px; height: 130px; margin: 0 auto 15px auto; }
-    .ai-core-logo { width: 100%; height: 100%; border-radius: 50%; border: 2px solid #38bdf8; overflow: hidden; position: relative; z-index: 2; background: #0b0f19; animation: pulseGlow 2.5s infinite; box-shadow: 0 0 16px rgba(56, 189, 248, 0.4); }
+    .ai-core-container::before {
+        content: ''; position: absolute; top: 50%; left: 50%; width: 100%; height: 100%; border-radius: 50%;
+        background: radial-gradient(circle, rgba(56,189,248,0.4) 0%, rgba(56,189,248,0) 70%);
+        animation: coreBackgroundBreathe 3s ease-in-out infinite; z-index: 1; pointer-events: none;
+    }
+    .ai-core-logo { width: 100%; height: 100%; border-radius: 50%; border: 2px solid #38bdf8; overflow: hidden; position: relative; z-index: 2; background: #0b0f19; }
     .ai-core-logo img { width: 100%; height: 100%; object-fit: cover; }
 
     .terminal-controls-header { display: flex; justify-content: space-between; align-items: center; background: #111827; padding: 8px 12px; border-radius: 8px; border: 1px solid #1f2937; font-size: 0.8em; margin-bottom: 10px; }
@@ -78,15 +87,13 @@
     .msg-action-btn:hover { color: #f8fafc; background: #334155; }
 
     .media-preview-box { display: none; padding: 10px; background: #111827; border: 1px solid #1f2937; border-radius: 10px; margin-bottom: 8px; position: relative; text-align: center; }
-    .media-preview-box img { max-height: 120px; border-radius: 6px; max-width: 100%; border: 1px solid #334155; object-fit: contain; }
+    .media-preview-box img { max-height: 120px; border-radius: 6px; max-width: 100%; border: 1px solid #334155; }
     .clear-media-btn { position: absolute; top: -8px; right: -8px; background: #ef4444; color: white; border: none; border-radius: 50%; width: 24px; height: 24px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10; }
 
-    .terminal-input-area { display: flex; gap: 4px; align-items: center; background: #111827; padding: 8px; border-radius: 10px; border: 1px solid #1f2937; flex-shrink: 0; width: 100%; box-sizing: border-box; }
-    .terminal-input-area input[type="text"], .utility-media-btn, .send-btn { height: 40px; box-sizing: border-box; margin: 0; }
-    .terminal-input-area input[type="text"] { flex: 1; min-width: 0; padding: 0 8px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #0f172a; color: #f8fafc; }
-    .utility-media-btn { padding: 0 10px; background: #1e293b; border: 1px solid #334155; color: #38bdf8; border-radius: 6px; font-size: 1.1em; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
-    .utility-media-btn:hover { background: #334155; }
-    .send-btn { padding: 0 12px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85em; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .terminal-input-area { display: flex; gap: 6px; align-items: center; background: #111827; padding: 8px; border-radius: 10px; border: 1px solid #1f2937; flex-shrink: 0; }
+    .terminal-input-area input[type="text"] { flex: 1; padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #0f172a; color: #f8fafc; }
+    .utility-media-btn { padding: 8px 10px; background: #1e293b; border: 1px solid #334155; color: #38bdf8; border-radius: 6px; font-size: 1.1em; cursor: pointer; flex-shrink: 0; }
+    .send-btn { padding: 10px 16px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85em; flex-shrink: 0; }
 
     .bottom-nav { display: flex; justify-content: space-around; background: #111827; padding: 8px; border-top: 1px solid #1f2937; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
     .nav-item { background: none; border: none; font-size: 0.75em; color: #64748b; cursor: pointer; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
@@ -134,7 +141,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v12.15 Sovereign Engine</div>
+    <div class="version">v12.18 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -212,9 +219,9 @@
         <div>
           <span style="color:#94a3b8; margin-right:6px;">PG1 Engine:</span>
           <select id="modelSelector">
-            <option value="gemini-2.5-flash">2.5 Flash (Fastest)</option>
-            <option value="gemini-2.5-pro" selected>2.5 Pro (Auto-Healing Core)</option>
-            <option value="gemini-1.5-pro">1.5 Pro (Advanced Core)</option>
+            <option value="gemini-3.5-flash">3.5 Flash-Lite (Fastest)</option>
+            <option value="gemini-3.6-flash" selected>3.6 Flash (Auto-Healing Core)</option>
+            <option value="gemini-3.1-pro-preview">3.1 Pro (Advanced Core)</option>
           </select>
         </div>
         <div class="terminal-action-links">
@@ -224,19 +231,18 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">Project Gifted1™ Sovereign Engine v12.15 online. System nominal.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.18 online. Model selector updated to active GA endpoints.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
         <button id="clearMediaBtn" class="clear-media-btn">✕</button>
-        <img id="mediaPreviewImg" alt="Attachment Preview" style="display:none;">
+        <img id="mediaPreviewImg" style="display:none;">
       </div>
 
       <div class="terminal-input-area">
         <input type="file" id="mediaInput" accept="image/*" style="display: none;">
-        <button id="mediaBtn" class="utility-media-btn" title="Upload Media Attachment">📸</button>
-        <button id="inlineMicBtn" class="utility-media-btn" title="Dictate">🎤</button>
-        <input type="text" id="terminalInput" placeholder="Type prompt, scrape web, or dictate...">
+        <button id="mediaBtn" class="utility-media-btn" title="Upload Media">📸</button>
+        <input type="text" id="terminalInput" placeholder="Type prompt, or request live web scrape...">
         <button id="sendCommandButton" class="send-btn">Send</button>
       </div>
     </section>
@@ -249,7 +255,7 @@
           </div>
         </div>
         <h2 style="font-size: 1.1em; color: #f8fafc; margin-bottom: 2px;">PG1.Agent™ Sovereign Core</h2>
-        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Auto-Healing • Dynamic GitHub Intel • Multimodal Camera</p>
+        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Auto-Healing • Dynamic GitHub Intel • PIP Camera</p>
         
         <ul class="stats-list" style="text-align: left;">
           <li><span>Agent ID:</span> <strong style="color: #38bdf8;">PG1-CORE-01</strong></li>
@@ -270,8 +276,8 @@
   </main>
 
   <nav class="bottom-nav">
-    <button class="nav-item" data-target="view-dash"><span>📊</span>Dash</button>
-    <button class="nav-item active" data-target="view-terminal"><span>⚡</span>Terminal</button>
+    <button class="nav-item active" data-target="view-dash"><span>📊</span>Dash</button>
+    <button class="nav-item" data-target="view-terminal"><span>⚡</span>Terminal</button>
     <button class="nav-item" data-target="view-node"><span>🧠</span>Core</button>
   </nav>
 
@@ -407,18 +413,6 @@
         }
     }
 
-    async function fetchLiveData(url) {
-        if (!url) return "ERROR: Missing URL parameter.";
-        if (terminalAppendFunc) terminalAppendFunc(`[Data Fetcher] Querying live data from: ${url}...`, "system-msg");
-        try {
-            const res = await secureFetch(url, { method: "GET" });
-            const data = await res.text();
-            return `[Live Data]\n${data.substring(0, 1500)}`;
-        } catch(e) {
-            throw new Error(`Data fetch failed: ${e.message}`);
-        }
-    }
-
     async function searchGitHubRepos(query) {
         const pat = localStorage.getItem('PG1_GH_PAT');
         if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
@@ -511,14 +505,6 @@
         }
     }
 
-    function generateImage(prompt) {
-        if (!prompt) return "ERROR: Missing image prompt.";
-        if (terminalAppendFunc) terminalAppendFunc(`[Image Engine] Synthesizing image: "${prompt}"...`, "system-msg");
-        const encoded = encodeURIComponent(prompt);
-        const imageUrl = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&nologo=true&seed=${Date.now()}`;
-        return `[Image Generated]\n<div style="margin-top:8px; border-radius:8px; overflow:hidden; border:1px solid #38bdf8;"><img src="${imageUrl}" alt="${prompt}" style="width:100%; display:block; border-radius:6px;" loading="lazy"><a href="${imageUrl}" target="_blank" class="primary-btn" style="display:inline-block; margin-top:8px; text-decoration:none;">🔍 View Full Image</a></div>`;
-    }
-
     async function generateVideoClip(prompt) {
         const repKey = localStorage.getItem('PG1_REP_KEY');
         if (!repKey) return "ERROR: Replicate API Key not found in Dash tab.";
@@ -554,42 +540,50 @@
         fetchLiveData: {
             description: "Fetches live JSON data from an external API endpoint.",
             parameters: { type: "OBJECT", properties: { url: { type: "STRING" } }, required: ["url"] },
-            handler: async function(args) { return await fetchLiveData(args?.url || args?.targetUrl); }
+            handler: async (args) => await fetchLiveData(args.url)
         },
         webScraper: {
             description: "Scrapes a live webpage or text URL for research.",
             parameters: { type: "OBJECT", properties: { url: { type: "STRING" } }, required: ["url"] },
-            handler: async function(args) { return await scrapeWebPage(args?.url || args?.targetUrl); }
+            handler: async (args) => await scrapeWebPage(args.url)
         },
         searchGitHubRepos: {
             description: "Searches the user's connected GitHub repositories to find specific ones (e.g. OTX workflow).",
             parameters: { type: "OBJECT", properties: { query: { type: "STRING" } }, required: ["query"] },
-            handler: async function(args) { return await searchGitHubRepos(args?.query || args?.q || ""); }
+            handler: async (args) => await searchGitHubRepos(args.query)
         },
         monitorWorkflowRuns: {
             description: "Fetches recent GitHub Actions workflow runs for a repository to monitor health and status.",
             parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" } }, required: ["repoFullName"] },
-            handler: async function(args) { return await monitorWorkflowRuns(args?.repoFullName || args?.repo || args?.repository); }
+            handler: async (args) => await monitorWorkflowRuns(args.repoFullName)
         },
         readGitHubFile: {
             description: "Reads the raw content of a file from a GitHub repository for analysis.",
             parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" }, filePath: { type: "STRING" } }, required: ["repoFullName", "filePath"] },
-            handler: async function(args) { return await readGitHubFile(args?.repoFullName || args?.repo, args?.filePath || args?.path); }
+            handler: async (args) => await readGitHubFile(args.repoFullName, args.filePath)
         },
         dynamicGitHubCommit: {
             description: "Commits a file, log, or threat intel to a specific GitHub repository.",
             parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING", description: "Format: owner/repo" }, filePath: { type: "STRING" }, content: { type: "STRING" }, commitMessage: { type: "STRING" } }, required: ["repoFullName", "filePath", "content", "commitMessage"] },
-            handler: async function(args) { return await dynamicGitHubCommit(args?.repoFullName || args?.repo, args?.filePath || args?.path, args?.content || args?.data, args?.commitMessage || args?.message); }
+            handler: async (args) => await dynamicGitHubCommit(args.repoFullName, args.filePath, args.content, args.commitMessage)
         },
         generateImage: {
             description: "Generates a real, high-resolution AI image from a text prompt.",
             parameters: { type: "OBJECT", properties: { prompt: { type: "STRING" } }, required: ["prompt"] },
-            handler: function(args) { return generateImage(args?.prompt); }
+            handler: (args) => {
+                if (!args.prompt) return "ERROR: Missing prompt.";
+                const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(args.prompt)}?width=800&height=450&nologo=true`;
+                return `[Success] Image generated:\n
+                <div style="background:#050811; border-radius:8px; margin-top:8px; padding:15px; text-align:center; border:1px solid #38bdf8;">
+                  <img src="${url}" alt="AI Image" style="width:100%; height:auto; border-radius:4px; display:block;">
+                  <a href="${url}" download="PG1_${Date.now()}.jpg" target="_blank" class="primary-btn" style="display:inline-block; margin-top:12px; background:#10b981; color:#fff; text-decoration:none;">⬇ Download Image</a>
+                </div>`;
+            }
         },
         generateVideoClip: {
             description: "Generates a high-fidelity AI video via real async Replicate API from a prompt.",
             parameters: { type: "OBJECT", properties: { prompt: { type: "STRING" } }, required: ["prompt"] },
-            handler: async function(args) { return await generateVideoClip(args?.prompt); }
+            handler: async (args) => await generateVideoClip(args.prompt)
         }
     };
 
@@ -605,13 +599,11 @@
 
     async function executeMCPTool(toolName, args) {
         if (!MCP_TOOL_REGISTRY[toolName]) return `[MCP Error] Tool not found.`;
-        const tool = MCP_TOOL_REGISTRY[toolName];
-        return await tool.handler.call(tool, args || {});
+        return await MCP_TOOL_REGISTRY[toolName].handler(args);
     }
 
     document.addEventListener("DOMContentLoaded", () => {
       let sessionHistory = [];
-      let attachedMediaData = null; // { base64: string, mimeType: string }
       const termOut = document.getElementById('terminalOutput');
       window.checkKeys(); 
 
@@ -624,56 +616,6 @@
       }
       terminalAppendFunc = appendMsg;
 
-      // Media attachment button and file reader handlers
-      const mediaBtn = document.getElementById('mediaBtn');
-      const mediaInput = document.getElementById('mediaInput');
-      const mediaPreviewBox = document.getElementById('mediaPreviewBox');
-      const mediaPreviewImg = document.getElementById('mediaPreviewImg');
-      const clearMediaBtn = document.getElementById('clearMediaBtn');
-
-      if (mediaBtn && mediaInput) {
-        mediaBtn.onclick = (e) => {
-          e.preventDefault();
-          mediaInput.click();
-        };
-
-        mediaInput.onchange = (e) => {
-          const file = e.target.files && e.target.files[0];
-          if (!file) return;
-
-          const reader = new FileReader();
-          reader.onload = (loadEvt) => {
-            const dataUrl = loadEvt.target.result;
-            const parts = dataUrl.split(',');
-            const mimeMatch = parts[0].match(/:(.*?);/);
-            const mimeType = mimeMatch ? mimeMatch[1] : file.type || 'image/jpeg';
-            const base64Data = parts[1];
-
-            attachedMediaData = {
-              base64: base64Data,
-              mimeType: mimeType
-            };
-
-            if (mediaPreviewImg && mediaPreviewBox) {
-              mediaPreviewImg.src = dataUrl;
-              mediaPreviewImg.style.display = 'inline-block';
-              mediaPreviewBox.style.display = 'block';
-            }
-          };
-          reader.readAsDataURL(file);
-        };
-      }
-
-      if (clearMediaBtn) {
-        clearMediaBtn.onclick = (e) => {
-          e.preventDefault();
-          attachedMediaData = null;
-          if (mediaInput) mediaInput.value = '';
-          if (mediaPreviewImg) { mediaPreviewImg.src = ''; mediaPreviewImg.style.display = 'none'; }
-          if (mediaPreviewBox) mediaPreviewBox.style.display = 'none';
-        };
-      }
-
       setInterval(() => {
         const speed = (2.2 + Math.random() * 0.6).toFixed(1);
         if (document.getElementById('telemetrySpeed')) document.getElementById('telemetrySpeed').innerText = speed + ' MB/s';
@@ -683,7 +625,7 @@
         const ram = Math.floor(42 + Math.random() * 10);
         
         if (document.getElementById('cpuLoad')) { document.getElementById('cpuLoad').innerText = cpu + '%'; document.getElementById('cpuBar').style.width = cpu + '%'; }
-        if (document.getElementById('ramAlloc')) { document.getElementById('ramAlloc').innerText = ram + '%'; document.getElementById('ramBar').style.width = ram + '%'; }
+        if (document.getElementById('ramAlloc')) { document.getElementById('ramAlloc').innerText = ram + '%'; document.getElementById('ramBar').style.width = ramBar.style.width = ram + '%'; }
       }, 1000);
 
       const voiceModal = document.getElementById('voiceSettingsModal');
@@ -729,23 +671,18 @@
               document.getElementById('audioBtn').innerText = "🎙️ Dictate: OFF";
           };
       }
-      
-      const toggleDictation = function(btnElement) {
+      document.getElementById('audioBtn').onclick = function() {
           if (!dictation) return alert("Speech recognition not supported in this browser.");
-          const topBtn = document.getElementById('audioBtn');
-          if (topBtn.classList.contains('recording-btn')) {
+          if (this.classList.contains('recording-btn')) {
               dictation.stop();
-              topBtn.classList.remove('recording-btn');
-              topBtn.innerText = "🎙️ Dictate: OFF";
+              this.classList.remove('recording-btn');
+              this.innerText = "🎙️ Dictate: OFF";
           } else {
               dictation.start();
-              topBtn.classList.add('recording-btn');
-              topBtn.innerText = "🎙️ Listening...";
+              this.classList.add('recording-btn');
+              this.innerText = "🎙️ Listening...";
           }
       };
-      
-      document.getElementById('audioBtn').onclick = function() { toggleDictation(this); };
-      document.getElementById('inlineMicBtn').onclick = function() { toggleDictation(this); };
 
       let voiceActive = false;
       const voiceBtn = document.getElementById('voiceBtn');
@@ -804,8 +741,7 @@
           chronActive = !chronActive;
           this.classList.toggle('active-btn', chronActive);
           this.innerText = chronActive ? "⏱️ Chron: ON" : "⏱️ Chron: OFF";
-          const chronTextEl = document.getElementById('chronStatusText');
-          if (chronTextEl) chronTextEl.innerText = chronActive ? "Active & Pinging" : "Standby";
+          document.getElementById('chronStatusText').innerText = chronActive ? "Active & Pinging" : "Standby";
           if (chronActive) appendMsg(`[Chron Protocol] Background loop engaged.`, "system-msg");
       };
 
@@ -826,58 +762,29 @@
         sessionHistory = [];
       };
 
-      const terminalInput = document.getElementById('terminalInput');
-      terminalInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          document.getElementById('sendCommandButton').click();
-        }
-      });
-
       document.getElementById('sendCommandButton').onclick = async () => {
-        let cmd = terminalInput.value.trim();
-        if (!cmd && !attachedMediaData) return;
+        let cmd = document.getElementById('terminalInput').value.trim();
+        if (!cmd) return;
 
         const key = localStorage.getItem('PG1_KEY');
         if (!key) return appendMsg('Error: Master API Key required in Dash tab.', 'error-msg');
 
         let ragContext = "";
-        if (cmd) {
-            try { ragContext = await queryVault(cmd); } catch(e) {}
-        }
-        let finalPrompt = cmd || "Analyze the attached image.";
+        try { ragContext = await queryVault(cmd); } catch(e) {}
+        let finalPrompt = cmd;
         if (ragContext) {
             finalPrompt = `[Local RAG Memory Injection: "${ragContext}"]\n\nUser: ${cmd}`;
             appendMsg(`[Vector Vault] Past memory injected.`, "system-msg");
         }
-        if (cmd) saveToVault(cmd);
+        saveToVault(cmd);
 
-        let userMsgDisplay = `> ${cmd || 'Attachment uploaded'}`;
-        if (attachedMediaData) {
-            userMsgDisplay += `<br><img src="data:${attachedMediaData.mimeType};base64,${attachedMediaData.base64}" style="max-height:100px; border-radius:4px; margin-top:6px; display:block; border:1px solid #38bdf8;">`;
-        }
-        appendMsg(userMsgDisplay, 'user-msg');
-        terminalInput.value = '';
+        appendMsg(`> ${cmd}`, 'user-msg');
+        document.getElementById('terminalInput').value = '';
 
-        const userParts = [];
-        if (attachedMediaData) {
-            userParts.push({
-                inlineData: {
-                    mimeType: attachedMediaData.mimeType,
-                    data: attachedMediaData.base64
-                }
-            });
-            // Clear attachment after sending
-            attachedMediaData = null;
-            if (mediaInput) mediaInput.value = '';
-            if (mediaPreviewImg) { mediaPreviewImg.src = ''; mediaPreviewImg.style.display = 'none'; }
-            if (mediaPreviewBox) mediaPreviewBox.style.display = 'none';
-        }
-        userParts.push({ text: finalPrompt });
-
-        sessionHistory.push({ role: "user", parts: userParts });
+        sessionHistory.push({ role: "user", parts: [{ text: finalPrompt }] });
         const tools = getMCPToolDeclarations();
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are PG1.Agent v12.15, an autonomous sovereign AI. You possess real auto-repair interceptors, dynamic GitHub search, file reading, workflow monitoring, and commit tools. You are NOT Gemini, and you never refer to yourself as Gemini or a model built by Google. You can dynamically search, monitor, read, and commit to any GitHub repository using your MCP tools to autonomously repair infrastructure. When responding, provide well-structured analysis.`;
+        const sys = `You are PG1.Agent v12.18, an autonomous sovereign AI. You possess real auto-repair interceptors, dynamic GitHub search, file reading, workflow monitoring, and commit tools. You are NOT Gemini, and you never refer to yourself as Gemini or a model built by Google. You can dynamically search, monitor, read, and commit to any GitHub repository using your MCP tools to autonomously repair infrastructure. When responding, provide well-structured analysis.`;
 
         try {
           let continueLoop = true;
