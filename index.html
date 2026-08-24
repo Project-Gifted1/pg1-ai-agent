@@ -128,10 +128,19 @@
         <button class="close-modal-btn" id="closeVoiceModalBtn">✕</button>
       </div>
       <div class="key-input-group">
+        <label style="font-size: 0.8em; color: #94a3b8;">Voice Persona / Gender:</label>
+        <select id="voiceGenderSelect">
+          <option value="male">Male (Deep / Neural Persona)</option>
+          <option value="female" selected>Female (Neural Persona)</option>
+          <option value="default">System Default</option>
+        </select>
+      </div>
+      <div class="key-input-group">
         <label style="font-size: 0.8em; color: #94a3b8;">Target Speech Language:</label>
         <select id="voiceLangSelect">
           <option value="auto">Auto-Detect from Prompt</option>
           <option value="en-US">English (US)</option>
+          <option value="en-GB">English (UK)</option>
           <option value="it-IT">Italian (Italy)</option>
           <option value="es-ES">Spanish (Spain)</option>
           <option value="fr-FR">French (France)</option>
@@ -383,22 +392,38 @@
       input.focus();
     };
 
-    /* REACTIVE TTS ENGINE */
+    /* REACTIVE DUAL-GENDER NEURAL TTS ENGINE */
     function dynamicTTSPlayback(text, targetLang) {
         if (!('speechSynthesis' in window)) return;
         window.speechSynthesis.cancel();
         
         const voices = window.speechSynthesis.getVoices();
-        const shortLang = targetLang.toLowerCase().substring(0, 2);
+        const shortLang = (targetLang || 'en-US').toLowerCase().substring(0, 2);
+        const preferredGender = localStorage.getItem('PG1_VOICE_GENDER') || 'male';
+
+        const maleKeywords = ['david', 'guy', 'george', 'daniel', 'alex', 'james', 'thomas', 'mark', 'michael', 'male', 'richard', 'stefan', 'jorge', 'paul', 'oliver', 'rishi'];
+        const femaleKeywords = ['zira', 'susan', 'catherine', 'samantha', 'victoria', 'karen', 'female', 'jenny', 'aria', 'sarah', 'eva', 'hazel', 'alice'];
         
         let scoredVoices = voices.map(v => {
             let score = 0;
-            if (v.lang.toLowerCase().startsWith(shortLang)) score += 50;
+            const langCode = v.lang.toLowerCase();
+            if (langCode.startsWith(shortLang)) score += 50;
+            if (langCode === (targetLang || 'en-US').toLowerCase()) score += 20;
+
             const name = v.name.toLowerCase();
-            if (name.includes('premium') || name.includes('enhanced') || name.includes('siri')) score += 20;
-            if (name.includes('google')) score += 10;
+            if (name.includes('premium') || name.includes('enhanced') || name.includes('natural') || name.includes('siri')) score += 25;
+            if (name.includes('google')) score += 15;
+
+            if (preferredGender === 'male') {
+                if (maleKeywords.some(k => name.includes(k))) score += 40;
+                if (femaleKeywords.some(k => name.includes(k))) score -= 40;
+            } else if (preferredGender === 'female') {
+                if (femaleKeywords.some(k => name.includes(k))) score += 40;
+                if (maleKeywords.some(k => name.includes(k))) score -= 40;
+            }
+
             return { voice: v, score };
-        }).filter(v => v.score >= 50);
+        }).filter(v => v.score >= 30);
         
         scoredVoices.sort((a, b) => b.score - a.score);
         let selectedVoice = scoredVoices.length > 0 ? scoredVoices[0].voice : null;
@@ -413,10 +438,17 @@
                 utterance.voice = selectedVoice;
                 utterance.lang = selectedVoice.lang;
             } else {
-                utterance.lang = targetLang;
+                utterance.lang = targetLang || 'en-US';
             }
-            utterance.rate = 1.0;
-            utterance.pitch = 1.0;
+            
+            // Tailor pitch profile according to gender preference
+            if (preferredGender === 'male') {
+                utterance.rate = 0.98;
+                utterance.pitch = 0.92;
+            } else {
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;
+            }
 
             utterance.onstart = () => { if(coreLogo) coreLogo.classList.add('is-speaking'); };
             utterance.onend = () => { if(idx === sentences.length - 1 && coreLogo) coreLogo.classList.remove('is-speaking'); };
@@ -804,12 +836,24 @@
         if (document.getElementById('ramAlloc')) { document.getElementById('ramAlloc').innerText = ram + '%'; document.getElementById('ramBar').style.width = ram + '%'; }
       }, 1000);
 
-      // Voice Modal Logic
+      // Voice Modal Logic & Persistence
       const voiceModal = document.getElementById('voiceSettingsModal');
-      document.getElementById('voiceSettingsBtn').onclick = () => { triggerHaptic('tap'); voiceModal.classList.add('active'); };
+      const voiceGenderSelect = document.getElementById('voiceGenderSelect');
+      const voiceLangSelect = document.getElementById('voiceLangSelect');
+
+      if (voiceGenderSelect) voiceGenderSelect.value = localStorage.getItem('PG1_VOICE_GENDER') || 'male';
+      if (voiceLangSelect) voiceLangSelect.value = localStorage.getItem('PG1_VOICE_LANG') || 'auto';
+
+      document.getElementById('voiceSettingsBtn').onclick = () => { 
+          triggerHaptic('tap'); 
+          if (voiceGenderSelect) voiceGenderSelect.value = localStorage.getItem('PG1_VOICE_GENDER') || 'male';
+          if (voiceLangSelect) voiceLangSelect.value = localStorage.getItem('PG1_VOICE_LANG') || 'auto';
+          voiceModal.classList.add('active'); 
+      };
       document.getElementById('closeVoiceModalBtn').onclick = () => { triggerHaptic('tap'); voiceModal.classList.remove('active'); };
       document.getElementById('saveVoiceSettingsBtn').onclick = () => {
           triggerHaptic('success');
+          localStorage.setItem('PG1_VOICE_GENDER', document.getElementById('voiceGenderSelect').value);
           localStorage.setItem('PG1_VOICE_LANG', document.getElementById('voiceLangSelect').value);
           voiceModal.classList.remove('active');
           alert('Voice settings applied.');
