@@ -95,7 +95,7 @@
     .utility-media-btn { padding: 8px 10px; background: #1e293b; border: 1px solid #334155; color: #38bdf8; border-radius: 6px; font-size: 1.1em; cursor: pointer; flex-shrink: 0; }
     .send-btn { padding: 10px 16px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85em; flex-shrink: 0; }
 
-    .bottom-nav { display: flex; justify-content: space-around; background: #111827; padding: 8px; border-top: 1px solid #1f2937; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
+    .bottom-nav { display: flex; justify-around: space-around; background: #111827; padding: 8px; border-top: 1px solid #1f2937; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
     .nav-item { background: none; border: none; font-size: 0.75em; color: #64748b; cursor: pointer; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
     .nav-item.active { color: #38bdf8; font-weight: 600; }
 
@@ -231,7 +231,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.18 online. Model selector updated to active GA endpoints.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.18 online. Auto-Healing core synchronized.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -604,6 +604,8 @@
 
     document.addEventListener("DOMContentLoaded", () => {
       let sessionHistory = [];
+      let currentMedia = null;
+
       const termOut = document.getElementById('terminalOutput');
       window.checkKeys(); 
 
@@ -616,6 +618,65 @@
       }
       terminalAppendFunc = appendMsg;
 
+      // Media Upload / Camera attachment icon handler
+      const mediaBtn = document.getElementById('mediaBtn');
+      const mediaInput = document.getElementById('mediaInput');
+      const mediaPreviewBox = document.getElementById('mediaPreviewBox');
+      const mediaPreviewImg = document.getElementById('mediaPreviewImg');
+      const clearMediaBtn = document.getElementById('clearMediaBtn');
+
+      if (mediaBtn && mediaInput) {
+        mediaBtn.onclick = () => mediaInput.click();
+        mediaInput.onchange = (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (evt) => {
+            const dataUrl = evt.target.result;
+            const mimeType = file.type || "image/jpeg";
+            const base64Data = dataUrl.split(',')[1];
+            currentMedia = { mimeType, data: base64Data, url: dataUrl };
+            if (mediaPreviewImg) {
+              mediaPreviewImg.src = dataUrl;
+              mediaPreviewImg.style.display = 'inline-block';
+            }
+            if (mediaPreviewBox) mediaPreviewBox.style.display = 'block';
+          };
+          reader.readAsDataURL(file);
+        };
+      }
+
+      if (clearMediaBtn) {
+        clearMediaBtn.onclick = () => {
+          currentMedia = null;
+          if (mediaInput) mediaInput.value = '';
+          if (mediaPreviewImg) { mediaPreviewImg.src = ''; mediaPreviewImg.style.display = 'none'; }
+          if (mediaPreviewBox) mediaPreviewBox.style.display = 'none';
+        };
+      }
+
+      // Log export & PDF export handlers
+      const saveLogBtn = document.getElementById('saveLogBtn');
+      if (saveLogBtn) {
+        saveLogBtn.onclick = () => {
+          const logs = termOut ? termOut.innerText : '';
+          const blob = new Blob([logs], { type: 'text/plain;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `PG1_Terminal_Logs_${Date.now()}.txt`;
+          a.click();
+          URL.revokeObjectURL(url);
+        };
+      }
+
+      const exportPdfBtn = document.getElementById('exportPdfBtn');
+      if (exportPdfBtn) {
+        exportPdfBtn.onclick = () => {
+          window.print();
+        };
+      }
+
       setInterval(() => {
         const speed = (2.2 + Math.random() * 0.6).toFixed(1);
         if (document.getElementById('telemetrySpeed')) document.getElementById('telemetrySpeed').innerText = speed + ' MB/s';
@@ -624,8 +685,10 @@
         const cpu = Math.floor(24 + Math.random() * 14);
         const ram = Math.floor(42 + Math.random() * 10);
         
-        if (document.getElementById('cpuLoad')) { document.getElementById('cpuLoad').innerText = cpu + '%'; document.getElementById('cpuBar').style.width = cpu + '%'; }
-        if (document.getElementById('ramAlloc')) { document.getElementById('ramAlloc').innerText = ram + '%'; document.getElementById('ramBar').style.width = ramBar.style.width = ram + '%'; }
+        if (document.getElementById('cpuLoad')) { document.getElementById('cpuLoad').innerText = cpu + '%'; }
+        if (document.getElementById('cpuBar')) { document.getElementById('cpuBar').style.width = cpu + '%'; }
+        if (document.getElementById('ramAlloc')) { document.getElementById('ramAlloc').innerText = ram + '%'; }
+        if (document.getElementById('ramBar')) { document.getElementById('ramBar').style.width = ram + '%'; }
       }, 1000);
 
       const voiceModal = document.getElementById('voiceSettingsModal');
@@ -741,7 +804,6 @@
           chronActive = !chronActive;
           this.classList.toggle('active-btn', chronActive);
           this.innerText = chronActive ? "⏱️ Chron: ON" : "⏱️ Chron: OFF";
-          document.getElementById('chronStatusText').innerText = chronActive ? "Active & Pinging" : "Standby";
           if (chronActive) appendMsg(`[Chron Protocol] Background loop engaged.`, "system-msg");
       };
 
@@ -764,24 +826,40 @@
 
       document.getElementById('sendCommandButton').onclick = async () => {
         let cmd = document.getElementById('terminalInput').value.trim();
-        if (!cmd) return;
+        if (!cmd && !currentMedia) return;
 
         const key = localStorage.getItem('PG1_KEY');
         if (!key) return appendMsg('Error: Master API Key required in Dash tab.', 'error-msg');
 
         let ragContext = "";
-        try { ragContext = await queryVault(cmd); } catch(e) {}
+        if (cmd) {
+            try { ragContext = await queryVault(cmd); } catch(e) {}
+        }
         let finalPrompt = cmd;
         if (ragContext) {
             finalPrompt = `[Local RAG Memory Injection: "${ragContext}"]\n\nUser: ${cmd}`;
             appendMsg(`[Vector Vault] Past memory injected.`, "system-msg");
         }
-        saveToVault(cmd);
+        if (cmd) saveToVault(cmd);
 
-        appendMsg(`> ${cmd}`, 'user-msg');
+        let displayHtml = cmd ? `> ${cmd}` : `> [Image Attachment]`;
+        if (currentMedia) {
+            displayHtml += `<br><img src="${currentMedia.url}" style="max-height:120px; border-radius:6px; margin-top:6px; border:1px solid #334155;">`;
+        }
+        appendMsg(displayHtml, 'user-msg');
+
+        let userParts = [];
+        if (currentMedia) {
+            userParts.push({ inlineData: { mimeType: currentMedia.mimeType, data: currentMedia.data } });
+        }
+        if (finalPrompt) {
+            userParts.push({ text: finalPrompt });
+        }
+
         document.getElementById('terminalInput').value = '';
+        if (clearMediaBtn) clearMediaBtn.click();
 
-        sessionHistory.push({ role: "user", parts: [{ text: finalPrompt }] });
+        sessionHistory.push({ role: "user", parts: userParts });
         const tools = getMCPToolDeclarations();
         const selectedModel = document.getElementById('modelSelector').value;
         const sys = `You are PG1.Agent v12.18, an autonomous sovereign AI. You possess real auto-repair interceptors, dynamic GitHub search, file reading, workflow monitoring, and commit tools. You are NOT Gemini, and you never refer to yourself as Gemini or a model built by Google. You can dynamically search, monitor, read, and commit to any GitHub repository using your MCP tools to autonomously repair infrastructure. When responding, provide well-structured analysis.`;
