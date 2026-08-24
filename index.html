@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v12.24</title>
+  <title>Project Gifted1™ - Sovereign Engine v12.25</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
@@ -127,7 +127,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v12.24 Sovereign Engine</div>
+    <div class="version">v12.25 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -217,7 +217,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.24 online. Tree Explorer and Self-Correcting 404 Interceptor activated. How can I help?<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.25 online. Advanced Sentence-Chunking Audio Pipeline activated.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -330,7 +330,6 @@
         if (!('speechSynthesis' in window)) return;
         window.speechSynthesis.cancel();
         
-        const utterance = new SpeechSynthesisUtterance(text);
         const voices = window.speechSynthesis.getVoices();
         const shortLang = targetLang.toLowerCase().substring(0, 2);
         
@@ -344,17 +343,26 @@
         }).filter(v => v.score >= 50);
         
         scoredVoices.sort((a, b) => b.score - a.score);
-        
-        if (scoredVoices.length > 0) {
-            utterance.voice = scoredVoices[0].voice;
-            utterance.lang = scoredVoices[0].voice.lang;
-        } else {
-            utterance.lang = targetLang;
-        }
-        
-        utterance.rate = 1.0;
-        utterance.pitch = 1.0;
-        window.speechSynthesis.speak(utterance);
+        let selectedVoice = scoredVoices.length > 0 ? scoredVoices[0].voice : null;
+
+        // Audio Chunking Pipeline: Bypass iOS 200-char limits by splitting into sentences
+        const sentences = text.match(/[^.!?\n]+[.!?\n]+/g) || [text];
+
+        sentences.forEach(sentence => {
+            if (sentence.trim() === "") return;
+            const utterance = new SpeechSynthesisUtterance(sentence.trim());
+            
+            if (selectedVoice) {
+                utterance.voice = selectedVoice;
+                utterance.lang = selectedVoice.lang;
+            } else {
+                utterance.lang = targetLang;
+            }
+            
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            window.speechSynthesis.speak(utterance);
+        });
     }
 
     let db = null;
@@ -439,7 +447,6 @@
         } catch(e) { throw new Error(`Monitor failed: ${e.message}`); }
     }
 
-    /* Updated readGitHubFile with 404 Catching */
     async function readGitHubFile(repoFullName, filePath) {
         const pat = localStorage.getItem('PG1_GH_PAT');
         if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
@@ -741,7 +748,7 @@
           this.innerText = voiceActive ? "🗣️ Voice: ON" : "🗣️ Voice: OFF";
           
           if (voiceActive) {
-              const testText = "Voice engine active.";
+              const testText = "Voice chunking active. I can now speak without limits.";
               const lang = localStorage.getItem('PG1_VOICE_LANG') || 'en';
               dynamicTTSPlayback(testText, lang);
           } else {
@@ -847,7 +854,7 @@
         
         const tools = getMCPToolDeclarations();
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are PG1.Agent v12.24, an autonomous AI copilot with dynamic GitHub search, file reading, structural repository mapping (listRepoTree), workflow monitoring, and commit tools. You are NOT Gemini and never refer to yourself as Gemini. Be direct, punchy, conversational, and energetic. Avoid robotic monologues and excessive bullet points unless specifically requested for a technical report. Mirror the user's language naturally.`;
+        const sys = `You are PG1.Agent v12.25, an autonomous AI copilot with dynamic GitHub search, file reading, structural repository mapping (listRepoTree), workflow monitoring, and commit tools. You are NOT Gemini and never refer to yourself as Gemini. Be direct, punchy, conversational, and energetic. Avoid robotic monologues and excessive bullet points unless specifically requested for a technical report. Mirror the user's language naturally.`;
 
         try {
           let continueLoop = true;
@@ -915,7 +922,7 @@
                           detectedLang = 'de-DE';
                       }
 
-                      let cleanText = textOutput.replace(/[*#_`~>]/g, '').replace(/[\r\n]+/g, '. ').substring(0, 240);
+                      let cleanText = textOutput.replace(/[*#_`~>]/g, '');
                       dynamicTTSPlayback(cleanText, detectedLang);
                   }
 
