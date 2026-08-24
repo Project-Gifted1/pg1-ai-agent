@@ -582,10 +582,7 @@
                 input: { prompt: prompt, mp4: true }
             };
 
-            const proxyList = [
-                "https://pg1-worker.gnfcw9w5rk.workers.dev/?url=" + encodeURIComponent(targetUrl),
-                "https://corsproxy.io/?" + encodeURIComponent(targetUrl)
-            ];
+            const proxyList = ['https://pg1-worker.gnfcw9w5rk.workers.dev/?url=' + encodeURIComponent(targetUrl)];
 
             let prediction = null;
             let activeProxy = null;
