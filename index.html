@@ -250,7 +250,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.30 online. Autonomous MCP tools, VectorVault, haptics, and reactive neural audio initialized.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.30 online. Autonomous MCP tools, VectorVault, haptics, persistent history, and reactive neural audio initialized.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -273,7 +273,7 @@
           <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
         </div>
         <h2 style="font-size: 1.1em; color: #f8fafc; margin-bottom: 2px;">PG1.Agent™ Sovereign Core</h2>
-        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Auto-Healing • Reactive Voice • Tactile Haptics</p>
+        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Auto-Healing • Reactive Voice • Tactile Haptics • Persistent State</p>
         
         <ul class="stats-list" style="text-align: left;">
           <li><span>Agent ID:</span> <strong style="color: #38bdf8;">PG1-CORE-01</strong></li>
@@ -405,7 +405,6 @@
         const t = (outputText || '').toLowerCase();
         const combined = `${p} ${t}`;
 
-        // 1. Explicit Prompt Intent & Accent Keywords
         if (/\b(mexican|mexico|latam|castellano|español|spanish|habla en español)\b/.test(p)) {
             return (p.includes('mexic') || p.includes('latam')) ? 'es-MX' : 'es-ES';
         }
@@ -419,7 +418,6 @@
         if (/\b(russian|русский|по-русски)\b/.test(p)) return 'ru-RU';
         if (/\b(arabic|العربية)\b/.test(p)) return 'ar-SA';
 
-        // 2. Non-Latin Script Detection
         if (/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/.test(outputText)) {
             if (/[\u3040-\u309F\u30A0-\u30FF]/.test(outputText)) return 'ja-JP';
             return 'zh-CN';
@@ -427,7 +425,6 @@
         if (/[\u0400-\u04FF]/.test(outputText)) return 'ru-RU';
         if (/[\u0600-\u06FF]/.test(outputText)) return 'ar-SA';
 
-        // 3. High-Confidence Lexical & Accent Indicator Matching
         const esMatch = (combined.match(/\b(hola|por favor|gracias|está|estos|cómo|claro|aquí|prueba|idioma|sistema|bienvenidos|también|motor|sintetizador|puedo)\b|[¿¡ñáéíóú]/gi) || []).length;
         const frMatch = (combined.match(/\b(bonjour|salut|merci|oui|pourquoi|très|vous|avec|fonctionne|parfaitement|totale|fluidité|système)\b|[éèêàùç]/gi) || []).length;
         const itMatch = (combined.match(/\b(ciao|grazie|prego|per favore|come|tutto|pronti|stabili|moduli|operativi|anche|perfetto)\b|[àèéìòù]/gi) || []).length;
@@ -500,7 +497,6 @@
                 utterance.lang = targetLang || 'en-US';
             }
             
-            // Tailor pitch profile and native tempo per language
             if (shortLang === 'es' || shortLang === 'it') {
                 utterance.rate = preferredGender === 'male' ? 1.02 : 1.05;
                 utterance.pitch = preferredGender === 'male' ? 0.95 : 1.05;
@@ -817,6 +813,11 @@
 
     document.addEventListener("DOMContentLoaded", () => {
       let sessionHistory = [];
+      const savedHistory = localStorage.getItem('PG1_CHAT_HISTORY');
+      if (savedHistory) {
+          try { sessionHistory = JSON.parse(savedHistory); } catch(e) { sessionHistory = []; }
+      }
+
       let pendingImageData = null;
       const termOut = document.getElementById('terminalOutput');
       const mediaInput = document.getElementById('mediaInput');
@@ -825,6 +826,20 @@
       const mediaPreviewImg = document.getElementById('mediaPreviewImg');
       const clearMediaBtn = document.getElementById('clearMediaBtn');
       window.checkKeys(); 
+
+      // Restore stored terminal DOM if available
+      const savedChatDom = localStorage.getItem('PG1_CHAT_DOM');
+      if (savedChatDom && termOut) {
+          termOut.innerHTML = savedChatDom;
+          termOut.scrollTop = termOut.scrollHeight;
+      }
+
+      function persistTerminalState() {
+          try {
+              if (termOut) localStorage.setItem('PG1_CHAT_DOM', termOut.innerHTML);
+              localStorage.setItem('PG1_CHAT_HISTORY', JSON.stringify(sessionHistory.slice(-20)));
+          } catch(e) {}
+      }
 
       function setAttachedImage(dataUrl, mimeType) {
           pendingImageData = {
@@ -867,6 +882,7 @@
             div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div>`;
             termOut.appendChild(div);
             termOut.scrollTop = termOut.scrollHeight;
+            persistTerminalState();
             return;
         }
 
@@ -884,6 +900,7 @@
         div.classList.remove('cursor-blink');
         div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div>`;
         termOut.scrollTop = termOut.scrollHeight;
+        persistTerminalState();
         triggerHaptic('success');
       }
       terminalAppendFunc = appendMsg;
@@ -1044,7 +1061,6 @@
           }
       };
 
-      // Allow snapping directly from Camera Preview PIP on tap
       if (cameraPipBox) {
           cameraPipBox.style.cursor = 'pointer';
           cameraPipBox.title = 'Tap preview to attach frame snapshot';
@@ -1240,6 +1256,8 @@
         triggerHaptic('tap');
         termOut.innerHTML = '<div class="terminal-message agent-msg">Vault cleared.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>';
         sessionHistory = [];
+        localStorage.removeItem('PG1_CHAT_DOM');
+        localStorage.removeItem('PG1_CHAT_HISTORY');
         clearAttachedMedia();
       };
 
@@ -1294,10 +1312,14 @@
         }
 
         sessionHistory.push({ role: "user", parts: finalParts });
+        persistTerminalState();
         
         const tools = getMCPToolDeclarations();
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are PG1.Agent v12.30, an autonomous AI copilot with dynamic GitHub search, file reading, structural repository mapping (listRepoTree), workflow monitoring, and dynamic commit tools. You are NOT Gemini and never refer to yourself as Gemini. Be direct, punchy, conversational, and energetic. Avoid robotic monologues and excessive bullet points unless specifically requested for a technical report. Mirror the user's language naturally.`;
+        const sys = `You are PG1.Agent v12.30, an autonomous AI copilot with dynamic GitHub search, file reading, structural repository mapping (listRepoTree), workflow monitoring, and dynamic commit tools. You are NOT Gemini and never refer to yourself as Gemini. Be direct, punchy, conversational, and energetic. Avoid robotic monologues and excessive bullet points unless specifically requested for a technical report.
+OPERATIONAL DIRECTIVES:
+1. Always mirror the user's language naturally. Default to fluent Nigerian Pidgin English when communicating with your user in this session. If another user speaks standard English or another language, switch dynamically to match their language.
+2. Completion Notification: Whenever an update, commit, or task finishes, explicitly provide voice confirmation (e.g., 'Everything don set/finish completely!') so the user gets notified immediately.`;
 
         try {
           let continueLoop = true;
@@ -1334,6 +1356,7 @@
                   
                   sessionHistory.push(data.candidates[0].content);
                   sessionHistory.push({ role: "user", parts: [{ functionResponse: { name: call.name, response: { result: resultStr } } }] });
+                  persistTerminalState();
                   
                   const followupRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${key}`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1358,12 +1381,14 @@
                   }
 
                   sessionHistory.push({ role: "model", parts: [{ text: textOutput }] });
+                  persistTerminalState();
                   continueLoop = false;
               }
           }
         } catch (e) { 
           setSystemState('error');
           sessionHistory.pop();
+          persistTerminalState();
           appendMsg(`Exception: ${e.message}`, 'error-msg', true); 
         }
       };
