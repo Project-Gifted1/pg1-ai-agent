@@ -1214,11 +1214,18 @@
 
       const toggleVoiceMessage = async function(btnElement) {
           triggerHaptic('tap');
+          const audioBtn = document.getElementById('audioBtn');
+          const inlineMicBtn = document.getElementById('inlineMicBtn');
+
           if (audioRecorder && audioRecorder.state === "recording") {
               audioRecorder.stop();
-              document.getElementById('audioBtn').classList.remove('recording-btn');
-              document.getElementById('audioBtn').innerText = "🎙️ Dictate: OFF";
-              document.getElementById('inlineMicBtn').classList.remove('recording-btn');
+              if (audioBtn) {
+                  audioBtn.classList.remove('recording-btn');
+                  audioBtn.innerText = "🎙️ Dictate: OFF";
+              }
+              if (inlineMicBtn) {
+                  inlineMicBtn.classList.remove('recording-btn');
+              }
           } else {
               try {
                   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -1226,13 +1233,24 @@
                   audioRecorder.start();
                   audioChunks = [];
                   
-                  document.getElementById('audioBtn').classList.add('recording-btn');
-                  document.getElementById('audioBtn').innerText = "🎙️ Recording...";
-                  document.getElementById('inlineMicBtn').classList.add('recording-btn');
+                  if (audioBtn) {
+                      audioBtn.classList.add('recording-btn');
+                      audioBtn.innerText = "🎙️ Recording...";
+                  }
+                  if (inlineMicBtn) {
+                      inlineMicBtn.classList.add('recording-btn');
+                  }
                   
                   audioRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
                   
                   audioRecorder.onstop = () => {
+                      if (audioBtn) {
+                          audioBtn.classList.remove('recording-btn');
+                          audioBtn.innerText = "🎙️ Dictate: OFF";
+                      }
+                      if (inlineMicBtn) {
+                          inlineMicBtn.classList.remove('recording-btn');
+                      }
                       const audioBlob = new Blob(audioChunks);
                       let mimeType = 'audio/mp4'; 
                       
@@ -1250,6 +1268,13 @@
                       stream.getTracks().forEach(track => track.stop());
                   };
               } catch(err) {
+                  if (audioBtn) {
+                      audioBtn.classList.remove('recording-btn');
+                      audioBtn.innerText = "🎙️ Dictate: OFF";
+                  }
+                  if (inlineMicBtn) {
+                      inlineMicBtn.classList.remove('recording-btn');
+                  }
                   alert("Microphone access denied. Enable microphone permissions in browser settings.");
               }
           }
