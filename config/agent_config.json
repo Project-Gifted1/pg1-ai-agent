@@ -1,8 +1,19 @@
 {
   "agent": {
     "name": "PG1-Autonomous-Agent",
-    "version": "12.18.0",
+    "version": "12.25.0",
     "mode": "autonomous",
+    "capabilities": [
+      "github_search_and_read",
+      "tree_mapping",
+      "dynamic_commit",
+      "workflow_monitoring",
+      "image_generation",
+      "video_generation",
+      "direct_media_download",
+      "live_api_fetch",
+      "web_scraping"
+    ],
     "protocols": {
       "a2a_enabled": true,
       "protocol_version": "2.0.0",
@@ -32,6 +43,7 @@
     "auto_retry_on_failure": true,
     "max_auto_retries": 3,
     "auto_commit_patches": true,
-    "require_human_gate_for_keys": true
+    "require_human_gate_for_keys": true,
+    "media_direct_download": true
   }
 }
