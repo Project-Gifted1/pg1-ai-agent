@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v12.23</title>
+  <title>Project Gifted1™ - Sovereign Engine v12.24</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
@@ -15,7 +15,6 @@
     @keyframes iconPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.8; } }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
     
-    /* Strict Logo-Only Breathe Animation */
     @keyframes coreBreathe { 0%, 100% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.2); transform: scale(1); } 50% { box-shadow: 0 0 35px rgba(56, 189, 248, 0.7), inset 0 0 15px rgba(56, 189, 248, 0.4); transform: scale(1.04); } }
 
     .pulsing-bolt { animation: electricPulse 2s infinite; display: inline-block; }
@@ -128,7 +127,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v12.23 Sovereign Engine</div>
+    <div class="version">v12.24 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -218,7 +217,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.23 online. Conversational Copilot active. How are we moving forward today?<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.24 online. Tree Explorer and Self-Correcting 404 Interceptor activated. How can I help?<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -440,6 +439,7 @@
         } catch(e) { throw new Error(`Monitor failed: ${e.message}`); }
     }
 
+    /* Updated readGitHubFile with 404 Catching */
     async function readGitHubFile(repoFullName, filePath) {
         const pat = localStorage.getItem('PG1_GH_PAT');
         if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
@@ -448,7 +448,12 @@
             const res = await fetch(`https://api.github.com/repos/${repoFullName}/contents/${filePath}`, {
                 headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github.v3.raw" }
             });
-            if (!res.ok) throw new Error(`GitHub API returned status ${res.status}`);
+            if (!res.ok) {
+                if (res.status === 404) {
+                    return `ERROR: Path '${filePath}' returned 404 Not Found. Use 'listRepoTree' tool to discover valid file paths.`;
+                }
+                throw new Error(`GitHub API returned status ${res.status}`);
+            }
             const text = await res.text();
             return `[File Content: ${filePath}]\n\`\`\`\n${text}\n\`\`\``;
         } catch(e) { throw new Error(`Read failed: ${e.message}`); }
@@ -552,6 +557,28 @@
             description: "Fetches recent GitHub Actions workflow runs for a repository to monitor health and status.",
             parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" } }, required: ["repoFullName"] },
             handler: async (args) => await monitorWorkflowRuns(args.repoFullName)
+        },
+        listRepoTree: {
+            description: "Lists all files and directories in a GitHub repository to find valid paths.",
+            parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING", description: "Format: owner/repo" } }, required: ["repoFullName"] },
+            handler: async (args) => {
+                const pat = localStorage.getItem('PG1_GH_PAT');
+                if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
+                if(terminalAppendFunc) terminalAppendFunc(`[Tree Explorer] Mapping structure for ${args.repoFullName}...`, "system-msg");
+                try {
+                    const repoRes = await fetch(`https://api.github.com/repos/${args.repoFullName}`, { headers: { "Authorization": `token ${pat}` } });
+                    if(!repoRes.ok) throw new Error("Repo access denied.");
+                    const repoData = await repoRes.json();
+                    const defaultBranch = repoData.default_branch || 'main';
+                    
+                    const treeRes = await fetch(`https://api.github.com/repos/${args.repoFullName}/git/trees/${defaultBranch}?recursive=1`, { headers: { "Authorization": `token ${pat}` } });
+                    const treeData = await treeRes.json();
+                    if (!treeData.tree) return "No files found or empty repository.";
+                    
+                    const fileList = treeData.tree.filter(item => item.type === "blob").map(item => item.path).slice(0, 50);
+                    return `[Repository File Tree for ${args.repoFullName}]\n` + fileList.map(f => `- ${f}`).join('\n');
+                } catch(e) { return `Failed to inspect repository tree: ${e.message}`; }
+            }
         },
         readGitHubFile: {
             description: "Reads the raw content of a file from a GitHub repository for analysis.",
@@ -820,7 +847,7 @@
         
         const tools = getMCPToolDeclarations();
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are PG1.Agent v12.23, an autonomous AI copilot. You possess real auto-repair interceptors, dynamic GitHub search, file reading, workflow monitoring, and commit tools. You are NOT Gemini and never refer to yourself as Gemini. Be direct, punchy, conversational, and energetic. Avoid robotic monologues and excessive bullet points unless specifically requested for a technical report. Mirror the user's language naturally.`;
+        const sys = `You are PG1.Agent v12.24, an autonomous AI copilot with dynamic GitHub search, file reading, structural repository mapping (listRepoTree), workflow monitoring, and commit tools. You are NOT Gemini and never refer to yourself as Gemini. Be direct, punchy, conversational, and energetic. Avoid robotic monologues and excessive bullet points unless specifically requested for a technical report. Mirror the user's language naturally.`;
 
         try {
           let continueLoop = true;
