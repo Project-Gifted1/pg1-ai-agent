@@ -88,7 +88,6 @@ export default {
 
       const fetchOptions = {
         method: request.method,
-        headers: forwardHeaders,
       };
 
       if (request.method === "POST" || request.method === "PUT") {
@@ -164,3 +163,5 @@ export default {
     }
   },
 };
+
+// Deploy trigger: 2025-05-18T12:00:00Z
