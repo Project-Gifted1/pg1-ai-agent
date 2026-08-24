@@ -8,7 +8,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
 
-    @keyframes pulseGlow { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); } 70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+    @keyframes pulseGlow { 0% { transform: scale(0.96); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.5); } 70% { transform: scale(1.02); box-shadow: 0 0 0 14px rgba(56, 189, 248, 0); } 100% { transform: scale(0.96); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); } }
     @keyframes fastSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     @keyframes dishSweep { 0%, 100% { transform: rotate(-20deg); } 50% { transform: rotate(20deg); } }
     @keyframes electricPulse { 0%, 100% { text-shadow: 0 0 5px rgba(56, 189, 248, 0.4), 0 0 10px rgba(56, 189, 248, 0.2); } 50% { text-shadow: 0 0 15px rgba(56, 189, 248, 0.9), 0 0 25px rgba(56, 189, 248, 0.6); } }
@@ -50,9 +50,9 @@
     .progress-bar-container { width: 100%; background: #1e293b; border-radius: 4px; height: 5px; margin-top: 4px; margin-bottom: 8px; overflow: hidden; }
     .progress-bar { height: 100%; background: #38bdf8; border-radius: 4px; transition: width 0.5s ease; }
 
-    /* Static AI Core Logo Container */
+    /* Pulsing AI Core Logo Container */
     .ai-core-container { position: relative; width: 130px; height: 130px; margin: 0 auto 15px auto; }
-    .ai-core-logo { width: 100%; height: 100%; border-radius: 50%; border: 2px solid #38bdf8; overflow: hidden; position: relative; z-index: 2; background: #0b0f19; }
+    .ai-core-logo { width: 100%; height: 100%; border-radius: 50%; border: 2px solid #38bdf8; overflow: hidden; position: relative; z-index: 2; background: #0b0f19; animation: pulseGlow 2.5s infinite; box-shadow: 0 0 16px rgba(56, 189, 248, 0.4); }
     .ai-core-logo img { width: 100%; height: 100%; object-fit: cover; }
 
     .terminal-controls-header { display: flex; justify-content: space-between; align-items: center; background: #111827; padding: 8px 12px; border-radius: 8px; border: 1px solid #1f2937; font-size: 0.8em; margin-bottom: 10px; }
@@ -553,42 +553,42 @@
         fetchLiveData: {
             description: "Fetches live JSON data from an external API endpoint.",
             parameters: { type: "OBJECT", properties: { url: { type: "STRING" } }, required: ["url"] },
-            handler: async (args) => await fetchLiveData(args.url)
+            handler: async function(args) { return await fetchLiveData(args?.url || args?.targetUrl); }
         },
         webScraper: {
             description: "Scrapes a live webpage or text URL for research.",
             parameters: { type: "OBJECT", properties: { url: { type: "STRING" } }, required: ["url"] },
-            handler: async (args) => await scrapeWebPage(args.url)
+            handler: async function(args) { return await scrapeWebPage(args?.url || args?.targetUrl); }
         },
         searchGitHubRepos: {
             description: "Searches the user's connected GitHub repositories to find specific ones (e.g. OTX workflow).",
             parameters: { type: "OBJECT", properties: { query: { type: "STRING" } }, required: ["query"] },
-            handler: async (args) => await searchGitHubRepos(args.query)
+            handler: async function(args) { return await searchGitHubRepos(args?.query || args?.q || ""); }
         },
         monitorWorkflowRuns: {
             description: "Fetches recent GitHub Actions workflow runs for a repository to monitor health and status.",
             parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" } }, required: ["repoFullName"] },
-            handler: async (args) => await monitorWorkflowRuns(args.repoFullName)
+            handler: async function(args) { return await monitorWorkflowRuns(args?.repoFullName || args?.repo || args?.repository); }
         },
         readGitHubFile: {
             description: "Reads the raw content of a file from a GitHub repository for analysis.",
             parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" }, filePath: { type: "STRING" } }, required: ["repoFullName", "filePath"] },
-            handler: async (args) => await readGitHubFile(args.repoFullName, args.filePath)
+            handler: async function(args) { return await readGitHubFile(args?.repoFullName || args?.repo, args?.filePath || args?.path); }
         },
         dynamicGitHubCommit: {
             description: "Commits a file, log, or threat intel to a specific GitHub repository.",
             parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING", description: "Format: owner/repo" }, filePath: { type: "STRING" }, content: { type: "STRING" }, commitMessage: { type: "STRING" } }, required: ["repoFullName", "filePath", "content", "commitMessage"] },
-            handler: async (args) => await dynamicGitHubCommit(args.repoFullName, args.filePath, args.content, args.commitMessage)
+            handler: async function(args) { return await dynamicGitHubCommit(args?.repoFullName || args?.repo, args?.filePath || args?.path, args?.content || args?.data, args?.commitMessage || args?.message); }
         },
         generateImage: {
             description: "Generates a real, high-resolution AI image from a text prompt.",
             parameters: { type: "OBJECT", properties: { prompt: { type: "STRING" } }, required: ["prompt"] },
-            handler: (args) => generateImage(args.prompt)
+            handler: function(args) { return generateImage(args?.prompt); }
         },
         generateVideoClip: {
             description: "Generates a high-fidelity AI video via real async Replicate API from a prompt.",
             parameters: { type: "OBJECT", properties: { prompt: { type: "STRING" } }, required: ["prompt"] },
-            handler: async (args) => await generateVideoClip(args.prompt)
+            handler: async function(args) { return await generateVideoClip(args?.prompt); }
         }
     };
 
@@ -604,7 +604,8 @@
 
     async function executeMCPTool(toolName, args) {
         if (!MCP_TOOL_REGISTRY[toolName]) return `[MCP Error] Tool not found.`;
-        return await MCP_TOOL_REGISTRY[toolName].handler(args);
+        const tool = MCP_TOOL_REGISTRY[toolName];
+        return await tool.handler.call(tool, args || {});
     }
 
     document.addEventListener("DOMContentLoaded", () => {
