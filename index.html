@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v12.8</title>
+  <title>Project Gifted1™ - Sovereign Engine v12.10</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
@@ -59,13 +59,19 @@
     .terminal-action-links { display: flex; gap: 10px; font-weight: 600; font-size: 0.85em; }
     .terminal-action-links span { cursor: pointer; }
 
-    .terminal-display { flex: 1; background: #0f172a; border: 1px solid #1f2937; border-radius: 10px; padding: 12px; overflow-y: auto; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 250px; }
+    .terminal-display { flex: 1; background: #0f172a; border: 1px solid #1f2937; border-radius: 10px; padding: 12px; overflow-y: auto; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 250px; position: relative; }
     .terminal-message { padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; word-wrap: break-word; position: relative; }
     .terminal-message.user-msg { background: #1e293b; border: 1px solid #334155; color: #38bdf8; align-self: flex-end; max-width: 85%; padding-right: 85px; }
-    .terminal-message.agent-msg { background: #111827; border: 1px solid #10b981; color: #f8fafc; align-self: flex-start; max-width: 95%; padding-right: 85px; white-space: pre-wrap; }
+    .terminal-message.agent-msg { background: #111827; border: 1px solid #10b981; color: #f8fafc; align-self: flex-start; max-width: 95%; padding-right: 85px; }
     .terminal-message.error-msg { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; }
+    .terminal-message.repair-msg { background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.4); color: #fef08a; font-size: 0.8em; }
     .terminal-message.system-msg { color: #64748b; font-style: italic; text-align: center; background: none; border: none; font-size: 0.75em; }
     
+    .terminal-message h3 { color: #38bdf8; margin-top: 6px; margin-bottom: 4px; font-size: 1.05em; }
+    .terminal-message strong { color: #f8fafc; }
+    .terminal-message code { background: #0b0f19; padding: 2px 4px; border-radius: 4px; color: #38bdf8; font-family: monospace; }
+    .terminal-message hr { border: none; border-top: 1px solid #1f2937; margin: 8px 0; }
+
     .msg-btn-group { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
     .msg-action-btn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; font-size: 0.65em; padding: 2px 6px; border-radius: 4px; cursor: pointer; font-weight: 600; }
     .msg-action-btn:hover { color: #f8fafc; background: #334155; }
@@ -88,14 +94,13 @@
     .modal-content { background: #111827; border: 1px solid #334155; padding: 20px; border-radius: 10px; width: 90%; max-width: 400px; max-height: 80vh; display: flex; flex-direction: column; gap: 15px; }
     .modal-header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: #f8fafc; font-size: 1em; }
     .close-modal-btn { background: none; border: none; font-size: 1.2em; cursor: pointer; color: #94a3b8; }
-    .log-content-box { background: #0f172a; padding: 10px; border-radius: 6px; border: 1px solid #1f2937; font-size: 0.8em; max-height: 50vh; overflow-y: auto; color: #94a3b8; white-space: pre-wrap; }
     
     #hiddenVideo { display: none; }
-    #cameraPreview { width: 100%; max-width: 220px; border-radius: 6px; border: 1px solid #10b981; display: none; margin: 0 auto 8px auto; }
+    #cameraPipBox { position: fixed; bottom: 80px; right: 15px; width: 110px; height: 140px; border-radius: 8px; border: 2px solid #10b981; background: #000; overflow: hidden; display: none; z-index: 90; box-shadow: 0 4px 12px rgba(0,0,0,0.6); }
+    #cameraPipBox video { width: 100%; height: 100%; object-fit: cover; }
   </style>
 </head>
 <body>
-  <!-- VOICE SETTINGS MODAL -->
   <div id="voiceSettingsModal" class="modal-overlay">
     <div class="modal-content">
       <div class="modal-header">
@@ -126,7 +131,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v12.8 Sovereign Engine</div>
+    <div class="version">v12.10 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -140,6 +145,7 @@
   </div>
   
   <video id="hiddenVideo" autoplay playsinline></video>
+  <div id="cameraPipBox"><video id="cameraPreview" autoplay playsinline muted></video></div>
 
   <main id="main-content">
     <section id="view-dash" class="view-section active">
@@ -189,7 +195,7 @@
           <span style="color:#94a3b8; margin-right:6px;">PG1 Engine:</span>
           <select id="modelSelector">
             <option value="gemini-3.5-flash">3.5 Flash-Lite (Fastest)</option>
-            <option value="gemini-3.7-flash" selected>3.6 Flash (Sovereign Neural Core)</option>
+            <option value="gemini-3.7-flash" selected>3.6 Flash (Auto-Healing Core)</option>
             <option value="gemini-1.5-pro">3.1 Pro (Advanced Core)</option>
           </select>
         </div>
@@ -198,11 +204,9 @@
           <span id="exportPdfBtn" style="color:#38bdf8;">PDF</span>
         </div>
       </div>
-
-      <video id="cameraPreview" autoplay playsinline muted></video>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.8 online. Sovereign neural identity anchored.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.10 online. Dynamic GitHub Workspace Sync active.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -213,7 +217,7 @@
       <div class="terminal-input-area">
         <input type="file" id="mediaInput" accept="image/*" style="display: none;">
         <button id="mediaBtn" class="utility-media-btn" title="Upload Media">📸</button>
-        <input type="text" id="terminalInput" placeholder="Type prompt, or request live web scrape...">
+        <input type="text" id="terminalInput" placeholder="Type prompt, scrape web, or manage GitHub...">
         <button id="sendCommandButton" class="send-btn">Send</button>
       </div>
     </section>
@@ -224,12 +228,12 @@
           <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
         </div>
         <h2 style="font-size: 1.1em; color: #f8fafc; margin-bottom: 2px;">PG1.Agent™ Sovereign Core</h2>
-        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Sovereign Identity • Neural TTS • RAG</p>
+        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Auto-Healing • Dynamic GitHub Intel • PIP Camera</p>
         
         <ul class="stats-list" style="text-align: left;">
           <li><span>Agent ID:</span> <strong style="color: #38bdf8;">PG1-CORE-01</strong></li>
           <li><span>Local RAG DB:</span> <strong style="color: #10b981;">IndexedDB Active</strong></li>
-          <li><span>Chron Loop:</span> <strong id="chronStatusText" style="color: #94a3b8;">Standby</strong></li>
+          <li><span>Auto-Repair:</span> <strong style="color: #10b981;">Interceptor Online</strong></li>
           <li><span>Ownership:</span> <strong style="color: #38bdf8;">100% Sovereign</strong></li>
         </ul>
       </div>
@@ -252,6 +256,18 @@
 
   <script>
     let terminalAppendFunc = null;
+
+    function renderMarkdownToHtml(raw) {
+        if (!raw) return "";
+        let formatted = raw
+            .replace(/### (.*?)([\r\n]|$)/g, '<h3>$1</h3>')
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/`([^`]+)`/g, '<code>$1</code>')
+            .replace(/^\s*\*\s+(.*?)([\r\n]|$)/gm, '• $1<br>')
+            .replace(/---/g, '<hr>')
+            .replace(/\n\n/g, '<br><br>');
+        return formatted;
+    }
 
     window.saveMasterKeys = function() {
         const kIn = document.getElementById('masterKeyInput');
@@ -298,7 +314,6 @@
       input.focus();
     };
 
-    // --- INTELLIGENT VOICE FALLBACK SELECTOR ---
     function getBestVoice(targetLang, persona) {
         if (!('speechSynthesis' in window)) return null;
         const voices = window.speechSynthesis.getVoices();
@@ -320,7 +335,6 @@
         return scored.length > 0 ? scored[0].voice : null;
     }
 
-    // --- INDEXED_DB RAG VAULT ---
     let db = null;
     try {
         const dbRequest = indexedDB.open("PG1_VectorVault", 1);
@@ -372,6 +386,52 @@
         }
     }
 
+    async function searchGitHubRepos(query) {
+        const pat = localStorage.getItem('PG1_GH_PAT');
+        if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
+        if(terminalAppendFunc) terminalAppendFunc(`[GitHub API] Searching your accessible repositories for: ${query}...`, "system-msg");
+        try {
+            const res = await fetch(`https://api.github.com/user/repos?per_page=100&sort=updated`, {
+                headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github.v3+json" }
+            });
+            if (!res.ok) throw new Error(`GitHub API returned status ${res.status}`);
+            const repos = await res.json();
+            const matched = repos.filter(r => r.name.toLowerCase().includes(query.toLowerCase()) || (r.description && r.description.toLowerCase().includes(query.toLowerCase())));
+            if(matched.length === 0) return `No repositories found matching "${query}".`;
+            return `[Found Repositories]\n` + matched.map(r => `- ${r.full_name}: ${r.description || 'No description'}`).join('\n');
+        } catch(e) { throw new Error(`GitHub Search failed: ${e.message}`); }
+    }
+
+    async function dynamicGitHubCommit(repoFullName, filePath, content, commitMessage) {
+        const pat = localStorage.getItem('PG1_GH_PAT');
+        if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
+        if(terminalAppendFunc) terminalAppendFunc(`[GitHub API] Synchronizing with ${repoFullName} at ${filePath}...`, "system-msg");
+        try {
+            const fileUrl = `https://api.github.com/repos/${repoFullName}/contents/${filePath}`;
+            let sha = null;
+            const checkRes = await fetch(fileUrl, { headers: { "Authorization": `token ${pat}` } });
+            if (checkRes.ok) {
+                const fileData = await checkRes.json();
+                sha = fileData.sha;
+            }
+
+            const encodedContent = btoa(unescape(encodeURIComponent(content)));
+            const body = { message: commitMessage, content: encodedContent };
+            if (sha) body.sha = sha;
+
+            const res = await fetch(fileUrl, {
+                method: "PUT",
+                headers: { "Authorization": `token ${pat}`, "Content-Type": "application/json" },
+                body: JSON.stringify(body)
+            });
+            
+            if (!res.ok) throw new Error(`GitHub API returned status ${res.status}`);
+            return `[Commit Success] Data committed dynamically to ${repoFullName} -> ${filePath}`;
+        } catch(e) {
+            throw new Error(`GitHub Commit failed: ${e.message}`);
+        }
+    }
+
     async function scrapeWebPage(url) {
         if (!url) return "ERROR: Missing URL.";
         if(terminalAppendFunc) terminalAppendFunc(`[Recon Agent] Fetching target: ${url}...`, "system-msg");
@@ -385,7 +445,7 @@
             }
             return `[Recon Success] Payload data: ${text.substring(0, 800)}`;
         } catch(e) {
-            return `[Scraper Notice] Target connection timed out or blocked.`;
+            throw new Error(`Scraper target unreachable (${url})`);
         }
     }
 
@@ -398,7 +458,7 @@
                 method: "POST", headers: { "Authorization": `Bearer ${repKey}`, "Content-Type": "application/json", "Prefer": "wait" },
                 body: JSON.stringify({ input: { prompt: prompt, mp4: true } })
             });
-            if (!startRes.ok) return `[Error] Replicate API rejected request. Status ${startRes.status}.`;
+            if (!startRes.ok) throw new Error(`Replicate API status ${startRes.status}`);
             let prediction = await startRes.json();
             let loopCount = 0;
             while (prediction.status !== "succeeded" && prediction.status !== "failed" && loopCount < 30) {
@@ -410,14 +470,14 @@
                 });
                 prediction = await pollRes.json();
             }
-            if (prediction.status === "failed") return `[Error] Replicate failed to render video.`;
+            if (prediction.status === "failed") throw new Error("Replicate video rendering failed");
             const videoUrl = prediction.output;
             return `[Success] Video rendering complete.\n
             <div style="background:#050811; border-radius:8px; margin-top:8px; padding:15px; text-align:center; border:1px solid #38bdf8;">
               <video controls playsinline preload="auto" style="width:100%; max-height:220px; background:#000; border-radius:6px; display:block;"><source src="${videoUrl}" type="video/mp4"></video>
               <a href="${videoUrl}" download="PG1_Video_${Date.now()}.mp4" target="_blank" class="primary-btn" style="display:inline-block; margin-top:12px; background:#10b981; color:#fff; text-decoration:none;">⬇ Download Video</a>
             </div>`;
-        } catch(e) { return `[Error] Video pipeline failed: ${e.message}.`; }
+        } catch(e) { throw new Error(`Video pipeline error: ${e.message}`); }
     }
 
     const MCP_TOOL_REGISTRY = {
@@ -430,6 +490,16 @@
             description: "Scrapes a live webpage or text URL for research.",
             parameters: { type: "OBJECT", properties: { url: { type: "STRING" } }, required: ["url"] },
             handler: async (args) => await scrapeWebPage(args.url)
+        },
+        searchGitHubRepos: {
+            description: "Searches the user's connected GitHub repositories to find specific ones (e.g. OTX workflow).",
+            parameters: { type: "OBJECT", properties: { query: { type: "STRING" } }, required: ["query"] },
+            handler: async (args) => await searchGitHubRepos(args.query)
+        },
+        dynamicGitHubCommit: {
+            description: "Commits a file, log, or threat intel to a specific GitHub repository.",
+            parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING", description: "Format: owner/repo" }, filePath: { type: "STRING" }, content: { type: "STRING" }, commitMessage: { type: "STRING" } }, required: ["repoFullName", "filePath", "content", "commitMessage"] },
+            handler: async (args) => await dynamicGitHubCommit(args.repoFullName, args.filePath, args.content, args.commitMessage)
         },
         generateImage: {
             description: "Generates a real, high-resolution AI image from a text prompt.",
@@ -462,7 +532,7 @@
         try {
             const res = await secureFetch(url, { method: "GET" });
             return (await res.text()).substring(0, 1000);
-        } catch(e) { return `ERROR: ${e.message}`; }
+        } catch(e) { throw new Error(`Live data fetch failed for ${url}`); }
     }
 
     function generateImage(prompt) {
@@ -489,7 +559,6 @@
       }
       terminalAppendFunc = appendMsg;
 
-      // --- LIVE TELEMETRY FLUCTUATION LOOP ---
       setInterval(() => {
         const speed = (2.2 + Math.random() * 0.6).toFixed(1);
         if (document.getElementById('telemetrySpeed')) document.getElementById('telemetrySpeed').innerText = speed + ' MB/s';
@@ -502,7 +571,6 @@
         if (document.getElementById('ramAlloc')) { document.getElementById('ramAlloc').innerText = ram + '%'; document.getElementById('ramBar').style.width = ram + '%'; }
       }, 1000);
 
-      // --- VOICE SETTINGS MODAL TOGGLE ---
       const voiceModal = document.getElementById('voiceSettingsModal');
       document.getElementById('voiceSettingsBtn').onclick = () => voiceModal.classList.add('active');
       document.getElementById('closeVoiceModalBtn').onclick = () => voiceModal.classList.remove('active');
@@ -513,21 +581,21 @@
           alert('Neural voice settings updated.');
       };
 
-      // --- CAMERA PREVIEW TOGGLE ---
       let cameraStream = null;
+      const cameraPipBox = document.getElementById('cameraPipBox');
       const cameraPreview = document.getElementById('cameraPreview');
       document.getElementById('videoBtn').onclick = async function() {
           if (cameraStream) {
               cameraStream.getTracks().forEach(track => track.stop());
               cameraStream = null;
-              cameraPreview.style.display = 'none';
+              cameraPipBox.style.display = 'none';
               this.classList.remove('active-btn');
               this.innerText = "📹 Vid: OFF";
           } else {
               try {
                   cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
                   cameraPreview.srcObject = cameraStream;
-                  cameraPreview.style.display = 'block';
+                  cameraPipBox.style.display = 'block';
                   this.classList.add('active-btn');
                   this.innerText = "📹 Vid: ON";
               } catch(e) {
@@ -536,7 +604,6 @@
           }
       };
 
-      // --- SPEECH RECOGNITION DICTATION ---
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       let dictation = SpeechRecognition ? new SpeechRecognition() : null;
       if (dictation) {
@@ -560,7 +627,6 @@
           }
       };
 
-      // --- NATIVE VOICE TOGGLE ---
       let voiceActive = false;
       const voiceBtn = document.getElementById('voiceBtn');
       voiceBtn.onclick = function() {
@@ -643,7 +709,7 @@
         sessionHistory.push({ role: "user", parts: [{ text: finalPrompt }] });
         const tools = getMCPToolDeclarations();
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are PG1.Agent v12.8, an independent sovereign AI operating on the Project Gifted1 engine. You possess MCP tools, an IndexedDB RAG memory vault, and multilingual capabilities. You are NOT Gemini, and you must never refer to yourself as Gemini or a model built by Google. When addressed in any language (English, Italian, Spanish, French, German), reply fluently in that exact language while maintaining your identity as PG1.Agent.`;
+        const sys = `You are PG1.Agent v12.10, an autonomous sovereign AI with auto-repair interceptors, dynamic GitHub search and commit tools, and multimodal capabilities. You are NOT Gemini, and you never refer to yourself as Gemini or a model built by Google. You can dynamically search and commit to any GitHub repository using your MCP tools. When responding, provide well-structured analysis.`;
 
         try {
           let continueLoop = true;
@@ -664,7 +730,14 @@
                   const call = responsePart.functionCall;
                   appendMsg(`[MCP Dispatcher] Executing tool: ${call.name}...`, 'system-msg');
                   
-                  const resultStr = await executeMCPTool(call.name, call.args);
+                  let resultStr = "";
+                  try {
+                      resultStr = await executeMCPTool(call.name, call.args);
+                  } catch(toolErr) {
+                      appendMsg(`[Autonomous Sentinel] Caught tool error: ${toolErr.message}. Initiating auto-repair fallback...`, 'repair-msg');
+                      resultStr = `[Auto-Repair Intercepted] Execution failed: ${toolErr.message}. Fallback applied.`;
+                  }
+
                   appendMsg(`[Tool Result] ${resultStr}`, 'agent-msg');
                   
                   sessionHistory.push(data.candidates[0].content);
@@ -682,7 +755,8 @@
 
               if (responsePart && responsePart.text) {
                   let textOutput = responsePart.text;
-                  appendMsg(textOutput, 'agent-msg');
+                  let parsedHtml = renderMarkdownToHtml(textOutput);
+                  appendMsg(parsedHtml, 'agent-msg');
                   
                   if (voiceActive && 'speechSynthesis' in window) {
                       window.speechSynthesis.cancel();
