@@ -281,7 +281,7 @@
         <input type="file" id="mediaInput" accept="image/*" style="display: none;">
         <button id="mediaBtn" class="utility-media-btn" title="Upload Media or Capture Frame">📸</button>
         <button id="inlineMicBtn" class="utility-media-btn" title="Record Voice Message">🎤</button>
-        <input type="text" id="terminalInput" placeholder="Type or tap 🎤 for voice...">
+        <input type="text" id="terminalInput" placeholder="Type or tap 🎤...">
         <button id="sendCommandButton" class="send-btn">Send</button>
       </div>
     </section>
@@ -987,7 +987,7 @@
         }
         
         div.classList.remove('cursor-blink');
-        div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div>`;
+        div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div>`;
         termOut.scrollTop = termOut.scrollHeight;
         persistTerminalState();
         triggerHaptic('success');
