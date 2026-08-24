@@ -1,8 +1,8 @@
 // agent-engine.js - PG1.Agent Sovereign Bridge v12.25
-// Integrated with Voice Fast-Path, Live Diff Drawer, GitHub Actions Telemetry, and Persistent Memory
+// Integrated with Voice Fast-Path, Live Diff Drawer, GitHub Actions Telemetry, Persistent Memory & Media Downloader
 
 (function () {
-  console.log("[PG1 Agent Engine v12.25] Initializing autonomous sovereign core...");
+  console.log("[PG1 Agent Engine v12.25] Initializing autonomous sovereign core with media download support...");
 
   // State Management
   let sessionHistory = [];
@@ -39,7 +39,7 @@
       <div id="pg1-drawer-header" style="padding: 10px 14px; background: #1e293b; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; border-radius: 12px 12px 0 0;">
         <span style="font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 8px;">
           <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e;"></span>
-          PG1 Execution Console & Tools
+          PG1 Execution Console & Tools v12.25
         </span>
         <div style="display:flex; gap:8px;">
           <button id="pg1-clear-logs" style="background:#334155; color:#cbd5e1; border:none; border-radius:4px; padding:2px 6px; font-size:10px; cursor:pointer;">Clear</button>
@@ -47,7 +47,7 @@
         </div>
       </div>
       <div id="pg1-drawer-body" style="padding: 12px; overflow-y: auto; max-height: 400px; display: flex; flex-direction: column; gap: 8px;">
-        <div style="color: #64748b;">// Awaiting multi-step tool calls, diff previews, and telemetry...</div>
+        <div style="color: #64748b;">// Awaiting multi-step tool calls, diff previews, telemetry, and media renders...</div>
       </div>
     `;
 
@@ -130,7 +130,33 @@
     return "";
   }
 
-  // 4. Media & Image Upload Handling
+  // 4. Helper for downloading blobs / media URLs
+  async function downloadMedia(url, filename) {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename || 'pg1-media-output';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+      logToConsole("success", "Media Downloaded", filename);
+    } catch (e) {
+      // Fallback direct link download
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'pg1-media-output';
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+  }
+
+  // 5. Media & Image Upload Handling
   const fileInput = document.createElement("input");
   fileInput.type = "file";
   fileInput.accept = "image/*";
@@ -167,27 +193,55 @@
     reader.readAsDataURL(file);
   });
 
-  // 5. Voice Fast-Path Intent Detection
-  function parseVoiceFastPath(text) {
-    const lower = text.toLowerCase().trim();
-    if (lower.startsWith("commit fix") || lower.startsWith("run workflow") || lower.startsWith("check health")) {
-      logToConsole("info", "Voice Fast-Path Triggered", { command: text });
-      return true;
-    }
-    return false;
-  }
-
-  // 6. Rich Content Renderer (Markdown, Diffs, Images, Video)
+  // 6. Rich Content Renderer (Markdown, Diffs, Images, Video + Download Buttons)
   function renderRichContent(content) {
     const container = document.createElement("div");
     container.style.cssText = "background:#f8fafc; border:1px solid #e2e8f0; padding:16px; margin:10px 0; border-radius:12px; font-size:14px; color:#0f172a; word-break:break-word; line-height:1.6;";
 
-    // Video check
-    if (content.includes("https://") && (content.includes(".mp4") || content.includes(".webm"))) {
-      const match = content.match(/https:\/\/[^\s"'<>]+\.(mp4|webm)/i);
-      if (match) {
-        container.innerHTML += `<div style="margin-top:10px;"><video controls autoplay loop muted src="${match[0]}" style="max-width:100%; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.1);"></video></div>`;
-      }
+    // Video Detection & Mount
+    const videoMatch = content.match(/https:\/\/[^\s"'<>]+\.(mp4|webm|mov)(\?[^\s"'<>]*)?/i) || content.match(/https:\/\/replicate\.delivery\/[^\s"'<>]+\.mp4/i);
+    if (videoMatch) {
+      const vidUrl = videoMatch[0];
+      const vidWrapper = document.createElement("div");
+      vidWrapper.style.cssText = "margin-top:12px; background:#0f172a; padding:12px; border-radius:10px; text-align:center;";
+      
+      const vid = document.createElement("video");
+      vid.controls = true;
+      vid.autoplay = true;
+      vid.loop = true;
+      vid.muted = true;
+      vid.src = vidUrl;
+      vid.style.cssText = "max-width:100%; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.3); display:block; margin:0 auto 10px auto;";
+      
+      const downloadBtn = document.createElement("button");
+      downloadBtn.innerText = "⬇ Download Video (.mp4)";
+      downloadBtn.style.cssText = "background:#2563eb; color:#ffffff; border:none; padding:6px 14px; border-radius:6px; font-weight:600; cursor:pointer; font-size:12px;";
+      downloadBtn.onclick = () => downloadMedia(vidUrl, `pg1-video-${Date.now()}.mp4`);
+
+      vidWrapper.appendChild(vid);
+      vidWrapper.appendChild(downloadBtn);
+      container.appendChild(vidWrapper);
+    }
+
+    // Image Detection & Mount
+    const imgMatch = content.match(/https:\/\/[^\s"'<>]+\.(jpeg|jpg|png|webp|gif)(\?[^\s"'<>]*)?/i);
+    if (imgMatch && !videoMatch) {
+      const imgUrl = imgMatch[0];
+      const imgWrapper = document.createElement("div");
+      imgWrapper.style.cssText = "margin-top:12px; background:#0f172a; padding:12px; border-radius:10px; text-align:center;";
+      
+      const img = document.createElement("img");
+      img.src = imgUrl;
+      img.style.cssText = "max-width:100%; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.3); display:block; margin:0 auto 10px auto;";
+      
+      const downloadBtn = document.createElement("button");
+      downloadBtn.innerText = "⬇ Download Image";
+      downloadBtn.style.cssText = "background:#2563eb; color:#ffffff; border:none; padding:6px 14px; border-radius:6px; font-weight:600; cursor:pointer; font-size:12px;";
+      downloadBtn.onclick = () => downloadMedia(imgUrl, `pg1-image-${Date.now()}.png`);
+
+      imgWrapper.appendChild(img);
+      imgWrapper.appendChild(downloadBtn);
+      container.appendChild(imgWrapper);
     }
 
     // Direct text / Markdown formatting
@@ -219,8 +273,6 @@
         chatContainer.appendChild(userDiv);
       }
 
-      parseVoiceFastPath(promptText);
-
       let output = "";
       const activeKey = getApiKey();
       let currentImage = pendingImageBase64;
@@ -240,13 +292,12 @@
           });
         }
 
-        let finalPrompt = promptText || "Analyze this image accurately.";
+        let finalPrompt = promptText || "Analyze accurately.";
         if (pinnedContext) {
           finalPrompt = `[Pinned Context: ${pinnedContext}]\n\n${finalPrompt}`;
         }
 
         userParts.push({ text: finalPrompt });
-
         logToConsole("info", "Dispatching Request", { partsCount: userParts.length, hasImage: !!currentImage });
 
         const workerUrl = "https://pg1-worker.gnfcw9w5rk.workers.dev";
@@ -262,7 +313,7 @@
         });
 
         const data = await res.json();
-        output = data.candidates?.[0]?.content?.parts?.[0]?.text || data.output || `API Error: ${JSON.stringify(data)}`;
+        output = data.candidates?.[0]?.content?.parts?.[0]?.text || data.output || `API Response: ${JSON.stringify(data)}`;
         logToConsole("success", "Response Received", { length: output.length });
       }
 
