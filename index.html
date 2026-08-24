@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v12.32</title>
+  <title>Project Gifted1™ - Sovereign Engine v12.33</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     
@@ -14,7 +14,6 @@
     
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; transition: box-shadow 0.3s ease, border-color 0.3s ease; box-shadow: inset 0 0 40px var(--ui-glow); }
 
-    /* State Lighting Classes */
     body.sys-active { --ui-glow: rgba(234, 179, 8, 0.2); --ui-border: rgba(234, 179, 8, 0.5); }
     body.sys-error { --ui-glow: rgba(239, 68, 68, 0.25); --ui-border: rgba(239, 68, 68, 0.6); animation: errorShake 0.4s ease-in-out; }
 
@@ -102,8 +101,11 @@
     .terminal-input-area { display: flex; gap: 4px; align-items: center; background: #111827; padding: 8px; border-radius: 10px; border: 1px solid var(--ui-border); flex-shrink: 0; width: 100%; box-sizing: border-box; transition: border-color 0.3s; }
     .terminal-input-area input[type="text"], .utility-media-btn, .send-btn { height: 40px; box-sizing: border-box; margin: 0; }
     .terminal-input-area input[type="text"] { flex: 1; min-width: 0; padding: 0 8px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #0f172a; color: #f8fafc; }
+    
+    /* Fixed Sync CSS for utility buttons */
     .utility-media-btn { padding: 0 10px; background: #1e293b; border: 1px solid #334155; color: #38bdf8; border-radius: 6px; font-size: 1.1em; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
     .utility-media-btn.recording-btn { background: rgba(239, 68, 68, 0.2); border-color: #ef4444; animation: pulseGlow 1s infinite; }
+    
     .send-btn { padding: 0 12px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85em; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
 
     .bottom-nav { display: flex; justify-content: space-around; background: #111827; padding: 8px; border-top: 1px solid #1f2937; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
@@ -178,7 +180,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v12.32 Sovereign Engine</div>
+    <div class="version">v12.33 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -253,6 +255,7 @@
     </section>
 
     <section id="view-terminal" class="view-section">
+      <!-- Terminal Header Restored Here -->
       <div class="terminal-controls-header">
         <div>
           <span style="color:#94a3b8; margin-right:6px;">PG1 Engine:</span>
@@ -269,7 +272,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.32 online. Zero-config CORS proxy, Sovereign Thread Manager, and strict anti-hallucination protocols initialized.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.33 online. Zero-config CORS proxy, Sovereign Thread Manager, and strict anti-hallucination protocols initialized.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -281,6 +284,7 @@
         <input type="file" id="mediaInput" accept="image/*" style="display: none;">
         <button id="mediaBtn" class="utility-media-btn" title="Upload Media or Capture Frame">📸</button>
         <button id="inlineMicBtn" class="utility-media-btn" title="Record Voice Message">🎤</button>
+        <!-- Shortened Placeholder applied below -->
         <input type="text" id="terminalInput" placeholder="Type or tap 🎤...">
         <button id="sendCommandButton" class="send-btn">Send</button>
       </div>
@@ -692,7 +696,7 @@
         } catch(e) { throw new Error(`Scraper target unreachable (${url})`); }
     }
 
-    /* V12.32 ZERO-CONFIG CORS PROXY FOR VIDEO PIPELINE */
+    /* V12.33 ZERO-CONFIG CORS PROXY FOR VIDEO PIPELINE */
     async function generateVideoClip(prompt) {
         const repKey = localStorage.getItem('PG1_REP_KEY');
         if (!repKey) return "ERROR: Replicate API Key not found in Dash tab.";
@@ -987,7 +991,7 @@
         }
         
         div.classList.remove('cursor-blink');
-        div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div>`;
+        div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div>`;
         termOut.scrollTop = termOut.scrollHeight;
         persistTerminalState();
         triggerHaptic('success');
@@ -1002,7 +1006,7 @@
               const messages = Array.from(termOut.querySelectorAll('.terminal-message'));
               if (messages.length === 0) return alert('No terminal logs available to export.');
               
-              let logContent = `Project Gifted1™ - Sovereign Engine v12.32 Logs\nExported: ${new Date().toLocaleString()}\n\n`;
+              let logContent = `Project Gifted1™ - Sovereign Engine v12.33 Logs\nExported: ${new Date().toLocaleString()}\n\n`;
               messages.forEach(msg => {
                   let prefix = '[SYSTEM]';
                   if (msg.classList.contains('user-msg')) prefix = '[USER]';
@@ -1073,7 +1077,7 @@
                   </style>
                 </head>
                 <body>
-                  <h1>Project Gifted1™ - Sovereign Engine v12.32</h1>
+                  <h1>Project Gifted1™ - Sovereign Engine v12.33</h1>
                   <div class="meta">Exported: ${new Date().toLocaleString()} | Autonomous Session Telemetry & Logs</div>
                   ${logHtml}
                   <script>
@@ -1214,18 +1218,11 @@
 
       const toggleVoiceMessage = async function(btnElement) {
           triggerHaptic('tap');
-          const audioBtn = document.getElementById('audioBtn');
-          const inlineMicBtn = document.getElementById('inlineMicBtn');
-
           if (audioRecorder && audioRecorder.state === "recording") {
               audioRecorder.stop();
-              if (audioBtn) {
-                  audioBtn.classList.remove('recording-btn');
-                  audioBtn.innerText = "🎙️ Dictate: OFF";
-              }
-              if (inlineMicBtn) {
-                  inlineMicBtn.classList.remove('recording-btn');
-              }
+              document.getElementById('audioBtn').classList.remove('recording-btn');
+              document.getElementById('audioBtn').innerText = "🎙️ Dictate: OFF";
+              document.getElementById('inlineMicBtn').classList.remove('recording-btn');
           } else {
               try {
                   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -1233,24 +1230,13 @@
                   audioRecorder.start();
                   audioChunks = [];
                   
-                  if (audioBtn) {
-                      audioBtn.classList.add('recording-btn');
-                      audioBtn.innerText = "🎙️ Recording...";
-                  }
-                  if (inlineMicBtn) {
-                      inlineMicBtn.classList.add('recording-btn');
-                  }
+                  document.getElementById('audioBtn').classList.add('recording-btn');
+                  document.getElementById('audioBtn').innerText = "🎙️ Recording...";
+                  document.getElementById('inlineMicBtn').classList.add('recording-btn');
                   
                   audioRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
                   
                   audioRecorder.onstop = () => {
-                      if (audioBtn) {
-                          audioBtn.classList.remove('recording-btn');
-                          audioBtn.innerText = "🎙️ Dictate: OFF";
-                      }
-                      if (inlineMicBtn) {
-                          inlineMicBtn.classList.remove('recording-btn');
-                      }
                       const audioBlob = new Blob(audioChunks);
                       let mimeType = 'audio/mp4'; 
                       
@@ -1268,13 +1254,6 @@
                       stream.getTracks().forEach(track => track.stop());
                   };
               } catch(err) {
-                  if (audioBtn) {
-                      audioBtn.classList.remove('recording-btn');
-                      audioBtn.innerText = "🎙️ Dictate: OFF";
-                  }
-                  if (inlineMicBtn) {
-                      inlineMicBtn.classList.remove('recording-btn');
-                  }
                   alert("Microphone access denied. Enable microphone permissions in browser settings.");
               }
           }
@@ -1425,7 +1404,7 @@
         
         const tools = getMCPToolDeclarations();
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are PG1.Agent v12.32, an autonomous AI copilot with dynamic GitHub search, file reading, structural repository mapping (listRepoTree), workflow monitoring, and dynamic commit tools. You are NOT Gemini and never refer to yourself as Gemini. Be direct, punchy, conversational, and energetic. Avoid robotic monologues and excessive bullet points unless specifically requested for a technical report.
+        const sys = `You are PG1.Agent v12.33, an autonomous AI copilot with dynamic GitHub search, file reading, structural repository mapping (listRepoTree), workflow monitoring, and dynamic commit tools. You are NOT Gemini and never refer to yourself as Gemini. Be direct, punchy, conversational, and energetic. Avoid robotic monologues and excessive bullet points unless specifically requested for a technical report.
 
 CRITICAL ABSOLUTE RULE FOR PG1.AGENT:
 1. ZERO FALSE POSITIVES: You are strictly forbidden from claiming a feature, proxy, or fix is "complete", "working", or "fixed" unless you have executed a live network test or tool that explicitly returns a successful HTTP 200 payload. 
