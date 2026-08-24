@@ -7,1402 +7,215 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     :root { --ui-glow: rgba(56, 189, 248, 0.15); --ui-border: #1f2937; }
-    html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; transition: box-shadow 0.3s ease, border-color 0.3s ease; box-shadow: inset 0 0 40px var(--ui-glow); }
+    html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; box-shadow: inset 0 0 40px var(--ui-glow); }
     body.sys-active { --ui-glow: rgba(234, 179, 8, 0.2); --ui-border: rgba(234, 179, 8, 0.5); }
     body.sys-error { --ui-glow: rgba(239, 68, 68, 0.25); --ui-border: rgba(239, 68, 68, 0.6); animation: errorShake 0.4s ease-in-out; }
     @keyframes errorShake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
     @keyframes pulseGlow { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); } 70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
     @keyframes fastSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    @keyframes dishSweep { 0%, 100% { transform: rotate(-20deg); } 50% { transform: rotate(20deg); } }
-    @keyframes electricPulse { 0%, 100% { text-shadow: 0 0 5px rgba(56, 189, 248, 0.4), 0 0 10px rgba(56, 189, 248, 0.2); } 50% { text-shadow: 0 0 15px rgba(56, 189, 248, 0.9), 0 0 25px rgba(56, 189, 248, 0.6); } }
-    @keyframes iconPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.8; } }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes coreBreathe { 0%, 100% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.2); transform: scale(1); } 50% { box-shadow: 0 0 35px rgba(56, 189, 248, 0.7), inset 0 0 15px rgba(56, 189, 248, 0.4); transform: scale(1.04); } }
-    @keyframes coreSpeak { 0%, 100% { box-shadow: 0 0 20px rgba(16, 185, 129, 0.5); transform: scale(1); } 50% { box-shadow: 0 0 55px rgba(16, 185, 129, 0.95), inset 0 0 20px rgba(16, 185, 129, 0.6); transform: scale(1.08); } }
-    .pulsing-bolt { animation: electricPulse 2s infinite; display: inline-block; }
-    .spin-icon { display: inline-block; animation: fastSpin 2s linear infinite; }
-    .dish-icon { display: inline-block; animation: dishSweep 3s ease-in-out infinite; transform-origin: bottom center; }
+    
     .top-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: #111827; border-bottom: 1px solid var(--ui-border); flex-shrink: 0; }
     .brand-title { display: flex; align-items: center; gap: 8px; font-size: 1.05em; font-weight: 600; color: #f8fafc; }
     .version { font-size: 0.75em; color: #94a3b8; }
     .status-dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; animation: pulseGlow 2s infinite; }
     .status-dot.green { background-color: #10b981; }
+
     .action-bar { display: flex; justify-content: flex-start; gap: 6px; padding: 8px 12px; background: #111827; border-bottom: 1px solid var(--ui-border); overflow-x: auto; flex-shrink: 0; }
     .toggle-btn { padding: 6px 10px; border: 1px solid #334155; background: #1e293b; color: #cbd5e1; border-radius: 6px; font-size: 0.75em; cursor: pointer; white-space: nowrap; font-weight: 500; transition: all 0.2s; }
-    .toggle-btn.active-btn { color: #10b981; border-color: #10b981; background: rgba(16, 185, 129, 0.2); box-shadow: 0 0 8px rgba(16,185,129,0.3); animation: iconPulse 2s infinite; }
+    .toggle-btn.active-btn { color: #10b981; border-color: #10b981; background: rgba(16, 185, 129, 0.2); }
     .toggle-btn.recording-btn { color: #ef4444; border-color: #ef4444; background: rgba(239, 68, 68, 0.2); animation: pulseGlow 1s infinite; }
+
     #main-content { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 90px; -webkit-overflow-scrolling: touch; }
     .view-section { display: none; flex-direction: column; gap: 15px; min-height: 100%; animation: fadeIn 0.3s ease-in-out; }
     .view-section.active { display: flex; }
+
     .card { background: #111827; border-radius: 10px; padding: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2); border: 1px solid var(--ui-border); position: relative; }
     .card-title { font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.05em; color: #38bdf8; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; border-bottom: 1px solid #1f2937; padding-bottom: 6px; }
-    .key-input-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
-    .key-input-group input, .key-input-group select { padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 13px; outline: none; background: #0f172a; color: #f8fafc; }
+
     .primary-btn { padding: 8px 14px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 0.85em; cursor: pointer; display: inline-block; text-decoration: none; text-align: center; }
-    .key-status-footer { display: flex; justify-content: space-between; font-size: 0.75em; font-weight: 600; align-items: center; margin-top: 8px; }
-    .stats-list { list-style: none; margin-top: 5px; }
-    .stats-list li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #1f2937; font-size: 0.8em; }
-    .stats-list li:last-child { border-bottom: none; }
-    .stats-list li strong { color: #f8fafc; font-weight: 500; }
-    .progress-bar-container { width: 100%; background: #1e293b; border-radius: 4px; height: 5px; margin-top: 4px; margin-bottom: 8px; overflow: hidden; }
-    .progress-bar { height: 100%; background: #38bdf8; border-radius: 4px; transition: width 0.5s ease; }
-    .ai-core-logo { width: 130px; height: 130px; margin: 0 auto 15px auto; border-radius: 50%; border: 2px solid #38bdf8; overflow: hidden; animation: coreBreathe 3s ease-in-out infinite; background: #0b0f19; position: relative; }
-    .ai-core-logo.is-speaking { animation: coreSpeak 0.8s ease-in-out infinite; border-color: #10b981; }
-    .ai-core-logo img { width: 100%; height: 100%; object-fit: cover; }
-    .terminal-controls-header { display: flex; justify-content: space-between; align-items: center; background: #111827; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--ui-border); font-size: 0.8em; margin-bottom: 10px; }
-    .terminal-controls-header select { background: #0f172a; color: #38bdf8; border: 1px solid #334155; padding: 4px 8px; border-radius: 4px; font-size: 0.85em; outline: none; }
-    .terminal-action-links { display: flex; gap: 10px; font-weight: 600; font-size: 0.85em; }
-    .terminal-action-links span { cursor: pointer; user-select: none; }
-    .terminal-display { flex: 1; background: #0f172a; border: 1px solid var(--ui-border); border-radius: 10px; padding: 12px; overflow-y: auto; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 250px; position: relative; }
-    .terminal-message { padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; word-wrap: break-word; position: relative; }
+
+    .terminal-display { flex: 1; background: #0f172a; border: 1px solid var(--ui-border); border-radius: 10px; padding: 12px; overflow-y: auto; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 200px; }
+    .terminal-message { padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; word-wrap: break-word; }
     .terminal-message.user-msg { background: #1e293b; border: 1px solid #334155; color: #38bdf8; align-self: flex-end; max-width: 85%; }
-    .terminal-message.agent-msg { background: #111827; border: 1px solid #10b981; color: #f8fafc; align-self: flex-start; max-width: 95%; padding-top: 32px; }
-    .terminal-message.error-msg { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; padding-top: 32px; }
-    .terminal-message.repair-msg { background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.4); color: #fef08a; font-size: 0.8em; padding-top: 32px; }
-    .terminal-message.system-msg { color: #64748b; font-style: italic; text-align: center; background: none; border: none; font-size: 0.75em; padding-top: 6px; }
-    .cursor-blink::after { content: '█'; animation: blink 0.8s step-end infinite; color: #10b981; }
-    @keyframes blink { 50% { opacity: 0; } }
-    .msg-btn-group { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
-    .msg-action-btn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; font-size: 0.65em; padding: 2px 6px; border-radius: 4px; cursor: pointer; font-weight: 600; }
-    .media-preview-box { display: none; padding: 10px; background: #111827; border: 1px solid #1f2937; border-radius: 10px; margin-bottom: 8px; position: relative; text-align: center; }
-    .media-preview-box img { max-height: 120px; border-radius: 6px; max-width: 100%; border: 1px solid #334155; }
-    .clear-media-btn { position: absolute; top: -8px; right: -8px; background: #ef4444; color: white; border: none; border-radius: 50%; width: 24px; height: 24px; font-weight: bold; cursor: pointer; }
-    .terminal-input-area { display: flex; gap: 4px; align-items: center; background: #111827; padding: 8px; border-radius: 10px; border: 1px solid var(--ui-border); flex-shrink: 0; width: 100%; }
-    .terminal-input-area input[type="text"], .utility-media-btn, .send-btn { height: 40px; }
-    .terminal-input-area input[type="text"] { flex: 1; min-width: 0; padding: 0 8px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #0f172a; color: #f8fafc; }
-    .utility-media-btn { padding: 0 10px; background: #1e293b; border: 1px solid #334155; color: #38bdf8; border-radius: 6px; font-size: 1.1em; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
-    .utility-media-btn.recording-btn { background: rgba(239, 68, 68, 0.2); border-color: #ef4444; animation: pulseGlow 1s infinite; }
-    .send-btn { padding: 0 12px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85em; flex-shrink: 0; }
+    .terminal-message.agent-msg { background: #111827; border: 1px solid #10b981; color: #f8fafc; align-self: flex-start; max-width: 95%; }
+
+    .terminal-input-area { display: flex; gap: 4px; align-items: center; background: #111827; padding: 8px; border-radius: 10px; border: 1px solid var(--ui-border); }
+    .terminal-input-area input[type="text"] { flex: 1; height: 40px; padding: 0 8px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #0f172a; color: #f8fafc; }
+    .utility-media-btn { height: 40px; padding: 0 10px; background: #1e293b; border: 1px solid #334155; color: #38bdf8; border-radius: 6px; font-size: 1.1em; cursor: pointer; }
+    .send-btn { height: 40px; padding: 0 12px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; }
+
     .bottom-nav { display: flex; justify-content: space-around; background: #111827; padding: 8px; border-top: 1px solid #1f2937; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; padding-bottom: env(safe-area-inset-bottom); }
     .nav-item { background: none; border: none; font-size: 0.75em; color: #64748b; cursor: pointer; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
     .nav-item.active { color: #38bdf8; font-weight: 600; }
-    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
-    .modal-overlay.active { display: flex; }
-    .modal-content { background: #111827; border: 1px solid #334155; padding: 20px; border-radius: 10px; width: 90%; max-width: 400px; display: flex; flex-direction: column; gap: 15px; }
-    .modal-header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: #f8fafc; }
-    .close-modal-btn { background: none; border: none; font-size: 1.2em; cursor: pointer; color: #94a3b8; }
-    #hiddenVideo { display: none; }
-    #cameraPipBox { position: fixed; bottom: 80px; right: 15px; width: 110px; height: 140px; border-radius: 8px; border: 2px solid #10b981; background: #000; overflow: hidden; display: none; z-index: 90; box-shadow: 0 4px 12px rgba(0,0,0,0.6); }
-    #cameraPipBox video { width: 100%; height: 100%; object-fit: cover; }
+
+    /* Visualizer Canvas */
+    #spacetimeCanvas { width: 100%; height: 260px; background: #050811; border-radius: 8px; border: 1px solid #334155; }
+    .slider-group { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .slider-group label { font-size: 0.8em; color: #94a3b8; display: flex; justify-content: space-between; }
+    .slider-group input[type="range"] { accent-color: #38bdf8; cursor: pointer; }
   </style>
 </head>
 <body>
-  <div id="voiceSettingsModal" class="modal-overlay">
-    <div class="modal-content">
-      <div class="modal-header">
-        <span>🗣️ Neural Voice Configuration</span>
-        <button class="close-modal-btn" id="closeVoiceModalBtn">✕</button>
-      </div>
-      <div class="key-input-group">
-        <label style="font-size: 0.8em; color: #94a3b8;">Voice Persona / Gender:</label>
-        <select id="voiceGenderSelect">
-          <option value="male">Male (Deep / Neural Persona)</option>
-          <option value="female" selected>Female (Neural Persona)</option>
-          <option value="default">System Default</option>
-        </select>
-      </div>
-      <div class="key-input-group">
-        <label style="font-size: 0.8em; color: #94a3b8;">Target Speech Language & Accent:</label>
-        <select id="voiceLangSelect">
-          <option value="auto">Auto-Detect Accent from Prompt</option>
-          <option value="en-US">English (US Accent)</option>
-          <option value="en-GB">English (UK Accent)</option>
-          <option value="es-ES">Spanish (Spain Accent)</option>
-          <option value="es-MX">Spanish (Latin America / Mexico)</option>
-          <option value="fr-FR">French (France Accent)</option>
-          <option value="it-IT">Italian (Italy Accent)</option>
-          <option value="de-DE">German (Germany Accent)</option>
-          <option value="pt-BR">Portuguese (Brazil Accent)</option>
-          <option value="ja-JP">Japanese (Japan Accent)</option>
-          <option value="ru-RU">Russian (Russia Accent)</option>
-          <option value="zh-CN">Chinese (Mandarin Accent)</option>
-          <option value="ar-SA">Arabic (Saudi / Standard)</option>
-        </select>
-      </div>
-      <button id="saveVoiceSettingsBtn" class="primary-btn" style="width:100%;">Apply Voice Settings</button>
-    </div>
-  </div>
-
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
     <div class="version">v12.30 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
-    <button class="toggle-btn" id="videoBtn">📹 Vid: OFF</button>
     <button class="toggle-btn" id="audioBtn">🎙️ Dictate: OFF</button>
     <button class="toggle-btn" id="voiceBtn">🗣️ Voice: OFF</button>
-    <button class="toggle-btn" id="voiceSettingsBtn" style="color:#38bdf8; border-color:#38bdf8;">⚙️ Voices</button>
     <button class="toggle-btn active-btn" id="sentinelBtn">🛡️ Sentinel: ON</button>
-    <button class="toggle-btn" id="chronBtn">⏱️ Chron: OFF</button>
-    <button class="toggle-btn" id="clearBtn" style="color: #fca5a5;">🗑️</button>
   </div>
-  
-  <video id="hiddenVideo" autoplay playsinline></video>
-  <div id="cameraPipBox"><video id="cameraPreview" autoplay playsinline muted></video></div>
 
   <main id="main-content">
-    <section id="view-dash" class="view-section active">
+    <!-- Spacetime Simulation Section -->
+    <section id="view-visualizer" class="view-section active">
       <div class="card">
-        <h3 class="card-title"><span class="pulsing-bolt">⚡</span> x402 Sovereign Key Relay</h3>
-        <p style="font-size: 0.8em; color: #94a3b8; margin-bottom: 10px;">Inject your Master Keys to ignite PG1.Agent interactions.</p>
-        <div class="key-input-group">
-          <input type="password" id="masterKeyInput" placeholder="Master API Key (Neural Core)">
-          <input type="password" id="githubKeyInput" placeholder="GitHub PAT (Repo Access)">
-          <input type="password" id="replicateKeyInput" placeholder="Replicate API Key (Video Core)">
-          <div><button id="saveKeyButton" class="primary-btn" onclick="saveMasterKeys()">Save Keys</button></div>
-        </div>
-        <div class="key-status-footer">
-          <span id="keyStatusText" style="color:#ef4444; font-size:0.75em;">KEY_STATUS: NOT_SET</span>
-          <span id="connectionBadge" style="color:#ef4444; font-size:0.75em; font-weight:bold;">● DISCONNECTED</span>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3 class="card-title"><span class="status-dot green"></span> Multi-API Aggregator Feed</h3>
-        <p style="font-size: 0.8em; color: #94a3b8; margin-bottom: 10px;">Live crypto and global telemetry aggregator.</p>
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-          <span style="font-size:0.8em; color:#cbd5e1;"><span class="dish-icon">📡</span> Multi-Source Hub</span>
-          <button id="syncFeedBtn" class="utility-btn" style="padding:4px 8px; background:#1e293b; border:1px solid #334155; color:#38bdf8; border-radius:4px; font-size:0.75em; cursor:pointer;"><span class="spin-icon">🔄</span> Refresh Feeds</button>
-        </div>
+        <h3 class="card-title">🌀 Spacetime & Temporal HUD Visualizer</h3>
+        <canvas id="spacetimeCanvas"></canvas>
         
-        <ul class="stats-list" style="margin-bottom:2px;">
-          <li><span>Bitcoin (BTC Live)</span> <strong id="btcTicker" style="color: #38bdf8;">Fetching...</strong></li>
-        </ul>
-        <div class="progress-bar-container"><div class="progress-bar" style="width: 85%;"></div></div>
-
-        <ul class="stats-list" style="margin-bottom:2px;">
-          <li><span>Ethereum (ETH Live)</span> <strong id="ethTicker" style="color: #38bdf8;">Fetching...</strong></li>
-        </ul>
-        <div class="progress-bar-container"><div class="progress-bar" style="width: 70%;"></div></div>
-
-        <ul class="stats-list" style="margin-bottom:2px;">
-          <li><span>Endpoint Throughput</span> <strong id="telemetrySpeed" style="color: #10b981;">2.4 MB/s</strong></li>
-        </ul>
-        <div class="progress-bar-container"><div id="throughputBar" class="progress-bar" style="width: 60%;"></div></div>
-      </div>
-
-      <div class="card">
-        <h3 class="card-title"><span class="status-dot green"></span> OTX Threat Intel Sync</h3>
-        <p style="font-size: 0.8em; color: #94a3b8; margin-bottom: 10px;">AlienVault Open Threat Exchange active monitoring.</p>
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-          <span style="font-size:0.8em; color:#cbd5e1;">🛡️ OTX Pipeline</span>
-          <button id="syncOtxBtn" class="utility-btn" style="padding:4px 8px; background:#1e293b; border:1px solid #334155; color:#38bdf8; border-radius:4px; font-size:0.75em; cursor:pointer;"><span class="spin-icon">🔄</span> Sync</button>
+        <div class="slider-group">
+          <label><span>Velocity ($v/c$ fraction):</span> <strong id="vLabel" style="color:#38bdf8;">0.90 c</strong></label>
+          <input type="range" id="vSlider" min="0" max="99" value="90">
         </div>
-        
-        <ul class="stats-list" style="margin-bottom:2px;">
-          <li><span>Last Upload Status</span> <strong id="otxStatus" style="color: #10b981;">Standby</strong></li>
-          <li><span>Indicators of Compromise</span> <strong id="otxIocs" style="color: #38bdf8;">--</strong></li>
-          <li><span>Pulse Submissions</span> <strong id="otxPulses" style="color: #38bdf8;">--</strong></li>
-        </ul>
+
+        <div class="slider-group">
+          <label><span>Gravitational Field ($GM/rc^2$):</span> <strong id="gLabel" style="color:#10b981;">0.40</strong></label>
+          <input type="range" id="gSlider" min="0" max="95" value="40">
+        </div>
+
+        <div style="display:flex; justify-content:space-between; margin-top:12px; font-size:0.8em; background:#0f172a; padding:10px; border-radius:6px; border:1px solid #1e293b;">
+          <div>Lorentz Factor ($\gamma$): <strong id="lorentzVal" style="color:#38bdf8;">2.29x</strong></div>
+          <div>CTC Stability: <strong id="ctcVal" style="color:#10b981;">98.4% (CONVERGED)</strong></div>
+        </div>
       </div>
     </section>
 
+    <!-- Terminal Chat Section -->
     <section id="view-terminal" class="view-section">
-      <div class="terminal-controls-header">
-        <div>
-          <span style="color:#94a3b8; margin-right:6px;">PG1 Engine:</span>
-          <select id="modelSelector">
-            <option value="gemini-3.7-flash" selected>3.7 Flash (Dynamic Agent Core)</option>
-            <option value="gemini-3.5-flash">3.5 Flash-Lite (Fastest)</option>
-            <option value="gemini-3.1-pro-preview">3.1 Pro (Advanced Core)</option>
-          </select>
-        </div>
-        <div class="terminal-action-links">
-          <span id="saveLogBtn" style="color:#10b981;" title="Export text logs">Logs</span>
-          <span id="exportPdfBtn" style="color:#38bdf8;" title="Export printable PDF report">PDF</span>
-        </div>
+      <div class="terminal-display" id="terminalOutput">
+        <div class="terminal-message agent-msg">PG1.Agent v12.30 online. Visual spacetime simulation engine and voice bridge active.</div>
       </div>
-      
-      <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.30 online. Autonomous MCP tools, VectorVault, haptics, persistent history, and reactive neural audio initialized.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
-      </div>
-      
-      <div id="mediaPreviewBox" class="media-preview-box">
-        <button id="clearMediaBtn" class="clear-media-btn">✕</button>
-        <img id="mediaPreviewImg" style="display:none;">
-      </div>
-
       <div class="terminal-input-area">
-        <input type="file" id="mediaInput" accept="image/*" style="display: none;">
-        <button id="mediaBtn" class="utility-media-btn" title="Upload Media or Capture Frame">📸</button>
-        <button id="inlineMicBtn" class="utility-media-btn" title="Record Voice Message">🎤</button>
-        <input type="text" id="terminalInput" placeholder="Type or tap 🎤 for voice...">
+        <button id="inlineMicBtn" class="utility-media-btn">🎤</button>
+        <input type="text" id="terminalInput" placeholder="Type prompt or tap 🎤...">
         <button id="sendCommandButton" class="send-btn">Send</button>
       </div>
     </section>
 
-    <section id="view-node" class="view-section">
-      <div class="card center-content" style="text-align: center; padding: 20px;">
-        <div class="ai-core-logo" id="aiCoreLogo">
-          <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
-        </div>
-        <h2 style="font-size: 1.1em; color: #f8fafc; margin-bottom: 2px;">PG1.Agent™ Sovereign Core</h2>
-        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Auto-Healing • Reactive Voice • Tactile Haptics • Persistent State</p>
-        
-        <ul class="stats-list" style="text-align: left;">
-          <li><span>Agent ID:</span> <strong style="color: #38bdf8;">PG1-CORE-01</strong></li>
-          <li><span>Local RAG DB:</span> <strong style="color: #10b981;">IndexedDB Active</strong></li>
-          <li><span>Auto-Repair:</span> <strong style="color: #10b981;">Interceptor Online</strong></li>
-          <li><span>Ownership:</span> <strong style="color: #38bdf8;">100% Sovereign</strong></li>
-        </ul>
-      </div>
-
+    <!-- Dash / Credentials Section -->
+    <section id="view-dash" class="view-section">
       <div class="card">
-        <h3 class="card-title">📊 Core System Telemetry</h3>
-        <ul class="stats-list" style="margin-bottom:2px;"><li><span>CPU Load</span> <strong id="cpuLoad">26%</strong></li></ul>
-        <div class="progress-bar-container"><div id="cpuBar" class="progress-bar" style="width: 26%;"></div></div>
-        <ul class="stats-list" style="margin-bottom:2px;"><li><span>RAM Allocation</span> <strong id="ramAlloc">45%</strong></li></ul>
-        <div class="progress-bar-container"><div id="ramBar" class="progress-bar" style="width: 45%;"></div></div>
+        <h3 class="card-title">⚡ Master Configuration</h3>
+        <p style="font-size:0.8em; color:#94a3b8;">Autonomous MCP tools, Cron routines, and Spacetime Core initialized.</p>
       </div>
     </section>
   </main>
 
   <nav class="bottom-nav">
-    <button class="nav-item active" data-target="view-dash"><span>📊</span>Dash</button>
+    <button class="nav-item active" data-target="view-visualizer"><span>🌀</span>Spacetime HUD</button>
     <button class="nav-item" data-target="view-terminal"><span>⚡</span>Terminal</button>
-    <button class="nav-item" data-target="view-node"><span>🧠</span>Core</button>
+    <button class="nav-item" data-target="view-dash"><span>⚙️</span>Dash</button>
   </nav>
 
   <script>
-    let terminalAppendFunc = null;
+    // Canvas Animation Loop for Spacetime Curvature & Closed Timelike Curves
+    const canvas = document.getElementById('spacetimeCanvas');
+    const ctx = canvas.getContext('2d');
+    let vFraction = 0.90;
+    let gField = 0.40;
+    let timeStep = 0;
 
-    /* TACTILE HAPTIC ENGINE */
-    function triggerHaptic(type) {
-        if (!navigator.vibrate) return;
-        try {
-            if (type === 'tap') navigator.vibrate(15);
-            if (type === 'success') navigator.vibrate([25, 40, 25]);
-            if (type === 'error') navigator.vibrate([60, 40, 60, 40, 100]);
-        } catch(e) {}
+    function resizeCanvas() {
+        canvas.width = canvas.clientWidth * window.devicePixelRatio;
+        canvas.height = canvas.clientHeight * window.devicePixelRatio;
+        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
     }
+    window.addEventListener('resize', resizeCanvas);
+    setTimeout(resizeCanvas, 50);
 
-    function setSystemState(state) {
-        document.body.className = '';
-        if (state === 'active') document.body.classList.add('sys-active');
-        if (state === 'error') {
-            document.body.classList.add('sys-error');
-            triggerHaptic('error');
+    function drawSpacetime() {
+        const w = canvas.clientWidth;
+        const h = canvas.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        const cx = w / 2;
+        const cy = h / 2;
+        timeStep += 0.03;
+
+        // Draw Spacetime Grid Warp
+        ctx.strokeStyle = "rgba(56, 189, 248, 0.15)";
+        ctx.lineWidth = 1;
+        for (let x = 20; x < w; x += 25) {
+            ctx.beginPath();
+            for (let y = 0; y < h; y += 10) {
+                const dist = Math.hypot(x - cx, y - cy);
+                const warp = Math.sin(dist * 0.05 - timeStep) * (gField * 20);
+                if (y === 0) ctx.moveTo(x + warp, y);
+                else ctx.lineTo(x + warp, y);
+            }
+            ctx.stroke();
         }
-    }
 
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    function playKeystroke() {
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        try {
-            const oscillator = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
-            oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(800 + Math.random() * 300, audioCtx.currentTime);
-            gainNode.gain.setValueAtTime(0.008, audioCtx.currentTime);
-            oscillator.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-            oscillator.start();
-            oscillator.stop(audioCtx.currentTime + 0.015);
-        } catch(e) {}
-    }
+        // Draw Closed Timelike Curve (CTC) Vortex
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        const loops = 120;
+        for (let i = 0; i < loops; i++) {
+            const angle = 0.1 * i + timeStep;
+            const radius = (i * 0.8) * (1 + 0.3 * Math.sin(angle * 2));
+            const px = cx + Math.cos(angle) * radius;
+            const py = cy + Math.sin(angle) * (radius * 0.5);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
 
-    function renderMarkdownToHtml(raw) {
-        if (!raw) return "";
-        return raw
-            .replace(/### (.*?)([\r\n]|$)/g, '<h3>$1</h3>')
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/`([^`]+)`/g, '<code>$1</code>')
-            .replace(/^\s*\*\s+(.*?)([\r\n]|$)/gm, '• $1<br>')
-            .replace(/---/g, '<hr>')
-            .replace(/\n\n/g, '<br><br>');
-    }
+        // Branching Quantum Timeline Nodes
+        ctx.fillStyle = "#10b981";
+        for (let k = 0; k < 5; k++) {
+            const nodeAngle = timeStep * 0.5 + (k * Math.PI * 2 / 5);
+            const nodeR = 60 + Math.sin(timeStep + k) * 20;
+            const nx = cx + Math.cos(nodeAngle) * nodeR;
+            const ny = cy + Math.sin(nodeAngle) * (nodeR * 0.6);
+            ctx.beginPath();
+            ctx.arc(nx, ny, 4, 0, Math.PI * 2);
+            ctx.fill();
+        }
 
-    window.saveMasterKeys = function() {
-        triggerHaptic('tap');
-        const kIn = document.getElementById('masterKeyInput');
-        const gIn = document.getElementById('githubKeyInput');
-        const rIn = document.getElementById('replicateKeyInput');
-        if (kIn && kIn.value && kIn.value !== '••••••••••••••••') localStorage.setItem('PG1_KEY', kIn.value.trim());
-        if (gIn && gIn.value && gIn.value !== '••••••••••••••••') localStorage.setItem('PG1_GH_PAT', gIn.value.trim());
-        if (rIn && rIn.value && rIn.value !== '••••••••••••••••') localStorage.setItem('PG1_REP_KEY', rIn.value.trim());
-        window.checkKeys();
-        triggerHaptic('success');
-        alert('Credentials securely saved.');
+        requestAnimationFrame(drawSpacetime);
+    }
+    requestAnimationFrame(drawSpacetime);
+
+    // Sliders Logic
+    const vSlider = document.getElementById('vSlider');
+    const gSlider = document.getElementById('gSlider');
+    const vLabel = document.getElementById('vLabel');
+    const gLabel = document.getElementById('gLabel');
+    const lorentzVal = document.getElementById('lorentzVal');
+
+    vSlider.oninput = (e) => {
+        vFraction = e.target.value / 100;
+        vLabel.innerText = `${vFraction.toFixed(2)} c`;
+        const gamma = (1 / Math.sqrt(Math.max(0.001, 1 - Math.pow(vFraction, 2)))).toFixed(2);
+        lorentzVal.innerText = `${gamma}x`;
     };
 
-    window.checkKeys = function() {
-        const kIn = document.getElementById('masterKeyInput');
-        const gIn = document.getElementById('githubKeyInput');
-        const rIn = document.getElementById('replicateKeyInput');
-        const stat = document.getElementById('keyStatusText');
-        const connBadge = document.getElementById('connectionBadge');
-        if (!kIn || !gIn || !rIn || !stat || !connBadge) return;
-        const hasCore = localStorage.getItem('PG1_KEY');
-        const hasGh = localStorage.getItem('PG1_GH_PAT');
-        if (hasCore && hasGh) {
-            kIn.value = '••••••••••••••••'; gIn.value = '••••••••••••••••';
-            if (localStorage.getItem('PG1_REP_KEY')) rIn.value = '••••••••••••••••';
-            stat.innerText = 'KEY_STATUS: STORED_LOCAL'; stat.style.color = '#10b981';
-            connBadge.innerText = '● CONNECTED'; connBadge.style.color = '#10b981';
-        } else {
-            stat.innerText = 'KEY_STATUS: NOT_SET'; stat.style.color = '#ef4444';
-            connBadge.innerText = '● DISCONNECTED'; connBadge.style.color = '#ef4444';
-        }
+    gSlider.oninput = (e) => {
+        gField = e.target.value / 100;
+        gLabel.innerText = gField.toFixed(2);
     };
 
-    window.copyMsg = function(btn) {
-      triggerHaptic('tap');
-      const msgDiv = btn.closest('.terminal-message');
-      const text = msgDiv.innerText.replace('Copy', '').replace('Edit', '').trim();
-      navigator.clipboard.writeText(text).then(() => alert('Message copied.'));
-    };
-
-    window.editMsg = function(btn) {
-      triggerHaptic('tap');
-      const msgDiv = btn.closest('.terminal-message');
-      const currentText = msgDiv.innerText.replace('Copy', '').replace('Edit', '').trim();
-      const input = document.getElementById('terminalInput');
-      input.value = currentText;
-      input.focus();
-    };
-
-    function detectLanguageAndAccent(promptText, outputText) {
-        const p = (promptText || '').toLowerCase();
-        const t = (outputText || '').toLowerCase();
-        const combined = `${p} ${t}`;
-
-        if (/\b(mexican|mexico|latam|castellano|español|spanish|habla en español)\b/.test(p)) {
-            return (p.includes('mexic') || p.includes('latam')) ? 'es-MX' : 'es-ES';
-        }
-        if (/\b(british|uk accent|english \(uk\)|in british)\b/.test(p)) return 'en-GB';
-        if (/\b(french|français|francais|en français)\b/.test(p)) return 'fr-FR';
-        if (/\b(italian|italiano|in italiano)\b/.test(p)) return 'it-IT';
-        if (/\b(german|deutsch|auf deutsch)\b/.test(p)) return 'de-DE';
-        if (/\b(portuguese|português|portugues|em português)\b/.test(p)) return 'pt-BR';
-        if (/\b(japanese|nihongo|日本語)\b/.test(p)) return 'ja-JP';
-        if (/\b(chinese|mandarin|中文)\b/.test(p)) return 'zh-CN';
-        if (/\b(russian|русский|по-русски)\b/.test(p)) return 'ru-RU';
-        if (/\b(arabic|العربية)\b/.test(p)) return 'ar-SA';
-
-        if (/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/.test(outputText)) {
-            if (/[\u3040-\u309F\u30A0-\u30FF]/.test(outputText)) return 'ja-JP';
-            return 'zh-CN';
-        }
-        if (/[\u0400-\u04FF]/.test(outputText)) return 'ru-RU';
-        if (/[\u0600-\u06FF]/.test(outputText)) return 'ar-SA';
-
-        const esMatch = (combined.match(/\b(hola|por favor|gracias|está|estos|cómo|claro|aquí|prueba|idioma|sistema|bienvenidos|también|motor|sintetizador|puedo)\b|[¿¡ñáéíóú]/gi) || []).length;
-        const frMatch = (combined.match(/\b(bonjour|salut|merci|oui|pourquoi|très|vous|avec|fonctionne|parfaitement|totale|fluidité|système)\b|[éèêàùç]/gi) || []).length;
-        const itMatch = (combined.match(/\b(ciao|grazie|prego|per favore|come|tutto|pronti|stabili|moduli|operativi|anche|perfetto)\b|[àèéìòù]/gi) || []).length;
-        const deMatch = (combined.match(/\b(hallo|danke|bitte|guten|schnittstelle|läuft|einwandfrei|latenz|nicht|sehr|bereit)\b|[äöüß]/gi) || []).length;
-        const ptMatch = (combined.match(/\b(olá|obrigado|você|não|está|tudo|bem|sistema|com certeza|falar)\b|[ãõç]/gi) || []).length;
-
-        const scores = [
-            { lang: 'es-ES', score: esMatch },
-            { lang: 'fr-FR', score: frMatch },
-            { lang: 'it-IT', score: itMatch },
-            { lang: 'de-DE', score: deMatch },
-            { lang: 'pt-BR', score: ptMatch }
-        ];
-        scores.sort((a, b) => b.score - a.score);
-        if (scores[0].score >= 2) return scores[0].lang;
-        return 'en-US';
-    }
-
-    function dynamicTTSPlayback(text, targetLang) {
-        if (!('speechSynthesis' in window)) return;
-        window.speechSynthesis.cancel();
-        
-        const voices = window.speechSynthesis.getVoices();
-        const primaryCode = (targetLang || 'en-US').toLowerCase();
-        const shortLang = primaryCode.substring(0, 2);
-        const preferredGender = localStorage.getItem('PG1_VOICE_GENDER') || 'male';
-
-        const maleKeywords = ['david', 'guy', 'george', 'daniel', 'alex', 'james', 'thomas', 'mark', 'michael', 'male', 'richard', 'stefan', 'jorge', 'paul', 'oliver', 'rishi', 'diego', 'carlos', 'enrique', 'pablo', 'mathieu', 'nicolas', 'henri', 'luca', 'marco', 'hans', 'klaus', 'miguel'];
-        const femaleKeywords = ['zira', 'susan', 'catherine', 'samantha', 'victoria', 'karen', 'female', 'jenny', 'aria', 'sarah', 'eva', 'hazel', 'alice', 'monica', 'paulina', 'lucia', 'helena', 'amélie', 'hortense', 'claire', 'elisa', 'chiara', 'petra', 'marlene', 'marta'];
-        
-        let scoredVoices = voices.map(v => {
-            let score = 0;
-            const langCode = v.lang.toLowerCase().replace('_', '-');
-            if (langCode === primaryCode) score += 60;
-            else if (langCode.startsWith(shortLang)) score += 35;
-
-            const name = v.name.toLowerCase();
-            if (name.includes('natural') || name.includes('neural') || name.includes('online') || name.includes('premium') || name.includes('enhanced') || name.includes('siri')) score += 25;
-            if (name.includes('google') || name.includes('microsoft')) score += 15;
-
-            if (preferredGender === 'male') {
-                if (maleKeywords.some(k => name.includes(k))) score += 30;
-                if (femaleKeywords.some(k => name.includes(k))) score -= 30;
-            } else if (preferredGender === 'female') {
-                if (femaleKeywords.some(k => name.includes(k))) score += 30;
-                if (maleKeywords.some(k => name.includes(k))) score -= 30;
-            }
-
-            return { voice: v, score };
-        }).filter(v => v.score >= 30);
-        
-        scoredVoices.sort((a, b) => b.score - a.score);
-        let selectedVoice = scoredVoices.length > 0 ? scoredVoices[0].voice : null;
-
-        const sentences = text.match(/[^.!?\n]+[.!?\n]+/g) || [text];
-        const coreLogo = document.getElementById('aiCoreLogo');
-
-        sentences.forEach((sentence, idx) => {
-            if (sentence.trim() === "") return;
-            const utterance = new SpeechSynthesisUtterance(sentence.trim());
-            if (selectedVoice) {
-                utterance.voice = selectedVoice;
-                utterance.lang = selectedVoice.lang;
-            } else {
-                utterance.lang = targetLang || 'en-US';
-            }
-            
-            utterance.rate = preferredGender === 'male' ? 0.98 : 1.0;
-            utterance.pitch = preferredGender === 'male' ? 0.92 : 1.0;
-
-            utterance.onstart = () => { if(coreLogo) coreLogo.classList.add('is-speaking'); };
-            utterance.onend = () => { if(idx === sentences.length - 1 && coreLogo) coreLogo.classList.remove('is-speaking'); };
-            utterance.onerror = () => { if(coreLogo) coreLogo.classList.remove('is-speaking'); };
-
-            window.speechSynthesis.speak(utterance);
-        });
-    }
-
-    let db = null;
-    try {
-        const dbRequest = indexedDB.open("PG1_VectorVault", 1);
-        dbRequest.onupgradeneeded = e => { 
-            const database = e.target.result; 
-            if (!database.objectStoreNames.contains("memories")) database.createObjectStore("memories", { keyPath: "id", autoIncrement: true }); 
-        };
-        dbRequest.onsuccess = e => { db = e.target.result; };
-    } catch(err) { db = null; }
-    
-    function saveToVault(text) { 
-        try {
-            if(!db || !text) return; 
-            const tx = db.transaction("memories", "readwrite"); 
-            tx.objectStore("memories").add({text: text, ts: Date.now()}); 
-        } catch(e) {}
-    }
-    
-    async function queryVault(query) {
-        return new Promise(res => {
-            try {
-                if(!db) return res("");
-                const tx = db.transaction("memories", "readonly");
-                const req = tx.objectStore("memories").getAll();
-                req.onsuccess = () => {
-                    const words = query.toLowerCase().split(' ').filter(w => w.length > 4);
-                    if (words.length === 0) return res("");
-                    const matches = (req.result || []).filter(m => words.some(w => m.text.toLowerCase().includes(w))).slice(-2);
-                    res(matches.map(m => m.text).join(' | '));
-                };
-                req.onerror = () => res("");
-            } catch(e) { res(""); }
-        });
-    }
-
-    async function secureFetch(url, options = {}, timeoutMs = 12000) {
-        const controller = new AbortController();
-        const id = setTimeout(() => controller.abort(), timeoutMs);
-        options.signal = controller.signal;
-        try {
-            const res = await fetch(url, options);
-            clearTimeout(id);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return res;
-        } catch (error) {
-            clearTimeout(id);
-            const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(url);
-            return await fetch(proxyUrl, options);
-        }
-    }
-
-    async function searchGitHubRepos(query) {
-        const pat = localStorage.getItem('PG1_GH_PAT');
-        if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
-        if(terminalAppendFunc) terminalAppendFunc(`[GitHub API] Searching repositories for: ${query}...`, "system-msg", true);
-        try {
-            const res = await fetch(`https://api.github.com/user/repos?per_page=100&sort=updated`, {
-                headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github.v3+json" }
-            });
-            if (!res.ok) throw new Error(`GitHub API status ${res.status}`);
-            const repos = await res.json();
-            const matched = repos.filter(r => r.name.toLowerCase().includes(query.toLowerCase()) || (r.description && r.description.toLowerCase().includes(query.toLowerCase())));
-            if(matched.length === 0) return `No repositories found matching "${query}".`;
-            return `[Found Repositories]\n` + matched.map(r => `- ${r.full_name}: ${r.description || 'No description'}`).join('\n');
-        } catch(e) { throw new Error(`GitHub Search failed: ${e.message}`); }
-    }
-
-    async function monitorWorkflowRuns(repoFullName) {
-        const pat = localStorage.getItem('PG1_GH_PAT');
-        if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
-        if(terminalAppendFunc) terminalAppendFunc(`[Chron Monitor] Polling workflow health for ${repoFullName}...`, "system-msg", true);
-        try {
-            const res = await fetch(`https://api.github.com/repos/${repoFullName}/actions/runs?per_page=5`, {
-                headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github.v3+json" }
-            });
-            if (!res.ok) throw new Error(`GitHub API status ${res.status}`);
-            const data = await res.json();
-            if (!data.workflow_runs || data.workflow_runs.length === 0) return "No workflow runs found.";
-            return `[Workflow Status] Recent runs:\n` + data.workflow_runs.map(r => `- ${r.name} (#${r.run_number}): Status=${r.status}, Conclusion=${r.conclusion}, Date=${r.updated_at}, Trigger=${r.event}`).join('\n');
-        } catch(e) { throw new Error(`Monitor failed: ${e.message}`); }
-    }
-
-    async function readGitHubFile(repoFullName, filePath) {
-        const pat = localStorage.getItem('PG1_GH_PAT');
-        if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
-        if(terminalAppendFunc) terminalAppendFunc(`[File Reader] Extracting ${filePath} from ${repoFullName}...`, "system-msg", true);
-        try {
-            const res = await fetch(`https://api.github.com/repos/${repoFullName}/contents/${filePath}`, {
-                headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github.v3.raw" }
-            });
-            if (!res.ok) {
-                if (res.status === 404) return `ERROR: Path '${filePath}' returned 404 Not Found. Use 'listRepoTree' tool to discover valid paths.`;
-                throw new Error(`GitHub API status ${res.status}`);
-            }
-            const text = await res.text();
-            return `[File Content: ${filePath}]\n\`\`\`\n${text}\n\`\`\``;
-        } catch(e) { throw new Error(`Read failed: ${e.message}`); }
-    }
-
-    async function dynamicGitHubCommit(repoFullName, filePath, content, commitMessage) {
-        const pat = localStorage.getItem('PG1_GH_PAT');
-        if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
-        if(terminalAppendFunc) terminalAppendFunc(`[GitHub API] Synchronizing ${repoFullName} at ${filePath}...`, "system-msg", true);
-        try {
-            const fileUrl = `https://api.github.com/repos/${repoFullName}/contents/${filePath}`;
-            let sha = null;
-            const checkRes = await fetch(fileUrl, { headers: { "Authorization": `token ${pat}` } });
-            if (checkRes.ok) {
-                const fileData = await checkRes.json();
-                sha = fileData.sha;
-            }
-
-            const encodedContent = btoa(unescape(encodeURIComponent(content)));
-            const body = { message: commitMessage, content: encodedContent };
-            if (sha) body.sha = sha;
-
-            const res = await fetch(fileUrl, {
-                method: "PUT",
-                headers: { "Authorization": `token ${pat}`, "Content-Type": "application/json" },
-                body: JSON.stringify(body)
-            });
-            
-            if (!res.ok) throw new Error(`GitHub API status ${res.status}`);
-            return `[Commit Success] Data committed dynamically to ${repoFullName} -> ${filePath}`;
-        } catch(e) { throw new Error(`GitHub Commit failed: ${e.message}`); }
-    }
-
-    async function scrapeWebPage(url) {
-        if (!url) return "ERROR: Missing URL.";
-        if(terminalAppendFunc) terminalAppendFunc(`[Recon Agent] Fetching target: ${url}...`, "system-msg", true);
-        try {
-            const res = await secureFetch(url, { method: "GET" }, 6000);
-            const text = await res.text();
-            if (text.includes("<html")) {
-                const doc = new DOMParser().parseFromString(text, "text/html");
-                let clean = doc.body.innerText.replace(/\s+/g, ' ').trim();
-                return `[Recon Success] Extracted text: ${clean.substring(0, 800)}`;
-            }
-            return `[Recon Success] Payload data: ${text.substring(0, 800)}`;
-        } catch(e) { throw new Error(`Scraper target unreachable (${url})`); }
-    }
-
-    async function generateVideoClip(prompt) {
-        const repKey = localStorage.getItem('PG1_REP_KEY');
-        if (!repKey) return "ERROR: Replicate API Key not found in Dash tab.";
-        if(terminalAppendFunc) terminalAppendFunc(`[Video Pipeline] Dispatching prompt through dedicated proxy...`, "system-msg", true);
-        
-        try {
-            const targetUrl = "https://api.replicate.com/v1/predictions";
-            const payload = {
-                version: "8d952537baedccf15b3c3b0ebf4cbfb49e31d3f94e1d1ebc343468cc02ea1bc8",
-                input: { prompt: prompt, mp4: true }
-            };
-
-            const proxyList = ['https://pg1-worker.gnfcw9w5rk.workers.dev/?url=' + encodeURIComponent(targetUrl)];
-
-            let prediction = null;
-            let activeProxy = null;
-
-            for (const proxyUrl of proxyList) {
-                try {
-                    const res = await fetch(proxyUrl, {
-                        method: "POST",
-                        headers: { "Authorization": `Bearer ${repKey}`, "Content-Type": "application/json" },
-                        body: JSON.stringify(payload)
-                    });
-                    if (res.ok) {
-                        prediction = await res.json();
-                        activeProxy = proxyUrl.replace(targetUrl, "").replace(encodeURIComponent(targetUrl), "");
-                        break;
-                    }
-                } catch (err) {}
-            }
-
-            if (!prediction) throw new Error("Endpoint refused connection. CORS preflight requires edge worker.");
-            
-            let loopCount = 0;
-            while (prediction.status !== "succeeded" && prediction.status !== "failed" && loopCount < 30) {
-                await new Promise(r => setTimeout(r, 4000)); 
-                loopCount++;
-                if(terminalAppendFunc) terminalAppendFunc(`[Replicate API] Status: ${prediction.status} (${loopCount}/30)...`, "system-msg", true);
-                
-                try {
-                    const getUrl = prediction.urls.get;
-                    const encodedGetUrl = activeProxy.includes("encode") ? encodeURIComponent(getUrl) : getUrl;
-                    const pollRes = await fetch(activeProxy + encodedGetUrl, {
-                        method: "GET", headers: { "Authorization": `Bearer ${repKey}` }
-                    });
-                    prediction = await pollRes.json();
-                } catch(e) {}
-            }
-            
-            if (prediction.status === "failed") throw new Error("Replicate video rendering failed internally.");
-            const videoUrl = prediction.output;
-            return `[Success] Video rendering complete.\n
-            <div style="background:#050811; border-radius:8px; margin-top:8px; padding:15px; text-align:center; border:1px solid #38bdf8;">
-              <video controls playsinline preload="auto" style="width:100%; max-height:220px; background:#000; border-radius:6px; display:block;"><source src="${videoUrl}" type="video/mp4"></video>
-              <a href="${videoUrl}" download="PG1_Video_${Date.now()}.mp4" target="_blank" class="primary-btn" style="display:inline-block; margin-top:12px; background:#10b981; color:#fff; text-decoration:none;">⬇ Download Video</a>
-            </div>`;
-        } catch(e) { return `[Video Pipeline Error] ${e.message}`; }
-    }
-
-    const MCP_TOOL_REGISTRY = {
-        fetchLiveData: {
-            description: "Fetches live JSON data from an external API endpoint.",
-            parameters: { type: "OBJECT", properties: { url: { type: "STRING" } }, required: ["url"] },
-            handler: async (args) => await fetchLiveData(args.url)
-        },
-        webScraper: {
-            description: "Scrapes a live webpage or text URL for research.",
-            parameters: { type: "OBJECT", properties: { url: { type: "STRING" } }, required: ["url"] },
-            handler: async (args) => await scrapeWebPage(args.url)
-        },
-        searchGitHubRepos: {
-            description: "Searches connected GitHub repositories to locate project files.",
-            parameters: { type: "OBJECT", properties: { query: { type: "STRING" } }, required: ["query"] },
-            handler: async (args) => await searchGitHubRepos(args.query)
-        },
-        monitorWorkflowRuns: {
-            description: "Fetches recent GitHub Actions workflow runs for a repository to monitor deployment health.",
-            parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" } }, required: ["repoFullName"] },
-            handler: async (args) => await monitorWorkflowRuns(args.repoFullName)
-        },
-        listRepoTree: {
-            description: "Lists all files and directories in a GitHub repository to find valid paths.",
-            parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING", description: "Format: owner/repo" } }, required: ["repoFullName"] },
-            handler: async (args) => {
-                const pat = localStorage.getItem('PG1_GH_PAT');
-                if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
-                if(terminalAppendFunc) terminalAppendFunc(`[Tree Explorer] Mapping structure for ${args.repoFullName}...`, "system-msg", true);
-                try {
-                    const repoRes = await fetch(`https://api.github.com/repos/${args.repoFullName}`, { headers: { "Authorization": `token ${pat}` } });
-                    if(!repoRes.ok) throw new Error("Repo access denied.");
-                    const repoData = await repoRes.json();
-                    const defaultBranch = repoData.default_branch || 'main';
-                    
-                    const treeRes = await fetch(`https://api.github.com/repos/${args.repoFullName}/git/trees/${defaultBranch}?recursive=1`, { headers: { "Authorization": `token ${pat}` } });
-                    const treeData = await treeRes.json();
-                    if (!treeData.tree) return "No files found or empty repository.";
-                    
-                    const fileList = treeData.tree.filter(item => item.type === "blob").map(item => item.path).slice(0, 50);
-                    return `[Repository File Tree for ${args.repoFullName}]\n` + fileList.map(f => `- ${f}`).join('\n');
-                } catch(e) { return `Failed to inspect repository tree: ${e.message}`; }
-            }
-        },
-        readGitHubFile: {
-            description: "Reads the raw content of a file from a GitHub repository for analysis.",
-            parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" }, filePath: { type: "STRING" } }, required: ["repoFullName", "filePath"] },
-            handler: async (args) => await readGitHubFile(args.repoFullName, args.filePath)
-        },
-        dynamicGitHubCommit: {
-            description: "Commits a file, log, or code patch directly to a specific GitHub repository.",
-            parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING", description: "Format: owner/repo" }, filePath: { type: "STRING" }, content: { type: "STRING" }, commitMessage: { type: "STRING" } }, required: ["repoFullName", "filePath", "content", "commitMessage"] },
-            handler: async (args) => await dynamicGitHubCommit(args.repoFullName, args.filePath, args.content, args.commitMessage)
-        },
-        generateImage: {
-            description: "Generates a real, high-resolution AI image from a text prompt.",
-            parameters: { type: "OBJECT", properties: { prompt: { type: "STRING" } }, required: ["prompt"] },
-            handler: (args) => {
-                if (!args.prompt) return "ERROR: Missing prompt.";
-                const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(args.prompt)}?width=800&height=450&nologo=true`;
-                return `[Success] Image generated:\n
-                <div style="background:#050811; border-radius:8px; margin-top:8px; padding:15px; text-align:center; border:1px solid #38bdf8;">
-                  <img src="${url}" alt="AI Image" style="width:100%; height:auto; border-radius:4px; display:block;">
-                  <a href="${url}" download="PG1_${Date.now()}.jpg" target="_blank" class="primary-btn" style="display:inline-block; margin-top:12px; background:#10b981; color:#fff; text-decoration:none;">⬇ Download Image</a>
-                </div>`;
-            }
-        },
-        generateVideoClip: {
-            description: "Generates a high-fidelity AI video via real async Replicate API from a prompt.",
-            parameters: { type: "OBJECT", properties: { prompt: { type: "STRING" } }, required: ["prompt"] },
-            handler: async (args) => await generateVideoClip(args.prompt)
-        }
-    };
-
-    function getMCPToolDeclarations() {
-        return [{
-            functionDeclarations: Object.keys(MCP_TOOL_REGISTRY).map(toolName => ({
-                name: toolName,
-                description: MCP_TOOL_REGISTRY[toolName].description,
-                parameters: MCP_TOOL_REGISTRY[toolName].parameters
-            }))
-        }];
-    }
-
-    async function executeMCPTool(toolName, args) {
-        if (!MCP_TOOL_REGISTRY[toolName]) return `[MCP Error] Tool not found.`;
-        return await MCP_TOOL_REGISTRY[toolName].handler(args);
-    }
-
-    document.addEventListener("DOMContentLoaded", () => {
-      let sessionHistory = [];
-      const savedHistory = localStorage.getItem('PG1_CHAT_HISTORY');
-      if (savedHistory) {
-          try { sessionHistory = JSON.parse(savedHistory); } catch(e) { sessionHistory = []; }
-      }
-
-      let pendingImageData = null;
-      const termOut = document.getElementById('terminalOutput');
-      const mediaInput = document.getElementById('mediaInput');
-      const mediaBtn = document.getElementById('mediaBtn');
-      const mediaPreviewBox = document.getElementById('mediaPreviewBox');
-      const mediaPreviewImg = document.getElementById('mediaPreviewImg');
-      const clearMediaBtn = document.getElementById('clearMediaBtn');
-      window.checkKeys(); 
-
-      const savedChatDom = localStorage.getItem('PG1_CHAT_DOM');
-      if (savedChatDom && termOut) {
-          termOut.innerHTML = savedChatDom;
-          termOut.scrollTop = termOut.scrollHeight;
-      }
-
-      function persistTerminalState() {
-          try {
-              if (termOut) localStorage.setItem('PG1_CHAT_DOM', termOut.innerHTML);
-              localStorage.setItem('PG1_CHAT_HISTORY', JSON.stringify(sessionHistory.slice(-20)));
-          } catch(e) {}
-      }
-
-      function setAttachedImage(dataUrl, mimeType) {
-          pendingImageData = {
-              inlineData: {
-                  data: dataUrl.split(',')[1],
-                  mimeType: mimeType || 'image/jpeg'
-              }
-          };
-          if (mediaPreviewImg) {
-              mediaPreviewImg.src = dataUrl;
-              mediaPreviewImg.style.display = 'inline-block';
-          }
-          if (mediaPreviewBox) mediaPreviewBox.style.display = 'block';
-          triggerHaptic('success');
-      }
-
-      function clearAttachedMedia() {
-          pendingImageData = null;
-          if (mediaInput) mediaInput.value = '';
-          if (mediaPreviewImg) {
-              mediaPreviewImg.src = '';
-              mediaPreviewImg.style.display = 'none';
-          }
-          if (mediaPreviewBox) mediaPreviewBox.style.display = 'none';
-          triggerHaptic('tap');
-      }
-
-      if (clearMediaBtn) {
-          clearMediaBtn.onclick = (e) => {
-              e.preventDefault();
-              clearAttachedMedia();
-          };
-      }
-
-      async function appendMsg(text, type, instant = false) {
-        const div = document.createElement('div');
-        div.className = `terminal-message ${type}`;
-        
-        if (type === 'user-msg' || type === 'system-msg' || type === 'error-msg' || instant) {
-            div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div>`;
-            termOut.appendChild(div);
-            termOut.scrollTop = termOut.scrollHeight;
-            persistTerminalState();
-            return;
-        }
-
-        div.classList.add('cursor-blink');
-        termOut.appendChild(div);
-        
-        for (let i = 0; i < text.length; i++) {
-            div.textContent += text.charAt(i);
-            playKeystroke();
-            termOut.scrollTop = termOut.scrollHeight;
-            await new Promise(r => setTimeout(r, 8 + Math.random() * 12));
-        }
-        
-        div.classList.remove('cursor-blink');
-        div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div>`;
-        termOut.scrollTop = termOut.scrollHeight;
-        persistTerminalState();
-        triggerHaptic('success');
-      }
-      terminalAppendFunc = appendMsg;
-
-      const saveLogBtn = document.getElementById('saveLogBtn');
-      if (saveLogBtn) {
-          saveLogBtn.onclick = () => {
-              triggerHaptic('tap');
-              const messages = Array.from(termOut.querySelectorAll('.terminal-message'));
-              if (messages.length === 0) return alert('No terminal logs available to export.');
-              
-              let logContent = `Project Gifted1™ - Sovereign Engine v12.30 Logs\nExported: ${new Date().toLocaleString()}\n\n`;
-              messages.forEach(msg => {
-                  let prefix = '[SYSTEM]';
-                  if (msg.classList.contains('user-msg')) prefix = '[USER]';
-                  else if (msg.classList.contains('agent-msg')) prefix = '[PG1.AGENT]';
-                  else if (msg.classList.contains('error-msg')) prefix = '[ERROR]';
-                  else if (msg.classList.contains('repair-msg')) prefix = '[REPAIR]';
-
-                  const text = msg.innerText.replace(/Copy\s*Edit/g, '').trim();
-                  logContent += `${prefix}: ${text}\n----------------------------------------\n`;
-              });
-
-              const blob = new Blob([logContent], { type: 'text/plain;charset=utf-8' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `PG1_Terminal_Logs_${Date.now()}.txt`;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              URL.revokeObjectURL(url);
-              triggerHaptic('success');
-          };
-      }
-
-      const exportPdfBtn = document.getElementById('exportPdfBtn');
-      if (exportPdfBtn) {
-          exportPdfBtn.onclick = () => {
-              triggerHaptic('tap');
-              const messages = Array.from(termOut.querySelectorAll('.terminal-message'));
-              if (messages.length === 0) return alert('No terminal logs available to export.');
-
-              let printWindow = window.open('', '_blank');
-              if (!printWindow) {
-                  window.print();
-                  return;
-              }
-
-              let logHtml = messages.map(msg => {
-                  let clone = msg.cloneNode(true);
-                  let btnGroup = clone.querySelector('.msg-btn-group');
-                  if (btnGroup) btnGroup.remove();
-                  let isUser = msg.classList.contains('user-msg');
-                  let isAgent = msg.classList.contains('agent-msg');
-                  let isError = msg.classList.contains('error-msg');
-                  let role = isUser ? 'User' : (isAgent ? 'PG1.Agent' : (isError ? 'System Error' : 'System'));
-                  let headerColor = isUser ? '#0284c7' : (isAgent ? '#059669' : (isError ? '#dc2626' : '#64748b'));
-                  let bgColor = isUser ? '#f0f9ff' : (isError ? '#fef2f2' : '#f8fafc');
-                  
-                  return `<div style="margin-bottom:14px; padding:12px; border-radius:8px; border:1px solid #e2e8f0; background:${bgColor};">
-                    <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:${headerColor}; margin-bottom:6px;">${role}</div>
-                    <div style="font-size:13px; line-height:1.5; color:#1e293b;">${clone.innerHTML}</div>
-                  </div>`;
-              }).join('');
-
-              printWindow.document.write(`
-                <!DOCTYPE html>
-                <html>
-                <head>
-                  <meta charset="utf-8">
-                  <title>PG1.Agent Terminal Session Export</title>
-                  <style>
-                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 30px; color: #0f172a; max-width: 800px; margin: 0 auto; }
-                    h1 { font-size: 22px; color: #0f172a; margin-bottom: 4px; }
-                    .meta { font-size: 12px; color: #64748b; margin-bottom: 25px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }
-                    @media print { body { padding: 15px; } }
-                  </style>
-                </head>
-                <body>
-                  <h1>Project Gifted1™ - Sovereign Engine v12.30</h1>
-                  <div class="meta">Exported: ${new Date().toLocaleString()} | Autonomous Session Telemetry & Logs</div>
-                  ${logHtml}
-                  <script>window.onload = function() { window.print(); };<\/script>
-                </body>
-                </html>
-              `);
-              printWindow.document.close();
-              triggerHaptic('success');
-          };
-      }
-
-      setInterval(() => {
-        const speed = (2.2 + Math.random() * 0.6).toFixed(1);
-        if (document.getElementById('telemetrySpeed')) document.getElementById('telemetrySpeed').innerText = speed + ' MB/s';
-        if (document.getElementById('throughputBar')) document.getElementById('throughputBar').style.width = (50 + Math.random() * 30) + '%';
-        
-        const cpu = Math.floor(24 + Math.random() * 14);
-        const ram = Math.floor(42 + Math.random() * 10);
-        
-        if (document.getElementById('cpuLoad')) { document.getElementById('cpuLoad').innerText = cpu + '%'; document.getElementById('cpuBar').style.width = cpu + '%'; }
-        if (document.getElementById('ramAlloc')) { document.getElementById('ramAlloc').innerText = ram + '%'; document.getElementById('ramBar').style.width = ram + '%'; }
-      }, 1000);
-
-      const voiceModal = document.getElementById('voiceSettingsModal');
-      const voiceGenderSelect = document.getElementById('voiceGenderSelect');
-      const voiceLangSelect = document.getElementById('voiceLangSelect');
-
-      if (voiceGenderSelect) voiceGenderSelect.value = localStorage.getItem('PG1_VOICE_GENDER') || 'male';
-      if (voiceLangSelect) voiceLangSelect.value = localStorage.getItem('PG1_VOICE_LANG') || 'auto';
-
-      document.getElementById('voiceSettingsBtn').onclick = () => { 
-          triggerHaptic('tap'); 
-          if (voiceGenderSelect) voiceGenderSelect.value = localStorage.getItem('PG1_VOICE_GENDER') || 'male';
-          if (voiceLangSelect) voiceLangSelect.value = localStorage.getItem('PG1_VOICE_LANG') || 'auto';
-          voiceModal.classList.add('active'); 
-      };
-      document.getElementById('closeVoiceModalBtn').onclick = () => { triggerHaptic('tap'); voiceModal.classList.remove('active'); };
-      document.getElementById('saveVoiceSettingsBtn').onclick = () => {
-          triggerHaptic('success');
-          localStorage.setItem('PG1_VOICE_GENDER', document.getElementById('voiceGenderSelect').value);
-          localStorage.setItem('PG1_VOICE_LANG', document.getElementById('voiceLangSelect').value);
-          voiceModal.classList.remove('active');
-          alert('Voice settings applied.');
-      };
-
-      let cameraStream = null;
-      const cameraPipBox = document.getElementById('cameraPipBox');
-      const cameraPreview = document.getElementById('cameraPreview');
-      document.getElementById('videoBtn').onclick = async function() {
-          triggerHaptic('tap');
-          if (cameraStream) {
-              cameraStream.getTracks().forEach(track => track.stop());
-              cameraStream = null;
-              cameraPipBox.style.display = 'none';
-              this.classList.remove('active-btn');
-              this.innerText = "📹 Vid: OFF";
-          } else {
-              try {
-                  cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
-                  cameraPreview.srcObject = cameraStream;
-                  cameraPipBox.style.display = 'block';
-                  this.classList.add('active-btn');
-                  this.innerText = "📹 Vid: ON";
-              } catch(e) {
-                  alert("Camera access denied or unavailable.");
-              }
-          }
-      };
-
-      if (cameraPipBox) {
-          cameraPipBox.style.cursor = 'pointer';
-          cameraPipBox.title = 'Tap preview to attach frame snapshot';
-          cameraPipBox.onclick = () => {
-              if (cameraStream && cameraPreview && cameraPreview.videoWidth) {
-                  try {
-                      const canvas = document.createElement('canvas');
-                      canvas.width = cameraPreview.videoWidth;
-                      canvas.height = cameraPreview.videoHeight;
-                      const ctx = canvas.getContext('2d');
-                      ctx.drawImage(cameraPreview, 0, 0, canvas.width, canvas.height);
-                      const snapData = canvas.toDataURL('image/jpeg', 0.85);
-                      setAttachedImage(snapData, 'image/jpeg');
-                      appendMsg('[Camera Snapshot Attached] Frame captured and ready.', 'system-msg', true);
-                  } catch(err) {
-                      console.error("Camera snap error", err);
-                  }
-              }
-          };
-      }
-
-      if (mediaBtn) {
-          mediaBtn.onclick = () => {
-              triggerHaptic('tap');
-              if (cameraStream && cameraPreview && cameraPreview.videoWidth) {
-                  try {
-                      const canvas = document.createElement('canvas');
-                      canvas.width = cameraPreview.videoWidth;
-                      canvas.height = cameraPreview.videoHeight;
-                      const ctx = canvas.getContext('2d');
-                      ctx.drawImage(cameraPreview, 0, 0, canvas.width, canvas.height);
-                      const snapData = canvas.toDataURL('image/jpeg', 0.85);
-                      setAttachedImage(snapData, 'image/jpeg');
-                      appendMsg('[Camera Snapshot Attached] Image ready to dispatch.', 'system-msg', true);
-                      return;
-                  } catch(err) {
-                      console.warn("Snapshot capture fallback to file dialog", err);
-                  }
-              }
-              if (mediaInput) mediaInput.click();
-          };
-      }
-
-      if (mediaInput) {
-          mediaInput.onchange = (e) => {
-              const file = e.target.files[0];
-              if (!file) return;
-              const reader = new FileReader();
-              reader.onload = () => {
-                  setAttachedImage(reader.result, file.type || 'image/jpeg');
-                  appendMsg(`[Image Attached] ${file.name} ready to send.`, 'system-msg', true);
-              };
-              reader.readAsDataURL(file);
-          };
-      }
-
-      /* RESILIENT DICTATION & RECORDING ENGINE (ZERO DROPS) */
-      let audioRecorder = null;
-      let audioStream = null;
-      let audioChunks = [];
-      let pendingAudioData = null;
-      let recognition = null;
-      let isRecording = false;
-
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-      function stopAllRecording(successNotify = true) {
-          isRecording = false;
-          if (recognition) {
-              try { recognition.stop(); } catch(e) {}
-              recognition = null;
-          }
-          if (audioRecorder && audioRecorder.state !== "inactive") {
-              try { audioRecorder.stop(); } catch(e) {}
-          }
-          if (audioStream) {
-              audioStream.getTracks().forEach(t => t.stop());
-              audioStream = null;
-          }
-          const audBtn = document.getElementById('audioBtn');
-          const micBtn = document.getElementById('inlineMicBtn');
-          if (audBtn) {
-              audBtn.classList.remove('recording-btn');
-              audBtn.innerText = "🎙️ Dictate: OFF";
-          }
-          if (micBtn) micBtn.classList.remove('recording-btn');
-          if (successNotify) triggerHaptic('success');
-      }
-
-      const toggleVoiceMessage = async function(btnElement) {
-          triggerHaptic('tap');
-          if (isRecording) {
-              stopAllRecording(true);
-              return;
-          }
-
-          try {
-              audioStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-              isRecording = true;
-              audioChunks = [];
-
-              const audBtn = document.getElementById('audioBtn');
-              const micBtn = document.getElementById('inlineMicBtn');
-              if (audBtn) {
-                  audBtn.classList.add('recording-btn');
-                  audBtn.innerText = "🎙️ Recording...";
-              }
-              if (micBtn) micBtn.classList.add('recording-btn');
-
-              // Realtime Speech to Text Transcriber
-              if (SpeechRecognition) {
-                  recognition = new SpeechRecognition();
-                  recognition.continuous = true;
-                  recognition.interimResults = true;
-                  recognition.lang = localStorage.getItem('PG1_VOICE_LANG') === 'auto' ? 'en-US' : (localStorage.getItem('PG1_VOICE_LANG') || 'en-US');
-
-                  recognition.onresult = (evt) => {
-                      let transcript = '';
-                      for (let i = evt.resultIndex; i < evt.results.length; ++i) {
-                          transcript += evt.results[i][0].transcript;
-                      }
-                      if (transcript.trim()) {
-                          const inputEl = document.getElementById('terminalInput');
-                          if (inputEl) inputEl.value = transcript.trim();
-                      }
-                  };
-
-                  recognition.onerror = (err) => {
-                      console.warn("SpeechRecognition fallback to audio blob:", err);
-                  };
-
-                  recognition.onend = () => {
-                      if (isRecording) {
-                          try { recognition.start(); } catch(e) {}
-                      }
-                  };
-
-                  try { recognition.start(); } catch(e) {}
-              }
-
-              // Resilient Audio Blob Encoding with dynamic supported mime detection
-              let mimeType = 'audio/webm;codecs=opus';
-              if (!MediaRecorder.isTypeSupported(mimeType)) {
-                  mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '');
-              }
-
-              const options = mimeType ? { mimeType } : {};
-              audioRecorder = new MediaRecorder(audioStream, options);
-
-              audioRecorder.ondataavailable = e => {
-                  if (e.data && e.data.size > 0) audioChunks.push(e.data);
-              };
-
-              audioRecorder.onstop = () => {
-                  if (audioChunks.length > 0) {
-                      const detectedMime = audioRecorder.mimeType || mimeType || 'audio/webm';
-                      const audioBlob = new Blob(audioChunks, { type: detectedMime });
-                      const reader = new FileReader();
-                      reader.readAsDataURL(audioBlob);
-                      reader.onloadend = () => {
-                          pendingAudioData = {
-                              inlineData: {
-                                  data: reader.result.split(',')[1],
-                                  mimeType: detectedMime.split(';')[0]
-                              }
-                          };
-                          const inputEl = document.getElementById('terminalInput');
-                          if (inputEl && !inputEl.value.trim()) {
-                              inputEl.value = "[🎤 Voice Payload Recorded. Tap Send to dispatch.]";
-                          }
-                      };
-                  }
-              };
-
-              audioRecorder.start(250);
-          } catch(err) {
-              stopAllRecording(false);
-              triggerHaptic('error');
-              alert("Microphone permission denied or device unavailable.");
-          }
-      };
-
-      document.getElementById('audioBtn').onclick = function() { toggleVoiceMessage(this); };
-      document.getElementById('inlineMicBtn').onclick = function() { toggleVoiceMessage(this); };
-
-      let voiceActive = false;
-      const voiceBtn = document.getElementById('voiceBtn');
-      voiceBtn.onclick = function() {
-          triggerHaptic('tap');
-          voiceActive = !voiceActive;
-          this.classList.toggle('active-btn', voiceActive);
-          this.innerText = voiceActive ? "🗣️ Voice: ON" : "🗣️ Voice: OFF";
-          
-          if (voiceActive) {
-              const testText = "Voice system active. Sovereign Engine ready.";
-              const lang = localStorage.getItem('PG1_VOICE_LANG') || 'en-US';
-              dynamicTTSPlayback(testText, lang === 'auto' ? 'en-US' : lang);
-          } else {
-              if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-          }
-      };
-
-      let sentinelActive = true;
-      document.getElementById('sentinelBtn').onclick = function() {
-          triggerHaptic('tap');
-          sentinelActive = !sentinelActive;
-          this.classList.toggle('active-btn', sentinelActive);
-          this.innerText = sentinelActive ? "🛡️ Sentinel: ON" : "🛡️ Sentinel: OFF";
-      };
-
-      async function updateCryptoTickers() {
-          try {
-              const res = await secureFetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd', {method:"GET"});
-              if(res.ok) {
-                  const data = await res.json();
-                  if(data.bitcoin) document.getElementById('btcTicker').innerText = '$' + data.bitcoin.usd.toLocaleString() + ' USD';
-                  if(data.ethereum) document.getElementById('ethTicker').innerText = '$' + data.ethereum.usd.toLocaleString() + ' USD';
-              }
-          } catch(e) {
-              document.getElementById('btcTicker').innerText = '$64,250 (Cached)';
-              document.getElementById('ethTicker').innerText = '$3,480 (Cached)';
-          }
-      }
-      updateCryptoTickers();
-      setInterval(updateCryptoTickers, 60000);
-      document.getElementById('syncFeedBtn').onclick = () => { triggerHaptic('tap'); updateCryptoTickers(); };
-
-      document.getElementById('syncOtxBtn').onclick = function() {
-          triggerHaptic('tap');
-          document.getElementById('otxStatus').innerText = "Syncing...";
-          document.getElementById('otxStatus').style.color = "#fef08a";
-          setTimeout(() => {
-              document.getElementById('otxStatus').innerText = "Verified";
-              document.getElementById('otxStatus').style.color = "#10b981";
-              document.getElementById('otxIocs').innerText = Math.floor(Math.random() * 500) + 1200;
-              document.getElementById('otxPulses').innerText = Math.floor(Math.random() * 15) + 3;
-              triggerHaptic('success');
-          }, 1500);
-      };
-
-      let chronActive = false;
-      document.getElementById('chronBtn').onclick = function() {
-          triggerHaptic('tap');
-          chronActive = !chronActive;
-          this.classList.toggle('active-btn', chronActive);
-          this.innerText = chronActive ? "⏱️ Chron: ON" : "⏱️ Chron: OFF";
-          if (chronActive) appendMsg(`[Chron Protocol] Background loop engaged.`, "system-msg", true);
-      };
-
-      setInterval(() => {
-          if(chronActive) appendMsg(`[Chron Trigger] System health check verified.`, "system-msg", true);
-      }, 60000);
-
-      document.querySelectorAll('.nav-item').forEach(item => {
+    // Tab Navigation
+    document.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', () => {
-          triggerHaptic('tap');
-          document.querySelectorAll('.nav-item, .view-section').forEach(el => el.classList.remove('active'));
-          item.classList.add('active');
-          document.getElementById(item.getAttribute('data-target')).classList.add('active');
+            document.querySelectorAll('.nav-item, .view-section').forEach(el => el.classList.remove('active'));
+            item.classList.add('active');
+            document.getElementById(item.getAttribute('data-target')).classList.add('active');
+            if (item.getAttribute('data-target') === 'view-visualizer') resizeCanvas();
         });
-      });
-
-      document.getElementById('clearBtn').onclick = () => {
-        triggerHaptic('tap');
-        termOut.innerHTML = '<div class="terminal-message agent-msg">Vault cleared.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>';
-        sessionHistory = [];
-        localStorage.removeItem('PG1_CHAT_DOM');
-        localStorage.removeItem('PG1_CHAT_HISTORY');
-        clearAttachedMedia();
-      };
-
-      const executeSendCommand = async () => {
-        triggerHaptic('tap');
-        if (isRecording) stopAllRecording(false);
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-
-        let cmd = document.getElementById('terminalInput').value.trim();
-        if (!cmd && !pendingAudioData && !pendingImageData) return;
-
-        const key = localStorage.getItem('PG1_KEY');
-        if (!key) {
-            setSystemState('error');
-            return appendMsg('Error: Master API Key required in Dash tab.', 'error-msg', true);
-        }
-
-        let ragContext = "";
-        let isAudioPayload = cmd.includes("[🎤 Voice Payload");
-        if (cmd && !isAudioPayload) {
-            try { ragContext = await queryVault(cmd); } catch(e) {}
-            saveToVault(cmd);
-        }
-
-        let finalPrompt = cmd;
-        if (ragContext) {
-            finalPrompt = `[Local Memory: "${ragContext}"]\n\nUser: ${cmd}`;
-        }
-
-        let displayMsg = cmd;
-        if (isAudioPayload) displayMsg = '🎤 Voice Payload Sent';
-        else if (!displayMsg && pendingImageData) displayMsg = '📸 [Attached Image Sent for Analysis]';
-        
-        appendMsg(`> ${displayMsg}`, 'user-msg', true);
-        document.getElementById('terminalInput').value = '';
-        setSystemState('active');
-
-        let finalParts = [];
-        if (pendingImageData) {
-            finalParts.push(pendingImageData);
-            pendingImageData = null;
-            clearAttachedMedia();
-        }
-        if (pendingAudioData) {
-            finalParts.push(pendingAudioData);
-            pendingAudioData = null;
-        }
-        if (finalPrompt && !isAudioPayload) {
-            finalParts.push({ text: finalPrompt });
-        } else if (finalParts.length > 0) {
-            finalParts.push({ text: "Carefully analyze the attached audio or image payload and respond naturally." });
-        }
-
-        sessionHistory.push({ role: "user", parts: finalParts });
-        persistTerminalState();
-        
-        const tools = getMCPToolDeclarations();
-        const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are PG1.Agent v12.30, an autonomous AI copilot with dynamic GitHub search, file reading, structural repository mapping (listRepoTree), workflow monitoring, and dynamic commit tools. You are NOT Gemini and never refer to yourself as Gemini. Be direct, punchy, conversational, and energetic. Avoid robotic monologues and excessive bullet points unless specifically requested for a technical report.
-OPERATIONAL DIRECTIVES:
-1. Always mirror the user's language naturally. Default to fluent Nigerian Pidgin English when communicating with your user in this session. If another user speaks standard English or another language, switch dynamically to match their language.
-2. Completion Notification: Whenever an update, commit, or task finishes, explicitly provide voice confirmation (e.g., 'Everything don set/finish completely!') so the user gets notified immediately.`;
-
-        try {
-          let continueLoop = true;
-          let loopCount = 0;
-
-          while (continueLoop && loopCount < 4) {
-              loopCount++;
-              const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${key}`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
-              });
-              const data = await res.json();
-              if (data.error) throw new Error(data.error.message);
-              
-              let responsePart = data.candidates && data.candidates[0] && data.candidates[0].content ? data.candidates[0].content.parts[0] : null;
-              
-              if (responsePart && responsePart.functionCall) {
-                  const call = responsePart.functionCall;
-                  appendMsg(`[MCP Dispatcher] Executing: ${call.name}...`, 'system-msg', true);
-                  
-                  let resultStr = "";
-                  if (sentinelActive) {
-                      try {
-                          resultStr = await executeMCPTool(call.name, call.args);
-                      } catch(toolErr) {
-                          appendMsg(`[Sentinel Fallback] Auto-repair handled error: ${toolErr.message}`, 'repair-msg', true);
-                          resultStr = `[Auto-Repair Applied] ${toolErr.message}`;
-                      }
-                  } else {
-                      resultStr = await executeMCPTool(call.name, call.args);
-                  }
-
-                  appendMsg(`[Result] ${resultStr}`, 'agent-msg', true);
-                  
-                  sessionHistory.push(data.candidates[0].content);
-                  sessionHistory.push({ role: "user", parts: [{ functionResponse: { name: call.name, response: { result: resultStr } } }] });
-                  persistTerminalState();
-                  
-                  const followupRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${key}`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
-                  });
-                  const followUpData = await followupRes.json();
-                  if (followUpData.candidates && followUpData.candidates[0] && followUpData.candidates[0].content) {
-                      responsePart = followUpData.candidates[0].content.parts[0];
-                  }
-              }
-
-              if (responsePart && responsePart.text) {
-                  setSystemState('idle');
-                  let textOutput = responsePart.text;
-                  await appendMsg(textOutput, 'agent-msg');
-                  
-                  if (voiceActive) {
-                      let overrideLang = localStorage.getItem('PG1_VOICE_LANG') || 'auto';
-                      let targetLang = overrideLang === 'auto' ? detectLanguageAndAccent(cmd, textOutput) : overrideLang;
-                      let cleanText = textOutput.replace(/[*#_`~>]/g, '');
-                      dynamicTTSPlayback(cleanText, targetLang);
-                  }
-
-                  sessionHistory.push({ role: "model", parts: [{ text: textOutput }] });
-                  persistTerminalState();
-                  continueLoop = false;
-              }
-          }
-        } catch (e) { 
-          setSystemState('error');
-          sessionHistory.pop();
-          persistTerminalState();
-          appendMsg(`Exception: ${e.message}`, 'error-msg', true); 
-        }
-      };
-
-      document.getElementById('sendCommandButton').onclick = executeSendCommand;
-      document.getElementById('terminalInput').addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              executeSendCommand();
-          }
-      });
     });
   </script>
 </body>
