@@ -1,8 +1,8 @@
-// agent-engine.js - PG1.Agent Sovereign Bridge v12.29
+// agent-engine.js - PG1.Agent Sovereign Bridge v12.30
 // Integrated with Automated Multi-Provider Failover, Voice Fast-Path, Live Diff Drawer, and Resilient Downloader
 
 (function () {
-  console.log("[PG1 Agent Engine v12.29] Initializing sovereign core with resilient video failover & direct downloader...");
+  console.log("[PG1 Agent Engine v12.30] Initializing sovereign core with resilient media failover & direct downloader...");
 
   // State & Config Management
   let sessionHistory = [];
@@ -46,7 +46,7 @@
       <div id="pg1-drawer-header" style="padding: 10px 14px; background: #1e293b; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; border-radius: 12px 12px 0 0;">
         <span style="font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 8px;">
           <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e;"></span>
-          PG1 Failover Console & Engine v12.29
+          PG1 Failover Console & Engine v12.30
         </span>
         <div style="display:flex; gap:8px;">
           <button id="pg1-clear-logs" style="background:#334155; color:#cbd5e1; border:none; border-radius:4px; padding:2px 6px; font-size:10px; cursor:pointer;">Clear</button>
@@ -54,7 +54,7 @@
         </div>
       </div>
       <div id="pg1-drawer-body" style="padding: 12px; overflow-y: auto; max-height: 400px; display: flex; flex-direction: column; gap: 8px;">
-        <div style="color: #64748b;">// Failover router active. Resilient media pipeline initialized.</div>
+        <div style="color: #64748b;">// Failover router active. Resilient media pipeline initialized (v12.30).</div>
       </div>
     `;
 
@@ -296,7 +296,7 @@
 
       const aiCard = renderRichContent(output);
       chatContainer.appendChild(aiCard);
-      window.scrollTo(0, document.body.scrollHeight);
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     } catch (err) {
       console.error("Execution error:", err);
       logToConsole("error", "Failover In Action", err.message);
