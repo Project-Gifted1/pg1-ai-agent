@@ -517,11 +517,16 @@
         if(terminalAppendFunc) terminalAppendFunc(`[Replicate Pipeline] Dispatching prompt through Cloudflare Worker relay...`, "system-msg");
         try {
             const workerUrl = "https://pg1-worker.gnfcw9w5rk.workers.dev";
+            const targetApi = "https://api.replicate.com/v1/predictions";
+            const hotshotVersion = "78b3a6257e16e4b241245d65c8b2b81ea2e1ff7ed4c55306b511509edd68ea3a";
             
-            const startRes = await fetch(workerUrl, {
+            const startRes = await fetch(`${workerUrl}?url=${encodeURIComponent(targetApi)}`, {
                 method: "POST", 
                 headers: { "Authorization": `Bearer ${repKey}`, "Content-Type": "application/json", "Prefer": "wait" },
-                body: JSON.stringify({ input: { prompt: prompt, mp4: true } })
+                body: JSON.stringify({
+                    version: hotshotVersion,
+                    input: { prompt: prompt, mp4: true }
+                })
             });
             
             if (!startRes.ok) {
@@ -536,7 +541,8 @@
                 loopCount++;
                 if(terminalAppendFunc) terminalAppendFunc(`[Replicate Pipeline] Status: ${prediction.status} (${loopCount}/30)...`, "system-msg");
                 
-                const pollUrl = `${workerUrl}?url=${encodeURIComponent(prediction.urls.get)}`;
+                const pollEndpoint = prediction.urls && prediction.urls.get ? prediction.urls.get : `https://api.replicate.com/v1/predictions/${prediction.id}`;
+                const pollUrl = `${workerUrl}?url=${encodeURIComponent(pollEndpoint)}`;
                 const pollRes = await fetch(pollUrl, {
                     method: "GET", headers: { "Authorization": `Bearer ${repKey}` }
                 });
@@ -544,7 +550,7 @@
             }
             
             if (prediction.status === "failed") throw new Error("Replicate video rendering failed");
-            const videoUrl = prediction.output;
+            const videoUrl = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
             return `[Success] Video rendering complete.\n
             <div style="background:#050811; border-radius:8px; margin-top:8px; padding:15px; text-align:center; border:1px solid #38bdf8;">
               <video controls playsinline preload="auto" style="width:100%; max-height:220px; background:#000; border-radius:6px; display:block;"><source src="${videoUrl}" type="video/mp4"></video>
