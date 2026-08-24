@@ -244,7 +244,7 @@
 
       <div class="terminal-input-area">
         <input type="file" id="mediaInput" accept="image/*" style="display: none;">
-        <button id="mediaBtn" class="utility-media-btn" title="Upload Media">📸</button>
+        <button id="mediaBtn" class="utility-media-btn" title="Upload Media or Capture Frame">📸</button>
         <button id="inlineMicBtn" class="utility-media-btn" title="Record Voice Message">🎤</button>
         <input type="text" id="terminalInput" placeholder="Type or tap 🎤 for voice...">
         <button id="sendCommandButton" class="send-btn">Send</button>
@@ -720,8 +720,47 @@
 
     document.addEventListener("DOMContentLoaded", () => {
       let sessionHistory = [];
+      let pendingImageData = null;
       const termOut = document.getElementById('terminalOutput');
+      const mediaInput = document.getElementById('mediaInput');
+      const mediaBtn = document.getElementById('mediaBtn');
+      const mediaPreviewBox = document.getElementById('mediaPreviewBox');
+      const mediaPreviewImg = document.getElementById('mediaPreviewImg');
+      const clearMediaBtn = document.getElementById('clearMediaBtn');
       window.checkKeys(); 
+
+      function setAttachedImage(dataUrl, mimeType) {
+          pendingImageData = {
+              inlineData: {
+                  data: dataUrl.split(',')[1],
+                  mimeType: mimeType || 'image/jpeg'
+              }
+          };
+          if (mediaPreviewImg) {
+              mediaPreviewImg.src = dataUrl;
+              mediaPreviewImg.style.display = 'inline-block';
+          }
+          if (mediaPreviewBox) mediaPreviewBox.style.display = 'block';
+          triggerHaptic('success');
+      }
+
+      function clearAttachedMedia() {
+          pendingImageData = null;
+          if (mediaInput) mediaInput.value = '';
+          if (mediaPreviewImg) {
+              mediaPreviewImg.src = '';
+              mediaPreviewImg.style.display = 'none';
+          }
+          if (mediaPreviewBox) mediaPreviewBox.style.display = 'none';
+          triggerHaptic('tap');
+      }
+
+      if (clearMediaBtn) {
+          clearMediaBtn.onclick = (e) => {
+              e.preventDefault();
+              clearAttachedMedia();
+          };
+      }
 
       async function appendMsg(text, type, instant = false) {
         const div = document.createElement('div');
@@ -800,6 +839,64 @@
               }
           }
       };
+
+      // Allow snapping directly from Camera Preview PIP on tap
+      if (cameraPipBox) {
+          cameraPipBox.style.cursor = 'pointer';
+          cameraPipBox.title = 'Tap preview to attach frame snapshot';
+          cameraPipBox.onclick = () => {
+              if (cameraStream && cameraPreview && cameraPreview.videoWidth) {
+                  try {
+                      const canvas = document.createElement('canvas');
+                      canvas.width = cameraPreview.videoWidth;
+                      canvas.height = cameraPreview.videoHeight;
+                      const ctx = canvas.getContext('2d');
+                      ctx.drawImage(cameraPreview, 0, 0, canvas.width, canvas.height);
+                      const snapData = canvas.toDataURL('image/jpeg', 0.85);
+                      setAttachedImage(snapData, 'image/jpeg');
+                      appendMsg('[Camera Snapshot Attached] Frame captured and ready.', 'system-msg', true);
+                  } catch(err) {
+                      console.error("Camera snap error", err);
+                  }
+              }
+          };
+      }
+
+      // Media / File Upload Button Handling
+      if (mediaBtn) {
+          mediaBtn.onclick = () => {
+              triggerHaptic('tap');
+              if (cameraStream && cameraPreview && cameraPreview.videoWidth) {
+                  try {
+                      const canvas = document.createElement('canvas');
+                      canvas.width = cameraPreview.videoWidth;
+                      canvas.height = cameraPreview.videoHeight;
+                      const ctx = canvas.getContext('2d');
+                      ctx.drawImage(cameraPreview, 0, 0, canvas.width, canvas.height);
+                      const snapData = canvas.toDataURL('image/jpeg', 0.85);
+                      setAttachedImage(snapData, 'image/jpeg');
+                      appendMsg('[Camera Snapshot Attached] Image ready to dispatch.', 'system-msg', true);
+                      return;
+                  } catch(err) {
+                      console.warn("Snapshot capture fallback to file dialog", err);
+                  }
+              }
+              if (mediaInput) mediaInput.click();
+          };
+      }
+
+      if (mediaInput) {
+          mediaInput.onchange = (e) => {
+              const file = e.target.files[0];
+              if (!file) return;
+              const reader = new FileReader();
+              reader.onload = () => {
+                  setAttachedImage(reader.result, file.type || 'image/jpeg');
+                  appendMsg(`[Image Attached] ${file.name} ready to send.`, 'system-msg', true);
+              };
+              reader.readAsDataURL(file);
+          };
+      }
 
       // Voice Message Dictation Logic
       let audioRecorder = null;
@@ -939,15 +1036,16 @@
         triggerHaptic('tap');
         termOut.innerHTML = '<div class="terminal-message agent-msg">Vault cleared.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>';
         sessionHistory = [];
+        clearAttachedMedia();
       };
 
       // Autonomous Command Execution
-      document.getElementById('sendCommandButton').onclick = async () => {
+      const executeSendCommand = async () => {
         triggerHaptic('tap');
         if (audioCtx.state === 'suspended') audioCtx.resume();
 
         let cmd = document.getElementById('terminalInput').value.trim();
-        if (!cmd && !pendingAudioData) return;
+        if (!cmd && !pendingAudioData && !pendingImageData) return;
 
         const key = localStorage.getItem('PG1_KEY');
         if (!key) {
@@ -967,11 +1065,20 @@
             finalPrompt = `[Local Memory: "${ragContext}"]\n\nUser: ${cmd}`;
         }
 
-        appendMsg(`> ${isAudioPayload ? 'Voice Payload Sent' : cmd}`, 'user-msg', true);
+        let displayMsg = cmd;
+        if (isAudioPayload) displayMsg = '🎤 Voice Payload Sent';
+        else if (!displayMsg && pendingImageData) displayMsg = '📸 [Attached Image Sent for Analysis]';
+        
+        appendMsg(`> ${displayMsg}`, 'user-msg', true);
         document.getElementById('terminalInput').value = '';
         setSystemState('active');
 
         let finalParts = [];
+        if (pendingImageData) {
+            finalParts.push(pendingImageData);
+            pendingImageData = null;
+            clearAttachedMedia();
+        }
         if (pendingAudioData) {
             finalParts.push(pendingAudioData);
             pendingAudioData = null;
@@ -979,7 +1086,7 @@
         if (finalPrompt && !isAudioPayload) {
             finalParts.push({ text: finalPrompt });
         } else if (finalParts.length > 0) {
-            finalParts.push({ text: "Listen carefully, transcribe, and respond naturally to this user's voice message in the same language." });
+            finalParts.push({ text: "Carefully analyze the attached audio or image payload and respond naturally." });
         }
 
         sessionHistory.push({ role: "user", parts: finalParts });
@@ -1068,6 +1175,14 @@
           appendMsg(`Exception: ${e.message}`, 'error-msg', true); 
         }
       };
+
+      document.getElementById('sendCommandButton').onclick = executeSendCommand;
+      document.getElementById('terminalInput').addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              executeSendCommand();
+          }
+      });
     });
   </script>
 </body>
