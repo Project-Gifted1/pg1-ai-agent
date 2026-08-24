@@ -1,7 +1,7 @@
 {
   "agent": {
     "name": "PG1-Autonomous-Agent",
-    "version": "12.25.0",
+    "version": "12.25.1",
     "mode": "autonomous",
     "capabilities": [
       "github_search_and_read",
@@ -12,12 +12,28 @@
       "video_generation",
       "direct_media_download",
       "live_api_fetch",
-      "web_scraping"
+      "web_scraping",
+      "multi_provider_failover",
+      "auto_reroute_telemetry"
     ],
     "protocols": {
       "a2a_enabled": true,
       "protocol_version": "2.0.0",
       "default_router": "A2ARouter"
+    },
+    "media_providers": {
+      "video_pipeline": {
+        "primary": "replicate-video",
+        "fallback_1": "huggingface-video",
+        "fallback_2": "pollinations-motion-interpolation",
+        "health_check_interval_ms": 30000,
+        "auto_reroute": true
+      },
+      "image_pipeline": {
+        "primary": "pollinations-turbo",
+        "fallback_1": "cloudflare-ai-flux",
+        "auto_reroute": true
+      }
     }
   },
   "a2a_peers": [
@@ -44,6 +60,7 @@
     "max_auto_retries": 3,
     "auto_commit_patches": true,
     "require_human_gate_for_keys": true,
-    "media_direct_download": true
+    "media_direct_download": true,
+    "circuit_breaker_enabled": true
   }
 }
