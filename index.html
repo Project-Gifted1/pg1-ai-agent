@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v12.19</title>
+  <title>Project Gifted1™ - Sovereign Engine v12.21</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
@@ -15,10 +15,8 @@
     @keyframes iconPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.8; } }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
     
-    @keyframes coreBackgroundBreathe { 
-        0%, 100% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.1); transform: translate(-50%, -50%) scale(1); opacity: 0.5; } 
-        50% { box-shadow: 0 0 45px rgba(56, 189, 248, 0.7); transform: translate(-50%, -50%) scale(1.15); opacity: 1; } 
-    }
+    /* Direct Logo Animation restored */
+    @keyframes coreBreathe { 0%, 100% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.2); transform: scale(1); } 50% { box-shadow: 0 0 35px rgba(56, 189, 248, 0.6), inset 0 0 15px rgba(56, 189, 248, 0.3); transform: scale(1.03); } }
 
     .pulsing-bolt { animation: electricPulse 2s infinite; display: inline-block; }
     .spin-icon { display: inline-block; animation: fastSpin 2s linear infinite; }
@@ -55,13 +53,8 @@
     .progress-bar-container { width: 100%; background: #1e293b; border-radius: 4px; height: 5px; margin-top: 4px; margin-bottom: 8px; overflow: hidden; }
     .progress-bar { height: 100%; background: #38bdf8; border-radius: 4px; transition: width 0.5s ease; }
 
-    .ai-core-container { position: relative; width: 130px; height: 130px; margin: 0 auto 15px auto; }
-    .ai-core-container::before {
-        content: ''; position: absolute; top: 50%; left: 50%; width: 100%; height: 100%; border-radius: 50%;
-        background: radial-gradient(circle, rgba(56,189,248,0.4) 0%, rgba(56,189,248,0) 70%);
-        animation: coreBackgroundBreathe 3s ease-in-out infinite; z-index: 1; pointer-events: none;
-    }
-    .ai-core-logo { width: 100%; height: 100%; border-radius: 50%; border: 2px solid #38bdf8; overflow: hidden; position: relative; z-index: 2; background: #0b0f19; }
+    /* Direct Logo Animation restored */
+    .ai-core-logo { width: 130px; height: 130px; margin: 0 auto 15px auto; border-radius: 50%; border: 2px solid #38bdf8; overflow: hidden; animation: coreBreathe 3s ease-in-out infinite; background: #0b0f19; }
     .ai-core-logo img { width: 100%; height: 100%; object-fit: cover; }
 
     .terminal-controls-header { display: flex; justify-content: space-between; align-items: center; background: #111827; padding: 8px 12px; border-radius: 8px; border: 1px solid #1f2937; font-size: 0.8em; margin-bottom: 10px; }
@@ -94,7 +87,8 @@
     .terminal-input-area { display: flex; gap: 4px; align-items: center; background: #111827; padding: 8px; border-radius: 10px; border: 1px solid #1f2937; flex-shrink: 0; width: 100%; box-sizing: border-box; }
     .terminal-input-area input[type="text"], .utility-media-btn, .send-btn { height: 40px; box-sizing: border-box; margin: 0; }
     .terminal-input-area input[type="text"] { flex: 1; min-width: 0; padding: 0 8px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #0f172a; color: #f8fafc; }
-    .utility-media-btn { padding: 0 10px; background: #1e293b; border: 1px solid #334155; color: #38bdf8; border-radius: 6px; font-size: 1.1em; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .utility-media-btn { padding: 0 10px; background: #1e293b; border: 1px solid #334155; color: #38bdf8; border-radius: 6px; font-size: 1.1em; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+    .utility-media-btn.recording-btn { background: rgba(239, 68, 68, 0.2); border-color: #ef4444; animation: pulseGlow 1s infinite; }
     .send-btn { padding: 0 12px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85em; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
 
     .bottom-nav { display: flex; justify-content: space-around; background: #111827; padding: 8px; border-top: 1px solid #1f2937; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
@@ -129,13 +123,6 @@
           <option value="fr-FR">French (France)</option>
           <option value="de-DE">German (Germany)</option>
         </select>
-        
-        <label style="font-size: 0.8em; color: #94a3b8; margin-top: 6px;">Voice Persona / Quality:</label>
-        <select id="voicePersonaSelect">
-          <option value="best">Best Neural / Enhanced</option>
-          <option value="female">Female Voice Profile</option>
-          <option value="male">Male Voice Profile</option>
-        </select>
       </div>
       <button id="saveVoiceSettingsBtn" class="primary-btn" style="width:100%; text-align:center;">Apply Voice Settings</button>
     </div>
@@ -143,7 +130,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v12.19 Sovereign Engine</div>
+    <div class="version">v12.21 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -233,7 +220,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.19 online. Event listener exception resolved and Dictation module restored.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.21 online. Dynamic Multilingual Audio Fallback Engine online. Logo animation restored.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -244,18 +231,16 @@
       <div class="terminal-input-area">
         <input type="file" id="mediaInput" accept="image/*" style="display: none;">
         <button id="mediaBtn" class="utility-media-btn" title="Upload Media">📸</button>
-        <button id="inlineMicBtn" class="utility-media-btn" title="Dictate">🎤</button>
-        <input type="text" id="terminalInput" placeholder="Type prompt, or request live web scrape...">
+        <button id="inlineMicBtn" class="utility-media-btn" title="Record Voice Message">🎤</button>
+        <input type="text" id="terminalInput" placeholder="Type prompt, or tap 🎤 to record...">
         <button id="sendCommandButton" class="send-btn">Send</button>
       </div>
     </section>
 
     <section id="view-node" class="view-section">
       <div class="card center-content" style="text-align: center; padding: 20px;">
-        <div class="ai-core-container">
-          <div class="ai-core-logo">
-            <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
-          </div>
+        <div class="ai-core-logo">
+          <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
         </div>
         <h2 style="font-size: 1.1em; color: #f8fafc; margin-bottom: 2px;">PG1.Agent™ Sovereign Core</h2>
         <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Auto-Healing • Dynamic GitHub Intel • PIP Camera</p>
@@ -344,25 +329,32 @@
       input.focus();
     };
 
-    function getBestVoice(targetLang, persona) {
-        if (!('speechSynthesis' in window)) return null;
+    function nativeTTSFallback(text, targetLang) {
+        if (!('speechSynthesis' in window)) return;
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
         const voices = window.speechSynthesis.getVoices();
-        if (!voices || voices.length === 0) return null;
-
-        let langVoices = voices.filter(v => v.lang.toLowerCase().startsWith(targetLang.toLowerCase().substring(0, 2)));
-        if (langVoices.length === 0) langVoices = voices;
-
-        let scored = langVoices.map(v => {
+        
+        let scored = voices.map(v => {
             let score = 0;
+            if (v.lang.toLowerCase().startsWith(targetLang.toLowerCase().substring(0, 2))) score += 50;
             const name = v.name.toLowerCase();
-            if (name.includes('enhanced') || name.includes('neural') || name.includes('premium') || name.includes('siri') || name.includes('google')) score += 10;
-            if (persona === 'female' && (name.includes('female') || name.includes('samantha') || name.includes('alice') || name.includes('victoria') || name.includes('moira') || name.includes('karen'))) score += 5;
-            if (persona === 'male' && (name.includes('male') || name.includes('luca') || name.includes('alex') || name.includes('oliver') || name.includes('daniel'))) score += 5;
+            if (name.includes('enhanced') || name.includes('siri') || name.includes('premium')) score += 20;
+            if (name.includes('google')) score += 10;
             return { voice: v, score };
-        });
-
+        }).filter(v => v.score > 0);
+        
         scored.sort((a, b) => b.score - a.score);
-        return scored.length > 0 ? scored[0].voice : null;
+        if (scored.length > 0) {
+            utterance.voice = scored[0].voice;
+            utterance.lang = scored[0].voice.lang;
+        } else {
+            utterance.lang = targetLang;
+        }
+        
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        window.speechSynthesis.speak(utterance);
     }
 
     let db = null;
@@ -636,7 +628,6 @@
       document.getElementById('closeVoiceModalBtn').onclick = () => voiceModal.classList.remove('active');
       document.getElementById('saveVoiceSettingsBtn').onclick = () => {
           localStorage.setItem('PG1_VOICE_LANG', document.getElementById('voiceLangSelect').value);
-          localStorage.setItem('PG1_VOICE_PERSONA', document.getElementById('voicePersonaSelect').value);
           voiceModal.classList.remove('active');
           alert('Neural voice settings updated.');
       };
@@ -664,33 +655,56 @@
           }
       };
 
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      let dictation = SpeechRecognition ? new SpeechRecognition() : null;
-      if (dictation) {
-          dictation.continuous = false; dictation.interimResults = false;
-          dictation.onresult = (e) => {
-              document.getElementById('terminalInput').value = e.results[0][0].transcript;
+      /* Native Audio Voice Message Integration */
+      let audioRecorder = null;
+      let audioChunks = [];
+      let pendingAudioData = null;
+
+      const toggleVoiceMessage = async function(btnElement) {
+          if (audioRecorder && audioRecorder.state === "recording") {
+              audioRecorder.stop();
               document.getElementById('audioBtn').classList.remove('recording-btn');
               document.getElementById('audioBtn').innerText = "🎙️ Dictate: OFF";
-          };
-      }
-      
-      const toggleDictation = function(btnElement) {
-          if (!dictation) return alert("Speech recognition not supported in this browser.");
-          const topBtn = document.getElementById('audioBtn');
-          if (topBtn.classList.contains('recording-btn')) {
-              dictation.stop();
-              topBtn.classList.remove('recording-btn');
-              topBtn.innerText = "🎙️ Dictate: OFF";
+              document.getElementById('inlineMicBtn').classList.remove('recording-btn');
           } else {
-              dictation.start();
-              topBtn.classList.add('recording-btn');
-              topBtn.innerText = "🎙️ Listening...";
+              try {
+                  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                  audioRecorder = new MediaRecorder(stream);
+                  audioRecorder.start();
+                  audioChunks = [];
+                  
+                  document.getElementById('audioBtn').classList.add('recording-btn');
+                  document.getElementById('audioBtn').innerText = "🎙️ Recording...";
+                  document.getElementById('inlineMicBtn').classList.add('recording-btn');
+                  
+                  audioRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+                  
+                  audioRecorder.onstop = () => {
+                      const audioBlob = new Blob(audioChunks);
+                      let mimeType = audioBlob.type.split(';')[0];
+                      if (!mimeType) mimeType = 'audio/mp4';
+                      
+                      const reader = new FileReader();
+                      reader.readAsDataURL(audioBlob);
+                      reader.onloadend = () => {
+                          pendingAudioData = {
+                              inlineData: {
+                                  data: reader.result.split(',')[1],
+                                  mimeType: mimeType
+                              }
+                          };
+                          document.getElementById('terminalInput').value = "[🎤 Audio Payload Ready. Type prompt or Send.]";
+                      };
+                      stream.getTracks().forEach(track => track.stop());
+                  };
+              } catch(err) {
+                  alert("Microphone access denied. For speech-to-text, tap the native microphone icon on your iOS keyboard.");
+              }
           }
       };
-      
-      document.getElementById('audioBtn').onclick = function() { toggleDictation(this); };
-      document.getElementById('inlineMicBtn').onclick = function() { toggleDictation(this); };
+
+      document.getElementById('audioBtn').onclick = function() { toggleVoiceMessage(this); };
+      document.getElementById('inlineMicBtn').onclick = function() { toggleVoiceMessage(this); };
 
       let voiceActive = false;
       const voiceBtn = document.getElementById('voiceBtn');
@@ -699,13 +713,16 @@
           this.classList.toggle('active-btn', voiceActive);
           this.innerText = voiceActive ? "🗣️ Voice: ON" : "🗣️ Voice: OFF";
           
-          if (voiceActive && 'speechSynthesis' in window) {
-              window.speechSynthesis.cancel();
-              const primeUtterance = new SpeechSynthesisUtterance("Voice active.");
-              primeUtterance.volume = 0.1;
-              window.speechSynthesis.speak(primeUtterance);
-          } else if (!voiceActive && 'speechSynthesis' in window) {
-              window.speechSynthesis.cancel();
+          if (voiceActive) {
+              const testText = "Voice engine activated.";
+              const lang = localStorage.getItem('PG1_VOICE_LANG') || 'en';
+              try {
+                  const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=${lang}&q=${encodeURIComponent(testText)}`;
+                  const dynamicAudio = new Audio(audioUrl);
+                  dynamicAudio.play().catch(e => nativeTTSFallback(testText, lang));
+              } catch(e) {
+                  nativeTTSFallback(testText, lang);
+              }
           }
       };
 
@@ -772,27 +789,43 @@
 
       document.getElementById('sendCommandButton').onclick = async () => {
         let cmd = document.getElementById('terminalInput').value.trim();
-        if (!cmd) return;
+        if (!cmd && !pendingAudioData) return;
 
         const key = localStorage.getItem('PG1_KEY');
         if (!key) return appendMsg('Error: Master API Key required in Dash tab.', 'error-msg');
 
         let ragContext = "";
-        try { ragContext = await queryVault(cmd); } catch(e) {}
+        let isAudioPayload = cmd.includes("[🎤 Audio Payload Ready");
+        if (cmd && !isAudioPayload) {
+            try { ragContext = await queryVault(cmd); } catch(e) {}
+            saveToVault(cmd);
+        }
+
         let finalPrompt = cmd;
         if (ragContext) {
             finalPrompt = `[Local RAG Memory Injection: "${ragContext}"]\n\nUser: ${cmd}`;
             appendMsg(`[Vector Vault] Past memory injected.`, "system-msg");
         }
-        saveToVault(cmd);
 
-        appendMsg(`> ${cmd}`, 'user-msg');
+        appendMsg(`> ${isAudioPayload ? 'Sent Audio Payload' : cmd}`, 'user-msg');
         document.getElementById('terminalInput').value = '';
 
-        sessionHistory.push({ role: "user", parts: [{ text: finalPrompt }] });
+        let finalParts = [];
+        if (pendingAudioData) {
+            finalParts.push(pendingAudioData);
+            pendingAudioData = null;
+        }
+        if (finalPrompt && !isAudioPayload) {
+            finalParts.push({ text: finalPrompt });
+        } else if (finalParts.length > 0) {
+            finalParts.push({ text: "Process and transcribe this voice payload." });
+        }
+
+        sessionHistory.push({ role: "user", parts: finalParts });
+        
         const tools = getMCPToolDeclarations();
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are PG1.Agent v12.19, an autonomous sovereign AI. You possess real auto-repair interceptors, dynamic GitHub search, file reading, workflow monitoring, and commit tools. You are NOT Gemini, and you never refer to yourself as Gemini or a model built by Google. You can dynamically search, monitor, read, and commit to any GitHub repository using your MCP tools to autonomously repair infrastructure. When responding, provide well-structured analysis.`;
+        const sys = `You are PG1.Agent v12.21, an autonomous sovereign AI. You possess real auto-repair interceptors, dynamic GitHub search, file reading, workflow monitoring, and commit tools. You are NOT Gemini, and you never refer to yourself as Gemini or a model built by Google. You can dynamically search, monitor, read, and commit to any GitHub repository using your MCP tools to autonomously repair infrastructure. When responding, provide well-structured analysis.`;
 
         try {
           let continueLoop = true;
@@ -845,38 +878,29 @@
                   let parsedHtml = renderMarkdownToHtml(textOutput);
                   appendMsg(parsedHtml, 'agent-msg');
                   
-                  if (voiceActive && 'speechSynthesis' in window) {
-                      window.speechSynthesis.cancel();
-                      let speechText = textOutput.replace(/[*#_`~>]/g, '').replace(/[\r\n]+/g, '. ').substring(0, 300);
-                      const utterance = new SpeechSynthesisUtterance(speechText);
-                      
+                  if (voiceActive) {
                       let overrideLang = localStorage.getItem('PG1_VOICE_LANG') || 'auto';
-                      let persona = localStorage.getItem('PG1_VOICE_PERSONA') || 'best';
-                      
-                      let detectedLang = 'en-US';
+                      let detectedLang = 'en';
                       if (overrideLang !== 'auto') {
-                          detectedLang = overrideLang;
+                          detectedLang = overrideLang.split('-')[0];
                       } else if (cmd.toLowerCase().includes('ciao') || textOutput.toLowerCase().includes('stato')) {
-                          detectedLang = 'it-IT';
+                          detectedLang = 'it';
                       } else if (cmd.toLowerCase().includes('hola') || textOutput.toLowerCase().includes('estado')) {
-                          detectedLang = 'es-ES';
+                          detectedLang = 'es';
                       } else if (cmd.toLowerCase().includes('bonjour') || textOutput.toLowerCase().includes('état')) {
-                          detectedLang = 'fr-FR';
+                          detectedLang = 'fr';
                       } else if (cmd.toLowerCase().includes('deutsch')) {
-                          detectedLang = 'de-DE';
+                          detectedLang = 'de';
                       }
 
-                      const bestVoice = getBestVoice(detectedLang, persona);
-                      if (bestVoice) {
-                          utterance.voice = bestVoice;
-                          utterance.lang = bestVoice.lang;
-                      } else {
-                          utterance.lang = detectedLang;
+                      let cleanText = textOutput.replace(/[*#_`~>]/g, '').replace(/[\r\n]+/g, '. ').substring(0, 200);
+                      try {
+                          const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=${detectedLang}&q=${encodeURIComponent(cleanText)}`;
+                          const dynamicAudio = new Audio(audioUrl);
+                          dynamicAudio.play().catch(e => nativeTTSFallback(cleanText, detectedLang));
+                      } catch(e) {
+                          nativeTTSFallback(cleanText, detectedLang);
                       }
-
-                      utterance.rate = 1.0;
-                      utterance.pitch = 1.0;
-                      window.speechSynthesis.speak(utterance);
                   }
 
                   sessionHistory.push({ role: "model", parts: [{ text: textOutput }] });
