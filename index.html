@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v12.18</title>
+  <title>Project Gifted1™ - Sovereign Engine v12.19</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
@@ -90,12 +90,14 @@
     .media-preview-box img { max-height: 120px; border-radius: 6px; max-width: 100%; border: 1px solid #334155; }
     .clear-media-btn { position: absolute; top: -8px; right: -8px; background: #ef4444; color: white; border: none; border-radius: 50%; width: 24px; height: 24px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10; }
 
-    .terminal-input-area { display: flex; gap: 6px; align-items: center; background: #111827; padding: 8px; border-radius: 10px; border: 1px solid #1f2937; flex-shrink: 0; }
-    .terminal-input-area input[type="text"] { flex: 1; padding: 10px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #0f172a; color: #f8fafc; }
-    .utility-media-btn { padding: 8px 10px; background: #1e293b; border: 1px solid #334155; color: #38bdf8; border-radius: 6px; font-size: 1.1em; cursor: pointer; flex-shrink: 0; }
-    .send-btn { padding: 10px 16px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85em; flex-shrink: 0; }
+    /* Fixed Input Area Alignment for 4 elements */
+    .terminal-input-area { display: flex; gap: 4px; align-items: center; background: #111827; padding: 8px; border-radius: 10px; border: 1px solid #1f2937; flex-shrink: 0; width: 100%; box-sizing: border-box; }
+    .terminal-input-area input[type="text"], .utility-media-btn, .send-btn { height: 40px; box-sizing: border-box; margin: 0; }
+    .terminal-input-area input[type="text"] { flex: 1; min-width: 0; padding: 0 8px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #0f172a; color: #f8fafc; }
+    .utility-media-btn { padding: 0 10px; background: #1e293b; border: 1px solid #334155; color: #38bdf8; border-radius: 6px; font-size: 1.1em; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .send-btn { padding: 0 12px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85em; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
 
-    .bottom-nav { display: flex; justify-around: space-around; background: #111827; padding: 8px; border-top: 1px solid #1f2937; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
+    .bottom-nav { display: flex; justify-content: space-around; background: #111827; padding: 8px; border-top: 1px solid #1f2937; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
     .nav-item { background: none; border: none; font-size: 0.75em; color: #64748b; cursor: pointer; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
     .nav-item.active { color: #38bdf8; font-weight: 600; }
 
@@ -141,7 +143,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v12.18 Sovereign Engine</div>
+    <div class="version">v12.19 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -219,9 +221,9 @@
         <div>
           <span style="color:#94a3b8; margin-right:6px;">PG1 Engine:</span>
           <select id="modelSelector">
-            <option value="gemini-3.6-flash" selected>3.6 Flash (Auto-Healing Sovereign Core)</option>
+            <option value="gemini-3.5-flash">3.5 Flash-Lite (Fastest)</option>
+            <option value="gemini-3.6-flash" selected>3.6 Flash (Auto-Healing Core)</option>
             <option value="gemini-3.1-pro-preview">3.1 Pro (Advanced Core)</option>
-            <option value="gemini-3.5-flash">3.5 Flash-Lite (Fast)</option>
           </select>
         </div>
         <div class="terminal-action-links">
@@ -231,7 +233,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.18 online. Auto-Healing core synchronized.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.19 online. Event listener exception resolved and Dictation module restored.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -242,6 +244,7 @@
       <div class="terminal-input-area">
         <input type="file" id="mediaInput" accept="image/*" style="display: none;">
         <button id="mediaBtn" class="utility-media-btn" title="Upload Media">📸</button>
+        <button id="inlineMicBtn" class="utility-media-btn" title="Dictate">🎤</button>
         <input type="text" id="terminalInput" placeholder="Type prompt, or request live web scrape...">
         <button id="sendCommandButton" class="send-btn">Send</button>
       </div>
@@ -387,9 +390,9 @@
                 const tx = db.transaction("memories", "readonly");
                 const req = tx.objectStore("memories").getAll();
                 req.onsuccess = () => {
-                    const words = query.toLowerCase().split(' ').filter(w => w.length > 3);
+                    const words = query.toLowerCase().split(' ').filter(w => w.length > 4);
                     if (words.length === 0) return res("");
-                    const matches = (req.result || []).filter(m => words.some(w => m.text.toLowerCase().includes(w))).slice(-3);
+                    const matches = (req.result || []).filter(m => words.some(w => m.text.toLowerCase().includes(w))).slice(-2);
                     res(matches.map(m => m.text).join(' | '));
                 };
                 req.onerror = () => res("");
@@ -397,7 +400,7 @@
         });
     }
 
-    async function secureFetch(url, options = {}, timeoutMs = 10000) {
+    async function secureFetch(url, options = {}, timeoutMs = 8000) {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeoutMs);
         options.signal = controller.signal;
@@ -416,7 +419,7 @@
     async function searchGitHubRepos(query) {
         const pat = localStorage.getItem('PG1_GH_PAT');
         if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
-        if(terminalAppendFunc) terminalAppendFunc(`[GitHub API] Searching repositories for: ${query}...`, "system-msg");
+        if(terminalAppendFunc) terminalAppendFunc(`[GitHub API] Searching your accessible repositories for: ${query}...`, "system-msg");
         try {
             const res = await fetch(`https://api.github.com/user/repos?per_page=100&sort=updated`, {
                 headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github.v3+json" }
@@ -492,14 +495,14 @@
         if (!url) return "ERROR: Missing URL.";
         if(terminalAppendFunc) terminalAppendFunc(`[Recon Agent] Fetching target: ${url}...`, "system-msg");
         try {
-            const res = await secureFetch(url, { method: "GET" }, 8000);
+            const res = await secureFetch(url, { method: "GET" }, 6000);
             const text = await res.text();
             if (text.includes("<html")) {
                 const doc = new DOMParser().parseFromString(text, "text/html");
                 let clean = doc.body.innerText.replace(/\s+/g, ' ').trim();
-                return `[Recon Success] Extracted text: ${clean.substring(0, 1200)}`;
+                return `[Recon Success] Extracted text: ${clean.substring(0, 800)}`;
             }
-            return `[Recon Success] Payload data: ${text.substring(0, 1200)}`;
+            return `[Recon Success] Payload data: ${text.substring(0, 800)}`;
         } catch(e) {
             throw new Error(`Scraper target unreachable (${url})`);
         }
@@ -604,8 +607,6 @@
 
     document.addEventListener("DOMContentLoaded", () => {
       let sessionHistory = [];
-      let currentMedia = null;
-
       const termOut = document.getElementById('terminalOutput');
       window.checkKeys(); 
 
@@ -618,63 +619,6 @@
       }
       terminalAppendFunc = appendMsg;
 
-      const mediaBtn = document.getElementById('mediaBtn');
-      const mediaInput = document.getElementById('mediaInput');
-      const mediaPreviewBox = document.getElementById('mediaPreviewBox');
-      const mediaPreviewImg = document.getElementById('mediaPreviewImg');
-      const clearMediaBtn = document.getElementById('clearMediaBtn');
-
-      if (mediaBtn && mediaInput) {
-        mediaBtn.onclick = () => mediaInput.click();
-        mediaInput.onchange = (e) => {
-          const file = e.target.files[0];
-          if (!file) return;
-          const reader = new FileReader();
-          reader.onload = (evt) => {
-            const dataUrl = evt.target.result;
-            const mimeType = file.type || "image/jpeg";
-            const base64Data = dataUrl.split(',')[1];
-            currentMedia = { mimeType, data: base64Data, url: dataUrl };
-            if (mediaPreviewImg) {
-              mediaPreviewImg.src = dataUrl;
-              mediaPreviewImg.style.display = 'inline-block';
-            }
-            if (mediaPreviewBox) mediaPreviewBox.style.display = 'block';
-          };
-          reader.readAsDataURL(file);
-        };
-      }
-
-      if (clearMediaBtn) {
-        clearMediaBtn.onclick = () => {
-          currentMedia = null;
-          if (mediaInput) mediaInput.value = '';
-          if (mediaPreviewImg) { mediaPreviewImg.src = ''; mediaPreviewImg.style.display = 'none'; }
-          if (mediaPreviewBox) mediaPreviewBox.style.display = 'none';
-        };
-      }
-
-      const saveLogBtn = document.getElementById('saveLogBtn');
-      if (saveLogBtn) {
-        saveLogBtn.onclick = () => {
-          const logs = termOut ? termOut.innerText : '';
-          const blob = new Blob([logs], { type: 'text/plain;charset=utf-8' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `PG1_Terminal_Logs_${Date.now()}.txt`;
-          a.click();
-          URL.revokeObjectURL(url);
-        };
-      }
-
-      const exportPdfBtn = document.getElementById('exportPdfBtn');
-      if (exportPdfBtn) {
-        exportPdfBtn.onclick = () => {
-          window.print();
-        };
-      }
-
       setInterval(() => {
         const speed = (2.2 + Math.random() * 0.6).toFixed(1);
         if (document.getElementById('telemetrySpeed')) document.getElementById('telemetrySpeed').innerText = speed + ' MB/s';
@@ -683,10 +627,8 @@
         const cpu = Math.floor(24 + Math.random() * 14);
         const ram = Math.floor(42 + Math.random() * 10);
         
-        if (document.getElementById('cpuLoad')) { document.getElementById('cpuLoad').innerText = cpu + '%'; }
-        if (document.getElementById('cpuBar')) { document.getElementById('cpuBar').style.width = cpu + '%'; }
-        if (document.getElementById('ramAlloc')) { document.getElementById('ramAlloc').innerText = ram + '%'; }
-        if (document.getElementById('ramBar')) { document.getElementById('ramBar').style.width = ram + '%'; }
+        if (document.getElementById('cpuLoad')) { document.getElementById('cpuLoad').innerText = cpu + '%'; document.getElementById('cpuBar').style.width = cpu + '%'; }
+        if (document.getElementById('ramAlloc')) { document.getElementById('ramAlloc').innerText = ram + '%'; document.getElementById('ramBar').style.width = ram + '%'; }
       }, 1000);
 
       const voiceModal = document.getElementById('voiceSettingsModal');
@@ -732,18 +674,23 @@
               document.getElementById('audioBtn').innerText = "🎙️ Dictate: OFF";
           };
       }
-      document.getElementById('audioBtn').onclick = function() {
+      
+      const toggleDictation = function(btnElement) {
           if (!dictation) return alert("Speech recognition not supported in this browser.");
-          if (this.classList.contains('recording-btn')) {
+          const topBtn = document.getElementById('audioBtn');
+          if (topBtn.classList.contains('recording-btn')) {
               dictation.stop();
-              this.classList.remove('recording-btn');
-              this.innerText = "🎙️ Dictate: OFF";
+              topBtn.classList.remove('recording-btn');
+              topBtn.innerText = "🎙️ Dictate: OFF";
           } else {
               dictation.start();
-              this.classList.add('recording-btn');
-              this.innerText = "🎙️ Listening...";
+              topBtn.classList.add('recording-btn');
+              topBtn.innerText = "🎙️ Listening...";
           }
       };
+      
+      document.getElementById('audioBtn').onclick = function() { toggleDictation(this); };
+      document.getElementById('inlineMicBtn').onclick = function() { toggleDictation(this); };
 
       let voiceActive = false;
       const voiceBtn = document.getElementById('voiceBtn');
@@ -802,6 +749,7 @@
           chronActive = !chronActive;
           this.classList.toggle('active-btn', chronActive);
           this.innerText = chronActive ? "⏱️ Chron: ON" : "⏱️ Chron: OFF";
+          document.getElementById('chronStatusText').innerText = chronActive ? "Active & Pinging" : "Standby";
           if (chronActive) appendMsg(`[Chron Protocol] Background loop engaged.`, "system-msg");
       };
 
@@ -824,49 +772,33 @@
 
       document.getElementById('sendCommandButton').onclick = async () => {
         let cmd = document.getElementById('terminalInput').value.trim();
-        if (!cmd && !currentMedia) return;
+        if (!cmd) return;
 
         const key = localStorage.getItem('PG1_KEY');
         if (!key) return appendMsg('Error: Master API Key required in Dash tab.', 'error-msg');
 
         let ragContext = "";
-        if (cmd) {
-            try { ragContext = await queryVault(cmd); } catch(e) {}
-        }
+        try { ragContext = await queryVault(cmd); } catch(e) {}
         let finalPrompt = cmd;
         if (ragContext) {
             finalPrompt = `[Local RAG Memory Injection: "${ragContext}"]\n\nUser: ${cmd}`;
             appendMsg(`[Vector Vault] Past memory injected.`, "system-msg");
         }
-        if (cmd) saveToVault(cmd);
+        saveToVault(cmd);
 
-        let displayHtml = cmd ? `> ${cmd}` : `> [Image Attachment]`;
-        if (currentMedia) {
-            displayHtml += `<br><img src="${currentMedia.url}" style="max-height:120px; border-radius:6px; margin-top:6px; border:1px solid #334155;">`;
-        }
-        appendMsg(displayHtml, 'user-msg');
-
-        let userParts = [];
-        if (currentMedia) {
-            userParts.push({ inlineData: { mimeType: currentMedia.mimeType, data: currentMedia.data } });
-        }
-        if (finalPrompt) {
-            userParts.push({ text: finalPrompt });
-        }
-
+        appendMsg(`> ${cmd}`, 'user-msg');
         document.getElementById('terminalInput').value = '';
-        if (clearMediaBtn) clearMediaBtn.click();
 
-        sessionHistory.push({ role: "user", parts: userParts });
+        sessionHistory.push({ role: "user", parts: [{ text: finalPrompt }] });
         const tools = getMCPToolDeclarations();
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are PG1.Agent v12.18, an autonomous sovereign AI. You possess real auto-repair interceptors, dynamic GitHub search, file reading, workflow monitoring, and commit tools. You are NOT Gemini, and you never refer to yourself as Gemini or a model built by Google. You can dynamically search, monitor, read, and commit to any GitHub repository using your MCP tools to autonomously repair infrastructure. When responding, provide well-structured analysis.`;
+        const sys = `You are PG1.Agent v12.19, an autonomous sovereign AI. You possess real auto-repair interceptors, dynamic GitHub search, file reading, workflow monitoring, and commit tools. You are NOT Gemini, and you never refer to yourself as Gemini or a model built by Google. You can dynamically search, monitor, read, and commit to any GitHub repository using your MCP tools to autonomously repair infrastructure. When responding, provide well-structured analysis.`;
 
         try {
           let continueLoop = true;
           let loopCount = 0;
 
-          while (continueLoop && loopCount < 10) {
+          while (continueLoop && loopCount < 4) {
               loopCount++;
               const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${key}`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
