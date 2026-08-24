@@ -1,0 +1,30 @@
+name: Chronos Temporal Engine Sweep
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  run-temporal-simulation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Execute Temporal Simulator
+        run: |
+          python src/temporal/chronos_engine.py > temporal_sweep_results.json
+          cat temporal_sweep_results.json
+
+      - name: Upload Simulation Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: chronos-sweep-results
+          path: temporal_sweep_results.json
