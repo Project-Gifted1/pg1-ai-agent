@@ -14,12 +14,6 @@
     @keyframes electricPulse { 0%, 100% { text-shadow: 0 0 5px rgba(56, 189, 248, 0.4), 0 0 10px rgba(56, 189, 248, 0.2); } 50% { text-shadow: 0 0 15px rgba(56, 189, 248, 0.9), 0 0 25px rgba(56, 189, 248, 0.6); } }
     @keyframes iconPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.8; } }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-    
-    /* Updated Background Breathe Animation */
-    @keyframes coreBackgroundBreathe { 
-        0%, 100% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.1); transform: translate(-50%, -50%) scale(1); opacity: 0.5; } 
-        50% { box-shadow: 0 0 45px rgba(56, 189, 248, 0.7); transform: translate(-50%, -50%) scale(1.15); opacity: 1; } 
-    }
 
     .pulsing-bolt { animation: electricPulse 2s infinite; display: inline-block; }
     .spin-icon { display: inline-block; animation: fastSpin 2s linear infinite; }
@@ -56,13 +50,8 @@
     .progress-bar-container { width: 100%; background: #1e293b; border-radius: 4px; height: 5px; margin-top: 4px; margin-bottom: 8px; overflow: hidden; }
     .progress-bar { height: 100%; background: #38bdf8; border-radius: 4px; transition: width 0.5s ease; }
 
-    /* Redesigned AI Core Logo Container */
+    /* Static AI Core Logo Container */
     .ai-core-container { position: relative; width: 130px; height: 130px; margin: 0 auto 15px auto; }
-    .ai-core-container::before {
-        content: ''; position: absolute; top: 50%; left: 50%; width: 100%; height: 100%; border-radius: 50%;
-        background: radial-gradient(circle, rgba(56,189,248,0.4) 0%, rgba(56,189,248,0) 70%);
-        animation: coreBackgroundBreathe 3s ease-in-out infinite; z-index: 1; pointer-events: none;
-    }
     .ai-core-logo { width: 100%; height: 100%; border-radius: 50%; border: 2px solid #38bdf8; overflow: hidden; position: relative; z-index: 2; background: #0b0f19; }
     .ai-core-logo img { width: 100%; height: 100%; object-fit: cover; }
 
@@ -234,7 +223,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.15 online. Background pulse animation deployed.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">Project Gifted1™ Sovereign Engine v12.15 online. System nominal.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -417,6 +406,18 @@
         }
     }
 
+    async function fetchLiveData(url) {
+        if (!url) return "ERROR: Missing URL parameter.";
+        if (terminalAppendFunc) terminalAppendFunc(`[Data Fetcher] Querying live data from: ${url}...`, "system-msg");
+        try {
+            const res = await secureFetch(url, { method: "GET" });
+            const data = await res.text();
+            return `[Live Data]\n${data.substring(0, 1500)}`;
+        } catch(e) {
+            throw new Error(`Data fetch failed: ${e.message}`);
+        }
+    }
+
     async function searchGitHubRepos(query) {
         const pat = localStorage.getItem('PG1_GH_PAT');
         if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
@@ -507,6 +508,14 @@
         } catch(e) {
             throw new Error(`Scraper target unreachable (${url})`);
         }
+    }
+
+    function generateImage(prompt) {
+        if (!prompt) return "ERROR: Missing image prompt.";
+        if (terminalAppendFunc) terminalAppendFunc(`[Image Engine] Synthesizing image: "${prompt}"...`, "system-msg");
+        const encoded = encodeURIComponent(prompt);
+        const imageUrl = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&nologo=true&seed=${Date.now()}`;
+        return `[Image Generated]\n<div style="margin-top:8px; border-radius:8px; overflow:hidden; border:1px solid #38bdf8;"><img src="${imageUrl}" alt="${prompt}" style="width:100%; display:block; border-radius:6px;" loading="lazy"><a href="${imageUrl}" target="_blank" class="primary-btn" style="display:inline-block; margin-top:8px; text-decoration:none;">🔍 View Full Image</a></div>`;
     }
 
     async function generateVideoClip(prompt) {
@@ -742,7 +751,8 @@
           chronActive = !chronActive;
           this.classList.toggle('active-btn', chronActive);
           this.innerText = chronActive ? "⏱️ Chron: ON" : "⏱️ Chron: OFF";
-          document.getElementById('chronStatusText').innerText = chronActive ? "Active & Pinging" : "Standby";
+          const chronTextEl = document.getElementById('chronStatusText');
+          if (chronTextEl) chronTextEl.innerText = chronActive ? "Active & Pinging" : "Standby";
           if (chronActive) appendMsg(`[Chron Protocol] Background loop engaged.`, "system-msg");
       };
 
