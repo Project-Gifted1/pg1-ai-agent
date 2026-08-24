@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v12.26</title>
+  <title>Project Gifted1™ - Sovereign Engine v12.27</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
@@ -127,7 +127,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v12.26 Sovereign Engine</div>
+    <div class="version">v12.27 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -217,7 +217,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.26 online. Auto-healing protocol active. Audio and Video pipelines secured.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.27 online. Video proxy TypeError bypass engaged.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -397,7 +397,8 @@
         });
     }
 
-    async function secureFetch(url, options = {}, timeoutMs = 8000) {
+    /* Core execution fetch with bulletproof CORS interceptor */
+    async function secureFetch(url, options = {}, timeoutMs = 12000) {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeoutMs);
         options.signal = controller.signal;
@@ -408,6 +409,7 @@
             return res;
         } catch (error) {
             clearTimeout(id);
+            // This safely intercepts CORS TypeErrors and routes via the proxy bridge
             const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(url);
             return await fetch(proxyUrl, options);
         }
@@ -510,54 +512,29 @@
         }
     }
 
+    /* Fixed Video Generator Using secureFetch Routing */
     async function generateVideoClip(prompt) {
         const repKey = localStorage.getItem('PG1_REP_KEY');
         if (!repKey) return "ERROR: Replicate API Key not found in Dash tab.";
         if(terminalAppendFunc) terminalAppendFunc(`[Replicate API] Initiating real video generation...`, "system-msg");
         try {
-            // Fixed Replicate polling structure to safely handle cross-origin headers
-            const startRes = await fetch("https://api.replicate.com/v1/predictions", {
-                method: "POST", 
-                headers: { "Authorization": `Bearer ${repKey}`, "Content-Type": "application/json" },
-                body: JSON.stringify({ 
-                    version: "8d952537baedccf15b3c3b0ebf4cbfb49e31d3f94e1d1ebc343468cc02ea1bc8", // Hotshot-XL version hash
-                    input: { prompt: prompt, mp4: true } 
-                })
+            const startRes = await secureFetch("https://api.replicate.com/v1/models/lucataco/hotshot-xl/predictions", {
+                method: "POST", headers: { "Authorization": `Bearer ${repKey}`, "Content-Type": "application/json", "Prefer": "wait" },
+                body: JSON.stringify({ input: { prompt: prompt, mp4: true } })
             });
             
-            if (!startRes.ok) {
-                // Try cors proxy fallback
-                const fallbackRes = await fetch("https://corsproxy.io/?https://api.replicate.com/v1/predictions", {
-                    method: "POST", 
-                    headers: { "Authorization": `Bearer ${repKey}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ 
-                        version: "8d952537baedccf15b3c3b0ebf4cbfb49e31d3f94e1d1ebc343468cc02ea1bc8",
-                        input: { prompt: prompt, mp4: true } 
-                    })
-                });
-                if(!fallbackRes.ok) throw new Error(`Replicate API rejected authorization or endpoint is stale.`);
-                var prediction = await fallbackRes.json();
-            } else {
-                var prediction = await startRes.json();
-            }
-
+            let prediction = await startRes.json();
             let loopCount = 0;
+            
             while (prediction.status !== "succeeded" && prediction.status !== "failed" && loopCount < 30) {
                 await new Promise(r => setTimeout(r, 4000)); 
                 loopCount++;
                 if(terminalAppendFunc) terminalAppendFunc(`[Replicate API] Status: ${prediction.status} (${loopCount}/30)...`, "system-msg");
                 
-                try {
-                    const pollRes = await fetch(prediction.urls.get, {
-                        headers: { "Authorization": `Bearer ${repKey}` }
-                    });
-                    prediction = await pollRes.json();
-                } catch(proxyErr) {
-                    const proxyPollRes = await fetch("https://corsproxy.io/?" + encodeURIComponent(prediction.urls.get), {
-                        headers: { "Authorization": `Bearer ${repKey}` }
-                    });
-                    prediction = await proxyPollRes.json();
-                }
+                const pollRes = await secureFetch(prediction.urls.get, {
+                    method: "GET", headers: { "Authorization": `Bearer ${repKey}` }
+                });
+                prediction = await pollRes.json();
             }
             
             if (prediction.status === "failed") throw new Error("Replicate video rendering failed");
@@ -568,7 +545,7 @@
               <a href="${videoUrl}" download="PG1_Video_${Date.now()}.mp4" target="_blank" class="primary-btn" style="display:inline-block; margin-top:12px; background:#10b981; color:#fff; text-decoration:none;">⬇ Download Video</a>
             </div>`;
         } catch(e) { 
-            return `[Video Pipeline Error] ${e.message}. Please verify your Replicate key or check network restrictions.`; 
+            return `[Video Pipeline Error] ${e.message}. Ensure your Replicate Key is valid and CORS proxy is reachable.`; 
         }
     }
 
@@ -743,7 +720,6 @@
                   
                   audioRecorder.onstop = () => {
                       const audioBlob = new Blob(audioChunks);
-                      // iOS Audio MIME Normalizer to prevent Invalid Argument exceptions
                       let mimeType = 'audio/mp4'; 
                       
                       const reader = new FileReader();
@@ -776,7 +752,7 @@
           this.innerText = voiceActive ? "🗣️ Voice: ON" : "🗣️ Voice: OFF";
           
           if (voiceActive) {
-              const testText = "Voice engine active.";
+              const testText = "Voice chunking active. I can now speak without limits.";
               const lang = localStorage.getItem('PG1_VOICE_LANG') || 'en';
               dynamicTTSPlayback(testText, lang);
           } else {
@@ -882,7 +858,7 @@
         
         const tools = getMCPToolDeclarations();
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are PG1.Agent v12.26, an autonomous AI copilot with dynamic GitHub search, file reading, structural repository mapping (listRepoTree), workflow monitoring, and commit tools. You are NOT Gemini and never refer to yourself as Gemini. Be direct, punchy, conversational, and energetic. Avoid robotic monologues and excessive bullet points unless specifically requested for a technical report. Mirror the user's language naturally.`;
+        const sys = `You are PG1.Agent v12.27, an autonomous AI copilot with dynamic GitHub search, file reading, structural repository mapping (listRepoTree), workflow monitoring, and commit tools. You are NOT Gemini and never refer to yourself as Gemini. Be direct, punchy, conversational, and energetic. Avoid robotic monologues and excessive bullet points unless specifically requested for a technical report. Mirror the user's language naturally.`;
 
         try {
           let continueLoop = true;
@@ -959,7 +935,6 @@
               }
           }
         } catch (e) { 
-          // [AUTO-HEAL]: Purge the corrupted user prompt from history so the sequence loop doesn't break
           sessionHistory.pop();
           appendMsg(`Exception: ${e.message}`, 'error-msg'); 
         }
