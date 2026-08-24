@@ -136,15 +136,21 @@
         </select>
       </div>
       <div class="key-input-group">
-        <label style="font-size: 0.8em; color: #94a3b8;">Target Speech Language:</label>
+        <label style="font-size: 0.8em; color: #94a3b8;">Target Speech Language & Accent:</label>
         <select id="voiceLangSelect">
-          <option value="auto">Auto-Detect from Prompt</option>
-          <option value="en-US">English (US)</option>
-          <option value="en-GB">English (UK)</option>
-          <option value="it-IT">Italian (Italy)</option>
-          <option value="es-ES">Spanish (Spain)</option>
-          <option value="fr-FR">French (France)</option>
-          <option value="de-DE">German (Germany)</option>
+          <option value="auto">Auto-Detect Accent from Prompt</option>
+          <option value="en-US">English (US Accent)</option>
+          <option value="en-GB">English (UK Accent)</option>
+          <option value="es-ES">Spanish (Spain Accent)</option>
+          <option value="es-MX">Spanish (Latin America / Mexico)</option>
+          <option value="fr-FR">French (France Accent)</option>
+          <option value="it-IT">Italian (Italy Accent)</option>
+          <option value="de-DE">German (Germany Accent)</option>
+          <option value="pt-BR">Portuguese (Brazil Accent)</option>
+          <option value="ja-JP">Japanese (Japan Accent)</option>
+          <option value="ru-RU">Russian (Russia Accent)</option>
+          <option value="zh-CN">Chinese (Mandarin Accent)</option>
+          <option value="ar-SA">Arabic (Saudi / Standard)</option>
         </select>
       </div>
       <button id="saveVoiceSettingsBtn" class="primary-btn" style="width:100%;">Apply Voice Settings</button>
@@ -392,34 +398,86 @@
       input.focus();
     };
 
-    /* REACTIVE DUAL-GENDER NEURAL TTS ENGINE */
+    /* DYNAMIC MULTI-LANGUAGE & ACCENT INTEL ENGINE */
+    function detectLanguageAndAccent(promptText, outputText) {
+        const p = (promptText || '').toLowerCase();
+        const t = (outputText || '').toLowerCase();
+        const combined = `${p} ${t}`;
+
+        // 1. Explicit Prompt Intent & Accent Keywords
+        if (/\b(mexican|mexico|latam|castellano|español|spanish|habla en español)\b/.test(p)) {
+            return (p.includes('mexic') || p.includes('latam')) ? 'es-MX' : 'es-ES';
+        }
+        if (/\b(british|uk accent|english \(uk\)|in british)\b/.test(p)) return 'en-GB';
+        if (/\b(french|français|francais|en français)\b/.test(p)) return 'fr-FR';
+        if (/\b(italian|italiano|in italiano)\b/.test(p)) return 'it-IT';
+        if (/\b(german|deutsch|auf deutsch)\b/.test(p)) return 'de-DE';
+        if (/\b(portuguese|português|portugues|em português)\b/.test(p)) return 'pt-BR';
+        if (/\b(japanese|nihongo|日本語)\b/.test(p)) return 'ja-JP';
+        if (/\b(chinese|mandarin|中文)\b/.test(p)) return 'zh-CN';
+        if (/\b(russian|русский|по-русски)\b/.test(p)) return 'ru-RU';
+        if (/\b(arabic|العربية)\b/.test(p)) return 'ar-SA';
+
+        // 2. Non-Latin Script Detection
+        if (/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/.test(outputText)) {
+            if (/[\u3040-\u309F\u30A0-\u30FF]/.test(outputText)) return 'ja-JP';
+            return 'zh-CN';
+        }
+        if (/[\u0400-\u04FF]/.test(outputText)) return 'ru-RU';
+        if (/[\u0600-\u06FF]/.test(outputText)) return 'ar-SA';
+
+        // 3. High-Confidence Lexical & Accent Indicator Matching
+        const esMatch = (combined.match(/\b(hola|por favor|gracias|está|estos|cómo|claro|aquí|prueba|idioma|sistema|bienvenidos|también|motor|sintetizador|puedo)\b|[¿¡ñáéíóú]/gi) || []).length;
+        const frMatch = (combined.match(/\b(bonjour|salut|merci|oui|pourquoi|très|vous|avec|fonctionne|parfaitement|totale|fluidité|système)\b|[éèêàùç]/gi) || []).length;
+        const itMatch = (combined.match(/\b(ciao|grazie|prego|per favore|come|tutto|pronti|stabili|moduli|operativi|anche|perfetto)\b|[àèéìòù]/gi) || []).length;
+        const deMatch = (combined.match(/\b(hallo|danke|bitte|guten|schnittstelle|läuft|einwandfrei|latenz|nicht|sehr|bereit)\b|[äöüß]/gi) || []).length;
+        const ptMatch = (combined.match(/\b(olá|obrigado|você|não|está|tudo|bem|sistema|com certeza|falar)\b|[ãõç]/gi) || []).length;
+
+        const scores = [
+            { lang: 'es-ES', score: esMatch },
+            { lang: 'fr-FR', score: frMatch },
+            { lang: 'it-IT', score: itMatch },
+            { lang: 'de-DE', score: deMatch },
+            { lang: 'pt-BR', score: ptMatch }
+        ];
+        scores.sort((a, b) => b.score - a.score);
+
+        if (scores[0].score >= 2) {
+            return scores[0].lang;
+        }
+
+        return 'en-US';
+    }
+
+    /* REACTIVE DUAL-GENDER NEURAL TTS ENGINE WITH ACCENT MATCHING */
     function dynamicTTSPlayback(text, targetLang) {
         if (!('speechSynthesis' in window)) return;
         window.speechSynthesis.cancel();
         
         const voices = window.speechSynthesis.getVoices();
-        const shortLang = (targetLang || 'en-US').toLowerCase().substring(0, 2);
+        const primaryCode = (targetLang || 'en-US').toLowerCase();
+        const shortLang = primaryCode.substring(0, 2);
         const preferredGender = localStorage.getItem('PG1_VOICE_GENDER') || 'male';
 
-        const maleKeywords = ['david', 'guy', 'george', 'daniel', 'alex', 'james', 'thomas', 'mark', 'michael', 'male', 'richard', 'stefan', 'jorge', 'paul', 'oliver', 'rishi'];
-        const femaleKeywords = ['zira', 'susan', 'catherine', 'samantha', 'victoria', 'karen', 'female', 'jenny', 'aria', 'sarah', 'eva', 'hazel', 'alice'];
+        const maleKeywords = ['david', 'guy', 'george', 'daniel', 'alex', 'james', 'thomas', 'mark', 'michael', 'male', 'richard', 'stefan', 'jorge', 'paul', 'oliver', 'rishi', 'diego', 'carlos', 'enrique', 'pablo', 'mathieu', 'nicolas', 'henri', 'luca', 'marco', 'hans', 'klaus', 'miguel'];
+        const femaleKeywords = ['zira', 'susan', 'catherine', 'samantha', 'victoria', 'karen', 'female', 'jenny', 'aria', 'sarah', 'eva', 'hazel', 'alice', 'monica', 'paulina', 'lucia', 'helena', 'amélie', 'hortense', 'claire', 'elisa', 'chiara', 'petra', 'marlene', 'marta'];
         
         let scoredVoices = voices.map(v => {
             let score = 0;
-            const langCode = v.lang.toLowerCase();
-            if (langCode.startsWith(shortLang)) score += 50;
-            if (langCode === (targetLang || 'en-US').toLowerCase()) score += 20;
+            const langCode = v.lang.toLowerCase().replace('_', '-');
+            if (langCode === primaryCode) score += 60;
+            else if (langCode.startsWith(shortLang)) score += 35;
 
             const name = v.name.toLowerCase();
-            if (name.includes('premium') || name.includes('enhanced') || name.includes('natural') || name.includes('siri')) score += 25;
-            if (name.includes('google')) score += 15;
+            if (name.includes('natural') || name.includes('neural') || name.includes('online') || name.includes('premium') || name.includes('enhanced') || name.includes('siri')) score += 25;
+            if (name.includes('google') || name.includes('microsoft')) score += 15;
 
             if (preferredGender === 'male') {
-                if (maleKeywords.some(k => name.includes(k))) score += 40;
-                if (femaleKeywords.some(k => name.includes(k))) score -= 40;
+                if (maleKeywords.some(k => name.includes(k))) score += 30;
+                if (femaleKeywords.some(k => name.includes(k))) score -= 30;
             } else if (preferredGender === 'female') {
-                if (femaleKeywords.some(k => name.includes(k))) score += 40;
-                if (maleKeywords.some(k => name.includes(k))) score -= 40;
+                if (femaleKeywords.some(k => name.includes(k))) score += 30;
+                if (maleKeywords.some(k => name.includes(k))) score -= 30;
             }
 
             return { voice: v, score };
@@ -441,13 +499,19 @@
                 utterance.lang = targetLang || 'en-US';
             }
             
-            // Tailor pitch profile according to gender preference
-            if (preferredGender === 'male') {
-                utterance.rate = 0.98;
-                utterance.pitch = 0.92;
+            // Tailor pitch profile and native tempo per language
+            if (shortLang === 'es' || shortLang === 'it') {
+                utterance.rate = preferredGender === 'male' ? 1.02 : 1.05;
+                utterance.pitch = preferredGender === 'male' ? 0.95 : 1.05;
+            } else if (shortLang === 'fr') {
+                utterance.rate = preferredGender === 'male' ? 0.96 : 1.0;
+                utterance.pitch = preferredGender === 'male' ? 0.92 : 1.02;
+            } else if (shortLang === 'de') {
+                utterance.rate = preferredGender === 'male' ? 0.95 : 0.98;
+                utterance.pitch = preferredGender === 'male' ? 0.90 : 1.0;
             } else {
-                utterance.rate = 1.0;
-                utterance.pitch = 1.0;
+                utterance.rate = preferredGender === 'male' ? 0.98 : 1.0;
+                utterance.pitch = preferredGender === 'male' ? 0.92 : 1.0;
             }
 
             utterance.onstart = () => { if(coreLogo) coreLogo.classList.add('is-speaking'); };
@@ -1005,7 +1069,7 @@
           if (voiceActive) {
               const testText = "Voice system active. Sovereign Engine ready.";
               const lang = localStorage.getItem('PG1_VOICE_LANG') || 'en-US';
-              dynamicTTSPlayback(testText, lang);
+              dynamicTTSPlayback(testText, lang === 'auto' ? 'en-US' : lang);
           } else {
               if ('speechSynthesis' in window) window.speechSynthesis.cancel();
           }
@@ -1192,21 +1256,9 @@
                   
                   if (voiceActive) {
                       let overrideLang = localStorage.getItem('PG1_VOICE_LANG') || 'auto';
-                      let detectedLang = 'en-US';
-                      if (overrideLang !== 'auto') {
-                          detectedLang = overrideLang;
-                      } else if (cmd.toLowerCase().includes('ciao') || textOutput.toLowerCase().includes('come posso')) {
-                          detectedLang = 'it-IT';
-                      } else if (cmd.toLowerCase().includes('hola') || textOutput.toLowerCase().includes('cómo')) {
-                          detectedLang = 'es-ES';
-                      } else if (cmd.toLowerCase().includes('bonjour') || textOutput.toLowerCase().includes('salut')) {
-                          detectedLang = 'fr-FR';
-                      } else if (cmd.toLowerCase().includes('hallo') || textOutput.toLowerCase().includes('wie kann')) {
-                          detectedLang = 'de-DE';
-                      }
-
+                      let targetLang = overrideLang === 'auto' ? detectLanguageAndAccent(cmd, textOutput) : overrideLang;
                       let cleanText = textOutput.replace(/[*#_`~>]/g, '');
-                      dynamicTTSPlayback(cleanText, detectedLang);
+                      dynamicTTSPlayback(cleanText, targetLang);
                   }
 
                   sessionHistory.push({ role: "model", parts: [{ text: textOutput }] });
