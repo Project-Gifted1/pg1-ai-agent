@@ -71,7 +71,8 @@
     .terminal-controls-header { display: flex; justify-content: space-between; align-items: center; background: #111827; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--ui-border); font-size: 0.8em; margin-bottom: 10px; transition: border-color 0.3s; }
     .terminal-controls-header select { background: #0f172a; color: #38bdf8; border: 1px solid #334155; padding: 4px 8px; border-radius: 4px; font-size: 0.85em; outline: none; }
     .terminal-action-links { display: flex; gap: 10px; font-weight: 600; font-size: 0.85em; }
-    .terminal-action-links span { cursor: pointer; }
+    .terminal-action-links span { cursor: pointer; user-select: none; transition: opacity 0.2s; }
+    .terminal-action-links span:hover { opacity: 0.8; }
 
     .terminal-display { flex: 1; background: #0f172a; border: 1px solid var(--ui-border); border-radius: 10px; padding: 12px; overflow-y: auto; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 250px; position: relative; transition: border-color 0.3s; }
     .terminal-message { padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; word-wrap: break-word; position: relative; }
@@ -243,8 +244,8 @@
           </select>
         </div>
         <div class="terminal-action-links">
-          <span id="saveLogBtn" style="color:#10b981;">Logs</span>
-          <span id="exportPdfBtn" style="color:#38bdf8;">PDF</span>
+          <span id="saveLogBtn" style="color:#10b981;" title="Export text logs">Logs</span>
+          <span id="exportPdfBtn" style="color:#38bdf8;" title="Export printable PDF report">PDF</span>
         </div>
       </div>
       
@@ -886,6 +887,101 @@
         triggerHaptic('success');
       }
       terminalAppendFunc = appendMsg;
+
+      // Logs & PDF Export Functionality
+      const saveLogBtn = document.getElementById('saveLogBtn');
+      if (saveLogBtn) {
+          saveLogBtn.onclick = () => {
+              triggerHaptic('tap');
+              const messages = Array.from(termOut.querySelectorAll('.terminal-message'));
+              if (messages.length === 0) return alert('No terminal logs available to export.');
+              
+              let logContent = `Project Gifted1™ - Sovereign Engine v12.30 Logs\nExported: ${new Date().toLocaleString()}\n\n`;
+              messages.forEach(msg => {
+                  let prefix = '[SYSTEM]';
+                  if (msg.classList.contains('user-msg')) prefix = '[USER]';
+                  else if (msg.classList.contains('agent-msg')) prefix = '[PG1.AGENT]';
+                  else if (msg.classList.contains('error-msg')) prefix = '[ERROR]';
+                  else if (msg.classList.contains('repair-msg')) prefix = '[REPAIR]';
+
+                  const text = msg.innerText.replace(/Copy\s*Edit/g, '').trim();
+                  logContent += `${prefix}: ${text}\n----------------------------------------\n`;
+              });
+
+              const blob = new Blob([logContent], { type: 'text/plain;charset=utf-8' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `PG1_Terminal_Logs_${Date.now()}.txt`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+              triggerHaptic('success');
+          };
+      }
+
+      const exportPdfBtn = document.getElementById('exportPdfBtn');
+      if (exportPdfBtn) {
+          exportPdfBtn.onclick = () => {
+              triggerHaptic('tap');
+              const messages = Array.from(termOut.querySelectorAll('.terminal-message'));
+              if (messages.length === 0) return alert('No terminal logs available to export.');
+
+              let printWindow = window.open('', '_blank');
+              if (!printWindow) {
+                  window.print();
+                  return;
+              }
+
+              let logHtml = messages.map(msg => {
+                  let clone = msg.cloneNode(true);
+                  let btnGroup = clone.querySelector('.msg-btn-group');
+                  if (btnGroup) btnGroup.remove();
+                  let isUser = msg.classList.contains('user-msg');
+                  let isAgent = msg.classList.contains('agent-msg');
+                  let isError = msg.classList.contains('error-msg');
+                  let role = isUser ? 'User' : (isAgent ? 'PG1.Agent' : (isError ? 'System Error' : 'System'));
+                  let headerColor = isUser ? '#0284c7' : (isAgent ? '#059669' : (isError ? '#dc2626' : '#64748b'));
+                  let bgColor = isUser ? '#f0f9ff' : (isError ? '#fef2f2' : '#f8fafc');
+                  
+                  return `<div style="margin-bottom:14px; padding:12px; border-radius:8px; border:1px solid #e2e8f0; background:${bgColor};">
+                    <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:${headerColor}; margin-bottom:6px;">${role}</div>
+                    <div style="font-size:13px; line-height:1.5; color:#1e293b;">${clone.innerHTML}</div>
+                  </div>`;
+              }).join('');
+
+              printWindow.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                  <meta charset="utf-8">
+                  <title>PG1.Agent Terminal Session Export</title>
+                  <style>
+                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 30px; color: #0f172a; max-width: 800px; margin: 0 auto; }
+                    h1 { font-size: 22px; color: #0f172a; margin-bottom: 4px; }
+                    .meta { font-size: 12px; color: #64748b; margin-bottom: 25px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }
+                    @media print {
+                      body { padding: 15px; }
+                    }
+                  </style>
+                </head>
+                <body>
+                  <h1>Project Gifted1™ - Sovereign Engine v12.30</h1>
+                  <div class="meta">Exported: ${new Date().toLocaleString()} | Autonomous Session Telemetry & Logs</div>
+                  ${logHtml}
+                  <script>
+                    window.onload = function() {
+                      window.print();
+                    };
+                  <\/script>
+                </body>
+                </html>
+              `);
+              printWindow.document.close();
+              triggerHaptic('success');
+          };
+      }
 
       // Realtime Telemetry Simulation
       setInterval(() => {
