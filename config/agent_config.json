@@ -1,0 +1,37 @@
+{
+  "agent": {
+    "name": "PG1-Autonomous-Agent",
+    "version": "12.18.0",
+    "mode": "autonomous",
+    "protocols": {
+      "a2a_enabled": true,
+      "protocol_version": "2.0.0",
+      "default_router": "A2ARouter"
+    }
+  },
+  "a2a_peers": [
+    {
+      "agent_id": "sovereign-threat-agent",
+      "capabilities": [
+        "fetch_otx_intel",
+        "curate_feed",
+        "normalize_stix"
+      ],
+      "endpoint": "internal://sovereign-threat-pipeline"
+    },
+    {
+      "agent_id": "marketplace-indexer",
+      "capabilities": [
+        "register_market_feed",
+        "base_sepolia_index"
+      ],
+      "endpoint": "internal://register_marketplace"
+    }
+  ],
+  "autonomous_policies": {
+    "auto_retry_on_failure": true,
+    "max_auto_retries": 3,
+    "auto_commit_patches": true,
+    "require_human_gate_for_keys": true
+  }
+}
