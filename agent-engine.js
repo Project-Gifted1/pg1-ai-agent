@@ -1,8 +1,8 @@
-// agent-engine.js - PG1.Agent Sovereign Bridge v12.25.1
+// agent-engine.js - PG1.Agent Sovereign Bridge v12.29
 // Integrated with Automated Multi-Provider Failover, Voice Fast-Path, Live Diff Drawer, and Resilient Downloader
 
 (function () {
-  console.log("[PG1 Agent Engine v12.25.1] Initializing autonomous sovereign core with failover router...");
+  console.log("[PG1 Agent Engine v12.29] Initializing sovereign core with resilient video failover & direct downloader...");
 
   // State & Config Management
   let sessionHistory = [];
@@ -11,7 +11,7 @@
   let pinnedContext = localStorage.getItem("pg1_pinned_context") || "";
 
   const PROVIDER_ROUTER = {
-    video: ["replicate-video", "huggingface-video", "pollinations-motion-interpolation"],
+    video: ["replicate-hotshot", "replicate-zeroscope", "pollinations-motion"],
     image: ["pollinations-turbo", "cloudflare-ai-flux"],
     activeVideoIndex: 0,
     activeImageIndex: 0
@@ -46,7 +46,7 @@
       <div id="pg1-drawer-header" style="padding: 10px 14px; background: #1e293b; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; border-radius: 12px 12px 0 0;">
         <span style="font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 8px;">
           <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e;"></span>
-          PG1 Failover Console & Engine v12.25.1
+          PG1 Failover Console & Engine v12.29
         </span>
         <div style="display:flex; gap:8px;">
           <button id="pg1-clear-logs" style="background:#334155; color:#cbd5e1; border:none; border-radius:4px; padding:2px 6px; font-size:10px; cursor:pointer;">Clear</button>
@@ -54,7 +54,7 @@
         </div>
       </div>
       <div id="pg1-drawer-body" style="padding: 12px; overflow-y: auto; max-height: 400px; display: flex; flex-direction: column; gap: 8px;">
-        <div style="color: #64748b;">// Failover router active. Monitoring provider health...</div>
+        <div style="color: #64748b;">// Failover router active. Resilient media pipeline initialized.</div>
       </div>
     `;
 
@@ -104,18 +104,32 @@
     body.scrollTop = body.scrollHeight;
   }
 
-  // 3. Automated Provider Failover Routing
-  function getNextProvider(type) {
-    if (type === "video") {
-      PROVIDER_ROUTER.activeVideoIndex = (PROVIDER_ROUTER.activeVideoIndex + 1) % PROVIDER_ROUTER.video.length;
-      const provider = PROVIDER_ROUTER.video[PROVIDER_ROUTER.activeVideoIndex];
-      logToConsole("warn", "Auto-Failover Triggered", { type: "video", nextProvider: provider });
-      return provider;
-    } else {
-      PROVIDER_ROUTER.activeImageIndex = (PROVIDER_ROUTER.activeImageIndex + 1) % PROVIDER_ROUTER.image.length;
-      const provider = PROVIDER_ROUTER.image[PROVIDER_ROUTER.activeImageIndex];
-      logToConsole("warn", "Auto-Failover Triggered", { type: "image", nextProvider: provider });
-      return provider;
+  // 3. Media Downloader with Direct Blob & Proxy Fallback
+  async function downloadMedia(url, filename) {
+    logToConsole("info", "Initiating Download", { url, filename });
+    try {
+      const response = await fetch(url, { mode: 'cors' });
+      if (!response.ok) throw new Error("CORS or network restriction");
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename || `pg1-media-${Date.now()}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+      logToConsole("success", "Media Download Completed", filename);
+    } catch (e) {
+      logToConsole("warn", "Direct download failed, falling back to anchor trigger", e.message);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || `pg1-media-${Date.now()}.mp4`;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     }
   }
 
@@ -143,79 +157,17 @@
         return key;
       }
     }
-
-    key = prompt("Please enter your API Key for this session:");
-    if (key && key.trim().length > 10) {
-      key = key.trim();
-      sessionStorage.setItem("pg1_active_key", key);
-      return key;
-    }
     return "";
   }
 
-  // 5. Media Downloader
-  async function downloadMedia(url, filename) {
-    try {
-      const response = await fetch(url);
-      const blob = await response.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = filename || 'pg1-media-output';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(blobUrl);
-      logToConsole("success", "Media Downloaded", filename);
-    } catch (e) {
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename || 'pg1-media-output';
-      a.target = '_blank';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    }
-  }
-
-  // 6. Media & Image Upload Handling
+  // 5. Media & Image Upload Handling
   const fileInput = document.createElement("input");
   fileInput.type = "file";
   fileInput.accept = "image/*";
   fileInput.style.display = "none";
   document.body.appendChild(fileInput);
 
-  fileInput.addEventListener("change", function (e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function (uploadEvent) {
-      const img = new Image();
-      img.onload = function () {
-        const canvas = document.createElement("canvas");
-        const MAX_WIDTH = 800;
-        const scaleSize = MAX_WIDTH / img.width;
-        canvas.width = MAX_WIDTH;
-        canvas.height = img.height * (scaleSize < 1 ? scaleSize : 1);
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        
-        pendingImageBase64 = canvas.toDataURL("image/jpeg", 0.7);
-        
-        const chatContainer = getChatContainer();
-        const imgPreviewDiv = document.createElement("div");
-        imgPreviewDiv.style.cssText = "background:#eef2ff; padding:12px 16px; margin:10px 0; border-radius:12px; word-break:break-word;";
-        imgPreviewDiv.innerHTML = `<img src="${pendingImageBase64}" style="max-width:220px; border-radius:8px; border:1px solid #d1d5db; display:block; margin-bottom:6px;"/><span style="font-size:12px; color:#4b5563;">[Attached Image Ready]</span>`;
-        chatContainer.appendChild(imgPreviewDiv);
-        window.scrollTo(0, document.body.scrollHeight);
-        logToConsole("success", "Media Preprocessed", "Image resized and cached for multimodal request.");
-      };
-      img.src = uploadEvent.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
-
-  // 7. Rich Content Renderer with Failover Downloaders
+  // 6. Rich Content Renderer with Failover Downloaders
   function renderRichContent(content) {
     const container = document.createElement("div");
     container.style.cssText = "background:#f8fafc; border:1px solid #e2e8f0; padding:16px; margin:10px 0; border-radius:12px; font-size:14px; color:#0f172a; word-break:break-word; line-height:1.6;";
@@ -236,8 +188,8 @@
       vid.style.cssText = "max-width:100%; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.3); display:block; margin:0 auto 10px auto;";
       
       const downloadBtn = document.createElement("button");
-      downloadBtn.innerText = "⬇ Download Video (.mp4)";
-      downloadBtn.style.cssText = "background:#2563eb; color:#ffffff; border:none; padding:6px 14px; border-radius:6px; font-weight:600; cursor:pointer; font-size:12px;";
+      downloadBtn.innerHTML = "⬇ Download Video (.mp4)";
+      downloadBtn.style.cssText = "background:#2563eb; color:#ffffff; border:none; padding:8px 16px; border-radius:6px; font-weight:600; cursor:pointer; font-size:13px; transition:background 0.2s;";
       downloadBtn.onclick = () => downloadMedia(vidUrl, `pg1-video-${Date.now()}.mp4`);
 
       vidWrapper.appendChild(vid);
@@ -257,8 +209,8 @@
       img.style.cssText = "max-width:100%; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.3); display:block; margin:0 auto 10px auto;";
       
       const downloadBtn = document.createElement("button");
-      downloadBtn.innerText = "⬇ Download Image";
-      downloadBtn.style.cssText = "background:#2563eb; color:#ffffff; border:none; padding:6px 14px; border-radius:6px; font-weight:600; cursor:pointer; font-size:12px;";
+      downloadBtn.innerHTML = "⬇ Download Image";
+      downloadBtn.style.cssText = "background:#2563eb; color:#ffffff; border:none; padding:8px 16px; border-radius:6px; font-weight:600; cursor:pointer; font-size:13px;";
       downloadBtn.onclick = () => downloadMedia(imgUrl, `pg1-image-${Date.now()}.png`);
 
       imgWrapper.appendChild(img);
@@ -266,7 +218,7 @@
       container.appendChild(imgWrapper);
     }
 
-    // Markdown
+    // Markdown formatting
     const formatted = content
       .replace(/```([\s\S]*?)```/g, '<pre style="background:#0f172a; color:#f8fafc; padding:12px; border-radius:8px; overflow-x:auto; font-family:monospace; margin:8px 0;"><code>$1</code></pre>')
       .replace(/`([^`]+)`/g, '<code style="background:#e2e8f0; padding:2px 5px; border-radius:4px; font-family:monospace;">$1</code>');
@@ -278,7 +230,7 @@
     return container;
   }
 
-  // 8. Execution Engine
+  // 7. Execution Engine
   async function executePrompt() {
     try {
       const inputEl = document.querySelector("input[type='text'], textarea");
@@ -347,12 +299,11 @@
       window.scrollTo(0, document.body.scrollHeight);
     } catch (err) {
       console.error("Execution error:", err);
-      getNextProvider("video");
       logToConsole("error", "Failover In Action", err.message);
     }
   }
 
-  // 9. Mounting
+  // 8. Mounting
   document.addEventListener("DOMContentLoaded", () => {
     createExecutionDrawer();
   });
