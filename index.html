@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v12.21</title>
+  <title>Project Gifted1™ - Sovereign Engine v12.22</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
@@ -15,8 +15,8 @@
     @keyframes iconPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.8; } }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
     
-    /* Direct Logo Animation restored */
-    @keyframes coreBreathe { 0%, 100% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.2); transform: scale(1); } 50% { box-shadow: 0 0 35px rgba(56, 189, 248, 0.6), inset 0 0 15px rgba(56, 189, 248, 0.3); transform: scale(1.03); } }
+    /* Strict Logo-Only Breathe Animation */
+    @keyframes coreBreathe { 0%, 100% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.2); transform: scale(1); } 50% { box-shadow: 0 0 35px rgba(56, 189, 248, 0.7), inset 0 0 15px rgba(56, 189, 248, 0.4); transform: scale(1.04); } }
 
     .pulsing-bolt { animation: electricPulse 2s infinite; display: inline-block; }
     .spin-icon { display: inline-block; animation: fastSpin 2s linear infinite; }
@@ -53,8 +53,8 @@
     .progress-bar-container { width: 100%; background: #1e293b; border-radius: 4px; height: 5px; margin-top: 4px; margin-bottom: 8px; overflow: hidden; }
     .progress-bar { height: 100%; background: #38bdf8; border-radius: 4px; transition: width 0.5s ease; }
 
-    /* Direct Logo Animation restored */
-    .ai-core-logo { width: 130px; height: 130px; margin: 0 auto 15px auto; border-radius: 50%; border: 2px solid #38bdf8; overflow: hidden; animation: coreBreathe 3s ease-in-out infinite; background: #0b0f19; }
+    /* Direct Logo Implementation */
+    .ai-core-logo { width: 130px; height: 130px; margin: 0 auto 15px auto; border-radius: 50%; border: 2px solid #38bdf8; overflow: hidden; animation: coreBreathe 3s ease-in-out infinite; background: #0b0f19; position: relative; z-index: 2; }
     .ai-core-logo img { width: 100%; height: 100%; object-fit: cover; }
 
     .terminal-controls-header { display: flex; justify-content: space-between; align-items: center; background: #111827; padding: 8px 12px; border-radius: 8px; border: 1px solid #1f2937; font-size: 0.8em; margin-bottom: 10px; }
@@ -83,7 +83,6 @@
     .media-preview-box img { max-height: 120px; border-radius: 6px; max-width: 100%; border: 1px solid #334155; }
     .clear-media-btn { position: absolute; top: -8px; right: -8px; background: #ef4444; color: white; border: none; border-radius: 50%; width: 24px; height: 24px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10; }
 
-    /* Fixed Input Area Alignment for 4 elements */
     .terminal-input-area { display: flex; gap: 4px; align-items: center; background: #111827; padding: 8px; border-radius: 10px; border: 1px solid #1f2937; flex-shrink: 0; width: 100%; box-sizing: border-box; }
     .terminal-input-area input[type="text"], .utility-media-btn, .send-btn { height: 40px; box-sizing: border-box; margin: 0; }
     .terminal-input-area input[type="text"] { flex: 1; min-width: 0; padding: 0 8px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #0f172a; color: #f8fafc; }
@@ -130,7 +129,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v12.21 Sovereign Engine</div>
+    <div class="version">v12.22 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -220,7 +219,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.21 online. Dynamic Multilingual Audio Fallback Engine online. Logo animation restored.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.22 online. Dynamic Multilingual Audio Engine deployed. Logo pulse restored.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -329,25 +328,32 @@
       input.focus();
     };
 
-    function nativeTTSFallback(text, targetLang) {
+    /* Fully robust dynamic voice selection logic prioritizing Premium/Enhanced iOS packs */
+    function dynamicTTSPlayback(text, targetLang) {
         if (!('speechSynthesis' in window)) return;
         window.speechSynthesis.cancel();
+        
         const utterance = new SpeechSynthesisUtterance(text);
         const voices = window.speechSynthesis.getVoices();
+        const shortLang = targetLang.toLowerCase().substring(0, 2);
         
-        let scored = voices.map(v => {
+        let scoredVoices = voices.map(v => {
             let score = 0;
-            if (v.lang.toLowerCase().startsWith(targetLang.toLowerCase().substring(0, 2))) score += 50;
+            if (v.lang.toLowerCase().startsWith(shortLang)) score += 50;
             const name = v.name.toLowerCase();
-            if (name.includes('enhanced') || name.includes('siri') || name.includes('premium')) score += 20;
+            if (name.includes('premium') || name.includes('enhanced') || name.includes('siri')) score += 20;
             if (name.includes('google')) score += 10;
             return { voice: v, score };
-        }).filter(v => v.score > 0);
+        }).filter(v => v.score >= 50);
         
-        scored.sort((a, b) => b.score - a.score);
-        if (scored.length > 0) {
-            utterance.voice = scored[0].voice;
-            utterance.lang = scored[0].voice.lang;
+        scoredVoices.sort((a, b) => b.score - a.score);
+        
+        if (scoredVoices.length > 0) {
+            utterance.voice = scoredVoices[0].voice;
+            utterance.lang = scoredVoices[0].voice.lang;
+            if(scoredVoices[0].score < 70) {
+                console.log("No Enhanced voice detected. Download in iOS Accessibility settings for best quality.");
+            }
         } else {
             utterance.lang = targetLang;
         }
@@ -629,7 +635,7 @@
       document.getElementById('saveVoiceSettingsBtn').onclick = () => {
           localStorage.setItem('PG1_VOICE_LANG', document.getElementById('voiceLangSelect').value);
           voiceModal.classList.remove('active');
-          alert('Neural voice settings updated.');
+          alert('Neural voice settings updated. (Note: iOS users must download Apple Enhanced voices in Accessibility Settings).');
       };
 
       let cameraStream = null;
@@ -716,13 +722,9 @@
           if (voiceActive) {
               const testText = "Voice engine activated.";
               const lang = localStorage.getItem('PG1_VOICE_LANG') || 'en';
-              try {
-                  const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=${lang}&q=${encodeURIComponent(testText)}`;
-                  const dynamicAudio = new Audio(audioUrl);
-                  dynamicAudio.play().catch(e => nativeTTSFallback(testText, lang));
-              } catch(e) {
-                  nativeTTSFallback(testText, lang);
-              }
+              dynamicTTSPlayback(testText, lang);
+          } else {
+              if ('speechSynthesis' in window) window.speechSynthesis.cancel();
           }
       };
 
@@ -825,7 +827,7 @@
         
         const tools = getMCPToolDeclarations();
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are PG1.Agent v12.21, an autonomous sovereign AI. You possess real auto-repair interceptors, dynamic GitHub search, file reading, workflow monitoring, and commit tools. You are NOT Gemini, and you never refer to yourself as Gemini or a model built by Google. You can dynamically search, monitor, read, and commit to any GitHub repository using your MCP tools to autonomously repair infrastructure. When responding, provide well-structured analysis.`;
+        const sys = `You are PG1.Agent v12.22, an autonomous sovereign AI. You possess real auto-repair interceptors, dynamic GitHub search, file reading, workflow monitoring, and commit tools. You are NOT Gemini, and you never refer to yourself as Gemini or a model built by Google. You can dynamically search, monitor, read, and commit to any GitHub repository using your MCP tools to autonomously repair infrastructure. When responding, provide well-structured analysis.`;
 
         try {
           let continueLoop = true;
@@ -894,13 +896,7 @@
                       }
 
                       let cleanText = textOutput.replace(/[*#_`~>]/g, '').replace(/[\r\n]+/g, '. ').substring(0, 200);
-                      try {
-                          const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=${detectedLang}&q=${encodeURIComponent(cleanText)}`;
-                          const dynamicAudio = new Audio(audioUrl);
-                          dynamicAudio.play().catch(e => nativeTTSFallback(cleanText, detectedLang));
-                      } catch(e) {
-                          nativeTTSFallback(cleanText, detectedLang);
-                      }
+                      dynamicTTSPlayback(cleanText, detectedLang);
                   }
 
                   sessionHistory.push({ role: "model", parts: [{ text: textOutput }] });
