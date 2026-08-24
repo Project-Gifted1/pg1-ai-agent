@@ -520,30 +520,21 @@
         if(terminalAppendFunc) terminalAppendFunc(`[Video Pipeline] Dispatching prompt through Cloudflare Worker relay...`, "system-msg");
         
         try {
-            const workerUrl = "https://pg1-worker.gnfcw9w5rk.workers.dev";
+            const targetUrl = "https://api.replicate.com/v1/predictions";
+            const proxyList = ['https://pg1-worker.gnfcw9w5rk.workers.dev/?url=' + encodeURIComponent(targetUrl)];
             const payload = {
                 version: "8d952537baedccf15b3c3b0ebf4cbfb49e31d3f94e1d1ebc343468cc02ea1bc8",
                 input: { prompt: prompt, mp4: true }
             };
 
-            const postRes = await fetch(workerUrl + "?url=" + encodeURIComponent("https://api.replicate.com/v1/predictions"), {
+            const postRes = await fetch(proxyList[0], {
                 method: "POST",
                 headers: { "Authorization": `Bearer ${repKey}`, "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
             });
 
-            let prediction = null;
-            if (!postRes.ok) {
-                const fallbackRes = await fetch(workerUrl, {
-                    method: "POST",
-                    headers: { "Authorization": `Bearer ${repKey}`, "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
-                });
-                if (!fallbackRes.ok) throw new Error(`Worker relay returned HTTP ${postRes.status}`);
-                prediction = await fallbackRes.json();
-            } else {
-                prediction = await postRes.json();
-            }
+            if (!postRes.ok) throw new Error(`Worker relay returned HTTP ${postRes.status}`);
+            let prediction = await postRes.json();
 
             if (!prediction || !prediction.urls) {
                 throw new Error("Invalid response received from prediction endpoint.");
@@ -557,7 +548,7 @@
                 
                 try {
                     const getUrl = prediction.urls.get;
-                    const pollRes = await fetch(workerUrl + "?url=" + encodeURIComponent(getUrl), {
+                    const pollRes = await fetch('https://pg1-worker.gnfcw9w5rk.workers.dev/?url=' + encodeURIComponent(getUrl), {
                         method: "GET", headers: { "Authorization": `Bearer ${repKey}` }
                     });
                     if (pollRes.ok) {
