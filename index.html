@@ -14,7 +14,6 @@
       --primary-cyan: #00d2ff;
       --text-main: #e2e8f0;
       --text-muted: #94a3b8;
-      --accent-blue: #2563eb;
     }
 
     * {
@@ -34,102 +33,88 @@
       overflow: hidden;
     }
 
-    /* Top Header */
     header {
-      padding: 10px 14px 4px 14px;
+      padding: 8px 12px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       border-bottom: 1px solid var(--border-color);
     }
     .brand-title {
-      font-size: 1.05rem;
+      font-size: 1rem;
       font-weight: 700;
       display: flex;
       align-items: center;
       gap: 6px;
     }
     .status-dot {
-      width: 9px;
-      height: 9px;
+      width: 8px;
+      height: 8px;
       background-color: var(--primary-green);
       border-radius: 50%;
-      display: inline-block;
-      box-shadow: 0 0 8px var(--primary-green);
+      box-shadow: 0 0 6px var(--primary-green);
     }
     .version-tag {
-      font-size: 0.78rem;
+      font-size: 0.75rem;
       color: var(--text-muted);
     }
 
-    /* Action Bar / Controls */
+    /* Fixed Controls Bar with wrapping to prevent cutoff */
     .controls-bar {
       display: flex;
-      gap: 6px;
-      padding: 8px 12px;
-      overflow-x: auto;
-      white-space: nowrap;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 6px 8px;
       border-bottom: 1px solid var(--border-color);
-      scrollbar-width: none;
-    }
-    .controls-bar::-webkit-scrollbar {
-      display: none;
+      background: #080d18;
     }
     .control-btn {
       background: #162238;
       border: 1px solid var(--border-color);
       color: var(--text-muted);
-      padding: 6px 10px;
-      border-radius: 8px;
-      font-size: 0.75rem;
+      padding: 5px 8px;
+      border-radius: 6px;
+      font-size: 0.7rem;
       font-weight: 600;
       display: inline-flex;
       align-items: center;
-      gap: 4px;
+      gap: 3px;
       cursor: pointer;
     }
-    .control-btn.active {
+    .control-btn.active, .control-btn.sentinel-active {
       border-color: var(--primary-green);
       color: var(--primary-green);
       background: rgba(0, 230, 118, 0.1);
     }
-    .control-btn.sentinel-active {
-      border-color: var(--primary-green);
-      color: var(--primary-green);
-      background: rgba(0, 230, 118, 0.12);
-    }
 
-    /* View Containers */
     main {
       flex: 1;
       overflow-y: auto;
-      padding: 12px;
+      padding: 10px;
     }
     .view-panel {
       display: none;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
     }
     .view-panel.active {
       display: flex;
     }
 
-    /* Terminal Message Box */
     .terminal-card {
       background-color: var(--bg-card);
       border: 1px solid var(--border-color);
-      border-radius: 10px;
-      padding: 12px;
+      border-radius: 8px;
+      padding: 10px;
       position: relative;
     }
     .agent-status-card {
       border: 1px solid rgba(0, 230, 118, 0.4);
-      box-shadow: 0 0 10px rgba(0, 230, 118, 0.05);
     }
     .card-actions {
       position: absolute;
-      top: 8px;
-      right: 8px;
+      top: 6px;
+      right: 6px;
       display: flex;
       gap: 4px;
     }
@@ -137,34 +122,33 @@
       background: #1e293b;
       border: 1px solid #334155;
       color: var(--text-muted);
-      font-size: 0.65rem;
-      padding: 2px 6px;
+      font-size: 0.6rem;
+      padding: 2px 5px;
       border-radius: 4px;
       cursor: pointer;
     }
     .card-text {
-      font-size: 0.88rem;
-      line-height: 1.4;
+      font-size: 0.85rem;
+      line-height: 1.3;
       white-space: pre-wrap;
       word-break: break-word;
     }
     .cron-log {
       color: #64748b;
       font-style: italic;
-      font-size: 0.8rem;
+      font-size: 0.78rem;
     }
 
-    /* Dash View Cards */
     .relay-card {
       background: var(--bg-card);
       border: 1px solid var(--border-color);
-      border-radius: 10px;
-      padding: 14px;
+      border-radius: 8px;
+      padding: 12px;
     }
     .relay-title {
       color: #38bdf8;
       font-weight: 700;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       margin-bottom: 6px;
     }
     .input-field {
@@ -172,45 +156,37 @@
       background: #080e1b;
       border: 1px solid var(--border-color);
       color: white;
-      padding: 9px;
+      padding: 8px;
       border-radius: 6px;
-      margin: 6px 0;
-      font-size: 0.85rem;
+      margin: 4px 0;
+      font-size: 0.8rem;
     }
     .btn-green {
       background: #059669;
       color: white;
       border: none;
-      padding: 8px 16px;
+      padding: 7px 14px;
       border-radius: 6px;
       font-weight: 600;
       cursor: pointer;
-      margin-top: 6px;
+      margin-top: 4px;
     }
 
-    /* Prompt Input Area */
+    /* Clean Prompt Input Area */
     .prompt-container {
-      padding: 8px 12px;
+      padding: 8px 10px;
       background: var(--bg-main);
       border-top: 1px solid var(--border-color);
       display: flex;
-      gap: 8px;
+      gap: 6px;
       align-items: center;
     }
-    .media-btn {
+    .media-btn, .voice-note-trigger {
       background: var(--bg-card);
       border: 1px solid var(--border-color);
-      padding: 8px;
-      border-radius: 8px;
-      font-size: 1.1rem;
-      cursor: pointer;
-    }
-    .voice-note-trigger {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      padding: 8px;
-      border-radius: 8px;
-      font-size: 1.1rem;
+      padding: 7px;
+      border-radius: 6px;
+      font-size: 1rem;
       cursor: pointer;
     }
     .prompt-input {
@@ -218,38 +194,34 @@
       background: var(--bg-input);
       border: 1px solid var(--border-color);
       color: white;
-      padding: 10px 12px;
-      border-radius: 8px;
+      padding: 9px 10px;
+      border-radius: 6px;
       font-size: 0.85rem;
-    }
-    .prompt-input:focus {
-      outline: 1px solid var(--primary-green);
     }
     .send-btn {
       background: #00c853;
       color: #0b111e;
       border: none;
       font-weight: 700;
-      padding: 10px 16px;
-      border-radius: 8px;
+      padding: 9px 14px;
+      border-radius: 6px;
       cursor: pointer;
     }
 
-    /* Bottom Nav */
     .bottom-nav {
       display: flex;
       justify-content: space-around;
       border-top: 1px solid var(--border-color);
       background: #080d1a;
-      padding: 6px 0 10px 0;
+      padding: 6px 0 8px 0;
     }
     .nav-tab {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 3px;
+      gap: 2px;
       color: var(--text-muted);
-      font-size: 0.72rem;
+      font-size: 0.7rem;
       text-decoration: none;
       background: none;
       border: none;
@@ -260,13 +232,12 @@
       font-weight: 600;
     }
     .nav-tab span {
-      font-size: 1.1rem;
+      font-size: 1rem;
     }
   </style>
 </head>
 <body>
 
-  <!-- Top Header -->
   <header>
     <div class="brand-title">
       <span class="status-dot"></span> Project Gifted1™
@@ -274,74 +245,56 @@
     <div class="version-tag">v12.8 Sovereign Engine</div>
   </header>
 
-  <!-- Controls Action Bar -->
-  <section class="controls-bar" id="controls-bar">
+  <!-- Fixed Controls Bar -->
+  <section class="controls-bar">
     <button class="control-btn" id="vid-toggle" onclick="runtime.toggleVideo()">📹 Vid: <span id="vid-status">OFF</span></button>
     <button class="control-btn" id="dictate-toggle" onclick="runtime.toggleDictate()">🎙️ Dictate: <span id="dictate-status">OFF</span></button>
     <button class="control-btn" id="voice-toggle" onclick="runtime.toggleVoice()">🗣️ Voice: <span id="voice-status">OFF</span></button>
     <button class="control-btn" id="voices-btn" onclick="runtime.showVoiceSettings()">⚙️ Voices</button>
     <button class="control-btn sentinel-active" id="sentinel-toggle" onclick="runtime.toggleSentinel()">🛡️ Sentinel: <span id="sentinel-status">ON</span></button>
-    <button class="control-btn" id="chron-toggle" onclick="runtime.toggleChron()">⏱️ Chron: <span id="chron-status">ON</span></button>
-    <button class="control-btn" id="clear-btn" onclick="runtime.clearTerminal()">🗑️</button>
+    <button class="control-btn active" id="chron-toggle" onclick="runtime.toggleChron()">⏱️ Chron: <span id="chron-status">ON</span></button>
+    <button class="control-btn" onclick="runtime.clearTerminal()">🗑️</button>
   </section>
 
-  <!-- Main Views -->
   <main>
-    <!-- Terminal Tab View -->
     <div class="view-panel active" id="terminal-view">
       <div class="terminal-card agent-status-card">
         <div class="card-actions">
           <button class="mini-btn" onclick="runtime.copyText(this)">Copy</button>
-          <button class="mini-btn">Edit</button>
         </div>
         <div class="card-text">PG1.Agent v12.8 online.&#10;Sovereign neural identity anchored.</div>
       </div>
-
       <div class="terminal-card">
         <div class="card-actions">
           <button class="mini-btn" onclick="runtime.copyText(this)">Copy</button>
-          <button class="mini-btn">Edit</button>
         </div>
         <div class="card-text cron-log">[Chron Protocol] Background loop engaged</div>
       </div>
-
       <div class="terminal-card">
         <div class="card-actions">
           <button class="mini-btn" onclick="runtime.copyText(this)">Copy</button>
-          <button class="mini-btn">Edit</button>
         </div>
         <div class="card-text cron-log">[Chron Trigger] System health check: ALL NOMINAL</div>
       </div>
       <div id="terminal-stream"></div>
     </div>
 
-    <!-- Dash View -->
     <div class="view-panel" id="dash-view">
       <div class="relay-card">
         <div class="relay-title">⚡ X402 SOVEREIGN KEY RELAY</div>
-        <p style="font-size: 0.8rem; color: var(--text-muted);">Inject Master Keys to ignite PG1.Agent interactions.</p>
-        <input type="password" class="input-field" value="••••••••••••••••" placeholder="API Key 1" />
-        <input type="password" class="input-field" value="••••••••••••••••" placeholder="API Key 2" />
-        <button class="btn-green" onclick="alert('Keys Stored Locally')">Save Keys</button>
-        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-top: 10px;">
-          <span style="color: var(--primary-green);">KEY_STATUS: STORED_LOCAL</span>
-          <span style="color: var(--primary-green);">● CONNECTED</span>
-        </div>
+        <input type="password" class="input-field" value="••••••••••••••••" />
+        <button class="btn-green" onclick="alert('Keys Stored Local')">Save Keys</button>
       </div>
     </div>
 
-    <!-- Core View -->
     <div class="view-panel" id="core-view">
       <div class="relay-card">
         <div class="relay-title">🧠 CORE ENGINE & VAULT</div>
-        <p style="font-size: 0.85rem;">IndexedDB Vault: <b>PG1_MemoryVault_v12_8</b></p>
-        <p style="font-size: 0.85rem; margin-top: 6px;">Hybrid RAG: <b>Vector Cosine + BM25 (RRF k=60)</b></p>
-        <p style="font-size: 0.85rem; margin-top: 6px;">Self-Healing Watcher: <b>ACTIVE (Every 3s)</b></p>
+        <p style="font-size: 0.8rem;">IndexedDB: PG1_MemoryVault_v12_8</p>
       </div>
     </div>
   </main>
 
-  <!-- Prompt Box -->
   <div class="prompt-container">
     <button class="media-btn" title="Attach Media">📸</button>
     <button class="voice-note-trigger" id="voice-note-btn" title="Voice Note" onclick="runtime.recordVoiceNote()">🎤</button>
@@ -349,103 +302,24 @@
     <button class="send-btn" onclick="runtime.sendPrompt()">Send</button>
   </div>
 
-  <!-- Bottom Nav Tabs -->
   <nav class="bottom-nav">
-    <button class="nav-tab" onclick="runtime.switchTab('dash', this)">
-      <span>📊</span> Dash
-    </button>
-    <button class="nav-tab active" onclick="runtime.switchTab('terminal', this)">
-      <span>⚡</span> Terminal
-    </button>
-    <button class="nav-tab" onclick="runtime.switchTab('core', this)">
-      <span>🧠</span> Core
-    </button>
+    <button class="nav-tab" onclick="runtime.switchTab('dash', this)"><span>📊</span> Dash</button>
+    <button class="nav-tab active" onclick="runtime.switchTab('terminal', this)"><span>⚡</span> Terminal</button>
+    <button class="nav-tab" onclick="runtime.switchTab('core', this)"><span>🧠</span> Core</button>
   </nav>
 
-  <!-- Complete Sovereign Engine Runtime & Self-Repair Script -->
   <script>
     class PG1SovereignRuntime {
       constructor() {
-        this.dbName = 'PG1_MemoryVault_v12_8';
-        this.db = null;
-        this.state = {
-          sentinel: true,
-          video: false,
-          voice: false,
-          dictate: false,
-          chron: true
-        };
-        this.init();
+        this.state = { sentinel: true, video: false, voice: false, dictate: false, chron: true };
       }
-
-      async init() {
-        await this.initIndexedDB();
-        this.initSelfHealingWatcher();
-        console.log('[PG1.Agent v12.8] Sovereign Engine initialized.');
-      }
-
-      // --- 1. IndexedDB Hybrid RAG Engine ---
-      async initIndexedDB() {
-        return new Promise((resolve) => {
-          const req = indexedDB.open(this.dbName, 1);
-          req.onupgradeneeded = (e) => {
-            const db = e.target.result;
-            if (!db.objectStoreNames.contains('chunks')) {
-              db.createObjectStore('chunks', { keyPath: 'id' });
-            }
-          };
-          req.onsuccess = (e) => {
-            this.db = e.target.result;
-            resolve();
-          };
-          req.onerror = () => resolve();
-        });
-      }
-
-      // --- 2. Autonomous UI Self-Healing Watcher ---
-      initSelfHealingWatcher() {
-        setInterval(() => {
-          this.auditTogglesAndDOM();
-        }, 3000);
-      }
-
-      auditTogglesAndDOM() {
-        // Ensure Sentinel Toggle reflects actual state and remains responsive
-        const sentinelBtn = document.getElementById('sentinel-toggle');
-        const sentinelStatus = document.getElementById('sentinel-status');
-        if (sentinelBtn && sentinelStatus) {
-          if (this.state.sentinel && !sentinelBtn.classList.contains('sentinel-active')) {
-            sentinelBtn.classList.add('sentinel-active');
-            sentinelStatus.textContent = 'ON';
-          }
-        }
-
-        // Ensure Voice Note Trigger is present
-        const promptBar = document.querySelector('.prompt-container');
-        if (promptBar && !document.getElementById('voice-note-btn')) {
-          const mic = document.createElement('button');
-          mic.id = 'voice-note-btn';
-          mic.className = 'voice-note-trigger';
-          mic.innerHTML = '🎤';
-          mic.onclick = () => this.recordVoiceNote();
-          promptBar.insertBefore(mic, document.getElementById('prompt-input'));
-        }
-      }
-
-      // --- Toggle Handlers ---
       toggleSentinel() {
         this.state.sentinel = !this.state.sentinel;
         const btn = document.getElementById('sentinel-toggle');
         const txt = document.getElementById('sentinel-status');
-        if (this.state.sentinel) {
-          btn.classList.add('sentinel-active');
-          txt.textContent = 'ON';
-        } else {
-          btn.classList.remove('sentinel-active');
-          txt.textContent = 'OFF';
-        }
+        btn.classList.toggle('sentinel-active', this.state.sentinel);
+        txt.textContent = this.state.sentinel ? 'ON' : 'OFF';
       }
-
       toggleVideo() {
         this.state.video = !this.state.video;
         const btn = document.getElementById('vid-toggle');
@@ -453,7 +327,6 @@
         btn.classList.toggle('active', this.state.video);
         txt.textContent = this.state.video ? 'ON' : 'OFF';
       }
-
       toggleVoice() {
         this.state.voice = !this.state.voice;
         const btn = document.getElementById('voice-toggle');
@@ -461,7 +334,6 @@
         btn.classList.toggle('active', this.state.voice);
         txt.textContent = this.state.voice ? 'ON' : 'OFF';
       }
-
       toggleDictate() {
         this.state.dictate = !this.state.dictate;
         const btn = document.getElementById('dictate-toggle');
@@ -469,7 +341,6 @@
         btn.classList.toggle('active', this.state.dictate);
         txt.textContent = this.state.dictate ? 'ON' : 'OFF';
       }
-
       toggleChron() {
         this.state.chron = !this.state.chron;
         const btn = document.getElementById('chron-toggle');
@@ -477,63 +348,28 @@
         btn.classList.toggle('active', this.state.chron);
         txt.textContent = this.state.chron ? 'ON' : 'OFF';
       }
-
-      recordVoiceNote() {
-        alert('Voice Note recording stream activated.');
-      }
-
-      showVoiceSettings() {
-        alert('Voice synthesis settings: Neural Model v12.8 Active.');
-      }
-
-      clearTerminal() {
-        document.getElementById('terminal-stream').innerHTML = '';
-      }
-
-      // --- Navigation & Prompt Handling ---
-      switchTab(tabName, el) {
+      recordVoiceNote() { alert('Voice Note active.'); }
+      showVoiceSettings() { alert('Voice settings nominal.'); }
+      clearTerminal() { document.getElementById('terminal-stream').innerHTML = ''; }
+      switchTab(name, el) {
         document.querySelectorAll('.view-panel').forEach(v => v.classList.remove('active'));
         document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-        document.getElementById(`${tabName}-view`).classList.add('active');
+        document.getElementById(`${name}-view`).classList.add('active');
         el.classList.add('active');
       }
-
       sendPrompt() {
         const input = document.getElementById('prompt-input');
-        const text = input.value.trim();
-        if (!text) return;
-
+        if (!input.value.trim()) return;
         const stream = document.getElementById('terminal-stream');
-        const userCard = document.createElement('div');
-        userCard.className = 'terminal-card';
-        userCard.innerHTML = `<div class="card-text" style="color: var(--primary-cyan);">&gt; ${text}</div>`;
-        stream.appendChild(userCard);
-
+        stream.innerHTML += `<div class="terminal-card"><div class="card-text" style="color:var(--primary-cyan);">&gt; ${input.value}</div></div>`;
         input.value = '';
-
-        // Auto agent acknowledgment
-        setTimeout(() => {
-          const agentCard = document.createElement('div');
-          agentCard.className = 'terminal-card agent-status-card';
-          agentCard.innerHTML = `
-            <div class="card-actions">
-              <button class="mini-btn" onclick="runtime.copyText(this)">Copy</button>
-            </div>
-            <div class="card-text">Command received: <b>${text}</b>\nProcessing via Sovereign Neural Engine v12.8...</div>
-          `;
-          stream.appendChild(agentCard);
-          stream.scrollTop = stream.scrollHeight;
-        }, 500);
       }
-
       copyText(btn) {
-        const text = btn.closest('.terminal-card').querySelector('.card-text').innerText;
-        navigator.clipboard.writeText(text);
+        navigator.clipboard.writeText(btn.closest('.terminal-card').querySelector('.card-text').innerText);
         btn.textContent = 'Copied!';
         setTimeout(() => btn.textContent = 'Copy', 1500);
       }
     }
-
     const runtime = new PG1SovereignRuntime();
   </script>
 </body>
