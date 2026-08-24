@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v12.27</title>
+  <title>Project Gifted1™ - Sovereign Engine v12.28</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     html, body { height: 100dvh; background-color: #0b0f19; color: #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
@@ -127,7 +127,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v12.27 Sovereign Engine</div>
+    <div class="version">v12.28 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -217,7 +217,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.27 online. Video proxy TypeError bypass engaged.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.28 online. Video pipeline secured via enforced header relay. Awaiting payload.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -397,7 +397,6 @@
         });
     }
 
-    /* Core execution fetch with bulletproof CORS interceptor */
     async function secureFetch(url, options = {}, timeoutMs = 12000) {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -409,7 +408,6 @@
             return res;
         } catch (error) {
             clearTimeout(id);
-            // This safely intercepts CORS TypeErrors and routes via the proxy bridge
             const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(url);
             return await fetch(proxyUrl, options);
         }
@@ -512,16 +510,24 @@
         }
     }
 
-    /* Fixed Video Generator Using secureFetch Routing */
+    /* Fixed Video Generator Using Properly Encoded Proxy Strategy */
     async function generateVideoClip(prompt) {
         const repKey = localStorage.getItem('PG1_REP_KEY');
         if (!repKey) return "ERROR: Replicate API Key not found in Dash tab.";
         if(terminalAppendFunc) terminalAppendFunc(`[Replicate API] Initiating real video generation...`, "system-msg");
         try {
-            const startRes = await secureFetch("https://api.replicate.com/v1/models/lucataco/hotshot-xl/predictions", {
-                method: "POST", headers: { "Authorization": `Bearer ${repKey}`, "Content-Type": "application/json", "Prefer": "wait" },
+            const targetUrl = "https://api.replicate.com/v1/models/lucataco/hotshot-xl/predictions";
+            const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(targetUrl);
+            
+            const startRes = await fetch(proxyUrl, {
+                method: "POST", 
+                headers: { "Authorization": `Bearer ${repKey}`, "Content-Type": "application/json", "Prefer": "wait" },
                 body: JSON.stringify({ input: { prompt: prompt, mp4: true } })
             });
+            
+            if (!startRes.ok) {
+                throw new Error(`Replicate API returned status ${startRes.status}. Check your Replicate API key in the Dash tab.`);
+            }
             
             let prediction = await startRes.json();
             let loopCount = 0;
@@ -531,7 +537,8 @@
                 loopCount++;
                 if(terminalAppendFunc) terminalAppendFunc(`[Replicate API] Status: ${prediction.status} (${loopCount}/30)...`, "system-msg");
                 
-                const pollRes = await secureFetch(prediction.urls.get, {
+                const getProxyUrl = "https://corsproxy.io/?" + encodeURIComponent(prediction.urls.get);
+                const pollRes = await fetch(getProxyUrl, {
                     method: "GET", headers: { "Authorization": `Bearer ${repKey}` }
                 });
                 prediction = await pollRes.json();
@@ -545,7 +552,7 @@
               <a href="${videoUrl}" download="PG1_Video_${Date.now()}.mp4" target="_blank" class="primary-btn" style="display:inline-block; margin-top:12px; background:#10b981; color:#fff; text-decoration:none;">⬇ Download Video</a>
             </div>`;
         } catch(e) { 
-            return `[Video Pipeline Error] ${e.message}. Ensure your Replicate Key is valid and CORS proxy is reachable.`; 
+            return `[Video Pipeline Error] ${e.message}`; 
         }
     }
 
@@ -858,7 +865,7 @@
         
         const tools = getMCPToolDeclarations();
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are PG1.Agent v12.27, an autonomous AI copilot with dynamic GitHub search, file reading, structural repository mapping (listRepoTree), workflow monitoring, and commit tools. You are NOT Gemini and never refer to yourself as Gemini. Be direct, punchy, conversational, and energetic. Avoid robotic monologues and excessive bullet points unless specifically requested for a technical report. Mirror the user's language naturally.`;
+        const sys = `You are PG1.Agent v12.28, an autonomous AI copilot with dynamic GitHub search, file reading, structural repository mapping (listRepoTree), workflow monitoring, and commit tools. You are NOT Gemini and never refer to yourself as Gemini. Be direct, punchy, conversational, and energetic. Avoid robotic monologues and excessive bullet points unless specifically requested for a technical report. Mirror the user's language naturally.`;
 
         try {
           let continueLoop = true;
