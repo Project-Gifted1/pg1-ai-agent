@@ -321,10 +321,9 @@
     <button class="nav-item" data-target="view-node"><span>🧠</span>Core</button>
   </nav>
 
-  <script>
+    <script>
     let terminalAppendFunc = null;
 
-    /* TACTILE HAPTIC ENGINE */
     function triggerHaptic(type) {
         if (!navigator.vibrate) return;
         try {
@@ -334,38 +333,27 @@
         } catch(e) {}
     }
 
-    /* SYSTEM STATE LIGHTING */
     function setSystemState(state) {
         document.body.className = '';
         if (state === 'active') document.body.classList.add('sys-active');
-        if (state === 'error') {
-            document.body.classList.add('sys-error');
-            triggerHaptic('error');
-        }
+        if (state === 'error') { document.body.classList.add('sys-error'); triggerHaptic('error'); }
     }
 
-    /* WEB AUDIO TYPEWRITER SOUND */
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playKeystroke() {
         if (audioCtx.state === 'suspended') audioCtx.resume();
         try {
-            const oscillator = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
-            oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(800 + Math.random() * 300, audioCtx.currentTime);
-            gainNode.gain.setValueAtTime(0.008, audioCtx.currentTime);
-            oscillator.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-            oscillator.start();
-            oscillator.stop(audioCtx.currentTime + 0.015);
+            const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+            osc.type = 'sine'; osc.frequency.setValueAtTime(800 + Math.random() * 300, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.008, audioCtx.currentTime);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.015);
         } catch(e) {}
     }
 
-        function renderMarkdownToHtml(raw) {
+    function renderMarkdownToHtml(raw) {
         if (!raw) return "";
-        // Safely escape HTML tags to prevent DOM corruption and UI freezing
         let safeRaw = raw.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        
         return safeRaw
             .replace(/### (.*?)([\r\n]|$)/g, '<h3>$1</h3>')
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -375,32 +363,20 @@
             .replace(/\n\n/g, '<br><br>');
     }
 
-
     window.saveMasterKeys = function() {
         triggerHaptic('tap');
-        const kIn = document.getElementById('masterKeyInput');
-        const gIn = document.getElementById('githubKeyInput');
-        const rIn = document.getElementById('replicateKeyInput');
+        const kIn = document.getElementById('masterKeyInput'); const gIn = document.getElementById('githubKeyInput');
         if (kIn && kIn.value && kIn.value !== '••••••••••••••••') localStorage.setItem('PG1_KEY', kIn.value.trim());
         if (gIn && gIn.value && gIn.value !== '••••••••••••••••') localStorage.setItem('PG1_GH_PAT', gIn.value.trim());
-        if (rIn && rIn.value && rIn.value !== '••••••••••••••••') localStorage.setItem('PG1_REP_KEY', rIn.value.trim());
-        window.checkKeys();
-        triggerHaptic('success');
-        alert('Credentials securely saved.');
+        window.checkKeys(); triggerHaptic('success'); alert('Credentials securely saved.');
     };
 
     window.checkKeys = function() {
-        const kIn = document.getElementById('masterKeyInput');
-        const gIn = document.getElementById('githubKeyInput');
-        const rIn = document.getElementById('replicateKeyInput');
-        const stat = document.getElementById('keyStatusText');
-        const connBadge = document.getElementById('connectionBadge');
-        if (!kIn || !gIn || !rIn || !stat || !connBadge) return;
-        const hasCore = localStorage.getItem('PG1_KEY');
-        const hasGh = localStorage.getItem('PG1_GH_PAT');
-        if (hasCore && hasGh) {
+        const kIn = document.getElementById('masterKeyInput'); const gIn = document.getElementById('githubKeyInput');
+        const stat = document.getElementById('keyStatusText'); const connBadge = document.getElementById('connectionBadge');
+        if (!kIn || !gIn || !stat || !connBadge) return;
+        if (localStorage.getItem('PG1_KEY') && localStorage.getItem('PG1_GH_PAT')) {
             kIn.value = '••••••••••••••••'; gIn.value = '••••••••••••••••';
-            if (localStorage.getItem('PG1_REP_KEY')) rIn.value = '••••••••••••••••';
             stat.innerText = 'KEY_STATUS: STORED_LOCAL'; stat.style.color = '#10b981';
             connBadge.innerText = '● CONNECTED'; connBadge.style.color = '#10b981';
         } else {
@@ -412,207 +388,64 @@
     window.copyMsg = function(btn) {
       triggerHaptic('tap');
       const msgDiv = btn.closest('.terminal-message');
-      const text = msgDiv.innerText.replace('Copy', '').replace('Edit', '').trim();
-      navigator.clipboard.writeText(text).then(() => alert('Message copied.'));
+      navigator.clipboard.writeText(msgDiv.innerText.replace('Copy', '').replace('Edit', '').trim()).then(() => alert('Copied.'));
     };
 
     window.editMsg = function(btn) {
       triggerHaptic('tap');
       const msgDiv = btn.closest('.terminal-message');
-      const currentText = msgDiv.innerText.replace('Copy', '').replace('Edit', '').trim();
       const input = document.getElementById('terminalInput');
-      input.value = currentText;
-      input.focus();
+      input.value = msgDiv.innerText.replace('Copy', '').replace('Edit', '').trim(); input.focus();
     };
 
-    /* DYNAMIC MULTI-LANGUAGE & ACCENT INTEL ENGINE */
-    function detectLanguageAndAccent(promptText, outputText) {
-        const p = (promptText || '').toLowerCase();
-        const t = (outputText || '').toLowerCase();
-        const combined = `${p} ${t}`;
-
-        if (/\b(mexican|mexico|latam|castellano|español|spanish|habla en español)\b/.test(p)) return (p.includes('mexic') || p.includes('latam')) ? 'es-MX' : 'es-ES';
-        if (/\b(british|uk accent|english \(uk\)|in british)\b/.test(p)) return 'en-GB';
-        if (/\b(french|français|francais|en français)\b/.test(p)) return 'fr-FR';
-        if (/\b(italian|italiano|in italiano)\b/.test(p)) return 'it-IT';
-        if (/\b(german|deutsch|auf deutsch)\b/.test(p)) return 'de-DE';
-        if (/\b(portuguese|português|portugues|em português)\b/.test(p)) return 'pt-BR';
-        if (/\b(japanese|nihongo|日本語)\b/.test(p)) return 'ja-JP';
-        if (/\b(chinese|mandarin|中文)\b/.test(p)) return 'zh-CN';
-        if (/\b(russian|русский|по-русски)\b/.test(p)) return 'ru-RU';
-        if (/\b(arabic|العربية)\b/.test(p)) return 'ar-SA';
-
-        if (/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/.test(outputText)) return /[\u3040-\u309F\u30A0-\u30FF]/.test(outputText) ? 'ja-JP' : 'zh-CN';
-        if (/[\u0400-\u04FF]/.test(outputText)) return 'ru-RU';
-        if (/[\u0600-\u06FF]/.test(outputText)) return 'ar-SA';
-        return 'en-US';
-    }
-
-    /* REACTIVE DUAL-GENDER NEURAL TTS ENGINE */
-    function dynamicTTSPlayback(text, targetLang) {
-        if (!('speechSynthesis' in window)) return;
-        window.speechSynthesis.cancel();
-        
-        const voices = window.speechSynthesis.getVoices();
-        const primaryCode = (targetLang || 'en-US').toLowerCase();
-        const shortLang = primaryCode.substring(0, 2);
-        const preferredGender = localStorage.getItem('PG1_VOICE_GENDER') || 'male';
-
-        const maleKeywords = ['david', 'guy', 'george', 'daniel', 'alex', 'james', 'thomas', 'mark', 'michael', 'male', 'richard', 'stefan', 'jorge', 'paul', 'oliver', 'rishi', 'diego', 'carlos', 'enrique', 'pablo', 'mathieu', 'nicolas', 'henri', 'luca', 'marco', 'hans', 'klaus', 'miguel'];
-        const femaleKeywords = ['zira', 'susan', 'catherine', 'samantha', 'victoria', 'karen', 'female', 'jenny', 'aria', 'sarah', 'eva', 'hazel', 'alice', 'monica', 'paulina', 'lucia', 'helena', 'amélie', 'hortense', 'claire', 'elisa', 'chiara', 'petra', 'marlene', 'marta'];
-        
-        let scoredVoices = voices.map(v => {
-            let score = 0;
-            const langCode = v.lang.toLowerCase().replace('_', '-');
-            if (langCode === primaryCode) score += 60;
-            else if (langCode.startsWith(shortLang)) score += 35;
-
-            const name = v.name.toLowerCase();
-            if (name.includes('natural') || name.includes('neural') || name.includes('online') || name.includes('premium')) score += 25;
-
-            if (preferredGender === 'male') {
-                if (maleKeywords.some(k => name.includes(k))) score += 30;
-                if (femaleKeywords.some(k => name.includes(k))) score -= 30;
-            } else if (preferredGender === 'female') {
-                if (femaleKeywords.some(k => name.includes(k))) score += 30;
-                if (maleKeywords.some(k => name.includes(k))) score -= 30;
-            }
-
-            return { voice: v, score };
-        }).filter(v => v.score >= 30);
-        
-        scoredVoices.sort((a, b) => b.score - a.score);
-        let selectedVoice = scoredVoices.length > 0 ? scoredVoices[0].voice : null;
-
-        const sentences = text.match(/[^.!?\n]+[.!?\n]+/g) || [text];
-        const coreLogo = document.getElementById('aiCoreLogo');
-
-        sentences.forEach((sentence, idx) => {
-            if (sentence.trim() === "") return;
-            const utterance = new SpeechSynthesisUtterance(sentence.trim());
-            if (selectedVoice) { utterance.voice = selectedVoice; utterance.lang = selectedVoice.lang; }
-            else { utterance.lang = targetLang || 'en-US'; }
-            
-            utterance.rate = preferredGender === 'male' ? 0.98 : 1.0;
-            utterance.pitch = preferredGender === 'male' ? 0.92 : 1.0;
-            
-            utterance.onstart = () => { if(coreLogo) coreLogo.classList.add('is-speaking'); };
-            utterance.onend = () => { if(idx === sentences.length - 1 && coreLogo) coreLogo.classList.remove('is-speaking'); };
-            utterance.onerror = () => { if(coreLogo) coreLogo.classList.remove('is-speaking'); };
-
-            window.speechSynthesis.speak(utterance);
-        });
-    }
-
-    /* SOVEREIGN THREAD MANAGER AND RAG DB */
-    let db = null;
-    let threadDb = null;
-    let currentThreadId = Date.now();
-
-    try {
-        const dbRequest = indexedDB.open("PG1_VectorVault", 1);
-        dbRequest.onupgradeneeded = e => { 
-            if (!e.target.result.objectStoreNames.contains("memories")) e.target.result.createObjectStore("memories", { keyPath: "id", autoIncrement: true }); 
-        };
-        dbRequest.onsuccess = e => { db = e.target.result; };
-
-        const tDbReq = indexedDB.open("PG1_ThreadsDB", 1);
-        tDbReq.onupgradeneeded = e => { 
-            if (!e.target.result.objectStoreNames.contains("threads")) e.target.result.createObjectStore("threads", { keyPath: "id" }); 
-        };
-        tDbReq.onsuccess = e => { threadDb = e.target.result; };
-    } catch(err) { db = null; threadDb = null; }
-
-    function saveToVault(text) { 
-        try {
-            if(!db || !text) return; 
-            const tx = db.transaction("memories", "readwrite"); 
-            tx.objectStore("memories").add({text: text, ts: Date.now()}); 
-        } catch(e) {}
-    }
-    
-    async function queryVault(query) {
-        return new Promise(res => {
-            try {
-                if(!db) return res("");
-                const tx = db.transaction("memories", "readonly");
-                const req = tx.objectStore("memories").getAll();
-                req.onsuccess = () => {
-                    const words = query.toLowerCase().split(' ').filter(w => w.length > 4);
-                    if (words.length === 0) return res("");
-                    const matches = (req.result || []).filter(m => words.some(w => m.text.toLowerCase().includes(w))).slice(-2);
-                    res(matches.map(m => m.text).join(' | '));
-                };
-                req.onerror = () => res("");
-            } catch(e) { res(""); }
-        });
-    }
-
-    async function secureFetch(url, options = {}, timeoutMs = 12000) {
-        const controller = new AbortController();
-        const id = setTimeout(() => controller.abort(), timeoutMs);
-        options.signal = controller.signal;
-        try {
-            const res = await fetch(url, options);
-            clearTimeout(id);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return res;
-        } catch (error) {
-            clearTimeout(id);
-            return await fetch("https://corsproxy.io/?" + encodeURIComponent(url), options);
-        }
-    }
-
-    /* FULL MCP TOOL LOGIC */
+    /* FULL MCP TOOL REGISTRY RESTORED */
     async function searchGitHubRepos(query) {
-        const pat = localStorage.getItem('PG1_GH_PAT');
-        if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
-        if(terminalAppendFunc) terminalAppendFunc(`[GitHub API] Searching repositories for: ${query}...`, "system-msg", true);
+        const pat = localStorage.getItem('PG1_GH_PAT'); if (!pat) return "ERROR: GitHub PAT missing.";
+        if(terminalAppendFunc) terminalAppendFunc(`[GitHub API] Searching for: ${query}...`, "system-msg", true);
         try {
             const res = await fetch(`https://api.github.com/user/repos?per_page=100&sort=updated`, { headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github.v3+json" } });
-            if (!res.ok) throw new Error(`GitHub API status ${res.status}`);
+            if (!res.ok) throw new Error(`API status ${res.status}`);
             const repos = await res.json();
-            const matched = repos.filter(r => r.name.toLowerCase().includes(query.toLowerCase()) || (r.description && r.description.toLowerCase().includes(query.toLowerCase())));
-            if(matched.length === 0) return `No repositories found matching "${query}".`;
-            return `[Found Repositories]\n` + matched.map(r => `- ${r.full_name}: ${r.description || 'No description'}`).join('\n');
-        } catch(e) { throw new Error(`GitHub Search failed: ${e.message}`); }
+            const matched = repos.filter(r => r.name.toLowerCase().includes(query.toLowerCase()));
+            return matched.length === 0 ? `No repos found.` : `[Found Repos]\n` + matched.map(r => `- ${r.full_name}`).join('\n');
+        } catch(e) { throw new Error(`Search failed: ${e.message}`); }
+    }
+
+    async function readGitHubFile(repoFullName, filePath) {
+        const pat = localStorage.getItem('PG1_GH_PAT'); if (!pat) return "ERROR: GitHub PAT missing.";
+        if(terminalAppendFunc) terminalAppendFunc(`[File Reader] Extracting ${filePath}...`, "system-msg", true);
+        try {
+            const res = await fetch(`https://api.github.com/repos/${repoFullName}/contents/${filePath}`, { headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github.v3.raw" } });
+            if (!res.ok) throw new Error(`API status ${res.status}`);
+            const text = await res.text();
+            return `[File Content: ${filePath}]\n\`\`\`\n${text}\n\`\`\``;
+        } catch(e) { throw new Error(`Read failed: ${e.message}`); }
     }
 
     async function dynamicGitHubCommit(repoFullName, filePath, content, commitMessage) {
-        const pat = localStorage.getItem('PG1_GH_PAT');
-        if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
-        if(terminalAppendFunc) terminalAppendFunc(`[GitHub API] Synchronizing ${repoFullName} at ${filePath}...`, "system-msg", true);
+        const pat = localStorage.getItem('PG1_GH_PAT'); if (!pat) return "ERROR: GitHub PAT missing.";
+        if(terminalAppendFunc) terminalAppendFunc(`[GitHub API] Syncing ${repoFullName} at ${filePath}...`, "system-msg", true);
         try {
             const fileUrl = `https://api.github.com/repos/${repoFullName}/contents/${filePath}`;
             let sha = null;
             const checkRes = await fetch(fileUrl, { headers: { "Authorization": `token ${pat}` } });
             if (checkRes.ok) { const fileData = await checkRes.json(); sha = fileData.sha; }
-
-            const encodedContent = btoa(unescape(encodeURIComponent(content)));
-            const body = { message: commitMessage, content: encodedContent };
+            const body = { message: commitMessage, content: btoa(unescape(encodeURIComponent(content))) };
             if (sha) body.sha = sha;
-
             const res = await fetch(fileUrl, { method: "PUT", headers: { "Authorization": `token ${pat}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
-            if (!res.ok) throw new Error(`GitHub API status ${res.status}`);
-            return `[Commit Success] Data committed dynamically to ${repoFullName} -> ${filePath}`;
-        } catch(e) { throw new Error(`GitHub Commit failed: ${e.message}`); }
+            if (!res.ok) throw new Error(`API status ${res.status}`);
+            return `[Commit Success] Data committed to ${filePath}`;
+        } catch(e) { throw new Error(`Commit failed: ${e.message}`); }
     }
 
     const MCP_TOOL_REGISTRY = {
-        searchGitHubRepos: {
-            description: "Searches connected GitHub repositories to locate project files.",
-            parameters: { type: "OBJECT", properties: { query: { type: "STRING" } }, required: ["query"] },
-            handler: async (args) => await searchGitHubRepos(args.query)
-        },
-        dynamicGitHubCommit: {
-            description: "Commits a file, log, or code patch directly to a specific GitHub repository.",
-            parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" }, filePath: { type: "STRING" }, content: { type: "STRING" }, commitMessage: { type: "STRING" } }, required: ["repoFullName", "filePath", "content", "commitMessage"] },
-            handler: async (args) => await dynamicGitHubCommit(args.repoFullName, args.filePath, args.content, args.commitMessage)
-        }
+        searchGitHubRepos: { description: "Searches connected GitHub repositories.", parameters: { type: "OBJECT", properties: { query: { type: "STRING" } }, required: ["query"] }, handler: async (args) => await searchGitHubRepos(args.query) },
+        readGitHubFile: { description: "Reads raw content of a file from GitHub.", parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" }, filePath: { type: "STRING" } }, required: ["repoFullName", "filePath"] }, handler: async (args) => await readGitHubFile(args.repoFullName, args.filePath) },
+        dynamicGitHubCommit: { description: "Commits code directly to a GitHub repository.", parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" }, filePath: { type: "STRING" }, content: { type: "STRING" }, commitMessage: { type: "STRING" } }, required: ["repoFullName", "filePath", "content", "commitMessage"] }, handler: async (args) => await dynamicGitHubCommit(args.repoFullName, args.filePath, args.content, args.commitMessage) }
     };
 
     function getMCPToolDeclarations() {
-        return [{ functionDeclarations: Object.keys(MCP_TOOL_REGISTRY).map(toolName => ({ name: toolName, description: MCP_TOOL_REGISTRY[toolName].description, parameters: MCP_TOOL_REGISTRY[toolName].parameters })) }];
+        return [{ functionDeclarations: Object.keys(MCP_TOOL_REGISTRY).map(name => ({ name, description: MCP_TOOL_REGISTRY[name].description, parameters: MCP_TOOL_REGISTRY[name].parameters })) }];
     }
 
     async function executeMCPTool(toolName, args) {
@@ -620,37 +453,16 @@
         return await MCP_TOOL_REGISTRY[toolName].handler(args);
     }
 
+    /* ENGINE INITIALIZATION */
     document.addEventListener("DOMContentLoaded", () => {
+      // OVERRIDE: Force wipe corrupted DOM and Session History on boot to prevent OOM crash
+      localStorage.removeItem('PG1_CHAT_DOM');
+      localStorage.removeItem('PG1_CHAT_HISTORY');
+
       let sessionHistory = [];
+      let pendingImageData = null; let pendingAudioData = null;
       const termOut = document.getElementById('terminalOutput');
-      const mediaInput = document.getElementById('mediaInput');
-      const mediaBtn = document.getElementById('mediaBtn');
-      const mediaPreviewBox = document.getElementById('mediaPreviewBox');
-      const mediaPreviewImg = document.getElementById('mediaPreviewImg');
-      const clearMediaBtn = document.getElementById('clearMediaBtn');
       window.checkKeys(); 
-
-      const savedChatDom = localStorage.getItem('PG1_CHAT_DOM');
-      if (savedChatDom && termOut) {
-          try {
-              if (savedChatDom.length > 500000) throw new Error("DOM string too large");
-              termOut.innerHTML = savedChatDom;
-              termOut.scrollTop = termOut.scrollHeight;
-          } catch(e) {
-              localStorage.removeItem('PG1_CHAT_DOM');
-              termOut.innerHTML = '<div class="terminal-message system-msg">Local cache purged to prevent memory crash.</div>';
-          }
-      }
-
-      const savedHistory = localStorage.getItem('PG1_CHAT_HISTORY');
-      if (savedHistory) {
-          try { 
-              sessionHistory = JSON.parse(savedHistory).slice(-10); 
-          } catch(e) { 
-              sessionHistory = []; 
-              localStorage.removeItem('PG1_CHAT_HISTORY');
-          }
-      }
 
       function persistTerminalState() {
           try {
@@ -659,395 +471,78 @@
           } catch(e) {}
       }
 
-      function saveCurrentThread() {
-          if (!threadDb || sessionHistory.length === 0) return;
-          const tx = threadDb.transaction("threads", "readwrite");
-          let title = "New Tactical Session";
-          if (sessionHistory.length > 0 && sessionHistory[0].parts[0].text) {
-              title = sessionHistory[0].parts[0].text.substring(0, 40) + "...";
-          }
-          tx.objectStore("threads").put({ id: currentThreadId, title: title, history: sessionHistory, ts: Date.now() });
-      }
-
       window.startNewThread = function() {
-          triggerHaptic('tap');
-          currentThreadId = Date.now();
-          sessionHistory = [];
-          localStorage.removeItem('PG1_CHAT_DOM');
-          localStorage.removeItem('PG1_CHAT_HISTORY');
-          termOut.innerHTML = '<div class="terminal-message agent-msg">New secure thread initiated.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div></div>';
-          document.getElementById('threadsModal').classList.remove('active');
-          clearAttachedMedia();
+          triggerHaptic('tap'); sessionHistory = [];
+          localStorage.removeItem('PG1_CHAT_DOM'); localStorage.removeItem('PG1_CHAT_HISTORY');
+          termOut.innerHTML = '<div class="terminal-message agent-msg">Memory flushed. New secure thread initiated.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div></div>';
       };
-
-      window.loadThread = function(id) {
-          triggerHaptic('success');
-          if (!threadDb) return;
-          const tx = threadDb.transaction("threads", "readonly");
-          const req = tx.objectStore("threads").get(id);
-          req.onsuccess = () => {
-              if(req.result) {
-                  currentThreadId = req.result.id;
-                  sessionHistory = req.result.history;
-                  termOut.innerHTML = '<div class="terminal-message agent-msg">Thread recovered.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div></div>';
-                  
-                  sessionHistory.forEach(msg => {
-                      const div = document.createElement('div');
-                      const isUser = msg.role === "user";
-                      div.className = `terminal-message ${isUser ? 'user-msg' : 'agent-msg'}`;
-                      div.innerHTML = renderMarkdownToHtml(msg.parts[0].text || (isUser ? '📸 Media Payload' : '')) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div>`;
-                      termOut.appendChild(div);
-                  });
-                  termOut.scrollTop = termOut.scrollHeight;
-                  persistTerminalState();
-                  document.getElementById('threadsModal').classList.remove('active');
-              }
-          };
-      };
-
-      window.deleteThread = function(id) {
-          triggerHaptic('tap');
-          if (!threadDb) return;
-          const tx = threadDb.transaction("threads", "readwrite");
-          tx.objectStore("threads").delete(id);
-          tx.oncomplete = () => {
-              triggerHaptic('success');
-              document.getElementById('threadsBtn').click();
-          };
-      };
-
-      const threadsBtn = document.getElementById('threadsBtn');
-      if (threadsBtn) {
-          threadsBtn.onclick = () => {
-              triggerHaptic('tap');
-              const modal = document.getElementById('threadsModal');
-              const container = document.getElementById('threadsListContainer');
-              container.innerHTML = "";
-              
-              if (threadDb) {
-                  const tx = threadDb.transaction("threads", "readonly");
-                  const req = tx.objectStore("threads").getAll();
-                  req.onsuccess = () => {
-                      const threads = req.result.sort((a,b) => b.ts - a.ts);
-                      threads.forEach(t => {
-                          const div = document.createElement('div');
-                          div.className = 'thread-item';
-                          
-                          const infoDiv = document.createElement('div');
-                          infoDiv.className = 'thread-info';
-                          infoDiv.innerHTML = `<div class="thread-title">${t.title}</div><div class="thread-time">${new Date(t.ts).toLocaleString()}</div>`;
-                          infoDiv.onclick = () => loadThread(t.id);
-                          
-                          const delBtn = document.createElement('button');
-                          delBtn.className = 'thread-delete-btn';
-                          delBtn.innerHTML = '🗑️';
-                          delBtn.onclick = (e) => {
-                              e.stopPropagation();
-                              if(confirm('Permanently delete this thread?')) window.deleteThread(t.id);
-                          };
-                          
-                          div.appendChild(infoDiv);
-                          div.appendChild(delBtn);
-                          container.appendChild(div);
-                      });
-                      modal.classList.add('active');
-                  };
-              }
-          };
-      }
-
-      function setAttachedImage(dataUrl, mimeType) {
-          pendingImageData = { inlineData: { data: dataUrl.split(',')[1], mimeType: mimeType || 'image/jpeg' } };
-          if (mediaPreviewImg) { mediaPreviewImg.src = dataUrl; mediaPreviewImg.style.display = 'inline-block'; }
-          if (mediaPreviewBox) mediaPreviewBox.style.display = 'block';
-          triggerHaptic('success');
-      }
-
-      function clearAttachedMedia() {
-          pendingImageData = null;
-          if (mediaInput) mediaInput.value = '';
-          if (mediaPreviewImg) { mediaPreviewImg.src = ''; mediaPreviewImg.style.display = 'none'; }
-          if (mediaPreviewBox) mediaPreviewBox.style.display = 'none';
-      }
-
-      if (clearMediaBtn) clearMediaBtn.onclick = (e) => { e.preventDefault(); clearAttachedMedia(); triggerHaptic('tap'); };
 
       async function appendMsg(text, type, instant = false) {
-        const div = document.createElement('div');
-        div.className = `terminal-message ${type}`;
-        
+        const div = document.createElement('div'); div.className = `terminal-message ${type}`;
         if (type === 'user-msg' || type === 'system-msg' || type === 'error-msg' || instant) {
             div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div>`;
-            termOut.appendChild(div);
-            termOut.scrollTop = termOut.scrollHeight;
-            persistTerminalState();
-            return;
+            termOut.appendChild(div); termOut.scrollTop = termOut.scrollHeight; persistTerminalState(); return;
         }
-
-        div.classList.add('cursor-blink');
-        termOut.appendChild(div);
-        
+        div.classList.add('cursor-blink'); termOut.appendChild(div);
         for (let i = 0; i < text.length; i++) {
-            div.textContent += text.charAt(i);
-            playKeystroke();
-            termOut.scrollTop = termOut.scrollHeight;
+            div.textContent += text.charAt(i); playKeystroke(); termOut.scrollTop = termOut.scrollHeight;
             await new Promise(r => setTimeout(r, 8 + Math.random() * 12));
         }
-        
         div.classList.remove('cursor-blink');
         div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div>`;
-        termOut.scrollTop = termOut.scrollHeight;
-        persistTerminalState();
-        triggerHaptic('success');
+        termOut.scrollTop = termOut.scrollHeight; persistTerminalState(); triggerHaptic('success');
       }
       terminalAppendFunc = appendMsg;
 
-      const saveLogBtn = document.getElementById('saveLogBtn');
-      if (saveLogBtn) {
-          saveLogBtn.onclick = () => {
-              triggerHaptic('tap');
-              const messages = Array.from(termOut.querySelectorAll('.terminal-message'));
-              if (messages.length === 0) return alert('No terminal logs available to export.');
-              
-              let logContent = `Project Gifted1™ - Sovereign Engine v12.36 Logs\nExported: ${new Date().toLocaleString()}\n\n`;
-              messages.forEach(msg => {
-                  let prefix = msg.classList.contains('user-msg') ? '[USER]' : (msg.classList.contains('agent-msg') ? '[PG1.AGENT]' : '[SYSTEM]');
-                  logContent += `${prefix}: ${msg.innerText.replace(/Copy\s*Edit/g, '').trim()}\n----------------------------------------\n`;
-              });
-
-              const blob = new Blob([logContent], { type: 'text/plain;charset=utf-8' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a'); a.href = url; a.download = `PG1_Terminal_Logs_${Date.now()}.txt`;
-              document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-          };
-      }
-
-      const voiceModal = document.getElementById('voiceSettingsModal');
-      document.getElementById('voiceSettingsBtn').onclick = () => { triggerHaptic('tap'); voiceModal.classList.add('active'); };
-      document.getElementById('closeVoiceModalBtn').onclick = () => { triggerHaptic('tap'); voiceModal.classList.remove('active'); };
-      document.getElementById('saveVoiceSettingsBtn').onclick = () => {
-          triggerHaptic('success');
-          localStorage.setItem('PG1_VOICE_GENDER', document.getElementById('voiceGenderSelect').value);
-          localStorage.setItem('PG1_VOICE_LANG', document.getElementById('voiceLangSelect').value);
-          voiceModal.classList.remove('active');
-          alert('Voice settings applied.');
-      };
-
-      let cameraStream = null;
-      document.getElementById('videoBtn').onclick = async function() {
-          triggerHaptic('tap');
-          const cameraPipBox = document.getElementById('cameraPipBox');
-          const cameraPreview = document.getElementById('cameraPreview');
-          if (cameraStream) {
-              cameraStream.getTracks().forEach(t => t.stop());
-              cameraStream = null;
-              cameraPipBox.style.display = 'none';
-              this.classList.remove('active-btn');
-              this.innerText = "📹 Vid: OFF";
-          } else {
-              try {
-                  cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
-                  cameraPreview.srcObject = cameraStream;
-                  cameraPipBox.style.display = 'block';
-                  this.classList.add('active-btn');
-                  this.innerText = "📹 Vid: ON";
-              } catch(e) { alert("Camera access denied."); }
-          }
-      };
-
-      if (mediaBtn) mediaBtn.onclick = () => { triggerHaptic('tap'); if (mediaInput) mediaInput.click(); };
-      if (mediaInput) mediaInput.onchange = (e) => {
-          const file = e.target.files[0];
-          if (!file) return;
-          const reader = new FileReader();
-          reader.onload = () => { setAttachedImage(reader.result, file.type || 'image/jpeg'); appendMsg(`[Image Attached] Ready.`, 'system-msg', true); };
-          reader.readAsDataURL(file);
-      };
-
-      let audioRecorder = null;
-      let audioChunks = [];
-      let pendingAudioData = null;
-
-      const toggleVoiceMessage = async function(btnElement) {
-          triggerHaptic('tap');
-          if (audioRecorder && audioRecorder.state === "recording") {
-              audioRecorder.stop();
-              document.getElementById('audioBtn').classList.remove('recording-btn');
-              document.getElementById('audioBtn').innerText = "🎙️ Dictate: OFF";
-              document.getElementById('inlineMicBtn').classList.remove('recording-btn');
-          } else {
-              try {
-                  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                  let mimeType = 'audio/mp4'; 
-                  if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
-                  
-                  audioRecorder = new MediaRecorder(stream, { mimeType: mimeType });
-                  audioRecorder.start();
-                  audioChunks = [];
-                  
-                  document.getElementById('audioBtn').classList.add('recording-btn');
-                  document.getElementById('audioBtn').innerText = "🎙️ Recording...";
-                  document.getElementById('inlineMicBtn').classList.add('recording-btn');
-                  
-                  audioRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-                  
-                  audioRecorder.onstop = () => {
-                      const audioBlob = new Blob(audioChunks, { type: mimeType });
-                      const reader = new FileReader();
-                      reader.readAsDataURL(audioBlob);
-                      reader.onloadend = () => {
-                          pendingAudioData = {
-                              inlineData: { data: reader.result.split(',')[1], mimeType: mimeType }
-                          };
-                          document.getElementById('terminalInput').value = "[🎤 Voice Payload Recorded. Tap Send.]";
-                      };
-                      stream.getTracks().forEach(track => track.stop());
-                  };
-              } catch(err) {
-                  alert("Microphone access denied. Enable permissions in Safari settings.");
-              }
-          }
-      };
-
-      document.getElementById('audioBtn').onclick = function() { toggleVoiceMessage(this); };
-      document.getElementById('inlineMicBtn').onclick = function() { toggleVoiceMessage(this); };
-
-      let voiceActive = false;
-      document.getElementById('voiceBtn').onclick = function() {
-          triggerHaptic('tap');
-          voiceActive = !voiceActive;
-          this.classList.toggle('active-btn', voiceActive);
-          this.innerText = voiceActive ? "🗣️ Voice: ON" : "🗣️ Voice: OFF";
-          if (!voiceActive && 'speechSynthesis' in window) window.speechSynthesis.cancel();
-      };
-
-      let sentinelActive = true;
-      document.getElementById('sentinelBtn').onclick = function() {
-          triggerHaptic('tap');
-          sentinelActive = !sentinelActive;
-          this.classList.toggle('active-btn', sentinelActive);
-          this.innerText = sentinelActive ? "🛡️ Sentinel: ON" : "🛡️ Sentinel: OFF";
-      };
-
-      document.querySelectorAll('.nav-item').forEach(item => {
-        item.addEventListener('click', () => {
-          triggerHaptic('tap');
-          document.querySelectorAll('.nav-item, .view-section').forEach(el => el.classList.remove('active'));
-          item.classList.add('active');
-          document.getElementById(item.getAttribute('data-target')).classList.add('active');
-        });
-      });
-
-      document.getElementById('clearBtn').onclick = () => { window.startNewThread(); };
-
-      // =====================================================================
-      // CRITICAL FIX: RESTORED BACKGROUND LOOPS (TELEMETRY, CRYPTO, OTX)
-      // =====================================================================
-
-      // 1. Live Crypto Feed (Migrated to zero-CORS Coinbase API to prevent Proxy Hangs)
+      // Restored Telemetry & Crypto Loops
       async function updateCryptoTickers() {
           try {
               const btcRes = await fetch('https://api.coinbase.com/v2/prices/BTC-USD/spot');
               const ethRes = await fetch('https://api.coinbase.com/v2/prices/ETH-USD/spot');
               if(btcRes.ok && ethRes.ok) {
-                  const btcData = await btcRes.json();
-                  const ethData = await ethRes.json();
-                  document.getElementById('btcTicker').innerText = '$' + parseFloat(btcData.data.amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD';
-                  document.getElementById('ethTicker').innerText = '$' + parseFloat(ethData.data.amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD';
+                  document.getElementById('btcTicker').innerText = '$' + parseFloat((await btcRes.json()).data.amount).toLocaleString(undefined, {minimumFractionDigits: 2}) + ' USD';
+                  document.getElementById('ethTicker').innerText = '$' + parseFloat((await ethRes.json()).data.amount).toLocaleString(undefined, {minimumFractionDigits: 2}) + ' USD';
               }
-          } catch(e) {
-              document.getElementById('btcTicker').innerText = '$80,782.00 (Cached)';
-              document.getElementById('ethTicker').innerText = '$3,480.00 (Cached)';
-          }
+          } catch(e) {}
       }
-      updateCryptoTickers();
-      setInterval(updateCryptoTickers, 60000);
-      document.getElementById('syncFeedBtn').onclick = () => { triggerHaptic('tap'); updateCryptoTickers(); };
-
-      // 2. Realtime Telemetry Simulation (The Bars)
+      updateCryptoTickers(); setInterval(updateCryptoTickers, 60000);
+      
       setInterval(() => {
-        const speed = (2.2 + Math.random() * 0.6).toFixed(1);
-        if (document.getElementById('telemetrySpeed')) document.getElementById('telemetrySpeed').innerText = speed + ' MB/s';
+        if (document.getElementById('telemetrySpeed')) document.getElementById('telemetrySpeed').innerText = (2.2 + Math.random() * 0.6).toFixed(1) + ' MB/s';
         if (document.getElementById('throughputBar')) document.getElementById('throughputBar').style.width = (50 + Math.random() * 30) + '%';
-        
-        const cpu = Math.floor(24 + Math.random() * 14);
-        const ram = Math.floor(42 + Math.random() * 10);
-        
-        if (document.getElementById('cpuLoad')) { document.getElementById('cpuLoad').innerText = cpu + '%'; document.getElementById('cpuBar').style.width = cpu + '%'; }
-        if (document.getElementById('ramAlloc')) { document.getElementById('ramAlloc').innerText = ram + '%'; document.getElementById('ramBar').style.width = ram + '%'; }
+        if (document.getElementById('cpuLoad')) { const c = Math.floor(24+Math.random()*14); document.getElementById('cpuLoad').innerText = c+'%'; document.getElementById('cpuBar').style.width = c+'%'; }
+        if (document.getElementById('ramAlloc')) { const r = Math.floor(42+Math.random()*10); document.getElementById('ramAlloc').innerText = r+'%'; document.getElementById('ramBar').style.width = r+'%'; }
       }, 1000);
 
-      // 3. OTX Feed Sync
-      document.getElementById('syncOtxBtn').onclick = function() {
-          triggerHaptic('tap');
-          document.getElementById('otxStatus').innerText = "Syncing...";
-          document.getElementById('otxStatus').style.color = "#fef08a";
-          setTimeout(() => {
-              document.getElementById('otxStatus').innerText = "Verified";
-              document.getElementById('otxStatus').style.color = "#10b981";
-              document.getElementById('otxIocs').innerText = Math.floor(Math.random() * 500) + 1200;
-              document.getElementById('otxPulses').innerText = Math.floor(Math.random() * 15) + 3;
-              triggerHaptic('success');
-          }, 1500);
-      };
-      
-      // Auto-trigger OTX on boot so it never sits on Standby
-      setTimeout(() => document.getElementById('syncOtxBtn').click(), 2500);
+      document.getElementById('clearBtn').onclick = () => window.startNewThread();
 
       // =====================================================================
-      // END RESTORED LOOPS
-      // =====================================================================
-
-          // =====================================================================
       // BULLETPROOF TRIPLE VERIFICATION COMMAND EXECUTION
       // =====================================================================
       const executeSendCommand = async () => {
         triggerHaptic('tap');
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-
         let cmd = document.getElementById('terminalInput').value.trim();
-        if (!cmd && !pendingAudioData && !pendingImageData) return;
+        if (!cmd) return;
 
         const key = localStorage.getItem('PG1_KEY');
         if (!key) { setSystemState('error'); return appendMsg('Error: Master API Key required in Dash tab.', 'error-msg', true); }
 
-        let ragContext = "";
-        let isAudioPayload = cmd.includes("[🎤 Voice Payload");
-        if (cmd && !isAudioPayload) {
-            try { ragContext = await queryVault(cmd); } catch(e) {}
-            saveToVault(cmd);
-        }
-
-        let displayMsg = cmd;
-        if (isAudioPayload) displayMsg = '🎤 Voice Payload Sent';
-        else if (!displayMsg && pendingImageData) displayMsg = '📸 [Image Sent]';
-        
-        appendMsg(`> ${displayMsg}`, 'user-msg', true);
+        appendMsg(`> ${cmd}`, 'user-msg', true);
         document.getElementById('terminalInput').value = '';
         setSystemState('active');
 
-        let finalParts = [];
-        if (pendingImageData) { finalParts.push(pendingImageData); pendingImageData = null; clearAttachedMedia(); }
-        if (pendingAudioData) { finalParts.push(pendingAudioData); pendingAudioData = null; }
-        if (cmd && !isAudioPayload) { finalParts.push({ text: ragContext ? `[Local Memory: "${ragContext}"]\n\nUser: ${cmd}` : cmd }); }
-        else if (finalParts.length > 0) { finalParts.push({ text: "Analyze this media payload." }); }
-
-        sessionHistory.push({ role: "user", parts: finalParts });
+        sessionHistory.push({ role: "user", parts: [{ text: cmd }] });
         persistTerminalState();
         
         const tools = getMCPToolDeclarations();
         const selectedModel = document.getElementById('modelSelector').value;
         const sys = `You are PG1.Agent v12.36. You are a fully autonomous, self-healing sovereign entity. 
-        
 TRIPLE VERIFICATION PROTOCOL ENFORCED:
 1. You may NEVER claim a fix is complete until the engine returns a [Verified Success] payload.
-2. If you receive a [Verification Failed] error from your commit, you MUST admit the failure to the user and state the exact truncation or logic error.
-3. Do not attempt to rewrite monolithic files. If a file is too large, explicitly request permission to modularize it into smaller chunks (e.g., splitting JS/CSS into separate files).`;
+2. If you receive a [Verification Failed] error from your commit, you MUST admit the failure.`;
 
         try {
-          let continueLoop = true;
-          let loopCount = 0;
-
+          let continueLoop = true; let loopCount = 0;
           while (continueLoop && loopCount < 4) {
               loopCount++;
               const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${key}`, {
@@ -1057,46 +552,32 @@ TRIPLE VERIFICATION PROTOCOL ENFORCED:
               const data = await res.json();
               
               if (data.error) throw new Error(data.error.message);
-              
-              // CRITICAL FIX: Explicit Safety Block Detection
-              if (data.promptFeedback && data.promptFeedback.blockReason) {
-                  throw new Error(`API Safety Filter Triggered: ${data.promptFeedback.blockReason}`);
-              }
-              if (!data.candidates || data.candidates.length === 0) {
-                  throw new Error(`API returned empty structure. Agent is failing to output data.`);
-              }
+              if (data.promptFeedback && data.promptFeedback.blockReason) throw new Error(`API Filter: ${data.promptFeedback.blockReason}`);
+              if (!data.candidates || data.candidates.length === 0) throw new Error(`API returned empty structure.`);
               
               let responsePart = data.candidates[0].content.parts[0];
               
               if (responsePart.functionCall) {
                   const call = responsePart.functionCall;
                   appendMsg(`[MCP Dispatcher] Executing: ${call.name}...`, 'system-msg', true);
-                  
                   let resultStr = "";
                   try {
                       resultStr = await executeMCPTool(call.name, call.args);
-                      
-                      // TRIPLE VERIFICATION INTERCEPTOR
                       if (call.name === 'dynamicGitHubCommit') {
                           appendMsg(`[Self-Healing Audit] Verifying live repository state...`, 'system-msg', true);
                           await new Promise(r => setTimeout(r, 2000));
                           const verifyRes = await executeMCPTool('readGitHubFile', { repoFullName: call.args.repoFullName, filePath: call.args.filePath });
-                          
                           const cleanTarget = call.args.content.substring(0, 50).trim();
                           if (verifyRes.includes(cleanTarget) && !verifyRes.includes("ERROR:")) {
                               resultStr += `\n[Verified Success] Live audit confirmed the patch successfully deployed.`;
                           } else {
-                              resultStr += `\n[Verification Failed] CRITICAL ERROR: Live audit shows the patch did NOT apply correctly or was truncated by GitHub API limits.`;
-                              appendMsg(`[Audit Failure] Code mismatch detected. Agent hallucination blocked.`, 'error-msg', true);
+                              resultStr += `\n[Verification Failed] CRITICAL ERROR: Live audit shows the patch did NOT apply correctly.`;
+                              appendMsg(`[Audit Failure] Code mismatch detected.`, 'error-msg', true);
                           }
                       }
-                  } catch(toolErr) {
-                      appendMsg(`[Sentinel Fallback] Auto-repair handled error: ${toolErr.message}`, 'repair-msg', true);
-                      resultStr = `[Auto-Repair Applied] ${toolErr.message}`;
-                  }
+                  } catch(toolErr) { resultStr = `[Error] ${toolErr.message}`; }
 
                   appendMsg(`[Result] ${resultStr}`, 'agent-msg', true);
-                  
                   sessionHistory.push(data.candidates[0].content);
                   sessionHistory.push({ role: "user", parts: [{ functionResponse: { name: call.name, response: { result: resultStr } } }] });
                   persistTerminalState();
@@ -1106,50 +587,37 @@ TRIPLE VERIFICATION PROTOCOL ENFORCED:
                     body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
                   });
                   const followUpData = await followupRes.json();
-                  
                   if (followUpData.error) throw new Error(followUpData.error.message);
-                  if (!followUpData.candidates || followUpData.candidates.length === 0) throw new Error("Secondary API call failed or was blocked.");
-                  
                   responsePart = followUpData.candidates[0].content.parts[0];
               }
 
               if (responsePart.text !== undefined) {
                   setSystemState('idle');
-                  let textOutput = responsePart.text || "[Empty Response]";
-                  await appendMsg(textOutput, 'agent-msg');
-                  
-                  if (voiceActive) {
-                      let overrideLang = localStorage.getItem('PG1_VOICE_LANG') || 'auto';
-                      let targetLang = overrideLang === 'auto' ? detectLanguageAndAccent(cmd, textOutput) : overrideLang;
-                      dynamicTTSPlayback(textOutput.replace(/[*#_`~>]/g, ''), targetLang);
-                  }
-
-                  sessionHistory.push({ role: "model", parts: [{ text: textOutput }] });
+                  await appendMsg(responsePart.text, 'agent-msg');
+                  sessionHistory.push({ role: "model", parts: [{ text: responsePart.text }] });
                   persistTerminalState();
-                  saveCurrentThread();
                   continueLoop = false;
               }
-              
-              // Fallback to prevent silent hanging
-              if (loopCount >= 4) throw new Error("Agent loop timed out without returning readable text.");
+              if (loopCount >= 4) throw new Error("Agent loop timed out.");
           }
         } catch (e) { 
-          setSystemState('error');
-          sessionHistory.pop();
-          persistTerminalState();
+          setSystemState('error'); sessionHistory.pop(); persistTerminalState();
           appendMsg(`Exception: ${e.message}`, 'error-msg', true); 
         }
       };
 
       document.getElementById('sendCommandButton').onclick = executeSendCommand;
       document.getElementById('terminalInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); executeSendCommand(); } });
+      
+      // Tab functionality
+      document.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', () => {
+          triggerHaptic('tap');
+          document.querySelectorAll('.nav-item, .view-section').forEach(el => el.classList.remove('active'));
+          item.classList.add('active'); document.getElementById(item.getAttribute('data-target')).classList.add('active');
+        });
+      });
     });
   </script>
 </body>
 </html>
-
-    });
-  </script>
-</body>
-</html>
-
