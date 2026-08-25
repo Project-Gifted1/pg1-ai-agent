@@ -27,7 +27,8 @@
       <div class="key-input-group">
         <label style="font-size: 0.8em; color: #94a3b8;">Voice Persona / Tone:</label>
         <select id="voiceGenderSelect">
-          <option value="female" selected>Female (Warm & Articulate)</option>
+          <option value="clara" selected>🌟 Clara (Studio HD Ultra-Clear & Smooth)</option>
+          <option value="female">Female (Warm & Articulate)</option>
           <option value="male">Male (Deep & Natural)</option>
           <option value="default">System Default (Ultra-Clear)</option>
         </select>
@@ -36,7 +37,7 @@
         <label style="font-size: 0.8em; color: #94a3b8;">Language & Regional Accent:</label>
         <select id="voiceLangSelect">
           <option value="auto">Auto-Detect Accent from Prompt</option>
-          <option value="en-US">English (US Studio HD)</option>
+          <option value="en-US" selected>English (US Studio HD)</option>
           <option value="en-GB">English (UK British Natural)</option>
           <option value="en-AU">English (Australia)</option>
           <option value="en-IN">English (India)</option>
@@ -67,6 +68,13 @@
       </div>
       <div class="key-input-group" style="margin-top: 4px;">
         <div style="display:flex; justify-content:space-between; font-size:0.8em; color:#94a3b8;">
+          <span>Output Gain (Volume Boost):</span>
+          <span id="volValLabel" style="color:#38bdf8;">100%</span>
+        </div>
+        <input type="range" id="voiceVolSlider" min="0.5" max="2.0" step="0.05" value="1.0" class="slider-control">
+      </div>
+      <div class="key-input-group" style="margin-top: 4px;">
+        <div style="display:flex; justify-content:space-between; font-size:0.8em; color:#94a3b8;">
           <span>Speech Rate (Speed):</span>
           <span id="rateValLabel" style="color:#38bdf8;">1.00x</span>
         </div>
@@ -90,7 +98,7 @@
         </select>
       </div>
       <div style="display:flex; gap:8px; margin-top:8px;">
-        <button id="testVoiceBtn" class="utility-btn" style="flex:1; justify-content:center; padding:10px; font-weight:600; border-color:#38bdf8;">🔊 Test Voice</button>
+        <button id="testVoiceBtn" class="utility-btn" style="flex:1; justify-content:center; padding:10px; font-weight:600; border-color:#38bdf8;">🔊 Test Clara Voice</button>
         <button id="saveVoiceSettingsBtn" class="primary-btn" style="flex:1; margin-top:0;">Apply Settings</button>
       </div>
     </div>
@@ -189,7 +197,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.36 online. Direct Coinbase Feed, Auto-Syncing OTX Pipeline, and Core Telemetry successfully activated.<div class="msg-btn-group"><button class="msg-action-btn speak-btn" onclick="speakMsg(this)">🔊 Speak</button><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.36 online. Studio Voice Clara profile active, dual-channel audio conflict resolution engaged, and Core Telemetry successfully activated.<div class="msg-btn-group"><button class="msg-action-btn speak-btn" onclick="speakMsg(this)">🔊 Speak</button><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -212,12 +220,12 @@
           <img src="./08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
         </div>
         <h2 style="font-size: 1.1em; color: #f8fafc; margin-bottom: 2px;">PG1.Agent™ Sovereign Core</h2>
-        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Auto-Healing • Reactive Voice • Tactile Haptics • Persistent State</p>
+        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Auto-Healing • Clara Voice Engine • Dynamic Audio Arbiter • Persistent State</p>
         
         <ul class="stats-list" style="text-align: left;">
           <li><span>Agent ID:</span> <strong style="color: #38bdf8;">PG1-CORE-01</strong></li>
           <li><span>Local RAG DB:</span> <strong style="color: #10b981;">IndexedDB Active</strong></li>
-          <li><span>Threads DB:</span> <strong style="color: #10b981;">IndexedDB Active</strong></li>
+          <li><span>Audio Routing:</span> <strong style="color: #10b981;">Exclusive Stream Mode</strong></li>
           <li><span>Auto-Repair:</span> <strong style="color: #10b981;">Interceptor Online</strong></li>
           <li><span>Ownership:</span> <strong style="color: #38bdf8;">100% Sovereign</strong></li>
         </ul>
