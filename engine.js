@@ -2,7 +2,6 @@ let terminalAppendFunc = null;
 let mediaStream = null;
 let speechRecognizer = null;
 let isVoiceEnabled = true;
-let isSfxEnabled = true;
 let isSentinelEnabled = true;
 let isChronEnabled = false;
 let chronTimer = null;
@@ -11,17 +10,19 @@ let speechKeepAliveInterval = null;
 let audioCtx = null;
 let isSpeakingNow = false;
 
-/* =========================================================================
-   HIGH-FIDELITY STUDIO AUDIO SYNTHESIZER (Web Audio API)
-   ========================================================================= */
+/* =====================================================================
+   PREMIUM STUDIO SOUND SYNTHESIS ENGINE (Web Audio API)
+===================================================================== */
 function getAudioContext() {
     if (!audioCtx) {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (AudioContextClass) {
-            audioCtx = new AudioContextClass();
-        }
+        if (AudioContextClass) audioCtx = new AudioContextClass();
     }
     return audioCtx;
+}
+
+function isSfxEnabled() {
+    return localStorage.getItem('PG1_SFX_ENABLED') !== 'false';
 }
 
 function unlockAudio() {
@@ -51,8 +52,8 @@ function triggerHaptic(type) {
     if (!navigator.vibrate) return;
     try {
         if (type === 'tap') navigator.vibrate(12);
-        if (type === 'success') navigator.vibrate([20, 35, 20]);
-        if (type === 'error') navigator.vibrate([50, 35, 50, 35, 80]);
+        if (type === 'success') navigator.vibrate([20, 30, 20]);
+        if (type === 'error') navigator.vibrate([50, 30, 50, 30, 80]);
     } catch(e) {}
 }
 
@@ -66,179 +67,142 @@ function setSystemState(state) {
     }
 }
 
-/* 1. Ultra-Crisp Tactile Mechanical Keystroke */
+// Ultra-Crisp Tactile Mechanical Keystroke Sound
 function playKeystroke() {
-    if (!isSfxEnabled) return;
+    if (!isSfxEnabled()) return;
     try {
         unlockAudio();
         const ctx = getAudioContext();
         if (!ctx) return;
         const now = ctx.currentTime;
 
-        // Transient Click Layer
-        const osc = ctx.createOscillator();
-        const clickFilter = ctx.createBiquadFilter();
-        const gain = ctx.createGain();
-
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(1400 + Math.random() * 400, now);
-        osc.frequency.exponentialRampToValueAtTime(320, now + 0.012);
-
-        clickFilter.type = 'bandpass';
-        clickFilter.frequency.setValueAtTime(1800, now);
-        clickFilter.Q.setValueAtTime(3.0, now);
-
-        gain.gain.setValueAtTime(0.025, now);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.014);
-
-        osc.connect(clickFilter);
-        clickFilter.connect(gain);
-        gain.connect(ctx.destination);
-
-        osc.start(now);
-        osc.stop(now + 0.015);
-
-        // Warm Sub-Resonance Layer
-        const subOsc = ctx.createOscillator();
-        const subGain = ctx.createGain();
-        subOsc.type = 'triangle';
-        subOsc.frequency.setValueAtTime(220 + Math.random() * 40, now);
-        subGain.gain.setValueAtTime(0.012, now);
-        subGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.018);
-
-        subOsc.connect(subGain);
-        subGain.connect(ctx.destination);
-        subOsc.start(now);
-        subOsc.stop(now + 0.02);
-    } catch(e) {}
-}
-
-/* 2. Pristine Crystal Glass Harmonic Chime (Solfeggio 528Hz Harmonic) */
-function playNotificationChime() {
-    if (!isSfxEnabled) return;
-    try {
-        unlockAudio();
-        const ctx = getAudioContext();
-        if (!ctx) return;
-        const now = ctx.currentTime;
-
-        const fundamental = 528; // Harmonic transformation tone
-        const overtone = 1056;
-
-        const osc1 = ctx.createOscillator();
-        const osc2 = ctx.createOscillator();
-        const gain1 = ctx.createGain();
-        const gain2 = ctx.createGain();
-
-        osc1.type = 'sine';
-        osc1.frequency.setValueAtTime(fundamental, now);
-        osc1.frequency.exponentialRampToValueAtTime(fundamental * 1.01, now + 0.4);
-
-        osc2.type = 'sine';
-        osc2.frequency.setValueAtTime(overtone, now + 0.02);
-        osc2.frequency.exponentialRampToValueAtTime(overtone * 0.99, now + 0.45);
-
-        gain1.gain.setValueAtTime(0.08, now);
-        gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
-
-        gain2.gain.setValueAtTime(0.04, now + 0.02);
-        gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
-
-        osc1.connect(gain1);
-        osc2.connect(gain2);
-        gain1.connect(ctx.destination);
-        gain2.connect(ctx.destination);
-
-        osc1.start(now);
-        osc1.stop(now + 0.48);
-        osc2.start(now + 0.02);
-        osc2.stop(now + 0.45);
-    } catch(e) {}
-}
-
-/* 3. Success Harmonic Chord (Ascending Major Triad) */
-function playSuccessChime() {
-    if (!isSfxEnabled) return;
-    try {
-        unlockAudio();
-        const ctx = getAudioContext();
-        if (!ctx) return;
-        const now = ctx.currentTime;
-
-        const notes = [523.25, 659.25, 783.99, 1046.50]; // C5 - E5 - G5 - C6
-        notes.forEach((freq, idx) => {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            const startT = now + (idx * 0.045);
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(freq, startT);
-            gain.gain.setValueAtTime(0.045, startT);
-            gain.gain.exponentialRampToValueAtTime(0.0001, startT + 0.35);
-
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.start(startT);
-            osc.stop(startT + 0.38);
-        });
-    } catch(e) {}
-}
-
-/* 4. Deep Cinematic Error / Alert Warning */
-function playErrorTone() {
-    if (!isSfxEnabled) return;
-    try {
-        unlockAudio();
-        const ctx = getAudioContext();
-        if (!ctx) return;
-        const now = ctx.currentTime;
-
+        // Mechanical switch click transient
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         const filter = ctx.createBiquadFilter();
+        
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(1400 + Math.random() * 400, now);
+        filter.Q.setValueAtTime(3.5, now);
 
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(220, now);
-        osc.frequency.exponentialRampToValueAtTime(110, now + 0.28);
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(950 + Math.random() * 250, now);
+        osc.frequency.exponentialRampToValueAtTime(320, now + 0.018);
 
-        filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(600, now);
-
-        gain.gain.setValueAtTime(0.06, now);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
+        gain.gain.setValueAtTime(0.015, now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.018);
 
         osc.connect(filter);
         filter.connect(gain);
         gain.connect(ctx.destination);
 
         osc.start(now);
-        osc.stop(now + 0.32);
+        osc.stop(now + 0.02);
     } catch(e) {}
 }
 
-/* 5. Studio Recording Punch In / Out Cue */
-function playMicBeep(type = 'start') {
-    if (!isSfxEnabled) return;
+// Pristine Crystal Harmonic Studio Notification Chime
+function playNotificationChime() {
+    if (!isSfxEnabled()) return;
     try {
         unlockAudio();
         const ctx = getAudioContext();
         if (!ctx) return;
         const now = ctx.currentTime;
 
+        // Dual pure harmonic tones with smooth exponential decay (528Hz Solfeggio + 1056Hz Octave Harmonic)
+        const fundamentalFreqs = [528, 1056, 1584];
+        const gains = [0.06, 0.025, 0.012];
+
+        fundamentalFreqs.forEach((freq, idx) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now + (idx * 0.025));
+
+            const duration = 0.45 - (idx * 0.08);
+            gain.gain.setValueAtTime(gains[idx], now + (idx * 0.025));
+            gain.gain.exponentialRampToValueAtTime(0.00005, now + (idx * 0.025) + duration);
+
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            osc.start(now + (idx * 0.025));
+            osc.stop(now + (idx * 0.025) + duration);
+        });
+    } catch(e) {}
+}
+
+// Luxurious Harmonic Success Arpeggio
+function playSuccessChime() {
+    if (!isSfxEnabled()) return;
+    try {
+        unlockAudio();
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        const notes = [659.25, 830.61, 987.77, 1318.51]; // E5, G#5, B5, E6
+        
+        notes.forEach((freq, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now + i * 0.06);
+            gain.gain.setValueAtTime(0.04, now + i * 0.06);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.06 + 0.3);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + i * 0.06);
+            osc.stop(now + i * 0.06 + 0.3);
+        });
+    } catch(e) {}
+}
+
+// Warm Soft Error Alert
+function playErrorTone() {
+    if (!isSfxEnabled()) return;
+    try {
+        unlockAudio();
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        const notes = [440, 415.30]; // Gentle descending minor interval
+        
+        notes.forEach((freq, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, now + i * 0.1);
+            gain.gain.setValueAtTime(0.04, now + i * 0.1);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.1 + 0.25);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + i * 0.1);
+            osc.stop(now + i * 0.1 + 0.25);
+        });
+    } catch(e) {}
+}
+
+// Studio Dictation Recording Cue
+function playMicTone(isStart) {
+    if (!isSfxEnabled()) return;
+    try {
+        unlockAudio();
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sine';
-
-        if (type === 'start') {
-            osc.frequency.setValueAtTime(440, now);
+        if (isStart) {
+            osc.frequency.setValueAtTime(480, now);
             osc.frequency.exponentialRampToValueAtTime(880, now + 0.08);
         } else {
             osc.frequency.setValueAtTime(880, now);
             osc.frequency.exponentialRampToValueAtTime(440, now + 0.08);
         }
-
-        gain.gain.setValueAtTime(0.04, now);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
-
+        gain.gain.setValueAtTime(0.035, now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(now);
@@ -258,90 +222,191 @@ function renderMarkdownToHtml(raw) {
         .replace(/\n\n/g, '<br><br>');
 }
 
-/* =========================================================================
-   MULTI-LANGUAGE NEURAL VOICE SYNTHESIS ENGINE
-   ========================================================================= */
+window.saveMasterKeys = function() {
+    triggerHaptic('tap');
+    const kIn = document.getElementById('masterKeyInput'); 
+    const gIn = document.getElementById('githubKeyInput');
+    const rIn = document.getElementById('replicateKeyInput');
+    if (kIn && kIn.value && kIn.value !== '••••••••••••••••') localStorage.setItem('PG1_KEY', kIn.value.trim());
+    if (gIn && gIn.value && gIn.value !== '••••••••••••••••') localStorage.setItem('PG1_GH_PAT', gIn.value.trim());
+    if (rIn && rIn.value && rIn.value !== '••••••••••••••••') localStorage.setItem('PG1_REP_KEY', rIn.value.trim());
+    window.checkKeys(); 
+    triggerHaptic('success'); 
+    playSuccessChime();
+    alert('Credentials securely saved.');
+};
+
+window.checkKeys = function() {
+    const kIn = document.getElementById('masterKeyInput'); 
+    const gIn = document.getElementById('githubKeyInput');
+    const rIn = document.getElementById('replicateKeyInput');
+    const stat = document.getElementById('keyStatusText'); 
+    const connBadge = document.getElementById('connectionBadge');
+    if (!kIn || !gIn || !stat || !connBadge) return;
+    
+    const hasKey = !!localStorage.getItem('PG1_KEY');
+    const hasPat = !!localStorage.getItem('PG1_GH_PAT');
+    const hasRep = !!localStorage.getItem('PG1_REP_KEY');
+    
+    if (hasKey) kIn.value = '••••••••••••••••';
+    if (hasPat) gIn.value = '••••••••••••••••';
+    if (hasRep && rIn) rIn.value = '••••••••••••••••';
+    
+    if (hasKey) {
+        stat.innerText = hasPat ? 'KEY_STATUS: MASTER + GITHUB_PAT' : 'KEY_STATUS: MASTER_STORED';
+        stat.style.color = '#10b981';
+        connBadge.innerText = '● CONNECTED'; 
+        connBadge.style.color = '#10b981';
+    } else {
+        stat.innerText = 'KEY_STATUS: NOT_SET'; 
+        stat.style.color = '#ef4444';
+        connBadge.innerText = '● DISCONNECTED'; 
+        connBadge.style.color = '#ef4444';
+    }
+};
+
+window.copyMsg = function(btn) {
+  triggerHaptic('tap');
+  const msgDiv = btn.closest('.terminal-message');
+  if (!msgDiv) return;
+  const clone = msgDiv.cloneNode(true);
+  const btnGroup = clone.querySelector('.msg-btn-group');
+  if (btnGroup) btnGroup.remove();
+  navigator.clipboard.writeText(clone.innerText.trim()).then(() => {
+      playKeystroke();
+      alert('Copied to clipboard.');
+  });
+};
+
+window.editMsg = function(btn) {
+  triggerHaptic('tap');
+  const msgDiv = btn.closest('.terminal-message');
+  if (!msgDiv) return;
+  const clone = msgDiv.cloneNode(true);
+  const btnGroup = clone.querySelector('.msg-btn-group');
+  if (btnGroup) btnGroup.remove();
+  const input = document.getElementById('terminalInput');
+  if (input) {
+      input.value = clone.innerText.trim();
+      input.focus();
+  }
+};
+
+window.speakMsg = function(btn) {
+  triggerHaptic('tap');
+  unlockAudio();
+  const msgDiv = btn.closest('.terminal-message');
+  if (!msgDiv) return;
+  const clone = msgDiv.cloneNode(true);
+  const btnGroup = clone.querySelector('.msg-btn-group');
+  if (btnGroup) btnGroup.remove();
+  const rawText = clone.innerText.trim();
+  speakAgentResponse(rawText, true);
+};
+
+/* =====================================================================
+   HIGH-DEFINITION MULTI-LANGUAGE VOICE ENGINE & RANKER
+===================================================================== */
 let systemVoices = [];
 
-function scoreVoiceQuality(v) {
-    let score = 0;
-    const name = v.name.toLowerCase();
+function populateVoiceSelect() {
+    const specificSelect = document.getElementById('voiceSpecificSelect');
+    if (!specificSelect || !('speechSynthesis' in window)) return;
     
-    // Prioritize natural / neural / studio voice badges
-    if (name.includes('neural')) score += 100;
-    if (name.includes('natural')) score += 90;
-    if (name.includes('google')) score += 80;
-    if (name.includes('premium')) score += 75;
-    if (name.includes('enhanced')) score += 70;
-    if (name.includes('studio')) score += 65;
-    if (name.includes('siri')) score += 60;
-    if (name.includes('wavenet')) score += 55;
-    if (name.includes('samantha') || name.includes('ava') || name.includes('daniel') || name.includes('karen') || name.includes('serena') || name.includes('arthur')) score += 40;
-    if (v.localService) score += 15;
-    if (v.default) score += 10;
-    return score;
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices || voices.length === 0) return;
+    systemVoices = voices;
+
+    const currentVal = localStorage.getItem('PG1_SPECIFIC_VOICE') || 'auto';
+    specificSelect.innerHTML = `<option value="auto">⚡ Best Neural / HD Voice (Auto-Selected)</option>`;
+    
+    // Sort voices prioritizing Natural/Neural/Enhanced/Studio voices
+    const sorted = [...voices].sort((a, b) => {
+        const aScore = getVoiceQualityScore(a);
+        const bScore = getVoiceQualityScore(b);
+        if (bScore !== aScore) return bScore - aScore;
+        return a.name.localeCompare(b.name);
+    });
+
+    sorted.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.name;
+        const isHd = getVoiceQualityScore(v) >= 8;
+        opt.textContent = `${isHd ? '🌟 ' : ''}${v.name} (${v.lang})${v.default ? ' [Default]' : ''}`;
+        specificSelect.appendChild(opt);
+    });
+
+    specificSelect.value = currentVal;
 }
 
-function populateVoiceDropdown() {
-    const specificSelect = document.getElementById('voiceSpecificSelect');
-    if (!specificSelect || !systemVoices || systemVoices.length === 0) return;
-
-    const currentSelection = localStorage.getItem('PG1_SPECIFIC_VOICE') || 'auto';
-    const targetLang = localStorage.getItem('PG1_VOICE_LANG') || 'auto';
-
-    let filteredVoices = [...systemVoices].sort((a, b) => scoreVoiceQuality(b) - scoreVoiceQuality(a));
-    
-    if (targetLang !== 'auto') {
-        const langPrefix = targetLang.substring(0, 2).toLowerCase();
-        const matched = filteredVoices.filter(v => v.lang.toLowerCase().startsWith(langPrefix));
-        if (matched.length > 0) {
-            filteredVoices = matched;
-        }
-    }
-
-    specificSelect.innerHTML = `<option value="auto">⚡ Best Neural / HD Voice (Auto-Selected)</option>` + 
-        filteredVoices.map(v => {
-            const isNeural = scoreVoiceQuality(v) >= 50 ? '💎 ' : '';
-            return `<option value="${v.name}" ${v.name === currentSelection ? 'selected' : ''}>${isNeural}${v.name} (${v.lang})</option>`;
-        }).join('');
+function getVoiceQualityScore(voice) {
+    if (!voice) return 0;
+    const name = (voice.name || '').toLowerCase();
+    let score = 0;
+    if (name.includes('neural')) score += 12;
+    if (name.includes('natural')) score += 10;
+    if (name.includes('studio')) score += 9;
+    if (name.includes('premium')) score += 8;
+    if (name.includes('enhanced')) score += 7;
+    if (name.includes('wavenet')) score += 7;
+    if (name.includes('google')) score += 6;
+    if (name.includes('siri') || name.includes('samantha') || name.includes('karen') || name.includes('daniel')) score += 5;
+    if (voice.localService) score += 2;
+    return score;
 }
 
 function cacheSystemVoices() {
     if ('speechSynthesis' in window) {
         systemVoices = window.speechSynthesis.getVoices();
-        populateVoiceDropdown();
+        populateVoiceSelect();
     }
 }
-
 if ('speechSynthesis' in window) {
     cacheSystemVoices();
     window.speechSynthesis.onvoiceschanged = cacheSystemVoices;
 }
 
-function detectTextLanguage(text) {
-    if (!text) return 'en-US';
-    // Asian scripts
-    if (/[\u3040-\u30ff]/.test(text)) return 'ja-JP'; // Japanese Hiragana/Katakana
-    if (/[\u4e00-\u9faf]/.test(text)) return 'zh-CN'; // Chinese
-    if (/[\uac00-\ud7af]/.test(text)) return 'ko-KR'; // Korean Hangul
-    // Cyrillic
-    if (/[\u0400-\u04ff]/.test(text)) return 'ru-RU'; // Russian
-    // Arabic
-    if (/[\u0600-\u06ff]/.test(text)) return 'ar-SA'; // Arabic
-    // Devanagari / Hindi
-    if (/[\u0900-\u097f]/.test(text)) return 'hi-IN'; // Hindi
-    // Spanish
-    if (/[¿¡áéíóúüñ]/i.test(text)) return 'es-ES';
-    // French
-    if (/[éèêëàâôûùç]/i.test(text) && /\b(le|la|les|un|une|des|est|sont|pour|avec)\b/i.test(text)) return 'fr-FR';
-    // German
-    if (/[äöüß]/i.test(text) || /\b(der|die|das|und|ist|nicht|für|mit)\b/i.test(text)) return 'de-DE';
-    // Italian
-    if (/\b(il|la|gli|per|con|sono|grazie|ciao)\b/i.test(text)) return 'it-IT';
-    // Portuguese
-    if (/[ãõáéíóúâêôç]/i.test(text) && /\b(o|a|os|as|do|da|com|não|para)\b/i.test(text)) return 'pt-BR';
+function selectBestVoice(targetLang, persona, specificVoiceName) {
+    const voices = (systemVoices && systemVoices.length > 0) ? systemVoices : (('speechSynthesis' in window) ? window.speechSynthesis.getVoices() : []);
+    if (!voices || voices.length === 0) return null;
 
-    return 'en-US';
+    // Direct explicit voice match if selected by user
+    if (specificVoiceName && specificVoiceName !== 'auto') {
+        const found = voices.find(v => v.name === specificVoiceName);
+        if (found) return found;
+    }
+
+    const langPrefix = (!targetLang || targetLang === 'auto') ? '' : targetLang.toLowerCase().substring(0, 2);
+    const fullLang = (!targetLang || targetLang === 'auto') ? '' : targetLang.toLowerCase();
+
+    // Filter by language first
+    let candidates = voices;
+    if (fullLang) {
+        const exactMatches = voices.filter(v => (v.lang || '').toLowerCase() === fullLang || (v.lang || '').toLowerCase().replace('_', '-') === fullLang);
+        if (exactMatches.length > 0) {
+            candidates = exactMatches;
+        } else if (langPrefix) {
+            const prefixMatches = voices.filter(v => (v.lang || '').toLowerCase().startsWith(langPrefix));
+            if (prefixMatches.length > 0) candidates = prefixMatches;
+        }
+    }
+
+    // Gender filter & keywords
+    const femaleKeywords = ['female', 'zira', 'samantha', 'victoria', 'karen', 'siri', 'moira', 'tessa', 'anna', 'monica', 'amelie', 'kyoko', 'yuna', 'tingting', 'luciana', 'elena', 'yelda', 'lekha', 'paulina', 'alice'];
+    const maleKeywords = ['male', 'david', 'guy', 'george', 'daniel', 'alex', 'aaron', 'thomas', 'jorge', 'arthur', 'oliver', 'yannick', 'sinji', 'otoya', 'felipe', 'nikolai', 'tarik'];
+
+    let genderFiltered = candidates;
+    if (persona === 'male') {
+        const matches = candidates.filter(v => maleKeywords.some(k => v.name.toLowerCase().includes(k)));
+        if (matches.length > 0) genderFiltered = matches;
+    } else if (persona === 'female') {
+        const matches = candidates.filter(v => femaleKeywords.some(k => v.name.toLowerCase().includes(k)));
+        if (matches.length > 0) genderFiltered = matches;
+    }
+
+    // Sort by quality score
+    genderFiltered.sort((a, b) => getVoiceQualityScore(b) - getVoiceQualityScore(a));
+    return genderFiltered[0] || candidates[0] || voices[0];
 }
 
 function stopSpeech() {
@@ -359,43 +424,6 @@ function stopSpeech() {
     if (logo) logo.classList.remove('is-speaking');
 }
 
-function findOptimalVoice(targetLang, preferredGender, specificVoiceName) {
-    const voices = (systemVoices && systemVoices.length > 0) ? systemVoices : ('speechSynthesis' in window ? window.speechSynthesis.getVoices() : []);
-    if (!voices || voices.length === 0) return null;
-
-    if (specificVoiceName && specificVoiceName !== 'auto') {
-        const found = voices.find(v => v.name === specificVoiceName);
-        if (found) return found;
-    }
-
-    const langPrefix = targetLang.substring(0, 2).toLowerCase();
-    let langMatches = voices.filter(v => v.lang.toLowerCase().startsWith(langPrefix));
-    if (langMatches.length === 0) langMatches = voices;
-
-    langMatches.sort((a, b) => scoreVoiceQuality(b) - scoreVoiceQuality(a));
-
-    if (preferredGender === 'male') {
-        const maleVoice = langMatches.find(v => {
-            const n = v.name.toLowerCase();
-            return n.includes('male') || n.includes('david') || n.includes('guy') || n.includes('george') || 
-                   n.includes('daniel') || n.includes('alex') || n.includes('aaron') || n.includes('thomas') || 
-                   n.includes('jorge') || n.includes('yuri') || n.includes('arthur') || n.includes('diego');
-        });
-        if (maleVoice) return maleVoice;
-    } else if (preferredGender === 'female') {
-        const femaleVoice = langMatches.find(v => {
-            const n = v.name.toLowerCase();
-            return n.includes('female') || n.includes('zira') || n.includes('samantha') || n.includes('victoria') || 
-                   n.includes('karen') || n.includes('siri') || n.includes('moira') || n.includes('tessa') || 
-                   n.includes('ava') || n.includes('paulina') || n.includes('amélie') || n.includes('monica') || 
-                   n.includes('anna') || n.includes('alice') || n.includes('kyoko') || n.includes('luciana');
-        });
-        if (femaleVoice) return femaleVoice;
-    }
-
-    return langMatches[0] || null;
-}
-
 function speakAgentResponse(text, forceSpeak = false) {
     if ((!isVoiceEnabled && !forceSpeak) || !('speechSynthesis' in window)) return;
     try {
@@ -408,24 +436,24 @@ function speakAgentResponse(text, forceSpeak = false) {
             .replace(/<[^>]*>/g, '')
             .replace(/[*_#~]/g, '')
             .replace(/https?:\/\/\S+/g, 'link')
-            .replace(/\s+/g, ' ')
+            .replace(/\b(?:PG1|pg1)\b/g, 'P G 1')
             .trim();
 
         if (!plainText) return;
 
-        // Split text cleanly by sentence boundaries for smooth phrasing
+        // Split text cleanly on punctuation with natural breath cadence
         const sentenceRegex = /[^.!?\n]+[.!?\n]+|[^.!?\n]+$/g;
-        const chunks = plainText.match(sentenceRegex) || [plainText];
+        const rawChunks = plainText.match(sentenceRegex) || [plainText];
+        const chunks = rawChunks.map(c => c.trim()).filter(c => c.length > 0);
         let chunkIndex = 0;
 
-        const configuredLang = localStorage.getItem('PG1_VOICE_LANG') || 'auto';
+        const savedLang = localStorage.getItem('PG1_VOICE_LANG') || 'en-US';
         const savedGender = localStorage.getItem('PG1_VOICE_GENDER') || 'female';
-        const specificVoiceName = localStorage.getItem('PG1_SPECIFIC_VOICE') || 'auto';
+        const savedSpecificVoice = localStorage.getItem('PG1_SPECIFIC_VOICE') || 'auto';
         const savedRate = parseFloat(localStorage.getItem('PG1_VOICE_RATE') || '1.0');
         const savedPitch = parseFloat(localStorage.getItem('PG1_VOICE_PITCH') || '1.0');
 
-        const activeLang = configuredLang === 'auto' ? detectTextLanguage(plainText) : configuredLang;
-        const matchedVoice = findOptimalVoice(activeLang, savedGender, specificVoiceName);
+        const matchedVoice = selectBestVoice(savedLang, savedGender, savedSpecificVoice);
 
         function speakNextChunk() {
             if (chunkIndex >= chunks.length) {
@@ -433,7 +461,7 @@ function speakAgentResponse(text, forceSpeak = false) {
                 return;
             }
 
-            const currentChunkText = chunks[chunkIndex].trim();
+            const currentChunkText = chunks[chunkIndex];
             chunkIndex++;
             if (!currentChunkText) {
                 speakNextChunk();
@@ -442,12 +470,16 @@ function speakAgentResponse(text, forceSpeak = false) {
 
             const utterance = new SpeechSynthesisUtterance(currentChunkText);
             utterance.volume = 1.0;
-            utterance.rate = savedRate;
-            utterance.pitch = savedPitch;
-            utterance.lang = activeLang;
+            utterance.rate = isNaN(savedRate) ? 1.0 : Math.min(Math.max(savedRate, 0.7), 1.5);
+            utterance.pitch = isNaN(savedPitch) ? 1.0 : Math.min(Math.max(savedPitch, 0.8), 1.3);
+
+            if (savedLang !== 'auto') {
+                utterance.lang = savedLang;
+            }
 
             if (matchedVoice) {
                 utterance.voice = matchedVoice;
+                if (!utterance.lang && matchedVoice.lang) utterance.lang = matchedVoice.lang;
             }
 
             const logo = document.getElementById('aiCoreLogo');
@@ -457,10 +489,7 @@ function speakAgentResponse(text, forceSpeak = false) {
             };
 
             utterance.onend = () => {
-                // Short human-like micro-pause between sentences
-                setTimeout(() => {
-                    speakNextChunk();
-                }, 40);
+                speakNextChunk();
             };
 
             utterance.onerror = () => {
@@ -471,7 +500,7 @@ function speakAgentResponse(text, forceSpeak = false) {
             window.speechSynthesis.speak(utterance);
         }
 
-        // WebKit keep-alive timer
+        // WebKit Speech Synthesis keep-alive loop
         speechKeepAliveInterval = setInterval(() => {
             if (window.speechSynthesis.speaking) {
                 window.speechSynthesis.resume();
@@ -479,16 +508,16 @@ function speakAgentResponse(text, forceSpeak = false) {
                 clearInterval(speechKeepAliveInterval);
                 speechKeepAliveInterval = null;
             }
-        }, 3000);
+        }, 3500);
 
         playNotificationChime();
         speakNextChunk();
     } catch(e) {}
 }
 
-/* =========================================================================
-   MCP TOOL REGISTRY RESTORATION & DYNAMIC COMMIT
-   ========================================================================= */
+/* =====================================================================
+   FULL MCP TOOL REGISTRY RESTORED
+===================================================================== */
 async function searchGitHubRepos(query) {
     const pat = localStorage.getItem('PG1_GH_PAT'); if (!pat) return "ERROR: GitHub PAT missing.";
     if(terminalAppendFunc) terminalAppendFunc(`[GitHub API] Searching for: ${query}...`, "system-msg", true);
@@ -543,6 +572,7 @@ async function executeMCPTool(toolName, args) {
     return await MCP_TOOL_REGISTRY[toolName].handler(args);
 }
 
+/* DYNAMIC ESCALATION PROTOCOL ROUTER */
 function evaluatePromptComplexity(prompt) {
     if (!prompt) return false;
     const deepLogicTriggers = [
@@ -575,93 +605,9 @@ function routeModelByComplexity(prompt, defaultModel = 'gemini-3.7-flash') {
     };
 }
 
-/* =========================================================================
-   UI CONTROLS & EVENT BINDINGS
-   ========================================================================= */
-window.saveMasterKeys = function() {
-    triggerHaptic('tap');
-    const kIn = document.getElementById('masterKeyInput'); 
-    const gIn = document.getElementById('githubKeyInput');
-    const rIn = document.getElementById('replicateKeyInput');
-    if (kIn && kIn.value && kIn.value !== '••••••••••••••••') localStorage.setItem('PG1_KEY', kIn.value.trim());
-    if (gIn && gIn.value && gIn.value !== '••••••••••••••••') localStorage.setItem('PG1_GH_PAT', gIn.value.trim());
-    if (rIn && rIn.value && rIn.value !== '••••••••••••••••') localStorage.setItem('PG1_REP_KEY', rIn.value.trim());
-    window.checkKeys(); 
-    triggerHaptic('success'); 
-    playSuccessChime();
-    alert('Credentials securely saved.');
-};
-
-window.checkKeys = function() {
-    const kIn = document.getElementById('masterKeyInput'); 
-    const gIn = document.getElementById('githubKeyInput');
-    const rIn = document.getElementById('replicateKeyInput');
-    const stat = document.getElementById('keyStatusText'); 
-    const connBadge = document.getElementById('connectionBadge');
-    if (!kIn || !gIn || !stat || !connBadge) return;
-    
-    const hasKey = !!localStorage.getItem('PG1_KEY');
-    const hasPat = !!localStorage.getItem('PG1_GH_PAT');
-    const hasRep = !!localStorage.getItem('PG1_REP_KEY');
-    
-    if (hasKey) kIn.value = '••••••••••••••••';
-    if (hasPat) gIn.value = '••••••••••••••••';
-    if (hasRep && rIn) rIn.value = '••••••••••••••••';
-    
-    if (hasKey) {
-        stat.innerText = hasPat ? 'KEY_STATUS: MASTER + GITHUB_PAT' : 'KEY_STATUS: MASTER_STORED';
-        stat.style.color = '#10b981';
-        connBadge.innerText = '● CONNECTED'; 
-        connBadge.style.color = '#10b981';
-    } else {
-        stat.innerText = 'KEY_STATUS: NOT_SET'; 
-        stat.style.color = '#ef4444';
-        connBadge.innerText = '● DISCONNECTED'; 
-        connBadge.style.color = '#ef4444';
-    }
-};
-
-window.copyMsg = function(btn) {
-  triggerHaptic('tap');
-  playKeystroke();
-  const msgDiv = btn.closest('.terminal-message');
-  if (!msgDiv) return;
-  const clone = msgDiv.cloneNode(true);
-  const btnGroup = clone.querySelector('.msg-btn-group');
-  if (btnGroup) btnGroup.remove();
-  navigator.clipboard.writeText(clone.innerText.trim()).then(() => alert('Copied to clipboard.'));
-};
-
-window.editMsg = function(btn) {
-  triggerHaptic('tap');
-  playKeystroke();
-  const msgDiv = btn.closest('.terminal-message');
-  if (!msgDiv) return;
-  const clone = msgDiv.cloneNode(true);
-  const btnGroup = clone.querySelector('.msg-btn-group');
-  if (btnGroup) btnGroup.remove();
-  const input = document.getElementById('terminalInput');
-  if (input) {
-      input.value = clone.innerText.trim();
-      input.focus();
-  }
-};
-
-window.speakMsg = function(btn) {
-  triggerHaptic('tap');
-  unlockAudio();
-  const msgDiv = btn.closest('.terminal-message');
-  if (!msgDiv) return;
-  const clone = msgDiv.cloneNode(true);
-  const btnGroup = clone.querySelector('.msg-btn-group');
-  if (btnGroup) btnGroup.remove();
-  const rawText = clone.innerText.trim();
-  speakAgentResponse(rawText, true);
-};
-
-/* =========================================================================
+/* =====================================================================
    ENGINE INITIALIZATION
-   ========================================================================= */
+===================================================================== */
 document.addEventListener("DOMContentLoaded", () => {
   localStorage.removeItem('PG1_CHAT_DOM');
   localStorage.removeItem('PG1_CHAT_HISTORY');
@@ -673,9 +619,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const savedVoicePref = localStorage.getItem('PG1_VOICE_ENABLED');
   isVoiceEnabled = savedVoicePref !== null ? (savedVoicePref === 'true') : true;
-
-  const savedSfxPref = localStorage.getItem('PG1_SFX_ENABLED');
-  isSfxEnabled = savedSfxPref !== null ? (savedSfxPref === 'true') : true;
 
   const voiceBtn = document.getElementById('voiceBtn');
   if (voiceBtn) {
@@ -695,6 +638,7 @@ document.addEventListener("DOMContentLoaded", () => {
       } catch(e) {}
   }
 
+  /* THREAD PERSISTENCE SYSTEM */
   function getSavedThreads() {
       try {
           const raw = localStorage.getItem('PG1_SAVED_THREADS');
@@ -759,7 +703,6 @@ document.addEventListener("DOMContentLoaded", () => {
   window.deleteSavedThread = function(threadId, e) {
       if (e) e.stopPropagation();
       triggerHaptic('tap');
-      playKeystroke();
       let threads = getSavedThreads();
       threads = threads.filter(t => t.id !== threadId);
       localStorage.setItem('PG1_SAVED_THREADS', JSON.stringify(threads));
@@ -768,7 +711,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   window.startNewThread = function() {
       triggerHaptic('tap'); 
-      playKeystroke();
       stopSpeech();
       if (sessionHistory.length > 0) saveCurrentThreadRecord();
       sessionHistory = [];
@@ -797,7 +739,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     div.classList.add('cursor-blink'); termOut.appendChild(div);
     for (let i = 0; i < text.length; i++) {
-        div.textContent += text.charAt(i); playKeystroke(); termOut.scrollTop = termOut.scrollHeight;
+        div.textContent += text.charAt(i); 
+        if (i % 2 === 0) playKeystroke(); 
+        termOut.scrollTop = termOut.scrollHeight;
         await new Promise(r => setTimeout(r, 6 + Math.random() * 8));
     }
     div.classList.remove('cursor-blink');
@@ -829,7 +773,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (document.getElementById('ramAlloc')) { const r = Math.floor(42+Math.random()*10); document.getElementById('ramAlloc').innerText = r+'%'; const rb = document.getElementById('ramBar'); if (rb) rb.style.width = r+'%'; }
   }, 1000);
 
-  /* VOICE MODAL CONTROLS & SLIDERS */
+  /* ACTION BAR & MODAL ICON BUTTON HANDLERS */
   const threadsBtn = document.getElementById('threadsBtn');
   const threadsModal = document.getElementById('threadsModal');
   if (threadsBtn && threadsModal) {
@@ -855,6 +799,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const pitchValLabel = document.getElementById('pitchValLabel');
   const sfxEnabledSelect = document.getElementById('sfxEnabledSelect');
 
+  // Restore saved voice settings
   if (voiceGenderSelect && localStorage.getItem('PG1_VOICE_GENDER')) {
       voiceGenderSelect.value = localStorage.getItem('PG1_VOICE_GENDER');
   }
@@ -869,7 +814,7 @@ document.addEventListener("DOMContentLoaded", () => {
       voicePitchSlider.value = localStorage.getItem('PG1_VOICE_PITCH');
       if (pitchValLabel) pitchValLabel.innerText = parseFloat(voicePitchSlider.value).toFixed(2);
   }
-  if (sfxEnabledSelect && localStorage.getItem('PG1_SFX_ENABLED')) {
+  if (sfxEnabledSelect && localStorage.getItem('PG1_SFX_ENABLED') !== null) {
       sfxEnabledSelect.value = localStorage.getItem('PG1_SFX_ENABLED');
   }
 
@@ -883,25 +828,19 @@ document.addEventListener("DOMContentLoaded", () => {
           pitchValLabel.innerText = parseFloat(voicePitchSlider.value).toFixed(2);
       };
   }
-  if (voiceLangSelect) {
-      voiceLangSelect.onchange = () => {
-          populateVoiceDropdown();
-      };
-  }
 
   if (voiceSettingsBtn && voiceSettingsModal) {
       voiceSettingsBtn.onclick = () => {
           triggerHaptic('tap');
           playKeystroke();
           unlockAudio();
-          cacheSystemVoices();
+          populateVoiceSelect();
           voiceSettingsModal.classList.add('active');
       };
   }
   if (closeVoiceModalBtn && voiceSettingsModal) {
       closeVoiceModalBtn.onclick = () => {
           triggerHaptic('tap');
-          playKeystroke();
           voiceSettingsModal.classList.remove('active');
       };
   }
@@ -914,36 +853,28 @@ document.addEventListener("DOMContentLoaded", () => {
           if (voiceSpecificSelect) localStorage.setItem('PG1_SPECIFIC_VOICE', voiceSpecificSelect.value);
           if (voiceRateSlider) localStorage.setItem('PG1_VOICE_RATE', voiceRateSlider.value);
           if (voicePitchSlider) localStorage.setItem('PG1_VOICE_PITCH', voicePitchSlider.value);
-          if (sfxEnabledSelect) {
-              localStorage.setItem('PG1_SFX_ENABLED', sfxEnabledSelect.value);
-              isSfxEnabled = sfxEnabledSelect.value === 'true';
-          }
+          if (sfxEnabledSelect) localStorage.setItem('PG1_SFX_ENABLED', sfxEnabledSelect.value);
+
           voiceSettingsModal.classList.remove('active');
           triggerHaptic('success');
           playSuccessChime();
-          speakAgentResponse("Studio voice configuration active and calibrated.", true);
+
+          const selectedLang = voiceLangSelect ? voiceLangSelect.value : 'en-US';
+          let sampleGreeting = "Neural voice configuration applied. Sound fidelity verified.";
+          if (selectedLang.startsWith('es')) sampleGreeting = "Configuración de voz aplicada. Fidelidad de audio óptima.";
+          else if (selectedLang.startsWith('fr')) sampleGreeting = "Configuration vocale appliquée. Audio haute fidélité opérationnel.";
+          else if (selectedLang.startsWith('de')) sampleGreeting = "Sprachkonfiguration angewendet. Klangtreue verifiziert.";
+          else if (selectedLang.startsWith('it')) sampleGreeting = "Configurazione vocale applicata. Audio ad alta fedeltà attivo.";
+          else if (selectedLang.startsWith('pt')) sampleGreeting = "Configuração de voz aplicada. Fidelidade de áudio confirmada.";
+          else if (selectedLang.startsWith('ja')) sampleGreeting = "音声設定が適用されました。高音質サウンドを確認しました。";
+          else if (selectedLang.startsWith('zh')) sampleGreeting = "语音配置已应用，高保真音质已就绪。";
+          else if (selectedLang.startsWith('ru')) sampleGreeting = "Конфигурация голоса сохранена. Звук высокого качества активен.";
+          else if (selectedLang.startsWith('ar')) sampleGreeting = "تم تطبيق إعدادات الصوت بنجاح.";
+          else if (selectedLang.startsWith('hi')) sampleGreeting = "ध्वनि सेटिंग्स सफलतापूर्वक लागू की गईं।";
+
+          speakAgentResponse(sampleGreeting, true);
       };
   }
-
-  const voiceSamplePhrases = {
-      'en-US': "Project Gifted 1 Sovereign Voice synthesizer test successful. All systems operating with maximum clarity.",
-      'en-GB': "Project Gifted 1 British neural voice active and crystal clear.",
-      'en-AU': "Project Gifted 1 Australian audio core running at optimal performance.",
-      'en-IN': "Project Gifted 1 voice core calibrated for clear natural speech.",
-      'es-ES': "Project Gifted 1 sintetizador de voz en español activado con máxima claridad y realismo.",
-      'es-MX': "Project Gifted 1 sintetizador de voz en español latinoamericano listo y calibrado.",
-      'fr-FR': "Project Gifted 1 synthèse vocale française haute définition activée avec succès.",
-      'de-DE': "Project Gifted 1 deutsche Sprachausgabe erfolgreich initialisiert und einsatzbereit.",
-      'it-IT': "Project Gifted 1 sintetizzatore vocale italiano attivo con audio ad alta fedeltà.",
-      'pt-BR': "Project Gifted 1 sintetizador de voz em português brasileiro ativo com excelente clareza.",
-      'ja-JP': "プロジェクト ギフテッドワン 音声エンジンが正常に起動しました。",
-      'zh-CN': "Project Gifted 1 神经网络语音系统测试成功，发音清晰自然。",
-      'ko-KR': "프로젝트 기프티드원 고음질 보이스 엔진이 정상 작동 중입니다.",
-      'ru-RU': "Голосовой синтезатор Проекта Гифтед 1 успешно откалиброван и готов к работе.",
-      'ar-SA': "تم تفعيل محرك الصوت فائق الوضوح لمشروع جيفتد ون بنجاح.",
-      'hi-IN': "प्रोजेक्ट गिफ्टेड 1 एचडी वॉयस सिंथेसाइज़र सक्रिय है और स्पष्ट रूप से काम कर रहा है।"
-  };
-
   if (testVoiceBtn) {
       testVoiceBtn.onclick = () => {
           triggerHaptic('tap');
@@ -953,10 +884,21 @@ document.addEventListener("DOMContentLoaded", () => {
           if (voiceSpecificSelect) localStorage.setItem('PG1_SPECIFIC_VOICE', voiceSpecificSelect.value);
           if (voiceRateSlider) localStorage.setItem('PG1_VOICE_RATE', voiceRateSlider.value);
           if (voicePitchSlider) localStorage.setItem('PG1_VOICE_PITCH', voicePitchSlider.value);
-          
-          const selLang = voiceLangSelect ? voiceLangSelect.value : 'en-US';
-          const sample = voiceSamplePhrases[selLang] || voiceSamplePhrases['en-US'];
-          speakAgentResponse(sample, true);
+
+          const selectedLang = voiceLangSelect ? voiceLangSelect.value : 'en-US';
+          let testMsg = "Project Gifted 1 Sovereign Voice Synthesizer online. Audio fidelity is crystal clear.";
+          if (selectedLang.startsWith('es')) testMsg = "Voz de Proyecto Gifted 1 en línea. Sonido de alta definición verificado.";
+          else if (selectedLang.startsWith('fr')) testMsg = "Synthèse vocale de Projet Gifted 1 active. Son haute définition confirmé.";
+          else if (selectedLang.startsWith('de')) testMsg = "Projekt Gifted 1 Sprachsynthesizer online. Klangqualität bestätigt.";
+          else if (selectedLang.startsWith('it')) testMsg = "Sintetizzatore vocale di Project Gifted 1 attivo. Audio limpido e naturale.";
+          else if (selectedLang.startsWith('pt')) testMsg = "Sintetizador de voz Project Gifted 1 ativado. Qualidade sonora verificada.";
+          else if (selectedLang.startsWith('ja')) testMsg = "プロジェクト・ギフテッド・ワンの音声エンジンが起動しました。";
+          else if (selectedLang.startsWith('zh')) testMsg = "Project Gifted 1 语音引擎已启动，音频清晰流畅。";
+          else if (selectedLang.startsWith('ru')) testMsg = "Голосовой модуль Project Gifted 1 активен. Качество звука проверено.";
+          else if (selectedLang.startsWith('ar')) testMsg = "محرك الصوت لمشروع غيفتد ون يعمل بدقة عالية.";
+          else if (selectedLang.startsWith('hi')) testMsg = "प्रोजेक्ट गिफ्टेड 1 वॉयस सिंथेसाइज़र सक्रिय है।";
+
+          speakAgentResponse(testMsg, true);
       };
   }
 
@@ -964,17 +906,18 @@ document.addEventListener("DOMContentLoaded", () => {
   if (voiceBtn) {
       voiceBtn.onclick = () => {
           triggerHaptic('tap');
-          playKeystroke();
           unlockAudio();
           isVoiceEnabled = !isVoiceEnabled;
           localStorage.setItem('PG1_VOICE_ENABLED', isVoiceEnabled.toString());
           if (isVoiceEnabled) {
               voiceBtn.classList.add('active-btn');
               voiceBtn.innerText = '🗣️ Voice: ON';
-              speakAgentResponse('Voice active and audio calibrated.', true);
+              playSuccessChime();
+              speakAgentResponse('Voice active and sound verified.', true);
           } else {
               voiceBtn.classList.remove('active-btn');
               voiceBtn.innerText = '🗣️ Voice: OFF';
+              playKeystroke();
               stopSpeech();
           }
       };
@@ -1036,6 +979,7 @@ document.addEventListener("DOMContentLoaded", () => {
                   cameraPipBox.style.display = 'block';
                   videoBtn.classList.add('active-btn');
                   videoBtn.innerText = '📹 Vid: ON';
+                  playSuccessChime();
               } catch(err) {
                   alert('Camera access unavailable or denied: ' + err.message);
               }
@@ -1043,7 +987,7 @@ document.addEventListener("DOMContentLoaded", () => {
       };
   }
 
-  /* HIGH-FIDELITY MULTI-LANGUAGE LIVE DICTATION */
+  /* HIGH-FIDELITY LIVE AUDIO DICTATION SPEECH RECOGNITION */
   const audioBtn = document.getElementById('audioBtn');
   const inlineMicBtn = document.getElementById('inlineMicBtn');
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1052,7 +996,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (speechRecognizer) {
           try { speechRecognizer.stop(); } catch(e) {}
           speechRecognizer = null;
-          playMicBeep('stop');
+          playMicTone(false);
       }
       if (audioBtn) { audioBtn.classList.remove('recording-btn'); audioBtn.innerText = '🎙️ Dictate: OFF'; }
       if (inlineMicBtn) inlineMicBtn.classList.remove('recording-btn');
@@ -1087,11 +1031,12 @@ document.addEventListener("DOMContentLoaded", () => {
           speechRecognizer.maxAlternatives = 1;
           
           const configuredLang = localStorage.getItem('PG1_VOICE_LANG');
-          speechRecognizer.lang = configuredLang && configuredLang !== 'auto' ? configuredLang : (navigator.language || 'en-US');
+          speechRecognizer.lang = configuredLang && configuredLang !== 'auto' ? configuredLang : 'en-US';
           
           if (audioBtn) { audioBtn.classList.add('recording-btn'); audioBtn.innerText = '🎙️ Dictate: REC'; }
           if (inlineMicBtn) inlineMicBtn.classList.add('recording-btn');
-          playMicBeep('start');
+
+          playMicTone(true);
 
           let initialText = "";
           const inputEl = document.getElementById('terminalInput');
@@ -1150,7 +1095,7 @@ document.addEventListener("DOMContentLoaded", () => {
           syncFeedBtn.disabled = true;
           await updateCryptoTickers();
           triggerHaptic('success');
-          playSuccessChime();
+          playNotificationChime();
           setTimeout(() => { syncFeedBtn.disabled = false; }, 800);
       };
   }
@@ -1196,7 +1141,7 @@ document.addEventListener("DOMContentLoaded", () => {
               pendingImageData = { mime_type: 'image/jpeg', data: base64Data, dataUrl: dataUrl };
               if (mediaPreviewImg) { mediaPreviewImg.src = dataUrl; mediaPreviewImg.style.display = 'inline-block'; }
               if (mediaPreviewBox) mediaPreviewBox.style.display = 'block';
-              playSuccessChime();
+              playNotificationChime();
           } else {
               mediaInput.click();
           }
@@ -1215,7 +1160,7 @@ document.addEventListener("DOMContentLoaded", () => {
               if (mediaPreviewImg) { mediaPreviewImg.src = dataUrl; mediaPreviewImg.style.display = 'inline-block'; }
               if (mediaPreviewBox) mediaPreviewBox.style.display = 'block';
               triggerHaptic('tap');
-              playSuccessChime();
+              playNotificationChime();
           };
           reader.readAsDataURL(file);
       };
@@ -1286,7 +1231,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // =====================================================================
   const executeSendCommand = async () => {
     triggerHaptic('tap');
-    playKeystroke();
     unlockAudio();
     stopDictation();
     const inputEl = document.getElementById('terminalInput');
