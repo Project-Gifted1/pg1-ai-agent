@@ -1,4 +1,3 @@
-/* PG1 SOVEREIGN ENGINE v12.38 AUDIO ARBITER */
 let terminalAppendFunc = null;
 let mediaStream = null;
 let speechRecognizer = null;
@@ -11,7 +10,6 @@ let currentUtterance = null;
 let speechKeepAliveInterval = null;
 let audioCtx = null;
 let isSpeakingNow = false;
-let isAudioUnlocked = false;
 
 /* =====================================================================
    TELEMETRY & AUTONOMOUS ANOMALY DETECTION ENGINE
@@ -63,13 +61,12 @@ function unlockAudio() {
         }
         if ('speechSynthesis' in window) {
             window.speechSynthesis.resume();
-            if (!isAudioUnlocked) {
-                isAudioUnlocked = true;
-                if (!window.speechSynthesis.speaking) {
-                    const dummy = new SpeechSynthesisUtterance('');
-                    dummy.volume = 0;
-                    window.speechSynthesis.speak(dummy);
-                }
+            if (!window._speechPrimed) {
+                const dummy = new SpeechSynthesisUtterance('');
+                dummy.volume = 0.01;
+                dummy.rate = 2;
+                window.speechSynthesis.speak(dummy);
+                window._speechPrimed = true;
             }
         }
     } catch(e) {}
@@ -379,7 +376,7 @@ function getVoiceQualityScore(voice) {
     if (name.includes('enhanced')) score += 7;
     if (name.includes('wavenet')) score += 7;
     if (name.includes('google')) score += 6;
-    if (name.includes('siri') || name.includes('samantha') || name.includes('karen') || name.includes('daniel') || name.includes('victoria')) score += 5;
+    if (name.includes('siri') || name.includes('samantha') || name.includes('karen') || name.includes('daniel')) score += 5;
     if (voice.localService) score += 2;
     return score;
 }
@@ -418,18 +415,14 @@ function selectBestVoice(targetLang, persona, specificVoiceName) {
         }
     }
 
-    const normalizedPersona = (persona || '').toLowerCase();
-    const isMale = normalizedPersona === 'male' || normalizedPersona.includes('charon') || normalizedPersona.includes('fenrir');
-    const isFemale = normalizedPersona === 'female' || normalizedPersona.includes('aoede') || normalizedPersona.includes('clara');
-
     const femaleKeywords = ['female', 'zira', 'samantha', 'victoria', 'karen', 'siri', 'moira', 'tessa', 'anna', 'monica', 'amelie', 'kyoko', 'yuna', 'tingting', 'luciana', 'elena', 'yelda', 'lekha', 'paulina', 'alice', 'ava', 'zoe'];
     const maleKeywords = ['male', 'david', 'guy', 'george', 'daniel', 'alex', 'aaron', 'thomas', 'jorge', 'arthur', 'oliver', 'yannick', 'sinji', 'otoya', 'felipe', 'nikolai', 'tarik'];
 
     let genderFiltered = candidates;
-    if (isMale) {
+    if (persona === 'male') {
         const matches = candidates.filter(v => maleKeywords.some(k => v.name.toLowerCase().includes(k)));
         if (matches.length > 0) genderFiltered = matches;
-    } else if (isFemale) {
+    } else if (persona === 'female') {
         const matches = candidates.filter(v => femaleKeywords.some(k => v.name.toLowerCase().includes(k)));
         if (matches.length > 0) genderFiltered = matches;
     }
@@ -476,11 +469,10 @@ function speakAgentResponse(text, forceSpeak = false) {
         let chunkIndex = 0;
 
         const savedLang = localStorage.getItem('PG1_VOICE_LANG') || 'en-US';
-        const savedGender = localStorage.getItem('PG1_VOICE_GENDER') || 'gemini-live-aoede';
+        const savedGender = localStorage.getItem('PG1_VOICE_GENDER') || 'female';
         const savedSpecificVoice = localStorage.getItem('PG1_SPECIFIC_VOICE') || 'auto';
         const savedRate = parseFloat(localStorage.getItem('PG1_VOICE_RATE') || '1.0');
         const savedPitch = parseFloat(localStorage.getItem('PG1_VOICE_PITCH') || '1.0');
-        const savedVol = parseFloat(localStorage.getItem('PG1_VOICE_VOL') || '1.0');
 
         const matchedVoice = selectBestVoice(savedLang, savedGender, savedSpecificVoice);
 
@@ -498,7 +490,7 @@ function speakAgentResponse(text, forceSpeak = false) {
             }
 
             const utterance = new SpeechSynthesisUtterance(currentChunkText);
-            utterance.volume = isNaN(savedVol) ? 1.0 : Math.min(Math.max(savedVol, 0.1), 1.0);
+            utterance.volume = 1.0;
             utterance.rate = isNaN(savedRate) ? 1.0 : Math.min(Math.max(savedRate, 0.7), 1.5);
             utterance.pitch = isNaN(savedPitch) ? 1.0 : Math.min(Math.max(savedPitch, 0.8), 1.3);
 
@@ -530,7 +522,7 @@ function speakAgentResponse(text, forceSpeak = false) {
         }
 
         speechKeepAliveInterval = setInterval(() => {
-            if (window.speechSynthesis && window.speechSynthesis.speaking) {
+            if (window.speechSynthesis.speaking) {
                 window.speechSynthesis.resume();
             } else if (!isSpeakingNow) {
                 clearInterval(speechKeepAliveInterval);
@@ -539,43 +531,9 @@ function speakAgentResponse(text, forceSpeak = false) {
         }, 2500);
 
         playNotificationChime();
-        setTimeout(() => {
-            speakNextChunk();
-        }, 50);
+        speakNextChunk();
     } catch(e) {}
 }
-
-window.testVoiceSynthesis = function() {
-    unlockAudio();
-    saveVoicePreferences();
-    speakAgentResponse("Project Gifted 1 Sovereign Voice Synthesizer online. Audio fidelity is crystal clear.", true);
-};
-
-window.saveVoicePreferences = function() {
-    triggerHaptic('tap');
-    unlockAudio();
-    const voiceGenderSelect = document.getElementById('voiceGenderSelect');
-    const voiceLangSelect = document.getElementById('voiceLangSelect');
-    const voiceSpecificSelect = document.getElementById('voiceSpecificSelect');
-    const voiceRateSlider = document.getElementById('voiceRateSlider');
-    const voicePitchSlider = document.getElementById('voicePitchSlider');
-    const voiceVolSlider = document.getElementById('voiceVolSlider');
-    const sfxEnabledSelect = document.getElementById('sfxEnabledSelect');
-
-    if (voiceGenderSelect) localStorage.setItem('PG1_VOICE_GENDER', voiceGenderSelect.value);
-    if (voiceLangSelect) localStorage.setItem('PG1_VOICE_LANG', voiceLangSelect.value);
-    if (voiceSpecificSelect) localStorage.setItem('PG1_SPECIFIC_VOICE', voiceSpecificSelect.value);
-    if (voiceRateSlider) localStorage.setItem('PG1_VOICE_RATE', voiceRateSlider.value);
-    if (voicePitchSlider) localStorage.setItem('PG1_VOICE_PITCH', voicePitchSlider.value);
-    if (voiceVolSlider) localStorage.setItem('PG1_VOICE_VOL', voiceVolSlider.value);
-    if (sfxEnabledSelect) localStorage.setItem('PG1_SFX_ENABLED', sfxEnabledSelect.value);
-
-    const voiceSettingsModal = document.getElementById('voiceSettingsModal');
-    if (voiceSettingsModal) voiceSettingsModal.classList.remove('active');
-    
-    triggerHaptic('success');
-    playSuccessChime();
-};
 
 /* =====================================================================
    FULL MCP TOOL REGISTRY WITH PRE-FLIGHT LINTING & ROLLBACK
@@ -919,10 +877,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const voiceSpecificSelect = document.getElementById('voiceSpecificSelect');
   const voiceRateSlider = document.getElementById('voiceRateSlider');
   const voicePitchSlider = document.getElementById('voicePitchSlider');
-  const voiceVolSlider = document.getElementById('voiceVolSlider');
   const rateValLabel = document.getElementById('rateValLabel');
   const pitchValLabel = document.getElementById('pitchValLabel');
-  const volValLabel = document.getElementById('volValLabel');
   const sfxEnabledSelect = document.getElementById('sfxEnabledSelect');
 
   if (voiceGenderSelect && localStorage.getItem('PG1_VOICE_GENDER')) {
@@ -930,10 +886,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   if (voiceLangSelect && localStorage.getItem('PG1_VOICE_LANG')) {
       voiceLangSelect.value = localStorage.getItem('PG1_VOICE_LANG');
-  }
-  if (voiceVolSlider && localStorage.getItem('PG1_VOICE_VOL')) {
-      voiceVolSlider.value = localStorage.getItem('PG1_VOICE_VOL');
-      if (volValLabel) volValLabel.innerText = Math.round(parseFloat(voiceVolSlider.value) * 100) + '%';
   }
   if (voiceRateSlider && localStorage.getItem('PG1_VOICE_RATE')) {
       voiceRateSlider.value = localStorage.getItem('PG1_VOICE_RATE');
@@ -947,11 +899,6 @@ document.addEventListener("DOMContentLoaded", () => {
       sfxEnabledSelect.value = localStorage.getItem('PG1_SFX_ENABLED');
   }
 
-  if (voiceVolSlider && volValLabel) {
-      voiceVolSlider.oninput = () => {
-          volValLabel.innerText = Math.round(parseFloat(voiceVolSlider.value) * 100) + '%';
-      };
-  }
   if (voiceRateSlider && rateValLabel) {
       voiceRateSlider.oninput = () => {
           rateValLabel.innerText = parseFloat(voiceRateSlider.value).toFixed(2) + 'x';
@@ -980,12 +927,33 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   if (saveVoiceSettingsBtn && voiceSettingsModal) {
       saveVoiceSettingsBtn.onclick = () => {
-          window.saveVoicePreferences();
+          triggerHaptic('tap');
+          unlockAudio();
+          if (voiceGenderSelect) localStorage.setItem('PG1_VOICE_GENDER', voiceGenderSelect.value);
+          if (voiceLangSelect) localStorage.setItem('PG1_VOICE_LANG', voiceLangSelect.value);
+          if (voiceSpecificSelect) localStorage.setItem('PG1_SPECIFIC_VOICE', voiceSpecificSelect.value);
+          if (voiceRateSlider) localStorage.setItem('PG1_VOICE_RATE', voiceRateSlider.value);
+          if (voicePitchSlider) localStorage.setItem('PG1_VOICE_PITCH', voicePitchSlider.value);
+          if (sfxEnabledSelect) localStorage.setItem('PG1_SFX_ENABLED', sfxEnabledSelect.value);
+
+          voiceSettingsModal.classList.remove('active');
+          triggerHaptic('success');
+          playSuccessChime();
+
+          speakAgentResponse("Neural voice configuration applied. Sound fidelity verified.", true);
       };
   }
   if (testVoiceBtn) {
       testVoiceBtn.onclick = () => {
-          window.testVoiceSynthesis();
+          triggerHaptic('tap');
+          unlockAudio();
+          if (voiceGenderSelect) localStorage.setItem('PG1_VOICE_GENDER', voiceGenderSelect.value);
+          if (voiceLangSelect) localStorage.setItem('PG1_VOICE_LANG', voiceLangSelect.value);
+          if (voiceSpecificSelect) localStorage.setItem('PG1_SPECIFIC_VOICE', voiceSpecificSelect.value);
+          if (voiceRateSlider) localStorage.setItem('PG1_VOICE_RATE', voiceRateSlider.value);
+          if (voicePitchSlider) localStorage.setItem('PG1_VOICE_PITCH', voicePitchSlider.value);
+
+          speakAgentResponse("Project Gifted 1 Sovereign Voice Synthesizer online. Audio fidelity is crystal clear.", true);
       };
   }
 
@@ -1141,15 +1109,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
           speechRecognizer.onend = () => {
               if (isDictationActive) {
-                  setTimeout(() => {
-                      if (isDictationActive && speechRecognizer) {
-                          try {
-                              speechRecognizer.start();
-                          } catch(e) {
-                              stopDictation();
-                          }
-                      }
-                  }, 150);
+                  try {
+                      speechRecognizer.start();
+                  } catch(e) {
+                      stopDictation();
+                  }
               } else {
                   stopDictation();
               }
@@ -1170,7 +1134,6 @@ document.addEventListener("DOMContentLoaded", () => {
           startSpeechRecognition();
       }
   }
-  window.toggleSpeechRecognition = toggleSpeechRecognition;
 
   if (audioBtn) audioBtn.onclick = toggleSpeechRecognition;
   if (inlineMicBtn) inlineMicBtn.onclick = toggleSpeechRecognition;
@@ -1263,6 +1226,7 @@ document.addEventListener("DOMContentLoaded", () => {
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
+          URL.revokeObjectURL(url);
           triggerHaptic('success');
           playSuccessChime();
       };
@@ -1340,7 +1304,7 @@ document.addEventListener("DOMContentLoaded", () => {
     persistTerminalState();
     
     const tools = getMCPToolDeclarations();
-    const configuredModel = document.getElementById('modelSelector') ? document.getElementById('modelSelector').value : 'gemini-3.7-flash';
+    const configuredModel = document.getElementById('modelSelector') ? document.getElementById('modelSelector').value : 'gemini-2.5-flash';
     const routingDecision = routeModelByComplexity(cmd, configuredModel);
     const activeModel = routingDecision.selectedModel;
 
@@ -1452,9 +1416,6 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS ENFORCED:
       appendMsg(`Exception: ${e.message}`, 'error-msg', true); 
     }
   };
-
-  window.executeSendCommand = executeSendCommand;
-  window.executeUserPrompt = executeSendCommand;
 
   const sendBtn = document.getElementById('sendCommandButton');
   if (sendBtn) sendBtn.onclick = executeSendCommand;
