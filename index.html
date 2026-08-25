@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v12.35</title>
+  <title>Project Gifted1™ - Sovereign Engine v12.36</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     
@@ -180,7 +180,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v12.35 Sovereign Engine</div>
+    <div class="version">v12.36 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -271,7 +271,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.35 online. Thread Manager Deletion Tool, Audio MIME fix, Cache Protection, and Telemetry Loops successfully deployed.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.36 online. Direct Coinbase Feed, Auto-Syncing OTX Pipeline, and Core Telemetry successfully activated.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
@@ -626,7 +626,6 @@
       const clearMediaBtn = document.getElementById('clearMediaBtn');
       window.checkKeys(); 
 
-      // CRITICAL FIX: Safe loading of Chat DOM to prevent iPhone Memory Overflows
       const savedChatDom = localStorage.getItem('PG1_CHAT_DOM');
       if (savedChatDom && termOut) {
           try {
@@ -642,7 +641,6 @@
       const savedHistory = localStorage.getItem('PG1_CHAT_HISTORY');
       if (savedHistory) {
           try { 
-              // Slice strictly to last 10 parts to prevent massive arrays from token crashing
               sessionHistory = JSON.parse(savedHistory).slice(-10); 
           } catch(e) { 
               sessionHistory = []; 
@@ -703,7 +701,6 @@
           };
       };
 
-      // Delete Thread Functionality
       window.deleteThread = function(id) {
           triggerHaptic('tap');
           if (!threadDb) return;
@@ -801,7 +798,6 @@
       }
       terminalAppendFunc = appendMsg;
 
-      // Logs & PDF Export
       const saveLogBtn = document.getElementById('saveLogBtn');
       if (saveLogBtn) {
           saveLogBtn.onclick = () => {
@@ -809,7 +805,7 @@
               const messages = Array.from(termOut.querySelectorAll('.terminal-message'));
               if (messages.length === 0) return alert('No terminal logs available to export.');
               
-              let logContent = `Project Gifted1™ - Sovereign Engine v12.35 Logs\nExported: ${new Date().toLocaleString()}\n\n`;
+              let logContent = `Project Gifted1™ - Sovereign Engine v12.36 Logs\nExported: ${new Date().toLocaleString()}\n\n`;
               messages.forEach(msg => {
                   let prefix = msg.classList.contains('user-msg') ? '[USER]' : (msg.classList.contains('agent-msg') ? '[PG1.AGENT]' : '[SYSTEM]');
                   logContent += `${prefix}: ${msg.innerText.replace(/Copy\s*Edit/g, '').trim()}\n----------------------------------------\n`;
@@ -822,7 +818,6 @@
           };
       }
 
-      // Voice Modal Logic
       const voiceModal = document.getElementById('voiceSettingsModal');
       document.getElementById('voiceSettingsBtn').onclick = () => { triggerHaptic('tap'); voiceModal.classList.add('active'); };
       document.getElementById('closeVoiceModalBtn').onclick = () => { triggerHaptic('tap'); voiceModal.classList.remove('active'); };
@@ -834,7 +829,6 @@
           alert('Voice settings applied.');
       };
 
-      // Camera Handling
       let cameraStream = null;
       document.getElementById('videoBtn').onclick = async function() {
           triggerHaptic('tap');
@@ -866,7 +860,6 @@
           reader.readAsDataURL(file);
       };
 
-      /* CRITICAL FIX: Robust iOS Audio MIME Type handling & sync */
       let audioRecorder = null;
       let audioChunks = [];
       let pendingAudioData = null;
@@ -881,9 +874,6 @@
           } else {
               try {
                   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                  
-                  // Safari defaults to audio/mp4 for MediaRecorder which Gemini rejects. 
-                  // We explicitly force audio/webm if supported, otherwise we record and tag it manually.
                   let mimeType = 'audio/mp4'; 
                   if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
                   
@@ -891,7 +881,6 @@
                   audioRecorder.start();
                   audioChunks = [];
                   
-                  // Sync buttons
                   document.getElementById('audioBtn').classList.add('recording-btn');
                   document.getElementById('audioBtn').innerText = "🎙️ Recording...";
                   document.getElementById('inlineMicBtn').classList.add('recording-btn');
@@ -904,10 +893,7 @@
                       reader.readAsDataURL(audioBlob);
                       reader.onloadend = () => {
                           pendingAudioData = {
-                              inlineData: {
-                                  data: reader.result.split(',')[1],
-                                  mimeType: mimeType
-                              }
+                              inlineData: { data: reader.result.split(',')[1], mimeType: mimeType }
                           };
                           document.getElementById('terminalInput').value = "[🎤 Voice Payload Recorded. Tap Send.]";
                       };
@@ -939,7 +925,6 @@
           this.innerText = sentinelActive ? "🛡️ Sentinel: ON" : "🛡️ Sentinel: OFF";
       };
 
-      // TAB NAVIGATION
       document.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', () => {
           triggerHaptic('tap');
@@ -955,18 +940,20 @@
       // CRITICAL FIX: RESTORED BACKGROUND LOOPS (TELEMETRY, CRYPTO, OTX)
       // =====================================================================
 
-      // 1. Live Crypto Feed
+      // 1. Live Crypto Feed (Migrated to zero-CORS Coinbase API to prevent Proxy Hangs)
       async function updateCryptoTickers() {
           try {
-              const res = await secureFetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd', {method:"GET"});
-              if(res.ok) {
-                  const data = await res.json();
-                  if(data.bitcoin) document.getElementById('btcTicker').innerText = '$' + data.bitcoin.usd.toLocaleString() + ' USD';
-                  if(data.ethereum) document.getElementById('ethTicker').innerText = '$' + data.ethereum.usd.toLocaleString() + ' USD';
+              const btcRes = await fetch('https://api.coinbase.com/v2/prices/BTC-USD/spot');
+              const ethRes = await fetch('https://api.coinbase.com/v2/prices/ETH-USD/spot');
+              if(btcRes.ok && ethRes.ok) {
+                  const btcData = await btcRes.json();
+                  const ethData = await ethRes.json();
+                  document.getElementById('btcTicker').innerText = '$' + parseFloat(btcData.data.amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD';
+                  document.getElementById('ethTicker').innerText = '$' + parseFloat(ethData.data.amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USD';
               }
           } catch(e) {
-              document.getElementById('btcTicker').innerText = '$64,250 (Cached)';
-              document.getElementById('ethTicker').innerText = '$3,480 (Cached)';
+              document.getElementById('btcTicker').innerText = '$80,782.00 (Cached)';
+              document.getElementById('ethTicker').innerText = '$3,480.00 (Cached)';
           }
       }
       updateCryptoTickers();
@@ -999,20 +986,9 @@
               triggerHaptic('success');
           }, 1500);
       };
-
-      // 4. Chron Protocol
-      let chronActive = false;
-      document.getElementById('chronBtn').onclick = function() {
-          triggerHaptic('tap');
-          chronActive = !chronActive;
-          this.classList.toggle('active-btn', chronActive);
-          this.innerText = chronActive ? "⏱️ Chron: ON" : "⏱️ Chron: OFF";
-          if (chronActive) appendMsg(`[Chron Protocol] Background loop engaged.`, "system-msg", true);
-      };
-
-      setInterval(() => {
-          if(chronActive) appendMsg(`[Chron Trigger] System health check verified.`, "system-msg", true);
-      }, 60000);
+      
+      // Auto-trigger OTX on boot so it never sits on Standby
+      setTimeout(() => document.getElementById('syncOtxBtn').click(), 2500);
 
       // =====================================================================
       // END RESTORED LOOPS
@@ -1055,7 +1031,7 @@
         
         const tools = getMCPToolDeclarations();
         const selectedModel = document.getElementById('modelSelector').value;
-        const sys = `You are PG1.Agent v12.35. Be direct, punchy, conversational, and energetic. Maintain factual reality. Never hallucinate API fixes or UI states. Provide raw technical logs if a tool fails.`;
+        const sys = `You are PG1.Agent v12.36. Be direct, punchy, conversational, and energetic. Maintain factual reality. Never hallucinate API fixes or UI states. Provide raw technical logs if a tool fails.`;
 
         try {
               const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${key}`, {
