@@ -21,7 +21,7 @@
   <div id="voiceSettingsModal" class="modal-overlay">
     <div class="modal-content">
       <div class="modal-header">
-        <span>🗣️ Neural Voice Configuration</span>
+        <span>🗣️ Neural Voice & Audio Configuration</span>
         <button class="close-modal-btn" id="closeVoiceModalBtn">✕</button>
       </div>
       <div class="key-input-group">
@@ -50,7 +50,10 @@
           <option value="ar-SA">Arabic (Saudi / Standard)</option>
         </select>
       </div>
-      <button id="saveVoiceSettingsBtn" class="primary-btn" style="width:100%;">Apply Voice Settings</button>
+      <div style="display:flex; gap:8px;">
+        <button id="testVoiceBtn" class="utility-btn" style="flex:1; justify-content:center; padding:10px; font-weight:600; border-color:#38bdf8;">🔊 Test Voice</button>
+        <button id="saveVoiceSettingsBtn" class="primary-btn" style="flex:1; margin-top:0;">Apply Settings</button>
+      </div>
     </div>
   </div>
 
@@ -147,7 +150,7 @@
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.36 online. Direct Coinbase Feed, Auto-Syncing OTX Pipeline, and Core Telemetry successfully activated.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.36 online. Direct Coinbase Feed, Auto-Syncing OTX Pipeline, and Core Telemetry successfully activated.<div class="msg-btn-group"><button class="msg-action-btn speak-btn" onclick="speakMsg(this)">🔊 Speak</button><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
       <div id="mediaPreviewBox" class="media-preview-box">
