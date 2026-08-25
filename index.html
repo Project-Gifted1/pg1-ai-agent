@@ -393,7 +393,6 @@
     async function secureGitHubCommit(owner, repo, path, content, message, bypassGuardrail = false) {
       const gitToken = document.getElementById("githubKeyInput").value;
       
-      // Explicit confirmation required unless explicitly stated otherwise by the user in a prompt
       if (!bypassGuardrail) {
         const isApproved = confirm(`AGENT ALERT: The system is attempting to execute a direct write operation to the repository.\n\nTarget Repo: ${owner}/${repo}\nFile: ${path}\nCommit Message: "${message}"\n\nDo you explicitly authorize this commit?`);
         if (!isApproved) {
@@ -409,8 +408,7 @@
 
       setAgentWorking(true);
       try {
-        // Implementation for the fetch to GitHub REST API to execute the commit 
-        alert("Commit executed successfully.");
+        alert("Commit function triggered (Handled by Global Interceptor).");
       } catch (err) {
         alert("Commit failed: " + err.message);
       } finally {
@@ -457,6 +455,31 @@
         setAgentWorking(false);
       }
     }
+
+    // 8. Sovereign Network Interceptor (Hard Guardrail)
+    const originalFetch = window.fetch;
+    window.fetch = async function() {
+      const url = arguments[0];
+      const options = arguments[1];
+
+      // Detect GitHub API write operations (PUT requests to /contents/)
+      if (typeof url === 'string' && url.includes('api.github.com/repos') && url.includes('/contents/') && options && options.method === 'PUT') {
+        let commitMsg = "Unknown commit";
+        try {
+           const payload = JSON.parse(options.body);
+           commitMsg = payload.message || commitMsg;
+        } catch(e) {}
+
+        const isApproved = confirm(`🛡️ SOVEREIGN GUARDRAIL 🛡️\n\nThe agent is attempting a direct write operation.\nTarget: ${url}\nMessage: "${commitMsg}"\n\nAuthorize this commit?`);
+        
+        if (!isApproved) {
+          alert("Commit aborted. Network request killed.");
+          return new Response(JSON.stringify({ error: "User explicitly blocked the commit." }), { status: 403, statusText: "Forbidden" });
+        }
+      }
+      // Proceed if approved or if it's a safe GET request
+      return originalFetch.apply(this, arguments);
+    };
   </script>
   <script src="./engine.js"></script>
 </body>
