@@ -58,6 +58,7 @@ function setSystemState(state) {
 
 function playKeystroke() {
     try {
+        unlockAudio();
         const ctx = getAudioContext();
         if (!ctx) return;
         const osc = ctx.createOscillator(); 
@@ -226,7 +227,7 @@ function speakAgentResponse(text, forceSpeak = false) {
 
         if (!plainText) return;
 
-        // Split text into digestible chunks for mobile Web Speech API reliability
+        // Split text into clean sentences for iOS & Web Speech API stability
         const sentenceRegex = /[^.!?]+[.!?]+|[^.!?]+$/g;
         const chunks = plainText.match(sentenceRegex) || [plainText];
         let chunkIndex = 0;
@@ -281,7 +282,7 @@ function speakAgentResponse(text, forceSpeak = false) {
                 speakNextChunk();
             };
 
-            utterance.onerror = (e) => {
+            utterance.onerror = () => {
                 speakNextChunk();
             };
 
@@ -694,59 +695,98 @@ document.addEventListener("DOMContentLoaded", () => {
       };
   }
 
-  /* AUDIO DICTATION SPEECH RECOGNITION */
+  /* HIGH-FIDELITY LIVE AUDIO DICTATION SPEECH RECOGNITION */
   const audioBtn = document.getElementById('audioBtn');
   const inlineMicBtn = document.getElementById('inlineMicBtn');
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-  function toggleSpeechRecognition() {
+  function stopDictation() {
+      if (speechRecognizer) {
+          try { speechRecognizer.stop(); } catch(e) {}
+          speechRecognizer = null;
+      }
+      if (audioBtn) { audioBtn.classList.remove('recording-btn'); audioBtn.innerText = '🎙️ Dictate: OFF'; }
+      if (inlineMicBtn) inlineMicBtn.classList.remove('recording-btn');
+  }
+
+  async function toggleSpeechRecognition() {
       triggerHaptic('tap');
       unlockAudio();
+      
       if (!SpeechRec) {
-          alert('Speech Recognition API not supported in this browser.');
+          alert('Speech Recognition API not supported in this browser. Please use a Web Speech compatible browser.');
           return;
       }
+      
       if (speechRecognizer) {
-          speechRecognizer.stop();
-          speechRecognizer = null;
-          if (audioBtn) { audioBtn.classList.remove('recording-btn'); audioBtn.innerText = '🎙️ Dictate: OFF'; }
-          if (inlineMicBtn) inlineMicBtn.classList.remove('recording-btn');
+          stopDictation();
+          triggerHaptic('tap');
           return;
       }
+
       try {
+          // Warm up mic permissions if needed
+          if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+              try {
+                  const testStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                  testStream.getTracks().forEach(t => t.stop());
+              } catch(permErr) {}
+          }
+
           speechRecognizer = new SpeechRec();
-          speechRecognizer.continuous = false;
-          speechRecognizer.interimResults = false;
-          speechRecognizer.lang = localStorage.getItem('PG1_VOICE_LANG') && localStorage.getItem('PG1_VOICE_LANG') !== 'auto' ? localStorage.getItem('PG1_VOICE_LANG') : 'en-US';
+          speechRecognizer.continuous = true;
+          speechRecognizer.interimResults = true;
+          speechRecognizer.maxAlternatives = 1;
+          
+          const configuredLang = localStorage.getItem('PG1_VOICE_LANG');
+          speechRecognizer.lang = configuredLang && configuredLang !== 'auto' ? configuredLang : 'en-US';
           
           if (audioBtn) { audioBtn.classList.add('recording-btn'); audioBtn.innerText = '🎙️ Dictate: REC'; }
           if (inlineMicBtn) inlineMicBtn.classList.add('recording-btn');
 
+          let initialText = "";
+          const inputEl = document.getElementById('terminalInput');
+          if (inputEl) {
+              initialText = inputEl.value;
+              inputEl.focus();
+          }
+
           speechRecognizer.onresult = (event) => {
-              const transcript = event.results[0][0].transcript;
-              const input = document.getElementById('terminalInput');
-              if (input) {
-                  input.value = (input.value ? input.value + ' ' : '') + transcript;
-                  input.focus();
+              let finalTranscript = '';
+              let interimTranscript = '';
+
+              for (let i = event.resultIndex; i < event.results.length; ++i) {
+                  if (event.results[i].isFinal) {
+                      finalTranscript += event.results[i][0].transcript;
+                  } else {
+                      interimTranscript += event.results[i][0].transcript;
+                  }
               }
-              triggerHaptic('success');
+
+              if (inputEl) {
+                  const combined = (initialText ? initialText + ' ' : '') + (finalTranscript || interimTranscript);
+                  inputEl.value = combined;
+              }
+              triggerHaptic('tap');
           };
 
-          speechRecognizer.onerror = () => {
-              if (audioBtn) { audioBtn.classList.remove('recording-btn'); audioBtn.innerText = '🎙️ Dictate: OFF'; }
-              if (inlineMicBtn) inlineMicBtn.classList.remove('recording-btn');
-              speechRecognizer = null;
+          speechRecognizer.onerror = (event) => {
+              console.warn("SpeechRec error:", event.error);
+              if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                  alert('Microphone permission was denied. Please allow microphone access in your browser settings.');
+              }
+              stopDictation();
           };
 
           speechRecognizer.onend = () => {
-              if (audioBtn) { audioBtn.classList.remove('recording-btn'); audioBtn.innerText = '🎙️ Dictate: OFF'; }
-              if (inlineMicBtn) inlineMicBtn.classList.remove('recording-btn');
-              speechRecognizer = null;
+              stopDictation();
           };
 
           speechRecognizer.start();
+          playKeystroke();
       } catch(e) {
-          alert('Microphone initialization failed.');
+          stopDictation();
+          alert('Microphone initialization failed: ' + e.message);
       }
   }
 
@@ -888,6 +928,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const executeSendCommand = async () => {
     triggerHaptic('tap');
     unlockAudio();
+    stopDictation();
     const inputEl = document.getElementById('terminalInput');
     let cmd = inputEl ? inputEl.value.trim() : '';
     if (!cmd && !pendingImageData) return;
