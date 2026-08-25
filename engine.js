@@ -1,7 +1,6 @@
 let terminalAppendFunc = null;
-let currentCameraStream = null;
+let mediaStream = null;
 let speechRecognizer = null;
-let isRecordingAudio = false;
 let isVoiceEnabled = false;
 let isSentinelEnabled = true;
 let isChronEnabled = false;
@@ -34,20 +33,6 @@ function playKeystroke() {
     } catch(e) {}
 }
 
-function playCoreChime() {
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    try {
-        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
-        osc.frequency.exponentialRampToValueAtTime(1046.50, audioCtx.currentTime + 0.15); // C6
-        gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
-        osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.start(); osc.stop(audioCtx.currentTime + 0.35);
-    } catch(e) {}
-}
-
 function renderMarkdownToHtml(raw) {
     if (!raw) return "";
     let safeRaw = raw.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -60,83 +45,112 @@ function renderMarkdownToHtml(raw) {
         .replace(/\n\n/g, '<br><br>');
 }
 
-/* TTS Voice Synthesizer */
-function speakText(text) {
-    if (!isVoiceEnabled || !('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-    
-    // Strip markdown tags and code snippets for speech
-    const cleanText = text.replace(/`[^`]*`/g, 'code snippet').replace(/[*#_~]/g, '').trim();
-    if (!cleanText) return;
-
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    const gender = localStorage.getItem('PG1_VOICE_GENDER') || 'female';
-    const lang = localStorage.getItem('PG1_VOICE_LANG') || 'auto';
-
-    if (lang !== 'auto') {
-        utterance.lang = lang;
-    }
-
-    const voices = window.speechSynthesis.getVoices();
-    if (voices.length > 0) {
-        let matchedVoice = null;
-        if (lang !== 'auto') {
-            matchedVoice = voices.find(v => v.lang.toLowerCase().startsWith(lang.substring(0, 2).toLowerCase()));
-        }
-        if (!matchedVoice && gender === 'female') {
-            matchedVoice = voices.find(v => v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('samantha') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('google us english'));
-        } else if (!matchedVoice && gender === 'male') {
-            matchedVoice = voices.find(v => v.name.toLowerCase().includes('male') || v.name.toLowerCase().includes('david') || v.name.toLowerCase().includes('george') || v.name.toLowerCase().includes('daniel'));
-        }
-        if (matchedVoice) utterance.voice = matchedVoice;
-    }
-
-    const coreLogo = document.getElementById('aiCoreLogo');
-    utterance.onstart = () => { if (coreLogo) coreLogo.classList.add('is-speaking'); };
-    utterance.onend = () => { if (coreLogo) coreLogo.classList.remove('is-speaking'); };
-    utterance.onerror = () => { if (coreLogo) coreLogo.classList.remove('is-speaking'); };
-
-    window.speechSynthesis.speak(utterance);
-}
-
 window.saveMasterKeys = function() {
     triggerHaptic('tap');
-    const kIn = document.getElementById('masterKeyInput'); const gIn = document.getElementById('githubKeyInput'); const rIn = document.getElementById('replicateKeyInput');
+    const kIn = document.getElementById('masterKeyInput'); 
+    const gIn = document.getElementById('githubKeyInput');
+    const rIn = document.getElementById('replicateKeyInput');
     if (kIn && kIn.value && kIn.value !== '••••••••••••••••') localStorage.setItem('PG1_KEY', kIn.value.trim());
     if (gIn && gIn.value && gIn.value !== '••••••••••••••••') localStorage.setItem('PG1_GH_PAT', gIn.value.trim());
-    if (rIn && rIn.value && rIn.value !== '••••••••••••••••') localStorage.setItem('PG1_REPLICATE_KEY', rIn.value.trim());
-    window.checkKeys(); triggerHaptic('success'); alert('Credentials securely saved.');
+    if (rIn && rIn.value && rIn.value !== '••••••••••••••••') localStorage.setItem('PG1_REP_KEY', rIn.value.trim());
+    window.checkKeys(); 
+    triggerHaptic('success'); 
+    alert('Credentials securely saved.');
 };
 
 window.checkKeys = function() {
-    const kIn = document.getElementById('masterKeyInput'); const gIn = document.getElementById('githubKeyInput'); const rIn = document.getElementById('replicateKeyInput');
-    const stat = document.getElementById('keyStatusText'); const connBadge = document.getElementById('connectionBadge');
+    const kIn = document.getElementById('masterKeyInput'); 
+    const gIn = document.getElementById('githubKeyInput');
+    const rIn = document.getElementById('replicateKeyInput');
+    const stat = document.getElementById('keyStatusText'); 
+    const connBadge = document.getElementById('connectionBadge');
     if (!kIn || !gIn || !stat || !connBadge) return;
-    if (localStorage.getItem('PG1_KEY') && localStorage.getItem('PG1_GH_PAT')) {
-        kIn.value = '••••••••••••••••'; gIn.value = '••••••••••••••••';
-        if (rIn && localStorage.getItem('PG1_REPLICATE_KEY')) rIn.value = '••••••••••••••••';
-        stat.innerText = 'KEY_STATUS: STORED_LOCAL'; stat.style.color = '#10b981';
-        connBadge.innerText = '● CONNECTED'; connBadge.style.color = '#10b981';
+    
+    const hasKey = !!localStorage.getItem('PG1_KEY');
+    const hasPat = !!localStorage.getItem('PG1_GH_PAT');
+    const hasRep = !!localStorage.getItem('PG1_REP_KEY');
+    
+    if (hasKey) kIn.value = '••••••••••••••••';
+    if (hasPat) gIn.value = '••••••••••••••••';
+    if (hasRep && rIn) rIn.value = '••••••••••••••••';
+    
+    if (hasKey) {
+        stat.innerText = hasPat ? 'KEY_STATUS: MASTER + GITHUB_PAT' : 'KEY_STATUS: MASTER_STORED';
+        stat.style.color = '#10b981';
+        connBadge.innerText = '● CONNECTED'; 
+        connBadge.style.color = '#10b981';
     } else {
-        stat.innerText = 'KEY_STATUS: NOT_SET'; stat.style.color = '#ef4444';
-        connBadge.innerText = '● DISCONNECTED'; connBadge.style.color = '#ef4444';
+        stat.innerText = 'KEY_STATUS: NOT_SET'; 
+        stat.style.color = '#ef4444';
+        connBadge.innerText = '● DISCONNECTED'; 
+        connBadge.style.color = '#ef4444';
     }
 };
 
 window.copyMsg = function(btn) {
   triggerHaptic('tap');
   const msgDiv = btn.closest('.terminal-message');
-  navigator.clipboard.writeText(msgDiv.innerText.replace('Copy', '').replace('Edit', '').trim()).then(() => alert('Copied to clipboard.'));
+  if (!msgDiv) return;
+  const clone = msgDiv.cloneNode(true);
+  const btnGroup = clone.querySelector('.msg-btn-group');
+  if (btnGroup) btnGroup.remove();
+  navigator.clipboard.writeText(clone.innerText.trim()).then(() => alert('Copied to clipboard.'));
 };
 
 window.editMsg = function(btn) {
   triggerHaptic('tap');
   const msgDiv = btn.closest('.terminal-message');
+  if (!msgDiv) return;
+  const clone = msgDiv.cloneNode(true);
+  const btnGroup = clone.querySelector('.msg-btn-group');
+  if (btnGroup) btnGroup.remove();
   const input = document.getElementById('terminalInput');
-  input.value = msgDiv.innerText.replace('Copy', '').replace('Edit', '').trim(); input.focus();
+  if (input) {
+      input.value = clone.innerText.trim();
+      input.focus();
+  }
 };
 
-/* FULL MCP TOOL REGISTRY */
+/* VOICE SYNTHESIS ENGINE */
+function speakAgentResponse(text) {
+    if (!isVoiceEnabled || !('speechSynthesis' in window)) return;
+    try {
+        window.speechSynthesis.cancel();
+        const plainText = text.replace(/<[^>]*>/g, '').replace(/[*_#`]/g, '').trim();
+        if (!plainText) return;
+        
+        const utterance = new SpeechSynthesisUtterance(plainText);
+        const savedLang = localStorage.getItem('PG1_VOICE_LANG') || 'en-US';
+        const savedGender = localStorage.getItem('PG1_VOICE_GENDER') || 'female';
+        
+        if (savedLang !== 'auto') {
+            utterance.lang = savedLang;
+        }
+
+        const voices = window.speechSynthesis.getVoices();
+        if (voices && voices.length > 0) {
+            let matchedVoice = null;
+            if (savedGender === 'male') {
+                matchedVoice = voices.find(v => (v.lang.startsWith(savedLang.substring(0, 2)) || savedLang === 'auto') && (v.name.toLowerCase().includes('male') || v.name.toLowerCase().includes('david') || v.name.toLowerCase().includes('guy') || v.name.toLowerCase().includes('george')));
+            } else if (savedGender === 'female') {
+                matchedVoice = voices.find(v => (v.lang.startsWith(savedLang.substring(0, 2)) || savedLang === 'auto') && (v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha') || v.name.toLowerCase().includes('victoria')));
+            }
+            if (!matchedVoice && savedLang !== 'auto') {
+                matchedVoice = voices.find(v => v.lang.startsWith(savedLang.substring(0, 2)));
+            }
+            if (matchedVoice) utterance.voice = matchedVoice;
+        }
+
+        const logo = document.getElementById('aiCoreLogo');
+        utterance.onstart = () => { if (logo) logo.classList.add('is-speaking'); };
+        utterance.onend = () => { if (logo) logo.classList.remove('is-speaking'); };
+        utterance.onerror = () => { if (logo) logo.classList.remove('is-speaking'); };
+
+        window.speechSynthesis.speak(utterance);
+    } catch(e) {}
+}
+
+/* FULL MCP TOOL REGISTRY RESTORED */
 async function searchGitHubRepos(query) {
     const pat = localStorage.getItem('PG1_GH_PAT'); if (!pat) return "ERROR: GitHub PAT missing.";
     if(terminalAppendFunc) terminalAppendFunc(`[GitHub API] Searching for: ${query}...`, "system-msg", true);
@@ -200,7 +214,9 @@ function evaluatePromptComplexity(prompt) {
         /patch/i, /remediat/i, /infrastructure/i, /algorithm/i, /optimize/i,
         /self-heal/i, /investigate/i, /escalat/i, /analyze\s*deeply/i, /complex/i
     ];
-    return deepLogicTriggers.some(pattern => pattern.test(prompt)) || prompt.length > 250 || prompt.includes("```") || (prompt.match(/\n/g) || []).length >= 3;
+    const hasComplexTrigger = deepLogicTriggers.some(pattern => pattern.test(prompt));
+    const isHighVolumeOrStructured = prompt.length > 250 || prompt.includes("```") || (prompt.match(/\n/g) || []).length >= 3;
+    return hasComplexTrigger || isHighVolumeOrStructured;
 }
 
 function routeModelByComplexity(prompt, defaultModel = 'gemini-3.7-flash') {
@@ -209,72 +225,18 @@ function routeModelByComplexity(prompt, defaultModel = 'gemini-3.7-flash') {
     const FLASH_MODEL = 'gemini-3.7-flash';
 
     if (isComplex) {
-        return { selectedModel: PRO_MODEL, escalated: true, reason: "Deep logic / diagnostic / architecture requirements detected" };
+        return {
+            selectedModel: PRO_MODEL,
+            escalated: true,
+            reason: "Deep logic / diagnostic / architecture requirements detected"
+        };
     }
-    return { selectedModel: defaultModel.includes('pro') ? defaultModel : FLASH_MODEL, escalated: false, reason: "Standard complexity query routed to Flash core" };
-}
-
-/* THREADS MANAGEMENT */
-function getSavedThreads() {
-    try {
-        const stored = localStorage.getItem('PG1_SAVED_THREADS');
-        return stored ? JSON.parse(stored) : [];
-    } catch(e) { return []; }
-}
-
-function saveCurrentThread(history, domContent) {
-    if (!history || history.length === 0) return;
-    const threads = getSavedThreads();
-    const firstUserMsg = history.find(m => m.role === 'user');
-    const titleText = firstUserMsg ? (firstUserMsg.parts[0]?.text || "Thread").substring(0, 30) : "Thread";
-    const newThread = {
-        id: 'th_' + Date.now(),
-        title: titleText + '...',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' }),
-        history: history,
-        dom: domContent
+    return {
+        selectedModel: defaultModel.includes('pro') ? defaultModel : FLASH_MODEL,
+        escalated: false,
+        reason: "Standard complexity query routed to Flash core"
     };
-    threads.unshift(newThread);
-    localStorage.setItem('PG1_SAVED_THREADS', JSON.stringify(threads.slice(0, 15)));
 }
-
-function renderSavedThreadsList() {
-    const container = document.getElementById('threadsListContainer');
-    if (!container) return;
-    const threads = getSavedThreads();
-    if (threads.length === 0) {
-        container.innerHTML = '<div style="color:#94a3b8; font-size:0.8em; text-align:center; padding:12px;">No saved threads yet.</div>';
-        return;
-    }
-    container.innerHTML = threads.map(th => `
-        <div class="thread-item" data-id="${th.id}">
-            <div class="thread-info" onclick="loadThread('${th.id}')">
-                <div class="thread-title">💬 ${th.title}</div>
-                <div class="thread-time">${th.timestamp}</div>
-            </div>
-            <button class="thread-delete-btn" onclick="deleteThread('${th.id}', event)">✕</button>
-        </div>
-    `).join('');
-}
-
-window.loadThread = function(threadId) {
-    triggerHaptic('tap');
-    const threads = getSavedThreads();
-    const thread = threads.find(t => t.id === threadId);
-    if (!thread) return;
-    const termOut = document.getElementById('terminalOutput');
-    if (termOut) termOut.innerHTML = thread.dom;
-    window.activeSessionHistory = thread.history || [];
-    document.getElementById('threadsModal').classList.remove('active');
-};
-
-window.deleteThread = function(threadId, e) {
-    if (e) e.stopPropagation();
-    triggerHaptic('tap');
-    let threads = getSavedThreads().filter(t => t.id !== threadId);
-    localStorage.setItem('PG1_SAVED_THREADS', JSON.stringify(threads));
-    renderSavedThreadsList();
-};
 
 /* ENGINE INITIALIZATION */
 document.addEventListener("DOMContentLoaded", () => {
@@ -282,10 +244,9 @@ document.addEventListener("DOMContentLoaded", () => {
   localStorage.removeItem('PG1_CHAT_HISTORY');
 
   let sessionHistory = [];
-  window.activeSessionHistory = sessionHistory;
   let pendingImageData = null;
   const termOut = document.getElementById('terminalOutput');
-  window.checkKeys();
+  window.checkKeys(); 
 
   function persistTerminalState() {
       try {
@@ -294,19 +255,91 @@ document.addEventListener("DOMContentLoaded", () => {
       } catch(e) {}
   }
 
-  window.startNewThread = function() {
-      triggerHaptic('tap');
-      if (sessionHistory.length > 0 && termOut) {
-          saveCurrentThread(sessionHistory, termOut.innerHTML);
+  /* THREAD PERSISTENCE SYSTEM */
+  function getSavedThreads() {
+      try {
+          const raw = localStorage.getItem('PG1_SAVED_THREADS');
+          return raw ? JSON.parse(raw) : [];
+      } catch(e) { return []; }
+  }
+
+  function saveCurrentThreadRecord() {
+      if (sessionHistory.length === 0) return;
+      try {
+          const threads = getSavedThreads();
+          const firstUserMsg = sessionHistory.find(m => m.role === 'user');
+          const title = firstUserMsg && firstUserMsg.parts && firstUserMsg.parts[0] && firstUserMsg.parts[0].text 
+                        ? firstUserMsg.parts[0].text.substring(0, 35) + '...' 
+                        : 'Session ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const threadRecord = {
+              id: Date.now().toString(),
+              title: title,
+              time: new Date().toLocaleString(),
+              history: sessionHistory,
+              dom: termOut ? termOut.innerHTML : ''
+          };
+          threads.unshift(threadRecord);
+          localStorage.setItem('PG1_SAVED_THREADS', JSON.stringify(threads.slice(0, 15)));
+      } catch(e) {}
+  }
+
+  function renderSavedThreadsList() {
+      const container = document.getElementById('threadsListContainer');
+      if (!container) return;
+      const threads = getSavedThreads();
+      if (threads.length === 0) {
+          container.innerHTML = '<div style="color:#94a3b8; font-size:0.8em; text-align:center; padding:15px;">No saved threads yet.</div>';
+          return;
       }
-      sessionHistory = [];
-      window.activeSessionHistory = sessionHistory;
-      localStorage.removeItem('PG1_CHAT_DOM'); localStorage.removeItem('PG1_CHAT_HISTORY');
-      termOut.innerHTML = '<div class="terminal-message agent-msg">Memory flushed. New secure thread initiated.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div></div>';
+      container.innerHTML = threads.map(th => `
+          <div class="thread-item" data-id="${th.id}">
+              <div class="thread-info" onclick="window.loadSavedThread('${th.id}')">
+                  <div class="thread-title">📁 ${renderMarkdownToHtml(th.title).replace(/<[^>]*>/g, '')}</div>
+                  <div class="thread-time">${th.time} • ${th.history ? th.history.length : 0} msgs</div>
+              </div>
+              <button class="thread-delete-btn" onclick="window.deleteSavedThread('${th.id}', event)">✕</button>
+          </div>
+      `).join('');
+  }
+
+  window.loadSavedThread = function(threadId) {
+      triggerHaptic('tap');
+      const threads = getSavedThreads();
+      const target = threads.find(t => t.id === threadId);
+      if (!target) return;
+      sessionHistory = target.history || [];
+      if (target.dom && termOut) {
+          termOut.innerHTML = target.dom;
+      }
+      persistTerminalState();
       document.getElementById('threadsModal').classList.remove('active');
+      appendMsg(`[Thread Restored] Resumed session "${target.title}"`, 'system-msg', true);
+  };
+
+  window.deleteSavedThread = function(threadId, e) {
+      if (e) e.stopPropagation();
+      triggerHaptic('tap');
+      let threads = getSavedThreads();
+      threads = threads.filter(t => t.id !== threadId);
+      localStorage.setItem('PG1_SAVED_THREADS', JSON.stringify(threads));
+      renderSavedThreadsList();
+  };
+
+  window.startNewThread = function() {
+      triggerHaptic('tap'); 
+      if (sessionHistory.length > 0) saveCurrentThreadRecord();
+      sessionHistory = [];
+      localStorage.removeItem('PG1_CHAT_DOM'); 
+      localStorage.removeItem('PG1_CHAT_HISTORY');
+      if (termOut) {
+          termOut.innerHTML = '<div class="terminal-message agent-msg">Memory flushed. New secure thread initiated.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div></div>';
+      }
+      const threadsModal = document.getElementById('threadsModal');
+      if (threadsModal) threadsModal.classList.remove('active');
   };
 
   async function appendMsg(text, type, instant = false) {
+    if (!termOut) return;
     const div = document.createElement('div'); div.className = `terminal-message ${type}`;
     if (type === 'user-msg' || type === 'system-msg' || type === 'error-msg' || instant) {
         div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div>`;
@@ -315,12 +348,14 @@ document.addEventListener("DOMContentLoaded", () => {
     div.classList.add('cursor-blink'); termOut.appendChild(div);
     for (let i = 0; i < text.length; i++) {
         div.textContent += text.charAt(i); playKeystroke(); termOut.scrollTop = termOut.scrollHeight;
-        await new Promise(r => setTimeout(r, 6 + Math.random() * 10));
+        await new Promise(r => setTimeout(r, 8 + Math.random() * 12));
     }
     div.classList.remove('cursor-blink');
     div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div>`;
     termOut.scrollTop = termOut.scrollHeight; persistTerminalState(); triggerHaptic('success');
-    speakText(text);
+    if (type === 'agent-msg') {
+        speakAgentResponse(text);
+    }
   }
   terminalAppendFunc = appendMsg;
 
@@ -337,146 +372,65 @@ document.addEventListener("DOMContentLoaded", () => {
           }
       } catch(e) {}
   }
-  updateCryptoTickers(); setInterval(updateCryptoTickers, 60000);
+  updateCryptoTickers(); 
+  setInterval(updateCryptoTickers, 60000);
   
   setInterval(() => {
     if (document.getElementById('telemetrySpeed')) document.getElementById('telemetrySpeed').innerText = (2.2 + Math.random() * 0.6).toFixed(1) + ' MB/s';
     if (document.getElementById('throughputBar')) document.getElementById('throughputBar').style.width = (50 + Math.random() * 30) + '%';
-    if (document.getElementById('cpuLoad')) { const c = Math.floor(24+Math.random()*14); document.getElementById('cpuLoad').innerText = c+'%'; document.getElementById('cpuBar').style.width = c+'%'; }
-    if (document.getElementById('ramAlloc')) { const r = Math.floor(42+Math.random()*10); document.getElementById('ramAlloc').innerText = r+'%'; document.getElementById('ramBar').style.width = r+'%'; }
+    if (document.getElementById('cpuLoad')) { const c = Math.floor(24+Math.random()*14); document.getElementById('cpuLoad').innerText = c+'%'; const b = document.getElementById('cpuBar'); if (b) b.style.width = c+'%'; }
+    if (document.getElementById('ramAlloc')) { const r = Math.floor(42+Math.random()*10); document.getElementById('ramAlloc').innerText = r+'%'; const rb = document.getElementById('ramBar'); if (rb) rb.style.width = r+'%'; }
   }, 1000);
 
-  // 1. Action Bar Button Handlers
+  /* ACTION BAR & MODAL ICON BUTTON HANDLERS */
   const threadsBtn = document.getElementById('threadsBtn');
-  if (threadsBtn) {
+  const threadsModal = document.getElementById('threadsModal');
+  if (threadsBtn && threadsModal) {
       threadsBtn.onclick = () => {
           triggerHaptic('tap');
           renderSavedThreadsList();
-          document.getElementById('threadsModal').classList.add('active');
+          threadsModal.classList.add('active');
       };
   }
 
   const voiceSettingsBtn = document.getElementById('voiceSettingsBtn');
-  if (voiceSettingsBtn) {
+  const voiceSettingsModal = document.getElementById('voiceSettingsModal');
+  const closeVoiceModalBtn = document.getElementById('closeVoiceModalBtn');
+  const saveVoiceSettingsBtn = document.getElementById('saveVoiceSettingsBtn');
+  const voiceGenderSelect = document.getElementById('voiceGenderSelect');
+  const voiceLangSelect = document.getElementById('voiceLangSelect');
+
+  if (voiceGenderSelect && localStorage.getItem('PG1_VOICE_GENDER')) {
+      voiceGenderSelect.value = localStorage.getItem('PG1_VOICE_GENDER');
+  }
+  if (voiceLangSelect && localStorage.getItem('PG1_VOICE_LANG')) {
+      voiceLangSelect.value = localStorage.getItem('PG1_VOICE_LANG');
+  }
+
+  if (voiceSettingsBtn && voiceSettingsModal) {
       voiceSettingsBtn.onclick = () => {
           triggerHaptic('tap');
-          const genderSel = document.getElementById('voiceGenderSelect');
-          const langSel = document.getElementById('voiceLangSelect');
-          if (genderSel) genderSel.value = localStorage.getItem('PG1_VOICE_GENDER') || 'female';
-          if (langSel) langSel.value = localStorage.getItem('PG1_VOICE_LANG') || 'auto';
-          document.getElementById('voiceSettingsModal').classList.add('active');
+          voiceSettingsModal.classList.add('active');
       };
   }
-
-  const closeVoiceModalBtn = document.getElementById('closeVoiceModalBtn');
-  if (closeVoiceModalBtn) {
+  if (closeVoiceModalBtn && voiceSettingsModal) {
       closeVoiceModalBtn.onclick = () => {
           triggerHaptic('tap');
-          document.getElementById('voiceSettingsModal').classList.remove('active');
+          voiceSettingsModal.classList.remove('active');
       };
   }
-
-  const saveVoiceSettingsBtn = document.getElementById('saveVoiceSettingsBtn');
-  if (saveVoiceSettingsBtn) {
+  if (saveVoiceSettingsBtn && voiceSettingsModal) {
       saveVoiceSettingsBtn.onclick = () => {
-          triggerHaptic('success');
-          const genderSel = document.getElementById('voiceGenderSelect');
-          const langSel = document.getElementById('voiceLangSelect');
-          if (genderSel) localStorage.setItem('PG1_VOICE_GENDER', genderSel.value);
-          if (langSel) localStorage.setItem('PG1_VOICE_LANG', langSel.value);
-          document.getElementById('voiceSettingsModal').classList.remove('active');
-          appendMsg('Voice configuration saved and applied.', 'system-msg', true);
-      };
-  }
-
-  // Video Toggle
-  const videoBtn = document.getElementById('videoBtn');
-  const cameraPipBox = document.getElementById('cameraPipBox');
-  const cameraPreview = document.getElementById('cameraPreview');
-  if (videoBtn) {
-      videoBtn.onclick = async () => {
           triggerHaptic('tap');
-          if (currentCameraStream) {
-              currentCameraStream.getTracks().forEach(track => track.stop());
-              currentCameraStream = null;
-              if (cameraPipBox) cameraPipBox.style.display = 'none';
-              videoBtn.classList.remove('active-btn');
-              videoBtn.innerText = '📹 Vid: OFF';
-          } else {
-              try {
-                  currentCameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
-                  if (cameraPreview) cameraPreview.srcObject = currentCameraStream;
-                  if (cameraPipBox) cameraPipBox.style.display = 'block';
-                  videoBtn.classList.add('active-btn');
-                  videoBtn.innerText = '📹 Vid: ON';
-              } catch(err) {
-                  appendMsg(`Camera access failed: ${err.message}`, 'error-msg', true);
-              }
-          }
+          if (voiceGenderSelect) localStorage.setItem('PG1_VOICE_GENDER', voiceGenderSelect.value);
+          if (voiceLangSelect) localStorage.setItem('PG1_VOICE_LANG', voiceLangSelect.value);
+          voiceSettingsModal.classList.remove('active');
+          triggerHaptic('success');
+          alert('Voice configuration saved.');
       };
   }
 
-  // Audio Dictation
-  const audioBtn = document.getElementById('audioBtn');
-  const inlineMicBtn = document.getElementById('inlineMicBtn');
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-  function toggleDictation() {
-      triggerHaptic('tap');
-      if (!SpeechRecognition) return alert('Speech recognition not supported in this browser.');
-      
-      if (isRecordingAudio && speechRecognizer) {
-          speechRecognizer.stop();
-          isRecordingAudio = false;
-          if (audioBtn) { audioBtn.classList.remove('recording-btn'); audioBtn.innerText = '🎙️ Dictate: OFF'; }
-          if (inlineMicBtn) { inlineMicBtn.classList.remove('recording-btn'); }
-          return;
-      }
-
-      try {
-          speechRecognizer = new SpeechRecognition();
-          speechRecognizer.continuous = false;
-          speechRecognizer.interimResults = true;
-          const userLang = localStorage.getItem('PG1_VOICE_LANG');
-          if (userLang && userLang !== 'auto') speechRecognizer.lang = userLang;
-
-          speechRecognizer.onstart = () => {
-              isRecordingAudio = true;
-              if (audioBtn) { audioBtn.classList.add('recording-btn'); audioBtn.innerText = '🎙️ Dictate: ON'; }
-              if (inlineMicBtn) { inlineMicBtn.classList.add('recording-btn'); }
-          };
-
-          speechRecognizer.onresult = (event) => {
-              let transcript = '';
-              for (let i = event.resultIndex; i < event.results.length; ++i) {
-                  transcript += event.results[i][0].transcript;
-              }
-              const termIn = document.getElementById('terminalInput');
-              if (termIn) termIn.value = transcript;
-          };
-
-          speechRecognizer.onerror = () => {
-              isRecordingAudio = false;
-              if (audioBtn) { audioBtn.classList.remove('recording-btn'); audioBtn.innerText = '🎙️ Dictate: OFF'; }
-              if (inlineMicBtn) { inlineMicBtn.classList.remove('recording-btn'); }
-          };
-
-          speechRecognizer.onend = () => {
-              isRecordingAudio = false;
-              if (audioBtn) { audioBtn.classList.remove('recording-btn'); audioBtn.innerText = '🎙️ Dictate: OFF'; }
-              if (inlineMicBtn) { inlineMicBtn.classList.remove('recording-btn'); }
-          };
-
-          speechRecognizer.start();
-      } catch(e) {
-          isRecordingAudio = false;
-      }
-  }
-
-  if (audioBtn) audioBtn.onclick = toggleDictation;
-  if (inlineMicBtn) inlineMicBtn.onclick = toggleDictation;
-
-  // Voice Response Toggle
+  /* VOICE TOGGLE */
   const voiceBtn = document.getElementById('voiceBtn');
   if (voiceBtn) {
       voiceBtn.onclick = () => {
@@ -485,16 +439,16 @@ document.addEventListener("DOMContentLoaded", () => {
           if (isVoiceEnabled) {
               voiceBtn.classList.add('active-btn');
               voiceBtn.innerText = '🗣️ Voice: ON';
-              playCoreChime();
+              if ('speechSynthesis' in window) window.speechSynthesis.resume();
           } else {
               voiceBtn.classList.remove('active-btn');
               voiceBtn.innerText = '🗣️ Voice: OFF';
-              window.speechSynthesis?.cancel();
+              if ('speechSynthesis' in window) window.speechSynthesis.cancel();
           }
       };
   }
 
-  // Sentinel Toggle
+  /* SENTINEL & CHRON TOGGLES */
   const sentinelBtn = document.getElementById('sentinelBtn');
   if (sentinelBtn) {
       sentinelBtn.onclick = () => {
@@ -510,7 +464,6 @@ document.addEventListener("DOMContentLoaded", () => {
       };
   }
 
-  // Chron Toggle
   const chronBtn = document.getElementById('chronBtn');
   if (chronBtn) {
       chronBtn.onclick = () => {
@@ -519,7 +472,7 @@ document.addEventListener("DOMContentLoaded", () => {
           if (isChronEnabled) {
               chronBtn.classList.add('active-btn');
               chronBtn.innerText = '⏱️ Chron: ON';
-              chronTimer = setInterval(updateCryptoTickers, 15000);
+              chronTimer = setInterval(() => { updateCryptoTickers(); }, 30000);
           } else {
               chronBtn.classList.remove('active-btn');
               chronBtn.innerText = '⏱️ Chron: OFF';
@@ -528,19 +481,103 @@ document.addEventListener("DOMContentLoaded", () => {
       };
   }
 
-  // Refresh Feed Button
+  /* CAMERA VIDEO TOGGLE */
+  const videoBtn = document.getElementById('videoBtn');
+  const cameraPipBox = document.getElementById('cameraPipBox');
+  const cameraPreview = document.getElementById('cameraPreview');
+  if (videoBtn && cameraPipBox && cameraPreview) {
+      videoBtn.onclick = async () => {
+          triggerHaptic('tap');
+          if (mediaStream) {
+              mediaStream.getTracks().forEach(track => track.stop());
+              mediaStream = null;
+              cameraPipBox.style.display = 'none';
+              videoBtn.classList.remove('active-btn');
+              videoBtn.innerText = '📹 Vid: OFF';
+          } else {
+              try {
+                  mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                  cameraPreview.srcObject = mediaStream;
+                  cameraPipBox.style.display = 'block';
+                  videoBtn.classList.add('active-btn');
+                  videoBtn.innerText = '📹 Vid: ON';
+              } catch(err) {
+                  alert('Camera access unavailable or denied: ' + err.message);
+              }
+          }
+      };
+  }
+
+  /* AUDIO DICTATION SPEECH RECOGNITION */
+  const audioBtn = document.getElementById('audioBtn');
+  const inlineMicBtn = document.getElementById('inlineMicBtn');
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  function toggleSpeechRecognition() {
+      triggerHaptic('tap');
+      if (!SpeechRec) {
+          alert('Speech Recognition API not supported in this browser.');
+          return;
+      }
+      if (speechRecognizer) {
+          speechRecognizer.stop();
+          speechRecognizer = null;
+          if (audioBtn) { audioBtn.classList.remove('recording-btn'); audioBtn.innerText = '🎙️ Dictate: OFF'; }
+          if (inlineMicBtn) inlineMicBtn.classList.remove('recording-btn');
+          return;
+      }
+      try {
+          speechRecognizer = new SpeechRec();
+          speechRecognizer.continuous = false;
+          speechRecognizer.interimResults = false;
+          speechRecognizer.lang = localStorage.getItem('PG1_VOICE_LANG') && localStorage.getItem('PG1_VOICE_LANG') !== 'auto' ? localStorage.getItem('PG1_VOICE_LANG') : 'en-US';
+          
+          if (audioBtn) { audioBtn.classList.add('recording-btn'); audioBtn.innerText = '🎙️ Dictate: REC'; }
+          if (inlineMicBtn) inlineMicBtn.classList.add('recording-btn');
+
+          speechRecognizer.onresult = (event) => {
+              const transcript = event.results[0][0].transcript;
+              const input = document.getElementById('terminalInput');
+              if (input) {
+                  input.value = (input.value ? input.value + ' ' : '') + transcript;
+                  input.focus();
+              }
+              triggerHaptic('success');
+          };
+
+          speechRecognizer.onerror = () => {
+              if (audioBtn) { audioBtn.classList.remove('recording-btn'); audioBtn.innerText = '🎙️ Dictate: OFF'; }
+              if (inlineMicBtn) inlineMicBtn.classList.remove('recording-btn');
+              speechRecognizer = null;
+          };
+
+          speechRecognizer.onend = () => {
+              if (audioBtn) { audioBtn.classList.remove('recording-btn'); audioBtn.innerText = '🎙️ Dictate: OFF'; }
+              if (inlineMicBtn) inlineMicBtn.classList.remove('recording-btn');
+              speechRecognizer = null;
+          };
+
+          speechRecognizer.start();
+      } catch(e) {
+          alert('Microphone initialization failed.');
+      }
+  }
+
+  if (audioBtn) audioBtn.onclick = toggleSpeechRecognition;
+  if (inlineMicBtn) inlineMicBtn.onclick = toggleSpeechRecognition;
+
+  /* DASH FEED & OTX SYNC BUTTONS */
   const syncFeedBtn = document.getElementById('syncFeedBtn');
   if (syncFeedBtn) {
       syncFeedBtn.onclick = async () => {
           triggerHaptic('tap');
-          const orig = syncFeedBtn.innerHTML;
-          syncFeedBtn.innerHTML = '<span class="spin-icon">🔄</span> Syncing...';
+          syncFeedBtn.disabled = true;
           await updateCryptoTickers();
-          setTimeout(() => { syncFeedBtn.innerHTML = orig; }, 800);
+          triggerHaptic('success');
+          setTimeout(() => { syncFeedBtn.disabled = false; }, 800);
       };
   }
 
-  // OTX Threat Intel Sync
   const syncOtxBtn = document.getElementById('syncOtxBtn');
   if (syncOtxBtn) {
       syncOtxBtn.onclick = () => {
@@ -548,28 +585,87 @@ document.addEventListener("DOMContentLoaded", () => {
           const otxStatus = document.getElementById('otxStatus');
           const otxIocs = document.getElementById('otxIocs');
           const otxPulses = document.getElementById('otxPulses');
-          if (otxStatus) otxStatus.innerText = 'Synchronizing...';
+          if (otxStatus) otxStatus.innerText = 'Syncing...';
           setTimeout(() => {
-              if (otxStatus) otxStatus.innerText = 'Active Pipeline';
-              if (otxIocs) otxIocs.innerText = (1200 + Math.floor(Math.random() * 400)) + ' Indicators';
-              if (otxPulses) otxPulses.innerText = (310 + Math.floor(Math.random() * 50)) + ' Pulses';
+              if (otxStatus) otxStatus.innerText = 'Active (Synced)';
+              if (otxIocs) otxIocs.innerText = (1420 + Math.floor(Math.random() * 85)).toString();
+              if (otxPulses) otxPulses.innerText = (84 + Math.floor(Math.random() * 6)).toString();
               triggerHaptic('success');
-          }, 700);
+          }, 600);
       };
   }
 
-  // Export Log & PDF
+  /* MEDIA CAPTURE & MULTIMODAL PREVIEW */
+  const mediaBtn = document.getElementById('mediaBtn');
+  const mediaInput = document.getElementById('mediaInput');
+  const mediaPreviewBox = document.getElementById('mediaPreviewBox');
+  const mediaPreviewImg = document.getElementById('mediaPreviewImg');
+  const clearMediaBtn = document.getElementById('clearMediaBtn');
+
+  if (mediaBtn && mediaInput) {
+      mediaBtn.onclick = () => {
+          triggerHaptic('tap');
+          if (mediaStream && cameraPreview) {
+              const canvas = document.createElement('canvas');
+              canvas.width = cameraPreview.videoWidth || 640;
+              canvas.height = cameraPreview.videoHeight || 480;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(cameraPreview, 0, 0, canvas.width, canvas.height);
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+              const base64Data = dataUrl.split(',')[1];
+              pendingImageData = { mime_type: 'image/jpeg', data: base64Data, dataUrl: dataUrl };
+              if (mediaPreviewImg) { mediaPreviewImg.src = dataUrl; mediaPreviewImg.style.display = 'inline-block'; }
+              if (mediaPreviewBox) mediaPreviewBox.style.display = 'block';
+          } else {
+              mediaInput.click();
+          }
+      };
+  }
+
+  if (mediaInput) {
+      mediaInput.onchange = (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (event) => {
+              const dataUrl = event.target.result;
+              const base64Data = dataUrl.split(',')[1];
+              pendingImageData = { mime_type: file.type || 'image/jpeg', data: base64Data, dataUrl: dataUrl };
+              if (mediaPreviewImg) { mediaPreviewImg.src = dataUrl; mediaPreviewImg.style.display = 'inline-block'; }
+              if (mediaPreviewBox) mediaPreviewBox.style.display = 'block';
+              triggerHaptic('tap');
+          };
+          reader.readAsDataURL(file);
+      };
+  }
+
+  if (clearMediaBtn && mediaPreviewBox) {
+      clearMediaBtn.onclick = () => {
+          triggerHaptic('tap');
+          pendingImageData = null;
+          if (mediaPreviewImg) { mediaPreviewImg.src = ''; mediaPreviewImg.style.display = 'none'; }
+          mediaPreviewBox.style.display = 'none';
+          if (mediaInput) mediaInput.value = '';
+      };
+  }
+
+  /* LOG EXPORT & PDF REPORT */
   const saveLogBtn = document.getElementById('saveLogBtn');
   if (saveLogBtn) {
       saveLogBtn.onclick = () => {
           triggerHaptic('tap');
           if (!termOut) return;
-          const text = termOut.innerText.replace(/Copy|Edit/g, '');
+          const text = termOut.innerText;
           const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = `PG1_Log_${Date.now()}.txt`;
+          a.href = url;
+          a.download = `pg1_log_${Date.now()}.txt`;
+          document.body.appendChild(a);
           a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          triggerHaptic('success');
       };
   }
 
@@ -581,75 +677,55 @@ document.addEventListener("DOMContentLoaded", () => {
       };
   }
 
-  // Multimodal Media Attachment
-  const mediaBtn = document.getElementById('mediaBtn');
-  const mediaInput = document.getElementById('mediaInput');
-  const mediaPreviewBox = document.getElementById('mediaPreviewBox');
-  const mediaPreviewImg = document.getElementById('mediaPreviewImg');
-  const clearMediaBtn = document.getElementById('clearMediaBtn');
-
-  if (mediaBtn && mediaInput) {
-      mediaBtn.onclick = () => { triggerHaptic('tap'); mediaInput.click(); };
-      mediaInput.onchange = (e) => {
-          const file = e.target.files[0];
-          if (!file) return;
-          const reader = new FileReader();
-          reader.onload = () => {
-              const base64Clean = reader.result.split(',')[1];
-              pendingImageData = { mime: file.type || 'image/jpeg', base64: base64Clean };
-              if (mediaPreviewImg) { mediaPreviewImg.src = reader.result; mediaPreviewImg.style.display = 'inline-block'; }
-              if (mediaPreviewBox) mediaPreviewBox.style.display = 'block';
-              triggerHaptic('success');
-          };
-          reader.readAsDataURL(file);
-      };
-  }
-
-  if (clearMediaBtn) {
-      clearMediaBtn.onclick = () => {
-          triggerHaptic('tap');
-          pendingImageData = null;
-          if (mediaPreviewImg) { mediaPreviewImg.src = ''; mediaPreviewImg.style.display = 'none'; }
-          if (mediaPreviewBox) mediaPreviewBox.style.display = 'none';
-          if (mediaInput) mediaInput.value = '';
-      };
-  }
-
-  // AI Core Logo Interactive Click
+  /* AI CORE LOGO INTERACTION */
   const aiCoreLogo = document.getElementById('aiCoreLogo');
   if (aiCoreLogo) {
       aiCoreLogo.onclick = () => {
-          triggerHaptic('success');
-          playCoreChime();
-          appendMsg('PG1 Sovereign Core pulse nominal. Auto-repair interceptors active.', 'system-msg', true);
+          playKeystroke();
+          triggerHaptic('tap');
       };
   }
 
-  document.getElementById('clearBtn').onclick = () => window.startNewThread();
+  const clearBtn = document.getElementById('clearBtn');
+  if (clearBtn) clearBtn.onclick = () => window.startNewThread();
 
   // =====================================================================
   // BULLETPROOF TRIPLE VERIFICATION COMMAND EXECUTION
   // =====================================================================
   const executeSendCommand = async () => {
     triggerHaptic('tap');
-    let cmd = document.getElementById('terminalInput').value.trim();
+    const inputEl = document.getElementById('terminalInput');
+    let cmd = inputEl ? inputEl.value.trim() : '';
     if (!cmd && !pendingImageData) return;
-    if (!cmd && pendingImageData) cmd = "Analyze this attached media payload.";
+    if (!cmd && pendingImageData) cmd = "Please analyze this image.";
 
     const key = localStorage.getItem('PG1_KEY');
-    if (!key) { setSystemState('error'); return appendMsg('Error: Master API Key required in Dash tab.', 'error-msg', true); }
+    if (!key) { 
+        setSystemState('error'); 
+        return appendMsg('Error: Master API Key required in Dash tab.', 'error-msg', true); 
+    }
 
-    appendMsg(`> ${cmd}`, 'user-msg', true);
-    document.getElementById('terminalInput').value = '';
+    if (pendingImageData) {
+        appendMsg(`> [Image Attached] ${cmd}`, 'user-msg', true);
+    } else {
+        appendMsg(`> ${cmd}`, 'user-msg', true);
+    }
+
+    if (inputEl) inputEl.value = '';
     setSystemState('active');
 
     const userParts = [{ text: cmd }];
     if (pendingImageData) {
-        userParts.push({ inline_data: { mime_type: pendingImageData.mime, data: pendingImageData.base64 } });
-        // Clear media preview after attaching
+        userParts.push({
+            inlineData: {
+                mimeType: pendingImageData.mime_type,
+                data: pendingImageData.data
+            }
+        });
+        // Clear media preview after staging payload
         pendingImageData = null;
-        if (mediaPreviewImg) { mediaPreviewImg.src = ''; mediaPreviewImg.style.display = 'none'; }
         if (mediaPreviewBox) mediaPreviewBox.style.display = 'none';
+        if (mediaPreviewImg) mediaPreviewImg.src = '';
         if (mediaInput) mediaInput.value = '';
     }
 
@@ -730,20 +806,34 @@ TRIPLE VERIFICATION PROTOCOL ENFORCED:
           if (loopCount >= 4) throw new Error("Agent loop timed out.");
       }
     } catch (e) { 
-      setSystemState('error'); sessionHistory.pop(); persistTerminalState();
+      setSystemState('error'); 
+      sessionHistory.pop(); 
+      persistTerminalState();
       appendMsg(`Exception: ${e.message}`, 'error-msg', true); 
     }
   };
 
-  document.getElementById('sendCommandButton').onclick = executeSendCommand;
-  document.getElementById('terminalInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); executeSendCommand(); } });
+  const sendBtn = document.getElementById('sendCommandButton');
+  if (sendBtn) sendBtn.onclick = executeSendCommand;
+
+  const termInput = document.getElementById('terminalInput');
+  if (termInput) {
+      termInput.addEventListener('keydown', (e) => { 
+          if (e.key === 'Enter' && !e.shiftKey) { 
+              e.preventDefault(); 
+              executeSendCommand(); 
+          } 
+      });
+  }
   
-  // Tab functionality
+  // Tab navigation functionality
   document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', () => {
       triggerHaptic('tap');
       document.querySelectorAll('.nav-item, .view-section').forEach(el => el.classList.remove('active'));
-      item.classList.add('active'); document.getElementById(item.getAttribute('data-target')).classList.add('active');
+      item.classList.add('active'); 
+      const targetSection = document.getElementById(item.getAttribute('data-target'));
+      if (targetSection) targetSection.classList.add('active');
     });
   });
 });
