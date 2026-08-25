@@ -361,9 +361,12 @@
         } catch(e) {}
     }
 
-    function renderMarkdownToHtml(raw) {
+        function renderMarkdownToHtml(raw) {
         if (!raw) return "";
-        return raw
+        // Safely escape HTML tags to prevent DOM corruption and UI freezing
+        let safeRaw = raw.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        
+        return safeRaw
             .replace(/### (.*?)([\r\n]|$)/g, '<h3>$1</h3>')
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/`([^`]+)`/g, '<code>$1</code>')
@@ -371,6 +374,7 @@
             .replace(/---/g, '<hr>')
             .replace(/\n\n/g, '<br><br>');
     }
+
 
     window.saveMasterKeys = function() {
         triggerHaptic('tap');
