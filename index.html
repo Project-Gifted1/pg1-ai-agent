@@ -102,6 +102,12 @@
         </select>
       </div>
       <div class="key-input-group">
+        <label style="font-size: 0.8em; color: #94a3b8;">Specific Installed Voice:</label>
+        <select id="voiceSpecificSelect">
+          <option value="auto" selected>⚡ Best Neural / HD Voice (Auto-Selected)</option>
+        </select>
+      </div>
+      <div class="key-input-group">
         <label style="font-size: 0.8em; color: #94a3b8;">Language & Regional Accent:</label>
         <select id="voiceLangSelect">
           <option value="en-US" selected>English (US Studio HD)</option>
@@ -113,12 +119,19 @@
           <option value="de-DE">German (Germany)</option>
         </select>
       </div>
+      <div class="key-input-group">
+        <label style="font-size: 0.8em; color: #94a3b8;">Tactile Sound FX (SFX):</label>
+        <select id="sfxEnabledSelect">
+          <option value="true" selected>🔊 Enabled (Harmonic Chimes & Tones)</option>
+          <option value="false">🔇 Disabled (Silent Mode)</option>
+        </select>
+      </div>
       <div class="key-input-group" style="margin-top: 4px;">
         <div style="display:flex; justify-content:space-between; font-size:0.8em; color:#94a3b8;">
-          <span>Output Gain:</span>
+          <span>Output Gain / Volume:</span>
           <span id="volValLabel" style="color:#38bdf8;">100%</span>
         </div>
-        <input type="range" id="voiceVolSlider" min="0.5" max="2.0" step="0.05" value="1.0" class="slider-control">
+        <input type="range" id="voiceVolSlider" min="0.1" max="1.0" step="0.05" value="1.0" class="slider-control">
       </div>
       <div class="key-input-group" style="margin-top: 4px;">
         <div style="display:flex; justify-content:space-between; font-size:0.8em; color:#94a3b8;">
@@ -126,6 +139,13 @@
           <span id="rateValLabel" style="color:#38bdf8;">1.00x</span>
         </div>
         <input type="range" id="voiceRateSlider" min="0.7" max="1.4" step="0.05" value="1.0" class="slider-control">
+      </div>
+      <div class="key-input-group" style="margin-top: 4px;">
+        <div style="display:flex; justify-content:space-between; font-size:0.8em; color:#94a3b8;">
+          <span>Pitch Tuning:</span>
+          <span id="pitchValLabel" style="color:#38bdf8;">1.00</span>
+        </div>
+        <input type="range" id="voicePitchSlider" min="0.8" max="1.3" step="0.05" value="1.0" class="slider-control">
       </div>
       <div style="display:flex; gap:8px; margin-top:8px;">
         <button id="testVoiceBtn" class="utility-btn" style="flex:1; justify-content:center; padding:10px; font-weight:600; border-color:#38bdf8;" onclick="testVoiceSynthesis()">🔊 Test Voice</button>
@@ -501,9 +521,6 @@
       return originalFetch.apply(this, arguments);
     };
   </script>
-  </script>
-  <script src="./engine.js?v=12.37"></script>
+  <script src="./engine.js?v=12.38"></script>
 </body>
 </html>
-
-
