@@ -100,6 +100,8 @@ body.sys-error { --ui-glow: rgba(239, 68, 68, 0.25); --ui-border: rgba(239, 68, 
 .msg-action-btn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; font-size: 0.65em; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-weight: 600; transition: all 0.15s ease-in-out; user-select: none; }
 .msg-action-btn:hover { color: #f8fafc; background: #334155; }
 .msg-action-btn:active { transform: scale(0.92); }
+.msg-action-btn.speak-btn { color: #38bdf8; border-color: rgba(56, 189, 248, 0.4); background: rgba(56, 189, 248, 0.1); }
+.msg-action-btn.speak-btn:hover { color: #fff; background: rgba(56, 189, 248, 0.3); }
 
 .media-preview-box { display: none; padding: 10px; background: #111827; border: 1px solid #1f2937; border-radius: 10px; margin-bottom: 8px; position: relative; text-align: center; }
 .media-preview-box img { max-height: 120px; border-radius: 6px; max-width: 100%; border: 1px solid #334155; }
