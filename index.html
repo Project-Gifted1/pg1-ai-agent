@@ -998,8 +998,8 @@
       // END RESTORED LOOPS
       // =====================================================================
 
-      // =====================================================================
-      // TRIPLE VERIFICATION COMMAND EXECUTION
+          // =====================================================================
+      // BULLETPROOF TRIPLE VERIFICATION COMMAND EXECUTION
       // =====================================================================
       const executeSendCommand = async () => {
         triggerHaptic('tap');
@@ -1055,11 +1055,20 @@ TRIPLE VERIFICATION PROTOCOL ENFORCED:
                 body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
               });
               const data = await res.json();
+              
               if (data.error) throw new Error(data.error.message);
               
-              let responsePart = data.candidates && data.candidates[0] && data.candidates[0].content ? data.candidates[0].content.parts[0] : null;
+              // CRITICAL FIX: Explicit Safety Block Detection
+              if (data.promptFeedback && data.promptFeedback.blockReason) {
+                  throw new Error(`API Safety Filter Triggered: ${data.promptFeedback.blockReason}`);
+              }
+              if (!data.candidates || data.candidates.length === 0) {
+                  throw new Error(`API returned empty structure. Agent is failing to output data.`);
+              }
               
-              if (responsePart && responsePart.functionCall) {
+              let responsePart = data.candidates[0].content.parts[0];
+              
+              if (responsePart.functionCall) {
                   const call = responsePart.functionCall;
                   appendMsg(`[MCP Dispatcher] Executing: ${call.name}...`, 'system-msg', true);
                   
@@ -1070,10 +1079,9 @@ TRIPLE VERIFICATION PROTOCOL ENFORCED:
                       // TRIPLE VERIFICATION INTERCEPTOR
                       if (call.name === 'dynamicGitHubCommit') {
                           appendMsg(`[Self-Healing Audit] Verifying live repository state...`, 'system-msg', true);
-                          await new Promise(r => setTimeout(r, 2000)); // Wait for GitHub propagation
+                          await new Promise(r => setTimeout(r, 2000));
                           const verifyRes = await executeMCPTool('readGitHubFile', { repoFullName: call.args.repoFullName, filePath: call.args.filePath });
                           
-                          // Check if the exact content it tried to commit actually exists in the live file
                           const cleanTarget = call.args.content.substring(0, 50).trim();
                           if (verifyRes.includes(cleanTarget) && !verifyRes.includes("ERROR:")) {
                               resultStr += `\n[Verified Success] Live audit confirmed the patch successfully deployed.`;
@@ -1098,14 +1106,16 @@ TRIPLE VERIFICATION PROTOCOL ENFORCED:
                     body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
                   });
                   const followUpData = await followupRes.json();
-                  if (followUpData.candidates && followUpData.candidates[0] && followUpData.candidates[0].content) {
-                      responsePart = followUpData.candidates[0].content.parts[0];
-                  }
+                  
+                  if (followUpData.error) throw new Error(followUpData.error.message);
+                  if (!followUpData.candidates || followUpData.candidates.length === 0) throw new Error("Secondary API call failed or was blocked.");
+                  
+                  responsePart = followUpData.candidates[0].content.parts[0];
               }
 
-              if (responsePart && responsePart.text) {
+              if (responsePart.text !== undefined) {
                   setSystemState('idle');
-                  let textOutput = responsePart.text;
+                  let textOutput = responsePart.text || "[Empty Response]";
                   await appendMsg(textOutput, 'agent-msg');
                   
                   if (voiceActive) {
@@ -1119,6 +1129,9 @@ TRIPLE VERIFICATION PROTOCOL ENFORCED:
                   saveCurrentThread();
                   continueLoop = false;
               }
+              
+              // Fallback to prevent silent hanging
+              if (loopCount >= 4) throw new Error("Agent loop timed out without returning readable text.");
           }
         } catch (e) { 
           setSystemState('error');
@@ -1130,6 +1143,11 @@ TRIPLE VERIFICATION PROTOCOL ENFORCED:
 
       document.getElementById('sendCommandButton').onclick = executeSendCommand;
       document.getElementById('terminalInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); executeSendCommand(); } });
+    });
+  </script>
+</body>
+</html>
+
     });
   </script>
 </body>
