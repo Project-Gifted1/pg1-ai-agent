@@ -8,6 +8,7 @@ let chronTimer = null;
 let currentUtterance = null;
 let speechKeepAliveInterval = null;
 let audioCtx = null;
+let isSpeakingNow = false;
 
 function getAudioContext() {
     if (!audioCtx) {
@@ -23,8 +24,15 @@ function unlockAudio() {
         if (ctx && ctx.state === 'suspended') {
             ctx.resume();
         }
-        if ('speechSynthesis' in window && window.speechSynthesis.paused) {
+        if ('speechSynthesis' in window) {
             window.speechSynthesis.resume();
+            if (!window._speechPrimed) {
+                const dummy = new SpeechSynthesisUtterance('');
+                dummy.volume = 0.01;
+                dummy.rate = 2;
+                window.speechSynthesis.speak(dummy);
+                window._speechPrimed = true;
+            }
         }
     } catch(e) {}
 }
@@ -50,7 +58,6 @@ function setSystemState(state) {
 
 function playKeystroke() {
     try {
-        unlockAudio();
         const ctx = getAudioContext();
         if (!ctx) return;
         const osc = ctx.createOscillator(); 
@@ -62,6 +69,26 @@ function playKeystroke() {
         gain.connect(ctx.destination);
         osc.start(); 
         osc.stop(ctx.currentTime + 0.015);
+    } catch(e) {}
+}
+
+function playNotificationChime() {
+    try {
+        unlockAudio();
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(587.33, now); // D5
+        osc.frequency.setValueAtTime(880, now + 0.08); // A5
+        gain.gain.setValueAtTime(0.05, now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.35);
     } catch(e) {}
 }
 
@@ -143,6 +170,18 @@ window.editMsg = function(btn) {
   }
 };
 
+window.speakMsg = function(btn) {
+  triggerHaptic('tap');
+  unlockAudio();
+  const msgDiv = btn.closest('.terminal-message');
+  if (!msgDiv) return;
+  const clone = msgDiv.cloneNode(true);
+  const btnGroup = clone.querySelector('.msg-btn-group');
+  if (btnGroup) btnGroup.remove();
+  const rawText = clone.innerText.trim();
+  speakAgentResponse(rawText, true);
+};
+
 /* PRE-LOAD VOICES */
 let systemVoices = [];
 function cacheSystemVoices() {
@@ -155,83 +194,113 @@ if ('speechSynthesis' in window) {
     window.speechSynthesis.onvoiceschanged = cacheSystemVoices;
 }
 
-/* VOICE SYNTHESIS ENGINE */
-function speakAgentResponse(text) {
-    if (!isVoiceEnabled || !('speechSynthesis' in window)) return;
+/* ROBUST VOICE SYNTHESIS ENGINE (iOS & Safari Compatible) */
+function stopSpeech() {
+    if ('speechSynthesis' in window) {
+        try {
+            window.speechSynthesis.cancel();
+        } catch(e) {}
+    }
+    if (speechKeepAliveInterval) {
+        clearInterval(speechKeepAliveInterval);
+        speechKeepAliveInterval = null;
+    }
+    isSpeakingNow = false;
+    const logo = document.getElementById('aiCoreLogo');
+    if (logo) logo.classList.remove('is-speaking');
+}
+
+function speakAgentResponse(text, forceSpeak = false) {
+    if ((!isVoiceEnabled && !forceSpeak) || !('speechSynthesis' in window)) return;
     try {
         unlockAudio();
-        window.speechSynthesis.cancel();
-        if (speechKeepAliveInterval) {
-            clearInterval(speechKeepAliveInterval);
-            speechKeepAliveInterval = null;
-        }
+        stopSpeech();
 
         const plainText = text
-            .replace(/```[\s\S]*?```/g, '')
+            .replace(/```[\s\S]*?```/g, 'Code block omitted.')
             .replace(/`([^`]+)`/g, '$1')
             .replace(/<[^>]*>/g, '')
             .replace(/[*_#~]/g, '')
-            .replace(/https?:\/\/\S+/g, '')
+            .replace(/https?:\/\/\S+/g, 'link')
             .trim();
 
         if (!plainText) return;
-        
-        currentUtterance = new SpeechSynthesisUtterance(plainText);
-        currentUtterance.volume = 1.0;
-        currentUtterance.rate = 1.0;
-        currentUtterance.pitch = 1.0;
+
+        // Split text into digestible chunks for mobile Web Speech API reliability
+        const sentenceRegex = /[^.!?]+[.!?]+|[^.!?]+$/g;
+        const chunks = plainText.match(sentenceRegex) || [plainText];
+        let chunkIndex = 0;
 
         const savedLang = localStorage.getItem('PG1_VOICE_LANG') || 'en-US';
         const savedGender = localStorage.getItem('PG1_VOICE_GENDER') || 'female';
-        
-        if (savedLang !== 'auto') {
-            currentUtterance.lang = savedLang;
-        }
 
-        const voices = systemVoices.length > 0 ? systemVoices : window.speechSynthesis.getVoices();
-        if (voices && voices.length > 0) {
-            let matchedVoice = null;
-            const langPrefix = savedLang === 'auto' ? 'en' : savedLang.substring(0, 2);
-            if (savedGender === 'male') {
-                matchedVoice = voices.find(v => (v.lang.startsWith(langPrefix) || savedLang === 'auto') && (v.name.toLowerCase().includes('male') || v.name.toLowerCase().includes('david') || v.name.toLowerCase().includes('guy') || v.name.toLowerCase().includes('george') || v.name.toLowerCase().includes('daniel') || v.name.toLowerCase().includes('alex')));
-            } else if (savedGender === 'female') {
-                matchedVoice = voices.find(v => (v.lang.startsWith(langPrefix) || savedLang === 'auto') && (v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha') || v.name.toLowerCase().includes('victoria') || v.name.toLowerCase().includes('karen') || v.name.toLowerCase().includes('siri')));
+        function speakNextChunk() {
+            if (chunkIndex >= chunks.length) {
+                stopSpeech();
+                return;
             }
-            if (!matchedVoice) {
-                matchedVoice = voices.find(v => v.lang.startsWith(langPrefix));
-            }
-            if (matchedVoice) currentUtterance.voice = matchedVoice;
-        }
 
-        const logo = document.getElementById('aiCoreLogo');
-        currentUtterance.onstart = () => {
-            if (logo) logo.classList.add('is-speaking');
-            speechKeepAliveInterval = setInterval(() => {
-                if (window.speechSynthesis.speaking) {
-                    window.speechSynthesis.pause();
-                    window.speechSynthesis.resume();
-                } else {
-                    clearInterval(speechKeepAliveInterval);
-                    speechKeepAliveInterval = null;
+            const currentChunkText = chunks[chunkIndex].trim();
+            chunkIndex++;
+            if (!currentChunkText) {
+                speakNextChunk();
+                return;
+            }
+
+            const utterance = new SpeechSynthesisUtterance(currentChunkText);
+            utterance.volume = 1.0;
+            utterance.rate = 1.05;
+            utterance.pitch = 1.0;
+
+            if (savedLang !== 'auto') {
+                utterance.lang = savedLang;
+            }
+
+            const voices = (systemVoices && systemVoices.length > 0) ? systemVoices : window.speechSynthesis.getVoices();
+            if (voices && voices.length > 0) {
+                let matchedVoice = null;
+                const langPrefix = savedLang === 'auto' ? 'en' : savedLang.substring(0, 2);
+                if (savedGender === 'male') {
+                    matchedVoice = voices.find(v => (v.lang.startsWith(langPrefix) || savedLang === 'auto') && (v.name.toLowerCase().includes('male') || v.name.toLowerCase().includes('david') || v.name.toLowerCase().includes('guy') || v.name.toLowerCase().includes('george') || v.name.toLowerCase().includes('daniel') || v.name.toLowerCase().includes('alex') || v.name.toLowerCase().includes('aaron')));
+                } else if (savedGender === 'female') {
+                    matchedVoice = voices.find(v => (v.lang.startsWith(langPrefix) || savedLang === 'auto') && (v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha') || v.name.toLowerCase().includes('victoria') || v.name.toLowerCase().includes('karen') || v.name.toLowerCase().includes('siri') || v.name.toLowerCase().includes('moira') || v.name.toLowerCase().includes('tessa')));
                 }
-            }, 8000);
-        };
-        currentUtterance.onend = () => {
-            if (logo) logo.classList.remove('is-speaking');
-            if (speechKeepAliveInterval) {
-                clearInterval(speechKeepAliveInterval);
-                speechKeepAliveInterval = null;
+                if (!matchedVoice) {
+                    matchedVoice = voices.find(v => v.lang.startsWith(langPrefix));
+                }
+                if (matchedVoice) utterance.voice = matchedVoice;
             }
-        };
-        currentUtterance.onerror = () => {
-            if (logo) logo.classList.remove('is-speaking');
-            if (speechKeepAliveInterval) {
-                clearInterval(speechKeepAliveInterval);
-                speechKeepAliveInterval = null;
-            }
-        };
 
-        window.speechSynthesis.speak(currentUtterance);
+            const logo = document.getElementById('aiCoreLogo');
+            utterance.onstart = () => {
+                isSpeakingNow = true;
+                if (logo) logo.classList.add('is-speaking');
+            };
+
+            utterance.onend = () => {
+                speakNextChunk();
+            };
+
+            utterance.onerror = (e) => {
+                speakNextChunk();
+            };
+
+            currentUtterance = utterance;
+            window.speechSynthesis.speak(utterance);
+        }
+
+        // Keep-alive timer for WebKit speech synthesis
+        speechKeepAliveInterval = setInterval(() => {
+            if (window.speechSynthesis.speaking) {
+                window.speechSynthesis.resume();
+            } else if (!isSpeakingNow) {
+                clearInterval(speechKeepAliveInterval);
+                speechKeepAliveInterval = null;
+            }
+        }, 5000);
+
+        playNotificationChime();
+        speakNextChunk();
     } catch(e) {}
 }
 
@@ -426,12 +495,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   window.startNewThread = function() {
       triggerHaptic('tap'); 
+      stopSpeech();
       if (sessionHistory.length > 0) saveCurrentThreadRecord();
       sessionHistory = [];
       localStorage.removeItem('PG1_CHAT_DOM'); 
       localStorage.removeItem('PG1_CHAT_HISTORY');
       if (termOut) {
-          termOut.innerHTML = '<div class="terminal-message agent-msg">Memory flushed. New secure thread initiated.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div></div>';
+          termOut.innerHTML = '<div class="terminal-message agent-msg">Memory flushed. New secure thread initiated.<div class="msg-btn-group"><button class="msg-action-btn speak-btn" onclick="speakMsg(this)">🔊 Speak</button><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div></div>';
       }
       const threadsModal = document.getElementById('threadsModal');
       if (threadsModal) threadsModal.classList.remove('active');
@@ -440,21 +510,25 @@ document.addEventListener("DOMContentLoaded", () => {
   async function appendMsg(text, type, instant = false) {
     if (!termOut) return;
     const div = document.createElement('div'); div.className = `terminal-message ${type}`;
+    const btnGroupHtml = `<div class="msg-btn-group">${type === 'agent-msg' ? '<button class="msg-action-btn speak-btn" onclick="speakMsg(this)">🔊 Speak</button>' : ''}<button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div>`;
+    
     if (type === 'user-msg' || type === 'system-msg' || type === 'error-msg' || instant) {
-        div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div>`;
+        div.innerHTML = renderMarkdownToHtml(text) + btnGroupHtml;
         termOut.appendChild(div); termOut.scrollTop = termOut.scrollHeight; persistTerminalState(); return;
     }
-    div.classList.add('cursor-blink'); termOut.appendChild(div);
-    for (let i = 0; i < text.length; i++) {
-        div.textContent += text.charAt(i); playKeystroke(); termOut.scrollTop = termOut.scrollHeight;
-        await new Promise(r => setTimeout(r, 8 + Math.random() * 12));
-    }
-    div.classList.remove('cursor-blink');
-    div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div>`;
-    termOut.scrollTop = termOut.scrollHeight; persistTerminalState(); triggerHaptic('success');
+
     if (type === 'agent-msg') {
         speakAgentResponse(text);
     }
+
+    div.classList.add('cursor-blink'); termOut.appendChild(div);
+    for (let i = 0; i < text.length; i++) {
+        div.textContent += text.charAt(i); playKeystroke(); termOut.scrollTop = termOut.scrollHeight;
+        await new Promise(r => setTimeout(r, 6 + Math.random() * 10));
+    }
+    div.classList.remove('cursor-blink');
+    div.innerHTML = renderMarkdownToHtml(text) + btnGroupHtml;
+    termOut.scrollTop = termOut.scrollHeight; persistTerminalState(); triggerHaptic('success');
   }
   terminalAppendFunc = appendMsg;
 
@@ -496,6 +570,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const voiceSettingsModal = document.getElementById('voiceSettingsModal');
   const closeVoiceModalBtn = document.getElementById('closeVoiceModalBtn');
   const saveVoiceSettingsBtn = document.getElementById('saveVoiceSettingsBtn');
+  const testVoiceBtn = document.getElementById('testVoiceBtn');
   const voiceGenderSelect = document.getElementById('voiceGenderSelect');
   const voiceLangSelect = document.getElementById('voiceLangSelect');
 
@@ -509,6 +584,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (voiceSettingsBtn && voiceSettingsModal) {
       voiceSettingsBtn.onclick = () => {
           triggerHaptic('tap');
+          unlockAudio();
           voiceSettingsModal.classList.add('active');
       };
   }
@@ -521,11 +597,21 @@ document.addEventListener("DOMContentLoaded", () => {
   if (saveVoiceSettingsBtn && voiceSettingsModal) {
       saveVoiceSettingsBtn.onclick = () => {
           triggerHaptic('tap');
+          unlockAudio();
           if (voiceGenderSelect) localStorage.setItem('PG1_VOICE_GENDER', voiceGenderSelect.value);
           if (voiceLangSelect) localStorage.setItem('PG1_VOICE_LANG', voiceLangSelect.value);
           voiceSettingsModal.classList.remove('active');
           triggerHaptic('success');
-          speakAgentResponse("Voice configuration updated.");
+          speakAgentResponse("Neural voice updated. Systems operational.", true);
+      };
+  }
+  if (testVoiceBtn) {
+      testVoiceBtn.onclick = () => {
+          triggerHaptic('tap');
+          unlockAudio();
+          if (voiceGenderSelect) localStorage.setItem('PG1_VOICE_GENDER', voiceGenderSelect.value);
+          if (voiceLangSelect) localStorage.setItem('PG1_VOICE_LANG', voiceLangSelect.value);
+          speakAgentResponse("Project Gifted 1 Sovereign Voice synthesizer test successful.", true);
       };
   }
 
@@ -533,17 +619,17 @@ document.addEventListener("DOMContentLoaded", () => {
   if (voiceBtn) {
       voiceBtn.onclick = () => {
           triggerHaptic('tap');
+          unlockAudio();
           isVoiceEnabled = !isVoiceEnabled;
           localStorage.setItem('PG1_VOICE_ENABLED', isVoiceEnabled.toString());
           if (isVoiceEnabled) {
               voiceBtn.classList.add('active-btn');
               voiceBtn.innerText = '🗣️ Voice: ON';
-              unlockAudio();
-              speakAgentResponse('Voice active.');
+              speakAgentResponse('Voice active and sound verified.', true);
           } else {
               voiceBtn.classList.remove('active-btn');
               voiceBtn.innerText = '🗣️ Voice: OFF';
-              if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+              stopSpeech();
           }
       };
   }
@@ -784,6 +870,12 @@ document.addEventListener("DOMContentLoaded", () => {
       aiCoreLogo.onclick = () => {
           playKeystroke();
           triggerHaptic('tap');
+          unlockAudio();
+          if (isSpeakingNow) {
+              stopSpeech();
+          } else {
+              speakAgentResponse("Project Gifted 1 Sovereign Core active and standing by.", true);
+          }
       };
   }
 
