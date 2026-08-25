@@ -457,7 +457,26 @@
       }
     }
 
-    // 8. Sovereign Network Interceptor (Hard Guardrail)
+    // 8. Autonomous Reconnection & Fail-Safe Execution Loop
+    async function executeWithRetry(apiCallFn, retries = 3, delay = 2000) {
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          setAgentWorking(true);
+          const result = await apiCallFn();
+          setAgentWorking(false);
+          return result;
+        } catch (err) {
+          console.warn(`[Sovereign Engine] Connection wobble detected (Attempt ${attempt}/${retries}):`, err.message);
+          if (attempt === retries) {
+            setAgentWorking(false);
+            throw new Error(`Critical Pipeline Failure after ${retries} attempts: ${err.message}`);
+          }
+          await new Promise(resolve => setTimeout(resolve, delay * attempt));
+        }
+      }
+    }
+
+    // 9. Sovereign Network Interceptor (Hard Guardrail)
     const originalFetch = window.fetch;
     window.fetch = async function() {
       const url = arguments[0];
