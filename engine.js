@@ -5,10 +5,13 @@ let isVoiceEnabled = true;
 let isSentinelEnabled = true;
 let isChronEnabled = false;
 let isDictationActive = false;
+let wasDictationPausedForSpeech = false;
 let chronTimer = null;
 let currentUtterance = null;
 let speechKeepAliveInterval = null;
 let audioCtx = null;
+let masterGainNode = null;
+let masterCompressor = null;
 let isSpeakingNow = false;
 
 /* =====================================================================
@@ -39,14 +42,36 @@ const TelemetryStack = {
 };
 
 /* =====================================================================
-   PREMIUM STUDIO SOUND SYNTHESIS ENGINE (Web Audio API)
+   PREMIUM STUDIO SOUND SYNTHESIS ENGINE (Web Audio API & Dynamics)
 ===================================================================== */
 function getAudioContext() {
     if (!audioCtx) {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (AudioContextClass) audioCtx = new AudioContextClass();
+        if (AudioContextClass) {
+            audioCtx = new AudioContextClass();
+            try {
+                masterCompressor = audioCtx.createDynamicsCompressor();
+                masterCompressor.threshold.setValueAtTime(-24, audioCtx.currentTime);
+                masterCompressor.knee.setValueAtTime(30, audioCtx.currentTime);
+                masterCompressor.ratio.setValueAtTime(12, audioCtx.currentTime);
+                masterCompressor.attack.setValueAtTime(0.003, audioCtx.currentTime);
+                masterCompressor.release.setValueAtTime(0.25, audioCtx.currentTime);
+
+                masterGainNode = audioCtx.createGain();
+                masterGainNode.gain.setValueAtTime(1.4, audioCtx.currentTime);
+
+                masterCompressor.connect(masterGainNode);
+                masterGainNode.connect(audioCtx.destination);
+            } catch(e) {}
+        }
     }
     return audioCtx;
+}
+
+function getAudioOutput() {
+    const ctx = getAudioContext();
+    if (!ctx) return null;
+    return masterCompressor || ctx.destination;
 }
 
 function isSfxEnabled() {
@@ -77,6 +102,12 @@ window.addEventListener('touchend', unlockAudio, { passive: true });
 window.addEventListener('touchstart', unlockAudio, { passive: true });
 window.addEventListener('keydown', unlockAudio, { passive: true });
 
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+        unlockAudio();
+    }
+});
+
 function triggerHaptic(type) {
     if (!navigator.vibrate) return;
     try {
@@ -102,7 +133,8 @@ function playKeystroke() {
     try {
         unlockAudio();
         const ctx = getAudioContext();
-        if (!ctx) return;
+        const out = getAudioOutput();
+        if (!ctx || !out) return;
         const now = ctx.currentTime;
 
         const osc = ctx.createOscillator();
@@ -117,12 +149,12 @@ function playKeystroke() {
         osc.frequency.setValueAtTime(950 + Math.random() * 250, now);
         osc.frequency.exponentialRampToValueAtTime(320, now + 0.018);
 
-        gain.gain.setValueAtTime(0.015, now);
+        gain.gain.setValueAtTime(0.04, now);
         gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.018);
 
         osc.connect(filter);
         filter.connect(gain);
-        gain.connect(ctx.destination);
+        gain.connect(out);
 
         osc.start(now);
         osc.stop(now + 0.02);
@@ -135,11 +167,12 @@ function playNotificationChime() {
     try {
         unlockAudio();
         const ctx = getAudioContext();
-        if (!ctx) return;
+        const out = getAudioOutput();
+        if (!ctx || !out) return;
         const now = ctx.currentTime;
 
         const fundamentalFreqs = [528, 1056, 1584];
-        const gains = [0.06, 0.025, 0.012];
+        const gains = [0.12, 0.06, 0.03];
 
         fundamentalFreqs.forEach((freq, idx) => {
             const osc = ctx.createOscillator();
@@ -152,7 +185,7 @@ function playNotificationChime() {
             gain.gain.exponentialRampToValueAtTime(0.00005, now + (idx * 0.025) + duration);
 
             osc.connect(gain);
-            gain.connect(ctx.destination);
+            gain.connect(out);
 
             osc.start(now + (idx * 0.025));
             osc.stop(now + (idx * 0.025) + duration);
@@ -166,7 +199,8 @@ function playSuccessChime() {
     try {
         unlockAudio();
         const ctx = getAudioContext();
-        if (!ctx) return;
+        const out = getAudioOutput();
+        if (!ctx || !out) return;
         const now = ctx.currentTime;
         const notes = [659.25, 830.61, 987.77, 1318.51];
         
@@ -175,10 +209,10 @@ function playSuccessChime() {
             const gain = ctx.createGain();
             osc.type = 'sine';
             osc.frequency.setValueAtTime(freq, now + i * 0.06);
-            gain.gain.setValueAtTime(0.04, now + i * 0.06);
+            gain.gain.setValueAtTime(0.09, now + i * 0.06);
             gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.06 + 0.3);
             osc.connect(gain);
-            gain.connect(ctx.destination);
+            gain.connect(out);
             osc.start(now + i * 0.06);
             osc.stop(now + i * 0.06 + 0.3);
         });
@@ -191,7 +225,8 @@ function playErrorTone() {
     try {
         unlockAudio();
         const ctx = getAudioContext();
-        if (!ctx) return;
+        const out = getAudioOutput();
+        if (!ctx || !out) return;
         const now = ctx.currentTime;
         const notes = [440, 415.30];
         
@@ -200,10 +235,10 @@ function playErrorTone() {
             const gain = ctx.createGain();
             osc.type = 'triangle';
             osc.frequency.setValueAtTime(freq, now + i * 0.1);
-            gain.gain.setValueAtTime(0.04, now + i * 0.1);
+            gain.gain.setValueAtTime(0.08, now + i * 0.1);
             gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.1 + 0.25);
             osc.connect(gain);
-            gain.connect(ctx.destination);
+            gain.connect(out);
             osc.start(now + i * 0.1);
             osc.stop(now + i * 0.1 + 0.25);
         });
@@ -216,7 +251,8 @@ function playMicTone(isStart) {
     try {
         unlockAudio();
         const ctx = getAudioContext();
-        if (!ctx) return;
+        const out = getAudioOutput();
+        if (!ctx || !out) return;
         const now = ctx.currentTime;
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -228,10 +264,10 @@ function playMicTone(isStart) {
             osc.frequency.setValueAtTime(880, now);
             osc.frequency.exponentialRampToValueAtTime(440, now + 0.08);
         }
-        gain.gain.setValueAtTime(0.035, now);
+        gain.gain.setValueAtTime(0.08, now);
         gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
         osc.connect(gain);
-        gain.connect(ctx.destination);
+        gain.connect(out);
         osc.start(now);
         osc.stop(now + 0.1);
     } catch(e) {}
@@ -444,12 +480,27 @@ function stopSpeech() {
     isSpeakingNow = false;
     const logo = document.getElementById('aiCoreLogo');
     if (logo) logo.classList.remove('is-speaking');
+
+    // Restore dictation if it was paused for speech output
+    if (wasDictationPausedForSpeech) {
+        wasDictationPausedForSpeech = false;
+        if (isDictationActive && speechRecognizer) {
+            try { speechRecognizer.start(); } catch(e) {}
+        }
+    }
 }
 
 function speakAgentResponse(text, forceSpeak = false) {
     if ((!isVoiceEnabled && !forceSpeak) || !('speechSynthesis' in window)) return;
     try {
         unlockAudio();
+
+        // Ducking mitigation: temporarily suspend speech recognition to prevent OS audio ducking & echo cancellation throttle
+        if (isDictationActive && speechRecognizer) {
+            wasDictationPausedForSpeech = true;
+            try { speechRecognizer.stop(); } catch(e) {}
+        }
+
         stopSpeech();
 
         const plainText = text
@@ -461,7 +512,15 @@ function speakAgentResponse(text, forceSpeak = false) {
             .replace(/\b(?:PG1|pg1)\b/g, 'P G 1')
             .trim();
 
-        if (!plainText) return;
+        if (!plainText) {
+            if (wasDictationPausedForSpeech) {
+                wasDictationPausedForSpeech = false;
+                if (isDictationActive && speechRecognizer) {
+                    try { speechRecognizer.start(); } catch(e) {}
+                }
+            }
+            return;
+        }
 
         const sentenceRegex = /[^.!?\n]+[.!?\n]+|[^.!?\n]+$/g;
         const rawChunks = plainText.match(sentenceRegex) || [plainText];
@@ -473,6 +532,7 @@ function speakAgentResponse(text, forceSpeak = false) {
         const savedSpecificVoice = localStorage.getItem('PG1_SPECIFIC_VOICE') || 'auto';
         const savedRate = parseFloat(localStorage.getItem('PG1_VOICE_RATE') || '1.0');
         const savedPitch = parseFloat(localStorage.getItem('PG1_VOICE_PITCH') || '1.0');
+        const savedVol = parseFloat(localStorage.getItem('PG1_VOICE_VOL') || '1.0');
 
         const matchedVoice = selectBestVoice(savedLang, savedGender, savedSpecificVoice);
 
@@ -490,7 +550,7 @@ function speakAgentResponse(text, forceSpeak = false) {
             }
 
             const utterance = new SpeechSynthesisUtterance(currentChunkText);
-            utterance.volume = 1.0;
+            utterance.volume = isNaN(savedVol) ? 1.0 : Math.min(Math.max(savedVol, 0.1), 1.0);
             utterance.rate = isNaN(savedRate) ? 1.0 : Math.min(Math.max(savedRate, 0.7), 1.5);
             utterance.pitch = isNaN(savedPitch) ? 1.0 : Math.min(Math.max(savedPitch, 0.8), 1.3);
 
@@ -877,8 +937,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const voiceSpecificSelect = document.getElementById('voiceSpecificSelect');
   const voiceRateSlider = document.getElementById('voiceRateSlider');
   const voicePitchSlider = document.getElementById('voicePitchSlider');
+  const voiceVolSlider = document.getElementById('voiceVolSlider');
   const rateValLabel = document.getElementById('rateValLabel');
   const pitchValLabel = document.getElementById('pitchValLabel');
+  const volValLabel = document.getElementById('volValLabel');
   const sfxEnabledSelect = document.getElementById('sfxEnabledSelect');
 
   if (voiceGenderSelect && localStorage.getItem('PG1_VOICE_GENDER')) {
@@ -895,6 +957,10 @@ document.addEventListener("DOMContentLoaded", () => {
       voicePitchSlider.value = localStorage.getItem('PG1_VOICE_PITCH');
       if (pitchValLabel) pitchValLabel.innerText = parseFloat(voicePitchSlider.value).toFixed(2);
   }
+  if (voiceVolSlider && localStorage.getItem('PG1_VOICE_VOL')) {
+      voiceVolSlider.value = localStorage.getItem('PG1_VOICE_VOL');
+      if (volValLabel) volValLabel.innerText = Math.round(parseFloat(voiceVolSlider.value) * 100) + '%';
+  }
   if (sfxEnabledSelect && localStorage.getItem('PG1_SFX_ENABLED') !== null) {
       sfxEnabledSelect.value = localStorage.getItem('PG1_SFX_ENABLED');
   }
@@ -907,6 +973,11 @@ document.addEventListener("DOMContentLoaded", () => {
   if (voicePitchSlider && pitchValLabel) {
       voicePitchSlider.oninput = () => {
           pitchValLabel.innerText = parseFloat(voicePitchSlider.value).toFixed(2);
+      };
+  }
+  if (voiceVolSlider && volValLabel) {
+      voiceVolSlider.oninput = () => {
+          volValLabel.innerText = Math.round(parseFloat(voiceVolSlider.value) * 100) + '%';
       };
   }
 
@@ -934,6 +1005,7 @@ document.addEventListener("DOMContentLoaded", () => {
           if (voiceSpecificSelect) localStorage.setItem('PG1_SPECIFIC_VOICE', voiceSpecificSelect.value);
           if (voiceRateSlider) localStorage.setItem('PG1_VOICE_RATE', voiceRateSlider.value);
           if (voicePitchSlider) localStorage.setItem('PG1_VOICE_PITCH', voicePitchSlider.value);
+          if (voiceVolSlider) localStorage.setItem('PG1_VOICE_VOL', voiceVolSlider.value);
           if (sfxEnabledSelect) localStorage.setItem('PG1_SFX_ENABLED', sfxEnabledSelect.value);
 
           voiceSettingsModal.classList.remove('active');
@@ -952,6 +1024,7 @@ document.addEventListener("DOMContentLoaded", () => {
           if (voiceSpecificSelect) localStorage.setItem('PG1_SPECIFIC_VOICE', voiceSpecificSelect.value);
           if (voiceRateSlider) localStorage.setItem('PG1_VOICE_RATE', voiceRateSlider.value);
           if (voicePitchSlider) localStorage.setItem('PG1_VOICE_PITCH', voicePitchSlider.value);
+          if (voiceVolSlider) localStorage.setItem('PG1_VOICE_VOL', voiceVolSlider.value);
 
           speakAgentResponse("Project Gifted 1 Sovereign Voice Synthesizer online. Audio fidelity is crystal clear.", true);
       };
@@ -1049,6 +1122,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function stopDictation() {
       isDictationActive = false;
+      wasDictationPausedForSpeech = false;
       if (speechRecognizer) {
           try { speechRecognizer.stop(); } catch(e) {}
           speechRecognizer = null;
@@ -1077,6 +1151,7 @@ document.addEventListener("DOMContentLoaded", () => {
           speechRecognizer.lang = configuredLang && configuredLang !== 'auto' ? configuredLang : 'en-US';
           
           isDictationActive = true;
+          wasDictationPausedForSpeech = false;
           if (audioBtn) { audioBtn.classList.add('recording-btn'); audioBtn.innerText = '🎙️ Dictate: REC'; }
           if (inlineMicBtn) inlineMicBtn.classList.add('recording-btn');
 
@@ -1108,13 +1183,13 @@ document.addEventListener("DOMContentLoaded", () => {
           };
 
           speechRecognizer.onend = () => {
-              if (isDictationActive) {
+              if (isDictationActive && !wasDictationPausedForSpeech && !isSpeakingNow) {
                   try {
                       speechRecognizer.start();
                   } catch(e) {
                       stopDictation();
                   }
-              } else {
+              } else if (!isDictationActive) {
                   stopDictation();
               }
           };
