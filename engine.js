@@ -1,10 +1,37 @@
 let terminalAppendFunc = null;
 let mediaStream = null;
 let speechRecognizer = null;
-let isVoiceEnabled = false;
+let isVoiceEnabled = true;
 let isSentinelEnabled = true;
 let isChronEnabled = false;
 let chronTimer = null;
+let currentUtterance = null;
+let speechKeepAliveInterval = null;
+let audioCtx = null;
+
+function getAudioContext() {
+    if (!audioCtx) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass) audioCtx = new AudioContextClass();
+    }
+    return audioCtx;
+}
+
+function unlockAudio() {
+    try {
+        const ctx = getAudioContext();
+        if (ctx && ctx.state === 'suspended') {
+            ctx.resume();
+        }
+        if ('speechSynthesis' in window && window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+        }
+    } catch(e) {}
+}
+
+window.addEventListener('click', unlockAudio, { passive: true });
+window.addEventListener('touchstart', unlockAudio, { passive: true });
+window.addEventListener('keydown', unlockAudio, { passive: true });
 
 function triggerHaptic(type) {
     if (!navigator.vibrate) return;
@@ -21,15 +48,20 @@ function setSystemState(state) {
     if (state === 'error') { document.body.classList.add('sys-error'); triggerHaptic('error'); }
 }
 
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 function playKeystroke() {
-    if (audioCtx.state === 'suspended') audioCtx.resume();
     try {
-        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-        osc.type = 'sine'; osc.frequency.setValueAtTime(800 + Math.random() * 300, audioCtx.currentTime);
-        gain.gain.setValueAtTime(0.008, audioCtx.currentTime);
-        osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.start(); osc.stop(audioCtx.currentTime + 0.015);
+        unlockAudio();
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const osc = ctx.createOscillator(); 
+        const gain = ctx.createGain();
+        osc.type = 'sine'; 
+        osc.frequency.setValueAtTime(800 + Math.random() * 300, ctx.currentTime);
+        gain.gain.setValueAtTime(0.008, ctx.currentTime);
+        osc.connect(gain); 
+        gain.connect(ctx.destination);
+        osc.start(); 
+        osc.stop(ctx.currentTime + 0.015);
     } catch(e) {}
 }
 
@@ -111,42 +143,95 @@ window.editMsg = function(btn) {
   }
 };
 
+/* PRE-LOAD VOICES */
+let systemVoices = [];
+function cacheSystemVoices() {
+    if ('speechSynthesis' in window) {
+        systemVoices = window.speechSynthesis.getVoices();
+    }
+}
+if ('speechSynthesis' in window) {
+    cacheSystemVoices();
+    window.speechSynthesis.onvoiceschanged = cacheSystemVoices;
+}
+
 /* VOICE SYNTHESIS ENGINE */
 function speakAgentResponse(text) {
     if (!isVoiceEnabled || !('speechSynthesis' in window)) return;
     try {
+        unlockAudio();
         window.speechSynthesis.cancel();
-        const plainText = text.replace(/<[^>]*>/g, '').replace(/[*_#`]/g, '').trim();
+        if (speechKeepAliveInterval) {
+            clearInterval(speechKeepAliveInterval);
+            speechKeepAliveInterval = null;
+        }
+
+        const plainText = text
+            .replace(/```[\s\S]*?```/g, '')
+            .replace(/`([^`]+)`/g, '$1')
+            .replace(/<[^>]*>/g, '')
+            .replace(/[*_#~]/g, '')
+            .replace(/https?:\/\/\S+/g, '')
+            .trim();
+
         if (!plainText) return;
         
-        const utterance = new SpeechSynthesisUtterance(plainText);
+        currentUtterance = new SpeechSynthesisUtterance(plainText);
+        currentUtterance.volume = 1.0;
+        currentUtterance.rate = 1.0;
+        currentUtterance.pitch = 1.0;
+
         const savedLang = localStorage.getItem('PG1_VOICE_LANG') || 'en-US';
         const savedGender = localStorage.getItem('PG1_VOICE_GENDER') || 'female';
         
         if (savedLang !== 'auto') {
-            utterance.lang = savedLang;
+            currentUtterance.lang = savedLang;
         }
 
-        const voices = window.speechSynthesis.getVoices();
+        const voices = systemVoices.length > 0 ? systemVoices : window.speechSynthesis.getVoices();
         if (voices && voices.length > 0) {
             let matchedVoice = null;
+            const langPrefix = savedLang === 'auto' ? 'en' : savedLang.substring(0, 2);
             if (savedGender === 'male') {
-                matchedVoice = voices.find(v => (v.lang.startsWith(savedLang.substring(0, 2)) || savedLang === 'auto') && (v.name.toLowerCase().includes('male') || v.name.toLowerCase().includes('david') || v.name.toLowerCase().includes('guy') || v.name.toLowerCase().includes('george')));
+                matchedVoice = voices.find(v => (v.lang.startsWith(langPrefix) || savedLang === 'auto') && (v.name.toLowerCase().includes('male') || v.name.toLowerCase().includes('david') || v.name.toLowerCase().includes('guy') || v.name.toLowerCase().includes('george') || v.name.toLowerCase().includes('daniel') || v.name.toLowerCase().includes('alex')));
             } else if (savedGender === 'female') {
-                matchedVoice = voices.find(v => (v.lang.startsWith(savedLang.substring(0, 2)) || savedLang === 'auto') && (v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha') || v.name.toLowerCase().includes('victoria')));
+                matchedVoice = voices.find(v => (v.lang.startsWith(langPrefix) || savedLang === 'auto') && (v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha') || v.name.toLowerCase().includes('victoria') || v.name.toLowerCase().includes('karen') || v.name.toLowerCase().includes('siri')));
             }
-            if (!matchedVoice && savedLang !== 'auto') {
-                matchedVoice = voices.find(v => v.lang.startsWith(savedLang.substring(0, 2)));
+            if (!matchedVoice) {
+                matchedVoice = voices.find(v => v.lang.startsWith(langPrefix));
             }
-            if (matchedVoice) utterance.voice = matchedVoice;
+            if (matchedVoice) currentUtterance.voice = matchedVoice;
         }
 
         const logo = document.getElementById('aiCoreLogo');
-        utterance.onstart = () => { if (logo) logo.classList.add('is-speaking'); };
-        utterance.onend = () => { if (logo) logo.classList.remove('is-speaking'); };
-        utterance.onerror = () => { if (logo) logo.classList.remove('is-speaking'); };
+        currentUtterance.onstart = () => {
+            if (logo) logo.classList.add('is-speaking');
+            speechKeepAliveInterval = setInterval(() => {
+                if (window.speechSynthesis.speaking) {
+                    window.speechSynthesis.pause();
+                    window.speechSynthesis.resume();
+                } else {
+                    clearInterval(speechKeepAliveInterval);
+                    speechKeepAliveInterval = null;
+                }
+            }, 8000);
+        };
+        currentUtterance.onend = () => {
+            if (logo) logo.classList.remove('is-speaking');
+            if (speechKeepAliveInterval) {
+                clearInterval(speechKeepAliveInterval);
+                speechKeepAliveInterval = null;
+            }
+        };
+        currentUtterance.onerror = () => {
+            if (logo) logo.classList.remove('is-speaking');
+            if (speechKeepAliveInterval) {
+                clearInterval(speechKeepAliveInterval);
+                speechKeepAliveInterval = null;
+            }
+        };
 
-        window.speechSynthesis.speak(utterance);
+        window.speechSynthesis.speak(currentUtterance);
     } catch(e) {}
 }
 
@@ -247,6 +332,20 @@ document.addEventListener("DOMContentLoaded", () => {
   let pendingImageData = null;
   const termOut = document.getElementById('terminalOutput');
   window.checkKeys(); 
+
+  const savedVoicePref = localStorage.getItem('PG1_VOICE_ENABLED');
+  isVoiceEnabled = savedVoicePref !== null ? (savedVoicePref === 'true') : true;
+
+  const voiceBtn = document.getElementById('voiceBtn');
+  if (voiceBtn) {
+      if (isVoiceEnabled) {
+          voiceBtn.classList.add('active-btn');
+          voiceBtn.innerText = '🗣️ Voice: ON';
+      } else {
+          voiceBtn.classList.remove('active-btn');
+          voiceBtn.innerText = '🗣️ Voice: OFF';
+      }
+  }
 
   function persistTerminalState() {
       try {
@@ -426,20 +525,21 @@ document.addEventListener("DOMContentLoaded", () => {
           if (voiceLangSelect) localStorage.setItem('PG1_VOICE_LANG', voiceLangSelect.value);
           voiceSettingsModal.classList.remove('active');
           triggerHaptic('success');
-          alert('Voice configuration saved.');
+          speakAgentResponse("Voice configuration updated.");
       };
   }
 
   /* VOICE TOGGLE */
-  const voiceBtn = document.getElementById('voiceBtn');
   if (voiceBtn) {
       voiceBtn.onclick = () => {
           triggerHaptic('tap');
           isVoiceEnabled = !isVoiceEnabled;
+          localStorage.setItem('PG1_VOICE_ENABLED', isVoiceEnabled.toString());
           if (isVoiceEnabled) {
               voiceBtn.classList.add('active-btn');
               voiceBtn.innerText = '🗣️ Voice: ON';
-              if ('speechSynthesis' in window) window.speechSynthesis.resume();
+              unlockAudio();
+              speakAgentResponse('Voice active.');
           } else {
               voiceBtn.classList.remove('active-btn');
               voiceBtn.innerText = '🗣️ Voice: OFF';
@@ -515,6 +615,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function toggleSpeechRecognition() {
       triggerHaptic('tap');
+      unlockAudio();
       if (!SpeechRec) {
           alert('Speech Recognition API not supported in this browser.');
           return;
@@ -694,6 +795,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // =====================================================================
   const executeSendCommand = async () => {
     triggerHaptic('tap');
+    unlockAudio();
     const inputEl = document.getElementById('terminalInput');
     let cmd = inputEl ? inputEl.value.trim() : '';
     if (!cmd && !pendingImageData) return;
@@ -722,7 +824,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 data: pendingImageData.data
             }
         });
-        // Clear media preview after staging payload
         pendingImageData = null;
         if (mediaPreviewBox) mediaPreviewBox.style.display = 'none';
         if (mediaPreviewImg) mediaPreviewImg.src = '';
