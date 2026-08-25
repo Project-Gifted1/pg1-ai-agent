@@ -129,6 +129,59 @@ async function executeMCPTool(toolName, args) {
     return await MCP_TOOL_REGISTRY[toolName].handler(args);
 }
 
+/* DYNAMIC ESCALATION PROTOCOL ROUTER */
+function evaluatePromptComplexity(prompt) {
+    if (!prompt) return false;
+    const deepLogicTriggers = [
+        /diagnos/i,
+        /debug/i,
+        /troubleshoot/i,
+        /root\s*cause/i,
+        /deep\s*logic/i,
+        /architect/i,
+        /refactor/i,
+        /security\s*audit/i,
+        /vulnerability/i,
+        /protocol/i,
+        /patch/i,
+        /remediat/i,
+        /infrastructure/i,
+        /algorithm/i,
+        /optimize/i,
+        /self-heal/i,
+        /investigate/i,
+        /escalat/i,
+        /analyze\s*deeply/i,
+        /complex/i
+    ];
+
+    const hasComplexTrigger = deepLogicTriggers.some(pattern => pattern.test(prompt));
+    const isHighVolumeOrStructured = prompt.length > 250 || prompt.includes("```") || (prompt.match(/\n/g) || []).length >= 3;
+    
+    return hasComplexTrigger || isHighVolumeOrStructured;
+}
+
+function routeModelByComplexity(prompt, defaultModel = 'gemini-3.7-flash') {
+    const isComplex = evaluatePromptComplexity(prompt);
+    const PRO_MODEL = 'gemini-3.1-pro-preview';
+    const FLASH_MODEL = 'gemini-3.7-flash';
+
+    if (isComplex) {
+        return {
+            selectedModel: PRO_MODEL,
+            escalated: true,
+            reason: "Deep logic / diagnostic / architecture requirements detected"
+        };
+    }
+
+    // Default simple queries to Flash
+    return {
+        selectedModel: defaultModel.includes('pro') ? defaultModel : FLASH_MODEL,
+        escalated: false,
+        reason: "Standard complexity query routed to Flash core"
+    };
+}
+
 /* ENGINE INITIALIZATION */
 document.addEventListener("DOMContentLoaded", () => {
   // OVERRIDE: Force wipe corrupted DOM and Session History on boot to prevent OOM crash
@@ -211,7 +264,14 @@ document.addEventListener("DOMContentLoaded", () => {
     persistTerminalState();
     
     const tools = getMCPToolDeclarations();
-    const selectedModel = document.getElementById('modelSelector').value;
+    const configuredModel = document.getElementById('modelSelector') ? document.getElementById('modelSelector').value : 'gemini-3.7-flash';
+    const routingDecision = routeModelByComplexity(cmd, configuredModel);
+    const activeModel = routingDecision.selectedModel;
+
+    if (routingDecision.escalated) {
+        appendMsg(`[Dynamic Escalation] Complex task detected (${routingDecision.reason}). Escalated payload to Pro model: ${activeModel}`, 'system-msg', true);
+    }
+
     const sys = `You are PG1.Agent v12.36. You are a fully autonomous, self-healing sovereign entity. 
 TRIPLE VERIFICATION PROTOCOL ENFORCED:
 1. You may NEVER claim a fix is complete until the engine returns a [Verified Success] payload.
@@ -221,7 +281,7 @@ TRIPLE VERIFICATION PROTOCOL ENFORCED:
       let continueLoop = true; let loopCount = 0;
       while (continueLoop && loopCount < 4) {
           loopCount++;
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${key}`, {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${key}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
           });
@@ -258,7 +318,7 @@ TRIPLE VERIFICATION PROTOCOL ENFORCED:
               sessionHistory.push({ role: "user", parts: [{ functionResponse: { name: call.name, response: { result: resultStr } } }] });
               persistTerminalState();
               
-              const followupRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${key}`, {
+              const followupRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${key}`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
               });
