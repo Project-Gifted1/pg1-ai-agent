@@ -4,6 +4,7 @@ let speechRecognizer = null;
 let isVoiceEnabled = true;
 let isSentinelEnabled = true;
 let isChronEnabled = false;
+let isDictationActive = false;
 let chronTimer = null;
 let currentUtterance = null;
 let speechKeepAliveInterval = null;
@@ -45,6 +46,7 @@ function unlockAudio() {
 }
 
 window.addEventListener('click', unlockAudio, { passive: true });
+window.addEventListener('touchend', unlockAudio, { passive: true });
 window.addEventListener('touchstart', unlockAudio, { passive: true });
 window.addEventListener('keydown', unlockAudio, { passive: true });
 
@@ -76,7 +78,6 @@ function playKeystroke() {
         if (!ctx) return;
         const now = ctx.currentTime;
 
-        // Mechanical switch click transient
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         const filter = ctx.createBiquadFilter();
@@ -110,7 +111,6 @@ function playNotificationChime() {
         if (!ctx) return;
         const now = ctx.currentTime;
 
-        // Dual pure harmonic tones with smooth exponential decay (528Hz Solfeggio + 1056Hz Octave Harmonic)
         const fundamentalFreqs = [528, 1056, 1584];
         const gains = [0.06, 0.025, 0.012];
 
@@ -141,7 +141,7 @@ function playSuccessChime() {
         const ctx = getAudioContext();
         if (!ctx) return;
         const now = ctx.currentTime;
-        const notes = [659.25, 830.61, 987.77, 1318.51]; // E5, G#5, B5, E6
+        const notes = [659.25, 830.61, 987.77, 1318.51];
         
         notes.forEach((freq, i) => {
             const osc = ctx.createOscillator();
@@ -166,7 +166,7 @@ function playErrorTone() {
         const ctx = getAudioContext();
         if (!ctx) return;
         const now = ctx.currentTime;
-        const notes = [440, 415.30]; // Gentle descending minor interval
+        const notes = [440, 415.30];
         
         notes.forEach((freq, i) => {
             const osc = ctx.createOscillator();
@@ -320,7 +320,6 @@ function populateVoiceSelect() {
     const currentVal = localStorage.getItem('PG1_SPECIFIC_VOICE') || 'auto';
     specificSelect.innerHTML = `<option value="auto">⚡ Best Neural / HD Voice (Auto-Selected)</option>`;
     
-    // Sort voices prioritizing Natural/Neural/Enhanced/Studio voices
     const sorted = [...voices].sort((a, b) => {
         const aScore = getVoiceQualityScore(a);
         const bScore = getVoiceQualityScore(b);
@@ -370,7 +369,6 @@ function selectBestVoice(targetLang, persona, specificVoiceName) {
     const voices = (systemVoices && systemVoices.length > 0) ? systemVoices : (('speechSynthesis' in window) ? window.speechSynthesis.getVoices() : []);
     if (!voices || voices.length === 0) return null;
 
-    // Direct explicit voice match if selected by user
     if (specificVoiceName && specificVoiceName !== 'auto') {
         const found = voices.find(v => v.name === specificVoiceName);
         if (found) return found;
@@ -379,7 +377,6 @@ function selectBestVoice(targetLang, persona, specificVoiceName) {
     const langPrefix = (!targetLang || targetLang === 'auto') ? '' : targetLang.toLowerCase().substring(0, 2);
     const fullLang = (!targetLang || targetLang === 'auto') ? '' : targetLang.toLowerCase();
 
-    // Filter by language first
     let candidates = voices;
     if (fullLang) {
         const exactMatches = voices.filter(v => (v.lang || '').toLowerCase() === fullLang || (v.lang || '').toLowerCase().replace('_', '-') === fullLang);
@@ -391,8 +388,7 @@ function selectBestVoice(targetLang, persona, specificVoiceName) {
         }
     }
 
-    // Gender filter & keywords
-    const femaleKeywords = ['female', 'zira', 'samantha', 'victoria', 'karen', 'siri', 'moira', 'tessa', 'anna', 'monica', 'amelie', 'kyoko', 'yuna', 'tingting', 'luciana', 'elena', 'yelda', 'lekha', 'paulina', 'alice'];
+    const femaleKeywords = ['female', 'zira', 'samantha', 'victoria', 'karen', 'siri', 'moira', 'tessa', 'anna', 'monica', 'amelie', 'kyoko', 'yuna', 'tingting', 'luciana', 'elena', 'yelda', 'lekha', 'paulina', 'alice', 'ava', 'zoe'];
     const maleKeywords = ['male', 'david', 'guy', 'george', 'daniel', 'alex', 'aaron', 'thomas', 'jorge', 'arthur', 'oliver', 'yannick', 'sinji', 'otoya', 'felipe', 'nikolai', 'tarik'];
 
     let genderFiltered = candidates;
@@ -404,7 +400,6 @@ function selectBestVoice(targetLang, persona, specificVoiceName) {
         if (matches.length > 0) genderFiltered = matches;
     }
 
-    // Sort by quality score
     genderFiltered.sort((a, b) => getVoiceQualityScore(b) - getVoiceQualityScore(a));
     return genderFiltered[0] || candidates[0] || voices[0];
 }
@@ -441,7 +436,6 @@ function speakAgentResponse(text, forceSpeak = false) {
 
         if (!plainText) return;
 
-        // Split text cleanly on punctuation with natural breath cadence
         const sentenceRegex = /[^.!?\n]+[.!?\n]+|[^.!?\n]+$/g;
         const rawChunks = plainText.match(sentenceRegex) || [plainText];
         const chunks = rawChunks.map(c => c.trim()).filter(c => c.length > 0);
@@ -500,7 +494,6 @@ function speakAgentResponse(text, forceSpeak = false) {
             window.speechSynthesis.speak(utterance);
         }
 
-        // WebKit Speech Synthesis keep-alive loop
         speechKeepAliveInterval = setInterval(() => {
             if (window.speechSynthesis.speaking) {
                 window.speechSynthesis.resume();
@@ -508,7 +501,7 @@ function speakAgentResponse(text, forceSpeak = false) {
                 clearInterval(speechKeepAliveInterval);
                 speechKeepAliveInterval = null;
             }
-        }, 3500);
+        }, 2500);
 
         playNotificationChime();
         speakNextChunk();
@@ -614,6 +607,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let sessionHistory = [];
   let pendingImageData = null;
+  let accumulatedTranscript = '';
   const termOut = document.getElementById('terminalOutput');
   window.checkKeys(); 
 
@@ -799,7 +793,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const pitchValLabel = document.getElementById('pitchValLabel');
   const sfxEnabledSelect = document.getElementById('sfxEnabledSelect');
 
-  // Restore saved voice settings
   if (voiceGenderSelect && localStorage.getItem('PG1_VOICE_GENDER')) {
       voiceGenderSelect.value = localStorage.getItem('PG1_VOICE_GENDER');
   }
@@ -861,17 +854,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
           const selectedLang = voiceLangSelect ? voiceLangSelect.value : 'en-US';
           let sampleGreeting = "Neural voice configuration applied. Sound fidelity verified.";
-          if (selectedLang.startsWith('es')) sampleGreeting = "Configuración de voz aplicada. Fidelidad de audio óptima.";
-          else if (selectedLang.startsWith('fr')) sampleGreeting = "Configuration vocale appliquée. Audio haute fidélité opérationnel.";
-          else if (selectedLang.startsWith('de')) sampleGreeting = "Sprachkonfiguration angewendet. Klangtreue verifiziert.";
-          else if (selectedLang.startsWith('it')) sampleGreeting = "Configurazione vocale applicata. Audio ad alta fedeltà attivo.";
-          else if (selectedLang.startsWith('pt')) sampleGreeting = "Configuração de voz aplicada. Fidelidade de áudio confirmada.";
-          else if (selectedLang.startsWith('ja')) sampleGreeting = "音声設定が適用されました。高音質サウンドを確認しました。";
-          else if (selectedLang.startsWith('zh')) sampleGreeting = "语音配置已应用，高保真音质已就绪。";
-          else if (selectedLang.startsWith('ru')) sampleGreeting = "Конфигурация голоса сохранена. Звук высокого качества активен.";
-          else if (selectedLang.startsWith('ar')) sampleGreeting = "تم تطبيق إعدادات الصوت بنجاح.";
-          else if (selectedLang.startsWith('hi')) sampleGreeting = "ध्वनि सेटिंग्स सफलतापूर्वक लागू की गईं।";
-
           speakAgentResponse(sampleGreeting, true);
       };
   }
@@ -885,19 +867,7 @@ document.addEventListener("DOMContentLoaded", () => {
           if (voiceRateSlider) localStorage.setItem('PG1_VOICE_RATE', voiceRateSlider.value);
           if (voicePitchSlider) localStorage.setItem('PG1_VOICE_PITCH', voicePitchSlider.value);
 
-          const selectedLang = voiceLangSelect ? voiceLangSelect.value : 'en-US';
           let testMsg = "Project Gifted 1 Sovereign Voice Synthesizer online. Audio fidelity is crystal clear.";
-          if (selectedLang.startsWith('es')) testMsg = "Voz de Proyecto Gifted 1 en línea. Sonido de alta definición verificado.";
-          else if (selectedLang.startsWith('fr')) testMsg = "Synthèse vocale de Projet Gifted 1 active. Son haute définition confirmé.";
-          else if (selectedLang.startsWith('de')) testMsg = "Projekt Gifted 1 Sprachsynthesizer online. Klangqualität bestätigt.";
-          else if (selectedLang.startsWith('it')) testMsg = "Sintetizzatore vocale di Project Gifted 1 attivo. Audio limpido e naturale.";
-          else if (selectedLang.startsWith('pt')) testMsg = "Sintetizador de voz Project Gifted 1 ativado. Qualidade sonora verificada.";
-          else if (selectedLang.startsWith('ja')) testMsg = "プロジェクト・ギフテッド・ワンの音声エンジンが起動しました。";
-          else if (selectedLang.startsWith('zh')) testMsg = "Project Gifted 1 语音引擎已启动，音频清晰流畅。";
-          else if (selectedLang.startsWith('ru')) testMsg = "Голосовой модуль Project Gifted 1 активен. Качество звука проверено.";
-          else if (selectedLang.startsWith('ar')) testMsg = "محرك الصوت لمشروع غيفتد ون يعمل بدقة عالية.";
-          else if (selectedLang.startsWith('hi')) testMsg = "प्रोजेक्ट गिफ्टेड 1 वॉयस सिंथेसाइज़र सक्रिय है।";
-
           speakAgentResponse(testMsg, true);
       };
   }
@@ -993,38 +963,26 @@ document.addEventListener("DOMContentLoaded", () => {
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 
   function stopDictation() {
+      isDictationActive = false;
       if (speechRecognizer) {
           try { speechRecognizer.stop(); } catch(e) {}
           speechRecognizer = null;
-          playMicTone(false);
       }
+      playMicTone(false);
       if (audioBtn) { audioBtn.classList.remove('recording-btn'); audioBtn.innerText = '🎙️ Dictate: OFF'; }
       if (inlineMicBtn) inlineMicBtn.classList.remove('recording-btn');
   }
 
-  async function toggleSpeechRecognition() {
-      triggerHaptic('tap');
-      unlockAudio();
-      
+  function startSpeechRecognition() {
       if (!SpeechRec) {
-          alert('Speech Recognition API not supported in this browser. Please use a Web Speech compatible browser.');
+          alert('Speech Recognition API is not supported in this browser. Please use a compatible Web Speech browser (Safari or Chrome).');
           return;
       }
-      
-      if (speechRecognizer) {
-          stopDictation();
-          triggerHaptic('tap');
-          return;
-      }
+
+      stopSpeech();
+      unlockAudio();
 
       try {
-          if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-              try {
-                  const testStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                  testStream.getTracks().forEach(t => t.stop());
-              } catch(permErr) {}
-          }
-
           speechRecognizer = new SpeechRec();
           speechRecognizer.continuous = true;
           speechRecognizer.interimResults = true;
@@ -1033,33 +991,25 @@ document.addEventListener("DOMContentLoaded", () => {
           const configuredLang = localStorage.getItem('PG1_VOICE_LANG');
           speechRecognizer.lang = configuredLang && configuredLang !== 'auto' ? configuredLang : 'en-US';
           
+          isDictationActive = true;
           if (audioBtn) { audioBtn.classList.add('recording-btn'); audioBtn.innerText = '🎙️ Dictate: REC'; }
           if (inlineMicBtn) inlineMicBtn.classList.add('recording-btn');
 
           playMicTone(true);
 
-          let initialText = "";
           const inputEl = document.getElementById('terminalInput');
-          if (inputEl) {
-              initialText = inputEl.value;
-              inputEl.focus();
-          }
+          let baseText = inputEl ? inputEl.value : '';
+          if (baseText && !baseText.endsWith(' ')) baseText += ' ';
 
           speechRecognizer.onresult = (event) => {
-              let finalTranscript = '';
-              let interimTranscript = '';
+              let currentSessionText = '';
 
-              for (let i = event.resultIndex; i < event.results.length; ++i) {
-                  if (event.results[i].isFinal) {
-                      finalTranscript += event.results[i][0].transcript;
-                  } else {
-                      interimTranscript += event.results[i][0].transcript;
-                  }
+              for (let i = 0; i < event.results.length; ++i) {
+                  currentSessionText += event.results[i][0].transcript;
               }
 
               if (inputEl) {
-                  const combined = (initialText ? initialText + ' ' : '') + (finalTranscript || interimTranscript);
-                  inputEl.value = combined;
+                  inputEl.value = baseText + currentSessionText;
               }
               triggerHaptic('tap');
           };
@@ -1067,19 +1017,36 @@ document.addEventListener("DOMContentLoaded", () => {
           speechRecognizer.onerror = (event) => {
               console.warn("SpeechRec error:", event.error);
               if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-                  alert('Microphone permission was denied. Please allow microphone access in your browser settings.');
+                  alert('Microphone permission was denied. Please allow microphone access in your iOS / Safari settings.');
+                  stopDictation();
               }
-              stopDictation();
           };
 
           speechRecognizer.onend = () => {
-              stopDictation();
+              if (isDictationActive) {
+                  try {
+                      speechRecognizer.start();
+                  } catch(e) {
+                      stopDictation();
+                  }
+              } else {
+                  stopDictation();
+              }
           };
 
           speechRecognizer.start();
       } catch(e) {
           stopDictation();
           alert('Microphone initialization failed: ' + e.message);
+      }
+  }
+
+  function toggleSpeechRecognition() {
+      triggerHaptic('tap');
+      if (isDictationActive) {
+          stopDictation();
+      } else {
+          startSpeechRecognition();
       }
   }
 
@@ -1364,7 +1331,6 @@ TRIPLE VERIFICATION PROTOCOL ENFORCED:
       });
   }
   
-  // Tab navigation functionality
   document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', () => {
       triggerHaptic('tap');
