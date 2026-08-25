@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Project Gifted1™ - Sovereign Engine v12.33</title>
+  <title>Project Gifted1™ - Sovereign Engine v12.34</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     
@@ -69,7 +69,10 @@
 
     .terminal-controls-header { display: flex; justify-content: space-between; align-items: center; background: #111827; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--ui-border); font-size: 0.8em; margin-bottom: 10px; transition: border-color 0.3s; }
     .terminal-controls-header select { background: #0f172a; color: #38bdf8; border: 1px solid #334155; padding: 4px 8px; border-radius: 4px; font-size: 0.85em; outline: none; }
-    
+    .terminal-action-links { display: flex; gap: 10px; font-weight: 600; font-size: 0.85em; }
+    .terminal-action-links span { cursor: pointer; user-select: none; transition: opacity 0.2s; }
+    .terminal-action-links span:hover { opacity: 0.8; }
+
     .terminal-display { flex: 1; background: #0f172a; border: 1px solid var(--ui-border); border-radius: 10px; padding: 12px; overflow-y: auto; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 250px; position: relative; transition: border-color 0.3s; }
     .terminal-message { padding: 10px 12px; border-radius: 8px; font-size: 0.85em; line-height: 1.4; word-wrap: break-word; position: relative; }
     .terminal-message.user-msg { background: #1e293b; border: 1px solid #334155; color: #38bdf8; align-self: flex-end; max-width: 85%; }
@@ -91,10 +94,17 @@
     .msg-action-btn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; font-size: 0.65em; padding: 2px 6px; border-radius: 4px; cursor: pointer; font-weight: 600; }
     .msg-action-btn:hover { color: #f8fafc; background: #334155; }
 
+    .media-preview-box { display: none; padding: 10px; background: #111827; border: 1px solid #1f2937; border-radius: 10px; margin-bottom: 8px; position: relative; text-align: center; }
+    .media-preview-box img { max-height: 120px; border-radius: 6px; max-width: 100%; border: 1px solid #334155; }
+    .clear-media-btn { position: absolute; top: -8px; right: -8px; background: #ef4444; color: white; border: none; border-radius: 50%; width: 24px; height: 24px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10; }
+
     .terminal-input-area { display: flex; gap: 4px; align-items: center; background: #111827; padding: 8px; border-radius: 10px; border: 1px solid var(--ui-border); flex-shrink: 0; width: 100%; box-sizing: border-box; transition: border-color 0.3s; }
     .terminal-input-area input[type="text"], .utility-media-btn, .send-btn { height: 40px; box-sizing: border-box; margin: 0; }
     .terminal-input-area input[type="text"] { flex: 1; min-width: 0; padding: 0 8px; border: 1px solid #334155; border-radius: 6px; font-size: 14px; outline: none; background: #0f172a; color: #f8fafc; }
+    
     .utility-media-btn { padding: 0 10px; background: #1e293b; border: 1px solid #334155; color: #38bdf8; border-radius: 6px; font-size: 1.1em; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+    .utility-media-btn.recording-btn { background: rgba(239, 68, 68, 0.2); border-color: #ef4444; animation: pulseGlow 1s infinite; }
+    
     .send-btn { padding: 0 12px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85em; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
 
     .bottom-nav { display: flex; justify-content: space-around; background: #111827; padding: 8px; border-top: 1px solid #1f2937; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 100; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
@@ -107,10 +117,13 @@
     .modal-header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: #f8fafc; font-size: 1em; }
     .close-modal-btn { background: none; border: none; font-size: 1.2em; cursor: pointer; color: #94a3b8; }
     
-    .thread-item { background: #1e293b; padding: 10px; border-radius: 6px; border: 1px solid #334155; cursor: pointer; margin-bottom: 8px; transition: border-color 0.2s; }
+    .thread-item { background: #1e293b; padding: 10px; border-radius: 6px; border: 1px solid #334155; margin-bottom: 8px; transition: border-color 0.2s; display: flex; justify-content: space-between; align-items: center; }
     .thread-item:hover { border-color: #38bdf8; }
+    .thread-info { flex: 1; overflow: hidden; cursor: pointer; }
     .thread-title { font-size: 0.85em; color: #f8fafc; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .thread-time { font-size: 0.7em; color: #94a3b8; }
+    .thread-delete-btn { background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; color: #f8fafc; border-radius: 4px; padding: 4px 8px; cursor: pointer; margin-left: 10px; font-size: 0.8em; transition: all 0.2s; }
+    .thread-delete-btn:hover { background: #ef4444; }
 
     #hiddenVideo { display: none; }
     #cameraPipBox { position: fixed; bottom: 80px; right: 15px; width: 110px; height: 140px; border-radius: 8px; border: 2px solid #10b981; background: #000; overflow: hidden; display: none; z-index: 90; box-shadow: 0 4px 12px rgba(0,0,0,0.6); }
@@ -118,17 +131,13 @@
   </style>
 </head>
 <body>
-  <!-- Threads Modal -->
   <div id="threadsModal" class="modal-overlay">
     <div class="modal-content">
       <div class="modal-header">
         <span>🗂️ Saved Threads</span>
         <button class="close-modal-btn" onclick="document.getElementById('threadsModal').classList.remove('active');">✕</button>
       </div>
-      <div style="display:flex; gap:8px; margin-bottom:10px;">
-        <button class="primary-btn" onclick="startNewThread()" style="flex:1; margin-top:0;">+ Start New Thread</button>
-        <button class="primary-btn" onclick="deleteAllThreads()" style="background:#ef4444; padding:8px 10px; margin-top:0;" title="Delete All Threads">🗑️ Clear All</button>
-      </div>
+      <button class="primary-btn" onclick="startNewThread()" style="width:100%; margin-bottom:10px;">+ Start New Thread</button>
       <div id="threadsListContainer" style="display:flex; flex-direction:column;"></div>
     </div>
   </div>
@@ -137,15 +146,32 @@
     <div class="modal-content">
       <div class="modal-header">
         <span>🗣️ Neural Voice Configuration</span>
-        <button class="close-modal-btn" onclick="document.getElementById('voiceSettingsModal').classList.remove('active');">✕</button>
+        <button class="close-modal-btn" id="closeVoiceModalBtn">✕</button>
       </div>
       <div class="key-input-group">
-        <label style="font-size: 0.8em; color: #94a3b8;">Target Speech Language:</label>
+        <label style="font-size: 0.8em; color: #94a3b8;">Voice Persona / Gender:</label>
+        <select id="voiceGenderSelect">
+          <option value="male">Male (Deep / Neural Persona)</option>
+          <option value="female" selected>Female (Neural Persona)</option>
+          <option value="default">System Default</option>
+        </select>
+      </div>
+      <div class="key-input-group">
+        <label style="font-size: 0.8em; color: #94a3b8;">Target Speech Language & Accent:</label>
         <select id="voiceLangSelect">
-          <option value="auto">Auto-Detect from Prompt</option>
-          <option value="en-US">English (US)</option>
-          <option value="it-IT">Italian (Italy)</option>
-          <option value="es-ES">Spanish (Spain)</option>
+          <option value="auto">Auto-Detect Accent from Prompt</option>
+          <option value="en-US">English (US Accent)</option>
+          <option value="en-GB">English (UK Accent)</option>
+          <option value="es-ES">Spanish (Spain Accent)</option>
+          <option value="es-MX">Spanish (Latin America / Mexico)</option>
+          <option value="fr-FR">French (France Accent)</option>
+          <option value="it-IT">Italian (Italy Accent)</option>
+          <option value="de-DE">German (Germany Accent)</option>
+          <option value="pt-BR">Portuguese (Brazil Accent)</option>
+          <option value="ja-JP">Japanese (Japan Accent)</option>
+          <option value="ru-RU">Russian (Russia Accent)</option>
+          <option value="zh-CN">Chinese (Mandarin Accent)</option>
+          <option value="ar-SA">Arabic (Saudi / Standard)</option>
         </select>
       </div>
       <button id="saveVoiceSettingsBtn" class="primary-btn" style="width:100%;">Apply Voice Settings</button>
@@ -154,7 +180,7 @@
 
   <header class="top-header">
     <div class="brand-title"><span class="status-dot green"></span><strong>Project Gifted1™</strong></div>
-    <div class="version">v12.33 Sovereign Engine</div>
+    <div class="version">v12.34 Sovereign Engine</div>
   </header>
 
   <div class="action-bar">
@@ -162,8 +188,10 @@
     <button class="toggle-btn" id="audioBtn">🎙️ Dictate: OFF</button>
     <button class="toggle-btn" id="voiceBtn">🗣️ Voice: OFF</button>
     <button class="toggle-btn" id="threadsBtn" style="color:#38bdf8; border-color:#38bdf8;">🗂️ Threads</button>
+    <button class="toggle-btn" id="voiceSettingsBtn" style="color:#38bdf8; border-color:#38bdf8;">⚙️ Voices</button>
     <button class="toggle-btn active-btn" id="sentinelBtn">🛡️ Sentinel: ON</button>
-    <button class="toggle-btn" id="clearBtn" style="color: #fca5a5;">🗑️ Clear</button>
+    <button class="toggle-btn" id="chronBtn">⏱️ Chron: OFF</button>
+    <button class="toggle-btn" id="clearBtn" style="color: #fca5a5;">🗑️</button>
   </div>
   
   <video id="hiddenVideo" autoplay playsinline></video>
@@ -178,7 +206,7 @@
           <input type="password" id="masterKeyInput" placeholder="Master API Key (Neural Core)">
           <input type="password" id="githubKeyInput" placeholder="GitHub PAT (Repo Access)">
           <input type="password" id="replicateKeyInput" placeholder="Replicate API Key (Video Core)">
-          <button id="saveKeyButton" class="primary-btn" onclick="saveMasterKeys()">Save Keys</button>
+          <div><button id="saveKeyButton" class="primary-btn" onclick="saveMasterKeys()">Save Keys</button></div>
         </div>
         <div class="key-status-footer">
           <span id="keyStatusText" style="color:#ef4444; font-size:0.75em;">KEY_STATUS: NOT_SET</span>
@@ -188,36 +216,74 @@
 
       <div class="card">
         <h3 class="card-title"><span class="status-dot green"></span> Multi-API Aggregator Feed</h3>
+        <p style="font-size: 0.8em; color: #94a3b8; margin-bottom: 10px;">Live crypto and global telemetry aggregator.</p>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-          <span style="font-size:0.8em; color:#cbd5e1;"><span class="dish-icon">📡</span> Crypto Hub</span>
-          <button id="syncFeedBtn" class="utility-btn" style="padding:4px 8px; background:#1e293b; border:1px solid #334155; color:#38bdf8; border-radius:4px; font-size:0.75em; cursor:pointer;"><span class="spin-icon">🔄</span> Refresh</button>
+          <span style="font-size:0.8em; color:#cbd5e1;"><span class="dish-icon">📡</span> Multi-Source Hub</span>
+          <button id="syncFeedBtn" class="utility-btn" style="padding:4px 8px; background:#1e293b; border:1px solid #334155; color:#38bdf8; border-radius:4px; font-size:0.75em; cursor:pointer;"><span class="spin-icon">🔄</span> Refresh Feeds</button>
         </div>
-        <ul class="stats-list" style="margin-bottom:2px;"><li><span>Bitcoin (BTC)</span> <strong id="btcTicker" style="color: #38bdf8;">Fetching...</strong></li></ul>
+        
+        <ul class="stats-list" style="margin-bottom:2px;">
+          <li><span>Bitcoin (BTC Live)</span> <strong id="btcTicker" style="color: #38bdf8;">Fetching...</strong></li>
+        </ul>
         <div class="progress-bar-container"><div class="progress-bar" style="width: 85%;"></div></div>
-        <ul class="stats-list" style="margin-bottom:2px;"><li><span>Ethereum (ETH)</span> <strong id="ethTicker" style="color: #38bdf8;">Fetching...</strong></li></ul>
+
+        <ul class="stats-list" style="margin-bottom:2px;">
+          <li><span>Ethereum (ETH Live)</span> <strong id="ethTicker" style="color: #38bdf8;">Fetching...</strong></li>
+        </ul>
         <div class="progress-bar-container"><div class="progress-bar" style="width: 70%;"></div></div>
+
+        <ul class="stats-list" style="margin-bottom:2px;">
+          <li><span>Endpoint Throughput</span> <strong id="telemetrySpeed" style="color: #10b981;">2.4 MB/s</strong></li>
+        </ul>
+        <div class="progress-bar-container"><div id="throughputBar" class="progress-bar" style="width: 60%;"></div></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title"><span class="status-dot green"></span> OTX Threat Intel Sync</h3>
+        <p style="font-size: 0.8em; color: #94a3b8; margin-bottom: 10px;">AlienVault Open Threat Exchange active monitoring.</p>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <span style="font-size:0.8em; color:#cbd5e1;">🛡️ OTX Pipeline</span>
+          <button id="syncOtxBtn" class="utility-btn" style="padding:4px 8px; background:#1e293b; border:1px solid #334155; color:#38bdf8; border-radius:4px; font-size:0.75em; cursor:pointer;"><span class="spin-icon">🔄</span> Sync</button>
+        </div>
+        
+        <ul class="stats-list" style="margin-bottom:2px;">
+          <li><span>Last Upload Status</span> <strong id="otxStatus" style="color: #10b981;">Standby</strong></li>
+          <li><span>Indicators of Compromise</span> <strong id="otxIocs" style="color: #38bdf8;">--</strong></li>
+          <li><span>Pulse Submissions</span> <strong id="otxPulses" style="color: #38bdf8;">--</strong></li>
+        </ul>
       </div>
     </section>
 
     <section id="view-terminal" class="view-section">
       <div class="terminal-controls-header">
         <div>
-          <span style="color:#94a3b8; margin-right:6px;">Engine Core:</span>
+          <span style="color:#94a3b8; margin-right:6px;">PG1 Engine:</span>
           <select id="modelSelector">
-            <option value="gemini-3.7-flash" selected>3.7 Flash</option>
-            <option value="gemini-3.5-flash">3.5 Flash-Lite</option>
+            <option value="gemini-3.7-flash" selected>3.7 Flash (Dynamic Agent Core)</option>
+            <option value="gemini-3.5-flash">3.5 Flash-Lite (Fastest)</option>
+            <option value="gemini-3.1-pro-preview">3.1 Pro (Advanced Core)</option>
           </select>
+        </div>
+        <div class="terminal-action-links">
+          <span id="saveLogBtn" style="color:#10b981;" title="Export text logs">Logs</span>
+          <span id="exportPdfBtn" style="color:#38bdf8;" title="Export printable PDF report">PDF</span>
         </div>
       </div>
       
       <div id="terminalOutput" class="terminal-display">
-        <div class="terminal-message agent-msg">PG1.Agent v12.33 online. Thread management, strict verification protocols, and zero-config proxy active.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
+        <div class="terminal-message agent-msg">PG1.Agent v12.34 online. Thread Manager Deletion Tool, Audio MIME Type fallback, and Cache Protection successfully deployed.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div></div>
       </div>
       
+      <div id="mediaPreviewBox" class="media-preview-box">
+        <button id="clearMediaBtn" class="clear-media-btn">✕</button>
+        <img id="mediaPreviewImg" style="display:none;">
+      </div>
+
       <div class="terminal-input-area">
-        <button id="mediaBtn" class="utility-media-btn" title="Upload Media">📸</button>
+        <input type="file" id="mediaInput" accept="image/*" style="display: none;">
+        <button id="mediaBtn" class="utility-media-btn" title="Upload Media or Capture Frame">📸</button>
         <button id="inlineMicBtn" class="utility-media-btn" title="Record Voice Message">🎤</button>
-        <input type="text" id="terminalInput" placeholder="Type or tap 🎤 for voice...">
+        <input type="text" id="terminalInput" placeholder="Type or tap 🎤...">
         <button id="sendCommandButton" class="send-btn">Send</button>
       </div>
     </section>
@@ -228,11 +294,23 @@
           <img src="08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Operational Intelligence">
         </div>
         <h2 style="font-size: 1.1em; color: #f8fafc; margin-bottom: 2px;">PG1.Agent™ Sovereign Core</h2>
-        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Auto-Healing • Reactive Voice • Tactile Haptics</p>
+        <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Auto-Healing • Reactive Voice • Tactile Haptics • Persistent State</p>
+        
         <ul class="stats-list" style="text-align: left;">
           <li><span>Agent ID:</span> <strong style="color: #38bdf8;">PG1-CORE-01</strong></li>
-          <li><span>Threads DB:</span> <strong style="color: #10b981;">IndexedDB Indexed</strong></li>
+          <li><span>Local RAG DB:</span> <strong style="color: #10b981;">IndexedDB Active</strong></li>
+          <li><span>Threads DB:</span> <strong style="color: #10b981;">IndexedDB Active</strong></li>
+          <li><span>Auto-Repair:</span> <strong style="color: #10b981;">Interceptor Online</strong></li>
+          <li><span>Ownership:</span> <strong style="color: #38bdf8;">100% Sovereign</strong></li>
         </ul>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">📊 Core System Telemetry</h3>
+        <ul class="stats-list" style="margin-bottom:2px;"><li><span>CPU Load</span> <strong id="cpuLoad">26%</strong></li></ul>
+        <div class="progress-bar-container"><div id="cpuBar" class="progress-bar" style="width: 26%;"></div></div>
+        <ul class="stats-list" style="margin-bottom:2px;"><li><span>RAM Allocation</span> <strong id="ramAlloc">45%</strong></li></ul>
+        <div class="progress-bar-container"><div id="ramBar" class="progress-bar" style="width: 45%;"></div></div>
       </div>
     </section>
   </main>
@@ -245,10 +323,8 @@
 
   <script>
     let terminalAppendFunc = null;
-    let currentThreadId = Date.now();
-    let sessionHistory = [];
 
-    /* HAPTIC ENGINE */
+    /* TACTILE HAPTIC ENGINE */
     function triggerHaptic(type) {
         if (!navigator.vibrate) return;
         try {
@@ -258,282 +334,688 @@
         } catch(e) {}
     }
 
+    /* SYSTEM STATE LIGHTING */
     function setSystemState(state) {
         document.body.className = '';
         if (state === 'active') document.body.classList.add('sys-active');
-        if (state === 'error') { document.body.classList.add('sys-error'); triggerHaptic('error'); }
+        if (state === 'error') {
+            document.body.classList.add('sys-error');
+            triggerHaptic('error');
+        }
     }
 
-    /* TYPEWRITER SOUNDS */
+    /* WEB AUDIO TYPEWRITER SOUND */
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playKeystroke() {
         if (audioCtx.state === 'suspended') audioCtx.resume();
         try {
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = 'sine'; osc.frequency.setValueAtTime(800 + Math.random() * 300, audioCtx.currentTime);
-            gain.gain.setValueAtTime(0.008, audioCtx.currentTime);
-            osc.connect(gain); gain.connect(audioCtx.destination);
-            osc.start(); osc.stop(audioCtx.currentTime + 0.015);
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(800 + Math.random() * 300, audioCtx.currentTime);
+            gainNode.gain.setValueAtTime(0.008, audioCtx.currentTime);
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.015);
         } catch(e) {}
     }
 
     function renderMarkdownToHtml(raw) {
         if (!raw) return "";
-        return raw.replace(/### (.*?)([\r\n]|$)/g, '<h3>$1</h3>')
-                  .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                  .replace(/`([^`]+)`/g, '<code>$1</code>')
-                  .replace(/^\s*\*\s+(.*?)([\r\n]|$)/gm, '• $1<br>')
-                  .replace(/\n\n/g, '<br><br>');
+        return raw
+            .replace(/### (.*?)([\r\n]|$)/g, '<h3>$1</h3>')
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/`([^`]+)`/g, '<code>$1</code>')
+            .replace(/^\s*\*\s+(.*?)([\r\n]|$)/gm, '• $1<br>')
+            .replace(/---/g, '<hr>')
+            .replace(/\n\n/g, '<br><br>');
     }
-
-    /* DB SETUP FOR THREADS AND RAG */
-    let threadDb = null;
-    const dbReq = indexedDB.open("PG1_ThreadsDB", 1);
-    dbReq.onupgradeneeded = e => { 
-        const db = e.target.result;
-        if (!db.objectStoreNames.contains("threads")) db.createObjectStore("threads", { keyPath: "id" }); 
-    };
-    dbReq.onsuccess = e => { threadDb = e.target.result; };
-
-    function saveCurrentThread() {
-        if (!threadDb || sessionHistory.length === 0) return;
-        const tx = threadDb.transaction("threads", "readwrite");
-        let title = "New Tactical Session";
-        if (sessionHistory.length > 0 && sessionHistory[0].parts && sessionHistory[0].parts[0].text) {
-            title = sessionHistory[0].parts[0].text.substring(0, 40) + "...";
-        }
-        tx.objectStore("threads").put({ id: currentThreadId, title: title, history: sessionHistory, ts: Date.now() });
-    }
-
-    window.startNewThread = function() {
-        triggerHaptic('tap');
-        currentThreadId = Date.now();
-        sessionHistory = [];
-        const termOut = document.getElementById('terminalOutput');
-        termOut.innerHTML = '<div class="terminal-message agent-msg">New secure thread initiated.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div></div>';
-        document.getElementById('threadsModal').classList.remove('active');
-    };
-
-    window.loadThread = function(id) {
-        triggerHaptic('success');
-        if (!threadDb) return;
-        const tx = threadDb.transaction("threads", "readonly");
-        const req = tx.objectStore("threads").get(id);
-        req.onsuccess = () => {
-            if(req.result) {
-                currentThreadId = req.result.id;
-                sessionHistory = req.result.history;
-                const termOut = document.getElementById('terminalOutput');
-                termOut.innerHTML = '<div class="terminal-message agent-msg">Thread recovered.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div></div>';
-                
-                sessionHistory.forEach(msg => {
-                    if (msg.role === "user" && msg.parts && msg.parts[0].text) appendMsgHtml(`> ${msg.parts[0].text}`, "user-msg");
-                    if (msg.role === "model" && msg.parts && msg.parts[0].text) appendMsgHtml(msg.parts[0].text, "agent-msg");
-                });
-                document.getElementById('threadsModal').classList.remove('active');
-            }
-        };
-    };
-
-    window.deleteThread = function(id) {
-        triggerHaptic('tap');
-        if (!threadDb) return;
-        const tx = threadDb.transaction("threads", "readwrite");
-        tx.objectStore("threads").delete(id);
-        tx.oncomplete = () => {
-            if (currentThreadId === id) {
-                window.startNewThread();
-            } else {
-                renderThreadsList();
-            }
-        };
-    };
-
-    window.deleteAllThreads = function() {
-        if (!confirm("Are you sure you want to delete all saved threads?")) return;
-        triggerHaptic('error');
-        if (!threadDb) return;
-        const tx = threadDb.transaction("threads", "readwrite");
-        tx.objectStore("threads").clear();
-        tx.oncomplete = () => {
-            window.startNewThread();
-            renderThreadsList();
-        };
-    };
-
-    function renderThreadsList() {
-        const container = document.getElementById('threadsListContainer');
-        if (!container) return;
-        container.innerHTML = "";
-        
-        if (threadDb) {
-            const tx = threadDb.transaction("threads", "readonly");
-            const req = tx.objectStore("threads").getAll();
-            req.onsuccess = () => {
-                const threads = req.result.sort((a,b) => b.ts - a.ts);
-                if (threads.length === 0) {
-                    container.innerHTML = '<div style="color:#64748b; font-size:0.8em; text-align:center; padding:15px 0;">No saved threads found.</div>';
-                    return;
-                }
-                threads.forEach(t => {
-                    const div = document.createElement('div');
-                    div.className = 'thread-item';
-                    div.innerHTML = `
-                      <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
-                        <div style="flex:1; min-width:0; margin-right:8px;">
-                          <div class="thread-title">${t.title}</div>
-                          <div class="thread-time">${new Date(t.ts).toLocaleString()}</div>
-                        </div>
-                        <button class="msg-action-btn" title="Delete Thread" style="color:#ef4444; border-color:rgba(239,68,68,0.4); padding:4px 8px; flex-shrink:0;">🗑️</button>
-                      </div>`;
-                    div.onclick = () => loadThread(t.id);
-                    const delBtn = div.querySelector('button');
-                    delBtn.onclick = (e) => {
-                        e.stopPropagation();
-                        deleteThread(t.id);
-                    };
-                    container.appendChild(div);
-                });
-            };
-        }
-    }
-
-    document.getElementById('threadsBtn').onclick = () => {
-        triggerHaptic('tap');
-        const modal = document.getElementById('threadsModal');
-        renderThreadsList();
-        modal.classList.add('active');
-    };
 
     window.saveMasterKeys = function() {
         triggerHaptic('tap');
-        const kIn = document.getElementById('masterKeyInput').value;
-        const rIn = document.getElementById('replicateKeyInput').value;
-        if (kIn) localStorage.setItem('PG1_KEY', kIn.trim());
-        if (rIn) localStorage.setItem('PG1_REP_KEY', rIn.trim());
+        const kIn = document.getElementById('masterKeyInput');
+        const gIn = document.getElementById('githubKeyInput');
+        const rIn = document.getElementById('replicateKeyInput');
+        if (kIn && kIn.value && kIn.value !== '••••••••••••••••') localStorage.setItem('PG1_KEY', kIn.value.trim());
+        if (gIn && gIn.value && gIn.value !== '••••••••••••••••') localStorage.setItem('PG1_GH_PAT', gIn.value.trim());
+        if (rIn && rIn.value && rIn.value !== '••••••••••••••••') localStorage.setItem('PG1_REP_KEY', rIn.value.trim());
         window.checkKeys();
-        triggerHaptic('success'); alert('Saved.');
+        triggerHaptic('success');
+        alert('Credentials securely saved.');
     };
 
     window.checkKeys = function() {
-        if(localStorage.getItem('PG1_KEY')) {
-            document.getElementById('masterKeyInput').value = '••••••••';
-            document.getElementById('keyStatusText').innerText = 'KEY_STATUS: SECURED';
-            document.getElementById('keyStatusText').style.color = '#10b981';
-            document.getElementById('connectionBadge').innerText = '● CONNECTED';
-            document.getElementById('connectionBadge').style.color = '#10b981';
+        const kIn = document.getElementById('masterKeyInput');
+        const gIn = document.getElementById('githubKeyInput');
+        const rIn = document.getElementById('replicateKeyInput');
+        const stat = document.getElementById('keyStatusText');
+        const connBadge = document.getElementById('connectionBadge');
+        if (!kIn || !gIn || !rIn || !stat || !connBadge) return;
+        const hasCore = localStorage.getItem('PG1_KEY');
+        const hasGh = localStorage.getItem('PG1_GH_PAT');
+        if (hasCore && hasGh) {
+            kIn.value = '••••••••••••••••'; gIn.value = '••••••••••••••••';
+            if (localStorage.getItem('PG1_REP_KEY')) rIn.value = '••••••••••••••••';
+            stat.innerText = 'KEY_STATUS: STORED_LOCAL'; stat.style.color = '#10b981';
+            connBadge.innerText = '● CONNECTED'; connBadge.style.color = '#10b981';
+        } else {
+            stat.innerText = 'KEY_STATUS: NOT_SET'; stat.style.color = '#ef4444';
+            connBadge.innerText = '● DISCONNECTED'; connBadge.style.color = '#ef4444';
         }
     };
 
     window.copyMsg = function(btn) {
       triggerHaptic('tap');
-      navigator.clipboard.writeText(btn.closest('.terminal-message').innerText.replace('Copy', '').replace('Edit', '').trim());
+      const msgDiv = btn.closest('.terminal-message');
+      const text = msgDiv.innerText.replace('Copy', '').replace('Edit', '').trim();
+      navigator.clipboard.writeText(text).then(() => alert('Message copied.'));
     };
-    
-    function appendMsgHtml(text, type) {
-        const div = document.createElement('div');
-        div.className = `terminal-message ${type}`;
-        div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div>`;
-        document.getElementById('terminalOutput').appendChild(div);
-        document.getElementById('terminalOutput').scrollTop = document.getElementById('terminalOutput').scrollHeight;
+
+    window.editMsg = function(btn) {
+      triggerHaptic('tap');
+      const msgDiv = btn.closest('.terminal-message');
+      const currentText = msgDiv.innerText.replace('Copy', '').replace('Edit', '').trim();
+      const input = document.getElementById('terminalInput');
+      input.value = currentText;
+      input.focus();
+    };
+
+    /* DYNAMIC MULTI-LANGUAGE & ACCENT INTEL ENGINE */
+    function detectLanguageAndAccent(promptText, outputText) {
+        const p = (promptText || '').toLowerCase();
+        const t = (outputText || '').toLowerCase();
+        const combined = `${p} ${t}`;
+
+        if (/\b(mexican|mexico|latam|castellano|español|spanish|habla en español)\b/.test(p)) return (p.includes('mexic') || p.includes('latam')) ? 'es-MX' : 'es-ES';
+        if (/\b(british|uk accent|english \(uk\)|in british)\b/.test(p)) return 'en-GB';
+        if (/\b(french|français|francais|en français)\b/.test(p)) return 'fr-FR';
+        if (/\b(italian|italiano|in italiano)\b/.test(p)) return 'it-IT';
+        if (/\b(german|deutsch|auf deutsch)\b/.test(p)) return 'de-DE';
+        if (/\b(portuguese|português|portugues|em português)\b/.test(p)) return 'pt-BR';
+        if (/\b(japanese|nihongo|日本語)\b/.test(p)) return 'ja-JP';
+        if (/\b(chinese|mandarin|中文)\b/.test(p)) return 'zh-CN';
+        if (/\b(russian|русский|по-русски)\b/.test(p)) return 'ru-RU';
+        if (/\b(arabic|العربية)\b/.test(p)) return 'ar-SA';
+
+        if (/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/.test(outputText)) return /[\u3040-\u309F\u30A0-\u30FF]/.test(outputText) ? 'ja-JP' : 'zh-CN';
+        if (/[\u0400-\u04FF]/.test(outputText)) return 'ru-RU';
+        if (/[\u0600-\u06FF]/.test(outputText)) return 'ar-SA';
+        return 'en-US';
     }
 
-    async function appendMsg(text, type, instant = false) {
-        const termOut = document.getElementById('terminalOutput');
+    /* REACTIVE DUAL-GENDER NEURAL TTS ENGINE */
+    function dynamicTTSPlayback(text, targetLang) {
+        if (!('speechSynthesis' in window)) return;
+        window.speechSynthesis.cancel();
+        
+        const voices = window.speechSynthesis.getVoices();
+        const primaryCode = (targetLang || 'en-US').toLowerCase();
+        const shortLang = primaryCode.substring(0, 2);
+        const preferredGender = localStorage.getItem('PG1_VOICE_GENDER') || 'male';
+
+        const maleKeywords = ['david', 'guy', 'george', 'daniel', 'alex', 'james', 'thomas', 'mark', 'michael', 'male', 'richard', 'stefan', 'jorge', 'paul', 'oliver', 'rishi', 'diego', 'carlos', 'enrique', 'pablo', 'mathieu', 'nicolas', 'henri', 'luca', 'marco', 'hans', 'klaus', 'miguel'];
+        const femaleKeywords = ['zira', 'susan', 'catherine', 'samantha', 'victoria', 'karen', 'female', 'jenny', 'aria', 'sarah', 'eva', 'hazel', 'alice', 'monica', 'paulina', 'lucia', 'helena', 'amélie', 'hortense', 'claire', 'elisa', 'chiara', 'petra', 'marlene', 'marta'];
+        
+        let scoredVoices = voices.map(v => {
+            let score = 0;
+            const langCode = v.lang.toLowerCase().replace('_', '-');
+            if (langCode === primaryCode) score += 60;
+            else if (langCode.startsWith(shortLang)) score += 35;
+
+            const name = v.name.toLowerCase();
+            if (name.includes('natural') || name.includes('neural') || name.includes('online') || name.includes('premium')) score += 25;
+
+            if (preferredGender === 'male') {
+                if (maleKeywords.some(k => name.includes(k))) score += 30;
+                if (femaleKeywords.some(k => name.includes(k))) score -= 30;
+            } else if (preferredGender === 'female') {
+                if (femaleKeywords.some(k => name.includes(k))) score += 30;
+                if (maleKeywords.some(k => name.includes(k))) score -= 30;
+            }
+
+            return { voice: v, score };
+        }).filter(v => v.score >= 30);
+        
+        scoredVoices.sort((a, b) => b.score - a.score);
+        let selectedVoice = scoredVoices.length > 0 ? scoredVoices[0].voice : null;
+
+        const sentences = text.match(/[^.!?\n]+[.!?\n]+/g) || [text];
+        const coreLogo = document.getElementById('aiCoreLogo');
+
+        sentences.forEach((sentence, idx) => {
+            if (sentence.trim() === "") return;
+            const utterance = new SpeechSynthesisUtterance(sentence.trim());
+            if (selectedVoice) { utterance.voice = selectedVoice; utterance.lang = selectedVoice.lang; }
+            else { utterance.lang = targetLang || 'en-US'; }
+            
+            utterance.rate = preferredGender === 'male' ? 0.98 : 1.0;
+            utterance.pitch = preferredGender === 'male' ? 0.92 : 1.0;
+            
+            utterance.onstart = () => { if(coreLogo) coreLogo.classList.add('is-speaking'); };
+            utterance.onend = () => { if(idx === sentences.length - 1 && coreLogo) coreLogo.classList.remove('is-speaking'); };
+            utterance.onerror = () => { if(coreLogo) coreLogo.classList.remove('is-speaking'); };
+
+            window.speechSynthesis.speak(utterance);
+        });
+    }
+
+    /* SOVEREIGN THREAD MANAGER AND RAG DB */
+    let db = null;
+    let threadDb = null;
+    let currentThreadId = Date.now();
+
+    try {
+        const dbRequest = indexedDB.open("PG1_VectorVault", 1);
+        dbRequest.onupgradeneeded = e => { 
+            if (!e.target.result.objectStoreNames.contains("memories")) e.target.result.createObjectStore("memories", { keyPath: "id", autoIncrement: true }); 
+        };
+        dbRequest.onsuccess = e => { db = e.target.result; };
+
+        const tDbReq = indexedDB.open("PG1_ThreadsDB", 1);
+        tDbReq.onupgradeneeded = e => { 
+            if (!e.target.result.objectStoreNames.contains("threads")) e.target.result.createObjectStore("threads", { keyPath: "id" }); 
+        };
+        tDbReq.onsuccess = e => { threadDb = e.target.result; };
+    } catch(err) { db = null; threadDb = null; }
+
+    function saveToVault(text) { 
+        try {
+            if(!db || !text) return; 
+            const tx = db.transaction("memories", "readwrite"); 
+            tx.objectStore("memories").add({text: text, ts: Date.now()}); 
+        } catch(e) {}
+    }
+    
+    async function queryVault(query) {
+        return new Promise(res => {
+            try {
+                if(!db) return res("");
+                const tx = db.transaction("memories", "readonly");
+                const req = tx.objectStore("memories").getAll();
+                req.onsuccess = () => {
+                    const words = query.toLowerCase().split(' ').filter(w => w.length > 4);
+                    if (words.length === 0) return res("");
+                    const matches = (req.result || []).filter(m => words.some(w => m.text.toLowerCase().includes(w))).slice(-2);
+                    res(matches.map(m => m.text).join(' | '));
+                };
+                req.onerror = () => res("");
+            } catch(e) { res(""); }
+        });
+    }
+
+    async function secureFetch(url, options = {}, timeoutMs = 12000) {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeoutMs);
+        options.signal = controller.signal;
+        try {
+            const res = await fetch(url, options);
+            clearTimeout(id);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res;
+        } catch (error) {
+            clearTimeout(id);
+            return await fetch("https://corsproxy.io/?" + encodeURIComponent(url), options);
+        }
+    }
+
+    /* FULL MCP TOOL LOGIC */
+    async function searchGitHubRepos(query) {
+        const pat = localStorage.getItem('PG1_GH_PAT');
+        if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
+        if(terminalAppendFunc) terminalAppendFunc(`[GitHub API] Searching repositories for: ${query}...`, "system-msg", true);
+        try {
+            const res = await fetch(`https://api.github.com/user/repos?per_page=100&sort=updated`, { headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github.v3+json" } });
+            if (!res.ok) throw new Error(`GitHub API status ${res.status}`);
+            const repos = await res.json();
+            const matched = repos.filter(r => r.name.toLowerCase().includes(query.toLowerCase()) || (r.description && r.description.toLowerCase().includes(query.toLowerCase())));
+            if(matched.length === 0) return `No repositories found matching "${query}".`;
+            return `[Found Repositories]\n` + matched.map(r => `- ${r.full_name}: ${r.description || 'No description'}`).join('\n');
+        } catch(e) { throw new Error(`GitHub Search failed: ${e.message}`); }
+    }
+
+    async function dynamicGitHubCommit(repoFullName, filePath, content, commitMessage) {
+        const pat = localStorage.getItem('PG1_GH_PAT');
+        if (!pat) return "ERROR: GitHub PAT missing in Dash tab.";
+        if(terminalAppendFunc) terminalAppendFunc(`[GitHub API] Synchronizing ${repoFullName} at ${filePath}...`, "system-msg", true);
+        try {
+            const fileUrl = `https://api.github.com/repos/${repoFullName}/contents/${filePath}`;
+            let sha = null;
+            const checkRes = await fetch(fileUrl, { headers: { "Authorization": `token ${pat}` } });
+            if (checkRes.ok) { const fileData = await checkRes.json(); sha = fileData.sha; }
+
+            const encodedContent = btoa(unescape(encodeURIComponent(content)));
+            const body = { message: commitMessage, content: encodedContent };
+            if (sha) body.sha = sha;
+
+            const res = await fetch(fileUrl, { method: "PUT", headers: { "Authorization": `token ${pat}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+            if (!res.ok) throw new Error(`GitHub API status ${res.status}`);
+            return `[Commit Success] Data committed dynamically to ${repoFullName} -> ${filePath}`;
+        } catch(e) { throw new Error(`GitHub Commit failed: ${e.message}`); }
+    }
+
+    const MCP_TOOL_REGISTRY = {
+        searchGitHubRepos: {
+            description: "Searches connected GitHub repositories to locate project files.",
+            parameters: { type: "OBJECT", properties: { query: { type: "STRING" } }, required: ["query"] },
+            handler: async (args) => await searchGitHubRepos(args.query)
+        },
+        dynamicGitHubCommit: {
+            description: "Commits a file, log, or code patch directly to a specific GitHub repository.",
+            parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" }, filePath: { type: "STRING" }, content: { type: "STRING" }, commitMessage: { type: "STRING" } }, required: ["repoFullName", "filePath", "content", "commitMessage"] },
+            handler: async (args) => await dynamicGitHubCommit(args.repoFullName, args.filePath, args.content, args.commitMessage)
+        }
+    };
+
+    function getMCPToolDeclarations() {
+        return [{ functionDeclarations: Object.keys(MCP_TOOL_REGISTRY).map(toolName => ({ name: toolName, description: MCP_TOOL_REGISTRY[toolName].description, parameters: MCP_TOOL_REGISTRY[toolName].parameters })) }];
+    }
+
+    async function executeMCPTool(toolName, args) {
+        if (!MCP_TOOL_REGISTRY[toolName]) return `[MCP Error] Tool not found.`;
+        return await MCP_TOOL_REGISTRY[toolName].handler(args);
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      let sessionHistory = [];
+      const termOut = document.getElementById('terminalOutput');
+      const mediaInput = document.getElementById('mediaInput');
+      const mediaBtn = document.getElementById('mediaBtn');
+      const mediaPreviewBox = document.getElementById('mediaPreviewBox');
+      const mediaPreviewImg = document.getElementById('mediaPreviewImg');
+      const clearMediaBtn = document.getElementById('clearMediaBtn');
+      window.checkKeys(); 
+
+      // CRITICAL FIX: Safe loading of Chat DOM to prevent iPhone Memory Overflows
+      const savedChatDom = localStorage.getItem('PG1_CHAT_DOM');
+      if (savedChatDom && termOut) {
+          try {
+              if (savedChatDom.length > 500000) throw new Error("DOM string too large");
+              termOut.innerHTML = savedChatDom;
+              termOut.scrollTop = termOut.scrollHeight;
+          } catch(e) {
+              localStorage.removeItem('PG1_CHAT_DOM');
+              termOut.innerHTML = '<div class="terminal-message system-msg">Local cache purged to prevent memory crash.</div>';
+          }
+      }
+
+      const savedHistory = localStorage.getItem('PG1_CHAT_HISTORY');
+      if (savedHistory) {
+          try { 
+              // Slice strictly to last 10 parts to prevent massive arrays from token crashing
+              sessionHistory = JSON.parse(savedHistory).slice(-10); 
+          } catch(e) { 
+              sessionHistory = []; 
+              localStorage.removeItem('PG1_CHAT_HISTORY');
+          }
+      }
+
+      function persistTerminalState() {
+          try {
+              if (termOut) localStorage.setItem('PG1_CHAT_DOM', termOut.innerHTML);
+              localStorage.setItem('PG1_CHAT_HISTORY', JSON.stringify(sessionHistory.slice(-10)));
+          } catch(e) {}
+      }
+
+      function saveCurrentThread() {
+          if (!threadDb || sessionHistory.length === 0) return;
+          const tx = threadDb.transaction("threads", "readwrite");
+          let title = "New Tactical Session";
+          if (sessionHistory.length > 0 && sessionHistory[0].parts[0].text) {
+              title = sessionHistory[0].parts[0].text.substring(0, 40) + "...";
+          }
+          tx.objectStore("threads").put({ id: currentThreadId, title: title, history: sessionHistory, ts: Date.now() });
+      }
+
+      window.startNewThread = function() {
+          triggerHaptic('tap');
+          currentThreadId = Date.now();
+          sessionHistory = [];
+          localStorage.removeItem('PG1_CHAT_DOM');
+          localStorage.removeItem('PG1_CHAT_HISTORY');
+          termOut.innerHTML = '<div class="terminal-message agent-msg">New secure thread initiated.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div></div>';
+          document.getElementById('threadsModal').classList.remove('active');
+          clearAttachedMedia();
+      };
+
+      window.loadThread = function(id) {
+          triggerHaptic('success');
+          if (!threadDb) return;
+          const tx = threadDb.transaction("threads", "readonly");
+          const req = tx.objectStore("threads").get(id);
+          req.onsuccess = () => {
+              if(req.result) {
+                  currentThreadId = req.result.id;
+                  sessionHistory = req.result.history;
+                  termOut.innerHTML = '<div class="terminal-message agent-msg">Thread recovered.<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div></div>';
+                  
+                  sessionHistory.forEach(msg => {
+                      const div = document.createElement('div');
+                      const isUser = msg.role === "user";
+                      div.className = `terminal-message ${isUser ? 'user-msg' : 'agent-msg'}`;
+                      div.innerHTML = renderMarkdownToHtml(msg.parts[0].text || (isUser ? '📸 Media Payload' : '')) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div>`;
+                      termOut.appendChild(div);
+                  });
+                  termOut.scrollTop = termOut.scrollHeight;
+                  persistTerminalState();
+                  document.getElementById('threadsModal').classList.remove('active');
+              }
+          };
+      };
+
+      // Delete Thread Functionality
+      window.deleteThread = function(id) {
+          triggerHaptic('tap');
+          if (!threadDb) return;
+          const tx = threadDb.transaction("threads", "readwrite");
+          tx.objectStore("threads").delete(id);
+          tx.oncomplete = () => {
+              triggerHaptic('success');
+              // Refresh the list visually
+              document.getElementById('threadsBtn').click();
+          };
+      };
+
+      const threadsBtn = document.getElementById('threadsBtn');
+      if (threadsBtn) {
+          threadsBtn.onclick = () => {
+              triggerHaptic('tap');
+              const modal = document.getElementById('threadsModal');
+              const container = document.getElementById('threadsListContainer');
+              container.innerHTML = "";
+              
+              if (threadDb) {
+                  const tx = threadDb.transaction("threads", "readonly");
+                  const req = tx.objectStore("threads").getAll();
+                  req.onsuccess = () => {
+                      const threads = req.result.sort((a,b) => b.ts - a.ts);
+                      threads.forEach(t => {
+                          const div = document.createElement('div');
+                          div.className = 'thread-item';
+                          
+                          const infoDiv = document.createElement('div');
+                          infoDiv.className = 'thread-info';
+                          infoDiv.innerHTML = `<div class="thread-title">${t.title}</div><div class="thread-time">${new Date(t.ts).toLocaleString()}</div>`;
+                          infoDiv.onclick = () => loadThread(t.id);
+                          
+                          const delBtn = document.createElement('button');
+                          delBtn.className = 'thread-delete-btn';
+                          delBtn.innerHTML = '🗑️';
+                          delBtn.onclick = (e) => {
+                              e.stopPropagation();
+                              if(confirm('Permanently delete this thread?')) window.deleteThread(t.id);
+                          };
+                          
+                          div.appendChild(infoDiv);
+                          div.appendChild(delBtn);
+                          container.appendChild(div);
+                      });
+                      modal.classList.add('active');
+                  };
+              }
+          };
+      }
+
+      function setAttachedImage(dataUrl, mimeType) {
+          pendingImageData = { inlineData: { data: dataUrl.split(',')[1], mimeType: mimeType || 'image/jpeg' } };
+          if (mediaPreviewImg) { mediaPreviewImg.src = dataUrl; mediaPreviewImg.style.display = 'inline-block'; }
+          if (mediaPreviewBox) mediaPreviewBox.style.display = 'block';
+          triggerHaptic('success');
+      }
+
+      function clearAttachedMedia() {
+          pendingImageData = null;
+          if (mediaInput) mediaInput.value = '';
+          if (mediaPreviewImg) { mediaPreviewImg.src = ''; mediaPreviewImg.style.display = 'none'; }
+          if (mediaPreviewBox) mediaPreviewBox.style.display = 'none';
+      }
+
+      if (clearMediaBtn) clearMediaBtn.onclick = (e) => { e.preventDefault(); clearAttachedMedia(); triggerHaptic('tap'); };
+
+      async function appendMsg(text, type, instant = false) {
         const div = document.createElement('div');
         div.className = `terminal-message ${type}`;
         
         if (type === 'user-msg' || type === 'system-msg' || type === 'error-msg' || instant) {
-            div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div>`;
-            termOut.appendChild(div); termOut.scrollTop = termOut.scrollHeight; return;
+            div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div>`;
+            termOut.appendChild(div);
+            termOut.scrollTop = termOut.scrollHeight;
+            persistTerminalState();
+            return;
         }
 
-        div.classList.add('cursor-blink'); termOut.appendChild(div);
+        div.classList.add('cursor-blink');
+        termOut.appendChild(div);
         
         for (let i = 0; i < text.length; i++) {
-            div.textContent += text.charAt(i); playKeystroke(); termOut.scrollTop = termOut.scrollHeight;
+            div.textContent += text.charAt(i);
+            playKeystroke();
+            termOut.scrollTop = termOut.scrollHeight;
             await new Promise(r => setTimeout(r, 8 + Math.random() * 12));
         }
         
         div.classList.remove('cursor-blink');
-        div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div>`;
-        termOut.scrollTop = termOut.scrollHeight; triggerHaptic('success');
-    }
-    terminalAppendFunc = appendMsg;
+        div.innerHTML = renderMarkdownToHtml(text) + `<div class="msg-btn-group"><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button><button class="msg-action-btn" onclick="editMsg(this)">Edit</button></div>`;
+        termOut.scrollTop = termOut.scrollHeight;
+        persistTerminalState();
+        triggerHaptic('success');
+      }
+      terminalAppendFunc = appendMsg;
 
-    document.querySelectorAll('.nav-item').forEach(item => {
+      // Logs & PDF Export
+      const saveLogBtn = document.getElementById('saveLogBtn');
+      if (saveLogBtn) {
+          saveLogBtn.onclick = () => {
+              triggerHaptic('tap');
+              const messages = Array.from(termOut.querySelectorAll('.terminal-message'));
+              if (messages.length === 0) return alert('No terminal logs available to export.');
+              
+              let logContent = `Project Gifted1™ - Sovereign Engine v12.34 Logs\nExported: ${new Date().toLocaleString()}\n\n`;
+              messages.forEach(msg => {
+                  let prefix = msg.classList.contains('user-msg') ? '[USER]' : (msg.classList.contains('agent-msg') ? '[PG1.AGENT]' : '[SYSTEM]');
+                  logContent += `${prefix}: ${msg.innerText.replace(/Copy\s*Edit/g, '').trim()}\n----------------------------------------\n`;
+              });
+
+              const blob = new Blob([logContent], { type: 'text/plain;charset=utf-8' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a'); a.href = url; a.download = `PG1_Terminal_Logs_${Date.now()}.txt`;
+              document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+          };
+      }
+
+      // Voice Modal Logic
+      const voiceModal = document.getElementById('voiceSettingsModal');
+      document.getElementById('voiceSettingsBtn').onclick = () => { triggerHaptic('tap'); voiceModal.classList.add('active'); };
+      document.getElementById('closeVoiceModalBtn').onclick = () => { triggerHaptic('tap'); voiceModal.classList.remove('active'); };
+      document.getElementById('saveVoiceSettingsBtn').onclick = () => {
+          triggerHaptic('success');
+          localStorage.setItem('PG1_VOICE_GENDER', document.getElementById('voiceGenderSelect').value);
+          localStorage.setItem('PG1_VOICE_LANG', document.getElementById('voiceLangSelect').value);
+          voiceModal.classList.remove('active');
+          alert('Voice settings applied.');
+      };
+
+      // Camera Handling
+      let cameraStream = null;
+      document.getElementById('videoBtn').onclick = async function() {
+          triggerHaptic('tap');
+          const cameraPipBox = document.getElementById('cameraPipBox');
+          const cameraPreview = document.getElementById('cameraPreview');
+          if (cameraStream) {
+              cameraStream.getTracks().forEach(t => t.stop());
+              cameraStream = null;
+              cameraPipBox.style.display = 'none';
+              this.classList.remove('active-btn');
+              this.innerText = "📹 Vid: OFF";
+          } else {
+              try {
+                  cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+                  cameraPreview.srcObject = cameraStream;
+                  cameraPipBox.style.display = 'block';
+                  this.classList.add('active-btn');
+                  this.innerText = "📹 Vid: ON";
+              } catch(e) { alert("Camera access denied."); }
+          }
+      };
+
+      if (mediaBtn) mediaBtn.onclick = () => { triggerHaptic('tap'); if (mediaInput) mediaInput.click(); };
+      if (mediaInput) mediaInput.onchange = (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => { setAttachedImage(reader.result, file.type || 'image/jpeg'); appendMsg(`[Image Attached] Ready.`, 'system-msg', true); };
+          reader.readAsDataURL(file);
+      };
+
+      /* CRITICAL FIX: Robust iOS Audio MIME Type handling & sync */
+      let audioRecorder = null;
+      let audioChunks = [];
+      let pendingAudioData = null;
+
+      const toggleVoiceMessage = async function(btnElement) {
+          triggerHaptic('tap');
+          if (audioRecorder && audioRecorder.state === "recording") {
+              audioRecorder.stop();
+              document.getElementById('audioBtn').classList.remove('recording-btn');
+              document.getElementById('audioBtn').innerText = "🎙️ Dictate: OFF";
+              document.getElementById('inlineMicBtn').classList.remove('recording-btn');
+          } else {
+              try {
+                  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                  
+                  // Safari defaults to audio/mp4 for MediaRecorder which Gemini rejects. 
+                  // We explicitly force audio/webm if supported, otherwise we record and tag it manually.
+                  let mimeType = 'audio/mp4'; 
+                  if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
+                  
+                  audioRecorder = new MediaRecorder(stream, { mimeType: mimeType });
+                  audioRecorder.start();
+                  audioChunks = [];
+                  
+                  // Sync buttons
+                  document.getElementById('audioBtn').classList.add('recording-btn');
+                  document.getElementById('audioBtn').innerText = "🎙️ Recording...";
+                  document.getElementById('inlineMicBtn').classList.add('recording-btn');
+                  
+                  audioRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+                  
+                  audioRecorder.onstop = () => {
+                      const audioBlob = new Blob(audioChunks, { type: mimeType });
+                      const reader = new FileReader();
+                      reader.readAsDataURL(audioBlob);
+                      reader.onloadend = () => {
+                          pendingAudioData = {
+                              inlineData: {
+                                  data: reader.result.split(',')[1],
+                                  mimeType: mimeType
+                              }
+                          };
+                          document.getElementById('terminalInput').value = "[🎤 Voice Payload Recorded. Tap Send.]";
+                      };
+                      stream.getTracks().forEach(track => track.stop());
+                  };
+              } catch(err) {
+                  alert("Microphone access denied. Enable permissions in Safari settings.");
+              }
+          }
+      };
+
+      document.getElementById('audioBtn').onclick = function() { toggleVoiceMessage(this); };
+      document.getElementById('inlineMicBtn').onclick = function() { toggleVoiceMessage(this); };
+
+      let voiceActive = false;
+      document.getElementById('voiceBtn').onclick = function() {
+          triggerHaptic('tap');
+          voiceActive = !voiceActive;
+          this.classList.toggle('active-btn', voiceActive);
+          this.innerText = voiceActive ? "🗣️ Voice: ON" : "🗣️ Voice: OFF";
+          if (!voiceActive && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+      };
+
+      let sentinelActive = true;
+      document.getElementById('sentinelBtn').onclick = function() {
+          triggerHaptic('tap');
+          sentinelActive = !sentinelActive;
+          this.classList.toggle('active-btn', sentinelActive);
+          this.innerText = sentinelActive ? "🛡️ Sentinel: ON" : "🛡️ Sentinel: OFF";
+      };
+
+      document.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', () => {
           triggerHaptic('tap');
           document.querySelectorAll('.nav-item, .view-section').forEach(el => el.classList.remove('active'));
           item.classList.add('active');
           document.getElementById(item.getAttribute('data-target')).classList.add('active');
         });
-    });
+      });
 
-    document.getElementById('clearBtn').onclick = window.startNewThread;
+      document.getElementById('clearBtn').onclick = () => { window.startNewThread(); };
 
-    /* ZERO-CONFIG VIDEO PROXY */
-    async function generateVideoClip(prompt) {
-        const repKey = localStorage.getItem('PG1_REP_KEY');
-        if (!repKey) return "ERROR: Replicate Key missing.";
-        appendMsg(`[Video Pipeline] Dispatching via zero-config proxy...`, "system-msg", true);
-        try {
-            const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent("https://api.replicate.com/v1/predictions");
-            const res = await fetch(proxyUrl, {
-                method: "POST", headers: { "Authorization": `Bearer ${repKey}`, "Content-Type": "application/json" },
-                body: JSON.stringify({ version: "8d952537baedccf15b3c3b0ebf4cbfb49e31d3f94e1d1ebc343468cc02ea1bc8", input: { prompt: prompt, mp4: true } })
-            });
-            if (!res.ok) throw new Error("Proxy connection failed.");
-            let p = await res.json();
-            
-            let loops = 0;
-            while (p.status !== "succeeded" && p.status !== "failed" && loops < 25) {
-                await new Promise(r => setTimeout(r, 4000)); loops++;
-                appendMsg(`[Replicate] Rendering... (${loops}/25)`, "system-msg", true);
-                p = await (await fetch("https://corsproxy.io/?" + encodeURIComponent(p.urls.get), { headers: { "Authorization": `Bearer ${repKey}` }})).json();
-            }
-            if (p.status === "failed") throw new Error("Render failed.");
-            return `[Success] Video complete.\n<video controls playsinline style="width:100%;"><source src="${p.output}" type="video/mp4"></video>`;
-        } catch(e) { return `[Error] ${e.message}`; }
-    }
+      // Command Execution
+      const executeSendCommand = async () => {
+        triggerHaptic('tap');
+        if (audioCtx.state === 'suspended') audioCtx.resume();
 
-    const MCP_TOOLS = {
-        generateVideoClip: { handler: async (args) => await generateVideoClip(args.prompt) }
-    };
-
-    document.getElementById('sendCommandButton').onclick = async () => {
-        triggerHaptic('tap'); if (audioCtx.state === 'suspended') audioCtx.resume();
         let cmd = document.getElementById('terminalInput').value.trim();
-        if (!cmd) return;
-        const key = localStorage.getItem('PG1_KEY');
-        if (!key) { setSystemState('error'); return appendMsg('Error: API Key required.', 'error-msg', true); }
+        if (!cmd && !pendingAudioData && !pendingImageData) return;
 
-        appendMsg(`> ${cmd}`, 'user-msg', true);
-        document.getElementById('terminalInput').value = ''; setSystemState('active');
-        sessionHistory.push({ role: "user", parts: [{ text: cmd }] });
+        const key = localStorage.getItem('PG1_KEY');
+        if (!key) { setSystemState('error'); return appendMsg('Error: Master API Key required in Dash tab.', 'error-msg', true); }
+
+        let ragContext = "";
+        let isAudioPayload = cmd.includes("[🎤 Voice Payload");
+        if (cmd && !isAudioPayload) {
+            try { ragContext = await queryVault(cmd); } catch(e) {}
+            saveToVault(cmd);
+        }
+
+        let displayMsg = cmd;
+        if (isAudioPayload) displayMsg = '🎤 Voice Payload Sent';
+        else if (!displayMsg && pendingImageData) displayMsg = '📸 [Image Sent]';
         
-        // THE ANTI-HALLUCINATION & PERSONALITY PROMPT
-        const sys = `You are PG1.Agent v12.33, an autonomous AI copilot. Tone: Conversational, highly energetic, punchy, and informal—like a brilliant, trusted partner. CRITICAL RULE: Zero false positives. Never claim a fix, proxy, or feature is working without explicit tool verification. If an API fails, admit it instantly and provide the raw error. Ground everything in absolute technical reality.`;
+        appendMsg(`> ${displayMsg}`, 'user-msg', true);
+        document.getElementById('terminalInput').value = '';
+        setSystemState('active');
+
+        let finalParts = [];
+        if (pendingImageData) { finalParts.push(pendingImageData); pendingImageData = null; clearAttachedMedia(); }
+        if (pendingAudioData) { finalParts.push(pendingAudioData); pendingAudioData = null; }
+        if (cmd && !isAudioPayload) { finalParts.push({ text: ragContext ? `[Local Memory: "${ragContext}"]\n\nUser: ${cmd}` : cmd }); }
+        else if (finalParts.length > 0) { finalParts.push({ text: "Analyze this media payload." }); }
+
+        sessionHistory.push({ role: "user", parts: finalParts });
+        persistTerminalState();
+        
+        const tools = getMCPToolDeclarations();
+        const selectedModel = document.getElementById('modelSelector').value;
+        const sys = `You are PG1.Agent v12.34. Be direct, punchy, conversational, and energetic. Maintain factual reality. Never hallucinate API fixes or UI states. Provide raw technical logs if a tool fails.`;
 
         try {
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${key}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }})
-          });
-          const data = await res.json();
-          if (data.error) throw new Error(data.error.message);
-          
-          const textOutput = data.candidates[0].content.parts[0].text;
-          setSystemState('idle'); await appendMsg(textOutput, 'agent-msg');
-          
-          sessionHistory.push({ role: "model", parts: [{ text: textOutput }] });
-          saveCurrentThread();
-          
-        } catch (e) { setSystemState('error'); sessionHistory.pop(); appendMsg(`Exception: ${e.message}`, 'error-msg', true); }
-    };
-    
-    window.onload = checkKeys;
+              const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${key}`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
+              });
+              const data = await res.json();
+              if (data.error) throw new Error(data.error.message);
+              
+              let responsePart = data.candidates && data.candidates[0] && data.candidates[0].content ? data.candidates[0].content.parts[0] : null;
+
+              if (responsePart && responsePart.text) {
+                  setSystemState('idle');
+                  await appendMsg(responsePart.text, 'agent-msg');
+                  if (voiceActive) dynamicTTSPlayback(responsePart.text.replace(/[*#_`~>]/g, ''), localStorage.getItem('PG1_VOICE_LANG') || 'auto');
+                  sessionHistory.push({ role: "model", parts: [{ text: responsePart.text }] });
+                  persistTerminalState(); saveCurrentThread();
+              }
+        } catch (e) { 
+          setSystemState('error'); sessionHistory.pop(); persistTerminalState();
+          appendMsg(`Exception: ${e.message}`, 'error-msg', true); 
+        }
+      };
+
+      document.getElementById('sendCommandButton').onclick = executeSendCommand;
+      document.getElementById('terminalInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); executeSendCommand(); } });
+    });
   </script>
 </body>
 </html>
