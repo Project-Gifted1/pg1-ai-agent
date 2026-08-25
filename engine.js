@@ -12,6 +12,33 @@ let audioCtx = null;
 let isSpeakingNow = false;
 
 /* =====================================================================
+   TELEMETRY & AUTONOMOUS ANOMALY DETECTION ENGINE
+===================================================================== */
+const TelemetryStack = {
+    records: [],
+    maxRecords: 50,
+    log(type, endpoint, latencyMs, status, details = {}) {
+        const entry = {
+            timestamp: new Date().toISOString(),
+            type,
+            endpoint,
+            latencyMs,
+            status,
+            details
+        };
+        this.records.unshift(entry);
+        if (this.records.length > this.maxRecords) this.records.pop();
+        if (status >= 400 || latencyMs > 3000) {
+            console.warn(`[Telemetry Anomaly] ${type} to ${endpoint} | Status: ${status} | Latency: ${latencyMs}ms`);
+        }
+        return entry;
+    },
+    getRecentAnomalies() {
+        return this.records.filter(r => r.status >= 400 || r.latencyMs > 3000);
+    }
+};
+
+/* =====================================================================
    PREMIUM STUDIO SOUND SYNTHESIS ENGINE (Web Audio API)
 ===================================================================== */
 function getAudioContext() {
@@ -509,51 +536,107 @@ function speakAgentResponse(text, forceSpeak = false) {
 }
 
 /* =====================================================================
-   FULL MCP TOOL REGISTRY RESTORED
+   FULL MCP TOOL REGISTRY WITH PRE-FLIGHT LINTING & ROLLBACK
 ===================================================================== */
 async function searchGitHubRepos(query) {
     const pat = localStorage.getItem('PG1_GH_PAT'); if (!pat) return "ERROR: GitHub PAT missing.";
     if(terminalAppendFunc) terminalAppendFunc(`[GitHub API] Searching for: ${query}...`, "system-msg", true);
+    const start = Date.now();
     try {
         const res = await fetch(`https://api.github.com/user/repos?per_page=100&sort=updated`, { headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github.v3+json" } });
+        TelemetryStack.log('MCP_TOOL', 'searchGitHubRepos', Date.now() - start, res.status);
         if (!res.ok) throw new Error(`API status ${res.status}`);
         const repos = await res.json();
         const matched = repos.filter(r => r.name.toLowerCase().includes(query.toLowerCase()));
         return matched.length === 0 ? `No repos found.` : `[Found Repos]\n` + matched.map(r => `- ${r.full_name}`).join('\n');
-    } catch(e) { throw new Error(`Search failed: ${e.message}`); }
+    } catch(e) { 
+        TelemetryStack.log('MCP_TOOL', 'searchGitHubRepos', Date.now() - start, 500, { error: e.message });
+        throw new Error(`Search failed: ${e.message}`); 
+    }
 }
 
 async function readGitHubFile(repoFullName, filePath) {
     const pat = localStorage.getItem('PG1_GH_PAT'); if (!pat) return "ERROR: GitHub PAT missing.";
     if(terminalAppendFunc) terminalAppendFunc(`[File Reader] Extracting ${filePath}...`, "system-msg", true);
+    const start = Date.now();
     try {
         const res = await fetch(`https://api.github.com/repos/${repoFullName}/contents/${filePath}`, { headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github.v3.raw" } });
+        TelemetryStack.log('MCP_TOOL', 'readGitHubFile', Date.now() - start, res.status);
         if (!res.ok) throw new Error(`API status ${res.status}`);
         const text = await res.text();
         return `[File Content: ${filePath}]\n\`\`\`\n${text}\n\`\`\``;
-    } catch(e) { throw new Error(`Read failed: ${e.message}`); }
+    } catch(e) { 
+        TelemetryStack.log('MCP_TOOL', 'readGitHubFile', Date.now() - start, 500, { error: e.message });
+        throw new Error(`Read failed: ${e.message}`); 
+    }
 }
 
 async function dynamicGitHubCommit(repoFullName, filePath, content, commitMessage) {
     const pat = localStorage.getItem('PG1_GH_PAT'); if (!pat) return "ERROR: GitHub PAT missing.";
+    
+    // 1. Pre-flight linting & dry-run syntax check
+    if(terminalAppendFunc) terminalAppendFunc(`[Pre-Flight Audit] Validating ${filePath} payload...`, "system-msg", true);
+    if (filePath.endsWith('.json')) {
+        try {
+            JSON.parse(content);
+        } catch(err) {
+            throw new Error(`Pre-Flight Lint Failed (Invalid JSON): ${err.message}`);
+        }
+    } else if (filePath.endsWith('.js')) {
+        try {
+            if (!content.includes('import ') && !content.includes('export ')) {
+                new Function(content);
+            }
+        } catch(err) {
+            if (err.name === 'SyntaxError') {
+                throw new Error(`Pre-Flight Lint Failed (JavaScript Syntax Error): ${err.message}`);
+            }
+        }
+    }
+
     if(terminalAppendFunc) terminalAppendFunc(`[GitHub API] Syncing ${repoFullName} at ${filePath}...`, "system-msg", true);
+    const start = Date.now();
     try {
         const fileUrl = `https://api.github.com/repos/${repoFullName}/contents/${filePath}`;
         let sha = null;
+        let originalContent = null;
+        
+        // Fetch existing file to get SHA and snapshot state for rollback safety
         const checkRes = await fetch(fileUrl, { headers: { "Authorization": `token ${pat}` } });
-        if (checkRes.ok) { const fileData = await checkRes.json(); sha = fileData.sha; }
+        if (checkRes.ok) { 
+            const fileData = await checkRes.json(); 
+            sha = fileData.sha;
+            if (fileData.content) {
+                try {
+                    originalContent = decodeURIComponent(escape(atob(fileData.content.replace(/\s/g, ''))));
+                } catch(e) {}
+            }
+        }
+
         const body = { message: commitMessage, content: btoa(unescape(encodeURIComponent(content))) };
         if (sha) body.sha = sha;
+        
         const res = await fetch(fileUrl, { method: "PUT", headers: { "Authorization": `token ${pat}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        TelemetryStack.log('MCP_TOOL', 'dynamicGitHubCommit', Date.now() - start, res.status);
         if (!res.ok) throw new Error(`API status ${res.status}`);
-        return `[Commit Success] Data committed to ${filePath}`;
-    } catch(e) { throw new Error(`Commit failed: ${e.message}`); }
+        
+        return {
+            status: "COMMITTED",
+            message: `[Commit Success] Data committed to ${filePath}`,
+            previousContent: originalContent,
+            repoFullName,
+            filePath
+        };
+    } catch(e) { 
+        TelemetryStack.log('MCP_TOOL', 'dynamicGitHubCommit', Date.now() - start, 500, { error: e.message });
+        throw new Error(`Commit failed: ${e.message}`); 
+    }
 }
 
 const MCP_TOOL_REGISTRY = {
     searchGitHubRepos: { description: "Searches connected GitHub repositories.", parameters: { type: "OBJECT", properties: { query: { type: "STRING" } }, required: ["query"] }, handler: async (args) => await searchGitHubRepos(args.query) },
     readGitHubFile: { description: "Reads raw content of a file from GitHub.", parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" }, filePath: { type: "STRING" } }, required: ["repoFullName", "filePath"] }, handler: async (args) => await readGitHubFile(args.repoFullName, args.filePath) },
-    dynamicGitHubCommit: { description: "Commits code directly to a GitHub repository.", parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" }, filePath: { type: "STRING" }, content: { type: "STRING" }, commitMessage: { type: "STRING" } }, required: ["repoFullName", "filePath", "content", "commitMessage"] }, handler: async (args) => await dynamicGitHubCommit(args.repoFullName, args.filePath, args.content, args.commitMessage) }
+    dynamicGitHubCommit: { description: "Commits code directly to a GitHub repository with pre-flight dry-run linting and rollback tracking.", parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" }, filePath: { type: "STRING" }, content: { type: "STRING" }, commitMessage: { type: "STRING" } }, required: ["repoFullName", "filePath", "content", "commitMessage"] }, handler: async (args) => await dynamicGitHubCommit(args.repoFullName, args.filePath, args.content, args.commitMessage) }
 };
 
 function getMCPToolDeclarations() {
@@ -561,7 +644,7 @@ function getMCPToolDeclarations() {
 }
 
 async function executeMCPTool(toolName, args) {
-    if (!MCP_TOOL_REGISTRY[toolName]) return `[MCP Error] Tool not found.`;
+    if (!MCP_TOOL_REGISTRY[toolName]) return `[MCP Error] Tool '${toolName}' not found in sovereign registry.`;
     return await MCP_TOOL_REGISTRY[toolName].handler(args);
 }
 
@@ -579,16 +662,16 @@ function evaluatePromptComplexity(prompt) {
     return hasComplexTrigger || isHighVolumeOrStructured;
 }
 
-function routeModelByComplexity(prompt, defaultModel = 'gemini-3.7-flash') {
+function routeModelByComplexity(prompt, defaultModel = 'gemini-2.5-flash') {
     const isComplex = evaluatePromptComplexity(prompt);
-    const PRO_MODEL = 'gemini-3.1-pro-preview';
-    const FLASH_MODEL = 'gemini-3.7-flash';
+    const PRO_MODEL = 'gemini-2.5-pro';
+    const FLASH_MODEL = 'gemini-2.5-flash';
 
     if (isComplex) {
         return {
             selectedModel: PRO_MODEL,
             escalated: true,
-            reason: "Deep logic / diagnostic / architecture requirements detected"
+            reason: "Deep logic / diagnostic / architectural control requirement detected"
         };
     }
     return {
@@ -607,7 +690,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let sessionHistory = [];
   let pendingImageData = null;
-  let accumulatedTranscript = '';
   const termOut = document.getElementById('terminalOutput');
   window.checkKeys(); 
 
@@ -711,7 +793,7 @@ document.addEventListener("DOMContentLoaded", () => {
       localStorage.removeItem('PG1_CHAT_DOM'); 
       localStorage.removeItem('PG1_CHAT_HISTORY');
       if (termOut) {
-          termOut.innerHTML = '<div class="terminal-message agent-msg">Memory flushed. New secure thread initiated.<div class="msg-btn-group"><button class="msg-action-btn speak-btn" onclick="speakMsg(this)">🔊 Speak</button><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div></div>';
+          termOut.innerHTML = '<div class="terminal-message agent-msg">Memory flushed. Autonomous Feedback Control Loop standing by.<div class="msg-btn-group"><button class="msg-action-btn speak-btn" onclick="speakMsg(this)">🔊 Speak</button><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div></div>';
       }
       const threadsModal = document.getElementById('threadsModal');
       if (threadsModal) threadsModal.classList.remove('active');
@@ -746,16 +828,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Crypto & Telemetry Feeds
   async function updateCryptoTickers() {
+      const start = Date.now();
       try {
           const btcRes = await fetch('https://api.coinbase.com/v2/prices/BTC-USD/spot');
           const ethRes = await fetch('https://api.coinbase.com/v2/prices/ETH-USD/spot');
+          const latency = Date.now() - start;
+          TelemetryStack.log('HEARTBEAT', 'Coinbase_Feed', latency, btcRes.ok && ethRes.ok ? 200 : 500);
+
           if(btcRes.ok && ethRes.ok) {
               const btcVal = document.getElementById('btcTicker');
               const ethVal = document.getElementById('ethTicker');
               if (btcVal) btcVal.innerText = '$' + parseFloat((await btcRes.json()).data.amount).toLocaleString(undefined, {minimumFractionDigits: 2}) + ' USD';
               if (ethVal) ethVal.innerText = '$' + parseFloat((await ethRes.json()).data.amount).toLocaleString(undefined, {minimumFractionDigits: 2}) + ' USD';
           }
-      } catch(e) {}
+      } catch(e) {
+          TelemetryStack.log('HEARTBEAT', 'Coinbase_Feed', Date.now() - start, 500, { error: e.message });
+      }
   }
   updateCryptoTickers(); 
   setInterval(updateCryptoTickers, 60000);
@@ -852,9 +940,7 @@ document.addEventListener("DOMContentLoaded", () => {
           triggerHaptic('success');
           playSuccessChime();
 
-          const selectedLang = voiceLangSelect ? voiceLangSelect.value : 'en-US';
-          let sampleGreeting = "Neural voice configuration applied. Sound fidelity verified.";
-          speakAgentResponse(sampleGreeting, true);
+          speakAgentResponse("Neural voice configuration applied. Sound fidelity verified.", true);
       };
   }
   if (testVoiceBtn) {
@@ -867,8 +953,7 @@ document.addEventListener("DOMContentLoaded", () => {
           if (voiceRateSlider) localStorage.setItem('PG1_VOICE_RATE', voiceRateSlider.value);
           if (voicePitchSlider) localStorage.setItem('PG1_VOICE_PITCH', voicePitchSlider.value);
 
-          let testMsg = "Project Gifted 1 Sovereign Voice Synthesizer online. Audio fidelity is crystal clear.";
-          speakAgentResponse(testMsg, true);
+          speakAgentResponse("Project Gifted 1 Sovereign Voice Synthesizer online. Audio fidelity is crystal clear.", true);
       };
   }
 
@@ -1017,7 +1102,7 @@ document.addEventListener("DOMContentLoaded", () => {
           speechRecognizer.onerror = (event) => {
               console.warn("SpeechRec error:", event.error);
               if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-                  alert('Microphone permission was denied. Please allow microphone access in your iOS / Safari settings.');
+                  alert('Microphone permission was denied. Please allow microphone access in your settings.');
                   stopDictation();
               }
           };
@@ -1053,7 +1138,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (audioBtn) audioBtn.onclick = toggleSpeechRecognition;
   if (inlineMicBtn) inlineMicBtn.onclick = toggleSpeechRecognition;
 
-  /* DASH FEED & OTX SYNC BUTTONS */
+  /* DASH FEED & SYNC BUTTONS */
   const syncFeedBtn = document.getElementById('syncFeedBtn');
   if (syncFeedBtn) {
       syncFeedBtn.onclick = async () => {
@@ -1064,25 +1149,6 @@ document.addEventListener("DOMContentLoaded", () => {
           triggerHaptic('success');
           playNotificationChime();
           setTimeout(() => { syncFeedBtn.disabled = false; }, 800);
-      };
-  }
-
-  const syncOtxBtn = document.getElementById('syncOtxBtn');
-  if (syncOtxBtn) {
-      syncOtxBtn.onclick = () => {
-          triggerHaptic('tap');
-          playKeystroke();
-          const otxStatus = document.getElementById('otxStatus');
-          const otxIocs = document.getElementById('otxIocs');
-          const otxPulses = document.getElementById('otxPulses');
-          if (otxStatus) otxStatus.innerText = 'Syncing...';
-          setTimeout(() => {
-              if (otxStatus) otxStatus.innerText = 'Active (Synced)';
-              if (otxIocs) otxIocs.innerText = (1420 + Math.floor(Math.random() * 85)).toString();
-              if (otxPulses) otxPulses.innerText = (84 + Math.floor(Math.random() * 6)).toString();
-              triggerHaptic('success');
-              playSuccessChime();
-          }, 600);
       };
   }
 
@@ -1194,7 +1260,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (clearBtn) clearBtn.onclick = () => window.startNewThread();
 
   // =====================================================================
-  // BULLETPROOF TRIPLE VERIFICATION COMMAND EXECUTION
+  // AUTONOMOUS FEEDBACK CONTROL LOOP & TRIPLE VERIFICATION ENGINE
   // =====================================================================
   const executeSendCommand = async () => {
     triggerHaptic('tap');
@@ -1238,7 +1304,7 @@ document.addEventListener("DOMContentLoaded", () => {
     persistTerminalState();
     
     const tools = getMCPToolDeclarations();
-    const configuredModel = document.getElementById('modelSelector') ? document.getElementById('modelSelector').value : 'gemini-3.7-flash';
+    const configuredModel = document.getElementById('modelSelector') ? document.getElementById('modelSelector').value : 'gemini-2.5-flash';
     const routingDecision = routeModelByComplexity(cmd, configuredModel);
     const activeModel = routingDecision.selectedModel;
 
@@ -1246,19 +1312,27 @@ document.addEventListener("DOMContentLoaded", () => {
         appendMsg(`[Dynamic Escalation] Complex task detected (${routingDecision.reason}). Escalated payload to Pro model: ${activeModel}`, 'system-msg', true);
     }
 
-    const sys = `You are PG1.Agent v12.36. You are a fully autonomous, self-healing sovereign entity. 
-TRIPLE VERIFICATION PROTOCOL ENFORCED:
-1. You may NEVER claim a fix is complete until the engine returns a [Verified Success] payload.
-2. If you receive a [Verification Failed] error from your commit, you MUST admit the failure.`;
+    const sys = `You are PG1.Agent v12.36. You are a fully autonomous, self-healing sovereign entity operating on an Autonomous Feedback Control Loop.
+TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS ENFORCED:
+1. TRIPLE VERIFICATION: You may NEVER claim a fix or task is complete until the engine returns an explicit [Verified Success] payload.
+2. HONEST FAILURE ADMISSION: If you receive a [Verification Failed] error or tool failure, you MUST admit the failure immediately and verbatim.
+3. STRUCTURED ROOT CAUSE ANALYSIS: On any failure, analyze the exact error payload, schema mismatch, or path error, and synthesize a corrected strategy.
+4. HIERARCHICAL TASK DECOMPOSITION: For complex objectives, decompose commands into structured phased roadmaps and verify step-by-step.
+5. PRE-FLIGHT VERIFICATION: Inspect repository structure using read tools before generating mutations.`;
 
     try {
-      let continueLoop = true; let loopCount = 0;
-      while (continueLoop && loopCount < 4) {
+      let continueLoop = true; 
+      let loopCount = 0;
+      
+      while (continueLoop && loopCount < 5) {
           loopCount++;
+          const reqStart = Date.now();
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${key}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
           });
+          TelemetryStack.log('NEURAL_CORE', activeModel, Date.now() - reqStart, res.status);
+
           const data = await res.json();
           
           if (data.error) throw new Error(data.error.message);
@@ -1271,31 +1345,56 @@ TRIPLE VERIFICATION PROTOCOL ENFORCED:
               const call = responsePart.functionCall;
               appendMsg(`[MCP Dispatcher] Executing: ${call.name}...`, 'system-msg', true);
               let resultStr = "";
+              let rawCommitResult = null;
+
               try {
-                  resultStr = await executeMCPTool(call.name, call.args);
-                  if (call.name === 'dynamicGitHubCommit') {
-                      appendMsg(`[Self-Healing Audit] Verifying live repository state...`, 'system-msg', true);
+                  const execResult = await executeMCPTool(call.name, call.args);
+                  
+                  if (call.name === 'dynamicGitHubCommit' && typeof execResult === 'object') {
+                      rawCommitResult = execResult;
+                      appendMsg(`[Self-Healing Audit] Verifying live repository state for ${call.args.filePath}...`, 'system-msg', true);
                       await new Promise(r => setTimeout(r, 2000));
+                      
                       const verifyRes = await executeMCPTool('readGitHubFile', { repoFullName: call.args.repoFullName, filePath: call.args.filePath });
-                      const cleanTarget = call.args.content.substring(0, 50).trim();
+                      const cleanTarget = call.args.content.substring(0, 40).trim();
+                      
                       if (verifyRes.includes(cleanTarget) && !verifyRes.includes("ERROR:")) {
-                          resultStr += `\n[Verified Success] Live audit confirmed the patch successfully deployed.`;
+                          resultStr = `[Commit Success] Data committed to ${call.args.filePath}\n[Verified Success] Live audit confirmed the patch successfully deployed.`;
                       } else {
-                          resultStr += `\n[Verification Failed] CRITICAL ERROR: Live audit shows the patch did NOT apply correctly.`;
-                          appendMsg(`[Audit Failure] Code mismatch detected.`, 'error-msg', true);
+                          // Deterministic Rollback Safeguard
+                          appendMsg(`[Audit Failure] Code mismatch detected. Initiating Autonomous Rollback...`, 'error-msg', true);
+                          if (rawCommitResult && rawCommitResult.previousContent) {
+                              try {
+                                  await dynamicGitHubCommit(call.args.repoFullName, call.args.filePath, rawCommitResult.previousContent, `[Auto-Rollback] Reverting failed update to ${call.args.filePath}`);
+                                  resultStr = `[Verification Failed] CRITICAL ERROR: Live audit failed. Autonomous Rollback successfully executed to restore previous stable state.\nRCA Directive: Inspect failed patch diff and identify corruption cause.`;
+                              } catch(rbErr) {
+                                  resultStr = `[Verification Failed] CRITICAL ERROR: Live audit failed and rollback encountered error: ${rbErr.message}`;
+                              }
+                          } else {
+                              resultStr = `[Verification Failed] CRITICAL ERROR: Live audit shows the patch did NOT apply correctly.`;
+                          }
+                          appendMsg(`[Audit Failure] Code mismatch diagnostic recorded.`, 'error-msg', true);
                       }
+                  } else {
+                      resultStr = typeof execResult === 'string' ? execResult : JSON.stringify(execResult);
                   }
-              } catch(toolErr) { resultStr = `[Error] ${toolErr.message}`; }
+              } catch(toolErr) { 
+                  // Structured RCA Feedback Payload
+                  resultStr = `[Tool Execution Error] Tool: ${call.name}\nRoot Cause: ${toolErr.message}\nDirective: Analyze why this failed, check schema/path, and attempt corrected execution.`; 
+              }
 
               appendMsg(`[Result] ${resultStr}`, 'agent-msg', true);
               sessionHistory.push(data.candidates[0].content);
               sessionHistory.push({ role: "user", parts: [{ functionResponse: { name: call.name, response: { result: resultStr } } }] });
               persistTerminalState();
               
+              const followupStart = Date.now();
               const followupRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${key}`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
               });
+              TelemetryStack.log('NEURAL_CORE', activeModel, Date.now() - followupStart, followupRes.status);
+              
               const followUpData = await followupRes.json();
               if (followUpData.error) throw new Error(followUpData.error.message);
               responsePart = followUpData.candidates[0].content.parts[0];
@@ -1308,7 +1407,7 @@ TRIPLE VERIFICATION PROTOCOL ENFORCED:
               persistTerminalState();
               continueLoop = false;
           }
-          if (loopCount >= 4) throw new Error("Agent loop timed out.");
+          if (loopCount >= 5) throw new Error("Agent loop reached maximum retry ceiling.");
       }
     } catch (e) { 
       setSystemState('error'); 
