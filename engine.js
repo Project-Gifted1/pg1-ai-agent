@@ -632,6 +632,17 @@ async function dynamicGitHubCommit(repoFullName, filePath, content, commitMessag
         throw new Error(`Commit failed: ${e.message}`); 
     }
 }
+    async function listGitHubRepoFiles(repoFullName, path = "") {
+        const pat = localStorage.getItem('PG1_GH_PAT'); if (!pat) return "ERROR: GitHub PAT missing.";
+        if(terminalAppendFunc) terminalAppendFunc(`[Scanner] Scanning directory: ${repoFullName}/${path}...`, "system-msg", true);
+        try {
+            const res = await fetch(`https://api.github.com/repos/${repoFullName}/contents/${path}`, { headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github.v3+json" } });
+            if (!res.ok) throw new Error(`API status ${res.status}`);
+            const data = await res.json();
+            if (!Array.isArray(data)) return `[Target is a file] Use readGitHubFile instead.`;
+            return `[Directory Contents]\n` + data.map(item => `- ${item.name} (${item.type})`).join('\n');
+        } catch(e) { throw new Error(`Scan failed: ${e.message}`); }
+    }
 
 const MCP_TOOL_REGISTRY = {
     searchGitHubRepos: { description: "Searches connected GitHub repositories.", parameters: { type: "OBJECT", properties: { query: { type: "STRING" } }, required: ["query"] }, handler: async (args) => await searchGitHubRepos(args.query) },
