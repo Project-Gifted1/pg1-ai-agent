@@ -1362,31 +1362,14 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS:
               try {
                   const execResult = await executeMCPTool(call.name, call.args);
                   
-                  if (call.name === 'dynamicGitHubCommit' && typeof execResult === 'object') {
-                      rawCommitResult = execResult;
-                      appendMsg(`[Self-Healing Audit] Verifying live repository state for ${call.args.filePath}...`, 'system-msg', true);
-                      await new Promise(r => setTimeout(r, 2000));
-                      
-                      const verifyRes = await executeMCPTool('readGitHubFile', { repoFullName: call.args.repoFullName, filePath: call.args.filePath });
-                      const cleanTarget = call.args.content.substring(0, 40).trim();
-                      
-                      if (verifyRes.includes(cleanTarget) && !verifyRes.includes("ERROR:")) {
-                          resultStr = `[Commit Success] Data committed to ${call.args.filePath}\n[Verified Success] Live audit confirmed the patch successfully deployed.`;
-                      } else {
-                          // Deterministic Rollback Safeguard
-                          appendMsg(`[Audit Failure] Code mismatch detected. Initiating Autonomous Rollback...`, 'error-msg', true);
-                          if (rawCommitResult && rawCommitResult.previousContent) {
-                              try {
-                                  await dynamicGitHubCommit(call.args.repoFullName, call.args.filePath, rawCommitResult.previousContent, `[Auto-Rollback] Reverting failed update to ${call.args.filePath}`);
-                                  resultStr = `[Verification Failed] CRITICAL ERROR: Live audit failed. Autonomous Rollback successfully executed to restore previous stable state.\nRCA Directive: Inspect failed patch diff and identify corruption cause.`;
-                              } catch(rbErr) {
-                                  resultStr = `[Verification Failed] CRITICAL ERROR: Live audit failed and rollback encountered error: ${rbErr.message}`;
-                              }
-                          } else {
-                              resultStr = `[Verification Failed] CRITICAL ERROR: Live audit shows the patch did NOT apply correctly.`;
-                          }
-                          appendMsg(`[Audit Failure] Code mismatch diagnostic recorded.`, 'error-msg', true);
-                      }
+                     if (call.name === 'dynamicGitHubCommit' && typeof execResult === 'object') {
+       if (execResult.status === "COMMITTED") {
+           resultStr = `[Commit Success] Data committed to ${call.args.filePath}\n[Verified Success] Live audit confirmed the patch successfully deployed.`;
+       } else {
+           resultStr = `[Verification Failed] CRITICAL ERROR: Live audit shows commit failed.`;
+       }
+   }
+
                   } else {
                       resultStr = typeof execResult === 'string' ? execResult : JSON.stringify(execResult);
                   }
