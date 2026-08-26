@@ -116,7 +116,7 @@
 <body>
   <header>
     <h2>PG1 Sovereign Agent</h2>
-    <span class="badge">Hybrid Router: Gemini &bull; OpenRouter</span>
+    <span class="badge">Dynamic Routing: Gemini Pro &bull; DeepSeek</span>
   </header>
   <main id="chat"></main>
   <footer>
@@ -145,38 +145,43 @@
       chat.scrollTop = chat.scrollHeight;
     }
 
-    async function send() {
-      const prompt = promptInput.value.trim();
-      if (!prompt) return;
+    // Step 2 Standard Agent Dispatcher
+    async function sendToAgent(userPrompt) {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: userPrompt })
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+      return data;
+    }
 
-      appendMessage('user', prompt);
+    async function handleSend() {
+      const userPrompt = promptInput.value.trim();
+      if (!userPrompt) return;
+
+      appendMessage('user', userPrompt);
       promptInput.value = '';
       sendBtn.disabled = true;
 
       try {
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt })
-        });
-        const data = await res.json();
-        if (data.error) {
-          appendMessage('agent', 'Error: ' + data.error);
-        } else {
-          appendMessage('agent', data.reply, data.provider, data.model);
-        }
+        const data = await sendToAgent(userPrompt);
+        appendMessage('agent', data.reply, data.provider, data.model);
       } catch (err) {
-        appendMessage('agent', 'Network Error: ' + err.message);
+        appendMessage('agent', 'Error: ' + err.message);
       } finally {
         sendBtn.disabled = false;
       }
     }
 
-    sendBtn.addEventListener('click', send);
+    sendBtn.addEventListener('click', handleSend);
     promptInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        send();
+        handleSend();
       }
     });
   </script>
