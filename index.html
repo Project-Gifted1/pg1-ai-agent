@@ -134,11 +134,8 @@
       <div class="key-input-group">
         <label style="font-size: 0.8em; color: #94a3b8;">Voice Persona / Engine:</label>
         <select id="voiceGenderSelect">
-          <option value="gemini-live-aoede" selected>🌟 Aoede (Google Neural Live - Studio HD)</option>
-          <option value="gemini-live-charon">Charon (Deep Informative Natural)</option>
-          <option value="gemini-live-fenrir">Fenrir (Direct Low-Latency)</option>
-          <option value="female">Clara (Pristine Neutral)</option>
-          <option value="male">David (Studio Direct)</option>
+          <option value="female" selected>🌟 Clara (Pristine Neural - Studio HD)</option>
+          <option value="male">David (Studio Direct Neural)</option>
         </select>
       </div>
       <div class="key-input-group">
@@ -284,9 +281,9 @@
         <div style="display:flex; align-items:center; gap:8px;">
           <span style="color:#94a3b8; font-size:0.8em;">Core:</span>
           <select id="modelSelector">
-            <option value="gemini-2.5-flash" selected>2.5 Flash (Sovereign Active Core)</option>
-            <option value="gemini-2.0-flash">2.0 Flash (Dynamic Agent Core)</option>
-            <option value="gemini-2.5-pro">2.5 Pro (Advanced Logic)</option>
+            <option value="gemini-1.5-flash" selected>1.5 Flash (Sovereign Active Core)</option>
+            <option value="gemini-2.0-flash">2.0 Flash (Next-Gen Dynamic Core)</option>
+            <option value="gemini-1.5-pro">1.5 Pro (Advanced Logic & Reasoning)</option>
           </select>
           <div id="agentWorkingIndicator" class="agent-working-indicator">
             <div class="pulse-dot"></div>
@@ -328,12 +325,15 @@
         <button id="inlineMicBtn" class="utility-media-btn" title="Live Speech-to-Text Dictation">🎙️</button>
         <button id="voiceMsgBtn" class="utility-media-btn" title="Record Voice Audio Message" onclick="toggleVoiceNoteRecording()">🗣️</button>
         <input type="text" id="terminalInput" placeholder="Type or tap 🎙️ to dictate...">
-        <button id="sendCommandButton" class="send-btn" onclick="executeUserPrompt()">Send</button>
+        <button id="sendCommandButton" class="send-btn" onclick="executeSendCommand()">Send</button>
       </div>
     </section>
 
     <section id="view-node" class="view-section">
       <div class="card center-content" style="text-align: center; padding: 20px;">
+        <div class="ai-core-logo" id="aiCoreLogo" title="Tap to interact with Sovereign Core">
+          <div style="display:flex; justify-content:center; align-items:center; height:100%; font-size:3.5em;">🧠</div>
+        </div>
         <h2 style="font-size: 1.1em; color: #f8fafc; margin-bottom: 2px;">PG1.Agent™ Sovereign Core</h2>
         <p style="font-size: 0.75em; color:#94a3b8; margin-bottom:15px;">Smart Tree Resolver • Adaptive Camera Stream • Low-Bandwidth Mode</p>
         
@@ -369,10 +369,12 @@
       if (activeMediaStream) {
         activeMediaStream.getTracks().forEach(track => track.stop());
         activeMediaStream = null;
-        vidBtn.textContent = "📹 Vid: OFF";
-        vidBtn.classList.remove("active-btn");
-        flipBtn.style.display = "none";
-        pipBox.style.display = "none";
+        if (vidBtn) {
+          vidBtn.textContent = "📹 Vid: OFF";
+          vidBtn.classList.remove("active-btn");
+        }
+        if (flipBtn) flipBtn.style.display = "none";
+        if (pipBox) pipBox.style.display = "none";
         return;
       }
 
@@ -380,26 +382,35 @@
         activeMediaStream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: currentFacingMode }
         });
-        videoEl.srcObject = activeMediaStream;
-        vidBtn.textContent = "📹 Vid: ON";
-        vidBtn.classList.add("active-btn");
-        flipBtn.style.display = "inline-block";
-        pipBox.style.display = "block";
+        if (videoEl) videoEl.srcObject = activeMediaStream;
+        if (vidBtn) {
+          vidBtn.textContent = "📹 Vid: ON";
+          vidBtn.classList.add("active-btn");
+        }
+        if (flipBtn) flipBtn.style.display = "inline-block";
+        if (pipBox) pipBox.style.display = "block";
       } catch (err) {
         alert("Camera access failed: " + err.message);
       }
     }
+    window.toggleCameraStream = toggleCameraStream;
 
     async function toggleCameraFacing() {
       currentFacingMode = currentFacingMode === "user" ? "environment" : "user";
       if (activeMediaStream) {
         activeMediaStream.getTracks().forEach(track => track.stop());
-        activeMediaStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: currentFacingMode }
-        });
-        document.getElementById("cameraPreview").srcObject = activeMediaStream;
+        try {
+          activeMediaStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: currentFacingMode }
+          });
+          const videoEl = document.getElementById("cameraPreview");
+          if (videoEl) videoEl.srcObject = activeMediaStream;
+        } catch (e) {
+          console.warn("Could not switch camera facing mode:", e);
+        }
       }
     }
+    window.toggleCameraFacing = toggleCameraFacing;
 
     // 2. Low-Bandwidth / Lite Mode Toggle
     function toggleLiteMode() {
@@ -407,14 +418,19 @@
       const btn = document.getElementById("liteModeBtn");
       if (isLiteMode) {
         document.body.classList.add("lite-mode");
-        btn.textContent = "⚡ Lite: ON";
-        btn.classList.add("active-btn");
+        if (btn) {
+          btn.textContent = "⚡ Lite: ON";
+          btn.classList.add("active-btn");
+        }
       } else {
         document.body.classList.remove("lite-mode");
-        btn.textContent = "⚡ Lite: OFF";
-        btn.classList.remove("active-btn");
+        if (btn) {
+          btn.textContent = "⚡ Lite: OFF";
+          btn.classList.remove("active-btn");
+        }
       }
     }
+    window.toggleLiteMode = toggleLiteMode;
 
     // 3. Agent Working Pulse State Controller
     function setAgentWorking(isWorking) {
@@ -424,6 +440,7 @@
         else indicator.classList.remove("active");
       }
     }
+    window.setAgentWorking = setAgentWorking;
 
     // 4. Secure Log Export & Preview
     function openLogExportModal() {
@@ -431,17 +448,23 @@
         .map(el => `[${new Date().toISOString()}] ${el.innerText.replace(/🔊 Speak|Copy|Edit/g, '').trim()}`)
         .join("\n\n");
       
-      document.getElementById("logExportPreview").textContent = logs || "No terminal logs recorded.";
-      document.getElementById("logExportModal").classList.add("active");
+      const prev = document.getElementById("logExportPreview");
+      if (prev) prev.textContent = logs || "No terminal logs recorded.";
+      const mod = document.getElementById("logExportModal");
+      if (mod) mod.classList.add("active");
     }
+    window.openLogExportModal = openLogExportModal;
 
     function copyLogsToClipboard() {
-      const logText = document.getElementById("logExportPreview").textContent;
+      const prev = document.getElementById("logExportPreview");
+      const logText = prev ? prev.textContent : "";
       navigator.clipboard.writeText(logText).then(() => alert("Logs copied to clipboard."));
     }
+    window.copyLogsToClipboard = copyLogsToClipboard;
 
     function downloadRawLogs() {
-      const logText = document.getElementById("logExportPreview").textContent;
+      const prev = document.getElementById("logExportPreview");
+      const logText = prev ? prev.textContent : "";
       const blob = new Blob([logText], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -450,6 +473,7 @@
       a.click();
       URL.revokeObjectURL(url);
     }
+    window.downloadRawLogs = downloadRawLogs;
 
     // 5. Smart Dynamic Tree Pre-Flight Reader (Prevents 404 Panics)
     async function smartReadGitHub(owner, repo, targetPath, token) {
@@ -480,10 +504,12 @@
         setAgentWorking(false);
       }
     }
+    window.smartReadGitHub = smartReadGitHub;
 
     // 6. Secure Commit Guardrail (Requires manual confirmation to push)
     async function secureGitHubCommit(owner, repo, path, content, message, bypassGuardrail = false) {
-      const gitToken = document.getElementById("githubKeyInput").value;
+      const gitInput = document.getElementById("githubKeyInput");
+      const gitToken = gitInput ? gitInput.value : "";
       
       if (!bypassGuardrail) {
         const isApproved = confirm(`AGENT ALERT: The system is attempting to execute a direct write operation to the repository.\n\nTarget Repo: ${owner}/${repo}\nFile: ${path}\nCommit Message: "${message}"\n\nDo you explicitly authorize this commit?`);
@@ -507,11 +533,14 @@
         setAgentWorking(false);
       }
     }
+    window.secureGitHubCommit = secureGitHubCommit;
 
     // 7. Replicate Video Generation API Request 
     async function triggerVideoGeneration() {
-      const repKey = document.getElementById("replicateKeyInput").value;
-      const promptText = document.getElementById("terminalInput").value;
+      const repInput = document.getElementById("replicateKeyInput");
+      const repKey = repInput ? repInput.value : "";
+      const termInput = document.getElementById("terminalInput");
+      const promptText = termInput ? termInput.value : "";
       
       if (!repKey) {
         alert("Replicate API Key is required. Please add it to the Sovereign Key Relay.");
@@ -540,13 +569,14 @@
         const data = await response.json();
         alert("Video generation successfully queued on Replicate. Prediction ID: " + data.id);
         
-        document.getElementById("terminalInput").value = "";
+        if (termInput) termInput.value = "";
       } catch (err) {
         alert("Video generation encountered an error: " + err.message);
       } finally {
         setAgentWorking(false);
       }
     }
+    window.triggerVideoGeneration = triggerVideoGeneration;
 
     // 8. Autonomous Reconnection & Fail-Safe Execution Loop
     async function executeWithRetry(apiCallFn, retries = 3, delay = 2000) {
@@ -566,6 +596,7 @@
         }
       }
     }
+    window.executeWithRetry = executeWithRetry;
 
     // 9. Sovereign Network Interceptor (Hard Guardrail)
     const originalFetch = window.fetch;
@@ -588,7 +619,6 @@
           return new Response(JSON.stringify({ error: "User explicitly blocked the commit." }), { status: 403, statusText: "Forbidden" });
         }
       }
-      // Proceed if approved or if it's a safe GET request
       return originalFetch.apply(this, arguments);
     };
   </script>
