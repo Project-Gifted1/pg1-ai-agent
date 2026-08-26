@@ -673,10 +673,10 @@ function evaluatePromptComplexity(prompt) {
     return hasComplexTrigger || isHighVolumeOrStructured;
 }
 
-function routeModelByComplexity(prompt, defaultModel = 'gemini-1.5-flash') {
+function routeModelByComplexity(prompt, defaultModel = 'gemini-1.5-latest') {
     const isComplex = evaluatePromptComplexity(prompt);
-    const PRO_MODEL = 'gemini-1.5-pro';
-    const FLASH_MODEL = 'gemini-1.5-flash';
+    const PRO_MODEL = 'gemini-1.5-pro-latest';
+    const FLASH_MODEL = 'gemini-1.5-latest';
 
     if (isComplex) {
         return {
