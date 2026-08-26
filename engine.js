@@ -673,10 +673,10 @@ function evaluatePromptComplexity(prompt) {
     return hasComplexTrigger || isHighVolumeOrStructured;
 }
 
-function routeModelByComplexity(prompt, defaultModel = 'gemini-1.5-latest') {
+function routeModelByComplexity(prompt, defaultModel = 'gemini-1.5-flash-latest') {
     const isComplex = evaluatePromptComplexity(prompt);
     const PRO_MODEL = 'gemini-1.5-pro-latest';
-    const FLASH_MODEL = 'gemini-1.5-latest';
+    const FLASH_MODEL = 'gemini-1.5-flash-latest';
 
     if (isComplex) {
         return {
@@ -692,9 +692,6 @@ function routeModelByComplexity(prompt, defaultModel = 'gemini-1.5-latest') {
     };
 }
 
-/* =====================================================================
-   ENGINE INITIALIZATION
-===================================================================== */
 document.addEventListener("DOMContentLoaded", () => {
   localStorage.removeItem('PG1_CHAT_DOM');
   localStorage.removeItem('PG1_CHAT_HISTORY');
