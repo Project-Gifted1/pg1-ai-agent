@@ -1368,7 +1368,7 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS:
        } else {
            resultStr = `[Verification Failed] CRITICAL ERROR: Live audit shows commit failed.`;
        }
-   }
+   
 
                   } else {
                       resultStr = typeof execResult === 'string' ? execResult : JSON.stringify(execResult);
