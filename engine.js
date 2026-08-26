@@ -9,14 +9,7 @@ let chronTimer = null;
 let currentUtterance = null;
 let speechKeepAliveInterval = null;
 let audioCtx = null;
-let analyserNode = null;
 let isSpeakingNow = false;
-
-// Voice Memo Recording State
-let voiceMediaRecorder = null;
-let voiceAudioChunks = [];
-let voiceRecordTimerInterval = null;
-let voiceRecordSeconds = 0;
 
 /* =====================================================================
    TELEMETRY & AUTONOMOUS ANOMALY DETECTION ENGINE
@@ -51,22 +44,9 @@ const TelemetryStack = {
 function getAudioContext() {
     if (!audioCtx) {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (AudioContextClass) {
-            audioCtx = new AudioContextClass();
-            try {
-                analyserNode = audioCtx.createAnalyser();
-                analyserNode.fftSize = 64;
-                analyserNode.connect(audioCtx.destination);
-            } catch(e) {}
-        }
+        if (AudioContextClass) audioCtx = new AudioContextClass();
     }
     return audioCtx;
-}
-
-function getAudioDestination() {
-    const ctx = getAudioContext();
-    if (!ctx) return null;
-    return analyserNode || ctx.destination;
 }
 
 function isSfxEnabled() {
@@ -122,8 +102,7 @@ function playKeystroke() {
     try {
         unlockAudio();
         const ctx = getAudioContext();
-        const dest = getAudioDestination();
-        if (!ctx || !dest) return;
+        if (!ctx) return;
         const now = ctx.currentTime;
 
         const osc = ctx.createOscillator();
@@ -143,7 +122,7 @@ function playKeystroke() {
 
         osc.connect(filter);
         filter.connect(gain);
-        gain.connect(dest);
+        gain.connect(ctx.destination);
 
         osc.start(now);
         osc.stop(now + 0.02);
@@ -156,8 +135,7 @@ function playNotificationChime() {
     try {
         unlockAudio();
         const ctx = getAudioContext();
-        const dest = getAudioDestination();
-        if (!ctx || !dest) return;
+        if (!ctx) return;
         const now = ctx.currentTime;
 
         const fundamentalFreqs = [528, 1056, 1584];
@@ -174,7 +152,7 @@ function playNotificationChime() {
             gain.gain.exponentialRampToValueAtTime(0.00005, now + (idx * 0.025) + duration);
 
             osc.connect(gain);
-            gain.connect(dest);
+            gain.connect(ctx.destination);
 
             osc.start(now + (idx * 0.025));
             osc.stop(now + (idx * 0.025) + duration);
@@ -188,8 +166,7 @@ function playSuccessChime() {
     try {
         unlockAudio();
         const ctx = getAudioContext();
-        const dest = getAudioDestination();
-        if (!ctx || !dest) return;
+        if (!ctx) return;
         const now = ctx.currentTime;
         const notes = [659.25, 830.61, 987.77, 1318.51];
         
@@ -201,7 +178,7 @@ function playSuccessChime() {
             gain.gain.setValueAtTime(0.04, now + i * 0.06);
             gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.06 + 0.3);
             osc.connect(gain);
-            gain.connect(dest);
+            gain.connect(ctx.destination);
             osc.start(now + i * 0.06);
             osc.stop(now + i * 0.06 + 0.3);
         });
@@ -214,8 +191,7 @@ function playErrorTone() {
     try {
         unlockAudio();
         const ctx = getAudioContext();
-        const dest = getAudioDestination();
-        if (!ctx || !dest) return;
+        if (!ctx) return;
         const now = ctx.currentTime;
         const notes = [440, 415.30];
         
@@ -227,7 +203,7 @@ function playErrorTone() {
             gain.gain.setValueAtTime(0.04, now + i * 0.1);
             gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.1 + 0.25);
             osc.connect(gain);
-            gain.connect(dest);
+            gain.connect(ctx.destination);
             osc.start(now + i * 0.1);
             osc.stop(now + i * 0.1 + 0.25);
         });
@@ -240,8 +216,7 @@ function playMicTone(isStart) {
     try {
         unlockAudio();
         const ctx = getAudioContext();
-        const dest = getAudioDestination();
-        if (!ctx || !dest) return;
+        if (!ctx) return;
         const now = ctx.currentTime;
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -256,63 +231,10 @@ function playMicTone(isStart) {
         gain.gain.setValueAtTime(0.035, now);
         gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
         osc.connect(gain);
-        gain.connect(dest);
+        gain.connect(ctx.destination);
         osc.start(now);
         osc.stop(now + 0.1);
     } catch(e) {}
-}
-
-/* =====================================================================
-   NEURAL AUDIO & TELEMETRY SPECTRUM CANVAS RENDERER
-===================================================================== */
-function initNeuralSpectrumVisualizer() {
-    const canvas = document.getElementById('neuralAudioCanvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let visualOffset = 0;
-
-    function renderFrame() {
-        requestAnimationFrame(renderFrame);
-        const w = canvas.width;
-        const h = canvas.height;
-        ctx.clearRect(0, 0, w, h);
-
-        const bars = 32;
-        const barWidth = (w / bars) - 2;
-
-        let freqData = null;
-        if (analyserNode) {
-            freqData = new Uint8Array(analyserNode.frequencyBinCount);
-            analyserNode.getByteFrequencyData(freqData);
-        }
-
-        visualOffset += 0.05;
-
-        for (let i = 0; i < bars; i++) {
-            let val = 0;
-            if (freqData && freqData.length > 0) {
-                const idx = Math.floor((i / bars) * freqData.length);
-                val = (freqData[idx] / 255);
-            }
-            
-            const wave = (Math.sin(visualOffset + (i * 0.3)) * 0.15) + 0.2;
-            const combinedHeight = Math.max(4, (val * h * 0.8) + (wave * h * 0.3));
-
-            const x = i * (barWidth + 2);
-            const y = h - combinedHeight;
-
-            const grad = ctx.createLinearGradient(0, y, 0, h);
-            grad.addColorStop(0, '#38bdf8');
-            grad.addColorStop(1, 'rgba(16, 185, 129, 0.4)');
-
-            ctx.fillStyle = grad;
-            ctx.fillRect(x, y, barWidth, combinedHeight);
-        }
-    }
-
-    renderFrame();
 }
 
 function renderMarkdownToHtml(raw) {
@@ -613,129 +535,6 @@ function speakAgentResponse(text, forceSpeak = false) {
     } catch(e) {}
 }
 
-window.testVoiceSynthesis = function() {
-    triggerHaptic('tap');
-    unlockAudio();
-    const voiceGenderSelect = document.getElementById('voiceGenderSelect');
-    const voiceLangSelect = document.getElementById('voiceLangSelect');
-    const voiceSpecificSelect = document.getElementById('voiceSpecificSelect');
-    const voiceRateSlider = document.getElementById('voiceRateSlider');
-    const voicePitchSlider = document.getElementById('voicePitchSlider');
-
-    if (voiceGenderSelect) localStorage.setItem('PG1_VOICE_GENDER', voiceGenderSelect.value);
-    if (voiceLangSelect) localStorage.setItem('PG1_VOICE_LANG', voiceLangSelect.value);
-    if (voiceSpecificSelect) localStorage.setItem('PG1_SPECIFIC_VOICE', voiceSpecificSelect.value);
-    if (voiceRateSlider) localStorage.setItem('PG1_VOICE_RATE', voiceRateSlider.value);
-    if (voicePitchSlider) localStorage.setItem('PG1_VOICE_PITCH', voicePitchSlider.value);
-
-    speakAgentResponse("Project Gifted 1 Sovereign Voice Synthesizer online. Audio fidelity is crystal clear.", true);
-};
-
-window.saveVoicePreferences = function() {
-    triggerHaptic('tap');
-    unlockAudio();
-    const voiceGenderSelect = document.getElementById('voiceGenderSelect');
-    const voiceLangSelect = document.getElementById('voiceLangSelect');
-    const voiceSpecificSelect = document.getElementById('voiceSpecificSelect');
-    const voiceRateSlider = document.getElementById('voiceRateSlider');
-    const voicePitchSlider = document.getElementById('voicePitchSlider');
-    const sfxEnabledSelect = document.getElementById('sfxEnabledSelect');
-
-    if (voiceGenderSelect) localStorage.setItem('PG1_VOICE_GENDER', voiceGenderSelect.value);
-    if (voiceLangSelect) localStorage.setItem('PG1_VOICE_LANG', voiceLangSelect.value);
-    if (voiceSpecificSelect) localStorage.setItem('PG1_SPECIFIC_VOICE', voiceSpecificSelect.value);
-    if (voiceRateSlider) localStorage.setItem('PG1_VOICE_RATE', voiceRateSlider.value);
-    if (voicePitchSlider) localStorage.setItem('PG1_VOICE_PITCH', voicePitchSlider.value);
-    if (sfxEnabledSelect) localStorage.setItem('PG1_SFX_ENABLED', sfxEnabledSelect.value);
-
-    const voiceSettingsModal = document.getElementById('voiceSettingsModal');
-    if (voiceSettingsModal) voiceSettingsModal.classList.remove('active');
-    triggerHaptic('success');
-    playSuccessChime();
-
-    speakAgentResponse("Neural voice configuration applied. Sound fidelity verified.", true);
-};
-
-/* =====================================================================
-   LIVE VOICE MEMO / AUDIO RECORDER MODULE
-===================================================================== */
-window.toggleVoiceNoteRecording = async function() {
-    triggerHaptic('tap');
-    unlockAudio();
-    const bar = document.getElementById('voiceNoteRecordingBar');
-    const timerLabel = document.getElementById('voiceNoteTimer');
-
-    if (voiceMediaRecorder && voiceMediaRecorder.state === 'recording') {
-        voiceMediaRecorder.stop();
-        if (voiceRecordTimerInterval) {
-            clearInterval(voiceRecordTimerInterval);
-            voiceRecordTimerInterval = null;
-        }
-        if (bar) bar.classList.remove('active');
-        playMicTone(false);
-        return;
-    }
-
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        voiceAudioChunks = [];
-        voiceRecordSeconds = 0;
-        if (timerLabel) timerLabel.innerText = "0:00";
-
-        voiceMediaRecorder = new MediaRecorder(stream);
-        voiceMediaRecorder.ondataavailable = (e) => {
-            if (e.data.size > 0) voiceAudioChunks.push(e.data);
-        };
-
-        voiceMediaRecorder.onstop = () => {
-            stream.getTracks().forEach(track => track.stop());
-            if (voiceAudioChunks.length > 0) {
-                const audioBlob = new Blob(voiceAudioChunks, { type: 'audio/webm' });
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    const inputEl = document.getElementById('terminalInput');
-                    if (inputEl) {
-                        const noteMsg = `[Voice Memo Attached (${voiceRecordSeconds}s)]`;
-                        inputEl.value = inputEl.value ? `${inputEl.value} ${noteMsg}` : noteMsg;
-                    }
-                    triggerHaptic('success');
-                    playNotificationChime();
-                };
-                reader.readAsDataURL(audioBlob);
-            }
-        };
-
-        voiceMediaRecorder.start();
-        if (bar) bar.classList.add('active');
-        playMicTone(true);
-
-        voiceRecordTimerInterval = setInterval(() => {
-            voiceRecordSeconds++;
-            const mins = Math.floor(voiceRecordSeconds / 60);
-            const secs = voiceRecordSeconds % 60;
-            if (timerLabel) timerLabel.innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-        }, 1000);
-
-    } catch(err) {
-        alert("Microphone permission unavailable for voice recording: " + err.message);
-    }
-};
-
-window.cancelVoiceNote = function() {
-    triggerHaptic('tap');
-    if (voiceMediaRecorder && voiceMediaRecorder.state === 'recording') {
-        voiceAudioChunks = [];
-        voiceMediaRecorder.stop();
-    }
-    if (voiceRecordTimerInterval) {
-        clearInterval(voiceRecordTimerInterval);
-        voiceRecordTimerInterval = null;
-    }
-    const bar = document.getElementById('voiceNoteRecordingBar');
-    if (bar) bar.classList.remove('active');
-    playMicTone(false);
-};
-
 /* =====================================================================
    FULL MCP TOOL REGISTRY WITH PRE-FLIGHT LINTING & ROLLBACK
 ===================================================================== */
@@ -761,14 +560,7 @@ async function readGitHubFile(repoFullName, filePath) {
     if(terminalAppendFunc) terminalAppendFunc(`[File Reader] Extracting ${filePath}...`, "system-msg", true);
     const start = Date.now();
     try {
-        const cacheBuster = `?ref=main&_ts=${Date.now()}`;
-        const res = await fetch(`https://api.github.com/repos/${repoFullName}/contents/${filePath}${cacheBuster}`, { 
-            headers: { 
-                "Authorization": `token ${pat}`, 
-                "Accept": "application/vnd.github.v3.raw",
-                "Cache-Control": "no-cache"
-            } 
-        });
+        const res = await fetch(`https://api.github.com/repos/${repoFullName}/contents/${filePath}`, { headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github.v3.raw" } });
         TelemetryStack.log('MCP_TOOL', 'readGitHubFile', Date.now() - start, res.status);
         if (!res.ok) throw new Error(`API status ${res.status}`);
         const text = await res.text();
@@ -782,7 +574,7 @@ async function readGitHubFile(repoFullName, filePath) {
 async function dynamicGitHubCommit(repoFullName, filePath, content, commitMessage) {
     const pat = localStorage.getItem('PG1_GH_PAT'); if (!pat) return "ERROR: GitHub PAT missing.";
     
-    // Pre-flight linting & dry-run syntax check
+    // 1. Pre-flight linting & dry-run syntax check
     if(terminalAppendFunc) terminalAppendFunc(`[Pre-Flight Audit] Validating ${filePath} payload...`, "system-msg", true);
     if (filePath.endsWith('.json')) {
         try {
@@ -809,7 +601,8 @@ async function dynamicGitHubCommit(repoFullName, filePath, content, commitMessag
         let sha = null;
         let originalContent = null;
         
-        const checkRes = await fetch(fileUrl, { headers: { "Authorization": `token ${pat}`, "Cache-Control": "no-cache" } });
+        // Fetch existing file to get SHA and snapshot state for rollback safety
+        const checkRes = await fetch(fileUrl, { headers: { "Authorization": `token ${pat}` } });
         if (checkRes.ok) { 
             const fileData = await checkRes.json(); 
             sha = fileData.sha;
@@ -827,11 +620,9 @@ async function dynamicGitHubCommit(repoFullName, filePath, content, commitMessag
         TelemetryStack.log('MCP_TOOL', 'dynamicGitHubCommit', Date.now() - start, res.status);
         if (!res.ok) throw new Error(`API status ${res.status}`);
         
-        const commitData = await res.json();
         return {
             status: "COMMITTED",
             message: `[Commit Success] Data committed to ${filePath}`,
-            commitSha: commitData?.commit?.sha || sha,
             previousContent: originalContent,
             repoFullName,
             filePath
@@ -841,6 +632,17 @@ async function dynamicGitHubCommit(repoFullName, filePath, content, commitMessag
         throw new Error(`Commit failed: ${e.message}`); 
     }
 }
+    async function listGitHubRepoFiles(repoFullName, path = "") {
+        const pat = localStorage.getItem('PG1_GH_PAT'); if (!pat) return "ERROR: GitHub PAT missing.";
+        if(terminalAppendFunc) terminalAppendFunc(`[Scanner] Scanning directory: ${repoFullName}/${path}...`, "system-msg", true);
+        try {
+            const res = await fetch(`https://api.github.com/repos/${repoFullName}/contents/${path}`, { headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github.v3+json" } });
+            if (!res.ok) throw new Error(`API status ${res.status}`);
+            const data = await res.json();
+            if (!Array.isArray(data)) return `[Target is a file] Use readGitHubFile instead.`;
+            return `[Directory Contents]\n` + data.map(item => `- ${item.name} (${item.type})`).join('\n');
+        } catch(e) { throw new Error(`Scan failed: ${e.message}`); }
+    }
 
 const MCP_TOOL_REGISTRY = {
     searchGitHubRepos: { description: "Searches connected GitHub repositories.", parameters: { type: "OBJECT", properties: { query: { type: "STRING" } }, required: ["query"] }, handler: async (args) => await searchGitHubRepos(args.query) },
@@ -901,9 +703,6 @@ document.addEventListener("DOMContentLoaded", () => {
   let pendingImageData = null;
   const termOut = document.getElementById('terminalOutput');
   window.checkKeys(); 
-
-  // Initialize Neural Canvas Visualizer
-  initNeuralSpectrumVisualizer();
 
   const savedVoicePref = localStorage.getItem('PG1_VOICE_ENABLED');
   isVoiceEnabled = savedVoicePref !== null ? (savedVoicePref === 'true') : true;
@@ -1138,10 +937,35 @@ document.addEventListener("DOMContentLoaded", () => {
       };
   }
   if (saveVoiceSettingsBtn && voiceSettingsModal) {
-      saveVoiceSettingsBtn.onclick = window.saveVoicePreferences;
+      saveVoiceSettingsBtn.onclick = () => {
+          triggerHaptic('tap');
+          unlockAudio();
+          if (voiceGenderSelect) localStorage.setItem('PG1_VOICE_GENDER', voiceGenderSelect.value);
+          if (voiceLangSelect) localStorage.setItem('PG1_VOICE_LANG', voiceLangSelect.value);
+          if (voiceSpecificSelect) localStorage.setItem('PG1_SPECIFIC_VOICE', voiceSpecificSelect.value);
+          if (voiceRateSlider) localStorage.setItem('PG1_VOICE_RATE', voiceRateSlider.value);
+          if (voicePitchSlider) localStorage.setItem('PG1_VOICE_PITCH', voicePitchSlider.value);
+          if (sfxEnabledSelect) localStorage.setItem('PG1_SFX_ENABLED', sfxEnabledSelect.value);
+
+          voiceSettingsModal.classList.remove('active');
+          triggerHaptic('success');
+          playSuccessChime();
+
+          speakAgentResponse("Neural voice configuration applied. Sound fidelity verified.", true);
+      };
   }
   if (testVoiceBtn) {
-      testVoiceBtn.onclick = window.testVoiceSynthesis;
+      testVoiceBtn.onclick = () => {
+          triggerHaptic('tap');
+          unlockAudio();
+          if (voiceGenderSelect) localStorage.setItem('PG1_VOICE_GENDER', voiceGenderSelect.value);
+          if (voiceLangSelect) localStorage.setItem('PG1_VOICE_LANG', voiceLangSelect.value);
+          if (voiceSpecificSelect) localStorage.setItem('PG1_SPECIFIC_VOICE', voiceSpecificSelect.value);
+          if (voiceRateSlider) localStorage.setItem('PG1_VOICE_RATE', voiceRateSlider.value);
+          if (voicePitchSlider) localStorage.setItem('PG1_VOICE_PITCH', voicePitchSlider.value);
+
+          speakAgentResponse("Project Gifted 1 Sovereign Voice Synthesizer online. Audio fidelity is crystal clear.", true);
+      };
   }
 
   /* VOICE TOGGLE */
@@ -1161,6 +985,70 @@ document.addEventListener("DOMContentLoaded", () => {
               voiceBtn.innerText = '🗣️ Voice: OFF';
               playKeystroke();
               stopSpeech();
+          }
+      };
+  }
+
+  /* SENTINEL & CHRON TOGGLES */
+  const sentinelBtn = document.getElementById('sentinelBtn');
+  if (sentinelBtn) {
+      sentinelBtn.onclick = () => {
+          triggerHaptic('tap');
+          playKeystroke();
+          isSentinelEnabled = !isSentinelEnabled;
+          if (isSentinelEnabled) {
+              sentinelBtn.classList.add('active-btn');
+              sentinelBtn.innerText = '🛡️ Sentinel: ON';
+          } else {
+              sentinelBtn.classList.remove('active-btn');
+              sentinelBtn.innerText = '🛡️ Sentinel: OFF';
+          }
+      };
+  }
+
+  const chronBtn = document.getElementById('chronBtn');
+  if (chronBtn) {
+      chronBtn.onclick = () => {
+          triggerHaptic('tap');
+          playKeystroke();
+          isChronEnabled = !isChronEnabled;
+          if (isChronEnabled) {
+              chronBtn.classList.add('active-btn');
+              chronBtn.innerText = '⏱️ Chron: ON';
+              chronTimer = setInterval(() => { updateCryptoTickers(); }, 30000);
+          } else {
+              chronBtn.classList.remove('active-btn');
+              chronBtn.innerText = '⏱️ Chron: OFF';
+              if (chronTimer) clearInterval(chronTimer);
+          }
+      };
+  }
+
+  /* CAMERA VIDEO TOGGLE */
+  const videoBtn = document.getElementById('videoBtn');
+  const cameraPipBox = document.getElementById('cameraPipBox');
+  const cameraPreview = document.getElementById('cameraPreview');
+  if (videoBtn && cameraPipBox && cameraPreview) {
+      videoBtn.onclick = async () => {
+          triggerHaptic('tap');
+          playKeystroke();
+          if (mediaStream) {
+              mediaStream.getTracks().forEach(track => track.stop());
+              mediaStream = null;
+              cameraPipBox.style.display = 'none';
+              videoBtn.classList.remove('active-btn');
+              videoBtn.innerText = '📹 Vid: OFF';
+          } else {
+              try {
+                  mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                  cameraPreview.srcObject = mediaStream;
+                  cameraPipBox.style.display = 'block';
+                  videoBtn.classList.add('active-btn');
+                  videoBtn.innerText = '📹 Vid: ON';
+                  playSuccessChime();
+              } catch(err) {
+                  alert('Camera access unavailable or denied: ' + err.message);
+              }
           }
       };
   }
@@ -1286,8 +1174,7 @@ document.addEventListener("DOMContentLoaded", () => {
       mediaBtn.onclick = () => {
           triggerHaptic('tap');
           playKeystroke();
-          const cameraPreview = document.getElementById('cameraPreview');
-          if (window.activeMediaStream && cameraPreview) {
+          if (mediaStream && cameraPreview) {
               const canvas = document.createElement('canvas');
               canvas.width = cameraPreview.videoWidth || 640;
               canvas.height = cameraPreview.videoHeight || 480;
@@ -1428,7 +1315,7 @@ document.addEventListener("DOMContentLoaded", () => {
     persistTerminalState();
     
     const tools = getMCPToolDeclarations();
-    const configuredModel = document.getElementById('modelSelector') ? document.getElementById('modelSelector').value : 'gemini-1.5-flash';
+    const configuredModel = document.getElementById('modelSelector') ? document.getElementById('modelSelector').value : 'gemini-2.5-flash';
     const routingDecision = routeModelByComplexity(cmd, configuredModel);
     const activeModel = routingDecision.selectedModel;
 
@@ -1470,20 +1357,41 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS:
               const call = responsePart.functionCall;
               appendMsg(`[MCP Dispatcher] Executing: ${call.name}...`, 'system-msg', true);
               let resultStr = "";
+              let rawCommitResult = null;
 
               try {
                   const execResult = await executeMCPTool(call.name, call.args);
                   
                   if (call.name === 'dynamicGitHubCommit' && typeof execResult === 'object') {
-                      if (execResult.status === "COMMITTED") {
+                      rawCommitResult = execResult;
+                      appendMsg(`[Self-Healing Audit] Verifying live repository state for ${call.args.filePath}...`, 'system-msg', true);
+                      await new Promise(r => setTimeout(r, 2000));
+                      
+                      const verifyRes = await executeMCPTool('readGitHubFile', { repoFullName: call.args.repoFullName, filePath: call.args.filePath });
+                      const cleanTarget = call.args.content.substring(0, 40).trim();
+                      
+                      if (verifyRes.includes(cleanTarget) && !verifyRes.includes("ERROR:")) {
                           resultStr = `[Commit Success] Data committed to ${call.args.filePath}\n[Verified Success] Live audit confirmed the patch successfully deployed.`;
                       } else {
-                          resultStr = `[Verification Failed] CRITICAL ERROR: Live audit shows commit failed.`;
+                          // Deterministic Rollback Safeguard
+                          appendMsg(`[Audit Failure] Code mismatch detected. Initiating Autonomous Rollback...`, 'error-msg', true);
+                          if (rawCommitResult && rawCommitResult.previousContent) {
+                              try {
+                                  await dynamicGitHubCommit(call.args.repoFullName, call.args.filePath, rawCommitResult.previousContent, `[Auto-Rollback] Reverting failed update to ${call.args.filePath}`);
+                                  resultStr = `[Verification Failed] CRITICAL ERROR: Live audit failed. Autonomous Rollback successfully executed to restore previous stable state.\nRCA Directive: Inspect failed patch diff and identify corruption cause.`;
+                              } catch(rbErr) {
+                                  resultStr = `[Verification Failed] CRITICAL ERROR: Live audit failed and rollback encountered error: ${rbErr.message}`;
+                              }
+                          } else {
+                              resultStr = `[Verification Failed] CRITICAL ERROR: Live audit shows the patch did NOT apply correctly.`;
+                          }
+                          appendMsg(`[Audit Failure] Code mismatch diagnostic recorded.`, 'error-msg', true);
                       }
                   } else {
                       resultStr = typeof execResult === 'string' ? execResult : JSON.stringify(execResult);
                   }
               } catch(toolErr) { 
+                  // Structured RCA Feedback Payload
                   resultStr = `[Tool Execution Error] Tool: ${call.name}\nRoot Cause: ${toolErr.message}\nDirective: Analyze why this failed, check schema/path, and attempt corrected execution.`; 
               }
 
@@ -1520,9 +1428,6 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS:
       appendMsg(`Exception: ${e.message}`, 'error-msg', true); 
     }
   };
-
-  window.executeSendCommand = executeSendCommand;
-  window.executeUserPrompt = executeSendCommand;
 
   const sendBtn = document.getElementById('sendCommandButton');
   if (sendBtn) sendBtn.onclick = executeSendCommand;
