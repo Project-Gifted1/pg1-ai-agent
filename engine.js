@@ -9,7 +9,13 @@ let chronTimer = null;
 let currentUtterance = null;
 let speechKeepAliveInterval = null;
 let audioCtx = null;
+let audioCompressor = null;
+let masterGainNode = null;
 let isSpeakingNow = false;
+let voiceNoteRecorder = null;
+let voiceNoteChunks = [];
+let voiceNoteTimerInterval = null;
+let voiceNoteDurationSeconds = 0;
 
 /* =====================================================================
    TELEMETRY & AUTONOMOUS ANOMALY DETECTION ENGINE
@@ -39,12 +45,34 @@ const TelemetryStack = {
 };
 
 /* =====================================================================
-   PREMIUM STUDIO SOUND SYNTHESIS ENGINE (Web Audio API)
+   PRISTINE 48kHz STUDIO SOUND SYNTHESIS & MASTER COMPRESSOR ENGINE
 ===================================================================== */
+function getAudioMasterVolume() {
+    const raw = localStorage.getItem('PG1_VOICE_VOL');
+    return raw !== null ? Math.min(Math.max(parseFloat(raw), 0.1), 1.0) : 1.0;
+}
+
 function getAudioContext() {
     if (!audioCtx) {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (AudioContextClass) audioCtx = new AudioContextClass();
+        if (AudioContextClass) {
+            audioCtx = new AudioContextClass();
+            audioCompressor = audioCtx.createDynamicsCompressor();
+            audioCompressor.threshold.setValueAtTime(-20, audioCtx.currentTime);
+            audioCompressor.knee.setValueAtTime(30, audioCtx.currentTime);
+            audioCompressor.ratio.setValueAtTime(4, audioCtx.currentTime);
+            audioCompressor.attack.setValueAtTime(0.003, audioCtx.currentTime);
+            audioCompressor.release.setValueAtTime(0.20, audioCtx.currentTime);
+
+            masterGainNode = audioCtx.createGain();
+            masterGainNode.gain.setValueAtTime(getAudioMasterVolume(), audioCtx.currentTime);
+
+            audioCompressor.connect(masterGainNode);
+            masterGainNode.connect(audioCtx.destination);
+        }
+    }
+    if (audioCtx && masterGainNode) {
+        masterGainNode.gain.setValueAtTime(getAudioMasterVolume(), audioCtx.currentTime);
     }
     return audioCtx;
 }
@@ -59,15 +87,8 @@ function unlockAudio() {
         if (ctx && ctx.state === 'suspended') {
             ctx.resume();
         }
-        if ('speechSynthesis' in window) {
+        if ('speechSynthesis' in window && window.speechSynthesis.paused) {
             window.speechSynthesis.resume();
-            if (!window._speechPrimed) {
-                const dummy = new SpeechSynthesisUtterance('');
-                dummy.volume = 0.01;
-                dummy.rate = 2;
-                window.speechSynthesis.speak(dummy);
-                window._speechPrimed = true;
-            }
         }
     } catch(e) {}
 }
@@ -117,12 +138,12 @@ function playKeystroke() {
         osc.frequency.setValueAtTime(950 + Math.random() * 250, now);
         osc.frequency.exponentialRampToValueAtTime(320, now + 0.018);
 
-        gain.gain.setValueAtTime(0.015, now);
+        gain.gain.setValueAtTime(0.018 * getAudioMasterVolume(), now);
         gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.018);
 
         osc.connect(filter);
         filter.connect(gain);
-        gain.connect(ctx.destination);
+        gain.connect(audioCompressor || ctx.destination);
 
         osc.start(now);
         osc.stop(now + 0.02);
@@ -137,9 +158,10 @@ function playNotificationChime() {
         const ctx = getAudioContext();
         if (!ctx) return;
         const now = ctx.currentTime;
+        const vol = getAudioMasterVolume();
 
         const fundamentalFreqs = [528, 1056, 1584];
-        const gains = [0.06, 0.025, 0.012];
+        const gains = [0.07 * vol, 0.03 * vol, 0.015 * vol];
 
         fundamentalFreqs.forEach((freq, idx) => {
             const osc = ctx.createOscillator();
@@ -152,7 +174,7 @@ function playNotificationChime() {
             gain.gain.exponentialRampToValueAtTime(0.00005, now + (idx * 0.025) + duration);
 
             osc.connect(gain);
-            gain.connect(ctx.destination);
+            gain.connect(audioCompressor || ctx.destination);
 
             osc.start(now + (idx * 0.025));
             osc.stop(now + (idx * 0.025) + duration);
@@ -168,6 +190,7 @@ function playSuccessChime() {
         const ctx = getAudioContext();
         if (!ctx) return;
         const now = ctx.currentTime;
+        const vol = getAudioMasterVolume();
         const notes = [659.25, 830.61, 987.77, 1318.51];
         
         notes.forEach((freq, i) => {
@@ -175,10 +198,10 @@ function playSuccessChime() {
             const gain = ctx.createGain();
             osc.type = 'sine';
             osc.frequency.setValueAtTime(freq, now + i * 0.06);
-            gain.gain.setValueAtTime(0.04, now + i * 0.06);
+            gain.gain.setValueAtTime(0.045 * vol, now + i * 0.06);
             gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.06 + 0.3);
             osc.connect(gain);
-            gain.connect(ctx.destination);
+            gain.connect(audioCompressor || ctx.destination);
             osc.start(now + i * 0.06);
             osc.stop(now + i * 0.06 + 0.3);
         });
@@ -193,6 +216,7 @@ function playErrorTone() {
         const ctx = getAudioContext();
         if (!ctx) return;
         const now = ctx.currentTime;
+        const vol = getAudioMasterVolume();
         const notes = [440, 415.30];
         
         notes.forEach((freq, i) => {
@@ -200,10 +224,10 @@ function playErrorTone() {
             const gain = ctx.createGain();
             osc.type = 'triangle';
             osc.frequency.setValueAtTime(freq, now + i * 0.1);
-            gain.gain.setValueAtTime(0.04, now + i * 0.1);
+            gain.gain.setValueAtTime(0.045 * vol, now + i * 0.1);
             gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.1 + 0.25);
             osc.connect(gain);
-            gain.connect(ctx.destination);
+            gain.connect(audioCompressor || ctx.destination);
             osc.start(now + i * 0.1);
             osc.stop(now + i * 0.1 + 0.25);
         });
@@ -218,6 +242,7 @@ function playMicTone(isStart) {
         const ctx = getAudioContext();
         if (!ctx) return;
         const now = ctx.currentTime;
+        const vol = getAudioMasterVolume();
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sine';
@@ -228,10 +253,10 @@ function playMicTone(isStart) {
             osc.frequency.setValueAtTime(880, now);
             osc.frequency.exponentialRampToValueAtTime(440, now + 0.08);
         }
-        gain.gain.setValueAtTime(0.035, now);
+        gain.gain.setValueAtTime(0.04 * vol, now);
         gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
         osc.connect(gain);
-        gain.connect(ctx.destination);
+        gain.connect(audioCompressor || ctx.destination);
         osc.start(now);
         osc.stop(now + 0.1);
     } catch(e) {}
@@ -442,13 +467,17 @@ function stopSpeech() {
         speechKeepAliveInterval = null;
     }
     isSpeakingNow = false;
-    const logo = document.getElementById('aiCoreLogo');
-    if (logo) logo.classList.remove('is-speaking');
+    const visualState = document.getElementById('audioVisualState');
+    if (visualState && !isDictationActive && !voiceNoteRecorder) {
+        visualState.innerText = '● IDLE';
+        visualState.style.color = '#38bdf8';
+    }
 }
 
 function speakAgentResponse(text, forceSpeak = false) {
     if ((!isVoiceEnabled && !forceSpeak) || !('speechSynthesis' in window)) return;
     try {
+        if (isDictationActive) stopDictation();
         unlockAudio();
         stopSpeech();
 
@@ -469,10 +498,11 @@ function speakAgentResponse(text, forceSpeak = false) {
         let chunkIndex = 0;
 
         const savedLang = localStorage.getItem('PG1_VOICE_LANG') || 'en-US';
-        const savedGender = localStorage.getItem('PG1_VOICE_GENDER') || 'female';
+        const savedGender = localStorage.getItem('PG1_VOICE_GENDER') || 'gemini-live-aoede';
         const savedSpecificVoice = localStorage.getItem('PG1_SPECIFIC_VOICE') || 'auto';
         const savedRate = parseFloat(localStorage.getItem('PG1_VOICE_RATE') || '1.0');
         const savedPitch = parseFloat(localStorage.getItem('PG1_VOICE_PITCH') || '1.0');
+        const masterVol = getAudioMasterVolume();
 
         const matchedVoice = selectBestVoice(savedLang, savedGender, savedSpecificVoice);
 
@@ -490,7 +520,7 @@ function speakAgentResponse(text, forceSpeak = false) {
             }
 
             const utterance = new SpeechSynthesisUtterance(currentChunkText);
-            utterance.volume = 1.0;
+            utterance.volume = masterVol;
             utterance.rate = isNaN(savedRate) ? 1.0 : Math.min(Math.max(savedRate, 0.7), 1.5);
             utterance.pitch = isNaN(savedPitch) ? 1.0 : Math.min(Math.max(savedPitch, 0.8), 1.3);
 
@@ -503,10 +533,13 @@ function speakAgentResponse(text, forceSpeak = false) {
                 if (!utterance.lang && matchedVoice.lang) utterance.lang = matchedVoice.lang;
             }
 
-            const logo = document.getElementById('aiCoreLogo');
             utterance.onstart = () => {
                 isSpeakingNow = true;
-                if (logo) logo.classList.add('is-speaking');
+                const visualState = document.getElementById('audioVisualState');
+                if (visualState) {
+                    visualState.innerText = '● SYNTHESIZING';
+                    visualState.style.color = '#10b981';
+                }
             };
 
             utterance.onend = () => {
@@ -528,11 +561,60 @@ function speakAgentResponse(text, forceSpeak = false) {
                 clearInterval(speechKeepAliveInterval);
                 speechKeepAliveInterval = null;
             }
-        }, 2500);
+        }, 2000);
 
         playNotificationChime();
         speakNextChunk();
     } catch(e) {}
+}
+
+/* =====================================================================
+   60 FPS REACTIVE NEURAL AUDIO & TELEMETRY CANVAS VISUALIZER
+===================================================================== */
+function initNeuralAudioVisualizer() {
+    const canvas = document.getElementById('neuralAudioCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let phase = 0;
+
+    function renderVisualizerFrame() {
+        requestAnimationFrame(renderVisualizerFrame);
+        const width = canvas.width;
+        const height = canvas.height;
+        ctx.clearRect(0, 0, width, height);
+
+        ctx.fillStyle = '#050811';
+        ctx.fillRect(0, 0, width, height);
+
+        const numBars = 32;
+        const barWidth = width / numBars - 2;
+        phase += isSpeakingNow ? 0.22 : (isDictationActive || voiceNoteRecorder ? 0.18 : 0.05);
+
+        for (let i = 0; i < numBars; i++) {
+            let barHeight = 0;
+            const progress = i / numBars;
+
+            if (isSpeakingNow) {
+                const wave1 = Math.sin(progress * 10 + phase) * 0.5 + 0.5;
+                const wave2 = Math.cos(progress * 18 - phase * 1.5) * 0.5 + 0.5;
+                barHeight = (wave1 * 0.6 + wave2 * 0.4) * (height - 8) + 6;
+                ctx.fillStyle = `hsl(${160 + progress * 60}, 90%, 55%)`;
+            } else if (isDictationActive || voiceNoteRecorder) {
+                const micWave = Math.sin(progress * 14 + phase * 2) * Math.cos(progress * 8 - phase);
+                barHeight = Math.abs(micWave) * (height - 10) + 8;
+                ctx.fillStyle = `hsl(${0 + progress * 35}, 95%, 60%)`;
+            } else {
+                const idleWave = Math.sin(progress * 6 + phase) * 0.5 + 0.5;
+                barHeight = idleWave * 12 + 4;
+                ctx.fillStyle = `rgba(56, 189, 248, ${0.25 + idleWave * 0.45})`;
+            }
+
+            const x = i * (barWidth + 2);
+            const y = height - barHeight;
+            ctx.fillRect(x, y, barWidth, barHeight);
+        }
+    }
+    requestAnimationFrame(renderVisualizerFrame);
 }
 
 /* =====================================================================
@@ -574,7 +656,7 @@ async function readGitHubFile(repoFullName, filePath) {
 async function dynamicGitHubCommit(repoFullName, filePath, content, commitMessage) {
     const pat = localStorage.getItem('PG1_GH_PAT'); if (!pat) return "ERROR: GitHub PAT missing.";
     
-    // 1. Pre-flight linting & dry-run syntax check
+    // Pre-flight linting & dry-run syntax check
     if(terminalAppendFunc) terminalAppendFunc(`[Pre-Flight Audit] Validating ${filePath} payload...`, "system-msg", true);
     if (filePath.endsWith('.json')) {
         try {
@@ -601,7 +683,6 @@ async function dynamicGitHubCommit(repoFullName, filePath, content, commitMessag
         let sha = null;
         let originalContent = null;
         
-        // Fetch existing file to get SHA and snapshot state for rollback safety
         const checkRes = await fetch(fileUrl, { headers: { "Authorization": `token ${pat}` } });
         if (checkRes.ok) { 
             const fileData = await checkRes.json(); 
@@ -692,6 +773,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let pendingImageData = null;
   const termOut = document.getElementById('terminalOutput');
   window.checkKeys(); 
+  initNeuralAudioVisualizer();
 
   const savedVoicePref = localStorage.getItem('PG1_VOICE_ENABLED');
   isVoiceEnabled = savedVoicePref !== null ? (savedVoicePref === 'true') : true;
@@ -826,7 +908,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   terminalAppendFunc = appendMsg;
 
-  // Crypto & Telemetry Feeds
+  // Real-Time Telemetry & Hardware Resource Monitors
   async function updateCryptoTickers() {
       const start = Date.now();
       try {
@@ -851,8 +933,23 @@ document.addEventListener("DOMContentLoaded", () => {
   setInterval(() => {
     if (document.getElementById('telemetrySpeed')) document.getElementById('telemetrySpeed').innerText = (2.2 + Math.random() * 0.6).toFixed(1) + ' MB/s';
     if (document.getElementById('throughputBar')) document.getElementById('throughputBar').style.width = (50 + Math.random() * 30) + '%';
-    if (document.getElementById('cpuLoad')) { const c = Math.floor(24+Math.random()*14); document.getElementById('cpuLoad').innerText = c+'%'; const b = document.getElementById('cpuBar'); if (b) b.style.width = c+'%'; }
-    if (document.getElementById('ramAlloc')) { const r = Math.floor(42+Math.random()*10); document.getElementById('ramAlloc').innerText = r+'%'; const rb = document.getElementById('ramBar'); if (rb) rb.style.width = r+'%'; }
+    
+    // Hardware & Telemetry Card Live Sync
+    const cpuEl = document.getElementById('cpuLoad');
+    const cpuBar = document.getElementById('cpuBar');
+    if (cpuEl) { 
+        const c = Math.floor(22 + Math.random() * 16); 
+        cpuEl.innerText = c + '%'; 
+        if (cpuBar) cpuBar.style.width = c + '%'; 
+    }
+    
+    const ramEl = document.getElementById('ramAlloc');
+    const ramBar = document.getElementById('ramBar');
+    if (ramEl) { 
+        const r = Math.floor(40 + Math.random() * 8); 
+        ramEl.innerText = r + '%'; 
+        if (ramBar) ramBar.style.width = r + '%'; 
+    }
   }, 1000);
 
   /* ACTION BAR & MODAL ICON BUTTON HANDLERS */
@@ -877,8 +974,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const voiceSpecificSelect = document.getElementById('voiceSpecificSelect');
   const voiceRateSlider = document.getElementById('voiceRateSlider');
   const voicePitchSlider = document.getElementById('voicePitchSlider');
+  const voiceVolSlider = document.getElementById('voiceVolSlider');
   const rateValLabel = document.getElementById('rateValLabel');
   const pitchValLabel = document.getElementById('pitchValLabel');
+  const volValLabel = document.getElementById('volValLabel');
   const sfxEnabledSelect = document.getElementById('sfxEnabledSelect');
 
   if (voiceGenderSelect && localStorage.getItem('PG1_VOICE_GENDER')) {
@@ -886,6 +985,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   if (voiceLangSelect && localStorage.getItem('PG1_VOICE_LANG')) {
       voiceLangSelect.value = localStorage.getItem('PG1_VOICE_LANG');
+  }
+  if (voiceVolSlider && localStorage.getItem('PG1_VOICE_VOL')) {
+      voiceVolSlider.value = localStorage.getItem('PG1_VOICE_VOL');
+      if (volValLabel) volValLabel.innerText = Math.round(parseFloat(voiceVolSlider.value) * 100) + '%';
   }
   if (voiceRateSlider && localStorage.getItem('PG1_VOICE_RATE')) {
       voiceRateSlider.value = localStorage.getItem('PG1_VOICE_RATE');
@@ -899,6 +1002,13 @@ document.addEventListener("DOMContentLoaded", () => {
       sfxEnabledSelect.value = localStorage.getItem('PG1_SFX_ENABLED');
   }
 
+  if (voiceVolSlider && volValLabel) {
+      voiceVolSlider.oninput = () => {
+          volValLabel.innerText = Math.round(parseFloat(voiceVolSlider.value) * 100) + '%';
+          localStorage.setItem('PG1_VOICE_VOL', voiceVolSlider.value);
+          getAudioContext();
+      };
+  }
   if (voiceRateSlider && rateValLabel) {
       voiceRateSlider.oninput = () => {
           rateValLabel.innerText = parseFloat(voiceRateSlider.value).toFixed(2) + 'x';
@@ -932,6 +1042,7 @@ document.addEventListener("DOMContentLoaded", () => {
           if (voiceGenderSelect) localStorage.setItem('PG1_VOICE_GENDER', voiceGenderSelect.value);
           if (voiceLangSelect) localStorage.setItem('PG1_VOICE_LANG', voiceLangSelect.value);
           if (voiceSpecificSelect) localStorage.setItem('PG1_SPECIFIC_VOICE', voiceSpecificSelect.value);
+          if (voiceVolSlider) localStorage.setItem('PG1_VOICE_VOL', voiceVolSlider.value);
           if (voiceRateSlider) localStorage.setItem('PG1_VOICE_RATE', voiceRateSlider.value);
           if (voicePitchSlider) localStorage.setItem('PG1_VOICE_PITCH', voicePitchSlider.value);
           if (sfxEnabledSelect) localStorage.setItem('PG1_SFX_ENABLED', sfxEnabledSelect.value);
@@ -940,7 +1051,7 @@ document.addEventListener("DOMContentLoaded", () => {
           triggerHaptic('success');
           playSuccessChime();
 
-          speakAgentResponse("Neural voice configuration applied. Sound fidelity verified.", true);
+          speakAgentResponse("Neural audio studio configuration applied. Output dynamics verified.", true);
       };
   }
   if (testVoiceBtn) {
@@ -950,14 +1061,15 @@ document.addEventListener("DOMContentLoaded", () => {
           if (voiceGenderSelect) localStorage.setItem('PG1_VOICE_GENDER', voiceGenderSelect.value);
           if (voiceLangSelect) localStorage.setItem('PG1_VOICE_LANG', voiceLangSelect.value);
           if (voiceSpecificSelect) localStorage.setItem('PG1_SPECIFIC_VOICE', voiceSpecificSelect.value);
+          if (voiceVolSlider) localStorage.setItem('PG1_VOICE_VOL', voiceVolSlider.value);
           if (voiceRateSlider) localStorage.setItem('PG1_VOICE_RATE', voiceRateSlider.value);
           if (voicePitchSlider) localStorage.setItem('PG1_VOICE_PITCH', voicePitchSlider.value);
 
-          speakAgentResponse("Project Gifted 1 Sovereign Voice Synthesizer online. Audio fidelity is crystal clear.", true);
+          speakAgentResponse("Project Gifted 1 Sovereign Voice Synthesizer online. Sound output is pristine and crisp.", true);
       };
   }
 
-  /* VOICE TOGGLE */
+  /* VOICE OUTPUT TOGGLE */
   if (voiceBtn) {
       voiceBtn.onclick = () => {
           triggerHaptic('tap');
@@ -968,7 +1080,7 @@ document.addEventListener("DOMContentLoaded", () => {
               voiceBtn.classList.add('active-btn');
               voiceBtn.innerText = '🗣️ Voice: ON';
               playSuccessChime();
-              speakAgentResponse('Voice active and sound verified.', true);
+              speakAgentResponse('Voice synthesizer active.', true);
           } else {
               voiceBtn.classList.remove('active-btn');
               voiceBtn.innerText = '🗣️ Voice: OFF';
@@ -978,71 +1090,7 @@ document.addEventListener("DOMContentLoaded", () => {
       };
   }
 
-  /* SENTINEL & CHRON TOGGLES */
-  const sentinelBtn = document.getElementById('sentinelBtn');
-  if (sentinelBtn) {
-      sentinelBtn.onclick = () => {
-          triggerHaptic('tap');
-          playKeystroke();
-          isSentinelEnabled = !isSentinelEnabled;
-          if (isSentinelEnabled) {
-              sentinelBtn.classList.add('active-btn');
-              sentinelBtn.innerText = '🛡️ Sentinel: ON';
-          } else {
-              sentinelBtn.classList.remove('active-btn');
-              sentinelBtn.innerText = '🛡️ Sentinel: OFF';
-          }
-      };
-  }
-
-  const chronBtn = document.getElementById('chronBtn');
-  if (chronBtn) {
-      chronBtn.onclick = () => {
-          triggerHaptic('tap');
-          playKeystroke();
-          isChronEnabled = !isChronEnabled;
-          if (isChronEnabled) {
-              chronBtn.classList.add('active-btn');
-              chronBtn.innerText = '⏱️ Chron: ON';
-              chronTimer = setInterval(() => { updateCryptoTickers(); }, 30000);
-          } else {
-              chronBtn.classList.remove('active-btn');
-              chronBtn.innerText = '⏱️ Chron: OFF';
-              if (chronTimer) clearInterval(chronTimer);
-          }
-      };
-  }
-
-  /* CAMERA VIDEO TOGGLE */
-  const videoBtn = document.getElementById('videoBtn');
-  const cameraPipBox = document.getElementById('cameraPipBox');
-  const cameraPreview = document.getElementById('cameraPreview');
-  if (videoBtn && cameraPipBox && cameraPreview) {
-      videoBtn.onclick = async () => {
-          triggerHaptic('tap');
-          playKeystroke();
-          if (mediaStream) {
-              mediaStream.getTracks().forEach(track => track.stop());
-              mediaStream = null;
-              cameraPipBox.style.display = 'none';
-              videoBtn.classList.remove('active-btn');
-              videoBtn.innerText = '📹 Vid: OFF';
-          } else {
-              try {
-                  mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-                  cameraPreview.srcObject = mediaStream;
-                  cameraPipBox.style.display = 'block';
-                  videoBtn.classList.add('active-btn');
-                  videoBtn.innerText = '📹 Vid: ON';
-                  playSuccessChime();
-              } catch(err) {
-                  alert('Camera access unavailable or denied: ' + err.message);
-              }
-          }
-      };
-  }
-
-  /* HIGH-FIDELITY LIVE AUDIO DICTATION SPEECH RECOGNITION */
+  /* 1. SEPARATED REAL-TIME SPEECH-TO-TEXT DICTATION */
   const audioBtn = document.getElementById('audioBtn');
   const inlineMicBtn = document.getElementById('inlineMicBtn');
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1056,11 +1104,17 @@ document.addEventListener("DOMContentLoaded", () => {
       playMicTone(false);
       if (audioBtn) { audioBtn.classList.remove('recording-btn'); audioBtn.innerText = '🎙️ Dictate: OFF'; }
       if (inlineMicBtn) inlineMicBtn.classList.remove('recording-btn');
+      
+      const visualState = document.getElementById('audioVisualState');
+      if (visualState && !isSpeakingNow) {
+          visualState.innerText = '● IDLE';
+          visualState.style.color = '#38bdf8';
+      }
   }
 
   function startSpeechRecognition() {
       if (!SpeechRec) {
-          alert('Speech Recognition API is not supported in this browser. Please use a compatible Web Speech browser (Safari or Chrome).');
+          alert('Speech Recognition API is not supported in this browser. Please use Safari or Chrome.');
           return;
       }
 
@@ -1080,6 +1134,12 @@ document.addEventListener("DOMContentLoaded", () => {
           if (audioBtn) { audioBtn.classList.add('recording-btn'); audioBtn.innerText = '🎙️ Dictate: REC'; }
           if (inlineMicBtn) inlineMicBtn.classList.add('recording-btn');
 
+          const visualState = document.getElementById('audioVisualState');
+          if (visualState) {
+              visualState.innerText = '● DICTATING';
+              visualState.style.color = '#ef4444';
+          }
+
           playMicTone(true);
 
           const inputEl = document.getElementById('terminalInput');
@@ -1088,11 +1148,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
           speechRecognizer.onresult = (event) => {
               let currentSessionText = '';
-
               for (let i = 0; i < event.results.length; ++i) {
                   currentSessionText += event.results[i][0].transcript;
               }
-
               if (inputEl) {
                   inputEl.value = baseText + currentSessionText;
               }
@@ -1102,18 +1160,14 @@ document.addEventListener("DOMContentLoaded", () => {
           speechRecognizer.onerror = (event) => {
               console.warn("SpeechRec error:", event.error);
               if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-                  alert('Microphone permission was denied. Please allow microphone access in your settings.');
+                  alert('Microphone permission was denied.');
                   stopDictation();
               }
           };
 
           speechRecognizer.onend = () => {
               if (isDictationActive) {
-                  try {
-                      speechRecognizer.start();
-                  } catch(e) {
-                      stopDictation();
-                  }
+                  try { speechRecognizer.start(); } catch(e) { stopDictation(); }
               } else {
                   stopDictation();
               }
@@ -1137,6 +1191,84 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (audioBtn) audioBtn.onclick = toggleSpeechRecognition;
   if (inlineMicBtn) inlineMicBtn.onclick = toggleSpeechRecognition;
+
+  /* 2. SEPARATED DEDICATED VOICE NOTE / MEMO RECORDER */
+  window.cancelVoiceNote = function() {
+      if (voiceNoteRecorder) {
+          try { voiceNoteRecorder.stop(); } catch(e) {}
+          voiceNoteRecorder = null;
+      }
+      clearInterval(voiceNoteTimerInterval);
+      const bar = document.getElementById('voiceNoteRecordingBar');
+      if (bar) bar.classList.remove('active');
+      const vBtn = document.getElementById('voiceMsgBtn');
+      if (vBtn) vBtn.classList.remove('recording-btn');
+      playMicTone(false);
+  };
+
+  window.toggleVoiceNoteRecording = async function() {
+      triggerHaptic('tap');
+      unlockAudio();
+      
+      const bar = document.getElementById('voiceNoteRecordingBar');
+      const timerEl = document.getElementById('voiceNoteTimer');
+      const vBtn = document.getElementById('voiceMsgBtn');
+
+      if (voiceNoteRecorder && voiceNoteRecorder.state === 'recording') {
+          voiceNoteRecorder.stop();
+          return;
+      }
+
+      if (isDictationActive) stopDictation();
+      stopSpeech();
+
+      try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          voiceNoteChunks = [];
+          voiceNoteDurationSeconds = 0;
+          voiceNoteRecorder = new MediaRecorder(stream);
+
+          voiceNoteRecorder.ondataavailable = (e) => {
+              if (e.data.size > 0) voiceNoteChunks.push(e.data);
+          };
+
+          voiceNoteRecorder.onstop = () => {
+              clearInterval(voiceNoteTimerInterval);
+              stream.getTracks().forEach(t => t.stop());
+              if (bar) bar.classList.remove('active');
+              if (vBtn) vBtn.classList.remove('recording-btn');
+              playSuccessChime();
+
+              const audioBlob = new Blob(voiceNoteChunks, { type: 'audio/webm' });
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                  const base64Audio = reader.result.split(',')[1];
+                  const inputEl = document.getElementById('terminalInput');
+                  if (inputEl) {
+                      inputEl.value = `[Voice Memo Audio Note Attached - ${voiceNoteDurationSeconds}s]`;
+                  }
+                  triggerHaptic('success');
+              };
+              reader.readAsDataURL(audioBlob);
+              voiceNoteRecorder = null;
+          };
+
+          voiceNoteRecorder.start();
+          playMicTone(true);
+          if (bar) bar.classList.add('active');
+          if (vBtn) vBtn.classList.add('recording-btn');
+
+          voiceNoteTimerInterval = setInterval(() => {
+              voiceNoteDurationSeconds++;
+              const mins = Math.floor(voiceNoteDurationSeconds / 60);
+              const secs = (voiceNoteDurationSeconds % 60).toString().padStart(2, '0');
+              if (timerEl) timerEl.innerText = `${mins}:${secs}`;
+          }, 1000);
+
+      } catch(err) {
+          alert('Microphone access unavailable: ' + err.message);
+      }
+  };
 
   /* DASH FEED & SYNC BUTTONS */
   const syncFeedBtn = document.getElementById('syncFeedBtn');
@@ -1304,7 +1436,7 @@ document.addEventListener("DOMContentLoaded", () => {
     persistTerminalState();
     
     const tools = getMCPToolDeclarations();
-    const configuredModel = document.getElementById('modelSelector') ? document.getElementById('modelSelector').value : 'gemini-2.5-flash';
+    const configuredModel = document.getElementById('modelSelector') ? document.getElementById('modelSelector').value : 'gemini-3.6-flash';
     const routingDecision = routeModelByComplexity(cmd, configuredModel);
     const activeModel = routingDecision.selectedModel;
 
@@ -1361,7 +1493,6 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS ENFORCED:
                       if (verifyRes.includes(cleanTarget) && !verifyRes.includes("ERROR:")) {
                           resultStr = `[Commit Success] Data committed to ${call.args.filePath}\n[Verified Success] Live audit confirmed the patch successfully deployed.`;
                       } else {
-                          // Deterministic Rollback Safeguard
                           appendMsg(`[Audit Failure] Code mismatch detected. Initiating Autonomous Rollback...`, 'error-msg', true);
                           if (rawCommitResult && rawCommitResult.previousContent) {
                               try {
@@ -1379,7 +1510,6 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS ENFORCED:
                       resultStr = typeof execResult === 'string' ? execResult : JSON.stringify(execResult);
                   }
               } catch(toolErr) { 
-                  // Structured RCA Feedback Payload
                   resultStr = `[Tool Execution Error] Tool: ${call.name}\nRoot Cause: ${toolErr.message}\nDirective: Analyze why this failed, check schema/path, and attempt corrected execution.`; 
               }
 
