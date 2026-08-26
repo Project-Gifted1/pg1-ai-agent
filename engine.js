@@ -675,7 +675,7 @@ function evaluatePromptComplexity(prompt) {
 
 function routeModelByComplexity(prompt, defaultModel = 'gemini-1.5-flash') {
     const isComplex = evaluatePromptComplexity(prompt);
-    const PRO_MODEL = 'gemini-1.5-pro';
+    const PRO_MODEL = 'gemini-1.5-pro-latest';
     const FLASH_MODEL = 'gemini-1.5-flash';
 
     if (isComplex) {
@@ -685,6 +685,13 @@ function routeModelByComplexity(prompt, defaultModel = 'gemini-1.5-flash') {
             reason: "Deep logic / diagnostic / architectural control requirement detected"
         };
     }
+    return {
+        selectedModel: defaultModel.includes('pro') ? defaultModel : FLASH_MODEL,
+        escalated: false,
+        reason: "Standard complexity query routed to Flash core"
+    };
+}
+
     return {
         selectedModel: defaultModel.includes('pro') ? defaultModel : FLASH_MODEL,
         escalated: false,
