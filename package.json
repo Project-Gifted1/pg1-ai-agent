@@ -1,0 +1,10 @@
+{
+  "name": "pg1-ai-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PG1 Sovereign AI Agent dynamic router endpoint",
+  "scripts": {
+    "start": "node api/chat.js"
+  },
+  "dependencies": {}
+}
