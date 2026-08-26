@@ -1336,7 +1336,7 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS:
       while (continueLoop && loopCount < 5) {
           loopCount++;
           const reqStart = Date.now();
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${key}`, {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1/models/${activeModel}:generateContent?key=${key}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
           });
