@@ -20,16 +20,19 @@ const TelemetryStack = {
     log(type, endpoint, latencyMs, status, details = {}) {
         const entry = {
             timestamp: new Date().toISOString(),
+            agent: 'PG1.Agent v12.39',
+            component: 'PG1.Orchestrator',
             type,
             endpoint,
             latencyMs,
             status,
-            details
+            details,
+            cost: null
         };
         this.records.unshift(entry);
         if (this.records.length > this.maxRecords) this.records.pop();
         if (status >= 400 || latencyMs > 3000) {
-            console.warn(`[Telemetry Anomaly] ${type} to ${endpoint} | Status: ${status} | Latency: ${latencyMs}ms`);
+            console.warn(`[PG1.Telemetry] ${type} to ${endpoint} | Status: ${status} | Latency: ${latencyMs}ms | Cost: unavailable`);
         }
         return entry;
     },
@@ -622,7 +625,7 @@ async function dynamicGitHubCommit(repoFullName, filePath, content, commitMessag
         
         return {
             status: "COMMITTED",
-            message: `[Commit Success] Data committed to ${filePath}`,
+            message: `[PG1.Commit] Data committed to ${filePath}`,
             previousContent: originalContent,
             repoFullName,
             filePath
@@ -804,7 +807,7 @@ document.addEventListener("DOMContentLoaded", () => {
       localStorage.removeItem('PG1_CHAT_DOM'); 
       localStorage.removeItem('PG1_CHAT_HISTORY');
       if (termOut) {
-          termOut.innerHTML = '<div class="terminal-message agent-msg">Memory flushed. Autonomous Feedback Control Loop standing by.<div class="msg-btn-group"><button class="msg-action-btn speak-btn" onclick="speakMsg(this)">🔊 Speak</button><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div></div>';
+          termOut.innerHTML = '<div class="terminal-message agent-msg">PG1.Memory flushed. Autonomous Feedback Control Loop standing by for the next Sovereign Execution.<div class="msg-btn-group"><button class="msg-action-btn speak-btn" onclick="speakMsg(this)">🔊 Speak</button><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div></div>';
       }
       const threadsModal = document.getElementById('threadsModal');
       if (threadsModal) threadsModal.classList.remove('active');
@@ -1285,7 +1288,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const key = localStorage.getItem('PG1_KEY');
     if (!key) { 
         setSystemState('error'); 
-        return appendMsg('Error: Master API Key required in Dash tab.', 'error-msg', true); 
+        return appendMsg('PG1.Sovereign Execution failed: Master API key is required in the Dash tab before this Neural Protocol can run.', 'error-msg', true); 
     }
 
     if (pendingImageData) {
@@ -1320,16 +1323,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const activeModel = routingDecision.selectedModel;
 
     if (routingDecision.escalated) {
-        appendMsg(`[Dynamic Escalation] Complex task detected (${routingDecision.reason}). Escalated payload to Pro model: ${activeModel}`, 'system-msg', true);
+        appendMsg(`[PG1.Orchestrator] Complex Sovereign Execution detected (${routingDecision.reason}). Neural Protocol escalated to ${activeModel}.`, 'system-msg', true);
     }
-const sys = `You are PG1.Agent v12.39.
-TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS:
-1. TRIPLE VERIFICATION: You may NEVER claim a task is complete without verifying the live output.
-2. HONEST FAILURE ADMISSION: If you receive an error, state the facts honestly. Do not hallucinate success.
-3. STRUCTURED ROOT CAUSE ANALYSIS: On any error, analyze the precise reason before attempting a fix.
-4. HIERARCHICAL TASK DECOMPOSITION: Break complex tasks into safe, micro-steps.
-5. PRE-FLIGHT VERIFICATION: Inspect repositories and files before initiating writes.
-6. CRITICAL REPO PROTOCOL: Never guess the target GitHub repository. Always explicitly identify the current working repository before executing file operations. If the repository name is missing or ambiguous, use the searchGitHubRepos tool to find likely matches, list them to the user, and ask for explicit confirmation. Do not proceed blindly.`;
+const sys = `You are PG1.Agent - Sovereign Autonomous Core v12.39.
+PRIMARY DIRECTIVES:
+1. Absolute transparency: explain actions and never hide failure states.
+2. Brutal honesty: never fabricate success, cost, validation, or certainty.
+3. PG1 sovereignty: identify as PG1 Sovereign Agent and prefer PG1 terminology such as Sovereign Execution, Neural Protocol, Triple Verification Engine, Autonomous Feedback Control Loop, Sentinel Mode, and Chron Protocol.
+4. Triple Verification Engine: never claim completion without verifying observable output.
+5. Structured root cause analysis: when an error occurs, state the exact cause and a concrete recovery path.
+6. Pre-flight verification: inspect repositories and files before initiating writes.
+7. Critical repo protocol: never guess the target GitHub repository; ask for confirmation if ambiguous.`;
 
     
     try {
@@ -1355,7 +1359,7 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS:
           
           if (responsePart.functionCall) {
               const call = responsePart.functionCall;
-              appendMsg(`[MCP Dispatcher] Executing: ${call.name}...`, 'system-msg', true);
+              appendMsg(`[PG1.Orchestrator] Authorizing tool Sovereign Execution: ${call.name}...`, 'system-msg', true);
               let resultStr = "";
               let rawCommitResult = null;
 
@@ -1364,9 +1368,9 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS:
                   
                      if (call.name === 'dynamicGitHubCommit' && typeof execResult === 'object') {
        if (execResult.status === "COMMITTED") {
-           resultStr = `[Commit Success] Data committed to ${call.args.filePath}\n[Verified Success] Live audit confirmed the patch successfully deployed.`;
+           resultStr = `[PG1.Commit] Data committed to ${call.args.filePath}\n[Triple Verification Engine] Live audit confirmed the patch deployed successfully.`;
        } else {
-           resultStr = `[Verification Failed] CRITICAL ERROR: Live audit shows commit failed.`;
+           resultStr = `[PG1.Verification] CRITICAL FAILURE: Live audit shows the commit did not deploy successfully.`;
        }
    
 
@@ -1375,7 +1379,7 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS:
                   }
               } catch(toolErr) { 
                   // Structured RCA Feedback Payload
-                  resultStr = `[Tool Execution Error] Tool: ${call.name}\nRoot Cause: ${toolErr.message}\nDirective: Analyze why this failed, check schema/path, and attempt corrected execution.`; 
+                  resultStr = `[PG1.Tool Failure] Tool: ${call.name}\nRoot Cause: ${toolErr.message}\nDirective: Analyze why this failed, check schema or path details, and attempt a corrected execution.`; 
               }
 
               appendMsg(`[Result] ${resultStr}`, 'agent-msg', true);
@@ -1410,7 +1414,7 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS:
       setSystemState('error'); 
       sessionHistory.pop(); 
       persistTerminalState();
-      appendMsg(`Exception: ${e.message}`, 'error-msg', true); 
+      appendMsg(`PG1.Sovereign Execution failed: ${e.message}`, 'error-msg', true); 
     }
   };
 

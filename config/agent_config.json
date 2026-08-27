@@ -1,6 +1,6 @@
 {
   "agent": {
-    "name": "PG1-Autonomous-Agent",
+    "name": "PG1.Agent",
     "version": "12.25.1",
     "mode": "autonomous",
     "capabilities": [

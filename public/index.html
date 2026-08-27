@@ -3,149 +3,346 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PG1 Sovereign Agent</title>
+  <title>PG1 Sovereign Agent Control Center</title>
   <style>
     :root {
-      --bg: #090a0f;
-      --card: #12141c;
-      --border: #1f2430;
-      --text: #e2e8f0;
-      --accent: #3b82f6;
-      --accent-gemini: #10b981;
-      --accent-router: #8b5cf6;
+      --bg: #07111f;
+      --panel: #0f172a;
+      --panel-alt: #111c33;
+      --border: #23324d;
+      --text: #e5eefc;
+      --muted: #8aa0c2;
+      --accent: #38bdf8;
+      --accent-strong: #2563eb;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: var(--bg);
+      font-family: Inter, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #10213d, var(--bg) 48%);
       color: var(--text);
+      min-height: 100vh;
       display: flex;
       flex-direction: column;
-      height: 100vh;
+    }
+    header, footer {
+      width: min(1120px, calc(100% - 32px));
+      margin: 16px auto 0;
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px 22px;
+      backdrop-filter: blur(12px);
     }
     header {
-      padding: 16px 24px;
-      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      align-items: center;
+    }
+    .brand {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+    .logo {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      color: #06101d;
+      background: linear-gradient(135deg, #67e8f9, #2563eb);
+      box-shadow: 0 0 24px rgba(56, 189, 248, 0.32);
+    }
+    .brand h1 { font-size: 1.15rem; margin-bottom: 4px; }
+    .brand p, .subtle { color: var(--muted); font-size: 0.92rem; }
+    .live-status {
+      font-size: 0.86rem;
+      color: var(--muted);
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      background: var(--card);
+      gap: 8px;
+      white-space: nowrap;
     }
-    .badge {
-      font-size: 12px;
-      padding: 4px 8px;
-      border-radius: 6px;
-      background: rgba(59, 130, 246, 0.2);
-      color: var(--accent);
+    .live-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--success);
+      box-shadow: 0 0 10px var(--success);
     }
     main {
+      width: min(1120px, calc(100% - 32px));
+      margin: 16px auto;
+      display: grid;
+      grid-template-columns: minmax(0, 2.1fr) minmax(300px, 1fr);
+      gap: 16px;
       flex: 1;
-      overflow-y: auto;
-      padding: 24px;
+      min-height: 0;
+    }
+    .panel {
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      overflow: hidden;
+      min-height: 0;
       display: flex;
       flex-direction: column;
-      gap: 16px;
-      max-width: 800px;
-      width: 100%;
-      margin: 0 auto;
     }
+    .panel-header {
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(17, 28, 51, 0.85);
+    }
+    .panel-header h2 { font-size: 1rem; margin-bottom: 4px; }
+    .panel-header p { color: var(--muted); font-size: 0.86rem; }
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      padding: 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .status-card {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+    }
+    .status-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+    .status-card strong {
+      display: block;
+      line-height: 1.4;
+      font-size: 0.95rem;
+    }
+    .controls {
+      padding: 18px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--border);
+    }
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 12px 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.15s ease, opacity 0.2s ease;
+    }
+    button:hover { transform: translateY(-1px); }
+    button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+    .primary { background: linear-gradient(135deg, var(--accent), var(--accent-strong)); color: #04111f; }
+    .secondary { background: rgba(245, 158, 11, 0.15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.28); }
+    .danger { background: rgba(239, 68, 68, 0.14); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.28); }
+    .chat {
+      padding: 18px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .message-wrap { display: flex; flex-direction: column; gap: 6px; }
     .message {
-      padding: 14px 18px;
-      border-radius: 8px;
-      line-height: 1.5;
-      font-size: 15px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 16px;
       white-space: pre-wrap;
+      line-height: 1.55;
+      word-break: break-word;
     }
     .message.user {
-      background: #1e293b;
       align-self: flex-end;
-      max-width: 80%;
+      max-width: 82%;
+      background: rgba(37, 99, 235, 0.14);
     }
     .message.agent {
-      background: var(--card);
-      border: 1px solid var(--border);
-      align-self: flex-start;
-      max-width: 90%;
+      max-width: 92%;
+      background: var(--panel-alt);
     }
-    .provider-tag {
-      font-size: 11px;
-      margin-bottom: 6px;
-      font-weight: 600;
-      text-transform: uppercase;
+    .meta {
+      color: var(--muted);
+      font-size: 0.76rem;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
     }
-    .tag-gemini { color: var(--accent-gemini); }
-    .tag-openrouter { color: var(--accent-router); }
-    footer {
-      padding: 16px 24px;
-      border-top: 1px solid var(--border);
-      background: var(--card);
+    .composer {
       display: flex;
       gap: 12px;
-      max-width: 800px;
-      width: 100%;
-      margin: 0 auto 16px auto;
-      border-radius: 10px;
+      align-items: stretch;
     }
     textarea {
       flex: 1;
-      background: #0d0e15;
+      min-height: 68px;
+      resize: vertical;
+      background: #09111f;
       border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 12px;
-      color: #fff;
-      font-size: 14px;
-      resize: none;
-      height: 48px;
+      border-radius: 14px;
+      color: var(--text);
+      padding: 14px;
+      font: inherit;
       outline: none;
     }
     textarea:focus { border-color: var(--accent); }
-    button {
-      background: var(--accent);
-      color: white;
-      border: none;
-      padding: 0 20px;
-      border-radius: 6px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.2s;
+    .trace-list {
+      list-style: none;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
     }
-    button:hover { opacity: 0.9; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .trace-list li {
+      border: 1px solid var(--border);
+      background: var(--panel-alt);
+      border-radius: 14px;
+      padding: 12px 14px;
+      line-height: 1.45;
+      font-size: 0.92rem;
+    }
+    .trace-list strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--accent);
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .disclosure {
+      margin-top: 12px;
+      padding: 0 18px 18px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+      header { flex-direction: column; align-items: flex-start; }
+      .status-grid { grid-template-columns: 1fr; }
+      .composer { flex-direction: column; }
+    }
   </style>
 </head>
 <body>
   <header>
-    <h2>PG1 Sovereign Agent</h2>
-    <span class="badge">Dynamic Routing: Gemini Pro &bull; DeepSeek</span>
+    <div class="brand">
+      <div class="logo">PG1</div>
+      <div>
+        <h1>PG1 Sovereign Agent Control Center</h1>
+        <p>PG1.Agent v1.0 • PG1 Autonomous Core • Professional, transparent, authoritative</p>
+      </div>
+    </div>
+    <div class="live-status">
+      <span class="live-dot"></span>
+      <span id="topStatus">PG1.Agent Status: Awaiting operator instruction</span>
+    </div>
   </header>
-  <main id="chat"></main>
+
+  <main>
+    <section class="panel">
+      <div class="panel-header">
+        <h2>PG1.Orchestrator Console</h2>
+        <p>Every Sovereign Execution reports status, verification, provider disclosure, and any limitations.</p>
+      </div>
+      <div class="status-grid">
+        <div class="status-card"><span>PG1.Agent Status</span><strong id="agentStatus">Awaiting operator instruction</strong></div>
+        <div class="status-card"><span>Neural Protocol Status</span><strong id="protocolStatus">Idle — no Neural Protocol engaged</strong></div>
+        <div class="status-card"><span>Triple Verification Status</span><strong id="verificationStatus">Standing by for response verification</strong></div>
+        <div class="status-card"><span>Sentinel Mode</span><strong id="sentinelStatus">Monitoring</strong></div>
+        <div class="status-card"><span>Chron Protocol</span><strong id="chronStatus">Not scheduled in this interface</strong></div>
+        <div class="status-card"><span>Neural Protocol Cost</span><strong id="costStatus">Unavailable — this route does not emit cost telemetry</strong></div>
+      </div>
+      <div class="controls">
+        <button id="authorizeBtn" class="primary">Authorize Execution</button>
+        <button id="denyBtn" class="danger" type="button">Deny Operation</button>
+        <button id="modifyBtn" class="secondary" type="button">Request Modification</button>
+      </div>
+      <div id="chat" class="chat"></div>
+      <div class="disclosure">
+        This interface keeps PG1 identity primary. When a third-party model is used, the response will disclose that PG1.Agent orchestrated it.
+      </div>
+    </section>
+
+    <aside class="panel">
+      <div class="panel-header">
+        <h2>Autonomous Feedback Control Loop</h2>
+        <p>Execution trace only. This panel shows operational steps, not hidden reasoning.</p>
+      </div>
+      <ul id="trace" class="trace-list"></ul>
+    </aside>
+  </main>
+
   <footer>
-    <textarea id="prompt" placeholder="Ask PG1 anything (code, analysis, or general query)..."></textarea>
-    <button id="sendBtn">Send</button>
+    <div class="composer">
+      <textarea id="prompt" placeholder="Describe the Sovereign Execution you want PG1.Agent to perform."></textarea>
+      <button id="sendBtn" class="primary">Authorize Execution</button>
+    </div>
   </footer>
 
   <script>
     const chat = document.getElementById('chat');
     const promptInput = document.getElementById('prompt');
     const sendBtn = document.getElementById('sendBtn');
+    const authorizeBtn = document.getElementById('authorizeBtn');
+    const denyBtn = document.getElementById('denyBtn');
+    const modifyBtn = document.getElementById('modifyBtn');
+    const topStatus = document.getElementById('topStatus');
+    const agentStatus = document.getElementById('agentStatus');
+    const protocolStatus = document.getElementById('protocolStatus');
+    const verificationStatus = document.getElementById('verificationStatus');
+    const costStatus = document.getElementById('costStatus');
+    const trace = document.getElementById('trace');
 
-    function appendMessage(role, text, provider, model) {
+    function updateStatus({ agent, protocol, verification, cost }) {
+      if (agent) {
+        topStatus.textContent = `PG1.Agent Status: ${agent}`;
+        agentStatus.textContent = agent;
+      }
+      if (protocol) protocolStatus.textContent = protocol;
+      if (verification) verificationStatus.textContent = verification;
+      if (cost) costStatus.textContent = cost;
+    }
+
+    function setTrace(steps) {
+      trace.innerHTML = '';
+      steps.forEach((step, index) => {
+        const item = document.createElement('li');
+        item.innerHTML = `<strong>Step ${index + 1}</strong>${step}`;
+        trace.appendChild(item);
+      });
+    }
+
+    function appendMessage(role, text, metadata = {}) {
+      const wrap = document.createElement('div');
+      wrap.className = 'message-wrap';
+      if (metadata.providerLabel || metadata.model) {
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        if (metadata.providerLabel) meta.innerHTML += `<span>${metadata.providerLabel}</span>`;
+        if (metadata.model) meta.innerHTML += `<span>${metadata.model}</span>`;
+        if (metadata.verification) meta.innerHTML += `<span>${metadata.verification}</span>`;
+        wrap.appendChild(meta);
+      }
       const msg = document.createElement('div');
       msg.className = `message ${role}`;
-      if (provider) {
-        const tag = document.createElement('div');
-        tag.className = `provider-tag tag-${provider}`;
-        tag.innerText = `[${provider.toUpperCase()}] ${model || ''}`;
-        msg.appendChild(tag);
-      }
-      const textSpan = document.createElement('span');
-      textSpan.innerText = text;
-      msg.appendChild(textSpan);
-      chat.appendChild(msg);
+      msg.textContent = text;
+      wrap.appendChild(msg);
+      chat.appendChild(wrap);
       chat.scrollTop = chat.scrollHeight;
     }
 
-    // Step 2 Standard Agent Dispatcher
     async function sendToAgent(userPrompt) {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -154,7 +351,7 @@
       });
       const data = await response.json();
       if (!response.ok || data.error) {
-        throw new Error(data.error || `HTTP ${response.status}`);
+        throw Object.assign(new Error(data.error || `HTTP ${response.status}`), { details: data });
       }
       return data;
     }
@@ -166,24 +363,97 @@
       appendMessage('user', userPrompt);
       promptInput.value = '';
       sendBtn.disabled = true;
+      authorizeBtn.disabled = true;
+      updateStatus({
+        agent: 'Sovereign Execution in progress',
+        protocol: 'Neural Protocol dispatching request',
+        verification: 'Triple Verification Engine validating downstream response',
+        cost: 'Unavailable — awaiting provider telemetry'
+      });
+      setTrace([
+        'Received operator instruction and opened a new Sovereign Execution.',
+        'Preparing Neural Protocol request with PG1 identity and honesty directives.',
+        'Awaiting provider response before final verification.'
+      ]);
 
       try {
         const data = await sendToAgent(userPrompt);
-        appendMessage('agent', data.reply, data.provider, data.model);
+        appendMessage('agent', data.reply, data);
+        updateStatus({
+          agent: data.status || 'Execution complete',
+          protocol: data.providerLabel || 'Neural Protocol completed',
+          verification: data.verificationLabel || 'Triple Verification Engine confirmed response structure',
+          cost: data.costLabel || 'Unavailable — provider did not return cost telemetry'
+        });
+        setTrace(data.trace || [
+          'PG1.Agent completed the requested Sovereign Execution.',
+          'Underlying provider details disclosed in message metadata.',
+          'No hidden steps were reported by this route.'
+        ]);
       } catch (err) {
-        appendMessage('agent', 'Error: ' + err.message);
+        const details = err.details || {};
+        appendMessage('agent', `PG1.Sovereign Execution failed.\n${err.message}`, details);
+        updateStatus({
+          agent: 'Execution failed',
+          protocol: details.providerLabel || 'Neural Protocol halted',
+          verification: 'Triple Verification Engine captured the failure',
+          cost: details.costLabel || 'Unavailable — partial cost telemetry not returned'
+        });
+        setTrace(details.trace || [
+          'The request was dispatched.',
+          'A downstream failure occurred and was surfaced without concealment.',
+          'Review the exact error message before retrying.'
+        ]);
       } finally {
         sendBtn.disabled = false;
+        authorizeBtn.disabled = false;
+        promptInput.focus();
       }
     }
 
+    authorizeBtn.addEventListener('click', handleSend);
     sendBtn.addEventListener('click', handleSend);
-    promptInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
+    denyBtn.addEventListener('click', () => {
+      promptInput.value = '';
+      updateStatus({
+        agent: 'Operation denied by operator',
+        protocol: 'Neural Protocol idle',
+        verification: 'No execution performed',
+        cost: 'No cost incurred in this interface'
+      });
+      setTrace([
+        'Operator denied the pending operation before dispatch.',
+        'No external Neural Protocol call was made.',
+        'Composer cleared and system returned to standby.'
+      ]);
+      promptInput.focus();
+    });
+    modifyBtn.addEventListener('click', () => {
+      updateStatus({
+        agent: 'Awaiting modified instruction',
+        protocol: 'Neural Protocol idle until operator confirms changes',
+        verification: 'Pending operator revision'
+      });
+      setTrace([
+        'Operator requested a plan modification.',
+        'No execution will occur until a revised instruction is submitted.',
+        'Composer focus returned for direct edits.'
+      ]);
+      promptInput.focus();
+    });
+    promptInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
         handleSend();
       }
     });
+
+    appendMessage('agent', 'PG1 Sovereign Agent is online. State the operation you want performed, and the interface will disclose provider usage, verification status, and any known limits.');
+    setTrace([
+      'PG1.Agent initialized in standby mode.',
+      'Sentinel Mode is monitoring input and response state.',
+      'Cost telemetry is disclosed as unavailable until a provider returns it.'
+    ]);
   </script>
 </body>
 </html>

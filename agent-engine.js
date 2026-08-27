@@ -2,7 +2,7 @@
 // Integrated with Automated Multi-Provider Failover, Voice Fast-Path, Live Diff Drawer, and Resilient Downloader
 
 (function () {
-  console.log("[PG1 Agent Engine v12.30] Initializing sovereign core with resilient media failover & direct downloader...");
+  console.log("[PG1.Agent v12.30] Initializing PG1 Autonomous Core with resilient media failover and direct downloader.");
 
   // State & Config Management
   let sessionHistory = [];
@@ -46,7 +46,7 @@
       <div id="pg1-drawer-header" style="padding: 10px 14px; background: #1e293b; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; border-radius: 12px 12px 0 0;">
         <span style="font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 8px;">
           <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e;"></span>
-          PG1 Failover Console & Engine v12.30
+          PG1 Sovereign Agent Control Center
         </span>
         <div style="display:flex; gap:8px;">
           <button id="pg1-clear-logs" style="background:#334155; color:#cbd5e1; border:none; border-radius:4px; padding:2px 6px; font-size:10px; cursor:pointer;">Clear</button>
@@ -54,7 +54,7 @@
         </div>
       </div>
       <div id="pg1-drawer-body" style="padding: 12px; overflow-y: auto; max-height: 400px; display: flex; flex-direction: column; gap: 8px;">
-        <div style="color: #64748b;">// Failover router active. Resilient media pipeline initialized (v12.30).</div>
+        <div style="color: #64748b;">// PG1.Orchestrator active. Neural Protocol media pipeline initialized.</div>
       </div>
     `;
 
@@ -74,7 +74,7 @@
     });
 
     clearBtn.addEventListener("click", () => {
-      body.innerHTML = `<div style="color: #64748b;">// Console cleared. Ready for next operation...</div>`;
+      body.innerHTML = `<div style="color: #64748b;">// Audit console cleared. PG1.Agent is ready for the next Sovereign Execution.</div>`;
     });
   }
 
@@ -91,13 +91,22 @@
     if (type === "success") logEntry.style.borderLeftColor = "#22c55e";
     if (type === "warn") logEntry.style.borderLeftColor = "#f59e0b";
 
-    const timestamp = new Date().toLocaleTimeString();
+    const timestamp = new Date().toISOString();
+    const normalizedPayload = typeof payload === "object"
+      ? {
+          agent: "PG1.Agent v12.30",
+          component: "PG1.Orchestrator",
+          action: title,
+          payload,
+          cost: null
+        }
+      : `PG1.Agent v12.30 | PG1.Orchestrator | Cost: unavailable | ${payload}`;
     logEntry.innerHTML = `
       <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-weight:600; color:#e2e8f0;">
         <span>${title}</span>
         <span style="color:#64748b; font-size:10px;">${timestamp}</span>
       </div>
-      <pre style="margin:0; white-space:pre-wrap; word-break:break-all; color:#94a3b8; font-size:11px; max-height:160px; overflow-y:auto;">${typeof payload === 'object' ? JSON.stringify(payload, null, 2) : payload}</pre>
+      <pre style="margin:0; white-space:pre-wrap; word-break:break-all; color:#94a3b8; font-size:11px; max-height:160px; overflow-y:auto;">${typeof normalizedPayload === 'object' ? JSON.stringify(normalizedPayload, null, 2) : normalizedPayload}</pre>
     `;
 
     body.appendChild(logEntry);
@@ -253,8 +262,8 @@
       pendingImageBase64 = null;
 
       if (!activeKey) {
-        output = "PG1 Sovereign Error: Active API Key is missing.";
-        logToConsole("error", "Authentication Missing", "No API Key provided.");
+        output = "PG1.Sovereign Execution failed: Active API key is missing.";
+        logToConsole("error", "Authentication Missing", "PG1.Agent could not continue because no API key was provided.");
       } else {
         const userParts = [];
         if (currentImage) {
@@ -272,7 +281,7 @@
         }
 
         userParts.push({ text: finalPrompt });
-        logToConsole("info", "Dispatching Request", { partsCount: userParts.length, hasImage: !!currentImage });
+        logToConsole("info", "Neural Protocol Dispatch", { partsCount: userParts.length, hasImage: !!currentImage });
 
         const workerUrl = "https://pg1-worker.gnfcw9w5rk.workers.dev";
         const res = await fetch(workerUrl, {
@@ -293,7 +302,7 @@
         } else {
           output = data.candidates?.[0]?.content?.parts?.[0]?.text || data.output || data.message || `API Response: ${JSON.stringify(data)}`;
         }
-        logToConsole("success", "Response Received", { length: output.length });
+        logToConsole("success", "Sovereign Execution Complete", { length: output.length, providerDisclosure: "PG1.Agent using Gemini API through a PG1 Neural Protocol" });
       }
 
       sessionHistory.push({ role: "user", parts: [{ text: promptText || "Image attached" }] });
@@ -303,8 +312,8 @@
       chatContainer.appendChild(aiCard);
       window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     } catch (err) {
-      console.error("Execution error:", err);
-      logToConsole("error", "Failover In Action", err.message);
+      console.error("PG1.Agent execution error:", err);
+      logToConsole("error", "Sovereign Execution Failed", err.message);
     }
   }
 

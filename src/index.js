@@ -1,5 +1,5 @@
 /**
- * Project Gifted1™ - Cloudflare Worker CORS Relay & Multi-Provider Video Pipeline
+ * Project Gifted1™ - PG1 Autonomous Media Relay & Visual Pipeline
  * Version 12.29 - Auto-Recovery, Input Normalization, and Resilient Downloader
  */
 
@@ -31,9 +31,9 @@ export default {
         return new Response(
           JSON.stringify({ 
             status: "online", 
-            service: "PG1 Replicate CORS Relay & Multi-Provider Video Pipeline", 
+            service: "PG1 Autonomous Media Relay & Visual Pipeline", 
             version: "12.29",
-            capabilities: ["hotshot-xl", "animate-diff", "pollinations-video", "auto-failover"]
+            capabilities: ["replicate-hotshot", "animate-diff", "pollinations-video", "auto-failover"]
           }),
           {
             status: 200,
@@ -127,7 +127,7 @@ export default {
               status: "succeeded",
               fallback: true,
               output: [fallbackUrl],
-              message: "Primary video provider exhausted, auto-routed to high-speed visual fallback."
+              message: "PG1.Agent detected upstream media exhaustion and routed the request to a visual fallback."
             }),
             {
               status: 200,
@@ -151,7 +151,7 @@ export default {
       });
     } catch (err) {
       return new Response(
-        JSON.stringify({ error: true, message: err.message || "Relay internal error" }),
+        JSON.stringify({ error: true, message: err.message || "PG1 Autonomous Media Relay failed without a more specific error message." }),
         {
           status: 500,
           headers: {
