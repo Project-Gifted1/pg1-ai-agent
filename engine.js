@@ -673,10 +673,10 @@ function evaluatePromptComplexity(prompt) {
     return hasComplexTrigger || isHighVolumeOrStructured;
 }
 
-function routeModelByComplexity(prompt, defaultModel = 'gemini-3.7-flash') {
+function routeModelByComplexity(prompt, defaultModel = 'gemini-1.5-flash') {
     const isComplex = evaluatePromptComplexity(prompt);
-    const PRO_MODEL = 'gemini-3.1-pro';
-    const FLASH_MODEL = 'gemini-3.7-flash';
+    const PRO_MODEL = 'gemini-1.5-pro';
+    const FLASH_MODEL = 'gemini-1.5-flash';
 
     if (isComplex) {
         return {
@@ -1315,7 +1315,7 @@ document.addEventListener("DOMContentLoaded", () => {
     persistTerminalState();
     
     const tools = getMCPToolDeclarations();
-    const configuredModel = document.getElementById('modelSelector') ? document.getElementById('modelSelector').value : 'gemini-2.5-flash';
+    const configuredModel = document.getElementById('modelSelector') ? document.getElementById('modelSelector').value : 'gemini-1.5-flash';
     const routingDecision = routeModelByComplexity(cmd, configuredModel);
     const activeModel = routingDecision.selectedModel;
 
@@ -1339,7 +1339,7 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS:
       while (continueLoop && loopCount < 5) {
           loopCount++;
           const reqStart = Date.now();
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1/models/${activeModel}:generateContent?key=${key}`, {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${key}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
           });
