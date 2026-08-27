@@ -64,39 +64,7 @@ export default async function handler(req, res) {
       const outputText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
       return res.status(200).json({ reply: outputText, provider: 'gemini', model: 'gemini-1.5-flash' });
 
-    } else {
-      // OpenRouter / DeepSeek Route
-      apiKey = process.env.OPENROUTER_API_KEY;
-      if (!apiKey) {
-        throw new Error('OPENROUTER_API_KEY environment variable is missing.');
-      }
-
-      apiUrl = 'https://openrouter.ai/api/v1/chat/completions';
-      headers['Authorization'] = `Bearer ${apiKey}`;
-
-      payload = {
-        model: 'deepseek/deepseek-chat',
-        messages: [
-          { role: 'system', content: sysPrompt },
-          { role: 'user', content: userMessage }
-        ]
-      };
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`OpenRouter API error (${response.status}): ${errorText}`);
-      }
-
-      const data = await response.json();
-      const outputText = data.choices?.[0]?.message?.content || '';
-      return res.status(200).json({ reply: outputText, provider: 'openrouter', model: 'deepseek/deepseek-chat' });
-    }
+  
   } catch (error) {
     console.error('Routing execution error:', error);
     return res.status(500).json({ error: error.message || 'Internal Server Error' });
