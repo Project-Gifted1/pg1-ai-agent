@@ -4,7 +4,9 @@
   "private": true,
   "description": "PG1 Sovereign AI Agent dynamic router endpoint",
   "scripts": {
-    "start": "node api/chat.js"
+    "start": "node api/chat.js",
+    "deploy:auto": "node scripts/deploy-auto.js",
+    "deploy:auto:dry-run": "node scripts/deploy-auto.js --dry-run"
   },
   "dependencies": {}
 }

@@ -1,0 +1,10 @@
+name = "pg1-ai-agent-worker"
+main = "src/index.js"
+compatibility_date = "2026-08-27"
+workers_dev = true
+
+[env.production]
+name = "pg1-ai-agent-worker-production"
+
+[env.production.vars]
+PG1_ENVIRONMENT = "production"

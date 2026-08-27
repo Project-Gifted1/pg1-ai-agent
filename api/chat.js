@@ -1,7 +1,14 @@
 export default async function handler(req, res) {
+  const origin = req.headers.origin || "";
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const allowOrigin = allowedOrigins.includes(origin) ? origin : "*";
+
   // CORS configuration
   res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', allowOrigin);
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader(
     'Access-Control-Allow-Headers',
@@ -22,6 +29,9 @@ export default async function handler(req, res) {
 
     if (!userMessage) {
       return res.status(400).json({ error: 'Missing prompt or message payload' });
+    }
+    if (typeof userMessage !== "string" || userMessage.length > 4000) {
+      return res.status(400).json({ error: 'Prompt is invalid or too long' });
     }
 
     // Complexity and length heuristic
@@ -49,11 +59,14 @@ export default async function handler(req, res) {
         contents: [{ role: "user", parts: [{ text: userMessage }] }]
       };
 
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers,
-        body: JSON.stringify(payload)
-      });
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      }).finally(() => clearTimeout(timeout));
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -82,11 +95,14 @@ export default async function handler(req, res) {
         ]
       };
 
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers,
-        body: JSON.stringify(payload)
-      });
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      }).finally(() => clearTimeout(timeout));
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -99,6 +115,6 @@ export default async function handler(req, res) {
     }
   } catch (error) {
     console.error('Routing execution error:', error);
-    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    return res.status(500).json({ error: 'Routing execution failed' });
   }
 }
