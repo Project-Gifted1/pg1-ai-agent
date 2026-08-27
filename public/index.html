@@ -3,187 +3,289 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PG1 Sovereign Agent</title>
+  <title>PG1 Enterprise Agent Control Center</title>
   <style>
-    :root {
-      --bg: #090a0f;
-      --card: #12141c;
-      --border: #1f2430;
-      --text: #e2e8f0;
-      --accent: #3b82f6;
-      --accent-gemini: #10b981;
-      --accent-router: #8b5cf6;
-    }
+    :root { --bg:#0b0f17; --panel:#131a27; --panel-2:#1b2233; --line:#2f3a55; --text:#e8edf9; --muted:#92a0c0; --accent:#32b5ff; --ok:#1ec981; --warn:#ffb44c; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-    }
-    header {
-      padding: 16px 24px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background: var(--card);
-    }
-    .badge {
-      font-size: 12px;
-      padding: 4px 8px;
-      border-radius: 6px;
-      background: rgba(59, 130, 246, 0.2);
-      color: var(--accent);
-    }
-    main {
-      flex: 1;
-      overflow-y: auto;
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      max-width: 800px;
-      width: 100%;
-      margin: 0 auto;
-    }
-    .message {
-      padding: 14px 18px;
-      border-radius: 8px;
-      line-height: 1.5;
-      font-size: 15px;
-      white-space: pre-wrap;
-    }
-    .message.user {
-      background: #1e293b;
-      align-self: flex-end;
-      max-width: 80%;
-    }
-    .message.agent {
-      background: var(--card);
-      border: 1px solid var(--border);
-      align-self: flex-start;
-      max-width: 90%;
-    }
-    .provider-tag {
-      font-size: 11px;
-      margin-bottom: 6px;
-      font-weight: 600;
-      text-transform: uppercase;
-    }
-    .tag-gemini { color: var(--accent-gemini); }
-    .tag-openrouter { color: var(--accent-router); }
-    footer {
-      padding: 16px 24px;
-      border-top: 1px solid var(--border);
-      background: var(--card);
-      display: flex;
-      gap: 12px;
-      max-width: 800px;
-      width: 100%;
-      margin: 0 auto 16px auto;
-      border-radius: 10px;
-    }
-    textarea {
-      flex: 1;
-      background: #0d0e15;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 12px;
-      color: #fff;
-      font-size: 14px;
-      resize: none;
-      height: 48px;
-      outline: none;
-    }
-    textarea:focus { border-color: var(--accent); }
-    button {
-      background: var(--accent);
-      color: white;
-      border: none;
-      padding: 0 20px;
-      border-radius: 6px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.2s;
-    }
-    button:hover { opacity: 0.9; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    body { font-family: Inter, system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    header { display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:2; }
+    .brand { font-weight:700; letter-spacing:.02em; }
+    .status { font-size:12px; color:var(--ok); }
+    .tabs { display:flex; gap:8px; padding:12px 18px; border-bottom:1px solid var(--line); background:var(--panel); }
+    .tab-btn { border:1px solid var(--line); background:var(--panel-2); color:var(--text); padding:8px 10px; border-radius:8px; cursor:pointer; }
+    .tab-btn.active { border-color:var(--accent); color:var(--accent); }
+    main { padding:16px; max-width:1200px; margin:0 auto; }
+    .hidden { display:none !important; }
+    .grid { display:grid; gap:12px; grid-template-columns: 1.4fr 1fr; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; }
+    .card h3 { font-size:13px; color:var(--muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:.06em; }
+    .kpi { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px; }
+    .kpi .tile { background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:10px; }
+    .tile .label { font-size:11px; color:var(--muted); }
+    .tile .value { font-size:17px; margin-top:4px; font-weight:700; }
+    .row { display:flex; gap:8px; }
+    input, textarea, button, select { font: inherit; }
+    textarea, input { width:100%; background:#0d1320; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:9px; }
+    button { background:var(--accent); color:#021224; border:none; border-radius:8px; padding:9px 12px; font-weight:600; cursor:pointer; }
+    button.secondary { background:#263248; color:var(--text); }
+    .log-list, .memory-list, .approval-list { max-height:260px; overflow:auto; display:flex; flex-direction:column; gap:8px; }
+    .log, .memory, .approval, .msg { border:1px solid var(--line); border-radius:8px; background:var(--panel-2); padding:8px; font-size:13px; }
+    .warn { color:var(--warn); }
+    .ok { color:var(--ok); }
+    .terminal-wrap { display:flex; flex-direction:column; gap:10px; }
+    #chat-stream { min-height:240px; max-height:52vh; overflow:auto; display:flex; flex-direction:column; gap:10px; }
+    .msg.user { align-self:flex-end; max-width:80%; }
+    .msg.bot { align-self:flex-start; max-width:90%; }
+    .meta { font-size:11px; color:var(--muted); margin-bottom:4px; }
+    .tree { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; white-space:pre-wrap; color:#c8d2ea; }
+    @media (max-width: 900px){ .grid{grid-template-columns:1fr;} .kpi{grid-template-columns:1fr 1fr;} }
   </style>
 </head>
 <body>
   <header>
-    <h2>PG1 Sovereign Agent</h2>
-    <span class="badge">Dynamic Routing: Gemini Pro &bull; DeepSeek</span>
+    <div class="brand">PG1 • Enterprise Autonomous Agent</div>
+    <div class="status">● CONTROL PLANE ONLINE</div>
   </header>
-  <main id="chat"></main>
-  <footer>
-    <textarea id="prompt" placeholder="Ask PG1 anything (code, analysis, or general query)..."></textarea>
-    <button id="sendBtn">Send</button>
-  </footer>
+
+  <div class="tabs">
+    <button id="tab-agent" class="tab-btn active" onclick="switchTab('agent')">Agent Control Panel</button>
+    <button id="tab-terminal" class="tab-btn" onclick="switchTab('terminal')">Terminal (Legacy)</button>
+  </div>
+
+  <main>
+    <section id="agent-view">
+      <div class="kpi">
+        <div class="tile"><div class="label">Lifecycle</div><div class="value" id="kpi-state">idle</div></div>
+        <div class="tile"><div class="label">Progress</div><div class="value" id="kpi-progress">0%</div></div>
+        <div class="tile"><div class="label">Session Cost</div><div class="value" id="kpi-cost">0.0000¢</div></div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h3>Task Executor</h3>
+          <textarea id="agent-task" rows="4" placeholder="Describe a task for autonomous planning and execution..."></textarea>
+          <div class="row" style="margin-top:8px;">
+            <input id="budget-cents" type="number" min="0" step="0.01" placeholder="Budget in cents (optional)" />
+            <button onclick="planTask()">Plan</button>
+            <button class="secondary" onclick="executeTaskStep()">Execute Step</button>
+          </div>
+          <div class="meta" style="margin-top:8px;">Task ID: <span id="task-id">-</span> • Session: <span id="session-id"></span></div>
+          <h3 style="margin-top:12px;">Reasoning Chain</h3>
+          <div id="reasoning-chain" class="tree">Thought → Action → Observation will appear here.</div>
+        </div>
+
+        <div class="card">
+          <h3>Approvals</h3>
+          <div id="approval-list" class="approval-list"></div>
+        </div>
+
+        <div class="card">
+          <h3>Execution Tree & Audit Logs</h3>
+          <div id="log-list" class="log-list"></div>
+        </div>
+
+        <div class="card">
+          <h3>Memory Context</h3>
+          <div id="memory-list" class="memory-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="terminal-view" class="hidden">
+      <div class="terminal-wrap">
+        <div id="chat-stream" class="card"></div>
+        <div class="row">
+          <textarea id="user-input" rows="2" placeholder="Type your instruction..."></textarea>
+          <button id="send-btn" onclick="sendMessage()">Send</button>
+        </div>
+      </div>
+    </section>
+  </main>
 
   <script>
-    const chat = document.getElementById('chat');
-    const promptInput = document.getElementById('prompt');
-    const sendBtn = document.getElementById('sendBtn');
+    const sessionId = localStorage.getItem('pg1_agent_session') || `session-${Date.now()}`;
+    localStorage.setItem('pg1_agent_session', sessionId);
+    document.getElementById('session-id').textContent = sessionId;
 
-    function appendMessage(role, text, provider, model) {
-      const msg = document.createElement('div');
-      msg.className = `message ${role}`;
-      if (provider) {
-        const tag = document.createElement('div');
-        tag.className = `provider-tag tag-${provider}`;
-        tag.innerText = `[${provider.toUpperCase()}] ${model || ''}`;
-        msg.appendChild(tag);
-      }
-      const textSpan = document.createElement('span');
-      textSpan.innerText = text;
-      msg.appendChild(textSpan);
-      chat.appendChild(msg);
-      chat.scrollTop = chat.scrollHeight;
+    let activeTaskId = localStorage.getItem('pg1_agent_task') || '';
+    if (activeTaskId) document.getElementById('task-id').textContent = activeTaskId;
+
+    function switchTab(tab) {
+      document.getElementById('agent-view').classList.toggle('hidden', tab !== 'agent');
+      document.getElementById('terminal-view').classList.toggle('hidden', tab !== 'terminal');
+      document.getElementById('tab-agent').classList.toggle('active', tab === 'agent');
+      document.getElementById('tab-terminal').classList.toggle('active', tab === 'terminal');
     }
 
-    // Step 2 Standard Agent Dispatcher
-    async function sendToAgent(userPrompt) {
-      const response = await fetch('/api/chat', {
+    async function planTask() {
+      const task = document.getElementById('agent-task').value.trim();
+      if (!task) return;
+      const budgetInput = document.getElementById('budget-cents').value;
+      const payload = { sessionId, task };
+      if (budgetInput !== '') payload.budgetCents = Number(budgetInput);
+
+      const res = await fetch('/api/agent/plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: userPrompt })
+        body: JSON.stringify(payload)
       });
-      const data = await response.json();
-      if (!response.ok || data.error) {
-        throw new Error(data.error || `HTTP ${response.status}`);
-      }
-      return data;
+      const data = await res.json();
+      if (!res.ok) return alert(data.error || 'Planning failed');
+
+      activeTaskId = data.taskId;
+      localStorage.setItem('pg1_agent_task', activeTaskId);
+      document.getElementById('task-id').textContent = activeTaskId;
+      document.getElementById('reasoning-chain').textContent = data.steps.map((s) => `• [${s.index + 1}] ${s.goal}`).join('\n');
+      refreshAgentPanels();
     }
 
-    async function handleSend() {
-      const userPrompt = promptInput.value.trim();
-      if (!userPrompt) return;
+    async function executeTaskStep(approvedApprovalIds = []) {
+      if (!activeTaskId) return alert('Plan a task first.');
+      const res = await fetch('/api/agent/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, taskId: activeTaskId, approvedApprovalIds })
+      });
+      const data = await res.json();
+      if (!res.ok) return alert(data.error || 'Execution failed');
 
-      appendMessage('user', userPrompt);
-      promptInput.value = '';
+      if (data.awaitingApproval && data.approval) {
+        renderApprovals([data.approval]);
+      }
+      refreshAgentPanels();
+    }
+
+    async function approveAndContinue(approvalId, decision) {
+      await fetch('/api/agent/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approvalId, decision })
+      });
+      if (decision === 'approve') {
+        executeTaskStep([approvalId]);
+      } else {
+        refreshAgentPanels();
+      }
+    }
+
+    async function refreshAgentPanels() {
+      if (!activeTaskId) return;
+      const [statusRes, logsRes, costsRes, memoryRes] = await Promise.all([
+        fetch(`/api/agent/status?sessionId=${encodeURIComponent(sessionId)}&taskId=${encodeURIComponent(activeTaskId)}`),
+        fetch(`/api/agent/logs?sessionId=${encodeURIComponent(sessionId)}&taskId=${encodeURIComponent(activeTaskId)}&limit=50`),
+        fetch(`/api/agent/costs?sessionId=${encodeURIComponent(sessionId)}&taskId=${encodeURIComponent(activeTaskId)}`),
+        fetch(`/api/agent/memory?sessionId=${encodeURIComponent(sessionId)}&limit=20`)
+      ]);
+
+      const statusData = statusRes.ok ? await statusRes.json() : null;
+      const logsData = logsRes.ok ? await logsRes.json() : { logs: [] };
+      const costsData = costsRes.ok ? await costsRes.json() : { total_cost_cents: 0 };
+      const memoryData = memoryRes.ok ? await memoryRes.json() : { memories: [] };
+
+      const task = statusData?.task;
+      const progress = task?.progress?.total_steps ? Math.round((task.progress.completed_steps / task.progress.total_steps) * 100) : 0;
+      document.getElementById('kpi-state').textContent = task?.lifecycle_state || 'idle';
+      document.getElementById('kpi-progress').textContent = `${progress}%`;
+      document.getElementById('kpi-cost').textContent = `${Number(costsData.total_cost_cents || 0).toFixed(4)}¢`;
+
+      const chain = logsData.logs.slice(0, 5).reverse().map((log) => `Thought: ${log.thought || '-'}\nAction: ${log.action || '-'}\nObservation: ${log.observation || '-'}\n`).join('\n');
+      document.getElementById('reasoning-chain').textContent = chain || 'No steps executed yet.';
+
+      renderLogs(logsData.logs || []);
+      renderApprovals(statusData?.pendingApprovals || []);
+      renderMemory(memoryData.memories || []);
+    }
+
+    function renderLogs(logs) {
+      const list = document.getElementById('log-list');
+      if (!logs.length) {
+        list.innerHTML = '<div class="log">No logs yet.</div>';
+        return;
+      }
+      list.innerHTML = logs.slice(0, 20).map((log) => `
+        <div class="log">
+          <div class="meta">${log.created_at || ''} • ${log.state || ''}</div>
+          <div><strong>${log.action || '-'}</strong></div>
+          <div>${log.observation || ''}</div>
+        </div>`).join('');
+    }
+
+    function renderApprovals(approvals) {
+      const list = document.getElementById('approval-list');
+      if (!approvals.length) {
+        list.innerHTML = '<div class="approval">No pending approvals.</div>';
+        return;
+      }
+      list.innerHTML = approvals.map((approval) => `
+        <div class="approval">
+          <div><strong>${approval.operation || 'Sensitive operation'}</strong></div>
+          <div class="meta">Risk score: ${approval.risk_score || approval.analysis?.riskScore || 0}</div>
+          <div class="row" style="margin-top:6px;">
+            <button onclick="approveAndContinue('${approval.id}', 'approve')">Approve</button>
+            <button class="secondary" onclick="approveAndContinue('${approval.id}', 'deny')">Deny</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderMemory(memories) {
+      const list = document.getElementById('memory-list');
+      if (!memories.length) {
+        list.innerHTML = '<div class="memory">No memory records yet.</div>';
+        return;
+      }
+      list.innerHTML = memories.slice(0, 20).map((item) => `
+        <div class="memory">
+          <div class="meta">${item.memory_type || 'memory'}</div>
+          <div>${item.content || ''}</div>
+        </div>
+      `).join('');
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('user-input');
+      const sendBtn = document.getElementById('send-btn');
+      const prompt = input.value.trim();
+      if (!prompt) return;
+      input.value = '';
+      appendTerminalMessage('user', prompt);
       sendBtn.disabled = true;
 
       try {
-        const data = await sendToAgent(userPrompt);
-        appendMessage('agent', data.reply, data.provider, data.model);
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        appendTerminalMessage('bot', data.reply, `[${data.provider}] ${data.model}`);
       } catch (err) {
-        appendMessage('agent', 'Error: ' + err.message);
+        appendTerminalMessage('bot', `Error: ${err.message}`);
       } finally {
         sendBtn.disabled = false;
       }
     }
 
-    sendBtn.addEventListener('click', handleSend);
-    promptInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        handleSend();
+    function appendTerminalMessage(role, text, meta = '') {
+      const stream = document.getElementById('chat-stream');
+      const wrap = document.createElement('div');
+      wrap.className = `msg ${role}`;
+      if (meta) {
+        const m = document.createElement('div');
+        m.className = 'meta';
+        m.textContent = meta;
+        wrap.appendChild(m);
       }
-    });
+      const t = document.createElement('div');
+      t.textContent = text;
+      wrap.appendChild(t);
+      stream.appendChild(wrap);
+      stream.scrollTop = stream.scrollHeight;
+    }
+
+    setInterval(refreshAgentPanels, 3000);
+    refreshAgentPanels();
   </script>
 </body>
 </html>
