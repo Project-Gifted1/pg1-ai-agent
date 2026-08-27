@@ -36,7 +36,7 @@ export default async function handler(req, res) {
     let headers = { 'Content-Type': 'application/json' };
     let payload = {};
 
-    if (isComplex || isLong) {
+    if (true) {
       // Gemini Route
       apiKey = (process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY || '').trim();
 
