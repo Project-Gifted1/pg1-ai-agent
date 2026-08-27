@@ -1,8 +1,54 @@
+// --- Constants ---
+const MAX_MESSAGE_LENGTH = 5000;
+const GEMINI_MODEL = 'gemini-1.5-flash';
+const OPENROUTER_MODEL = 'deepseek/deepseek-chat';
+const FETCH_TIMEOUT_MS = 8000;
+
+/**
+ * Trusted origins for CORS. Falls back to the Vercel deployment URL env var,
+ * then the production domain.
+ */
+const ALLOWED_ORIGINS = [
+  process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
+  'https://pg1-ai-agent.vercel.app',
+].filter(Boolean);
+
+/**
+ * Determines whether a message should be routed to the more capable model.
+ * Uses message length and presence of code blocks rather than keyword matching
+ * to avoid false positives (e.g. "decode" triggering on "code").
+ * @param {string} message
+ * @returns {boolean}
+ */
+function isComplexMessage(message) {
+  return message.length > 500 || message.includes('```');
+}
+
+/**
+ * Creates an AbortController that automatically aborts after the given timeout.
+ * @param {number} ms - Timeout in milliseconds.
+ * @returns {{ controller: AbortController, timeoutId: ReturnType<typeof setTimeout> }}
+ */
+function createFetchTimeout(ms) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms);
+  return { controller, timeoutId };
+}
+
+/**
+ * Main Vercel API handler. Routes chat requests to Gemini (complex) or
+ * OpenRouter/DeepSeek (simple) based on message characteristics.
+ * @param {import('@vercel/node').VercelRequest} req
+ * @param {import('@vercel/node').VercelResponse} res
+ */
 export default async function handler(req, res) {
-  // CORS configuration
+  // --- CORS ---
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
   res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
@@ -16,89 +62,117 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
+  // --- Request logging ---
+  console.log(`[chat] ${new Date().toISOString()} origin=${origin || 'unknown'}`);
+
   try {
     const { prompt, messages } = req.body || {};
-    const userMessage = prompt || (messages && messages[messages.length - 1]?.content) || '';
 
-    if (!userMessage) {
+    // --- Input validation ---
+    const rawMessage = prompt ?? messages?.[messages.length - 1]?.content;
+
+    if (rawMessage === undefined || rawMessage === null || rawMessage === '') {
       return res.status(400).json({ error: 'Missing prompt or message payload' });
     }
 
-    // Complexity and length heuristic
-    const complexKeywords = ["code", "refactor", "analyze", "debug", "architecture", "system", "vulnerability", "sql", "deploy"];
-    const isComplex = complexKeywords.some((keyword) => userMessage.toLowerCase().includes(keyword));
-    const isLong = userMessage.length > 500;
+    if (typeof rawMessage !== 'string') {
+      return res.status(400).json({ error: 'Message must be a string' });
+    }
 
-    const sysPrompt = "You are the PG1 Sovereign AI Agent. Provide precise, direct, and actionable solutions.";
+    if (rawMessage.length > MAX_MESSAGE_LENGTH) {
+      return res.status(413).json({ error: 'Message too long. Maximum length is 5000 characters.' });
+    }
 
-    let apiUrl = '';
-    let apiKey = '';
+    const userMessage = rawMessage;
+    const sysPrompt = 'You are the PG1 Sovereign AI Agent. Provide precise, direct, and actionable solutions.';
+
     let headers = { 'Content-Type': 'application/json' };
-    let payload = {};
 
-    if (isComplex || isLong) {
-      // Gemini Route
-      apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (isComplexMessage(userMessage)) {
+      // --- Gemini Route ---
+      const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
       if (!apiKey) {
-        throw new Error('GEMINI_API_KEY environment variable is missing.');
+        console.error('[chat] GEMINI_API_KEY is not configured');
+        return res.status(500).json({ error: 'Server configuration error' });
       }
 
-      apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-      payload = {
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+      const payload = {
         systemInstruction: { parts: [{ text: sysPrompt }] },
-        contents: [{ role: "user", parts: [{ text: userMessage }] }]
+        contents: [{ role: 'user', parts: [{ text: userMessage }] }]
       };
 
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-      });
+      const { controller, timeoutId } = createFetchTimeout(FETCH_TIMEOUT_MS);
+      let response;
+      try {
+        response = await fetch(apiUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Gemini API error (${response.status}): ${errorText}`);
+        console.error(`[chat] Gemini API error (${response.status}):`, errorText);
+        return res.status(502).json({ error: 'Upstream API request failed' });
       }
 
       const data = await response.json();
       const outputText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      return res.status(200).json({ reply: outputText, provider: 'gemini', model: 'gemini-1.5-flash' });
+      return res.status(200).json({ reply: outputText, provider: 'gemini', model: GEMINI_MODEL });
 
     } else {
-      // OpenRouter / DeepSeek Route
-      apiKey = process.env.OPENROUTER_API_KEY;
+      // --- OpenRouter / DeepSeek Route ---
+      const apiKey = process.env.OPENROUTER_API_KEY;
       if (!apiKey) {
-        throw new Error('OPENROUTER_API_KEY environment variable is missing.');
+        console.error('[chat] OPENROUTER_API_KEY is not configured');
+        return res.status(500).json({ error: 'Server configuration error' });
       }
 
-      apiUrl = 'https://openrouter.ai/api/v1/chat/completions';
-      headers['Authorization'] = `Bearer ${apiKey}`;
+      const apiUrl = 'https://openrouter.ai/api/v1/chat/completions';
+      headers['Authorization'] = 'Bearer ' + apiKey;
 
-      payload = {
-        model: 'deepseek/deepseek-chat',
+      const payload = {
+        model: OPENROUTER_MODEL,
         messages: [
           { role: 'system', content: sysPrompt },
           { role: 'user', content: userMessage }
         ]
       };
 
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-      });
+      const { controller, timeoutId } = createFetchTimeout(FETCH_TIMEOUT_MS);
+      let response;
+      try {
+        response = await fetch(apiUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`OpenRouter API error (${response.status}): ${errorText}`);
+        console.error(`[chat] OpenRouter API error (${response.status}):`, errorText);
+        return res.status(502).json({ error: 'Upstream API request failed' });
       }
 
       const data = await response.json();
       const outputText = data.choices?.[0]?.message?.content || '';
-      return res.status(200).json({ reply: outputText, provider: 'openrouter', model: 'deepseek/deepseek-chat' });
+      return res.status(200).json({ reply: outputText, provider: 'openrouter', model: OPENROUTER_MODEL });
     }
   } catch (error) {
-    console.error('Routing execution error:', error);
-    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    if (error.name === 'AbortError') {
+      console.error('[chat] Request timed out');
+      return res.status(504).json({ error: 'Request timed out' });
+    }
+    console.error('[chat] Unhandled error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
   }
 }
