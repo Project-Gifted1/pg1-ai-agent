@@ -15,6 +15,9 @@ let isSpeakingNow = false;
 const MASKED_SECRET_VALUE = '••••••••••••••••';
 const SENSITIVE_STORAGE_KEYS = new Set(['PG1_KEY', 'PG1_GH_PAT', 'PG1_REP_KEY']);
 const OBFUSCATED_STORAGE_PREFIX = 'pg1-obf:';
+const CREDENTIAL_MIN_LENGTH = 8;
+const CREDENTIAL_MAX_LENGTH = 512;
+const MAX_AGENT_LOOP_ITERATIONS = 5;
 
 function getBrowserStorage(storageType) {
     try {
@@ -146,8 +149,8 @@ function safeStorageRemove(key, options = {}) {
 function normalizeCredentialInput(value, label) {
     const normalized = typeof value === 'string' ? value.trim() : '';
     if (!normalized || normalized === MASKED_SECRET_VALUE) return { skip: true };
-    if (normalized.length < 8) return { error: `${label} looks too short.` };
-    if (normalized.length > 512) return { error: `${label} is too long.` };
+    if (normalized.length < CREDENTIAL_MIN_LENGTH) return { error: `${label} looks too short.` };
+    if (normalized.length > CREDENTIAL_MAX_LENGTH) return { error: `${label} is too long.` };
     if (/\s/.test(normalized)) return { error: `${label} must not contain spaces.` };
     if (/[\u0000-\u001F\u007F]/.test(normalized)) return { error: `${label} contains invalid control characters.` };
     return { value: normalized };
@@ -1524,7 +1527,7 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS:
       let continueLoop = true; 
       let loopCount = 0;
       
-      while (continueLoop && loopCount < 5) {
+      while (continueLoop && loopCount < MAX_AGENT_LOOP_ITERATIONS) {
           loopCount++;
           const reqStart = Date.now();
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${key}`, {
@@ -1549,16 +1552,14 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS:
              let rawCommitResult = null;
 
              try {
-                 const execResult = await executeMCPTool(call.name, callArgs);
-                  
-                     if (call.name === 'dynamicGitHubCommit' && typeof execResult === 'object') {
-       if (execResult.status === "COMMITTED") {
-           resultStr = `[Commit Success] Data committed to ${(callArgs.filePath || execResult.filePath || 'target file')}\n[Verified Success] Live audit confirmed the patch successfully deployed.`;
-       } else {
-           resultStr = `[Verification Failed] CRITICAL ERROR: Live audit shows commit failed.`;
-       }
-   
-
+                  const execResult = await executeMCPTool(call.name, callArgs);
+                   
+                  if (call.name === 'dynamicGitHubCommit' && typeof execResult === 'object') {
+                      if (execResult.status === "COMMITTED") {
+                          resultStr = `[Commit Success] Data committed to ${(callArgs.filePath || execResult.filePath || 'target file')}\n[Verified Success] Live audit confirmed the patch successfully deployed.`;
+                      } else {
+                          resultStr = `[Verification Failed] CRITICAL ERROR: Live audit shows commit failed.`;
+                      }
                   } else {
                       resultStr = typeof execResult === 'string' ? execResult : JSON.stringify(execResult);
                   }
@@ -1581,7 +1582,7 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS:
               persistTerminalState();
               continueLoop = false;
           }
-          if (loopCount >= 5) throw new Error("Agent loop reached maximum retry ceiling.");
+          if (loopCount >= MAX_AGENT_LOOP_ITERATIONS) throw new Error("Agent loop reached maximum retry ceiling.");
       }
     } catch (e) { 
       setSystemState('error'); 
