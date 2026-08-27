@@ -75,6 +75,24 @@
     }
     .tag-gemini { color: var(--accent-gemini); }
     .tag-openrouter { color: var(--accent-router); }
+    .voice-player {
+      max-width: 800px;
+      width: 100%;
+      margin: 0 auto;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .voice-status {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    #voice-output {
+      width: 100%;
+      margin-top: 10px;
+    }
     footer {
       padding: 16px 24px;
       border-top: 1px solid var(--border);
@@ -119,15 +137,34 @@
     <span class="badge">Dynamic Routing: Gemini Pro &bull; DeepSeek</span>
   </header>
   <main id="chat"></main>
+  <section class="voice-player">
+    <button id="play-voice-btn" type="button">🎙️ Enable Voice</button>
+    <div class="voice-status" id="voice-status">
+      Voice: Disabled | Polly: Ready | Free Tier: 5M chars/month
+    </div>
+    <audio id="voice-output" controls></audio>
+  </section>
   <footer>
     <textarea id="prompt" placeholder="Ask PG1 anything (code, analysis, or general query)..."></textarea>
     <button id="sendBtn">Send</button>
   </footer>
 
+  <script src="/voice-player.js"></script>
   <script>
     const chat = document.getElementById('chat');
     const promptInput = document.getElementById('prompt');
     const sendBtn = document.getElementById('sendBtn');
+    const playVoiceBtn = document.getElementById('play-voice-btn');
+    const voiceStatus = document.getElementById('voice-status');
+    window.PG1_VOICE_ENABLED = false;
+
+    playVoiceBtn.addEventListener('click', () => {
+      window.PG1_VOICE_ENABLED = !window.PG1_VOICE_ENABLED;
+      playVoiceBtn.innerText = window.PG1_VOICE_ENABLED ? '🎙️ Voice Enabled' : '🎙️ Enable Voice';
+      voiceStatus.innerText = window.PG1_VOICE_ENABLED
+        ? 'Voice: Enabled | Polly: Connected | Free Tier: 5M chars/month'
+        : 'Voice: Disabled | Polly: Ready | Free Tier: 5M chars/month';
+    });
 
     function appendMessage(role, text, provider, model) {
       const msg = document.createElement('div');
@@ -170,6 +207,13 @@
       try {
         const data = await sendToAgent(userPrompt);
         appendMessage('agent', data.reply, data.provider, data.model);
+        if (window.PG1_VOICE_ENABLED && window.PG1Voice) {
+          try {
+            await window.PG1Voice.playVoice(data.reply, 'neutral');
+          } catch (voiceErr) {
+            console.error('Voice playback failed:', voiceErr);
+          }
+        }
       } catch (err) {
         appendMessage('agent', 'Error: ' + err.message);
       } finally {
