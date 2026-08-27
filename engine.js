@@ -706,6 +706,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const savedVoicePref = localStorage.getItem('PG1_VOICE_ENABLED');
   isVoiceEnabled = savedVoicePref !== null ? (savedVoicePref === 'true') : true;
+  const autonomousModeEnabled = () => localStorage.getItem('PG1_AUTONOMOUS_MODE') === 'true';
 
   const voiceBtn = document.getElementById('voiceBtn');
   if (voiceBtn) {
@@ -1313,6 +1314,48 @@ document.addEventListener("DOMContentLoaded", () => {
 
     sessionHistory.push({ role: "user", parts: userParts });
     persistTerminalState();
+
+    if (autonomousModeEnabled()) {
+      try {
+        const agentSessionId = localStorage.getItem('PG1_AGENT_SESSION_ID') || `engine-${Date.now()}`;
+        localStorage.setItem('PG1_AGENT_SESSION_ID', agentSessionId);
+
+        let taskId = localStorage.getItem('PG1_AGENT_TASK_ID');
+        if (!taskId) {
+          const planRes = await fetch('/api/agent/plan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: agentSessionId, task: cmd })
+          });
+          const planData = await planRes.json();
+          if (!planRes.ok) throw new Error(planData.error || 'Autonomous planning failed');
+          taskId = planData.taskId;
+          localStorage.setItem('PG1_AGENT_TASK_ID', taskId);
+          appendMsg(`[Autonomous Planner] Created task ${taskId} with ${planData.steps?.length || 0} steps.`, 'system-msg', true);
+        }
+
+        const executeRes = await fetch('/api/agent/execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: agentSessionId, taskId, input: cmd })
+        });
+        const executeData = await executeRes.json();
+        if (!executeRes.ok) throw new Error(executeData.error || 'Autonomous execution failed');
+
+        if (executeData.awaitingApproval && executeData.approval) {
+          appendMsg(`[Approval Required] ${executeData.approval.operation} (risk ${executeData.approval.risk_score || executeData.approval.analysis?.riskScore || 0})`, 'repair-msg', true);
+        } else if (executeData.observation) {
+          await appendMsg(executeData.observation, 'agent-msg');
+        } else {
+          await appendMsg(`Autonomous step executed. State: ${executeData.state}`, 'agent-msg');
+        }
+
+        setSystemState('idle');
+        return;
+      } catch (autonomousError) {
+        appendMsg(`Autonomous Mode Error: ${autonomousError.message}`, 'error-msg', true);
+      }
+    }
     
     const tools = getMCPToolDeclarations();
     const configuredModel = document.getElementById('modelSelector') ? document.getElementById('modelSelector').value : 'gemini-1.5-flash';
@@ -1387,7 +1430,7 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS:
               const followupRes = await fetch('/api/chat', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ prompt: currentPrompt, model: activeModel })
+  body: JSON.stringify({ prompt: cmd, model: activeModel })
 });
 
               TelemetryStack.log('NEURAL_CORE', activeModel, Date.now() - followupStart, followupRes.status);

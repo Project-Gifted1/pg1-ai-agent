@@ -1,12 +1,39 @@
+import { routeAndGenerateReply } from '../lib/modelRouter.js';
+
+const MAX_MESSAGE_LENGTH = Number(process.env.MAX_MESSAGE_LENGTH || 5000);
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'https://pg1-ai-agent.vercel.app,http://localhost:3000,http://localhost:5173')
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean);
+
+function applyCors(req, res) {
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else if (!origin && ALLOWED_ORIGINS.length > 0) {
+    res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGINS[0]);
+  }
+
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+}
+
+function parseBody(body) {
+  if (!body) return {};
+  if (typeof body === 'string') {
+    try {
+      return JSON.parse(body);
+    } catch {
+      return {};
+    }
+  }
+  return body;
+}
+
 export default async function handler(req, res) {
-  // CORS configuration
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-  );
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -17,88 +44,30 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { prompt, messages } = req.body || {};
-    const userMessage = prompt || (messages && messages[messages.length - 1]?.content) || '';
+    const body = parseBody(req.body);
+    const userMessage = String(body.prompt || body.messages?.[body.messages.length - 1]?.content || '').trim();
 
     if (!userMessage) {
       return res.status(400).json({ error: 'Missing prompt or message payload' });
     }
 
-    // Complexity and length heuristic
-    const complexKeywords = ["code", "refactor", "analyze", "debug", "architecture", "system", "vulnerability", "sql", "deploy"];
-    const isComplex = complexKeywords.some((keyword) => userMessage.toLowerCase().includes(keyword));
-    const isLong = userMessage.length > 500;
-
-    const sysPrompt = "You are the PG1 Sovereign AI Agent. Provide precise, direct, and actionable solutions.";
-
-    let apiUrl = '';
-    let apiKey = '';
-    let headers = { 'Content-Type': 'application/json' };
-    let payload = {};
-
-    if (isComplex || isLong) {
-      // Gemini Route
-      apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-      if (!apiKey) {
-        throw new Error('GEMINI_API_KEY environment variable is missing.');
-      }
-
-      apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-      payload = {
-        systemInstruction: { parts: [{ text: sysPrompt }] },
-        contents: [{ role: "user", parts: [{ text: userMessage }] }]
-      };
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Gemini API error (${response.status}): ${errorText}`);
-      }
-
-      const data = await response.json();
-      const outputText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      return res.status(200).json({ reply: outputText, provider: 'gemini', model: 'gemini-1.5-flash' });
-
-    } else {
-      // OpenRouter / DeepSeek Route
-      apiKey = process.env.OPENROUTER_API_KEY;
-      if (!apiKey) {
-        throw new Error('OPENROUTER_API_KEY environment variable is missing.');
-      }
-
-      apiUrl = 'https://openrouter.ai/api/v1/chat/completions';
-      headers['Authorization'] = `Bearer ${apiKey}`;
-
-      payload = {
-        model: 'deepseek/deepseek-chat',
-        messages: [
-          { role: 'system', content: sysPrompt },
-          { role: 'user', content: userMessage }
-        ]
-      };
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`OpenRouter API error (${response.status}): ${errorText}`);
-      }
-
-      const data = await response.json();
-      const outputText = data.choices?.[0]?.message?.content || '';
-      return res.status(200).json({ reply: outputText, provider: 'openrouter', model: 'deepseek/deepseek-chat' });
+    if (userMessage.length > MAX_MESSAGE_LENGTH) {
+      return res.status(413).json({ error: `Message too long. Max characters: ${MAX_MESSAGE_LENGTH}` });
     }
+
+    const routed = await routeAndGenerateReply(userMessage, {
+      systemPrompt: 'You are the PG1 Sovereign AI Agent. Provide precise, direct, and actionable solutions.',
+      network: { timeoutMs: 8000, retries: 2 }
+    });
+
+    return res.status(200).json({
+      reply: routed.reply,
+      provider: routed.provider,
+      model: routed.model,
+      complexity: routed.complexity
+    });
   } catch (error) {
-    console.error('Routing execution error:', error);
-    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    console.error('Routing execution error:', error.message);
+    return res.status(500).json({ error: 'Internal Server Error' });
   }
 }

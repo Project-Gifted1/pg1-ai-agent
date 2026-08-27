@@ -3,283 +3,253 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PG1 Sovereign AI Agent</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <title>PG1 Enterprise Agent Control Center</title>
   <style>
-    :root {
-      --bg-primary: #0a0c10;
-      --bg-secondary: #12151e;
-      --bg-card: #181d2a;
-      --border-color: #262c3e;
-      --accent-cyan: #00f2fe;
-      --accent-blue: #4facfe;
-      --text-main: #e2e8f0;
-      --text-muted: #8892b0;
-      --user-msg-bg: #1c2438;
-      --bot-msg-bg: #141926;
-      --gemini-badge: #4facfe;
-      --openrouter-badge: #10b981;
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      background-color: var(--bg-primary);
-      color: var(--text-main);
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    header {
-      background: var(--bg-secondary);
-      border-bottom: 1px solid var(--border-color);
-      padding: 16px 24px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .brand-icon {
-      width: 32px;
-      height: 32px;
-      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: 'JetBrains Mono', monospace;
-      font-weight: 700;
-      font-size: 14px;
-      color: #0a0c10;
-    }
-
-    .brand-title {
-      font-size: 16px;
-      font-weight: 600;
-      letter-spacing: -0.02em;
-    }
-
-    .brand-status {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      color: var(--text-muted);
-      font-family: 'JetBrains Mono', monospace;
-    }
-
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      background: #10b981;
-      border-radius: 50%;
-      box-shadow: 0 0 8px #10b981;
-    }
-
-    main {
-      flex: 1;
-      overflow-y: auto;
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      max-width: 900px;
-      width: 100%;
-      margin: 0 auto;
-    }
-
-    .message-container {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      width: 100%;
-    }
-
-    .message {
-      padding: 14px 18px;
-      border-radius: 12px;
-      font-size: 14px;
-      line-height: 1.6;
-      white-space: pre-wrap;
-      word-break: break-word;
-      border: 1px solid var(--border-color);
-    }
-
-    .message.user {
-      align-self: flex-end;
-      background-color: var(--user-msg-bg);
-      border-color: #2b395b;
-      max-width: 80%;
-    }
-
-    .message.bot {
-      align-self: flex-start;
-      background-color: var(--bot-msg-bg);
-      max-width: 90%;
-    }
-
-    .badge-bar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 11px;
-      font-family: 'JetBrains Mono', monospace;
-      color: var(--text-muted);
-      padding: 0 4px;
-    }
-
-    .badge {
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-weight: 500;
-      text-transform: uppercase;
-      font-size: 10px;
-      letter-spacing: 0.05em;
-    }
-
-    .badge-gemini {
-      background: rgba(79, 172, 254, 0.15);
-      color: var(--gemini-badge);
-      border: 1px solid rgba(79, 172, 254, 0.3);
-    }
-
-    .badge-openrouter {
-      background: rgba(16, 185, 129, 0.15);
-      color: var(--openrouter-badge);
-      border: 1px solid rgba(16, 185, 129, 0.3);
-    }
-
-    footer {
-      background: var(--bg-secondary);
-      border-top: 1px solid var(--border-color);
-      padding: 16px 24px;
-    }
-
-    .input-wrapper {
-      max-width: 900px;
-      margin: 0 auto;
-      display: flex;
-      gap: 12px;
-      position: relative;
-    }
-
-    textarea {
-      flex: 1;
-      background-color: var(--bg-card);
-      border: 1px solid var(--border-color);
-      color: var(--text-main);
-      padding: 12px 16px;
-      border-radius: 10px;
-      font-size: 14px;
-      font-family: inherit;
-      resize: none;
-      height: 48px;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-
-    textarea:focus {
-      border-color: var(--accent-cyan);
-    }
-
-    button.send-btn {
-      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
-      border: none;
-      color: #0a0c10;
-      font-weight: 600;
-      padding: 0 20px;
-      border-radius: 10px;
-      cursor: pointer;
-      font-size: 14px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: opacity 0.2s;
-    }
-
-    button.send-btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .loading-pulse {
-      display: inline-block;
-      width: 12px;
-      height: 12px;
-      border: 2px solid var(--accent-cyan);
-      border-top-color: transparent;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
+    :root { --bg:#0b0f17; --panel:#131a27; --panel-2:#1b2233; --line:#2f3a55; --text:#e8edf9; --muted:#92a0c0; --accent:#32b5ff; --ok:#1ec981; --warn:#ffb44c; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Inter, system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    header { display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:2; }
+    .brand { font-weight:700; letter-spacing:.02em; }
+    .status { font-size:12px; color:var(--ok); }
+    .tabs { display:flex; gap:8px; padding:12px 18px; border-bottom:1px solid var(--line); background:var(--panel); }
+    .tab-btn { border:1px solid var(--line); background:var(--panel-2); color:var(--text); padding:8px 10px; border-radius:8px; cursor:pointer; }
+    .tab-btn.active { border-color:var(--accent); color:var(--accent); }
+    main { padding:16px; max-width:1200px; margin:0 auto; }
+    .hidden { display:none !important; }
+    .grid { display:grid; gap:12px; grid-template-columns: 1.4fr 1fr; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; }
+    .card h3 { font-size:13px; color:var(--muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:.06em; }
+    .kpi { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px; }
+    .kpi .tile { background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:10px; }
+    .tile .label { font-size:11px; color:var(--muted); }
+    .tile .value { font-size:17px; margin-top:4px; font-weight:700; }
+    .row { display:flex; gap:8px; }
+    input, textarea, button, select { font: inherit; }
+    textarea, input { width:100%; background:#0d1320; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:9px; }
+    button { background:var(--accent); color:#021224; border:none; border-radius:8px; padding:9px 12px; font-weight:600; cursor:pointer; }
+    button.secondary { background:#263248; color:var(--text); }
+    .log-list, .memory-list, .approval-list { max-height:260px; overflow:auto; display:flex; flex-direction:column; gap:8px; }
+    .log, .memory, .approval, .msg { border:1px solid var(--line); border-radius:8px; background:var(--panel-2); padding:8px; font-size:13px; }
+    .warn { color:var(--warn); }
+    .ok { color:var(--ok); }
+    .terminal-wrap { display:flex; flex-direction:column; gap:10px; }
+    #chat-stream { min-height:240px; max-height:52vh; overflow:auto; display:flex; flex-direction:column; gap:10px; }
+    .msg.user { align-self:flex-end; max-width:80%; }
+    .msg.bot { align-self:flex-start; max-width:90%; }
+    .meta { font-size:11px; color:var(--muted); margin-bottom:4px; }
+    .tree { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; white-space:pre-wrap; color:#c8d2ea; }
+    @media (max-width: 900px){ .grid{grid-template-columns:1fr;} .kpi{grid-template-columns:1fr 1fr;} }
   </style>
 </head>
 <body>
   <header>
-    <div class="brand">
-      <div class="brand-icon">PG1</div>
-      <span class="brand-title">Sovereign AI Agent</span>
-    </div>
-    <div class="brand-status">
-      <span class="status-dot"></span>
-      <span>DYNAMIC ROUTER ONLINE</span>
-    </div>
+    <div class="brand">PG1 • Enterprise Autonomous Agent</div>
+    <div class="status">● CONTROL PLANE ONLINE</div>
   </header>
 
-  <main id="chat-stream">
-    <div class="message-container">
-      <div class="message bot">
-        Greetings. PG1 Sovereign Agent is connected. Submit a prompt or code task to initiate the dynamic model router.
+  <div class="tabs">
+    <button id="tab-agent" class="tab-btn active" onclick="switchTab('agent')">Agent Control Panel</button>
+    <button id="tab-terminal" class="tab-btn" onclick="switchTab('terminal')">Terminal (Legacy)</button>
+  </div>
+
+  <main>
+    <section id="agent-view">
+      <div class="kpi">
+        <div class="tile"><div class="label">Lifecycle</div><div class="value" id="kpi-state">idle</div></div>
+        <div class="tile"><div class="label">Progress</div><div class="value" id="kpi-progress">0%</div></div>
+        <div class="tile"><div class="label">Session Cost</div><div class="value" id="kpi-cost">0.0000¢</div></div>
       </div>
-    </div>
+
+      <div class="grid">
+        <div class="card">
+          <h3>Task Executor</h3>
+          <textarea id="agent-task" rows="4" placeholder="Describe a task for autonomous planning and execution..."></textarea>
+          <div class="row" style="margin-top:8px;">
+            <input id="budget-cents" type="number" min="0" step="0.01" placeholder="Budget in cents (optional)" />
+            <button onclick="planTask()">Plan</button>
+            <button class="secondary" onclick="executeTaskStep()">Execute Step</button>
+          </div>
+          <div class="meta" style="margin-top:8px;">Task ID: <span id="task-id">-</span> • Session: <span id="session-id"></span></div>
+          <h3 style="margin-top:12px;">Reasoning Chain</h3>
+          <div id="reasoning-chain" class="tree">Thought → Action → Observation will appear here.</div>
+        </div>
+
+        <div class="card">
+          <h3>Approvals</h3>
+          <div id="approval-list" class="approval-list"></div>
+        </div>
+
+        <div class="card">
+          <h3>Execution Tree & Audit Logs</h3>
+          <div id="log-list" class="log-list"></div>
+        </div>
+
+        <div class="card">
+          <h3>Memory Context</h3>
+          <div id="memory-list" class="memory-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="terminal-view" class="hidden">
+      <div class="terminal-wrap">
+        <div id="chat-stream" class="card"></div>
+        <div class="row">
+          <textarea id="user-input" rows="2" placeholder="Type your instruction..."></textarea>
+          <button id="send-btn" onclick="sendMessage()">Send</button>
+        </div>
+      </div>
+    </section>
   </main>
 
-  <footer>
-    <div class="input-wrapper">
-      <textarea id="user-input" placeholder="Type your instruction or code analysis request..." rows="1"></textarea>
-      <button id="send-btn" class="send-btn" onclick="sendMessage()">Send</button>
-    </div>
-  </footer>
-
   <script>
-    const chatStream = document.getElementById('chat-stream');
-    const userInput = document.getElementById('user-input');
-    const sendBtn = document.getElementById('send-btn');
+    const sessionId = localStorage.getItem('pg1_agent_session') || `session-${Date.now()}`;
+    localStorage.setItem('pg1_agent_session', sessionId);
+    document.getElementById('session-id').textContent = sessionId;
 
-    userInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
+    let activeTaskId = localStorage.getItem('pg1_agent_task') || '';
+    if (activeTaskId) document.getElementById('task-id').textContent = activeTaskId;
+
+    function switchTab(tab) {
+      document.getElementById('agent-view').classList.toggle('hidden', tab !== 'agent');
+      document.getElementById('terminal-view').classList.toggle('hidden', tab !== 'terminal');
+      document.getElementById('tab-agent').classList.toggle('active', tab === 'agent');
+      document.getElementById('tab-terminal').classList.toggle('active', tab === 'terminal');
+    }
+
+    async function planTask() {
+      const task = document.getElementById('agent-task').value.trim();
+      if (!task) return;
+      const budgetInput = document.getElementById('budget-cents').value;
+      const payload = { sessionId, task };
+      if (budgetInput !== '') payload.budgetCents = Number(budgetInput);
+
+      const res = await fetch('/api/agent/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) return alert(data.error || 'Planning failed');
+
+      activeTaskId = data.taskId;
+      localStorage.setItem('pg1_agent_task', activeTaskId);
+      document.getElementById('task-id').textContent = activeTaskId;
+      document.getElementById('reasoning-chain').textContent = data.steps.map((s) => `• [${s.index + 1}] ${s.goal}`).join('\n');
+      refreshAgentPanels();
+    }
+
+    async function executeTaskStep(approvedApprovalIds = []) {
+      if (!activeTaskId) return alert('Plan a task first.');
+      const res = await fetch('/api/agent/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, taskId: activeTaskId, approvedApprovalIds })
+      });
+      const data = await res.json();
+      if (!res.ok) return alert(data.error || 'Execution failed');
+
+      if (data.awaitingApproval && data.approval) {
+        renderApprovals([data.approval]);
       }
-    });
+      refreshAgentPanels();
+    }
+
+    async function approveAndContinue(approvalId, decision) {
+      await fetch('/api/agent/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approvalId, decision })
+      });
+      if (decision === 'approve') {
+        executeTaskStep([approvalId]);
+      } else {
+        refreshAgentPanels();
+      }
+    }
+
+    async function refreshAgentPanels() {
+      if (!activeTaskId) return;
+      const [statusRes, logsRes, costsRes, memoryRes] = await Promise.all([
+        fetch(`/api/agent/status?sessionId=${encodeURIComponent(sessionId)}&taskId=${encodeURIComponent(activeTaskId)}`),
+        fetch(`/api/agent/logs?sessionId=${encodeURIComponent(sessionId)}&taskId=${encodeURIComponent(activeTaskId)}&limit=50`),
+        fetch(`/api/agent/costs?sessionId=${encodeURIComponent(sessionId)}&taskId=${encodeURIComponent(activeTaskId)}`),
+        fetch(`/api/agent/memory?sessionId=${encodeURIComponent(sessionId)}&limit=20`)
+      ]);
+
+      const statusData = statusRes.ok ? await statusRes.json() : null;
+      const logsData = logsRes.ok ? await logsRes.json() : { logs: [] };
+      const costsData = costsRes.ok ? await costsRes.json() : { total_cost_cents: 0 };
+      const memoryData = memoryRes.ok ? await memoryRes.json() : { memories: [] };
+
+      const task = statusData?.task;
+      const progress = task?.progress?.total_steps ? Math.round((task.progress.completed_steps / task.progress.total_steps) * 100) : 0;
+      document.getElementById('kpi-state').textContent = task?.lifecycle_state || 'idle';
+      document.getElementById('kpi-progress').textContent = `${progress}%`;
+      document.getElementById('kpi-cost').textContent = `${Number(costsData.total_cost_cents || 0).toFixed(4)}¢`;
+
+      const chain = logsData.logs.slice(0, 5).reverse().map((log) => `Thought: ${log.thought || '-'}\nAction: ${log.action || '-'}\nObservation: ${log.observation || '-'}\n`).join('\n');
+      document.getElementById('reasoning-chain').textContent = chain || 'No steps executed yet.';
+
+      renderLogs(logsData.logs || []);
+      renderApprovals(statusData?.pendingApprovals || []);
+      renderMemory(memoryData.memories || []);
+    }
+
+    function renderLogs(logs) {
+      const list = document.getElementById('log-list');
+      if (!logs.length) {
+        list.innerHTML = '<div class="log">No logs yet.</div>';
+        return;
+      }
+      list.innerHTML = logs.slice(0, 20).map((log) => `
+        <div class="log">
+          <div class="meta">${log.created_at || ''} • ${log.state || ''}</div>
+          <div><strong>${log.action || '-'}</strong></div>
+          <div>${log.observation || ''}</div>
+        </div>`).join('');
+    }
+
+    function renderApprovals(approvals) {
+      const list = document.getElementById('approval-list');
+      if (!approvals.length) {
+        list.innerHTML = '<div class="approval">No pending approvals.</div>';
+        return;
+      }
+      list.innerHTML = approvals.map((approval) => `
+        <div class="approval">
+          <div><strong>${approval.operation || 'Sensitive operation'}</strong></div>
+          <div class="meta">Risk score: ${approval.risk_score || approval.analysis?.riskScore || 0}</div>
+          <div class="row" style="margin-top:6px;">
+            <button onclick="approveAndContinue('${approval.id}', 'approve')">Approve</button>
+            <button class="secondary" onclick="approveAndContinue('${approval.id}', 'deny')">Deny</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderMemory(memories) {
+      const list = document.getElementById('memory-list');
+      if (!memories.length) {
+        list.innerHTML = '<div class="memory">No memory records yet.</div>';
+        return;
+      }
+      list.innerHTML = memories.slice(0, 20).map((item) => `
+        <div class="memory">
+          <div class="meta">${item.memory_type || 'memory'}</div>
+          <div>${item.content || ''}</div>
+        </div>
+      `).join('');
+    }
 
     async function sendMessage() {
-      const prompt = userInput.value.trim();
+      const input = document.getElementById('user-input');
+      const sendBtn = document.getElementById('send-btn');
+      const prompt = input.value.trim();
       if (!prompt) return;
-
-      userInput.value = '';
-      appendMessage('user', prompt);
+      input.value = '';
+      appendTerminalMessage('user', prompt);
       sendBtn.disabled = true;
-
-      const loadingContainer = appendLoading();
 
       try {
         const res = await fetch('/api/chat', {
@@ -287,55 +257,35 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt })
         });
-
         const data = await res.json();
-        loadingContainer.remove();
-
-        if (!res.ok) {
-          appendMessage('bot', `Error: ${data.error || 'Request failed'}`);
-        } else {
-          appendMessage('bot', data.reply, data.provider, data.model);
-        }
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        appendTerminalMessage('bot', data.reply, `[${data.provider}] ${data.model}`);
       } catch (err) {
-        loadingContainer.remove();
-        appendMessage('bot', `Network error: ${err.message}`);
+        appendTerminalMessage('bot', `Error: ${err.message}`);
       } finally {
         sendBtn.disabled = false;
-        userInput.focus();
       }
     }
 
-    function appendMessage(role, text, provider, model) {
-      const container = document.createElement('div');
-      container.className = 'message-container';
-
-      if (provider && model) {
-        const badgeBar = document.createElement('div');
-        badgeBar.className = 'badge-bar';
-        badgeBar.innerHTML = `<span class="badge badge-${provider}">${provider}</span> <span>${model}</span>`;
-        container.appendChild(badgeBar);
+    function appendTerminalMessage(role, text, meta = '') {
+      const stream = document.getElementById('chat-stream');
+      const wrap = document.createElement('div');
+      wrap.className = `msg ${role}`;
+      if (meta) {
+        const m = document.createElement('div');
+        m.className = 'meta';
+        m.textContent = meta;
+        wrap.appendChild(m);
       }
-
-      const msg = document.createElement('div');
-      msg.className = `message ${role}`;
-      msg.textContent = text;
-      container.appendChild(msg);
-
-      chatStream.appendChild(container);
-      chatStream.scrollTop = chatStream.scrollHeight;
+      const t = document.createElement('div');
+      t.textContent = text;
+      wrap.appendChild(t);
+      stream.appendChild(wrap);
+      stream.scrollTop = stream.scrollHeight;
     }
 
-    function appendLoading() {
-      const container = document.createElement('div');
-      container.className = 'message-container';
-      const msg = document.createElement('div');
-      msg.className = 'message bot';
-      msg.innerHTML = '<span class="loading-pulse"></span> Routing request...';
-      container.appendChild(msg);
-      chatStream.appendChild(container);
-      chatStream.scrollTop = chatStream.scrollHeight;
-      return container;
-    }
+    setInterval(refreshAgentPanels, 3000);
+    refreshAgentPanels();
   </script>
 </body>
 </html>
