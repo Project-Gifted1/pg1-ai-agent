@@ -38,7 +38,8 @@ export default async function handler(req, res) {
 
     if (isComplex || isLong) {
       // Gemini Route
-      apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+      apiKey = (process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY || '').trim();
+
       if (!apiKey) {
         throw new Error('GEMINI_API_KEY environment variable is missing.');
       }
