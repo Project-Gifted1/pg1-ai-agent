@@ -692,12 +692,8 @@ function routeModelByComplexity(prompt, defaultModel = 'gemini-1.5-flash') {
     };
 }
 
-    return {
-        selectedModel: defaultModel.includes('pro') ? defaultModel : FLASH_MODEL,
-        escalated: false,
-        reason: "Standard complexity query routed to Flash core"
-    };
-}
+    
+
 
 document.addEventListener("DOMContentLoaded", () => {
   localStorage.removeItem('PG1_CHAT_DOM');
