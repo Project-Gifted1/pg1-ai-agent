@@ -27,3 +27,5 @@ out/
 .cache/
 .npm/
 *.tmp
+cache/voices/
+cache/voice-generation-logs.jsonl

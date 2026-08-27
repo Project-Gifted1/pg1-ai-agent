@@ -4,7 +4,13 @@
   "private": true,
   "description": "PG1 Sovereign AI Agent dynamic router endpoint",
   "scripts": {
-    "start": "node api/chat.js"
+    "start": "node api/chat.js",
+    "setup:voice": "node scripts/setup-aws-polly.js",
+    "voice:test": "node scripts/test-voice.js",
+    "voice:cache:clear": "rm -rf ./cache/voices",
+    "voice:list": "node scripts/list-voices.js"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@aws-sdk/client-polly": "3.1119.0"
+  }
 }
