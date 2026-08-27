@@ -7,22 +7,26 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const { message, userMessage } = req.body || {};
-    const promptText = userMessage || message || '';
+    const promptText = req.body?.userMessage || req.body?.message || '';
     const apiKey = (process.env.GEMINI_API_KEY1 || '').trim();
     
-    if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY1 missing.' });
+    if (!apiKey) return res.status(200).json({ reply: 'Vercel Error: GEMINI_API_KEY1 missing.' });
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] })
     });
 
     const data = await response.json();
+
+    if (!response.ok) {
+      return res.status(200).json({ reply: `Google API Error: ${data.error?.message || 'Invalid Request'}`, provider: 'gemini' });
+    }
+
     const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated.';
     return res.status(200).json({ reply, provider: 'gemini' });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(200).json({ reply: `Execution Error: ${err.message}`, provider: 'gemini' });
   }
 };
