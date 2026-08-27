@@ -1384,10 +1384,12 @@ TRIPLE VERIFICATION & AUTONOMOUS CONTROL PROTOCOLS:
               persistTerminalState();
               
               const followupStart = Date.now();
-              const followupRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${key}`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
-              });
+              const followupRes = await fetch('/api/chat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ prompt: currentPrompt, model: activeModel })
+});
+
               TelemetryStack.log('NEURAL_CORE', activeModel, Date.now() - followupStart, followupRes.status);
               
               const followUpData = await followupRes.json();
