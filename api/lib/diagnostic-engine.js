@@ -148,9 +148,6 @@ class DiagnosticEngine {
     };
   }
 
-  /**
-   * Analyze error and suggest solutions
-   */
   diagnose(errorMessage, context = '') {
     const diagnosis = {
       error: errorMessage,
@@ -187,9 +184,6 @@ class DiagnosticEngine {
     return diagnosis;
   }
 
-  /**
-   * Validate proposed solution
-   */
   validateSolution(solution, validationType = 'syntax') {
     const validation = {
       solution: solution.substring(0, 200),
@@ -226,9 +220,6 @@ class DiagnosticEngine {
     return validation;
   }
 
-  /**
-   * Suggest debugging strategies
-   */
   suggestDebugStrategy(errorType) {
     const strategies = {
       'timeout': [
@@ -266,9 +257,6 @@ class DiagnosticEngine {
     return strategies[errorType] || strategies['logic'];
   }
 
-  /**
-   * Get error severity color for UI
-   */
   getSeverityLevel(severity) {
     const levels = {
       'critical': { level: 0, color: 'red', action: 'ESCALATE' },
