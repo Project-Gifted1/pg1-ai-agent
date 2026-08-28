@@ -17,7 +17,6 @@
       flex-direction: column;
     }
 
-    /* Classic Header */
     header {
       padding: 20px 16px;
       background-color: #0A0D14;
@@ -35,7 +34,6 @@
       font-size: 24px; font-weight: bold; color: #FFFFFF; letter-spacing: -0.5px;
     }
 
-    /* Chat Area */
     main {
       flex: 1; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 24px;
     }
@@ -61,7 +59,6 @@
       max-width: 85%;
     }
 
-    /* Markdown Styling */
     .bubble strong { color: #FFFFFF; }
     .bubble pre { background: #0A0D14; padding: 12px; border-radius: 4px; margin: 10px 0; overflow-x: auto; border: 1px solid #1E293B; }
     .bubble code { font-family: monospace; font-size: 13px; color: #93C5FD; }
@@ -69,8 +66,8 @@
     .bubble p:last-child { margin-bottom: 0; }
     .bubble ul { margin-left: 20px; margin-bottom: 12px; }
     .bubble li { margin-bottom: 6px; }
+    .bubble img { max-width: 100%; border-radius: 8px; margin: 12px 0; border: 1px solid #1E293B; display: block; }
 
-    /* Classic Voice Panel */
     .voice-panel {
       background-color: #121826;
       border-top: 1px solid #1E293B;
@@ -99,7 +96,6 @@
       font-size: 12px; color: #94A3B8; font-family: monospace;
     }
 
-    /* Visual Audio Player Match */
     .dummy-audio-player {
       background-color: #0A0D14;
       border-radius: 30px;
@@ -111,7 +107,6 @@
     .progress-bar { flex: 1; height: 4px; background: #1E293B; border-radius: 2px; position: relative; }
     .progress-dot { width: 10px; height: 10px; background: #FFFFFF; border-radius: 50%; position: absolute; top: -3px; left: 0; }
 
-    /* Input Area */
     .input-area {
       background-color: #0A0D14;
       padding: 12px 16px 24px 16px;
@@ -161,7 +156,6 @@
     }
     .mic-btn.recording { background-color: #EF4444; border-color: #EF4444; animation: pulse 1s infinite; }
     @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-
   </style>
 </head>
 <body>
@@ -256,7 +250,7 @@
     function speakText(text) {
       if (!voiceEnabled || !('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
-      const plainText = text.replace(/[*_#`]/g, ''); 
+      const plainText = text.replace(/[*_#`]/g, '').replace(/!\[.*?\]\(.*?\)/g, ''); 
       const utterance = new SpeechSynthesisUtterance(plainText);
       utterance.lang = 'en-US';
       utterance.rate = 1.05;
@@ -266,7 +260,7 @@
     function parseMarkdown(text) {
       let html = text;
       html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
-      html = html.replace(/!\[([^\]]*)\]\((.*?)\)/g, '<img src="$2" alt="$1" style="max-width: 100%; border-radius: 8px; margin: 12px 0; border: 1px solid #1E293B; display: block;" />');
+      html = html.replace(/!\[([^\]]*)\]\((.*?)\)/g, '<img src="$2" alt="$1" />');
       html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
       html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
       html = html.replace(/`(.*?)`/g, '<code>$1</code>');
@@ -291,7 +285,8 @@
       const loadingId = appendBotMessage('Processing directive...', true);
 
       try {
-        const res = await fetch('https://gifted1s-projects.vercel.app/api/chat', {
+        // Updated to relative routing to bypass CORS regardless of deployment URL
+        const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: prompt, userMessage: prompt, message: prompt })
