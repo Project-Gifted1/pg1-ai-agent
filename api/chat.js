@@ -135,8 +135,9 @@ async function handler(req, res) {
       return res.status(400).json({ error: 'Missing prompt or message payload' });
     }
 
-    if (promptText.length > getMaxMessageLength()) {
-      return res.status(413).json({ error: `Message too long (max ${getMaxMessageLength()} characters)` });
+    const maxMessageLength = getMaxMessageLength();
+    if (promptText.length > maxMessageLength) {
+      return res.status(413).json({ error: `Message too long (max ${maxMessageLength} characters)` });
     }
 
     const apiKey = (process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY || '').trim();
