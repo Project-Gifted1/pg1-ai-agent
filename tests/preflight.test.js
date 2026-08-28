@@ -19,7 +19,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
+const backendOrigin = require('../backend-origin.js');
+const chatHandler = require('../api/chat.js');
 const SelfHealingEngine = require('../api/lib/self-healing');
+const MemorySystem = require('../api/lib/memory-system');
+const { PG1CostTracker } = require('../lib/costTracker');
 
 // Minimal stubs — we only test generateFallbackResponse here
 const engine = new SelfHealingEngine(null, null, null);
@@ -94,21 +98,188 @@ test('status request uses status-focused response', () => {
 // ── HTML checks ───────────────────────────────────────────────────────────────
 
 const html = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
+const publicHtml = fs.readFileSync(path.resolve(__dirname, '../public/index.html'), 'utf8');
+const deployWorkflow = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/deploy.yml'), 'utf8');
 
-test('composer placeholder is friendly (not technical jargon)', () => {
+test('root composer keeps the existing PG1-branded placeholder', () => {
   assert.ok(!html.includes('Execute directive or query agent'), 'Old placeholder still present');
-  assert.ok(html.includes('Ask anything'), 'Expected friendly placeholder not found');
+  assert.ok(html.includes('Message PG1 Sovereign Agent™...'), 'Expected root composer placeholder not found');
 });
 
-test('quick-action chips are wrapped in .action-row-wrap for mobile scroll-fade', () => {
-  assert.ok(html.includes('action-row-wrap'), 'action-row-wrap wrapper not found in HTML');
+test('root composer keeps voice input controls', () => {
+  assert.ok(html.includes('id="micBtn"'), 'Voice input button missing from root entrypoint');
+  assert.ok(html.includes('SpeechRecognition'), 'Speech recognition wiring missing from root entrypoint');
 });
 
-test('action-row-wrap::after fade cue is defined in CSS', () => {
-  assert.ok(html.includes('action-row-wrap::after'), 'Scroll-fade CSS rule not found');
+test('static entrypoints use the numeric repository logo asset for favicon and branding', () => {
+  assert.ok(html.includes('rel="icon" type="image/jpeg" href="./08207b14-b824-41ac-ac43-97d078840546.jpeg"'), 'Root favicon is not using the numeric repo logo asset');
+  assert.ok(html.includes('src="./08207b14-b824-41ac-ac43-97d078840546.jpeg"'), 'Root logo image is not using the numeric repo logo asset');
+  assert.ok(publicHtml.includes('rel="icon" type="image/jpeg" href="../08207b14-b824-41ac-ac43-97d078840546.jpeg"'), 'Public favicon is not using the numeric repo logo asset');
+  assert.ok(publicHtml.includes('src="../08207b14-b824-41ac-ac43-97d078840546.jpeg"'), 'Public branding is not using the numeric repo logo asset');
 });
 
-test('-webkit-overflow-scrolling is set on .action-row for iOS scroll', () => {
-  assert.ok(html.includes('-webkit-overflow-scrolling'), 'iOS scroll hint missing from .action-row');
+test('public entrypoint keeps quick-action buttons', () => {
+  assert.ok(publicHtml.includes('class="action-row"'), 'Quick-action row missing from public entrypoint');
+  assert.ok(publicHtml.includes('Status Report'), 'Expected quick-action label missing from public entrypoint');
 });
 
+test('public composer keeps the streamlined placeholder', () => {
+  assert.ok(publicHtml.includes('placeholder="Initialize sequence..."'), 'Expected public composer placeholder not found');
+});
+
+test('static entrypoints load the shared backend origin helper', () => {
+  assert.ok(html.includes('<script src="./backend-origin.js"></script>'), 'Root entrypoint helper missing');
+  assert.ok(publicHtml.includes('<script src="../backend-origin.js"></script>'), 'Public entrypoint helper missing');
+});
+
+test('static entrypoints build chat requests from the shared backend origin helper', () => {
+  assert.ok(html.includes("window.PG1_BUILD_BACKEND_URL('/api/chat')"), 'Root entrypoint is not using the shared backend origin helper');
+  assert.ok(publicHtml.includes("window.PG1_BUILD_BACKEND_URL('/api/chat')"), 'Public entrypoint is not using the shared backend origin helper');
+  assert.ok(!html.includes("fetch('/api/chat'"), 'Root entrypoint still uses a relative /api/chat request');
+  assert.ok(!publicHtml.includes("fetch('/api/chat'"), 'Public entrypoint still uses a relative /api/chat request');
+});
+
+test('backend origin helper defaults to the production backend and builds absolute API URLs', () => {
+  delete globalThis.PG1_BACKEND_ORIGIN;
+  assert.equal(backendOrigin.defaultBackendOrigin, 'https://pg1-ai-agent.vercel.app');
+  assert.equal(backendOrigin.backendOrigin, 'https://pg1-ai-agent.vercel.app');
+  assert.equal(backendOrigin.buildApiUrl('/api/chat'), 'https://pg1-ai-agent.vercel.app/api/chat');
+});
+
+test('backend origin helper accepts a runtime override', () => {
+  const original = globalThis.PG1_BACKEND_ORIGIN;
+  globalThis.PG1_BACKEND_ORIGIN = 'https://example.com/custom/path';
+
+  try {
+    assert.equal(backendOrigin.backendOrigin, 'https://example.com');
+    assert.equal(backendOrigin.buildApiUrl('api/media/voice'), 'https://example.com/api/media/voice');
+  } finally {
+    if (typeof original === 'undefined') delete globalThis.PG1_BACKEND_ORIGIN;
+    else globalThis.PG1_BACKEND_ORIGIN = original;
+  }
+});
+
+test('memory and voice cost logs use tmp-backed writable paths by default', () => {
+  delete process.env.PG1_MEMORY_FILE;
+  delete process.env.PG1_VOICE_LOG_FILE;
+
+  const memorySystem = new MemorySystem();
+  const costTracker = new PG1CostTracker();
+
+  assert.equal(memorySystem.memoryFile, path.join('/tmp', '.pg1-memory.json'));
+  assert.equal(costTracker.logFile, path.join('/tmp', 'voice-generation-logs.jsonl'));
+});
+
+test('deploy workflow uses a unique Pages artifact name to avoid collisions', () => {
+  assert.ok(deployWorkflow.includes('name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}'), 'Unique Pages artifact name missing');
+  assert.ok(deployWorkflow.includes('artifact_name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}'), 'Deploy step is not pinned to the unique artifact name');
+});
+
+test('chat handler accepts the static frontend send payload and applies allowed-origin CORS', async () => {
+  const originalFetch = global.fetch;
+  const originalGeminiKey = process.env.GEMINI_API_KEY;
+  const originalGeminiKey1 = process.env.GEMINI_API_KEY1;
+  const originalAllowedOrigins = process.env.ALLOWED_ORIGINS;
+  process.env.GEMINI_API_KEY = '';
+  process.env.GEMINI_API_KEY1 = 'test-key';
+  process.env.ALLOWED_ORIGINS = 'https://project-gifted1.github.io';
+
+  const fetchCalls = [];
+  global.fetch = async (url, options) => {
+    fetchCalls.push({ url, options });
+    return {
+      ok: true,
+      text: async () => JSON.stringify({
+        candidates: [
+          {
+            content: {
+              parts: [{ text: 'Acknowledged.' }]
+            }
+          }
+        ]
+      })
+    };
+  };
+
+  const req = {
+    method: 'POST',
+    headers: { origin: 'https://project-gifted1.github.io' },
+    body: { message: 'Hello from Pages' }
+  };
+  const res = createMockResponse();
+
+  try {
+    await chatHandler(req, res);
+  } finally {
+    global.fetch = originalFetch;
+    restoreEnv('GEMINI_API_KEY', originalGeminiKey);
+    restoreEnv('GEMINI_API_KEY1', originalGeminiKey1);
+    restoreEnv('ALLOWED_ORIGINS', originalAllowedOrigins);
+  }
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Access-Control-Allow-Origin'], 'https://project-gifted1.github.io');
+  assert.equal(res.body.reply, 'Acknowledged.');
+  assert.equal(new URL(fetchCalls[0].url).hostname, 'generativelanguage.googleapis.com');
+  assert.equal(JSON.parse(fetchCalls[0].options.body).contents[0].parts[0].text, 'Hello from Pages');
+});
+
+test('chat handler rejects oversize payloads before contacting the upstream model', async () => {
+  const originalFetch = global.fetch;
+  const originalMaxLength = process.env.MAX_MESSAGE_LENGTH;
+  const originalGeminiKey = process.env.GEMINI_API_KEY1;
+  process.env.MAX_MESSAGE_LENGTH = '4';
+  process.env.GEMINI_API_KEY1 = 'test-key';
+  let fetchCalled = false;
+  global.fetch = async () => {
+    fetchCalled = true;
+    throw new Error('fetch should not be called');
+  };
+
+  const req = {
+    method: 'POST',
+    headers: {},
+    body: { message: '12345' }
+  };
+  const res = createMockResponse();
+
+  try {
+    await chatHandler(req, res);
+  } finally {
+    global.fetch = originalFetch;
+    restoreEnv('MAX_MESSAGE_LENGTH', originalMaxLength);
+    restoreEnv('GEMINI_API_KEY1', originalGeminiKey);
+  }
+
+  assert.equal(res.statusCode, 413);
+  assert.equal(fetchCalled, false);
+});
+
+function createMockResponse() {
+  return {
+    headers: {},
+    statusCode: 200,
+    body: undefined,
+    ended: false,
+    setHeader(name, value) {
+      this.headers[name] = value;
+    },
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload) {
+      this.body = payload;
+      return this;
+    },
+    end() {
+      this.ended = true;
+      return this;
+    }
+  };
+}
+
+function restoreEnv(key, value) {
+  if (typeof value === 'undefined') delete process.env[key];
+  else process.env[key] = value;
+}

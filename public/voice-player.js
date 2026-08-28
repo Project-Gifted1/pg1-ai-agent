@@ -4,6 +4,14 @@ class PG1VoicePlayer {
     this.currentAudio = null;
   }
 
+  buildBackendUrl(path) {
+    if (window.PG1_BUILD_BACKEND_URL) {
+      return window.PG1_BUILD_BACKEND_URL(path);
+    }
+
+    return path;
+  }
+
   base64ToBlob(base64, mimeType = 'audio/mpeg') {
     const binary = atob(base64);
     const len = binary.length;
@@ -16,8 +24,9 @@ class PG1VoicePlayer {
     if (this.isPlaying || !text) return null;
 
     this.isPlaying = true;
+    let objectUrl = null;
     try {
-      const response = await fetch('/api/media/voice', {
+      const response = await fetch(this.buildBackendUrl('/api/media/voice'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, context })
@@ -28,7 +37,7 @@ class PG1VoicePlayer {
       if (!data.audioBase64) throw new Error('Voice API did not return audio data');
 
       const blob = this.base64ToBlob(data.audioBase64, 'audio/mpeg');
-      const objectUrl = URL.createObjectURL(blob);
+      objectUrl = URL.createObjectURL(blob);
       const audioElement = document.getElementById('voice-output');
       const audio = audioElement || new Audio();
       audio.src = objectUrl;
@@ -42,6 +51,7 @@ class PG1VoicePlayer {
       this.currentAudio = audio;
       return data;
     } catch (error) {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
       this.isPlaying = false;
       throw error;
     }
@@ -55,7 +65,7 @@ class PG1VoicePlayer {
   }
 
   async listVoices() {
-    const response = await fetch('/api/media/voice?action=list');
+    const response = await fetch(this.buildBackendUrl('/api/media/voice?action=list'));
     if (!response.ok) throw new Error(`Voice list failed: ${response.status}`);
     const data = await response.json();
     return data.voices || [];

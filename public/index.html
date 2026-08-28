@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>PG1 Sovereign Agent™ | Project-Gifted1™</title>
+  <link rel="icon" type="image/jpeg" href="../08207b14-b824-41ac-ac43-97d078840546.jpeg" />
+  <link rel="apple-touch-icon" href="../08207b14-b824-41ac-ac43-97d078840546.jpeg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -204,7 +206,7 @@
   
   <header>
     <div class="brand-cluster">
-      <img src="https://raw.githubusercontent.com/Project-Gifted1/pg1-ai-agent/main/08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1" class="brand-logo" onerror="this.style.display='none'" />
+      <img src="../08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1" class="brand-logo" onerror="this.style.display='none'" />
       <div class="brand-meta"><span class="brand-title">PG1 Sovereign Agent™</span><span class="brand-sub">Project-Gifted1™ Core</span></div>
     </div>
     <div class="status-pill" onclick="toggleModal('sys-modal')">
@@ -219,7 +221,7 @@
       
       <div class="core-header">
         <div class="core-logo-ring">
-          <img src="https://raw.githubusercontent.com/Project-Gifted1/pg1-ai-agent/main/08207b14-b824-41ac-ac43-97d078840546.jpeg" class="core-logo" />
+          <img src="../08207b14-b824-41ac-ac43-97d078840546.jpeg" class="core-logo" />
         </div>
         <div class="core-title">PG1.Agent™ Sovereign Core</div>
         <div class="core-subtitle">Auto-Healing • Dynamic GitHub Intel • PiP Camera</div>
@@ -281,6 +283,7 @@
     </div>
   </footer>
 
+  <script src="../backend-origin.js"></script>
   <script>
     const chatStream = document.getElementById('chat-stream');
     const userInput = document.getElementById('user-input');
@@ -337,6 +340,7 @@
     async function sendMessage() {
       const prompt = userInput.value.trim();
       if (!prompt) return;
+      const chatEndpoint = window.PG1_BUILD_BACKEND_URL('/api/chat');
 
       userInput.value = '';
       userInput.style.height = '38px';
@@ -346,7 +350,7 @@
       const loadingContainer = appendLoading();
 
       try {
-        const res = await fetch('/api/chat', {
+        const res = await fetch(chatEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: prompt, userMessage: prompt, message: prompt })

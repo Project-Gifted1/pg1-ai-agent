@@ -44,6 +44,8 @@ An autonomous AI development assistant that combines:
 
 ## 🚀 Quick Start
 
+> Static entrypoints (`/index.html` and `/public/index.html`) now share `/backend-origin.js` as the single source of truth for absolute backend API URLs. By default it targets `https://pg1-ai-agent.vercel.app`; override `window.PG1_BACKEND_ORIGIN` or the `pg1-backend-origin` meta tag only when intentionally pointing the static UI at a different backend origin.
+
 ### 1. Deploy to Production
 
 ```bash
