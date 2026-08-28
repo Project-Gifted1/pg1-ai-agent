@@ -10,6 +10,151 @@ let currentUtterance = null;
 let speechKeepAliveInterval = null;
 let audioCtx = null;
 let isSpeakingNow = false;
+// Browser storage is only a convenience layer here. Obfuscation reduces casual exposure,
+// but real protection still depends on preventing XSS and serving the app with a strict CSP.
+const MASKED_SECRET_VALUE = '••••••••••••••••';
+const SENSITIVE_STORAGE_KEYS = new Set(['PG1_KEY', 'PG1_GH_PAT', 'PG1_REP_KEY']);
+const OBFUSCATED_STORAGE_PREFIX = 'pg1-obf:';
+const CREDENTIAL_MIN_LENGTH = 8;
+const CREDENTIAL_MAX_LENGTH = 512;
+const MAX_AGENT_LOOP_ITERATIONS = 5;
+
+function getBrowserStorage(storageType) {
+    try {
+        return typeof window !== 'undefined' ? window[storageType] : null;
+    } catch (e) {
+        console.warn(`[PG1 Storage] ${storageType} unavailable: ${e.message}`);
+        return null;
+    }
+}
+
+function encodeSensitiveStorageValue(value) {
+    try {
+        return `${OBFUSCATED_STORAGE_PREFIX}${btoa(value)}`;
+    } catch (e) {
+        console.warn(`[PG1 Storage] Secret encoding failed: ${e.message}`);
+        return value;
+    }
+}
+
+function decodeSensitiveStorageValue(value) {
+    if (typeof value !== 'string') return '';
+    if (!value.startsWith(OBFUSCATED_STORAGE_PREFIX)) return value;
+    try {
+        return atob(value.slice(OBFUSCATED_STORAGE_PREFIX.length));
+    } catch (e) {
+        console.warn(`[PG1 Storage] Secret decoding failed: ${e.message}`);
+        return '';
+    }
+}
+
+function safeStorageGet(key, options = {}) {
+    const { sensitive = SENSITIVE_STORAGE_KEYS.has(key), defaultValue = null } = options;
+
+    if (sensitive) {
+        const session = getBrowserStorage('sessionStorage');
+        if (session) {
+            try {
+                const sessionValue = session.getItem(key);
+                if (sessionValue) return sessionValue;
+            } catch (e) {
+                console.warn(`[PG1 Storage] Session read failed for ${key}: ${e.message}`);
+            }
+        }
+    }
+
+    const storage = getBrowserStorage('localStorage');
+    if (!storage) return defaultValue;
+
+    try {
+        const storedValue = storage.getItem(key);
+        if (storedValue === null || storedValue === undefined) return defaultValue;
+        const decodedValue = sensitive ? decodeSensitiveStorageValue(storedValue) : storedValue;
+
+        if (sensitive && decodedValue) {
+            const session = getBrowserStorage('sessionStorage');
+            if (session) {
+                try {
+                    session.setItem(key, decodedValue);
+                } catch (e) {
+                    console.warn(`[PG1 Storage] Session cache failed for ${key}: ${e.message}`);
+                }
+            }
+        }
+
+        return decodedValue || defaultValue;
+    } catch (e) {
+        console.warn(`[PG1 Storage] Read failed for ${key}: ${e.message}`);
+        return defaultValue;
+    }
+}
+
+function safeStorageSet(key, value, options = {}) {
+    const { sensitive = SENSITIVE_STORAGE_KEYS.has(key), persistLocal = true } = options;
+    const normalizedValue = typeof value === 'string' ? value : String(value ?? '');
+    let wroteValue = false;
+
+    if (sensitive) {
+        const session = getBrowserStorage('sessionStorage');
+        if (session) {
+            try {
+                session.setItem(key, normalizedValue);
+                wroteValue = true;
+            } catch (e) {
+                console.warn(`[PG1 Storage] Session write failed for ${key}: ${e.message}`);
+            }
+        }
+    }
+
+    if (!persistLocal) return wroteValue;
+
+    const storage = getBrowserStorage('localStorage');
+    if (!storage) return wroteValue;
+
+    try {
+        storage.setItem(key, sensitive ? encodeSensitiveStorageValue(normalizedValue) : normalizedValue);
+        return true;
+    } catch (e) {
+        console.warn(`[PG1 Storage] Write failed for ${key}: ${e.message}`);
+        return wroteValue;
+    }
+}
+
+function safeStorageRemove(key, options = {}) {
+    const { sensitive = SENSITIVE_STORAGE_KEYS.has(key) } = options;
+
+    if (sensitive) {
+        const session = getBrowserStorage('sessionStorage');
+        if (session) {
+            try {
+                session.removeItem(key);
+            } catch (e) {
+                console.warn(`[PG1 Storage] Session remove failed for ${key}: ${e.message}`);
+            }
+        }
+    }
+
+    const storage = getBrowserStorage('localStorage');
+    if (!storage) return false;
+
+    try {
+        storage.removeItem(key);
+        return true;
+    } catch (e) {
+        console.warn(`[PG1 Storage] Remove failed for ${key}: ${e.message}`);
+        return false;
+    }
+}
+
+function normalizeCredentialInput(value, label) {
+    const normalized = typeof value === 'string' ? value.trim() : '';
+    if (!normalized || normalized === MASKED_SECRET_VALUE) return { skip: true };
+    if (normalized.length < CREDENTIAL_MIN_LENGTH) return { error: `${label} looks too short.` };
+    if (normalized.length > CREDENTIAL_MAX_LENGTH) return { error: `${label} is too long.` };
+    if (/\s/.test(normalized)) return { error: `${label} must not contain spaces.` };
+    if (/[\u0000-\u001F\u007F]/.test(normalized)) return { error: `${label} contains invalid control characters.` };
+    return { value: normalized };
+}
 
 /* =====================================================================
    TELEMETRY & AUTONOMOUS ANOMALY DETECTION ENGINE
@@ -53,7 +198,7 @@ function getAudioContext() {
 }
 
 function isSfxEnabled() {
-    return localStorage.getItem('PG1_SFX_ENABLED') !== 'false';
+    return safeStorageGet('PG1_SFX_ENABLED') !== 'false';
 }
 
 function unlockAudio() {
@@ -257,13 +402,36 @@ window.saveMasterKeys = function() {
     const kIn = document.getElementById('masterKeyInput'); 
     const gIn = document.getElementById('githubKeyInput');
     const rIn = document.getElementById('replicateKeyInput');
-    if (kIn && kIn.value && kIn.value !== '••••••••••••••••') localStorage.setItem('PG1_KEY', kIn.value.trim());
-    if (gIn && gIn.value && gIn.value !== '••••••••••••••••') localStorage.setItem('PG1_GH_PAT', gIn.value.trim());
-    if (rIn && rIn.value && rIn.value !== '••••••••••••••••') localStorage.setItem('PG1_REP_KEY', rIn.value.trim());
+    const credentialInputs = [
+        { input: kIn, key: 'PG1_KEY', label: 'Master API key' },
+        { input: gIn, key: 'PG1_GH_PAT', label: 'GitHub PAT' },
+        { input: rIn, key: 'PG1_REP_KEY', label: 'Replicate API key' }
+    ];
+    const validationErrors = [];
+
+    credentialInputs.forEach(({ input, key, label }) => {
+        if (!input) return;
+        const normalized = normalizeCredentialInput(input.value, label);
+        if (normalized.error) {
+            validationErrors.push(normalized.error);
+            return;
+        }
+        if (!normalized.skip) {
+            safeStorageSet(key, normalized.value, { sensitive: true });
+        }
+    });
+
+    if (validationErrors.length > 0) {
+        triggerHaptic('error');
+        playErrorTone();
+        alert(`Credential validation failed:\n- ${validationErrors.join('\n- ')}`);
+        return;
+    }
+
     window.checkKeys(); 
     triggerHaptic('success'); 
     playSuccessChime();
-    alert('Credentials securely saved.');
+    alert('Credentials saved for this session and obfuscated in local storage for convenience. This reduces casual exposure but does not protect against XSS. For stronger protection, use a strict Content Security Policy and keep production secrets on the server.');
 };
 
 window.checkKeys = function() {
@@ -274,13 +442,13 @@ window.checkKeys = function() {
     const connBadge = document.getElementById('connectionBadge');
     if (!kIn || !gIn || !stat || !connBadge) return;
     
-    const hasKey = !!localStorage.getItem('PG1_KEY');
-    const hasPat = !!localStorage.getItem('PG1_GH_PAT');
-    const hasRep = !!localStorage.getItem('PG1_REP_KEY');
+    const hasKey = !!safeStorageGet('PG1_KEY', { sensitive: true });
+    const hasPat = !!safeStorageGet('PG1_GH_PAT', { sensitive: true });
+    const hasRep = !!safeStorageGet('PG1_REP_KEY', { sensitive: true });
     
-    if (hasKey) kIn.value = '••••••••••••••••';
-    if (hasPat) gIn.value = '••••••••••••••••';
-    if (hasRep && rIn) rIn.value = '••••••••••••••••';
+    if (hasKey) kIn.value = MASKED_SECRET_VALUE;
+    if (hasPat) gIn.value = MASKED_SECRET_VALUE;
+    if (hasRep && rIn) rIn.value = MASKED_SECRET_VALUE;
     
     if (hasKey) {
         stat.innerText = hasPat ? 'KEY_STATUS: MASTER + GITHUB_PAT' : 'KEY_STATUS: MASTER_STORED';
@@ -347,7 +515,7 @@ function populateVoiceSelect() {
     if (!voices || voices.length === 0) return;
     systemVoices = voices;
 
-    const currentVal = localStorage.getItem('PG1_SPECIFIC_VOICE') || 'auto';
+    const currentVal = safeStorageGet('PG1_SPECIFIC_VOICE') || 'auto';
     specificSelect.innerHTML = `<option value="auto">⚡ Best Neural / HD Voice (Auto-Selected)</option>`;
     
     const sorted = [...voices].sort((a, b) => {
@@ -418,7 +586,7 @@ function selectBestVoice(targetLang, persona, specificVoiceName) {
         }
     }
 
-    const femaleKeywords = ['female', 'zira', 'samantha', 'victoria', 'karen', 'siri', 'moira', 'tessa', 'anna', 'monica', 'amelie', 'kyoko', 'yuna', 'tingting', 'luciana', 'elena', 'yelda', 'lekha', 'paulina', 'alice', 'ava', 'zoe'];
+    const femaleKeywords = ['female', 'zira', 'samantha', 'victoria', 'karen', 'siri', 'moira', 'tessa', 'anna', 'monica', 'amelie', 'kyoko', 'yuna', 'tingting', 'luciana', 'elena', 'yelda', 'lekha', 'paulina', 'alice', 'ava', 'zoe', 'serena', 'emma', 'aria', 'catherine'];
     const maleKeywords = ['male', 'david', 'guy', 'george', 'daniel', 'alex', 'aaron', 'thomas', 'jorge', 'arthur', 'oliver', 'yannick', 'sinji', 'otoya', 'felipe', 'nikolai', 'tarik'];
 
     let genderFiltered = candidates;
@@ -471,11 +639,11 @@ function speakAgentResponse(text, forceSpeak = false) {
         const chunks = rawChunks.map(c => c.trim()).filter(c => c.length > 0);
         let chunkIndex = 0;
 
-        const savedLang = localStorage.getItem('PG1_VOICE_LANG') || 'en-US';
-        const savedGender = localStorage.getItem('PG1_VOICE_GENDER') || 'female';
-        const savedSpecificVoice = localStorage.getItem('PG1_SPECIFIC_VOICE') || 'auto';
-        const savedRate = parseFloat(localStorage.getItem('PG1_VOICE_RATE') || '1.0');
-        const savedPitch = parseFloat(localStorage.getItem('PG1_VOICE_PITCH') || '1.0');
+        const savedLang = safeStorageGet('PG1_VOICE_LANG') || 'en-US';
+        const savedGender = safeStorageGet('PG1_VOICE_GENDER') || 'female';
+        const savedSpecificVoice = safeStorageGet('PG1_SPECIFIC_VOICE') || 'auto';
+        const savedRate = parseFloat(safeStorageGet('PG1_VOICE_RATE') || '1.0');
+        const savedPitch = parseFloat(safeStorageGet('PG1_VOICE_PITCH') || '1.0');
 
         const matchedVoice = selectBestVoice(savedLang, savedGender, savedSpecificVoice);
 
@@ -542,7 +710,7 @@ function speakAgentResponse(text, forceSpeak = false) {
    FULL MCP TOOL REGISTRY WITH PRE-FLIGHT LINTING & ROLLBACK
 ===================================================================== */
 async function searchGitHubRepos(query) {
-    const pat = localStorage.getItem('PG1_GH_PAT'); if (!pat) return "ERROR: GitHub PAT missing.";
+    const pat = safeStorageGet('PG1_GH_PAT', { sensitive: true }); if (!pat) return "ERROR: GitHub PAT missing.";
     if(terminalAppendFunc) terminalAppendFunc(`[GitHub API] Searching for: ${query}...`, "system-msg", true);
     const start = Date.now();
     try {
@@ -559,7 +727,7 @@ async function searchGitHubRepos(query) {
 }
 
 async function readGitHubFile(repoFullName, filePath) {
-    const pat = localStorage.getItem('PG1_GH_PAT'); if (!pat) return "ERROR: GitHub PAT missing.";
+    const pat = safeStorageGet('PG1_GH_PAT', { sensitive: true }); if (!pat) return "ERROR: GitHub PAT missing.";
     if(terminalAppendFunc) terminalAppendFunc(`[File Reader] Extracting ${filePath}...`, "system-msg", true);
     const start = Date.now();
     try {
@@ -575,7 +743,7 @@ async function readGitHubFile(repoFullName, filePath) {
 }
 
 async function dynamicGitHubCommit(repoFullName, filePath, content, commitMessage) {
-    const pat = localStorage.getItem('PG1_GH_PAT'); if (!pat) return "ERROR: GitHub PAT missing.";
+    const pat = safeStorageGet('PG1_GH_PAT', { sensitive: true }); if (!pat) return "ERROR: GitHub PAT missing.";
     
     // 1. Pre-flight linting & dry-run syntax check
     if(terminalAppendFunc) terminalAppendFunc(`[Pre-Flight Audit] Validating ${filePath} payload...`, "system-msg", true);
@@ -636,7 +804,7 @@ async function dynamicGitHubCommit(repoFullName, filePath, content, commitMessag
     }
 }
     async function listGitHubRepoFiles(repoFullName, path = "") {
-        const pat = localStorage.getItem('PG1_GH_PAT'); if (!pat) return "ERROR: GitHub PAT missing.";
+        const pat = safeStorageGet('PG1_GH_PAT', { sensitive: true }); if (!pat) return "ERROR: GitHub PAT missing.";
         if(terminalAppendFunc) terminalAppendFunc(`[Scanner] Scanning directory: ${repoFullName}/${path}...`, "system-msg", true);
         try {
             const res = await fetch(`https://api.github.com/repos/${repoFullName}/contents/${path}`, { headers: { "Authorization": `token ${pat}`, "Accept": "application/vnd.github.v3+json" } });
@@ -650,6 +818,7 @@ async function dynamicGitHubCommit(repoFullName, filePath, content, commitMessag
 const MCP_TOOL_REGISTRY = {
     searchGitHubRepos: { description: "Searches connected GitHub repositories.", parameters: { type: "OBJECT", properties: { query: { type: "STRING" } }, required: ["query"] }, handler: async (args) => await searchGitHubRepos(args.query) },
     readGitHubFile: { description: "Reads raw content of a file from GitHub.", parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" }, filePath: { type: "STRING" } }, required: ["repoFullName", "filePath"] }, handler: async (args) => await readGitHubFile(args.repoFullName, args.filePath) },
+    listGitHubRepoFiles: { description: "Lists the files in a GitHub repository directory.", parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" }, path: { type: "STRING" } }, required: ["repoFullName"] }, handler: async (args) => await listGitHubRepoFiles(args.repoFullName, args.path || "") },
     dynamicGitHubCommit: { description: "Commits code directly to a GitHub repository with pre-flight dry-run linting and rollback tracking.", parameters: { type: "OBJECT", properties: { repoFullName: { type: "STRING" }, filePath: { type: "STRING" }, content: { type: "STRING" }, commitMessage: { type: "STRING" } }, required: ["repoFullName", "filePath", "content", "commitMessage"] }, handler: async (args) => await dynamicGitHubCommit(args.repoFullName, args.filePath, args.content, args.commitMessage) }
 };
 
@@ -695,19 +864,32 @@ function routeModelByComplexity(prompt, defaultModel = 'gemini-3.7-flash') {
     };
 }
 
-    
+function getFirstCandidateContent(data, contextLabel = 'API') {
+    const candidate = data && Array.isArray(data.candidates) ? data.candidates[0] : null;
+    const content = candidate && candidate.content;
+    if (!content || !Array.isArray(content.parts) || !content.parts[0]) {
+        throw new Error(`${contextLabel} returned empty structure.`);
+    }
+    return content;
+}
+
 
 
 document.addEventListener("DOMContentLoaded", () => {
-  localStorage.removeItem('PG1_CHAT_DOM');
-  localStorage.removeItem('PG1_CHAT_HISTORY');
+  safeStorageRemove('PG1_CHAT_DOM');
+  safeStorageRemove('PG1_CHAT_HISTORY');
 
   let sessionHistory = [];
   let pendingImageData = null;
   const termOut = document.getElementById('terminalOutput');
-  window.checkKeys(); 
+  if (!termOut) console.warn('[PG1 Init] Missing terminal output container; chat rendering will be skipped.');
+  try {
+      window.checkKeys();
+  } catch (e) {
+      console.warn(`[PG1 Init] Key status initialization failed: ${e.message}`);
+  }
 
-  const savedVoicePref = localStorage.getItem('PG1_VOICE_ENABLED');
+  const savedVoicePref = safeStorageGet('PG1_VOICE_ENABLED');
   isVoiceEnabled = savedVoicePref !== null ? (savedVoicePref === 'true') : true;
 
   const voiceBtn = document.getElementById('voiceBtn');
@@ -723,15 +905,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function persistTerminalState() {
       try {
-          if (termOut) localStorage.setItem('PG1_CHAT_DOM', termOut.innerHTML);
-          localStorage.setItem('PG1_CHAT_HISTORY', JSON.stringify(sessionHistory.slice(-10)));
-      } catch(e) {}
+          if (termOut) safeStorageSet('PG1_CHAT_DOM', termOut.innerHTML);
+          safeStorageSet('PG1_CHAT_HISTORY', JSON.stringify(sessionHistory.slice(-10)));
+      } catch(e) {
+          console.warn(`[PG1 Persist] Terminal state save failed: ${e.message}`);
+      }
   }
 
   /* THREAD PERSISTENCE SYSTEM */
   function getSavedThreads() {
       try {
-          const raw = localStorage.getItem('PG1_SAVED_THREADS');
+          const raw = safeStorageGet('PG1_SAVED_THREADS');
           return raw ? JSON.parse(raw) : [];
       } catch(e) { return []; }
   }
@@ -752,8 +936,10 @@ document.addEventListener("DOMContentLoaded", () => {
               dom: termOut ? termOut.innerHTML : ''
           };
           threads.unshift(threadRecord);
-          localStorage.setItem('PG1_SAVED_THREADS', JSON.stringify(threads.slice(0, 15)));
-      } catch(e) {}
+          safeStorageSet('PG1_SAVED_THREADS', JSON.stringify(threads.slice(0, 15)));
+      } catch(e) {
+          console.warn(`[PG1 Threads] Save current thread failed: ${e.message}`);
+      }
   }
 
   function renderSavedThreadsList() {
@@ -795,7 +981,7 @@ document.addEventListener("DOMContentLoaded", () => {
       triggerHaptic('tap');
       let threads = getSavedThreads();
       threads = threads.filter(t => t.id !== threadId);
-      localStorage.setItem('PG1_SAVED_THREADS', JSON.stringify(threads));
+      safeStorageSet('PG1_SAVED_THREADS', JSON.stringify(threads));
       renderSavedThreadsList();
   };
 
@@ -804,8 +990,8 @@ document.addEventListener("DOMContentLoaded", () => {
       stopSpeech();
       if (sessionHistory.length > 0) saveCurrentThreadRecord();
       sessionHistory = [];
-      localStorage.removeItem('PG1_CHAT_DOM'); 
-      localStorage.removeItem('PG1_CHAT_HISTORY');
+      safeStorageRemove('PG1_CHAT_DOM'); 
+      safeStorageRemove('PG1_CHAT_HISTORY');
       if (termOut) {
           termOut.innerHTML = '<div class="terminal-message agent-msg">PG1.Memory flushed. Autonomous Feedback Control Loop standing by for the next Sovereign Execution.<div class="msg-btn-group"><button class="msg-action-btn speak-btn" onclick="speakMsg(this)">🔊 Speak</button><button class="msg-action-btn" onclick="copyMsg(this)">Copy</button></div></div>';
       }
@@ -894,23 +1080,28 @@ document.addEventListener("DOMContentLoaded", () => {
   const rateValLabel = document.getElementById('rateValLabel');
   const pitchValLabel = document.getElementById('pitchValLabel');
   const sfxEnabledSelect = document.getElementById('sfxEnabledSelect');
+  const savedVoiceGender = safeStorageGet('PG1_VOICE_GENDER');
+  const savedVoiceLang = safeStorageGet('PG1_VOICE_LANG');
+  const savedVoiceRate = safeStorageGet('PG1_VOICE_RATE');
+  const savedVoicePitch = safeStorageGet('PG1_VOICE_PITCH');
+  const savedSfxEnabled = safeStorageGet('PG1_SFX_ENABLED');
 
-  if (voiceGenderSelect && localStorage.getItem('PG1_VOICE_GENDER')) {
-      voiceGenderSelect.value = localStorage.getItem('PG1_VOICE_GENDER');
+  if (voiceGenderSelect && savedVoiceGender) {
+      voiceGenderSelect.value = savedVoiceGender;
   }
-  if (voiceLangSelect && localStorage.getItem('PG1_VOICE_LANG')) {
-      voiceLangSelect.value = localStorage.getItem('PG1_VOICE_LANG');
+  if (voiceLangSelect && savedVoiceLang) {
+      voiceLangSelect.value = savedVoiceLang;
   }
-  if (voiceRateSlider && localStorage.getItem('PG1_VOICE_RATE')) {
-      voiceRateSlider.value = localStorage.getItem('PG1_VOICE_RATE');
+  if (voiceRateSlider && savedVoiceRate) {
+      voiceRateSlider.value = savedVoiceRate;
       if (rateValLabel) rateValLabel.innerText = parseFloat(voiceRateSlider.value).toFixed(2) + 'x';
   }
-  if (voicePitchSlider && localStorage.getItem('PG1_VOICE_PITCH')) {
-      voicePitchSlider.value = localStorage.getItem('PG1_VOICE_PITCH');
+  if (voicePitchSlider && savedVoicePitch) {
+      voicePitchSlider.value = savedVoicePitch;
       if (pitchValLabel) pitchValLabel.innerText = parseFloat(voicePitchSlider.value).toFixed(2);
   }
-  if (sfxEnabledSelect && localStorage.getItem('PG1_SFX_ENABLED') !== null) {
-      sfxEnabledSelect.value = localStorage.getItem('PG1_SFX_ENABLED');
+  if (sfxEnabledSelect && savedSfxEnabled !== null) {
+      sfxEnabledSelect.value = savedSfxEnabled;
   }
 
   if (voiceRateSlider && rateValLabel) {
@@ -943,12 +1134,12 @@ document.addEventListener("DOMContentLoaded", () => {
       saveVoiceSettingsBtn.onclick = () => {
           triggerHaptic('tap');
           unlockAudio();
-          if (voiceGenderSelect) localStorage.setItem('PG1_VOICE_GENDER', voiceGenderSelect.value);
-          if (voiceLangSelect) localStorage.setItem('PG1_VOICE_LANG', voiceLangSelect.value);
-          if (voiceSpecificSelect) localStorage.setItem('PG1_SPECIFIC_VOICE', voiceSpecificSelect.value);
-          if (voiceRateSlider) localStorage.setItem('PG1_VOICE_RATE', voiceRateSlider.value);
-          if (voicePitchSlider) localStorage.setItem('PG1_VOICE_PITCH', voicePitchSlider.value);
-          if (sfxEnabledSelect) localStorage.setItem('PG1_SFX_ENABLED', sfxEnabledSelect.value);
+          if (voiceGenderSelect) safeStorageSet('PG1_VOICE_GENDER', voiceGenderSelect.value);
+          if (voiceLangSelect) safeStorageSet('PG1_VOICE_LANG', voiceLangSelect.value);
+          if (voiceSpecificSelect) safeStorageSet('PG1_SPECIFIC_VOICE', voiceSpecificSelect.value);
+          if (voiceRateSlider) safeStorageSet('PG1_VOICE_RATE', voiceRateSlider.value);
+          if (voicePitchSlider) safeStorageSet('PG1_VOICE_PITCH', voicePitchSlider.value);
+          if (sfxEnabledSelect) safeStorageSet('PG1_SFX_ENABLED', sfxEnabledSelect.value);
 
           voiceSettingsModal.classList.remove('active');
           triggerHaptic('success');
@@ -961,11 +1152,11 @@ document.addEventListener("DOMContentLoaded", () => {
       testVoiceBtn.onclick = () => {
           triggerHaptic('tap');
           unlockAudio();
-          if (voiceGenderSelect) localStorage.setItem('PG1_VOICE_GENDER', voiceGenderSelect.value);
-          if (voiceLangSelect) localStorage.setItem('PG1_VOICE_LANG', voiceLangSelect.value);
-          if (voiceSpecificSelect) localStorage.setItem('PG1_SPECIFIC_VOICE', voiceSpecificSelect.value);
-          if (voiceRateSlider) localStorage.setItem('PG1_VOICE_RATE', voiceRateSlider.value);
-          if (voicePitchSlider) localStorage.setItem('PG1_VOICE_PITCH', voicePitchSlider.value);
+          if (voiceGenderSelect) safeStorageSet('PG1_VOICE_GENDER', voiceGenderSelect.value);
+          if (voiceLangSelect) safeStorageSet('PG1_VOICE_LANG', voiceLangSelect.value);
+          if (voiceSpecificSelect) safeStorageSet('PG1_SPECIFIC_VOICE', voiceSpecificSelect.value);
+          if (voiceRateSlider) safeStorageSet('PG1_VOICE_RATE', voiceRateSlider.value);
+          if (voicePitchSlider) safeStorageSet('PG1_VOICE_PITCH', voicePitchSlider.value);
 
           speakAgentResponse("Project Gifted 1 Sovereign Voice Synthesizer online. Audio fidelity is crystal clear.", true);
       };
@@ -977,7 +1168,7 @@ document.addEventListener("DOMContentLoaded", () => {
           triggerHaptic('tap');
           unlockAudio();
           isVoiceEnabled = !isVoiceEnabled;
-          localStorage.setItem('PG1_VOICE_ENABLED', isVoiceEnabled.toString());
+          safeStorageSet('PG1_VOICE_ENABLED', isVoiceEnabled.toString());
           if (isVoiceEnabled) {
               voiceBtn.classList.add('active-btn');
               voiceBtn.innerText = '🗣️ Voice: ON';
@@ -1087,7 +1278,7 @@ document.addEventListener("DOMContentLoaded", () => {
           speechRecognizer.interimResults = true;
           speechRecognizer.maxAlternatives = 1;
           
-          const configuredLang = localStorage.getItem('PG1_VOICE_LANG');
+          const configuredLang = safeStorageGet('PG1_VOICE_LANG');
           speechRecognizer.lang = configuredLang && configuredLang !== 'auto' ? configuredLang : 'en-US';
           
           isDictationActive = true;
@@ -1285,7 +1476,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!cmd && !pendingImageData) return;
     if (!cmd && pendingImageData) cmd = "Please analyze this image.";
 
-    const key = localStorage.getItem('PG1_KEY');
+    const key = safeStorageGet('PG1_KEY', { sensitive: true });
     if (!key) { 
         setSystemState('error'); 
         return appendMsg('PG1.Sovereign Execution failed: Master API key is required in the Dash tab before this Neural Protocol can run.', 'error-msg', true); 
@@ -1340,7 +1531,7 @@ PRIMARY DIRECTIVES:
       let continueLoop = true; 
       let loopCount = 0;
       
-      while (continueLoop && loopCount < 5) {
+      while (continueLoop && loopCount < MAX_AGENT_LOOP_ITERATIONS) {
           loopCount++;
           const reqStart = Date.now();
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${key}`, {
@@ -1348,32 +1539,31 @@ PRIMARY DIRECTIVES:
             body: JSON.stringify({ contents: sessionHistory, systemInstruction: { parts: [{ text: sys }] }, tools: tools })
           });
           TelemetryStack.log('NEURAL_CORE', activeModel, Date.now() - reqStart, res.status);
-
           const data = await res.json();
           
+          if (!res.ok) throw new Error((data && data.error && data.error.message) || `API status ${res.status}`);
           if (data.error) throw new Error(data.error.message);
           if (data.promptFeedback && data.promptFeedback.blockReason) throw new Error(`API Filter: ${data.promptFeedback.blockReason}`);
-          if (!data.candidates || data.candidates.length === 0) throw new Error(`API returned empty structure.`);
+          const responseContent = getFirstCandidateContent(data, 'Gemini API');
           
-          let responsePart = data.candidates[0].content.parts[0];
+          let responsePart = responseContent.parts[0];
           
           if (responsePart.functionCall) {
               const call = responsePart.functionCall;
+              const callArgs = call.args || {};
               appendMsg(`[PG1.Orchestrator] Authorizing tool Sovereign Execution: ${call.name}...`, 'system-msg', true);
               let resultStr = "";
               let rawCommitResult = null;
 
               try {
-                  const execResult = await executeMCPTool(call.name, call.args);
-                  
-                     if (call.name === 'dynamicGitHubCommit' && typeof execResult === 'object') {
-       if (execResult.status === "COMMITTED") {
-           resultStr = `[PG1.Commit] Data committed to ${call.args.filePath}\n[Triple Verification Engine] Live audit confirmed the patch deployed successfully.`;
-       } else {
-           resultStr = `[PG1.Verification] CRITICAL FAILURE: Live audit shows the commit did not deploy successfully.`;
-       }
-   
-
+                  const execResult = await executeMCPTool(call.name, callArgs);
+                   
+                  if (call.name === 'dynamicGitHubCommit' && typeof execResult === 'object') {
+                      if (execResult.status === "COMMITTED") {
+                          resultStr = `[PG1.Commit] Data committed to ${(callArgs.filePath || execResult.filePath || 'target file')}\n[Triple Verification Engine] Live audit confirmed the patch deployed successfully.`;
+                      } else {
+                          resultStr = `[PG1.Verification] CRITICAL FAILURE: Live audit shows the commit did not deploy successfully.`;
+                      }
                   } else {
                       resultStr = typeof execResult === 'string' ? execResult : JSON.stringify(execResult);
                   }
@@ -1383,22 +1573,10 @@ PRIMARY DIRECTIVES:
               }
 
               appendMsg(`[Result] ${resultStr}`, 'agent-msg', true);
-              sessionHistory.push(data.candidates[0].content);
+              sessionHistory.push(responseContent);
               sessionHistory.push({ role: "user", parts: [{ functionResponse: { name: call.name, response: { result: resultStr } } }] });
               persistTerminalState();
-              
-              const followupStart = Date.now();
-              const followupRes = await fetch('/api/chat', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ prompt: currentPrompt, model: activeModel })
-});
-
-              TelemetryStack.log('NEURAL_CORE', activeModel, Date.now() - followupStart, followupRes.status);
-              
-              const followUpData = await followupRes.json();
-              if (followUpData.error) throw new Error(followUpData.error.message);
-              responsePart = followUpData.candidates[0].content.parts[0];
+              continue;
           }
 
           if (responsePart.text !== undefined) {
@@ -1408,7 +1586,7 @@ PRIMARY DIRECTIVES:
               persistTerminalState();
               continueLoop = false;
           }
-          if (loopCount >= 5) throw new Error("Agent loop reached maximum retry ceiling.");
+          if (loopCount >= MAX_AGENT_LOOP_ITERATIONS) throw new Error("Agent loop reached maximum retry ceiling.");
       }
     } catch (e) { 
       setSystemState('error'); 
