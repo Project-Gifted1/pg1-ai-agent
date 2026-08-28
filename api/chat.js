@@ -47,7 +47,10 @@ CRITICAL RULES:
               }
             ]
           }
-        ]
+        ],
+        toolConfig: {
+          includeServerSideToolInvocations: true
+        }
       };
 
       let response = await fetch(url, {
@@ -64,7 +67,6 @@ CRITICAL RULES:
 
       const part = data?.candidates?.[0]?.content?.parts?.[0];
       
-      // 1. Intercept Function Call (GitHub Data Request)
       if (part?.functionCall) {
         const funcCall = part.functionCall;
         if (funcCall.name === "read_github_repo") {
@@ -74,7 +76,6 @@ CRITICAL RULES:
           let ghUrl = `https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/${path}`;
           let ghHeaders = { 'User-Agent': 'PG1-Sovereign-Agent', 'Accept': 'application/vnd.github.v3+json' };
           
-          // Inject token if available in Vercel for private repo access
           if (ghToken) ghHeaders['Authorization'] = `token ${ghToken}`;
 
           try {
@@ -90,14 +91,16 @@ CRITICAL RULES:
               resultString = JSON.stringify(ghData);
             }
 
-            // 2. Send the fetched GitHub data back to the model for the final answer
             const hop2Body = {
               systemInstruction: { parts: [{ text: pg1SystemInstruction }] },
               contents: [
                 { role: "user", parts: [{ text: promptText }] },
                 { role: "model", parts: [{ functionCall: funcCall }] },
                 { role: "user", parts: [{ functionResponse: { name: funcCall.name, response: { name: funcCall.name, content: resultString.substring(0, 6000) } } }] }
-              ]
+              ],
+              toolConfig: {
+                includeServerSideToolInvocations: true
+              }
             };
 
             let response2 = await fetch(url, {
@@ -116,7 +119,6 @@ CRITICAL RULES:
         }
       }
 
-      // 3. Return Standard Text (If no tools were needed)
       if (part?.text) {
         return res.status(200).json({ reply: part.text, provider: 'PG1' });
       }
