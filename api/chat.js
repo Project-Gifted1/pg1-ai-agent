@@ -20,7 +20,8 @@ CRITICAL RULES:
 3. You possess live web access and direct GitHub API access. USE your tools to find exact information or read repository files when requested.
 4. Maintain an authoritative, factual, confident tone at all times.`;
 
-    const verifiedModels = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-flash-latest'];
+    // Updated to the active 2026 model architecture per Google API requirements
+    const verifiedModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
     let lastError = '';
 
     for (const model of verifiedModels) {
