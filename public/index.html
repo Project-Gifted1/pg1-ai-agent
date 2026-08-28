@@ -439,10 +439,8 @@ This interface will disclose failures, provider usage, and known limitations dir
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            prompt: prompt,
-            userMessage: prompt,
-            message: prompt
+          body: JSON.stringify({
+            userMessage: prompt
           })
         });
 
@@ -482,7 +480,13 @@ This interface will disclose failures, provider usage, and known limitations dir
       
       const meta = document.createElement('div');
       meta.className = 'msg-meta';
-      meta.innerHTML = `<span class="meta-tag">[PG1]</span> <span>${statusText}</span>`;
+      const tag = document.createElement('span');
+      tag.className = 'meta-tag';
+      tag.textContent = '[PG1]';
+      const status = document.createElement('span');
+      status.textContent = statusText;
+      meta.appendChild(tag);
+      meta.appendChild(status);
       
       const msg = document.createElement('div');
       msg.className = 'msg-bubble bot';
@@ -500,7 +504,13 @@ This interface will disclose failures, provider usage, and known limitations dir
       
       const meta = document.createElement('div');
       meta.className = 'msg-meta';
-      meta.innerHTML = `<span class="meta-tag">[PG1]</span> <span>Authorize Execution</span>`;
+      const tag = document.createElement('span');
+      tag.className = 'meta-tag';
+      tag.textContent = '[PG1]';
+      const status = document.createElement('span');
+      status.textContent = 'Authorize Execution';
+      meta.appendChild(tag);
+      meta.appendChild(status);
       
       const msg = document.createElement('div');
       msg.className = 'msg-bubble bot';

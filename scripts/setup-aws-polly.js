@@ -44,8 +44,7 @@ async function setupAWSPolly() {
     return safeRegion;
   }
 
-  const envContent = `AWS_ACCESS_KEY_ID=${accessKeyId}
-AWS_SECRET_ACCESS_KEY=${secretAccessKey}
+  const envContent = `# Keep AWS credentials in your environment or AWS profile. Do not store secrets in this file.
 AWS_REGION=${region}
 PG1_VOICE_PROVIDER=amazon-polly
 PG1_DEFAULT_VOICE=Joanna
@@ -59,7 +58,7 @@ PG1_VOICE_CACHE_DIR=./cache/voices
   fs.mkdirSync('./cache/voices', { recursive: true });
 
   console.log('✅ Voice configuration saved to .env.voice');
-  console.log('⚠️ Keep .env.voice private. It contains AWS credentials and must never be committed or shared.');
+  console.log('⚠️ AWS credentials were not written to disk. Keep them in your environment or AWS credential profile.');
   console.log('✅ Voice cache directory created');
   console.log('\n✅ AWS Polly setup complete');
 }

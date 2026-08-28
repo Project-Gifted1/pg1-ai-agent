@@ -32,7 +32,7 @@ function getAllowedOrigins() {
 function applyCors(req, res) {
   const allowedOrigins = getAllowedOrigins();
   const requestOrigin = req.headers.origin;
-  const matchedOrigin = allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0];
+  const matchedOrigin = allowedOrigins.includes(requestOrigin) ? requestOrigin : null;
 
   if (matchedOrigin) {
     res.setHeader('Access-Control-Allow-Origin', matchedOrigin);
