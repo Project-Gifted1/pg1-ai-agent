@@ -281,6 +281,7 @@
     </div>
   </footer>
 
+  <script src="../backend-origin.js"></script>
   <script>
     const chatStream = document.getElementById('chat-stream');
     const userInput = document.getElementById('user-input');
@@ -346,7 +347,7 @@
       const loadingContainer = appendLoading();
 
       try {
-        const res = await fetch('/api/chat', {
+        const res = await fetch(window.PG1_CHAT_API_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: prompt, userMessage: prompt, message: prompt })

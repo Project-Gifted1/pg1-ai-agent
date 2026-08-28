@@ -94,21 +94,42 @@ test('status request uses status-focused response', () => {
 // ── HTML checks ───────────────────────────────────────────────────────────────
 
 const html = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
+const publicHtml = fs.readFileSync(path.resolve(__dirname, '../public/index.html'), 'utf8');
+const backendOriginScript = fs.readFileSync(path.resolve(__dirname, '../backend-origin.js'), 'utf8');
 
-test('composer placeholder is friendly (not technical jargon)', () => {
+test('composer placeholder stays friendly and PG1-branded', () => {
   assert.ok(!html.includes('Execute directive or query agent'), 'Old placeholder still present');
-  assert.ok(html.includes('Ask anything'), 'Expected friendly placeholder not found');
+  assert.ok(html.includes('Message PG1 Sovereign Agent™...'), 'Expected current placeholder not found');
 });
 
-test('quick-action chips are wrapped in .action-row-wrap for mobile scroll-fade', () => {
-  assert.ok(html.includes('action-row-wrap'), 'action-row-wrap wrapper not found in HTML');
+test('mobile layout keeps the small-screen media rule', () => {
+  assert.ok(html.includes('@media (max-width: 390px)'), 'Small-screen media rule missing');
 });
 
-test('action-row-wrap::after fade cue is defined in CSS', () => {
-  assert.ok(html.includes('action-row-wrap::after'), 'Scroll-fade CSS rule not found');
+test('mobile composer keeps the voice input control', () => {
+  assert.ok(html.includes('id="micBtn"'), 'Voice input button missing from composer');
 });
 
-test('-webkit-overflow-scrolling is set on .action-row for iOS scroll', () => {
-  assert.ok(html.includes('-webkit-overflow-scrolling'), 'iOS scroll hint missing from .action-row');
+test('mobile composer keeps the send control', () => {
+  assert.ok(html.includes('id="sendBtn"'), 'Send button missing from composer');
 });
 
+test('root entrypoint loads the shared backend origin helper', () => {
+  assert.ok(html.includes('<script src="./backend-origin.js"></script>'), 'Root helper script tag missing');
+  assert.ok(html.includes('fetch(window.PG1_CHAT_API_URL'), 'Root entrypoint is not using shared chat API URL');
+});
+
+test('public entrypoint loads the shared backend origin helper', () => {
+  assert.ok(publicHtml.includes('<script src="../backend-origin.js"></script>'), 'Public helper script tag missing');
+  assert.ok(publicHtml.includes('fetch(window.PG1_CHAT_API_URL'), 'Public entrypoint is not using shared chat API URL');
+});
+
+test('static entrypoints no longer call relative /api/chat directly', () => {
+  assert.ok(!html.includes("fetch('/api/chat'"), 'Root entrypoint still fetches relative /api/chat');
+  assert.ok(!publicHtml.includes("fetch('/api/chat'"), 'Public entrypoint still fetches relative /api/chat');
+});
+
+test('backend origin helper defaults to the Vercel API origin', () => {
+  assert.ok(backendOriginScript.includes("const DEFAULT_BACKEND_ORIGIN = 'https://pg1-ai-agent.vercel.app';"), 'Default backend origin mismatch');
+  assert.ok(backendOriginScript.includes("window.PG1_CHAT_API_URL = resolveBackendUrl('/api/chat');"), 'Chat API URL helper missing');
+});
