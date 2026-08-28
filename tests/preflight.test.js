@@ -6,8 +6,8 @@
  *  2. Fallback text is contextual and non-generic for known request types
  *  3. Typo-tolerant matching (e.g., "lastest" → upgrade branch)
  *  4. Generic fallback includes the original prompt excerpt (not boilerplate)
- *  5. HTML: composer placeholder is friendly
- *  6. HTML: quick-action chips are wrapped for mobile scroll-fade
+ *  5. Static entrypoints load shared absolute backend wiring
+ *  6. Static entrypoints expose mobile multimodal controls and quick chips
  *
  * Run with: node tests/preflight.test.js   (or: npm test)
  */
@@ -21,10 +21,17 @@ const path = require('node:path');
 
 const SelfHealingEngine = require('../api/lib/self-healing');
 
-// Minimal stubs — we only test generateFallbackResponse here
 const engine = new SelfHealingEngine(null, null, null);
-
 const FORBIDDEN_TEMPLATE = 'I encountered a challenge with this request';
+
+function readRepoFile(relativePath) {
+  return fs.readFileSync(path.resolve(__dirname, '..', relativePath), 'utf8');
+}
+
+const rootHtml = readRepoFile('index.html');
+const publicHtml = readRepoFile('public/index.html');
+const backendHelper = readRepoFile('backend-origin.js');
+const uiScript = readRepoFile('static-chat-ui.js');
 
 // ── Fallback response tests ───────────────────────────────────────────────────
 
@@ -91,24 +98,56 @@ test('status request uses status-focused response', () => {
   assert.ok(reply.toLowerCase().includes('operational') || reply.toLowerCase().includes('node'), `Got: ${reply}`);
 });
 
-// ── HTML checks ───────────────────────────────────────────────────────────────
+// ── Static frontend checks ────────────────────────────────────────────────────
 
-const html = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
-
-test('composer placeholder is friendly (not technical jargon)', () => {
-  assert.ok(!html.includes('Execute directive or query agent'), 'Old placeholder still present');
-  assert.ok(html.includes('Ask anything'), 'Expected friendly placeholder not found');
+test('backend-origin helper defaults to the deployed PG1 Vercel origin', () => {
+  assert.ok(backendHelper.includes("https://pg1-ai-agent.vercel.app"), 'Expected PG1 backend origin default not found');
+  assert.ok(backendHelper.includes('PG1_CHAT_API_URL'), 'Shared chat API URL export missing');
 });
 
-test('quick-action chips are wrapped in .action-row-wrap for mobile scroll-fade', () => {
-  assert.ok(html.includes('action-row-wrap'), 'action-row-wrap wrapper not found in HTML');
+test('static UI script sends chat requests through the shared absolute chat API URL', () => {
+  assert.ok(uiScript.includes('window.PG1_CHAT_API_URL'), 'Shared PG1 chat API URL is not used');
+  assert.ok(!uiScript.includes("fetch('/api/chat'"), 'Relative /api/chat call still present in shared UI script');
 });
 
-test('action-row-wrap::after fade cue is defined in CSS', () => {
-  assert.ok(html.includes('action-row-wrap::after'), 'Scroll-fade CSS rule not found');
+test('root entrypoint loads the shared backend helper and shared UI assets', () => {
+  assert.ok(rootHtml.includes('./backend-origin.js'), 'Root backend-origin helper reference missing');
+  assert.ok(rootHtml.includes('./static-chat-ui.js'), 'Root shared UI script reference missing');
+  assert.ok(rootHtml.includes('./static-chat-ui.css'), 'Root shared UI stylesheet reference missing');
 });
 
-test('-webkit-overflow-scrolling is set on .action-row for iOS scroll', () => {
-  assert.ok(html.includes('-webkit-overflow-scrolling'), 'iOS scroll hint missing from .action-row');
+test('public entrypoint loads the shared backend helper and shared UI assets', () => {
+  assert.ok(publicHtml.includes('../backend-origin.js'), 'Public backend-origin helper reference missing');
+  assert.ok(publicHtml.includes('../static-chat-ui.js'), 'Public shared UI script reference missing');
+  assert.ok(publicHtml.includes('../static-chat-ui.css'), 'Public shared UI stylesheet reference missing');
 });
 
+test('entrypoints no longer hardcode relative /api/chat assumptions', () => {
+  assert.ok(!rootHtml.includes("fetch('/api/chat'"), 'Root entrypoint still contains a relative /api/chat call');
+  assert.ok(!publicHtml.includes("fetch('/api/chat'"), 'Public entrypoint still contains a relative /api/chat call');
+  assert.ok(!rootHtml.includes('Verify `/api/chat` is running'), 'Root entrypoint still references relative /api/chat troubleshooting');
+  assert.ok(!publicHtml.includes('fetch(\'/api/chat\''), 'Public entrypoint still contains inline relative chat fetch');
+});
+
+test('composer placeholder stays friendly and assistant-like', () => {
+  assert.ok(rootHtml.includes('Ask anything or add media context'), 'Expected friendly root placeholder not found');
+  assert.ok(publicHtml.includes('Ask anything or add media context'), 'Expected friendly public placeholder not found');
+});
+
+test('quick-action chips remain wrapped for mobile scroll fade', () => {
+  assert.ok(rootHtml.includes('action-row-wrap'), 'Root action-row-wrap wrapper not found');
+  assert.ok(publicHtml.includes('action-row-wrap'), 'Public action-row-wrap wrapper not found');
+  assert.ok(readRepoFile('static-chat-ui.css').includes('action-row-wrap::after'), 'Scroll-fade CSS rule not found');
+  assert.ok(readRepoFile('static-chat-ui.css').includes('-webkit-overflow-scrolling'), 'iOS scroll hint missing from action row styles');
+});
+
+test('both entrypoints expose multimodal image, video, mic, and voice controls', () => {
+  for (const html of [rootHtml, publicHtml]) {
+    assert.ok(html.includes('id="imageBtn"'), 'Image button missing');
+    assert.ok(html.includes('id="videoBtn"'), 'Video button missing');
+    assert.ok(html.includes('id="micBtn"'), 'Microphone button missing');
+    assert.ok(html.includes('id="voiceBtn"'), 'Voice button missing');
+    assert.ok(html.includes('accept="image/*"'), 'Image file input missing');
+    assert.ok(html.includes('accept="video/*"'), 'Video file input missing');
+  }
+});
