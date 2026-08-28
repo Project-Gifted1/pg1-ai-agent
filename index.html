@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PG1 Sovereign AI Agent</title>
+  <title>PG1 Sovereign Agent™ | Project-Gifted1™</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
@@ -19,8 +19,7 @@
       --text-muted: #8892b0;
       --user-msg-bg: #1c2438;
       --bot-msg-bg: #141926;
-      --gemini-badge: #4facfe;
-      --openrouter-badge: #10b981;
+      --pg1-badge: #00f2fe;
     }
 
     * {
@@ -46,6 +45,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 12px;
     }
 
     .brand {
@@ -77,18 +77,22 @@
     .brand-status {
       display: flex;
       align-items: center;
-      gap: 6px;
-      font-size: 12px;
+      gap: 8px;
+      font-size: 11px;
       color: var(--text-muted);
       font-family: 'JetBrains Mono', monospace;
+      background: rgba(0, 242, 254, 0.08);
+      border: 1px solid rgba(0, 242, 254, 0.2);
+      padding: 6px 12px;
+      border-radius: 6px;
     }
 
     .status-dot {
       width: 8px;
       height: 8px;
-      background: #10b981;
+      background: var(--accent-cyan);
       border-radius: 50%;
-      box-shadow: 0 0 8px #10b981;
+      box-shadow: 0 0 8px var(--accent-cyan);
     }
 
     main {
@@ -152,16 +156,10 @@
       letter-spacing: 0.05em;
     }
 
-    .badge-gemini {
-      background: rgba(79, 172, 254, 0.15);
-      color: var(--gemini-badge);
-      border: 1px solid rgba(79, 172, 254, 0.3);
-    }
-
-    .badge-openrouter {
-      background: rgba(16, 185, 129, 0.15);
-      color: var(--openrouter-badge);
-      border: 1px solid rgba(16, 185, 129, 0.3);
+    .badge-pg1 {
+      background: rgba(0, 242, 254, 0.15);
+      color: var(--pg1-badge);
+      border: 1px solid rgba(0, 242, 254, 0.3);
     }
 
     footer {
@@ -236,25 +234,25 @@
   <header>
     <div class="brand">
       <div class="brand-icon">PG1</div>
-      <span class="brand-title">Sovereign AI Agent</span>
+      <span class="brand-title">PG1 Sovereign Agent™</span>
     </div>
     <div class="brand-status">
       <span class="status-dot"></span>
-      <span>DYNAMIC ROUTER ONLINE</span>
+      <span>Autonomous Network • Project-Gifted1™</span>
     </div>
   </header>
 
   <main id="chat-stream">
     <div class="message-container">
       <div class="message bot">
-        Greetings. PG1 Sovereign Agent is connected. Submit a prompt or code task to initiate the dynamic model router.
+        Greetings. PG1 Sovereign Agent™ is connected. Submit a prompt or code task to initiate execution across Project-Gifted1™.
       </div>
     </div>
   </main>
 
   <footer>
     <div class="input-wrapper">
-      <textarea id="user-input" placeholder="Type your instruction or code analysis request..." rows="1"></textarea>
+      <textarea id="user-input" placeholder="Ask PG1 anything (code, analysis, or general query)..." rows="1"></textarea>
       <button id="send-btn" class="send-btn" onclick="sendMessage()">Send</button>
     </div>
   </footer>
@@ -285,7 +283,11 @@
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt })
+          body: JSON.stringify({ 
+            prompt: prompt,
+            userMessage: prompt,
+            message: prompt
+          })
         });
 
         const data = await res.json();
@@ -294,7 +296,7 @@
         if (!res.ok) {
           appendMessage('bot', `Error: ${data.error || 'Request failed'}`);
         } else {
-          appendMessage('bot', data.reply, data.provider, data.model);
+          appendMessage('bot', data.reply, data.provider || 'PG1', data.model);
         }
       } catch (err) {
         loadingContainer.remove();
@@ -309,10 +311,11 @@
       const container = document.createElement('div');
       container.className = 'message-container';
 
-      if (provider && model) {
+      if (role === 'bot') {
         const badgeBar = document.createElement('div');
         badgeBar.className = 'badge-bar';
-        badgeBar.innerHTML = `<span class="badge badge-${provider}">${provider}</span> <span>${model}</span>`;
+        const displayTag = (provider && provider.toUpperCase().includes('PG1')) ? 'PG1' : 'PG1';
+        badgeBar.innerHTML = `<span class="badge badge-pg1">[${displayTag}]</span>`;
         container.appendChild(badgeBar);
       }
 
@@ -330,7 +333,7 @@
       container.className = 'message-container';
       const msg = document.createElement('div');
       msg.className = 'message bot';
-      msg.innerHTML = '<span class="loading-pulse"></span> Routing request...';
+      msg.innerHTML = '<span class="loading-pulse"></span> Processing task...';
       container.appendChild(msg);
       chatStream.appendChild(container);
       chatStream.scrollTop = chatStream.scrollHeight;
