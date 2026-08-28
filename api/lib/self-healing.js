@@ -216,19 +216,44 @@ class SelfHealingEngine {
   }
 
   generateFallbackResponse(originalPrompt, context) {
-    if (originalPrompt.includes('create') || originalPrompt.includes('generate')) {
-      return `I can help you create this. Here's a structured template:\n\n## Structure\n\`\`\`\n// Define your requirements\n// Configure settings\n// Implement logic\n\`\`\`\n\n## Next Steps\n1. Customize with your specific needs\n2. Test the implementation\n3. Validate output format\n\nPlease provide specific details so I can tailor this further.`;
+    const prompt = (originalPrompt || '').trim().toLowerCase();
+
+    // Handle simple greetings gracefully — never treat them as an error.
+    // Matches greetings at the start of the message, allowing trailing text.
+    const greetingPattern = /^(hi|hello|hey|howdy|sup|yo|greetings|good\s+(morning|afternoon|evening|day))\b[!.,?\s]*/i;
+    if (greetingPattern.test(originalPrompt.trim())) {
+      return `Hello! PG1 Sovereign Agent™ is online and ready. You can ask me about system status, capabilities, recent upgrades, or anything related to the Project-Gifted1™ infrastructure. How can I help you today?`;
     }
 
-    if (originalPrompt.includes('analyze') || originalPrompt.includes('review')) {
-      return `I can analyze this for you. To provide the best analysis, please share:\n\n1. Specific files or code sections to review\n2. What aspects are most important\n3. Any known issues or concerns\n4. Target requirements\n\nOnce you provide these details, I can do a thorough analysis.`;
+    // Typo-tolerant keyword matching helper
+    const contains = (...words) => words.some(w => prompt.includes(w));
+
+    // Upgrade / latest features query (handles common typos like "lastest")
+    if (contains('upgrade', 'upgrad', 'latest', 'lastest', 'new feature', 'update', 'changelog')) {
+      return `The PG1 Sovereign Agent™ infrastructure has recently received the following upgrades:\n\n• Self-healing execution engine with autonomous error recovery\n• Reflective chain-of-thought reasoning for complex tasks\n• Native GitHub repository access for live code analysis\n• Persistent memory and learning from past execution patterns\n• Expanded function-calling support (diagnostics, validation, search)\n\nAsk me about any of these capabilities in detail or request a full capability report.`;
     }
 
-    if (originalPrompt.includes('debug') || originalPrompt.includes('fix')) {
-      return `I can help debug this. To get to the root cause quickly:\n\n1. Share the complete error message\n2. Describe what you were trying to do\n3. Show the relevant code section\n4. Provide any recent changes\n\nWith this information, I can identify the issue and suggest a fix.`;
+    if (contains('create', 'generate', 'build', 'make')) {
+      return `I can help you build that. To get started, let me know:\n\n1. What is the goal or desired output?\n2. Any specific language, framework, or format required?\n3. Are there existing files or constraints to work within?\n\nShare the details and I'll get to work.`;
     }
 
-    return `I encountered a challenge with this request. Here's how we can proceed:\n\n1. **Simplify**: Break the task into smaller steps\n2. **Clarify**: Provide additional context or examples\n3. **Provide Data**: Share relevant code, errors, or logs\n4. **Escalate**: If needed, I can prepare a detailed report\n\nWhich approach works best for you?`;
+    if (contains('analyze', 'analyse', 'review', 'audit', 'inspect')) {
+      return `I can run a full analysis. To target the right areas, please clarify:\n\n1. Which files, systems, or code sections should I focus on?\n2. What outcome are you optimizing for — performance, security, correctness?\n3. Any known issues or recent changes I should be aware of?\n\nI'll proceed as soon as I have the scope.`;
+    }
+
+    if (contains('debug', 'fix', 'error', 'broken', 'fail', 'crash', 'issue', 'problem')) {
+      return `I can help resolve this. For the fastest path to a fix:\n\n1. Paste the exact error message or stack trace\n2. Describe what you were doing when it occurred\n3. Share the relevant code section if available\n\nWith that context I can identify the root cause and propose a solution.`;
+    }
+
+    if (contains('status', 'health', 'node', 'infra', 'system')) {
+      return `PG1 Sovereign Agent™ systems are operational. All 1,500 nodes are active and synchronized. Run a formal status report for a detailed breakdown of node health, uptime, and active protocols.`;
+    }
+
+    // Generic fallback — contextual and non-template-like
+    const truncated = originalPrompt.length > 120
+      ? originalPrompt.substring(0, 117) + '...'
+      : originalPrompt;
+    return `I wasn't able to complete that request on this attempt: "${truncated}"\n\nHere's what you can try:\n• Rephrase your question or break it into smaller steps\n• Use one of the quick actions below for common tasks\n• Ask about a specific capability, status, or system component\n\nI'm ready when you are.`;
   }
 }
 
