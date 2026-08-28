@@ -314,6 +314,49 @@
     .md li { margin: 4px 0; }
     .md strong { color: #ffffff; }
 
+    .action-row-wrap {
+      position: relative;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .action-row-wrap::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 32px;
+      height: 100%;
+      background: linear-gradient(to right, transparent, var(--bg-2));
+      pointer-events: none;
+    }
+
+    .action-row {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      padding: 2px 0;
+    }
+
+    .action-row::-webkit-scrollbar { display: none; }
+
+    .action-chip {
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid var(--stroke);
+      border-radius: 999px;
+      padding: 6px 14px;
+      font-size: 0.82rem;
+      color: var(--text);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .15s ease;
+    }
+
+    .action-chip:active { background: rgba(255,255,255,0.2); }
+
     @media (max-width: 390px) {
       .header { padding: 10px; gap: 8px; }
       .logo { width: 40px; height: 40px; }
@@ -341,8 +384,16 @@
       <div class="message assistant md">Welcome to <strong>PG1 Sovereign Agent™</strong>.<br/>Tap the mic to speak or type your message.</div>
     </main>
 
+    <div class="action-row-wrap">
+      <div class="action-row" role="toolbar" aria-label="Quick actions">
+        <button class="action-chip" data-prompt="Status Report">Status Report</button>
+        <button class="action-chip" data-prompt="Protocol Review">Protocol Review</button>
+        <button class="action-chip" data-prompt="Capabilities">Capabilities</button>
+      </div>
+    </div>
+
     <section class="composer glass">
-      <textarea id="promptInput" class="input" placeholder="Message PG1 Sovereign Agent™..." rows="1"></textarea>
+      <textarea id="promptInput" class="input" placeholder="Ask anything..." rows="1"></textarea>
       <button id="micBtn" class="btn btn-mic" aria-label="Start voice input" title="Voice input">🎤</button>
       <button id="sendBtn" class="btn btn-send" aria-label="Send message" title="Send">➤</button>
     </section>
@@ -366,6 +417,20 @@
   </div>
 
   <script>
+    /* ── Backend configuration ─────────────────────────────────────────────
+       BACKEND_ORIGIN must be the base URL of the Vercel deployment (no
+       trailing slash).  Override this constant — or set the meta tag
+         <meta name="pg1-backend-origin" content="https://…">
+       — to point at a different backend without touching the rest of the
+       file.  Falls back to same-origin for local development.
+    ── */
+    const _metaOrigin = document.querySelector('meta[name="pg1-backend-origin"]');
+    const BACKEND_ORIGIN = (_metaOrigin && _metaOrigin.content && _metaOrigin.content !== '%PG1_BACKEND_ORIGIN%')
+      ? _metaOrigin.content.replace(/\/$/, '')
+      : (window.location.hostname.endsWith('github.io')
+          ? 'https://pg1-ai-agent.vercel.app'
+          : '');
+
     (function () {
       const chatEl = document.getElementById('chat');
       const inputEl = document.getElementById('promptInput');
@@ -469,7 +534,7 @@
         statusEl.textContent = 'Processing...';
 
         try {
-          const res = await fetch('/api/chat', {
+          const res = await fetch(BACKEND_ORIGIN + '/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: prompt })
@@ -489,7 +554,10 @@
           speak(reply);
           statusEl.textContent = 'Ready';
         } catch (err) {
-          appendMessage('assistant', '**Error:** Unable to reach backend API.\n- Verify `/api/chat` is running\n- Check network and server logs');
+          const corsHint = BACKEND_ORIGIN
+            ? '\n- Check that CORS is enabled on `' + BACKEND_ORIGIN + '/api/chat`'
+            : '';
+          appendMessage('assistant', '**Error:** Unable to reach backend API.' + corsHint + '\n- Check network and server logs');
           statusEl.textContent = 'Error: ' + err.message;
         }
       }
@@ -585,6 +653,14 @@
         if (e.key === 'Escape') {
           modalOverlay.classList.remove('active');
         }
+      });
+
+      document.querySelectorAll('.action-chip').forEach(function (chip) {
+        chip.addEventListener('click', function () {
+          inputEl.value = chip.dataset.prompt || chip.textContent;
+          autoResizeTextarea();
+          sendMessage();
+        });
       });
 
       initRecognition();
