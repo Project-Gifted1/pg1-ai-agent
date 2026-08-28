@@ -10,7 +10,10 @@
   const normalizedOrigin = configuredOrigin.replace(/\/+$/, '');
 
   function resolveBackendUrl(path) {
-    return new URL(path, normalizedOrigin + '/').toString();
+    const normalizedPath = String(path || '/').startsWith('/')
+      ? String(path || '/')
+      : '/' + String(path || '/');
+    return normalizedOrigin + normalizedPath;
   }
 
   window.PG1_BACKEND_ORIGIN = normalizedOrigin;
