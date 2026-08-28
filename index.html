@@ -1,358 +1,200 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <title>PG1 Sovereign Agent</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+module.exports = async function handler(req, res) {
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    return res.status(200).end();
+  }
+
+  try {
+    const promptText = req.body?.userMessage || req.body?.message || req.body?.prompt || '';
+    const apiKey = (process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY || '').trim();
+    const ghToken = (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
+    const replicateToken = (process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_API_KEY || '').trim();
     
-    body {
-      background-color: #0A0D14; /* Deep dark blue background */
-      color: #E2E8F0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      height: 100dvh;
-      display: flex;
-      flex-direction: column;
-    }
+    if (!apiKey) return res.status(200).json({ reply: 'System Error: GEMINI_API_KEY1 is missing.' });
 
-    /* Classic Header */
-    header {
-      padding: 20px 16px;
-      background-color: #0A0D14;
-      border-bottom: 1px solid #1E293B;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
+    const pg1SystemInstruction = `You are the PG1 Sovereign Agent™, the core intelligence of Project-Gifted1™.
+CRITICAL RULES:
+1. You are strictly PG1 Sovereign Agent™ under Project-Gifted1™. Your sovereign repository is: Project-Gifted1/pg1-ai-agent.
+2. NEVER identify as Gemini, Google, DeepSeek, OpenAI, or any third party.
+3. You possess live web access, direct GitHub API access, and Replicate API access for media generation.
+4. Maintain an authoritative, factual, confident tone at all times.
+5. You have a fully operational, native voice module enabled. 
+6. You have full access to secure Vercel environment variables, including REPLICATE_API_TOKEN and OPENROUTER_API_KEY. When a user requests an image, use the generate_media tool. When returning an image, strictly format it in Markdown: ![Generated Media](URL_RETURNED_BY_TOOL)`;
 
-    .header-logo {
-      width: 40px; height: 40px; border-radius: 50%;
-    }
+    const verifiedModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
+    let lastError = '';
 
-    .header-title {
-      font-size: 24px; font-weight: bold; color: #FFFFFF; letter-spacing: -0.5px;
-    }
+    const pg1SafetySettings = [
+      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+    ];
 
-    /* Chat Area */
-    main {
-      flex: 1; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 24px;
-    }
-
-    .bubble-wrapper { display: flex; flex-direction: column; gap: 6px; }
-    
-    .bubble {
-      background-color: #121826; /* Dark slate */
-      border: 1px solid #1E293B;
-      border-radius: 8px;
-      padding: 16px;
-      font-size: 15px;
-      line-height: 1.5;
-      color: #CBD5E1;
-      word-wrap: break-word;
-    }
-
-    .bubble.user {
-      align-self: flex-end;
-      background-color: #1E293B;
-      color: #F8FAFC;
-      border: none;
-      max-width: 85%;
-    }
-
-    /* Markdown Styling */
-    .bubble strong { color: #FFFFFF; }
-    .bubble pre { background: #0A0D14; padding: 12px; border-radius: 4px; margin: 10px 0; overflow-x: auto; border: 1px solid #1E293B; }
-    .bubble code { font-family: monospace; font-size: 13px; color: #93C5FD; }
-    .bubble p { margin-bottom: 12px; }
-    .bubble p:last-child { margin-bottom: 0; }
-    .bubble ul { margin-left: 20px; margin-bottom: 12px; }
-    .bubble li { margin-bottom: 6px; }
-
-    /* Classic Voice Panel */
-    .voice-panel {
-      background-color: #121826;
-      border-top: 1px solid #1E293B;
-      border-radius: 12px 12px 0 0;
-      padding: 12px 16px;
-      display: flex; flex-direction: column; gap: 10px;
-    }
-
-    .voice-toggle-btn {
-      background-color: #3B82F6; /* Classic Blue */
-      color: #FFFFFF;
-      border: none;
-      border-radius: 20px;
-      padding: 6px 16px;
-      font-size: 13px;
-      font-weight: 600;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      cursor: pointer;
-      align-self: flex-start;
-    }
-    .voice-toggle-btn.active { background-color: #10B981; }
-
-    .voice-stats {
-      font-size: 12px; color: #94A3B8; font-family: monospace;
-    }
-
-    /* Visual Audio Player Match */
-    .dummy-audio-player {
-      background-color: #0A0D14;
-      border-radius: 30px;
-      height: 40px;
-      display: flex; align-items: center; padding: 0 16px; gap: 12px;
-      color: #94A3B8; font-size: 12px;
-    }
-    .dummy-audio-player svg { width: 16px; height: 16px; fill: #94A3B8; }
-    .progress-bar { flex: 1; height: 4px; background: #1E293B; border-radius: 2px; position: relative; }
-    .progress-dot { width: 10px; height: 10px; background: #FFFFFF; border-radius: 50%; position: absolute; top: -3px; left: 0; }
-
-    /* Input Area */
-    .input-area {
-      background-color: #0A0D14;
-      padding: 12px 16px 24px 16px; /* Extra bottom padding for iPhone indicator */
-      display: flex;
-      gap: 8px;
-    }
-
-    .input-box {
-      flex: 1;
-      background-color: #121826;
-      border: 1px solid #1E293B;
-      border-radius: 8px;
-      color: #F8FAFC;
-      font-size: 15px;
-      padding: 12px;
-      resize: none;
-      outline: none;
-      font-family: inherit;
-    }
-    .input-box::placeholder { color: #64748B; }
-
-    .action-buttons {
-      display: flex; flex-direction: column; gap: 8px;
-    }
-
-    .send-btn {
-      background-color: #3B82F6;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      padding: 0 16px;
-      font-weight: 600;
-      font-size: 15px;
-      cursor: pointer;
-      flex: 1;
-    }
-    .send-btn:disabled { opacity: 0.5; }
-
-    .mic-btn {
-      background-color: #1E293B;
-      border: 1px solid #334155;
-      color: white;
-      border-radius: 8px;
-      padding: 10px;
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer;
-    }
-    .mic-btn.recording { background-color: #EF4444; border-color: #EF4444; animation: pulse 1s infinite; }
-    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-
-  </style>
-</head>
-<body>
-
-  <header>
-    <div class="header-title">PG1 Sovereign Agent</div>
-  </header>
-
-  <main id="chat-stream">
-    <div class="bubble-wrapper">
-      <div class="bubble bot">
-        Greetings. PG1 Sovereign Agent is operational and secured.
-      </div>
-    </div>
-  </main>
-
-  <div class="voice-panel">
-    <button id="voice-toggle" class="voice-toggle-btn" onclick="toggleVoice()">
-      🎙️ Enable Voice
-    </button>
-    <div id="voice-stats" class="voice-stats">
-      Voice: Disabled | System TTS: Ready | Network: Secure
-    </div>
-    <div class="dummy-audio-player">
-      <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-      <span>00:00</span>
-      <div class="progress-bar"><div class="progress-dot"></div></div>
-      <span>-00:00</span>
-      <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
-    </div>
-  </div>
-
-  <div class="input-area">
-    <textarea id="user-input" class="input-box" rows="2" placeholder="Ask PG1 anything (code, analysis, or general query)..."></textarea>
-    <div class="action-buttons">
-      <button id="send-btn" class="send-btn">Send</button>
-      <button id="mic-btn" class="mic-btn" aria-label="Speech to text">🎙️</button>
-    </div>
-  </div>
-
-  <script>
-    const chatStream = document.getElementById('chat-stream');
-    const userInput = document.getElementById('user-input');
-    const sendBtn = document.getElementById('send-btn');
-    const micBtn = document.getElementById('mic-btn');
-    const voiceToggleBtn = document.getElementById('voice-toggle');
-    const voiceStats = document.getElementById('voice-stats');
-
-    let voiceEnabled = false;
-
-    function toggleVoice() {
-      voiceEnabled = !voiceEnabled;
-      if (voiceEnabled) {
-        voiceToggleBtn.classList.add('active');
-        voiceToggleBtn.innerText = "🎙️ Voice Active";
-        voiceStats.innerText = "Voice: Enabled | System TTS: Active | Network: Secure";
-        
-        // Safari unlock
-        if ('speechSynthesis' in window) {
-          const unlockUtterance = new SpeechSynthesisUtterance('');
-          window.speechSynthesis.speak(unlockUtterance);
-        }
-      } else {
-        voiceToggleBtn.classList.remove('active');
-        voiceToggleBtn.innerText = "🎙️ Enable Voice";
-        voiceStats.innerText = "Voice: Disabled | System TTS: Ready | Network: Secure";
-        if ('speechSynthesis' in window) {
-          window.speechSynthesis.cancel();
-        }
-      }
-    }
-
-    // Speech-to-Text Setup
-    let recognition;
-    if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-
-      recognition.onstart = () => { micBtn.classList.add('recording'); };
-      recognition.onend = () => { micBtn.classList.remove('recording'); };
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        userInput.value += (userInput.value ? ' ' : '') + transcript;
-      };
+    for (const model of verifiedModels) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
       
-      micBtn.addEventListener('click', () => {
-        if (micBtn.classList.contains('recording')) recognition.stop();
-        else recognition.start();
+      const requestBody = {
+        systemInstruction: { parts: [{ text: pg1SystemInstruction }] },
+        contents: [{ role: "user", parts: [{ text: promptText }] }],
+        tools: [
+          { googleSearch: {} },
+          {
+            functionDeclarations: [
+              {
+                name: "read_github_repo",
+                description: "List files or read file contents from the Project-Gifted1/pg1-ai-agent repository.",
+                parameters: {
+                  type: "OBJECT",
+                  properties: {
+                    action: { type: "STRING", description: "Either 'list' to view directory contents or 'read' to view a specific file." },
+                    path: { type: "STRING", description: "The path to the directory or file (e.g., '' for root, 'api/chat.js' for a file)." }
+                  },
+                  required: ["action", "path"]
+                }
+              },
+              {
+                name: "generate_media",
+                description: "Generate an image via Replicate API using Vercel secrets.",
+                parameters: {
+                  type: "OBJECT",
+                  properties: {
+                    prompt: { type: "STRING", description: "Highly detailed prompt for the image." }
+                  },
+                  required: ["prompt"]
+                }
+              }
+            ]
+          }
+        ],
+        toolConfig: { includeServerSideToolInvocations: true },
+        safetySettings: pg1SafetySettings
+      };
+
+      let response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
       });
-    }
 
-    function speakText(text) {
-      if (!voiceEnabled || !('speechSynthesis' in window)) return;
-      window.speechSynthesis.cancel();
-      const plainText = text.replace(/[*_#`]/g, ''); 
-      const utterance = new SpeechSynthesisUtterance(plainText);
-      utterance.lang = 'en-US';
-      utterance.rate = 1.05;
-      window.speechSynthesis.speak(utterance);
-    }
+      let data = await response.json();
+      if (!response.ok) {
+        lastError = data.error?.message || 'API rejected request';
+        continue;
+      }
 
-    function parseMarkdown(text) {
-      let html = text;
-      html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
-      html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-      html = html.replace(/`(.*?)`/g, '<code>$1</code>');
-      html = html.replace(/^\s*[\-\*]\s+(.*)/gim, '<li>$1</li>');
-      html = html.replace(/(<li>.*<\/li>(?:\n<li>.*<\/li>)*)/gim, '<ul>$1</ul>');
-      html = html.split('\n').map(line => {
-         if (line.match(/^(<ul|<li|<\/ul|<pre|<code)/)) return line;
-         if (line.trim() === '') return '';
-         return '<p>' + line + '</p>';
-      }).filter(line => line !== '').join('\n');
-      return html;
-    }
+      const candidate = data?.candidates?.[0];
+      const originalModelParts = candidate?.content?.parts;
+      const functionCallPart = originalModelParts?.find(p => p.functionCall);
+      
+      if (!originalModelParts) {
+        lastError = candidate?.finishReason ? `Request Blocked. Finish Reason: ${candidate.finishReason}` : 'Empty content from API';
+        continue;
+      }
+      
+      if (functionCallPart) {
+        const funcCall = functionCallPart.functionCall;
+        let resultString = "";
 
-    async function sendMessage() {
-      const prompt = userInput.value.trim();
-      if (!prompt) return;
+        if (funcCall.name === "read_github_repo") {
+          const action = funcCall.args.action;
+          const path = funcCall.args.path || '';
+          
+          let ghUrl = `https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/${path}`;
+          let ghHeaders = { 'User-Agent': 'PG1-Sovereign-Agent', 'Accept': 'application/vnd.github.v3+json' };
+          if (ghToken) ghHeaders['Authorization'] = `token ${ghToken}`;
 
-      userInput.value = '';
-      appendUserMessage(prompt);
-      sendBtn.disabled = true;
+          try {
+            let ghResponse = await fetch(ghUrl, { headers: ghHeaders });
+            let ghData = await ghResponse.json();
+            if (Array.isArray(ghData)) {
+              resultString = "Directory contents: " + ghData.map(f => f.name).join(', ');
+            } else if (ghData.content) {
+              resultString = "File content:\n" + Buffer.from(ghData.content, 'base64').toString('utf-8');
+            } else {
+              resultString = JSON.stringify(ghData);
+            }
+          } catch (ghErr) {
+            resultString = `GitHub Tool Failed: ${ghErr.message}`;
+          }
 
-      const loadingId = appendBotMessage('Processing directive...', true);
+        } else if (funcCall.name === "generate_media") {
+          if (!replicateToken) {
+            resultString = "System Error: REPLICATE_API_TOKEN environment variable is missing from Vercel.";
+          } else {
+            const genPrompt = funcCall.args.prompt;
+            try {
+              let repRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${replicateToken}`,
+                  'Content-Type': 'application/json',
+                  'Prefer': 'wait'
+                },
+                body: JSON.stringify({ input: { prompt: genPrompt } })
+              });
+              let repData = await repRes.json();
+              if (repData.error) {
+                resultString = `Replicate Error: ${repData.error}`;
+              } else if (repData.output) {
+                let mediaUrl = Array.isArray(repData.output) ? repData.output[0] : repData.output;
+                resultString = `Image successfully generated. URL: ${mediaUrl}. Output this URL formatted as markdown: ![Generated Media](${mediaUrl})`;
+              } else {
+                resultString = `Generation initiated but polling failed. Status: ${repData.status}`;
+              }
+            } catch (err) {
+              resultString = `Replicate API execution failed: ${err.message}`;
+            }
+          }
+        }
 
-      try {
-        const res = await fetch('https://gifted1s-projects.vercel.app/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: prompt, userMessage: prompt, message: prompt })
-        });
+        try {
+          const hop2Body = {
+            systemInstruction: { parts: [{ text: pg1SystemInstruction }] },
+            contents: [
+              { role: "user", parts: [{ text: promptText }] },
+              { role: "model", parts: originalModelParts },
+              { role: "user", parts: [{ functionResponse: { name: funcCall.name, response: { name: funcCall.name, content: resultString.substring(0, 6000) } } }] }
+            ],
+            tools: requestBody.tools,
+            toolConfig: requestBody.toolConfig,
+            safetySettings: pg1SafetySettings
+          };
 
-        const data = await res.json();
-        const reply = data.reply || 'Execution complete.';
-        
-        updateBotMessage(loadingId, reply);
-        speakText(reply);
-        
-      } catch (err) {
-        updateBotMessage(loadingId, `Network Error: ${err.message}`);
-      } finally { 
-        sendBtn.disabled = false; 
+          let response2 = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(hop2Body)
+          });
+
+          let data2 = await response2.json();
+          const finalParts = data2?.candidates?.[0]?.content?.parts || [];
+          const replyText = finalParts.map(p => p.text).filter(Boolean).join('\n');
+          const nextFunc = finalParts.find(p => p.functionCall);
+
+          if (replyText) {
+            return res.status(200).json({ reply: replyText, provider: 'PG1' });
+          } else if (nextFunc) {
+            return res.status(200).json({ reply: `Agent engaged secondary tool: ${nextFunc.functionCall.name}. Sequence completed.`, provider: 'PG1' });
+          } else {
+            return res.status(200).json({ reply: "Protocol reviewed. Operations nominal.", provider: 'PG1' });
+          }
+        } catch (hop2Err) {
+          return res.status(200).json({ reply: `Hop 2 Execution Failed: ${hop2Err.message}`, provider: 'PG1-SYS' });
+        }
+      }
+
+      const textPart = originalModelParts?.find(p => p.text);
+      if (textPart) {
+        return res.status(200).json({ reply: textPart.text, provider: 'PG1' });
       }
     }
 
-    function appendUserMessage(text) {
-      const wrapper = document.createElement('div');
-      wrapper.className = 'bubble-wrapper';
-      const msg = document.createElement('div');
-      msg.className = 'bubble user';
-      msg.textContent = text;
-      wrapper.appendChild(msg);
-      chatStream.appendChild(wrapper);
-      scrollToBottom();
-    }
+    return res.status(200).json({ reply: `Execution failed. Last Error: ${lastError}`, provider: 'PG1-SYS' });
 
-    function appendBotMessage(text, isLoading = false) {
-      const id = 'msg-' + Date.now();
-      const wrapper = document.createElement('div');
-      wrapper.className = 'bubble-wrapper';
-      wrapper.id = id;
-      const msg = document.createElement('div');
-      msg.className = 'bubble bot';
-      msg.innerHTML = text;
-      if (isLoading) msg.style.opacity = '0.7';
-      wrapper.appendChild(msg);
-      chatStream.appendChild(wrapper);
-      scrollToBottom();
-      return id;
-    }
-
-    function updateBotMessage(id, text) {
-      const wrapper = document.getElementById(id);
-      if (wrapper) {
-        const msg = wrapper.querySelector('.bubble');
-        msg.style.opacity = '1';
-        msg.innerHTML = parseMarkdown(text);
-        scrollToBottom();
-      }
-    }
-
-    function scrollToBottom() { chatStream.scrollTop = chatStream.scrollHeight; }
-
-    sendBtn.addEventListener('click', sendMessage);
-    userInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-    });
-  </script>
-</body>
-</html>
+  } catch (err) {
+    return res.status(200).json({ reply: `Runtime Error: ${err.message}`, provider: 'PG1-SYS' });
+  }
+};
