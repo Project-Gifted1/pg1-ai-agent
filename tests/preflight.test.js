@@ -20,6 +20,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const SelfHealingEngine = require('../api/lib/self-healing');
+const {
+  normalizePipelineTelemetry,
+  getPipelineTelemetrySnapshot,
+  requestPipelineSync
+} = require('../api/lib/pipeline-telemetry');
 
 // Minimal stubs — we only test generateFallbackResponse here
 const engine = new SelfHealingEngine(null, null, null);
@@ -112,3 +117,51 @@ test('-webkit-overflow-scrolling is set on .action-row for iOS scroll', () => {
   assert.ok(html.includes('-webkit-overflow-scrolling'), 'iOS scroll hint missing from .action-row');
 });
 
+// ── Pipeline telemetry integration checks ──────────────────────────────────────
+
+test('pipeline telemetry normalization maps core status fields', () => {
+  const normalized = normalizePipelineTelemetry({
+    state: 'healthy',
+    last_run_time: '2026-08-28T00:00:00Z',
+    last_successful_upload: '2026-08-28T00:05:00Z',
+    queue_depth: '3',
+    config_ready: true,
+    secrets_ready: false
+  });
+
+  assert.equal(normalized.state, 'healthy');
+  assert.equal(normalized.lastRunTime, '2026-08-28T00:00:00Z');
+  assert.equal(normalized.lastSuccessfulSync, '2026-08-28T00:05:00Z');
+  assert.equal(normalized.queueDepth, 3);
+  assert.equal(normalized.configReady, true);
+  assert.equal(normalized.secretsReady, false);
+});
+
+test('pipeline telemetry snapshot falls back to offline state when unavailable', async () => {
+  const snapshot = await getPipelineTelemetrySnapshot({
+    env: {},
+    fetchFn: async () => { throw new Error('network unavailable'); }
+  });
+
+  assert.equal(snapshot.state, 'offline');
+  assert.equal(snapshot.telemetryAvailable, false);
+  assert.match(snapshot.currentErrorState, /telemetry unavailable/i);
+});
+
+test('pipeline sync request is approval-gated by confirmation and policy', async () => {
+  const missingConfirm = await requestPipelineSync({
+    confirmed: false,
+    env: { PIPELINE_ALLOW_DISPATCH: 'true' },
+    fetchFn: async () => ({ ok: true })
+  });
+  assert.equal(missingConfirm.ok, false);
+  assert.equal(missingConfirm.status, 400);
+
+  const blockedByPolicy = await requestPipelineSync({
+    confirmed: true,
+    env: { PIPELINE_ALLOW_DISPATCH: 'false' },
+    fetchFn: async () => ({ ok: true })
+  });
+  assert.equal(blockedByPolicy.ok, false);
+  assert.equal(blockedByPolicy.status, 403);
+});
