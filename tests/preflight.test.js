@@ -116,8 +116,17 @@ test('public/index.html keeps the existing composer placeholder', () => {
 });
 
 test('frontend config builds an absolute backend chat URL', () => {
-  assert.equal(frontendConfig.backendOrigin, 'https://pg1-ai-agent.vercel.app');
-  assert.equal(frontendConfig.buildApiUrl('/api/chat'), 'https://pg1-ai-agent.vercel.app/api/chat');
+  const originalOverride = globalThis.PG1_BACKEND_ORIGIN;
+  delete globalThis.PG1_BACKEND_ORIGIN;
+
+  try {
+    assert.equal(frontendConfig.defaultBackendOrigin, 'https://pg1-ai-agent.vercel.app');
+    assert.equal(frontendConfig.backendOrigin, 'https://pg1-ai-agent.vercel.app');
+    assert.equal(frontendConfig.buildApiUrl('/api/chat'), 'https://pg1-ai-agent.vercel.app/api/chat');
+  } finally {
+    if (typeof originalOverride === 'undefined') delete globalThis.PG1_BACKEND_ORIGIN;
+    else globalThis.PG1_BACKEND_ORIGIN = originalOverride;
+  }
 });
 
 test('index.html uses shared frontend config instead of relative /api/chat', () => {
