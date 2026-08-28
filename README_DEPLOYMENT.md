@@ -44,6 +44,8 @@ An autonomous AI development assistant that combines:
 
 ## 🚀 Quick Start
 
+> Static frontend entrypoints (`/index.html` and `/public/index.html`) resolve chat requests through `/frontend-config.js`, which defaults to the Vercel backend origin `https://pg1-ai-agent.vercel.app`. Override `window.PG1_BACKEND_ORIGIN` or the `pg1-backend-origin` meta tag only when pointing the static UI at a different deployed backend.
+
 ### 1. Deploy to Production
 
 ```bash
