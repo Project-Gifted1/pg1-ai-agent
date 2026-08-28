@@ -285,7 +285,8 @@
       const loadingId = appendBotMessage('Processing directive...', true);
 
       try {
-        const res = await fetch('https://gifted1s-projects.vercel.app/api/chat', {
+        // Updated to relative routing to bypass CORS regardless of deployment URL
+        const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: prompt, userMessage: prompt, message: prompt })
