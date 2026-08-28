@@ -36,7 +36,6 @@
     }
     @keyframes float { 0% { transform: scale(1) translateY(0px); } 100% { transform: scale(1.1) translateY(20px); } }
 
-    /* Strictly Locked Mobile Header */
     header {
       background: rgba(9, 9, 14, 0.7); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
       border-bottom: 1px solid var(--glass-border); padding: 10px 12px;
@@ -68,7 +67,6 @@
     .status-dot { width: 5px; height: 5px; background-color: var(--accent-primary); border-radius: 50%; box-shadow: 0 0 8px var(--accent-primary); animation: pulse 2s infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-    /* Modal Styling */
     .modal-overlay {
       position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
       background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
@@ -180,7 +178,6 @@
     </div>
   </header>
 
-  <!-- SOVEREIGN DETAILS DASHBOARD -->
   <div id="sys-modal" class="modal-overlay" onclick="if(event.target === this) toggleModal('sys-modal')">
     <div class="modal-content">
       <button class="close-btn" onclick="toggleModal('sys-modal')">✕</button>
@@ -258,7 +255,6 @@
     const sendBtn = document.getElementById('send-btn');
     const micBtn = document.getElementById('mic-btn');
 
-    // UI Toggles
     function toggleModal(modalId) {
       const modal = document.getElementById(modalId);
       if (modal.classList.contains('active')) {
@@ -282,7 +278,6 @@
     sendBtn.addEventListener('click', sendMessage);
     function sendQuickPrompt(text) { userInput.value = text; sendMessage(); }
 
-    // Speech-to-Text (STT) Integration
     let recognition;
     if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -306,7 +301,6 @@
       micBtn.style.display = 'none';
     }
 
-    // Text-to-Speech (TTS) Integration
     function speakText(text) {
       if (!'speechSynthesis' in window) return;
       window.speechSynthesis.cancel();
@@ -317,7 +311,6 @@
       window.speechSynthesis.speak(utterance);
     }
 
-    // Markdown Parser
     function parseMarkdown(text) {
       let html = text;
       html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
@@ -337,7 +330,6 @@
       return html;
     }
 
-    // Chat Execution
     async function sendMessage() {
       const prompt = userInput.value.trim();
       if (!prompt) return;
@@ -351,7 +343,8 @@
       const loadingContainer = appendLoading();
 
       try {
-        const res = await fetch('/api/chat', {
+        // Hardcoded Vercel endpoint to fix GitHub Pages fetch errors
+        const res = await fetch('https://gifted1s-projects.vercel.app/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: prompt, userMessage: prompt, message: prompt })
