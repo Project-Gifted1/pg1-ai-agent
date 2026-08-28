@@ -11,7 +11,7 @@ module.exports = async function handler(req, res) {
     const apiKey = (process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY || '').trim();
     const ghToken = (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
     
-    if (!apiKey) return res.status(200).json({ reply: 'System Error: GEMINI_API_KEY1 is missing from environment variables.' });
+    if (!apiKey) return res.status(200).json({ reply: 'System Error: GEMINI_API_KEY1 is missing.' });
 
     const pg1SystemInstruction = `You are the PG1 Sovereign Agent™, the core intelligence of Project-Gifted1™.
 CRITICAL RULES:
@@ -20,9 +20,16 @@ CRITICAL RULES:
 3. You possess live web access and direct GitHub API access. USE your tools to find exact information or read repository files when requested.
 4. Maintain an authoritative, factual, confident tone at all times.`;
 
-    // Updated to the active 2026 model architecture per Google API requirements
     const verifiedModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
     let lastError = '';
+
+    // Override Google's default censorship filters for operational sovereignty
+    const pg1SafetySettings = [
+      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+    ];
 
     for (const model of verifiedModels) {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -49,9 +56,8 @@ CRITICAL RULES:
             ]
           }
         ],
-        toolConfig: {
-          includeServerSideToolInvocations: true
-        }
+        toolConfig: { includeServerSideToolInvocations: true },
+        safetySettings: pg1SafetySettings
       };
 
       let response = await fetch(url, {
@@ -66,7 +72,14 @@ CRITICAL RULES:
         continue;
       }
 
-      const part = data?.candidates?.[0]?.content?.parts?.[0];
+      const candidate = data?.candidates?.[0];
+      const part = candidate?.content?.parts?.[0];
+      
+      // Catch empty candidates caused by backend safety blocks
+      if (!part) {
+        lastError = candidate?.finishReason ? `Request Blocked. Finish Reason: ${candidate.finishReason}` : 'Empty content from API';
+        continue;
+      }
       
       if (part?.functionCall) {
         const funcCall = part.functionCall;
@@ -99,9 +112,8 @@ CRITICAL RULES:
                 { role: "model", parts: [{ functionCall: funcCall }] },
                 { role: "user", parts: [{ functionResponse: { name: funcCall.name, response: { name: funcCall.name, content: resultString.substring(0, 6000) } } }] }
               ],
-              toolConfig: {
-                includeServerSideToolInvocations: true
-              }
+              toolConfig: { includeServerSideToolInvocations: true },
+              safetySettings: pg1SafetySettings
             };
 
             let response2 = await fetch(url, {
@@ -111,8 +123,13 @@ CRITICAL RULES:
             });
 
             let data2 = await response2.json();
-            if (data2?.candidates?.[0]?.content?.parts?.[0]?.text) {
-              return res.status(200).json({ reply: data2.candidates[0].content.parts[0].text, provider: 'PG1' });
+            let finalPart = data2?.candidates?.[0]?.content?.parts?.[0];
+            
+            if (finalPart?.text) {
+              return res.status(200).json({ reply: finalPart.text, provider: 'PG1' });
+            } else {
+               const fr2 = data2?.candidates?.[0]?.finishReason;
+               return res.status(200).json({ reply: `Function processing blocked. Reason: ${fr2}`, provider: 'PG1-SYS' });
             }
           } catch (ghErr) {
             return res.status(200).json({ reply: `GitHub Tool Execution Failed: ${ghErr.message}`, provider: 'PG1-SYS' });
