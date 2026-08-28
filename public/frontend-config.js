@@ -5,7 +5,9 @@
     module.exports = config;
   }
 
-  root.PG1FrontendConfig = config;
+  if (root && root.window === root) {
+    root.PG1FrontendConfig = config;
+  }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (root, document) {
   const DEFAULT_BACKEND_ORIGIN = 'https://pg1-ai-agent.vercel.app';
 
