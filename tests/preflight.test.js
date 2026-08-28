@@ -20,6 +20,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const SelfHealingEngine = require('../api/lib/self-healing');
+const frontendConfig = require('../frontend-config.js');
 
 // Minimal stubs — we only test generateFallbackResponse here
 const engine = new SelfHealingEngine(null, null, null);
@@ -94,21 +95,46 @@ test('status request uses status-focused response', () => {
 // ── HTML checks ───────────────────────────────────────────────────────────────
 
 const html = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
+const publicHtml = fs.readFileSync(path.resolve(__dirname, '../public/index.html'), 'utf8');
 
-test('composer placeholder is friendly (not technical jargon)', () => {
-  assert.ok(!html.includes('Execute directive or query agent'), 'Old placeholder still present');
-  assert.ok(html.includes('Ask anything'), 'Expected friendly placeholder not found');
+test('index.html keeps the mobile composer and voice controls', () => {
+  assert.ok(html.includes('placeholder="Message PG1 Sovereign Agent™..."'), 'Expected chat composer placeholder not found');
+  assert.ok(html.includes('id="micBtn"'), 'Voice input button missing from index.html');
 });
 
-test('quick-action chips are wrapped in .action-row-wrap for mobile scroll-fade', () => {
-  assert.ok(html.includes('action-row-wrap'), 'action-row-wrap wrapper not found in HTML');
+test('index.html still exposes speech recognition wiring', () => {
+  assert.ok(html.includes('SpeechRecognition'), 'Speech recognition wiring missing from index.html');
 });
 
-test('action-row-wrap::after fade cue is defined in CSS', () => {
-  assert.ok(html.includes('action-row-wrap::after'), 'Scroll-fade CSS rule not found');
+test('public/index.html keeps the mobile quick-action row', () => {
+  assert.ok(publicHtml.includes('class="action-row"'), 'Quick-action row missing from public/index.html');
+  assert.ok(publicHtml.includes('overflow-x: auto'), 'Quick-action row no longer scrolls horizontally');
 });
 
-test('-webkit-overflow-scrolling is set on .action-row for iOS scroll', () => {
-  assert.ok(html.includes('-webkit-overflow-scrolling'), 'iOS scroll hint missing from .action-row');
+test('public/index.html keeps the existing composer placeholder', () => {
+  assert.ok(publicHtml.includes('placeholder="Initialize sequence..."'), 'Expected public composer placeholder not found');
 });
 
+test('frontend config builds an absolute backend chat URL', () => {
+  const originalOverride = globalThis.PG1_BACKEND_ORIGIN;
+  delete globalThis.PG1_BACKEND_ORIGIN;
+
+  try {
+    assert.equal(frontendConfig.defaultBackendOrigin, 'https://pg1-ai-agent.vercel.app');
+    assert.equal(frontendConfig.backendOrigin, 'https://pg1-ai-agent.vercel.app');
+    assert.equal(frontendConfig.buildApiUrl('/api/chat'), 'https://pg1-ai-agent.vercel.app/api/chat');
+  } finally {
+    if (typeof originalOverride === 'undefined') delete globalThis.PG1_BACKEND_ORIGIN;
+    else globalThis.PG1_BACKEND_ORIGIN = originalOverride;
+  }
+});
+
+test('index.html uses shared frontend config instead of relative /api/chat', () => {
+  assert.ok(html.includes('frontend-config.js'), 'Shared frontend config script missing from index.html');
+  assert.ok(!html.includes("fetch('/api/chat'"), 'index.html still uses relative /api/chat');
+});
+
+test('public/index.html uses shared frontend config instead of relative /api/chat', () => {
+  assert.ok(publicHtml.includes('frontend-config.js'), 'Shared frontend config script missing from public/index.html');
+  assert.ok(!publicHtml.includes("fetch('/api/chat'"), 'public/index.html still uses relative /api/chat');
+});

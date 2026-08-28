@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script src="./frontend-config.js"></script>
   <style>
     :root {
       --bg-base: #09090E;
@@ -337,6 +338,7 @@
     async function sendMessage() {
       const prompt = userInput.value.trim();
       if (!prompt) return;
+      const chatEndpoint = window.PG1FrontendConfig.buildApiUrl('/api/chat');
 
       userInput.value = '';
       userInput.style.height = '38px';
@@ -346,7 +348,7 @@
       const loadingContainer = appendLoading();
 
       try {
-        const res = await fetch('/api/chat', {
+        const res = await fetch(chatEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: prompt, userMessage: prompt, message: prompt })
