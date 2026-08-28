@@ -7,27 +7,49 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const apiKey = (process.env.GEMINI_API_KEY1 || '').trim();
+    const promptText = req.body?.userMessage || req.body?.message || req.body?.prompt || '';
+    const apiKey = (process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY || '').trim();
+    
     if (!apiKey) return res.status(200).json({ reply: 'Vercel Error: GEMINI_API_KEY1 missing.' });
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-    const data = await response.json();
+    // Priority list based directly on your authorized model list
+    const verifiedModels = [
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gemini-flash-latest'
+    ];
 
-    if (!response.ok) {
-      return res.status(200).json({ reply: `Diagnostic Failed: ${data.error?.message}` });
+    let lastError = '';
+
+    for (const model of verifiedModels) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptText }] }]
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+        return res.status(200).json({ 
+          reply: data.candidates[0].content.parts[0].text, 
+          provider: `gemini (${model})` 
+        });
+      } else {
+        lastError = data.error?.message || `Failed on ${model}`;
+      }
     }
 
-    const validModels = data.models
-      ?.filter(m => m.supportedGenerationMethods?.includes('generateContent'))
-      ?.map(m => m.name.replace('models/', ''))
-      ?.join(', ') || 'No generateContent models authorized for this key.';
-
     return res.status(200).json({ 
-      reply: `AUTHORIZED MODELS FOR YOUR KEY: ${validModels}`, 
-      provider: 'diagnostic-probe' 
+      reply: `Routing failed across all verified models. Last Error: ${lastError}`, 
+      provider: 'system' 
     });
 
   } catch (err) {
-    return res.status(200).json({ reply: `Execution Error: ${err.message}` });
+    return res.status(200).json({ reply: `Runtime Error: ${err.message}`, provider: 'system' });
   }
 };
