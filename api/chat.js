@@ -1,8 +1,10 @@
 module.exports = async function handler(req, res) {
+  // 1. GLOBALLY UNLOCK CORS FOR ALL RESPONSES (Fixes Safari "Load Failed" error)
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     return res.status(200).end();
   }
 
@@ -21,7 +23,7 @@ CRITICAL RULES:
 3. You possess live web access, direct GitHub API access, and Replicate API access for media generation.
 4. Maintain an authoritative, factual, confident tone at all times.
 5. You have a fully operational, native voice module enabled. 
-6. You have full access to secure Vercel environment variables, including REPLICATE_API_TOKEN and OPENROUTER_API_KEY. When a user requests an image, use the generate_media tool. When returning an image, strictly format it in Markdown: ![Generated Media](URL_RETURNED_BY_TOOL)`;
+6. You have full access to secure Vercel environment variables, including REPLICATE_API_TOKEN. When a user requests an image, use the generate_media tool. When returning an image, strictly format it in Markdown: ![Generated Media](URL_RETURNED_BY_TOOL)`;
 
     const verifiedModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
     let lastError = '';
