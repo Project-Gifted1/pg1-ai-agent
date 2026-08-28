@@ -2,6 +2,7 @@ class PG1VoicePlayer {
   constructor() {
     this.isPlaying = false;
     this.currentAudio = null;
+    this.currentObjectUrl = null;
   }
 
   base64ToBlob(base64, mimeType = 'audio/mpeg') {
@@ -29,19 +30,27 @@ class PG1VoicePlayer {
 
       const blob = this.base64ToBlob(data.audioBase64, 'audio/mpeg');
       const objectUrl = URL.createObjectURL(blob);
+      this.currentObjectUrl = objectUrl;
       const audioElement = document.getElementById('voice-output');
       const audio = audioElement || new Audio();
       audio.src = objectUrl;
 
       await audio.play();
       audio.onended = () => {
-        URL.revokeObjectURL(objectUrl);
+        if (this.currentObjectUrl) {
+          URL.revokeObjectURL(this.currentObjectUrl);
+          this.currentObjectUrl = null;
+        }
         this.isPlaying = false;
       };
 
       this.currentAudio = audio;
       return data;
     } catch (error) {
+      if (this.currentObjectUrl) {
+        URL.revokeObjectURL(this.currentObjectUrl);
+        this.currentObjectUrl = null;
+      }
       this.isPlaying = false;
       throw error;
     }
@@ -51,6 +60,10 @@ class PG1VoicePlayer {
     if (!this.currentAudio) return;
     this.currentAudio.pause();
     this.currentAudio.currentTime = 0;
+    if (this.currentObjectUrl) {
+      URL.revokeObjectURL(this.currentObjectUrl);
+      this.currentObjectUrl = null;
+    }
     this.isPlaying = false;
   }
 

@@ -8,7 +8,7 @@
     "test": "node tests/preflight.test.js",
     "setup:voice": "node scripts/setup-aws-polly.js",
     "voice:test": "node scripts/test-voice.js",
-    "voice:cache:clear": "rm -rf ./cache/voices",
+    "voice:cache:clear": "node -e \"require('fs').rmSync('./cache/voices', { recursive: true, force: true })\"",
     "voice:list": "node scripts/list-voices.js"
   },
   "dependencies": {

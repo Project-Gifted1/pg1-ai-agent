@@ -4,6 +4,8 @@
  * Identifies common errors and suggests fixes
  */
 
+const vm = require('node:vm');
+
 class DiagnosticEngine {
   constructor() {
     this.errorPatterns = {
@@ -195,7 +197,7 @@ class DiagnosticEngine {
 
     if (validationType === 'syntax') {
       try {
-        new Function(solution);
+        new vm.Script(String(solution));
         validation.passed = true;
       } catch (e) {
         validation.passed = false;
