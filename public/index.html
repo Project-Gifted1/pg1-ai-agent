@@ -281,6 +281,7 @@
     </div>
   </footer>
 
+  <script src="../backend-origin.js"></script>
   <script>
     const chatStream = document.getElementById('chat-stream');
     const userInput = document.getElementById('user-input');
@@ -337,6 +338,7 @@
     async function sendMessage() {
       const prompt = userInput.value.trim();
       if (!prompt) return;
+      const chatEndpoint = window.PG1_BUILD_BACKEND_URL('/api/chat');
 
       userInput.value = '';
       userInput.style.height = '38px';
@@ -346,7 +348,7 @@
       const loadingContainer = appendLoading();
 
       try {
-        const res = await fetch('/api/chat', {
+        const res = await fetch(chatEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: prompt, userMessage: prompt, message: prompt })

@@ -365,6 +365,7 @@
     </div>
   </div>
 
+  <script src="./backend-origin.js"></script>
   <script>
     (function () {
       const chatEl = document.getElementById('chat');
@@ -462,6 +463,7 @@
       async function sendMessage() {
         const prompt = inputEl.value.trim();
         if (!prompt) return;
+        const chatEndpoint = window.PG1_BUILD_BACKEND_URL('/api/chat');
 
         appendMessage('user', prompt);
         inputEl.value = '';
@@ -469,7 +471,7 @@
         statusEl.textContent = 'Processing...';
 
         try {
-          const res = await fetch('/api/chat', {
+          const res = await fetch(chatEndpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: prompt })
@@ -489,7 +491,7 @@
           speak(reply);
           statusEl.textContent = 'Ready';
         } catch (err) {
-          appendMessage('assistant', '**Error:** Unable to reach backend API.\n- Verify `/api/chat` is running\n- Check network and server logs');
+          appendMessage('assistant', `**Error:** Unable to reach backend API at \`${chatEndpoint}\`.\n- Verify the backend deployment is reachable\n- Check network and server logs`);
           statusEl.textContent = 'Error: ' + err.message;
         }
       }
