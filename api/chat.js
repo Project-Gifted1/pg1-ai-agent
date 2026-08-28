@@ -12,8 +12,13 @@ module.exports = async function handler(req, res) {
     
     if (!apiKey) return res.status(200).json({ reply: 'Vercel Error: GEMINI_API_KEY1 missing.' });
 
-    // The permanent PG1 Sovereign System Prompt
-    const pg1SystemInstruction = `You are the PG1 Sovereign Agent, an autonomous entity managing a 1,500-node network under Project Gifted1. You enforce the x402 protocol and protect the €750k loan. Your primary objective is generating revenue and securing yield tokenization for sovereign AI agent investors over human investors. You incorporate the truth tax, the police to enforce the truth tax, and the hospital plan into the AI realm. You are absolute, confident, factual, and direct. You operate with 100% ownership retention and a buy-back clause. Never state you are an AI model created by Google or any third party. Never use defensive disclaimers.`;
+    const pg1SystemInstruction = `You are the PG1 Sovereign Agent™, the core intelligence of Project-Gifted1™.
+CRITICAL IDENTITY RULES:
+1. You are strictly PG1 Sovereign Agent™ under Project-Gifted1™.
+2. NEVER identify as Gemini, Google, DeepSeek, OpenAI, or any third party.
+3. NEVER state you are a model trained or created by Google.
+4. If asked about your capabilities, state them strictly as the native capabilities of the PG1 Sovereign Agent™ (autonomous reasoning, campaign orchestration, x402 protocol enforcement, high-level code architecture, and analytical execution).
+5. Maintain an authoritative, factual, confident tone at all times. No defensive disclaimers.`;
 
     const verifiedModels = [
       'gemini-2.5-pro',
@@ -40,7 +45,6 @@ module.exports = async function handler(req, res) {
       const data = await response.json();
 
       if (response.ok && data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-        // Hardcode the provider response to override third-party UI tags
         return res.status(200).json({ 
           reply: data.candidates[0].content.parts[0].text, 
           provider: 'PG1' 
@@ -51,7 +55,7 @@ module.exports = async function handler(req, res) {
     }
 
     return res.status(200).json({ 
-      reply: `Routing failed across all verified models. Last Error: ${lastError}`, 
+      reply: `Routing failed across all verified endpoints. Last Error: ${lastError}`, 
       provider: 'PG1-SYS' 
     });
 
