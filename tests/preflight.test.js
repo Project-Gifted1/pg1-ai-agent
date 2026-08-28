@@ -213,7 +213,7 @@ test('chat handler accepts the static frontend send payload and applies allowed-
   assert.equal(res.statusCode, 200);
   assert.equal(res.headers['Access-Control-Allow-Origin'], 'https://project-gifted1.github.io');
   assert.equal(res.body.reply, 'Acknowledged.');
-  assert.equal(fetchCalls[0].url.includes('generativelanguage.googleapis.com'), true);
+  assert.equal(new URL(fetchCalls[0].url).hostname, 'generativelanguage.googleapis.com');
   assert.equal(JSON.parse(fetchCalls[0].options.body).contents[0].parts[0].text, 'Hello from Pages');
 });
 
