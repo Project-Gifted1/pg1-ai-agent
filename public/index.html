@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>PG1 Sovereign Agent™ | Project-Gifted1™</title>
+  <title>PG1 Sovereign Agent Control Center</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
@@ -330,13 +330,13 @@
     <div class="header-left">
       <div class="logo-block">PG1</div>
       <div class="title-stack">
-        <span class="title-main">PG1 Sovereign Agent™</span>
-        <span class="title-sub">Project-Gifted1™ Core</span>
+        <span class="title-main">PG1 Sovereign Agent Control Center</span>
+        <span class="title-sub">PG1.Agent Status • PG1 Autonomous Core</span>
       </div>
     </div>
     <div class="node-status">
       <div class="status-indicator"></div>
-      1,500 Nodes Active
+      PG1.Agent Status: Active
     </div>
   </header>
 
@@ -344,12 +344,12 @@
     <div class="msg-wrapper">
       <div class="msg-meta">
         <span class="meta-tag">[PG1]</span>
-        <span>System Initialized</span>
+        <span>PG1.Agent Status</span>
       </div>
       <div class="msg-bubble bot">
-        Greetings. PG1 Sovereign Agent™ is operational and synchronized with the 1,500-node infrastructure under Project-Gifted1™. 
+        PG1 Sovereign Agent is online. Submit your directive or select a command below to begin a Sovereign Execution.
 
-Submit your directive or select a command below to begin execution.
+This interface will disclose failures, provider usage, and known limitations directly.
       </div>
     </div>
   </main>
@@ -369,8 +369,8 @@ Submit your directive or select a command below to begin execution.
       </div>
 
       <div class="input-row">
-        <textarea id="user-input" placeholder="Execute directive or query agent..." rows="1"></textarea>
-        <button id="send-btn" class="send-btn" onclick="sendMessage()" aria-label="Send">
+        <textarea id="user-input" placeholder="Ask PG1 to run a Sovereign Execution..." rows="1"></textarea>
+        <button id="send-btn" class="send-btn" onclick="sendMessage()" aria-label="Authorize Execution">
           <svg viewBox="0 0 24 24">
             <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
           </svg>
@@ -432,13 +432,13 @@ Submit your directive or select a command below to begin execution.
         loadingContainer.remove();
 
         if (!res.ok) {
-          appendBotMessage(`System Error: ${data.error || 'Execution interrupted'}`, 'Error Log');
+          appendBotMessage(`PG1.Sovereign Execution failed: ${data.error || 'Execution interrupted'}`, data.verificationLabel || 'Failure Captured');
         } else {
-          appendBotMessage(data.reply || 'Execution complete.', 'Sovereign Output');
+          appendBotMessage(data.reply || 'Execution complete.', data.verificationLabel || data.status || 'Sovereign Output');
         }
       } catch (err) {
         loadingContainer.remove();
-        appendBotMessage(`Network Error: ${err.message}`, 'Connection Fault');
+        appendBotMessage(`PG1 Neural Protocol network failure: ${err.message}`, 'Connection Fault');
       } finally {
         sendBtn.disabled = false;
         userInput.focus();
@@ -482,7 +482,7 @@ Submit your directive or select a command below to begin execution.
       
       const meta = document.createElement('div');
       meta.className = 'msg-meta';
-      meta.innerHTML = `<span class="meta-tag">[PG1]</span> <span>Executing Directive</span>`;
+      meta.innerHTML = `<span class="meta-tag">[PG1]</span> <span>Authorize Execution</span>`;
       
       const msg = document.createElement('div');
       msg.className = 'msg-bubble bot';

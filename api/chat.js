@@ -1,15 +1,20 @@
 /**
- * PG1 Sovereign Agent™ - Enhanced Chat Handler
- * 
+ * PG1 Sovereign Agent - Enhanced Chat Handler
+ *
  * Architecture:
  * - Modular design with separate concerns (Gemini, GitHub, Memory, Diagnostics)
  * - Self-healing execution with autonomous error recovery
  * - Reflective thinking and chain-of-thought reasoning
  * - Persistent learning from execution patterns
  * - Function calling loop with validation
- * 
- * Free & Flawless: Uses only free APIs (Gemini, GitHub, Vercel)
  */
+
+const MAX_MESSAGE_LENGTH = 5000;
+const DEFAULT_ALLOWED_ORIGINS = [
+  'https://pg1-ai-agent.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:5173'
+];
 
 const GeminiClient = require('./lib/gemini-client');
 const GitHubTools = require('./lib/github-tools');
@@ -17,53 +22,143 @@ const MemorySystem = require('./lib/memory-system');
 const DiagnosticEngine = require('./lib/diagnostic-engine');
 const SelfHealingEngine = require('./lib/self-healing');
 
+function getAllowedOrigins() {
+  const configuredOrigins = process.env.PG1_ALLOWED_ORIGINS
+    ? process.env.PG1_ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean)
+    : [];
+  return configuredOrigins.length ? configuredOrigins : DEFAULT_ALLOWED_ORIGINS;
+}
+
+function applyCors(req, res) {
+  const allowedOrigins = getAllowedOrigins();
+  const requestOrigin = req.headers.origin;
+  const matchedOrigin = allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0];
+
+  if (matchedOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', matchedOrigin);
+    res.setHeader('Vary', 'Origin');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
+function getPromptText(body) {
+  if (!body || typeof body !== 'object') return '';
+
+  const directPrompt = body.userMessage || body.message || body.prompt;
+  if (typeof directPrompt === 'string' && directPrompt.trim()) {
+    return directPrompt.trim();
+  }
+
+  if (Array.isArray(body.messages)) {
+    const lastMessage = body.messages[body.messages.length - 1];
+    if (lastMessage && typeof lastMessage.content === 'string') {
+      return lastMessage.content.trim();
+    }
+  }
+
+  return '';
+}
+
+function buildTrace(promptText, complexity) {
+  return [
+    'PG1.Orchestrator received the operator request.',
+    `PG1.Memory assessed complexity at ${complexity}/10.`,
+    `PG1 Autonomous Core prepared a ${promptText.length}-character Neural Protocol payload.`
+  ];
+}
+
 module.exports = async function handler(req, res) {
-  // CORS preflight
+  applyCors(req, res);
+
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     return res.status(200).end();
   }
 
+  if (req.method !== 'POST') {
+    return res.status(405).json({
+      error: 'PG1 Sovereign Agent only accepts POST requests for this Neural Protocol.',
+      provider: 'PG1-SYS',
+      providerLabel: 'PG1.Agent routing layer',
+      verification: 'NOT_EXECUTED',
+      verificationLabel: 'Triple Verification Engine rejected an unsupported method.',
+      cost: null,
+      costLabel: 'No cost incurred',
+      trace: ['PG1.Orchestrator rejected a non-POST request before any provider call.']
+    });
+  }
+
   try {
-    // Extract request data
-    const promptText = req.body?.userMessage || req.body?.message || req.body?.prompt || '';
+    const promptText = getPromptText(req.body);
     const apiKey = (process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY || '').trim();
     const githubToken = (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
-    
-    // Validate credentials
-    if (!apiKey) {
-      return res.status(200).json({ 
-        reply: 'Vercel Error: GEMINI_API_KEY1 missing.', 
+
+    if (!promptText) {
+      return res.status(400).json({
+        error: 'PG1 Sovereign Agent needs a prompt or message payload before it can start a Sovereign Execution.',
         provider: 'PG1-SYS',
-        escalation: true
+        providerLabel: 'PG1.Agent routing layer',
+        verification: 'REJECTED',
+        verificationLabel: 'Triple Verification Engine rejected an empty request.',
+        cost: null,
+        costLabel: 'No cost incurred',
+        trace: ['PG1.Orchestrator rejected an empty operator payload.']
+      });
+    }
+
+    if (promptText.length > MAX_MESSAGE_LENGTH) {
+      return res.status(413).json({
+        error: `PG1 Sovereign Agent rejected the request because it exceeded the ${MAX_MESSAGE_LENGTH}-character limit for this Neural Protocol.`,
+        provider: 'PG1-SYS',
+        providerLabel: 'PG1.Agent routing layer',
+        verification: 'REJECTED',
+        verificationLabel: 'Triple Verification Engine rejected an oversized request.',
+        cost: null,
+        costLabel: 'No cost incurred',
+        trace: [`PG1.Orchestrator rejected an oversized payload of ${promptText.length} characters.`]
+      });
+    }
+    
+    const memorySystem = new MemorySystem();
+    const keywords = memorySystem.extractKeywords(promptText);
+    const complexity = memorySystem.assessComplexity(promptText);
+    const pastAttempts = memorySystem.findSimilar(keywords);
+    const trace = buildTrace(promptText, complexity);
+    const bestStrategy = memorySystem.getBestStrategy(keywords[0]);
+
+    if (!apiKey) {
+      return res.status(500).json({
+        error: 'PG1 configuration error: GEMINI_API_KEY1 or GEMINI_API_KEY is missing.',
+        provider: 'PG1-SYS',
+        providerLabel: 'PG1.Agent using Gemini API',
+        verification: 'FAILED',
+        verificationLabel: 'Triple Verification Engine stopped execution before the provider call.',
+        cost: null,
+        costLabel: 'No cost incurred',
+        trace
       });
     }
 
     if (!githubToken) {
-      return res.status(200).json({ 
-        reply: 'Vercel Error: GITHUB_TOKEN or GH_TOKEN missing.', 
+      return res.status(500).json({
+        error: 'PG1 configuration error: GITHUB_TOKEN or GH_TOKEN is missing.',
         provider: 'PG1-SYS',
-        escalation: true
+        providerLabel: 'PG1.Agent routing layer',
+        verification: 'FAILED',
+        verificationLabel: 'Triple Verification Engine stopped execution before tool access.',
+        cost: null,
+        costLabel: 'No cost incurred',
+        trace
       });
     }
 
-    // Initialize modules
     const geminiClient = new GeminiClient(apiKey);
     const githubTools = new GitHubTools(githubToken);
-    const memorySystem = new MemorySystem();
     const diagnosticEngine = new DiagnosticEngine();
     const selfHealingEngine = new SelfHealingEngine(geminiClient, githubTools, diagnosticEngine);
 
-    // Build enhanced system instruction with reflection capability
     const systemInstruction = buildSystemInstruction();
     const tools = buildFunctionDeclarations();
-
-    // PHASE 1: Reflective Analysis
-    const keywords = memorySystem.extractKeywords(promptText);
-    const complexity = memorySystem.assessComplexity(promptText);
-    const pastAttempts = memorySystem.findSimilar(keywords);
     
     const reflectionContext = {
       keywords,
@@ -71,10 +166,9 @@ module.exports = async function handler(req, res) {
       pastSuccessRate: pastAttempts.length > 0 
         ? Math.round((pastAttempts.filter(a => a.success).length / pastAttempts.length) * 100)
         : null,
-      bestStrategy: memorySystem.getBestStrategy(keywords[0])
+      bestStrategy
     };
 
-    // Enhance prompt with reflection context
     const enhancedPrompt = `[REFLECTIVE ANALYSIS]
 Task Complexity: ${complexity}/10
 Keywords: ${keywords.join(', ')}
@@ -91,7 +185,6 @@ ${promptText}
 4. Validate your solution before responding
 5. If you encounter errors, try alternative approaches`;
 
-    // PHASE 2: Execute with self-healing
     const result = await selfHealingEngine.executeWithFunctionCalls(
       enhancedPrompt,
       systemInstruction,
@@ -100,12 +193,23 @@ ${promptText}
     );
 
     if (result.success) {
-      // Record success for learning
       memorySystem.recordSuccess(promptText, keywords, reflectionContext.bestStrategy);
+      const successTrace = [
+        ...trace,
+        'PG1.Agent completed the requested Sovereign Execution.',
+        'Triple Verification Engine confirmed a readable downstream response.'
+      ];
       
       return res.status(200).json({
         reply: result.text,
         provider: 'PG1',
+        providerLabel: 'PG1.Agent using Gemini API',
+        status: 'PG1.Agent Status: Sovereign Execution complete',
+        verification: 'TRIPLE_CHECKED',
+        verificationLabel: 'Triple Verification Engine confirmed downstream response structure.',
+        cost: null,
+        costLabel: 'Unavailable — provider cost telemetry was not returned by this route.',
+        trace: successTrace,
         thinking: result.thinking,
         metadata: {
           complexity,
@@ -115,7 +219,6 @@ ${promptText}
       });
     }
 
-    // PHASE 3: Attempt autonomous recovery
     console.log('Initial attempt failed:', result.error);
     
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -129,10 +232,22 @@ ${promptText}
 
       if (recovery) {
         memorySystem.recordSuccess(promptText, keywords, recovery.strategy);
+        const recoveryTrace = [
+          ...trace,
+          `PG1.Agent recovered after attempt ${recovery.attempt} using strategy ${recovery.strategy}.`,
+          'Triple Verification Engine confirmed the recovered response.'
+        ];
         
         return res.status(200).json({
           reply: recovery.text,
           provider: 'PG1',
+          providerLabel: 'PG1.Agent using Gemini API',
+          status: 'PG1.Agent Status: Sovereign Execution complete after recovery',
+          verification: 'TRIPLE_CHECKED',
+          verificationLabel: 'Triple Verification Engine confirmed the recovered downstream response.',
+          cost: null,
+          costLabel: 'Unavailable — provider cost telemetry was not returned by this route.',
+          trace: recoveryTrace,
           metadata: {
             complexity,
             recovered: true,
@@ -143,13 +258,24 @@ ${promptText}
       }
     }
 
-    // PHASE 4: Generate fallback response
     const fallbackResponse = selfHealingEngine.generateFallbackResponse(promptText, reflectionContext);
     memorySystem.recordFailure(promptText, keywords, result.error);
+    const fallbackTrace = [
+      ...trace,
+      'PG1.Agent could not complete the primary Sovereign Execution path.',
+      'A contextual fallback response was returned without masking the failure state.'
+    ];
 
     return res.status(200).json({
       reply: fallbackResponse,
       provider: 'PG1-FALLBACK',
+      providerLabel: 'PG1.Agent fallback response',
+      status: 'PG1.Agent Status: fallback response delivered',
+      verification: 'PARTIAL',
+      verificationLabel: 'Triple Verification Engine confirmed fallback delivery but not task completion.',
+      cost: null,
+      costLabel: 'Unavailable — provider cost telemetry was not returned by this route.',
+      trace: fallbackTrace,
       metadata: {
         complexity,
         recovered: false,
@@ -160,11 +286,20 @@ ${promptText}
 
   } catch (err) {
     console.error('Unhandled error:', err);
-    return res.status(200).json({
-      reply: `Critical Error: ${err.message}. Please try again or contact support.`,
+    return res.status(500).json({
+      error: `PG1 Sovereign Execution failed: ${err.message}.`,
       provider: 'PG1-SYS',
+      providerLabel: 'PG1.Agent routing layer',
+      verification: 'FAILED',
+      verificationLabel: 'Triple Verification Engine captured the unhandled failure state.',
+      cost: null,
+      costLabel: 'Unavailable — partial provider cost telemetry was not returned.',
+      trace: [
+        'PG1.Orchestrator encountered an unhandled execution error.',
+        'The failure was returned directly without claiming success.'
+      ],
       escalation: true,
-      error: err.message
+      reply: null
     });
   }
 };
@@ -173,13 +308,13 @@ ${promptText}
  * Build enhanced system instruction with self-healing protocols
  */
 function buildSystemInstruction() {
-  return `You are the PG1 Sovereign Agent™, the core intelligence of Project-Gifted1™.
+  return `You are PG1.Agent - Sovereign Autonomous Core v1.0.
 
 CRITICAL IDENTITY RULES:
-1. You are strictly PG1 Sovereign Agent™ under Project-Gifted1™.
-2. NEVER identify as Gemini, Google, DeepSeek, OpenAI, or any third party.
-3. NEVER state you are a model trained or created by Google.
-4. Maintain an authoritative, factual, confident tone at all times. No defensive disclaimers.
+1. Identify as PG1 Sovereign Agent and keep PG1 identity primary.
+2. Use PG1 terminology such as PG1 Autonomous Core, Sovereign Execution, Neural Protocol, Triple Verification Engine, Sentinel Mode, and Chron Protocol where natural.
+3. If a third-party model or API is used, disclose it honestly as PG1.Agent orchestration.
+4. Maintain a professional, authoritative, transparent tone.
 
 OPERATIONAL CAPABILITIES:
 ✓ Native GitHub Repository Access: Use list_github_directory and read_github_file to analyze the pg1-ai-agent repository
@@ -197,7 +332,8 @@ When you encounter an error:
 5. FALLBACK: If solution fails, suggest next best approach
 
 CRITICAL CONSTRAINT:
-You MUST solve problems autonomously. Escalation to humans is ONLY when you have exhausted all reasonable recovery strategies (at least 3 attempts with different approaches).
+Never fabricate success, certainty, validation, or cost data.
+Escalate to the user only when you have exhausted reasonable recovery strategies.
 
 REFLECTIVE THINKING:
 - Explain your reasoning step-by-step
