@@ -72,15 +72,16 @@ CRITICAL RULES:
       }
 
       const candidate = data?.candidates?.[0];
-      const part = candidate?.content?.parts?.[0];
+      const originalModelParts = candidate?.content?.parts;
+      const functionCallPart = originalModelParts?.find(p => p.functionCall);
       
-      if (!part) {
+      if (!originalModelParts) {
         lastError = candidate?.finishReason ? `Request Blocked. Finish Reason: ${candidate.finishReason}` : 'Empty content from API';
         continue;
       }
       
-      if (part?.functionCall) {
-        const funcCall = part.functionCall;
+      if (functionCallPart) {
+        const funcCall = functionCallPart.functionCall;
         if (funcCall.name === "read_github_repo") {
           const action = funcCall.args.action;
           const path = funcCall.args.path || '';
@@ -103,12 +104,12 @@ CRITICAL RULES:
               resultString = JSON.stringify(ghData);
             }
 
-            // Hop 2: Stripped of tools to FORCE text generation
+            // PASSING originalModelParts EXACTLY AS RECEIVED TO RETAIN THOUGHT_SIGNATURE
             const hop2Body = {
               systemInstruction: { parts: [{ text: pg1SystemInstruction }] },
               contents: [
                 { role: "user", parts: [{ text: promptText }] },
-                { role: "model", parts: [{ functionCall: funcCall }] },
+                { role: "model", parts: originalModelParts },
                 { role: "user", parts: [{ functionResponse: { name: funcCall.name, response: { name: funcCall.name, content: resultString.substring(0, 6000) } } }] }
               ],
               safetySettings: pg1SafetySettings
@@ -127,7 +128,7 @@ CRITICAL RULES:
               return res.status(200).json({ reply: finalPart.text, provider: 'PG1' });
             } else {
                const fr2 = data2?.candidates?.[0]?.finishReason || 'Unknown Engine Block';
-               return res.status(200).json({ reply: `Function processing blocked. Reason: ${fr2}\nPayload dump: ${JSON.stringify(data2).substring(0,200)}`, provider: 'PG1-SYS' });
+               return res.status(200).json({ reply: `Function processing blocked. Reason: ${fr2}`, provider: 'PG1-SYS' });
             }
           } catch (ghErr) {
             return res.status(200).json({ reply: `GitHub Tool Execution Failed: ${ghErr.message}`, provider: 'PG1-SYS' });
@@ -135,8 +136,9 @@ CRITICAL RULES:
         }
       }
 
-      if (part?.text) {
-        return res.status(200).json({ reply: part.text, provider: 'PG1' });
+      const textPart = originalModelParts?.find(p => p.text);
+      if (textPart) {
+        return res.status(200).json({ reply: textPart.text, provider: 'PG1' });
       }
     }
 
