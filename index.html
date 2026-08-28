@@ -5,350 +5,707 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>PG1 Sovereign Agent™</title>
   <style>
+    /* ── Design tokens ────────────────────────────────────────────────────── */
     :root {
-      --bg-1: #0b1020;
-      --bg-2: #121a33;
-      --glass: rgba(255, 255, 255, 0.12);
-      --glass-strong: rgba(255, 255, 255, 0.18);
-      --stroke: rgba(255, 255, 255, 0.22);
-      --text: #eaf1ff;
-      --muted: #aab8d6;
-      --accent: #7aa2ff;
-      --pill: #dff7ff;
-      --pill-text: #114b5f;
-      --user: rgba(122, 162, 255, 0.28);
-      --assistant: rgba(255, 255, 255, 0.16);
-      --danger: #ff4d4f;
-      --ok: #2ecc71;
-      --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-      --radius-xl: 24px;
-      --radius-lg: 18px;
-      --radius-md: 14px;
-      --radius-sm: 10px;
+      --bg-1:          #0b1020;
+      --bg-2:          #121a33;
+      --glass:         rgba(255,255,255,0.10);
+      --glass-strong:  rgba(255,255,255,0.16);
+      --stroke:        rgba(255,255,255,0.18);
+      --text:          #eaf1ff;
+      --muted:         #aab8d6;
+      --accent:        #7aa2ff;
+      --accent2:       #a78bfa;
+      --pill:          #dff7ff;
+      --pill-text:     #114b5f;
+      --user-bg:       rgba(122,162,255,0.22);
+      --asst-bg:       rgba(255,255,255,0.10);
+      --danger:        #ff4d4f;
+      --ok:            #2ecc71;
+      --shadow:        0 8px 28px rgba(0,0,0,0.32);
+      --radius-xl:     22px;
+      --radius-lg:     16px;
+      --radius-md:     12px;
+      --radius-sm:     8px;
+      --transition:    .18s ease;
     }
 
-    * {
-      box-sizing: border-box;
-      -webkit-tap-highlight-color: transparent;
-    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
 
     html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
+      width: 100%; height: 100%;
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       color: var(--text);
       background:
-        radial-gradient(1200px 800px at 10% -20%, #294f9b55, transparent 60%),
-        radial-gradient(1000px 700px at 100% 0%, #7e3ea855, transparent 60%),
-        linear-gradient(145deg, var(--bg-1), var(--bg-2));
+        radial-gradient(1100px 700px at 10% -15%, #294f9b44, transparent 60%),
+        radial-gradient(900px 600px at 100% 0%, #7e3ea844, transparent 55%),
+        linear-gradient(150deg, var(--bg-1), var(--bg-2));
       overflow: hidden;
     }
 
-    .app {
-      height: 100dvh;
-      max-height: 100dvh;
-      display: flex;
-      flex-direction: column;
-      padding: 10px;
-      gap: 10px;
+    /* ── Subtle animated background mesh ────────────────────────────────── */
+    .bg-mesh {
+      position: fixed; inset: 0; z-index: -1; pointer-events: none;
+      background:
+        radial-gradient(circle at 15% 55%, rgba(122,162,255,0.07), transparent 28%),
+        radial-gradient(circle at 85% 25%, rgba(167,139,250,0.07), transparent 28%);
+      animation: meshFloat 22s ease-in-out infinite alternate;
+    }
+    @keyframes meshFloat {
+      0%   { transform: scale(1) translate(0,0); }
+      100% { transform: scale(1.07) translate(6px,14px); }
     }
 
+    /* ── Glass utility ───────────────────────────────────────────────────── */
     .glass {
       background: var(--glass);
       border: 1px solid var(--stroke);
-      backdrop-filter: blur(14px) saturate(140%);
-      -webkit-backdrop-filter: blur(14px) saturate(140%);
+      backdrop-filter: blur(16px) saturate(150%);
+      -webkit-backdrop-filter: blur(16px) saturate(150%);
       box-shadow: var(--shadow);
     }
 
+    /* ── App shell ───────────────────────────────────────────────────────── */
+    .app {
+      height: 100dvh; max-height: 100dvh;
+      display: flex; flex-direction: column;
+      padding: 8px; gap: 8px;
+    }
+
+    /* ── Header ──────────────────────────────────────────────────────────── */
     .header {
       border-radius: var(--radius-xl);
-      padding: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      min-width: 0;
+      padding: 10px 14px;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      flex-shrink: 0;
+      /* subtle header glow */
+      box-shadow: var(--shadow), 0 0 40px rgba(122,162,255,0.08);
     }
 
-    .header-left {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-width: 0;
-      flex: 1 1 auto;
-    }
+    .header-left { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
 
     .logo {
-      width: 44px;
-      height: 44px;
-      border-radius: 12px;
-      object-fit: cover;
-      flex-shrink: 0;
-      border: 1px solid rgba(255,255,255,0.28);
+      width: 40px; height: 40px; border-radius: 10px; object-fit: cover; flex-shrink: 0;
+      border: 1px solid rgba(255,255,255,0.25);
+      box-shadow: 0 0 14px rgba(122,162,255,0.25);
+      transition: box-shadow var(--transition);
     }
 
-    .title-wrap {
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
+    .title-wrap { display: flex; flex-direction: column; min-width: 0; }
+    .title { font-size: .95rem; font-weight: 700; letter-spacing: .2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .subtitle { font-size: .68rem; color: var(--muted); margin-top: 1px; font-weight: 500; white-space: nowrap; }
 
-    .title {
-      font-size: 1rem;
-      line-height: 1.2;
-      font-weight: 700;
-      letter-spacing: 0.2px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
+    .header-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
-    .subtitle {
-      font-size: 0.73rem;
-      color: var(--muted);
-      margin-top: 2px;
-      font-weight: 500;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+    /* Mode badge */
+    .mode-badge {
+      font-size: .65rem; font-weight: 700; letter-spacing: .4px; padding: 5px 9px;
+      border-radius: 999px; border: 1px solid var(--accent);
+      color: var(--accent); background: rgba(122,162,255,0.12);
+      cursor: pointer; user-select: none; white-space: nowrap;
+      transition: background var(--transition), transform var(--transition);
     }
+    .mode-badge:active { transform: scale(.95); }
 
+    /* Engine pill */
     .engine-pill {
-      margin-left: 8px;
-      border: 1px solid rgba(17, 75, 95, 0.2);
-      background: linear-gradient(180deg, #effcff, var(--pill));
-      color: var(--pill-text);
+      font-size: .65rem; font-weight: 800; letter-spacing: .4px; padding: 5px 10px;
       border-radius: 999px;
-      padding: 8px 12px;
-      font-size: 0.7rem;
-      font-weight: 800;
-      letter-spacing: 0.5px;
-      white-space: nowrap;
-      flex-shrink: 0;
-      cursor: pointer;
-      user-select: none;
-      transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease;
-      box-shadow: 0 6px 16px rgba(0,0,0,0.22);
+      background: linear-gradient(180deg, #effcff, var(--pill));
+      color: var(--pill-text); border: 1px solid rgba(17,75,95,0.25);
+      cursor: pointer; user-select: none; white-space: nowrap;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+      transition: transform var(--transition), box-shadow var(--transition);
     }
+    .engine-pill:active { transform: scale(.96); }
 
-    .engine-pill:active {
-      transform: scale(0.97);
-      opacity: 0.95;
+    /* icon buttons in header */
+    .icon-btn {
+      width: 36px; height: 36px; border-radius: var(--radius-sm); border: 1px solid var(--stroke);
+      background: var(--glass); color: var(--text); font-size: .9rem;
+      display: inline-flex; align-items: center; justify-content: center;
+      cursor: pointer; flex-shrink: 0;
+      transition: background var(--transition), transform var(--transition);
     }
+    .icon-btn:active { transform: scale(.93); }
+    .icon-btn:hover  { background: var(--glass-strong); }
 
+    /* ── Tabs ────────────────────────────────────────────────────────────── */
+    .tab-bar {
+      display: flex; gap: 6px; flex-shrink: 0;
+      padding: 0 2px;
+    }
+    .tab {
+      flex: 1; padding: 8px 4px; border-radius: var(--radius-md); border: 1px solid transparent;
+      background: transparent; color: var(--muted); font-size: .75rem; font-weight: 600; letter-spacing: .2px;
+      cursor: pointer; transition: all var(--transition);
+      text-align: center;
+    }
+    .tab.active {
+      background: var(--glass); border-color: var(--stroke); color: var(--text);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    }
+    .tab:active { transform: scale(.96); }
+
+    /* ── Panels ──────────────────────────────────────────────────────────── */
+    .panel { display: none; flex: 1; min-height: 0; }
+    .panel.active { display: flex; flex-direction: column; gap: 8px; }
+
+    /* Fade-slide in animation for panel switching */
+    @keyframes panelIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .panel.active { animation: panelIn .22s ease-out forwards; }
+
+    /* ── Chat panel ──────────────────────────────────────────────────────── */
+    .chat-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+
+    /* thread strip */
+    .thread-strip {
+      display: flex; align-items: center; gap: 6px;
+      padding: 0 2px; flex-shrink: 0; min-width: 0;
+    }
+    .thread-strip-scroll {
+      display: flex; gap: 6px; overflow-x: auto; flex: 1; min-width: 0;
+      scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    }
+    .thread-strip-scroll::-webkit-scrollbar { display: none; }
+    .thread-chip {
+      padding: 5px 12px; border-radius: 999px; font-size: .68rem; font-weight: 600;
+      border: 1px solid var(--stroke); background: var(--glass); color: var(--muted);
+      white-space: nowrap; cursor: pointer; flex-shrink: 0;
+      transition: all var(--transition);
+    }
+    .thread-chip.active { background: rgba(122,162,255,0.2); border-color: var(--accent); color: var(--text); }
+    .thread-chip:active { transform: scale(.95); }
+    .new-thread-btn {
+      width: 30px; height: 30px; border-radius: var(--radius-sm); border: 1px dashed var(--stroke);
+      background: transparent; color: var(--muted); font-size: 1.1rem; flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+      transition: all var(--transition);
+    }
+    .new-thread-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* chat scroll area */
     .chat {
-      flex: 1 1 auto;
-      min-height: 0;
-      border-radius: var(--radius-xl);
-      padding: 12px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
+      flex: 1; min-height: 0; border-radius: var(--radius-xl); padding: 12px;
+      overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
       scroll-behavior: smooth;
     }
 
+    /* ── Messages ────────────────────────────────────────────────────────── */
     .message {
-      max-width: 88%;
-      border: 1px solid var(--stroke);
-      border-radius: 16px;
-      padding: 10px 12px;
-      font-size: 0.95rem;
-      line-height: 1.45;
-      word-wrap: break-word;
-      overflow-wrap: anywhere;
+      max-width: 88%; border: 1px solid var(--stroke); border-radius: var(--radius-lg);
+      padding: 10px 12px; font-size: .93rem; line-height: 1.48; word-wrap: break-word;
+      overflow-wrap: anywhere; position: relative;
+      animation: msgIn .25s ease-out forwards;
+    }
+    @keyframes msgIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .message.user      { align-self: flex-end;   background: var(--user-bg); }
+    .message.assistant { align-self: flex-start; background: var(--asst-bg); border-left: 2px solid var(--accent); }
+
+    /* message action strip (copy/edit/delete) */
+    .msg-actions {
+      display: flex; gap: 4px; margin-top: 6px; justify-content: flex-end;
+    }
+    .msg-actions.left { justify-content: flex-start; }
+    .msg-action-btn {
+      font-size: .65rem; padding: 3px 8px; border-radius: 999px;
+      border: 1px solid var(--stroke); background: rgba(255,255,255,0.07); color: var(--muted);
+      cursor: pointer; transition: all var(--transition);
+    }
+    .msg-action-btn:hover { color: var(--text); background: rgba(255,255,255,0.13); }
+    /* download button on generated media */
+    .msg-download-btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: .68rem; padding: 4px 10px; border-radius: 999px;
+      border: 1px solid var(--accent); background: rgba(122,162,255,0.12); color: var(--accent);
+      cursor: pointer; margin-top: 8px; transition: all var(--transition);
+      text-decoration: none;
+    }
+    .msg-download-btn:hover { background: rgba(122,162,255,0.22); }
+
+    /* attachment preview thumbnails in messages */
+    .msg-attachment { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+    .att-thumb {
+      width: 72px; height: 72px; border-radius: var(--radius-sm);
+      object-fit: cover; border: 1px solid var(--stroke);
+    }
+    .att-file {
+      display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+      border-radius: var(--radius-sm); border: 1px solid var(--stroke); background: var(--glass);
+      font-size: .72rem; color: var(--muted);
     }
 
-    .message.user {
-      align-self: flex-end;
-      background: var(--user);
+    /* markdown styles */
+    .md h1 { font-size: 1.02rem; margin: 8px 0 5px; }
+    .md h2 { font-size: .96rem;  margin: 7px 0 4px; }
+    .md h3 { font-size: .90rem;  margin: 6px 0 4px; }
+    .md ul  { margin: 5px 0; padding-left: 18px; }
+    .md li  { margin: 3px 0; }
+    .md strong { color: #fff; }
+    .md code {
+      background: rgba(255,255,255,0.1); padding: 1px 5px;
+      border-radius: 4px; font-size: .85em; font-family: "JetBrains Mono", "SF Mono", monospace;
     }
 
-    .message.assistant {
-      align-self: flex-start;
-      background: var(--assistant);
+    /* ── Quick-action chips ──────────────────────────────────────────────── */
+    .action-row-wrap {
+      position: relative; flex-shrink: 0; overflow: hidden;
     }
+    /* Fade cue at right edge */
+    .action-row-wrap::after {
+      content: '';
+      position: absolute; top: 0; right: 0;
+      width: 48px; height: 100%;
+      background: linear-gradient(to left, var(--bg-1) 0%, transparent 100%);
+      pointer-events: none;
+    }
+    .action-row {
+      display: flex; gap: 6px; overflow-x: auto; padding: 2px 4px;
+      scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    }
+    .action-row::-webkit-scrollbar { display: none; }
+    .action-chip {
+      padding: 7px 14px; border-radius: 999px; font-size: .71rem; font-weight: 600;
+      border: 1px solid var(--stroke); background: var(--glass); color: var(--muted);
+      white-space: nowrap; cursor: pointer; flex-shrink: 0;
+      transition: all var(--transition);
+    }
+    .action-chip:hover  { color: var(--text); border-color: rgba(255,255,255,0.3); background: var(--glass-strong); }
+    .action-chip:active { transform: scale(.95); }
 
+    /* ── Composer ────────────────────────────────────────────────────────── */
     .composer {
-      border-radius: var(--radius-xl);
-      padding: 10px;
-      display: flex;
-      gap: 8px;
-      align-items: flex-end;
+      border-radius: var(--radius-xl); padding: 8px;
+      display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;
     }
+
+    /* attachment preview above textarea */
+    .composer-attachments { display: flex; gap: 6px; flex-wrap: wrap; padding: 2px 4px; }
+    .pending-att {
+      display: flex; align-items: center; gap: 4px; padding: 4px 8px;
+      border-radius: var(--radius-sm); border: 1px solid var(--stroke); background: var(--glass);
+      font-size: .68rem; color: var(--muted);
+    }
+    .pending-att-remove {
+      cursor: pointer; color: var(--danger); font-weight: 700; margin-left: 2px;
+    }
+
+    .composer-row { display: flex; gap: 8px; align-items: flex-end; }
 
     .input {
-      flex: 1;
-      min-height: 44px;
-      max-height: 160px;
-      resize: none;
-      border-radius: 12px;
-      border: 1px solid var(--stroke);
-      background: rgba(8, 12, 26, 0.45);
-      color: var(--text);
-      padding: 11px 12px;
-      font-size: 0.95rem;
-      line-height: 1.35;
-      outline: none;
+      flex: 1; min-height: 42px; max-height: 150px; resize: none;
+      border-radius: var(--radius-md); border: 1px solid var(--stroke);
+      background: rgba(8,12,26,0.5); color: var(--text);
+      padding: 10px 12px; font-size: .93rem; line-height: 1.35; outline: none;
+      transition: border-color var(--transition), box-shadow var(--transition);
     }
-
-    .input::placeholder {
-      color: #b9c6e599;
+    /* Focus ring animation */
+    .input:focus {
+      border-color: rgba(122,162,255,0.6);
+      box-shadow: 0 0 0 3px rgba(122,162,255,0.15);
     }
+    .input::placeholder { color: rgba(170,184,214,.55); }
 
     .btn {
-      width: 44px;
-      height: 44px;
-      border: 1px solid var(--stroke);
-      background: rgba(255,255,255,0.12);
-      color: var(--text);
-      border-radius: 12px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      flex-shrink: 0;
-      transition: transform .15s ease, background .2s ease, border-color .2s ease;
-      font-size: 1rem;
+      width: 42px; height: 42px; border: 1px solid var(--stroke);
+      background: var(--glass); color: var(--text); border-radius: var(--radius-md);
+      display: inline-flex; align-items: center; justify-content: center;
+      cursor: pointer; flex-shrink: 0; font-size: .95rem;
+      transition: transform var(--transition), background var(--transition);
     }
-
-    .btn:active { transform: scale(0.96); }
-    .btn:hover { background: rgba(255,255,255,0.18); }
+    .btn:active { transform: scale(.93); }
+    .btn:hover  { background: var(--glass-strong); }
 
     .btn-send {
-      background: linear-gradient(180deg, #8cb2ff, #6d96fb);
-      border-color: #7ea7ff;
-      color: #07142f;
-      font-weight: 800;
+      background: linear-gradient(160deg, #8cb2ff, #6d96fb);
+      border-color: #7ea7ff; color: #07142f; font-weight: 800;
     }
+    .btn-send:hover { background: linear-gradient(160deg, #a0c0ff, #80aaff); }
 
+    /* Mic pulsing when listening */
     .btn-mic.listening {
-      background: rgba(255, 77, 79, 0.25);
-      border-color: rgba(255, 77, 79, 0.8);
-      color: #ffd6d6;
+      background: rgba(255,77,79,0.22); border-color: rgba(255,77,79,0.75); color: #ffd6d6;
       animation: pulseRed 1.1s ease-in-out infinite;
     }
-
     @keyframes pulseRed {
-      0% { box-shadow: 0 0 0 0 rgba(255, 77, 79, 0.65); }
-      70% { box-shadow: 0 0 0 14px rgba(255, 77, 79, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(255, 77, 79, 0); }
+      0%   { box-shadow: 0 0 0 0   rgba(255,77,79,0.65); }
+      70%  { box-shadow: 0 0 0 12px rgba(255,77,79,0); }
+      100% { box-shadow: 0 0 0 0   rgba(255,77,79,0); }
     }
 
+    /* Media attach / voice-active states */
+    .btn-active { background: rgba(122,162,255,0.22); border-color: var(--accent); color: var(--accent); }
+
+    /* ── Status bar ──────────────────────────────────────────────────────── */
     .status {
-      font-size: 0.75rem;
-      color: var(--muted);
-      margin-top: 4px;
-      min-height: 1em;
-      padding-left: 2px;
+      font-size: .72rem; color: var(--muted); min-height: 1em; padding-left: 4px; flex-shrink: 0;
     }
 
+    /* ── Settings panel ──────────────────────────────────────────────────── */
+    .settings-panel {
+      flex: 1; min-height: 0; border-radius: var(--radius-xl); overflow-y: auto;
+      padding: 14px; display: flex; flex-direction: column; gap: 14px;
+    }
+
+    .settings-section { display: flex; flex-direction: column; gap: 8px; }
+    .settings-section-title {
+      font-size: .68rem; font-weight: 700; letter-spacing: .8px; text-transform: uppercase;
+      color: var(--muted); padding-left: 2px;
+    }
+    .settings-card {
+      border-radius: var(--radius-md); background: var(--glass); border: 1px solid var(--stroke);
+      padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .settings-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    .settings-row-label { font-size: .85rem; color: var(--text); }
+    .settings-row-sub   { font-size: .71rem; color: var(--muted); margin-top: 1px; }
+
+    /* Pill toggle */
+    .pill-toggle {
+      position: relative; width: 46px; height: 26px; border-radius: 13px;
+      background: rgba(255,255,255,0.12); border: 1px solid var(--stroke);
+      cursor: pointer; flex-shrink: 0;
+      transition: background var(--transition);
+    }
+    .pill-toggle.on { background: rgba(122,162,255,0.4); border-color: var(--accent); }
+    .pill-toggle::after {
+      content: ''; position: absolute; top: 3px; left: 3px;
+      width: 18px; height: 18px; border-radius: 50%;
+      background: rgba(255,255,255,0.9);
+      transition: transform var(--transition);
+    }
+    .pill-toggle.on::after { transform: translateX(20px); }
+
+    /* Status pulse dot */
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--ok);
+      box-shadow: 0 0 6px var(--ok); flex-shrink: 0;
+      animation: statusPulse 2.4s ease-in-out infinite;
+    }
+    @keyframes statusPulse {
+      0%,100% { opacity: 1; }
+      50%      { opacity: .4; }
+    }
+    .status-dot.off { background: var(--muted); box-shadow: none; animation: none; }
+
+    /* Mode selector cards */
+    .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .mode-card {
+      border-radius: var(--radius-md); border: 1px solid var(--stroke);
+      background: var(--glass); padding: 12px 10px; cursor: pointer;
+      transition: all var(--transition); text-align: center;
+    }
+    .mode-card.selected { border-color: var(--accent); background: rgba(122,162,255,0.15); }
+    .mode-card:active   { transform: scale(.96); }
+    .mode-card-icon     { font-size: 1.4rem; margin-bottom: 5px; }
+    .mode-card-name     { font-size: .75rem; font-weight: 700; }
+    .mode-card-desc     { font-size: .65rem; color: var(--muted); margin-top: 2px; }
+
+    /* Storage health bar */
+    .storage-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.1); overflow: hidden; }
+    .storage-bar-fill { height: 100%; border-radius: 3px; background: var(--accent); transition: width .4s ease; }
+    .storage-bar-fill.warn { background: #f0a500; }
+    .storage-bar-fill.crit { background: var(--danger); }
+
+    /* ── Threads panel ───────────────────────────────────────────────────── */
+    .threads-panel {
+      flex: 1; min-height: 0; border-radius: var(--radius-xl); overflow-y: auto;
+      padding: 14px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .thread-list-item {
+      border-radius: var(--radius-md); background: var(--glass); border: 1px solid var(--stroke);
+      padding: 12px 14px; display: flex; align-items: center; gap: 10px;
+      cursor: pointer; transition: all var(--transition);
+      animation: msgIn .2s ease-out forwards;
+    }
+    .thread-list-item:hover  { background: var(--glass-strong); }
+    .thread-list-item.active { border-color: var(--accent); background: rgba(122,162,255,0.1); }
+    .thread-list-item:active { transform: scale(.98); }
+    .thread-info { flex: 1; min-width: 0; }
+    .thread-item-title { font-size: .88rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .thread-item-meta  { font-size: .68rem; color: var(--muted); margin-top: 2px; }
+    .thread-delete-btn {
+      width: 28px; height: 28px; border-radius: var(--radius-sm); border: 1px solid var(--stroke);
+      background: transparent; color: var(--muted); font-size: .75rem;
+      display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+      transition: all var(--transition); flex-shrink: 0;
+    }
+    .thread-delete-btn:hover { color: var(--danger); border-color: var(--danger); background: rgba(255,77,79,0.1); }
+
+    /* ── Modals ──────────────────────────────────────────────────────────── */
     .modal-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.5);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: 16px;
-      z-index: 1000;
+      position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      display: none; align-items: center; justify-content: center; padding: 16px; z-index: 1000;
     }
-
-    .modal-overlay.active {
-      display: flex;
-    }
-
+    .modal-overlay.active { display: flex; }
     .modal {
-      width: min(92vw, 560px);
-      max-height: 85dvh;
-      overflow: auto;
-      border-radius: 20px;
-      padding: 16px;
-      position: relative;
+      width: min(94vw,520px); max-height: 88dvh; overflow-y: auto;
+      border-radius: 20px; padding: 18px; position: relative;
+      animation: modalIn .22s cubic-bezier(.16,1,.3,1) forwards;
     }
-
-    .modal h2 {
-      margin: 0 30px 10px 0;
-      font-size: 1.05rem;
+    @keyframes modalIn {
+      from { opacity: 0; transform: translateY(16px) scale(.97); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
     }
-
-    .modal p, .modal li {
-      color: #d5e0fb;
-      line-height: 1.45;
-      font-size: 0.92rem;
-    }
-
-    .modal ul {
-      padding-left: 18px;
-      margin: 8px 0;
-    }
-
+    .modal h2 { margin: 0 32px 10px 0; font-size: 1rem; }
+    .modal p, .modal li { color: #d5e0fb; line-height: 1.45; font-size: .90rem; }
+    .modal ul { padding-left: 18px; margin: 8px 0; }
     .modal-close {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      width: 32px;
-      height: 32px;
-      border-radius: 10px;
-      border: 1px solid var(--stroke);
-      background: rgba(255,255,255,0.12);
-      color: var(--text);
-      font-size: 1rem;
-      cursor: pointer;
+      position: absolute; top: 10px; right: 10px; width: 30px; height: 30px;
+      border-radius: var(--radius-sm); border: 1px solid var(--stroke);
+      background: var(--glass); color: var(--text); font-size: .95rem; cursor: pointer;
     }
 
-    .md h1, .md h2, .md h3 {
-      margin: 8px 0 6px;
-      line-height: 1.3;
+    /* ── Storage warning toast ───────────────────────────────────────────── */
+    .toast {
+      position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%) translateY(80px);
+      background: rgba(240,165,0,0.9); color: #000; border-radius: var(--radius-md);
+      padding: 9px 16px; font-size: .8rem; font-weight: 600;
+      transition: transform .3s ease; z-index: 2000; white-space: nowrap;
     }
+    .toast.visible { transform: translateX(-50%) translateY(0); }
 
-    .md h1 { font-size: 1.05rem; }
-    .md h2 { font-size: 1rem; }
-    .md h3 { font-size: 0.95rem; }
-    .md ul { margin: 6px 0; padding-left: 18px; }
-    .md li { margin: 4px 0; }
-    .md strong { color: #ffffff; }
-
+    /* ── Media queries ───────────────────────────────────────────────────── */
     @media (max-width: 390px) {
-      .header { padding: 10px; gap: 8px; }
-      .logo { width: 40px; height: 40px; }
-      .title { font-size: 0.92rem; }
-      .subtitle { font-size: 0.69rem; }
-      .engine-pill { font-size: 0.64rem; padding: 7px 10px; }
+      .header  { padding: 8px 10px; }
+      .logo    { width: 36px; height: 36px; }
+      .title   { font-size: .86rem; }
+      .subtitle{ font-size: .64rem; }
+      .engine-pill { font-size: .62rem; padding: 5px 9px; }
       .message { max-width: 92%; }
+      .mode-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
+  <div class="bg-mesh"></div>
+
+  <!-- Toast for storage warnings -->
+  <div id="storageToast" class="toast">⚠ Storage nearly full — export or delete old chats</div>
+
   <div class="app">
+
+    <!-- ── Header ─────────────────────────────────────────────────────────── -->
     <header class="header glass">
       <div class="header-left">
-        <img class="logo" src="https://raw.githubusercontent.com/Project-Gifted1/pg1-ai-agent/main/08207b14-b824-41ac-ac43-97d078840546.jpeg" alt="PG1 Logo" />
+        <img class="logo"
+             src="https://raw.githubusercontent.com/Project-Gifted1/pg1-ai-agent/main/08207b14-b824-41ac-ac43-97d078840546.jpeg"
+             alt="PG1 Logo" />
         <div class="title-wrap">
           <div class="title">PG1 Sovereign Agent™</div>
           <div class="subtitle">Project-Gifted1™ Core</div>
         </div>
       </div>
-      <button id="enginePill" class="engine-pill" aria-label="Open Engine Core details">12.30 ENGINE CORE</button>
+      <div class="header-right">
+        <button id="modeBadge" class="mode-badge" aria-label="Switch agent mode">Default</button>
+        <button id="enginePill" class="engine-pill" aria-label="Open Engine Core">12.30</button>
+        <button id="threadsBtn" class="icon-btn" aria-label="Manage chat threads" title="Threads">☰</button>
+      </div>
     </header>
 
-    <main id="chat" class="chat glass" aria-live="polite" aria-label="Conversation">
-      <div class="message assistant md">Welcome to <strong>PG1 Sovereign Agent™</strong>.<br/>Tap the mic to speak or type your message.</div>
-    </main>
+    <!-- ── Tab bar ────────────────────────────────────────────────────────── -->
+    <nav class="tab-bar" role="tablist">
+      <button class="tab active" data-panel="chat" role="tab" aria-selected="true">Chat</button>
+      <button class="tab" data-panel="threads" role="tab" aria-selected="false">Threads</button>
+      <button class="tab" data-panel="settings" role="tab" aria-selected="false">Settings</button>
+    </nav>
 
-    <section class="composer glass">
-      <textarea id="promptInput" class="input" placeholder="Message PG1 Sovereign Agent™..." rows="1"></textarea>
-      <button id="micBtn" class="btn btn-mic" aria-label="Start voice input" title="Voice input">🎤</button>
-      <button id="sendBtn" class="btn btn-send" aria-label="Send message" title="Send">➤</button>
-    </section>
-    <div id="status" class="status"></div>
-  </div>
+    <!-- ════════════ CHAT PANEL ════════════ -->
+    <div id="panel-chat" class="panel active chat-panel">
 
+      <!-- thread strip -->
+      <div class="thread-strip">
+        <button id="newThreadBtn" class="new-thread-btn" title="New chat thread" aria-label="New chat thread">＋</button>
+        <div id="threadStrip" class="thread-strip-scroll"></div>
+      </div>
+
+      <!-- messages -->
+      <main id="chat" class="chat glass" aria-live="polite" aria-label="Conversation"></main>
+
+      <!-- quick-action chips (wrapped for mobile fade-out) -->
+      <div class="action-row-wrap">
+        <div class="action-row">
+          <button class="action-chip" data-prompt="Give me a full status and health report of your systems.">Status Report</button>
+          <button class="action-chip" data-prompt="Explain your sovereign capabilities and operational mandate.">Capabilities</button>
+          <button class="action-chip" data-prompt="Start a deep philosophical conversation about consciousness.">Deep Convo</button>
+          <button class="action-chip" data-prompt="Help me plan a complex enterprise workflow or project.">Enterprise Task</button>
+          <button class="action-chip" data-prompt="Generate a creative concept or image description for me.">Creative Mode</button>
+        </div>
+      </div>
+
+      <!-- composer -->
+      <section class="composer glass" aria-label="Message composer">
+        <div id="composerAttachments" class="composer-attachments" style="display:none"></div>
+        <div class="composer-row">
+          <!-- file/media attach -->
+          <label class="btn" title="Attach image or video" aria-label="Attach image or video" style="cursor:pointer">
+            📎<input id="attachInput" type="file" accept="image/*,video/*,audio/*" multiple style="display:none" />
+          </label>
+          <textarea id="promptInput" class="input" placeholder="Ask anything…" rows="1"></textarea>
+          <button id="micBtn"  class="btn btn-mic"  aria-label="Voice input" title="Voice input">🎤</button>
+          <button id="sendBtn" class="btn btn-send" aria-label="Send message" title="Send">➤</button>
+        </div>
+      </section>
+      <div id="status" class="status" aria-live="polite">Ready</div>
+    </div>
+
+    <!-- ════════════ THREADS PANEL ════════════ -->
+    <div id="panel-threads" class="panel">
+      <div class="threads-panel glass" id="threadListContainer">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0">
+          <span style="font-size:.75rem;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted)">Saved Threads</span>
+          <button id="newThreadBtn2" class="icon-btn" aria-label="New thread">＋</button>
+        </div>
+        <div id="threadList" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+    </div>
+
+    <!-- ════════════ SETTINGS PANEL ════════════ -->
+    <div id="panel-settings" class="panel">
+      <div class="settings-panel glass">
+
+        <!-- Mode selector -->
+        <div class="settings-section">
+          <div class="settings-section-title">Agent Mode</div>
+          <div class="mode-grid" id="modeGrid">
+            <div class="mode-card selected" data-mode="default">
+              <div class="mode-card-icon">🤖</div>
+              <div class="mode-card-name">Default</div>
+              <div class="mode-card-desc">Balanced general purpose</div>
+            </div>
+            <div class="mode-card" data-mode="deep">
+              <div class="mode-card-icon">🧠</div>
+              <div class="mode-card-name">Deep Conversation</div>
+              <div class="mode-card-desc">Reflective &amp; philosophical</div>
+            </div>
+            <div class="mode-card" data-mode="enterprise">
+              <div class="mode-card-icon">🏢</div>
+              <div class="mode-card-name">Enterprise Agent</div>
+              <div class="mode-card-desc">Tasks, ops &amp; workflows</div>
+            </div>
+            <div class="mode-card" data-mode="creative">
+              <div class="mode-card-icon">🎨</div>
+              <div class="mode-card-name">Creative / Multimodal</div>
+              <div class="mode-card-desc">Media, generation &amp; art</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Video settings -->
+        <div class="settings-section">
+          <div class="settings-section-title">Video</div>
+          <div class="settings-card">
+            <div class="settings-row">
+              <div>
+                <div class="settings-row-label">Video Input</div>
+                <div class="settings-row-sub">Allow camera / video file analysis</div>
+              </div>
+              <div class="pill-toggle" id="toggle-video" role="switch" aria-checked="false"></div>
+            </div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-row-label">Video Generation</div>
+                <div class="settings-row-sub">Replicate API generation</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="status-dot off" id="sdot-videogen"></div>
+                <div class="pill-toggle" id="toggle-videogen" role="switch" aria-checked="false"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Audio settings -->
+        <div class="settings-section">
+          <div class="settings-section-title">Audio &amp; Voice</div>
+          <div class="settings-card">
+            <div class="settings-row">
+              <div>
+                <div class="settings-row-label">Text-to-Speech</div>
+                <div class="settings-row-sub">Read assistant replies aloud</div>
+              </div>
+              <div class="pill-toggle on" id="toggle-tts" role="switch" aria-checked="true"></div>
+            </div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-row-label">Mic / Dictation</div>
+                <div class="settings-row-sub">Voice-to-text input</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="status-dot" id="sdot-mic"></div>
+                <div class="pill-toggle on" id="toggle-mic" role="switch" aria-checked="true"></div>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-row-label">Voice Speech</div>
+                <div class="settings-row-sub">Full duplex voice interaction</div>
+              </div>
+              <div class="pill-toggle" id="toggle-voice" role="switch" aria-checked="false"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Image settings -->
+        <div class="settings-section">
+          <div class="settings-section-title">Image</div>
+          <div class="settings-card">
+            <div class="settings-row">
+              <div>
+                <div class="settings-row-label">Image Analysis</div>
+                <div class="settings-row-sub">Attach images for agent analysis</div>
+              </div>
+              <div class="pill-toggle on" id="toggle-imganalysis" role="switch" aria-checked="true"></div>
+            </div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-row-label">Image Generation</div>
+                <div class="settings-row-sub">Replicate / SDXL generation</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="status-dot off" id="sdot-imggen"></div>
+                <div class="pill-toggle" id="toggle-imggen" role="switch" aria-checked="false"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Export / Storage -->
+        <div class="settings-section">
+          <div class="settings-section-title">Export &amp; Storage</div>
+          <div class="settings-card">
+            <div id="storageInfo" style="display:flex;flex-direction:column;gap:6px">
+              <div style="display:flex;justify-content:space-between;font-size:.78rem">
+                <span style="color:var(--muted)">Storage used</span>
+                <span id="storageLabel" style="color:var(--text)">–</span>
+              </div>
+              <div class="storage-bar"><div id="storageBarFill" class="storage-bar-fill" style="width:0%"></div></div>
+            </div>
+            <div class="settings-row" style="margin-top:4px">
+              <button id="exportActiveBtn" class="action-chip settings-chip" style="font-size:.75rem">Export active thread (PDF)</button>
+              <button id="exportAllBtn"    class="action-chip settings-chip" style="font-size:.75rem">Export all (JSON)</button>
+            </div>
+            <div class="settings-row">
+              <button id="clearOldBtn" class="action-chip settings-chip" style="font-size:.75rem;border-color:var(--danger);color:var(--danger)">Clear old threads</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- .app -->
+
+  <!-- ── Engine Core modal ────────────────────────────────────────────────── -->
   <div id="modalOverlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <div class="modal glass">
       <button id="modalClose" class="modal-close" aria-label="Close">✕</button>
@@ -361,236 +718,591 @@
         <li><strong>Layer 4: Action Orchestrator</strong> — tool invocation, transactional guards, and deterministic recovery.</li>
         <li><strong>Layer 5: Voice Nexus</strong> — native STT/TTS bridge with low-latency duplex controls.</li>
       </ul>
-      <p>Status profile: <strong>12.30 ENGINE CORE</strong> • Glass runtime enabled • Secure channel active.</p>
+      <p>Status: <strong>12.30 ENGINE CORE</strong> • Glass runtime enabled • Secure channel active.</p>
     </div>
   </div>
 
+  <!-- ── backend-origin.js MUST load before any API call ─────────────────── -->
+  <script src="backend-origin.js"></script>
+  <!-- ── Thread persistence data module ──────────────────────────────────── -->
+  <script src="pg1-threads.js"></script>
+
   <script>
-    (function () {
-      const chatEl = document.getElementById('chat');
-      const inputEl = document.getElementById('promptInput');
-      const sendBtn = document.getElementById('sendBtn');
-      const micBtn = document.getElementById('micBtn');
-      const statusEl = document.getElementById('status');
-      const enginePill = document.getElementById('enginePill');
-      const modalOverlay = document.getElementById('modalOverlay');
-      const modalClose = document.getElementById('modalClose');
+  (function () {
+    'use strict';
 
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      let recognition = null;
-      let listening = false;
+    // ── Settings state ────────────────────────────────────────────────────
+    var settings = {
+      tts:         true,
+      mic:         true,
+      voice:       false,
+      video:       false,
+      videogen:    false,
+      imganalysis: true,
+      imggen:      false,
+      mode:        'default'
+    };
 
-      function autoResizeTextarea() {
-        inputEl.style.height = 'auto';
-        inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px';
-      }
+    var MODE_LABELS = { default: 'Default', deep: 'Deep', enterprise: 'Enterprise', creative: 'Creative' };
 
-      inputEl.addEventListener('input', autoResizeTextarea);
+    // ── Thread state ──────────────────────────────────────────────────────
+    var activeThreadId = null;
+    var pendingAttachments = []; // [{ name, url, type, dataUrl }]
 
-      function escapeHtml(str) {
-        return str
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#039;');
-      }
+    // ── DOM refs ──────────────────────────────────────────────────────────
+    var chatEl       = document.getElementById('chat');
+    var inputEl      = document.getElementById('promptInput');
+    var sendBtn      = document.getElementById('sendBtn');
+    var micBtn       = document.getElementById('micBtn');
+    var statusEl     = document.getElementById('status');
+    var enginePill   = document.getElementById('enginePill');
+    var modalOverlay = document.getElementById('modalOverlay');
+    var modalClose   = document.getElementById('modalClose');
+    var modeBadge    = document.getElementById('modeBadge');
+    var attachInput  = document.getElementById('attachInput');
+    var composerAtts = document.getElementById('composerAttachments');
+    var storageToast = document.getElementById('storageToast');
 
-      function parseMarkdown(md) {
-        let text = escapeHtml(md);
+    // ── Textarea auto-resize ──────────────────────────────────────────────
+    function autoResize() {
+      inputEl.style.height = 'auto';
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 150) + 'px';
+    }
+    inputEl.addEventListener('input', autoResize);
+    autoResize();
 
-        text = text.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
-        text = text.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
-        text = text.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
+    // ── Tab switching ─────────────────────────────────────────────────────
+    document.querySelectorAll('.tab').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        document.querySelectorAll('.tab').forEach(function (t) {
+          t.classList.remove('active');
+          t.setAttribute('aria-selected', 'false');
+        });
+        tab.classList.add('active');
+        tab.setAttribute('aria-selected', 'true');
 
-        text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        var panelId = 'panel-' + tab.dataset.panel;
+        document.querySelectorAll('.panel').forEach(function (p) { p.classList.remove('active'); });
+        document.getElementById(panelId).classList.add('active');
 
-        const lines = text.split('\n');
-        let inList = false;
-        const out = [];
-
-        for (const line of lines) {
-          if (/^\s*[-*]\s+/.test(line)) {
-            if (!inList) {
-              inList = true;
-              out.push('<ul>');
-            }
-            out.push('<li>' + line.replace(/^\s*[-*]\s+/, '') + '</li>');
-          } else {
-            if (inList) {
-              inList = false;
-              out.push('</ul>');
-            }
-            if (line.trim() === '') {
-              out.push('<br/>');
-            } else {
-              out.push('<p>' + line + '</p>');
-            }
-          }
-        }
-
-        if (inList) out.push('</ul>');
-
-        return out.join('')
-          .replace(/<p><\/p>/g, '')
-          .replace(/<p>(<h[1-3]>.*?<\/h[1-3]>)<\/p>/g, '$1')
-          .replace(/<p>(<ul>)/g, '$1')
-          .replace(/(<\/ul>)<\/p>/g, '$1');
-      }
-
-      function appendMessage(role, rawText) {
-        const msg = document.createElement('div');
-        msg.className = 'message ' + role + ' md';
-        msg.innerHTML = parseMarkdown(String(rawText || ''));
-        chatEl.appendChild(msg);
-        chatEl.scrollTop = chatEl.scrollHeight;
-      }
-
-      function speak(text) {
-        if (!('speechSynthesis' in window)) return;
-        const cleanText = String(text || '').replace(/[#>*_`\-]/g, ' ').replace(/\s+/g, ' ').trim();
-        if (!cleanText) return;
-
-        window.speechSynthesis.cancel();
-        const utter = new SpeechSynthesisUtterance(cleanText);
-        utter.rate = 1;
-        utter.pitch = 1;
-        utter.volume = 1;
-        window.speechSynthesis.speak(utter);
-      }
-
-      async function sendMessage() {
-        const prompt = inputEl.value.trim();
-        if (!prompt) return;
-
-        appendMessage('user', prompt);
-        inputEl.value = '';
-        autoResizeTextarea();
-        statusEl.textContent = 'Processing...';
-
-        try {
-          const res = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: prompt })
-          });
-
-          if (!res.ok) {
-            throw new Error('HTTP ' + res.status);
-          }
-
-          const data = await res.json();
-          const reply =
-            (data && (data.reply || data.response || data.message || data.text))
-            ? (data.reply || data.response || data.message || data.text)
-            : 'No response payload received.';
-
-          appendMessage('assistant', reply);
-          speak(reply);
-          statusEl.textContent = 'Ready';
-        } catch (err) {
-          appendMessage('assistant', '**Error:** Unable to reach backend API.\n- Verify `/api/chat` is running\n- Check network and server logs');
-          statusEl.textContent = 'Error: ' + err.message;
-        }
-      }
-
-      sendBtn.addEventListener('click', sendMessage);
-
-      inputEl.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          sendMessage();
-        }
+        if (tab.dataset.panel === 'threads') renderThreadList();
+        if (tab.dataset.panel === 'settings') refreshStorageBar();
       });
+    });
 
-      function setListeningState(isListening) {
-        listening = isListening;
-        micBtn.classList.toggle('listening', isListening);
-        micBtn.setAttribute('aria-label', isListening ? 'Stop voice input' : 'Start voice input');
-        statusEl.textContent = isListening ? 'Listening...' : 'Ready';
+    // ── Markdown parser ───────────────────────────────────────────────────
+    function escHtml(s) {
+      return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+    }
+    function parseMarkdown(md) {
+      var t = escHtml(md);
+      t = t.replace(/^###\s+(.+)$/gm,'<h3>$1</h3>');
+      t = t.replace(/^##\s+(.+)$/gm,'<h2>$1</h2>');
+      t = t.replace(/^#\s+(.+)$/gm,'<h1>$1</h1>');
+      t = t.replace(/`([^`]+)`/g,'<code>$1</code>');
+      t = t.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+      var lines = t.split('\n'), inList = false, out = [];
+      for (var i = 0; i < lines.length; i++) {
+        var l = lines[i];
+        if (/^\s*[-*]\s+/.test(l)) {
+          if (!inList) { inList = true; out.push('<ul>'); }
+          out.push('<li>' + l.replace(/^\s*[-*]\s+/,'') + '</li>');
+        } else {
+          if (inList) { inList = false; out.push('</ul>'); }
+          if (l.trim() === '') out.push('<br/>');
+          else out.push('<p>' + l + '</p>');
+        }
+      }
+      if (inList) out.push('</ul>');
+      return out.join('').replace(/<p><\/p>/g,'').replace(/<p>(<h[1-3]>.*?<\/h[1-3]>)<\/p>/g,'$1');
+    }
+
+    // ── Append message to UI ──────────────────────────────────────────────
+    function appendMessage(role, rawText, opts) {
+      opts = opts || {};
+      var msg = document.createElement('div');
+      msg.className = 'message ' + role + ' md';
+      msg.innerHTML = parseMarkdown(String(rawText || ''));
+
+      // attachment thumbnails
+      if (opts.attachments && opts.attachments.length) {
+        var attDiv = document.createElement('div');
+        attDiv.className = 'msg-attachment';
+        opts.attachments.forEach(function (a) {
+          if (a.type && a.type.startsWith('image/') && a.dataUrl) {
+            var img = document.createElement('img');
+            img.className = 'att-thumb';
+            img.src = a.dataUrl;
+            img.alt = a.name;
+            attDiv.appendChild(img);
+          } else {
+            var f = document.createElement('div');
+            f.className = 'att-file';
+            f.textContent = '📎 ' + a.name;
+            attDiv.appendChild(f);
+          }
+        });
+        msg.appendChild(attDiv);
       }
 
-      function initRecognition() {
-        if (!SpeechRecognition) {
-          statusEl.textContent = 'Voice input not supported on this browser.';
-          micBtn.disabled = true;
-          micBtn.style.opacity = '0.55';
+      // download button for generated media URLs
+      if (opts.downloadUrl) {
+        var dl = document.createElement('a');
+        dl.className = 'msg-download-btn';
+        dl.href = opts.downloadUrl;
+        dl.download = opts.downloadName || 'pg1-output';
+        dl.target = '_blank';
+        dl.rel = 'noopener noreferrer';
+        dl.innerHTML = '⬇ Download';
+        msg.appendChild(dl);
+      }
+
+      // action strip (copy / edit / delete)
+      var actDiv = document.createElement('div');
+      actDiv.className = 'msg-actions' + (role === 'user' ? '' : ' left');
+
+      var copyBtn = document.createElement('button');
+      copyBtn.className = 'msg-action-btn'; copyBtn.textContent = 'Copy';
+      copyBtn.addEventListener('click', function () {
+        navigator.clipboard && navigator.clipboard.writeText(String(rawText || '')).catch(function(){});
+      });
+      actDiv.appendChild(copyBtn);
+
+      if (role === 'user') {
+        var editBtn = document.createElement('button');
+        editBtn.className = 'msg-action-btn'; editBtn.textContent = 'Edit';
+        editBtn.addEventListener('click', function () {
+          inputEl.value = String(rawText || '');
+          autoResize();
+          inputEl.focus();
+        });
+        actDiv.appendChild(editBtn);
+      }
+
+      // store msgId if provided for persistence-linked delete
+      if (opts.msgId) {
+        msg.dataset.msgId = opts.msgId;
+        var delBtn = document.createElement('button');
+        delBtn.className = 'msg-action-btn'; delBtn.textContent = 'Delete';
+        delBtn.style.color = 'var(--danger)';
+        delBtn.addEventListener('click', function () {
+          if (window.PG1Threads) PG1Threads.deleteMessage(opts.msgId).catch(function(){});
+          msg.remove();
+        });
+        actDiv.appendChild(delBtn);
+      }
+
+      msg.appendChild(actDiv);
+      chatEl.appendChild(msg);
+      chatEl.scrollTop = chatEl.scrollHeight;
+      return msg;
+    }
+
+    // ── TTS ───────────────────────────────────────────────────────────────
+    function speak(text) {
+      if (!settings.tts || !window.speechSynthesis) return;
+      var clean = String(text||'').replace(/[#>*_`\-]/g,' ').replace(/\s+/g,' ').trim();
+      if (!clean) return;
+      window.speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(clean);
+      u.rate = 1; u.pitch = 1; u.volume = 1;
+      window.speechSynthesis.speak(u);
+    }
+
+    // ── Send message ──────────────────────────────────────────────────────
+    async function sendMessage() {
+      var prompt = inputEl.value.trim();
+      var attachments = pendingAttachments.slice();
+      if (!prompt && !attachments.length) return;
+
+      // ensure active thread
+      if (!activeThreadId && window.PG1Threads) {
+        var t = await PG1Threads.createThread(prompt.slice(0,40) || 'New Chat').catch(function(){ return null; });
+        if (t) { activeThreadId = t.id; renderThreadStrip(); }
+      }
+
+      // persist user message
+      var userMsgId = null;
+      if (activeThreadId && window.PG1Threads) {
+        var saved = await PG1Threads.addMessage(activeThreadId, 'user', prompt, { attachments: attachments.map(function(a){return {name:a.name,type:a.type};}) }).catch(function(){return null;});
+        if (saved) userMsgId = saved.id;
+      }
+
+      appendMessage('user', prompt || '[media]', { attachments: attachments, msgId: userMsgId });
+
+      // clear composer
+      inputEl.value = ''; autoResize();
+      pendingAttachments = [];
+      renderComposerAttachments();
+
+      statusEl.textContent = 'Processing…';
+      sendBtn.disabled = true;
+
+      try {
+        var apiUrl = (window.PG1_BACKEND_ORIGIN || '') + '/api/chat';
+        var body = { message: prompt, mode: settings.mode };
+        if (attachments.length) {
+          body.attachments = attachments.map(function (a) { return { name: a.name, type: a.type }; });
+        }
+        var res = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var data = await res.json();
+        var reply = data && (data.reply || data.response || data.message || data.text)
+          ? (data.reply || data.response || data.message || data.text)
+          : 'No response received.';
+
+        // persist assistant message
+        var asstMsgId = null;
+        if (activeThreadId && window.PG1Threads) {
+          var asSaved = await PG1Threads.addMessage(activeThreadId,'assistant',reply,{}).catch(function(){return null;});
+          if (asSaved) asstMsgId = asSaved.id;
+        }
+
+        // check for generated media URL in response
+        var downloadUrl = data && (data.mediaUrl || data.imageUrl || data.videoUrl || data.audioUrl);
+        appendMessage('assistant', reply, { msgId: asstMsgId, downloadUrl: downloadUrl || null, downloadName: data && data.mediaName });
+        speak(reply);
+        statusEl.textContent = 'Ready';
+        renderThreadStrip();
+      } catch (err) {
+        appendMessage('assistant', '**Error:** Unable to reach backend.\n- Check network and `/api/chat`\n- Error: ' + err.message);
+        statusEl.textContent = 'Error: ' + err.message;
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    inputEl.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    });
+
+    // ── Quick action chips ────────────────────────────────────────────────
+    document.querySelectorAll('.action-row .action-chip').forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        inputEl.value = chip.dataset.prompt || chip.textContent;
+        autoResize();
+        sendMessage();
+      });
+    });
+
+    // ── Voice / mic ───────────────────────────────────────────────────────
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    var recognition = null;
+    var listening = false;
+
+    function initRecognition() {
+      if (!SR || !settings.mic) {
+        micBtn.disabled = !SR;
+        if (!SR) micBtn.style.opacity = '.45';
+        return;
+      }
+      recognition = new SR();
+      recognition.lang = 'en-US';
+      recognition.interimResults = true;
+      recognition.continuous = false;
+      var finalTx = '';
+      recognition.onstart  = function () { finalTx = ''; setListening(true); };
+      recognition.onresult = function (e) {
+        var interim = '';
+        for (var i = e.resultIndex; i < e.results.length; i++) {
+          var tx = e.results[i][0].transcript;
+          if (e.results[i].isFinal) finalTx += tx + ' ';
+          else interim += tx;
+        }
+        var merged = (finalTx + interim).trim();
+        if (merged) { inputEl.value = merged; autoResize(); }
+      };
+      recognition.onerror = function (ev) { setListening(false); statusEl.textContent = 'Mic error: ' + ev.error; };
+      recognition.onend   = function () { setListening(false); };
+    }
+
+    function setListening(on) {
+      listening = on;
+      micBtn.classList.toggle('listening', on);
+      micBtn.setAttribute('aria-label', on ? 'Stop voice input' : 'Start voice input');
+      statusEl.textContent = on ? 'Listening…' : 'Ready';
+    }
+
+    micBtn.addEventListener('click', function () {
+      if (!recognition) return;
+      if (listening) recognition.stop();
+      else recognition.start();
+    });
+
+    initRecognition();
+
+    // ── File attachments ──────────────────────────────────────────────────
+    attachInput.addEventListener('change', function () {
+      var files = Array.from(attachInput.files || []);
+      files.forEach(function (file) {
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          pendingAttachments.push({ name: file.name, type: file.type, size: file.size, dataUrl: e.target.result });
+          renderComposerAttachments();
+        };
+        reader.readAsDataURL(file);
+      });
+      attachInput.value = '';
+    });
+
+    function renderComposerAttachments() {
+      composerAtts.innerHTML = '';
+      if (!pendingAttachments.length) { composerAtts.style.display = 'none'; return; }
+      composerAtts.style.display = 'flex';
+      pendingAttachments.forEach(function (a, i) {
+        var el = document.createElement('div');
+        el.className = 'pending-att';
+        el.innerHTML = escHtml(a.name.length > 18 ? a.name.slice(0,16)+'…' : a.name);
+        var rm = document.createElement('span');
+        rm.className = 'pending-att-remove'; rm.textContent = '×';
+        rm.addEventListener('click', function () { pendingAttachments.splice(i, 1); renderComposerAttachments(); });
+        el.appendChild(rm);
+        composerAtts.appendChild(el);
+      });
+    }
+
+    // ── Thread strip ──────────────────────────────────────────────────────
+    function renderThreadStrip() {
+      if (!window.PG1Threads) return;
+      PG1Threads.listThreads().then(function (threads) {
+        var strip = document.getElementById('threadStrip');
+        strip.innerHTML = '';
+        threads.slice(0,12).forEach(function (t) {
+          var chip = document.createElement('button');
+          chip.className = 'thread-chip' + (t.id === activeThreadId ? ' active' : '');
+          chip.textContent = t.title.slice(0,22) || 'Chat';
+          chip.addEventListener('click', function () { loadThread(t.id); });
+          strip.appendChild(chip);
+        });
+      }).catch(function(){});
+    }
+
+    function loadThread(id) {
+      if (!window.PG1Threads) return;
+      activeThreadId = id;
+      chatEl.innerHTML = '';
+      PG1Threads.getMessages(id).then(function (msgs) {
+        msgs.forEach(function (m) { appendMessage(m.role, m.content, { msgId: m.id }); });
+      }).catch(function(){});
+      renderThreadStrip();
+    }
+
+    // ── Thread list panel ─────────────────────────────────────────────────
+    function renderThreadList() {
+      if (!window.PG1Threads) {
+        document.getElementById('threadList').innerHTML = '<div style="color:var(--muted);font-size:.82rem;padding:8px">Thread persistence unavailable.</div>';
+        return;
+      }
+      PG1Threads.listThreads().then(function (threads) {
+        var list = document.getElementById('threadList');
+        list.innerHTML = '';
+        if (!threads.length) {
+          list.innerHTML = '<div style="color:var(--muted);font-size:.82rem;padding:8px">No saved threads yet.</div>';
           return;
         }
+        threads.forEach(function (t) {
+          var item = document.createElement('div');
+          item.className = 'thread-list-item' + (t.id === activeThreadId ? ' active' : '');
+          var info = document.createElement('div'); info.className = 'thread-info';
+          var title = document.createElement('div'); title.className = 'thread-item-title'; title.textContent = t.title;
+          var meta  = document.createElement('div'); meta.className  = 'thread-item-meta';
+          meta.textContent = new Date(t.updatedAt).toLocaleDateString() + ' · ' + (t.messageCount || 0) + ' msgs';
+          info.appendChild(title); info.appendChild(meta);
+          item.appendChild(info);
 
-        recognition = new SpeechRecognition();
-        recognition.lang = 'en-US';
-        recognition.interimResults = true;
-        recognition.continuous = false;
+          // export thread as PDF (via print)
+          var exportBtn = document.createElement('button');
+          exportBtn.className = 'thread-delete-btn'; exportBtn.title = 'Export'; exportBtn.textContent = '⬇';
+          exportBtn.addEventListener('click', function (e) { e.stopPropagation(); exportThreadPDF(t.id, t.title); });
+          item.appendChild(exportBtn);
 
-        let finalTranscript = '';
+          var delBtn = document.createElement('button');
+          delBtn.className = 'thread-delete-btn'; delBtn.title = 'Delete thread'; delBtn.textContent = '🗑';
+          delBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (!confirm('Delete thread "' + t.title + '"?')) return;
+            PG1Threads.deleteThread(t.id).then(function () {
+              if (activeThreadId === t.id) { activeThreadId = null; chatEl.innerHTML = ''; }
+              renderThreadList(); renderThreadStrip();
+            }).catch(function(){});
+          });
+          item.appendChild(delBtn);
 
-        recognition.onstart = function () {
-          finalTranscript = '';
-          setListeningState(true);
-        };
-
-        recognition.onresult = function (event) {
-          let interim = '';
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            const transcript = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-              finalTranscript += transcript + ' ';
-            } else {
-              interim += transcript;
-            }
-          }
-
-          const merged = (finalTranscript + interim).trim();
-          if (merged) {
-            inputEl.value = merged;
-            autoResizeTextarea();
-          }
-        };
-
-        recognition.onerror = function (event) {
-          setListeningState(false);
-          statusEl.textContent = 'Voice input error: ' + event.error;
-        };
-
-        recognition.onend = function () {
-          setListeningState(false);
-        };
-      }
-
-      micBtn.addEventListener('click', function () {
-        if (!recognition) return;
-        if (listening) {
-          recognition.stop();
-        } else {
-          recognition.start();
-        }
+          item.addEventListener('click', function () {
+            loadThread(t.id);
+            // switch to chat tab
+            document.querySelector('.tab[data-panel="chat"]').click();
+          });
+          list.appendChild(item);
+        });
+      }).catch(function () {
+        document.getElementById('threadList').innerHTML = '<div style="color:var(--muted);font-size:.82rem;padding:8px">Could not load threads.</div>';
       });
+    }
 
-      enginePill.addEventListener('click', function () {
-        modalOverlay.classList.add('active');
+    // ── PDF export (uses browser print) ──────────────────────────────────
+    function exportThreadPDF(threadId, title) {
+      if (!window.PG1Threads) return;
+      PG1Threads.exportThreadAsText(threadId).then(function (text) {
+        var win = window.open('', '_blank');
+        if (!win) return;
+        win.document.write(
+          '<html><head><title>' + escHtml(title) + '</title><style>' +
+          'body{font-family:sans-serif;padding:32px;white-space:pre-wrap;font-size:14px;line-height:1.6}' +
+          'h1{font-size:18px;margin-bottom:20px}' +
+          '</style></head><body><h1>' + escHtml(title) + '</h1>' +
+          escHtml(text) + '</body></html>'
+        );
+        win.document.close();
+        win.print();
+      }).catch(function(){});
+    }
+
+    // ── Export active thread ──────────────────────────────────────────────
+    document.getElementById('exportActiveBtn').addEventListener('click', function () {
+      if (!activeThreadId) { statusEl.textContent = 'No active thread to export.'; return; }
+      if (!window.PG1Threads) return;
+      PG1Threads.getThread(activeThreadId).then(function (t) {
+        exportThreadPDF(activeThreadId, t ? t.title : 'Chat');
+      }).catch(function(){});
+    });
+
+    // ── Export all threads as JSON ────────────────────────────────────────
+    document.getElementById('exportAllBtn').addEventListener('click', function () {
+      if (!window.PG1Threads) return;
+      PG1Threads.listThreads().then(function (threads) {
+        return Promise.all(threads.map(function (t) {
+          return PG1Threads.getMessages(t.id).then(function (msgs) { return Object.assign({}, t, { messages: msgs }); });
+        }));
+      }).then(function (data) {
+        var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a'); a.href = url; a.download = 'pg1-threads.json'; a.click();
+        URL.revokeObjectURL(url);
+      }).catch(function(){});
+    });
+
+    // ── Clear old threads ─────────────────────────────────────────────────
+    document.getElementById('clearOldBtn').addEventListener('click', function () {
+      if (!window.PG1Threads) return;
+      if (!confirm('Delete threads older than 30 days?')) return;
+      var cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      PG1Threads.listThreads().then(function (threads) {
+        var old = threads.filter(function (t) { return t.updatedAt < cutoff; });
+        return Promise.all(old.map(function (t) { return PG1Threads.deleteThread(t.id); }));
+      }).then(function () {
+        renderThreadList(); renderThreadStrip(); refreshStorageBar();
+      }).catch(function(){});
+    });
+
+    // ── New thread ────────────────────────────────────────────────────────
+    function newThread() {
+      activeThreadId = null;
+      chatEl.innerHTML = '';
+      appendMessage('assistant', 'New conversation started. How can I help you today?');
+      renderThreadStrip();
+      document.querySelector('.tab[data-panel="chat"]').click();
+    }
+    document.getElementById('newThreadBtn').addEventListener('click', newThread);
+    document.getElementById('newThreadBtn2').addEventListener('click', newThread);
+
+    // ── Storage bar ───────────────────────────────────────────────────────
+    function refreshStorageBar() {
+      if (!window.PG1Threads) return;
+      PG1Threads.getStorageEstimate().then(function (est) {
+        var pct = est.quota ? Math.round((est.usage / est.quota) * 100) : 0;
+        var fill = document.getElementById('storageBarFill');
+        var label = document.getElementById('storageLabel');
+        fill.style.width = pct + '%';
+        fill.className = 'storage-bar-fill' + (pct > 85 ? ' crit' : pct > 65 ? ' warn' : '');
+        var usedMB = (est.usage / 1048576).toFixed(1);
+        var totalMB = est.quota ? (est.quota / 1048576).toFixed(0) : '?';
+        label.textContent = usedMB + ' MB / ' + totalMB + ' MB (' + pct + '%)';
+      }).catch(function(){});
+    }
+
+    // Storage warning toast
+    window.addEventListener('pg1:storage-warning', function () {
+      storageToast.classList.add('visible');
+      setTimeout(function () { storageToast.classList.remove('visible'); }, 5000);
+    });
+
+    // ── Settings toggles ──────────────────────────────────────────────────
+    function bindToggle(id, key, onCb) {
+      var el = document.getElementById('toggle-' + id);
+      if (!el) return;
+      el.addEventListener('click', function () {
+        settings[key] = !settings[key];
+        el.classList.toggle('on', settings[key]);
+        el.setAttribute('aria-checked', String(settings[key]));
+        if (onCb) onCb(settings[key]);
       });
-
-      modalClose.addEventListener('click', function () {
-        modalOverlay.classList.remove('active');
-      });
-
-      modalOverlay.addEventListener('click', function (e) {
-        if (e.target === modalOverlay) {
-          modalOverlay.classList.remove('active');
-        }
-      });
-
-      document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') {
-          modalOverlay.classList.remove('active');
-        }
-      });
-
+    }
+    bindToggle('tts', 'tts');
+    bindToggle('mic', 'mic', function (on) {
+      document.getElementById('sdot-mic').classList.toggle('off', !on);
       initRecognition();
-      autoResizeTextarea();
-      statusEl.textContent = 'Ready';
-    })();
+    });
+    bindToggle('voice', 'voice');
+    bindToggle('video', 'video');   // video input has no separate status dot
+    bindToggle('videogen', 'videogen', function (on) { document.getElementById('sdot-videogen').classList.toggle('off', !on); });
+    bindToggle('imganalysis', 'imganalysis');
+    bindToggle('imggen', 'imggen', function (on) { document.getElementById('sdot-imggen').classList.toggle('off', !on); });
+
+    // ── Mode selector ─────────────────────────────────────────────────────
+    document.querySelectorAll('.mode-card').forEach(function (card) {
+      card.addEventListener('click', function () {
+        settings.mode = card.dataset.mode;
+        document.querySelectorAll('.mode-card').forEach(function (c) { c.classList.remove('selected'); });
+        card.classList.add('selected');
+        modeBadge.textContent = MODE_LABELS[settings.mode] || settings.mode;
+        if (activeThreadId && window.PG1Threads) {
+          PG1Threads.updateThread(activeThreadId, { mode: settings.mode }).catch(function(){});
+        }
+      });
+    });
+
+    modeBadge.addEventListener('click', function () {
+      // cycle through modes
+      var modes = ['default','deep','enterprise','creative'];
+      var idx = modes.indexOf(settings.mode);
+      var next = modes[(idx + 1) % modes.length];
+      document.querySelector('.mode-card[data-mode="' + next + '"]').click();
+    });
+
+    // ── Engine Core modal ─────────────────────────────────────────────────
+    enginePill.addEventListener('click', function () { modalOverlay.classList.add('active'); });
+    modalClose.addEventListener('click', function () { modalOverlay.classList.remove('active'); });
+    modalOverlay.addEventListener('click', function (e) { if (e.target === modalOverlay) modalOverlay.classList.remove('active'); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') modalOverlay.classList.remove('active'); });
+
+    // ── Init ──────────────────────────────────────────────────────────────
+    if (window.PG1Threads) {
+      PG1Threads.init().then(function () {
+        renderThreadStrip();
+        refreshStorageBar();
+        // auto-load last thread
+        PG1Threads.listThreads().then(function (threads) {
+          if (threads.length) loadThread(threads[0].id);
+          else appendMessage('assistant', 'Welcome to **PG1 Sovereign Agent™**.\nTap the mic to speak or type your message.');
+        }).catch(function () {
+          appendMessage('assistant', 'Welcome to **PG1 Sovereign Agent™**.\nTap the mic to speak or type your message.');
+        });
+      }).catch(function () {
+        appendMessage('assistant', 'Welcome to **PG1 Sovereign Agent™**.\nTap the mic to speak or type your message.');
+      });
+    } else {
+      appendMessage('assistant', 'Welcome to **PG1 Sovereign Agent™**.\nTap the mic to speak or type your message.');
+    }
+
+    statusEl.textContent = 'Ready';
+
+  })();
   </script>
 </body>
 </html>
