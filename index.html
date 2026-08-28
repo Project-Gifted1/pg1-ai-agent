@@ -20,6 +20,7 @@
       --assistant: rgba(255, 255, 255, 0.16);
       --danger: #ff4d4f;
       --ok: #2ecc71;
+      --warn: #f5a623;
       --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
       --radius-xl: 24px;
       --radius-lg: 18px;
@@ -248,6 +249,130 @@
       padding-left: 2px;
     }
 
+    .core-telemetry {
+      border-radius: var(--radius-lg);
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .core-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .core-title {
+      font-size: 0.82rem;
+      letter-spacing: 0.3px;
+      color: #d7e3ff;
+      font-weight: 700;
+    }
+
+    .status-badge {
+      border-radius: 999px;
+      border: 1px solid var(--stroke);
+      padding: 4px 8px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.45px;
+    }
+
+    .status-badge.healthy { color: var(--ok); }
+    .status-badge.degraded { color: var(--warn); }
+    .status-badge.offline { color: var(--danger); }
+
+    .telemetry-grid {
+      display: grid;
+      gap: 6px 10px;
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .telemetry-item {
+      min-width: 0;
+      font-size: 0.76rem;
+    }
+
+    .telemetry-item span {
+      display: block;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+
+    .telemetry-item strong {
+      color: #f0f6ff;
+      font-weight: 600;
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .core-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .core-btn {
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text);
+      padding: 7px 10px;
+      font-size: 0.74rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .core-note {
+      margin: 0;
+      font-size: 0.68rem;
+      color: var(--muted);
+    }
+
+    .action-row-wrap {
+      position: relative;
+      margin-top: -2px;
+    }
+
+    .action-row-wrap::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 20px;
+      height: 100%;
+      pointer-events: none;
+      background: linear-gradient(to right, transparent, rgba(11, 16, 32, 0.88));
+    }
+
+    .action-row {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 2px 2px 4px;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+
+    .action-row::-webkit-scrollbar {
+      display: none;
+    }
+
+    .action-chip {
+      border-radius: 999px;
+      border: 1px solid var(--stroke);
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text);
+      font-size: 0.72rem;
+      white-space: nowrap;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+
     .modal-overlay {
       position: fixed;
       inset: 0;
@@ -337,12 +462,40 @@
       <button id="enginePill" class="engine-pill" aria-label="Open Engine Core details">12.30 ENGINE CORE</button>
     </header>
 
+    <section class="core-telemetry glass" aria-label="Sovereign Threat Pipeline health">
+      <div class="core-head">
+        <div class="core-title">Sovereign Threat Pipeline</div>
+        <div id="pipelineState" class="status-badge offline">OFFLINE</div>
+      </div>
+      <div class="telemetry-grid">
+        <div class="telemetry-item"><span>Last Run</span><strong id="pipelineLastRun">Unavailable</strong></div>
+        <div class="telemetry-item"><span>Last Successful Sync</span><strong id="pipelineLastSuccess">Unavailable</strong></div>
+        <div class="telemetry-item"><span>Error State</span><strong id="pipelineError">Telemetry unavailable</strong></div>
+        <div class="telemetry-item"><span>Queue Depth</span><strong id="pipelineQueue">Unknown</strong></div>
+        <div class="telemetry-item"><span>Config Ready</span><strong id="pipelineConfig">Unknown</strong></div>
+        <div class="telemetry-item"><span>Secrets Ready</span><strong id="pipelineSecrets">Unknown</strong></div>
+      </div>
+      <div class="core-actions">
+        <button id="pipelineRefreshBtn" class="core-btn" type="button">Refresh Status</button>
+        <button id="pipelineSyncBtn" class="core-btn" type="button">Request Sync</button>
+      </div>
+      <p class="core-note">Pipeline logic stays isolated in its own repository. Controls are read-only or confirmation-gated.</p>
+    </section>
+
     <main id="chat" class="chat glass" aria-live="polite" aria-label="Conversation">
       <div class="message assistant md">Welcome to <strong>PG1 Sovereign Agent™</strong>.<br/>Tap the mic to speak or type your message.</div>
     </main>
 
+    <div class="action-row-wrap">
+      <div class="action-row" aria-label="Quick actions">
+        <button class="action-chip" type="button" data-prompt="Show pipeline health summary">Pipeline health</button>
+        <button class="action-chip" type="button" data-prompt="Show latest sync and queue depth">Sync status</button>
+        <button class="action-chip" type="button" data-prompt="List current error state">Error state</button>
+      </div>
+    </div>
+
     <section class="composer glass">
-      <textarea id="promptInput" class="input" placeholder="Message PG1 Sovereign Agent™..." rows="1"></textarea>
+      <textarea id="promptInput" class="input" placeholder="Ask anything..." rows="1"></textarea>
       <button id="micBtn" class="btn btn-mic" aria-label="Start voice input" title="Voice input">🎤</button>
       <button id="sendBtn" class="btn btn-send" aria-label="Send message" title="Send">➤</button>
     </section>
@@ -375,6 +528,15 @@
       const enginePill = document.getElementById('enginePill');
       const modalOverlay = document.getElementById('modalOverlay');
       const modalClose = document.getElementById('modalClose');
+      const pipelineStateEl = document.getElementById('pipelineState');
+      const pipelineLastRunEl = document.getElementById('pipelineLastRun');
+      const pipelineLastSuccessEl = document.getElementById('pipelineLastSuccess');
+      const pipelineErrorEl = document.getElementById('pipelineError');
+      const pipelineQueueEl = document.getElementById('pipelineQueue');
+      const pipelineConfigEl = document.getElementById('pipelineConfig');
+      const pipelineSecretsEl = document.getElementById('pipelineSecrets');
+      const pipelineRefreshBtn = document.getElementById('pipelineRefreshBtn');
+      const pipelineSyncBtn = document.getElementById('pipelineSyncBtn');
 
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       let recognition = null;
@@ -446,6 +608,71 @@
         chatEl.scrollTop = chatEl.scrollHeight;
       }
 
+      function formatDateTime(value) {
+        if (!value) return 'Unavailable';
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) return String(value);
+        return parsed.toLocaleString();
+      }
+
+      function formatReadiness(value) {
+        if (value === true) return 'Ready';
+        if (value === false) return 'Missing';
+        return 'Unknown';
+      }
+
+      function setPipelineBadge(state) {
+        const normalized = String(state || 'offline').toLowerCase();
+        pipelineStateEl.className = 'status-badge ' + (normalized === 'healthy' ? 'healthy' : normalized === 'degraded' ? 'degraded' : 'offline');
+        pipelineStateEl.textContent = normalized === 'healthy' ? 'HEALTHY' : normalized === 'degraded' ? 'DEGRADED' : 'OFFLINE';
+      }
+
+      function renderPipelineTelemetry(snapshot) {
+        const telemetry = snapshot && typeof snapshot === 'object' ? snapshot : {};
+        setPipelineBadge(telemetry.state);
+        pipelineLastRunEl.textContent = formatDateTime(telemetry.lastRunTime);
+        pipelineLastSuccessEl.textContent = formatDateTime(telemetry.lastSuccessfulSync);
+        pipelineErrorEl.textContent = telemetry.currentErrorState || 'None';
+        pipelineQueueEl.textContent = telemetry.queueDepth === null || telemetry.queueDepth === undefined ? 'Unknown' : String(telemetry.queueDepth);
+        pipelineConfigEl.textContent = formatReadiness(telemetry.configReady);
+        pipelineSecretsEl.textContent = formatReadiness(telemetry.secretsReady);
+        pipelineSyncBtn.disabled = !(telemetry.controls && telemetry.controls.canRequestSync);
+        pipelineSyncBtn.style.opacity = pipelineSyncBtn.disabled ? '0.6' : '1';
+      }
+
+      async function refreshPipelineTelemetry() {
+        try {
+          const res = await fetch('/api/pipeline-status');
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          renderPipelineTelemetry(data);
+        } catch (_) {
+          renderPipelineTelemetry({
+            state: 'offline',
+            currentErrorState: 'Telemetry unavailable'
+          });
+        }
+      }
+
+      async function requestPipelineSync() {
+        const confirmed = window.confirm('Request a non-destructive manual sync for sovereign-threat-pipeline?');
+        if (!confirmed) return;
+
+        const res = await fetch('/api/pipeline-control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'request_sync',
+            confirmed: true,
+            reason: 'Requested from PG1 Core dashboard'
+          })
+        });
+
+        const data = await res.json();
+        statusEl.textContent = data && data.message ? data.message : 'Pipeline action processed.';
+        await refreshPipelineTelemetry();
+      }
+
       function speak(text) {
         if (!('speechSynthesis' in window)) return;
         const cleanText = String(text || '').replace(/[#>*_`\-]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -495,6 +722,18 @@
       }
 
       sendBtn.addEventListener('click', sendMessage);
+      pipelineRefreshBtn.addEventListener('click', refreshPipelineTelemetry);
+      pipelineSyncBtn.addEventListener('click', requestPipelineSync);
+
+      document.addEventListener('click', function (e) {
+        const target = e.target;
+        if (!(target instanceof HTMLElement)) return;
+        const prompt = target.getAttribute('data-prompt');
+        if (!prompt) return;
+        inputEl.value = prompt;
+        autoResizeTextarea();
+        inputEl.focus();
+      });
 
       inputEl.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -588,6 +827,7 @@
       });
 
       initRecognition();
+      refreshPipelineTelemetry();
       autoResizeTextarea();
       statusEl.textContent = 'Ready';
     })();
