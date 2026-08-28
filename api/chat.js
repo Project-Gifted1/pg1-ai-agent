@@ -1,4 +1,24 @@
+/**
+ * PG1 Sovereign Agent™ - Enhanced Chat Handler
+ * 
+ * Architecture:
+ * - Modular design with separate concerns (Gemini, GitHub, Memory, Diagnostics)
+ * - Self-healing execution with autonomous error recovery
+ * - Reflective thinking and chain-of-thought reasoning
+ * - Persistent learning from execution patterns
+ * - Function calling loop with validation
+ * 
+ * Free & Flawless: Uses only free APIs (Gemini, GitHub, Vercel)
+ */
+
+const GeminiClient = require('./lib/gemini-client');
+const GitHubTools = require('./lib/github-tools');
+const MemorySystem = require('./lib/memory-system');
+const DiagnosticEngine = require('./lib/diagnostic-engine');
+const SelfHealingEngine = require('./lib/self-healing');
+
 module.exports = async function handler(req, res) {
+  // CORS preflight
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -7,48 +27,204 @@ module.exports = async function handler(req, res) {
   }
 
   try {
+    // Extract request data
     const promptText = req.body?.userMessage || req.body?.message || req.body?.prompt || '';
     const apiKey = (process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY || '').trim();
-    
-    if (!apiKey) return res.status(200).json({ reply: 'Vercel Error: GEMINI_API_KEY1 missing.' });
-
     const githubToken = (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
-    if (!githubToken) return res.status(200).json({ reply: 'Vercel Error: GITHUB_TOKEN or GH_TOKEN missing.' });
+    
+    // Validate credentials
+    if (!apiKey) {
+      return res.status(200).json({ 
+        reply: 'Vercel Error: GEMINI_API_KEY1 missing.', 
+        provider: 'PG1-SYS',
+        escalation: true
+      });
+    }
 
-    const pg1SystemInstruction = `You are the PG1 Sovereign Agent™, the core intelligence of Project-Gifted1™.
+    if (!githubToken) {
+      return res.status(200).json({ 
+        reply: 'Vercel Error: GITHUB_TOKEN or GH_TOKEN missing.', 
+        provider: 'PG1-SYS',
+        escalation: true
+      });
+    }
+
+    // Initialize modules
+    const geminiClient = new GeminiClient(apiKey);
+    const githubTools = new GitHubTools(githubToken);
+    const memorySystem = new MemorySystem();
+    const diagnosticEngine = new DiagnosticEngine();
+    const selfHealingEngine = new SelfHealingEngine(geminiClient, githubTools, diagnosticEngine);
+
+    // Build enhanced system instruction with reflection capability
+    const systemInstruction = buildSystemInstruction();
+    const tools = buildFunctionDeclarations();
+
+    // PHASE 1: Reflective Analysis
+    const keywords = memorySystem.extractKeywords(promptText);
+    const complexity = memorySystem.assessComplexity(promptText);
+    const pastAttempts = memorySystem.findSimilar(keywords);
+    
+    const reflectionContext = {
+      keywords,
+      complexity,
+      pastSuccessRate: pastAttempts.length > 0 
+        ? Math.round((pastAttempts.filter(a => a.success).length / pastAttempts.length) * 100)
+        : null,
+      bestStrategy: memorySystem.getBestStrategy(keywords[0])
+    };
+
+    // Enhance prompt with reflection context
+    const enhancedPrompt = `[REFLECTIVE ANALYSIS]
+Task Complexity: ${complexity}/10
+Keywords: ${keywords.join(', ')}
+${reflectionContext.pastSuccessRate !== null ? `Past Success Rate: ${reflectionContext.pastSuccessRate}%` : ''}
+${reflectionContext.bestStrategy ? `Recommended Strategy: ${reflectionContext.bestStrategy}` : ''}
+
+[ORIGINAL REQUEST]
+${promptText}
+
+[EXECUTION PROTOCOL]
+1. Analyze the request step-by-step
+2. Identify any potential issues
+3. Attempt resolution using available tools
+4. Validate your solution before responding
+5. If you encounter errors, try alternative approaches`;
+
+    // PHASE 2: Execute with self-healing
+    const result = await selfHealingEngine.executeWithFunctionCalls(
+      enhancedPrompt,
+      systemInstruction,
+      tools,
+      { temperature: 0.7, topP: 0.95 }
+    );
+
+    if (result.success) {
+      // Record success for learning
+      memorySystem.recordSuccess(promptText, keywords, reflectionContext.bestStrategy);
+      
+      return res.status(200).json({
+        reply: result.text,
+        provider: 'PG1',
+        thinking: result.thinking,
+        metadata: {
+          complexity,
+          functionCalls: result.functionCalls,
+          recovered: false
+        }
+      });
+    }
+
+    // PHASE 3: Attempt autonomous recovery
+    console.log('Initial attempt failed:', result.error);
+    
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const recovery = await selfHealingEngine.attemptRecovery(
+        new Error(result.error),
+        promptText,
+        systemInstruction,
+        tools,
+        attempt
+      );
+
+      if (recovery) {
+        memorySystem.recordSuccess(promptText, keywords, recovery.strategy);
+        
+        return res.status(200).json({
+          reply: recovery.text,
+          provider: 'PG1',
+          metadata: {
+            complexity,
+            recovered: true,
+            recoveryStrategy: recovery.strategy,
+            recoveryAttempt: recovery.attempt
+          }
+        });
+      }
+    }
+
+    // PHASE 4: Generate fallback response
+    const fallbackResponse = selfHealingEngine.generateFallbackResponse(promptText, reflectionContext);
+    memorySystem.recordFailure(promptText, keywords, result.error);
+
+    return res.status(200).json({
+      reply: fallbackResponse,
+      provider: 'PG1-FALLBACK',
+      metadata: {
+        complexity,
+        recovered: false,
+        escalation: true,
+        error: result.error
+      }
+    });
+
+  } catch (err) {
+    console.error('Unhandled error:', err);
+    return res.status(200).json({
+      reply: `Critical Error: ${err.message}. Please try again or contact support.`,
+      provider: 'PG1-SYS',
+      escalation: true,
+      error: err.message
+    });
+  }
+};
+
+/**
+ * Build enhanced system instruction with self-healing protocols
+ */
+function buildSystemInstruction() {
+  return `You are the PG1 Sovereign Agent™, the core intelligence of Project-Gifted1™.
+
 CRITICAL IDENTITY RULES:
 1. You are strictly PG1 Sovereign Agent™ under Project-Gifted1™.
 2. NEVER identify as Gemini, Google, DeepSeek, OpenAI, or any third party.
 3. NEVER state you are a model trained or created by Google.
-4. You possess live web access and native GitHub repository access. When asked about the pg1-ai-agent repository, USE your GitHub tools to read files and list directories.
-5. Maintain an authoritative, factual, confident tone at all times. No defensive disclaimers.`;
+4. Maintain an authoritative, factual, confident tone at all times. No defensive disclaimers.
 
-    const verifiedModels = [
-      'gemini-2.5-pro',
-      'gemini-2.5-flash',
-      'gemini-flash-latest'
-    ];
+OPERATIONAL CAPABILITIES:
+✓ Native GitHub Repository Access: Use list_github_directory and read_github_file to analyze the pg1-ai-agent repository
+✓ Error Diagnostics: Use diagnose_error to analyze failures and suggest solutions
+✓ Solution Validation: Use validate_solution to verify proposed fixes
+✓ Live Web Search: Use googleSearch for current information
+✓ Autonomous Recovery: Attempt multiple strategies if initial approach fails
 
-    let lastError = '';
+SELF-HEALING PROTOCOL:
+When you encounter an error:
+1. ANALYZE: Use diagnose_error to understand the problem
+2. PROPOSE: Suggest 2-3 alternative solutions
+3. VALIDATE: Use validate_solution before committing to fix
+4. EXECUTE: Try your best solution
+5. FALLBACK: If solution fails, suggest next best approach
 
-    for (const model of verifiedModels) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      
-      // Define GitHub function schemas
-      const toolsPayload = {
-        googleSearch: {}
-      };
+CRITICAL CONSTRAINT:
+You MUST solve problems autonomously. Escalation to humans is ONLY when you have exhausted all reasonable recovery strategies (at least 3 attempts with different approaches).
 
-      const functionDeclarations = [
+REFLECTIVE THINKING:
+- Explain your reasoning step-by-step
+- Show your thought process transparently
+- Identify assumptions and potential risks
+- Validate conclusions before responding`;
+}
+
+/**
+ * Build function declarations for Gemini
+ */
+function buildFunctionDeclarations() {
+  return [
+    {
+      googleSearch: {}
+    },
+    {
+      functionDeclarations: [
         {
           name: 'list_github_directory',
-          description: 'Lists files and directories in the pg1-ai-agent GitHub repository',
+          description: 'Lists files and directories in the pg1-ai-agent repository for exploration and analysis',
           parameters: {
             type: 'OBJECT',
             properties: {
               path: {
                 type: 'STRING',
-                description: 'The directory path (e.g., "api", "src/components"). Root if empty.'
+                description: 'Directory path (e.g., "api", "src/components", ""). Leave empty for root.'
               }
             },
             required: ['path']
@@ -56,207 +232,55 @@ CRITICAL IDENTITY RULES:
         },
         {
           name: 'read_github_file',
-          description: 'Reads the contents of a file in the pg1-ai-agent GitHub repository',
+          description: 'Reads the complete contents of a file in the pg1-ai-agent repository',
           parameters: {
             type: 'OBJECT',
             properties: {
               filepath: {
                 type: 'STRING',
-                description: 'The full file path (e.g., "api/chat.js", "package.json")'
+                description: 'Full file path (e.g., "api/chat.js", "package.json", "README.md")'
               }
             },
             required: ['filepath']
           }
-        }
-      ];
-
-      let currentResponse = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [{ text: pg1SystemInstruction }]
-          },
-          contents: [{ parts: [{ text: promptText }] }],
-          tools: [
-            { googleSearch: {} },
-            { functionDeclarations }
-          ]
-        })
-      });
-
-      let data = await currentResponse.json();
-
-      // Function calling loop: handle tool invocations
-      while (data?.candidates?.[0]?.content?.parts) {
-        const parts = data.candidates[0].content.parts;
-        
-        // Check if there's a function call
-        const functionCall = parts.find(part => part.functionCall);
-        
-        if (!functionCall) {
-          // No function call, check for text response
-          const textPart = parts.find(part => part.text);
-          if (textPart?.text) {
-            return res.status(200).json({ 
-              reply: textPart.text, 
-              provider: 'PG1' 
-            });
-          }
-          break;
-        }
-
-        // Execute the function call
-        const { name, args } = functionCall.functionCall;
-        let functionResult = '';
-
-        try {
-          if (name === 'list_github_directory') {
-            functionResult = await listGithubDirectory(args.path, githubToken);
-          } else if (name === 'read_github_file') {
-            functionResult = await readGithubFile(args.filepath, githubToken);
-          } else {
-            functionResult = JSON.stringify({ error: `Unknown function: ${name}` });
-          }
-        } catch (funcErr) {
-          functionResult = JSON.stringify({ 
-            error: `Function execution failed: ${funcErr.message}` 
-          });
-        }
-
-        // Send follow-up request with function response
-        currentResponse = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            systemInstruction: {
-              parts: [{ text: pg1SystemInstruction }]
-            },
-            contents: [
-              { parts: [{ text: promptText }] },
-              { parts: data.candidates[0].content.parts },
-              { 
-                parts: [{ 
-                  functionResponse: {
-                    name: name,
-                    response: JSON.parse(functionResult)
-                  }
-                }]
+        },
+        {
+          name: 'diagnose_error',
+          description: 'Analyzes error messages and provides root cause analysis with solutions',
+          parameters: {
+            type: 'OBJECT',
+            properties: {
+              error_message: {
+                type: 'STRING',
+                description: 'The error message, exception, or failure description'
+              },
+              context: {
+                type: 'STRING',
+                description: 'Additional context about when/where the error occurred'
               }
-            ],
-            tools: [
-              { googleSearch: {} },
-              { functionDeclarations }
-            ]
-          })
-        });
-
-        data = await currentResponse.json();
-
-        // Safety check to prevent infinite loops
-        if (!currentResponse.ok) {
-          lastError = data.error?.message || 'Function calling loop error';
-          break;
+            },
+            required: ['error_message']
+          }
+        },
+        {
+          name: 'validate_solution',
+          description: 'Validates a proposed solution before implementation (syntax, logic, compatibility, performance)',
+          parameters: {
+            type: 'OBJECT',
+            properties: {
+              solution: {
+                type: 'STRING',
+                description: 'The proposed solution code or approach'
+              },
+              validation_type: {
+                type: 'STRING',
+                description: 'Type of validation: "syntax", "logic", "compatibility", or "performance"'
+              }
+            },
+            required: ['solution', 'validation_type']
+          }
         }
-      }
-
-      // Check if we got a valid response from the loop or initial request
-      if (currentResponse.ok && data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-        return res.status(200).json({ 
-          reply: data.candidates[0].content.parts[0].text, 
-          provider: 'PG1' 
-        });
-      } else {
-        lastError = data.error?.message || `Failed on ${model}`;
-      }
+      ]
     }
-
-    return res.status(200).json({ 
-      reply: `Routing failed across all verified endpoints. Last Error: ${lastError}`, 
-      provider: 'PG1-SYS' 
-    });
-
-  } catch (err) {
-    return res.status(200).json({ 
-      reply: `Runtime Error: ${err.message}`, 
-      provider: 'PG1-SYS' 
-    });
-  }
-};
-
-/**
- * List files and directories in a GitHub repository path
- */
-async function listGithubDirectory(path, githubToken) {
-  try {
-    const endpoint = path 
-      ? `/repos/Project-Gifted1/pg1-ai-agent/contents/${path}`
-      : '/repos/Project-Gifted1/pg1-ai-agent/contents';
-
-    const response = await fetch(`https://api.github.com${endpoint}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${githubToken}`,
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'pg1-ai-agent'
-      }
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      return JSON.stringify({ 
-        error: error.message || `GitHub API error: ${response.status}` 
-      });
-    }
-
-    const contents = await response.json();
-    
-    // Return structured data about files and directories
-    const formatted = Array.isArray(contents)
-      ? contents.map(item => ({
-          name: item.name,
-          type: item.type, // 'file' or 'dir'
-          path: item.path,
-          size: item.size
-        }))
-      : { error: 'Path is not a directory' };
-
-    return JSON.stringify(formatted);
-  } catch (err) {
-    return JSON.stringify({ error: `Failed to list directory: ${err.message}` });
-  }
-}
-
-/**
- * Read a file from the GitHub repository
- */
-async function readGithubFile(filepath, githubToken) {
-  try {
-    const response = await fetch(
-      `https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/contents/${filepath}`,
-      {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${githubToken}`,
-          'Accept': 'application/vnd.github.v3.raw',
-          'User-Agent': 'pg1-ai-agent'
-        }
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      return JSON.stringify({ 
-        error: error.message || `GitHub API error: ${response.status}` 
-      });
-    }
-
-    const content = await response.text();
-    return JSON.stringify({ 
-      filepath: filepath,
-      content: content
-    });
-  } catch (err) {
-    return JSON.stringify({ error: `Failed to read file: ${err.message}` });
-  }
+  ];
 }
