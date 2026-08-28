@@ -16,6 +16,7 @@ class PG1VoicePlayer {
     if (this.isPlaying || !text) return null;
 
     this.isPlaying = true;
+    let objectUrl = null;
     try {
       const response = await fetch('/api/media/voice', {
         method: 'POST',
@@ -28,7 +29,7 @@ class PG1VoicePlayer {
       if (!data.audioBase64) throw new Error('Voice API did not return audio data');
 
       const blob = this.base64ToBlob(data.audioBase64, 'audio/mpeg');
-      const objectUrl = URL.createObjectURL(blob);
+      objectUrl = URL.createObjectURL(blob);
       const audioElement = document.getElementById('voice-output');
       const audio = audioElement || new Audio();
       audio.src = objectUrl;
@@ -42,6 +43,7 @@ class PG1VoicePlayer {
       this.currentAudio = audio;
       return data;
     } catch (error) {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
       this.isPlaying = false;
       throw error;
     }
