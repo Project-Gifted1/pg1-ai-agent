@@ -3,41 +3,98 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PG1 Sovereign Agent</title>
+  <title>PG1 Sovereign Agent™ | Project-Gifted1™</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #090a0f;
-      --card: #12141c;
-      --border: #1f2430;
-      --text: #e2e8f0;
-      --accent: #3b82f6;
-      --accent-gemini: #10b981;
-      --accent-router: #8b5cf6;
+      --bg-primary: #0a0c10;
+      --bg-secondary: #12151e;
+      --bg-card: #181d2a;
+      --border-color: #262c3e;
+      --accent-cyan: #00f2fe;
+      --accent-blue: #4facfe;
+      --text-main: #e2e8f0;
+      --text-muted: #8892b0;
+      --user-msg-bg: #1c2438;
+      --bot-msg-bg: #141926;
+      --pg1-badge: #00f2fe;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: var(--bg);
-      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      height: 100vh;
       display: flex;
       flex-direction: column;
-      height: 100vh;
+      overflow: hidden;
     }
+
     header {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
       padding: 16px 24px;
-      border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      background: var(--card);
+      gap: 12px;
     }
-    .badge {
-      font-size: 12px;
-      padding: 4px 8px;
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 14px;
+      color: #0a0c10;
+    }
+
+    .brand-title {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+      background: rgba(0, 242, 254, 0.08);
+      border: 1px solid rgba(0, 242, 254, 0.2);
+      padding: 6px 12px;
       border-radius: 6px;
-      background: rgba(59, 130, 246, 0.2);
-      color: var(--accent);
     }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--accent-cyan);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--accent-cyan);
+    }
+
     main {
       flex: 1;
       overflow-y: auto;
@@ -45,189 +102,243 @@
       display: flex;
       flex-direction: column;
       gap: 16px;
-      max-width: 800px;
+      max-width: 900px;
       width: 100%;
       margin: 0 auto;
     }
+
+    .message-container {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      width: 100%;
+    }
+
     .message {
       padding: 14px 18px;
-      border-radius: 8px;
-      line-height: 1.5;
-      font-size: 15px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.6;
       white-space: pre-wrap;
+      word-break: break-word;
+      border: 1px solid var(--border-color);
     }
+
     .message.user {
-      background: #1e293b;
       align-self: flex-end;
+      background-color: var(--user-msg-bg);
+      border-color: #2b395b;
       max-width: 80%;
     }
-    .message.agent {
-      background: var(--card);
-      border: 1px solid var(--border);
+
+    .message.bot {
       align-self: flex-start;
+      background-color: var(--bot-msg-bg);
       max-width: 90%;
     }
-    .provider-tag {
+
+    .badge-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       font-size: 11px;
-      margin-bottom: 6px;
-      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-muted);
+      padding: 0 4px;
+    }
+
+    .badge {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 500;
       text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.05em;
     }
-    .tag-gemini { color: var(--accent-gemini); }
-    .tag-openrouter { color: var(--accent-router); }
-    .voice-player {
-      max-width: 800px;
-      width: 100%;
-      margin: 0 auto;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px;
+
+    .badge-pg1 {
+      background: rgba(0, 242, 254, 0.15);
+      color: var(--pg1-badge);
+      border: 1px solid rgba(0, 242, 254, 0.3);
     }
-    .voice-status {
-      margin-top: 8px;
-      font-size: 12px;
-      color: #94a3b8;
-    }
-    #voice-output {
-      width: 100%;
-      margin-top: 10px;
-    }
+
     footer {
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border-color);
       padding: 16px 24px;
-      border-top: 1px solid var(--border);
-      background: var(--card);
+    }
+
+    .input-wrapper {
+      max-width: 900px;
+      margin: 0 auto;
       display: flex;
       gap: 12px;
-      max-width: 800px;
-      width: 100%;
-      margin: 0 auto 16px auto;
-      border-radius: 10px;
+      position: relative;
     }
+
     textarea {
       flex: 1;
-      background: #0d0e15;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 12px;
-      color: #fff;
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 12px 16px;
+      border-radius: 10px;
       font-size: 14px;
+      font-family: inherit;
       resize: none;
       height: 48px;
       outline: none;
+      transition: border-color 0.2s;
     }
-    textarea:focus { border-color: var(--accent); }
-    button {
-      background: var(--accent);
-      color: white;
+
+    textarea:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    button.send-btn {
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
       border: none;
-      padding: 0 20px;
-      border-radius: 6px;
+      color: #0a0c10;
       font-weight: 600;
+      padding: 0 20px;
+      border-radius: 10px;
       cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       transition: opacity 0.2s;
     }
-    button:hover { opacity: 0.9; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    button.send-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .loading-pulse {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--accent-cyan);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
   <header>
-    <h2>PG1 Sovereign Agent</h2>
-    <span class="badge">Dynamic Routing: Gemini Pro &bull; DeepSeek</span>
-  </header>
-  <main id="chat"></main>
-  <section class="voice-player">
-    <button id="play-voice-btn" type="button">🎙️ Enable Voice</button>
-    <div class="voice-status" id="voice-status">
-      Voice: Disabled | Polly: Ready | Free Tier: 5M chars/month
+    <div class="brand">
+      <div class="brand-icon">PG1</div>
+      <span class="brand-title">PG1 Sovereign Agent™</span>
     </div>
-    <audio id="voice-output" controls></audio>
-  </section>
+    <div class="brand-status">
+      <span class="status-dot"></span>
+      <span>Autonomous Network • Project-Gifted1™</span>
+    </div>
+  </header>
+
+  <main id="chat-stream">
+    <div class="message-container">
+      <div class="message bot">
+        Greetings. PG1 Sovereign Agent™ is connected. Submit a prompt or code task to initiate execution across Project-Gifted1™.
+      </div>
+    </div>
+  </main>
+
   <footer>
-    <textarea id="prompt" placeholder="Ask PG1 anything (code, analysis, or general query)..."></textarea>
-    <button id="sendBtn">Send</button>
+    <div class="input-wrapper">
+      <textarea id="user-input" placeholder="Ask PG1 anything (code, analysis, or general query)..." rows="1"></textarea>
+      <button id="send-btn" class="send-btn" onclick="sendMessage()">Send</button>
+    </div>
   </footer>
 
-  <script src="/voice-player.js"></script>
   <script>
-    const chat = document.getElementById('chat');
-    const promptInput = document.getElementById('prompt');
-    const sendBtn = document.getElementById('sendBtn');
-    const playVoiceBtn = document.getElementById('play-voice-btn');
-    const voiceStatus = document.getElementById('voice-status');
-    window.PG1_VOICE_ENABLED = false;
+    const chatStream = document.getElementById('chat-stream');
+    const userInput = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
 
-    playVoiceBtn.addEventListener('click', () => {
-      window.PG1_VOICE_ENABLED = !window.PG1_VOICE_ENABLED;
-      playVoiceBtn.innerText = window.PG1_VOICE_ENABLED ? '🎙️ Voice Enabled' : '🎙️ Enable Voice';
-      voiceStatus.innerText = window.PG1_VOICE_ENABLED
-        ? 'Voice: Enabled | Polly: Connected | Free Tier: 5M chars/month'
-        : 'Voice: Disabled | Polly: Ready | Free Tier: 5M chars/month';
-    });
-
-    function appendMessage(role, text, provider, model) {
-      const msg = document.createElement('div');
-      msg.className = `message ${role}`;
-      if (provider) {
-        const tag = document.createElement('div');
-        tag.className = `provider-tag tag-${provider}`;
-        tag.innerText = `[${provider.toUpperCase()}] ${model || ''}`;
-        msg.appendChild(tag);
-      }
-      const textSpan = document.createElement('span');
-      textSpan.innerText = text;
-      msg.appendChild(textSpan);
-      chat.appendChild(msg);
-      chat.scrollTop = chat.scrollHeight;
-    }
-
-    // Step 2 Standard Agent Dispatcher
-    async function sendToAgent(userPrompt) {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: userPrompt })
-      });
-      const data = await response.json();
-      if (!response.ok || data.error) {
-        throw new Error(data.error || `HTTP ${response.status}`);
-      }
-      return data;
-    }
-
-    async function handleSend() {
-      const userPrompt = promptInput.value.trim();
-      if (!userPrompt) return;
-
-      appendMessage('user', userPrompt);
-      promptInput.value = '';
-      sendBtn.disabled = true;
-
-      try {
-        const data = await sendToAgent(userPrompt);
-        appendMessage('agent', data.reply, data.provider, data.model);
-        if (window.PG1_VOICE_ENABLED && window.PG1Voice) {
-          try {
-            await window.PG1Voice.playVoice(data.reply, 'neutral');
-          } catch (voiceErr) {
-            console.error('Voice playback failed:', voiceErr);
-          }
-        }
-      } catch (err) {
-        appendMessage('agent', 'Error: ' + err.message);
-      } finally {
-        sendBtn.disabled = false;
-      }
-    }
-
-    sendBtn.addEventListener('click', handleSend);
-    promptInput.addEventListener('keydown', (e) => {
+    userInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        handleSend();
+        sendMessage();
       }
     });
+
+    async function sendMessage() {
+      const prompt = userInput.value.trim();
+      if (!prompt) return;
+
+      userInput.value = '';
+      appendMessage('user', prompt);
+      sendBtn.disabled = true;
+
+      const loadingContainer = appendLoading();
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            prompt: prompt,
+            userMessage: prompt,
+            message: prompt
+          })
+        });
+
+        const data = await res.json();
+        loadingContainer.remove();
+
+        if (!res.ok) {
+          appendMessage('bot', `Error: ${data.error || 'Request failed'}`);
+        } else {
+          appendMessage('bot', data.reply, data.provider || 'PG1', data.model);
+        }
+      } catch (err) {
+        loadingContainer.remove();
+        appendMessage('bot', `Network error: ${err.message}`);
+      } finally {
+        sendBtn.disabled = false;
+        userInput.focus();
+      }
+    }
+
+    function appendMessage(role, text, provider, model) {
+      const container = document.createElement('div');
+      container.className = 'message-container';
+
+      if (role === 'bot') {
+        const badgeBar = document.createElement('div');
+        badgeBar.className = 'badge-bar';
+        const displayTag = (provider && provider.toUpperCase().includes('PG1')) ? 'PG1' : 'PG1';
+        badgeBar.innerHTML = `<span class="badge badge-pg1">[${displayTag}]</span>`;
+        container.appendChild(badgeBar);
+      }
+
+      const msg = document.createElement('div');
+      msg.className = `message ${role}`;
+      msg.textContent = text;
+      container.appendChild(msg);
+
+      chatStream.appendChild(container);
+      chatStream.scrollTop = chatStream.scrollHeight;
+    }
+
+    function appendLoading() {
+      const container = document.createElement('div');
+      container.className = 'message-container';
+      const msg = document.createElement('div');
+      msg.className = 'message bot';
+      msg.innerHTML = '<span class="loading-pulse"></span> Processing task...';
+      container.appendChild(msg);
+      chatStream.appendChild(container);
+      chatStream.scrollTop = chatStream.scrollHeight;
+      return container;
+    }
   </script>
 </body>
 </html>
