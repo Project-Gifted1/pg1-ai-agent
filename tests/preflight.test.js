@@ -111,6 +111,13 @@ test('root composer keeps voice input controls', () => {
   assert.ok(html.includes('SpeechRecognition'), 'Speech recognition wiring missing from root entrypoint');
 });
 
+test('static entrypoints use the numeric repository logo asset for favicon and branding', () => {
+  assert.ok(html.includes('rel="icon" type="image/jpeg" href="./08207b14-b824-41ac-ac43-97d078840546.jpeg"'), 'Root favicon is not using the numeric repo logo asset');
+  assert.ok(html.includes('src="./08207b14-b824-41ac-ac43-97d078840546.jpeg"'), 'Root logo image is not using the numeric repo logo asset');
+  assert.ok(publicHtml.includes('rel="icon" type="image/jpeg" href="../08207b14-b824-41ac-ac43-97d078840546.jpeg"'), 'Public favicon is not using the numeric repo logo asset');
+  assert.ok(publicHtml.includes('src="../08207b14-b824-41ac-ac43-97d078840546.jpeg"'), 'Public branding is not using the numeric repo logo asset');
+});
+
 test('public entrypoint keeps quick-action buttons', () => {
   assert.ok(publicHtml.includes('class="action-row"'), 'Quick-action row missing from public entrypoint');
   assert.ok(publicHtml.includes('Status Report'), 'Expected quick-action label missing from public entrypoint');
