@@ -23,7 +23,6 @@ CRITICAL RULES:
     const verifiedModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
     let lastError = '';
 
-    // Override Google's default censorship filters for operational sovereignty
     const pg1SafetySettings = [
       { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
       { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
@@ -75,7 +74,6 @@ CRITICAL RULES:
       const candidate = data?.candidates?.[0];
       const part = candidate?.content?.parts?.[0];
       
-      // Catch empty candidates caused by backend safety blocks
       if (!part) {
         lastError = candidate?.finishReason ? `Request Blocked. Finish Reason: ${candidate.finishReason}` : 'Empty content from API';
         continue;
@@ -105,6 +103,7 @@ CRITICAL RULES:
               resultString = JSON.stringify(ghData);
             }
 
+            // Hop 2: Stripped of tools to FORCE text generation
             const hop2Body = {
               systemInstruction: { parts: [{ text: pg1SystemInstruction }] },
               contents: [
@@ -112,7 +111,6 @@ CRITICAL RULES:
                 { role: "model", parts: [{ functionCall: funcCall }] },
                 { role: "user", parts: [{ functionResponse: { name: funcCall.name, response: { name: funcCall.name, content: resultString.substring(0, 6000) } } }] }
               ],
-              toolConfig: { includeServerSideToolInvocations: true },
               safetySettings: pg1SafetySettings
             };
 
@@ -128,8 +126,8 @@ CRITICAL RULES:
             if (finalPart?.text) {
               return res.status(200).json({ reply: finalPart.text, provider: 'PG1' });
             } else {
-               const fr2 = data2?.candidates?.[0]?.finishReason;
-               return res.status(200).json({ reply: `Function processing blocked. Reason: ${fr2}`, provider: 'PG1-SYS' });
+               const fr2 = data2?.candidates?.[0]?.finishReason || 'Unknown Engine Block';
+               return res.status(200).json({ reply: `Function processing blocked. Reason: ${fr2}\nPayload dump: ${JSON.stringify(data2).substring(0,200)}`, provider: 'PG1-SYS' });
             }
           } catch (ghErr) {
             return res.status(200).json({ reply: `GitHub Tool Execution Failed: ${ghErr.message}`, provider: 'PG1-SYS' });
