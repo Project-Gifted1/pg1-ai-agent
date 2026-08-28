@@ -1,5 +1,4 @@
 (function () {
-  var DEFAULT_CHAT_API_URL = 'https://pg1-ai-agent.vercel.app/api/chat';
   var chatEl = document.getElementById('chat');
   var inputEl = document.getElementById('promptInput');
   var sendBtn = document.getElementById('sendBtn');
@@ -51,11 +50,14 @@
   }
 
   function parseMarkdown(markdown) {
-    var text = escapeHtml(markdown);
-
-    text = text.replace(/```([\s\S]*?)```/g, function (_, code) {
-      return '<pre><code>' + code.trim() + '</code></pre>';
+    var codeBlocks = [];
+    var source = String(markdown || '').replace(/```([\s\S]*?)```/g, function (_, code) {
+      var token = '%%PG1_CODE_BLOCK_' + codeBlocks.length + '%%';
+      codeBlocks.push('<pre><code>' + escapeHtml(code.trim()) + '</code></pre>');
+      return token;
     });
+    var text = escapeHtml(source);
+
     text = text.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
     text = text.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
     text = text.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
@@ -95,7 +97,9 @@
     });
 
     if (inList) output.push('</ul>');
-    return output.filter(Boolean).join('');
+    return output.filter(Boolean).join('').replace(/%%PG1_CODE_BLOCK_(\d+)%%/g, function (_, index) {
+      return codeBlocks[Number(index)] || '';
+    });
   }
 
   function formatFileSize(bytes) {
@@ -390,7 +394,7 @@
     var fallbackPrompt = typedPrompt || 'Please review the attached media context.';
     var attachmentSummary = buildAttachmentSummary();
     var prompt = attachmentSummary ? fallbackPrompt + '\n\nAttached context:\n' + attachmentSummary : fallbackPrompt;
-    var chatApiUrl = window.PG1_CHAT_API_URL || DEFAULT_CHAT_API_URL;
+    var chatApiUrl = window.PG1_CHAT_API_URL;
 
     appendMessage('user', fallbackPrompt, outgoingAttachments, attachmentSummary ? 'Media attached' : 'Prompt queued');
     inputEl.value = '';
@@ -401,6 +405,10 @@
     var loadingMessage = appendLoading();
 
     try {
+      if (!chatApiUrl) {
+        throw new Error('PG1 chat API URL is not configured');
+      }
+
       var res = await fetch(chatApiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -412,11 +420,24 @@
         })
       });
 
-      var data = await res.json();
+      var responseText = await res.text();
+      var data = null;
+
+      if (responseText) {
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseError) {
+          if (!res.ok) {
+            throw new Error('Backend returned HTTP ' + res.status);
+          }
+          throw new Error('Invalid JSON response from PG1 backend');
+        }
+      }
+
       loadingMessage.remove();
 
       if (!res.ok) {
-        throw new Error('HTTP ' + res.status);
+        throw new Error((data && (data.error || data.reply || data.message)) || ('Backend returned HTTP ' + res.status));
       }
 
       var reply = (data && (data.reply || data.response || data.message || data.text)) || 'No response payload received.';
@@ -429,8 +450,12 @@
       }
     } catch (error) {
       loadingMessage.remove();
-      appendMessage('assistant', '**Error:** Unable to reach the configured PG1 backend.\n- Verify the backend origin is correct\n- Check network and server logs', null, 'Connection issue');
-      setStatus('Connection failed: ' + error.message, 'Offline');
+      var errorMessage = error && error.message ? error.message : 'Unknown error';
+      var backendMessage = errorMessage.indexOf('HTTP') !== -1 || errorMessage.indexOf('Invalid JSON') !== -1
+        ? '**Error:** PG1 backend returned an unexpected server response.\n- Check the deployed backend logs\n- Verify the backend origin configuration'
+        : '**Error:** Unable to reach the configured PG1 backend.\n- Verify the backend origin is correct\n- Check network and server logs';
+      appendMessage('assistant', backendMessage, null, 'Connection issue');
+      setStatus('Connection failed: ' + errorMessage, 'Offline');
     } finally {
       sendBtn.disabled = false;
       inputEl.focus();

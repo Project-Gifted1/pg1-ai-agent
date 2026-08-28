@@ -32,6 +32,7 @@ const rootHtml = readRepoFile('index.html');
 const publicHtml = readRepoFile('public/index.html');
 const backendHelper = readRepoFile('backend-origin.js');
 const uiScript = readRepoFile('static-chat-ui.js');
+const uiStyles = readRepoFile('static-chat-ui.css');
 
 // ── Fallback response tests ───────────────────────────────────────────────────
 
@@ -101,7 +102,7 @@ test('status request uses status-focused response', () => {
 // ── Static frontend checks ────────────────────────────────────────────────────
 
 test('backend-origin helper defaults to the deployed PG1 Vercel origin', () => {
-  assert.ok(backendHelper.includes("https://pg1-ai-agent.vercel.app"), 'Expected PG1 backend origin default not found');
+  assert.match(backendHelper, new RegExp("DEFAULT_ORIGIN\\s*=\\s*'https://pg1-ai-agent\\.vercel\\.app'"), 'Expected PG1 backend origin default not found');
   assert.ok(backendHelper.includes('PG1_CHAT_API_URL'), 'Shared chat API URL export missing');
 });
 
@@ -126,7 +127,6 @@ test('entrypoints no longer hardcode relative /api/chat assumptions', () => {
   assert.ok(!rootHtml.includes("fetch('/api/chat'"), 'Root entrypoint still contains a relative /api/chat call');
   assert.ok(!publicHtml.includes("fetch('/api/chat'"), 'Public entrypoint still contains a relative /api/chat call');
   assert.ok(!rootHtml.includes('Verify `/api/chat` is running'), 'Root entrypoint still references relative /api/chat troubleshooting');
-  assert.ok(!publicHtml.includes('fetch(\'/api/chat\''), 'Public entrypoint still contains inline relative chat fetch');
 });
 
 test('composer placeholder stays friendly and assistant-like', () => {
@@ -137,8 +137,8 @@ test('composer placeholder stays friendly and assistant-like', () => {
 test('quick-action chips remain wrapped for mobile scroll fade', () => {
   assert.ok(rootHtml.includes('action-row-wrap'), 'Root action-row-wrap wrapper not found');
   assert.ok(publicHtml.includes('action-row-wrap'), 'Public action-row-wrap wrapper not found');
-  assert.ok(readRepoFile('static-chat-ui.css').includes('action-row-wrap::after'), 'Scroll-fade CSS rule not found');
-  assert.ok(readRepoFile('static-chat-ui.css').includes('-webkit-overflow-scrolling'), 'iOS scroll hint missing from action row styles');
+  assert.ok(uiStyles.includes('action-row-wrap::after'), 'Scroll-fade CSS rule not found');
+  assert.ok(uiStyles.includes('-webkit-overflow-scrolling'), 'iOS scroll hint missing from action row styles');
 });
 
 test('both entrypoints expose multimodal image, video, mic, and voice controls', () => {

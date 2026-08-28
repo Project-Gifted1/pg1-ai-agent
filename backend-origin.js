@@ -27,8 +27,10 @@
 
   global.PG1_BACKEND_ORIGIN = resolvedOrigin;
   global.PG1_BUILD_BACKEND_URL = function (pathname) {
-    var safePath = String(pathname || '').replace(/^\/+/, '');
-    return safePath ? new URL(safePath, resolvedOrigin.replace(/\/?$/, '/')).toString() : resolvedOrigin;
+    var safePath = String(pathname || '').trim();
+    if (!safePath) return resolvedOrigin;
+    var normalizedPath = safePath.charAt(0) === '/' ? safePath : '/' + safePath;
+    return new URL(normalizedPath, resolvedOrigin).toString();
   };
   global.PG1_CHAT_API_URL = global.PG1_BUILD_BACKEND_URL('/api/chat');
 })(window);
