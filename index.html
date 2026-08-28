@@ -1,17 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>PG1 Sovereign Agent</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    
+    body {
+      background-color: #0A0D14;
+      color: #E2E8F0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 20px 16px;
+      background-color: #0A0D14;
+      border-bottom: 1px solid #1E293B;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-logo {
+      width: 40px; height: 40px; border-radius: 50%;
+    }
+
+    .header-title {
+      font-size: 24px; font-weight: bold; color: #FFFFFF; letter-spacing: -0.5px;
+    }
+
+    main {
+      flex: 1; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 24px;
+    }
+
+    .bubble-wrapper { display: flex; flex-direction: column; gap: 6px; }
+    
+    .bubble {
+      background-color: #121826;
+      border: 1px solid #1E293B;
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 15px;
+      line-height: 1.5;
+      color: #CBD5E1;
+      word-wrap: break-word;
+    }
+
+    .bubble.user {
+      align-self: flex-end;
+      background-color: #1E293B;
+      color: #F8FAFC;
+      border: none;
+      max-width: 85%;
+    }
+
+    .bubble strong { color: #FFFFFF; }
+    .bubble pre { background: #0A0D14; padding: 12px; border-radius: 4px; margin: 10px 0; overflow-x: auto; border: 1px solid #1E293B; }
+    .bubble code { font-family: monospace; font-size: 13px; color: #93C5FD; }
+    .bubble p { margin-bottom: 12px; }
+    .bubble p:last-child { margin-bottom: 0; }
+    .bubble ul { margin-left: 20px; margin-bottom: 12px; }
+    .bubble li { margin-bottom: 6px; }
+    .bubble img { max-width: 100%; border-radius: 8px; margin: 12px 0; border: 1px solid #1E293B; display: block; }
+
+    .voice-panel {
+      background-color: #121826;
+      border-top: 1px solid #1E293B;
+      border-radius: 12px 12px 0 0;
+      padding: 12px 16px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+
+    .voice-toggle-btn {
+      background-color: #3B82F6;
+      color: #FFFFFF;
+      border: none;
+      border-radius: 20px;
+      padding: 6px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      align-self: flex-start;
+    }
+    .voice-toggle-btn.active { background-color: #10B981; }
+
+    .voice-stats {
+      font-size: 12px; color: #94A3B8; font-family: monospace;
+    }
+
+    .dummy-audio-player {
+      background-color: #0A0D14;
+      border-radius: 30px;
+      height: 40px;
+      display: flex; align-items: center; padding: 0 16px; gap: 12px;
+      color: #94A3B8; font-size: 12px;
+    }
+    .dummy-audio-player svg { width: 16px; height: 16px; fill: #94A3B8; }
+    .progress-bar { flex: 1; height: 4px; background: #1E293B; border-radius: 2px; position: relative; }
+    .progress-dot { width: 10px; height: 10px; background: #FFFFFF; border-radius: 50%; position: absolute; top: -3px; left: 0; }
+
+    .input-area {
+      background-color: #0A0D14;
+      padding: 12px 16px 24px 16px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .input-box {
+      flex: 1;
+      background-color: #121826;
+      border: 1px solid #1E293B;
+      border-radius: 8px;
+      color: #F8FAFC;
+      font-size: 15px;
+      padding: 12px;
+      resize: none;
+      outline: none;
+      font-family: inherit;
+    }
+    .input-box::placeholder { color: #64748B; }
+
+    .action-buttons {
+      display: flex; flex-direction: column; gap: 8px;
+    }
+
+    .send-btn {
+      background-color: #3B82F6;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 0 16px;
+      font-weight: 600;
+      font-size: 15px;
+      cursor: pointer;
+      flex: 1;
+    }
+    .send-btn:disabled { opacity: 0.5; }
+
+    .mic-btn {
+      background-color: #1E293B;
+      border: 1px solid #334155;
+      color: white;
+      border-radius: 8px;
+      padding: 10px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+    }
+    .mic-btn.recording { background-color: #EF4444; border-color: #EF4444; animation: pulse 1s infinite; }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-title">PG1 Sovereign Agent</div>
+  </header>
+
+  <main id="chat-stream">
+    <div class="bubble-wrapper">
+      <div class="bubble bot">
+        Greetings. PG1 Sovereign Agent is operational and secured.
+      </div>
+    </div>
+  </main>
+
+  <div class="voice-panel">
+    <button id="voice-toggle" class="voice-toggle-btn" onclick="toggleVoice()">
+      🎙️ Enable Voice
+    </button>
+    <div id="voice-stats" class="voice-stats">
+      Voice: Disabled | System TTS: Ready | Network: Secure
+    </div>
+    <div class="dummy-audio-player">
+      <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      <span>00:00</span>
+      <div class="progress-bar"><div class="progress-dot"></div></div>
+      <span>-00:00</span>
+      <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+    </div>
+  </div>
+
+  <div class="input-area">
+    <textarea id="user-input" class="input-box" rows="2" placeholder="Ask PG1 anything (code, analysis, or general query)..."></textarea>
+    <div class="action-buttons">
+      <button id="send-btn" class="send-btn">Send</button>
+      <button id="mic-btn" class="mic-btn" aria-label="Speech to text">🎙️</button>
+    </div>
+  </div>
+
+  <script>
+    const chatStream = document.getElementById('chat-stream');
+    const userInput = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
+    const micBtn = document.getElementById('mic-btn');
+    const voiceToggleBtn = document.getElementById('voice-toggle');
+    const voiceStats = document.getElementById('voice-stats');
+
+    let voiceEnabled = false;
+
+    function toggleVoice() {
+      voiceEnabled = !voiceEnabled;
+      if (voiceEnabled) {
+        voiceToggleBtn.classList.add('active');
+        voiceToggleBtn.innerText = "🎙️ Voice Active";
+        voiceStats.innerText = "Voice: Enabled | System TTS: Active | Network: Secure";
+        
+        if ('speechSynthesis' in window) {
+          const unlockUtterance = new SpeechSynthesisUtterance('');
+          window.speechSynthesis.speak(unlockUtterance);
+        }
+      } else {
+        voiceToggleBtn.classList.remove('active');
+        voiceToggleBtn.innerText = "🎙️ Enable Voice";
+        voiceStats.innerText = "Voice: Disabled | System TTS: Ready | Network: Secure";
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+        }
+      }
+    }
+
+    let recognition;
+    if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      recognition.onstart = () => { micBtn.classList.add('recording'); };
+      recognition.onend = () => { micBtn.classList.remove('recording'); };
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        userInput.value += (userInput.value ? ' ' : '') + transcript;
+      };
+      
+      micBtn.addEventListener('click', () => {
+        if (micBtn.classList.contains('recording')) recognition.stop();
+        else recognition.start();
+      });
+    }
+
+    function speakText(text) {
+      if (!voiceEnabled || !('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const plainText = text.replace(/[*_#`]/g, '').replace(/!\[.*?\]\(.*?\)/g, ''); 
+      const utterance = new SpeechSynthesisUtterance(plainText);
+      utterance.lang = 'en-US';
+      utterance.rate = 1.05;
+      window.speechSynthesis.speak(utterance);
+    }
+
     function parseMarkdown(text) {
       let html = text;
-      // Core markdown mapping
       html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
-      
-      // Image Parser: Detects ![alt](url) and renders the visual media
-      html = html.replace(/!\[([^\]]*)\]\((.*?)\)/g, '<img src="$2" alt="$1" style="max-width: 100%; border-radius: 8px; margin: 12px 0; border: 1px solid #1E293B; display: block;" />');
-      
+      html = html.replace(/!\[([^\]]*)\]\((.*?)\)/g, '<img src="$2" alt="$1" />');
       html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
       html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
       html = html.replace(/`(.*?)`/g, '<code>$1</code>');
       html = html.replace(/^\s*[\-\*]\s+(.*)/gim, '<li>$1</li>');
       html = html.replace(/(<li>.*<\/li>(?:\n<li>.*<\/li>)*)/gim, '<ul>$1</ul>');
-      
       html = html.split('\n').map(line => {
          if (line.match(/^(<ul|<li|<\/ul|<pre|<code|<img)/)) return line;
          if (line.trim() === '') return '';
@@ -19,3 +273,79 @@
       }).filter(line => line !== '').join('\n');
       return html;
     }
+
+    async function sendMessage() {
+      const prompt = userInput.value.trim();
+      if (!prompt) return;
+
+      userInput.value = '';
+      appendUserMessage(prompt);
+      sendBtn.disabled = true;
+
+      const loadingId = appendBotMessage('Processing directive...', true);
+
+      try {
+        const res = await fetch('https://gifted1s-projects.vercel.app/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: prompt, userMessage: prompt, message: prompt })
+        });
+
+        const data = await res.json();
+        const reply = data.reply || 'Execution complete.';
+        
+        updateBotMessage(loadingId, reply);
+        speakText(reply);
+        
+      } catch (err) {
+        updateBotMessage(loadingId, `Network Error: ${err.message}`);
+      } finally { 
+        sendBtn.disabled = false; 
+      }
+    }
+
+    function appendUserMessage(text) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'bubble-wrapper';
+      const msg = document.createElement('div');
+      msg.className = 'bubble user';
+      msg.textContent = text;
+      wrapper.appendChild(msg);
+      chatStream.appendChild(wrapper);
+      scrollToBottom();
+    }
+
+    function appendBotMessage(text, isLoading = false) {
+      const id = 'msg-' + Date.now();
+      const wrapper = document.createElement('div');
+      wrapper.className = 'bubble-wrapper';
+      wrapper.id = id;
+      const msg = document.createElement('div');
+      msg.className = 'bubble bot';
+      msg.innerHTML = text;
+      if (isLoading) msg.style.opacity = '0.7';
+      wrapper.appendChild(msg);
+      chatStream.appendChild(wrapper);
+      scrollToBottom();
+      return id;
+    }
+
+    function updateBotMessage(id, text) {
+      const wrapper = document.getElementById(id);
+      if (wrapper) {
+        const msg = wrapper.querySelector('.bubble');
+        msg.style.opacity = '1';
+        msg.innerHTML = parseMarkdown(text);
+        scrollToBottom();
+      }
+    }
+
+    function scrollToBottom() { chatStream.scrollTop = chatStream.scrollHeight; }
+
+    sendBtn.addEventListener('click', sendMessage);
+    userInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    });
+  </script>
+</body>
+</html>
