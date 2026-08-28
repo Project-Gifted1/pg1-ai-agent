@@ -1,5 +1,6 @@
 # Environment variables - NEVER commit actual keys to version control
 .env
+.env.voice
 .env.local
 .env.*.local
 

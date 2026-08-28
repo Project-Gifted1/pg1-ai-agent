@@ -139,21 +139,23 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    if (!githubToken) {
-      return res.status(500).json({
-        error: 'PG1 configuration error: GITHUB_TOKEN or GH_TOKEN is missing.',
-        provider: 'PG1-SYS',
-        providerLabel: 'PG1.Agent routing layer',
-        verification: 'FAILED',
-        verificationLabel: 'Triple Verification Engine stopped execution before tool access.',
-        cost: null,
-        costLabel: 'No cost incurred',
-        trace
-      });
-    }
-
     const geminiClient = new GeminiClient(apiKey);
-    const githubTools = new GitHubTools(githubToken);
+    const githubTools = githubToken
+      ? new GitHubTools(githubToken)
+      : {
+          async listDirectory() {
+            return {
+              success: false,
+              error: 'PG1 tool access unavailable: GITHUB_TOKEN or GH_TOKEN is not configured.'
+            };
+          },
+          async readFile() {
+            return {
+              success: false,
+              error: 'PG1 tool access unavailable: GITHUB_TOKEN or GH_TOKEN is not configured.'
+            };
+          }
+        };
     const diagnosticEngine = new DiagnosticEngine();
     const selfHealingEngine = new SelfHealingEngine(geminiClient, githubTools, diagnosticEngine);
 

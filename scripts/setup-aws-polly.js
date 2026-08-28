@@ -59,6 +59,7 @@ PG1_VOICE_CACHE_DIR=./cache/voices
   fs.mkdirSync('./cache/voices', { recursive: true });
 
   console.log('✅ Voice configuration saved to .env.voice');
+  console.log('⚠️ Keep .env.voice private. It contains AWS credentials and must never be committed or shared.');
   console.log('✅ Voice cache directory created');
   console.log('\n✅ AWS Polly setup complete');
 }

@@ -707,4 +707,6 @@ const QuickReference = `
 ═══════════════════════════════════════════════════════════════════════════════
 `;
 
-console.log(QuickReference);
+if (require.main === module) {
+  console.log(QuickReference);
+}

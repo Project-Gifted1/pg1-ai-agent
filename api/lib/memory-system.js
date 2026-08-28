@@ -9,7 +9,9 @@ const path = require('path');
 
 class MemorySystem {
   constructor() {
-    this.memoryFile = path.join(__dirname, '../../.pg1-memory.json');
+    this.memoryFile = process.env.PG1_MEMORY_FILE
+      ? path.resolve(process.env.PG1_MEMORY_FILE)
+      : path.join('/tmp', '.pg1-memory.json');
     this.memory = this.load();
   }
 

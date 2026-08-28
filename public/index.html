@@ -207,12 +207,28 @@
       gap: 16px;
     }
 
+    .action-row-wrap {
+      position: relative;
+    }
+
+    .action-row-wrap::after {
+      content: '';
+      position: absolute;
+      right: 0;
+      top: 0;
+      bottom: 4px;
+      width: 32px;
+      background: linear-gradient(to right, transparent, var(--bg-panel));
+      pointer-events: none;
+    }
+
     .action-row {
       display: flex;
       gap: 10px;
       overflow-x: auto;
       scrollbar-width: none;
       padding-bottom: 4px;
+      -webkit-overflow-scrolling: touch;
     }
     
     .action-row::-webkit-scrollbar { display: none; }
@@ -356,20 +372,22 @@ This interface will disclose failures, provider usage, and known limitations dir
 
   <footer>
     <div class="footer-content">
-      <div class="action-row">
-        <button class="action-btn" onclick="sendQuickPrompt('Generate system architecture status and node verification report.')">
-          ⚡ Status Report
-        </button>
-        <button class="action-btn" onclick="sendQuickPrompt('Review revenue strike deliverability and protocol parameters.')">
-          📊 Protocol Review
-        </button>
-        <button class="action-btn" onclick="sendQuickPrompt('Explain your full operational capabilities and sovereign mandate.')">
-          🛡️ Capabilities
-        </button>
+      <div class="action-row-wrap">
+        <div class="action-row">
+          <button class="action-btn" onclick="sendQuickPrompt('Generate system architecture status and node verification report.')">
+            ⚡ Status Report
+          </button>
+          <button class="action-btn" onclick="sendQuickPrompt('Review revenue strike deliverability and protocol parameters.')">
+            📊 Protocol Review
+          </button>
+          <button class="action-btn" onclick="sendQuickPrompt('Explain your full operational capabilities and sovereign mandate.')">
+            🛡️ Capabilities
+          </button>
+        </div>
       </div>
 
       <div class="input-row">
-        <textarea id="user-input" placeholder="Ask PG1 to run a Sovereign Execution..." rows="1"></textarea>
+        <textarea id="user-input" placeholder="Ask anything — status, capabilities, upgrades…" rows="1"></textarea>
         <button id="send-btn" class="send-btn" onclick="sendMessage()" aria-label="Authorize Execution">
           <svg viewBox="0 0 24 24">
             <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>

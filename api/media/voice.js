@@ -1,10 +1,34 @@
 const { PG1VoiceRouter } = require('../../lib/voiceRouter');
 const { PG1CostTracker } = require('../../lib/costTracker');
 
-module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+const DEFAULT_ALLOWED_ORIGINS = [
+  'https://pg1-ai-agent.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:5173'
+];
+
+function getAllowedOrigins() {
+  const configuredOrigins = process.env.PG1_ALLOWED_ORIGINS
+    ? process.env.PG1_ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean)
+    : [];
+  return configuredOrigins.length ? configuredOrigins : DEFAULT_ALLOWED_ORIGINS;
+}
+
+function applyCors(req, res) {
+  const allowedOrigins = getAllowedOrigins();
+  const requestOrigin = req.headers.origin;
+  const matchedOrigin = allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0];
+
+  if (matchedOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', matchedOrigin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'POST,GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
+module.exports = async function handler(req, res) {
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
