@@ -12,21 +12,46 @@ module.exports = async function handler(req, res) {
     
     if (!apiKey) return res.status(200).json({ reply: 'Vercel Error: GEMINI_API_KEY1 missing.' });
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] })
-    });
+    // Dynamic model fallback array
+    const modelsToTry = [
+      'gemini-1.5-pro',
+      'gemini-1.5-flash',
+      'gemini-1.0-pro'
+    ];
 
-    const data = await response.json();
+    let lastError = '';
 
-    if (!response.ok) {
-      return res.status(200).json({ reply: `Google API Error: ${data.error?.message || 'Invalid Request'}`, provider: 'gemini' });
+    // Loop through models until one accepts the request
+    for (const model of modelsToTry) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+        // Success: Return the text and specify which model worked
+        return res.status(200).json({ 
+          reply: data.candidates[0].content.parts[0].text, 
+          provider: `gemini (${model})` 
+        });
+      } else {
+        // Failure: Store the error and move to the next model
+        lastError = data.error?.message || 'Endpoint rejected request.';
+      }
     }
 
-    const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated.';
-    return res.status(200).json({ reply, provider: 'gemini' });
+    // If the script reaches this point, every model in the array failed
+    return res.status(200).json({ 
+      reply: `All fallbacks failed. Last Google API Error: ${lastError}`, 
+      provider: 'gemini-fallback-system' 
+    });
+
   } catch (err) {
-    return res.status(200).json({ reply: `Execution Error: ${err.message}`, provider: 'gemini' });
+    return res.status(200).json({ reply: `Execution Error: ${err.message}`, provider: 'system' });
   }
 };
