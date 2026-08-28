@@ -255,6 +255,20 @@
     const sendBtn = document.getElementById('send-btn');
     const micBtn = document.getElementById('mic-btn');
 
+    // iOS Safari Audio Unlocker
+    let ttsUnlocked = false;
+    function unlockAudio() {
+      if (!ttsUnlocked && 'speechSynthesis' in window) {
+        const unlockUtterance = new SpeechSynthesisUtterance('');
+        window.speechSynthesis.speak(unlockUtterance);
+        ttsUnlocked = true;
+      }
+      document.body.removeEventListener('touchstart', unlockAudio);
+      document.body.removeEventListener('click', unlockAudio);
+    }
+    document.body.addEventListener('touchstart', unlockAudio);
+    document.body.addEventListener('click', unlockAudio);
+
     function toggleModal(modalId) {
       const modal = document.getElementById(modalId);
       if (modal.classList.contains('active')) {
@@ -302,9 +316,9 @@
     }
 
     function speakText(text) {
-      if (!'speechSynthesis' in window) return;
+      if (!('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
-      const plainText = text.replace(/[#*`]/g, ''); 
+      const plainText = text.replace(/[*_#`]/g, ''); 
       const utterance = new SpeechSynthesisUtterance(plainText);
       utterance.lang = 'en-US';
       utterance.rate = 1.05;
@@ -343,7 +357,6 @@
       const loadingContainer = appendLoading();
 
       try {
-        // Hardcoded Vercel endpoint to fix GitHub Pages fetch errors
         const res = await fetch('https://gifted1s-projects.vercel.app/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
