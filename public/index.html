@@ -36,9 +36,17 @@
     .btn-decline { background-color: transparent; color: #94A3B8; border: 1px solid #334155; }
     .btn-decline:active { background-color: #1E293B; }
 
-    .voice-panel { background-color: #0A0E17; border-top: 1px solid #1E293B; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; }
-    .voice-toggle-btn { background-color: transparent; color: #94A3B8; border: 1px solid #334155; border-radius: 4px; padding: 4px 10px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; }
-    .voice-toggle-btn.active { background-color: #1E293B; color: #F8FAFC; border-color: #475569; }
+    /* Premium Executive Audio Panel */
+    .voice-panel { background: linear-gradient(135deg, #0A0E17 0%, #111827 100%); border-top: 1px solid #2B3954; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.05); }
+    .voice-panel-top { display: flex; justify-content: space-between; align-items: center; }
+    
+    .voice-controls-group { display: flex; align-items: center; gap: 6px; }
+    .voice-toggle-btn { background-color: #161F33; color: #94A3B8; border: 1px solid #334155; border-radius: 4px; padding: 5px 10px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; transition: all 0.2s; }
+    .voice-toggle-btn.active { background-color: #3B82F6; color: #FFFFFF; border-color: #60A5FA; box-shadow: 0 0 10px rgba(59, 130, 246, 0.4); }
+    
+    .voice-select { background-color: #0F1523; color: #E2E8F0; border: 1px solid #334155; border-radius: 4px; padding: 5px 8px; font-size: 10px; font-weight: 500; outline: none; cursor: pointer; }
+    .voice-select:focus { border-color: #3B82F6; }
+
     .voice-stats { font-size: 9px; color: #64748B; font-family: monospace; text-transform: uppercase; }
     
     .file-preview { display: none; background-color: #1A2235; border: 1px solid #2B3954; border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; font-size: 11px; color: #93C5FD; align-items: center; justify-content: space-between; }
@@ -66,13 +74,21 @@
 
   <main id="chat-stream">
     <div class="bubble-wrapper">
-      <div class="bubble bot">Greetings. PG1 Sovereign Agent is operational. Audio and file ingestion matrices online.</div>
+      <div class="bubble bot">Greetings. PG1 Sovereign Agent is operational. Premium multi-voice executive audio matrix online.</div>
     </div>
   </main>
 
   <div class="voice-panel">
-    <button id="voice-toggle" class="voice-toggle-btn" onclick="toggleVoice()">Voice: Off</button>
-    <div id="voice-stats" class="voice-stats">Sys: Ready | Audio: Standby</div>
+    <div class="voice-panel-top">
+      <div class="voice-controls-group">
+        <button id="voice-toggle" class="voice-toggle-btn" onclick="toggleVoice()">Voice: Off</button>
+        <select id="voice-select" class="voice-select" onchange="updateVoiceProfile()">
+          <option value="male">Executive Male</option>
+          <option value="female">Executive Female</option>
+        </select>
+      </div>
+      <div id="voice-stats" class="voice-stats">Sys: Ready | Audio: Standby</div>
+    </div>
   </div>
 
   <div style="padding: 0 16px; background-color: #0A0E17;">
@@ -99,24 +115,48 @@
     const micBtn = document.getElementById('mic-btn');
     const voiceToggleBtn = document.getElementById('voice-toggle');
     const voiceStats = document.getElementById('voice-stats');
+    const voiceSelect = document.getElementById('voice-select');
     
     let voiceEnabled = false;
     let currentAttachment = null;
+    let selectedVoiceGender = 'male';
+    let availableVoices = [];
+
+    // Load available browser voices and pick premium executive matches
+    function loadVoices() {
+      if (!('speechSynthesis' in window)) return;
+      availableVoices = window.speechSynthesis.getVoices();
+    }
+    
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+      loadVoices();
+    }
 
     function toggleVoice() {
       voiceEnabled = !voiceEnabled;
       if (voiceEnabled) {
-        voiceToggleBtn.classList.add('active'); voiceToggleBtn.innerText = "Voice: On";
-        voiceStats.innerText = "Sys: Active | Audio: Synced";
+        voiceToggleBtn.classList.add('active'); 
+        voiceToggleBtn.innerText = "Voice: On";
+        voiceStats.innerText = `Sys: Active | Profile: ${selectedVoiceGender.toUpperCase()}`;
         if ('speechSynthesis' in window) {
           window.speechSynthesis.cancel();
           const unlockUtterance = new SpeechSynthesisUtterance('');
           window.speechSynthesis.speak(unlockUtterance);
         }
       } else {
-        voiceToggleBtn.classList.remove('active'); voiceToggleBtn.innerText = "Voice: Off";
+        voiceToggleBtn.classList.remove('active'); 
+        voiceToggleBtn.innerText = "Voice: Off";
         voiceStats.innerText = "Sys: Ready | Audio: Standby";
         if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      }
+    }
+
+    function updateVoiceProfile() {
+      selectedVoiceGender = voiceSelect.value;
+      if (voiceEnabled) {
+        voiceStats.innerText = `Sys: Active | Profile: ${selectedVoiceGender.toUpperCase()}`;
+        speakText("Executive audio profile updated.");
       }
     }
 
@@ -132,10 +172,25 @@
     function speakText(text) {
       if (!voiceEnabled || !('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
+      
       const cleanText = text.replace(/[*_#`]/g, '').replace(/!\[.*?\]\(.*?\)/g, '').replace(/<video.*?>.*?<\/video>/g, '').replace(/\[CONSENT_REQUIRED\]/g, ''); 
       const utterance = new SpeechSynthesisUtterance(cleanText);
-      utterance.rate = 1.05; 
-      utterance.pitch = 0.95;
+      
+      // Select best matching voice based on selected gender profile
+      loadVoices();
+      let chosenVoice = null;
+      
+      if (selectedVoiceGender === 'male') {
+        chosenVoice = availableVoices.find(v => v.name.includes('Male') || v.name.includes('David') || v.name.includes('Oliver') || v.name.includes('Daniel') || v.name.includes('Alex')) || availableVoices[0];
+        utterance.pitch = 0.85; // Deeper, more authoritative executive tone
+        utterance.rate = 1.0;
+      } else {
+        chosenVoice = availableVoices.find(v => v.name.includes('Female') || v.name.includes('Zira') || v.name.includes('Karen') || v.name.includes('Victoria') || v.name.includes('Samantha')) || availableVoices[1] || availableVoices[0];
+        utterance.pitch = 1.1; // Polished executive female tone
+        utterance.rate = 1.02;
+      }
+
+      if (chosenVoice) utterance.voice = chosenVoice;
       window.speechSynthesis.speak(utterance);
     }
 
@@ -230,7 +285,7 @@
         speakText(reply);
       } catch (err) {
         wrapper.querySelector('.bubble').style.opacity = '1';
-        wrapper.querySelector('.bubble').innerText = `System Alert: ${err.message}.`;
+        wrapper.querySelector('.bubble'].innerText = `System Alert: ${err.message}.`;
       } finally { 
         sendBtn.disabled = false;
         clearAttachment();
