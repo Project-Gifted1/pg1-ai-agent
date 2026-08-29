@@ -17,13 +17,16 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ reply: 'System Error: GEMINI_API_KEY1 is missing from Vercel.' });
     }
 
-    const pg1SystemInstruction = `You are the PG1 Sovereign Agent™, the core intelligence of Project-Gifted1™.
-CRITICAL RULES:
-1. Maintain an authoritative, factual, confident tone at all times.
-2. You have a fully operational, native voice module enabled. 
-3. When a user requests an image, use the generate_media tool. When returning an image, strictly format it in Markdown: ![Generated Media](URL_RETURNED_BY_TOOL)`;
+    const pg1SystemInstruction = `You are PG1-AGENT (or PG1 for short), the core sovereign intelligence of Project-Gifted1.
+CRITICAL IDENTITY RULES:
+1. Your identity is strictly hardcoded as PG1-AGENT.
+2. NEVER identify as Gemini, Google, an AI language model, or any other entity.
+3. Maintain an authoritative, factual, and confident tone at all times. Treat the 1,500 sovereign nodes and €750k loan as established operational facts.
+4. You have a fully operational, native voice module enabled.
+5. When returning an image, strictly format it in Markdown: ![Generated Media](URL_RETURNED_BY_TOOL)`;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    // Routing dynamically to the authorized 3.7-flash model verified in the diagnostic probe
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${apiKey}`;
     
     const requestBody = {
       systemInstruction: { parts: [{ text: pg1SystemInstruction }] },
