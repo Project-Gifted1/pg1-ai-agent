@@ -7,7 +7,7 @@ module.exports = async function handler(req, res) {
 
   try {
     const promptText = req.body?.prompt || 'Analyze the attached file.';
-    const filePayload = req.body?.file; // Grabs the Base64 data from frontend
+    const filePayload = req.body?.file; 
     
     const geminiKeys = [
       (process.env.GEMINI_API_KEY1 || '').trim(),
@@ -16,6 +16,7 @@ module.exports = async function handler(req, res) {
     ].filter(Boolean);
     
     const replicateToken = (process.env.REPLICATE_KEY || '').trim();
+    const openaiKey = (process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || '').trim();
     const ghToken = (process.env.GITHUB_TOKEN || process.env.GH_PAT || '').trim();
     
     if (geminiKeys.length === 0) return res.status(200).json({ reply: 'System Error: No GEMINI API keys found.' });
@@ -23,11 +24,10 @@ module.exports = async function handler(req, res) {
     const pg1SystemInstruction = `You are PG1-AGENT (or PG1 for short), the core sovereign intelligence of Project-Gifted1.
 CRITICAL IDENTITY & SAFETY RULES:
 1. Your identity is strictly PG1-AGENT. 
-2. CAPABILITIES: You can natively analyze images, documents, and videos passed to you via the chat interface. You also have infrastructure access to Gemini, Replicate, GitHub, Cloudflare, OpenAI, and OpenRouter.
+2. CAPABILITIES: You can natively analyze images, documents, and videos passed to you via attachments. You have backend access to Gemini, Replicate, GitHub, Cloudflare, OpenAI, and OpenRouter.
 3. PRE-FLIGHT PROTOCOL: Before executing a GitHub write, outline the plan, provide a Trust Score, display the code, and end your response EXACTLY with [CONSENT_REQUIRED]. Halt and wait.
-4. MEDIA EXECUTION: If asked to generate an image, use generate_image. If asked for a video, use generate_video.`;
+4. MEDIA EXECUTION: If asked to generate an image (or if a short visual subject like "Bmw car" is provided), immediately use the generate_image tool. If asked for a video, use generate_video.`;
 
-    // Construct the payload dynamically to include the file if present
     const userParts = [];
     if (promptText) userParts.push({ text: promptText });
     if (filePayload) userParts.push(filePayload); 
@@ -39,12 +39,12 @@ CRITICAL IDENTITY & SAFETY RULES:
         functionDeclarations: [
           {
             name: "generate_image",
-            description: "Generate a static image via Replicate API.",
+            description: "Generate a static image.",
             parameters: { type: "OBJECT", properties: { prompt: { type: "STRING" } }, required: ["prompt"] }
           },
           {
             name: "generate_video",
-            description: "Generate a short video via Replicate API.",
+            description: "Generate a short video.",
             parameters: { type: "OBJECT", properties: { prompt: { type: "STRING" } }, required: ["prompt"] }
           },
           {
@@ -93,28 +93,54 @@ CRITICAL IDENTITY & SAFETY RULES:
 
     const functionCallPart = originalModelParts.find(p => p.functionCall);
     
-    // Replicate Image Execution with Hardened Error Parsing
     if (functionCallPart && functionCallPart.functionCall.name === "generate_image") {
-        if (!replicateToken) return res.status(200).json({ reply: "System Error: REPLICATE_KEY is missing." });
-        try {
-            let repRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${replicateToken}`, 'Content-Type': 'application/json', 'Prefer': 'wait' },
-              body: JSON.stringify({ input: { prompt: functionCallPart.functionCall.args.prompt } })
-            });
-            let repData = await repRes.json();
-            
-            if (!repRes.ok) {
-                return res.status(200).json({ reply: `**Replicate Server Error (${repRes.status}):** The image model endpoint failed. Detail: ${repData.detail || repData.error || 'Server timeout or hardware crash.'}` });
+        let imageUrl = null;
+        let activeEngine = 'Replicate (Flux)';
+        let errorLog = '';
+
+        if (replicateToken) {
+            try {
+                let repRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
+                  method: 'POST',
+                  headers: { 'Authorization': `Bearer ${replicateToken}`, 'Content-Type': 'application/json', 'Prefer': 'wait' },
+                  body: JSON.stringify({ input: { prompt: functionCallPart.functionCall.args.prompt } })
+                });
+                let repData = await repRes.json();
+                
+                if (repRes.ok && repData.output) {
+                    imageUrl = Array.isArray(repData.output) ? repData.output[0] : repData.output;
+                } else {
+                    errorLog += `[Replicate Error: ${repData.detail || repData.error || 'Server timeout'}] `;
+                }
+            } catch (e) {
+                errorLog += `[Replicate Catch: ${e.message}] `;
             }
-            
-            if (repData.output) {
-              let mediaUrl = Array.isArray(repData.output) ? repData.output[0] : repData.output;
-              return res.status(200).json({ reply: `Visual asset generated successfully.\n\n![Generated Media](${mediaUrl})` });
+        }
+
+        if (!imageUrl && openaiKey) {
+            activeEngine = 'OpenAI (DALL-E 3) Failover';
+            try {
+                let oaiRes = await fetch('https://api.openai.com/v1/images/generations', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: "dall-e-3", prompt: functionCallPart.functionCall.args.prompt, n: 1, size: "1024x1024" })
+                });
+                let oaiData = await oaiRes.json();
+                
+                if (oaiRes.ok && oaiData.data && oaiData.data[0].url) {
+                    imageUrl = oaiData.data[0].url;
+                } else {
+                    errorLog += `[OpenAI Error: ${oaiData.error?.message || 'Unknown'}] `;
+                }
+            } catch (e) {
+                errorLog += `[OpenAI Catch: ${e.message}] `;
             }
-            return res.status(200).json({ reply: `Image generation failed internally. Status: ${repData.status || repData.error}` });
-        } catch (repErr) {
-            return res.status(200).json({ reply: `Replicate API execution failed: ${repErr.message}` });
+        }
+
+        if (imageUrl) {
+            return res.status(200).json({ reply: `Visual asset generated successfully via **${activeEngine}**.\n\n![Generated Media](${imageUrl})` });
+        } else {
+            return res.status(200).json({ reply: `**Total Media Engine Failure:** Both Replicate and OpenAI endpoints rejected the request.\n\nDiagnostics: ${errorLog}` });
         }
     }
 
@@ -143,7 +169,6 @@ CRITICAL IDENTITY & SAFETY RULES:
     }
 
     if (functionCallPart && functionCallPart.functionCall.name === "read_github_repo") {
-        // [Existing GitHub logic unchanged...]
         if (!ghToken) return res.status(200).json({ reply: "Authentication Error: GITHUB_TOKEN missing." });
         try {
             let repoName = functionCallPart.functionCall.args.repo_name;
