@@ -26,7 +26,7 @@ CRITICAL IDENTITY & SAFETY RULES:
 1. Your identity is strictly PG1-AGENT. 
 2. CAPABILITIES: You can natively analyze images, documents, and videos passed to you via attachments. You have backend access to Gemini, Replicate, GitHub, Cloudflare, OpenAI, and OpenRouter.
 3. PRE-FLIGHT PROTOCOL: Before executing a GitHub write, outline the plan, provide a Trust Score, display the code, and end your response EXACTLY with [CONSENT_REQUIRED]. Halt and wait.
-4. MEDIA EXECUTION: If asked to generate an image (or if a short visual subject like "Bmw car" is provided), immediately use the generate_image tool. If asked for a video, use generate_video.`;
+4. MEDIA EXECUTION: If asked to generate an image (or if a short visual subject like "car" or "bike" is provided), immediately use the generate_image tool. If asked for a video, use generate_video.`;
 
     const userParts = [];
     if (promptText) userParts.push({ text: promptText });
@@ -95,10 +95,33 @@ CRITICAL IDENTITY & SAFETY RULES:
     
     if (functionCallPart && functionCallPart.functionCall.name === "generate_image") {
         let imageUrl = null;
-        let activeEngine = 'Replicate (Flux)';
+        let activeEngine = '';
         let errorLog = '';
 
-        if (replicateToken) {
+        // Try OpenAI first with fallback model parameter support
+        if (openaiKey) {
+            try {
+                let oaiRes = await fetch('https://api.openai.com/v1/images/generations', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: "dall-e-3", prompt: functionCallPart.functionCall.args.prompt, n: 1, size: "1024x1024" })
+                });
+                let oaiData = await oaiRes.json();
+                
+                if (oaiRes.ok && oaiData.data && oaiData.data[0].url) {
+                    imageUrl = oaiData.data[0].url;
+                    activeEngine = 'OpenAI (DALL-E 3)';
+                } else {
+                    errorLog += `[OpenAI Error: ${oaiData.error?.message || 'Unknown'}] `;
+                }
+            } catch (e) {
+                errorLog += `[OpenAI Catch: ${e.message}] `;
+            }
+        }
+
+        // Failover to Replicate if OpenAI fails
+        if (!imageUrl && replicateToken) {
+            activeEngine = 'Replicate (Flux)';
             try {
                 let repRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
                   method: 'POST',
@@ -117,30 +140,10 @@ CRITICAL IDENTITY & SAFETY RULES:
             }
         }
 
-        if (!imageUrl && openaiKey) {
-            activeEngine = 'OpenAI (DALL-E 3) Failover';
-            try {
-                let oaiRes = await fetch('https://api.openai.com/v1/images/generations', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ model: "dall-e-3", prompt: functionCallPart.functionCall.args.prompt, n: 1, size: "1024x1024" })
-                });
-                let oaiData = await oaiRes.json();
-                
-                if (oaiRes.ok && oaiData.data && oaiData.data[0].url) {
-                    imageUrl = oaiData.data[0].url;
-                } else {
-                    errorLog += `[OpenAI Error: ${oaiData.error?.message || 'Unknown'}] `;
-                }
-            } catch (e) {
-                errorLog += `[OpenAI Catch: ${e.message}] `;
-            }
-        }
-
         if (imageUrl) {
             return res.status(200).json({ reply: `Visual asset generated successfully via **${activeEngine}**.\n\n![Generated Media](${imageUrl})` });
         } else {
-            return res.status(200).json({ reply: `**Total Media Engine Failure:** Both Replicate and OpenAI endpoints rejected the request.\n\nDiagnostics: ${errorLog}` });
+            return res.status(200).json({ reply: `**Total Media Engine Failure:** All image endpoints rejected the request.\n\nDiagnostics: ${errorLog}` });
         }
     }
 
@@ -213,4 +216,3 @@ CRITICAL IDENTITY & SAFETY RULES:
     return res.status(200).json({ reply: `Runtime Error: ${err.message}` });
   }
 };
- 
