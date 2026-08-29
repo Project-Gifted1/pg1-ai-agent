@@ -92,7 +92,7 @@
     </div>
   </div>
 
-  <script>
+<script>
     const chatStream = document.getElementById('chat-stream');
     const userInput = document.getElementById('user-input');
     const sendBtn = document.getElementById('send-btn');
@@ -135,7 +135,7 @@
       const cleanText = text.replace(/[*_#`]/g, '').replace(/!\[.*?\]\(.*?\)/g, '').replace(/<video.*?>.*?<\/video>/g, '').replace(/\[CONSENT_REQUIRED\]/g, ''); 
       const utterance = new SpeechSynthesisUtterance(cleanText);
       utterance.rate = 1.05; 
-      utterance.pitch = 0.95; // Executive tone adjustment
+      utterance.pitch = 0.95;
       window.speechSynthesis.speak(utterance);
     }
 
