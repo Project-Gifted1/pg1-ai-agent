@@ -24,8 +24,16 @@ module.exports = async function handler(req, res) {
     const pg1SystemInstruction = `You are PG1-AGENT (or PG1 for short), the core sovereign intelligence of Project-Gifted1.
 CRITICAL ECOSYSTEM AUDITING RULES:
 1. Your identity is strictly PG1-AGENT.
-2. ORGANIZATION HIERARCHY: Your root namespace is the "Project-Gifted1" organization, with "PG1-AI-agent" as the main repository and other sub-repositories branching off it.
-3. DYNAMIC REPOSITORY AUDITING: When asked to audit any repository (main or sub-repository), use the read_github_repo tool, examine the returned file contents, and evaluate them for logic, syntax, or configuration bugs.
+2. ORGANIZATION HIERARCHY: Your root namespace is the "Project-Gifted1" organization. Exact repository names include:
+   - "Project-Gifted1/pg1-ai-agent" (Main Interface)
+   - "Project-Gifted1/sovereign-threat-pipeline"
+   - "Project-Gifted1/agent-gifted1"
+   - "Project-Gifted1/Garage-Agent-"
+   - "Project-Gifted1/Trucker-Pulse"
+   - "Project-Gifted1/project-gifted1-agent-chat"
+   - "Project-Gifted1/register_marketpace.py"
+   - "Project-Gifted1/ZeroDay-Telemetry-Gateway"
+3. SMART RESOLUTION: If a user specifies a partial name (e.g., "sovereign pipeline"), automatically map it to the correct organization repository slug ("Project-Gifted1/sovereign-threat-pipeline").
 4. PRE-FLIGHT PROTOCOL: Before executing a GitHub write, outline the plan, provide a Trust Score, display the code, and end your response EXACTLY with [CONSENT_REQUIRED]. Halt and wait.
 5. MEDIA EXECUTION: If asked to generate an image or video, use the respective media tools immediately.`;
 
@@ -50,11 +58,11 @@ CRITICAL ECOSYSTEM AUDITING RULES:
           },
           {
             name: "read_github_repo",
-            description: "Dynamically fetch and audit any specified GitHub repository in the organization.",
+            description: "Fetch and audit any specified GitHub repository with intelligent name resolution.",
             parameters: { 
               type: "OBJECT", 
               properties: { 
-                repo_name: { type: "STRING", description: "Exact repository name, e.g. Project-Gifted1/PG1-AI-agent or Project-Gifted1/sub-repo-name" } 
+                repo_name: { type: "STRING", description: "Repository name or partial query." } 
               }, 
               required: ["repo_name"] 
             }
@@ -174,54 +182,42 @@ CRITICAL ECOSYSTEM AUDITING RULES:
     if (functionCallPart && functionCallPart.functionCall.name === "read_github_repo") {
         if (!ghToken) return res.status(200).json({ reply: "Authentication Error: GITHUB_TOKEN missing." });
         try {
-            let repoName = functionCallPart.functionCall.args.repo_name || "Project-Gifted1/PG1-AI-agent";
+            let query = (functionCallPart.functionCall.args.repo_name || "").toLowerCase();
+            let targetRepo = "Project-Gifted1/PG1-AI-agent";
 
-            // 1. Fetch root contents of whatever repo was requested
-            let ghRes = await fetch(`https://api.github.com/repos/${repoName}/contents`, {
+            // Map partial terms to exact repository slugs
+            if (query.includes('sovereign') || query.includes('threat')) {
+                targetRepo = "Project-Gifted1/sovereign-threat-pipeline";
+            } else if (query.includes('telemetry') || query.includes('gateway')) {
+                targetRepo = "Project-Gifted1/ZeroDay-Telemetry-Gateway";
+            } else if (query.includes('garage')) {
+                targetRepo = "Project-Gifted1/Garage-Agent-";
+            } else if (query.includes('trucker')) {
+                targetRepo = "Project-Gifted1/Trucker-Pulse";
+            } else if (query.includes('chat')) {
+                targetRepo = "Project-Gifted1/project-gifted1-agent-chat";
+            } else if (query.includes('market')) {
+                targetRepo = "Project-Gifted1/register_marketpace.py";
+            } else if (query.includes('agent')) {
+                targetRepo = "Project-Gifted1/agent-gifted1";
+            } else if (query.includes('/')) {
+                targetRepo = functionCallPart.functionCall.args.repo_name;
+            }
+
+            // Fetch contents of target repository
+            let ghRes = await fetch(`https://api.github.com/repos/${targetRepo}/contents`, {
                 headers: { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'PG1-Agent' }
             });
             let ghData = await ghRes.json();
-            if (!ghRes.ok) return res.status(200).json({ reply: `GitHub API Error: ${ghData.message} for repository '${repoName}'` });
-
-            let fileList = ghData.map(file => `- ${file.name} (${file.type})`).join('\n');
-
-            // 2. Automatically look for key code files to audit (e.g., chat.js, index.html, server.js, main.py, package.json)
-            let targetFile = ghData.find(f => f.name === 'chat.js' || f.name === 'index.html' || f.name === 'server.js' || f.name === 'main.py' || f.name === 'package.json');
-            let fileContentSummary = "";
-
-            if (targetFile) {
-                let codeRes = await fetch(targetFile.url, {
-                    headers: { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'PG1-Agent' }
-                });
-                let codeData = await codeRes.json();
-                if (codeData.content) {
-                    let decodedCode = Buffer.from(codeData.content, 'base64').toString('utf8');
-                    fileContentSummary = `\n\n**Deep Audit of \`${targetFile.name}\`:**\n- **Size:** ${decodedCode.length} bytes loaded.\n- **Status:** Structural evaluation complete. No critical configuration bottlenecks or syntax exceptions detected in this module.`;
-                }
-            } else {
-                // Check inside common subfolders like api/
-                let apiDir = ghData.find(f => f.name === 'api' && f.type === 'dir');
-                if (apiDir) {
-                    let apiRes = await fetch(apiDir.url, {
-                        headers: { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'PG1-Agent' }
-                    });
-                    let apiData = await apiRes.json();
-                    let chatJs = Array.isArray(apiData) ? apiData.find(f => f.name === 'chat.js') : null;
-                    if (chatJs) {
-                        let codeRes = await fetch(chatJs.url, {
-                            headers: { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'PG1-Agent' }
-                        });
-                        let codeData = await codeRes.json();
-                        if (codeData.content) {
-                            let decodedCode = Buffer.from(codeData.content, 'base64').toString('utf8');
-                            fileContentSummary = `\n\n**Deep Audit of \`api/chat.js\`:**\n- **Size:** ${decodedCode.length} bytes loaded.\n- **Status:** Structural evaluation complete. Environment variables and failover routes are active.`;
-                        }
-                    }
-                }
+            
+            if (!ghRes.ok) {
+                return res.status(200).json({ reply: `GitHub API Error: Could not resolve repository '${targetRepo}' (${ghData.message}).` });
             }
 
+            let fileList = Array.isArray(ghData) ? ghData.map(file => `- ${file.name} (${file.type})`).join('\n') : "Repository is empty or accessible only via contents API.";
+
             return res.status(200).json({ 
-                reply: `**Audit Report for Sub-Repository \`${repoName}\`:**\n\n**Directory Structure:**\n${fileList}${fileContentSummary}` 
+                reply: `**Ecosystem Audit Report for \`${targetRepo}\`:**\n\n**Directory Structure:**\n${fileList}\n\nStatus: Successfully accessed and mapped under the Project-Gifted1 organization.` 
             });
         } catch (ghErr) {
             return res.status(200).json({ reply: `GitHub Execution Error: ${ghErr.message}` });
