@@ -42,7 +42,14 @@
     .voice-toggle-btn.active { background-color: #1E293B; color: #F8FAFC; border-color: #475569; }
     .voice-stats { font-size: 9px; color: #64748B; font-family: monospace; text-transform: uppercase; }
     
-    .input-area { background-color: #0A0E17; padding: 8px 16px 16px 16px; display: flex; gap: 8px; }
+    /* Attachment Styles */
+    .file-preview { display: none; background-color: #1A2235; border: 1px solid #2B3954; border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; font-size: 11px; color: #93C5FD; align-items: center; justify-content: space-between; }
+    .file-preview.active { display: flex; }
+    .remove-file { cursor: pointer; color: #F87171; font-weight: bold; font-size: 12px; }
+    .attach-btn { background-color: transparent; border: 1px solid #334155; color: #94A3B8; border-radius: 6px; padding: 8px 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; transition: all 0.2s; }
+    .attach-btn:hover { background-color: #1E293B; color: #F8FAFC; }
+    
+    .input-area { background-color: #0A0E17; padding: 8px 16px 16px 16px; display: flex; gap: 8px; align-items: stretch; }
     .input-box { flex: 1; background-color: #0F1523; border: 1px solid #1E293B; border-radius: 6px; color: #F8FAFC; font-size: 14px; padding: 10px 12px; resize: none; outline: none; font-family: inherit; }
     .input-box:focus { border-color: #3B82F6; }
     .action-buttons { display: flex; flex-direction: column; gap: 6px; }
@@ -70,7 +77,16 @@
     <div id="voice-stats" class="voice-stats">Sys: Ready | Tel: Encrypted</div>
   </div>
 
+  <div style="padding: 0 16px; background-color: #0A0E17;">
+    <div id="file-preview" class="file-preview">
+      <span id="file-name">No file attached</span>
+      <span class="remove-file" onclick="clearAttachment()">✕</span>
+    </div>
+  </div>
+
   <div class="input-area">
+    <button id="attach-btn" class="attach-btn" onclick="document.getElementById('file-upload').click()">📎</button>
+    <input type="file" id="file-upload" style="display: none;" accept="image/*,video/*,application/pdf" onchange="handleFileSelect(event)" />
     <textarea id="user-input" class="input-box" rows="2" placeholder="Input operational directive..."></textarea>
     <div class="action-buttons">
       <button id="send-btn" class="send-btn">Execute</button>
@@ -85,7 +101,9 @@
     const micBtn = document.getElementById('mic-btn');
     const voiceToggleBtn = document.getElementById('voice-toggle');
     const voiceStats = document.getElementById('voice-stats');
+    
     let voiceEnabled = false;
+    let currentAttachment = null;
 
     function toggleVoice() {
       voiceEnabled = !voiceEnabled;
@@ -142,6 +160,20 @@
       return html;
     }
 
+    function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      currentAttachment = file;
+      document.getElementById('file-name').innerText = file.name;
+      document.getElementById('file-preview').classList.add('active');
+    }
+
+    function clearAttachment() {
+      currentAttachment = null;
+      document.getElementById('file-upload').value = '';
+      document.getElementById('file-preview').classList.remove('active');
+    }
+
     window.submitConsent = function(decision) {
       userInput.value = `[SYSTEM_OVERRIDE]: User has selected to ${decision} the proposed action.`;
       sendMessage();
@@ -149,9 +181,10 @@
 
     async function sendMessage() {
       const prompt = userInput.value.trim();
-      if (!prompt) return;
+      if (!prompt && !currentAttachment) return;
+      
       userInput.value = ''; 
-      appendUserMessage(prompt.replace('[SYSTEM_OVERRIDE]: ', '')); 
+      appendUserMessage(prompt.replace('[SYSTEM_OVERRIDE]: ', '') + (currentAttachment ? ' 📎 [File Attached]' : '')); 
       sendBtn.disabled = true;
       
       const id = 'msg-' + Date.now();
@@ -166,7 +199,7 @@
         const res = await fetch(`/api/chat?t=${Date.now()}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
-          body: JSON.stringify({ prompt: prompt, userMessage: prompt, message: prompt })
+          body: JSON.stringify({ prompt: prompt, userMessage: prompt, message: prompt }) // Note: Backend Base64 injection logic will be built next
         });
         
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -181,7 +214,8 @@
         wrapper.querySelector('.bubble').style.opacity = '1';
         wrapper.querySelector('.bubble').innerText = `System Alert: ${err.message}.`;
       } finally { 
-        sendBtn.disabled = false; 
+        sendBtn.disabled = false;
+        clearAttachment();
       }
     }
 
