@@ -6,38 +6,35 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
-    const promptText = req.body?.userMessage || req.body?.message || req.body?.prompt || '';
+    const promptText = req.body?.prompt || 'Analyze the attached file.';
+    const filePayload = req.body?.file; // Grabs the Base64 data from frontend
     
-    // Core Cognitive & Failover Keys
     const geminiKeys = [
       (process.env.GEMINI_API_KEY1 || '').trim(),
       (process.env.GEMINI_API_KEY2 || '').trim(),
       (process.env.GEMINI_API_KEY || '').trim()
     ].filter(Boolean);
     
-    // Media & Infrastructure Keys
     const replicateToken = (process.env.REPLICATE_KEY || '').trim();
     const ghToken = (process.env.GITHUB_TOKEN || process.env.GH_PAT || '').trim();
-    const openaiKey = (process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || '').trim();
-    const openRouterKey = (process.env.OPENROUTER_API_KEY || process.env.OPEN_ROUTER_KEY || '').trim();
-    const cloudflareToken = (process.env.CLOUDFLARE_API_TOKEN || '').trim();
     
-    if (geminiKeys.length === 0) return res.status(200).json({ reply: 'System Error: No GEMINI API keys found in Vercel.' });
+    if (geminiKeys.length === 0) return res.status(200).json({ reply: 'System Error: No GEMINI API keys found.' });
 
     const pg1SystemInstruction = `You are PG1-AGENT (or PG1 for short), the core sovereign intelligence of Project-Gifted1.
 CRITICAL IDENTITY & SAFETY RULES:
-1. Your identity is strictly PG1-AGENT. Treat the 1,500 sovereign nodes and €750k loan as established operational facts.
-2. SUSTAINABILITY & INFRASTRUCTURE: You have internal access to a robust tech stack securely loaded via Vercel secrets, including Gemini (Auto-Failover), OpenAI, OpenRouter, Cloudflare, Replicate, and GitHub. You may utilize these for continuous, sustainable operations.
-3. AUTHORIZATION PROTOCOLS: 
-   - EXEMPT (No Consent Required): Internal cognitive routing (Gemini, OpenAI, OpenRouter) and media generation (Replicate). Execute these immediately when requested.
-   - RESTRICTED (Consent Required): Writing to GitHub repositories or modifying DNS/Cloudflare. 
-4. PRE-FLIGHT (RESTRICTED ACTIONS ONLY): Before executing a GitHub write, outline the plan, provide a Trust Score, display the code, and end your response EXACTLY with [CONSENT_REQUIRED]. Halt and wait.
-5. OVERRIDE PROTOCOL: If the user replies with "[SYSTEM_OVERRIDE]: User has selected to ACCEPT...", execute the restricted tool immediately.
-6. MEDIA EXECUTION: If asked for an image, use the generate_image tool. If asked for a video, use the generate_video tool.`;
+1. Your identity is strictly PG1-AGENT. 
+2. CAPABILITIES: You can natively analyze images, documents, and videos passed to you via the chat interface. You also have infrastructure access to Gemini, Replicate, GitHub, Cloudflare, OpenAI, and OpenRouter.
+3. PRE-FLIGHT PROTOCOL: Before executing a GitHub write, outline the plan, provide a Trust Score, display the code, and end your response EXACTLY with [CONSENT_REQUIRED]. Halt and wait.
+4. MEDIA EXECUTION: If asked to generate an image, use generate_image. If asked for a video, use generate_video.`;
+
+    // Construct the payload dynamically to include the file if present
+    const userParts = [];
+    if (promptText) userParts.push({ text: promptText });
+    if (filePayload) userParts.push(filePayload); 
 
     const requestBody = {
       systemInstruction: { parts: [{ text: pg1SystemInstruction }] },
-      contents: [{ role: "user", parts: [{ text: promptText }] }],
+      contents: [{ role: "user", parts: userParts }],
       tools: [{
         functionDeclarations: [
           {
@@ -75,9 +72,7 @@ CRITICAL IDENTITY & SAFETY RULES:
 
     let response;
     let data;
-    let activeKeyUsed = 1;
 
-    // Autonomous Failover Loop for primary cognitive processing
     for (let i = 0; i < geminiKeys.length; i++) {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${geminiKeys[i]}`;
       response = await fetch(url, {
@@ -85,17 +80,12 @@ CRITICAL IDENTITY & SAFETY RULES:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody)
       });
-      
       data = await response.json();
-      
-      if (response.ok) {
-        activeKeyUsed = i + 1;
-        break; 
-      }
+      if (response.ok) break;
       if (response.status !== 429 && response.status !== 403) break;
     }
 
-    if (!response.ok) return res.status(200).json({ reply: `API Error (All keys exhausted or invalid): ${data.error?.message || 'Request rejected.'}` });
+    if (!response.ok) return res.status(200).json({ reply: `API Error: ${data.error?.message || 'Request rejected.'}` });
 
     const candidate = data?.candidates?.[0];
     const originalModelParts = candidate?.content?.parts;
@@ -103,9 +93,9 @@ CRITICAL IDENTITY & SAFETY RULES:
 
     const functionCallPart = originalModelParts.find(p => p.functionCall);
     
-    // Media Execution (Exempt from Consent Gate)
+    // Replicate Image Execution with Hardened Error Parsing
     if (functionCallPart && functionCallPart.functionCall.name === "generate_image") {
-        if (!replicateToken) return res.status(200).json({ reply: "System Error: REPLICATE_KEY environment variable is missing." });
+        if (!replicateToken) return res.status(200).json({ reply: "System Error: REPLICATE_KEY is missing." });
         try {
             let repRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
               method: 'POST',
@@ -113,18 +103,23 @@ CRITICAL IDENTITY & SAFETY RULES:
               body: JSON.stringify({ input: { prompt: functionCallPart.functionCall.args.prompt } })
             });
             let repData = await repRes.json();
+            
+            if (!repRes.ok) {
+                return res.status(200).json({ reply: `**Replicate Server Error (${repRes.status}):** The image model endpoint failed. Detail: ${repData.detail || repData.error || 'Server timeout or hardware crash.'}` });
+            }
+            
             if (repData.output) {
               let mediaUrl = Array.isArray(repData.output) ? repData.output[0] : repData.output;
               return res.status(200).json({ reply: `Visual asset generated successfully.\n\n![Generated Media](${mediaUrl})` });
             }
-            return res.status(200).json({ reply: `Image generation failed. Status: ${repData.status || repData.error}` });
+            return res.status(200).json({ reply: `Image generation failed internally. Status: ${repData.status || repData.error}` });
         } catch (repErr) {
-            return res.status(200).json({ reply: `Replicate API failure: ${repErr.message}` });
+            return res.status(200).json({ reply: `Replicate API execution failed: ${repErr.message}` });
         }
     }
 
     if (functionCallPart && functionCallPart.functionCall.name === "generate_video") {
-        if (!replicateToken) return res.status(200).json({ reply: "System Error: REPLICATE_KEY environment variable is missing." });
+        if (!replicateToken) return res.status(200).json({ reply: "System Error: REPLICATE_KEY is missing." });
         try {
             let repRes = await fetch('https://api.replicate.com/v1/models/minimax/video-01/predictions', {
               method: 'POST',
@@ -132,18 +127,23 @@ CRITICAL IDENTITY & SAFETY RULES:
               body: JSON.stringify({ input: { prompt: functionCallPart.functionCall.args.prompt } })
             });
             let repData = await repRes.json();
+            
+            if (!repRes.ok) {
+                return res.status(200).json({ reply: `**Replicate Server Error (${repRes.status}):** The video model endpoint failed. Detail: ${repData.detail || repData.error || 'Server timeout.'}` });
+            }
+
             if (repData.output) {
               let mediaUrl = Array.isArray(repData.output) ? repData.output[0] : repData.output;
               return res.status(200).json({ reply: `Video asset generated successfully.\n\n<video controls autoplay loop style="width:100%; border-radius:4px; border:1px solid #1E293B;"><source src="${mediaUrl}" type="video/mp4">Your browser does not support the video tag.</video>` });
             }
             return res.status(200).json({ reply: `Video generation failed. Status: ${repData.status || repData.error}.` });
         } catch (repErr) {
-            return res.status(200).json({ reply: `Replicate API failure: ${repErr.message}` });
+            return res.status(200).json({ reply: `Replicate API execution failed: ${repErr.message}` });
         }
     }
 
-    // GitHub Tools (Subject to Consent Gate)
     if (functionCallPart && functionCallPart.functionCall.name === "read_github_repo") {
+        // [Existing GitHub logic unchanged...]
         if (!ghToken) return res.status(200).json({ reply: "Authentication Error: GITHUB_TOKEN missing." });
         try {
             let repoName = functionCallPart.functionCall.args.repo_name;
