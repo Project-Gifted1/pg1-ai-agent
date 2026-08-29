@@ -7,115 +7,52 @@
   <title>Project-Gifted1™</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-    body { background-color: #080B11; color: #E2E8F0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; height: 100dvh; display: flex; flex-direction: column; }
-    header { padding: 18px 20px; background-color: #0D121D; border-bottom: 1px solid #1E293B; display: flex; align-items: center; justify-content: space-between; }
-    .header-title { font-size: 20px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.3px; display: flex; align-items: center; gap: 8px; }
-    .status-pill { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; padding: 3px 8px; background: rgba(16, 185, 129, 0.12); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; font-weight: 600; }
+    body { background-color: #05070A; color: #E2E8F0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; height: 100dvh; display: flex; flex-direction: column; }
     
-    main { flex: 1; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 20px; }
+    /* Executive Header with Glassmorphism */
+    header { padding: 16px 20px; background-color: rgba(10, 14, 23, 0.85); backdrop-filter: blur(12px); border-bottom: 1px solid #1E293B; display: flex; align-items: center; justify-content: space-between; z-index: 10; }
+    .header-title { font-size: 19px; font-weight: 600; color: #F8FAFC; letter-spacing: -0.2px; }
+    .status-pill { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; padding: 4px 10px; background: transparent; color: #94A3B8; border: 1px solid #334155; border-radius: 4px; font-weight: 500; }
+    
+    main { flex: 1; overflow-y: auto; padding: 24px 16px; display: flex; flex-direction: column; gap: 20px; }
     .bubble-wrapper { display: flex; flex-direction: column; gap: 6px; }
-    .bubble { background-color: #111726; border: 1px solid #1E293B; border-radius: 12px; padding: 16px; font-size: 14px; line-height: 1.6; color: #CBD5E1; word-wrap: break-word; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25); }
-    .bubble.user { align-self: flex-end; background: linear-gradient(135deg, #1E293B, #172033); color: #F8FAFC; border: 1px solid #334155; max-width: 85%; }
+    
+    /* Executive Chat Bubbles */
+    .bubble { background-color: #0F1523; border: 1px solid #1E293B; border-radius: 6px; padding: 16px; font-size: 14.5px; line-height: 1.65; color: #CBD5E1; word-wrap: break-word; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); }
+    .bubble.user { align-self: flex-end; background-color: #1A2235; color: #F8FAFC; border: 1px solid #2B3954; max-width: 85%; }
     .bubble strong { color: #FFFFFF; font-weight: 600; }
-    .bubble pre { background: #080B11; padding: 12px; border-radius: 8px; margin: 10px 0; overflow-x: auto; border: 1px solid #1E293B; }
-    .bubble code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12.5px; color: #60A5FA; }
-    .bubble p { margin-bottom: 10px; }
+    .bubble pre { background: #05070A; padding: 14px; border-radius: 4px; margin: 12px 0; overflow-x: auto; border: 1px solid #1E293B; }
+    .bubble code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12.5px; color: #93C5FD; }
+    .bubble p { margin-bottom: 12px; }
     .bubble p:last-child { margin-bottom: 0; }
-    .bubble img { max-width: 100%; border-radius: 8px; margin: 12px 0; border: 1px solid #1E293B; display: block; }
+    .bubble img, .bubble video { max-width: 100%; border-radius: 4px; margin: 12px 0; border: 1px solid #1E293B; display: block; }
 
-    /* Elegant Sovereign Consent Gate Card */
-    .consent-card {
-      margin-top: 14px;
-      background: linear-gradient(180deg, #141C2E 0%, #0D1322 100%);
-      border: 1px solid #2B3954;
-      border-radius: 10px;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      position: relative;
-      overflow: hidden;
-    }
-    .consent-card::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, #3B82F6, #10B981, #6366F1);
-    }
-    .consent-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border-bottom: 1px solid #1E293B;
-      padding-bottom: 8px;
-    }
-    .consent-title {
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: #94A3B8;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .consent-trust-badge {
-      font-size: 11px;
-      font-weight: 600;
-      color: #34D399;
-      background: rgba(52, 211, 153, 0.1);
-      border: 1px solid rgba(52, 211, 153, 0.25);
-      padding: 2px 8px;
-      border-radius: 20px;
-    }
-    .consent-actions {
-      display: flex;
-      gap: 10px;
-      margin-top: 4px;
-    }
-    .btn-consent {
-      flex: 1;
-      padding: 10px 14px;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      transition: all 0.2s ease;
-      outline: none;
-    }
-    .btn-accept {
-      background: linear-gradient(180deg, #10B981 0%, #059669 100%);
-      color: #FFFFFF;
-      border: 1px solid #059669;
-      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
-    }
-    .btn-accept:active { transform: scale(0.98); opacity: 0.9; }
-    .btn-decline {
-      background: rgba(239, 68, 68, 0.08);
-      color: #F87171;
-      border: 1px solid rgba(239, 68, 68, 0.25);
-    }
-    .btn-decline:active { transform: scale(0.98); background: rgba(239, 68, 68, 0.15); }
+    /* Refined Consent Gate Card */
+    .consent-card { margin-top: 16px; background-color: #0A0E17; border: 1px solid #1E293B; border-left: 3px solid #3B82F6; border-radius: 4px; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+    .consent-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #1E293B; padding-bottom: 10px; }
+    .consent-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #94A3B8; }
+    .consent-trust-badge { font-size: 10px; font-weight: 600; color: #F8FAFC; background: #1E293B; padding: 3px 8px; border-radius: 4px; }
+    .consent-actions { display: flex; gap: 12px; }
+    .btn-consent { flex: 1; padding: 10px 14px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; transition: all 0.2s ease; border: none; }
+    .btn-accept { background-color: #3B82F6; color: #FFFFFF; }
+    .btn-accept:active { background-color: #2563EB; }
+    .btn-decline { background-color: transparent; color: #94A3B8; border: 1px solid #334155; }
+    .btn-decline:active { background-color: #1E293B; }
 
     /* Audio / Bottom Dock */
-    .voice-panel { background-color: #0D121D; border-top: 1px solid #1E293B; border-radius: 16px 16px 0 0; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
-    .voice-toggle-btn { background-color: #2563EB; color: #FFFFFF; border: none; border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; align-self: flex-start; }
-    .voice-toggle-btn.active { background-color: #10B981; }
-    .voice-stats { font-size: 11px; color: #64748B; font-family: monospace; }
+    .voice-panel { background-color: #0A0E17; border-top: 1px solid #1E293B; padding: 14px 20px; display: flex; justify-content: space-between; align-items: center; }
+    .voice-toggle-btn { background-color: transparent; color: #94A3B8; border: 1px solid #334155; border-radius: 4px; padding: 6px 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; }
+    .voice-toggle-btn.active { background-color: #1E293B; color: #F8FAFC; border-color: #475569; }
+    .voice-stats { font-size: 10px; color: #64748B; font-family: monospace; text-transform: uppercase; }
     
-    .input-area { background-color: #080B11; padding: 12px 16px 20px 16px; display: flex; gap: 8px; }
-    .input-box { flex: 1; background-color: #111726; border: 1px solid #1E293B; border-radius: 8px; color: #F8FAFC; font-size: 14px; padding: 10px 12px; resize: none; outline: none; font-family: inherit; }
-    .input-box:focus { border-color: #3B82F6; }
-    .action-buttons { display: flex; flex-direction: column; gap: 6px; }
-    .send-btn { background: #2563EB; color: white; border: none; border-radius: 8px; padding: 0 16px; font-weight: 600; font-size: 14px; cursor: pointer; flex: 1; }
+    .input-area { background-color: #0A0E17; padding: 0 20px 20px 20px; display: flex; gap: 10px; }
+    .input-box { flex: 1; background-color: #05070A; border: 1px solid #1E293B; border-radius: 4px; color: #F8FAFC; font-size: 14px; padding: 12px 14px; resize: none; outline: none; font-family: inherit; }
+    .input-box:focus { border-color: #475569; }
+    .action-buttons { display: flex; flex-direction: column; gap: 8px; }
+    .send-btn { background: #E2E8F0; color: #0F172A; border: none; border-radius: 4px; padding: 0 18px; font-weight: 600; font-size: 13px; cursor: pointer; flex: 1; }
     .send-btn:disabled { opacity: 0.5; }
-    .mic-btn { background-color: #1E293B; border: 1px solid #334155; color: white; border-radius: 8px; padding: 8px 12px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-    .mic-btn.recording { background-color: #EF4444; border-color: #EF4444; }
+    .mic-btn { background-color: transparent; border: 1px solid #334155; color: #94A3B8; border-radius: 4px; padding: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .mic-btn.recording { background-color: #7F1D1D; color: #FECACA; border-color: #991B1B; }
   </style>
 </head>
 <body>
@@ -126,19 +63,19 @@
 
   <main id="chat-stream">
     <div class="bubble-wrapper">
-      <div class="bubble bot">Greetings. PG1 Sovereign Agent is operational and secured. Repository telemetry online.</div>
+      <div class="bubble bot">Greetings. PG1 Sovereign Agent is operational. Telemetry and media generation interfaces are secured.</div>
     </div>
   </main>
 
   <div class="voice-panel">
-    <button id="voice-toggle" class="voice-toggle-btn" onclick="toggleVoice()">🎙️ Enable Voice</button>
-    <div id="voice-stats" class="voice-stats">Voice: Disabled | System TTS: Ready | Telemetry: Encrypted</div>
+    <button id="voice-toggle" class="voice-toggle-btn" onclick="toggleVoice()">Voice: Off</button>
+    <div id="voice-stats" class="voice-stats">Sys: Ready | Tel: Encrypted</div>
   </div>
 
   <div class="input-area">
-    <textarea id="user-input" class="input-box" rows="2" placeholder="Send directive to PG1..."></textarea>
+    <textarea id="user-input" class="input-box" rows="2" placeholder="Input operational directive..."></textarea>
     <div class="action-buttons">
-      <button id="send-btn" class="send-btn">Send</button>
+      <button id="send-btn" class="send-btn">Execute</button>
       <button id="mic-btn" class="mic-btn">🎙️</button>
     </div>
   </div>
@@ -155,12 +92,12 @@
     function toggleVoice() {
       voiceEnabled = !voiceEnabled;
       if (voiceEnabled) {
-        voiceToggleBtn.classList.add('active'); voiceToggleBtn.innerText = "🎙️ Voice Active";
-        voiceStats.innerText = "Voice: Enabled | System TTS: Active | Telemetry: Encrypted";
+        voiceToggleBtn.classList.add('active'); voiceToggleBtn.innerText = "Voice: On";
+        voiceStats.innerText = "Sys: Active | Tel: Encrypted";
         if ('speechSynthesis' in window) window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
       } else {
-        voiceToggleBtn.classList.remove('active'); voiceToggleBtn.innerText = "🎙️ Enable Voice";
-        voiceStats.innerText = "Voice: Disabled | System TTS: Ready | Telemetry: Encrypted";
+        voiceToggleBtn.classList.remove('active'); voiceToggleBtn.innerText = "Voice: Off";
+        voiceStats.innerText = "Sys: Ready | Tel: Encrypted";
         if ('speechSynthesis' in window) window.speechSynthesis.cancel();
       }
     }
@@ -177,7 +114,7 @@
     function speakText(text) {
       if (!voiceEnabled || !('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
-      const plainText = text.replace(/[*_#`]/g, '').replace(/!\[.*?\]\(.*?\)/g, '').replace(/\[CONSENT_REQUIRED\]/g, ''); 
+      const plainText = text.replace(/[*_#`]/g, '').replace(/!\[.*?\]\(.*?\)/g, '').replace(/<video.*?>.*?<\/video>/g, '').replace(/\[CONSENT_REQUIRED\]/g, ''); 
       const utterance = new SpeechSynthesisUtterance(plainText);
       utterance.rate = 1.05; window.speechSynthesis.speak(utterance);
     }
@@ -187,28 +124,24 @@
       html = html.replace(/!\[([^\]]*)\]\((.*?)\)/g, '<img src="$2" alt="$1" />');
       html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
       
-      // Render the sophisticated Consent Gate Notification Card
       if (html.includes('[CONSENT_REQUIRED]')) {
         html = html.replace('[CONSENT_REQUIRED]', '');
         html += `
           <div class="consent-card">
             <div class="consent-header">
-              <span class="consent-title">🛡️ Authorization Required</span>
-              <span class="consent-trust-badge">Pre-Flight Verified</span>
+              <span class="consent-title">Authorization Required</span>
+              <span class="consent-trust-badge">Verified</span>
             </div>
             <div class="consent-actions">
-              <button class="btn-consent btn-accept" onclick="submitConsent('ACCEPT')">
-                ✓ Authorize Execution
-              </button>
-              <button class="btn-consent btn-decline" onclick="submitConsent('DECLINE')">
-                ✕ Dismiss Action
-              </button>
+              <button class="btn-consent btn-accept" onclick="submitConsent('ACCEPT')">Approve Action</button>
+              <button class="btn-consent btn-decline" onclick="submitConsent('DECLINE')">Dismiss</button>
             </div>
           </div>
         `;
       }
       
-      html = html.split('\n').map(line => line.trim() ? (line.match(/^(<pre|<code|<img|<div|<button|<span|<header)/) ? line : `<p>${line}</p>`) : '').join('\n');
+      // Allow video tags to bypass the paragraph wrapper
+      html = html.split('\n').map(line => line.trim() ? (line.match(/^(<pre|<code|<img|<div|<button|<span|<header|<video)/) ? line : `<p>${line}</p>`) : '').join('\n');
       return html;
     }
 
@@ -228,18 +161,14 @@
       const wrapper = document.createElement('div'); 
       wrapper.className = 'bubble-wrapper'; 
       wrapper.id = id;
-      wrapper.innerHTML = `<div class="bubble bot" style="opacity:0.65">Analyzing repository telemetry...</div>`;
+      wrapper.innerHTML = `<div class="bubble bot" style="opacity:0.65">Executing directive...</div>`;
       chatStream.appendChild(wrapper); 
       scrollToBottom();
 
       try {
         const res = await fetch(`/api/chat?t=${Date.now()}`, {
           method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache'
-          },
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
           body: JSON.stringify({ prompt: prompt, userMessage: prompt, message: prompt })
         });
         
@@ -253,7 +182,7 @@
         speakText(reply);
       } catch (err) {
         wrapper.querySelector('.bubble').style.opacity = '1';
-        wrapper.querySelector('.bubble').innerText = `Telemetry Alert: ${err.message}.`;
+        wrapper.querySelector('.bubble').innerText = `System Alert: ${err.message}.`;
       } finally { 
         sendBtn.disabled = false; 
       }
@@ -267,17 +196,9 @@
       scrollToBottom();
     }
     
-    function scrollToBottom() { 
-      chatStream.scrollTop = chatStream.scrollHeight; 
-    }
-    
+    function scrollToBottom() { chatStream.scrollTop = chatStream.scrollHeight; }
     sendBtn.addEventListener('click', sendMessage);
-    userInput.addEventListener('keydown', (e) => { 
-      if (e.key === 'Enter' && !e.shiftKey) { 
-        e.preventDefault(); 
-        sendMessage(); 
-      } 
-    });
+    userInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
   </script>
 </body>
 </html>
