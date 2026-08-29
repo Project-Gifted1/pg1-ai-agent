@@ -36,13 +36,11 @@
     .btn-decline { background-color: transparent; color: #94A3B8; border: 1px solid #334155; }
     .btn-decline:active { background-color: #1E293B; }
 
-    /* Compact Audio / Bottom Dock */
     .voice-panel { background-color: #0A0E17; border-top: 1px solid #1E293B; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; }
     .voice-toggle-btn { background-color: transparent; color: #94A3B8; border: 1px solid #334155; border-radius: 4px; padding: 4px 10px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; }
     .voice-toggle-btn.active { background-color: #1E293B; color: #F8FAFC; border-color: #475569; }
     .voice-stats { font-size: 9px; color: #64748B; font-family: monospace; text-transform: uppercase; }
     
-    /* Attachment Styles */
     .file-preview { display: none; background-color: #1A2235; border: 1px solid #2B3954; border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; font-size: 11px; color: #93C5FD; align-items: center; justify-content: space-between; }
     .file-preview.active { display: flex; }
     .remove-file { cursor: pointer; color: #F87171; font-weight: bold; font-size: 12px; }
@@ -68,7 +66,7 @@
 
   <main id="chat-stream">
     <div class="bubble-wrapper">
-      <div class="bubble bot">Greetings. PG1 Sovereign Agent is operational. Telemetry and media generation interfaces are secured.</div>
+      <div class="bubble bot">Greetings. PG1 Sovereign Agent is operational. File ingestion matrix is online.</div>
     </div>
   </main>
 
@@ -118,23 +116,6 @@
       }
     }
 
-    let recognition;
-    if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
-      recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-      recognition.onstart = () => micBtn.classList.add('recording');
-      recognition.onend = () => micBtn.classList.remove('recording');
-      recognition.onresult = (e) => userInput.value += (userInput.value ? ' ' : '') + e.results[0][0].transcript;
-      micBtn.addEventListener('click', () => micBtn.classList.contains('recording') ? recognition.stop() : recognition.start());
-    }
-
-    function speakText(text) {
-      if (!voiceEnabled || !('speechSynthesis' in window)) return;
-      window.speechSynthesis.cancel();
-      const plainText = text.replace(/[*_#`]/g, '').replace(/!\[.*?\]\(.*?\)/g, '').replace(/<video.*?>.*?<\/video>/g, '').replace(/\[CONSENT_REQUIRED\]/g, ''); 
-      const utterance = new SpeechSynthesisUtterance(plainText);
-      utterance.rate = 1.05; window.speechSynthesis.speak(utterance);
-    }
-
     function parseMarkdown(text) {
       let html = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
       html = html.replace(/!\[([^\]]*)\]\((.*?)\)/g, '<img src="$2" alt="$1" />');
@@ -180,26 +161,42 @@
     };
 
     async function sendMessage() {
-      const prompt = userInput.value.trim();
-      if (!prompt && !currentAttachment) return;
+      const promptText = userInput.value.trim();
+      if (!promptText && !currentAttachment) return;
       
+      const promptToDisplay = promptText || "Analyze the attached file.";
       userInput.value = ''; 
-      appendUserMessage(prompt.replace('[SYSTEM_OVERRIDE]: ', '') + (currentAttachment ? ' 📎 [File Attached]' : '')); 
+      appendUserMessage(promptToDisplay.replace('[SYSTEM_OVERRIDE]: ', '') + (currentAttachment ? ' 📎 [File Attached]' : '')); 
       sendBtn.disabled = true;
       
       const id = 'msg-' + Date.now();
       const wrapper = document.createElement('div'); 
       wrapper.className = 'bubble-wrapper'; 
       wrapper.id = id;
-      wrapper.innerHTML = `<div class="bubble bot" style="opacity:0.65">Executing directive...</div>`;
+      wrapper.innerHTML = `<div class="bubble bot" style="opacity:0.65">Ingesting data payload...</div>`;
       chatStream.appendChild(wrapper); 
       scrollToBottom();
 
       try {
+        let filePayload = null;
+        
+        // Base64 Encoding execution before sending to backend
+        if (currentAttachment) {
+          const reader = new FileReader();
+          const base64Promise = new Promise(resolve => {
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+          });
+          reader.readAsDataURL(currentAttachment);
+          const base64Data = await base64Promise;
+          filePayload = {
+            inlineData: { data: base64Data, mimeType: currentAttachment.type }
+          };
+        }
+
         const res = await fetch(`/api/chat?t=${Date.now()}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
-          body: JSON.stringify({ prompt: prompt, userMessage: prompt, message: prompt }) // Note: Backend Base64 injection logic will be built next
+          body: JSON.stringify({ prompt: promptToDisplay, file: filePayload }) 
         });
         
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -209,7 +206,6 @@
         wrapper.querySelector('.bubble').style.opacity = '1';
         wrapper.querySelector('.bubble').innerHTML = parseMarkdown(reply);
         scrollToBottom(); 
-        speakText(reply);
       } catch (err) {
         wrapper.querySelector('.bubble').style.opacity = '1';
         wrapper.querySelector('.bubble').innerText = `System Alert: ${err.message}.`;
