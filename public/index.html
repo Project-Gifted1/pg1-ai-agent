@@ -66,13 +66,13 @@
 
   <main id="chat-stream">
     <div class="bubble-wrapper">
-      <div class="bubble bot">Greetings. PG1 Sovereign Agent is operational. File ingestion matrix is online.</div>
+      <div class="bubble bot">Greetings. PG1 Sovereign Agent is operational. Audio and file ingestion matrices online.</div>
     </div>
   </main>
 
   <div class="voice-panel">
     <button id="voice-toggle" class="voice-toggle-btn" onclick="toggleVoice()">Voice: Off</button>
-    <div id="voice-stats" class="voice-stats">Sys: Ready | Tel: Encrypted</div>
+    <div id="voice-stats" class="voice-stats">Sys: Ready | Audio: Standby</div>
   </div>
 
   <div style="padding: 0 16px; background-color: #0A0E17;">
@@ -107,13 +107,36 @@
       voiceEnabled = !voiceEnabled;
       if (voiceEnabled) {
         voiceToggleBtn.classList.add('active'); voiceToggleBtn.innerText = "Voice: On";
-        voiceStats.innerText = "Sys: Active | Tel: Encrypted";
-        if ('speechSynthesis' in window) window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
+        voiceStats.innerText = "Sys: Active | Audio: Synced";
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const unlockUtterance = new SpeechSynthesisUtterance('');
+          window.speechSynthesis.speak(unlockUtterance);
+        }
       } else {
         voiceToggleBtn.classList.remove('active'); voiceToggleBtn.innerText = "Voice: Off";
-        voiceStats.innerText = "Sys: Ready | Tel: Encrypted";
+        voiceStats.innerText = "Sys: Ready | Audio: Standby";
         if ('speechSynthesis' in window) window.speechSynthesis.cancel();
       }
+    }
+
+    let recognition;
+    if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+      recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+      recognition.onstart = () => micBtn.classList.add('recording');
+      recognition.onend = () => micBtn.classList.remove('recording');
+      recognition.onresult = (e) => userInput.value += (userInput.value ? ' ' : '') + e.results[0][0].transcript;
+      micBtn.addEventListener('click', () => micBtn.classList.contains('recording') ? recognition.stop() : recognition.start());
+    }
+
+    function speakText(text) {
+      if (!voiceEnabled || !('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const cleanText = text.replace(/[*_#`]/g, '').replace(/!\[.*?\]\(.*?\)/g, '').replace(/<video.*?>.*?<\/video>/g, '').replace(/\[CONSENT_REQUIRED\]/g, ''); 
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.rate = 1.05; 
+      utterance.pitch = 0.95; // Executive tone adjustment
+      window.speechSynthesis.speak(utterance);
     }
 
     function parseMarkdown(text) {
@@ -173,14 +196,12 @@
       const wrapper = document.createElement('div'); 
       wrapper.className = 'bubble-wrapper'; 
       wrapper.id = id;
-      wrapper.innerHTML = `<div class="bubble bot" style="opacity:0.65">Ingesting data payload...</div>`;
+      wrapper.innerHTML = `<div class="bubble bot" style="opacity:0.65">Executing directive...</div>`;
       chatStream.appendChild(wrapper); 
       scrollToBottom();
 
       try {
         let filePayload = null;
-        
-        // Base64 Encoding execution before sending to backend
         if (currentAttachment) {
           const reader = new FileReader();
           const base64Promise = new Promise(resolve => {
@@ -206,6 +227,7 @@
         wrapper.querySelector('.bubble').style.opacity = '1';
         wrapper.querySelector('.bubble').innerHTML = parseMarkdown(reply);
         scrollToBottom(); 
+        speakText(reply);
       } catch (err) {
         wrapper.querySelector('.bubble').style.opacity = '1';
         wrapper.querySelector('.bubble').innerText = `System Alert: ${err.message}.`;
