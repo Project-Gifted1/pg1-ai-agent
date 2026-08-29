@@ -285,12 +285,19 @@
       const loadingId = appendBotMessage('Processing directive...', true);
 
       try {
-        // Absolute URL restored so it works flawlessly on GitHub Pages
+        // This is the crucial fix: It explicitly routes to the Vercel backend.
         const res = await fetch('https://gifted1s-projects.vercel.app/api/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
           body: JSON.stringify({ prompt: prompt, userMessage: prompt, message: prompt })
         });
+
+        if (!res.ok) {
+            throw new Error(`HTTP error! status: ${res.status}`);
+        }
 
         const data = await res.json();
         const reply = data.reply || 'Execution complete.';
