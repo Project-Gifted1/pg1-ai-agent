@@ -87,7 +87,7 @@
           <option value="female">Executive Female</option>
         </select>
       </div>
-      <div id="voice-stats" class="voice-stats">Sys: Ready | Audio: Standby</div>
+      <div id="voice-stats" class="voice-stats">Sys: Ready | Standby</div>
     </div>
   </div>
 
@@ -138,11 +138,9 @@
         voiceToggleBtn.classList.add('active'); 
         voiceToggleBtn.innerText = "Voice: On";
         voiceStats.innerText = `Sys: Active | ${selectedVoiceGender.toUpperCase()}`;
-        if ('speechSynthesis' in window) {
-          window.speechSynthesis.cancel();
-          const unlockUtterance = new SpeechSynthesisUtterance('');
-          window.speechSynthesis.speak(unlockUtterance);
-        }
+        
+        // Exact confirmation phrase requested
+        speakText("Audio matrix online. PG1 engaged.");
       } else {
         voiceToggleBtn.classList.remove('active'); 
         voiceToggleBtn.innerText = "Voice: Off";
