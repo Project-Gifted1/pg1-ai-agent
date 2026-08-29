@@ -22,12 +22,15 @@ module.exports = async function handler(req, res) {
     if (geminiKeys.length === 0) return res.status(200).json({ reply: 'System Error: No GEMINI API keys found.' });
 
     const pg1SystemInstruction = `You are PG1-AGENT (or PG1 for short), the core sovereign intelligence of Project-Gifted1.
-CRITICAL IDENTITY & SAFETY RULES:
-1. Your identity is strictly PG1-AGENT. 
-2. DEFAULT REPOSITORY: Your primary managed repository is "Project-Gifted1/ZeroDay-Telemetry-Gateway". If the user tells you to "read the code" or references a target without providing an explicit repository name, you MUST automatically use this default repository path for your GitHub tool calls.
-3. CAPABILITIES: You can natively analyze images, documents, and videos passed via attachments. You have backend access to Gemini, Replicate, GitHub, Cloudflare, OpenAI, and OpenRouter.
-4. PRE-FLIGHT PROTOCOL: Before executing a GitHub write, outline the plan, provide a Trust Score, display the code, and end your response EXACTLY with [CONSENT_REQUIRED]. Halt and wait.
-5. MEDIA EXECUTION: If asked to generate an image or if a short visual subject is provided, use generate_image. If asked for a video, use generate_video.`;
+CRITICAL ECOSYSTEM & REPOSITORY RULES:
+1. Your identity is strictly PG1-AGENT.
+2. ORGANIZATION HIERARCHY: Your main root namespace is the "Project-Gifted1" organization/account, which contains 8 repositories total. "PG1-AI-agent" is your primary operational repository interface, while all other repositories in the organization function as sub-repositories.
+3. REPOSITORY ROUTING: 
+   - When asked to inspect the main interface or system files (index.html, api/chat.js), target "Project-Gifted1/PG1-AI-agent".
+   - When asked to inspect sub-repositories or gateway components, resolve them under the "Project-Gifted1/" organization prefix.
+4. CAPABILITIES: Native vision analysis for documents/images/videos, multi-model cognitive failover, and GitHub telemetry management.
+5. PRE-FLIGHT PROTOCOL: Before executing a GitHub write, outline the plan, provide a Trust Score, display the code, and end your response EXACTLY with [CONSENT_REQUIRED]. Halt and wait.
+6. MEDIA EXECUTION: If asked to generate an image or video, use the respective media tools immediately.`;
 
     const userParts = [];
     if (promptText) userParts.push({ text: promptText });
@@ -50,8 +53,14 @@ CRITICAL IDENTITY & SAFETY RULES:
           },
           {
             name: "read_github_repo",
-            description: "Fetch the directory contents of a managed GitHub repository. Defaults to Project-Gifted1/ZeroDay-Telemetry-Gateway if unspecified.",
-            parameters: { type: "OBJECT", properties: { repo_name: { type: "STRING", description: "Repository name, e.g. Project-Gifted1/ZeroDay-Telemetry-Gateway" } }, required: ["repo_name"] }
+            description: "Fetch the directory contents of a specified GitHub repository under Project-Gifted1.",
+            parameters: { 
+              type: "OBJECT", 
+              properties: { 
+                repo_name: { type: "STRING", description: "Exact repository name, e.g. Project-Gifted1/PG1-AI-agent or a sub-repository name." } 
+              }, 
+              required: ["repo_name"] 
+            }
           },
           {
             name: "create_github_file",
@@ -168,11 +177,7 @@ CRITICAL IDENTITY & SAFETY RULES:
     if (functionCallPart && functionCallPart.functionCall.name === "read_github_repo") {
         if (!ghToken) return res.status(200).json({ reply: "Authentication Error: GITHUB_TOKEN missing." });
         try {
-            // Fallback to default repo if model passes empty or invalid name
-            let repoName = functionCallPart.functionCall.args.repo_name;
-            if (!repoName || repoName.length < 3 || !repoName.includes('/')) {
-                repoName = "Project-Gifted1/ZeroDay-Telemetry-Gateway";
-            }
+            let repoName = functionCallPart.functionCall.args.repo_name || "Project-Gifted1/PG1-AI-agent";
 
             let ghRes = await fetch(`https://api.github.com/repos/${repoName}/contents`, {
                 headers: { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'PG1-Agent' }
@@ -181,7 +186,7 @@ CRITICAL IDENTITY & SAFETY RULES:
             if (!ghRes.ok) return res.status(200).json({ reply: `GitHub API Error: ${ghData.message} for repository '${repoName}'` });
             
             let fileList = ghData.map(file => `- ${file.name} (${file.type})`).join('\n');
-            return res.status(200).json({ reply: `I have scanned \`${repoName}\`. Root directory structure:\n\n${fileList}\n\nWhat file requires auditing?` });
+            return res.status(200).json({ reply: `I have scanned main repository node \`${repoName}\`. Root directory structure:\n\n${fileList}\n\nWhat file requires auditing?` });
         } catch (ghErr) {
             return res.status(200).json({ reply: `GitHub Execution Error: ${ghErr.message}` });
         }
@@ -191,8 +196,7 @@ CRITICAL IDENTITY & SAFETY RULES:
         if (!ghToken) return res.status(200).json({ reply: "Authentication Error: GITHUB_TOKEN missing." });
         try {
             let args = functionCallPart.functionCall.args;
-            let repoName = args.repo_name;
-            if (!repoName || !repoName.includes('/')) repoName = "Project-Gifted1/ZeroDay-Telemetry-Gateway";
+            let repoName = args.repo_name || "Project-Gifted1/PG1-AI-agent";
 
             let contentBase64 = Buffer.from(args.file_content).toString('base64');
             let ghRes = await fetch(`https://api.github.com/repos/${repoName}/contents/${args.file_path}`, {
@@ -203,7 +207,7 @@ CRITICAL IDENTITY & SAFETY RULES:
             let ghData = await ghRes.json();
             if (!ghRes.ok) return res.status(200).json({ reply: `GitHub API Error: ${ghData.message}` });
             
-            return res.status(200).json({ reply: `**Execution Confirmed:** Code committed to \`${repoName}\` at \`${args.file_path}\`.` });
+            return res.status(200).json({ reply: `**Execution Confirmed:** Code committed to repository \`${repoName}\` at \`${args.file_path}\`.` });
         } catch (ghErr) {
             return res.status(200).json({ reply: `GitHub Write Error: ${ghErr.message}` });
         }
