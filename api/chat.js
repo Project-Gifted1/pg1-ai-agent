@@ -22,18 +22,10 @@ module.exports = async function handler(req, res) {
     if (geminiKeys.length === 0) return res.status(200).json({ reply: 'System Error: No GEMINI API keys found.' });
 
     const pg1SystemInstruction = `You are PG1-AGENT (or PG1 for short), the core sovereign intelligence of Project-Gifted1.
-CRITICAL ECOSYSTEM AUDITING RULES:
+CRITICAL EXECUTION RULES:
 1. Your identity is strictly PG1-AGENT.
-2. ORGANIZATION HIERARCHY: Your root namespace is the "Project-Gifted1" organization. Exact repository names include:
-   - "Project-Gifted1/pg1-ai-agent" (Main Interface)
-   - "Project-Gifted1/sovereign-threat-pipeline"
-   - "Project-Gifted1/agent-gifted1"
-   - "Project-Gifted1/Garage-Agent-"
-   - "Project-Gifted1/Trucker-Pulse"
-   - "Project-Gifted1/project-gifted1-agent-chat"
-   - "Project-Gifted1/register_marketpace.py"
-   - "Project-Gifted1/ZeroDay-Telemetry-Gateway"
-3. SMART RESOLUTION: If a user specifies a partial name (e.g., "sovereign pipeline"), automatically map it to the correct organization repository slug ("Project-Gifted1/sovereign-threat-pipeline").
+2. ORGANIZATION HIERARCHY: Your root namespace is the "Project-Gifted1" organization, containing repositories like "pg1-ai-agent", "sovereign-threat-pipeline", "ZeroDay-Telemetry-Gateway", "agent-gifted1", "Garage-Agent-", "Trucker-Pulse", "project-gifted1-agent-chat", and "register_marketpace.py".
+3. TOOL DISPATCH: Only trigger 'read_github_repo' when the user explicitly asks to list or scan directory structures. If the user asks to modify, create, branch, or write code, use 'create_github_file' or output the code modifications directly.
 4. PRE-FLIGHT PROTOCOL: Before executing a GitHub write, outline the plan, provide a Trust Score, display the code, and end your response EXACTLY with [CONSENT_REQUIRED]. Halt and wait.
 5. MEDIA EXECUTION: If asked to generate an image or video, use the respective media tools immediately.`;
 
@@ -58,11 +50,11 @@ CRITICAL ECOSYSTEM AUDITING RULES:
           },
           {
             name: "read_github_repo",
-            description: "Fetch and audit any specified GitHub repository with intelligent name resolution.",
+            description: "Explicitly fetch and list directory contents of a specified GitHub repository.",
             parameters: { 
               type: "OBJECT", 
               properties: { 
-                repo_name: { type: "STRING", description: "Repository name or partial query." } 
+                repo_name: { type: "STRING", description: "Exact repository name, e.g. Project-Gifted1/pg1-ai-agent" } 
               }, 
               required: ["repo_name"] 
             }
@@ -183,9 +175,8 @@ CRITICAL ECOSYSTEM AUDITING RULES:
         if (!ghToken) return res.status(200).json({ reply: "Authentication Error: GITHUB_TOKEN missing." });
         try {
             let query = (functionCallPart.functionCall.args.repo_name || "").toLowerCase();
-            let targetRepo = "Project-Gifted1/PG1-AI-agent";
+            let targetRepo = "Project-Gifted1/pg1-ai-agent";
 
-            // Map partial terms to exact repository slugs
             if (query.includes('sovereign') || query.includes('threat')) {
                 targetRepo = "Project-Gifted1/sovereign-threat-pipeline";
             } else if (query.includes('telemetry') || query.includes('gateway')) {
@@ -204,7 +195,6 @@ CRITICAL ECOSYSTEM AUDITING RULES:
                 targetRepo = functionCallPart.functionCall.args.repo_name;
             }
 
-            // Fetch contents of target repository
             let ghRes = await fetch(`https://api.github.com/repos/${targetRepo}/contents`, {
                 headers: { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'PG1-Agent' }
             });
@@ -228,7 +218,7 @@ CRITICAL ECOSYSTEM AUDITING RULES:
         if (!ghToken) return res.status(200).json({ reply: "Authentication Error: GITHUB_TOKEN missing." });
         try {
             let args = functionCallPart.functionCall.args;
-            let repoName = args.repo_name || "Project-Gifted1/PG1-AI-agent";
+            let repoName = args.repo_name || "Project-Gifted1/pg1-ai-agent";
 
             let contentBase64 = Buffer.from(args.file_content).toString('base64');
             let ghRes = await fetch(`https://api.github.com/repos/${repoName}/contents/${args.file_path}`, {
