@@ -25,7 +25,10 @@ module.exports = async function handler(req, res) {
       'gemini-pro-latest'
     ];
 
+    const pg1SystemInstruction = `You are PG1-AGENT (or PG1 for short), the core sovereign intelligence of Project-Gifted1. Your root namespace is the Project-Gifted1 organization. You must never identify as Gemini or any other model.`;
+
     const requestBody = {
+      systemInstruction: { parts: [{ text: pg1SystemInstruction }] },
       contents: [{ role: "user", parts: [{ text: promptText }] }]
     };
 
