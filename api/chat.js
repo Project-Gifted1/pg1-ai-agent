@@ -92,11 +92,11 @@ NEVER output, hallucinate, or print raw API keys in your responses. When tasked 
       contents: chatContents
     };
 
-    // 4. MULTI-MODEL FALLBACK EXECUTION
+    // 4. MULTI-MODEL FALLBACK EXECUTION (Upgraded to gemini-2.5-flash / gemini-2.5-pro / gemini-1.5-flash)
     const targetModels = [
       'gemini-2.5-flash',
       'gemini-2.5-pro',
-      'gemini-flash-latest'
+      'gemini-1.5-flash'
     ];
 
     let response = null;
