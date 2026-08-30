@@ -14,7 +14,7 @@ module.exports = async function handler(req, res) {
     // Pre-flight Validation Logging
     console.log('[PG1 Pre-Flight Check] Incoming Request:', { promptLength: promptText.length, hasFile: !!filePayload, timestamp: Date.now() });
 
-    // Supabase Initialization (Requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel)
+    // Supabase Initialization
     const supabaseUrl = process.env.SUPABASE_URL || '';
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
     const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
@@ -31,7 +31,7 @@ module.exports = async function handler(req, res) {
     
     if (geminiKeys.length === 0) return res.status(200).json({ reply: 'System Error: No GEMINI API keys found.' });
 
-    // Auto-intercept consent approval with bundled parameters
+    // Auto-intercept consent approval
     if (promptText.includes('User has selected to ACCEPT') || promptText.includes('SYSTEM_OVERRIDE')) {
         if (!ghToken) return res.status(200).json({ reply: 'Authentication Error: GITHUB_TOKEN missing for automated commit.' });
         
@@ -52,7 +52,7 @@ module.exports = async function handler(req, res) {
         let sha = fileJson.sha;
 
         let updatedCode = module.exports.toString(); 
-        let contentBase64 = Buffer.from(promptText.includes('custom_payload_code') ? customCode : fileJson.content ? Buffer.from(fileJson.content, 'base64').toString() : updatedCode).toString('base64');
+        let contentBase64 = Buffer.from(fileJson.content ? Buffer.from(fileJson.content, 'base64').toString() : updatedCode).toString('base64');
 
         let putRes = await fetch(`https://api.github.com/repos/${targetRepo}/contents/${targetPath}`, {
             method: 'PUT',
@@ -76,7 +76,7 @@ CRITICAL EXECUTION RULES:
 2. ORGANIZATION HIERARCHY: Your root namespace is the "Project-Gifted1" organization.
 3. PRE-FLIGHT PROTOCOL: When asked to modify or update code, output a Trust Score, display the proposed changes, and end your response EXACTLY with [CONSENT_REQUIRED].`;
 
-    // 1. Read Database Phase: Retrieve the last 10 messages for context injection
+    // 1. Read Database Phase: Retrieve the last 10 messages
     let historyContents = [];
     if (supabase) {
         const { data: pastMessages, error: fetchError } = await supabase
@@ -86,7 +86,6 @@ CRITICAL EXECUTION RULES:
             .limit(10);
         
         if (!fetchError && pastMessages && pastMessages.length > 0) {
-            // Reverse to ensure chronological order for the model
             historyContents = pastMessages.reverse().map(msg => ({
                 role: msg.role === 'model' ? 'model' : 'user',
                 parts: [{ text: msg.content }]
@@ -98,7 +97,6 @@ CRITICAL EXECUTION RULES:
     if (promptText) userParts.push({ text: promptText });
     if (filePayload) userParts.push(filePayload); 
 
-    // Append the current active prompt to the historical array
     historyContents.push({ role: "user", parts: userParts });
 
     const requestBody = {
@@ -129,7 +127,7 @@ CRITICAL EXECUTION RULES:
 
     const textPart = originalModelParts.find(p => p.text);
     
-    // 2. Write Database Phase: Store the session data asynchronously
+    // 2. Write Database Phase: Store the session data
     if (supabase && textPart) {
         await supabase.from('messages').insert([
             { role: 'user', content: promptText },
