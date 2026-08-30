@@ -25,11 +25,13 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ reply: 'System Error: No GEMINI API keys found in Vercel environment variables.' });
     }
 
-    // Stable, current production model identifiers supported by the v1beta endpoint
+    // Upgraded model list with latest high-reliability production identifiers
     const targetModels = [
+      'gemini-3.7-flash',
+      'gemini-3.6-flash',
+      'gemini-3.5-flash',
       'gemini-2.5-flash',
-      'gemini-2.5-pro',
-      'gemini-2.5-flash-lite'
+      'gemini-2.5-pro'
     ];
 
     let historyContents = [];
