@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>Project-Gifted1™</title>
+  <!-- jsPDF for real, functional PDF exports -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     :root {
@@ -62,14 +63,46 @@
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 1px 15px rgba(234, 179, 8, 0.1);
     }
 
-    @keyframes headerGlowPulse {
-      0% { text-shadow: 0 0 6px rgba(234, 179, 8, 0.3); }
-      50% { text-shadow: 0 0 14px rgba(234, 179, 8, 0.7); }
-      100% { text-shadow: 0 0 6px rgba(234, 179, 8, 0.3); }
+    .header-title-group { display: flex; align-items: center; gap: 8px; }
+
+    /* Animated Liquid Gold Sweep for Title */
+    .header-title { 
+      font-size: 16px; 
+      font-weight: 800; 
+      letter-spacing: -0.2px; 
+      background: linear-gradient(90deg, #FFFFFF 0%, #FDE047 50%, #FFFFFF 100%);
+      background-size: 200% auto;
+      color: transparent;
+      -webkit-background-clip: text;
+      background-clip: text;
+      animation: shineSweep 4s linear infinite, hudPulse 6s ease-in-out infinite;
+      cursor: pointer;
+      transition: transform 0.15s;
     }
 
-    .header-title-group { display: flex; align-items: center; gap: 8px; }
-    .header-title { font-size: 16px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.2px; animation: headerGlowPulse 4s ease-in-out infinite; }
+    .header-title:active {
+      transform: scale(0.96);
+    }
+
+    @keyframes shineSweep {
+      to { background-position: 200% center; }
+    }
+
+    /* Independent Trademark Floating Pulse */
+    .trademark-symbol {
+      font-size: 10px;
+      color: var(--accent-gold);
+      vertical-align: super;
+      margin-left: 1px;
+      animation: trademarkPulse 2.5s ease-in-out infinite;
+      text-shadow: 0 0 8px var(--accent-glow);
+    }
+
+    @keyframes trademarkPulse {
+      0% { opacity: 0.7; text-shadow: 0 0 4px rgba(234, 179, 8, 0.4); }
+      50% { opacity: 1; text-shadow: 0 0 12px rgba(234, 179, 8, 0.8); }
+      100% { opacity: 0.7; text-shadow: 0 0 4px rgba(234, 179, 8, 0.4); }
+    }
     
     .header-actions { display: flex; gap: 6px; align-items: center; }
     
@@ -126,6 +159,8 @@
     .bubble-container:hover .message-tools { opacity: 1; }
     .tool-action { background: none; border: none; color: var(--text-muted); font-size: 9.5px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.8px; font-family: var(--font-mono); transition: color 0.15s; display: flex; align-items: center; gap: 4px; }
     .tool-action:hover { color: var(--accent-gold); text-shadow: 0 0 5px var(--accent-glow); }
+
+    .edit-input { width: 100%; background: var(--bg-deep); border: 1px solid var(--border-active); color: var(--text-main); padding: 10px; border-radius: 8px; font-family: inherit; font-size: 13px; resize: none; outline: none; margin-top: 4px; box-shadow: 0 0 12px var(--accent-glow); }
 
     .consent-card { margin-top: 12px; background-color: var(--bg-deep); border: 1px solid rgba(234, 179, 8, 0.3); border-left: 3px solid var(--accent-gold); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 0 15px rgba(234, 179, 8, 0.1); }
     .consent-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(234, 179, 8, 0.2); padding-bottom: 8px; }
@@ -188,7 +223,7 @@
 <body>
   <header>
     <div class="header-title-group">
-      <div class="header-title">Project-Gifted1™</div>
+      <div class="header-title">Project-Gifted1<span class="trademark-symbol">™</span></div>
     </div>
     <div class="header-actions">
       <button class="icon-btn" onclick="openLiveVideo()" title="Live Video">
@@ -393,82 +428,4 @@
     }
 
     function parseMarkdown(text) {
-      let html = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>').replace(/!\[([^\]]*)\]\((.*?)\)/g, '<img src="$2" alt="$1" />').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      if (html.includes('[CONSENT_REQUIRED]')) {
-        html = html.replace('[CONSENT_REQUIRED]', '') + `<div class="consent-card"><div class="consent-header"><span class="consent-title">Authorization Required</span><span class="consent-trust-badge">Verified</span></div><div class="consent-actions"><button class="btn-consent btn-accept" onclick="submitConsent('ACCEPT')">Approve Action</button><button class="btn-consent btn-decline" onclick="submitConsent('DECLINE')">Dismiss</button></div></div>`;
-      }
-      return html.split('\n').map(line => line.trim() ? (line.match(/^(<pre|<code|<img|<div|<button|<span|<header|<video)/) ? line : `<p>${line}</p>`) : '').join('\n');
-    }
-
-    function handleFileSelect(event) { triggerHaptic(20); const file = event.target.files[0]; if (!file) return; currentAttachment = file; document.getElementById('file-name').innerText = file.name; document.getElementById('file-preview').classList.add('active'); }
-    function clearAttachment() { triggerHaptic(10); currentAttachment = null; document.getElementById('file-upload').value = ''; document.getElementById('file-preview').classList.remove('active'); }
-    window.submitConsent = function(decision) { triggerHaptic(30); userInput.value = `[SYSTEM_OVERRIDE]: User has selected to ${decision} the proposed action.`; sendMessage(); };
-    function getTimeString() { return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
-
-    window.copyMessageText = function(btn) { triggerHaptic(15); navigator.clipboard.writeText(btn.closest('.bubble-container').querySelector('.bubble').innerText); btn.innerText = "Copied!"; setTimeout(() => btn.innerText = "Copy", 1500); };
-    window.deleteMessageBubble = function(btn) { triggerHaptic(25); const wrapper = btn.closest('.bubble-wrapper'); wrapper.style.opacity = '0'; wrapper.style.transform = 'scale(0.95)'; setTimeout(() => { wrapper.remove(); persistCurrentThreadState(); }, 200); };
-    window.enableInlineEdit = function(btn) {
-      triggerHaptic(15); const container = btn.closest('.bubble-container'); const bubble = container.querySelector('.bubble'); if (container.querySelector('.edit-input')) return;
-      const originalText = bubble.innerText; bubble.style.display = 'none';
-      const textarea = document.createElement('textarea'); textarea.className = 'edit-input'; textarea.rows = 2; textarea.value = originalText;
-      textarea.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); const newText = textarea.value.trim(); textarea.remove(); bubble.style.display = 'block'; if (newText) { bubble.innerHTML = parseMarkdown(newText); userInput.value = newText; persistCurrentThreadState(); sendMessage(); } } });
-      container.insertBefore(textarea, bubble); textarea.focus();
-    };
-
-    window.openThreadManager = function() { triggerHaptic(20); renderThreadList(); document.getElementById('thread-modal').classList.add('active'); };
-    window.closeThreadManager = function(e) { if (!e || e.target.id === 'thread-modal' || e.target.classList.contains('icon-btn')) document.getElementById('thread-modal').classList.remove('active'); };
-    function renderThreadList() {
-      const listContainer = document.getElementById('thread-list'); listContainer.innerHTML = '';
-      Object.keys(threads).forEach(id => {
-        const item = document.createElement('div'); item.className = `thread-item ${id === currentThreadId ? 'active-thread' : ''}`;
-        item.innerHTML = `<div style="display:flex;flex-direction:column;gap:2px;overflow:hidden;width:100%;" onclick="switchThread('${id}')"><span style="font-size:12px;font-weight:500;color:var(--text-main);">${threads[id].title}</span><span style="font-size:9px;color:var(--text-muted);font-family:var(--font-mono);">${threads[id].date}</span></div><button class="icon-btn" style="width:26px;height:26px;animation:none;" onclick="deleteThreadSession(event, '${id}')">✕</button>`;
-        listContainer.appendChild(item);
-      });
-    }
-
-    window.switchThread = function(id) { triggerHaptic(20); persistCurrentThreadState(); currentThreadId = id; chatStream.innerHTML = threads[currentThreadId].messages; saveThreadsToStorage(); closeThreadManager(); scrollToBottom(); };
-    window.deleteThreadSession = function(e, id) { e.stopPropagation(); triggerHaptic(30); if (Object.keys(threads).length <= 1) { alert("Cannot delete the only remaining thread."); return; } delete threads[id]; if (currentThreadId === id) { currentThreadId = Object.keys(threads)[0]; chatStream.innerHTML = threads[currentThreadId].messages; } saveThreadsToStorage(); renderThreadList(); };
-    window.createNewThread = function() { triggerHaptic(25); persistCurrentThreadState(); currentThreadId = 'thread_' + Date.now(); threads[currentThreadId] = { title: 'New Directive', date: new Date().toLocaleString(), messages: `<div class="bubble-wrapper"><div class="bubble-container bot"><div class="bubble">Greetings. New session initialized. PG1 Sovereign Agent operational.</div><div class="message-meta"><span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action" onclick="copyMessageText(this)">Copy</button><button class="tool-action delete" onclick="deleteMessageBubble(this)">Delete</button></div></div></div></div>` }; chatStream.innerHTML = threads[currentThreadId].messages; saveThreadsToStorage(); };
-    window.saveCurrentThreadAndCreateNew = function() { persistCurrentThreadState(); closeThreadManager(); createNewThread(); };
-
-    async function sendMessage() {
-      triggerHaptic(25); const promptText = userInput.value.trim(); if (!promptText && !currentAttachment) return;
-      const promptToDisplay = promptText || "Analyze the attached file.";
-      if (threads[currentThreadId].title === 'Initial Session' || threads[currentThreadId].title === 'New Directive') threads[currentThreadId].title = promptToDisplay.substring(0, 28) + (promptToDisplay.length > 28 ? '...' : '');
-      userInput.value = ''; appendUserMessage(promptToDisplay.replace('[SYSTEM_OVERRIDE]: ', '') + (currentAttachment ? ' 📎 [File Attached]' : '')); sendBtn.disabled = false;
-      const wrapper = document.createElement('div'); wrapper.className = 'bubble-wrapper'; 
-      wrapper.innerHTML = `<div class="bubble-container bot"><div class="bubble" style="opacity:0.65">Executing directive...</div><div class="message-meta"><span class="timestamp">${getTimeString()}</span></div></div>`;
-      chatStream.appendChild(wrapper); scrollToBottom(); persistCurrentThreadState();
-
-      try {
-        let filePayload = null;
-        if (currentAttachment) {
-          const reader = new FileReader();
-          filePayload = { inlineData: { data: await new Promise(r => { reader.onload = () => r(reader.result.split(',')[1]); reader.readAsDataURL(currentAttachment); }), mimeType: currentAttachment.type } };
-        }
-        const res = await fetch(`/api/chat?t=${Date.now()}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: promptToDisplay, file: filePayload }) });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        
-        const container = wrapper.querySelector('.bubble-container');
-        container.querySelector('.bubble').style.opacity = '1';
-        container.querySelector('.bubble').innerHTML = parseMarkdown(data.reply || 'Execution complete.');
-        container.querySelector('.message-meta').innerHTML = `<span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action" onclick="copyMessageText(this)">Copy</button><button class="tool-action delete" onclick="deleteMessageBubble(this)">Delete</button></div>`;
-        scrollToBottom(); persistCurrentThreadState(); speakText(data.reply || 'Execution complete.');
-      } catch (err) {
-        wrapper.querySelector('.bubble').style.opacity = '1'; wrapper.querySelector('.bubble').innerText = `System Alert: ${err.message}.`; persistCurrentThreadState();
-      } finally { sendBtn.disabled = false; clearAttachment(); }
-    }
-
-    function appendUserMessage(text) {
-      const wrapper = document.createElement('div'); wrapper.className = 'bubble-wrapper';
-      wrapper.innerHTML = `<div class="bubble-container user"><div class="bubble">${text}</div><div class="message-meta"><span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action" onclick="enableInlineEdit(this)">Edit</button><button class="tool-action delete" onclick="deleteMessageBubble(this)">Delete</button></div></div></div>`;
-      chatStream.appendChild(wrapper); scrollToBottom(); persistCurrentThreadState();
-    }
-    
-    function scrollToBottom() { chatStream.scrollTop = chatStream.scrollHeight; }
-    sendBtn.addEventListener('click', sendMessage);
-    userInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
-  </script>
-</body>
-</html>
+      let html = text.replace(/```([\s\S]*?)
