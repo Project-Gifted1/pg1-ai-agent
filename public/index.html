@@ -9,7 +9,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     :root {
-      /* Pure OLED Black for maximum contrast */
       --bg-deep: #000000;
       --bg-surface: #040404;
       --bg-glass: rgba(0, 0, 0, 0.95);
@@ -35,7 +34,73 @@
       position: relative; 
     }
 
-    /* Ambient Background Layer (Fixed iOS Tap Bug) */
+    /* Security Gate Overlay */
+    #auth-gate {
+      position: fixed;
+      inset: 0;
+      background: #000000;
+      z-index: 99999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .auth-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--accent-gold);
+      border-radius: 14px;
+      width: 100%;
+      max-width: 360px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 0 30px rgba(234, 179, 8, 0.2);
+    }
+    .auth-title {
+      font-size: 14px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: var(--accent-gold);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      text-align: center;
+    }
+    .auth-input {
+      background: #000;
+      border: 1px solid rgba(234, 179, 8, 0.4);
+      border-radius: 8px;
+      color: var(--text-main);
+      padding: 12px;
+      font-size: 14px;
+      outline: none;
+      font-family: var(--font-mono);
+    }
+    .auth-input:focus {
+      border-color: var(--accent-gold);
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+    .auth-btn {
+      background: var(--accent-gold);
+      color: #000;
+      border: none;
+      border-radius: 8px;
+      padding: 12px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      cursor: pointer;
+      box-shadow: 0 2px 10px var(--accent-glow);
+    }
+    .auth-error {
+      color: #EF4444;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      text-align: center;
+      display: none;
+    }
+
     .hud-ambient-bg {
       position: fixed;
       top: -20%; 
@@ -48,7 +113,6 @@
       pointer-events: none;
     }
 
-    /* Outer HUD Pulse Boundary placed behind UI */
     @keyframes hudPulse {
       0% { box-shadow: inset 0 0 15px rgba(234, 179, 8, 0.05); border: 1px solid rgba(234, 179, 8, 0.05); }
       50% { box-shadow: inset 0 0 35px rgba(234, 179, 8, 0.15); border: 1px solid rgba(234, 179, 8, 0.25); }
@@ -79,7 +143,6 @@
 
     .header-title-group { display: flex; align-items: center; gap: 8px; }
 
-    /* Animated Liquid Gold Sweep */
     .header-title { 
       font-size: 16px; 
       font-weight: 800; 
@@ -96,7 +159,6 @@
     .header-title:active { transform: scale(0.96); }
     @keyframes shineSweep { to { background-position: 200% center; } }
 
-    /* Independent Trademark Floating Pulse */
     .trademark-symbol {
       font-size: 10px;
       color: var(--accent-gold);
@@ -249,6 +311,17 @@
   </style>
 </head>
 <body>
+
+  <!-- Direct Password Gate Overlay -->
+  <div id="auth-gate">
+    <div class="auth-card">
+      <div class="auth-title">Project-Gifted1 Security Gate</div>
+      <input type="text" id="gate-user" class="auth-input" placeholder="Enter Username..." autocomplete="off" />
+      <input type="password" id="gate-pass" class="auth-input" placeholder="Enter Password..." autocomplete="current-password" />
+      <button class="auth-btn" onclick="verifyAccess()">Authenticate</button>
+      <div id="gate-error" class="auth-error">Access Denied: Invalid Credentials.</div>
+    </div>
+  </div>
   
   <div class="hud-ambient-bg"></div>
   <div class="hud-border-overlay"></div>
@@ -342,6 +415,36 @@
   </div>
 
   <script>
+    // Frontend Authentication Gate Verification
+    async function verifyAccess() {
+      const u = document.getElementById('gate-user').value.trim();
+      const p = document.getElementById('gate-pass').value.trim();
+      
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: 'AUTH_VERIFY', user: u, pass: p })
+        });
+        const data = await res.json();
+        
+        if (data.authenticated) {
+          sessionStorage.setItem('pg1_auth', 'true');
+          document.getElementById('auth-gate').style.display = 'none';
+        } else {
+          document.getElementById('gate-error').style.display = 'block';
+        }
+      } catch (err) {
+        document.getElementById('gate-error').style.display = 'block';
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      if (sessionStorage.getItem('pg1_auth') === 'true') {
+        document.getElementById('auth-gate').style.display = 'none';
+      }
+    });
+
     const chatStream = document.getElementById('chat-stream');
     const userInput = document.getElementById('user-input');
     const sendBtn = document.getElementById('send-btn');
@@ -359,11 +462,7 @@
 
     function triggerHaptic(duration = 15) {
       if ('vibrate' in navigator) {
-        try {
-          navigator.vibrate(duration);
-        } catch (e) {
-          // Silent catch for iOS
-        }
+        try { navigator.vibrate(duration); } catch (e) {}
       }
     }
 
@@ -506,9 +605,7 @@
         voiceToggleBtn.classList.remove('active');
         voiceToggleBtn.innerText = "Voice: Off";
         voiceStats.innerText = "Sys: Ready | Standby";
-        if ('speechSynthesis' in window) {
-          window.speechSynthesis.cancel();
-        }
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
       }
     }
 
@@ -531,11 +628,8 @@
       };
       micBtn.addEventListener('click', () => {
         triggerHaptic(25);
-        if (micBtn.classList.contains('recording')) {
-          recognition.stop();
-        } else {
-          recognition.start();
-        }
+        if (micBtn.classList.contains('recording')) recognition.stop();
+        else recognition.start();
       });
     }
 
@@ -548,15 +642,12 @@
       
       loadVoices();
       let chosenVoice = null;
-      
       if (selectedVoiceGender === 'male') {
         chosenVoice = availableVoices.find(v => /Male|David|Oliver|Daniel|Alex/i.test(v.name)) || availableVoices[0];
-        utterance.pitch = 0.85; 
-        utterance.rate = 1.0;
+        utterance.pitch = 0.85; utterance.rate = 1.0;
       } else {
         chosenVoice = availableVoices.find(v => /Female|Zira|Karen|Victoria|Samantha/i.test(v.name)) || availableVoices[1] || availableVoices[0];
-        utterance.pitch = 1.1; 
-        utterance.rate = 1.02;
+        utterance.pitch = 1.1; utterance.rate = 1.02;
       }
 
       if (chosenVoice) utterance.voice = chosenVoice;
@@ -583,7 +674,6 @@
           </div>
         `;
       }
-      
       return html.split('\n').map(line => line.trim() ? (line.match(/^(<pre|<code|<img|<div|<button|<span|<header|<video)/) ? line : `<p>${line}</p>`) : '').join('\n');
     }
 
@@ -634,39 +724,6 @@
       }, 200);
     };
 
-    window.enableInlineEdit = function(btn) {
-      triggerHaptic(15);
-      const container = btn.closest('.bubble-container');
-      const bubble = container.querySelector('.bubble');
-      if (container.querySelector('.edit-input')) return;
-      
-      const originalText = bubble.innerText;
-      bubble.style.display = 'none';
-      
-      const textarea = document.createElement('textarea');
-      textarea.className = 'edit-input';
-      textarea.rows = 2;
-      textarea.value = originalText;
-      
-      textarea.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          const newText = textarea.value.trim();
-          textarea.remove();
-          bubble.style.display = 'block';
-          if (newText) {
-            bubble.innerHTML = parseMarkdown(newText);
-            userInput.value = newText;
-            persistCurrentThreadState();
-            sendMessage();
-          }
-        }
-      });
-      
-      container.insertBefore(textarea, bubble);
-      textarea.focus();
-    };
-
     window.openThreadManager = function() {
       triggerHaptic(20);
       renderThreadList();
@@ -682,7 +739,6 @@
     function renderThreadList() {
       const listContainer = document.getElementById('thread-list');
       listContainer.innerHTML = '';
-      
       Object.keys(threads).forEach(id => {
         const thread = threads[id];
         const item = document.createElement('div');
@@ -749,7 +805,6 @@
       if (!promptText && !currentAttachment) return;
       
       const promptToDisplay = promptText || "Analyze the attached file.";
-      
       if (threads[currentThreadId].title === 'Initial Session' || threads[currentThreadId].title === 'New Directive') {
         threads[currentThreadId].title = promptToDisplay.substring(0, 28) + (promptToDisplay.length > 28 ? '...' : '');
       }
@@ -832,7 +887,6 @@
           <div class="message-meta">
             <span class="timestamp">${getTimeString()}</span>
             <div class="message-tools">
-              <button class="tool-action" onclick="enableInlineEdit(this)">Edit</button>
               <button class="tool-action delete" onclick="deleteMessageBubble(this)">Delete</button>
             </div>
           </div>
