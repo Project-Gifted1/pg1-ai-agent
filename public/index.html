@@ -58,7 +58,7 @@
       100% { text-shadow: 0 0 6px rgba(59, 130, 246, 0.3); }
     }
 
-    .header-title-group { display: flex; align-items: center; gap: 8px; }
+    .header-title-group { display: flex; align-items: baseline; gap: 8px; }
     .header-title { 
       font-size: 15.5px; 
       font-weight: 700; 
@@ -67,18 +67,15 @@
       animation: headerGlowPulse 4s ease-in-out infinite;
     }
 
+    /* Clean Minimalist Status Text without awkward box background */
     .status-pill { 
       font-size: 8px; 
       text-transform: uppercase; 
       letter-spacing: 1px; 
-      padding: 3px 6px; 
-      background: rgba(59, 130, 246, 0.08); 
       color: #93C5FD; 
-      border: 1px solid rgba(59, 130, 246, 0.25); 
-      border-radius: 4px; 
       font-weight: 600; 
       font-family: var(--font-mono); 
-      box-shadow: 0 0 8px rgba(59, 130, 246, 0.15);
+      opacity: 0.85;
     }
     
     .header-actions { display: flex; gap: 6px; align-items: center; }
@@ -265,7 +262,7 @@
     </div>
     <div class="video-controls">
       <button class="video-action-btn" onclick="toggleCameraFacing()">
-        <svg style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;" viewBox="0 0 24 24"><path d="M20 4v5h-.58a7.994 7.994 0="00-15.42 0H3V4m1 15h16a1 1 0 001-1v-5a1 1 0 00-1-1H4a1 1 0 00-1 1v5a1 1 0 001 1z"/></svg>
+        <svg style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;" viewBox="0 0 24 24"><path d="M20 4v5h-.58a7.994 7.994 0=00-15.42 0H3V4m1 15h16a1 1 0 001-1v-5a1 1 0 00-1-1H4a1 1 0 00-1 1v5a1 1 0 001 1z"/></svg>
         Flip Camera
       </button>
       <button class="video-action-btn end-call" onclick="closeLiveVideo()">End Stream</button>
@@ -406,7 +403,7 @@
         
         doc.setFont("Helvetica", "bold");
         doc.setFontSize(10);
-        doc.setTextColor(isUser ? 147, 197, 253) : 255, 255, 255;
+        doc.setTextColor(isUser ? 147 : 255, isUser ? 197 : 255, isUser ? 253 : 255);
         doc.text(isUser ? "USER DIRECTIVE:" : "PG1-AGENT RESPONSE:", 15, yPos);
         yPos += 6;
         
