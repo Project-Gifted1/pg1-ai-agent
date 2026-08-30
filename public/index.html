@@ -5,11 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>Project-Gifted1™</title>
+  <!-- jsPDF for real, functional PDF exports -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     :root {
       --bg-deep: #030508;
       --bg-surface: #090D16;
-      --bg-glass: rgba(13, 19, 32, 0.85);
+      --bg-glass: rgba(10, 14, 22, 0.9);
       --border-subtle: rgba(255, 255, 255, 0.08);
       --border-active: rgba(59, 130, 246, 0.4);
       --accent-blue: #3B82F6;
@@ -31,76 +33,73 @@
       transform: translateX(-50%);
       width: 600px;
       height: 400px;
-      background: radial-gradient(circle, rgba(37, 99, 235, 0.09) 0%, rgba(3, 5, 8, 0) 70%);
+      background: radial-gradient(circle, rgba(37, 99, 235, 0.08) 0%, rgba(3, 5, 8, 0) 70%);
       z-index: 0;
       pointer-events: none;
     }
     
-    /* Premium Header with Relocated Core Badge */
+    /* Sleek, Unified Executive Header */
     header { 
-      padding: 12px 18px; 
+      padding: 12px 16px; 
       background-color: var(--bg-glass); 
-      backdrop-filter: blur(16px); 
-      -webkit-backdrop-filter: blur(16px); 
+      backdrop-filter: blur(20px); 
+      -webkit-backdrop-filter: blur(20px); 
       border-bottom: 1px solid var(--border-subtle); 
       display: flex; 
       align-items: center; 
       justify-content: space-between; 
       z-index: 10;
-      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
     }
 
     @keyframes headerGlowPulse {
-      0% { text-shadow: 0 0 8px rgba(59, 130, 246, 0.3); }
-      50% { text-shadow: 0 0 16px rgba(59, 130, 246, 0.6), 0 0 24px rgba(59, 130, 246, 0.2); }
-      100% { text-shadow: 0 0 8px rgba(59, 130, 246, 0.3); }
+      0% { text-shadow: 0 0 6px rgba(59, 130, 246, 0.3); }
+      50% { text-shadow: 0 0 14px rgba(59, 130, 246, 0.6); }
+      100% { text-shadow: 0 0 6px rgba(59, 130, 246, 0.3); }
     }
 
-    .header-title-group { display: flex; flex-direction: column; gap: 3px; }
+    .header-title-group { display: flex; align-items: center; gap: 8px; }
     .header-title { 
-      font-size: 16.5px; 
+      font-size: 15.5px; 
       font-weight: 700; 
       color: #FFFFFF; 
       letter-spacing: -0.2px; 
       animation: headerGlowPulse 4s ease-in-out infinite;
     }
 
-    /* Relocated Core Status Pill under Title */
     .status-pill { 
       font-size: 8px; 
       text-transform: uppercase; 
-      letter-spacing: 1.2px; 
-      padding: 2px 6px; 
+      letter-spacing: 1px; 
+      padding: 3px 6px; 
       background: rgba(59, 130, 246, 0.08); 
       color: #93C5FD; 
       border: 1px solid rgba(59, 130, 246, 0.25); 
       border-radius: 4px; 
       font-weight: 600; 
       font-family: var(--font-mono); 
-      width: fit-content;
       box-shadow: 0 0 8px rgba(59, 130, 246, 0.15);
     }
     
-    .header-actions { display: flex; gap: 10px; align-items: center; }
+    .header-actions { display: flex; gap: 6px; align-items: center; }
     
-    /* Elegant Minimalist Icon Buttons */
+    /* Clean, Modern Glass Icon Buttons */
     .icon-btn { 
-      background: var(--bg-surface); 
+      background: rgba(255, 255, 255, 0.03); 
       border: 1px solid var(--border-subtle); 
       color: #94A3B8; 
-      width: 36px; 
-      height: 36px; 
-      border-radius: 9px; 
+      width: 32px; 
+      height: 32px; 
+      border-radius: 8px; 
       display: flex; 
       align-items: center; 
       justify-content: center; 
       cursor: pointer; 
       transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
-    .icon-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .icon-btn:hover { border-color: var(--border-active); color: var(--text-main); background: rgba(59, 130, 246, 0.1); box-shadow: 0 0 12px var(--accent-glow); }
-    .icon-btn:active { transform: scale(0.93); }
+    .icon-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .icon-btn:hover { border-color: var(--border-active); color: var(--text-main); background: rgba(59, 130, 246, 0.12); box-shadow: 0 0 10px var(--accent-glow); }
+    .icon-btn:active { transform: scale(0.92); }
 
     main { flex: 1; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 18px; z-index: 1; scroll-behavior: smooth; }
     
@@ -124,9 +123,9 @@
     .bubble p:last-child { margin-bottom: 0; }
     .bubble img, .bubble video { max-width: 100%; border-radius: 6px; margin: 10px 0; border: 1px solid var(--border-subtle); display: block; }
 
-    .message-meta { display: flex; justify-content: space-between; align-items: center; font-size: 9.5px; color: var(--text-muted); padding: 0 2px; margin-top: 4px; font-family: var(--font-mono); }
-    .message-tools { opacity: 0; transition: opacity 0.2s ease, transform 0.2s ease; transform: translateY(-2px); display: flex; gap: 12px; }
-    .bubble-container:hover .message-tools { opacity: 1; transform: translateY(0); }
+    .message-meta { display: flex; justify-content: space-between; align-items: center; font-size: 9.5px; color: var(--text-muted); padding: 2px 4px; margin-top: 2px; font-family: var(--font-mono); }
+    .message-tools { display: flex; gap: 10px; opacity: 0.6; transition: opacity 0.2s ease; }
+    .bubble-container:hover .message-tools { opacity: 1; }
     
     .tool-action { background: none; border: none; color: var(--text-muted); font-size: 9.5px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.8px; font-family: var(--font-mono); transition: color 0.15s; display: flex; align-items: center; gap: 4px; }
     .tool-action:hover { color: var(--accent-blue); }
@@ -144,6 +143,19 @@
     .btn-accept:active { background-color: #2563EB; transform: scale(0.98); }
     .btn-decline { background-color: transparent; color: var(--text-muted); border: 1px solid var(--border-subtle); }
     .btn-decline:active { background-color: var(--bg-surface); transform: scale(0.98); }
+
+    /* Live Video Real-Time Stream Modal */
+    .video-modal { position: fixed; inset: 0; background: rgba(3, 5, 8, 0.92); backdrop-filter: blur(16px); display: none; flex-direction: column; z-index: 200; opacity: 0; transition: opacity 0.25s ease; }
+    .video-modal.active { display: flex; opacity: 1; }
+    .video-header { padding: 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-subtle); background: var(--bg-glass); }
+    .video-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; font-family: var(--font-mono); color: var(--text-main); display: flex; align-items: center; gap: 8px; }
+    .live-dot { width: 8px; height: 8px; background: #EF4444; border-radius: 50%; box-shadow: 0 0 8px #EF4444; animation: pulseRed 1.5s infinite; }
+    .video-container { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #000; }
+    #live-video-stream { width: 100%; height: 100%; object-fit: cover; }
+    .video-controls { padding: 20px; display: flex; justify-content: center; gap: 16px; background: var(--bg-glass); border-top: 1px solid var(--border-subtle); }
+    .video-action-btn { background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-main); padding: 10px 20px; border-radius: 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; font-family: var(--font-mono); cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 8px; }
+    .video-action-btn:hover { border-color: var(--accent-blue); background: rgba(59, 130, 246, 0.1); }
+    .video-action-btn.end-call { background: #7F1D1D; border-color: #991B1B; color: #FECACA; }
 
     /* Executive Audio & Telemetry Panel */
     .voice-panel { background: var(--bg-glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-top: 1px solid var(--border-subtle); padding: 10px 16px; display: flex; flex-direction: column; gap: 6px; z-index: 10; }
@@ -202,16 +214,23 @@
   <header>
     <div class="header-title-group">
       <div class="header-title">Project-Gifted1™</div>
-      <div class="status-pill">PG1.V12 Core</div>
+      <div class="status-pill">PG1.V12 CORE</div>
     </div>
     <div class="header-actions">
-      <!-- Elegantly styled SVG Icon Buttons -->
+      <!-- Live Video Real-Time Stream Button -->
+      <button class="icon-btn" onclick="openLiveVideo()" title="Live Real-Time Vision & Audio" aria-label="Live Video">
+        <svg viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7zM14 5H3a2 2 0 00-2 2v10a2 2 0 002-2h11a2 2 0 002-2V7a2 2 0 00-2-2z"/></svg>
+      </button>
+      <!-- Export PDF Button -->
+      <button class="icon-btn" onclick="exportCurrentThreadPDF()" title="Export Thread to PDF" aria-label="Export PDF">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM14 3.5L18.5 8H14V3.5zM10 13H8v4h2a2 2 0 002-2v0a2 2 0 00-2-2z"/></svg>
+      </button>
+      <!-- Vault / Sessions Button -->
       <button class="icon-btn" onclick="openThreadManager()" title="Manage Threads" aria-label="Manage Threads">
-        <!-- Vault / Sessions Icon -->
         <svg viewBox="0 0 24 24"><path d="M21 8V21H3V8M1 3H23V7H1V3M10 12H14"/></svg>
       </button>
+      <!-- New Thread Button -->
       <button class="icon-btn" onclick="createNewThread()" title="New Thread" aria-label="New Thread">
-        <!-- Glowing Plus Icon -->
         <svg viewBox="0 0 24 24"><path d="M12 5V19M5 12H19"/></svg>
       </button>
     </div>
@@ -220,7 +239,7 @@
   <main id="chat-stream">
     <div class="bubble-wrapper">
       <div class="bubble-container bot">
-        <div class="bubble">Greetings. PG1 Sovereign Agent is operational. Premium audio matrix & file systems online.</div>
+        <div class="bubble">Greetings. PG1 Sovereign Agent is operational. Premium audio matrix, live real-time vision, and PDF export systems online.</div>
         <div class="message-meta">
           <span class="timestamp">Just now</span>
           <div class="message-tools">
@@ -231,6 +250,27 @@
       </div>
     </div>
   </main>
+
+  <!-- Live Video Real-Time Stream Modal -->
+  <div id="video-modal" class="video-modal">
+    <div class="video-header">
+      <div class="video-title">
+        <div class="live-dot"></div>
+        PG1 Live Vision & Audio Matrix
+      </div>
+      <button class="icon-btn" style="width:28px;height:28px;" onclick="closeLiveVideo()">✕</button>
+    </div>
+    <div class="video-container">
+      <video id="live-video-stream" autoplay playsinline muted></video>
+    </div>
+    <div class="video-controls">
+      <button class="video-action-btn" onclick="toggleCameraFacing()">
+        <svg style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;" viewBox="0 0 24 24"><path d="M20 4v5h-.58a7.994 7.994 0="00-15.42 0H3V4m1 15h16a1 1 0 001-1v-5a1 1 0 00-1-1H4a1 1 0 00-1 1v5a1 1 0 001 1z"/></svg>
+        Flip Camera
+      </button>
+      <button class="video-action-btn end-call" onclick="closeLiveVideo()">End Stream</button>
+    </div>
+  </div>
 
   <!-- Thread Manager Modal -->
   <div id="thread-modal" class="modal-overlay" onclick="closeThreadManager(event)">
@@ -291,6 +331,103 @@
     let currentAttachment = null;
     let selectedVoiceGender = 'male';
     let availableVoices = [];
+    let activeStream = null;
+    let useFrontCamera = false;
+
+    // Real-Time Live Video Stream Control with Camera Toggle
+    async function openLiveVideo() {
+      triggerHaptic();
+      const modal = document.getElementById('video-modal');
+      modal.classList.add('active');
+      await startCameraStream();
+    }
+
+    async function startCameraStream() {
+      try {
+        if (activeStream) {
+          activeStream.getTracks().forEach(track => track.stop());
+        }
+        const constraints = {
+          video: { facingMode: useFrontCamera ? 'user' : 'environment' },
+          audio: true
+        };
+        activeStream = await navigator.mediaDevices.getUserMedia(constraints);
+        const videoElement = document.getElementById('live-video-stream');
+        videoElement.srcObject = activeStream;
+      } catch (err) {
+        alert("Camera access error: " + err.message);
+        closeLiveVideo();
+      }
+    }
+
+    async function toggleCameraFacing() {
+      triggerHaptic();
+      useFrontCamera = !useFrontCamera;
+      await startCameraStream();
+    }
+
+    function closeLiveVideo() {
+      triggerHaptic();
+      if (activeStream) {
+        activeStream.getTracks().forEach(track => track.stop());
+        activeStream = null;
+      }
+      document.getElementById('video-modal').classList.remove('active');
+    }
+
+    // Functional PDF Export using jsPDF
+    function exportCurrentThreadPDF() {
+      triggerHaptic();
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      
+      doc.setFillColor(3, 5, 8);
+      doc.rect(0, 0, 210, 297, 'F');
+      
+      doc.setTextColor(241, 245, 249);
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(18);
+      doc.text("Project-Gifted1™ - Executive Thread Export", 15, 20);
+      
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(100, 116, 139);
+      doc.text("Session ID: " + currentThreadId + " | Timestamp: " + new Date().toLocaleString(), 15, 28);
+      
+      doc.setDrawColor(59, 130, 246);
+      doc.line(15, 33, 195, 33);
+      
+      let yPos = 42;
+      const bubbles = chatStream.querySelectorAll('.bubble-container');
+      
+      bubbles.forEach((container) => {
+        const isUser = container.classList.contains('user');
+        const text = container.querySelector('.bubble').innerText;
+        
+        doc.setFont("Helvetica", "bold");
+        doc.setFontSize(10);
+        doc.setTextColor(isUser ? 147, 197, 253) : 255, 255, 255;
+        doc.text(isUser ? "USER DIRECTIVE:" : "PG1-AGENT RESPONSE:", 15, yPos);
+        yPos += 6;
+        
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(203, 213, 225);
+        
+        const splitText = doc.splitTextToSize(text, 180);
+        doc.text(splitText, 15, yPos);
+        yPos += (splitText.length * 6) + 8;
+        
+        if (yPos > 275) {
+          doc.addPage();
+          doc.setFillColor(3, 5, 8);
+          doc.rect(0, 0, 210, 297, 'F');
+          yPos = 20;
+        }
+      });
+      
+      doc.save(`PG1_Thread_${Date.now()}.pdf`);
+    }
 
     // Multi-Thread Vault State Management
     let currentThreadId = localStorage.getItem('pg1_active_thread') || 'thread_' + Date.now();
