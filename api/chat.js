@@ -1,3 +1,5 @@
+const { createClient } = require('@supabase/supabase-js');
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -7,7 +9,12 @@ module.exports = async function handler(req, res) {
 
   try {
     let promptText = req.body?.prompt || 'Hello';
+    const filePayload = req.body?.file; 
     
+    const supabaseUrl = process.env.SUPABASE_URL || '';
+    const supabaseKey = process.env.SUPABASEAPI_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
+
     const geminiKeys = [
       (process.env.GEMINI_API_KEY1 || '').trim(),
       (process.env.GEMINI_API_KEY2 || '').trim(),
@@ -18,33 +25,86 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ reply: 'System Error: No GEMINI API keys found in Vercel environment variables.' });
     }
 
-    const requestBody = {
-      contents: [{ role: "user", parts: [{ text: promptText }] }]
-    };
+    // Comprehensive model fallback chain ensuring maximum resilience
+    const targetModels = [
+      'gemini-2.5-flash',
+      'gemini-2.5-pro',
+      'gemini-3.7-flash',
+      'gemini-3.5-flash',
+      'gemini-3.1-pro-preview',
+      'gemini-flash-latest',
+      'gemini-pro-latest'
+    ];
 
-    let response;
-    let data;
-
-    for (let i = 0; i < geminiKeys.length; i++) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${geminiKeys[i]}`;
-      response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      });
-      data = await response.json();
-      if (response.ok) break;
-      if (response.status !== 429 && response.status !== 403) break;
+    let historyContents = [];
+    if (supabase) {
+        const { data: pastMessages, error: fetchError } = await supabase
+            .from('messages')
+            .select('role, content')
+            .order('created_at', { ascending: false })
+            .limit(10);
+        
+        if (!fetchError && pastMessages && pastMessages.length > 0) {
+            historyContents = pastMessages.reverse().map(msg => ({
+                role: msg.role === 'model' ? 'model' : 'user',
+                parts: [{ text: msg.content }]
+            }));
+        }
     }
 
-    if (!response.ok) {
-      return res.status(200).json({ reply: `API Error: ${data.error?.message || 'Request rejected.'}` });
+    const userParts = [];
+    if (promptText) userParts.push({ text: promptText });
+    if (filePayload) userParts.push(filePayload); 
+
+    historyContents.push({ role: "user", parts: userParts });
+
+    const pg1SystemInstruction = `You are PG1-AGENT (or PG1 for short), the core sovereign intelligence of Project-Gifted1.`;
+
+    const requestBody = {
+      systemInstruction: { parts: [{ text: pg1SystemInstruction }] },
+      contents: historyContents
+    };
+
+    let response = null;
+    let data = null;
+    let success = false;
+
+    // Multi-key and Multi-model fallback matrix to guarantee zero downtime
+    for (const key of geminiKeys) {
+      for (const model of targetModels) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+        try {
+          response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+          });
+          data = await response.json();
+          if (response.ok && data?.candidates?.[0]) {
+            success = true;
+            break;
+          }
+        } catch (e) {
+          // Continue to next fallback model/key on network/fetch exception
+        }
+      }
+      if (success) break;
+    }
+
+    if (!success || !response?.ok) {
+      return res.status(200).json({ reply: `API Error: All fallback models and keys exhausted.` });
     }
 
     const textPart = data?.candidates?.[0]?.content?.parts?.find(p => p.text);
-    if (textPart) {
-      return res.status(200).json({ reply: textPart.text });
+    
+    if (supabase && textPart) {
+        await supabase.from('messages').insert([
+            { role: 'user', content: promptText },
+            { role: 'model', content: textPart.text }
+        ]);
     }
+
+    if (textPart) return res.status(200).json({ reply: textPart.text });
 
     return res.status(200).json({ reply: 'Execution completed without text output.' });
   } catch (err) {
