@@ -25,15 +25,11 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ reply: 'System Error: No GEMINI API keys found in Vercel environment variables.' });
     }
 
-    // Comprehensive model fallback chain ensuring maximum resilience
+    // Stable, current production model identifiers supported by the v1beta endpoint
     const targetModels = [
       'gemini-2.5-flash',
       'gemini-2.5-pro',
-      'gemini-3.7-flash',
-      'gemini-3.5-flash',
-      'gemini-3.1-pro-preview',
-      'gemini-flash-latest',
-      'gemini-pro-latest'
+      'gemini-2.5-flash-lite'
     ];
 
     let historyContents = [];
@@ -69,7 +65,6 @@ module.exports = async function handler(req, res) {
     let data = null;
     let success = false;
 
-    // Multi-key and Multi-model fallback matrix to guarantee zero downtime
     for (const key of geminiKeys) {
       for (const model of targetModels) {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
@@ -85,14 +80,14 @@ module.exports = async function handler(req, res) {
             break;
           }
         } catch (e) {
-          // Continue to next fallback model/key on network/fetch exception
+          // Continue fallback sequence
         }
       }
       if (success) break;
     }
 
     if (!success || !response?.ok) {
-      return res.status(200).json({ reply: `API Error: All fallback models and keys exhausted.` });
+      return res.status(200).json({ reply: `API Error: ${data?.error?.message || 'All fallback models exhausted.'}` });
     }
 
     const textPart = data?.candidates?.[0]?.content?.parts?.find(p => p.text);
