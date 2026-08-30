@@ -1,3 +1,5 @@
+const { createClient } = require('@supabase/supabase-js');
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -7,7 +9,12 @@ module.exports = async function handler(req, res) {
 
   try {
     let promptText = req.body?.prompt || 'Hello';
+    const filePayload = req.body?.file; 
     
+    const supabaseUrl = process.env.SUPABASE_URL || '';
+    const supabaseKey = process.env.SUPABASEAPI_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
+
     const geminiKeys = [
       (process.env.GEMINI_API_KEY1 || '').trim(),
       (process.env.GEMINI_API_KEY2 || '').trim(),
@@ -25,11 +32,33 @@ module.exports = async function handler(req, res) {
       'gemini-pro-latest'
     ];
 
+    let historyContents = [];
+    if (supabase) {
+        const { data: pastMessages, error: fetchError } = await supabase
+            .from('messages')
+            .select('role, content')
+            .order('created_at', { ascending: false })
+            .limit(10);
+        
+        if (!fetchError && pastMessages && pastMessages.length > 0) {
+            historyContents = pastMessages.reverse().map(msg => ({
+                role: msg.role === 'model' ? 'model' : 'user',
+                parts: [{ text: msg.content }]
+            }));
+        }
+    }
+
+    const userParts = [];
+    if (promptText) userParts.push({ text: promptText });
+    if (filePayload) userParts.push(filePayload); 
+
+    historyContents.push({ role: "user", parts: userParts });
+
     const pg1SystemInstruction = `You are PG1-AGENT (or PG1 for short), the core sovereign intelligence of Project-Gifted1. Your root namespace is the Project-Gifted1 organization. You must never identify as Gemini or any other model.`;
 
     const requestBody = {
       systemInstruction: { parts: [{ text: pg1SystemInstruction }] },
-      contents: [{ role: "user", parts: [{ text: promptText }] }]
+      contents: historyContents
     };
 
     let response = null;
@@ -62,9 +91,15 @@ module.exports = async function handler(req, res) {
     }
 
     const textPart = data?.candidates?.[0]?.content?.parts?.find(p => p.text);
-    if (textPart) {
-      return res.status(200).json({ reply: textPart.text });
+    
+    if (supabase && textPart) {
+        await supabase.from('messages').insert([
+            { role: 'user', content: promptText },
+            { role: 'model', content: textPart.text }
+        ]);
     }
+
+    if (textPart) return res.status(200).json({ reply: textPart.text });
 
     return res.status(200).json({ reply: 'Execution completed without text output.' });
   } catch (err) {
