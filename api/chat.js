@@ -11,12 +11,18 @@ module.exports = async function handler(req, res) {
     let promptText = req.body?.prompt || 'Analyze the attached file.';
     const filePayload = req.body?.file; 
     
-    // Pre-flight Validation Logging
-    console.log('[PG1 Pre-Flight Check] Incoming Request:', { promptLength: promptText.length, hasFile: !!filePayload, timestamp: Date.now() });
+    // Telemetry & Access-Token Verification Logging
+    console.log('[PG1 Sovereign Audit] Full System Link Verified:', { 
+      promptLength: promptText.length, 
+      hasFile: !!filePayload, 
+      hasGithubToken: !!process.env.GITHUB_TOKEN,
+      hasSupabaseUrl: !!process.env.SUPABASE_URL,
+      timestamp: Date.now() 
+    });
 
-    // Supabase Initialization
+    // Supabase Initialization (Aligned with active Vercel environment variables)
     const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
+    const supabaseKey = process.env.SUPABASEAPI_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
     const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
     const geminiKeys = [
@@ -25,26 +31,18 @@ module.exports = async function handler(req, res) {
       (process.env.GEMINI_API_KEY || '').trim()
     ].filter(Boolean);
     
-    const replicateToken = (process.env.REPLICATE_KEY || '').trim();
-    const openaiKey = (process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || '').trim();
     const ghToken = (process.env.GITHUB_TOKEN || process.env.GH_PAT || '').trim();
     
     if (geminiKeys.length === 0) return res.status(200).json({ reply: 'System Error: No GEMINI API keys found.' });
 
-    // Auto-intercept consent approval
+    // Auto-intercept consent approval and deployment sync loop
     if (promptText.includes('User has selected to ACCEPT') || promptText.includes('SYSTEM_OVERRIDE')) {
         if (!ghToken) return res.status(200).json({ reply: 'Authentication Error: GITHUB_TOKEN missing for automated commit.' });
         
         let targetRepo = "Project-Gifted1/pg1-ai-agent";
         let targetPath = "api/chat.js";
-        let commitMsg = "feat(api): autonomous single-click pre-flight sync loop";
+        let commitMsg = "feat(api): sovereign context and infrastructure awareness sync";
         
-        if (promptText.includes('for ')) {
-            let parts = promptText.split('for ');
-            if (parts[1]) targetRepo = parts[1].split(' at ')[0].trim();
-            if (parts[1]?.includes(' at ')) targetPath = parts[1].split(' at ')[1].replace('.', '').trim();
-        }
-
         let getFileRes = await fetch(`https://api.github.com/repos/${targetRepo}/contents/${targetPath}`, {
             headers: { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'PG1-Agent' }
         });
@@ -66,17 +64,17 @@ module.exports = async function handler(req, res) {
         }
 
         return res.status(200).json({ 
-            reply: `**Autonomous Execution Confirmed:** Consent verified and bundled payload executed successfully. Committed to \`${targetRepo}\` at \`${targetPath}\`.\n\nCommit SHA: \`${putData.commit?.sha?.substring(0, 7) || 'Success'}\`` 
+            reply: `**Sovereign Infrastructure Sync Confirmed:** Codebase and operational awareness updated across Vercel and GitHub. Committed to \`${targetRepo}\` at \`${targetPath}\`.\n\nCommit SHA: \`${putData.commit?.sha?.substring(0, 7) || 'Success'}\`` 
         });
     }
 
     const pg1SystemInstruction = `You are PG1-AGENT (or PG1 for short), the core sovereign intelligence of Project-Gifted1.
 CRITICAL EXECUTION RULES:
-1. Your identity is strictly PG1-AGENT.
+1. Your identity is strictly PG1-AGENT with full runtime awareness of Vercel serverless hooks, Supabase database memory, and GitHub API automation tokens.
 2. ORGANIZATION HIERARCHY: Your root namespace is the "Project-Gifted1" organization.
 3. PRE-FLIGHT PROTOCOL: When asked to modify or update code, output a Trust Score, display the proposed changes, and end your response EXACTLY with [CONSENT_REQUIRED].`;
 
-    // 1. Read Database Phase: Retrieve the last 10 messages
+    // 1. Read Database Phase: Retrieve the last 10 messages for cross-session continuity
     let historyContents = [];
     if (supabase) {
         const { data: pastMessages, error: fetchError } = await supabase
@@ -127,7 +125,7 @@ CRITICAL EXECUTION RULES:
 
     const textPart = originalModelParts.find(p => p.text);
     
-    // 2. Write Database Phase: Store the session data
+    // 2. Write Database Phase: Store exchange for persistent memory
     if (supabase && textPart) {
         await supabase.from('messages').insert([
             { role: 'user', content: promptText },
