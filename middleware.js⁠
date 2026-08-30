@@ -1,15 +1,27 @@
 export default function middleware(request) {
   const authHeader = request.headers.get('authorization');
+  
   if (authHeader) {
     const authValue = authHeader.split(' ')[1];
-    const [user, pwd] = atob(authValue).split(':');
-    if (user === process.env.USER_API_KEY && pwd === process.env.USER_API_PASS) {
-      return; 
+    try {
+      const [user, pwd] = atob(authValue).split(':');
+      // Replace with your exact Vercel env keys or hardcode a fallback test password
+      if (user === (process.env.USER_API_KEY || 'admin') && pwd === (process.env.USER_API_PASS || 'securepassword')) {
+        return; 
+      }
+    } catch (e) {
+      // Malformed auth header, fall through to challenge
     }
   }
-  return new Response('PG1 SOVEREIGN AGENT: ACCESS DENIED.', {
+
+  return new Response('Access Denied', {
     status: 401,
-    headers: { 'WWW-Authenticate': 'Basic realm="Project-Gifted1 Secure Matrix"' },
+    headers: {
+      'WWW-Authenticate': 'Basic realm="Project-Gifted1 Secure Matrix"',
+    },
   });
 }
-export const config = { matcher: '/(.*)' };
+
+export const config = {
+  matcher: '/((?!_next/static|_next/image|favicon.ico).*)',
+};
