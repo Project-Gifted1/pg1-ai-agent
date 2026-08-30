@@ -32,8 +32,10 @@ module.exports = async function handler(req, res) {
       'gemini-pro-latest'
     ];
 
+    // Safely fetch history with a try/catch block to prevent 500 crashes if table is missing/locked
     let historyContents = [];
     if (supabase) {
+      try {
         const { data: pastMessages, error: fetchError } = await supabase
             .from('messages')
             .select('role, content')
@@ -46,6 +48,9 @@ module.exports = async function handler(req, res) {
                 parts: [{ text: msg.content }]
             }));
         }
+      } catch (dbErr) {
+        console.log('Supabase read warning:', dbErr.message);
+      }
     }
 
     const userParts = [];
@@ -92,11 +97,16 @@ module.exports = async function handler(req, res) {
 
     const textPart = data?.candidates?.[0]?.content?.parts?.find(p => p.text);
     
+    // Safely insert message with try/catch to prevent crashes
     if (supabase && textPart) {
+      try {
         await supabase.from('messages').insert([
             { role: 'user', content: promptText },
             { role: 'model', content: textPart.text }
         ]);
+      } catch (dbWriteErr) {
+        console.log('Supabase write warning:', dbWriteErr.message);
+      }
     }
 
     if (textPart) return res.status(200).json({ reply: textPart.text });
