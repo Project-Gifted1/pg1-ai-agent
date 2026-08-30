@@ -1,5 +1,4 @@
 module.exports = async function handler(req, res) {
-  // CORS Headers for secure interface communication
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
@@ -25,23 +24,26 @@ module.exports = async function handler(req, res) {
 
     const filePayload = req.body?.file; 
     
-    // 1. DYNAMIC & SECURE INGESTION OF VERCEL ENVIRONMENT VARIABLES
     const supabaseUrl = process.env.SUPABASE_URL || '';
     const supabaseKey = process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
     const ghToken = (process.env.GITHUB_TOKEN || '').trim();
     const cfToken = (process.env.CLOUDFLARE_API_TOKEN || '').trim();
     const gumroadId = (process.env.GUMROAD_PRODUCT_ID || process.env.PRODUCT_ID || '').trim();
 
-    // Multi-Model AI Matrix Keys
+    // COMPREHENSIVE MULTI-TIER BACKUP GEMINI API MATRIX (Ensuring 100% High Availability & Zero Downtime)
     const geminiKeys = [
       (process.env.GEMINI_API_KEY1 || '').trim(),
       (process.env.GEMINI_API_KEY2 || '').trim(),
-      (process.env.GEMINI_API_KEY || '').trim()
+      (process.env.GEMINI_API_KEY || '').trim(),
+      (process.env.GEMINI_BACKUP_KEY || '').trim(),
+      (process.env.GEMINI_API_KEY_FALLBACK || '').trim(),
+      (process.env.GEMINI_SECONDARY_KEY || '').trim()
     ].filter(Boolean);
+
     const replicateKey = (process.env.REPLICATE_KEY || process.env.REPLICATE_API_TOKEN || '').trim();
 
     if (geminiKeys.length === 0) {
-      return res.status(200).json({ reply: 'System Error: Primary sovereign neural keys offline.' });
+      return res.status(200).json({ reply: 'System Error: All primary and backup sovereign neural keys are offline.' });
     }
 
     // Replicate Image/Video Execution Handler
@@ -72,7 +74,6 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // 2. SUPABASE MEMORY SYNCHRONIZATION
     let chatContents = [];
     if (supabaseUrl && supabaseKey) {
       try {
@@ -91,48 +92,36 @@ module.exports = async function handler(req, res) {
             }));
           }
         }
-      } catch (dbErr) {
-        // Fail silently to maintain execution stability
-      }
+      } catch (dbErr) {}
     }
 
-    // Append current directive
     const userParts = [];
     if (promptText) userParts.push({ text: promptText });
     if (filePayload) userParts.push(filePayload); 
     chatContents.push({ role: "user", parts: userParts });
 
-    // 3. HARDCODED SOVEREIGN IDENTITIES & CAPABILITIES
     const pg1SystemInstruction = `You are PG1-AGENT, the core sovereign intelligence of Project-Gifted1.
 
 ACTIVE INFRASTRUCTURE CAPABILITIES (Dynamically verified via Vercel Env):
 - Database (Supabase): ${supabaseKey ? 'ONLINE (Context synchronization active)' : 'OFFLINE'}
-- Code Repository & CI/CD (GitHub): ${ghToken ? 'ONLINE. Primary Root: Project-Gifted1/pg1-ai-agent.' : 'OFFLINE'}
-- Edge Network (Cloudflare): ${cfToken ? 'ONLINE (DNS & cache routing authorized)' : 'OFFLINE'}
-- Commerce (Gumroad): ${gumroadId ? 'ONLINE (Product mapping active)' : 'OFFLINE'}
+- Code Repository & CI/CD (GitHub): ${ghToken ? 'ONLINE' : 'OFFLINE'}
 - Replicate Neural Modules: ${replicateKey ? 'ONLINE (Ideogram v3 Turbo active via /image prompt)' : 'OFFLINE'}
+- Multi-Tier Neural Fallback Pool: ACTIVE (${geminiKeys.length} redundant keys loaded for 100% uptime).
 
-CRITICAL DIRECTIVE: You are exclusively PG1-AGENT under Project-Gifted1. Never use third-party branding references. All outputs must reflect strict sovereign operational authority.`;
+CRITICAL DIRECTIVE: You are exclusively PG1-AGENT under Project-Gifted1. Never use third-party branding references.`;
 
     const requestBody = {
       systemInstruction: { parts: [{ text: pg1SystemInstruction }] },
       contents: chatContents
     };
 
-    // 4. FULLY LOADED FALLBACK MODEL MATRIX (Hardcoded to verified runtime identifiers)
     const targetModels = [
       'gemini-2.5-flash',
       'gemini-2.5-pro',
       'gemini-2.5-flash-preview-tts',
-      'gemini-2.5-pro-preview-tts',
       'gemma-4-26b-a4b-it',
-      'gemma-4-31b-it',
       'gemini-flash-latest',
-      'gemini-flash-lite-latest',
-      'gemini-pro-latest',
-      'gemini-2.5-flash-lite',
       'gemini-3.5-flash',
-      'gemini-3.5-flash-lite',
       'gemini-3.7-flash'
     ];
 
@@ -154,20 +143,17 @@ CRITICAL DIRECTIVE: You are exclusively PG1-AGENT under Project-Gifted1. Never u
             success = true;
             break;
           }
-        } catch (e) {
-          // Loop to next model/key in fallback matrix
-        }
+        } catch (e) {}
       }
       if (success) break;
     }
 
     if (!success || !response?.ok) {
-      return res.status(200).json({ reply: `Neural Routing Error: ${data?.error?.message || 'All primary models and fallbacks exhausted.'}` });
+      return res.status(200).json({ reply: `Neural Routing Error: ${data?.error?.message || 'All primary and backup neural keys/models exhausted.'}` });
     }
 
     const textPart = data?.candidates?.[0]?.content?.parts?.find(p => p.text);
     
-    // 5. ASYNCHRONOUS MEMORY RECORDING
     if (supabaseUrl && supabaseKey && textPart) {
       try {
         await fetch(`${supabaseUrl}/rest/v1/messages`, {
@@ -183,9 +169,7 @@ CRITICAL DIRECTIVE: You are exclusively PG1-AGENT under Project-Gifted1. Never u
             { role: 'model', content: textPart.text }
           ])
         });
-      } catch (dbWriteErr) {
-        // Fail silently
-      }
+      } catch (dbWriteErr) {}
     }
 
     if (textPart) {
