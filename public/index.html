@@ -9,11 +9,11 @@
     :root {
       --bg-deep: #030508;
       --bg-surface: #090D16;
-      --bg-glass: rgba(13, 19, 32, 0.75);
+      --bg-glass: rgba(13, 19, 32, 0.85);
       --border-subtle: rgba(255, 255, 255, 0.08);
       --border-active: rgba(59, 130, 246, 0.4);
       --accent-blue: #3B82F6;
-      --accent-glow: rgba(59, 130, 246, 0.15);
+      --accent-glow: rgba(59, 130, 246, 0.25);
       --text-main: #F1F5F9;
       --text-muted: #64748B;
       --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -31,24 +31,62 @@
       transform: translateX(-50%);
       width: 600px;
       height: 400px;
-      background: radial-gradient(circle, rgba(37, 99, 235, 0.07) 0%, rgba(3, 5, 8, 0) 70%);
+      background: radial-gradient(circle, rgba(37, 99, 235, 0.08) 0%, rgba(3, 5, 8, 0) 70%);
       z-index: 0;
       pointer-events: none;
     }
     
-    header { padding: 12px 16px; background-color: var(--bg-glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: space-between; z-index: 10; }
+    /* Sophisticated Header with Animated Glow */
+    header { 
+      padding: 14px 18px; 
+      background-color: var(--bg-glass); 
+      backdrop-filter: blur(16px); 
+      -webkit-backdrop-filter: blur(16px); 
+      border-bottom: 1px solid var(--border-subtle); 
+      display: flex; 
+      align-items: center; 
+      justify-content: space-between; 
+      z-index: 10;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), inset 0 -1px 0 rgba(59, 130, 246, 0.15);
+    }
+
+    @keyframes headerGlowPulse {
+      0% { text-shadow: 0 0 8px rgba(59, 130, 246, 0.3); }
+      50% { text-shadow: 0 0 16px rgba(59, 130, 246, 0.6), 0 0 24px rgba(59, 130, 246, 0.2); }
+      100% { text-shadow: 0 0 8px rgba(59, 130, 246, 0.3); }
+    }
+
     .header-title-group { display: flex; align-items: center; gap: 10px; }
-    .header-title { font-size: 16px; font-weight: 600; color: var(--text-main); letter-spacing: -0.3px; }
+    .header-title { 
+      font-size: 16.5px; 
+      font-weight: 700; 
+      color: #FFFFFF; 
+      letter-spacing: -0.2px; 
+      animation: headerGlowPulse 4s ease-in-out infinite;
+    }
     
     .header-actions { display: flex; gap: 8px; align-items: center; }
     
-    /* Premium Minimalist Icon Buttons */
-    .icon-btn { background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-muted); width: 32px; height: 32px; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
-    .icon-btn svg { width: 14px; height: 14px; fill: currentColor; }
-    .icon-btn:hover { border-color: var(--border-active); color: var(--text-main); background: rgba(59, 130, 246, 0.05); }
-    .icon-btn:active { transform: scale(0.94); }
+    /* Elegant Minimalist Icon Buttons */
+    .icon-btn { 
+      background: var(--bg-surface); 
+      border: 1px solid var(--border-subtle); 
+      color: #94A3B8; 
+      width: 34px; 
+      height: 34px; 
+      border-radius: 8px; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      cursor: pointer; 
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .icon-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .icon-btn:hover { border-color: var(--border-active); color: var(--text-main); background: rgba(59, 130, 246, 0.08); box-shadow: 0 0 12px var(--accent-glow); }
+    .icon-btn:active { transform: scale(0.93); }
 
-    .status-pill { font-size: 8px; text-transform: uppercase; letter-spacing: 1.2px; padding: 4px 8px; background: rgba(255,255,255,0.02); color: var(--text-muted); border: 1px solid var(--border-subtle); border-radius: 4px; font-weight: 500; font-family: var(--font-mono); }
+    .status-pill { font-size: 8.5px; text-transform: uppercase; letter-spacing: 1.2px; padding: 5px 9px; background: rgba(59, 130, 246, 0.05); color: #93C5FD; border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 6px; font-weight: 600; font-family: var(--font-mono); }
     
     main { flex: 1; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 18px; z-index: 1; scroll-behavior: smooth; }
     
@@ -72,7 +110,6 @@
     .bubble p:last-child { margin-bottom: 0; }
     .bubble img, .bubble video { max-width: 100%; border-radius: 6px; margin: 10px 0; border: 1px solid var(--border-subtle); display: block; }
 
-    /* Elegant, unobtrusive action menu revealed beside chat bubbles */
     .message-meta { display: flex; justify-content: space-between; align-items: center; font-size: 9.5px; color: var(--text-muted); padding: 0 2px; margin-top: 4px; font-family: var(--font-mono); }
     .message-tools { opacity: 0; transition: opacity 0.2s ease, transform 0.2s ease; transform: translateY(-2px); display: flex; gap: 12px; }
     .bubble-container:hover .message-tools { opacity: 1; transform: translateY(0); }
@@ -132,17 +169,17 @@
     }
 
     /* Thread Manager Modal Overlay */
-    .modal-overlay { position: fixed; inset: 0; background: rgba(3, 5, 8, 0.8); backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; z-index: 100; opacity: 0; transition: opacity 0.25s ease; }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(3, 5, 8, 0.82); backdrop-filter: blur(10px); display: none; align-items: center; justify-content: center; z-index: 100; opacity: 0; transition: opacity 0.25s ease; }
     .modal-overlay.active { display: flex; opacity: 1; }
-    .modal-card { background: var(--bg-surface); border: 1px solid var(--border-active); border-radius: 12px; width: 90%; max-width: 400px; padding: 20px; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
+    .modal-card { background: var(--bg-surface); border: 1px solid var(--border-active); border-radius: 12px; width: 90%; max-width: 400px; padding: 20px; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.7); }
     .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-subtle); padding-bottom: 12px; }
-    .modal-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; font-family: var(--font-mono); color: var(--text-main); }
+    .modal-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; font-family: var(--font-mono); color: var(--text-main); }
     .thread-list { display: flex; flex-direction: column; gap: 8px; max-height: 250px; overflow-y: auto; }
-    .thread-item { background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: all 0.2s; }
+    .thread-item { background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: all 0.2s; }
     .thread-item:hover { border-color: var(--accent-blue); background: rgba(59, 130, 246, 0.04); }
-    .thread-item.active-thread { border-color: var(--accent-blue); box-shadow: 0 0 10px var(--accent-glow); }
+    .thread-item.active-thread { border-color: var(--accent-blue); box-shadow: 0 0 10px var(--accent-glow); background: rgba(59, 130, 246, 0.06); }
     .thread-info { display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
-    .thread-name { font-size: 12px; font-weight: 500; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+    .thread-name { font-size: 12px; font-weight: 500; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 230px; }
     .thread-date { font-size: 9px; color: var(--text-muted); font-family: var(--font-mono); }
     .modal-footer { display: flex; gap: 10px; margin-top: 4px; }
   </style>
@@ -153,12 +190,14 @@
       <div class="header-title">Project-Gifted1™</div>
     </div>
     <div class="header-actions">
-      <!-- Minimalist SVG Icon Buttons -->
+      <!-- Elegantly styled SVG Icon Buttons -->
       <button class="icon-btn" onclick="openThreadManager()" title="Manage Threads" aria-label="Manage Threads">
-        <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        <!-- Vault / Sessions Icon -->
+        <svg viewBox="0 0 24 24"><path d="M21 8V21H3V8M1 3H23V7H1V3M10 12H14"/></svg>
       </button>
       <button class="icon-btn" onclick="createNewThread()" title="New Thread" aria-label="New Thread">
-        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        <!-- Glowing Plus Icon -->
+        <svg viewBox="0 0 24 24"><path d="M12 5V19M5 12H19"/></svg>
       </button>
       <div class="status-pill">PG1.V12</div>
     </div>
@@ -184,7 +223,7 @@
     <div class="modal-card" onclick="event.stopPropagation()">
       <div class="modal-header">
         <span class="modal-title">Thread Vault & Sessions</span>
-        <button class="icon-btn" style="width:24px;height:24px;font-size:12px;" onclick="closeThreadManager()">✕</button>
+        <button class="icon-btn" style="width:26px;height:26px;" onclick="closeThreadManager()">✕</button>
       </div>
       <div id="thread-list" class="thread-list">
         <!-- Dynamically injected threads -->
@@ -530,7 +569,6 @@
       
       const promptToDisplay = promptText || "Analyze the attached file.";
       
-      // Auto-name thread title based on first user prompt if default
       if (threads[currentThreadId].title === 'Initial Session' || threads[currentThreadId].title === 'New Directive Session') {
         threads[currentThreadId].title = promptToDisplay.substring(0, 28) + (promptToDisplay.length > 28 ? '...' : '');
       }
