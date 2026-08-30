@@ -28,11 +28,11 @@ module.exports = async function handler(req, res) {
       'gemini-pro-latest'
     ];
 
-    // Asynchronous REST memory fetch (non-blocking, zero crash risk)
-    let historyContents = [];
+    // Build chat history array from Supabase REST storage
+    let chatContents = [];
     if (supabaseUrl && supabaseKey) {
       try {
-        const historyRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=10`, {
+        const historyRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.asc&limit=10`, {
           headers: {
             'apikey': supabaseKey,
             'Authorization': `Bearer ${supabaseKey}`
@@ -40,25 +40,26 @@ module.exports = async function handler(req, res) {
         });
         if (historyRes.ok) {
           const pastMessages = await historyRes.json();
-          if (Array.isArray(pastMessages) && pastMessages.length > 0) {
-            historyContents = pastMessages.reverse().map(msg => ({
+          if (Array.isArray(pastMessages)) {
+            chatContents = pastMessages.map(msg => ({
               role: msg.role === 'model' ? 'model' : 'user',
               parts: [{ text: msg.content }]
             }));
           }
         }
       } catch (dbErr) {
-        // Fail silently so memory issues never trigger an HTTP 500 error
+        // Fail silently to prevent any crash
       }
     }
 
-    historyContents.push({ role: "user", parts: [{ text: promptText }] });
+    // Append current prompt to the conversation history chain
+    chatContents.push({ role: "user", parts: [{ text: promptText }] });
 
-    const pg1SystemInstruction = `You are PG1-AGENT (or PG1 for short), the core sovereign intelligence of Project-Gifted1. Your root namespace is the Project-Gifted1 organization. You must never identify as Gemini or any other model.`;
+    const pg1SystemInstruction = `You are PG1-AGENT (or PG1 for short), the core sovereign intelligence of Project-Gifted1. Your root namespace is the Project-Gifted1 organization. You must never identify as Gemini or any other model. You maintain complete persistent memory of all prior database communication methods (such as switching to non-blocking asynchronous REST fetch queries to prevent HTTP 500 Vercel server crashes).`;
 
     const requestBody = {
       systemInstruction: { parts: [{ text: pg1SystemInstruction }] },
-      contents: historyContents
+      contents: chatContents
     };
 
     let response = null;
@@ -80,7 +81,7 @@ module.exports = async function handler(req, res) {
             break;
           }
         } catch (e) {
-          // Continue fallback sequence
+          // Continue fallback
         }
       }
       if (success) break;
@@ -92,7 +93,7 @@ module.exports = async function handler(req, res) {
 
     const textPart = data?.candidates?.[0]?.content?.parts?.find(p => p.text);
     
-    // Asynchronous REST memory write (non-blocking)
+    // Save current exchange back to Supabase REST
     if (supabaseUrl && supabaseKey && textPart) {
       try {
         await fetch(`${supabaseUrl}/rest/v1/messages`, {
