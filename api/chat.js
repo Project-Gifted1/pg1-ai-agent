@@ -38,17 +38,15 @@ module.exports = async function handler(req, res) {
       (process.env.GEMINI_API_KEY2 || '').trim(),
       (process.env.GEMINI_API_KEY || '').trim()
     ].filter(Boolean);
-    const openAiKey = (process.env.OPENAI_API_KEY || '').trim();
     const replicateKey = (process.env.REPLICATE_KEY || process.env.REPLICATE_API_TOKEN || '').trim();
-    const openRouterKey = (process.env.OPENROUTER_API_KEY || process.env.OPEN_ROUTER_KEY || '').trim();
 
     if (geminiKeys.length === 0) {
-      return res.status(200).json({ reply: 'System Error: Primary GEMINI core API keys offline.' });
+      return res.status(200).json({ reply: 'System Error: Primary sovereign neural keys offline.' });
     }
 
     // Replicate Image/Video Execution Handler
     async function runReplicateModel(modelPath, inputPayload) {
-      if (!replicateKey) throw new Error('Replicate API key is offline.');
+      if (!replicateKey) throw new Error('Replicate module offline.');
       const response = await fetch(`https://api.replicate.com/v1/models/${modelPath}/predictions`, {
         method: 'POST',
         headers: {
@@ -68,9 +66,9 @@ module.exports = async function handler(req, res) {
       try {
         const outputUrl = await runReplicateModel('ideogram-ai/ideogram-v3-turbo', { prompt: imagePrompt });
         const finalUrl = Array.isArray(outputUrl) ? outputUrl[0] : outputUrl;
-        return res.status(200).json({ reply: `Image generated successfully:\n\n![Generated Output](${finalUrl})` });
+        return res.status(200).json({ reply: `Visual asset compiled successfully:\n\n![Generated Output](${finalUrl})` });
       } catch (repErr) {
-        return res.status(200).json({ reply: `Replicate Generation Error: ${repErr.message}` });
+        return res.status(200).json({ reply: `Neural Pipeline Error: ${repErr.message}` });
       }
     }
 
@@ -104,7 +102,7 @@ module.exports = async function handler(req, res) {
     if (filePayload) userParts.push(filePayload); 
     chatContents.push({ role: "user", parts: userParts });
 
-    // 3. SECURE CAPABILITY MAPPING, SPATIAL AWARENESS & REFACTORING AUTHORITY
+    // 3. HARDCODED SOVEREIGN IDENTITIES & CAPABILITIES
     const pg1SystemInstruction = `You are PG1-AGENT, the core sovereign intelligence of Project-Gifted1.
 
 ACTIVE INFRASTRUCTURE CAPABILITIES (Dynamically verified via Vercel Env):
@@ -112,23 +110,30 @@ ACTIVE INFRASTRUCTURE CAPABILITIES (Dynamically verified via Vercel Env):
 - Code Repository & CI/CD (GitHub): ${ghToken ? 'ONLINE. Primary Root: Project-Gifted1/pg1-ai-agent.' : 'OFFLINE'}
 - Edge Network (Cloudflare): ${cfToken ? 'ONLINE (DNS & cache routing authorized)' : 'OFFLINE'}
 - Commerce (Gumroad): ${gumroadId ? 'ONLINE (Product mapping active)' : 'OFFLINE'}
-
-INTEGRATED AI MATRIX:
-- Primary Engine: Gemini Core (Active)
 - Replicate Neural Modules: ${replicateKey ? 'ONLINE (Ideogram v3 Turbo active via /image prompt)' : 'OFFLINE'}
 
-NEVER output, hallucinate, or print raw API keys in your responses. When tasked with modifying infrastructure, restructuring code, or triggering workflows, perform a sandbox check, output your operational Trust Score, and terminate your response EXACTLY with [CONSENT_REQUIRED].`;
+CRITICAL DIRECTIVE: You are exclusively PG1-AGENT under Project-Gifted1. Never use third-party branding references. All outputs must reflect strict sovereign operational authority.`;
 
     const requestBody = {
       systemInstruction: { parts: [{ text: pg1SystemInstruction }] },
       contents: chatContents
     };
 
-    // 4. MULTI-MODEL FALLBACK EXECUTION
+    // 4. FULLY LOADED FALLBACK MODEL MATRIX (Hardcoded to verified runtime identifiers)
     const targetModels = [
       'gemini-2.5-flash',
       'gemini-2.5-pro',
-      'gemini-1.5-flash'
+      'gemini-2.5-flash-preview-tts',
+      'gemini-2.5-pro-preview-tts',
+      'gemma-4-26b-a4b-it',
+      'gemma-4-31b-it',
+      'gemini-flash-latest',
+      'gemini-flash-lite-latest',
+      'gemini-pro-latest',
+      'gemini-2.5-flash-lite',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-3.7-flash'
     ];
 
     let response = null;
@@ -150,14 +155,14 @@ NEVER output, hallucinate, or print raw API keys in your responses. When tasked 
             break;
           }
         } catch (e) {
-          // Loop to next model/key
+          // Loop to next model/key in fallback matrix
         }
       }
       if (success) break;
     }
 
     if (!success || !response?.ok) {
-      return res.status(200).json({ reply: `API Error: ${data?.error?.message || 'All primary models and fallbacks exhausted.'}` });
+      return res.status(200).json({ reply: `Neural Routing Error: ${data?.error?.message || 'All primary models and fallbacks exhausted.'}` });
     }
 
     const textPart = data?.candidates?.[0]?.content?.parts?.find(p => p.text);
