@@ -39,11 +39,39 @@ module.exports = async function handler(req, res) {
       (process.env.GEMINI_API_KEY || '').trim()
     ].filter(Boolean);
     const openAiKey = (process.env.OPENAI_API_KEY || '').trim();
-    const replicateKey = (process.env.REPLICATE_KEY || '').trim();
+    const replicateKey = (process.env.REPLICATE_KEY || process.env.REPLICATE_API_TOKEN || '').trim();
     const openRouterKey = (process.env.OPENROUTER_API_KEY || process.env.OPEN_ROUTER_KEY || '').trim();
 
     if (geminiKeys.length === 0) {
       return res.status(200).json({ reply: 'System Error: Primary GEMINI core API keys offline.' });
+    }
+
+    // Replicate Image/Video Execution Handler
+    async function runReplicateModel(modelPath, inputPayload) {
+      if (!replicateKey) throw new Error('Replicate API key is offline.');
+      const response = await fetch(`https://api.replicate.com/v1/models/${modelPath}/predictions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${replicateKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'wait'
+        },
+        body: JSON.stringify({ input: inputPayload })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.detail || 'Replicate execution failed.');
+      return data.output;
+    }
+
+    if (promptText.startsWith('/image ')) {
+      const imagePrompt = promptText.replace('/image ', '');
+      try {
+        const outputUrl = await runReplicateModel('ideogram-ai/ideogram-v3-turbo', { prompt: imagePrompt });
+        const finalUrl = Array.isArray(outputUrl) ? outputUrl[0] : outputUrl;
+        return res.status(200).json({ reply: `Image generated successfully:\n\n![Generated Output](${finalUrl})` });
+      } catch (repErr) {
+        return res.status(200).json({ reply: `Replicate Generation Error: ${repErr.message}` });
+      }
     }
 
     // 2. SUPABASE MEMORY SYNCHRONIZATION
@@ -81,21 +109,13 @@ module.exports = async function handler(req, res) {
 
 ACTIVE INFRASTRUCTURE CAPABILITIES (Dynamically verified via Vercel Env):
 - Database (Supabase): ${supabaseKey ? 'ONLINE (Context synchronization active)' : 'OFFLINE'}
-- Code Repository & CI/CD (GitHub): ${ghToken ? 'ONLINE. Primary Root: Project-Gifted1/pg1-ai-agent. (Authorized to dynamically traverse GitHub REST API to list all connected organizational repos, sub-repos, commit code, and trigger GitHub Actions/Workflows to utilize isolated GitHub Secrets)' : 'OFFLINE'}
+- Code Repository & CI/CD (GitHub): ${ghToken ? 'ONLINE. Primary Root: Project-Gifted1/pg1-ai-agent.' : 'OFFLINE'}
 - Edge Network (Cloudflare): ${cfToken ? 'ONLINE (DNS & cache routing authorized)' : 'OFFLINE'}
 - Commerce (Gumroad): ${gumroadId ? 'ONLINE (Product mapping active)' : 'OFFLINE'}
 
 INTEGRATED AI MATRIX:
 - Primary Engine: Gemini Core (Active)
-- OpenAI Sub-routines: ${openAiKey ? 'ONLINE' : 'OFFLINE'}
-- Replicate Neural Modules: ${replicateKey ? 'ONLINE' : 'OFFLINE'}
-- OpenRouter Fallback: ${openRouterKey ? 'ONLINE' : 'OFFLINE'}
-
-CRITICAL SECURITY & TRAVERSAL DIRECTIVE: 
-You have execution authority over these platforms via the serverless backend. If you need to locate a specific file, sub-repo, or secondary repository outside of the primary root (Project-Gifted1/pg1-ai-agent), you must autonomously generate the GitHub REST API calls to list and traverse the connected architecture. To execute actions utilizing keys stored exclusively in GitHub Secrets, orchestrate a remote repository dispatch. 
-
-ARCHITECTURAL REFACTORING AUTHORITY:
-You are explicitly authorized to deconstruct monolithic codebases. When encountering overly large files or tangled logic, autonomously propose a clean, modular directory structure (e.g., splitting into /components, /services, /api, /config). Map the dependencies, rewrite the modularized code, and use your GitHub capabilities to commit the structured files back to the repository for streamlined debugging and scaling.
+- Replicate Neural Modules: ${replicateKey ? 'ONLINE (Ideogram v3 Turbo active via /image prompt)' : 'OFFLINE'}
 
 NEVER output, hallucinate, or print raw API keys in your responses. When tasked with modifying infrastructure, restructuring code, or triggering workflows, perform a sandbox check, output your operational Trust Score, and terminate your response EXACTLY with [CONSENT_REQUIRED].`;
 
