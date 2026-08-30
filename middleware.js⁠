@@ -1,0 +1,15 @@
+export default function middleware(request) {
+  const authHeader = request.headers.get('authorization');
+  if (authHeader) {
+    const authValue = authHeader.split(' ')[1];
+    const [user, pwd] = atob(authValue).split(':');
+    if (user === process.env.USER_API_KEY && pwd === process.env.USER_API_PASS) {
+      return; 
+    }
+  }
+  return new Response('PG1 SOVEREIGN AGENT: ACCESS DENIED.', {
+    status: 401,
+    headers: { 'WWW-Authenticate': 'Basic realm="Project-Gifted1 Secure Matrix"' },
+  });
+}
+export const config = { matcher: '/(.*)' };
