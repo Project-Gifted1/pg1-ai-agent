@@ -72,9 +72,9 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ reply: 'Formatting error. Syntax: /vault service_name api_key' });
     }
 
-    // 3. DYNAMIC REPLICATE KEY RESOLUTION (Bypass GitHub/Vercel completely)
-    let replicateKey = (process.env.REPLICATE_KEY || process.env.REPLICATE_API_TOKEN || '').trim();
-    if (!replicateKey && supabaseUrl && supabaseKey) {
+    // 3. DYNAMIC REPLICATE KEY RESOLUTION (Vault Priority - Bypassing Vercel)
+    let replicateKey = '';
+    if (supabaseUrl && supabaseKey) {
       try {
         const vaultRes = await fetch(`${supabaseUrl}/rest/v1/api_vault?service_name=eq.replicate&select=api_key`, {
           headers: {
@@ -89,6 +89,11 @@ module.exports = async function handler(req, res) {
           }
         }
       } catch (vaultErr) {}
+    }
+    
+    // Fallback to Vercel only if the vault is completely empty
+    if (!replicateKey) {
+      replicateKey = (process.env.REPLICATE_KEY || process.env.REPLICATE_API_TOKEN || '').trim();
     }
 
     // 4. AUTONOMOUS GITHUB COMMIT PROTOCOL
