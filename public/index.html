@@ -353,6 +353,7 @@
         <div class="message-meta">
           <span class="timestamp">Just now</span>
           <div class="message-tools">
+            <button class="tool-action" onclick="speakMessageText(this)">Speak</button>
             <button class="tool-action" onclick="copyMessageText(this)">Copy</button>
             <button class="tool-action delete" onclick="deleteMessageBubble(this)">Delete</button>
           </div>
@@ -654,6 +655,28 @@
       window.speechSynthesis.speak(utterance);
     }
 
+    window.speakMessageText = function(btn) {
+      triggerHaptic(15);
+      const container = btn.closest('.bubble-container');
+      const bubble = container.querySelector('.bubble');
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const cleanText = bubble.innerText.replace(/[*_#`]/g, '');
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        loadVoices();
+        let chosenVoice = null;
+        if (selectedVoiceGender === 'male') {
+          chosenVoice = availableVoices.find(v => /Male|David|Oliver|Daniel|Alex/i.test(v.name)) || availableVoices[0];
+          utterance.pitch = 0.85; utterance.rate = 1.0;
+        } else {
+          chosenVoice = availableVoices.find(v => /Female|Zira|Karen|Victoria|Samantha/i.test(v.name)) || availableVoices[1] || availableVoices[0];
+          utterance.pitch = 1.1; utterance.rate = 1.02;
+        }
+        if (chosenVoice) utterance.voice = chosenVoice;
+        window.speechSynthesis.speak(utterance);
+      }
+    };
+
     function parseMarkdown(text) {
       let html = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
       html = html.replace(/!\[([^\]]*)\]\((.*?)\)/g, '<img src="$2" alt="$1" />');
@@ -710,6 +733,44 @@
       navigator.clipboard.writeText(bubble.innerText);
       btn.innerText = "Copied!";
       setTimeout(() => { btn.innerText = "Copy"; }, 1500);
+    };
+
+    window.editMessageText = function(btn) {
+      triggerHaptic(15);
+      const container = btn.closest('.bubble-container');
+      const bubble = container.querySelector('.bubble');
+      const currentText = bubble.innerText;
+      
+      if (container.querySelector('.edit-input')) return; // already editing
+      
+      const textarea = document.createElement('textarea');
+      textarea.className = 'edit-input';
+      textarea.value = currentText;
+      textarea.rows = 2;
+      
+      bubble.style.display = 'none';
+      container.insertBefore(textarea, bubble);
+      textarea.focus();
+
+      textarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          const newText = textarea.value.trim();
+          textarea.remove();
+          bubble.style.display = 'block';
+          if (newText) {
+            bubble.innerText = newText;
+            persistCurrentThreadState();
+            // Optional: re-trigger message send with edited text if desired, or just update UI.
+            // For a robust flow, let's also place it in userInput box or send it:
+            userInput.value = newText;
+            sendMessage();
+          }
+        } else if (e.key === 'Escape') {
+          textarea.remove();
+          bubble.style.display = 'block';
+        }
+      });
     };
 
     window.deleteMessageBubble = function(btn) {
@@ -787,7 +848,7 @@
       threads[currentThreadId] = {
         title: 'New Directive',
         date: new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-        messages: `<div class="bubble-wrapper"><div class="bubble-container bot"><div class="bubble">Greetings. New session initialized. PG1 Sovereign Agent operational.</div><div class="message-meta"><span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action" onclick="copyMessageText(this)">Copy</button><button class="tool-action delete" onclick="deleteMessageBubble(this)">Delete</button></div></div></div></div>`
+        messages: `<div class="bubble-wrapper"><div class="bubble-container bot"><div class="bubble">Greetings. New session initialized. PG1 Sovereign Agent operational.</div><div class="message-meta"><span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action" onclick="speakMessageText(this)">Speak</button><button class="tool-action" onclick="copyMessageText(this)">Copy</button><button class="tool-action delete" onclick="deleteMessageBubble(this)">Delete</button></div></div></div></div>`
       };
       chatStream.innerHTML = threads[currentThreadId].messages;
       saveThreadsToStorage();
@@ -859,6 +920,7 @@
         metaDiv.innerHTML = `
           <span class="timestamp">${getTimeString()}</span>
           <div class="message-tools">
+            <button class="tool-action" onclick="speakMessageText(this)">Speak</button>
             <button class="tool-action" onclick="copyMessageText(this)">Copy</button>
             <button class="tool-action delete" onclick="deleteMessageBubble(this)">Delete</button>
           </div>
@@ -887,6 +949,8 @@
           <div class="message-meta">
             <span class="timestamp">${getTimeString()}</span>
             <div class="message-tools">
+              <button class="tool-action" onclick="editMessageText(this)">Edit</button>
+              <button class="tool-action" onclick="copyMessageText(this)">Copy</button>
               <button class="tool-action delete" onclick="deleteMessageBubble(this)">Delete</button>
             </div>
           </div>
