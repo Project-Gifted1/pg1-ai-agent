@@ -129,7 +129,7 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // 5. REPLICATE NEURAL ASSET GENERATOR (Image & Video)
+    // 5. REPLICATE NEURAL ASSET GENERATOR (Polling-backed)
     async function runReplicateModel(modelPath, inputPayload) {
       if (!replicateKey) throw new Error('Replicate key missing from environment and Vault.');
       const response = await fetch(`https://api.replicate.com/v1/models/${modelPath}/predictions`, {
@@ -137,12 +137,25 @@ module.exports = async function handler(req, res) {
         headers: {
           'Authorization': `Bearer ${replicateKey}`,
           'Content-Type': 'application/json',
-          'Prefer': 'wait'
+          'Prefer': 'wait=30'
         },
         body: JSON.stringify({ input: inputPayload })
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data?.detail || 'Replicate execution failed.');
+      let data = await response.json();
+      if (!response.ok) throw new Error(data?.detail || 'Replicate initialization failed.');
+
+      let attempts = 0;
+      while (data.status !== 'succeeded' && data.status !== 'failed' && data.status !== 'canceled' && attempts < 15) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        const checkRes = await fetch(`https://api.replicate.com/v1/predictions/${data.id}`, {
+          headers: { 'Authorization': `Bearer ${replicateKey}` }
+        });
+        data = await checkRes.json();
+        attempts++;
+      }
+
+      if (data.status === 'failed') throw new Error(data.error || 'Prediction failed.');
+      if (!data.output) throw new Error('Asset generation timed out.');
       return data.output;
     }
 
@@ -160,10 +173,14 @@ module.exports = async function handler(req, res) {
     if (promptText.startsWith('/video ')) {
       const videoPrompt = promptText.replace('/video ', '');
       try {
-        const outputUrl = await runReplicateModel('minimax/video-01', { prompt: videoPrompt });
+        const outputUrl = await runReplicateModel('lightricks/ltx-video', { 
+          prompt: videoPrompt,
+          aspect_ratio: '16:9',
+          length: 97
+        });
         const finalUrl = Array.isArray(outputUrl) ? outputUrl[0] : outputUrl;
         return res.status(200).json({ 
-          reply: `Video asset compiled:\n\n<video src="${finalUrl}" controls playsinline style="width:100%; border-radius: 8px; margin-top: 10px;"></video>\n\n[Download Direct Link](${finalUrl})` 
+          reply: `Video asset compiled successfully:\n\n<video controls playsinline width="100%" style="border-radius:8px; margin-top:10px;"><source src="${finalUrl}" type="video/mp4"></video>\n\nDirect Download: ${finalUrl}` 
         });
       } catch (repErr) {
         return res.status(200).json({ reply: `Neural Pipeline Error: ${repErr.message}` });
