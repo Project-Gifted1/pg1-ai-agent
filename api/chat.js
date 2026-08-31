@@ -145,7 +145,8 @@ module.exports = async function handler(req, res) {
       if (!response.ok) throw new Error(data?.detail || 'Replicate initialization failed.');
 
       let attempts = 0;
-      while (data.status !== 'succeeded' && data.status !== 'failed' && data.status !== 'canceled' && attempts < 15) {
+      // 30 polling attempts at 2 seconds each = 60 second extended window
+      while (data.status !== 'succeeded' && data.status !== 'failed' && data.status !== 'canceled' && attempts < 30) {
         await new Promise(resolve => setTimeout(resolve, 2000));
         const checkRes = await fetch(`https://api.replicate.com/v1/predictions/${data.id}`, {
           headers: { 'Authorization': `Bearer ${replicateKey}` }
@@ -173,12 +174,8 @@ module.exports = async function handler(req, res) {
     if (promptText.startsWith('/video ')) {
       const videoPrompt = promptText.replace('/video ', '');
       try {
-        const outputUrl = await runReplicateModel('anotherjesse/zeroscope-v2-xl', { 
-          prompt: videoPrompt,
-          fps: 24,
-          num_frames: 24,
-          width: 1024,
-          height: 576
+        const outputUrl = await runReplicateModel('minimax/video-01', { 
+          prompt: videoPrompt
         });
         const finalUrl = Array.isArray(outputUrl) ? outputUrl[0] : outputUrl;
         return res.status(200).json({ 
