@@ -10,15 +10,29 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const payload = req.body;
-    if (!payload || !payload.sale_id) {
-      return res.status(400).json({ error: 'Invalid webhook payload structure.' });
+    // Parse URL-encoded form data sent by Gumroad webhooks
+    let payload = {};
+    if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
+      payload = req.body;
+    } else {
+      const rawBody = typeof req.body === 'string' ? req.body : '';
+      const params = new URLSearchParams(rawBody);
+      payload = Object.fromEntries(params.entries());
+    }
+
+    const saleId = payload.sale_id || payload.id || 'sale_' + Date.now();
+
+    // Security check: Validate seller ID if configured
+    const expectedSellerId = process.env.GUMROAD_SELLER_ID;
+    if (expectedSellerId && payload.seller_id && payload.seller_id !== expectedSellerId) {
+      return res.status(401).json({ error: 'Unauthorized seller identity' });
     }
 
     const supabaseUrl = process.env.SUPABASE_URL || '';
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASEAPI_KEY || process.env.SUPABASE_ANON_KEY || '';
 
-    res.status(200).json({ status: 'received', sale_id: payload.sale_id });
+    // Immediate 200 OK handshake to prevent Gumroad retry loops
+    res.status(200).json({ status: 'received', sale_id: saleId });
 
     if (supabaseUrl && supabaseKey) {
       await fetch(`${supabaseUrl}/rest/v1/gumroad_sales`, {
@@ -30,7 +44,7 @@ export default async function handler(req, res) {
           'Prefer': 'resolution=merge-duplicates'
         },
         body: JSON.stringify({
-          sale_id: String(payload.sale_id),
+          sale_id: String(saleId),
           product_id: String(payload.product_id || ''),
           product_name: String(payload.product_name || ''),
           email: String(payload.email || ''),
