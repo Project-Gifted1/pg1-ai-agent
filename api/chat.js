@@ -105,7 +105,22 @@ export default async function handler(req, res) {
       }
     }
 
-    // 4. AUTONOMOUS GITHUB COMMIT PROTOCOL (SUPPORTS SUB-FOLDERS)
+    // 4. CHECK SALES COMMAND
+    if (promptText === '/check-sales') {
+      try {
+        const queryRes = await fetch(`${supabaseUrl}/rest/v1/gumroad_sales?select=*&order=created_at.desc&limit=5`, {
+          headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+        });
+        const salesData = await queryRes.json();
+        return res.status(200).json({ 
+          reply: `Supabase Ledger Inspection:\n\`\`\`json\n${JSON.stringify(salesData, null, 2)}\n\`\`\`` 
+        });
+      } catch (err) {
+        return res.status(200).json({ reply: `Ledger Query Failure: ${err.message}` });
+      }
+    }
+
+    // 5. AUTONOMOUS GITHUB COMMIT PROTOCOL
     async function commitToGitHub(filePath, fileContent, commitMessage) {
       if (!ghToken) throw new Error('GitHub token offline.');
       const repo = 'Project-Gifted1/pg1-ai-agent';
@@ -157,7 +172,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // 5. REPLICATE ASSET GENERATOR WITH AUTO-POLLING
+    // 6. REPLICATE ASSET GENERATOR
     async function runAutoPollingReplicate(modelPath, inputPayload) {
       let replicateKey = '';
       if (supabaseUrl && supabaseKey) {
@@ -219,7 +234,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // 6. SUPABASE MEMORY SYNCHRONIZATION
+    // 7. SUPABASE MEMORY SYNCHRONIZATION & VAULT MEDIA PARSING
     let chatContents = [];
     if (supabaseUrl && supabaseKey) {
       try {
@@ -238,9 +253,27 @@ export default async function handler(req, res) {
     const userParts = [];
     if (promptText) userParts.push({ text: promptText });
     if (filePayload) userParts.push(filePayload); 
+
+    // Extract vault URL from frontend transmission notification
+    const vaultUrlMatch = promptText.match(/URL:\s*(https:\/\/[^\s]+?pg1-vault[^\s]+?)(?=\.\]|\]|\s|$)/i);
+    if (vaultUrlMatch && vaultUrlMatch[1]) {
+      try {
+        const vaultUrl = vaultUrlMatch[1];
+        const vaultRes = await fetch(vaultUrl);
+        if (vaultRes.ok) {
+          const arrayBuffer = await vaultRes.arrayBuffer();
+          const vaultBase64 = Buffer.from(arrayBuffer).toString('base64');
+          const vaultMime = vaultRes.headers.get('content-type') || 'video/mp4';
+          userParts.push({ inlineData: { data: vaultBase64, mimeType: vaultMime } });
+        }
+      } catch (mediaErr) {
+        userParts.push({ text: `[SYSTEM ERROR: Failed to ingest media vault payload into matrix: ${mediaErr.message}]` });
+      }
+    }
+
     chatContents.push({ role: "user", parts: userParts });
 
-    // 7. SYSTEM INSTRUCTION
+    // 8. SYSTEM INSTRUCTION
     const pg1SystemInstruction = `You are PG1-AGENT, the core sovereign intelligence of Project-Gifted1.
     OPERATIONAL OUTPUT STANDARDS:
     1. DELIVER COMPLETE INTELLIGENCE: Always provide thorough analysis, clear breakdowns, concrete strategic recommendations, and necessary action steps.
