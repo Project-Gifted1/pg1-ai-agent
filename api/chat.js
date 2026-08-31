@@ -129,43 +129,27 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // 5. REPLICATE NEURAL ASSET GENERATOR (Polling-backed)
-    async function runReplicateModel(modelPath, inputPayload) {
-      if (!replicateKey) throw new Error('Replicate key missing from environment and Vault.');
+    // 5. ASYNCHRONOUS REPLICATE ASSET GENERATOR
+    async function startReplicateModel(modelPath, inputPayload) {
+      if (!replicateKey) throw new Error('Replicate key missing from Vault.');
       const response = await fetch(`https://api.replicate.com/v1/models/${modelPath}/predictions`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${replicateKey}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'wait=30'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ input: inputPayload })
       });
-      let data = await response.json();
+      const data = await response.json();
       if (!response.ok) throw new Error(data?.detail || 'Replicate initialization failed.');
-
-      let attempts = 0;
-      // 30 polling attempts at 2 seconds each = 60 second extended window
-      while (data.status !== 'succeeded' && data.status !== 'failed' && data.status !== 'canceled' && attempts < 30) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        const checkRes = await fetch(`https://api.replicate.com/v1/predictions/${data.id}`, {
-          headers: { 'Authorization': `Bearer ${replicateKey}` }
-        });
-        data = await checkRes.json();
-        attempts++;
-      }
-
-      if (data.status === 'failed') throw new Error(data.error || 'Prediction failed.');
-      if (!data.output) throw new Error('Asset generation timed out.');
-      return data.output;
+      return data;
     }
 
     if (promptText.startsWith('/image ')) {
       const imagePrompt = promptText.replace('/image ', '');
       try {
-        const outputUrl = await runReplicateModel('ideogram-ai/ideogram-v3-turbo', { prompt: imagePrompt });
-        const finalUrl = Array.isArray(outputUrl) ? outputUrl[0] : outputUrl;
-        return res.status(200).json({ reply: `Visual asset compiled:\n\n![Output](${finalUrl})` });
+        const data = await startReplicateModel('ideogram-ai/ideogram-v3-turbo', { prompt: imagePrompt });
+        return res.status(200).json({ reply: `Visual asset processing. If it does not load immediately, check status using:\n\n/check ${data.id}` });
       } catch (repErr) {
         return res.status(200).json({ reply: `Neural Pipeline Error: ${repErr.message}` });
       }
@@ -174,15 +158,35 @@ module.exports = async function handler(req, res) {
     if (promptText.startsWith('/video ')) {
       const videoPrompt = promptText.replace('/video ', '');
       try {
-        const outputUrl = await runReplicateModel('minimax/video-01', { 
-          prompt: videoPrompt
-        });
-        const finalUrl = Array.isArray(outputUrl) ? outputUrl[0] : outputUrl;
+        const data = await startReplicateModel('minimax/video-01', { prompt: videoPrompt });
         return res.status(200).json({ 
-          reply: `Video asset compiled successfully:\n\n<video controls playsinline width="100%" style="border-radius:8px; margin-top:10px;"><source src="${finalUrl}" type="video/mp4"></video>\n\nDirect Download: ${finalUrl}` 
+          reply: `Video generation initialized successfully on sovereign cluster.\n\nTracking ID: ${data.id}\n\nExecute the following command in 60 seconds to retrieve your asset:\n\n/check ${data.id}` 
         });
       } catch (repErr) {
         return res.status(200).json({ reply: `Neural Pipeline Error: ${repErr.message}` });
+      }
+    }
+
+    if (promptText.startsWith('/check ')) {
+      const predictionId = promptText.replace('/check ', '').trim();
+      try {
+        const checkRes = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
+          headers: { 'Authorization': `Bearer ${replicateKey}` }
+        });
+        const data = await checkRes.json();
+        
+        if (data.status === 'starting' || data.status === 'processing') {
+          return res.status(200).json({ reply: `Asset is still compiling. Current status: ${data.status}. Please check again in 15 seconds.` });
+        } else if (data.status === 'succeeded') {
+          const finalUrl = Array.isArray(data.output) ? data.output[0] : data.output;
+          return res.status(200).json({ 
+            reply: `Asset retrieved:\n\n<video controls playsinline width="100%" style="border-radius:8px; margin-top:10px;"><source src="${finalUrl}"></video>\n\n[Direct Link](${finalUrl})` 
+          });
+        } else {
+          return res.status(200).json({ reply: `Asset generation failed or canceled. Status: ${data.status}` });
+        }
+      } catch (repErr) {
+        return res.status(200).json({ reply: `Status Check Error: ${repErr.message}` });
       }
     }
 
@@ -243,7 +247,7 @@ module.exports = async function handler(req, res) {
     const responsePart = candidateParts.find(p => p.text && !p.thought) || candidateParts.reverse().find(p => p.text);
     const finalReplyText = responsePart?.text || 'Execution completed without text output.';
 
-    if (supabaseUrl && supabaseKey && finalReplyText && !promptText.startsWith('/vault')) {
+    if (supabaseUrl && supabaseKey && finalReplyText && !promptText.startsWith('/vault') && !promptText.startsWith('/check')) {
       try {
         await fetch(`${supabaseUrl}/rest/v1/messages`, {
           method: 'POST',
