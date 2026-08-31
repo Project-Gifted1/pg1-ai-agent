@@ -173,10 +173,12 @@ module.exports = async function handler(req, res) {
     if (promptText.startsWith('/video ')) {
       const videoPrompt = promptText.replace('/video ', '');
       try {
-        const outputUrl = await runReplicateModel('lightricks/ltx-video', { 
+        const outputUrl = await runReplicateModel('anotherjesse/zeroscope-v2-xl', { 
           prompt: videoPrompt,
-          aspect_ratio: '16:9',
-          length: 97
+          fps: 24,
+          num_frames: 24,
+          width: 1024,
+          height: 576
         });
         const finalUrl = Array.isArray(outputUrl) ? outputUrl[0] : outputUrl;
         return res.status(200).json({ 
