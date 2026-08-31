@@ -41,7 +41,7 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ reply: 'System Error: All primary and backup sovereign neural keys are offline.' });
     }
 
-    // 2. AUTONOMOUS VAULT MANAGER (Inject keys via Chat)
+    // 2. AUTONOMOUS VAULT MANAGER
     if (promptText.startsWith('/vault ')) {
       const args = promptText.replace('/vault ', '').split(' ');
       if (args.length >= 2 && supabaseUrl && supabaseKey) {
@@ -72,7 +72,7 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ reply: 'Formatting error. Syntax: /vault service_name api_key' });
     }
 
-    // 3. DYNAMIC REPLICATE KEY RESOLUTION (Vault Priority - Bypassing Vercel)
+    // 3. DYNAMIC REPLICATE KEY RESOLUTION
     let replicateKey = '';
     if (supabaseUrl && supabaseKey) {
       try {
@@ -91,7 +91,6 @@ module.exports = async function handler(req, res) {
       } catch (vaultErr) {}
     }
     
-    // Fallback to Vercel only if the vault is completely empty
     if (!replicateKey) {
       replicateKey = (process.env.REPLICATE_KEY || process.env.REPLICATE_API_TOKEN || '').trim();
     }
@@ -130,7 +129,7 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // 5. REPLICATE NEURAL ASSET GENERATOR
+    // 5. REPLICATE NEURAL ASSET GENERATOR (Image & Video)
     async function runReplicateModel(modelPath, inputPayload) {
       if (!replicateKey) throw new Error('Replicate key missing from environment and Vault.');
       const response = await fetch(`https://api.replicate.com/v1/models/${modelPath}/predictions`, {
@@ -153,6 +152,19 @@ module.exports = async function handler(req, res) {
         const outputUrl = await runReplicateModel('ideogram-ai/ideogram-v3-turbo', { prompt: imagePrompt });
         const finalUrl = Array.isArray(outputUrl) ? outputUrl[0] : outputUrl;
         return res.status(200).json({ reply: `Visual asset compiled:\n\n![Output](${finalUrl})` });
+      } catch (repErr) {
+        return res.status(200).json({ reply: `Neural Pipeline Error: ${repErr.message}` });
+      }
+    }
+
+    if (promptText.startsWith('/video ')) {
+      const videoPrompt = promptText.replace('/video ', '');
+      try {
+        const outputUrl = await runReplicateModel('minimax/video-01', { prompt: videoPrompt });
+        const finalUrl = Array.isArray(outputUrl) ? outputUrl[0] : outputUrl;
+        return res.status(200).json({ 
+          reply: `Video asset compiled:\n\n<video src="${finalUrl}" controls playsinline style="width:100%; border-radius: 8px; margin-top: 10px;"></video>\n\n[Download Direct Link](${finalUrl})` 
+        });
       } catch (repErr) {
         return res.status(200).json({ reply: `Neural Pipeline Error: ${repErr.message}` });
       }
