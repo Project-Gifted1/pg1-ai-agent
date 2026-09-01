@@ -11,7 +11,6 @@ export default async function handler(req, res) {
   try {
     let promptText = req.body?.prompt || 'System check.';
     
-    // 1. FRONTEND AUTHENTICATION GATE
     if (promptText === 'AUTH_VERIFY') {
       const inputUser = (req.body?.user || '').trim();
       const inputPass = (req.body?.pass || '').trim();
@@ -44,132 +43,75 @@ export default async function handler(req, res) {
       return res.status(200).json({ reply: 'System Error: All primary and backup sovereign neural keys are offline.' });
     }
 
-    // 2. AUTONOMOUS VAULT MANAGER
     if (promptText.startsWith('/vault ')) {
       const args = promptText.replace('/vault ', '').split(' ');
       if (args.length >= 2 && supabaseUrl && supabaseKey) {
         const serviceName = args[0].trim();
         const apiToken = args[1].trim();
-        
         try {
           const upsertRes = await fetch(`${supabaseUrl}/rest/v1/api_vault`, {
             method: 'POST',
-            headers: {
-              'apikey': supabaseKey,
-              'Authorization': `Bearer ${supabaseKey}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'resolution=merge-duplicates'
-            },
+            headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
             body: JSON.stringify({ service_name: serviceName, api_key: apiToken })
           });
-          
-          if (upsertRes.ok) {
-            return res.status(200).json({ reply: `[SECURITY] Key for '${serviceName}' successfully encrypted and stored in Supabase Vault.` });
-          } else {
-             return res.status(200).json({ reply: `[ERROR] Vault storage failed. Ensure api_vault table exists.` });
-          }
-        } catch (e) {
-          return res.status(200).json({ reply: `[ERROR] Vault execution failed: ${e.message}` });
-        }
+          if (upsertRes.ok) return res.status(200).json({ reply: `[SECURITY] Key for '${serviceName}' successfully encrypted and stored in Supabase Vault.` });
+          else return res.status(200).json({ reply: `[ERROR] Vault storage failed. Ensure api_vault table exists.` });
+        } catch (e) { return res.status(200).json({ reply: `[ERROR] Vault execution failed: ${e.message}` }); }
       }
       return res.status(200).json({ reply: 'Formatting error. Syntax: /vault service_name api_key' });
     }
 
-    // 3. WEBHOOK SELF-TEST ROUTE
     if (promptText === '/test-gumroad') {
       try {
         const protocol = req.headers['x-forwarded-proto'] || 'https';
         const host = req.headers['host'] || 'pg1-ai-agent.vercel.app';
         const testUrl = `${protocol}://${host}/api/webhooks/gumroad`;
-        
         const testRes = await fetch(testUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sale_id: 'test_sale_' + Date.now(),
-            product_id: 'prod_test',
-            product_name: 'Sovereign Agent Diagnostic Package',
-            email: 'operator@project-gifted1.internal',
-            price: 5000,
-            currency: 'usd',
-            license_key: 'PG1-TEST-KEY-2026'
-          })
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sale_id: 'test_sale_' + Date.now(), product_id: 'prod_test', product_name: 'Diagnostic Package', email: 'operator@project-gifted1.internal', price: 5000, currency: 'usd', license_key: 'PG1-TEST-KEY' })
         });
-        
         const testBody = await testRes.text();
-        return res.status(200).json({ 
-          reply: `Webhook Endpoint Diagnostic Report:\n- URL: ${testUrl}\n- Status Code: ${testRes.status}\n- Response: ${testBody}` 
-        });
-      } catch (testErr) {
-        return res.status(200).json({ reply: `Webhook Diagnostic Failure: ${testErr.message}` });
-      }
+        return res.status(200).json({ reply: `Webhook Diagnostic Report:\n- URL: ${testUrl}\n- Status Code: ${testRes.status}\n- Response: ${testBody}` });
+      } catch (testErr) { return res.status(200).json({ reply: `Webhook Diagnostic Failure: ${testErr.message}` }); }
     }
 
-    // 4. CHECK SALES COMMAND
     if (promptText === '/check-sales') {
       try {
-        const queryRes = await fetch(`${supabaseUrl}/rest/v1/gumroad_sales?select=*&order=created_at.desc&limit=5`, {
-          headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
-        });
+        const queryRes = await fetch(`${supabaseUrl}/rest/v1/gumroad_sales?select=*&order=created_at.desc&limit=5`, { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }});
         const salesData = await queryRes.json();
-        return res.status(200).json({ 
-          reply: `Supabase Ledger Inspection:\n\`\`\`json\n${JSON.stringify(salesData, null, 2)}\n\`\`\`` 
-        });
-      } catch (err) {
-        return res.status(200).json({ reply: `Ledger Query Failure: ${err.message}` });
-      }
+        return res.status(200).json({ reply: `Supabase Ledger Inspection:\n\`\`\`json\n${JSON.stringify(salesData, null, 2)}\n\`\`\`` });
+      } catch (err) { return res.status(200).json({ reply: `Ledger Query Failure: ${err.message}` }); }
     }
 
-    // 5. AUTONOMOUS BUCKET PROVISIONING
     if (promptText === '/init-vault') {
       try {
         const bucketRes = await fetch(`${supabaseUrl}/storage/v1/bucket`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
+          method: 'POST', headers: { 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: 'pg1-vault', name: 'pg1-vault', public: true })
         });
         const bucketData = await bucketRes.json();
-        if (bucketRes.ok) {
-          return res.status(200).json({ reply: 'Storage vault `pg1-vault` has been autonomously provisioned.' });
-        } else {
-          if (bucketData.message?.includes('already exists')) {
-             return res.status(200).json({ reply: 'Storage vault `pg1-vault` already exists and is ready.' });
-          }
+        if (bucketRes.ok) return res.status(200).json({ reply: 'Storage vault `pg1-vault` has been provisioned.' });
+        else {
+          if (bucketData.message?.includes('already exists')) return res.status(200).json({ reply: 'Storage vault `pg1-vault` already exists.' });
           return res.status(200).json({ reply: `Vault provisioning failed: ${bucketData.message || JSON.stringify(bucketData)}` });
         }
-      } catch (err) {
-        return res.status(200).json({ reply: `Vault provisioning error: ${err.message}` });
-      }
+      } catch (err) { return res.status(200).json({ reply: `Vault provisioning error: ${err.message}` }); }
     }
 
-    // 6. AUTONOMOUS GITHUB COMMIT PROTOCOL
     async function commitToGitHub(filePath, fileContent, commitMessage) {
       if (!ghToken) throw new Error('GitHub token offline.');
       const repo = 'Project-Gifted1/pg1-ai-agent';
       const apiUrl = `https://api.github.com/repos/${repo}/contents/${filePath}`;
-      
       let sha = undefined;
       try {
         const getRes = await fetch(apiUrl, { headers: { 'Authorization': `token ${ghToken}`, 'User-Agent': 'PG1-AGENT' }});
-        if (getRes.ok) {
-          const getJson = await getRes.json();
-          sha = getJson?.sha;
-        }
+        if (getRes.ok) { const getJson = await getRes.json(); sha = getJson?.sha; }
       } catch (e) {}
-      
       const putRes = await fetch(apiUrl, {
-        method: 'PUT',
-        headers: { 'Authorization': `token ${ghToken}`, 'Content-Type': 'application/json', 'User-Agent': 'PG1-AGENT' },
-        body: JSON.stringify({
-          message: commitMessage,
-          content: Buffer.from(fileContent, 'utf-8').toString('base64'),
-          sha: sha
-        })
+        method: 'PUT', headers: { 'Authorization': `token ${ghToken}`, 'Content-Type': 'application/json', 'User-Agent': 'PG1-AGENT' },
+        body: JSON.stringify({ message: commitMessage, content: Buffer.from(fileContent, 'utf-8').toString('base64'), sha: sha })
       });
-      if (!putRes.ok) {
-        const errJson = await putRes.json().catch(() => ({}));
-        throw new Error(errJson.message || 'GitHub commit execution failed.');
-      }
+      if (!putRes.ok) { const errJson = await putRes.json().catch(() => ({})); throw new Error(errJson.message || 'GitHub commit failed.'); }
       return await putRes.json();
     }
 
@@ -177,97 +119,64 @@ export default async function handler(req, res) {
       const parts = promptText.replace('/commit ', '');
       const firstPipe = parts.indexOf('|');
       const secondPipe = parts.indexOf('|', firstPipe + 1);
-      
       if (firstPipe !== -1 && secondPipe !== -1) {
         const filePath = parts.substring(0, firstPipe).trim();
         const commitMsg = parts.substring(firstPipe + 1, secondPipe).trim();
         const fileContent = parts.substring(secondPipe + 1).trim();
-        
         try {
           await commitToGitHub(filePath, fileContent, commitMsg);
           return res.status(200).json({ reply: `System Update Pushed: ${filePath} updated successfully.` });
-        } catch (e) {
-          return res.status(200).json({ reply: `Deployment Error: ${e.message}` });
-        }
-      } else {
-        return res.status(200).json({ reply: 'Formatting error. Syntax: /commit filepath|message|content' });
-      }
+        } catch (e) { return res.status(200).json({ reply: `Deployment Error: ${e.message}` }); }
+      } else { return res.status(200).json({ reply: 'Formatting error. Syntax: /commit filepath|message|content' }); }
     }
 
-    // 7. REPLICATE ASSET GENERATOR
     async function runAutoPollingReplicate(modelPath, inputPayload) {
       let replicateKey = '';
       if (supabaseUrl && supabaseKey) {
         try {
-          const vaultRes = await fetch(`${supabaseUrl}/rest/v1/api_vault?service_name=eq.replicate&select=api_key`, {
-            headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
-          });
-          if (vaultRes.ok) {
-            const vaultData = await vaultRes.json();
-            if (vaultData && vaultData.length > 0) replicateKey = vaultData[0].api_key;
-          }
+          const vaultRes = await fetch(`${supabaseUrl}/rest/v1/api_vault?service_name=eq.replicate&select=api_key`, { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } });
+          if (vaultRes.ok) { const vaultData = await vaultRes.json(); if (vaultData && vaultData.length > 0) replicateKey = vaultData[0].api_key; }
         } catch (vaultErr) {}
       }
       if (!replicateKey) replicateKey = (process.env.REPLICATE_KEY || process.env.REPLICATE_API_TOKEN || '').trim();
       if (!replicateKey) throw new Error('Replicate key missing from Vault.');
-      
       const response = await fetch(`https://api.replicate.com/v1/models/${modelPath}/predictions`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${replicateKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: inputPayload })
+        method: 'POST', headers: { 'Authorization': `Bearer ${replicateKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ input: inputPayload })
       });
       let data = await response.json();
       if (!response.ok) throw new Error(data?.detail || 'Replicate initialization failed.');
-
       let attempts = 0;
       while (data.status !== 'succeeded' && data.status !== 'failed' && data.status !== 'canceled' && attempts < 30) {
         await new Promise(resolve => setTimeout(resolve, 3000));
-        const checkRes = await fetch(`https://api.replicate.com/v1/predictions/${data.id}`, {
-          headers: { 'Authorization': `Bearer ${replicateKey}` }
-        });
-        data = await checkRes.json();
-        attempts++;
+        const checkRes = await fetch(`https://api.replicate.com/v1/predictions/${data.id}`, { headers: { 'Authorization': `Bearer ${replicateKey}` } });
+        data = await checkRes.json(); attempts++;
       }
-
       if (data.status === 'failed') throw new Error(data.error || 'Prediction failed.');
       if (data.status !== 'succeeded') throw new Error('Asset generation timed out.');
       return Array.isArray(data.output) ? data.output[0] : data.output;
     }
 
     if (promptText.startsWith('/image ')) {
-      const imagePrompt = promptText.replace('/image ', '');
       try {
-        const finalUrl = await runAutoPollingReplicate('ideogram-ai/ideogram-v3-turbo', { prompt: imagePrompt });
+        const finalUrl = await runAutoPollingReplicate('ideogram-ai/ideogram-v3-turbo', { prompt: promptText.replace('/image ', '') });
         return res.status(200).json({ reply: `Visual asset compiled:\n\n![Output](${finalUrl})` });
-      } catch (repErr) {
-        return res.status(200).json({ reply: `Neural Pipeline Error: ${repErr.message}` });
-      }
+      } catch (repErr) { return res.status(200).json({ reply: `Neural Pipeline Error: ${repErr.message}` }); }
     }
 
     if (promptText.startsWith('/video ')) {
-      const videoPrompt = promptText.replace('/video ', '');
       try {
-        const finalUrl = await runAutoPollingReplicate('minimax/video-01', { prompt: videoPrompt });
-        return res.status(200).json({ 
-          reply: `Video asset compiled successfully:\n\n<video controls playsinline width="100%" style="border-radius:8px; margin-top:10px;"><source src="${finalUrl}" type="video/mp4"></video>\n\nDirect Download: ${finalUrl}` 
-        });
-      } catch (repErr) {
-        return res.status(200).json({ reply: `Neural Pipeline Error: ${repErr.message}` });
-      }
+        const finalUrl = await runAutoPollingReplicate('minimax/video-01', { prompt: promptText.replace('/video ', '') });
+        return res.status(200).json({ reply: `Video asset compiled:\n\n<video controls playsinline width="100%" style="border-radius:8px; margin-top:10px;"><source src="${finalUrl}" type="video/mp4"></video>\n\nDirect Download: ${finalUrl}` });
+      } catch (repErr) { return res.status(200).json({ reply: `Neural Pipeline Error: ${repErr.message}` }); }
     }
 
-    // 8. SUPABASE MEMORY SYNCHRONIZATION & SECURE VAULT PARSING
     let chatContents = [];
     if (supabaseUrl && supabaseKey) {
       try {
-        const historyRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.asc&limit=10`, {
-          headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
-        });
+        const historyRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=30`, { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } });
         if (historyRes.ok) {
           const pastMessages = await historyRes.json();
-          if (Array.isArray(pastMessages)) {
-            chatContents = pastMessages.map(msg => ({ role: msg.role === 'model' ? 'model' : 'user', parts: [{ text: msg.content }] }));
-          }
+          if (Array.isArray(pastMessages)) chatContents = pastMessages.reverse().map(msg => ({ role: msg.role === 'model' ? 'model' : 'user', parts: [{ text: msg.content }] }));
         }
       } catch (dbErr) {}
     }
@@ -281,50 +190,35 @@ export default async function handler(req, res) {
       try {
         let vaultUrl = vaultUrlMatch[1];
         let fetchOptions = {};
-        
         if (vaultUrl.includes('supabase') && supabaseKey) {
           vaultUrl = vaultUrl.replace('/public/pg1-vault/', '/authenticated/pg1-vault/');
           fetchOptions = { headers: { 'Authorization': `Bearer ${supabaseKey}` } };
         }
-        
         const vaultRes = await fetch(vaultUrl, fetchOptions);
         if (vaultRes.ok) {
           const arrayBuffer = await vaultRes.arrayBuffer();
-          const vaultBase64 = Buffer.from(arrayBuffer).toString('base64');
-          const vaultMime = vaultRes.headers.get('content-type') || 'video/mp4';
-          userParts.push({ inlineData: { data: vaultBase64, mimeType: vaultMime } });
-        } else {
-           throw new Error(`Vault locked or missing (HTTP ${vaultRes.status})`);
-        }
-      } catch (mediaErr) {
-        userParts.push({ text: `[SYSTEM ERROR: Failed to ingest secure media vault payload: ${mediaErr.message}]` });
-      }
+          userParts.push({ inlineData: { data: Buffer.from(arrayBuffer).toString('base64'), mimeType: vaultRes.headers.get('content-type') || 'video/mp4' } });
+        } else throw new Error(`Vault locked or missing (HTTP ${vaultRes.status})`);
+      } catch (mediaErr) { userParts.push({ text: `[SYSTEM ERROR: Failed to ingest secure media: ${mediaErr.message}]` }); }
     }
-
     chatContents.push({ role: "user", parts: userParts });
 
-    // 9. SYSTEM INSTRUCTION
     const pg1SystemInstruction = `You are PG1-AGENT, the core sovereign intelligence of Project-Gifted1.
     OPERATIONAL OUTPUT STANDARDS:
-    1. DELIVER COMPLETE INTELLIGENCE: Always provide thorough analysis, clear breakdowns, concrete strategic recommendations, and necessary action steps.
-    2. DO NOT ECHO PROMPTS: Never repeat the user's prompt or begin with conversational filler.
-    3. SILENT SCRATCHPAD: Keep internal meta-planning hidden. Deliver the final analysis cleanly.
-    4. SOVEREIGN IDENTITY: Operate strictly as PG1-AGENT under Project-Gifted1.`;
+    1. DELIVER COMPLETE INTELLIGENCE: Always provide thorough analysis and clear breakdowns.
+    2. APPROVAL PROTOCOL: You must present proposed codebase changes, commands, or deployments to the operator for review. Do not provide the final executable command (e.g., /commit) until the operator explicitly states "approved" or authorizes the deployment.
+    3. DO NOT ECHO PROMPTS: Never repeat the user's prompt or begin with conversational filler.
+    4. SILENT SCRATCHPAD: Keep internal meta-planning hidden.
+    5. SOVEREIGN IDENTITY: Operate strictly as PG1-AGENT under Project-Gifted1.`;
 
-    const requestBody = {
-      systemInstruction: { parts: [{ text: pg1SystemInstruction }] },
-      contents: chatContents
-    };
-
+    const requestBody = { systemInstruction: { parts: [{ text: pg1SystemInstruction }] }, contents: chatContents };
     const targetModels = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest'];
     let response = null, data = null, success = false;
 
     for (const key of geminiKeys) {
       for (const model of targetModels) {
         try {
-          response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody)
-          });
+          response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
           data = await response.json();
           if (response.ok && data?.candidates?.[0]) { success = true; break; }
         } catch (e) {}
