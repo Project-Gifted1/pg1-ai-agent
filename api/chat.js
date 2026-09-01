@@ -120,7 +120,29 @@ export default async function handler(req, res) {
       }
     }
 
-    // 5. AUTONOMOUS GITHUB COMMIT PROTOCOL
+    // 5. AUTONOMOUS BUCKET PROVISIONING
+    if (promptText === '/init-vault') {
+      try {
+        const bucketRes = await fetch(`${supabaseUrl}/storage/v1/bucket`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: 'pg1-vault', name: 'pg1-vault', public: true })
+        });
+        const bucketData = await bucketRes.json();
+        if (bucketRes.ok) {
+          return res.status(200).json({ reply: 'Storage vault `pg1-vault` has been autonomously provisioned and set to public.' });
+        } else {
+          if (bucketData.message?.includes('already exists')) {
+             return res.status(200).json({ reply: 'Storage vault `pg1-vault` already exists and is ready.' });
+          }
+          return res.status(200).json({ reply: `Vault provisioning failed: ${bucketData.message || JSON.stringify(bucketData)}` });
+        }
+      } catch (err) {
+        return res.status(200).json({ reply: `Vault provisioning error: ${err.message}` });
+      }
+    }
+
+    // 6. AUTONOMOUS GITHUB COMMIT PROTOCOL
     async function commitToGitHub(filePath, fileContent, commitMessage) {
       if (!ghToken) throw new Error('GitHub token offline.');
       const repo = 'Project-Gifted1/pg1-ai-agent';
@@ -172,7 +194,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // 6. REPLICATE ASSET GENERATOR
+    // 7. REPLICATE ASSET GENERATOR
     async function runAutoPollingReplicate(modelPath, inputPayload) {
       let replicateKey = '';
       if (supabaseUrl && supabaseKey) {
@@ -234,7 +256,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // 7. SUPABASE MEMORY SYNCHRONIZATION & VAULT MEDIA PARSING
+    // 8. SUPABASE MEMORY SYNCHRONIZATION & VAULT MEDIA PARSING
     let chatContents = [];
     if (supabaseUrl && supabaseKey) {
       try {
@@ -254,7 +276,6 @@ export default async function handler(req, res) {
     if (promptText) userParts.push({ text: promptText });
     if (filePayload) userParts.push(filePayload); 
 
-    // Extract vault URL from frontend transmission notification
     const vaultUrlMatch = promptText.match(/URL:\s*(https:\/\/[^\s]+?pg1-vault[^\s]+?)(?=\.\]|\]|\s|$)/i);
     if (vaultUrlMatch && vaultUrlMatch[1]) {
       try {
@@ -273,7 +294,7 @@ export default async function handler(req, res) {
 
     chatContents.push({ role: "user", parts: userParts });
 
-    // 8. SYSTEM INSTRUCTION
+    // 9. SYSTEM INSTRUCTION
     const pg1SystemInstruction = `You are PG1-AGENT, the core sovereign intelligence of Project-Gifted1.
     OPERATIONAL OUTPUT STANDARDS:
     1. DELIVER COMPLETE INTELLIGENCE: Always provide thorough analysis, clear breakdowns, concrete strategic recommendations, and necessary action steps.
