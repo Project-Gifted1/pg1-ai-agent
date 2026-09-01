@@ -146,13 +146,13 @@ export default async function handler(req, res) {
       let data = await response.json();
       if (!response.ok) throw new Error(data?.detail || 'Replicate initialization failed.');
       let attempts = 0;
-      while (data.status !== 'succeeded' && data.status !== 'failed' && data.status !== 'canceled' && attempts < 30) {
-        await new Promise(resolve => setTimeout(resolve, 3000));
+      while (data.status !== 'succeeded' && data.status !== 'failed' && data.status !== 'canceled' && attempts < 25) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
         const checkRes = await fetch(`https://api.replicate.com/v1/predictions/${data.id}`, { headers: { 'Authorization': `Bearer ${replicateKey}` } });
         data = await checkRes.json(); attempts++;
       }
       if (data.status === 'failed') throw new Error(data.error || 'Prediction failed.');
-      if (data.status !== 'succeeded') throw new Error('Asset generation timed out.');
+      if (data.status !== 'succeeded') return `https://api.replicate.com/v1/predictions/${data.id}`;
       return Array.isArray(data.output) ? data.output[0] : data.output;
     }
 
@@ -166,7 +166,11 @@ export default async function handler(req, res) {
     if (promptText.startsWith('/video ')) {
       try {
         const finalUrl = await runAutoPollingReplicate('minimax/video-01', { prompt: promptText.replace('/video ', '') });
-        return res.status(200).json({ reply: `Video asset compiled:\n\n<video controls playsinline width="100%" style="border-radius:8px; margin-top:10px;"><source src="${finalUrl}" type="video/mp4"></video>\n\nDirect Download: ${finalUrl}` });
+        if (finalUrl.startsWith('http://') || finalUrl.startsWith('https://') && !finalUrl.includes('api.replicate.com')) {
+          return res.status(200).json({ reply: `Video asset compiled:\n\n<video controls playsinline webkit-playsinline="true" preload="metadata" style="width:100%;border-radius:8px;background:#000;"><source src="${finalUrl}" type="video/mp4"></video>\n\nDirect Download: ${finalUrl}` });
+        } else {
+          return res.status(200).json({ reply: `Video generation initialized. Check status or retrieve result here: ${finalUrl}` });
+        }
       } catch (repErr) { return res.status(200).json({ reply: `Neural Pipeline Error: ${repErr.message}` }); }
     }
 
