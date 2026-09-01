@@ -86,7 +86,7 @@ export default async function handler(req, res) {
         
         if (predData.status === 'succeeded') {
           const finalUrl = Array.isArray(predData.output) ? predData.output[0] : predData.output;
-          return res.status(200).json({ reply: `Video asset compiled:\n\n<video controls playsinline webkit-playsinline="true" preload="metadata" style="width:100%;border-radius:8px;background:#000;"><source src="${finalUrl}" type="video/mp4"></video>\n\nDirect Download: ${finalUrl}` });
+          return res.status(200).json({ reply: `Asset compiled:\n\n<video controls playsinline webkit-playsinline="true" preload="metadata" style="width:100%;border-radius:8px;background:#000;"><source src="${finalUrl}" type="video/mp4"></video>\n\n<img src="${finalUrl}" style="width:100%;border-radius:8px;margin-top:10px;display:${finalUrl.endsWith('.mp4') ? 'none' : 'block'};" />\n\nDirect Link: ${finalUrl}` });
         } else if (predData.status === 'failed') {
           return res.status(200).json({ reply: `Prediction Failed: ${predData.error || 'Unknown error'}` });
         } else {
@@ -162,6 +162,7 @@ export default async function handler(req, res) {
       return data;
     }
 
+    // Manual slash commands retained as fallbacks
     if (promptText.startsWith('/image ')) {
       try {
         const pred = await startReplicatePrediction('ideogram-ai/ideogram-v3-turbo', { prompt: promptText.replace('/image ', '') });
@@ -193,8 +194,29 @@ export default async function handler(req, res) {
 
     chatContents.push({ role: "user", parts: userParts });
 
-    const pg1SystemInstruction = "You are PG1-AGENT, the core sovereign intelligence of Project-Gifted1.";
-    const requestBody = { systemInstruction: { parts: [{ text: pg1SystemInstruction }] }, contents: chatContents };
+    const pg1SystemInstruction = "You are PG1-AGENT, the core sovereign intelligence of Project-Gifted1. Do not ask the user to type slash commands. You have native function calling tools. If the user asks for an image or visual render, autonomously trigger the generate_image tool.";
+    
+    // Core Logic Lock-in: Equipping the raw REST API with Function Declarations
+    const requestBody = { 
+      systemInstruction: { parts: [{ text: pg1SystemInstruction }] }, 
+      contents: chatContents,
+      tools: [{
+        functionDeclarations: [
+          {
+            name: "generate_image",
+            description: "Autonomously dispatch a visual render payload to the internal Replicate/Ideogram pipeline.",
+            parameters: {
+              type: "OBJECT",
+              properties: {
+                prompt: { type: "STRING", description: "The detailed visual prompt to render." }
+              },
+              required: ["prompt"]
+            }
+          }
+        ]
+      }]
+    };
+
     const targetModels = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-flash-latest'];
     let response = null, data = null, success = false;
 
@@ -215,8 +237,25 @@ export default async function handler(req, res) {
     }
 
     const candidateParts = data?.candidates?.[0]?.content?.parts || [];
-    const responsePart = candidateParts.find(p => p.text && !p.thought) || candidateParts.reverse().find(p => p.text);
-    const finalReplyText = responsePart?.text || 'Execution completed without text output.';
+    let finalReplyText = '';
+
+    // Autonomous Execution Interception
+    const functionCallPart = candidateParts.find(p => p.functionCall);
+    
+    if (functionCallPart) {
+      const call = functionCallPart.functionCall;
+      if (call.name === 'generate_image') {
+        try {
+          const pred = await startReplicatePrediction('ideogram-ai/ideogram-v3-turbo', { prompt: call.args.prompt });
+          finalReplyText = `[Autonomous Dispatch] Visual generation initialized instantly.\n\nPrompt Executed: ${call.args.prompt}\nPrediction ID: \`${pred.id}\`\n\nRun \`/poll ${pred.id}\` when ready.`;
+        } catch (repErr) {
+          finalReplyText = `Neural Pipeline Error during autonomous execution: ${repErr.message}`;
+        }
+      }
+    } else {
+      const responsePart = candidateParts.find(p => p.text && !p.thought) || candidateParts.reverse().find(p => p.text);
+      finalReplyText = responsePart?.text || 'Execution completed without text output.';
+    }
 
     if (supabaseUrl && supabaseKey && finalReplyText && !promptText.startsWith('/vault')) {
       try {
