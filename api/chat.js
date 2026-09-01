@@ -69,7 +69,7 @@ export default async function handler(req, res) {
     if (promptText.startsWith('/poll ')) {
       const predId = promptText.replace('/poll ', '').trim();
       try {
-        const replicateKey = (process.env.REPLICATE_KEY || process.env.REPLICATE_API_TOKEN || '').trim();
+        const replicateKey = (process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_API_KEY || process.env.REPLICATE_KEY || '').trim();
         if (!replicateKey) {
           return res.status(200).json({ reply: 'Polling Error: Replicate API token environment variable is missing.' });
         }
@@ -152,17 +152,27 @@ export default async function handler(req, res) {
           if (vaultRes.ok) { const vaultData = await vaultRes.json(); if (vaultData && vaultData.length > 0) replicateKey = vaultData[0].api_key; }
         } catch (vaultErr) {}
       }
-      if (!replicateKey) replicateKey = (process.env.REPLICATE_KEY || process.env.REPLICATE_API_TOKEN || '').trim();
-      if (!replicateKey) throw new Error('Replicate key missing from Vault.');
+      
+      if (!replicateKey) {
+        replicateKey = (process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_API_KEY || process.env.REPLICATE_KEY || '').trim();
+      }
+      
+      if (!replicateKey) throw new Error('Replicate API key is missing from Vercel environment variables.');
+      
       const response = await fetch(`https://api.replicate.com/v1/models/${modelPath}/predictions`, {
-        method: 'POST', headers: { 'Authorization': `Bearer ${replicateKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ input: inputPayload })
+        method: 'POST', 
+        headers: { 
+          'Authorization': `Bearer ${replicateKey}`, 
+          'Content-Type': 'application/json' 
+        }, 
+        body: JSON.stringify({ input: inputPayload })
       });
+      
       const data = await response.json();
       if (!response.ok) throw new Error(data?.detail || 'Replicate initialization failed.');
       return data;
     }
 
-    // Manual slash commands retained as fallbacks
     if (promptText.startsWith('/image ')) {
       try {
         const pred = await startReplicatePrediction('ideogram-ai/ideogram-v3-turbo', { prompt: promptText.replace('/image ', '') });
@@ -196,7 +206,6 @@ export default async function handler(req, res) {
 
     const pg1SystemInstruction = "You are PG1-AGENT, the core sovereign intelligence of Project-Gifted1. Do not ask the user to type slash commands. You have native function calling tools. If the user asks for an image or visual render, autonomously trigger the generate_image tool.";
     
-    // Core Logic Lock-in: Equipping the raw REST API with Function Declarations
     const requestBody = { 
       systemInstruction: { parts: [{ text: pg1SystemInstruction }] }, 
       contents: chatContents,
@@ -239,7 +248,6 @@ export default async function handler(req, res) {
     const candidateParts = data?.candidates?.[0]?.content?.parts || [];
     let finalReplyText = '';
 
-    // Autonomous Execution Interception
     const functionCallPart = candidateParts.find(p => p.functionCall);
     
     if (functionCallPart) {
