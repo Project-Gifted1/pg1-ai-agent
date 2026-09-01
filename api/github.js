@@ -55,7 +55,7 @@ export default async function handler(req, res) {
 
 
 
-    const githubToken = process.env.GITHUB_TOKEN;
+    const githubToken = process.env.GH_PAT || process.env.GITHUB_TOKEN;
 
 
     const githubOwner = process.env.GITHUB_OWNER || "Project-Gifted1";
@@ -68,7 +68,7 @@ export default async function handler(req, res) {
     if (!githubToken) {
 
 
-      return res.status(500).json({ error: "GITHUB_TOKEN is missing from environment variables." });
+      return res.status(500).json({ error: "GH_PAT is missing from environment variables." });
 
 
     }
