@@ -1,7 +1,24 @@
+json
 {
+
+
   "name": "pg1-ai-agent",
+
+
   "version": "1.0.0",
+
+
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.0"
+
+
+    "@supabase/supabase-js": "^2.39.0",
+
+
+    "@octokit/rest": "^20.0.2"
+
+
   }
+
+
 }
+
