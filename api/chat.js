@@ -130,7 +130,7 @@ export default async function handler(req, res) {
         });
         const bucketData = await bucketRes.json();
         if (bucketRes.ok) {
-          return res.status(200).json({ reply: 'Storage vault `pg1-vault` has been autonomously provisioned and set to public.' });
+          return res.status(200).json({ reply: 'Storage vault `pg1-vault` has been autonomously provisioned.' });
         } else {
           if (bucketData.message?.includes('already exists')) {
              return res.status(200).json({ reply: 'Storage vault `pg1-vault` already exists and is ready.' });
@@ -256,7 +256,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // 8. SUPABASE MEMORY SYNCHRONIZATION & VAULT MEDIA PARSING
+    // 8. SUPABASE MEMORY SYNCHRONIZATION & SECURE VAULT PARSING
     let chatContents = [];
     if (supabaseUrl && supabaseKey) {
       try {
@@ -279,16 +279,25 @@ export default async function handler(req, res) {
     const vaultUrlMatch = promptText.match(/URL:\s*(https:\/\/[^\s]+?pg1-vault[^\s]+?)(?=\.\]|\]|\s|$)/i);
     if (vaultUrlMatch && vaultUrlMatch[1]) {
       try {
-        const vaultUrl = vaultUrlMatch[1];
-        const vaultRes = await fetch(vaultUrl);
+        let vaultUrl = vaultUrlMatch[1];
+        let fetchOptions = {};
+        
+        if (vaultUrl.includes('supabase') && supabaseKey) {
+          vaultUrl = vaultUrl.replace('/public/pg1-vault/', '/authenticated/pg1-vault/');
+          fetchOptions = { headers: { 'Authorization': `Bearer ${supabaseKey}` } };
+        }
+        
+        const vaultRes = await fetch(vaultUrl, fetchOptions);
         if (vaultRes.ok) {
           const arrayBuffer = await vaultRes.arrayBuffer();
           const vaultBase64 = Buffer.from(arrayBuffer).toString('base64');
           const vaultMime = vaultRes.headers.get('content-type') || 'video/mp4';
           userParts.push({ inlineData: { data: vaultBase64, mimeType: vaultMime } });
+        } else {
+           throw new Error(`Vault locked or missing (HTTP ${vaultRes.status})`);
         }
       } catch (mediaErr) {
-        userParts.push({ text: `[SYSTEM ERROR: Failed to ingest media vault payload into matrix: ${mediaErr.message}]` });
+        userParts.push({ text: `[SYSTEM ERROR: Failed to ingest secure media vault payload: ${mediaErr.message}]` });
       }
     }
 
