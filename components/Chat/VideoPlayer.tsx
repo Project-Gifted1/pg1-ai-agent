@@ -15,6 +15,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src }) => {
         preload="metadata"
         style={{ width: '100%', display: 'block', background: '#000' }}
       />
+      <div style={{ padding: '8px', background: '#111', textAlign: 'center' }}>
+        <a
+          href={src}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: '#d4af37', fontSize: '12px', textDecoration: 'none', fontWeight: 'bold' }}
+        >
+          Direct Playback / Stream Link
+        </a>
+      </div>
     </div>
   );
 };
