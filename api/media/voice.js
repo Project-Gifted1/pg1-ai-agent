@@ -41,23 +41,33 @@ module.exports = async function handler(req, res) {
     await tts.setMetadata(selectedVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
 
     const readable = tts.toStream(cleanText);
-    const chunks = [];
 
-    readable.on("data", (chunk) => chunks.push(chunk));
-    readable.on("end", () => {
-      const audioBuffer = Buffer.concat(chunks);
-      res.setHeader("Content-Type", "audio/mpeg");
-      res.setHeader("Cache-Control", "no-cache");
-      return res.status(200).send(audioBuffer);
-    });
-    
-    readable.on("error", (err) => {
-      console.error("Stream error:", err);
-      if (!res.headersSent) res.status(500).json({ error: "Stream failed" });
+    // Forces the Vercel Serverless container to stay alive until the MP3 is fully built and sent.
+    await new Promise((resolve, reject) => {
+      const chunks = [];
+      
+      readable.on("data", (chunk) => {
+        chunks.push(chunk);
+      });
+      
+      readable.on("end", () => {
+        const audioBuffer = Buffer.concat(chunks);
+        res.setHeader("Content-Type", "audio/mpeg");
+        res.setHeader("Cache-Control", "no-cache");
+        res.status(200).send(audioBuffer);
+        resolve(); // Unlocks container
+      });
+      
+      readable.on("error", (err) => {
+        console.error("Stream error:", err);
+        reject(err);
+      });
     });
 
   } catch (err) {
     console.error("TTS Error:", err);
-    return res.status(500).json({ error: err.message });
+    if (!res.headersSent) {
+      return res.status(500).json({ error: err.message });
+    }
   }
 };
