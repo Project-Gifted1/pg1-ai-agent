@@ -346,6 +346,11 @@
 
     async function speakText(text) {
       if (!voiceEnabled) return; 
+      
+      // iOS Safari Bypass: Create Audio sync on gesture
+      const audio = new Audio();
+      audio.play().catch(()=>{}); // Silently unlock element
+      
       try {
         const cleanText = text.replace(/[*_#`]/g, '').replace(/!\[.*?\]\(.*?\)/g, '').replace(/<video.*?>.*?<\/video>/g, '').replace(/\[CONSENT_REQUIRED\]/g, '');
         const response = await fetch('/api/media/voice', {
@@ -354,9 +359,9 @@
           body: JSON.stringify({ text: cleanText, voice: voiceSelect.value })
         });
         if (!response.ok) throw new Error('API Request Failed');
+        
         const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
+        audio.src = URL.createObjectURL(audioBlob);
         await audio.play();
       } catch (err) {
         console.error('PG1 Voice API Error:', err);
@@ -365,6 +370,11 @@
 
     window.speakMessageText = async function(btn) { 
       triggerHaptic(15); 
+      
+      // iOS Safari Bypass: Create Audio sync on gesture
+      const audio = new Audio();
+      audio.play().catch(()=>{}); // Silently unlock element
+      
       const container = btn.closest('.bubble-container'); 
       const bubble = container.querySelector('.bubble'); 
       const cleanText = bubble.innerText.replace(/[*_#`]/g, '');
@@ -377,9 +387,9 @@
           body: JSON.stringify({ text: cleanText, voice: voiceSelect.value })
         });
         if (!response.ok) throw new Error('API Request Failed');
+        
         const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
+        audio.src = URL.createObjectURL(audioBlob);
         
         audio.onended = () => { btn.innerText = "Speak"; };
         await audio.play();
@@ -391,145 +401,4 @@
     };
 
     function parseMarkdown(text) {
-      let html = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>'); html = html.replace(/!\[([^\]]*)\]\((.*?)\)/g, '<img src="$2" alt="$1" />'); html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      if (html.includes('[CONSENT_REQUIRED]')) { html = html.replace('[CONSENT_REQUIRED]', ''); html += `<div class="consent-card"><div class="consent-header"><span class="consent-title">Authorization Required</span><span class="consent-trust-badge">Verified</span></div><div class="consent-actions"><button class="btn-consent btn-accept" onclick="submitConsent('ACCEPT')">Approve Action</button><button class="btn-consent btn-decline" onclick="submitConsent('DECLINE')">Dismiss</button></div></div>`; }
-      return html.split('\n').map(line => line.trim() ? (line.match(/^(<pre|<code|<img|<div|<button|<span|<header|<video)/) ? line : `<p>${line}</p>`) : '').join('\n');
-    }
-
-    function handleFileSelect(event) { triggerHaptic(20); const file = event.target.files[0]; if (!file) return; currentAttachment = file; document.getElementById('file-name').innerText = file.name; document.getElementById('file-preview').classList.add('active'); }
-    function clearAttachment() { triggerHaptic(10); currentAttachment = null; document.getElementById('file-upload').value = ''; document.getElementById('file-preview').classList.remove('active'); }
-    window.submitConsent = function(decision) { triggerHaptic(30); userInput.value = `[SYSTEM_OVERRIDE]: User has selected to ${decision} the proposed action.`; sendMessage(); };
-    function getTimeString() { return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
-
-    window.copyMessageText = function(btn) { triggerHaptic(15); const container = btn.closest('.bubble-container'); const bubble = container.querySelector('.bubble'); navigator.clipboard.writeText(bubble.innerText); btn.innerText = "Copied!"; setTimeout(() => { btn.innerText = "Copy"; }, 1500); };
-    window.editMessageText = function(btn) { triggerHaptic(15); const container = btn.closest('.bubble-container'); const bubble = container.querySelector('.bubble'); const currentText = bubble.innerText; if (container.querySelector('.edit-input')) return; const textarea = document.createElement('textarea'); textarea.className = 'edit-input'; textarea.value = currentText; textarea.rows = 2; bubble.style.display = 'none'; container.insertBefore(textarea, bubble); textarea.focus(); textarea.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); const newText = textarea.value.trim(); textarea.remove(); bubble.style.display = 'block'; if (newText) { bubble.innerText = newText; persistCurrentThreadState(); userInput.value = newText; sendMessage(); } } else if (e.key === 'Escape') { textarea.remove(); bubble.style.display = 'block'; } }); };
-    window.deleteMessageBubble = function(btn) { triggerHaptic(25); const wrapper = btn.closest('.bubble-wrapper'); wrapper.style.opacity = '0'; wrapper.style.transform = 'scale(0.95)'; wrapper.style.transition = 'all 0.2s ease'; setTimeout(() => { wrapper.remove(); persistCurrentThreadState(); }, 200); };
-
-    window.openThreadManager = function() { triggerHaptic(20); renderThreadList(); document.getElementById('thread-modal').classList.add('active'); };
-    window.closeThreadManager = function(e) { if (!e || e.target.id === 'thread-modal' || e.target.classList.contains('icon-btn')) { document.getElementById('thread-modal').classList.remove('active'); } };
-    function renderThreadList() { const listContainer = document.getElementById('thread-list'); listContainer.innerHTML = ''; Object.keys(threads).forEach(id => { const thread = threads[id]; const item = document.createElement('div'); item.className = `thread-item ${id === currentThreadId ? 'active-thread' : ''}`; item.innerHTML = `<div style="display:flex;flex-direction:column;gap:2px;overflow:hidden;width:100%;" onclick="switchThread('${id}')"><span style="font-size:12px;font-weight:500;color:var(--text-main);">${thread.title}</span><span style="font-size:9px;color:var(--text-muted);font-family:var(--font-mono);">${thread.date}</span></div><button class="icon-btn" style="width:26px;height:26px;animation:none;" onclick="deleteThreadSession(event, '${id}')">✕</button>`; listContainer.appendChild(item); }); }
-    window.switchThread = function(id) { triggerHaptic(20); persistCurrentThreadState(); currentThreadId = id; chatStream.innerHTML = threads[currentThreadId].messages; saveThreadsToStorage(); closeThreadManager(); scrollToBottom(); };
-    window.deleteThreadSession = function(e, id) { e.stopPropagation(); triggerHaptic(30); if (Object.keys(threads).length <= 1) { alert("Cannot delete the only remaining thread."); return; } delete threads[id]; if (currentThreadId === id) { currentThreadId = Object.keys(threads)[0]; chatStream.innerHTML = threads[currentThreadId].messages; } saveThreadsToStorage(); renderThreadList(); };
-    window.createNewThread = function() { triggerHaptic(25); persistCurrentThreadState(); currentThreadId = 'thread_' + Date.now(); threads[currentThreadId] = { title: 'New Directive', date: new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }), messages: `<div class="bubble-wrapper"><div class="bubble-container bot"><div class="bubble">Greetings. New session initialized. PG1 Sovereign Agent operational.</div><div class="message-meta"><span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action" onclick="speakMessageText(this)">Speak</button><button class="tool-action" onclick="copyMessageText(this)">Copy</button><button class="tool-action delete" onclick="deleteMessageBubble(this)">Delete</button></div></div></div></div>` }; chatStream.innerHTML = threads[currentThreadId].messages; saveThreadsToStorage(); };
-    window.saveCurrentThreadAndCreateNew = function() { persistCurrentThreadState(); closeThreadManager(); createNewThread(); };
-
-    async function sendMessage() {
-      triggerHaptic(25);
-      const promptText = userInput.value.trim();
-      if (!promptText && !currentAttachment) return;
-      
-      const promptToDisplay = promptText || "Analyze the attached file.";
-      if (threads[currentThreadId].title === 'Initial Session' || threads[currentThreadId].title === 'New Directive') {
-        threads[currentThreadId].title = promptToDisplay.substring(0, 28) + (promptToDisplay.length > 28 ? '...' : '');
-      }
-
-      userInput.value = ''; 
-      appendUserMessage(promptToDisplay.replace('[SYSTEM_OVERRIDE]: ', '') + (currentAttachment ? ' 📎 [File Attached]' : '')); 
-      sendBtn.disabled = true;
-      
-      const wrapper = document.createElement('div'); 
-      wrapper.className = 'bubble-wrapper'; 
-      wrapper.innerHTML = `
-        <div class="bubble-container bot">
-          <div class="bubble" style="opacity:0.65">Executing directive...</div>
-          <div class="message-meta"><span class="timestamp">${getTimeString()}</span></div>
-        </div>
-      `;
-      chatStream.appendChild(wrapper); 
-      scrollToBottom();
-      persistCurrentThreadState();
-
-      try {
-        let filePayload = null;
-        let vaultUrl = null;
-        
-        if (currentAttachment) {
-          const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB safe threshold
-          
-          if (currentAttachment.size > MAX_FILE_SIZE) {
-            const bubble = wrapper.querySelector('.bubble');
-            bubble.innerText = "Media payload exceeds Vercel 4.5MB pipeline limit. Rerouting via direct-to-object-storage vault...";
-            
-            // 1. Fetch Auth Credentials
-            const authRes = await fetch('/api/vault-auth', { method: 'POST' });
-            if (!authRes.ok) throw new Error("Vault architecture offline. Backend endpoint '/api/vault-auth' failed.");
-            const { url: sbUrl, key: sbKey } = await authRes.json();
-            
-            // 2. Direct Storage Stream bypassing Vercel
-            bubble.innerText = "Streaming encrypted payload directly to storage vault...";
-            const fileName = `pg1_vault_${Date.now()}_${currentAttachment.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-            
-            const uploadRes = await fetch(`${sbUrl}/storage/v1/object/pg1-vault/${fileName}`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${sbKey}`,
-                'apikey': sbKey,
-                'Content-Type': currentAttachment.type
-              },
-              body: currentAttachment
-            });
-
-            if (!uploadRes.ok) {
-              const errData = await uploadRes.json().catch(()=>({}));
-              throw new Error(errData.message || "Direct storage stream failed. Ensure 'pg1-vault' bucket exists in Supabase and allows public inserts.");
-            }
-
-            // 3. Obtain Media URL for Analysis
-            vaultUrl = `${sbUrl}/storage/v1/object/public/pg1-vault/${fileName}`;
-            bubble.innerText = "Payload vaulted successfully. Analyzing matrix...";
-          } else {
-            // Standard small file base64 pipeline
-            const reader = new FileReader();
-            const base64Promise = new Promise(resolve => {
-              reader.onload = () => resolve(reader.result.split(',')[1]);
-            });
-            reader.readAsDataURL(currentAttachment);
-            const base64Data = await base64Promise;
-            filePayload = { inlineData: { data: base64Data, mimeType: currentAttachment.type } };
-          }
-        }
-
-        const finalPrompt = vaultUrl 
-          ? `${promptToDisplay}\n\n[SYSTEM NOTIFICATION: User has transmitted a heavy payload directly to the storage vault at URL: ${vaultUrl}. Process and analyze this link accordingly.]`
-          : promptToDisplay;
-
-        const res = await fetch(`/api/chat?t=${Date.now()}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
-          body: JSON.stringify({ prompt: finalPrompt, file: filePayload }) 
-        });
-        
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-        const data = await res.json();
-        const reply = data.reply || 'Execution complete.';
-        
-        const container = wrapper.querySelector('.bubble-container');
-        const bubble = container.querySelector('.bubble');
-        bubble.style.opacity = '1';
-        bubble.innerHTML = parseMarkdown(reply);
-        
-        const metaDiv = container.querySelector('.message-meta');
-        metaDiv.innerHTML = `<span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action" onclick="speakMessageText(this)">Speak</button><button class="tool-action" onclick="copyMessageText(this)">Copy</button><button class="tool-action delete" onclick="deleteMessageBubble(this)">Delete</button></div>`;
-        
-        scrollToBottom(); 
-        persistCurrentThreadState();
-        speakText(reply);
-      } catch (err) {
-        const bubble = wrapper.querySelector('.bubble');
-        bubble.style.opacity = '1';
-        bubble.innerText = `System Alert: ${err.message}.`;
-        persistCurrentThreadState();
-      } finally { 
-        sendBtn.disabled = false;
-        clearAttachment();
-      }
-    }
-
-    function appendUserMessage(text) { const wrapper = document.createElement('div'); wrapper.className = 'bubble-wrapper'; wrapper.innerHTML = `<div class="bubble-container user"><div class="bubble">${text}</div><div class="message-meta"><span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action" onclick="editMessageText(this)">Edit</button><button class="tool-action" onclick="copyMessageText(this)">Copy</button><button class="tool-action delete" onclick="deleteMessageBubble(this)">Delete</button></div></div></div>`; chatStream.appendChild(wrapper); scrollToBottom(); persistCurrentThreadState(); }
-    function scrollToBottom() { chatStream.scrollTop = chatStream.scrollHeight; }
-    sendBtn.addEventListener('click', sendMessage);
-    userInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
-  </script>
-</body>
-</html>
+      let html = text.replace(/```([\s\S]*?)
