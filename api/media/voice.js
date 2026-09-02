@@ -1,75 +1,43 @@
-const { PG1VoiceRouter } = require('../../lib/voiceRouter');
-const { PG1CostTracker } = require('../../lib/costTracker');
+import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 
-module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST,GET,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+export default async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
+  let text = "PG1 Sovereign Intelligence Online.";
+  let voice = "en-US-GuyNeural";
+
+  if (req.method === "POST") {
+    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body;
+    text = body?.text || text;
+    voice = body?.voice || voice;
+  } else if (req.method === "GET") {
+    text = req.query?.text || text;
+    voice = req.query?.voice || voice;
+  }
 
   try {
-    const voiceRouter = new PG1VoiceRouter();
+    const cleanText = text.replace(/[*#`_~]/g, "").trim();
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
 
-    if (req.method === 'GET') {
-      if (req.query && req.query.action === 'list') {
-        const voices = await voiceRouter.getAllVoices();
-        const neuralVoices = voices.filter((voice) => Array.isArray(voice.SupportedEngines) && voice.SupportedEngines.includes('neural'));
-        return res.status(200).json({
-          voices: neuralVoices.map((voice) => ({
-            id: voice.Id,
-            name: voice.Name,
-            language: voice.LanguageName,
-            engine: 'neural'
-          })),
-          total: neuralVoices.length,
-          freeLimit: '5M characters/month'
-        });
-      }
-      return res.status(400).json({ error: 'Unsupported action' });
-    }
+    const readable = tts.toStream(cleanText);
+    const chunks = [];
 
-    if (req.method !== 'POST') {
-      return res.status(405).json({ error: 'Method Not Allowed' });
-    }
-
-    const body = req.body || {};
-    const text = typeof body.text === 'string' ? body.text.trim() : '';
-    const context = typeof body.context === 'string' && body.context ? body.context : 'neutral';
-
-    if (!text) return res.status(400).json({ error: 'Missing text parameter' });
-    if (text.length > 3000) {
-      return res.status(413).json({
-        error: 'Text too long (max 3000 characters)',
-        length: text.length
-      });
-    }
-
-    const result = await voiceRouter.generateVoice(text, context);
-    const costTracker = new PG1CostTracker();
-    const cost = 0;
-    await costTracker.trackVoiceGeneration('amazon-polly', text.length, cost);
-
-    return res.status(200).json({
-      success: true,
-      voice: result.voice,
-      context,
-      cost,
-      costLabel: 'FREE - Amazon Polly Free Tier',
-      charactersUsed: text.length,
-      freeLimit: '5M/month',
-      fromCache: result.fromCache,
-      quality: '⭐⭐⭐⭐',
-      provider: 'amazon-polly',
-      timestamp: new Date().toISOString(),
-      audioBase64: Buffer.from(result.audio).toString('base64')
+    readable.on("data", (chunk) => chunks.push(chunk));
+    readable.on("end", () => {
+      const audioBuffer = Buffer.concat(chunks);
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Cache-Control", "no-cache");
+      return res.status(200).send(audioBuffer);
     });
-  } catch (error) {
-    console.error('Voice generation failed:', error);
-    return res.status(500).json({
-      error: error.message || 'Voice generation failed',
-      provider: 'amazon-polly',
-      recommendation: 'Check AWS credentials and free tier limits'
-    });
+  } catch (err) {
+    console.error("TTS Error:", err);
+    return res.status(500).json({ error: err.message });
   }
-};
+}
