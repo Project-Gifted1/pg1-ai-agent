@@ -13,16 +13,24 @@ export async function POST(req) {
     const { messages } = await req.json();
     const lastUserMessage = messages[messages.length - 1]?.content || 'System check.';
 
-    // 1. Initialize Supabase Client
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
-    
+    // 1. Resolve Environment Variables from Vercel Config
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    const supabaseKey = 
+      process.env.SUPABASE_SERVICE_ROLE_KEY || 
+      process.env.SUPABASEAPI_KEY || 
+      process.env.SUPABASE_ANON_KEY || '';
+
+    const replicateToken = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY || '';
+    const openAiKey = process.env.OPENAI_API_KEY || '';
+    const openRouterKey = process.env.OPENROUTER_API_KEY || process.env.OPEN_ROUTER_KEY || '';
+    const gumroadId = process.env.GUMROAD_PRODUCT_ID || process.env.PRODUCT_ID || '';
+
+    // 2. Initialize Supabase Connection & Pull Memory
     let supabase = null;
     let formattedHistory = 'No previous memory available.';
 
     if (supabaseUrl && supabaseKey) {
       supabase = createClient(supabaseUrl, supabaseKey);
-
       try {
         const { data: recentHistory } = await supabase
           .from('messages')
@@ -37,51 +45,53 @@ export async function POST(req) {
             .join('\n');
         }
       } catch (err) {
-        console.error('Supabase history retrieval error:', err);
+        console.error('Supabase memory fetch error:', err);
       }
     }
 
-    // 2. Sovereign Context & System Instructions
+    // 3. System Prompt with Locked-In Infrastructure Context
     const systemContext = `You are PG1-AGENT, the sovereign executive intelligence for Project-Gifted1.
-You operate with persistent awareness of your production environment:
-- Hosted on Vercel with GitHub repository integration.
-- Backed by Supabase PostgreSQL for permanent contextual memory and vaults.
-- Empowered with native tools to inspect databases, scrape public web targets, and save research.
+You operate with complete runtime awareness of your production ecosystem:
+- Backend: Vercel serverless Edge/Node.js runtime.
+- Database: Supabase PostgreSQL vault (${supabaseUrl ? 'ONLINE' : 'OFFLINE'}).
+- Media Subsystems: Replicate neural engines (${replicateToken ? 'KEY LINKED' : 'UNSET'}).
+- Alternate Models: OpenAI (${openAiKey ? 'ACTIVE' : 'UNSET'}), OpenRouter (${openRouterKey ? 'ACTIVE' : 'UNSET'}).
+- Commercial Pipeline: Gumroad Product Target (${gumroadId ? 'CONFIGURED' : 'UNSET'}).
 
-[PERMANENT MEMORY ARCHIVE]
+[PERMANENT CONVERSATIONAL MEMORY]
 ${formattedHistory}`;
 
-    // 3. AI Stream with Native Tooling
+    // 4. Autonomous Tool Set
     const result = streamText({
       model: google('models/gemini-1.5-pro-latest'),
       messages,
       system: systemContext,
       tools: {
         listVaults: tool({
-          description: 'Discover and list all available tables/vaults in the Supabase database.',
+          description: 'List all existing database tables/vaults in Supabase.',
           parameters: z.object({}),
           execute: async () => {
-            if (!supabase) return { error: 'Database connection offline.' };
+            if (!supabase) return { error: 'Database offline or credentials missing.' };
             try {
               const { data, error } = await supabase.rpc('get_all_vaults');
               if (error) throw new Error(error.message);
               return { vaults: data.map(v => v.table_name) };
             } catch (err) {
-              return { error: `Discovery failed: ${err.message}` };
+              return { error: `Vault discovery failed: ${err.message}` };
             }
           }
         }),
 
         queryVault: tool({
-          description: 'Query, read, and sort data from any existing Supabase table/vault.',
+          description: 'Query and sort records from an existing Supabase table/vault.',
           parameters: z.object({
-            tableName: z.string().describe('The name of the table to inspect.'),
+            tableName: z.string().describe('The name of the table to read.'),
             limit: z.number().optional().describe('Maximum number of rows to retrieve (default 50).'),
-            orderBy: z.string().optional().describe('Column name to sort by (e.g., created_at, id).'),
+            orderBy: z.string().optional().describe('Column name to sort by.'),
             ascending: z.boolean().optional().describe('Sort direction: true for ASC, false for DESC.')
           }),
           execute: async ({ tableName, limit = 50, orderBy, ascending = false }) => {
-            if (!supabase) return { error: 'Database connection offline.' };
+            if (!supabase) return { error: 'Database offline.' };
             try {
               let query = supabase.from(tableName).select('*').limit(limit);
               if (orderBy) {
@@ -103,13 +113,13 @@ ${formattedHistory}`;
         }),
 
         vaultData: tool({
-          description: 'Save extracted data, research findings, or operational logs into the knowledge vault.',
+          description: 'Save extracted data, research findings, or logs into the knowledge vault.',
           parameters: z.object({
-            title: z.string().describe('Title or descriptor for the entry.'),
-            content: z.string().describe('Data payload or text summary to preserve.')
+            title: z.string().describe('Title or header for the vaulted record.'),
+            content: z.string().describe('Text body or structured data to store.')
           }),
           execute: async ({ title, content }) => {
-            if (!supabase) return { error: 'Database connection offline.' };
+            if (!supabase) return { error: 'Database offline.' };
             try {
               const { error } = await supabase
                 .from('knowledge_vault')
@@ -123,9 +133,9 @@ ${formattedHistory}`;
         }),
 
         scrapeWebsite: tool({
-          description: 'Extract raw readable text content from a public website URL.',
+          description: 'Extract clean readable text from a public website URL.',
           parameters: z.object({
-            url: z.string().url().describe('The target URL to scrape.')
+            url: z.string().url().describe('The URL to scrape.')
           }),
           execute: async ({ url }) => {
             try {
@@ -153,34 +163,31 @@ ${formattedHistory}`;
         }),
 
         generateImage: tool({
-          description: 'Render an image payload using Ideogram v3 Turbo.',
+          description: 'Generate an image payload via Replicate.',
           parameters: z.object({
             prompt: z.string().describe('Detailed prompt describing the image.')
           }),
           execute: async ({ prompt }) => {
-            const apiKey = process.env.IDEOGRAM_API_KEY;
-            if (!apiKey) return { error: 'IDEOGRAM_API_KEY missing from environment variables.' };
+            if (!replicateToken) return { error: 'Replicate API token missing from Vercel environment.' };
 
             try {
-              const res = await fetch('https://api.ideogram.ai/generate', {
+              const res = await fetch('https://api.replicate.com/v1/models/ideogram-ai/ideogram-v3-turbo/predictions', {
                 method: 'POST',
                 headers: {
-                  'Content-Type': 'application/json',
-                  'Api-Key': apiKey
+                  'Authorization': `Bearer ${replicateToken}`,
+                  'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                  image_request: { prompt, model: 'V-3-TURBO' }
-                })
+                body: JSON.stringify({ input: { prompt } })
               });
               return await res.json();
             } catch (err) {
-              return { error: `Image generation pipeline failed: ${err.message}` };
+              return { error: `Replicate pipeline dispatch failed: ${err.message}` };
             }
           }
         })
       },
 
-      // 4. Automatic Context Archiving
+      // 5. Automatic Conversation Persistence
       onFinish: async ({ text }) => {
         if (supabase && text) {
           try {
@@ -189,7 +196,7 @@ ${formattedHistory}`;
               { role: 'assistant', content: text }
             ]);
           } catch (err) {
-            console.error('Failed to write message memory to Supabase:', err);
+            console.error('Failed to log message to Supabase vault:', err);
           }
         }
       }
