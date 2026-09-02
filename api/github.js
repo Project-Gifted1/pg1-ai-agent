@@ -1,6 +1,6 @@
-import { Octokit } from "@octokit/rest";
+const { Octokit } = require("@octokit/rest");
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Credentials", true);
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS,PATCH,DELETE,POST,PUT");
@@ -48,7 +48,6 @@ export default async function handler(req, res) {
           sha = existingFile.data.sha;
         }
       } catch (err) {
-        // File does not exist, proceed without SHA to create new file
         sha = undefined;
       }
 
@@ -73,7 +72,7 @@ export default async function handler(req, res) {
 
     if (action === "trigger_workflow") {
       if (!workflowFileName) {
-        return res.status(400).json({ error: "workflowFileName is required (e.g. 'deploy.yml')." });
+        return res.status(400).json({ error: "workflowFileName is required." });
       }
 
       await octokit.rest.actions.createWorkflowDispatch({
@@ -100,4 +99,4 @@ export default async function handler(req, res) {
       details: error.message,
     });
   }
-}
+};
