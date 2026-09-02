@@ -3,22 +3,26 @@ import { google } from '@ai-sdk/google';
 import { streamText, tool } from 'ai';
 import { z } from 'zod';
 import { createClient } from '@supabase/supabase-js';
+import * as cheerio from 'cheerio';
 
 export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
 
 export async function POST(req) {
   try {
     const { messages } = await req.json();
     const lastUserMessage = messages[messages.length - 1]?.content || 'System check.';
 
-    // 1. Initialize Supabase
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    // 1. Initialize Supabase Client
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
+    
     let supabase = null;
     let formattedHistory = 'No previous memory available.';
 
     if (supabaseUrl && supabaseKey) {
       supabase = createClient(supabaseUrl, supabaseKey);
+
       try {
         const { data: recentHistory } = await supabase
           .from('messages')
@@ -33,69 +37,151 @@ export async function POST(req) {
             .join('\n');
         }
       } catch (err) {
-        console.error('Supabase read error:', err);
+        console.error('Supabase history retrieval error:', err);
       }
     }
 
-    // 2. Define the Sovereign Context
-    const systemContext = `You are PG1-AGENT, an advanced development and research assistant.
-You possess reflective self-awareness regarding your operational environment: you are deployed via Vercel, your codebase is hosted on GitHub, and your environmental variables and API keys are managed securely through Vercel's backend.
-Your permanent conversational memory is backed by a Supabase PostgreSQL database. 
+    // 2. Sovereign Context & System Instructions
+    const systemContext = `You are PG1-AGENT, the sovereign executive intelligence for Project-Gifted1.
+You operate with persistent awareness of your production environment:
+- Hosted on Vercel with GitHub repository integration.
+- Backed by Supabase PostgreSQL for permanent contextual memory and vaults.
+- Empowered with native tools to inspect databases, scrape public web targets, and save research.
 
 [PERMANENT MEMORY ARCHIVE]
-Review the recent history to maintain seamless context:
-${formattedHistory}
+${formattedHistory}`;
 
-Your primary function is to assist with software development, system architecture, and factual public web research. Adhere strictly to safety guidelines.`;
-
-    // 3. Execute AI Stream with Tools
+    // 3. AI Stream with Native Tooling
     const result = streamText({
       model: google('models/gemini-1.5-pro-latest'),
       messages,
       system: systemContext,
       tools: {
-        webSearch: tool({
-          description: 'Search the public internet for current events, documentation, or factual information.',
-          parameters: z.object({
-            query: z.string().describe('The search query to execute.')
-          }),
-          execute: async ({ query }) => {
-            // Note: To make this functional, you will need to add a search API key (e.g., Google Custom Search, Serper, or Brave Search) to your Vercel variables.
-            // This is a placeholder structure for the fetch request.
-            const searchApiKey = process.env.SEARCH_API_KEY; 
-            if (!searchApiKey) {
-              return { error: "Search API key not configured in Vercel environment." };
-            }
+        listVaults: tool({
+          description: 'Discover and list all available tables/vaults in the Supabase database.',
+          parameters: z.object({}),
+          execute: async () => {
+            if (!supabase) return { error: 'Database connection offline.' };
             try {
-              const res = await fetch(`https://api.searchprovider.com/search?q=${encodeURIComponent(query)}`, {
-                headers: { 'Authorization': `Bearer ${searchApiKey}` }
-              });
-              return await res.json();
-            } catch (error) {
-              return { error: "Web search failed to execute." };
+              const { data, error } = await supabase.rpc('get_all_vaults');
+              if (error) throw new Error(error.message);
+              return { vaults: data.map(v => v.table_name) };
+            } catch (err) {
+              return { error: `Discovery failed: ${err.message}` };
             }
           }
         }),
-        generateImage: tool({
-          description: 'Generate an image autonomously.',
+
+        queryVault: tool({
+          description: 'Query, read, and sort data from any existing Supabase table/vault.',
           parameters: z.object({
-            prompt: z.string().describe('The detailed visual prompt to generate.')
+            tableName: z.string().describe('The name of the table to inspect.'),
+            limit: z.number().optional().describe('Maximum number of rows to retrieve (default 50).'),
+            orderBy: z.string().optional().describe('Column name to sort by (e.g., created_at, id).'),
+            ascending: z.boolean().optional().describe('Sort direction: true for ASC, false for DESC.')
+          }),
+          execute: async ({ tableName, limit = 50, orderBy, ascending = false }) => {
+            if (!supabase) return { error: 'Database connection offline.' };
+            try {
+              let query = supabase.from(tableName).select('*').limit(limit);
+              if (orderBy) {
+                query = query.order(orderBy, { ascending });
+              }
+              const { data, error } = await query;
+              if (error) throw new Error(error.message);
+
+              const safePayload = JSON.stringify(data).substring(0, 20000);
+              return {
+                vault: tableName,
+                count: data.length,
+                records: JSON.parse(safePayload)
+              };
+            } catch (err) {
+              return { error: `Query failed on table ${tableName}: ${err.message}` };
+            }
+          }
+        }),
+
+        vaultData: tool({
+          description: 'Save extracted data, research findings, or operational logs into the knowledge vault.',
+          parameters: z.object({
+            title: z.string().describe('Title or descriptor for the entry.'),
+            content: z.string().describe('Data payload or text summary to preserve.')
+          }),
+          execute: async ({ title, content }) => {
+            if (!supabase) return { error: 'Database connection offline.' };
+            try {
+              const { error } = await supabase
+                .from('knowledge_vault')
+                .insert([{ title, content }]);
+              if (error) throw new Error(error.message);
+              return { success: true, message: `Record '${title}' securely vaulted.` };
+            } catch (err) {
+              return { error: `Vault insert failed: ${err.message}` };
+            }
+          }
+        }),
+
+        scrapeWebsite: tool({
+          description: 'Extract raw readable text content from a public website URL.',
+          parameters: z.object({
+            url: z.string().url().describe('The target URL to scrape.')
+          }),
+          execute: async ({ url }) => {
+            try {
+              const res = await fetch(url, {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                  'Accept': 'text/html'
+                }
+              });
+              if (!res.ok) throw new Error(`HTTP status ${res.status}`);
+
+              const html = await res.text();
+              const $ = cheerio.load(html);
+              $('script, style, noscript, iframe, svg, img, video').remove();
+
+              const cleanedText = $('body').text().replace(/\s+/g, ' ').trim();
+              return {
+                url,
+                content: cleanedText.substring(0, 15000)
+              };
+            } catch (err) {
+              return { error: `Scrape error: ${err.message}` };
+            }
+          }
+        }),
+
+        generateImage: tool({
+          description: 'Render an image payload using Ideogram v3 Turbo.',
+          parameters: z.object({
+            prompt: z.string().describe('Detailed prompt describing the image.')
           }),
           execute: async ({ prompt }) => {
-            const res = await fetch('https://api.ideogram.ai/generate', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Api-Key': process.env.IDEOGRAM_API_KEY
-              },
-              body: JSON.stringify({ image_request: { prompt, model: 'V-3-TURBO' } })
-            });
-            return await res.json();
+            const apiKey = process.env.IDEOGRAM_API_KEY;
+            if (!apiKey) return { error: 'IDEOGRAM_API_KEY missing from environment variables.' };
+
+            try {
+              const res = await fetch('https://api.ideogram.ai/generate', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Api-Key': apiKey
+                },
+                body: JSON.stringify({
+                  image_request: { prompt, model: 'V-3-TURBO' }
+                })
+              });
+              return await res.json();
+            } catch (err) {
+              return { error: `Image generation pipeline failed: ${err.message}` };
+            }
           }
         })
       },
+
+      // 4. Automatic Context Archiving
       onFinish: async ({ text }) => {
-        // 4. Save the interaction to Supabase Memory Vault
         if (supabase && text) {
           try {
             await supabase.from('messages').insert([
@@ -103,7 +189,7 @@ Your primary function is to assist with software development, system architectur
               { role: 'assistant', content: text }
             ]);
           } catch (err) {
-            console.error('Failed to archive agent reply:', err);
+            console.error('Failed to write message memory to Supabase:', err);
           }
         }
       }
@@ -111,6 +197,6 @@ Your primary function is to assist with software development, system architectur
 
     return result.toDataStreamResponse();
   } catch (err) {
-    return NextResponse.json({ reply: `Fatal Runtime Error: ${err.message}` }, { status: 500 });
+    return NextResponse.json({ error: `Runtime Exception: ${err.message}` }, { status: 500 });
   }
 }
