@@ -135,7 +135,8 @@
       <div class="auth-title">Project-Gifted1 Security Gate</div>
       <input type="text" id="gate-user" class="auth-input" placeholder="Enter Username..." autocomplete="off" />
       <input type="password" id="gate-pass" class="auth-input" placeholder="Enter Password..." autocomplete="current-password" />
-      <button id="auth-btn-submit" class="auth-btn">Authenticate</button>
+      <!-- Hardwired onclick to ensure iOS Safari never drops the event -->
+      <button id="auth-btn-submit" class="auth-btn" onclick="executeGateAuth()">Authenticate</button>
       <div id="gate-error" class="auth-error">Access Denied: Invalid Credentials.</div>
     </div>
   </div>
@@ -219,56 +220,52 @@
     </div>
   </div>
 
+  <!-- Dedicated Audio Engine to bypass iOS autoplay restrictions -->
+  <audio id="pg1-audio-player" playsinline style="display:none;"></audio>
+
   <script>
-    function initAuthGate() {
+    // Hardwired auth function accessible globally
+    window.executeGateAuth = async function() {
+      const u = document.getElementById('gate-user').value.trim();
+      const p = document.getElementById('gate-pass').value.trim();
+      const errDiv = document.getElementById('gate-error');
       const authBtn = document.getElementById('auth-btn-submit');
       
-      if (authBtn) {
-        authBtn.addEventListener('click', async () => {
-          const u = document.getElementById('gate-user').value.trim();
-          const p = document.getElementById('gate-pass').value.trim();
-          const errDiv = document.getElementById('gate-error');
-          
-          authBtn.innerText = 'VERIFYING...';
-          errDiv.style.display = 'none';
+      authBtn.innerText = 'VERIFYING...';
+      errDiv.style.display = 'none';
 
-          try {
-            const res = await fetch('/api/chat', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ prompt: 'AUTH_VERIFY', user: u, pass: p })
-            });
-            
-            if (!res.ok) throw new Error(`Gateway Error: HTTP ${res.status}`);
-            
-            const data = await res.json();
-            
-            if (data.authenticated) {
-              sessionStorage.setItem('pg1_auth', 'true');
-              document.getElementById('auth-gate').style.display = 'none';
-            } else {
-              errDiv.innerText = 'Access Denied: Invalid Credentials.';
-              errDiv.style.display = 'block';
-            }
-          } catch (err) {
-            errDiv.innerText = err.message;
-            errDiv.style.display = 'block';
-          } finally {
-            authBtn.innerText = 'AUTHENTICATE';
-          }
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: 'AUTH_VERIFY', user: u, pass: p })
         });
+        
+        if (!res.ok) throw new Error(`Gateway Error: HTTP ${res.status}`);
+        
+        const data = await res.json();
+        
+        if (data.authenticated) {
+          sessionStorage.setItem('pg1_auth', 'true');
+          document.getElementById('auth-gate').style.display = 'none';
+        } else {
+          errDiv.innerText = 'Access Denied: Invalid Credentials.';
+          errDiv.style.display = 'block';
+        }
+      } catch (err) {
+        errDiv.innerText = err.message;
+        errDiv.style.display = 'block';
+      } finally {
+        authBtn.innerText = 'AUTHENTICATE';
       }
+    };
 
+    // Auto-hide gate if already verified
+    document.addEventListener('DOMContentLoaded', () => {
       if (sessionStorage.getItem('pg1_auth') === 'true') {
         document.getElementById('auth-gate').style.display = 'none';
       }
-    }
-
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initAuthGate);
-    } else {
-      initAuthGate();
-    }
+    });
 
     const chatStream = document.getElementById('chat-stream');
     const userInput = document.getElementById('user-input');
@@ -277,6 +274,7 @@
     const voiceToggleBtn = document.getElementById('voice-toggle');
     const voiceStats = document.getElementById('voice-stats');
     const voiceSelect = document.getElementById('voice-select');
+    const sysAudioPlayer = document.getElementById('pg1-audio-player');
     
     let voiceEnabled = false;
     let currentAttachment = null;
@@ -314,6 +312,7 @@
 
     function toggleVoice() { 
       triggerHaptic(20); 
+      sysAudioPlayer.play().catch(()=>{}); // Unlock iOS Audio
       voiceEnabled = !voiceEnabled; 
       if (voiceEnabled) { 
         voiceToggleBtn.classList.add('active'); 
@@ -329,6 +328,7 @@
     
     function updateVoiceProfile() { 
       triggerHaptic(15); 
+      sysAudioPlayer.play().catch(()=>{}); // Unlock iOS Audio
       if (voiceEnabled) { 
         voiceStats.innerText = `Sys: Active | ${voiceSelect.options[voiceSelect.selectedIndex].text}`; 
         speakText("Executive audio profile updated."); 
@@ -346,11 +346,6 @@
 
     async function speakText(text) {
       if (!voiceEnabled) return; 
-      
-      // iOS Safari Bypass: Create Audio sync on gesture
-      const audio = new Audio();
-      audio.play().catch(()=>{}); // Silently unlock element
-      
       try {
         const cleanText = text.replace(/[*_#`]/g, '').replace(/!\[.*?\]\(.*?\)/g, '').replace(/<video.*?>.*?<\/video>/g, '').replace(/\[CONSENT_REQUIRED\]/g, '');
         const response = await fetch('/api/media/voice', {
@@ -361,8 +356,8 @@
         if (!response.ok) throw new Error('API Request Failed');
         
         const audioBlob = await response.blob();
-        audio.src = URL.createObjectURL(audioBlob);
-        await audio.play();
+        sysAudioPlayer.src = URL.createObjectURL(audioBlob);
+        await sysAudioPlayer.play();
       } catch (err) {
         console.error('PG1 Voice API Error:', err);
       }
@@ -370,10 +365,7 @@
 
     window.speakMessageText = async function(btn) { 
       triggerHaptic(15); 
-      
-      // iOS Safari Bypass: Create Audio sync on gesture
-      const audio = new Audio();
-      audio.play().catch(()=>{}); // Silently unlock element
+      sysAudioPlayer.play().catch(()=>{}); // Unlock iOS Audio instantly on tap
       
       const container = btn.closest('.bubble-container'); 
       const bubble = container.querySelector('.bubble'); 
@@ -389,10 +381,10 @@
         if (!response.ok) throw new Error('API Request Failed');
         
         const audioBlob = await response.blob();
-        audio.src = URL.createObjectURL(audioBlob);
+        sysAudioPlayer.src = URL.createObjectURL(audioBlob);
         
-        audio.onended = () => { btn.innerText = "Speak"; };
-        await audio.play();
+        sysAudioPlayer.onended = () => { btn.innerText = "Speak"; };
+        await sysAudioPlayer.play();
       } catch (err) {
         console.error('PG1 Voice API Error:', err);
         btn.innerText = "Error";
