@@ -1,10 +1,24 @@
 {
   "name": "pg1-ai-agent",
   "version": "1.0.0",
+  "private": true,
   "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.0",
-    "@octokit/rest": "^20.0.2",
-    "msedge-tts": "^1.4.3"
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "@ai-sdk/google": "latest",
+    "ai": "latest",
+    "zod": "latest",
+    "@supabase/supabase-js": "latest",
+    "cheerio": "latest",
+    "puppeteer-core": "^22.0.0",
+    "@sparticuz/chromium": "^121.0.0"
   }
 }
