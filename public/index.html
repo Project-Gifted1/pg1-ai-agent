@@ -140,7 +140,6 @@
     </div>
   </div>
 
-  <!-- ISOLATED AUTHENTICATION ENGINE -->
   <script>
     window.executeGateAuth = async function() {
       const u = document.getElementById('gate-user').value.trim();
@@ -261,9 +260,6 @@
     </div>
   </div>
 
-  <audio id="pg1-audio-player" playsinline style="position:absolute; opacity:0; pointer-events:none;"></audio>
-
-  <!-- CORE SYSTEM ENGINE -->
   <script>
     const chatStream = document.getElementById('chat-stream');
     const userInput = document.getElementById('user-input');
@@ -272,7 +268,6 @@
     const voiceToggleBtn = document.getElementById('voice-toggle');
     const voiceStats = document.getElementById('voice-stats');
     const voiceSelect = document.getElementById('voice-select');
-    const sysAudioPlayer = document.getElementById('pg1-audio-player');
     
     let voiceEnabled = false;
     let currentAttachment = null;
@@ -310,7 +305,6 @@
 
     function toggleVoice() { 
       triggerHaptic(20); 
-      sysAudioPlayer.play().catch(()=>{}); // Unlock iOS Audio
       voiceEnabled = !voiceEnabled; 
       if (voiceEnabled) { 
         voiceToggleBtn.classList.add('active'); 
@@ -326,7 +320,6 @@
     
     function updateVoiceProfile() { 
       triggerHaptic(15); 
-      sysAudioPlayer.play().catch(()=>{}); // Unlock iOS Audio
       if (voiceEnabled) { 
         voiceStats.innerText = `Sys: Active | ${voiceSelect.options[voiceSelect.selectedIndex].text}`; 
         speakText("Executive audio profile updated."); 
@@ -342,8 +335,13 @@
       micBtn.addEventListener('click', () => { triggerHaptic(25); if (micBtn.classList.contains('recording')) recognition.stop(); else recognition.start(); });
     }
 
+    // iOS Safari Bulletproof Auto-Voice Player
     async function speakText(text) {
       if (!voiceEnabled) return; 
+      
+      const audio = new Audio();
+      audio.play().catch(()=>{}); // iOS Audio Unlock 
+
       try {
         const cleanText = text.replace(/[*_#`]/g, '').replace(/!\[.*?\]\(.*?\)/g, '').replace(/<video.*?>.*?<\/video>/g, '').replace(/\[CONSENT_REQUIRED\]/g, '');
         const response = await fetch('/api/media/voice', {
@@ -351,23 +349,28 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: cleanText, voice: voiceSelect.value })
         });
-        if (!response.ok) throw new Error('API Request Failed');
+        
+        if (!response.ok) throw new Error('API Request Failed: ' + await response.text());
         
         const audioBlob = await response.blob();
-        sysAudioPlayer.src = URL.createObjectURL(audioBlob);
-        await sysAudioPlayer.play();
+        audio.src = URL.createObjectURL(audioBlob);
+        await audio.play();
       } catch (err) {
         console.error('PG1 Voice API Error:', err);
       }
     }
 
+    // iOS Safari Bulletproof Manual-Voice Player
     window.speakMessageText = async function(btn) { 
       triggerHaptic(15); 
-      sysAudioPlayer.play().catch(()=>{}); // Unlock iOS Audio instantly on tap
+      
+      const audio = new Audio();
+      audio.play().catch(()=>{}); // iOS Audio Unlock instantly on tap
       
       const container = btn.closest('.bubble-container'); 
       const bubble = container.querySelector('.bubble'); 
       const cleanText = bubble.innerText.replace(/[*_#`]/g, '');
+      const originalText = btn.innerText;
       
       btn.innerText = "Speaking...";
       try {
@@ -376,17 +379,18 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: cleanText, voice: voiceSelect.value })
         });
-        if (!response.ok) throw new Error('API Request Failed');
+        
+        if (!response.ok) throw new Error('API Request Failed: ' + await response.text());
         
         const audioBlob = await response.blob();
-        sysAudioPlayer.src = URL.createObjectURL(audioBlob);
+        audio.src = URL.createObjectURL(audioBlob);
         
-        sysAudioPlayer.onended = () => { btn.innerText = "Speak"; };
-        await sysAudioPlayer.play();
+        audio.onended = () => { btn.innerText = originalText; };
+        await audio.play();
       } catch (err) {
         console.error('PG1 Voice API Error:', err);
         btn.innerText = "Error";
-        setTimeout(() => { btn.innerText = "Speak"; }, 2000);
+        setTimeout(() => { btn.innerText = originalText; }, 2000);
       }
     };
 
@@ -415,7 +419,6 @@
 
     async function sendMessage() {
       triggerHaptic(25);
-      sysAudioPlayer.play().catch(()=>{}); // Unlock iOS Audio instantly on tap
       
       const promptText = userInput.value.trim();
       if (!promptText && !currentAttachment) return;
