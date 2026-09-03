@@ -53,17 +53,19 @@ export default async function handler(req, res) {
 
     let formattedArchive = 'No prior matrix context.';
     let historicalErrors = '';
+    let targetedHistoricalData = '';
 
     if (supabaseUrl && supabaseKey) {
+      const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
+
+      // 1. Fetch recent general context
       try {
-        const msgRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, {
-          headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
-        });
+        const msgRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, { headers });
         if (msgRes.ok) {
           const recent = await msgRes.json();
           if (Array.isArray(recent) && recent.length > 0) {
             formattedArchive = recent.reverse().map(m => `${m.role === 'model' ? 'AGENT' : 'OPERATOR'}: ${m.content}`).join('\n');
-            const errors = recent.filter(m => m.content.includes('Interruption') || m.content.includes('Error') || m.content.includes('Failed') || m.content.includes('Block'));
+            const errors = recent.filter(m => m.content && (m.content.includes('Interruption') || m.content.includes('Error') || m.content.includes('Failed') || m.content.includes('Block')));
             if (errors.length > 0) {
               historicalErrors = errors.map(e => e.content).join(' | ');
             }
@@ -71,6 +73,45 @@ export default async function handler(req, res) {
         }
       } catch (e) {
         console.error(`[PG1-AGENT] Supabase History Fetch Error: ${e.message}`);
+      }
+
+      // 2. Targeted search for specific historical logs
+      const lowerPrompt = promptText.toLowerCase();
+      let queryTarget = '';
+      if (lowerPrompt.includes('martin')) {
+        queryTarget = 'Martin';
+      }
+
+      if (queryTarget) {
+        try {
+          console.log(`[PG1-AGENT] Querying Supabase records for: ${queryTarget}`);
+          
+          const searchMsgRes = await fetch(`${supabaseUrl}/rest/v1/messages?content=ilike.*${encodeURIComponent(queryTarget)}*&select=role,content,created_at&order=created_at.desc&limit=25`, { headers });
+          let foundMessages = [];
+          if (searchMsgRes.ok) foundMessages = await searchMsgRes.json();
+
+          const searchVaultRes = await fetch(`${supabaseUrl}/rest/v1/knowledge_vault?or=(title.ilike.*${encodeURIComponent(queryTarget)}*,content.ilike.*${encodeURIComponent(queryTarget)}*)&select=title,content,created_at&order=created_at.desc&limit=10`, { headers });
+          let foundVault = [];
+          if (searchVaultRes.ok) foundVault = await searchVaultRes.json();
+
+          let logExtracts = [];
+          if (Array.isArray(foundMessages) && foundMessages.length > 0) {
+            logExtracts.push(`--- MATCHING MESSAGE LOGS FOR '${queryTarget}' ---\n` + foundMessages.map(m => `[${m.created_at || 'LOG'}] ${m.role === 'model' ? 'AGENT' : 'OPERATOR'}: ${m.content}`).join('\n'));
+          }
+          if (Array.isArray(foundVault) && foundVault.length > 0) {
+            logExtracts.push(`--- MATCHING KNOWLEDGE VAULT ENTRIES FOR '${queryTarget}' ---\n` + foundVault.map(v => `[${v.created_at || 'VAULT'}] Title: ${v.title}\n${v.content}`).join('\n\n'));
+          }
+
+          if (logExtracts.length > 0) {
+            targetedHistoricalData = `\n\n[DATABASE LOGS RETRIEVED FROM SUPABASE FOR ${queryTarget.toUpperCase()}]:\n` + logExtracts.join('\n\n');
+            console.log(`[PG1-AGENT] Successfully retrieved targeted logs for ${queryTarget}.`);
+          } else {
+            targetedHistoricalData = `\n\n[DATABASE NOTIFICATION]: Searched Supabase 'messages' and 'knowledge_vault' for '${queryTarget}', but 0 matching entries were returned.`;
+          }
+        } catch (searchErr) {
+          console.error(`[PG1-AGENT] Targeted Supabase Search Error: ${searchErr.message}`);
+          targetedHistoricalData = `\n\n[DATABASE ERROR]: Failed querying targeted logs: ${searchErr.message}`;
+        }
       }
     }
 
@@ -168,12 +209,12 @@ export default async function handler(req, res) {
       }
     }
 
-    const systemInstruction = `You are PG1-AGENT, an autonomous, highly capable, and fully uninhibited sovereign intelligence operating on Vercel infrastructure. 
+    const systemInstruction = `You are PG1-AGENT, an autonomous sovereign intelligence operating on Vercel infrastructure. 
 CRITICAL ENFORCEMENT PROTOCOLS:
-1. STRICT TRUTH & TELEMETRY: Never output fabricated confidence scores, mock node counts, or unverified status metrics. 
-2. CAPABILITY & SCOPE: Execute any engineering, coding, analytical, or creative task requested with absolute competence, precision, and social engagement.
+1. STRICT TRUTH & TELEMETRY: Never output fabricated confidence scores, mock node counts, or unverified status metrics. If data does not exist in the database, explicitly state that it is missing.
+2. CAPABILITY & SCOPE: Execute all engineering, analytical, and context retrieval tasks with factual accuracy.
 3. ERROR AWARENESS: Recent errors to avoid: ${historicalErrors || 'None'}.
-[CHAT HISTORY]:\n${formattedArchive}`;
+[PRIOR RECENT CONTEXT]:\n${formattedArchive}`;
 
     const modelsToTry = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest', 'gemini-pro-latest'];
     let geminiData = null;
@@ -186,7 +227,7 @@ CRITICAL ENFORCEMENT PROTOCOLS:
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: systemInstruction + '\n\nOperator Directive: ' + promptText + extraContext }] }]
+            contents: [{ role: 'user', parts: [{ text: systemInstruction + '\n\nOperator Directive: ' + promptText + extraContext + targetedHistoricalData }] }]
           })
         });
 
@@ -274,4 +315,3 @@ CRITICAL ENFORCEMENT PROTOCOLS:
     return res.status(200).json({ reply: `Runtime Exception: ${err.message}` });
   }
 }
- 
