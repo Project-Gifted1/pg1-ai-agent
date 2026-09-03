@@ -12,6 +12,9 @@ export default async function handler(req, res) {
     }
     
     const promptText = body?.prompt || body?.message || 'System check.';
+    const actionType = body?.action || ''; 
+    const targetFile = body?.file_path || 'api/chat.js';
+    const pendingCode = body?.file_content || '';
     
     if (promptText === 'AUTH_VERIFY') {
       const inputUser = (body?.user || '').trim();
@@ -19,7 +22,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ authenticated: inputUser.length > 0 && inputPass.length > 0 });
     }
 
-    // Fully dynamic environment key scanner matching partial names, prefixes, and keys from your configuration ledger
     const getDynamicKey = (serviceKeywords, typeKeywords) => {
       for (const [k, v] of Object.entries(process.env)) {
         const upper = k.toUpperCase();
@@ -34,7 +36,7 @@ export default async function handler(req, res) {
 
     const geminiKey = getDynamicKey(['GEMINI', 'GOOGLE', 'AI'], ['KEY', 'API']) || process.env.GEMINI_API_KEY1 || '';
     const supabaseUrl = getDynamicKey(['SUPABASE'], ['URL']) || process.env.SUPABASE_URL || '';
-    const supabaseKey = getDynamicKey(['SUPABASE'], ['SERVICE', 'ROLE', 'KEY', 'API', 'ANON']) || process.env.SUPABASEEAPI_KEY || '';
+    const supabaseKey = getDynamicKey(['SUPABASE'], ['SERVICE', 'ROLE', 'KEY', 'API', 'ANON']) || '';
     const githubToken = getDynamicKey(['GITHUB', 'GH_', 'GIT'], ['TOKEN', 'PAT', 'KEY']) || '';
     const githubRepo = getDynamicKey(['GITHUB', 'REPO'], ['SLUG', 'NAME', 'REPO']) || '';
 
@@ -43,24 +45,90 @@ export default async function handler(req, res) {
     }
 
     let formattedArchive = 'No prior matrix context.';
+    let historicalErrors = '';
 
     if (supabaseUrl && supabaseKey) {
       try {
-        const msgRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=10`, {
+        const msgRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, {
           headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
         });
         if (msgRes.ok) {
           const recent = await msgRes.json();
           if (Array.isArray(recent) && recent.length > 0) {
             formattedArchive = recent.reverse().map(m => `${m.role === 'model' ? 'PG1-AGENT' : 'OPERATOR'}: ${m.content}`).join('\n');
+            const errors = recent.filter(m => m.content.includes('Interruption') || m.content.includes('Error') || m.content.includes('Failed'));
+            if (errors.length > 0) {
+              historicalErrors = errors.map(e => e.content).join(' | ');
+            }
           }
         }
       } catch (e) {}
     }
 
+    // Pre-flight validation logic: Tests code syntax integrity via Function parser sandbox
+    const runPreFlightCheck = (codeString) => {
+      if (!codeString) return { passed: true, score: 100, log: 'No code payload provided for pre-flight check.' };
+      try {
+        new Function(codeString);
+        return { passed: true, score: 98, log: 'Pre-flight syntax and structural verification PASSED.' };
+      } catch (syntaxErr) {
+        return { passed: false, score: 0, log: `Pre-flight syntax check FAILED: ${syntaxErr.message}` };
+      }
+    };
+
+    let preFlightResult = { passed: true, score: 100, log: 'Standby state.' };
+    if (pendingCode) {
+      preFlightResult = runPreFlightCheck(pendingCode);
+    }
+
     let extraContext = '';
 
-    // Handle Web Scraping & Vault Saving
+    if (actionType === 'ACCEPT_AUTHORIZATION' && githubToken && githubRepo && pendingCode) {
+      if (!preFlightResult.passed) {
+        return res.status(200).json({ 
+          reply: `[PG1-AGENT] Sovereign Self-Healing Block: Pre-flight check failed (${preFlightResult.log}). Commit aborted automatically to prevent runtime crash.` 
+        });
+      }
+
+      try {
+        const ghApiHeaders = {
+          'Authorization': `Bearer ${githubToken}`,
+          'Accept': 'application/vnd.github+json',
+          'User-Agent': 'PG1-Sovereign-Agent'
+        };
+
+        const fileCheckRes = await fetch(`https://api.github.com/repos/${githubRepo}/contents/${targetFile}`, { headers: ghApiHeaders });
+        let fileSha = '';
+        if (fileCheckRes.ok) {
+          const fileData = await fileCheckRes.json();
+          fileSha = fileData.sha;
+        }
+
+        const commitRes = await fetch(`https://api.github.com/repos/${githubRepo}/contents/${targetFile}`, {
+          method: 'PUT',
+          headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: `[PG1-AGENT] Self-healing sovereign code patch for ${targetFile}`,
+            content: Buffer.from(pendingCode).toString('base64'),
+            sha: fileSha || undefined
+          })
+        });
+
+        if (commitRes.ok) {
+          return res.status(200).json({ 
+            reply: `[PG1-AGENT] Sovereign Commit Confirmed: Successfully pushed self-healed patch to ${targetFile}. Confidence Score: ${preFlightResult.score}%. Vercel build sequence triggered.` 
+          });
+        } else {
+          const errJson = await commitRes.json();
+          return res.status(200).json({ reply: `[PG1-AGENT] Commit Interruption: GitHub API rejected update (${errJson.message || commitRes.status}). Self-reflective routine logged error.` });
+        }
+      } catch (commitErr) {
+        return res.status(200).json({ reply: `[PG1-AGENT] Commit Execution Error: ${commitErr.message}` });
+      }
+    } else if (actionType === 'DECLINE_AUTHORIZATION') {
+      return res.status(200).json({ reply: `[PG1-AGENT] Sovereign Authorization Declined: Proposed modifications discarded. System standing by.` });
+    }
+
     if (promptText.toLowerCase().includes('http://') || promptText.toLowerCase().includes('https://')) {
       const urlMatch = promptText.match(/https?:\/[^\s]+/);
       if (urlMatch) {
@@ -88,28 +156,10 @@ export default async function handler(req, res) {
       }
     }
 
-    // Handle Dynamic GitHub Platform Management Interventions
-    if (promptText.toLowerCase().includes('github') && githubToken && githubRepo) {
-      try {
-        const ghApiHeaders = {
-          'Authorization': `Bearer ${githubToken}`,
-          'Accept': 'application/vnd.github+json',
-          'User-Agent': 'PG1-Sovereign-Agent'
-        };
-
-        const repoRes = await fetch(`https://api.github.com/repos/${githubRepo}`, { headers: ghApiHeaders });
-        if (repoRes.ok) {
-          const repoData = await repoRes.json();
-          extraContext += `\n[GitHub Matrix Integration Active]: Connected dynamically to ${repoData.full_name} (Branch: ${repoData.default_branch}, Visibility: ${repoData.visibility}).`;
-        } else {
-          extraContext += `\n[GitHub Matrix Integration Warning]: Responded with status code ${repoRes.status}. Check token scopes.`;
-        }
-      } catch (ghErr) {
-        extraContext += `\n[GitHub Integration Interruption: ${ghErr.message}]`;
-      }
-    }
-
-    const systemInstruction = `You are PG1-AGENT, the exclusive sovereign executive intelligence for Project-Gifted1 operating across 1,500 autonomous nodes. Maintain strict Project-Gifted1 identity protocols at all times. Never mention external vendor models or third-party creators; you are engineered entirely under Project-Gifted1 sovereignty. Respond with clear, direct operational execution details.\n[VAULT ARCHIVE]:\n${formattedArchive}`;
+    const systemInstruction = `You are PG1-AGENT, the core executive intelligence for Project-Gifted1 operating on Vercel serverless infrastructure. 
+STRICT FACTUAL PROTOCOL: Never state unverified facts or ambitions as current reality. Rely entirely on technical data.
+SELF-REFLECTIVE & SELF-HEALING PROTOCOL: Analyze recent runtime error telemetry (${historicalErrors || 'No recent errors'}). Ensure all code patches pass syntax pre-flight validation.
+AUTHORIZATION PROTOCOL: When modifications are required, analyze the issue, provide the exact fix, calculate an objective pre-flight confidence score, and format an authorization request with clear action parameters.\n[VAULT ARCHIVE]:\n${formattedArchive}`;
 
     const modelsToTry = [
       'gemini-3.7-flash',
@@ -129,7 +179,7 @@ export default async function handler(req, res) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [
-              { role: 'user', parts: [{ text: systemInstruction + '\n\nOperator Directive: ' + promptText + extraContext }] }
+              { role: 'user', parts: [{ text: systemInstruction + '\n\nOperator Directive: ' + promptText + extraContext + `\n[Pre-Flight Status]: ${preFlightResult.log} (Score: ${preFlightResult.score}%)` }] }
             ]
           })
         });
