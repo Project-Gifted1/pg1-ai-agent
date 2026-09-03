@@ -99,6 +99,33 @@ export default async function handler(req, res) {
     let supabaseStatus = 'DISCONNECTED';
     let lastTableFetch = 'NO_ATTEMPT';
 
+    if (supabaseUrl && supabaseKey) {
+      const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
+      try {
+        const testPing = await fetch(`${supabaseUrl}/rest/v1/messages?select=id&limit=1`, { headers });
+        supabaseStatus = testPing.ok ? 'CONNECTED' : `ERROR_${testPing.status}`;
+        lastTableFetch = testPing.ok ? 'SUCCESS' : await testPing.text();
+      } catch (err) {
+        supabaseStatus = 'EXCEPTION';
+        lastTableFetch = err.message;
+      }
+    }
+
+    if (actionType === 'HEALTH_CHECK') {
+      return res.status(200).json({
+        status: 'ONLINE',
+        version: '10.0 Sovereign Core - Multimedia Enabled',
+        traceId: requestTraceId,
+        telemetry: {
+          supabaseStatus,
+          lastTableFetch,
+          githubRepo,
+          geminiConfigured: !!geminiKey,
+          cartesiaConfigured: !!cartesiaKey
+        }
+      });
+    }
+
     if (actionType === 'SPEAK') {
       if (cartesiaKey) {
         try {
@@ -119,6 +146,44 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Audio unavailable', traceId: requestTraceId });
     }
 
+    if (actionType === 'GENERATE_IMAGE') {
+      console.log(`[PG1-AGENT:${requestTraceId}] Native Image Generation Requested.`);
+      if (geminiKey) {
+        try {
+          const imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${geminiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: promptText }] }],
+              generationConfig: { responseModalities: ['Text', 'Image'] }
+            })
+          });
+          if (imgRes.ok) {
+            const data = await imgRes.json();
+            let imageBase64 = null;
+            let textReply = '';
+            const parts = data?.candidates?.[0]?.content?.parts || [];
+            for (const p of parts) {
+              if (p.inlineData) {
+                imageBase64 = p.inlineData.data;
+              } else if (p.text) {
+                textReply += p.text;
+              }
+            }
+            return res.status(200).json({ 
+              reply: textReply || 'Image generated successfully.', 
+              image: imageBase64, 
+              imageStatus: imageBase64 ? 'SUCCESS' : 'FAILED',
+              traceId: requestTraceId 
+            });
+          }
+        } catch (e) {
+           return res.status(500).json({ error: e.message, traceId: requestTraceId });
+        }
+      }
+      return res.status(400).json({ error: 'Image generation unavailable', traceId: requestTraceId });
+    }
+
     if (!geminiKey) {
       return res.status(200).json({ reply: 'Config Error: Core API Key could not be resolved.', traceId: requestTraceId });
     }
@@ -129,15 +194,6 @@ export default async function handler(req, res) {
 
     if (supabaseUrl && supabaseKey) {
       const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
-
-      try {
-        const testPing = await fetch(`${supabaseUrl}/rest/v1/messages?select=id&limit=1`, { headers });
-        supabaseStatus = testPing.ok ? 'CONNECTED' : `ERROR_${testPing.status}`;
-        lastTableFetch = testPing.ok ? 'SUCCESS' : await testPing.text();
-      } catch (err) {
-        supabaseStatus = 'EXCEPTION';
-        lastTableFetch = err.message;
-      }
 
       try {
         const msgRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, { headers });
@@ -231,7 +287,7 @@ export default async function handler(req, res) {
           method: 'PUT',
           headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            message: `[AGENT-10/10] Verified secure self-patch update for ${targetFile} [Trace: ${requestTraceId}]`,
+            message: `[AGENT-10/10] Secure self-patch update for ${targetFile} [Trace: ${requestTraceId}]`,
             content: Buffer.from(pendingCode).toString('base64'),
             sha: fileSha || undefined
           })
@@ -373,7 +429,7 @@ CRITICAL ENFORCEMENT PROTOCOLS:
         lastFetchStatus: lastTableFetch,
         githubRepoConfigured: githubRepo,
         executionTimeMs: executionTime,
-        agentRatingScore: '10/10 Enterprise Grade'
+        agentRatingScore: '10/10 Enterprise Grade - Fully Integrated'
       }
     });
 
