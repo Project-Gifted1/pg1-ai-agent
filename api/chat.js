@@ -53,12 +53,39 @@ export default async function handler(req, res) {
     const geminiKey = getDynamicKey(['GEMINI', 'GOOGLE', 'AI'], ['KEY', 'API']) || process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY || '';
     const supabaseUrl = getDynamicKey(['SUPABASE'], ['URL']) || process.env.SUPABASE_URL || '';
     const supabaseKey = getDynamicKey(['SUPABASE'], ['SERVICE', 'ROLE', 'KEY', 'API', 'ANON']) || '';
-    let rawGithubRepo = getDynamicKey(['GITHUB', 'REPO'], ['SLUG', 'NAME', 'REPO']) || process.env.GITHUB_REPO || '';
     const githubToken = getDynamicKey(['GITHUB', 'GH_', 'GIT'], ['TOKEN', 'PAT', 'KEY']) || process.env.GITHUB_TOKEN || '';
     const cartesiaKey = getDynamicKey(['CARTESIA'], ['KEY', 'API', 'TOKEN']) || process.env.CARTESIA_API_KEY || '';
 
-    // SANITIZE GITHUB REPO FORMAT (Strips full URLs and trailing slashes to prevent 404s)
-    const githubRepo = rawGithubRepo.replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '').trim();
+    // NATIVE VERCEL & DYNAMIC GITHUB REPO RESOLUTION
+    let rawGithubRepo = process.env.GITHUB_REPO || 
+      (process.env.VERCEL_GIT_REPO_OWNER && process.env.VERCEL_GIT_REPO_SLUG 
+        ? `${process.env.VERCEL_GIT_REPO_OWNER}/${process.env.VERCEL_GIT_REPO_SLUG}` 
+        : '');
+
+    let githubRepo = rawGithubRepo.replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '').trim();
+
+    // Auto-discover via GitHub Token API if repo slug is still missing
+    if ((!githubRepo || !githubRepo.includes('/')) && githubToken) {
+      try {
+        console.log(`[PG1-AGENT] GITHUB_REPO not set or invalid. Auto-discovering via GITHUB_TOKEN...`);
+        const repoListRes = await fetch('https://api.github.com/user/repos?per_page=15&sort=updated', {
+          headers: {
+            'Authorization': `Bearer ${githubToken}`,
+            'Accept': 'application/vnd.github+json',
+            'User-Agent': 'Sovereign-Agent'
+          }
+        });
+        if (repoListRes.ok) {
+          const repos = await repoListRes.json();
+          if (Array.isArray(repos) && repos.length > 0) {
+            githubRepo = repos[0].full_name;
+            console.log(`[PG1-AGENT] Auto-discovered GitHub Repository: ${githubRepo}`);
+          }
+        }
+      } catch (discErr) {
+        console.error(`[PG1-AGENT] Repository auto-discovery exception: ${discErr.message}`);
+      }
+    }
 
     console.log(`[PG1-AGENT] Key Resolution - Gemini: ${!!geminiKey} | Supabase: ${!!supabaseUrl} | GitHub Token: ${!!githubToken} | Repo: ${githubRepo} | Cartesia: ${!!cartesiaKey}`);
 
