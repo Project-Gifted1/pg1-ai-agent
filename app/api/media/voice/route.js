@@ -1,18 +1,34 @@
-import { NextResponse } from 'next/server';
-
 export const maxDuration = 30;
-export const dynamic = 'force-dynamic';
 
-export async function POST(req) {
+export default async function handler(req, res) {
+  // CORS Headers for Vercel Serverless
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   try {
-    const { text, voice = 'alloy' } = await req.json();
+    let body = req.body;
+    if (typeof body === 'string') {
+      try { body = JSON.parse(body); } catch (e) { body = {}; }
+    }
+
+    const text = body?.text;
+    const voice = body?.voice || 'alloy';
+
+    if (!text) {
+      return res.status(400).json({ error: 'Execution halted: Text payload missing.' });
+    }
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: 'OPENAI_API_KEY is not configured in Vercel.' }, { status: 500 });
+      return res.status(500).json({ error: 'System Alert: OPENAI_API_KEY is missing from Vercel.' });
     }
 
-    // Map your dropdown voices to native OpenAI neural voices
+    // Map your custom UI voices to OpenAI's native TTS-1 voices
     const voiceMap = {
       christopher: 'onyx',
       steffan: 'echo',
@@ -22,7 +38,7 @@ export async function POST(req) {
 
     const targetVoice = voiceMap[voice.toLowerCase()] || 'onyx';
 
-    // Dispatch request to OpenAI TTS pipeline
+    // Dispatch to OpenAI
     const response = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
       headers: {
@@ -31,26 +47,26 @@ export async function POST(req) {
       },
       body: JSON.stringify({
         model: 'tts-1',
-        input: text.substring(0, 4000), // Protect token boundaries
+        input: text.substring(0, 4000), // Hard cap to protect API token limits
         voice: targetVoice
       })
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      return NextResponse.json({ error: `OpenAI TTS error: ${errText}` }, { status: response.status });
+      return res.status(response.status).json({ error: `OpenAI Gateway Error: ${errText}` });
     }
 
-    const audioBuffer = await response.arrayBuffer();
+    // Convert the audio stream into a buffer and send it to the frontend player
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
-    return new NextResponse(audioBuffer, {
-      headers: {
-        'Content-Type': 'audio/mpeg',
-        'Content-Length': audioBuffer.byteLength.toString(),
-        'Cache-Control': 'no-cache'
-      }
-    });
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Length', buffer.length);
+    res.setHeader('Cache-Control', 'no-cache');
+    
+    return res.status(200).send(buffer);
   } catch (err) {
-    return NextResponse.json({ error: `Audio synthesis failed: ${err.message}` }, { status: 500 });
+    return res.status(500).json({ error: `Audio synthesis fatal error: ${err.message}` });
   }
 }
