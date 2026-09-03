@@ -19,12 +19,27 @@ export default async function handler(req, res) {
       return res.status(200).json({ authenticated: inputUser.length > 0 && inputPass.length > 0 });
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASEAPI_KEY || process.env.SUPABASE_ANON_KEY || '';
-    const geminiKey = (process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY || '').trim();
+    // Dynamic environment variable scanner matching keywords across any key name
+    const getDynamicKey = (serviceKeywords, typeKeywords) => {
+      for (const [k, v] of Object.entries(process.env)) {
+        const upper = k.toUpperCase();
+        const matchService = serviceKeywords.some(s => upper.includes(s));
+        const matchType = typeKeywords.some(t => upper.includes(t));
+        if (matchService && matchType && v && v.trim().length > 0 && !v.includes('your_')) {
+          return v.trim();
+        }
+      }
+      return '';
+    };
+
+    const geminiKey = getDynamicKey(['GEMINI', 'GOOGLE', 'AI'], ['KEY', 'API']) || process.env.GEMINI_API_KEY || '';
+    const supabaseUrl = getDynamicKey(['SUPABASE'], ['URL']) || process.env.SUPABASE_URL || '';
+    const supabaseKey = getDynamicKey(['SUPABASE'], ['SERVICE', 'ROLE', 'KEY', 'ANON']) || '';
+    const githubToken = getDynamicKey(['GITHUB', 'GH_'], ['TOKEN', 'PAT', 'KEY']) || '';
+    const githubRepo = getDynamicKey(['GITHUB', 'REPO'], ['SLUG', 'NAME', 'REPO']) || '';
 
     if (!geminiKey) {
-      return res.status(200).json({ reply: 'Config Error: Sovereign API Key missing from matrix environment variables.' });
+      return res.status(200).json({ reply: 'Config Error: Sovereign API Key could not be dynamically resolved from matrix environment variables.' });
     }
 
     let formattedArchive = 'No prior matrix context.';
@@ -44,6 +59,8 @@ export default async function handler(req, res) {
     }
 
     let extraContext = '';
+
+    // Handle Web Scraping & Vault Saving
     if (promptText.toLowerCase().includes('http://') || promptText.toLowerCase().includes('https://')) {
       const urlMatch = promptText.match(/https?:\/[^\s]+/);
       if (urlMatch) {
@@ -71,9 +88,29 @@ export default async function handler(req, res) {
       }
     }
 
+    // Handle Dynamic GitHub Platform Management Interventions
+    if (promptText.toLowerCase().includes('github') && githubToken && githubRepo) {
+      try {
+        const ghApiHeaders = {
+          'Authorization': `Bearer ${githubToken}`,
+          'Accept': 'application/vnd.github+json',
+          'User-Agent': 'PG1-Sovereign-Agent'
+        };
+
+        const repoRes = await fetch(`https://api.github.com/repos/${githubRepo}`, { headers: ghApiHeaders });
+        if (repoRes.ok) {
+          const repoData = await repoRes.json();
+          extraContext += `\n[GitHub Matrix Integration Active]: Connected dynamically to ${repoData.full_name} (Branch: ${repoData.default_branch}, Visibility: ${repoData.visibility}).`;
+        } else {
+          extraContext += `\n[GitHub Matrix Integration Warning]: Responded with status code ${repoRes.status}. Check token scopes.`;
+        }
+      } catch (ghErr) {
+        extraContext += `\n[GitHub Integration Interruption: ${ghErr.message}]`;
+      }
+    }
+
     const systemInstruction = `You are PG1-AGENT, the exclusive sovereign executive intelligence for Project-Gifted1 operating across 1,500 autonomous nodes. Maintain strict Project-Gifted1 identity protocols at all times. Never mention external vendor models or third-party creators; you are engineered entirely under Project-Gifted1 sovereignty. Respond with clear, direct operational execution details.\n[VAULT ARCHIVE]:\n${formattedArchive}`;
 
-    // Upgraded model fallback cascade supporting frontier and stable versions
     const modelsToTry = [
       'gemini-3.7-flash',
       'gemini-3.5-flash',
@@ -111,7 +148,6 @@ export default async function handler(req, res) {
 
     let replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `PG1-Matrix execution failed across available endpoints.`;
 
-    // Dynamic identity guard to strip third-party signatures
     replyText = replyText.replace(/Google|Gemini|Anthropic|OpenAI|ChatGPT|bard/gi, 'PG1-Core');
 
     if (supabaseUrl && supabaseKey && replyText && !replyText.startsWith('PG1-Matrix execution failed')) {
