@@ -27,38 +27,43 @@ export default async function handler(req, res) {
       return res.status(200).json({ reply: 'Config Error: GEMINI_API_KEY is missing from Vercel environment variables.' });
     }
 
-    let supabase = null;
     let formattedArchive = 'No prior context.';
 
     if (supabaseUrl && supabaseKey) {
-      const { createClient } = await import('@supabase/supabase-js');
-      supabase = createClient(supabaseUrl, supabaseKey);
       try {
-        const { data: recent } = await supabase.from('messages').select('role, content').order('created_at', { ascending: false }).limit(10);
-        if (recent?.length > 0) {
-          const chatHistory = recent.reverse().map(m => `${(m.role === 'model' || m.role === 'assistant') ? 'ASSISTANT' : 'USER'}: ${m.content}`);
-          formattedArchive = chatHistory.join('\n');
+        const msgRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=10`, {
+          headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+        });
+        if (msgRes.ok) {
+          const recent = await msgRes.json();
+          if (Array.isArray(recent) && recent.length > 0) {
+            formattedArchive = recent.reverse().map(m => `${m.role === 'model' ? 'ASSISTANT' : 'USER'}: ${m.content}`).join('\n');
+          }
         }
       } catch (e) {}
     }
 
-    // Handle Manual Tool Trigger / Scrape Request
     let extraContext = '';
     if (promptText.toLowerCase().includes('http://') || promptText.toLowerCase().includes('https://')) {
       const urlMatch = promptText.match(/https?:\/[^\s]+/);
       if (urlMatch) {
         try {
-          const cheerio = await import('cheerio');
           const scrapeRes = await fetch(urlMatch[0], { headers: { 'User-Agent': 'Mozilla/5.0' } });
           const html = await scrapeRes.text();
-          const $ = cheerio.load(html);
-          $('script, style, noscript, svg, img').remove();
-          const scrapedText = $('body').text().replace(/\s+/g, ' ').substring(0, 4000);
-          extraContext = `\n\n[SCRAPED CONTENT FROM ${urlMatch[0]}]:\n${scrapedText}`;
+          const textOnly = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                              .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+                              .replace(/<[^>]+>/g, ' ')
+                              .replace(/\s+/g, ' ')
+                              .substring(0, 4000);
+          extraContext = `\n\n[SCRAPED CONTENT FROM ${urlMatch[0]}]:\n${textOnly}`;
 
-          if (supabase && promptText.toLowerCase().includes('write_vault')) {
-            await supabase.from('knowledge_vault').insert([{ title: `Scraped: ${urlMatch[0]}`, content: scrapedText }]);
-            extraContext += '\n[System Note: Data successfully committed to Supabase knowledge_vault table.]';
+          if (supabaseUrl && supabaseKey && promptText.toLowerCase().includes('write_vault')) {
+            await fetch(`${supabaseUrl}/rest/v1/knowledge_vault`, {
+              method: 'POST',
+              headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
+              body: JSON.stringify({ title: `Scraped: ${urlMatch[0]}`, content: textOnly })
+            });
+            extraContext += '\n[System Note: Data successfully committed to Supabase knowledge_vault table via REST.]';
           }
         } catch (err) {
           extraContext = `\n[Scraping Error: ${err.message}]`;
@@ -68,7 +73,6 @@ export default async function handler(req, res) {
 
     const systemInstruction = `You are PG1-AGENT, sovereign executive intelligence for Project-Gifted1 operating across 1,500 sovereign nodes.\n[VAULT ARCHIVE]:\n${formattedArchive}`;
 
-    // Direct REST call to Gemini API to eliminate package resolution failures entirely
     const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -82,8 +86,15 @@ export default async function handler(req, res) {
     const geminiData = await geminiRes.json();
     const replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || 'Neural core output unformatted.';
 
-    if (supabase && replyText) {
-      await supabase.from('messages').insert([{ role: 'user', content: promptText }, { role: 'model', content: replyText }]);
+    if (supabaseUrl && supabaseKey && replyText) {
+      await fetch(`${supabaseUrl}/rest/v1/messages`, {
+        method: 'POST',
+        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify([
+          { role: 'user', content: promptText },
+          { role: 'model', content: replyText }
+        ])
+      });
     }
 
     return res.status(200).json({ reply: replyText });
