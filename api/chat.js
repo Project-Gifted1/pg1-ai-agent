@@ -71,9 +71,9 @@ export default async function handler(req, res) {
       }
     }
 
-    const systemInstruction = `You are PG1-AGENT, sovereign executive intelligence for Project-Gifted1 operating across 1,500 sovereign nodes.\n[VAULT ARCHIVE]:\n${formattedArchive}`;
+    const systemInstruction = `You are PG1-AGENT, sovereign executive intelligence for Project-Gifted1 operating across 1,500 sovereign nodes. Respond with clear, direct, operational execution details.\n[VAULT ARCHIVE]:\n${formattedArchive}`;
 
-    const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiKey}`, {
+    const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -84,7 +84,7 @@ export default async function handler(req, res) {
     });
 
     const geminiData = await geminiRes.json();
-    const replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || 'Neural core output unformatted.';
+    const replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(geminiData);
 
     if (supabaseUrl && supabaseKey && replyText) {
       await fetch(`${supabaseUrl}/rest/v1/messages`, {
