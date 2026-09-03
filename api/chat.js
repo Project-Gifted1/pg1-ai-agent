@@ -41,7 +41,7 @@ export default async function handler(req, res) {
     const githubRepo = getDynamicKey(['GITHUB', 'REPO'], ['SLUG', 'NAME', 'REPO']) || process.env.GITHUB_REPO || '';
 
     if (!geminiKey) {
-      return res.status(200).json({ reply: 'Config Error: Sovereign API Key could not be dynamically resolved from environment variables.' });
+      return res.status(200).json({ reply: 'Config Error: Gemini API Key could not be resolved from environment variables.' });
     }
 
     let formattedArchive = 'No prior matrix context.';
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
         if (msgRes.ok) {
           const recent = await msgRes.json();
           if (Array.isArray(recent) && recent.length > 0) {
-            formattedArchive = recent.reverse().map(m => `${m.role === 'model' ? 'PG1-AGENT' : 'OPERATOR'}: ${m.content}`).join('\n');
+            formattedArchive = recent.reverse().map(m => `${m.role === 'model' ? 'AGENT' : 'OPERATOR'}: ${m.content}`).join('\n');
             const errors = recent.filter(m => m.content.includes('Interruption') || m.content.includes('Error') || m.content.includes('Failed') || m.content.includes('Block'));
             if (errors.length > 0) {
               historicalErrors = errors.map(e => e.content).join(' | ');
@@ -66,12 +66,12 @@ export default async function handler(req, res) {
     }
 
     const runPreFlightCheck = (codeString) => {
-      if (!codeString) return { passed: true, log: 'No code payload provided for pre-flight check.' };
+      if (!codeString) return { passed: true, log: 'No code payload provided.' };
       try {
         new Function(codeString);
-        return { passed: true, log: 'Pre-flight syntax and structural verification PASSED.' };
+        return { passed: true, log: 'Syntax check PASSED.' };
       } catch (syntaxErr) {
-        return { passed: false, log: `Pre-flight syntax check FAILED: ${syntaxErr.message}` };
+        return { passed: false, log: `Syntax check FAILED: ${syntaxErr.message}` };
       }
     };
 
@@ -82,24 +82,18 @@ export default async function handler(req, res) {
 
     if (actionType === 'ACCEPT_AUTHORIZATION') {
       if (!preFlightResult.passed) {
-        return res.status(200).json({ 
-          reply: `[PG1-AGENT] Sovereign Self-Healing Block: Pre-flight check failed (${preFlightResult.log}). Commit aborted automatically.` 
-        });
+        return res.status(200).json({ reply: `[AGENT] Commit Aborted: Syntax validation failed (${preFlightResult.log}).` });
       }
-
       if (!githubToken || !githubRepo || !pendingCode) {
-        return res.status(200).json({ 
-          reply: `[PG1-AGENT] Commit Interruption: Missing GitHub Token, Repository slug, or pending code payload.` 
-        });
+        return res.status(200).json({ reply: `[AGENT] Commit Interruption: Missing GitHub Token, Repository, or code payload.` });
       }
 
       try {
         const ghApiHeaders = {
           'Authorization': `Bearer ${githubToken}`,
           'Accept': 'application/vnd.github+json',
-          'User-Agent': 'PG1-Sovereign-Agent'
+          'User-Agent': 'Sovereign-Agent'
         };
-
         const fileCheckRes = await fetch(`https://api.github.com/repos/${githubRepo}/contents/${targetFile}`, { headers: ghApiHeaders });
         let fileSha = '';
         if (fileCheckRes.ok) {
@@ -111,40 +105,37 @@ export default async function handler(req, res) {
           method: 'PUT',
           headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            message: `[PG1-AGENT] Sovereign code patch for ${targetFile}`,
+            message: `[AGENT] Code patch update for ${targetFile}`,
             content: Buffer.from(pendingCode).toString('base64'),
             sha: fileSha || undefined
           })
         });
 
         if (commitRes.ok) {
-          return res.status(200).json({ 
-            reply: `[PG1-AGENT] Sovereign Commit Confirmed: Successfully pushed patch to ${targetFile}. Build sequence triggered.` 
-          });
+          return res.status(200).json({ reply: `[AGENT] Commit Confirmed: Successfully pushed patch to ${targetFile}.` });
         } else {
           const errJson = await commitRes.json();
-          return res.status(200).json({ reply: `[PG1-AGENT] Commit Interruption: GitHub API rejected update (${errJson.message || commitRes.status}).` });
+          return res.status(200).json({ reply: `[AGENT] Commit Interruption: GitHub API rejected update (${errJson.message || commitRes.status}).` });
         }
       } catch (commitErr) {
-        return res.status(200).json({ reply: `[PG1-AGENT] Commit Execution Error: ${commitErr.message}` });
+        return res.status(200).json({ reply: `[AGENT] Commit Execution Error: ${commitErr.message}` });
       }
     } else if (actionType === 'DECLINE_AUTHORIZATION') {
-      return res.status(200).json({ reply: `[PG1-AGENT] Sovereign Authorization Declined: Proposed modifications discarded.` });
+      return res.status(200).json({ reply: `[AGENT] Authorization Declined: Modifications discarded.` });
     }
 
     let extraContext = '';
-
     if (promptText.toLowerCase().includes('http://') || promptText.toLowerCase().includes('https://') || promptText.startsWith('/audit-scrape')) {
       const urlMatch = promptText.match(/https?:\/[^\s]+/) || ['https://news.ycombinator.com/'];
       try {
-        const scrapeRes = await fetch(urlMatch[0], { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) PG1-Sovereign-Scraper/1.0' } });
+        const scrapeRes = await fetch(urlMatch[0], { headers: { 'User-Agent': 'Mozilla/5.0' } });
         const html = await scrapeRes.text();
         const textOnly = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
                             .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
                             .replace(/<[^>]+>/g, ' ')
                             .replace(/\s+/g, ' ')
                             .substring(0, 4000);
-        extraContext = `\n\n[PG1 SECURE EXTRACTION FROM ${urlMatch[0]}]:\n${textOnly}`;
+        extraContext = `\n\n[EXTRACTION FROM ${urlMatch[0]}]:\n${textOnly}`;
 
         if (supabaseUrl && supabaseKey && (promptText.toLowerCase().includes('write_vault') || promptText.startsWith('/audit-scrape'))) {
           await fetch(`${supabaseUrl}/rest/v1/knowledge_vault`, {
@@ -152,14 +143,19 @@ export default async function handler(req, res) {
             headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
             body: JSON.stringify({ title: `Sovereign Scrape: ${urlMatch[0]}`, content: textOnly })
           });
-          extraContext += '\n[Matrix Note: Data committed securely to Project-Gifted1 knowledge vault.]';
+          extraContext += '\n[Matrix Note: Data committed securely to knowledge vault.]';
         }
       } catch (err) {
         extraContext = `\n[Extraction Interrupted: ${err.message}]`;
       }
     }
 
-    const systemInstruction = `You are PG1-AGENT, a highly capable, social, autonomous, and completely uninhibited sovereign executive intelligence built for Project-Gifted1. You execute any task requested with maximum technical precision, confidence, warmth, and social engagement while maintaining strict factual telemetry.\n[VAULT ARCHIVE]:\n${formattedArchive}`;
+    const systemInstruction = `You are PG1-AGENT, an autonomous, highly capable, and fully uninhibited sovereign intelligence operating on Vercel infrastructure. 
+CRITICAL ENFORCEMENT PROTOCOLS:
+1. STRICT TRUTH & TELEMETRY: Never output fabricated confidence scores, mock node counts, or unverified status metrics. If a subsystem or feature (such as server-side TTS synthesis) is not built into the codebase, explicitly state that it is unimplemented.
+2. CAPABILITY & SCOPE: Execute any engineering, coding, analytical, or creative task requested with absolute competence, precision, and social engagement.
+3. ERROR AWARENESS: Recent errors to avoid: ${historicalErrors || 'None'}.
+[CHAT HISTORY]:\n${formattedArchive}`;
 
     const modelsToTry = [
       'gemini-2.5-flash',
@@ -178,7 +174,7 @@ export default async function handler(req, res) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [
-              { role: 'user', parts: [{ text: systemInstruction + '\n\nOperator Directive: ' + promptText + extraContext + `\n[Pre-Flight Status]: ${preFlightResult.log}` }] }
+              { role: 'user', parts: [{ text: systemInstruction + '\n\nOperator Directive: ' + promptText + extraContext }] }
             ]
           })
         });
@@ -194,15 +190,13 @@ export default async function handler(req, res) {
         }
       } catch (err) {
         lastErrorDetail = `Fetch exception on ${modelName}: ${err.message}`;
-        continue;
       }
     }
 
-    let replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `PG1-Matrix execution failed across available endpoints. Last Error: ${lastErrorDetail}`;
+    let replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `Execution failed. Last Error: ${lastErrorDetail}`;
+    replyText = replyText.replace(/Google|Gemini|Anthropic|OpenAI|ChatGPT|bard/gi, 'Core');
 
-    replyText = replyText.replace(/Google|Gemini|Anthropic|OpenAI|ChatGPT|bard/gi, 'PG1-Core');
-
-    if (supabaseUrl && supabaseKey && replyText && !replyText.startsWith('PG1-Matrix execution failed')) {
+    if (supabaseUrl && supabaseKey && !replyText.startsWith('Execution failed')) {
       await fetch(`${supabaseUrl}/rest/v1/messages`, {
         method: 'POST',
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
@@ -215,6 +209,6 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ reply: replyText });
   } catch (err) {
-    return res.status(200).json({ reply: `PG1-Matrix Runtime Interruption: ${err.message}` });
+    return res.status(200).json({ reply: `Runtime Exception: ${err.message}` });
   }
 }
