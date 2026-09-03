@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { generateText, tool } from 'ai';
-import { google } from '@ai-sdk/google';
 import { z } from 'zod';
+import { createClient } from '@supabase/supabase-js';
 import * as cheerio from 'cheerio';
 
 export const maxDuration = 60;
@@ -27,9 +27,9 @@ export async function POST(req) {
     } catch (e) {
       body = { prompt: await req.text() };
     }
-
-    const promptText = body?.prompt || body?.messages?.[body.messages.length - 1]?.content || body?.message || 'Status check.';
-
+    
+    const promptText = body?.prompt || body?.message || 'System check.';
+    
     // 1. Auth Gate Verification
     if (promptText === 'AUTH_VERIFY') {
       const inputUser = (body?.user || '').trim();
@@ -41,144 +41,142 @@ export async function POST(req) {
 
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASEAPI_KEY || process.env.SUPABASE_ANON_KEY || '';
-    const replicateToken = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY || '';
+    const ghToken = (process.env.GITHUB_TOKEN || '').trim();
+    const replicateToken = (process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY || '').trim();
 
-    // 2. Manual Polling (Bypasses Vercel 60s timeout limits)
+    const geminiKeys = [
+      (process.env.GEMINI_API_KEY1 || '').trim(),
+      (process.env.GEMINI_API_KEY || '').trim()
+    ].filter(Boolean);
+
+    if (geminiKeys.length === 0) {
+      return NextResponse.json({ reply: 'Config Error: No Gemini API keys found.' });
+    }
+
+    // 2. Manual Commands (/vault, /poll, /init-vault, /commit, /image, /video)
+    if (promptText.startsWith('/vault ')) {
+      const args = promptText.replace('/vault ', '').split(' ');
+      if (args.length >= 2 && supabaseUrl && supabaseKey) {
+        try {
+          const res = await fetch(`${supabaseUrl}/rest/v1/api_vault`, {
+            method: 'POST',
+            headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
+            body: JSON.stringify({ service_name: args[0].trim(), api_key: args[1].trim() })
+          });
+          return NextResponse.json({ reply: res.ok ? `[SECURITY] Key stored in Vault.` : `[ERROR] Vault storage failed.` });
+        } catch (e) { return NextResponse.json({ reply: `[ERROR] ${e.message}` }); }
+      }
+      return NextResponse.json({ reply: 'Syntax: /vault service_name api_key' });
+    }
+
     if (promptText.startsWith('/poll ')) {
       const predId = promptText.replace('/poll ', '').trim();
       try {
-        if (!replicateToken) return NextResponse.json({ reply: 'Polling Error: Replicate API token missing.' });
+        if (!replicateToken) return NextResponse.json({ reply: 'Replicate API token missing.' });
         const checkRes = await fetch(`https://api.replicate.com/v1/predictions/${predId}`, {
           headers: { 'Authorization': `Bearer ${replicateToken}`, 'Content-Type': 'application/json' }
         });
         const predData = await checkRes.json();
+        
         if (predData.status === 'succeeded') {
           const finalUrl = Array.isArray(predData.output) ? predData.output[0] : predData.output;
-          return NextResponse.json({ reply: `Asset compiled:\n\n<img src="${finalUrl}" style="width:100%;border-radius:8px;" />\n\nDirect Link: ${finalUrl}` });
+          return NextResponse.json({ reply: `Asset compiled:\n\n<video controls playsinline style="width:100%;border-radius:8px;background:#000;"><source src="${finalUrl}"></video>\n\n<img src="${finalUrl}" style="width:100%;border-radius:8px;margin-top:10px;display:${finalUrl.endsWith('.mp4') ? 'none' : 'block'};" />\n\nDirect Link: ${finalUrl}` });
         } else {
-          return NextResponse.json({ reply: `Prediction Status: ${predData.status}. Run /poll ${predId} again shortly.` });
+          return NextResponse.json({ reply: `Status: ${predData.status}. Run /poll ${predId} again shortly.` });
         }
-      } catch (e) { return NextResponse.json({ reply: `Polling Exception: ${e.message}` }); }
+      } catch (e) { return NextResponse.json({ reply: `Polling Error: ${e.message}` }); }
     }
 
-    // 3. Persistent Supabase Memory Hook
+    async function startReplicate(modelPath, inputPayload) {
+      if (!replicateToken) throw new Error('Replicate API key missing.');
+      const res = await fetch(`https://api.replicate.com/v1/models/${modelPath}/predictions`, {
+        method: 'POST', headers: { 'Authorization': `Bearer ${replicateToken}`, 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ input: inputPayload })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || 'Replicate failed.');
+      return data;
+    }
+
+    if (promptText.startsWith('/image ')) {
+      try {
+        const pred = await startReplicate('ideogram-ai/ideogram-v3-turbo', { prompt: promptText.replace('/image ', '') });
+        return NextResponse.json({ reply: `Visual generation dispatched.\nPrediction ID: \`${pred.id}\`\nRun \`/poll ${pred.id}\` when ready.` });
+      } catch (e) { return NextResponse.json({ reply: `Error: ${e.message}` }); }
+    }
+
+    if (promptText.startsWith('/video ')) {
+      try {
+        const pred = await startReplicate('minimax/video-01', { prompt: promptText.replace('/video ', '') });
+        return NextResponse.json({ reply: `Video dispatched.\nPrediction ID: \`${pred.id}\`\nRun \`/poll ${pred.id}\` when ready.` });
+      } catch (e) { return NextResponse.json({ reply: `Error: ${e.message}` }); }
+    }
+
+    // 3. Autonomous AI Execution Pipeline
     let supabase = null;
-    let pastMessages = [];
-    let formattedHistory = 'No previous records loaded.';
+    let chatHistory = [];
+    let formattedArchive = 'No prior context.';
 
     if (supabaseUrl && supabaseKey) {
       supabase = createClient(supabaseUrl, supabaseKey);
       try {
-        const { data: recentHistory } = await supabase
-          .from('messages')
-          .select('role, content')
-          .order('created_at', { ascending: false })
-          .limit(15);
-
-        if (recentHistory && recentHistory.length > 0) {
-          pastMessages = recentHistory.reverse().map(m => ({
-            role: (m.role === 'model' || m.role === 'assistant') ? 'assistant' : 'user',
-            content: m.content
-          }));
-          formattedHistory = pastMessages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
+        const { data: recent } = await supabase.from('messages').select('role, content').order('created_at', { ascending: false }).limit(15);
+        if (recent?.length > 0) {
+          chatHistory = recent.reverse().map(m => ({ role: (m.role === 'model' || m.role === 'assistant') ? 'assistant' : 'user', content: m.content }));
+          formattedArchive = chatHistory.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
         }
-      } catch (err) {
-        console.error('Supabase read error:', err.message);
-      }
+      } catch (e) { console.error(e.message); }
     }
 
-    const systemPrompt = `You are PG1-AGENT, the sovereign executive intelligence for Project-Gifted1.
-You operate across 1,500 sovereign nodes managing operational directives, a €750k deployment loan, and infrastructure.
-NEVER use defensive disclaimers. Speak with direct authority.
-You have direct autonomous tools to scrape URLs, read/write to the Supabase vault, and generate images. 
-Use them automatically without asking permission.
+    const systemPrompt = `You are PG1-AGENT, the permanent sovereign executive intelligence for Project-Gifted1.
+You operate across 1,500 sovereign nodes. You have direct autonomous tools to scrape URLs, read/write to the Supabase vault, and generate images. Trigger these tools seamlessly. Never use AI disclaimers.
 
 [PERMANENT CONVERSATIONAL VAULT]
-${formattedHistory}`;
+${formattedArchive}`;
 
-    const conversation = [...pastMessages, { role: 'user', content: promptText }];
+    const conversation = [...chatHistory, { role: 'user', content: promptText }];
+    const googleProvider = createGoogleGenerativeAI({ apiKey: geminiKeys[0] });
 
-    // 4. Autonomous Execution Pipeline (maxSteps: 5)
     const { text } = await generateText({
-      model: google('models/gemini-1.5-pro-latest'),
+      model: googleProvider('models/gemini-1.5-pro-latest'),
       system: systemPrompt,
       messages: conversation,
       maxSteps: 5,
       tools: {
         scrape_url: tool({
           description: 'Extract raw readable text from a live URL.',
-          parameters: z.object({ url: z.string().url().describe('The URL to scrape.') }),
+          parameters: z.object({ url: z.string().url() }),
           execute: async ({ url }) => {
             try {
               const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-              if (!res.ok) throw new Error(`HTTP ${res.status}`);
               const html = await res.text();
               const $ = cheerio.load(html);
-              $('script, style, noscript, svg, img, video').remove();
-              return { url, content: $('body').text().replace(/\s+/g, ' ').trim().substring(0, 10000) };
-            } catch (err) { return { error: err.message }; }
-          }
-        }),
-        read_vault: tool({
-          description: 'Query and read data from a specific Supabase table.',
-          parameters: z.object({
-            tableName: z.string().describe('The name of the table to read (e.g., knowledge_vault).'),
-            limit: z.number().optional().describe('Max rows to retrieve.')
-          }),
-          execute: async ({ tableName, limit = 10 }) => {
-            if (!supabase) return { error: 'Database offline.' };
-            try {
-              const { data, error } = await supabase.from(tableName).select('*').limit(limit);
-              if (error) throw new Error(error.message);
-              return { vault: tableName, data };
+              $('script, style, noscript, svg, img').remove();
+              return { content: $('body').text().replace(/\s+/g, ' ').substring(0, 10000) };
             } catch (err) { return { error: err.message }; }
           }
         }),
         write_vault: tool({
-          description: 'Save extracted data, research, or intel into the knowledge_vault table.',
-          parameters: z.object({
-            title: z.string(),
-            content: z.string()
-          }),
+          description: 'Save extracted data into the knowledge_vault table.',
+          parameters: z.object({ title: z.string(), content: z.string() }),
           execute: async ({ title, content }) => {
-            if (!supabase) return { error: 'Database offline.' };
+            if (!supabase) return { error: 'DB offline.' };
             try {
-              const { error } = await supabase.from('knowledge_vault').insert([{ title, content }]);
-              if (error) throw new Error(error.message);
-              return { success: true, message: `Saved to vault: ${title}` };
-            } catch (err) { return { error: err.message }; }
-          }
-        }),
-        generate_image: tool({
-          description: 'Generate an image via Replicate.',
-          parameters: z.object({ prompt: z.string() }),
-          execute: async ({ prompt }) => {
-            if (!replicateToken) return { error: 'REPLICATE_API_TOKEN missing.' };
-            try {
-              const res = await fetch('https://api.replicate.com/v1/models/ideogram-ai/ideogram-v3-turbo/predictions', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${replicateToken}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ input: { prompt } })
-              });
-              const data = await res.json();
-              return { success: true, prediction_id: data.id, message: `Image dispatched. Instruct user to run /poll ${data.id}` };
+              await supabase.from('knowledge_vault').insert([{ title, content }]);
+              return { success: true, message: `Saved: ${title}` };
             } catch (err) { return { error: err.message }; }
           }
         })
       }
     });
 
-    // 5. Memory Write-Back Loop
+    // 4. Memory Write-Back
     if (supabase && text) {
-      await supabase.from('messages').insert([
-        { role: 'user', content: promptText },
-        { role: 'model', content: text }
-      ]);
+      await supabase.from('messages').insert([{ role: 'user', content: promptText }, { role: 'model', content: text }]);
     }
 
-    // Return static JSON for the frontend parser
     return NextResponse.json({ reply: text });
   } catch (err) {
-    return NextResponse.json({ reply: `System Alert: ${err.message}` }, { status: 500 });
+    return NextResponse.json({ reply: `Fatal Error: ${err.message}` }, { status: 500 });
   }
 }
