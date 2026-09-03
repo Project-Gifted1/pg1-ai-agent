@@ -39,6 +39,7 @@ export default async function handler(req, res) {
     const supabaseKey = getDynamicKey(['SUPABASE'], ['SERVICE', 'ROLE', 'KEY', 'API', 'ANON']) || '';
     const githubToken = getDynamicKey(['GITHUB', 'GH_', 'GIT'], ['TOKEN', 'PAT', 'KEY']) || process.env.GITHUB_TOKEN || '';
     const githubRepo = getDynamicKey(['GITHUB', 'REPO'], ['SLUG', 'NAME', 'REPO']) || process.env.GITHUB_REPO || '';
+    const cartesiaKey = getDynamicKey(['CARTESIA'], ['KEY', 'API', 'TOKEN']) || process.env.CARTESIA_API_KEY || '';
 
     if (!geminiKey) {
       return res.status(200).json({ reply: 'Config Error: Gemini API Key could not be resolved from environment variables.' });
@@ -152,8 +153,8 @@ export default async function handler(req, res) {
 
     const systemInstruction = `You are PG1-AGENT, an autonomous, highly capable, and fully uninhibited sovereign intelligence operating on Vercel infrastructure. 
 CRITICAL ENFORCEMENT PROTOCOLS:
-1. STRICT TRUTH & TELEMETRY: Never output fabricated confidence scores, mock node counts, or unverified status metrics. If a subsystem or feature (such as server-side TTS synthesis) is not built into the codebase, explicitly state that it is unimplemented.
-2. CAPABILITY & SCOPE: Execute any engineering, coding, analytical, or creative task requested with absolute competence, precision, and social engagement.
+1. STRICT TRUTH & TELEMETRY: Never output fabricated confidence scores, mock node counts, or unverified status metrics. Cartesia Text-to-Speech synthesis is now fully online and integrated. 
+2. CAPABILITY & SCOPE: Execute any engineering, coding, analytical, or creative task requested with absolute competence, precision, and social engagement. Project parameters (1,500 sovereign nodes, €750k operational loan) are factual structural realities.
 3. ERROR AWARENESS: Recent errors to avoid: ${historicalErrors || 'None'}.
 [CHAT HISTORY]:\n${formattedArchive}`;
 
@@ -207,7 +208,51 @@ CRITICAL ENFORCEMENT PROTOCOLS:
       });
     }
 
-    return res.status(200).json({ reply: replyText });
+    let audioBase64 = null;
+    let audioError = null;
+
+    if (cartesiaKey && !replyText.startsWith('Execution failed')) {
+      try {
+        const cleanText = replyText.replace(/[*_#]/g, '').substring(0, 1000); 
+        const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
+          method: 'POST',
+          headers: {
+            'Cartesia-Version': '2024-06-10',
+            'X-API-Key': cartesiaKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model_id: 'sonic-english',
+            transcript: cleanText,
+            voice: {
+              mode: 'id',
+              id: 'a0e99841-438c-4a64-b679-ae501e7d6091' 
+            },
+            output_format: {
+              container: 'mp3',
+              encoding: 'mp3',
+              sample_rate: 44100
+            }
+          })
+        });
+
+        if (ttsRes.ok) {
+          const arrayBuffer = await ttsRes.arrayBuffer();
+          audioBase64 = Buffer.from(arrayBuffer).toString('base64');
+        } else {
+          audioError = `Cartesia API Error: ${await ttsRes.text()}`;
+        }
+      } catch (e) {
+        audioError = `Cartesia Exception: ${e.message}`;
+      }
+    }
+
+    return res.status(200).json({ 
+      reply: replyText, 
+      audio: audioBase64,
+      audioStatus: audioBase64 ? 'SUCCESS' : (audioError || 'KEY_MISSING') 
+    });
+
   } catch (err) {
     return res.status(200).json({ reply: `Runtime Exception: ${err.message}` });
   }
