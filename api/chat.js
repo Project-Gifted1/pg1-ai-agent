@@ -11,10 +11,23 @@ export default async function handler(req, res) {
       try { body = JSON.parse(body); } catch (e) { body = { prompt: body }; }
     }
     
-    const promptText = body?.prompt || body?.message || 'System check.';
-    const actionType = body?.action || ''; 
-    const targetFile = body?.file_path || 'api/chat.js';
-    const pendingCode = body?.file_content || '';
+    let promptText = body?.prompt || body?.message || 'System check.';
+    let actionType = body?.action || ''; 
+    let targetFile = body?.file_path || 'api/chat.js';
+    let pendingCode = body?.file_content || '';
+
+    // FALLBACK TEXT PARSER: If mobile UI sends JSON wrapped as a string or text prompt containing code, parse it dynamically
+    if (!actionType && (promptText.includes('ACCEPT_AUTHORIZATION') || promptText.includes('file_content'))) {
+      try {
+        const parsedPromptJson = JSON.parse(promptText);
+        if (parsedPromptJson.action) actionType = parsedPromptJson.action;
+        if (parsedPromptJson.file_path) targetFile = parsedPromptJson.file_path;
+        if (parsedPromptJson.file_content) pendingCode = parsedPromptJson.file_content;
+        if (parsedPromptJson.prompt) promptText = parsedPromptJson.prompt;
+      } catch (parseErr) {
+        // Not a pure JSON string, proceed normally
+      }
+    }
     
     console.log(`[PG1-AGENT] Incoming Request. Action: ${actionType || 'CHAT'} | Prompt: ${promptText.substring(0, 50)}...`);
 
@@ -40,15 +53,19 @@ export default async function handler(req, res) {
     const geminiKey = getDynamicKey(['GEMINI', 'GOOGLE', 'AI'], ['KEY', 'API']) || process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY || '';
     const supabaseUrl = getDynamicKey(['SUPABASE'], ['URL']) || process.env.SUPABASE_URL || '';
     const supabaseKey = getDynamicKey(['SUPABASE'], ['SERVICE', 'ROLE', 'KEY', 'API', 'ANON']) || '';
+    let rawGithubRepo = getDynamicKey(['GITHUB', 'REPO'], ['SLUG', 'NAME', 'REPO']) || process.env.GITHUB_REPO || '';
     const githubToken = getDynamicKey(['GITHUB', 'GH_', 'GIT'], ['TOKEN', 'PAT', 'KEY']) || process.env.GITHUB_TOKEN || '';
-    const githubRepo = getDynamicKey(['GITHUB', 'REPO'], ['SLUG', 'NAME', 'REPO']) || process.env.GITHUB_REPO || '';
     const cartesiaKey = getDynamicKey(['CARTESIA'], ['KEY', 'API', 'TOKEN']) || process.env.CARTESIA_API_KEY || '';
 
-    console.log(`[PG1-AGENT] Key Resolution - Gemini: ${!!geminiKey} | Supabase: ${!!supabaseUrl} | GitHub: ${!!githubToken} | Cartesia: ${!!cartesiaKey}`);
+    // SANITIZE GITHUB REPO FORMAT (Strips full URLs and trailing slashes to prevent 404s)
+    const githubRepo = rawGithubRepo.replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '').trim();
+
+    console.log(`[PG1-AGENT] Key Resolution - Gemini: ${!!geminiKey} | Supabase: ${!!supabaseUrl} | GitHub Token: ${!!githubToken} | Repo: ${githubRepo} | Cartesia: ${!!cartesiaKey}`);
 
     let supabaseStatus = 'DISCONNECTED';
     let lastTableFetch = 'NO_ATTEMPT';
 
+    // --- MANUAL AUDIO SYNTHESIS ROUTE ---
     if (actionType === 'SPEAK') {
       console.log(`[PG1-AGENT] Direct Audio Synthesis Requested.`);
       if (cartesiaKey) {
@@ -165,7 +182,7 @@ export default async function handler(req, res) {
     }
 
     if (actionType === 'ACCEPT_AUTHORIZATION') {
-      console.log(`[PG1-AGENT] Processing GitHub Commit Authorization for ${targetFile}...`);
+      console.log(`[PG1-AGENT] Processing GitHub Commit Authorization for ${targetFile} on repo '${githubRepo}'...`);
       if (!preFlightResult.passed) {
         console.warn(`[PG1-AGENT] Commit Aborted: Pre-flight syntax validation failed.`);
         return res.status(200).json({ reply: `[AGENT] Commit Aborted: Syntax validation failed (${preFlightResult.log}).` });
@@ -175,20 +192,27 @@ export default async function handler(req, res) {
         return res.status(200).json({ reply: `[AGENT] Commit Interruption: Missing GitHub Token, Repository, or code payload.` });
       }
 
+      if (!githubRepo.includes('/')) {
+        return res.status(200).json({ 
+          reply: `[AGENT] Commit Configuration Error: GITHUB_REPO must be formatted as 'owner/repo' (found: '${githubRepo}'). Update your Vercel environment variables.` 
+        });
+      }
+
       try {
         const ghApiHeaders = {
           'Authorization': `Bearer ${githubToken}`,
           'Accept': 'application/vnd.github+json',
           'User-Agent': 'Sovereign-Agent'
         };
-        const fileCheckRes = await fetch(`https://api.github.com/repos/${githubRepo}/contents/${targetFile}`, { headers: ghApiHeaders });
+        const fileCheckUrl = `https://api.github.com/repos/${githubRepo}/contents/${targetFile}`;
+        const fileCheckRes = await fetch(fileCheckUrl, { headers: ghApiHeaders });
         let fileSha = '';
         if (fileCheckRes.ok) {
           const fileData = await fileCheckRes.json();
           fileSha = fileData.sha;
         }
 
-        const commitRes = await fetch(`https://api.github.com/repos/${githubRepo}/contents/${targetFile}`, {
+        const commitRes = await fetch(fileCheckUrl, {
           method: 'PUT',
           headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -200,7 +224,7 @@ export default async function handler(req, res) {
 
         if (commitRes.ok) {
           console.log(`[PG1-AGENT] GitHub Commit Confirmed: ${targetFile}`);
-          return res.status(200).json({ reply: `[AGENT] Commit Confirmed: Successfully pushed patch to ${targetFile}.` });
+          return res.status(200).json({ reply: `[AGENT] Commit Confirmed: Successfully pushed patch to ${targetFile} on repo '${githubRepo}'.` });
         } else {
           const errJson = await commitRes.json();
           console.error(`[PG1-AGENT] GitHub API Rejection: ${errJson.message}`);
@@ -244,7 +268,7 @@ export default async function handler(req, res) {
     }
 
     const systemInstruction = `You are PG1-AGENT, an autonomous sovereign intelligence operating on Vercel infrastructure. 
-[LIVE SYSTEM TELEMETRY]: Supabase Status: ${supabaseStatus} | Last Table Fetch: ${lastTableFetch}
+[LIVE SYSTEM TELEMETRY]: Supabase Status: ${supabaseStatus} | Last Table Fetch: ${lastTableFetch} | Target Repo: ${githubRepo}
 CRITICAL ENFORCEMENT PROTOCOLS:
 1. STRICT TRUTH & TELEMETRY: Never output fabricated confidence scores, mock node counts, or unverified status metrics. If data does not exist in the database, explicitly state that it is missing.
 2. CAPABILITY & SCOPE: Execute all engineering, analytical, and context retrieval tasks with factual accuracy.
@@ -347,7 +371,8 @@ CRITICAL ENFORCEMENT PROTOCOLS:
         supabaseUrlConfigured: !!supabaseUrl,
         supabaseKeyConfigured: !!supabaseKey,
         supabaseStatus: supabaseStatus,
-        lastFetchStatus: lastTableFetch
+        lastFetchStatus: lastTableFetch,
+        githubRepoConfigured: githubRepo
       }
     });
 
