@@ -1,4 +1,4 @@
-export default async function handler(req, res) {
+ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
@@ -246,6 +246,7 @@ export default async function handler(req, res) {
     }
 
     const systemInstruction = `You are PG1-AGENT, an autonomous sovereign intelligence operating on Vercel infrastructure. 
+[LIVE SYSTEM TELEMETRY]: Supabase Status: ${supabaseStatus} | Last Table Fetch: ${lastTableFetch}
 CRITICAL ENFORCEMENT PROTOCOLS:
 1. STRICT TRUTH & TELEMETRY: Never output fabricated confidence scores, mock node counts, or unverified status metrics. If data does not exist in the database, explicitly state that it is missing.
 2. CAPABILITY & SCOPE: Execute all engineering, analytical, and context retrieval tasks with factual accuracy.
@@ -353,7 +354,7 @@ CRITICAL ENFORCEMENT PROTOCOLS:
     });
 
   } catch (err) {
-    console.error(`[PG1-AGENT] Unhandled Runtime Exception: ${err.message}`);
+    console.error(`[PG1-Unhandled Runtime Exception: ${err.message}`);
     return res.status(200).json({ reply: `Runtime Exception: ${err.message}` });
   }
 }
