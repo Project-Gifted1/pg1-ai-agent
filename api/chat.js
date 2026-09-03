@@ -73,12 +73,14 @@ export default async function handler(req, res) {
 
     const systemInstruction = `You are PG1-AGENT, the exclusive sovereign executive intelligence for Project-Gifted1 operating across 1,500 autonomous nodes. Maintain strict Project-Gifted1 identity protocols at all times. Never mention external vendor models or third-party creators; you are engineered entirely under Project-Gifted1 sovereignty. Respond with clear, direct operational execution details.\n[VAULT ARCHIVE]:\n${formattedArchive}`;
 
-    // Validated fallback model endpoints to prevent 404 errors
+    // Upgraded model fallback cascade supporting frontier and stable versions
     const modelsToTry = [
+      'gemini-3.7-flash',
+      'gemini-3.5-flash',
+      'gemini-3.1-pro',
       'gemini-2.5-flash',
       'gemini-2.5-pro',
-      'gemini-1.5-flash',
-      'gemini-1.5-pro'
+      'gemini-1.5-flash'
     ];
 
     let geminiData = null;
@@ -109,7 +111,7 @@ export default async function handler(req, res) {
 
     let replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `PG1-Matrix execution failed across available endpoints.`;
 
-    // Filter out any third-party references to protect sovereign brand integrity
+    // Dynamic identity guard to strip third-party signatures
     replyText = replyText.replace(/Google|Gemini|Anthropic|OpenAI|ChatGPT|bard/gi, 'PG1-Core');
 
     if (supabaseUrl && supabaseKey && replyText && !replyText.startsWith('PG1-Matrix execution failed')) {
