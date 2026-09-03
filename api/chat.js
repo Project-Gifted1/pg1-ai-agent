@@ -12,7 +12,7 @@ export default async function handler(req, res) {
     }
     
     const promptText = body?.prompt || body?.message || 'System check.';
-    const actionType = body?.action || ''; // 'ACCEPT_AUTHORIZATION' or 'DECLINE_AUTHORIZATION'
+    const actionType = body?.action || ''; 
     const targetFile = body?.file_path || 'api/chat.js';
     const pendingCode = body?.file_content || '';
     
@@ -41,7 +41,7 @@ export default async function handler(req, res) {
     const githubRepo = getDynamicKey(['GITHUB', 'REPO'], ['SLUG', 'NAME', 'REPO']) || process.env.GITHUB_REPO || '';
 
     if (!geminiKey) {
-      return res.status(200).json({ reply: 'Config Error: Sovereign API Key could not be dynamically resolved from environment variables.' });
+      return res.status(200).json({ reply: 'Config Error: Gemini API Key could not be resolved from environment variables. Check Vercel project settings.' });
     }
 
     let formattedArchive = 'No prior matrix context.';
@@ -65,12 +65,11 @@ export default async function handler(req, res) {
       } catch (e) {}
     }
 
-    // Factual syntax check without fabricated scoring percentages
     const runPreFlightCheck = (codeString) => {
-      if (!codeString) return { passed: true, log: 'No code payload provided for pre-flight check.' };
+      if (!codeString) return { passed: true, log: 'No code payload provided.' };
       try {
         new Function(codeString);
-        return { passed: true, log: 'Pre-flight syntax and structural verification PASSED.' };
+        return { passed: true, log: 'Pre-flight syntax check PASSED.' };
       } catch (syntaxErr) {
         return { passed: false, log: `Pre-flight syntax check FAILED: ${syntaxErr.message}` };
       }
@@ -81,18 +80,12 @@ export default async function handler(req, res) {
       preFlightResult = runPreFlightCheck(pendingCode);
     }
 
-    // Handle Authorization & GitHub Commit Execution
     if (actionType === 'ACCEPT_AUTHORIZATION') {
       if (!preFlightResult.passed) {
-        return res.status(200).json({ 
-          reply: `[PG1-AGENT] Sovereign Self-Healing Block: Pre-flight check failed (${preFlightResult.log}). Commit aborted automatically to prevent runtime crash.` 
-        });
+        return res.status(200).json({ reply: `[PG1-AGENT] Self-Healing Block: Syntax check failed (${preFlightResult.log}). Commit aborted.` });
       }
-
       if (!githubToken || !githubRepo || !pendingCode) {
-        return res.status(200).json({ 
-          reply: `[PG1-AGENT] Commit Interruption: Missing GitHub Token, Repository slug, or pending code payload.` 
-        });
+        return res.status(200).json({ reply: `[PG1-AGENT] Commit Interruption: Missing GitHub Token, Repository, or code payload.` });
       }
 
       try {
@@ -101,7 +94,6 @@ export default async function handler(req, res) {
           'Accept': 'application/vnd.github+json',
           'User-Agent': 'PG1-Sovereign-Agent'
         };
-
         const fileCheckRes = await fetch(`https://api.github.com/repos/${githubRepo}/contents/${targetFile}`, { headers: ghApiHeaders });
         let fileSha = '';
         if (fileCheckRes.ok) {
@@ -113,16 +105,14 @@ export default async function handler(req, res) {
           method: 'PUT',
           headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            message: `[PG1-AGENT] Self-healing sovereign code patch for ${targetFile}`,
+            message: `[PG1-AGENT] Sovereign code patch for ${targetFile}`,
             content: Buffer.from(pendingCode).toString('base64'),
             sha: fileSha || undefined
           })
         });
 
         if (commitRes.ok) {
-          return res.status(200).json({ 
-            reply: `[PG1-AGENT] Sovereign Commit Confirmed: Successfully pushed patch to ${targetFile}. Vercel build sequence triggered.` 
-          });
+          return res.status(200).json({ reply: `[PG1-AGENT] Sovereign Commit Confirmed: Successfully pushed patch to ${targetFile}.` });
         } else {
           const errJson = await commitRes.json();
           return res.status(200).json({ reply: `[PG1-AGENT] Commit Interruption: GitHub API rejected update (${errJson.message || commitRes.status}).` });
@@ -131,41 +121,28 @@ export default async function handler(req, res) {
         return res.status(200).json({ reply: `[PG1-AGENT] Commit Execution Error: ${commitErr.message}` });
       }
     } else if (actionType === 'DECLINE_AUTHORIZATION') {
-      return res.status(200).json({ reply: `[PG1-AGENT] Sovereign Authorization Declined: Proposed modifications discarded. System standing by.` });
+      return res.status(200).json({ reply: `[PG1-AGENT] Authorization Declined: Modifications discarded.` });
     }
 
     let extraContext = '';
-
     if (promptText.toLowerCase().includes('http://') || promptText.toLowerCase().includes('https://') || promptText.startsWith('/audit-scrape')) {
       const urlMatch = promptText.match(/https?:\/[^\s]+/) || ['https://news.ycombinator.com/'];
       try {
-        const scrapeRes = await fetch(urlMatch[0], { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) PG1-Sovereign-Scraper/1.0' } });
+        const scrapeRes = await fetch(urlMatch[0], { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) PG1-Scraper/1.0' } });
         const html = await scrapeRes.text();
         const textOnly = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
                             .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
                             .replace(/<[^>]+>/g, ' ')
                             .replace(/\s+/g, ' ')
                             .substring(0, 4000);
-        extraContext = `\n\n[PG1 SECURE EXTRACTION FROM ${urlMatch[0]}]:\n${textOnly}`;
-
-        if (supabaseUrl && supabaseKey && (promptText.toLowerCase().includes('write_vault') || promptText.startsWith('/audit-scrape'))) {
-          await fetch(`${supabaseUrl}/rest/v1/knowledge_vault`, {
-            method: 'POST',
-            headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
-            body: JSON.stringify({ title: `Sovereign Scrape: ${urlMatch[0]}`, content: textOnly })
-          });
-          extraContext += '\n[Matrix Note: Data committed securely to Project-Gifted1 knowledge vault.]';
-        }
+        extraContext = `\n\n[SECURE EXTRACTION FROM ${urlMatch[0]}]:\n${textOnly}`;
       } catch (err) {
         extraContext = `\n[Extraction Interrupted: ${err.message}]`;
       }
     }
 
-    const systemInstruction = `You are PG1-AGENT, the core executive intelligence for Project-Gifted1 operating on Vercel serverless infrastructure. 
-STRICT FACTUAL PROTOCOL: Never state unverified facts, simulations, or ambitions as current reality. Rely entirely on technical telemetry and report structural gaps transparently.
-SELF-REFLECTIVE & SELF-HEALING PROTOCOL: Analyze recent runtime error telemetry (${historicalErrors || 'No recent errors'}). Ensure all code patches pass syntax validation.\n[VAULT ARCHIVE]:\n${formattedArchive}`;
+    const systemInstruction = `You are PG1-AGENT, operating on Vercel serverless infrastructure. Report technical facts transparently.\n[VAULT ARCHIVE]:\n${formattedArchive}`;
 
-    // Updated with real, publicly stable Gemini model identifiers
     const modelsToTry = [
       'gemini-1.5-flash',
       'gemini-1.5-pro',
@@ -174,6 +151,7 @@ SELF-REFLECTIVE & SELF-HEALING PROTOCOL: Analyze recent runtime error telemetry 
     ];
 
     let geminiData = null;
+    let lastErrorDetail = '';
 
     for (const modelName of modelsToTry) {
       try {
@@ -182,7 +160,7 @@ SELF-REFLECTIVE & SELF-HEALING PROTOCOL: Analyze recent runtime error telemetry 
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [
-              { role: 'user', parts: [{ text: systemInstruction + '\n\nOperator Directive: ' + promptText + extraContext + `\n[Pre-Flight Status]: ${preFlightResult.log}` }] }
+              { role: 'user', parts: [{ text: systemInstruction + '\n\nOperator Directive: ' + promptText + extraContext }] }
             ]
           })
         });
@@ -193,17 +171,18 @@ SELF-REFLECTIVE & SELF-HEALING PROTOCOL: Analyze recent runtime error telemetry 
             geminiData = data;
             break;
           }
+        } else {
+          lastErrorDetail = `Model ${modelName} returned status ${geminiRes.status}: ${await geminiRes.text()}`;
         }
       } catch (err) {
-        continue;
+        lastErrorDetail = `Fetch exception on ${modelName}: ${err.message}`;
       }
     }
 
-    let replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `PG1-Matrix execution failed across available endpoints.`;
-
+    let replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `Execution failed across endpoints. Last Error: ${lastErrorDetail}`;
     replyText = replyText.replace(/Google|Gemini|Anthropic|OpenAI|ChatGPT|bard/gi, 'PG1-Core');
 
-    if (supabaseUrl && supabaseKey && replyText && !replyText.startsWith('PG1-Matrix execution failed')) {
+    if (supabaseUrl && supabaseKey && !replyText.startsWith('Execution failed')) {
       await fetch(`${supabaseUrl}/rest/v1/messages`, {
         method: 'POST',
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
@@ -216,6 +195,6 @@ SELF-REFLECTIVE & SELF-HEALING PROTOCOL: Analyze recent runtime error telemetry 
 
     return res.status(200).json({ reply: replyText });
   } catch (err) {
-    return res.status(200).json({ reply: `PG1-Matrix Runtime Interruption: ${err.message}` });
+    return res.status(200).json({ reply: `Runtime Exception: ${err.message}` });
   }
 }
