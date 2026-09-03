@@ -102,7 +102,7 @@ export default async function handler(req, res) {
     if (actionType === 'SPEAK') {
       if (cartesiaKey) {
         try {
-          const cleanText = promptText.replace(/[*_#]/g, '').substring(0, 750);
+          const cleanText = promptText.replace(/[*_#]/g, '').substring(0, 2500);
           const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
             method: 'POST',
             headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
@@ -331,7 +331,7 @@ CRITICAL ENFORCEMENT PROTOCOLS:
 
     if (cartesiaKey && !replyText.startsWith('Execution failed')) {
       try {
-        const cleanText = replyText.replace(/[*_#]/g, '').substring(0, 750);
+        const cleanText = replyText.replace(/[*_#]/g, '').substring(0, 2500);
         const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
           method: 'POST',
           headers: {
