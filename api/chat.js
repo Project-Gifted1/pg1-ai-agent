@@ -19,7 +19,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ authenticated: inputUser.length > 0 && inputPass.length > 0 });
     }
 
-    // Dynamic environment variable scanner matching keywords across any key name
+    // Fully dynamic environment key scanner matching partial names, prefixes, and keys from your configuration ledger
     const getDynamicKey = (serviceKeywords, typeKeywords) => {
       for (const [k, v] of Object.entries(process.env)) {
         const upper = k.toUpperCase();
@@ -32,10 +32,10 @@ export default async function handler(req, res) {
       return '';
     };
 
-    const geminiKey = getDynamicKey(['GEMINI', 'GOOGLE', 'AI'], ['KEY', 'API']) || process.env.GEMINI_API_KEY || '';
+    const geminiKey = getDynamicKey(['GEMINI', 'GOOGLE', 'AI'], ['KEY', 'API']) || process.env.GEMINI_API_KEY1 || '';
     const supabaseUrl = getDynamicKey(['SUPABASE'], ['URL']) || process.env.SUPABASE_URL || '';
-    const supabaseKey = getDynamicKey(['SUPABASE'], ['SERVICE', 'ROLE', 'KEY', 'ANON']) || '';
-    const githubToken = getDynamicKey(['GITHUB', 'GH_'], ['TOKEN', 'PAT', 'KEY']) || '';
+    const supabaseKey = getDynamicKey(['SUPABASE'], ['SERVICE', 'ROLE', 'KEY', 'API', 'ANON']) || process.env.SUPABASEEAPI_KEY || '';
+    const githubToken = getDynamicKey(['GITHUB', 'GH_', 'GIT'], ['TOKEN', 'PAT', 'KEY']) || '';
     const githubRepo = getDynamicKey(['GITHUB', 'REPO'], ['SLUG', 'NAME', 'REPO']) || '';
 
     if (!geminiKey) {
