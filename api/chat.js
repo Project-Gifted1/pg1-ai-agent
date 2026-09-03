@@ -237,7 +237,7 @@ CRITICAL ENFORCEMENT PROTOCOLS:
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            model_id: 'sonic-english',
+            model_id: 'sonic-3.6',
             transcript: cleanText,
             voice: { mode: 'id', id: 'a0e99841-438c-4a64-b679-ae501e7d6091' },
             output_format: { container: 'mp3', encoding: 'mp3', sample_rate: 44100 }
