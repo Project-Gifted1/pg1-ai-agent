@@ -46,6 +46,10 @@ export default async function handler(req, res) {
 
     console.log(`[PG1-AGENT] Key Resolution - Gemini: ${!!geminiKey} | Supabase: ${!!supabaseUrl} | GitHub: ${!!githubToken} | Cartesia: ${!!cartesiaKey}`);
 
+    // --- TELEMETRY & CONNECTION DIAGNOSTIC ---
+    let supabaseStatus = 'DISCONNECTED';
+    let lastTableFetch = 'NO_ATTEMPT';
+
     // --- MANUAL AUDIO SYNTHESIS ROUTE ---
     if (actionType === 'SPEAK') {
       console.log(`[PG1-AGENT] Direct Audio Synthesis Requested.`);
@@ -79,6 +83,16 @@ export default async function handler(req, res) {
 
     if (supabaseUrl && supabaseKey) {
       const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
+
+      // Active Telemetry Verification Ping
+      try {
+        const testPing = await fetch(`${supabaseUrl}/rest/v1/messages?select=id&limit=1`, { headers });
+        supabaseStatus = testPing.ok ? 'CONNECTED' : `ERROR_${testPing.status}`;
+        lastTableFetch = testPing.ok ? 'SUCCESS' : await testPing.text();
+      } catch (err) {
+        supabaseStatus = 'EXCEPTION';
+        lastTableFetch = err.message;
+      }
 
       // 1. Fetch recent general context
       try {
@@ -329,7 +343,13 @@ CRITICAL ENFORCEMENT PROTOCOLS:
     return res.status(200).json({ 
       reply: replyText, 
       audio: audioBase64,
-      audioStatus: audioBase64 ? 'SUCCESS' : 'FAILED' 
+      audioStatus: audioBase64 ? 'SUCCESS' : 'FAILED',
+      telemetry: {
+        supabaseUrlConfigured: !!supabaseUrl,
+        supabaseKeyConfigured: !!supabaseKey,
+        supabaseStatus: supabaseStatus,
+        lastFetchStatus: lastTableFetch
+      }
     });
 
   } catch (err) {
