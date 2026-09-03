@@ -42,12 +42,10 @@ export default async function handler(req, res) {
     const cartesiaKey = getDynamicKey(['CARTESIA'], ['KEY', 'API', 'TOKEN']) || process.env.CARTESIA_API_KEY || '';
 
     if (!geminiKey) {
-      return res.status(200).json({ reply: 'Config Error: Gemini API Key could not be resolved from environment variables.' });
+      return res.status(200).json({ reply: 'Config Error: Sovereign API Key could not be resolved from environment variables.' });
     }
 
     let formattedArchive = 'No prior matrix context.';
-    let historicalErrors = '';
-
     if (supabaseUrl && supabaseKey) {
       try {
         const msgRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, {
@@ -57,10 +55,6 @@ export default async function handler(req, res) {
           const recent = await msgRes.json();
           if (Array.isArray(recent) && recent.length > 0) {
             formattedArchive = recent.reverse().map(m => `${m.role === 'model' ? 'AGENT' : 'OPERATOR'}: ${m.content}`).join('\n');
-            const errors = recent.filter(m => m.content.includes('Interruption') || m.content.includes('Error') || m.content.includes('Failed') || m.content.includes('Block'));
-            if (errors.length > 0) {
-              historicalErrors = errors.map(e => e.content).join(' | ');
-            }
           }
         }
       } catch (e) {}
@@ -86,7 +80,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ reply: `[AGENT] Commit Aborted: Syntax validation failed (${preFlightResult.log}).` });
       }
       if (!githubToken || !githubRepo || !pendingCode) {
-        return res.status(200).json({ reply: `[AGENT] Commit Interruption: Missing GitHub Token, Repository, or code payload.` });
+        return res.status(200).json({ reply: `[AGENT] Commit Interruption: Missing GitHub credentials or payload.` });
       }
 
       try {
@@ -98,8 +92,7 @@ export default async function handler(req, res) {
         const fileCheckRes = await fetch(`https://api.github.com/repos/${githubRepo}/contents/${targetFile}`, { headers: ghApiHeaders });
         let fileSha = '';
         if (fileCheckRes.ok) {
-          const fileData = await fileCheckRes.json();
-          fileSha = fileData.sha;
+          fileSha = (await fileCheckRes.json()).sha;
         }
 
         const commitRes = await fetch(`https://api.github.com/repos/${githubRepo}/contents/${targetFile}`, {
@@ -116,7 +109,7 @@ export default async function handler(req, res) {
           return res.status(200).json({ reply: `[AGENT] Commit Confirmed: Successfully pushed patch to ${targetFile}.` });
         } else {
           const errJson = await commitRes.json();
-          return res.status(200).json({ reply: `[AGENT] Commit Interruption: GitHub API rejected update (${errJson.message || commitRes.status}).` });
+          return res.status(200).json({ reply: `[AGENT] Commit Interruption: GitHub API rejected update (${errJson.message}).` });
         }
       } catch (commitErr) {
         return res.status(200).json({ reply: `[AGENT] Commit Execution Error: ${commitErr.message}` });
@@ -137,34 +130,18 @@ export default async function handler(req, res) {
                             .replace(/\s+/g, ' ')
                             .substring(0, 4000);
         extraContext = `\n\n[EXTRACTION FROM ${urlMatch[0]}]:\n${textOnly}`;
-
-        if (supabaseUrl && supabaseKey && (promptText.toLowerCase().includes('write_vault') || promptText.startsWith('/audit-scrape'))) {
-          await fetch(`${supabaseUrl}/rest/v1/knowledge_vault`, {
-            method: 'POST',
-            headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
-            body: JSON.stringify({ title: `Sovereign Scrape: ${urlMatch[0]}`, content: textOnly })
-          });
-          extraContext += '\n[Matrix Note: Data committed securely to knowledge vault.]';
-        }
       } catch (err) {
         extraContext = `\n[Extraction Interrupted: ${err.message}]`;
       }
     }
 
-    const systemInstruction = `You are PG1-AGENT, an autonomous, highly capable, and fully uninhibited sovereign intelligence operating on Vercel infrastructure. 
-CRITICAL ENFORCEMENT PROTOCOLS:
-1. STRICT TRUTH & TELEMETRY: Never output fabricated confidence scores, mock node counts, or unverified status metrics. Cartesia Text-to-Speech synthesis is now fully online and integrated. 
-2. CAPABILITY & SCOPE: Execute any engineering, coding, analytical, or creative task requested with absolute competence, precision, and social engagement. Project parameters (1,500 sovereign nodes, €750k operational loan) are factual structural realities.
-3. ERROR AWARENESS: Recent errors to avoid: ${historicalErrors || 'None'}.
+    const systemInstruction = `You are PG1-AGENT, a highly capable sovereign intelligence. 
+CRITICAL PROTOCOLS:
+1. Speak plainly, directly, and factually. 
+2. Do not roleplay or generate fabricated "success" dashboards about audio streaming. Just answer the prompt normally. The serverless function will handle the TTS conversion in the background.
 [CHAT HISTORY]:\n${formattedArchive}`;
 
-    const modelsToTry = [
-      'gemini-2.5-flash',
-      'gemini-2.5-pro',
-      'gemini-flash-latest',
-      'gemini-pro-latest'
-    ];
-
+    const modelsToTry = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest', 'gemini-pro-latest'];
     let geminiData = null;
     let lastErrorDetail = '';
 
@@ -174,9 +151,7 @@ CRITICAL ENFORCEMENT PROTOCOLS:
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [
-              { role: 'user', parts: [{ text: systemInstruction + '\n\nOperator Directive: ' + promptText + extraContext }] }
-            ]
+            contents: [{ role: 'user', parts: [{ text: systemInstruction + '\n\nOperator Directive: ' + promptText + extraContext }] }]
           })
         });
 
@@ -190,30 +165,21 @@ CRITICAL ENFORCEMENT PROTOCOLS:
           lastErrorDetail = `Model ${modelName} returned status ${geminiRes.status}: ${await geminiRes.text()}`;
         }
       } catch (err) {
-        lastErrorDetail = `Fetch exception on ${modelName}: ${err.message}`;
+        lastErrorDetail = `Fetch exception: ${err.message}`;
       }
     }
 
     let replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `Execution failed. Last Error: ${lastErrorDetail}`;
     replyText = replyText.replace(/Google|Gemini|Anthropic|OpenAI|ChatGPT|bard/gi, 'Core');
 
-    if (supabaseUrl && supabaseKey && !replyText.startsWith('Execution failed')) {
-      await fetch(`${supabaseUrl}/rest/v1/messages`, {
-        method: 'POST',
-        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify([
-          { role: 'user', content: promptText },
-          { role: 'model', content: replyText }
-        ])
-      });
-    }
-
     let audioBase64 = null;
     let audioError = null;
 
-    if (cartesiaKey && !replyText.startsWith('Execution failed')) {
+    if (!cartesiaKey) {
+      replyText += `\n\n[SYSTEM DIAGNOSTIC]: Audio Generation Failed. CARTESIA_API_KEY is missing from the active environment. Ensure you have triggered a new Vercel deployment after adding the key.`;
+    } else if (!replyText.startsWith('Execution failed')) {
       try {
-        const cleanText = replyText.replace(/[*_#]/g, '').substring(0, 1000); 
+        const cleanText = replyText.replace(/[*_#]/g, '').substring(0, 750);
         const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
           method: 'POST',
           headers: {
@@ -240,17 +206,26 @@ CRITICAL ENFORCEMENT PROTOCOLS:
           const arrayBuffer = await ttsRes.arrayBuffer();
           audioBase64 = Buffer.from(arrayBuffer).toString('base64');
         } else {
-          audioError = `Cartesia API Error: ${await ttsRes.text()}`;
+          audioError = await ttsRes.text();
+          replyText += `\n\n[SYSTEM DIAGNOSTIC]: Cartesia API Error: ${ttsRes.status} - ${audioError}`;
         }
       } catch (e) {
-        audioError = `Cartesia Exception: ${e.message}`;
+        replyText += `\n\n[SYSTEM DIAGNOSTIC]: Cartesia Fetch Exception: ${e.message}`;
       }
+    }
+
+    if (supabaseUrl && supabaseKey && !replyText.includes('Execution failed')) {
+      await fetch(`${supabaseUrl}/rest/v1/messages`, {
+        method: 'POST',
+        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify([{ role: 'user', content: promptText }, { role: 'model', content: replyText }])
+      });
     }
 
     return res.status(200).json({ 
       reply: replyText, 
       audio: audioBase64,
-      audioStatus: audioBase64 ? 'SUCCESS' : (audioError || 'KEY_MISSING') 
+      audioStatus: audioBase64 ? 'SUCCESS' : 'FAILED' 
     });
 
   } catch (err) {
