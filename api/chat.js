@@ -46,6 +46,28 @@ export default async function handler(req, res) {
 
     console.log(`[PG1-AGENT] Key Resolution - Gemini: ${!!geminiKey} | Supabase: ${!!supabaseUrl} | GitHub: ${!!githubToken} | Cartesia: ${!!cartesiaKey}`);
 
+    // --- MANUAL AUDIO SYNTHESIS ROUTE ---
+    if (actionType === 'SPEAK') {
+      console.log(`[PG1-AGENT] Direct Audio Synthesis Requested.`);
+      if (cartesiaKey) {
+        try {
+          const cleanText = promptText.replace(/[*_#]/g, '').substring(0, 750);
+          const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
+            method: 'POST',
+            headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_id: 'sonic-3.6', transcript: cleanText, voice: { mode: 'id', id: 'a0e99841-438c-4a64-b679-ae501e7d6091' }, output_format: { container: 'mp3', encoding: 'mp3', sample_rate: 44100 } })
+          });
+          if (ttsRes.ok) {
+            const arrayBuffer = await ttsRes.arrayBuffer();
+            return res.status(200).json({ audio: Buffer.from(arrayBuffer).toString('base64'), audioStatus: 'SUCCESS' });
+          }
+        } catch (e) {
+           return res.status(500).json({ error: e.message });
+        }
+      }
+      return res.status(400).json({ error: 'Audio unavailable' });
+    }
+
     if (!geminiKey) {
       console.error(`[PG1-AGENT] FATAL: Gemini Key Missing. Aborting.`);
       return res.status(200).json({ reply: 'Config Error: Sovereign API Key could not be resolved from environment variables.' });
