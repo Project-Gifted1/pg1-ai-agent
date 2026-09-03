@@ -65,7 +65,6 @@ export default async function handler(req, res) {
       } catch (e) {}
     }
 
-    // Pre-flight validation logic: Tests code syntax integrity via Function parser sandbox
     const runPreFlightCheck = (codeString) => {
       if (!codeString) return { passed: true, score: 100, log: 'No code payload provided for pre-flight check.' };
       try {
