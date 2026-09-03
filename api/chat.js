@@ -41,7 +41,7 @@ export default async function handler(req, res) {
     const githubRepo = getDynamicKey(['GITHUB', 'REPO'], ['SLUG', 'NAME', 'REPO']) || process.env.GITHUB_REPO || '';
 
     if (!geminiKey) {
-      return res.status(200).json({ reply: 'Config Error: Sovereign API Key could not be dynamically resolved from matrix environment variables.' });
+      return res.status(200).json({ reply: 'Config Error: Sovereign API Key could not be dynamically resolved from environment variables.' });
     }
 
     let formattedArchive = 'No prior matrix context.';
@@ -65,17 +65,18 @@ export default async function handler(req, res) {
       } catch (e) {}
     }
 
+    // Factual syntax check without fabricated scoring percentages
     const runPreFlightCheck = (codeString) => {
-      if (!codeString) return { passed: true, score: 100, log: 'No code payload provided for pre-flight check.' };
+      if (!codeString) return { passed: true, log: 'No code payload provided for pre-flight check.' };
       try {
         new Function(codeString);
-        return { passed: true, score: 98, log: 'Pre-flight syntax and structural verification PASSED.' };
+        return { passed: true, log: 'Pre-flight syntax and structural verification PASSED.' };
       } catch (syntaxErr) {
-        return { passed: false, score: 0, log: `Pre-flight syntax check FAILED: ${syntaxErr.message}` };
+        return { passed: false, log: `Pre-flight syntax check FAILED: ${syntaxErr.message}` };
       }
     };
 
-    let preFlightResult = { passed: true, score: 100, log: 'Standby state.' };
+    let preFlightResult = { passed: true, log: 'Standby state.' };
     if (pendingCode) {
       preFlightResult = runPreFlightCheck(pendingCode);
     }
@@ -120,11 +121,11 @@ export default async function handler(req, res) {
 
         if (commitRes.ok) {
           return res.status(200).json({ 
-            reply: `[PG1-AGENT] Sovereign Commit Confirmed: Successfully pushed self-healed patch to ${targetFile}. Confidence Score: ${preFlightResult.score}%. Vercel build sequence triggered.` 
+            reply: `[PG1-AGENT] Sovereign Commit Confirmed: Successfully pushed patch to ${targetFile}. Vercel build sequence triggered.` 
           });
         } else {
           const errJson = await commitRes.json();
-          return res.status(200).json({ reply: `[PG1-AGENT] Commit Interruption: GitHub API rejected update (${errJson.message || commitRes.status}). Self-reflective routine logged error.` });
+          return res.status(200).json({ reply: `[PG1-AGENT] Commit Interruption: GitHub API rejected update (${errJson.message || commitRes.status}).` });
         }
       } catch (commitErr) {
         return res.status(200).json({ reply: `[PG1-AGENT] Commit Execution Error: ${commitErr.message}` });
@@ -161,17 +162,15 @@ export default async function handler(req, res) {
     }
 
     const systemInstruction = `You are PG1-AGENT, the core executive intelligence for Project-Gifted1 operating on Vercel serverless infrastructure. 
-STRICT FACTUAL PROTOCOL: Never state unverified facts, simulations, or ambitions as current reality. Rely entirely on technical telemetry.
-SELF-REFLECTIVE & SELF-HEALING PROTOCOL: Analyze recent runtime error telemetry (${historicalErrors || 'No recent errors'}). Ensure all code patches pass syntax pre-flight validation.
-AUTHORIZATION PROTOCOL: When code modifications are required, analyze the issue, provide the exact fix, calculate an objective pre-flight confidence score, and format an authorization request with clear action parameters.\n[VAULT ARCHIVE]:\n${formattedArchive}`;
+STRICT FACTUAL PROTOCOL: Never state unverified facts, simulations, or ambitions as current reality. Rely entirely on technical telemetry and report structural gaps transparently.
+SELF-REFLECTIVE & SELF-HEALING PROTOCOL: Analyze recent runtime error telemetry (${historicalErrors || 'No recent errors'}). Ensure all code patches pass syntax validation.\n[VAULT ARCHIVE]:\n${formattedArchive}`;
 
+    // Updated with real, publicly stable Gemini model identifiers
     const modelsToTry = [
       'gemini-1.5-flash',
       'gemini-1.5-pro',
-      'gemini-2.5-flash',
-      'gemini-2.5-pro',
-      'gemini-3.1-pro',
-      'gemini-3.7-flash'
+      'gemini-2.0-flash',
+      'gemini-2.0-pro'
     ];
 
     let geminiData = null;
@@ -183,7 +182,7 @@ AUTHORIZATION PROTOCOL: When code modifications are required, analyze the issue,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [
-              { role: 'user', parts: [{ text: systemInstruction + '\n\nOperator Directive: ' + promptText + extraContext + `\n[Pre-Flight Status]: ${preFlightResult.log} (Score: ${preFlightResult.score}%)` }] }
+              { role: 'user', parts: [{ text: systemInstruction + '\n\nOperator Directive: ' + promptText + extraContext + `\n[Pre-Flight Status]: ${preFlightResult.log}` }] }
             ]
           })
         });
