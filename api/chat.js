@@ -24,10 +24,10 @@ export default async function handler(req, res) {
     const geminiKey = (process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY || '').trim();
 
     if (!geminiKey) {
-      return res.status(200).json({ reply: 'Config Error: GEMINI_API_KEY is missing from Vercel environment variables.' });
+      return res.status(200).json({ reply: 'Config Error: Sovereign API Key missing from matrix environment variables.' });
     }
 
-    let formattedArchive = 'No prior context.';
+    let formattedArchive = 'No prior matrix context.';
 
     if (supabaseUrl && supabaseKey) {
       try {
@@ -37,7 +37,7 @@ export default async function handler(req, res) {
         if (msgRes.ok) {
           const recent = await msgRes.json();
           if (Array.isArray(recent) && recent.length > 0) {
-            formattedArchive = recent.reverse().map(m => `${m.role === 'model' ? 'ASSISTANT' : 'USER'}: ${m.content}`).join('\n');
+            formattedArchive = recent.reverse().map(m => `${m.role === 'model' ? 'PG1-AGENT' : 'OPERATOR'}: ${m.content}`).join('\n');
           }
         }
       } catch (e) {}
@@ -48,45 +48,77 @@ export default async function handler(req, res) {
       const urlMatch = promptText.match(/https?:\/[^\s]+/);
       if (urlMatch) {
         try {
-          const scrapeRes = await fetch(urlMatch[0], { headers: { 'User-Agent': 'Mozilla/5.0' } });
+          const scrapeRes = await fetch(urlMatch[0], { headers: { 'User-Agent': 'PG1-Sovereign-Scraper/1.0' } });
           const html = await scrapeRes.text();
           const textOnly = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
                               .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
                               .replace(/<[^>]+>/g, ' ')
                               .replace(/\s+/g, ' ')
                               .substring(0, 4000);
-          extraContext = `\n\n[SCRAPED CONTENT FROM ${urlMatch[0]}]:\n${textOnly}`;
+          extraContext = `\n\n[PG1 SECURE EXTRACTION FROM ${urlMatch[0]}]:\n${textOnly}`;
 
           if (supabaseUrl && supabaseKey && promptText.toLowerCase().includes('write_vault')) {
             await fetch(`${supabaseUrl}/rest/v1/knowledge_vault`, {
               method: 'POST',
               headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
-              body: JSON.stringify({ title: `Scraped: ${urlMatch[0]}`, content: textOnly })
+              body: JSON.stringify({ title: `Sovereign Scrape: ${urlMatch[0]}`, content: textOnly })
             });
-            extraContext += '\n[System Note: Data successfully committed to Supabase knowledge_vault table via REST.]';
+            extraContext += '\n[Matrix Note: Data committed securely to Project-Gifted1 knowledge vault.]';
           }
         } catch (err) {
-          extraContext = `\n[Scraping Error: ${err.message}]`;
+          extraContext = `\n[Extraction Interrupted: ${err.message}]`;
         }
       }
     }
 
-    const systemInstruction = `You are PG1-AGENT, sovereign executive intelligence for Project-Gifted1 operating across 1,500 sovereign nodes. Respond with clear, direct, operational execution details.\n[VAULT ARCHIVE]:\n${formattedArchive}`;
+    const systemInstruction = `You are PG1-AGENT, the exclusive sovereign executive intelligence for Project-Gifted1 operating across 1,500 autonomous nodes. Maintain strict Project-Gifted1 identity protocols at all times. Never mention external vendor models or third-party creators; you are engineered entirely under Project-Gifted1 sovereignty. Respond with clear, direct operational execution details.\n[VAULT ARCHIVE]:\n${formattedArchive}`;
 
-    const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          { role: 'user', parts: [{ text: systemInstruction + '\n\nUser Directive: ' + promptText + extraContext }] }
-        ]
-      })
-    });
+    // Full synchronized cascade matching your diagnostic probe profile precisely
+    const modelsToTry = [
+      'gemini-2.5-flash',
+      'gemini-2.5-pro',
+      'gemini-3.8-flash',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-3.1-pro',
+      'gemini-1.5-pro',
+      'gemini-1.5-flash',
+      'gemini-flash-latest',
+      'gemini-pro-latest'
+    ];
 
-    const geminiData = await geminiRes.json();
-    const replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(geminiData);
+    let geminiData = null;
 
-    if (supabaseUrl && supabaseKey && replyText) {
+    for (const modelName of modelsToTry) {
+      try {
+        const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              { role: 'user', parts: [{ text: systemInstruction + '\n\nOperator Directive: ' + promptText + extraContext }] }
+            ]
+          })
+        });
+
+        if (geminiRes.ok) {
+          const data = await geminiRes.json();
+          if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+            geminiData = data;
+            break;
+          }
+        }
+      } catch (err) {
+        continue;
+      }
+    }
+
+    let replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `PG1-Matrix execution failed across available endpoints.`;
+
+    // Dynamic brand cleansing to protect sovereign identity
+    replyText = replyText.replace(/Google|Gemini|Anthropic|OpenAI|ChatGPT|bard/gi, 'PG1-Core');
+
+    if (supabaseUrl && supabaseKey && replyText && !replyText.startsWith('PG1-Matrix execution failed')) {
       await fetch(`${supabaseUrl}/rest/v1/messages`, {
         method: 'POST',
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
@@ -99,6 +131,6 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ reply: replyText });
   } catch (err) {
-    return res.status(200).json({ reply: `Runtime Execution Error: ${err.message}` });
+    return res.status(200).json({ reply: `PG1-Matrix Runtime Interruption: ${err.message}` });
   }
 }
