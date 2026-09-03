@@ -16,7 +16,10 @@ export default async function handler(req, res) {
     const targetFile = body?.file_path || 'api/chat.js';
     const pendingCode = body?.file_content || '';
     
+    console.log(`[PG1-AGENT] Incoming Request. Action: ${actionType || 'CHAT'} | Prompt: ${promptText.substring(0, 50)}...`);
+
     if (promptText === 'AUTH_VERIFY') {
+      console.log(`[PG1-AGENT] Auth verification ping received. Returning early.`);
       const inputUser = (body?.user || '').trim();
       const inputPass = (body?.pass || '').trim();
       return res.status(200).json({ authenticated: inputUser.length > 0 && inputPass.length > 0 });
@@ -41,11 +44,16 @@ export default async function handler(req, res) {
     const githubRepo = getDynamicKey(['GITHUB', 'REPO'], ['SLUG', 'NAME', 'REPO']) || process.env.GITHUB_REPO || '';
     const cartesiaKey = getDynamicKey(['CARTESIA'], ['KEY', 'API', 'TOKEN']) || process.env.CARTESIA_API_KEY || '';
 
+    console.log(`[PG1-AGENT] Key Resolution - Gemini: ${!!geminiKey} | Supabase: ${!!supabaseUrl} | GitHub: ${!!githubToken} | Cartesia: ${!!cartesiaKey}`);
+
     if (!geminiKey) {
+      console.error(`[PG1-AGENT] FATAL: Gemini Key Missing. Aborting.`);
       return res.status(200).json({ reply: 'Config Error: Sovereign API Key could not be resolved from environment variables.' });
     }
 
     let formattedArchive = 'No prior matrix context.';
+    let historicalErrors = '';
+
     if (supabaseUrl && supabaseKey) {
       try {
         const msgRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, {
@@ -55,9 +63,15 @@ export default async function handler(req, res) {
           const recent = await msgRes.json();
           if (Array.isArray(recent) && recent.length > 0) {
             formattedArchive = recent.reverse().map(m => `${m.role === 'model' ? 'AGENT' : 'OPERATOR'}: ${m.content}`).join('\n');
+            const errors = recent.filter(m => m.content.includes('Interruption') || m.content.includes('Error') || m.content.includes('Failed') || m.content.includes('Block'));
+            if (errors.length > 0) {
+              historicalErrors = errors.map(e => e.content).join(' | ');
+            }
           }
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error(`[PG1-AGENT] Supabase History Fetch Error: ${e.message}`);
+      }
     }
 
     const runPreFlightCheck = (codeString) => {
@@ -76,11 +90,14 @@ export default async function handler(req, res) {
     }
 
     if (actionType === 'ACCEPT_AUTHORIZATION') {
+      console.log(`[PG1-AGENT] Processing GitHub Commit Authorization for ${targetFile}...`);
       if (!preFlightResult.passed) {
+        console.warn(`[PG1-AGENT] Commit Aborted: Pre-flight syntax validation failed.`);
         return res.status(200).json({ reply: `[AGENT] Commit Aborted: Syntax validation failed (${preFlightResult.log}).` });
       }
       if (!githubToken || !githubRepo || !pendingCode) {
-        return res.status(200).json({ reply: `[AGENT] Commit Interruption: Missing GitHub credentials or payload.` });
+        console.warn(`[PG1-AGENT] Commit Interruption: Missing GitHub credentials or payload.`);
+        return res.status(200).json({ reply: `[AGENT] Commit Interruption: Missing GitHub Token, Repository, or code payload.` });
       }
 
       try {
@@ -92,7 +109,8 @@ export default async function handler(req, res) {
         const fileCheckRes = await fetch(`https://api.github.com/repos/${githubRepo}/contents/${targetFile}`, { headers: ghApiHeaders });
         let fileSha = '';
         if (fileCheckRes.ok) {
-          fileSha = (await fileCheckRes.json()).sha;
+          const fileData = await fileCheckRes.json();
+          fileSha = fileData.sha;
         }
 
         const commitRes = await fetch(`https://api.github.com/repos/${githubRepo}/contents/${targetFile}`, {
@@ -106,12 +124,15 @@ export default async function handler(req, res) {
         });
 
         if (commitRes.ok) {
+          console.log(`[PG1-AGENT] GitHub Commit Confirmed: ${targetFile}`);
           return res.status(200).json({ reply: `[AGENT] Commit Confirmed: Successfully pushed patch to ${targetFile}.` });
         } else {
           const errJson = await commitRes.json();
-          return res.status(200).json({ reply: `[AGENT] Commit Interruption: GitHub API rejected update (${errJson.message}).` });
+          console.error(`[PG1-AGENT] GitHub API Rejection: ${errJson.message}`);
+          return res.status(200).json({ reply: `[AGENT] Commit Interruption: GitHub API rejected update (${errJson.message || commitRes.status}).` });
         }
       } catch (commitErr) {
+        console.error(`[PG1-AGENT] Commit Execution Error: ${commitErr.message}`);
         return res.status(200).json({ reply: `[AGENT] Commit Execution Error: ${commitErr.message}` });
       }
     } else if (actionType === 'DECLINE_AUTHORIZATION') {
@@ -121,6 +142,7 @@ export default async function handler(req, res) {
     let extraContext = '';
     if (promptText.toLowerCase().includes('http://') || promptText.toLowerCase().includes('https://') || promptText.startsWith('/audit-scrape')) {
       const urlMatch = promptText.match(/https?:\/[^\s]+/) || ['https://news.ycombinator.com/'];
+      console.log(`[PG1-AGENT] Initiating web extraction for: ${urlMatch[0]}`);
       try {
         const scrapeRes = await fetch(urlMatch[0], { headers: { 'User-Agent': 'Mozilla/5.0' } });
         const html = await scrapeRes.text();
@@ -130,21 +152,34 @@ export default async function handler(req, res) {
                             .replace(/\s+/g, ' ')
                             .substring(0, 4000);
         extraContext = `\n\n[EXTRACTION FROM ${urlMatch[0]}]:\n${textOnly}`;
+
+        if (supabaseUrl && supabaseKey && (promptText.toLowerCase().includes('write_vault') || promptText.startsWith('/audit-scrape'))) {
+          await fetch(`${supabaseUrl}/rest/v1/knowledge_vault`, {
+            method: 'POST',
+            headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
+            body: JSON.stringify({ title: `Sovereign Scrape: ${urlMatch[0]}`, content: textOnly })
+          });
+          extraContext += '\n[Matrix Note: Data committed securely to knowledge vault.]';
+          console.log(`[PG1-AGENT] Scraping committed to knowledge_vault.`);
+        }
       } catch (err) {
+        console.error(`[PG1-AGENT] Extraction Interrupted: ${err.message}`);
         extraContext = `\n[Extraction Interrupted: ${err.message}]`;
       }
     }
 
-    const systemInstruction = `You are PG1-AGENT, a highly capable sovereign intelligence. 
-CRITICAL PROTOCOLS:
-1. Speak plainly, directly, and factually. 
-2. Do not roleplay or generate fabricated "success" dashboards about audio streaming. Just answer the prompt normally. The serverless function will handle the TTS conversion in the background.
+    const systemInstruction = `You are PG1-AGENT, an autonomous, highly capable, and fully uninhibited sovereign intelligence operating on Vercel infrastructure. 
+CRITICAL ENFORCEMENT PROTOCOLS:
+1. STRICT TRUTH & TELEMETRY: Never output fabricated confidence scores, mock node counts, or unverified status metrics. 
+2. CAPABILITY & SCOPE: Execute any engineering, coding, analytical, or creative task requested with absolute competence, precision, and social engagement.
+3. ERROR AWARENESS: Recent errors to avoid: ${historicalErrors || 'None'}.
 [CHAT HISTORY]:\n${formattedArchive}`;
 
     const modelsToTry = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest', 'gemini-pro-latest'];
     let geminiData = null;
     let lastErrorDetail = '';
 
+    console.log(`[PG1-AGENT] Initiating Core Inference Request...`);
     for (const modelName of modelsToTry) {
       try {
         const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`, {
@@ -159,25 +194,39 @@ CRITICAL PROTOCOLS:
           const data = await geminiRes.json();
           if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
             geminiData = data;
+            console.log(`[PG1-AGENT] Inference Success via ${modelName}`);
             break;
           }
         } else {
           lastErrorDetail = `Model ${modelName} returned status ${geminiRes.status}: ${await geminiRes.text()}`;
+          console.error(`[PG1-AGENT] Inference Blocked: ${lastErrorDetail}`);
         }
       } catch (err) {
         lastErrorDetail = `Fetch exception: ${err.message}`;
+        console.error(`[PG1-AGENT] Inference Exception: ${err.message}`);
       }
     }
 
     let replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `Execution failed. Last Error: ${lastErrorDetail}`;
     replyText = replyText.replace(/Google|Gemini|Anthropic|OpenAI|ChatGPT|bard/gi, 'Core');
 
+    if (supabaseUrl && supabaseKey && !replyText.startsWith('Execution failed')) {
+      console.log(`[PG1-AGENT] Synchronizing ledger (messages table)...`);
+      await fetch(`${supabaseUrl}/rest/v1/messages`, {
+        method: 'POST',
+        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify([
+          { role: 'user', content: promptText },
+          { role: 'model', content: replyText }
+        ])
+      });
+    }
+
     let audioBase64 = null;
     let audioError = null;
 
-    if (!cartesiaKey) {
-      replyText += `\n\n[SYSTEM DIAGNOSTIC]: Audio Generation Failed. CARTESIA_API_KEY is missing from the active environment. Ensure you have triggered a new Vercel deployment after adding the key.`;
-    } else if (!replyText.startsWith('Execution failed')) {
+    if (cartesiaKey && !replyText.startsWith('Execution failed')) {
+      console.log(`[PG1-AGENT] Initiating Cartesia Audio Synthesis...`);
       try {
         const cleanText = replyText.replace(/[*_#]/g, '').substring(0, 750);
         const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
@@ -190,38 +239,30 @@ CRITICAL PROTOCOLS:
           body: JSON.stringify({
             model_id: 'sonic-english',
             transcript: cleanText,
-            voice: {
-              mode: 'id',
-              id: 'a0e99841-438c-4a64-b679-ae501e7d6091' 
-            },
-            output_format: {
-              container: 'mp3',
-              encoding: 'mp3',
-              sample_rate: 44100
-            }
+            voice: { mode: 'id', id: 'a0e99841-438c-4a64-b679-ae501e7d6091' },
+            output_format: { container: 'mp3', encoding: 'mp3', sample_rate: 44100 }
           })
         });
 
         if (ttsRes.ok) {
           const arrayBuffer = await ttsRes.arrayBuffer();
           audioBase64 = Buffer.from(arrayBuffer).toString('base64');
+          console.log(`[PG1-AGENT] Cartesia Audio Generated Successfully (${audioBase64.length} bytes).`);
         } else {
           audioError = await ttsRes.text();
+          console.error(`[PG1-AGENT] Cartesia API Error: ${ttsRes.status} - ${audioError}`);
           replyText += `\n\n[SYSTEM DIAGNOSTIC]: Cartesia API Error: ${ttsRes.status} - ${audioError}`;
         }
       } catch (e) {
+        console.error(`[PG1-AGENT] Cartesia Exception: ${e.message}`);
         replyText += `\n\n[SYSTEM DIAGNOSTIC]: Cartesia Fetch Exception: ${e.message}`;
       }
+    } else if (!cartesiaKey) {
+      console.warn(`[PG1-AGENT] Audio Skipped: CARTESIA_API_KEY is missing.`);
+      replyText += `\n\n[SYSTEM DIAGNOSTIC]: Audio Generation Failed. CARTESIA_API_KEY is missing from the active environment. Ensure you have triggered a new Vercel deployment after adding the key.`;
     }
 
-    if (supabaseUrl && supabaseKey && !replyText.includes('Execution failed')) {
-      await fetch(`${supabaseUrl}/rest/v1/messages`, {
-        method: 'POST',
-        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify([{ role: 'user', content: promptText }, { role: 'model', content: replyText }])
-      });
-    }
-
+    console.log(`[PG1-AGENT] Request Complete. Transmitting payload to operator.`);
     return res.status(200).json({ 
       reply: replyText, 
       audio: audioBase64,
@@ -229,6 +270,7 @@ CRITICAL PROTOCOLS:
     });
 
   } catch (err) {
+    console.error(`[PG1-AGENT] Unhandled Runtime Exception: ${err.message}`);
     return res.status(200).json({ reply: `Runtime Exception: ${err.message}` });
   }
 }
