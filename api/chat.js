@@ -49,7 +49,7 @@ export default async function handler(req, res) {
 
       return {
         action: 'ACCEPT_AUTHORIZATION',
-        filePath: filePathMatch?.[1]?.trim() || targetFile,
+        filePath: filePathMatch?.[1]?.trim() || '',
         fileContent: codeBlockMatch[1].trim()
       };
     };
@@ -64,18 +64,6 @@ export default async function handler(req, res) {
         if (parsedPromptJson.files) multiFiles = parsedPromptJson.files;
         if (parsedPromptJson.file) singleFile = parsedPromptJson.file;
       } catch (parseErr) {}
-    }
-
-    if (typeof promptText === 'string') {
-      const autonomousIntent = parseAutonomousGithubIntent(promptText, !!clientSignature);
-      if (!actionType && autonomousIntent) {
-        actionType = autonomousIntent.action;
-        if (!pendingCode) pendingCode = autonomousIntent.fileContent;
-        if (!body?.file_path && autonomousIntent.filePath) targetFile = autonomousIntent.filePath;
-      } else if (actionType === 'ACCEPT_AUTHORIZATION' && autonomousIntent) {
-        if (!pendingCode) pendingCode = autonomousIntent.fileContent;
-        if (!body?.file_path && autonomousIntent.filePath) targetFile = autonomousIntent.filePath;
-      }
     }
 
     multiFiles = normalizeFilePayloads(multiFiles);
@@ -113,9 +101,23 @@ export default async function handler(req, res) {
     const cartesiaKey = getDynamicKey(['CARTESIA'], ['KEY', 'API', 'TOKEN']) || process.env.CARTESIA_API_KEY || '';
 
     const masterControlKey = process.env.AGENT_MASTER_SECRET || githubToken;
+    const hasApprovedSignature = !masterControlKey || (clientSignature && clientSignature === masterControlKey);
+
+    if (typeof promptText === 'string') {
+      const autonomousIntent = parseAutonomousGithubIntent(promptText, hasApprovedSignature);
+      if (!actionType && autonomousIntent) {
+        actionType = autonomousIntent.action;
+        if (!pendingCode) pendingCode = autonomousIntent.fileContent;
+        if (!body?.file_path && autonomousIntent.filePath) targetFile = autonomousIntent.filePath;
+      } else if (actionType === 'ACCEPT_AUTHORIZATION' && autonomousIntent) {
+        if (!pendingCode) pendingCode = autonomousIntent.fileContent;
+        if (!body?.file_path && autonomousIntent.filePath) targetFile = autonomousIntent.filePath;
+      }
+    }
+
     let isAuthorizedAction = true;
     if (actionType === 'ACCEPT_AUTHORIZATION' && masterControlKey) {
-      if (clientSignature && clientSignature !== masterControlKey) {
+      if (!hasApprovedSignature) {
         isAuthorizedAction = false;
       }
     }
