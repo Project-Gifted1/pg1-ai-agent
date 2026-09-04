@@ -423,7 +423,7 @@
         const safeUrl = sanitizeMediaUrl(mediaUrl);
         return safeUrl ? storePlaceholder(`<img src="${safeUrl}" alt="${escapeHtml(altText)}" />`) : escapeHtml(match);
       });
-      html = escapeHtml(html).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      html = html.split(/(__PG1_BLOCK_\d+__)/g).map(segment => /^__PG1_BLOCK_\d+__$/.test(segment) ? segment : escapeHtml(segment)).join('').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
 
       if (html.includes('[CONSENT_REQUIRED]')) {
         html = html.replace('[CONSENT_REQUIRED]', '');

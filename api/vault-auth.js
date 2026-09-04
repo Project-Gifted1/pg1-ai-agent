@@ -26,8 +26,7 @@ export default async function handler(req, res) {
           headers: {
             'Content-Type': 'application/json',
             apikey: signingKey,
-            Authorization: `******
-          },
+            Authorization: `Bearer ${signingKey}`,
           body: JSON.stringify({ expiresIn: 3600 })
         }
       );
