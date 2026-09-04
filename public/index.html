@@ -559,8 +559,16 @@
               const errData = await uploadRes.json().catch(()=>({}));
               throw new Error(errData.message || "Direct storage stream failed. Ensure 'pg1-vault' bucket exists in Supabase and allows public inserts.");
             }
-            vaultUrl = `${sbUrl}/storage/v1/object/public/pg1-vault/${fileName}`;
-            bubble.innerText = "Payload vaulted successfully. Analyzing matrix...";
+            const signedVaultRes = await fetch('/api/vault-auth', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ fileName })
+            });
+            if (!signedVaultRes.ok) throw new Error("Vault signed URL generation failed.");
+            const { signedUrl } = await signedVaultRes.json();
+            if (!signedUrl) throw new Error("Vault signed URL generation failed.");
+            vaultUrl = signedUrl;
+            bubble.innerText = "Payload vaulted securely. Analyzing matrix...";
           } else {
             const reader = new FileReader();
             const base64Promise = new Promise((resolve, reject) => {
