@@ -32,8 +32,9 @@ export default async function handler(req, res) {
       return [payload];
     });
 
-    const parseAutonomousGithubIntent = (inputPrompt) => {
+    const parseAutonomousGithubIntent = (inputPrompt, hasStructuredAuthorization) => {
       if (typeof inputPrompt !== 'string') return null;
+      if (!hasStructuredAuthorization) return null;
 
       const intentRegex = /\b(push|commit|update\s+file)\b/i;
       const githubKeywords = ['push', 'commit', 'update file'];
@@ -66,7 +67,7 @@ export default async function handler(req, res) {
     }
 
     if (typeof promptText === 'string') {
-      const autonomousIntent = parseAutonomousGithubIntent(promptText);
+      const autonomousIntent = parseAutonomousGithubIntent(promptText, !!clientSignature);
       if (!actionType && autonomousIntent) {
         actionType = autonomousIntent.action;
         if (!pendingCode) pendingCode = autonomousIntent.fileContent;
