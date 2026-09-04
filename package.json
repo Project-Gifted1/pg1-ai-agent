@@ -2,21 +2,37 @@
   "name": "pg1-ai-agent",
   "version": "1.0.2",
   "private": true,
-  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint .",
+    "test": "node tests/preflight.test.cjs"
   },
   "dependencies": {
+    "@ai-sdk/google": "latest",
+    "@supabase/supabase-js": "latest",
+    "ai": "latest",
+    "cheerio": "latest",
     "next": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "@ai-sdk/google": "latest",
-    "ai": "latest",
-    "zod": "latest",
-    "@supabase/supabase-js": "latest",
-    "cheerio": "latest"
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "eslint": "^10.10.0",
+    "eslint-config-next": "^16.3.4",
+    "typescript": "^5.9.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "eslint": "^10.10.0",
+    "eslint-config-next": "^16.3.4",
+    "typescript": "^5.9.2"
   }
 }
