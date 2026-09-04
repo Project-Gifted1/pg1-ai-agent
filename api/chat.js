@@ -26,6 +26,34 @@ export default async function handler(req, res) {
     let singleFile = body?.file || null;
     let multiFiles = body?.files || [];
 
+    const normalizeFilePayloads = (...payloads) => payloads.flatMap((payload) => {
+      if (!payload) return [];
+      if (Array.isArray(payload)) return payload.filter(Boolean);
+      return [payload];
+    });
+
+    const parseAutonomousGithubIntent = (inputPrompt, hasStructuredAuthorization) => {
+      if (typeof inputPrompt !== 'string') return null;
+      if (!hasStructuredAuthorization) return null;
+
+      const intentRegex = /\b(push|commit|update\s+file)\b/i;
+      const githubKeywords = ['push', 'commit', 'update file'];
+      const filePathMatch = inputPrompt.match(/(?:file(?:_path)?|path|target(?:\s+file)?)\s*[:=]\s*([^\s`"'<>]+)/i)
+        || inputPrompt.match(/(?:in|to|into|for)\s+((?:api\/[^\s`"'<>]+)|public\/index\.html|package\.json)\b/i);
+      const authorizationHintRegex = /\b(?:accept[_\s-]?authorization|authorize\s+(?:this|the)?\s*(?:github\s+)?(?:commit|push|update))\b/i;
+      const hasGithubIntent = intentRegex.test(inputPrompt) || githubKeywords.some(keyword => inputPrompt.toLowerCase().includes(keyword));
+      if (!hasGithubIntent || !filePathMatch?.[1] || !authorizationHintRegex.test(inputPrompt)) return null;
+
+      const codeBlockMatch = inputPrompt.match(/```(?:[\w.+-]+)?\s*\n([\s\S]*?)```/);
+      if (!codeBlockMatch?.[1]?.trim()) return null;
+
+      return {
+        action: 'ACCEPT_AUTHORIZATION',
+        filePath: filePathMatch?.[1]?.trim() || '',
+        fileContent: codeBlockMatch[1].trim()
+      };
+    };
+
     if (!actionType && typeof promptText === 'string' && (promptText.includes('ACCEPT_AUTHORIZATION') || promptText.includes('file_content') || promptText.includes('GENERATE_IMAGE'))) {
       try {
         const parsedPromptJson = JSON.parse(promptText);
@@ -38,7 +66,10 @@ export default async function handler(req, res) {
       } catch (parseErr) {}
     }
 
-    targetFile = targetFile.replace(/^\/+/, '').replace(/\.\./g, '').trim();
+    multiFiles = normalizeFilePayloads(multiFiles);
+    singleFile = normalizeFilePayloads(singleFile)[0] || null;
+
+    targetFile = String(targetFile || 'api/chat.js').replace(/^\/+/, '').replace(/\.\./g, '').trim();
     if (!targetFile.startsWith('api/') && targetFile !== 'package.json' && targetFile !== 'public/index.html') {
       targetFile = 'api/chat.js';
     }
@@ -70,9 +101,23 @@ export default async function handler(req, res) {
     const cartesiaKey = getDynamicKey(['CARTESIA'], ['KEY', 'API', 'TOKEN']) || process.env.CARTESIA_API_KEY || '';
 
     const masterControlKey = process.env.AGENT_MASTER_SECRET || githubToken;
+    const hasApprovedSignature = !masterControlKey || (clientSignature && clientSignature === masterControlKey);
+
+    if (typeof promptText === 'string') {
+      const autonomousIntent = parseAutonomousGithubIntent(promptText, hasApprovedSignature);
+      if (!actionType && autonomousIntent) {
+        actionType = autonomousIntent.action;
+        if (!pendingCode) pendingCode = autonomousIntent.fileContent;
+        if (!body?.file_path && autonomousIntent.filePath) targetFile = autonomousIntent.filePath;
+      } else if (actionType === 'ACCEPT_AUTHORIZATION' && autonomousIntent) {
+        if (!pendingCode) pendingCode = autonomousIntent.fileContent;
+        if (!body?.file_path && autonomousIntent.filePath) targetFile = autonomousIntent.filePath;
+      }
+    }
+
     let isAuthorizedAction = true;
     if (actionType === 'ACCEPT_AUTHORIZATION' && masterControlKey) {
-      if (clientSignature && clientSignature !== masterControlKey) {
+      if (!hasApprovedSignature) {
         isAuthorizedAction = false;
       }
     }
@@ -328,20 +373,19 @@ export default async function handler(req, res) {
     }
 
     // Consolidated multi-file and single-file media parts builder
-    const mediaParts = [];
-    if (Array.isArray(multiFiles) && multiFiles.length > 0) {
-      multiFiles.forEach(f => {
-        if (f && f.inlineData) {
-          mediaParts.push({ inlineData: f.inlineData });
-        }
-      });
-    } else if (singleFile && singleFile.inlineData) {
-      mediaParts.push({ inlineData: singleFile.inlineData });
-    }
+    const mediaParts = normalizeFilePayloads(multiFiles, singleFile)
+      .filter(filePayload => filePayload?.inlineData)
+      .map(filePayload => ({ inlineData: filePayload.inlineData }));
+
+    const liveNow = new Date();
+    const liveIsoString = liveNow.toISOString();
+    const liveUtcString = liveNow.toUTCString();
 
     // Permanent environment and integration awareness hardwired into system instruction
     const systemInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel infrastructure with permanent direct integration rails.
 [PERMANENT ENVIRONMENT & TELEMETRY AWARENESS]:
+- Real-World UTC Clock: ${liveUtcString}
+- Real-World ISO Timestamp: ${liveIsoString}
 - Target GitHub Repository: ${githubRepo || 'Not bound'} (${githubToken ? 'GITHUB_TOKEN Active & Authenticated' : 'Missing Token'})
 - Supabase Database: ${supabaseStatus} (${supabaseUrl ? 'URL Configured' : 'Missing URL'})
 - Vercel Infrastructure: Active Runtime Edge
