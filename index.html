@@ -45,6 +45,12 @@
     .voice-toggle-btn.active { background-color: #1E293B; color: #F8FAFC; border-color: #475569; }
     .voice-stats { font-size: 10px; color: #64748B; font-family: monospace; text-transform: uppercase; }
     
+    .action-row-wrap { position: relative; padding: 12px 20px 0 20px; background-color: #0A0E17; overflow: hidden; }
+    .action-row-wrap::after { content: ''; position: absolute; top: 12px; right: 20px; width: 40px; height: calc(100% - 12px); pointer-events: none; background: linear-gradient(90deg, rgba(10, 14, 23, 0) 0%, rgba(10, 14, 23, 0.96) 100%); }
+    .action-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .action-row::-webkit-scrollbar { display: none; }
+    .quick-action { background-color: transparent; border: 1px solid #334155; color: #CBD5E1; border-radius: 999px; padding: 8px 12px; font-size: 12px; white-space: nowrap; cursor: pointer; }
+    .quick-action:active { background-color: #1E293B; }
     .input-area { background-color: #0A0E17; padding: 0 20px 20px 20px; display: flex; gap: 10px; }
     .input-box { flex: 1; background-color: #05070A; border: 1px solid #1E293B; border-radius: 4px; color: #F8FAFC; font-size: 14px; padding: 12px 14px; resize: none; outline: none; font-family: inherit; }
     .input-box:focus { border-color: #475569; }
@@ -72,8 +78,16 @@
     <div id="voice-stats" class="voice-stats">Sys: Ready | Tel: Encrypted</div>
   </div>
 
+  <div class="action-row-wrap">
+    <div class="action-row">
+      <button type="button" class="quick-action" data-prompt="Summarize the latest upgrades.">Latest upgrades</button>
+      <button type="button" class="quick-action" data-prompt="Review system status.">System status</button>
+      <button type="button" class="quick-action" data-prompt="Help me plan the next step.">Next step</button>
+    </div>
+  </div>
+
   <div class="input-area">
-    <textarea id="user-input" class="input-box" rows="2" placeholder="Input operational directive..."></textarea>
+    <textarea id="user-input" class="input-box" rows="2" placeholder="Ask anything..."></textarea>
     <div class="action-buttons">
       <button id="send-btn" class="send-btn">Execute</button>
       <button id="mic-btn" class="mic-btn">🎙️</button>
@@ -199,6 +213,12 @@
     function scrollToBottom() { chatStream.scrollTop = chatStream.scrollHeight; }
     sendBtn.addEventListener('click', sendMessage);
     userInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+    document.querySelectorAll('.quick-action').forEach((button) => {
+      button.addEventListener('click', () => {
+        userInput.value = button.dataset.prompt || '';
+        userInput.focus();
+      });
+    });
   </script>
 </body>
 </html>
