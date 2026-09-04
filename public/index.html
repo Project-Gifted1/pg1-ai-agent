@@ -398,10 +398,47 @@
     }
 
     // Text & DOM Utilities
+    function escapeHtml(text) {
+      return String(text ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[char]));
+    }
+
+    function sanitizeMediaUrl(url) {
+      const trimmedUrl = String(url ?? '').trim();
+      return /^(https?:|data:image\/|blob:|\/|\.\/|\.\.\/)/i.test(trimmedUrl) ? escapeHtml(trimmedUrl) : '';
+    }
+
     function parseMarkdown(text) {
-      let html = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>'); html = html.replace(/!\[([^\]]*)\]\((.*?)\)/g, '<img src="$2" alt="$1" />'); html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      if (html.includes('[CONSENT_REQUIRED]')) { html = html.replace('[CONSENT_REQUIRED]', ''); html += `<div class="consent-card"><div class="consent-header"><span class="consent-title">Authorization Required</span><span class="consent-trust-badge">Verified</span></div><div class="consent-actions"><button class="btn-consent btn-accept">Approve Action</button><button class="btn-consent btn-decline">Dismiss</button></div></div>`; }
-      return html.split('\n').map(line => line.trim() ? (line.match(/^(<pre|<code|<img|<div|<button|<span|<header|<video)/) ? line : `<p>${line}</p>`) : '').join('\n');
+      const placeholders = [];
+      const storePlaceholder = (value) => `__PG1_BLOCK_${placeholders.push(value) - 1}__`;
+      let html = String(text ?? '').replace(/\r\n?/g, '\n');
+
+      html = html.replace(/```([\s\S]*?)```/g, (_, code) => storePlaceholder(`<pre><code>${escapeHtml(code)}</code></pre>`));
+      html = html.replace(/!\[([^\]]*)\]\((.*?)\)/g, (match, altText, mediaUrl) => {
+        const safeUrl = sanitizeMediaUrl(mediaUrl);
+        return safeUrl ? storePlaceholder(`<img src="${safeUrl}" alt="${escapeHtml(altText)}" />`) : escapeHtml(match);
+      });
+      html = escapeHtml(html).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+      if (html.includes('[CONSENT_REQUIRED]')) {
+        html = html.replace('[CONSENT_REQUIRED]', '');
+        html += storePlaceholder(`<div class="consent-card"><div class="consent-header"><span class="consent-title">Authorization Required</span><span class="consent-trust-badge">Verified</span></div><div class="consent-actions"><button class="btn-consent btn-accept">Approve Action</button><button class="btn-consent btn-decline">Dismiss</button></div></div>`);
+      }
+
+      return html
+        .split('\n')
+        .map(line => {
+          const trimmedLine = line.trim();
+          if (!trimmedLine) return '';
+          return /^__PG1_BLOCK_\d+__$/.test(trimmedLine) ? trimmedLine : `<p>${trimmedLine}</p>`;
+        })
+        .join('\n')
+        .replace(/__PG1_BLOCK_(\d+)__/g, (_, index) => placeholders[Number(index)] || '');
     }
 
     function handleFileSelect(event) { triggerHaptic(20); const file = event.target.files[0]; if (!file) return; currentAttachment = file; document.getElementById('file-name').innerText = file.name; document.getElementById('file-preview').classList.add('active'); }
@@ -424,7 +461,37 @@
         const item = document.createElement('div'); 
         item.className = `thread-item ${id === currentThreadId ? 'active-thread' : ''}`; 
         item.dataset.id = id;
-        item.innerHTML = `<div style="display:flex;flex-direction:column;gap:2px;overflow:hidden;width:100%;"><span style="font-size:12px;font-weight:500;color:var(--text-main);">${thread.title}</span><span style="font-size:9px;color:var(--text-muted);font-family:var(--font-mono);">${thread.date}</span></div><button class="icon-btn delete-thread-btn" style="width:26px;height:26px;animation:none;">✕</button>`; 
+
+        const meta = document.createElement('div');
+        meta.style.display = 'flex';
+        meta.style.flexDirection = 'column';
+        meta.style.gap = '2px';
+        meta.style.overflow = 'hidden';
+        meta.style.width = '100%';
+
+        const title = document.createElement('span');
+        title.style.fontSize = '12px';
+        title.style.fontWeight = '500';
+        title.style.color = 'var(--text-main)';
+        title.textContent = thread.title;
+
+        const date = document.createElement('span');
+        date.style.fontSize = '9px';
+        date.style.color = 'var(--text-muted)';
+        date.style.fontFamily = 'var(--font-mono)';
+        date.textContent = thread.date;
+
+        const deleteButton = document.createElement('button');
+        deleteButton.className = 'icon-btn delete-thread-btn';
+        deleteButton.style.width = '26px';
+        deleteButton.style.height = '26px';
+        deleteButton.style.animation = 'none';
+        deleteButton.textContent = '✕';
+
+        meta.appendChild(title);
+        meta.appendChild(date);
+        item.appendChild(meta);
+        item.appendChild(deleteButton);
         listContainer.appendChild(item); 
       }); 
     }
@@ -496,7 +563,11 @@
             bubble.innerText = "Payload vaulted successfully. Analyzing matrix...";
           } else {
             const reader = new FileReader();
-            const base64Promise = new Promise(resolve => { reader.onload = () => resolve(reader.result.split(',')[1]); });
+            const base64Promise = new Promise((resolve, reject) => {
+              reader.onload = () => resolve(reader.result.split(',')[1]);
+              reader.onerror = () => reject(new Error('Failed to read attached file.'));
+              reader.onabort = () => reject(new Error('Attached file read was aborted.'));
+            });
             reader.readAsDataURL(currentAttachment);
             filePayload = { inlineData: { data: await base64Promise, mimeType: currentAttachment.type } };
           }
@@ -558,9 +629,41 @@
     }
 
     function appendUserMessage(text) { 
-      const wrapper = document.createElement('div'); wrapper.className = 'bubble-wrapper'; 
-      wrapper.innerHTML = `<div class="bubble-container user"><div class="bubble">${text}</div><div class="message-meta"><span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action edit-btn">Edit</button><button class="tool-action copy-btn">Copy</button><button class="tool-action delete-btn">Delete</button></div></div></div>`; 
-      chatStream.appendChild(wrapper); scrollToBottom(); persistCurrentThreadState(); 
+      const wrapper = document.createElement('div');
+      wrapper.className = 'bubble-wrapper';
+
+      const container = document.createElement('div');
+      container.className = 'bubble-container user';
+
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.textContent = text;
+
+      const meta = document.createElement('div');
+      meta.className = 'message-meta';
+
+      const timestamp = document.createElement('span');
+      timestamp.className = 'timestamp';
+      timestamp.textContent = getTimeString();
+
+      const tools = document.createElement('div');
+      tools.className = 'message-tools';
+
+      ['Edit', 'Copy', 'Delete'].forEach(label => {
+        const button = document.createElement('button');
+        button.className = `tool-action ${label.toLowerCase()}-btn`;
+        button.textContent = label;
+        tools.appendChild(button);
+      });
+
+      meta.appendChild(timestamp);
+      meta.appendChild(tools);
+      container.appendChild(bubble);
+      container.appendChild(meta);
+      wrapper.appendChild(container);
+      chatStream.appendChild(wrapper);
+      scrollToBottom();
+      persistCurrentThreadState(); 
     }
     
     function scrollToBottom() { chatStream.scrollTop = chatStream.scrollHeight; }
