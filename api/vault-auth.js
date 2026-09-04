@@ -10,10 +10,11 @@ export default async function handler(req, res) {
 
   try {
     const supabaseUrl = process.env.SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    const uploadKey = process.env.SUPABASE_ANON_KEY || '';
+    const signingKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASEAPI_KEY || uploadKey;
     const fileName = typeof req.body?.fileName === 'string' ? req.body.fileName : '';
 
-    if (!supabaseUrl || !supabaseKey) {
+    if (!supabaseUrl || !uploadKey) {
       return res.status(500).json({ error: 'Vault credentials missing from environment.' });
     }
 
@@ -24,7 +25,7 @@ export default async function handler(req, res) {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            apikey: supabaseKey,
+            apikey: signingKey,
             Authorization: `******
           },
           body: JSON.stringify({ expiresIn: 3600 })
@@ -50,7 +51,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ signedUrl });
     }
 
-    return res.status(200).json({ url: supabaseUrl, key: supabaseKey });
+    return res.status(200).json({ url: supabaseUrl, key: uploadKey });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
