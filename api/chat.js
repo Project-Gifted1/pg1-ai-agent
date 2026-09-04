@@ -37,14 +37,14 @@ export default async function handler(req, res) {
 
       const intentRegex = /\b(push|commit|update\s+file)\b/i;
       const githubKeywords = ['push', 'commit', 'update file'];
+      const filePathMatch = inputPrompt.match(/(?:file(?:_path)?|path|target(?:\s+file)?)\s*[:=]\s*([^\s`"'<>]+)/i)
+        || inputPrompt.match(/(?:in|to|into|for)\s+(api\/[^\s`"'<>]+|public\/index\.html|package\.json)\b/i);
+      const authorizationHintRegex = /\b(accept[_\s-]?authorization|authorize|authorized|github(?:\s+token)?)\b/i;
       const hasGithubIntent = intentRegex.test(inputPrompt) || githubKeywords.some(keyword => inputPrompt.toLowerCase().includes(keyword));
-      if (!hasGithubIntent) return null;
+      if (!hasGithubIntent || !filePathMatch?.[1] || !authorizationHintRegex.test(inputPrompt)) return null;
 
       const codeBlockMatch = inputPrompt.match(/```(?:[\w.+-]+)?\s*\n([\s\S]*?)```/);
       if (!codeBlockMatch?.[1]?.trim()) return null;
-
-      const filePathMatch = inputPrompt.match(/(?:file(?:_path)?|path|target(?:\s+file)?)\s*[:=]\s*([^\s`"'<>]+)/i)
-        || inputPrompt.match(/(?:in|to|into|for)\s+(api\/[^\s`"'<>]+|public\/index\.html|package\.json)\b/i);
 
       return {
         action: 'ACCEPT_AUTHORIZATION',
@@ -371,8 +371,9 @@ export default async function handler(req, res) {
       .filter(filePayload => filePayload?.inlineData)
       .map(filePayload => ({ inlineData: filePayload.inlineData }));
 
-    const liveIsoString = new Date().toISOString();
-    const liveUtcString = new Date().toUTCString();
+    const liveNow = new Date();
+    const liveIsoString = liveNow.toISOString();
+    const liveUtcString = liveNow.toUTCString();
 
     // Permanent environment and integration awareness hardwired into system instruction
     const systemInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel infrastructure with permanent direct integration rails.
