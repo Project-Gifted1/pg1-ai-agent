@@ -17,7 +17,7 @@ function handleOptions(request) {
   });
 }
 
-export default {
+const mediaRelayWorker = {
   async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") {
       return handleOptions(request);
@@ -163,5 +163,7 @@ export default {
     }
   },
 };
+
+export default mediaRelayWorker;
 
 // Deploy trigger: 2025-05-18T12:05:00Z

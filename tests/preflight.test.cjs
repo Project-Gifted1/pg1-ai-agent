@@ -9,7 +9,7 @@
  *  5. HTML: composer placeholder is friendly
  *  6. HTML: quick-action chips are wrapped for mobile scroll-fade
  *
- * Run with: node tests/preflight.test.js   (or: npm test)
+ * Run with: node tests/preflight.test.cjs   (or: npm test)
  */
 
 'use strict';
@@ -111,4 +111,3 @@ test('action-row-wrap::after fade cue is defined in CSS', () => {
 test('-webkit-overflow-scrolling is set on .action-row for iOS scroll', () => {
   assert.ok(html.includes('-webkit-overflow-scrolling'), 'iOS scroll hint missing from .action-row');
 });
-

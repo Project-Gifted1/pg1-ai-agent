@@ -1,4 +1,4 @@
-export default {
+const worker = {
   async fetch(request, env, ctx) {
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
@@ -37,3 +37,5 @@ export default {
     }
   }
 };
+
+export default worker;

@@ -129,11 +129,45 @@ export default function Client() {
   };
 
   useEffect(() => {
-    startStream(facingMode);
+    let isActive = true;
+
+    const bootstrapStream = async () => {
+      try {
+        const constraints: MediaStreamConstraints = {
+          video: { facingMode: { ideal: "user" } },
+          audio: true,
+        };
+
+        const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (!isActive) {
+          newStream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        streamRef.current = newStream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = newStream;
+          await videoRef.current.play().catch(() => {});
+        }
+
+        setError(null);
+        setIsStreaming(true);
+      } catch (err: any) {
+        if (!isActive) return;
+        console.error("Error accessing media:", err);
+        setError(err.message || "Failed to access camera/microphone");
+        setIsStreaming(false);
+      }
+    };
+
+    void bootstrapStream();
+
     return () => {
+      isActive = false;
       stopStream();
     };
-  }, []);
+  }, [stopStream]);
 
   return (
   <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-slate-950 text-white">
