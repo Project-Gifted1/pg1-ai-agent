@@ -519,6 +519,18 @@
         const bubble = container.querySelector('.bubble');
         bubble.style.opacity = '1';
         bubble.innerHTML = parseMarkdown(reply);
+
+        // Native Image Generation Renderer Injection
+        if (data.image) {
+          const imgElement = document.createElement('img');
+          imgElement.src = `data:image/png;base64,${data.image}`;
+          imgElement.alt = 'Generated response image';
+          imgElement.style.maxWidth = '100%';
+          imgElement.style.borderRadius = '8px';
+          imgElement.style.marginTop = '10px';
+          imgElement.style.display = 'block';
+          bubble.appendChild(imgElement);
+        }
         
         const metaDiv = container.querySelector('.message-meta');
         metaDiv.innerHTML = `<span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action speak-btn">Speak</button><button class="tool-action copy-btn">Copy</button><button class="tool-action delete-btn">Delete</button></div>`;
