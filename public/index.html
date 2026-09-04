@@ -399,4 +399,227 @@
 
     // Text & DOM Utilities
     function parseMarkdown(text) {
-      let html = text.replace(/```([\s\S]*?)
+      let html = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>'); html = html.replace(/!\[([^\]]*)\]\((.*?)\)/g, '<img src="$2" alt="$1" />'); html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      if (html.includes('[CONSENT_REQUIRED]')) { html = html.replace('[CONSENT_REQUIRED]', ''); html += `<div class="consent-card"><div class="consent-header"><span class="consent-title">Authorization Required</span><span class="consent-trust-badge">Verified</span></div><div class="consent-actions"><button class="btn-consent btn-accept">Approve Action</button><button class="btn-consent btn-decline">Dismiss</button></div></div>`; }
+      return html.split('\n').map(line => line.trim() ? (line.match(/^(<pre|<code|<img|<div|<button|<span|<header|<video)/) ? line : `<p>${line}</p>`) : '').join('\n');
+    }
+
+    function handleFileSelect(event) { triggerHaptic(20); const file = event.target.files[0]; if (!file) return; currentAttachment = file; document.getElementById('file-name').innerText = file.name; document.getElementById('file-preview').classList.add('active'); }
+    function clearAttachment() { triggerHaptic(10); currentAttachment = null; document.getElementById('file-upload').value = ''; document.getElementById('file-preview').classList.remove('active'); }
+    function submitConsent(decision) { triggerHaptic(30); userInput.value = `[SYSTEM_OVERRIDE]: User has selected to ${decision} the proposed action.`; sendMessage(); }
+    function getTimeString() { return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+
+    function copyMessageText(btn) { triggerHaptic(15); const container = btn.closest('.bubble-container'); const bubble = container.querySelector('.bubble'); navigator.clipboard.writeText(bubble.innerText); btn.innerText = "Copied!"; setTimeout(() => { btn.innerText = "Copy"; }, 1500); }
+    function editMessageText(btn) { triggerHaptic(15); const container = btn.closest('.bubble-container'); const bubble = container.querySelector('.bubble'); const currentText = bubble.innerText; if (container.querySelector('.edit-input')) return; const textarea = document.createElement('textarea'); textarea.className = 'edit-input'; textarea.value = currentText; textarea.rows = 2; bubble.style.display = 'none'; container.insertBefore(textarea, bubble); textarea.focus(); textarea.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); const newText = textarea.value.trim(); textarea.remove(); bubble.style.display = 'block'; if (newText) { bubble.innerText = newText; persistCurrentThreadState(); userInput.value = newText; sendMessage(); } } else if (e.key === 'Escape') { textarea.remove(); bubble.style.display = 'block'; } }); }
+    function deleteMessageBubble(btn) { triggerHaptic(25); const wrapper = btn.closest('.bubble-wrapper'); wrapper.style.opacity = '0'; wrapper.style.transform = 'scale(0.95)'; wrapper.style.transition = 'all 0.2s ease'; setTimeout(() => { wrapper.remove(); persistCurrentThreadState(); }, 200); }
+
+    function openThreadManager() { triggerHaptic(20); renderThreadList(); document.getElementById('thread-modal').classList.add('active'); }
+    function closeThreadManager() { document.getElementById('thread-modal').classList.remove('active'); }
+    
+    function renderThreadList() { 
+      const listContainer = document.getElementById('thread-list'); 
+      listContainer.innerHTML = ''; 
+      Object.keys(threads).forEach(id => { 
+        const thread = threads[id]; 
+        const item = document.createElement('div'); 
+        item.className = `thread-item ${id === currentThreadId ? 'active-thread' : ''}`; 
+        item.dataset.id = id;
+        item.innerHTML = `<div style="display:flex;flex-direction:column;gap:2px;overflow:hidden;width:100%;"><span style="font-size:12px;font-weight:500;color:var(--text-main);">${thread.title}</span><span style="font-size:9px;color:var(--text-muted);font-family:var(--font-mono);">${thread.date}</span></div><button class="icon-btn delete-thread-btn" style="width:26px;height:26px;animation:none;">✕</button>`; 
+        listContainer.appendChild(item); 
+      }); 
+    }
+    
+    function switchThread(id) { triggerHaptic(20); persistCurrentThreadState(); currentThreadId = id; chatStream.innerHTML = threads[currentThreadId].messages; saveThreadsToStorage(); closeThreadManager(); scrollToBottom(); }
+    function deleteThreadSession(id) { triggerHaptic(30); if (Object.keys(threads).length <= 1) { alert("Cannot delete the only remaining thread."); return; } delete threads[id]; if (currentThreadId === id) { currentThreadId = Object.keys(threads)[0]; chatStream.innerHTML = threads[currentThreadId].messages; } saveThreadsToStorage(); renderThreadList(); }
+    
+    function createNewThread() { 
+      triggerHaptic(25); persistCurrentThreadState(); 
+      currentThreadId = 'thread_' + Date.now(); 
+      threads[currentThreadId] = { title: 'New Directive', date: new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }), messages: `<div class="bubble-wrapper"><div class="bubble-container bot"><div class="bubble">Greetings. New session initialized. PG1 Sovereign Agent operational.</div><div class="message-meta"><span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action speak-btn">Speak</button><button class="tool-action copy-btn">Copy</button><button class="tool-action delete-btn">Delete</button></div></div></div></div>` }; 
+      chatStream.innerHTML = threads[currentThreadId].messages; saveThreadsToStorage(); 
+    }
+    function saveCurrentThreadAndCreateNew() { persistCurrentThreadState(); closeThreadManager(); createNewThread(); }
+
+    // Core Interaction Engine
+    async function sendMessage() {
+      triggerHaptic(25);
+      const promptText = userInput.value.trim();
+      if (!promptText && !currentAttachment) return;
+      
+      const playbackEngine = new Audio();
+      if (voiceEnabled) { playbackEngine.play().catch(()=>{}); }
+      
+      const promptToDisplay = promptText || "Analyze the attached file.";
+      if (threads[currentThreadId].title === 'Initial Session' || threads[currentThreadId].title === 'New Directive') {
+        threads[currentThreadId].title = promptToDisplay.substring(0, 28) + (promptToDisplay.length > 28 ? '...' : '');
+      }
+
+      userInput.value = ''; 
+      appendUserMessage(promptToDisplay.replace('[SYSTEM_OVERRIDE]: ', '') + (currentAttachment ? ' 📎 [File Attached]' : '')); 
+      sendBtn.disabled = true;
+      
+      const wrapper = document.createElement('div'); 
+      wrapper.className = 'bubble-wrapper'; 
+      wrapper.innerHTML = `<div class="bubble-container bot"><div class="bubble" style="opacity:0.65">Executing directive...</div><div class="message-meta"><span class="timestamp">${getTimeString()}</span></div></div>`;
+      chatStream.appendChild(wrapper); 
+      scrollToBottom();
+      persistCurrentThreadState();
+
+      try {
+        let filePayload = null;
+        let vaultUrl = null;
+        
+        if (currentAttachment) {
+          const MAX_FILE_SIZE = 4 * 1024 * 1024;
+          if (currentAttachment.size > MAX_FILE_SIZE) {
+            const bubble = wrapper.querySelector('.bubble');
+            bubble.innerText = "Media payload exceeds Vercel 4.5MB pipeline limit. Rerouting via direct-to-object-storage vault...";
+            
+            const authRes = await fetch('/api/vault-auth', { method: 'POST' });
+            if (!authRes.ok) throw new Error("Vault architecture offline. Backend endpoint '/api/vault-auth' failed.");
+            const { url: sbUrl, key: sbKey } = await authRes.json();
+            
+            bubble.innerText = "Streaming encrypted payload directly to storage vault...";
+            const fileName = `pg1_vault_${Date.now()}_${currentAttachment.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+            
+            const uploadRes = await fetch(`${sbUrl}/storage/v1/object/pg1-vault/${fileName}`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${sbKey}`, 'apikey': sbKey, 'Content-Type': currentAttachment.type },
+              body: currentAttachment
+            });
+
+            if (!uploadRes.ok) {
+              const errData = await uploadRes.json().catch(()=>({}));
+              throw new Error(errData.message || "Direct storage stream failed. Ensure 'pg1-vault' bucket exists in Supabase and allows public inserts.");
+            }
+            vaultUrl = `${sbUrl}/storage/v1/object/public/pg1-vault/${fileName}`;
+            bubble.innerText = "Payload vaulted successfully. Analyzing matrix...";
+          } else {
+            const reader = new FileReader();
+            const base64Promise = new Promise(resolve => { reader.onload = () => resolve(reader.result.split(',')[1]); });
+            reader.readAsDataURL(currentAttachment);
+            filePayload = { inlineData: { data: await base64Promise, mimeType: currentAttachment.type } };
+          }
+        }
+
+        const finalPrompt = vaultUrl ? `${promptToDisplay}\n\n[SYSTEM NOTIFICATION: User has transmitted a heavy payload directly to the storage vault at URL: ${vaultUrl}. Process and analyze this link accordingly.]` : promptToDisplay;
+
+        const res = await fetch(`/api/chat?t=${Date.now()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
+          body: JSON.stringify({ prompt: finalPrompt, file: filePayload }) 
+        });
+        
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const data = await res.json();
+        const reply = data.reply || 'Execution complete.';
+        
+        const container = wrapper.querySelector('.bubble-container');
+        const bubble = container.querySelector('.bubble');
+        bubble.style.opacity = '1';
+        bubble.innerHTML = parseMarkdown(reply);
+
+        // Native Image Generation Renderer Injection
+        if (data.image) {
+          const imgElement = document.createElement('img');
+          imgElement.src = `data:image/png;base64,${data.image}`;
+          imgElement.alt = 'Generated response image';
+          imgElement.style.maxWidth = '100%';
+          imgElement.style.borderRadius = '8px';
+          imgElement.style.marginTop = '10px';
+          imgElement.style.display = 'block';
+          bubble.appendChild(imgElement);
+        }
+        
+        const metaDiv = container.querySelector('.message-meta');
+        metaDiv.innerHTML = `<span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action speak-btn">Speak</button><button class="tool-action copy-btn">Copy</button><button class="tool-action delete-btn">Delete</button></div>`;
+        
+        scrollToBottom(); 
+        persistCurrentThreadState();
+
+        if (voiceEnabled) {
+          if (data.audio) {
+            playbackEngine.src = "data:audio/mp3;base64," + data.audio;
+            playbackEngine.play().catch(err => console.error("Playback block override failed:", err));
+          } else {
+            speakText(reply);
+          }
+        }
+      } catch (err) {
+        const bubble = wrapper.querySelector('.bubble');
+        bubble.style.opacity = '1';
+        bubble.innerText = `System Alert: ${err.message}.`;
+        persistCurrentThreadState();
+      } finally { 
+        sendBtn.disabled = false;
+        clearAttachment();
+      }
+    }
+
+    function appendUserMessage(text) { 
+      const wrapper = document.createElement('div'); wrapper.className = 'bubble-wrapper'; 
+      wrapper.innerHTML = `<div class="bubble-container user"><div class="bubble">${text}</div><div class="message-meta"><span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action edit-btn">Edit</button><button class="tool-action copy-btn">Copy</button><button class="tool-action delete-btn">Delete</button></div></div></div>`; 
+      chatStream.appendChild(wrapper); scrollToBottom(); persistCurrentThreadState(); 
+    }
+    
+    function scrollToBottom() { chatStream.scrollTop = chatStream.scrollHeight; }
+    
+    // --- EXPLICIT EVENT LISTENER BINDINGS ---
+    // Header Actions
+    document.getElementById('btn-live-video').addEventListener('click', openLiveVideo);
+    document.getElementById('btn-export-pdf').addEventListener('click', exportCurrentThreadPDF);
+    document.getElementById('btn-vault').addEventListener('click', openThreadManager);
+    document.getElementById('btn-new-thread').addEventListener('click', createNewThread);
+    
+    // Modals
+    document.getElementById('btn-close-video1').addEventListener('click', closeLiveVideo);
+    document.getElementById('btn-flip-camera').addEventListener('click', toggleCameraFacing);
+    document.getElementById('btn-end-stream').addEventListener('click', closeLiveVideo);
+    
+    document.getElementById('thread-modal').addEventListener('click', (e) => { if (e.target.id === 'thread-modal') closeThreadManager(); });
+    document.getElementById('btn-close-vault').addEventListener('click', closeThreadManager);
+    document.getElementById('btn-save-new').addEventListener('click', saveCurrentThreadAndCreateNew);
+    
+    // Core Functions
+    document.getElementById('voice-toggle').addEventListener('click', toggleVoice);
+    document.getElementById('voice-select').addEventListener('change', updateVoiceProfile);
+    
+    document.getElementById('attach-btn').addEventListener('click', () => document.getElementById('file-upload').click());
+    document.getElementById('file-upload').addEventListener('change', handleFileSelect);
+    document.getElementById('btn-clear-attach').addEventListener('click', clearAttachment);
+    
+    document.getElementById('send-btn').addEventListener('click', sendMessage);
+    document.getElementById('user-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+
+    // Dynamic Event Delegation for Bubbles
+    chatStream.addEventListener('click', (e) => {
+      const btn = e.target.closest('.tool-action');
+      if (btn) {
+        if (btn.classList.contains('speak-btn')) speakMessageText(btn);
+        else if (btn.classList.contains('copy-btn')) copyMessageText(btn);
+        else if (btn.classList.contains('edit-btn')) editMessageText(btn);
+        else if (btn.classList.contains('delete-btn')) deleteMessageBubble(btn);
+        return;
+      }
+      const consentBtn = e.target.closest('.btn-consent');
+      if (consentBtn) {
+        if (consentBtn.classList.contains('btn-accept')) submitConsent('ACCEPT');
+        else submitConsent('DECLINE');
+      }
+    });
+
+    // Dynamic Event Delegation for Thread Vault
+    document.getElementById('thread-list').addEventListener('click', (e) => {
+      const item = e.target.closest('.thread-item');
+      if (!item) return;
+      const id = item.dataset.id;
+      if (e.target.closest('.delete-thread-btn')) {
+        deleteThreadSession(id);
+      } else {
+        switchThread(id);
+      }
+    });
+  </script>
+</body>
+</html>
