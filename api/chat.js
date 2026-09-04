@@ -38,7 +38,7 @@ export default async function handler(req, res) {
       const intentRegex = /\b(push|commit|update\s+file)\b/i;
       const githubKeywords = ['push', 'commit', 'update file'];
       const filePathMatch = inputPrompt.match(/(?:file(?:_path)?|path|target(?:\s+file)?)\s*[:=]\s*([^\s`"'<>]+)/i)
-        || inputPrompt.match(/(?:in|to|into|for)\s+(api\/[^\s`"'<>]+|public\/index\.html|package\.json)\b/i);
+        || inputPrompt.match(/(?:in|to|into|for)\s+((?:api\/[^\s`"'<>]+)|public\/index\.html|package\.json)\b/i);
       const authorizationHintRegex = /\b(?:accept[_\s-]?authorization|authorize\s+(?:this|the)?\s*(?:github\s+)?(?:commit|push|update))\b/i;
       const hasGithubIntent = intentRegex.test(inputPrompt) || githubKeywords.some(keyword => inputPrompt.toLowerCase().includes(keyword));
       if (!hasGithubIntent || !filePathMatch?.[1] || !authorizationHintRegex.test(inputPrompt)) return null;
@@ -65,10 +65,13 @@ export default async function handler(req, res) {
       } catch (parseErr) {}
     }
 
-    if ((!actionType || !pendingCode) && typeof promptText === 'string') {
+    if (typeof promptText === 'string') {
       const autonomousIntent = parseAutonomousGithubIntent(promptText);
-      if (autonomousIntent) {
+      if (!actionType && autonomousIntent) {
         actionType = autonomousIntent.action;
+        if (!pendingCode) pendingCode = autonomousIntent.fileContent;
+        if (!body?.file_path && autonomousIntent.filePath) targetFile = autonomousIntent.filePath;
+      } else if (actionType === 'ACCEPT_AUTHORIZATION' && autonomousIntent) {
         if (!pendingCode) pendingCode = autonomousIntent.fileContent;
         if (!body?.file_path && autonomousIntent.filePath) targetFile = autonomousIntent.filePath;
       }
