@@ -39,7 +39,7 @@ export default async function handler(req, res) {
       const githubKeywords = ['push', 'commit', 'update file'];
       const filePathMatch = inputPrompt.match(/(?:file(?:_path)?|path|target(?:\s+file)?)\s*[:=]\s*([^\s`"'<>]+)/i)
         || inputPrompt.match(/(?:in|to|into|for)\s+(api\/[^\s`"'<>]+|public\/index\.html|package\.json)\b/i);
-      const authorizationHintRegex = /\b(accept[_\s-]?authorization|authorize|authorized|github(?:\s+token)?)\b/i;
+      const authorizationHintRegex = /\b(?:accept[_\s-]?authorization|authorize\s+(?:this|the)?\s*(?:github\s+)?(?:commit|push|update))\b/i;
       const hasGithubIntent = intentRegex.test(inputPrompt) || githubKeywords.some(keyword => inputPrompt.toLowerCase().includes(keyword));
       if (!hasGithubIntent || !filePathMatch?.[1] || !authorizationHintRegex.test(inputPrompt)) return null;
 
@@ -77,7 +77,7 @@ export default async function handler(req, res) {
     multiFiles = normalizeFilePayloads(multiFiles);
     singleFile = normalizeFilePayloads(singleFile)[0] || null;
 
-    targetFile = targetFile.replace(/^\/+/, '').replace(/\.\./g, '').trim();
+    targetFile = String(targetFile || 'api/chat.js').replace(/^\/+/, '').replace(/\.\./g, '').trim();
     if (!targetFile.startsWith('api/') && targetFile !== 'package.json' && targetFile !== 'public/index.html') {
       targetFile = 'api/chat.js';
     }
