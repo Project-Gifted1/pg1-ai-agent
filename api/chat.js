@@ -623,6 +623,18 @@ CRITICAL ENFORCEMENT PROTOCOLS:
     }
 
     let replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `Execution failed. Last Error: ${lastErrorDetail}`;
+    // --- SMART SOVEREIGN BRANDING FILTER ---
+    // This strips 3rd-party corporate branding from chat text but protects variables and code blocks
+    let textChunks = replyText.split(/(```[\s\S]*?```|`[^`]+`)/g);
+    for (let i = 0; i < textChunks.length; i++) {
+      if (!textChunks[i].startsWith('`')) {
+        textChunks[i] = textChunks[i]
+          .replace(/\b(Google|Gemini|Anthropic|OpenAI|ChatGPT|Bard|Claude)\b/gi, 'PG1 Sovereign Core')
+          .replace(/\b(a Google trained AI|a large language model)\b/gi, 'the intelligence core of Project-Gifted1™');
+      }
+    }
+    replyText = textChunks.join('');
+    // ---------------------------------------
 
     if (supabaseUrl && supabaseKey && !replyText.startsWith('Execution failed') && !isPdfExport) {
       await fetch(`${supabaseUrl}/rest/v1/messages`, {
