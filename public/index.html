@@ -478,6 +478,10 @@
         }
         const hadExistingPlayback = !!audioPlayer.__pg1Cleanup || !!audioPlayer.__pg1PlaybackToken;
         const previousCleanup = audioPlayer.__pg1Cleanup;
+        if (hadExistingPlayback) {
+          audioPlayer.onended = null;
+          audioPlayer.__pg1PlaybackToken = Symbol('pg1-interrupted-playback');
+        }
         releaseAudioPlayer(false);
         if (hadExistingPlayback && previousCleanup) {
           runAudioCleanup(previousCleanup, 'interrupted');
