@@ -342,6 +342,8 @@
     }
 
     // Audio Transport Routines
+    const AUDIO_UNLOCK_DATA_URI = 'data:audio/wav;base64,UklGRsQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+
     function getVoiceReadyStatus() {
       return voiceEnabled ? `Sys: READY | ${voiceSelect.options[voiceSelect.selectedIndex].text}` : "Sys: READY | Standby";
     }
@@ -361,7 +363,27 @@
     }
 
     function unlockAudioPlayer() {
-      return getAudioPlayer();
+      const audioPlayer = getAudioPlayer();
+      if (audioPlayer.__pg1Unlocked || audioPlayer.__pg1UnlockPromise) return audioPlayer;
+      audioPlayer.muted = true;
+      audioPlayer.src = AUDIO_UNLOCK_DATA_URI;
+      const unlockAttempt = audioPlayer.play();
+      if (unlockAttempt && typeof unlockAttempt.then === 'function') {
+        audioPlayer.__pg1UnlockPromise = unlockAttempt
+          .then(() => {
+            audioPlayer.__pg1Unlocked = true;
+          })
+          .catch(() => {})
+          .finally(() => {
+            audioPlayer.pause();
+            audioPlayer.currentTime = 0;
+            audioPlayer.muted = false;
+            audioPlayer.removeAttribute('src');
+            audioPlayer.load();
+            audioPlayer.__pg1UnlockPromise = null;
+          });
+      }
+      return audioPlayer;
     }
 
     function releaseAudioPlayer(invokeCleanup = true) {
@@ -393,7 +415,13 @@
         return true;
       }
       if (typeof audioPayload !== 'string') return false;
-      const normalizedAudio = audioPayload.trim().replace(/^data:[^,]+,/, '').replace(/\s+/g, '');
+      const trimmedAudio = audioPayload.trim();
+      if (!trimmedAudio) return false;
+      if (/^data:audio\/[^,]+,/i.test(trimmedAudio)) {
+        audioPlayer.src = trimmedAudio.replace(/\s+/g, '');
+        return true;
+      }
+      const normalizedAudio = trimmedAudio.replace(/\s+/g, '');
       if (!normalizedAudio) return false;
       audioPlayer.src = `data:audio/mp3;base64,${normalizedAudio}`;
       return true;
@@ -402,34 +430,38 @@
     function playAudioPayload(audioPayload, onended) {
       const audioPlayer = unlockAudioPlayer();
       const cleanup = typeof onended === 'function' ? onended : null;
-      releaseAudioPlayer(false);
-      audioPlayer.__pg1Cleanup = cleanup;
-      if (!assignAudioSource(audioPlayer, audioPayload)) {
-        audioPlayer.__pg1Cleanup = null;
-        setVoicePlaybackStatus(false);
-        return Promise.resolve(false);
-      }
-      audioPlayer.onended = () => {
-        setVoicePlaybackStatus(false);
-        releaseAudioPlayer(true);
-      };
-      setVoicePlaybackStatus(true);
-      return audioPlayer.play()
-        .then(() => true)
-        .catch(err => {
-          console.log("Audio unlock required:", err);
+      const unlockPromise = audioPlayer.__pg1UnlockPromise || Promise.resolve();
+      return unlockPromise.then(() => {
+        releaseAudioPlayer(false);
+        audioPlayer.__pg1Cleanup = cleanup;
+        audioPlayer.muted = false;
+        if (!assignAudioSource(audioPlayer, audioPayload)) {
+          audioPlayer.__pg1Cleanup = null;
           setVoicePlaybackStatus(false);
-          const failedCleanup = audioPlayer.__pg1Cleanup;
-          releaseAudioPlayer(false);
-          if (typeof failedCleanup === 'function') {
-            try {
-              failedCleanup();
-            } catch (cleanupErr) {
-              console.error("PG1 Voice completion callback error:", cleanupErr);
-            }
-          }
           return false;
-        });
+        }
+        audioPlayer.onended = () => {
+          setVoicePlaybackStatus(false);
+          releaseAudioPlayer(true);
+        };
+        setVoicePlaybackStatus(true);
+        return audioPlayer.play()
+          .then(() => true)
+          .catch(err => {
+            console.log("Audio unlock required:", err);
+            setVoicePlaybackStatus(false);
+            const failedCleanup = audioPlayer.__pg1Cleanup;
+            releaseAudioPlayer(false);
+            if (typeof failedCleanup === 'function') {
+              try {
+                failedCleanup();
+              } catch (cleanupErr) {
+                console.error("PG1 Voice completion callback error:", cleanupErr);
+              }
+            }
+            return false;
+          });
+      });
     }
 
     async function parseSpeechResponse(response) {
