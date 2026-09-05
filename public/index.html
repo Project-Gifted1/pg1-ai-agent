@@ -383,8 +383,13 @@
         if (window.__pg1ActiveAudio === ttsAudio) window.__pg1ActiveAudio = null;
         ttsAudio.__pg1Cleanup = null;
         ttsAudio.__pg1ObjectUrl = null;
-        if (cleanup) cleanup();
-        URL.revokeObjectURL(audioUrl);
+        try {
+          if (cleanup) cleanup();
+        } catch (err) {
+          console.error("PG1 Voice completion callback error:", err);
+        } finally {
+          URL.revokeObjectURL(audioUrl);
+        }
       };
       window.__pg1ActiveAudio = ttsAudio;
       return ttsAudio.play()
@@ -400,6 +405,15 @@
         });
     }
 
+    async function parseSpeechResponse(response) {
+      const responseType = response.headers.get('content-type') || '';
+      if (responseType.includes('application/json')) {
+        return response.json();
+      }
+      const text = await response.text();
+      return { error: text };
+    }
+
     async function speakText(text) {
       if (!voiceEnabled) return; 
       const audio = new Audio();
@@ -411,7 +425,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'SPEAK', prompt: cleanText, voice: voiceSelect.value })
         });
-        const data = await response.json();
+        const data = await parseSpeechResponse(response);
         if (!response.ok) throw new Error(data.error || 'API Request Failed');
         if (data.audio) {
           await playBase64Audio(data.audio);
@@ -440,7 +454,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'SPEAK', prompt: cleanText, voice: voiceSelect.value })
         });
-        const data = await response.json();
+        const data = await parseSpeechResponse(response);
         if (!response.ok) throw new Error(data.error || 'API Request Failed');
         if (data.audio) {
           const played = await playBase64Audio(data.audio, () => { btn.innerText = originalText; });
