@@ -371,6 +371,7 @@
         audioPlayer.muted = false;
         audioPlayer.src = '';
         audioPlayer.removeAttribute('src');
+        if (!audioPlayer.__pg1Unlocked) audioPlayer.__pg1UnlockAttempted = false;
         audioPlayer.__pg1UnlockPromise = null;
       };
       audioPlayer.__pg1UnlockAttempted = true;
@@ -386,6 +387,7 @@
             })
             .catch(() => {
               audioPlayer.__pg1Unlocked = false;
+              audioPlayer.__pg1UnlockAttempted = false;
               return false;
             })
             .then((unlocked) => {
@@ -398,6 +400,7 @@
         }
       } catch (err) {
         audioPlayer.__pg1Unlocked = false;
+        audioPlayer.__pg1UnlockAttempted = false;
         finalizeUnlockAttempt();
       }
       return audioPlayer;
@@ -492,7 +495,7 @@
         if (!assignAudioSource(audioPlayer, audioPayload, mimeType)) {
           audioPlayer.__pg1Cleanup = null;
           audioPlayer.__pg1PlaybackToken = null;
-          cleanup('blocked');
+          cleanup('failed');
           return false;
         }
         audioPlayer.onended = () => {
@@ -565,6 +568,11 @@
       const resetSpeakButton = (state) => {
         if (state === 'interrupted') {
           btn.innerText = originalText;
+          return;
+        }
+        if (state === 'failed') {
+          btn.innerText = "Error";
+          setTimeout(() => { btn.innerText = originalText; }, 2000);
           return;
         }
         btn.innerText = "READY";
