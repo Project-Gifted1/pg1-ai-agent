@@ -430,6 +430,8 @@
           if (!played) console.warn('PG1 Voice API Warning: audio playback was skipped.');
         } else if (data.audioStatus === 'FAILED') {
           console.warn('PG1 Voice API Warning:', data.audioError || data.error || 'Audio unavailable');
+        } else {
+          throw new Error('No audio payload returned');
         }
       } catch (err) {
         console.error('PG1 Voice API Error:', err);
