@@ -378,6 +378,7 @@
             audioPlayer.pause();
             audioPlayer.currentTime = 0;
             audioPlayer.muted = false;
+            audioPlayer.src = '';
             audioPlayer.removeAttribute('src');
             audioPlayer.load();
             audioPlayer.__pg1UnlockPromise = null;
@@ -399,6 +400,9 @@
         URL.revokeObjectURL(audioPlayer.__pg1ObjectUrl);
         audioPlayer.__pg1ObjectUrl = null;
       }
+      audioPlayer.src = '';
+      audioPlayer.removeAttribute('src');
+      audioPlayer.load();
       if (invokeCleanup && typeof cleanup === 'function') {
         try {
           cleanup();
@@ -448,8 +452,8 @@
           runAudioCleanup(cleanup, 'interrupted');
           return false;
         }
-        const previousCleanup = audioPlayer.__pg1Cleanup;
         const previousToken = audioPlayer.__pg1PlaybackToken;
+        const previousCleanup = previousToken ? audioPlayer.__pg1Cleanup : null;
         releaseAudioPlayer(false);
         if (previousToken && previousToken !== playbackToken) {
           runAudioCleanup(previousCleanup, 'interrupted');
@@ -473,7 +477,7 @@
         return audioPlayer.play()
           .then(() => true)
           .catch(err => {
-            console.log("Audio unlock required:", err);
+            console.log("Audio playback failed:", err);
             setVoicePlaybackStatus(false);
             releaseAudioPlayer(false);
             runAudioCleanup(cleanup, 'blocked');
