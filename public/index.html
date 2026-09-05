@@ -356,8 +356,8 @@
         if (!response.ok) throw new Error('API Request Failed');
         const data = await response.json();
         if(data.audio) {
-          audio.src = "data:audio/mp3;base64," + data.audio;
-          await audio.play();
+          const ttsAudio = new Audio("data:audio/mp3;base64," + data.audio);
+          await ttsAudio.play();
         }
       } catch (err) {
         console.error('PG1 Voice API Error:', err);
@@ -384,9 +384,9 @@
         if (!response.ok) throw new Error('API Request Failed');
         const data = await response.json();
         if(data.audio) {
-          audio.src = "data:audio/mp3;base64," + data.audio;
-          audio.onended = () => { btn.innerText = originalText; };
-          await audio.play();
+          const ttsAudio = new Audio("data:audio/mp3;base64," + data.audio);
+          ttsAudio.onended = () => { btn.innerText = originalText; };
+          await ttsAudio.play();
         } else {
           throw new Error('No audio payload returned');
         }
@@ -540,8 +540,8 @@
 
         if (voiceEnabled) {
           if (data.audio) {
-            playbackEngine.src = "data:audio/mp3;base64," + data.audio;
-            playbackEngine.play().catch(err => console.error("Playback block override failed:", err));
+            const ttsAudio = new Audio("data:audio/mp3;base64," + data.audio);
+            ttsAudio.play().catch(err => console.error("Playback block override failed:", err));
           } else {
             speakText(reply);
           }
