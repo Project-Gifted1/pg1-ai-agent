@@ -1,4 +1,10 @@
 {
+  "crons": [
+    {
+      "path": "/api/heartbeat/pulse",
+      "schedule": "0 * * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",
