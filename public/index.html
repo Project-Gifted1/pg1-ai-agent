@@ -402,7 +402,7 @@
     function playAudioPayload(audioPayload, onended) {
       const audioPlayer = unlockAudioPlayer();
       const cleanup = typeof onended === 'function' ? onended : null;
-      releaseAudioPlayer(true);
+      releaseAudioPlayer(false);
       audioPlayer.__pg1Cleanup = cleanup;
       if (!assignAudioSource(audioPlayer, audioPayload)) {
         audioPlayer.__pg1Cleanup = null;
