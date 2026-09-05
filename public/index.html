@@ -441,7 +441,7 @@
 
     function isBase64AudioPayload(text) {
       const compactText = text.replace(/\s+/g, '');
-      return compactText.length > 128 && compactText.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(compactText);
+      return compactText.length > 0 && compactText.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(compactText);
     }
 
     function assignAudioSource(audioPlayer, audioPayload, fallbackMimeType) {
