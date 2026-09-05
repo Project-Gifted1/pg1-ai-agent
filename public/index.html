@@ -342,9 +342,12 @@
     }
 
     // Audio Transport Routines
-    function createAudioObjectUrl(audioBase64) {
-      if (typeof audioBase64 !== 'string') return null;
-      const normalizedAudio = audioBase64.trim().replace(/^data:[^,]+,/, '').replace(/\s+/g, '');
+    function createAudioObjectUrl(audioPayload) {
+      if (audioPayload instanceof Blob) {
+        return URL.createObjectURL(audioPayload);
+      }
+      if (typeof audioPayload !== 'string') return null;
+      const normalizedAudio = audioPayload.trim().replace(/^data:[^,]+,/, '').replace(/\s+/g, '');
       if (!normalizedAudio) return null;
       try {
         const binary = atob(normalizedAudio);
@@ -357,9 +360,9 @@
       }
     }
 
-    function playBase64Audio(audioBase64, onended) {
+    function playAudioPayload(audioPayload, onended) {
       const previousAudio = window.__pg1ActiveAudio || null;
-      const audioUrl = createAudioObjectUrl(audioBase64);
+      const audioUrl = createAudioObjectUrl(audioPayload);
       if (!audioUrl) return Promise.resolve(false);
       if (previousAudio) {
         previousAudio.pause();
@@ -411,15 +414,8 @@
       if (response.ok && responseType.startsWith('text/')) {
         return { audio: await response.text() };
       }
+      if (response.ok) return { audioBlob: await response.blob() };
       const arrayBuffer = await response.arrayBuffer();
-      if (response.ok) {
-        const bytes = new Uint8Array(arrayBuffer);
-        const chunks = [];
-        for (let i = 0; i < bytes.length; i += 0x8000) {
-          chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)));
-        }
-        return { audio: btoa(chunks.join('')) };
-      }
       return { error: new TextDecoder().decode(arrayBuffer) };
     }
 
@@ -436,8 +432,8 @@
         });
         const data = await parseSpeechResponse(response);
         if (!response.ok) throw new Error(data.error || 'API Request Failed');
-        if (data.audio) {
-          const played = await playBase64Audio(data.audio);
+        if (data.audio || data.audioBlob) {
+          const played = await playAudioPayload(data.audio || data.audioBlob);
           if (!played) console.warn('PG1 Voice API Warning: audio playback was skipped.');
         } else if (data.audioStatus === 'FAILED') {
           throw new Error(data.audioError || data.error || 'Audio unavailable');
@@ -468,8 +464,8 @@
         });
         const data = await parseSpeechResponse(response);
         if (!response.ok) throw new Error(data.error || 'API Request Failed');
-        if (data.audio) {
-          const played = await playBase64Audio(data.audio, () => { btn.innerText = originalText; });
+        if (data.audio || data.audioBlob) {
+          const played = await playAudioPayload(data.audio || data.audioBlob, () => { btn.innerText = originalText; });
           if (!played) btn.innerText = originalText;
         } else if (data.audioStatus === 'FAILED') {
           throw new Error(data.audioError || data.error || 'Audio unavailable');
@@ -626,7 +622,7 @@
 
         if (voiceEnabled) {
           if (data.audio) {
-            playBase64Audio(data.audio).catch(() => {});
+            playAudioPayload(data.audio).catch(() => {});
           } else {
             speakText(reply);
           }
