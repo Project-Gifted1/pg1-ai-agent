@@ -32,24 +32,45 @@ export default async function handler(req, res) {
       return [payload];
     });
 
+    const sanitizeTargetFilePath = (inputPath, fallbackPath = 'api/chat.js') => {
+      const rawPath = String(inputPath || fallbackPath)
+        .trim()
+        .replace(/\\/g, '/')
+        .replace(/^\/+/, '');
+
+      const cleanedSegments = rawPath
+        .split('/')
+        .filter(segment => segment && segment !== '.' && segment !== '..')
+        .map(segment => segment.replace(/[^a-zA-Z0-9._-]/g, ''));
+
+      const sanitizedPath = cleanedSegments.join('/').replace(/\/{2,}/g, '/').trim();
+      return sanitizedPath || fallbackPath;
+    };
+
     const parseAutonomousGithubIntent = (inputPrompt, hasStructuredAuthorization) => {
       if (typeof inputPrompt !== 'string') return null;
       if (!hasStructuredAuthorization) return null;
 
       const intentRegex = /\b(push|commit|update\s+file)\b/i;
       const githubKeywords = ['push', 'commit', 'update file'];
-      const filePathMatch = inputPrompt.match(/(?:file(?:_path)?|path|target(?:\s+file)?)\s*[:=]\s*([^\s`"'<>]+)/i)
-        || inputPrompt.match(/(?:in|to|into|for)\s+((?:api\/[^\s`"'<>]+)|public\/index\.html|package\.json)\b/i);
+      const explicitPathMatch = inputPrompt.match(/(?:file(?:_path)?|path|target(?:\s+file)?)\s*[:=]\s*["'`]?([^\s`"'<>]+)["'`]?/i);
+      const routePathMatches = Array.from(inputPrompt.matchAll(/(?:in|to|into|for)\s+["'`]?([^\s`"'<>]+)["'`]?/gi)).map(match => match?.[1]).filter(Boolean);
+      const genericPathMatches = Array.from(inputPrompt.matchAll(/(?:^|[\s"'`(])([./]?[a-zA-Z0-9._-]+(?:\/[a-zA-Z0-9._-]+)*)(?=$|[\s"'`).,;:!?])/g)).map(match => match?.[1]).filter(Boolean);
+      const isLikelyFilePath = (candidate) => {
+        if (!candidate || /\s/.test(candidate) || /^https?:\/\//i.test(candidate)) return false;
+        return candidate.includes('/') || candidate.startsWith('.') || /\.[a-z0-9]+$/i.test(candidate);
+      };
+      const extractedFilePath = [explicitPathMatch?.[1], ...routePathMatches, ...genericPathMatches].find(isLikelyFilePath) || '';
       const authorizationHintRegex = /\b(?:accept[_\s-]?authorization|authorize\s+(?:this|the)?\s*(?:github\s+)?(?:commit|push|update))\b/i;
       const hasGithubIntent = intentRegex.test(inputPrompt) || githubKeywords.some(keyword => inputPrompt.toLowerCase().includes(keyword));
-      if (!hasGithubIntent || !filePathMatch?.[1] || !authorizationHintRegex.test(inputPrompt)) return null;
+      if (!hasGithubIntent || !extractedFilePath || !authorizationHintRegex.test(inputPrompt)) return null;
 
-      const codeBlockMatch = inputPrompt.match(/```(?:[\w.+-]+)?\s*\n([\s\S]*?)```/);
+      const codeBlockMatch = inputPrompt.match(/```(?:toml|json|yaml|yml|txt|javascript|html|js|[\w.+-]+)?\s*\r?\n([\s\S]*?)```/i);
       if (!codeBlockMatch?.[1]?.trim()) return null;
 
       return {
         action: 'ACCEPT_AUTHORIZATION',
-        filePath: filePathMatch?.[1]?.trim() || '',
+        filePath: sanitizeTargetFilePath(extractedFilePath),
         fileContent: codeBlockMatch[1].trim()
       };
     };
@@ -68,13 +89,6 @@ export default async function handler(req, res) {
 
     multiFiles = normalizeFilePayloads(multiFiles);
     singleFile = normalizeFilePayloads(singleFile)[0] || null;
-
-    targetFile = String(targetFile || 'api/chat.js').replace(/^\/+/, '').replace(/\.\./g, '').trim();
-    if (!targetFile.startsWith('api/') && targetFile !== 'package.json' && targetFile !== 'public/index.html') {
-      targetFile = 'api/chat.js';
-    }
-    
-    console.log(`[PG1-AGENT:${requestTraceId}] Incoming Request. Action: ${actionType || 'CHAT'} | Target: ${targetFile}`);
 
     if (promptText === 'AUTH_VERIFY') {
       const inputUser = (body?.user || '').trim();
@@ -114,6 +128,9 @@ export default async function handler(req, res) {
         if (!body?.file_path && autonomousIntent.filePath) targetFile = autonomousIntent.filePath;
       }
     }
+
+    targetFile = sanitizeTargetFilePath(targetFile);
+    console.log(`[PG1-AGENT:${requestTraceId}] Incoming Request. Action: ${actionType || 'CHAT'} | Target: ${targetFile}`);
 
     let isAuthorizedAction = true;
     if (actionType === 'ACCEPT_AUTHORIZATION' && masterControlKey) {
