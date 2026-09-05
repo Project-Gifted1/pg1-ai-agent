@@ -115,6 +115,41 @@ export default async function handler(req, res) {
       };
     };
 
+    const requestCartesiaSpeech = async (transcript) => {
+      const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
+        method: 'POST',
+        headers: {
+          'Cartesia-Version': '2024-06-10',
+          'X-API-Key': cartesiaKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model_id: 'sonic-english',
+          transcript,
+          voice: { mode: 'id', id: 'a0e99841-438c-4a64-b679-ae501e7d6091' },
+          output_format: { container: 'mp3', sample_rate: 44100 }
+        })
+      });
+
+      if (!ttsRes.ok) {
+        return {
+          ok: false,
+          status: ttsRes.status,
+          error: await ttsRes.text()
+        };
+      }
+
+      const arrayBuffer = await ttsRes.arrayBuffer();
+      if (!arrayBuffer.byteLength) {
+        return { ok: false, status: 502, error: 'Cartesia returned an empty audio payload.' };
+      }
+
+      return {
+        ok: true,
+        audio: Buffer.from(arrayBuffer).toString('base64')
+      };
+    };
+
     // --- AGGRESSIVE AUTO-ROUTER FOR NATURAL LANGUAGE GENERATION ---
     if (typeof promptText === 'string') {
       const lowerPrmpt = promptText.trim().toLowerCase();
@@ -248,25 +283,16 @@ export default async function handler(req, res) {
       if (cartesiaKey) {
         try {
           const cleanText = promptText.replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 1500).trim();
-          const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
-            method: 'POST',
-            headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              model_id: 'sonic-english', 
-              transcript: cleanText, 
-              voice: { mode: 'id', id: 'a0e99841-438c-4a64-b679-ae501e7d6091' }, 
-              output_format: { container: 'mp3', sample_rate: 44100 } 
-            })
-          });
-          if (ttsRes.ok) {
-            const arrayBuffer = await ttsRes.arrayBuffer();
-            return res.status(200).json({ audio: Buffer.from(arrayBuffer).toString('base64'), audioStatus: 'SUCCESS', traceId: requestTraceId });
+          const speechResult = await requestCartesiaSpeech(cleanText);
+          if (speechResult.ok) {
+            return res.status(200).json({ audio: speechResult.audio, audioStatus: 'SUCCESS', traceId: requestTraceId });
           }
+          return res.status(speechResult.status || 502).json({ error: speechResult.error || 'Audio unavailable', audioStatus: 'FAILED', traceId: requestTraceId });
         } catch (e) {
-           return res.status(500).json({ error: e.message, traceId: requestTraceId });
+           return res.status(500).json({ error: e.message, audioStatus: 'FAILED', traceId: requestTraceId });
         }
       }
-      return res.status(400).json({ error: 'Audio unavailable', traceId: requestTraceId });
+      return res.status(400).json({ error: 'Audio unavailable', audioStatus: 'FAILED', traceId: requestTraceId });
     }
 
     // --- TRUE IMAGEN 3 GENERATION PIPELINE ---
@@ -674,28 +700,15 @@ CRITICAL ENFORCEMENT PROTOCOLS:
     if (cartesiaKey && !replyText.startsWith('Execution failed') && !isPdfExport) {
       try {
         const cleanText = ttsSourceText;
-        const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
-          method: 'POST',
-          headers: {
-            'Cartesia-Version': '2024-06-10',
-            'X-API-Key': cartesiaKey,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model_id: 'sonic-english',
-            transcript: cleanText,
-            voice: { mode: 'id', id: 'a0e99841-438c-4a64-b679-ae501e7d6091' },
-            output_format: { container: 'mp3', sample_rate: 44100 }
-          })
-        });
-
-        if (ttsRes.ok) {
-          const arrayBuffer = await ttsRes.arrayBuffer();
-          audioBase64 = Buffer.from(arrayBuffer).toString('base64');
+        const speechResult = await requestCartesiaSpeech(cleanText);
+        if (speechResult.ok) {
+          audioBase64 = speechResult.audio;
         } else {
-          audioError = await ttsRes.text();
+          audioError = speechResult.error;
         }
-      } catch (e) {}
+      } catch (e) {
+        audioError = e.message;
+      }
     }
 
     const executionTime = Date.now() - startTime;
@@ -704,6 +717,7 @@ CRITICAL ENFORCEMENT PROTOCOLS:
       reply: replyText, 
       audio: audioBase64,
       audioStatus: audioBase64 ? 'SUCCESS' : 'FAILED',
+      audioError,
       pdfExport: isPdfExport,
       traceId: requestTraceId,
       telemetry: {

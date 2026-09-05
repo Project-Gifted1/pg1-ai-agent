@@ -342,34 +342,84 @@
     }
 
     // Audio Transport Routines
-    function playBase64Audio(audioBase64, onended) {
+    function createAudioObjectUrl(audioPayload) {
+      if (audioPayload instanceof Blob) {
+        return URL.createObjectURL(audioPayload);
+      }
+      if (typeof audioPayload !== 'string') return null;
+      const normalizedAudio = audioPayload.trim().replace(/^data:[^,]+,/, '').replace(/\s+/g, '');
+      if (!normalizedAudio) return null;
+      try {
+        const binary = atob(normalizedAudio);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+        return URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+      } catch (err) {
+        console.error("PG1 Voice decode error:", err);
+        return null;
+      }
+    }
+
+    function playAudioPayload(audioPayload, onended) {
       const previousAudio = window.__pg1ActiveAudio || null;
+      const audioUrl = createAudioObjectUrl(audioPayload);
+      if (!audioUrl) return Promise.resolve(false);
       if (previousAudio) {
-        const previousCleanup = previousAudio.__pg1Cleanup;
-        previousAudio.onended = null;
-        previousAudio.__pg1Cleanup = null;
-        if (typeof previousCleanup === 'function') previousCleanup();
         previousAudio.pause();
         previousAudio.src = '';
+        if (typeof previousAudio.__pg1Finalize === 'function') {
+          previousAudio.__pg1Finalize();
+        } else if (previousAudio.__pg1ObjectUrl) {
+          URL.revokeObjectURL(previousAudio.__pg1ObjectUrl);
+          previousAudio.__pg1ObjectUrl = null;
+        }
       }
-      const ttsAudio = new Audio("data:audio/mp3;base64," + audioBase64);
+      const ttsAudio = new Audio(audioUrl);
       const cleanup = typeof onended === 'function' ? onended : null;
-      ttsAudio.__pg1Cleanup = cleanup;
-      ttsAudio.onended = () => {
+      let released = false;
+      ttsAudio.__pg1Finalize = (invokeCleanup = true) => {
+        if (released) return;
+        released = true;
         if (window.__pg1ActiveAudio === ttsAudio) window.__pg1ActiveAudio = null;
+        ttsAudio.onended = null;
+        const finish = ttsAudio.__pg1Cleanup;
         ttsAudio.__pg1Cleanup = null;
-        if (cleanup) cleanup();
+        ttsAudio.__pg1ObjectUrl = null;
+        try {
+          if (invokeCleanup && finish) finish();
+        } catch (err) {
+          console.error("PG1 Voice completion callback error:", err);
+        } finally {
+          URL.revokeObjectURL(audioUrl);
+        }
       };
+      ttsAudio.__pg1Cleanup = cleanup;
+      ttsAudio.__pg1ObjectUrl = audioUrl;
+      ttsAudio.onended = () => ttsAudio.__pg1Finalize(true);
       window.__pg1ActiveAudio = ttsAudio;
       return ttsAudio.play()
-        .then(() => {})
+        .then(() => true)
         .catch(err => {
-          ttsAudio.onended = null;
-          ttsAudio.__pg1Cleanup = null;
-          if (window.__pg1ActiveAudio === ttsAudio) window.__pg1ActiveAudio = null;
           console.error("Playback block override failed:", err);
-          throw err;
+          ttsAudio.__pg1Finalize(false);
+          return false;
         });
+    }
+
+    async function parseSpeechResponse(response) {
+      const responseType = response.headers.get('content-type') || '';
+      if (responseType.includes('application/json')) {
+        return response.json();
+      }
+      if (response.ok && responseType.startsWith('text/')) {
+        const text = await response.text();
+        const normalizedText = text.trim();
+        const isAudioPayload = /^data:audio\/[^,]+,/.test(normalizedText) || /^[A-Za-z0-9+/=\s]+$/.test(normalizedText);
+        return isAudioPayload ? { audio: text } : { audioStatus: 'FAILED', audioError: text || 'Audio unavailable' };
+      }
+      if (response.ok) return { audioBlob: await response.blob() };
+      const arrayBuffer = await response.arrayBuffer();
+      return { error: new TextDecoder().decode(arrayBuffer) };
     }
 
     async function speakText(text) {
@@ -383,10 +433,15 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'SPEAK', prompt: cleanText, voice: voiceSelect.value })
         });
-        if (!response.ok) throw new Error('API Request Failed');
-        const data = await response.json();
-        if(data.audio) {
-          await playBase64Audio(data.audio);
+        const data = await parseSpeechResponse(response);
+        if (!response.ok) throw new Error(data.error || 'API Request Failed');
+        if (data.audio || data.audioBlob) {
+          const played = await playAudioPayload(data.audio || data.audioBlob);
+          if (!played) console.warn('PG1 Voice API Warning: audio playback was skipped.');
+        } else if (data.audioStatus === 'FAILED') {
+          throw new Error(data.audioError || data.error || 'Audio unavailable');
+        } else {
+          throw new Error('No audio payload returned');
         }
       } catch (err) {
         console.error('PG1 Voice API Error:', err);
@@ -410,10 +465,13 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'SPEAK', prompt: cleanText, voice: voiceSelect.value })
         });
-        if (!response.ok) throw new Error('API Request Failed');
-        const data = await response.json();
-        if(data.audio) {
-          await playBase64Audio(data.audio, () => { btn.innerText = originalText; });
+        const data = await parseSpeechResponse(response);
+        if (!response.ok) throw new Error(data.error || 'API Request Failed');
+        if (data.audio || data.audioBlob) {
+          const played = await playAudioPayload(data.audio || data.audioBlob, () => { btn.innerText = originalText; });
+          if (!played) btn.innerText = originalText;
+        } else if (data.audioStatus === 'FAILED') {
+          throw new Error(data.audioError || data.error || 'Audio unavailable');
         } else {
           throw new Error('No audio payload returned');
         }
@@ -567,7 +625,7 @@
 
         if (voiceEnabled) {
           if (data.audio) {
-            playBase64Audio(data.audio).catch(() => {});
+            playAudioPayload(data.audio).catch(() => {});
           } else {
             speakText(reply);
           }
