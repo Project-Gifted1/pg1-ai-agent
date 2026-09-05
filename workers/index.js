@@ -22,7 +22,7 @@ export default {
       });
     }
 
-    // 2. Static Assets Fallback (Serves frontend if routed via Cloudflare)
+    // 2. Static Assets Fallback
     if (env.ASSETS) {
       return env.ASSETS.fetch(request);
     }
