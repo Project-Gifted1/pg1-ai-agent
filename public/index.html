@@ -344,7 +344,7 @@
     // Audio Transport Routines
     function createAudioObjectUrl(audioBase64) {
       if (typeof audioBase64 !== 'string') return null;
-      const normalizedAudio = audioBase64.trim().replace(/^data:audio\/[^;]+;base64,/, '').replace(/\s+/g, '');
+      const normalizedAudio = audioBase64.trim().replace(/^data:[^,]+,/, '').replace(/\s+/g, '');
       if (!normalizedAudio) return null;
       try {
         const binary = atob(normalizedAudio);
@@ -383,8 +383,8 @@
         if (window.__pg1ActiveAudio === ttsAudio) window.__pg1ActiveAudio = null;
         ttsAudio.__pg1Cleanup = null;
         ttsAudio.__pg1ObjectUrl = null;
-        URL.revokeObjectURL(audioUrl);
         if (cleanup) cleanup();
+        URL.revokeObjectURL(audioUrl);
       };
       window.__pg1ActiveAudio = ttsAudio;
       return ttsAudio.play()
