@@ -360,15 +360,14 @@
     function playBase64Audio(audioBase64, onended) {
       const previousAudio = window.__pg1ActiveAudio || null;
       if (previousAudio) {
-        const previousCleanup = previousAudio.__pg1Cleanup;
-        const previousObjectUrl = previousAudio.__pg1ObjectUrl;
-        previousAudio.onended = null;
-        previousAudio.__pg1Cleanup = null;
-        previousAudio.__pg1ObjectUrl = null;
-        if (typeof previousCleanup === 'function') previousCleanup();
         previousAudio.pause();
         previousAudio.src = '';
-        if (previousObjectUrl) URL.revokeObjectURL(previousObjectUrl);
+        if (typeof previousAudio.__pg1Finalize === 'function') {
+          previousAudio.__pg1Finalize();
+        } else if (previousAudio.__pg1ObjectUrl) {
+          URL.revokeObjectURL(previousAudio.__pg1ObjectUrl);
+          previousAudio.__pg1ObjectUrl = null;
+        }
       }
       const audioUrl = createAudioObjectUrl(audioBase64);
       if (!audioUrl) {
@@ -377,30 +376,32 @@
       }
       const ttsAudio = new Audio(audioUrl);
       const cleanup = typeof onended === 'function' ? onended : null;
-      ttsAudio.__pg1Cleanup = cleanup;
-      ttsAudio.__pg1ObjectUrl = audioUrl;
-      ttsAudio.onended = () => {
+      let released = false;
+      ttsAudio.__pg1Finalize = (invokeCleanup = true) => {
+        if (released) return;
+        released = true;
         if (window.__pg1ActiveAudio === ttsAudio) window.__pg1ActiveAudio = null;
+        ttsAudio.onended = null;
+        const finish = ttsAudio.__pg1Cleanup;
         ttsAudio.__pg1Cleanup = null;
         ttsAudio.__pg1ObjectUrl = null;
         try {
-          if (cleanup) cleanup();
+          if (invokeCleanup && finish) finish();
         } catch (err) {
           console.error("PG1 Voice completion callback error:", err);
         } finally {
           URL.revokeObjectURL(audioUrl);
         }
       };
+      ttsAudio.__pg1Cleanup = cleanup;
+      ttsAudio.__pg1ObjectUrl = audioUrl;
+      ttsAudio.onended = () => ttsAudio.__pg1Finalize(true);
       window.__pg1ActiveAudio = ttsAudio;
       return ttsAudio.play()
         .then(() => true)
         .catch(err => {
-          ttsAudio.onended = null;
-          ttsAudio.__pg1Cleanup = null;
-          ttsAudio.__pg1ObjectUrl = null;
-          if (window.__pg1ActiveAudio === ttsAudio) window.__pg1ActiveAudio = null;
-          URL.revokeObjectURL(audioUrl);
           console.error("Playback block override failed:", err);
+          ttsAudio.__pg1Finalize(false);
           return false;
         });
     }
