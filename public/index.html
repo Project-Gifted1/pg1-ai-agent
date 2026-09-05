@@ -412,7 +412,10 @@
         return response.json();
       }
       if (response.ok && responseType.startsWith('text/')) {
-        return { audio: await response.text() };
+        const text = await response.text();
+        const normalizedText = text.trim();
+        const isAudioPayload = /^data:audio\/[^,]+,/.test(normalizedText) || /^[A-Za-z0-9+/=\s]+$/.test(normalizedText);
+        return isAudioPayload ? { audio: text } : { audioStatus: 'FAILED', audioError: text || 'Audio unavailable' };
       }
       if (response.ok) return { audioBlob: await response.blob() };
       const arrayBuffer = await response.arrayBuffer();
