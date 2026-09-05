@@ -55,8 +55,18 @@ export default async function handler(req, res) {
       const blockedPatterns = [/^\.git(?:\/|$)/i, /^\.env(?:\.|$)/i];
       if (blockedPatterns.some(pattern => pattern.test(normalizedPath))) return false;
 
-      const allowedTopLevelDirs = new Set(['api', 'app', 'components', 'config', 'lib', 'public', 'scripts', 'src', 'styles', 'tests', 'workers']);
-      const allowedRootFiles = new Set(['.cfignore', '.gitignore', 'index.html', 'package-lock.json', 'package.json', 'README.md', 'README_DEPLOYMENT.md', 'style.css', 'vercel.json', 'wrangler.toml']);
+      const allowedTopLevelDirs = new Set(
+        String(process.env.AGENT_ALLOWED_TARGET_ROOTS || 'api,app,components,config,lib,public,scripts,src,styles,tests,workers')
+          .split(',')
+          .map(segment => segment.trim().replace(/[^a-zA-Z0-9._-]/g, ''))
+          .filter(Boolean)
+      );
+      const allowedRootFiles = new Set(
+        String(process.env.AGENT_ALLOWED_TARGET_FILES || '.cfignore,.gitignore,index.html,package-lock.json,package.json,README.md,README_DEPLOYMENT.md,style.css,vercel.json,wrangler.toml')
+          .split(',')
+          .map(segment => segment.trim().replace(/^\/+/, ''))
+          .filter(Boolean)
+      );
       const pathSegments = normalizedPath.split('/');
       if (pathSegments.length > 1) return allowedTopLevelDirs.has(pathSegments[0]);
 
@@ -92,7 +102,10 @@ export default async function handler(req, res) {
       if (!hasGithubIntent || !extractedFilePath || !authorizationHintRegex.test(inputPrompt)) return null;
 
       const codeBlockMatches = Array.from(inputPrompt.matchAll(/```(?:toml|json|yaml|yml|txt|javascript|html|js|[\w.+-]+)?\s*\r?\n([\s\S]*?)```/gi));
-      const codeBlockMatch = codeBlockMatches[codeBlockMatches.length - 1];
+      const targetPathIndex = extractedFilePath ? inputPrompt.toLowerCase().indexOf(extractedFilePath.toLowerCase()) : -1;
+      const codeBlockMatch = targetPathIndex >= 0
+        ? (codeBlockMatches.find(match => typeof match.index === 'number' && match.index > targetPathIndex) || codeBlockMatches[0])
+        : codeBlockMatches[0];
       if (!codeBlockMatch?.[1]?.trim()) return null;
 
       return {
