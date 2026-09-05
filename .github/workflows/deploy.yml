@@ -12,10 +12,6 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
-
 jobs:
   deploy:
     environment:
@@ -38,7 +34,15 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-      - name: Deploy Worker to Cloudflare
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Deploy Worker Dynamically
+        env:
+          CF_TOKEN_1: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_TOKEN_2: ${{ secrets.CLOUDFLARE_TOKEN }}
+          CF_TOKEN_3: ${{ secrets.CLOUDFLARE }}
+        run: |
+          TOKEN="${CF_TOKEN_1:-${CF_TOKEN_2:-$CF_TOKEN_3}}"
+          if [ -z "$TOKEN" ]; then
+            echo "Error: No Cloudflare API token found matching standard repository secret names."
+            exit 1
+          fi
+          npx wrangler deploy --api-token "$TOKEN"
