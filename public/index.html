@@ -371,7 +371,6 @@
         audioPlayer.muted = false;
         audioPlayer.src = '';
         audioPlayer.removeAttribute('src');
-        audioPlayer.load();
         audioPlayer.__pg1UnlockPromise = null;
       };
       audioPlayer.muted = true;
@@ -409,7 +408,6 @@
       }
       audioPlayer.src = '';
       audioPlayer.removeAttribute('src');
-      audioPlayer.load();
       if (invokeCleanup && typeof cleanup === 'function') {
         try {
           cleanup();
@@ -487,6 +485,7 @@
         return audioPlayer.play()
           .then(() => true)
           .catch(err => {
+            if (audioPlayer.__pg1PlaybackToken !== playbackToken) return false;
             console.log("Audio playback failed:", err);
             releaseAudioPlayer(false);
             cleanup('blocked');
