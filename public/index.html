@@ -491,6 +491,7 @@
         audioPlayer.muted = false;
         if (!assignAudioSource(audioPlayer, audioPayload, mimeType)) {
           audioPlayer.__pg1Cleanup = null;
+          audioPlayer.__pg1PlaybackToken = null;
           cleanup('blocked');
           return false;
         }
@@ -520,7 +521,7 @@
       if (response.ok && responseType.startsWith('text/')) {
         const text = await response.text();
         const normalizedText = text.trim();
-        const isAudioPayload = /^data:audio\/[^,]*,/.test(normalizedText) || /^[A-Za-z0-9+/=\s]+$/.test(normalizedText);
+        const isAudioPayload = /^data:audio\/[^,]*,/.test(normalizedText) || /^[A-Za-z0-9+/=][A-Za-z0-9+/=\s]*$/.test(normalizedText);
         return isAudioPayload ? { audio: text } : { audioStatus: 'FAILED', audioError: text || 'Audio unavailable' };
       }
       if (response.ok) return { audioBlob: await response.blob() };
