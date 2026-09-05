@@ -342,66 +342,94 @@
     }
 
     // Audio Transport Routines
-    function createAudioObjectUrl(audioPayload) {
-      if (audioPayload instanceof Blob) {
-        return URL.createObjectURL(audioPayload);
+    function getVoiceReadyStatus() {
+      return voiceEnabled ? `Sys: READY | ${voiceSelect.options[voiceSelect.selectedIndex].text}` : "Sys: READY | Standby";
+    }
+
+    function setVoicePlaybackStatus(isSpeaking) {
+      voiceStats.innerText = isSpeaking ? "Sys: SPEAKING..." : getVoiceReadyStatus();
+    }
+
+    function getAudioPlayer() {
+      if (!window.__pg1AudioPlayer) {
+        const audioPlayer = new Audio();
+        audioPlayer.preload = 'auto';
+        audioPlayer.playsInline = true;
+        window.__pg1AudioPlayer = audioPlayer;
       }
-      if (typeof audioPayload !== 'string') return null;
-      const normalizedAudio = audioPayload.trim().replace(/^data:[^,]+,/, '').replace(/\s+/g, '');
-      if (!normalizedAudio) return null;
-      try {
-        const binary = atob(normalizedAudio);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-        return URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
-      } catch (err) {
-        console.error("PG1 Voice decode error:", err);
-        return null;
+      return window.__pg1AudioPlayer;
+    }
+
+    function unlockAudioPlayer() {
+      const audioPlayer = getAudioPlayer();
+      if (audioPlayer.__pg1UnlockAttempted) return audioPlayer;
+      audioPlayer.__pg1UnlockAttempted = true;
+      const unlockAttempt = audioPlayer.play();
+      if (unlockAttempt && typeof unlockAttempt.catch === 'function') {
+        unlockAttempt.catch(() => {}).finally(() => {
+          audioPlayer.pause();
+          audioPlayer.currentTime = 0;
+        });
+      }
+      return audioPlayer;
+    }
+
+    function releaseAudioPlayer(invokeCleanup = true) {
+      const audioPlayer = window.__pg1AudioPlayer || null;
+      if (!audioPlayer) return;
+      audioPlayer.pause();
+      audioPlayer.currentTime = 0;
+      audioPlayer.onended = null;
+      const cleanup = audioPlayer.__pg1Cleanup;
+      audioPlayer.__pg1Cleanup = null;
+      if (audioPlayer.__pg1ObjectUrl) {
+        URL.revokeObjectURL(audioPlayer.__pg1ObjectUrl);
+        audioPlayer.__pg1ObjectUrl = null;
+      }
+      if (invokeCleanup && typeof cleanup === 'function') {
+        try {
+          cleanup();
+        } catch (err) {
+          console.error("PG1 Voice completion callback error:", err);
+        }
       }
     }
 
-    function playAudioPayload(audioPayload, onended) {
-      const previousAudio = window.__pg1ActiveAudio || null;
-      const audioUrl = createAudioObjectUrl(audioPayload);
-      if (!audioUrl) return Promise.resolve(false);
-      if (previousAudio) {
-        previousAudio.pause();
-        previousAudio.src = '';
-        if (typeof previousAudio.__pg1Finalize === 'function') {
-          previousAudio.__pg1Finalize();
-        } else if (previousAudio.__pg1ObjectUrl) {
-          URL.revokeObjectURL(previousAudio.__pg1ObjectUrl);
-          previousAudio.__pg1ObjectUrl = null;
-        }
+    function assignAudioSource(audioPlayer, audioPayload) {
+      if (audioPayload instanceof Blob) {
+        const audioUrl = URL.createObjectURL(audioPayload);
+        audioPlayer.__pg1ObjectUrl = audioUrl;
+        audioPlayer.src = audioUrl;
+        return true;
       }
-      const ttsAudio = new Audio(audioUrl);
+      if (typeof audioPayload !== 'string') return false;
+      const normalizedAudio = audioPayload.trim().replace(/^data:[^,]+,/, '').replace(/\s+/g, '');
+      if (!normalizedAudio) return false;
+      audioPlayer.src = `data:audio/mp3;base64,${normalizedAudio}`;
+      return true;
+    }
+
+    function playAudioPayload(audioPayload, onended) {
+      const audioPlayer = unlockAudioPlayer();
       const cleanup = typeof onended === 'function' ? onended : null;
-      let released = false;
-      ttsAudio.__pg1Finalize = (invokeCleanup = true) => {
-        if (released) return;
-        released = true;
-        if (window.__pg1ActiveAudio === ttsAudio) window.__pg1ActiveAudio = null;
-        ttsAudio.onended = null;
-        const finish = ttsAudio.__pg1Cleanup;
-        ttsAudio.__pg1Cleanup = null;
-        ttsAudio.__pg1ObjectUrl = null;
-        try {
-          if (invokeCleanup && finish) finish();
-        } catch (err) {
-          console.error("PG1 Voice completion callback error:", err);
-        } finally {
-          URL.revokeObjectURL(audioUrl);
-        }
+      releaseAudioPlayer(true);
+      audioPlayer.__pg1Cleanup = cleanup;
+      if (!assignAudioSource(audioPlayer, audioPayload)) {
+        audioPlayer.__pg1Cleanup = null;
+        setVoicePlaybackStatus(false);
+        return Promise.resolve(false);
+      }
+      audioPlayer.onended = () => {
+        setVoicePlaybackStatus(false);
+        releaseAudioPlayer(true);
       };
-      ttsAudio.__pg1Cleanup = cleanup;
-      ttsAudio.__pg1ObjectUrl = audioUrl;
-      ttsAudio.onended = () => ttsAudio.__pg1Finalize(true);
-      window.__pg1ActiveAudio = ttsAudio;
-      return ttsAudio.play()
+      setVoicePlaybackStatus(true);
+      return audioPlayer.play()
         .then(() => true)
         .catch(err => {
-          console.error("Playback block override failed:", err);
-          ttsAudio.__pg1Finalize(false);
+          console.log("Audio unlock required:", err);
+          setVoicePlaybackStatus(false);
+          releaseAudioPlayer(false);
           return false;
         });
     }
@@ -424,8 +452,7 @@
 
     async function speakText(text) {
       if (!voiceEnabled) return; 
-      const audio = new Audio();
-      audio.play().catch(()=>{}); 
+      unlockAudioPlayer();
       try {
         const cleanText = text.replace(/[*_#`]/g, '').replace(/!\[.*?\]\(.*?\)/g, '').replace(/<video.*?>.*?<\/video>/g, '').replace(/\[CONSENT_REQUIRED\]/g, '');
         const response = await fetch('/api/chat', {
@@ -450,15 +477,14 @@
 
     async function speakMessageText(btn) { 
       triggerHaptic(15); 
-      const audio = new Audio();
-      audio.play().catch(()=>{}); 
+      unlockAudioPlayer();
       
       const container = btn.closest('.bubble-container'); 
       const bubble = container.querySelector('.bubble'); 
       const cleanText = bubble.innerText.replace(/[*_#`]/g, '');
       const originalText = btn.innerText;
       
-      btn.innerText = "Speaking...";
+      btn.innerText = "SPEAKING...";
       try {
         const response = await fetch('/api/chat', {
           method: 'POST',
@@ -468,8 +494,14 @@
         const data = await parseSpeechResponse(response);
         if (!response.ok) throw new Error(data.error || 'API Request Failed');
         if (data.audio || data.audioBlob) {
-          const played = await playAudioPayload(data.audio || data.audioBlob, () => { btn.innerText = originalText; });
-          if (!played) btn.innerText = originalText;
+          const played = await playAudioPayload(data.audio || data.audioBlob, () => {
+            btn.innerText = "READY";
+            setTimeout(() => { btn.innerText = originalText; }, 1200);
+          });
+          if (!played) {
+            btn.innerText = "READY";
+            setTimeout(() => { btn.innerText = originalText; }, 1200);
+          }
         } else if (data.audioStatus === 'FAILED') {
           throw new Error(data.audioError || data.error || 'Audio unavailable');
         } else {
@@ -531,8 +563,7 @@
       const promptText = userInput.value.trim();
       if (!promptText && !currentAttachment) return;
 
-      const audioWarmup = new Audio();
-      if (voiceEnabled) { audioWarmup.play().catch(() => {}); }
+      if (voiceEnabled) { unlockAudioPlayer(); }
       
       const promptToDisplay = promptText || "Analyze the attached file.";
       if (threads[currentThreadId].title === 'Initial Session' || threads[currentThreadId].title === 'New Directive') {
