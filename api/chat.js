@@ -432,7 +432,28 @@ export default async function handler(req, res) {
       }
     }
 
-    // Consolidated multi-file and single-file media parts builder
+    // --- [NEW INJECTION: DYNAMIC VECTOR MEMORY RECALL] ---
+    let vectorContext = '';
+    try {
+      const protocol = req.headers['x-forwarded-proto'] || 'https';
+      const host = req.headers.host || 'localhost';
+      const baseUrl = `${protocol}://${host}`;
+      const recallRes = await fetch(`${baseUrl}/api/memory/recall`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: promptText })
+      });
+      if (recallRes.ok) {
+        const recallData = await recallRes.json();
+        if (recallData.memories && recallData.memories.length > 0) {
+          vectorContext = '\n[VERIFIED VECTOR MEMORIES]:\n' + recallData.memories.map(m => `[${m.memory_type.toUpperCase()}]: ${m.content}`).join('\n');
+        }
+      }
+    } catch (memErr) {
+      console.error(`[PG1-AGENT:${requestTraceId}] Vector Recall Error: ${memErr.message}`);
+    }
+    // -----------------------------------------------------
+
     const mediaParts = normalizeFilePayloads(multiFiles, singleFile)
       .filter(filePayload => filePayload?.inlineData)
       .map(filePayload => ({ inlineData: filePayload.inlineData }));
@@ -441,7 +462,6 @@ export default async function handler(req, res) {
     const liveIsoString = liveNow.toISOString();
     const liveUtcString = liveNow.toUTCString();
 
-    // Permanent environment and integration awareness hardwired into system instruction
     const systemInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel infrastructure with permanent direct integration rails.
 [PERMANENT ENVIRONMENT & TELEMETRY AWARENESS]:
 - Real-World UTC Clock: ${liveUtcString}
@@ -457,7 +477,7 @@ CRITICAL ENFORCEMENT PROTOCOLS:
 2. PERMANENT RAIL AWARENESS: You have permanent access to your GitHub token and Vercel/Supabase environment variables. When asked to patch files or inspect repositories, acknowledge your active environment rails directly.
 3. MULTI-FILE AWARENESS: You can receive multiple file payloads simultaneously from the operator frontend. Analyze all attached documents, images, or code streams collectively.
 4. ERROR AWARENESS: Recent errors to avoid: ${historicalErrors || 'None'}.
-[PRIOR RECENT CONTEXT]:\n${formattedArchive}`;
+[PRIOR RECENT CONTEXT]:\n${formattedArchive}${vectorContext}`;
 
     const modelsToTry = ['gemini-3.7-flash', 'gemini-omni-1.1-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
     let geminiData = null;
@@ -505,6 +525,25 @@ CRITICAL ENFORCEMENT PROTOCOLS:
           { role: 'model', content: replyText }
         ])
       });
+
+      // --- [NEW INJECTION: DYNAMIC EPISODIC CONSOLIDATION] ---
+      try {
+        const protocol = req.headers['x-forwarded-proto'] || 'https';
+        const host = req.headers.host || 'localhost';
+        const baseUrl = `${protocol}://${host}`;
+        fetch(`${baseUrl}/api/memory/consolidate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            type: 'episodic', 
+            content: `User: ${promptText} | Agent: ${replyText}`,
+            metadata: { session_id: requestTraceId }
+          })
+        }).catch(err => console.error('Memory consolidation failed:', err));
+      } catch(err) {
+        console.error('Failed to trigger consolidation route', err);
+      }
+      // -------------------------------------------------------
     }
 
     let audioBase64 = null;
@@ -563,4 +602,3 @@ CRITICAL ENFORCEMENT PROTOCOLS:
     return res.status(200).json({ reply: `Runtime Exception: ${err.message}`, traceId: requestTraceId });
   }
 }
-  
