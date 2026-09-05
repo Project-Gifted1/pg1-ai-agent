@@ -446,7 +446,7 @@
       if (typeof audioPayload !== 'string') return false;
       const trimmedAudio = audioPayload.trim();
       if (!trimmedAudio) return false;
-      if (/^data:audio\/[^,]+,/i.test(trimmedAudio)) {
+      if (/^data:audio\/[^,]*,/i.test(trimmedAudio)) {
         audioPlayer.src = trimmedAudio.replace(/\s+/g, '');
         return true;
       }
@@ -516,7 +516,7 @@
       if (response.ok && responseType.startsWith('text/')) {
         const text = await response.text();
         const normalizedText = text.trim();
-        const isAudioPayload = /^data:audio\/[^,]+,/.test(normalizedText) || /^[A-Za-z0-9+/=\s]+$/.test(normalizedText);
+        const isAudioPayload = /^data:audio\/[^,]*,/.test(normalizedText) || /^[A-Za-z0-9+/=\s]+$/.test(normalizedText);
         return isAudioPayload ? { audio: text } : { audioStatus: 'FAILED', audioError: text || 'Audio unavailable' };
       }
       if (response.ok) return { audioBlob: await response.blob() };
