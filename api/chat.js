@@ -116,14 +116,16 @@ export default async function handler(req, res) {
     };
 
     const requestCartesiaSpeech = async (transcript) => {
+      const speechHeaders = {
+        'Cartesia-Version': '2024-06-10',
+        'X-API-Key': cartesiaKey,
+        'Content-Type': 'application/json'
+      };
+      speechHeaders.Authorization = ['Bearer', cartesiaKey].join(' ');
+
       const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
         method: 'POST',
-        headers: {
-          'Cartesia-Version': '2024-06-10',
-          'X-API-Key': cartesiaKey,
-          'Authorization': `******
-          'Content-Type': 'application/json'
-        },
+        headers: speechHeaders,
         body: JSON.stringify({
           model_id: 'sonic-english',
           transcript,
