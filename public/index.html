@@ -468,12 +468,12 @@
       window.__pg1PlaybackSequence = playbackToken;
       const unlockPromise = audioPlayer.__pg1UnlockPromise || Promise.resolve(audioPlayer.__pg1Unlocked || !audioPlayer.__pg1UnlockAttempted);
       return unlockPromise.then((unlocked) => {
-        if (!unlocked) {
-          cleanup('blocked');
-          return false;
-        }
         if (window.__pg1PlaybackSequence !== playbackToken) {
           cleanup('interrupted');
+          return false;
+        }
+        if (!unlocked) {
+          cleanup('blocked');
           return false;
         }
         const hadExistingPlayback = !!audioPlayer.__pg1Cleanup || !!audioPlayer.__pg1PlaybackToken;
