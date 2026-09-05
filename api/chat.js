@@ -32,24 +32,85 @@ export default async function handler(req, res) {
       return [payload];
     });
 
+    const sanitizeTargetFilePath = (inputPath, fallbackPath = 'api/chat.js') => {
+      const rawPath = String(inputPath || fallbackPath)
+        .trim()
+        .replace(/\\/g, '/')
+        .replace(/^\/+/, '');
+      if (/(^|\/)\.\.(\/|$)/.test(rawPath)) return fallbackPath;
+
+      const cleanedSegments = rawPath
+        .split('/')
+        .filter(segment => segment && segment !== '.' && segment !== '..')
+        .map(segment => segment.replace(/[^a-zA-Z0-9._-]/g, ''));
+
+      const sanitizedPath = cleanedSegments.join('/').replace(/\/{2,}/g, '/').trim();
+      return sanitizedPath || fallbackPath;
+    };
+
+    const isAllowedTargetFilePath = (inputPath) => {
+      const normalizedPath = sanitizeTargetFilePath(inputPath, '');
+      if (!normalizedPath) return false;
+
+      const blockedPatterns = [/^\.git(?:\/|$)/i, /^\.env(?:\.|$)/i];
+      if (blockedPatterns.some(pattern => pattern.test(normalizedPath))) return false;
+
+      const allowedTopLevelDirs = new Set(
+        String(process.env.AGENT_ALLOWED_TARGET_ROOTS || 'api,app,components,config,lib,public,scripts,src,styles,tests,workers')
+          .split(',')
+          .map(segment => segment.trim().replace(/[^a-zA-Z0-9._-]/g, ''))
+          .filter(Boolean)
+      );
+      const allowedRootFiles = new Set(
+        String(process.env.AGENT_ALLOWED_TARGET_FILES || '.cfignore,.gitignore,index.html,package-lock.json,package.json,README.md,README_DEPLOYMENT.md,style.css,vercel.json,wrangler.toml')
+          .split(',')
+          .map(segment => segment.trim().replace(/^\/+/, ''))
+          .filter(Boolean)
+      );
+      const pathSegments = normalizedPath.split('/');
+      if (pathSegments.length > 1) return allowedTopLevelDirs.has(pathSegments[0]);
+
+      return allowedRootFiles.has(normalizedPath);
+    };
+
     const parseAutonomousGithubIntent = (inputPrompt, hasStructuredAuthorization) => {
       if (typeof inputPrompt !== 'string') return null;
       if (!hasStructuredAuthorization) return null;
 
       const intentRegex = /\b(push|commit|update\s+file)\b/i;
       const githubKeywords = ['push', 'commit', 'update file'];
-      const filePathMatch = inputPrompt.match(/(?:file(?:_path)?|path|target(?:\s+file)?)\s*[:=]\s*([^\s`"'<>]+)/i)
-        || inputPrompt.match(/(?:in|to|into|for)\s+((?:api\/[^\s`"'<>]+)|public\/index\.html|package\.json)\b/i);
+      const normalizePathCandidate = (candidate) => String(candidate || '')
+        .trim()
+        .replace(/^[`"'([{<]+/, '')
+        .replace(/[`"'.,;:!?)}\]>]+$/, '')
+        .trim();
+      const promptWithoutCodeBlocks = inputPrompt.replace(/```[\s\S]*?```/g, ' ');
+      const explicitPathMatch = promptWithoutCodeBlocks.match(/(?:file(?:_path)?|path|target(?:\s+file)?)\s*[:=]\s*(?:"([^"]+)"|'([^']+)'|`([^`]+)`|([^\s`"'<>]+))/i);
+      const actionPathMatches = Array.from(promptWithoutCodeBlocks.matchAll(/(?:update|commit|push|modify|edit|patch)\s+(?:the\s+)?(?:file\s+)?["'`]?([./]?[a-zA-Z0-9._-]*[/.][a-zA-Z0-9._/-]+)["'`]?/gi)).map(match => normalizePathCandidate(match?.[1])).filter(Boolean);
+      const routePathMatches = [
+        ...Array.from(promptWithoutCodeBlocks.matchAll(/(?:in|to|into)\s+(?:file\s+)?["'`]?([^\s`"'<>]+)["'`]?/gi)).map(match => normalizePathCandidate(match?.[1])),
+        ...Array.from(promptWithoutCodeBlocks.matchAll(/for\s+file\s+["'`]?([^\s`"'<>]+)["'`]?/gi)).map(match => normalizePathCandidate(match?.[1]))
+      ].filter(Boolean);
+      const isLikelyFilePath = (candidate) => {
+        if (!candidate || /\s/.test(candidate) || /^https?:\/\//i.test(candidate)) return false;
+        return candidate.includes('/') || candidate.startsWith('.') || /\.[a-z0-9]+$/i.test(candidate);
+      };
+      const explicitPathCandidate = normalizePathCandidate(explicitPathMatch?.[1] || explicitPathMatch?.[2] || explicitPathMatch?.[3] || explicitPathMatch?.[4] || '');
+      const extractedFilePath = [explicitPathCandidate, ...actionPathMatches, ...routePathMatches].find(isLikelyFilePath) || '';
       const authorizationHintRegex = /\b(?:accept[_\s-]?authorization|authorize\s+(?:this|the)?\s*(?:github\s+)?(?:commit|push|update))\b/i;
       const hasGithubIntent = intentRegex.test(inputPrompt) || githubKeywords.some(keyword => inputPrompt.toLowerCase().includes(keyword));
-      if (!hasGithubIntent || !filePathMatch?.[1] || !authorizationHintRegex.test(inputPrompt)) return null;
+      if (!hasGithubIntent || !extractedFilePath || !authorizationHintRegex.test(inputPrompt)) return null;
 
-      const codeBlockMatch = inputPrompt.match(/```(?:[\w.+-]+)?\s*\n([\s\S]*?)```/);
+      const codeBlockMatches = Array.from(inputPrompt.matchAll(/```(?:toml|json|yaml|yml|txt|javascript|html|js|[\w.+-]+)?\s*\r?\n([\s\S]*?)```/gi));
+      const targetPathIndex = extractedFilePath ? inputPrompt.toLowerCase().indexOf(extractedFilePath.toLowerCase()) : -1;
+      const codeBlockMatch = targetPathIndex >= 0
+        ? (codeBlockMatches.find(match => typeof match.index === 'number' && match.index > targetPathIndex) || codeBlockMatches[0])
+        : codeBlockMatches[0];
       if (!codeBlockMatch?.[1]?.trim()) return null;
 
       return {
         action: 'ACCEPT_AUTHORIZATION',
-        filePath: filePathMatch?.[1]?.trim() || '',
+        filePath: sanitizeTargetFilePath(extractedFilePath),
         fileContent: codeBlockMatch[1].trim()
       };
     };
@@ -68,13 +129,6 @@ export default async function handler(req, res) {
 
     multiFiles = normalizeFilePayloads(multiFiles);
     singleFile = normalizeFilePayloads(singleFile)[0] || null;
-
-    targetFile = String(targetFile || 'api/chat.js').replace(/^\/+/, '').replace(/\.\./g, '').trim();
-    if (!targetFile.startsWith('api/') && targetFile !== 'package.json' && targetFile !== 'public/index.html') {
-      targetFile = 'api/chat.js';
-    }
-    
-    console.log(`[PG1-AGENT:${requestTraceId}] Incoming Request. Action: ${actionType || 'CHAT'} | Target: ${targetFile}`);
 
     if (promptText === 'AUTH_VERIFY') {
       const inputUser = (body?.user || '').trim();
@@ -114,6 +168,12 @@ export default async function handler(req, res) {
         if (!body?.file_path && autonomousIntent.filePath) targetFile = autonomousIntent.filePath;
       }
     }
+
+    targetFile = sanitizeTargetFilePath(targetFile);
+    if (!isAllowedTargetFilePath(targetFile)) {
+      targetFile = 'api/chat.js';
+    }
+    console.log(`[PG1-AGENT:${requestTraceId}] Incoming Request. Action: ${actionType || 'CHAT'} | Target: ${targetFile}`);
 
     let isAuthorizedAction = true;
     if (actionType === 'ACCEPT_AUTHORIZATION' && masterControlKey) {
