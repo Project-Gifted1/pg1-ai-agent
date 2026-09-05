@@ -394,6 +394,7 @@
       audioPlayer.onended = null;
       const cleanup = audioPlayer.__pg1Cleanup;
       audioPlayer.__pg1Cleanup = null;
+      audioPlayer.__pg1PlaybackToken = null;
       if (audioPlayer.__pg1ObjectUrl) {
         URL.revokeObjectURL(audioPlayer.__pg1ObjectUrl);
         audioPlayer.__pg1ObjectUrl = null;
@@ -404,6 +405,15 @@
         } catch (err) {
           console.error("PG1 Voice completion callback error:", err);
         }
+      }
+    }
+
+    function runAudioCleanup(cleanup, state) {
+      if (typeof cleanup !== 'function') return;
+      try {
+        cleanup(state);
+      } catch (err) {
+        console.error("PG1 Voice completion callback error:", err);
       }
     }
 
@@ -430,19 +440,34 @@
     function playAudioPayload(audioPayload, onended) {
       const audioPlayer = unlockAudioPlayer();
       const cleanup = typeof onended === 'function' ? onended : null;
+      const playbackToken = (window.__pg1PlaybackSequence || 0) + 1;
+      window.__pg1PlaybackSequence = playbackToken;
       const unlockPromise = audioPlayer.__pg1UnlockPromise || Promise.resolve();
       return unlockPromise.then(() => {
+        if (window.__pg1PlaybackSequence !== playbackToken) {
+          runAudioCleanup(cleanup, 'interrupted');
+          return false;
+        }
+        const previousCleanup = audioPlayer.__pg1Cleanup;
+        const previousToken = audioPlayer.__pg1PlaybackToken;
         releaseAudioPlayer(false);
+        if (previousToken && previousToken !== playbackToken) {
+          runAudioCleanup(previousCleanup, 'interrupted');
+        }
         audioPlayer.__pg1Cleanup = cleanup;
+        audioPlayer.__pg1PlaybackToken = playbackToken;
         audioPlayer.muted = false;
         if (!assignAudioSource(audioPlayer, audioPayload)) {
           audioPlayer.__pg1Cleanup = null;
           setVoicePlaybackStatus(false);
+          runAudioCleanup(cleanup, 'blocked');
           return false;
         }
         audioPlayer.onended = () => {
+          if (audioPlayer.__pg1PlaybackToken !== playbackToken) return;
           setVoicePlaybackStatus(false);
-          releaseAudioPlayer(true);
+          releaseAudioPlayer(false);
+          runAudioCleanup(cleanup, 'ended');
         };
         setVoicePlaybackStatus(true);
         return audioPlayer.play()
@@ -450,15 +475,8 @@
           .catch(err => {
             console.log("Audio unlock required:", err);
             setVoicePlaybackStatus(false);
-            const failedCleanup = audioPlayer.__pg1Cleanup;
             releaseAudioPlayer(false);
-            if (typeof failedCleanup === 'function') {
-              try {
-                failedCleanup();
-              } catch (cleanupErr) {
-                console.error("PG1 Voice completion callback error:", cleanupErr);
-              }
-            }
+            runAudioCleanup(cleanup, 'blocked');
             return false;
           });
       });
@@ -513,6 +531,14 @@
       const bubble = container.querySelector('.bubble'); 
       const cleanText = bubble.innerText.replace(/[*_#`]/g, '');
       const originalText = btn.innerText;
+      const resetSpeakButton = (state) => {
+        if (state === 'interrupted') {
+          btn.innerText = originalText;
+          return;
+        }
+        btn.innerText = "READY";
+        setTimeout(() => { btn.innerText = originalText; }, 1200);
+      };
       
       btn.innerText = "SPEAKING...";
       try {
@@ -524,14 +550,7 @@
         const data = await parseSpeechResponse(response);
         if (!response.ok) throw new Error(data.error || 'API Request Failed');
         if (data.audio || data.audioBlob) {
-          const played = await playAudioPayload(data.audio || data.audioBlob, () => {
-            btn.innerText = "READY";
-            setTimeout(() => { btn.innerText = originalText; }, 1200);
-          });
-          if (!played) {
-            btn.innerText = "READY";
-            setTimeout(() => { btn.innerText = originalText; }, 1200);
-          }
+          await playAudioPayload(data.audio || data.audioBlob, resetSpeakButton);
         } else if (data.audioStatus === 'FAILED') {
           throw new Error(data.audioError || data.error || 'Audio unavailable');
         } else {
