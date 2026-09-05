@@ -345,7 +345,9 @@
     const AUDIO_UNLOCK_DATA_URI = 'data:audio/wav;base64,UklGRsQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
     function getVoiceReadyStatus() {
-      return voiceEnabled ? `Sys: READY | ${voiceSelect.options[voiceSelect.selectedIndex].text}` : "Sys: READY | Standby";
+      const selectedOption = voiceSelect.options[voiceSelect.selectedIndex] || voiceSelect.options[0];
+      const selectedLabel = selectedOption ? selectedOption.text : 'Audio Ready';
+      return voiceEnabled ? `Sys: READY | ${selectedLabel}` : "Sys: READY | Standby";
     }
 
     function setVoicePlaybackStatus(isSpeaking) {
@@ -444,6 +446,11 @@
       return compactText.length > 0 && compactText.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(compactText);
     }
 
+    function getSafeAudioMimeType(mimeType) {
+      const normalizedMimeType = typeof mimeType === 'string' ? mimeType.toLowerCase() : '';
+      return ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/ogg', 'audio/mp4', 'audio/webm', 'audio/aac'].includes(normalizedMimeType) ? normalizedMimeType : null;
+    }
+
     function assignAudioSource(audioPlayer, audioPayload, fallbackMimeType) {
       if (audioPayload instanceof Blob) {
         const audioUrl = URL.createObjectURL(audioPayload);
@@ -454,14 +461,17 @@
       if (typeof audioPayload !== 'string') return false;
       const trimmedAudio = audioPayload.trim();
       if (!trimmedAudio) return false;
-      if (/^data:audio\/[^,]*,/i.test(trimmedAudio)) {
+      const dataUriMatch = trimmedAudio.match(/^data:(audio\/[^;,]+)(?:;[^,]*)?,/i);
+      if (dataUriMatch) {
+        if (!getSafeAudioMimeType(dataUriMatch[1])) return false;
         audioPlayer.src = trimmedAudio.replace(/\s+/g, '');
         return true;
       }
       const normalizedAudio = trimmedAudio.replace(/\s+/g, '');
       if (!normalizedAudio) return false;
-      if (!fallbackMimeType) return false;
-      audioPlayer.src = `data:${fallbackMimeType};base64,${normalizedAudio}`;
+      const safeMimeType = getSafeAudioMimeType(fallbackMimeType);
+      if (!safeMimeType) return false;
+      audioPlayer.src = `data:${safeMimeType};base64,${normalizedAudio}`;
       return true;
     }
 
@@ -573,6 +583,11 @@
       const resetSpeakButton = (state) => {
         if (state === 'interrupted') {
           btn.innerText = originalText;
+          return;
+        }
+        if (state === 'blocked') {
+          btn.innerText = "Blocked";
+          setTimeout(() => { btn.innerText = originalText; }, 2000);
           return;
         }
         if (state === 'failed') {
