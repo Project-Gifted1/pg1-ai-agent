@@ -429,7 +429,7 @@
           const played = await playBase64Audio(data.audio);
           if (!played) console.warn('PG1 Voice API Warning: audio playback was skipped.');
         } else if (data.audioStatus === 'FAILED') {
-          console.warn('PG1 Voice API Warning:', data.audioError || data.error || 'Audio unavailable');
+          throw new Error(data.audioError || data.error || 'Audio unavailable');
         } else {
           throw new Error('No audio payload returned');
         }
