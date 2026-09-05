@@ -285,7 +285,7 @@ export default async function handler(req, res) {
           const cleanText = promptText.replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 1500).trim();
           const speechResult = await requestCartesiaSpeech(cleanText);
           if (speechResult.ok) {
-            return res.status(200).json({ audio: speechResult.audio, audioStatus: 'SUCCESS', traceId: requestTraceId });
+            return res.status(200).json({ audio: speechResult.audio, audioMimeType: 'audio/mpeg', audioStatus: 'SUCCESS', traceId: requestTraceId });
           }
           return res.status(speechResult.status || 502).json({ error: speechResult.error || 'Audio unavailable', audioStatus: 'FAILED', traceId: requestTraceId });
         } catch (e) {
@@ -716,6 +716,7 @@ CRITICAL ENFORCEMENT PROTOCOLS:
     return res.status(200).json({ 
       reply: replyText, 
       audio: audioBase64,
+      audioMimeType: audioBase64 ? 'audio/mpeg' : null,
       audioStatus: audioBase64 ? 'SUCCESS' : 'FAILED',
       audioError,
       pdfExport: isPdfExport,
