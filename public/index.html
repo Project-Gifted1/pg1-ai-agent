@@ -444,7 +444,7 @@
       }
       const normalizedAudio = trimmedAudio.replace(/\s+/g, '');
       if (!normalizedAudio) return false;
-      audioPlayer.src = `data:audio/mp3;base64,${normalizedAudio}`;
+      audioPlayer.src = `data:audio/mpeg;base64,${normalizedAudio}`;
       return true;
     }
 
