@@ -55,10 +55,11 @@ export default async function handler(req, res) {
       if (blockedPatterns.some(pattern => pattern.test(normalizedPath))) return false;
 
       const allowedTopLevelDirs = new Set(['api', 'app', 'components', 'config', 'lib', 'public', 'scripts', 'src', 'styles', 'tests', 'workers']);
+      const allowedRootFiles = new Set(['.cfignore', '.gitignore', 'index.html', 'package-lock.json', 'package.json', 'README.md', 'README_DEPLOYMENT.md', 'style.css', 'vercel.json', 'wrangler.toml']);
       const pathSegments = normalizedPath.split('/');
       if (pathSegments.length > 1) return allowedTopLevelDirs.has(pathSegments[0]);
 
-      return /^[a-zA-Z0-9._-]+$/.test(normalizedPath);
+      return allowedRootFiles.has(normalizedPath);
     };
 
     const parseAutonomousGithubIntent = (inputPrompt, hasStructuredAuthorization) => {
@@ -67,20 +68,26 @@ export default async function handler(req, res) {
 
       const intentRegex = /\b(push|commit|update\s+file)\b/i;
       const githubKeywords = ['push', 'commit', 'update file'];
+      const normalizePathCandidate = (candidate) => String(candidate || '')
+        .trim()
+        .replace(/^[`"'([{<]+/, '')
+        .replace(/[`"'.,;:!?)}\]>]+$/, '')
+        .trim();
       const promptWithoutCodeBlocks = inputPrompt.replace(/```[\s\S]*?```/g, ' ');
       const explicitPathMatch = promptWithoutCodeBlocks.match(/(?:file(?:_path)?|path|target(?:\s+file)?)\s*[:=]\s*["'`]?([^\s`"'<>]+)["'`]?/i);
-      const actionPathMatches = Array.from(promptWithoutCodeBlocks.matchAll(/(?:update|commit|push|modify|edit|patch)\s+(?:the\s+)?(?:file\s+)?["'`]?([^\s`"'<>]+)["'`]?/gi)).map(match => match?.[1]).filter(Boolean);
-      const routePathMatches = Array.from(promptWithoutCodeBlocks.matchAll(/(?:in|to|into|for)\s+(?:file\s+)?["'`]?([^\s`"'<>]+)["'`]?/gi)).map(match => match?.[1]).filter(Boolean);
+      const actionPathMatches = Array.from(promptWithoutCodeBlocks.matchAll(/(?:update|commit|push|modify|edit|patch)\s+(?:the\s+)?(?:file\s+)?["'`]?([^\s`"'<>]+)["'`]?/gi)).map(match => normalizePathCandidate(match?.[1])).filter(Boolean);
+      const routePathMatches = Array.from(promptWithoutCodeBlocks.matchAll(/(?:in|to|into|for)\s+(?:file\s+)?["'`]?([^\s`"'<>]+)["'`]?/gi)).map(match => normalizePathCandidate(match?.[1])).filter(Boolean);
       const isLikelyFilePath = (candidate) => {
         if (!candidate || /\s/.test(candidate) || /^https?:\/\//i.test(candidate)) return false;
         return candidate.includes('/') || candidate.startsWith('.') || /\.[a-z0-9]+$/i.test(candidate);
       };
-      const extractedFilePath = [explicitPathMatch?.[1], ...actionPathMatches, ...routePathMatches].find(isLikelyFilePath) || '';
+      const extractedFilePath = [normalizePathCandidate(explicitPathMatch?.[1]), ...actionPathMatches, ...routePathMatches].find(isLikelyFilePath) || '';
       const authorizationHintRegex = /\b(?:accept[_\s-]?authorization|authorize\s+(?:this|the)?\s*(?:github\s+)?(?:commit|push|update))\b/i;
       const hasGithubIntent = intentRegex.test(inputPrompt) || githubKeywords.some(keyword => inputPrompt.toLowerCase().includes(keyword));
       if (!hasGithubIntent || !extractedFilePath || !authorizationHintRegex.test(inputPrompt)) return null;
 
-      const codeBlockMatch = inputPrompt.match(/```(?:toml|json|yaml|yml|txt|javascript|html|js|[\w.+-]+)?\s*\r?\n([\s\S]*?)```/i);
+      const codeBlockMatches = Array.from(inputPrompt.matchAll(/```(?:toml|json|yaml|yml|txt|javascript|html|js|[\w.+-]+)?\s*\r?\n([\s\S]*?)```/gi));
+      const codeBlockMatch = codeBlockMatches[codeBlockMatches.length - 1];
       if (!codeBlockMatch?.[1]?.trim()) return null;
 
       return {
