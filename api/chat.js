@@ -622,8 +622,14 @@ CRITICAL ENFORCEMENT PROTOCOLS:
       } catch (err) {}
     }
 
-    let replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `Execution failed. Last Error: ${lastErrorDetail}`;
-    // --- SMART SOVEREIGN BRANDING FILTER ---
+    const rawReplyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `Execution failed. Last Error: ${lastErrorDetail}`;
+    const ttsSourceText = rawReplyText
+      .replace(/[*_#`[\]()]/g, '')
+      .replace(/[^\x20-\x7E]/g, ' ')
+      .trim()
+      .slice(0, 400);
+    let replyText = rawReplyText;
+    // --- SMART SOVEREIGN BRANDING FILTER (UI OUTPUT ONLY) ---
     let textChunks = replyText.split(/(```[\s\S]*?```|`[^`]+`)/g);
     for (let i = 0; i < textChunks.length; i++) {
       if (!textChunks[i].startsWith('`')) {
@@ -667,7 +673,7 @@ CRITICAL ENFORCEMENT PROTOCOLS:
 
     if (cartesiaKey && !replyText.startsWith('Execution failed') && !isPdfExport) {
       try {
-        const cleanText = replyText.replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 1000).trim();
+        const cleanText = ttsSourceText;
         const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
           method: 'POST',
           headers: {
