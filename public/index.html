@@ -359,6 +359,8 @@
 
     function playBase64Audio(audioBase64, onended) {
       const previousAudio = window.__pg1ActiveAudio || null;
+      const audioUrl = createAudioObjectUrl(audioBase64);
+      if (!audioUrl) return Promise.resolve(false);
       if (previousAudio) {
         previousAudio.pause();
         previousAudio.src = '';
@@ -369,8 +371,6 @@
           previousAudio.__pg1ObjectUrl = null;
         }
       }
-      const audioUrl = createAudioObjectUrl(audioBase64);
-      if (!audioUrl) return Promise.resolve(false);
       const ttsAudio = new Audio(audioUrl);
       const cleanup = typeof onended === 'function' ? onended : null;
       let released = false;
@@ -408,8 +408,17 @@
       if (responseType.includes('application/json')) {
         return response.json();
       }
-      const text = await response.text();
-      return response.ok ? { audio: text } : { error: text };
+      if (response.ok && responseType.startsWith('text/')) {
+        return { audio: await response.text() };
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      if (response.ok) {
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+        return { audio: btoa(binary) };
+      }
+      return { error: new TextDecoder().decode(arrayBuffer) };
     }
 
     async function speakText(text) {
