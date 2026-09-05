@@ -370,10 +370,7 @@
         }
       }
       const audioUrl = createAudioObjectUrl(audioBase64);
-      if (!audioUrl) {
-        if (typeof onended === 'function') onended();
-        return Promise.resolve(false);
-      }
+      if (!audioUrl) return Promise.resolve(false);
       const ttsAudio = new Audio(audioUrl);
       const cleanup = typeof onended === 'function' ? onended : null;
       let released = false;
