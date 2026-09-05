@@ -342,6 +342,36 @@
     }
 
     // Audio Transport Routines
+    function playBase64Audio(audioBase64, onended) {
+      const previousAudio = window.__pg1ActiveAudio || null;
+      if (previousAudio) {
+        const previousCleanup = previousAudio.__pg1Cleanup;
+        previousAudio.onended = null;
+        previousAudio.__pg1Cleanup = null;
+        if (typeof previousCleanup === 'function') previousCleanup();
+        previousAudio.pause();
+        previousAudio.src = '';
+      }
+      const ttsAudio = new Audio("data:audio/mp3;base64," + audioBase64);
+      const cleanup = typeof onended === 'function' ? onended : null;
+      ttsAudio.__pg1Cleanup = cleanup;
+      ttsAudio.onended = () => {
+        if (window.__pg1ActiveAudio === ttsAudio) window.__pg1ActiveAudio = null;
+        ttsAudio.__pg1Cleanup = null;
+        if (cleanup) cleanup();
+      };
+      window.__pg1ActiveAudio = ttsAudio;
+      return ttsAudio.play()
+        .then(() => {})
+        .catch(err => {
+          ttsAudio.onended = null;
+          ttsAudio.__pg1Cleanup = null;
+          if (window.__pg1ActiveAudio === ttsAudio) window.__pg1ActiveAudio = null;
+          console.error("Playback block override failed:", err);
+          throw err;
+        });
+    }
+
     async function speakText(text) {
       if (!voiceEnabled) return; 
       const audio = new Audio();
@@ -356,8 +386,7 @@
         if (!response.ok) throw new Error('API Request Failed');
         const data = await response.json();
         if(data.audio) {
-          audio.src = "data:audio/mp3;base64," + data.audio;
-          await audio.play();
+          await playBase64Audio(data.audio);
         }
       } catch (err) {
         console.error('PG1 Voice API Error:', err);
@@ -384,9 +413,7 @@
         if (!response.ok) throw new Error('API Request Failed');
         const data = await response.json();
         if(data.audio) {
-          audio.src = "data:audio/mp3;base64," + data.audio;
-          audio.onended = () => { btn.innerText = originalText; };
-          await audio.play();
+          await playBase64Audio(data.audio, () => { btn.innerText = originalText; });
         } else {
           throw new Error('No audio payload returned');
         }
@@ -445,9 +472,9 @@
       triggerHaptic(25);
       const promptText = userInput.value.trim();
       if (!promptText && !currentAttachment) return;
-      
-      const playbackEngine = new Audio();
-      if (voiceEnabled) { playbackEngine.play().catch(()=>{}); }
+
+      const audioWarmup = new Audio();
+      if (voiceEnabled) { audioWarmup.play().catch(() => {}); }
       
       const promptToDisplay = promptText || "Analyze the attached file.";
       if (threads[currentThreadId].title === 'Initial Session' || threads[currentThreadId].title === 'New Directive') {
@@ -540,8 +567,7 @@
 
         if (voiceEnabled) {
           if (data.audio) {
-            playbackEngine.src = "data:audio/mp3;base64," + data.audio;
-            playbackEngine.play().catch(err => console.error("Playback block override failed:", err));
+            playBase64Audio(data.audio).catch(() => {});
           } else {
             speakText(reply);
           }
