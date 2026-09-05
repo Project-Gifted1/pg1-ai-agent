@@ -412,7 +412,7 @@
         return response.json();
       }
       const text = await response.text();
-      return { error: text };
+      return response.ok ? { audio: text } : { error: text };
     }
 
     async function speakText(text) {
