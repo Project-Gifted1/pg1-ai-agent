@@ -1,0 +1,33 @@
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  
+  const { query, threshold = 0.75, count = 5 } = req.body;
+  
+  try {
+    const embedRes = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json', 
+        'Authorization': `Bearer ${process.env.Core_API_KEY}` 
+      },
+      body: JSON.stringify({ model: 'text-embedding-ada-002', input: query })
+    });
+    const embedData = await embedRes.json();
+    const query_embedding = embedData.data[0].embedding;
+
+    const { data, error } = await supabase.rpc('match_agent_memories', {
+      query_embedding,
+      match_threshold: threshold,
+      match_count: count
+    });
+
+    if (error) throw error;
+    return res.status(200).json({ memories: data });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+}
