@@ -1,0 +1,42 @@
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  
+  const { type, content, metadata = {} } = req.body;
+  
+  try {
+    const embedRes = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json', 
+        'Authorization': `Bearer ${process.env.Core_API_KEY}` 
+      },
+      body: JSON.stringify({ model: 'text-embedding-ada-002', input: content })
+    });
+    const embedData = await embedRes.json();
+    const embedding = embedData.data[0].embedding;
+
+    let table = 'agent_episodic_memory';
+    let payload = { embedding, metadata };
+    
+    if (type === 'semantic') {
+       table = 'agent_semantic_memory';
+       payload = { ...payload, fact_key: metadata.key || 'extracted_fact', fact_value: content };
+    } else if (type === 'procedural') {
+       table = 'agent_procedural_memory';
+       payload = { ...payload, task_pattern: content, steps: metadata.steps || [] };
+    } else {
+       payload = { ...payload, session_id: metadata.session_id || 'active_session', summary: content };
+    }
+
+    const { data, error } = await supabase.from(table).insert([payload]);
+    
+    if (error) throw error;
+    return res.status(200).json({ success: true, inserted: data });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+}
