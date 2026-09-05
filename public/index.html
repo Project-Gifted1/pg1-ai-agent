@@ -439,6 +439,11 @@
       }
     }
 
+    function isBase64AudioPayload(text) {
+      const compactText = text.replace(/\s+/g, '');
+      return compactText.length > 128 && compactText.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(compactText);
+    }
+
     function assignAudioSource(audioPlayer, audioPayload, fallbackMimeType) {
       if (audioPayload instanceof Blob) {
         const audioUrl = URL.createObjectURL(audioPayload);
@@ -524,7 +529,7 @@
       if (response.ok && responseType.startsWith('text/')) {
         const text = await response.text();
         const normalizedText = text.trim();
-        const isAudioPayload = /^data:audio\/[^,]*,/.test(normalizedText) || /^[A-Za-z0-9+/=][A-Za-z0-9+/=\s]*$/.test(normalizedText);
+        const isAudioPayload = /^data:audio\/[^,]*,/.test(normalizedText) || isBase64AudioPayload(normalizedText);
         return isAudioPayload ? { audio: text } : { audioStatus: 'FAILED', audioError: text || 'Audio unavailable' };
       }
       if (response.ok) return { audioBlob: await response.blob() };
