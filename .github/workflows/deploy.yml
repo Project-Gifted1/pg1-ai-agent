@@ -45,5 +45,6 @@ jobs:
 
       - name: Deploy Worker to Cloudflare
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: "f4ca340d9bcbeeab89bba95915dd072e"
         run: npx --yes wrangler deploy
