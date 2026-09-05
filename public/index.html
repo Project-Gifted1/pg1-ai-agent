@@ -406,12 +406,12 @@
     function releaseAudioPlayer(invokeCleanup = true) {
       const audioPlayer = window.__pg1AudioPlayer || null;
       if (!audioPlayer) return;
+      audioPlayer.onended = null;
+      audioPlayer.__pg1PlaybackToken = null;
       audioPlayer.pause();
       audioPlayer.currentTime = 0;
-      audioPlayer.onended = null;
       const cleanup = audioPlayer.__pg1Cleanup;
       audioPlayer.__pg1Cleanup = null;
-      audioPlayer.__pg1PlaybackToken = null;
       if (audioPlayer.__pg1ObjectUrl) {
         URL.revokeObjectURL(audioPlayer.__pg1ObjectUrl);
         audioPlayer.__pg1ObjectUrl = null;
