@@ -385,6 +385,7 @@
             .catch(() => {})
             .finally(finalizeUnlockAttempt);
         } else {
+          audioPlayer.__pg1Unlocked = true;
           finalizeUnlockAttempt();
         }
       } catch (err) {
