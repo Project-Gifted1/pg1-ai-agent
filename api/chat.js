@@ -37,6 +37,7 @@ export default async function handler(req, res) {
         .trim()
         .replace(/\\/g, '/')
         .replace(/^\/+/, '');
+      if (/(^|\/)\.\.(\/|$)/.test(rawPath)) return fallbackPath;
 
       const cleanedSegments = rawPath
         .split('/')
@@ -74,7 +75,7 @@ export default async function handler(req, res) {
         .replace(/[`"'.,;:!?)}\]>]+$/, '')
         .trim();
       const promptWithoutCodeBlocks = inputPrompt.replace(/```[\s\S]*?```/g, ' ');
-      const explicitPathMatch = promptWithoutCodeBlocks.match(/(?:file(?:_path)?|path|target(?:\s+file)?)\s*[:=]\s*["'`]?([^\s`"'<>]+)["'`]?/i);
+      const explicitPathMatch = promptWithoutCodeBlocks.match(/(?:file(?:_path)?|path|target(?:\s+file)?)\s*[:=]\s*(?:"([^"]+)"|'([^']+)'|`([^`]+)`|([^\s`"'<>]+))/i);
       const actionPathMatches = Array.from(promptWithoutCodeBlocks.matchAll(/(?:update|commit|push|modify|edit|patch)\s+(?:the\s+)?(?:file\s+)?["'`]?([./]?[a-zA-Z0-9._-]*[/.][a-zA-Z0-9._/-]+)["'`]?/gi)).map(match => normalizePathCandidate(match?.[1])).filter(Boolean);
       const routePathMatches = [
         ...Array.from(promptWithoutCodeBlocks.matchAll(/(?:in|to|into)\s+(?:file\s+)?["'`]?([^\s`"'<>]+)["'`]?/gi)).map(match => normalizePathCandidate(match?.[1])),
@@ -84,7 +85,8 @@ export default async function handler(req, res) {
         if (!candidate || /\s/.test(candidate) || /^https?:\/\//i.test(candidate)) return false;
         return candidate.includes('/') || candidate.startsWith('.') || /\.[a-z0-9]+$/i.test(candidate);
       };
-      const extractedFilePath = [normalizePathCandidate(explicitPathMatch?.[1]), ...actionPathMatches, ...routePathMatches].find(isLikelyFilePath) || '';
+      const explicitPathCandidate = normalizePathCandidate(explicitPathMatch?.[1] || explicitPathMatch?.[2] || explicitPathMatch?.[3] || explicitPathMatch?.[4] || '');
+      const extractedFilePath = [explicitPathCandidate, ...actionPathMatches, ...routePathMatches].find(isLikelyFilePath) || '';
       const authorizationHintRegex = /\b(?:accept[_\s-]?authorization|authorize\s+(?:this|the)?\s*(?:github\s+)?(?:commit|push|update))\b/i;
       const hasGithubIntent = intentRegex.test(inputPrompt) || githubKeywords.some(keyword => inputPrompt.toLowerCase().includes(keyword));
       if (!hasGithubIntent || !extractedFilePath || !authorizationHintRegex.test(inputPrompt)) return null;
