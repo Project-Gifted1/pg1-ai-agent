@@ -451,13 +451,17 @@
 
     function playAudioPayload(audioPayload, onended, mimeType) {
       const audioPlayer = unlockAudioPlayer();
-      const cleanup = typeof onended === 'function' ? onended : null;
+      const callerCleanup = typeof onended === 'function' ? onended : null;
+      const cleanup = (state) => {
+        setVoicePlaybackStatus(false);
+        runAudioCleanup(callerCleanup, state);
+      };
       const playbackToken = (window.__pg1PlaybackSequence || 0) + 1;
       window.__pg1PlaybackSequence = playbackToken;
       const unlockPromise = audioPlayer.__pg1UnlockPromise || Promise.resolve();
       return unlockPromise.then(() => {
         if (window.__pg1PlaybackSequence !== playbackToken) {
-          runAudioCleanup(cleanup, 'interrupted');
+          cleanup('interrupted');
           return false;
         }
         const previousToken = audioPlayer.__pg1PlaybackToken;
@@ -471,24 +475,21 @@
         audioPlayer.muted = false;
         if (!assignAudioSource(audioPlayer, audioPayload, mimeType)) {
           audioPlayer.__pg1Cleanup = null;
-          setVoicePlaybackStatus(false);
-          runAudioCleanup(cleanup, 'blocked');
+          cleanup('blocked');
           return false;
         }
         audioPlayer.onended = () => {
           if (audioPlayer.__pg1PlaybackToken !== playbackToken) return;
-          setVoicePlaybackStatus(false);
           releaseAudioPlayer(false);
-          runAudioCleanup(cleanup, 'ended');
+          cleanup('ended');
         };
         setVoicePlaybackStatus(true);
         return audioPlayer.play()
           .then(() => true)
           .catch(err => {
             console.log("Audio playback failed:", err);
-            setVoicePlaybackStatus(false);
             releaseAudioPlayer(false);
-            runAudioCleanup(cleanup, 'blocked');
+            cleanup('blocked');
             return false;
           });
       });
