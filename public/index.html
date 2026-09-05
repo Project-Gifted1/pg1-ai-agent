@@ -361,17 +361,7 @@
     }
 
     function unlockAudioPlayer() {
-      const audioPlayer = getAudioPlayer();
-      if (audioPlayer.__pg1UnlockAttempted) return audioPlayer;
-      audioPlayer.__pg1UnlockAttempted = true;
-      const unlockAttempt = audioPlayer.play();
-      if (unlockAttempt && typeof unlockAttempt.catch === 'function') {
-        unlockAttempt.catch(() => {}).finally(() => {
-          audioPlayer.pause();
-          audioPlayer.currentTime = 0;
-        });
-      }
-      return audioPlayer;
+      return getAudioPlayer();
     }
 
     function releaseAudioPlayer(invokeCleanup = true) {
