@@ -373,6 +373,7 @@
         audioPlayer.removeAttribute('src');
         audioPlayer.__pg1UnlockPromise = null;
       };
+      audioPlayer.__pg1UnlockAttempted = true;
       audioPlayer.muted = true;
       audioPlayer.src = AUDIO_UNLOCK_DATA_URI;
       try {
@@ -381,14 +382,22 @@
           audioPlayer.__pg1UnlockPromise = unlockAttempt
             .then(() => {
               audioPlayer.__pg1Unlocked = true;
+              return true;
             })
-            .catch(() => {})
-            .finally(finalizeUnlockAttempt);
+            .catch(() => {
+              audioPlayer.__pg1Unlocked = false;
+              return false;
+            })
+            .then((unlocked) => {
+              finalizeUnlockAttempt();
+              return unlocked;
+            });
         } else {
           audioPlayer.__pg1Unlocked = true;
           finalizeUnlockAttempt();
         }
       } catch (err) {
+        audioPlayer.__pg1Unlocked = false;
         finalizeUnlockAttempt();
       }
       return audioPlayer;
@@ -457,8 +466,12 @@
       };
       const playbackToken = (window.__pg1PlaybackSequence || 0) + 1;
       window.__pg1PlaybackSequence = playbackToken;
-      const unlockPromise = audioPlayer.__pg1UnlockPromise || Promise.resolve();
-      return unlockPromise.then(() => {
+      const unlockPromise = audioPlayer.__pg1UnlockPromise || Promise.resolve(audioPlayer.__pg1Unlocked || !audioPlayer.__pg1UnlockAttempted);
+      return unlockPromise.then((unlocked) => {
+        if (!unlocked) {
+          cleanup('blocked');
+          return false;
+        }
         if (window.__pg1PlaybackSequence !== playbackToken) {
           cleanup('interrupted');
           return false;
