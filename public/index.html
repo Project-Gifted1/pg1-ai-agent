@@ -476,10 +476,10 @@
           cleanup('interrupted');
           return false;
         }
-        const previousToken = audioPlayer.__pg1PlaybackToken;
-        const previousCleanup = previousToken ? audioPlayer.__pg1Cleanup : null;
+        const hadExistingPlayback = !!audioPlayer.__pg1Cleanup || !audioPlayer.paused || !!audioPlayer.currentSrc;
+        const previousCleanup = audioPlayer.__pg1Cleanup;
         releaseAudioPlayer(false);
-        if (previousToken && previousToken !== playbackToken) {
+        if (hadExistingPlayback && previousCleanup) {
           runAudioCleanup(previousCleanup, 'interrupted');
         }
         audioPlayer.__pg1Cleanup = cleanup;
