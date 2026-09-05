@@ -342,33 +342,61 @@
     }
 
     // Audio Transport Routines
+    function createAudioObjectUrl(audioBase64) {
+      if (typeof audioBase64 !== 'string') return null;
+      const normalizedAudio = audioBase64.trim().replace(/^data:audio\/[^;]+;base64,/, '').replace(/\s+/g, '');
+      if (!normalizedAudio) return null;
+      try {
+        const binary = atob(normalizedAudio);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+        return URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+      } catch (err) {
+        console.error("PG1 Voice decode error:", err);
+        return null;
+      }
+    }
+
     function playBase64Audio(audioBase64, onended) {
       const previousAudio = window.__pg1ActiveAudio || null;
       if (previousAudio) {
         const previousCleanup = previousAudio.__pg1Cleanup;
+        const previousObjectUrl = previousAudio.__pg1ObjectUrl;
         previousAudio.onended = null;
         previousAudio.__pg1Cleanup = null;
+        previousAudio.__pg1ObjectUrl = null;
         if (typeof previousCleanup === 'function') previousCleanup();
         previousAudio.pause();
         previousAudio.src = '';
+        if (previousObjectUrl) URL.revokeObjectURL(previousObjectUrl);
       }
-      const ttsAudio = new Audio("data:audio/mp3;base64," + audioBase64);
+      const audioUrl = createAudioObjectUrl(audioBase64);
+      if (!audioUrl) {
+        if (typeof onended === 'function') onended();
+        return Promise.resolve(false);
+      }
+      const ttsAudio = new Audio(audioUrl);
       const cleanup = typeof onended === 'function' ? onended : null;
       ttsAudio.__pg1Cleanup = cleanup;
+      ttsAudio.__pg1ObjectUrl = audioUrl;
       ttsAudio.onended = () => {
         if (window.__pg1ActiveAudio === ttsAudio) window.__pg1ActiveAudio = null;
         ttsAudio.__pg1Cleanup = null;
+        ttsAudio.__pg1ObjectUrl = null;
+        URL.revokeObjectURL(audioUrl);
         if (cleanup) cleanup();
       };
       window.__pg1ActiveAudio = ttsAudio;
       return ttsAudio.play()
-        .then(() => {})
+        .then(() => true)
         .catch(err => {
           ttsAudio.onended = null;
           ttsAudio.__pg1Cleanup = null;
+          ttsAudio.__pg1ObjectUrl = null;
           if (window.__pg1ActiveAudio === ttsAudio) window.__pg1ActiveAudio = null;
+          URL.revokeObjectURL(audioUrl);
           console.error("Playback block override failed:", err);
-          throw err;
+          return false;
         });
     }
 
@@ -383,10 +411,12 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'SPEAK', prompt: cleanText, voice: voiceSelect.value })
         });
-        if (!response.ok) throw new Error('API Request Failed');
         const data = await response.json();
-        if(data.audio) {
+        if (!response.ok) throw new Error(data.error || 'API Request Failed');
+        if (data.audio) {
           await playBase64Audio(data.audio);
+        } else if (data.audioStatus === 'FAILED') {
+          console.warn('PG1 Voice API Warning:', data.audioError || data.error || 'Audio unavailable');
         }
       } catch (err) {
         console.error('PG1 Voice API Error:', err);
@@ -410,10 +440,13 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'SPEAK', prompt: cleanText, voice: voiceSelect.value })
         });
-        if (!response.ok) throw new Error('API Request Failed');
         const data = await response.json();
-        if(data.audio) {
-          await playBase64Audio(data.audio, () => { btn.innerText = originalText; });
+        if (!response.ok) throw new Error(data.error || 'API Request Failed');
+        if (data.audio) {
+          const played = await playBase64Audio(data.audio, () => { btn.innerText = originalText; });
+          if (!played) btn.innerText = originalText;
+        } else if (data.audioStatus === 'FAILED') {
+          throw new Error(data.audioError || data.error || 'Audio unavailable');
         } else {
           throw new Error('No audio payload returned');
         }
