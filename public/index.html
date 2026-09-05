@@ -419,7 +419,15 @@
         .catch(err => {
           console.log("Audio unlock required:", err);
           setVoicePlaybackStatus(false);
+          const failedCleanup = audioPlayer.__pg1Cleanup;
           releaseAudioPlayer(false);
+          if (typeof failedCleanup === 'function') {
+            try {
+              failedCleanup();
+            } catch (cleanupErr) {
+              console.error("PG1 Voice completion callback error:", cleanupErr);
+            }
+          }
           return false;
         });
     }
