@@ -623,7 +623,11 @@ CRITICAL ENFORCEMENT PROTOCOLS:
     }
 
     const rawReplyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `Execution failed. Last Error: ${lastErrorDetail}`;
-    const ttsSourceText = rawReplyText.slice(0, 400);
+    const ttsSourceText = rawReplyText
+      .replace(/[*_#`[\]()]/g, '')
+      .replace(/[^\x20-\x7E]/g, ' ')
+      .trim()
+      .slice(0, 400);
     let replyText = rawReplyText;
     // --- SMART SOVEREIGN BRANDING FILTER (UI OUTPUT ONLY) ---
     let textChunks = replyText.split(/(```[\s\S]*?```|`[^`]+`)/g);
@@ -669,7 +673,7 @@ CRITICAL ENFORCEMENT PROTOCOLS:
 
     if (cartesiaKey && !replyText.startsWith('Execution failed') && !isPdfExport) {
       try {
-        const cleanText = ttsSourceText.replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').trim();
+        const cleanText = ttsSourceText;
         const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
           method: 'POST',
           headers: {
