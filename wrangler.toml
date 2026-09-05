@@ -1,8 +1,8 @@
 name = "pg1-ai-agent-worker"
-
 main = "workers/index.js"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
+account_id = "f4ca340d9bcbeeab89bba95915dd072e"
 
 [assets]
 directory = "./"
