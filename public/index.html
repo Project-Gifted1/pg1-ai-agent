@@ -365,24 +365,31 @@
     function unlockAudioPlayer() {
       const audioPlayer = getAudioPlayer();
       if (audioPlayer.__pg1Unlocked || audioPlayer.__pg1UnlockPromise) return audioPlayer;
+      const finalizeUnlockAttempt = () => {
+        audioPlayer.pause();
+        audioPlayer.currentTime = 0;
+        audioPlayer.muted = false;
+        audioPlayer.src = '';
+        audioPlayer.removeAttribute('src');
+        audioPlayer.load();
+        audioPlayer.__pg1UnlockPromise = null;
+      };
       audioPlayer.muted = true;
       audioPlayer.src = AUDIO_UNLOCK_DATA_URI;
-      const unlockAttempt = audioPlayer.play();
-      if (unlockAttempt && typeof unlockAttempt.then === 'function') {
-        audioPlayer.__pg1UnlockPromise = unlockAttempt
-          .then(() => {
-            audioPlayer.__pg1Unlocked = true;
-          })
-          .catch(() => {})
-          .finally(() => {
-            audioPlayer.pause();
-            audioPlayer.currentTime = 0;
-            audioPlayer.muted = false;
-            audioPlayer.src = '';
-            audioPlayer.removeAttribute('src');
-            audioPlayer.load();
-            audioPlayer.__pg1UnlockPromise = null;
-          });
+      try {
+        const unlockAttempt = audioPlayer.play();
+        if (unlockAttempt && typeof unlockAttempt.then === 'function') {
+          audioPlayer.__pg1UnlockPromise = unlockAttempt
+            .then(() => {
+              audioPlayer.__pg1Unlocked = true;
+            })
+            .catch(() => {})
+            .finally(finalizeUnlockAttempt);
+        } else {
+          finalizeUnlockAttempt();
+        }
+      } catch (err) {
+        finalizeUnlockAttempt();
       }
       return audioPlayer;
     }
