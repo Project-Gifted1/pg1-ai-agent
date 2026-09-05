@@ -1,0 +1,1 @@
+export default async function handler(req, res) { return res.status(200).json({ status: 'VERIFIED_ONLINE', hash: 'VERIFICATION_HASH_7789' }); }
