@@ -515,7 +515,7 @@
             if (audioPlayer.__pg1PlaybackToken !== playbackToken) return false;
             console.log("Audio playback failed:", err);
             releaseAudioPlayer(false);
-            cleanup('blocked');
+            cleanup(err && err.name === 'NotAllowedError' ? 'blocked' : 'failed');
             return false;
           });
       });
@@ -550,7 +550,7 @@
         const data = await parseSpeechResponse(response);
         if (!response.ok) throw new Error(data.error || 'API Request Failed');
         if (data.audio || data.audioBlob) {
-          const played = await playAudioPayload(data.audio || data.audioBlob, null, data.audio ? 'audio/mpeg' : null);
+          const played = await playAudioPayload(data.audio || data.audioBlob, null, data.audioMimeType || null);
           if (!played) console.warn('PG1 Voice API Warning: audio playback was skipped.');
         } else if (data.audioStatus === 'FAILED') {
           throw new Error(data.audioError || data.error || 'Audio unavailable');
@@ -594,7 +594,7 @@
         const data = await parseSpeechResponse(response);
         if (!response.ok) throw new Error(data.error || 'API Request Failed');
         if (data.audio || data.audioBlob) {
-          await playAudioPayload(data.audio || data.audioBlob, resetSpeakButton, data.audio ? 'audio/mpeg' : null);
+          await playAudioPayload(data.audio || data.audioBlob, resetSpeakButton, data.audioMimeType || null);
         } else if (data.audioStatus === 'FAILED') {
           throw new Error(data.audioError || data.error || 'Audio unavailable');
         } else {
@@ -749,7 +749,7 @@
 
         if (voiceEnabled) {
           if (data.audio) {
-            playAudioPayload(data.audio, null, 'audio/mpeg').catch(() => {});
+            playAudioPayload(data.audio, null, data.audioMimeType || null).catch(() => {});
           } else {
             speakText(reply);
           }
