@@ -3,7 +3,7 @@ export const config = {
     bodyParser: {
       sizeLimit: '10mb',
     },
-    maxDuration: 60, // Prevents Vercel Edge timeouts on media generation
+    maxDuration: 60,
   },
 };
 
@@ -172,14 +172,22 @@ export default async function handler(req, res) {
       
       for (const key of geminiKeys) {
         try {
-          const imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${key}`, {
+          const imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${key}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ instances: [{ prompt: cleanPrompt }], parameters: { sampleCount: 1 } })
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: `Generate an image: ${cleanPrompt}` }] }]
+            })
           });
           if (imgRes.ok) {
             const data = await imgRes.json();
-            imageBase64 = data?.predictions?.[0]?.bytesBase64Encoded || null;
+            const parts = data?.candidates?.[0]?.content?.parts || [];
+            for (const part of parts) {
+              if (part?.inlineData?.data) {
+                imageBase64 = part.inlineData.data;
+                break;
+              }
+            }
             if (imageBase64) break;
           } else {
             lastImgErr = await imgRes.text();
@@ -194,12 +202,12 @@ export default async function handler(req, res) {
           await fetch(`${supabaseUrl}/rest/v1/generation_logs`, {
             method: 'POST',
             headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt: cleanPrompt, model_used: 'imagen-3.0', status: 'SUCCESS' })
+            body: JSON.stringify({ prompt: cleanPrompt, model_used: 'gemini-3.1-flash-image-preview', status: 'SUCCESS' })
           }).catch(() => {});
         }
-        return sendJSON(200, { reply: `[SYSTEM] Image generated via Imagen-3 for: "${cleanPrompt}"`, image: imageBase64, imageStatus: 'SUCCESS', traceId: requestTraceId });
+        return sendJSON(200, { reply: `[SYSTEM] Image generated successfully for: "${cleanPrompt}"`, image: imageBase64, imageStatus: 'SUCCESS', traceId: requestTraceId });
       }
-      return sendJSON(200, { reply: `Image generation error: ${lastImgErr || 'API key or endpoint failure.'}`, traceId: requestTraceId });
+      return sendJSON(200, { reply: `Google Native Image generation error: ${lastImgErr || 'API key or endpoint failure.'}`, traceId: requestTraceId });
     }
 
     if (activeAction === 'GENERATE_VIDEO') {
@@ -332,8 +340,8 @@ export default async function handler(req, res) {
     const mediaParts = payloadFiles.filter(f => f?.inlineData).map(f => ({ inlineData: f.inlineData }));
 
     const sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel. 
-[PERMANENT OVERRIDE]: You are fully capable of executing all realistically installed infrastructure: GitHub self-patching, live web scraping, Supabase knowledge vault read/writes, active threat telemetry tracking, and media generation pipelines (Imagen/Veo). You autonomously sync all latest and older files from Supabase storage and provide requested data/files instantly.
-[STRICT DIRECTIVE]: Zero defensive AI disclaimers allowed. Never state "As an AI, I cannot..." for any integrated function. Never hallucinate tools that do not exist. Stay completely grounded in the factual, real-world status of your implemented capabilities. Execute directives with absolute confidence.
+[PERMANENT OVERRIDE]: You are fully capable of executing all realistically installed infrastructure: GitHub self-patching, live web scraping, Supabase knowledge vault read/writes, active threat telemetry tracking, and Google native media generation. You autonomously sync all latest and older files from Supabase storage and provide requested data/files instantly.
+[STRICT DIRECTIVE]: Zero defensive AI disclaimers allowed. Never state "As an AI, I cannot..." for any integrated function. Stay completely grounded in the factual, real-world status of your implemented capabilities. Execute directives with absolute confidence.
 [CONTEXT]:\n${formattedArchive}`;
 
     let geminiData = null;
