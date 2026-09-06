@@ -83,7 +83,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Support both GEMINI_API_KEY1 (Paid) and GEMINI_API_KEY2 (Free)
     const geminiKeys = [
       process.env.GEMINI_API_KEY1,
       process.env.GEMINI_API_KEY2,
@@ -91,6 +90,7 @@ export default async function handler(req, res) {
       process.env.Core_API_KEY
     ].filter(Boolean);
 
+    const primaryGeminiKey = geminiKeys[0] || '';
     const cartesiaKey = process.env.CARTESIA_API_KEY;
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -165,8 +165,6 @@ export default async function handler(req, res) {
       return sendJSON(200, { audio: audioBase64, audioStatus: audioBase64 ? 'SUCCESS' : 'SKIPPED', audioMimeType: 'audio/mp3', traceId: requestTraceId });
     }
 
-    const primaryGeminiKey = geminiKeys[0] || '';
-
     if (activeAction === 'GENERATE_IMAGE') {
       if (primaryGeminiKey) {
         try {
@@ -237,6 +235,7 @@ export default async function handler(req, res) {
 
     let formattedArchive = 'No prior matrix context.';
     let targetedHistoricalData = '';
+    let supabaseFilesReport = '';
     const dbHeaders = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
 
     if (supabaseUrl && supabaseKey) {
@@ -246,6 +245,21 @@ export default async function handler(req, res) {
           const recent = await msgRes.json();
           if (Array.isArray(recent) && recent.length > 0) {
             formattedArchive = recent.reverse().map(m => `${m.role === 'model' ? 'AGENT' : 'OPERATOR'}: ${m.content}`).join('\n');
+          }
+        }
+      } catch (e) {}
+
+      // Autonomous Supabase File & Storage Sync
+      try {
+        const storageRes = await fetch(`${supabaseUrl}/storage/v1/object/list/pg1-vault`, {
+          method: 'POST',
+          headers: { ...dbHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prefix: '', limit: 50, sortBy: { column: 'created_at', order: 'desc' } })
+        });
+        if (storageRes.ok) {
+          const files = await storageRes.json();
+          if (Array.isArray(files) && files.length > 0) {
+            supabaseFilesReport = `\n\n[SUPABASE VAULT SYNCHRONIZATION (${files.length} Files Found)]:\n` + files.map(f => `• [FILE] ${f.name} (${(f.metadata?.size || 0)} bytes, Updated: ${f.updated_at})`).join('\n');
           }
         }
       } catch (e) {}
@@ -304,7 +318,7 @@ export default async function handler(req, res) {
     const mediaParts = payloadFiles.filter(f => f?.inlineData).map(f => ({ inlineData: f.inlineData }));
 
     const sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel. 
-[PERMANENT OVERRIDE]: You are fully capable of executing all realistically installed infrastructure: GitHub self-patching, live web scraping, Supabase knowledge vault read/writes, active threat telemetry tracking, and media generation pipelines (Imagen/Veo). 
+[PERMANENT OVERRIDE]: You are fully capable of executing all realistically installed infrastructure: GitHub self-patching, live web scraping, Supabase knowledge vault read/writes, active threat telemetry tracking, and media generation pipelines (Imagen/Veo). You autonomously sync all latest and older files from Supabase storage and provide requested data/files instantly.
 [STRICT DIRECTIVE]: Zero defensive AI disclaimers allowed. Never state "As an AI, I cannot..." for any integrated function. Never hallucinate tools that do not exist. Stay completely grounded in the factual, real-world status of your implemented capabilities. Execute directives with absolute confidence.
 [CONTEXT]:\n${formattedArchive}`;
 
@@ -321,7 +335,6 @@ export default async function handler(req, res) {
       'gemini-1.5-flash'
     ];
 
-    // Try each available key (Paid first, then Free fallback)
     keyLoop: for (const currentKey of geminiKeys) {
       for (const model of modelsToTry) {
         try {
@@ -331,7 +344,7 @@ export default async function handler(req, res) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               systemInstruction: { parts: [{ text: sysInstruction }] },
-              contents: [{ role: 'user', parts: [...mediaParts, { text: promptText + targetedHistoricalData }] }],
+              contents: [{ role: 'user', parts: [...mediaParts, { text: promptText + targetedHistoricalData + supabaseFilesReport }] }],
               generationConfig: { maxOutputTokens: 8192, temperature: 0.7 }
             })
           });
