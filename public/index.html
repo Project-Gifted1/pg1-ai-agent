@@ -14,6 +14,7 @@
       --glow-subtle: rgba(243, 198, 35, 0.15);
       --glow-strong: rgba(243, 198, 35, 0.4);
       --glass-edge: rgba(255, 255, 255, 0.03);
+      --danger-red: #ff4444;
       --font-mono: "Courier New", Courier, monospace;
     }
     
@@ -50,11 +51,12 @@
       100% { opacity: 0.6; transform: scale(1.05); }
     }
     
+    /* --- COMPACT MOBILE-OPTIMIZED HEADER --- */
     header { 
       display: flex; 
       justify-content: space-between; 
       align-items: center; 
-      padding: 16px 20px; 
+      padding: 12px 14px; 
       background: rgba(3, 3, 3, 0.85);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
@@ -63,22 +65,21 @@
       box-shadow: 0 4px 30px rgba(0,0,0,0.8);
     }
     
-    /* Sovereign Metallic Header */
     header h1 { 
-      font-size: 18px; 
+      font-size: 15px; 
       font-weight: 900; 
-      letter-spacing: 1.5px; 
+      letter-spacing: 1px; 
       text-transform: uppercase;
-      /* Dynamic Gold Gradient */
+      white-space: nowrap; /* Prevents wrapping */
+      display: flex;
+      align-items: center; /* Locks TM baseline */
+      
       background: linear-gradient(135deg, #b5852a 0%, #f3c623 25%, #fff2cd 50%, #f3c623 75%, #b5852a 100%);
       background-size: 200% auto;
       color: transparent;
       -webkit-background-clip: text;
       background-clip: text;
       animation: sovereignShine 5s linear infinite;
-      display: flex;
-      align-items: flex-start;
-      /* Soft ambient back-glow so it detaches from the dark background */
       filter: drop-shadow(0 0 8px rgba(243, 198, 35, 0.2));
     }
 
@@ -86,34 +87,32 @@
       to { background-position: 200% center; }
     }
 
-    /* Refined Hardware-Style TM Indicator */
+    /* Fixed TM Placement & Visibility */
     .tm-symbol {
-      font-size: 0.45em;
-      margin-left: 4px;
-      margin-top: 2px;
-      color: #fff;
-      -webkit-text-fill-color: #fff; /* Override gradient for the TM */
-      text-shadow: 0 0 5px var(--text-gold);
-      animation: tm-pulse 2.5s infinite alternate ease-in-out;
+      font-size: 0.6em;
+      margin-left: 2px;
+      transform: translateY(-0.6em); /* Forces superscript position */
+      color: var(--text-gold);
+      -webkit-text-fill-color: var(--text-gold); 
       font-weight: bold;
-      letter-spacing: 0;
+      animation: tm-pulse 2.5s infinite alternate ease-in-out;
     }
 
     @keyframes tm-pulse {
-      0% { text-shadow: 0 0 2px #fff, 0 0 4px var(--text-gold); opacity: 0.7; }
-      100% { text-shadow: 0 0 8px #fff, 0 0 12px var(--text-gold); opacity: 1; color: var(--text-gold); }
+      0% { text-shadow: 0 0 2px #fff, 0 0 4px var(--text-gold); opacity: 0.8; }
+      100% { text-shadow: 0 0 8px #fff, 0 0 16px var(--text-gold); opacity: 1; }
     }
     
-    .header-controls { display: flex; gap: 10px; }
+    .header-controls { display: flex; gap: 6px; }
     
     .header-btn { 
       background: rgba(255, 255, 255, 0.03); 
       border: 1px solid transparent; 
       color: var(--text-gold); 
-      width: 40px; 
-      height: 36px; 
-      border-radius: 8px; 
-      font-size: 15px; 
+      width: 32px; 
+      height: 32px; 
+      border-radius: 6px; 
+      font-size: 14px; 
       cursor: pointer; 
       display: flex; 
       align-items: center; 
@@ -129,7 +128,7 @@
     #chat-container { 
       flex: 1; 
       overflow-y: auto; 
-      padding: 20px; 
+      padding: 16px 20px; 
       display: flex; 
       flex-direction: column; 
       gap: 20px; 
@@ -140,7 +139,7 @@
       background: var(--card-bg); 
       border: 1px solid var(--glass-edge); 
       border-radius: 12px; 
-      padding: 18px 24px; 
+      padding: 18px 20px; 
       max-width: 96%; 
       align-self: flex-start; 
       box-shadow: 0 8px 24px rgba(0,0,0,0.8), inset 0 0 20px rgba(255,255,255,0.01);
@@ -161,7 +160,7 @@
     }
     
     .message-text { 
-      font-size: 14.5px; 
+      font-size: 14px; 
       line-height: 1.7; 
       letter-spacing: 0.5px; 
       white-space: pre-wrap; 
@@ -173,7 +172,7 @@
       display: flex; 
       gap: 20px; 
       margin-top: 16px; 
-      font-size: 11.5px; 
+      font-size: 11px; 
       color: var(--text-gold); 
       text-transform: uppercase; 
       cursor: pointer; 
@@ -197,14 +196,14 @@
     }
     
     .footer-panel { 
-      padding: 16px 20px; 
+      padding: 14px 16px; 
       background: rgba(3, 3, 3, 0.85);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       border-top: 1px solid var(--glass-edge); 
       display: flex; 
       flex-direction: column; 
-      gap: 14px; 
+      gap: 12px; 
       z-index: 10;
       box-shadow: 0 -5px 30px rgba(0,0,0,0.8);
     }
@@ -216,44 +215,25 @@
       padding: 0 4px;
     }
     
-    .voice-group { 
-      display: flex; 
-      align-items: center; 
-      gap: 16px; 
-    }
+    .voice-group { display: flex; align-items: center; gap: 12px; }
     
     .stealth-select, .stealth-btn {
-      background: transparent;
-      border: none;
-      color: var(--text-gold);
-      font-size: 11.5px;
-      font-weight: bold;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      cursor: pointer;
-      outline: none;
-      transition: all 0.2s;
-      opacity: 0.7;
+      background: transparent; border: none; color: var(--text-gold);
+      font-size: 11px; font-weight: bold; text-transform: uppercase;
+      letter-spacing: 1px; cursor: pointer; outline: none;
+      transition: all 0.2s; opacity: 0.7;
     }
     .stealth-select:hover, .stealth-btn:hover { opacity: 1; text-shadow: 0 0 10px var(--text-gold); }
     .stealth-select option { background: var(--bg-color); color: var(--text-gold); }
 
     .status-indicator { 
-      font-size: 11.5px; 
-      color: #999; 
-      letter-spacing: 1.5px; 
-      text-transform: uppercase; 
-      display: flex;
-      align-items: center;
-      gap: 10px;
+      font-size: 11px; color: #999; letter-spacing: 1.5px; 
+      text-transform: uppercase; display: flex; align-items: center; gap: 8px;
     }
 
     .status-dot {
-      display: inline-block;
-      width: 7px;
-      height: 7px;
-      background-color: #00ff66;
-      border-radius: 50%;
+      display: inline-block; width: 6px; height: 6px;
+      background-color: #00ff66; border-radius: 50%;
       box-shadow: 0 0 10px #00ff66;
       animation: pulse-dot 1.5s infinite alternate;
     }
@@ -263,15 +243,10 @@
     }
     
     .command-deck { 
-      display: flex; 
-      align-items: flex-end; 
-      background: var(--input-bg);
-      border: 1px solid var(--glass-edge);
-      border-radius: 14px;
-      padding: 6px;
-      gap: 6px;
-      transition: all 0.3s ease;
-      box-shadow: inset 0 0 15px rgba(0,0,0,0.6);
+      display: flex; align-items: flex-end; 
+      background: var(--input-bg); border: 1px solid var(--glass-edge);
+      border-radius: 12px; padding: 6px; gap: 6px;
+      transition: all 0.3s ease; box-shadow: inset 0 0 15px rgba(0,0,0,0.6);
     }
     .command-deck:focus-within {
       box-shadow: 0 0 20px var(--glow-strong), inset 0 0 10px var(--glow-subtle);
@@ -279,20 +254,11 @@
     }
     
     .tool-btn { 
-      background: transparent; 
-      border: none; 
-      color: var(--text-gold); 
-      border-radius: 10px; 
-      width: 44px; 
-      height: 44px; 
-      display: flex; 
-      align-items: center; 
-      justify-content: center; 
-      cursor: pointer; 
-      font-size: 18px; 
-      transition: all 0.2s;
-      flex-shrink: 0;
-      opacity: 0.8;
+      background: transparent; border: none; color: var(--text-gold); 
+      border-radius: 8px; width: 40px; height: 40px; 
+      display: flex; align-items: center; justify-content: center; 
+      cursor: pointer; font-size: 18px; transition: all 0.2s;
+      flex-shrink: 0; opacity: 0.8;
     }
     .tool-btn:hover { background: rgba(243, 198, 35, 0.08); opacity: 1; }
     .tool-btn:active { transform: scale(0.9); }
@@ -304,35 +270,19 @@
     .mic-active { animation: mic-recording 0.6s infinite alternate !important; opacity: 1 !important; }
     
     textarea { 
-      flex: 1; 
-      background: transparent; 
-      border: none; 
-      color: #fff; 
-      padding: 13px 10px; 
-      font-size: 14.5px; 
-      letter-spacing: 0.5px;
-      resize: none; 
-      min-height: 44px; 
-      max-height: 140px;
-      outline: none; 
-      line-height: 1.5;
+      flex: 1; background: transparent; border: none; color: #fff; 
+      padding: 11px 8px; font-size: 14px; letter-spacing: 0.5px;
+      resize: none; min-height: 40px; max-height: 120px;
+      outline: none; line-height: 1.5;
     }
     textarea::placeholder { color: #555; }
     
     .execute-btn { 
-      background: var(--text-gold); 
-      color: #000; 
-      border: none; 
-      font-weight: bold; 
-      padding: 0 20px; 
-      border-radius: 10px; 
-      height: 44px; 
-      font-size: 13px; 
-      cursor: pointer; 
-      text-transform: uppercase; 
-      letter-spacing: 1.5px;
-      transition: all 0.2s;
-      flex-shrink: 0;
+      background: var(--text-gold); color: #000; border: none; 
+      font-weight: bold; padding: 0 16px; border-radius: 8px; 
+      height: 40px; font-size: 12px; cursor: pointer; 
+      text-transform: uppercase; letter-spacing: 1.5px;
+      transition: all 0.2s; flex-shrink: 0;
       box-shadow: 0 0 10px rgba(243, 198, 35, 0.2);
     }
     .execute-btn:hover { filter: brightness(1.15); box-shadow: 0 0 20px var(--glow-strong); }
@@ -340,29 +290,17 @@
     
     input[type="file"] { display: none; }
 
-    #auth-modal { 
-      position: fixed; 
-      inset: 0; 
-      background: rgba(0,0,0,0.92);
-      backdrop-filter: blur(15px);
-      -webkit-backdrop-filter: blur(15px);
-      z-index: 100; 
-      display: flex; 
-      align-items: center; 
-      justify-content: center; 
-      padding: 20px; 
+    /* Modals (Auth & Threads) */
+    .matrix-modal { 
+      position: fixed; inset: 0; background: rgba(0,0,0,0.92);
+      backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
+      z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px;
     }
     
-    .auth-card { 
-      background: rgba(10, 10, 10, 0.8); 
-      border: 1px solid var(--glass-edge); 
-      border-radius: 16px; 
-      padding: 40px 30px; 
-      width: 100%; 
-      max-width: 380px; 
-      display: flex; 
-      flex-direction: column; 
-      gap: 22px; 
+    .matrix-card { 
+      background: rgba(10, 10, 10, 0.8); border: 1px solid var(--glass-edge); 
+      border-radius: 16px; padding: 32px 24px; width: 100%; max-width: 380px; 
+      display: flex; flex-direction: column; gap: 20px; 
       box-shadow: 0 15px 50px rgba(0,0,0,0.9), inset 0 0 30px rgba(255,255,255,0.02);
       animation: modal-drop 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
@@ -372,65 +310,100 @@
       to { opacity: 1; transform: scale(1) translateY(0); }
     }
     
-    .auth-card h2 { 
-      font-size: 16px; 
-      color: var(--text-gold); 
-      text-align: center; 
-      letter-spacing: 2.5px; 
-      margin-bottom: 8px;
-      text-shadow: 0 0 15px var(--glow-subtle);
+    .matrix-card h2 { 
+      font-size: 15px; color: var(--text-gold); text-align: center; 
+      letter-spacing: 2px; margin-bottom: 4px; text-shadow: 0 0 15px var(--glow-subtle);
     }
     
-    .auth-input { 
-      background: #000; 
-      border: 1px solid var(--glass-edge); 
-      border-radius: 8px; 
-      color: #fff; 
-      padding: 16px; 
-      font-size: 15px; 
-      letter-spacing: 0.5px;
-      outline: none; 
-      transition: all 0.3s ease;
-      box-shadow: inset 0 0 10px rgba(0,0,0,1);
+    .matrix-input { 
+      background: #000; border: 1px solid var(--glass-edge); border-radius: 8px; 
+      color: #fff; padding: 14px; font-size: 14px; letter-spacing: 0.5px;
+      outline: none; transition: all 0.3s ease; box-shadow: inset 0 0 10px rgba(0,0,0,1);
     }
-    .auth-input:focus { 
-      box-shadow: 0 0 20px var(--glow-strong), inset 0 0 10px rgba(0,0,0,1); 
-      border-color: rgba(243, 198, 35, 0.3); 
-    }
+    .matrix-input:focus { box-shadow: 0 0 20px var(--glow-strong), inset 0 0 10px rgba(0,0,0,1); border-color: rgba(243, 198, 35, 0.3); }
     
-    .auth-submit { 
-      background: var(--text-gold); 
-      color: #000; 
-      border: none; 
-      font-weight: bold; 
-      padding: 16px; 
-      border-radius: 8px; 
-      font-size: 14px; 
-      cursor: pointer; 
-      text-transform: uppercase; 
-      letter-spacing: 2px; 
-      width: 100%; 
-      transition: all 0.2s;
-      margin-top: 10px;
+    .matrix-submit { 
+      background: var(--text-gold); color: #000; border: none; 
+      font-weight: bold; padding: 14px; border-radius: 8px; font-size: 13px; 
+      cursor: pointer; text-transform: uppercase; letter-spacing: 2px; width: 100%; 
+      transition: all 0.2s; margin-top: 6px;
     }
-    .auth-submit:hover { box-shadow: 0 0 25px var(--glow-strong); filter: brightness(1.15); transform: translateY(-2px); }
-    .auth-submit:active { transform: translateY(1px); }
+    .matrix-submit:hover { box-shadow: 0 0 25px var(--glow-strong); filter: brightness(1.15); transform: translateY(-2px); }
+    .matrix-submit:active { transform: translateY(1px); }
+
+    /* Thread List Specifics */
+    .thread-list {
+      display: flex; flex-direction: column; gap: 12px;
+      max-height: 50vh; overflow-y: auto; padding-right: 6px;
+    }
+    .thread-item {
+      display: flex; justify-content: space-between; align-items: center;
+      background: rgba(20,20,20,0.6); border: 1px solid var(--glass-edge);
+      padding: 14px 16px; border-radius: 10px; transition: all 0.2s ease;
+    }
+    .thread-item:hover { border-color: rgba(243, 198, 35, 0.3); box-shadow: 0 0 15px var(--glow-subtle); }
+    .thread-info { display: flex; flex-direction: column; gap: 4px; }
+    .thread-title { font-size: 13px; font-weight: bold; color: var(--text-main); }
+    .thread-date { font-size: 10px; color: var(--text-muted); }
+    
+    .thread-actions { display: flex; gap: 8px; }
+    .thread-action-btn {
+      background: transparent; border: 1px solid var(--text-gold); color: var(--text-gold);
+      border-radius: 6px; padding: 6px 12px; font-size: 10px; cursor: pointer; font-weight: bold;
+    }
+    .thread-action-btn.danger { border-color: var(--danger-red); color: var(--danger-red); }
+    .thread-action-btn:active { transform: scale(0.9); }
   </style>
 </head>
 <body>
 
-  <div id="auth-modal">
-    <div class="auth-card">
+  <!-- Authentication Modal -->
+  <div id="auth-modal" class="matrix-modal">
+    <div class="matrix-card">
       <h2>SECURITY GATE</h2>
-      <input type="text" id="auth-user" class="auth-input" placeholder="Operator ID" value="Winner1G">
-      <input type="password" id="auth-pass" class="auth-input" placeholder="Secure Matrix Passkey">
-      <button class="auth-submit" onclick="triggerHaptic(60); verifyAuth()">AUTHENTICATE</button>
+      <input type="text" id="auth-user" class="matrix-input" placeholder="Operator ID" value="Winner1G">
+      <input type="password" id="auth-pass" class="matrix-input" placeholder="Secure Matrix Passkey">
+      <button class="matrix-submit" onclick="triggerHaptic(60); verifyAuth()">AUTHENTICATE</button>
+    </div>
+  </div>
+
+  <!-- Threads Management Modal -->
+  <div id="threads-modal" class="matrix-modal" style="display: none;">
+    <div class="matrix-card" style="max-width: 420px;">
+      <h2>SESSION THREADS</h2>
+      <div class="thread-list" id="thread-list-container">
+        
+        <div class="thread-item" id="thread-demo-1">
+          <div class="thread-info">
+            <span class="thread-title">Directive: Node Scaling</span>
+            <span class="thread-date">2026-09-06 | 10:45 AM</span>
+          </div>
+          <div class="thread-actions">
+            <button class="thread-action-btn" onclick="triggerHaptic(30); loadThread('thread-demo-1')">LOAD</button>
+            <button class="thread-action-btn danger" onclick="triggerHaptic([40, 40]); deleteThread('thread-demo-1')">DEL</button>
+          </div>
+        </div>
+
+        <div class="thread-item" id="thread-demo-2">
+          <div class="thread-info">
+            <span class="thread-title">System Audit Log</span>
+            <span class="thread-date">2026-09-05 | 08:30 PM</span>
+          </div>
+          <div class="thread-actions">
+            <button class="thread-action-btn" onclick="triggerHaptic(30); loadThread('thread-demo-2')">LOAD</button>
+            <button class="thread-action-btn danger" onclick="triggerHaptic([40, 40]); deleteThread('thread-demo-2')">DEL</button>
+          </div>
+        </div>
+
+      </div>
+      <button class="matrix-submit" onclick="triggerHaptic(40); closeThreadsModal()" style="margin-top: 10px; background: transparent; border: 1px solid var(--text-gold); color: var(--text-gold);">CLOSE VAULT</button>
     </div>
   </div>
 
   <header>
-    <h1>Project-Gifted1<span class="tm-symbol">™</span></h1>
+    <h1>PROJECT-GIFTED1<span class="tm-symbol">™</span></h1>
     <div class="header-controls">
+      <button class="header-btn" onclick="triggerHaptic(); openThreadsModal()" title="Manage Threads">💬</button>
       <button class="header-btn" onclick="triggerHaptic(); openVideoVaultModal()" title="Video Vault">📹</button>
       <button class="header-btn" onclick="triggerHaptic(); exportChatPDF()" title="Export Transcript">📄</button>
       <button class="header-btn" onclick="triggerHaptic(); clearChat()" title="Clear Chat">🗑️</button>
@@ -487,6 +460,25 @@
     function autoResize(textarea) {
       textarea.style.height = 'auto';
       textarea.style.height = (textarea.scrollHeight) + 'px';
+    }
+
+    // --- Thread Modal Logistics ---
+    function openThreadsModal() {
+      document.getElementById('threads-modal').style.display = 'flex';
+    }
+    function closeThreadsModal() {
+      document.getElementById('threads-modal').style.display = 'none';
+    }
+    function loadThread(threadId) {
+      // In production, this targets Supabase history.
+      alert(`System routing to Thread ID: ${threadId}`);
+      closeThreadsModal();
+    }
+    function deleteThread(threadId) {
+      if (confirm('AUTHORIZATION REQUIRED: Purge this thread from the Sovereign matrix?')) {
+        const el = document.getElementById(threadId);
+        if (el) el.remove();
+      }
     }
 
     let voiceActive = false;
