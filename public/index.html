@@ -7,12 +7,14 @@
   <style>
     :root {
       --bg-color: #000000;
-      --card-bg: #080808;
+      --card-bg: #050505;
       --border-gold: #c5a059;
       --text-gold: #c5a059;
       --text-main: #e0e0e0;
-      --input-bg: #111111;
-      --font-mono: "Courier New", Courier, monospace; /* Exact font from the video */
+      --input-bg: #0a0a0a;
+      --glow-subtle: rgba(197, 160, 89, 0.15);
+      --glow-strong: rgba(197, 160, 89, 0.4);
+      --font-mono: "Courier New", Courier, monospace;
     }
     
     * { 
@@ -29,6 +31,23 @@
       flex-direction: column; 
       height: 100dvh; 
       overflow: hidden; 
+      position: relative;
+    }
+
+    /* Subtle Ambient Breathing Background */
+    body::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 50%, var(--glow-subtle), transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+      animation: ambient-breathe 4s ease-in-out infinite alternate;
+    }
+
+    @keyframes ambient-breathe {
+      0% { opacity: 0.3; transform: scale(0.98); }
+      100% { opacity: 1; transform: scale(1.02); }
     }
     
     header { 
@@ -37,8 +56,11 @@
       align-items: center; 
       padding: 12px 16px; 
       border-bottom: 1px solid var(--border-gold); 
-      background: var(--card-bg); 
+      background: rgba(5, 5, 5, 0.85);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
       z-index: 10; 
+      box-shadow: 0 2px 15px var(--glow-subtle);
     }
     
     header h1 { 
@@ -46,6 +68,12 @@
       color: var(--text-gold); 
       font-weight: bold; 
       letter-spacing: 0.5px; 
+      animation: text-glow 3s ease-in-out infinite alternate;
+    }
+
+    @keyframes text-glow {
+      0% { text-shadow: 0 0 4px rgba(197, 160, 89, 0.2); }
+      100% { text-shadow: 0 0 12px rgba(197, 160, 89, 0.6); }
     }
     
     .header-controls { display: flex; gap: 8px; }
@@ -62,8 +90,13 @@
       display: flex; 
       align-items: center; 
       justify-content: center; 
+      transition: all 0.2s ease;
     }
-    .header-btn:active { background: rgba(197, 160, 89, 0.2); }
+    .header-btn:hover {
+      box-shadow: 0 0 8px var(--glow-strong);
+      background: rgba(197, 160, 89, 0.1);
+    }
+    .header-btn:active { background: rgba(197, 160, 89, 0.2); transform: scale(0.95); }
     
     #chat-container { 
       flex: 1; 
@@ -72,6 +105,7 @@
       display: flex; 
       flex-direction: column; 
       gap: 14px; 
+      z-index: 2;
     }
     
     .message-bubble { 
@@ -81,11 +115,19 @@
       padding: 14px; 
       max-width: 90%; 
       align-self: flex-start; 
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      animation: slide-up 0.3s ease-out forwards;
+    }
+
+    @keyframes slide-up {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
     }
     
     .message-bubble.user { 
       align-self: flex-end; 
       background: var(--input-bg); 
+      border-color: rgba(197, 160, 89, 0.5);
     }
     
     .message-text { 
@@ -105,7 +147,8 @@
       cursor: pointer; 
       font-weight: bold; 
     }
-    .message-actions span:hover { text-decoration: underline; opacity: 0.8; }
+    .message-actions span { transition: text-shadow 0.2s ease; }
+    .message-actions span:hover { text-decoration: underline; text-shadow: 0 0 8px var(--text-gold); }
 
     .media-preview-container { margin-top: 12px; width: 100%; }
     .media-preview-container img, .media-preview-container video { 
@@ -116,15 +159,20 @@
       display: block; 
       max-height: 400px; 
       object-fit: contain; 
+      box-shadow: 0 0 15px var(--glow-subtle);
     }
     
     .footer-panel { 
       padding: 12px 16px; 
-      background: var(--card-bg); 
+      background: rgba(5, 5, 5, 0.85);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
       border-top: 1px solid var(--border-gold); 
       display: flex; 
       flex-direction: column; 
       gap: 10px; 
+      z-index: 10;
+      box-shadow: 0 -2px 15px var(--glow-subtle);
     }
     
     .toolbar-row { display: flex; justify-content: space-between; align-items: center; }
@@ -140,7 +188,9 @@
       font-size: 12px; 
       cursor: pointer; 
       font-weight: bold; 
+      transition: all 0.2s;
     }
+    .voice-toggle:hover { box-shadow: 0 0 8px var(--glow-strong); }
     
     .voice-select { 
       background: var(--input-bg); 
@@ -151,13 +201,38 @@
       font-size: 12px; 
       outline: none; 
       cursor: pointer; 
+      transition: all 0.2s;
+    }
+    .voice-select:focus { box-shadow: 0 0 8px var(--glow-strong); }
+
+    .status-indicator { 
+      font-size: 12px; 
+      color: #888; 
+      letter-spacing: 0.5px; 
+      text-transform: uppercase; 
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
-    .status-indicator { font-size: 12px; color: #888; letter-spacing: 0.5px; text-transform: uppercase; }
+    /* Live Telemetry Pulse Dot */
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      background-color: #00ff66;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #00ff66;
+      animation: pulse-dot 1.5s infinite alternate;
+    }
+    @keyframes pulse-dot {
+      from { opacity: 0.4; box-shadow: 0 0 2px #00ff66; }
+      to { opacity: 1; box-shadow: 0 0 10px #00ff66; }
+    }
     
     .input-row { display: flex; gap: 8px; align-items: center; }
     
-    .attach-btn { 
+    .attach-btn, .mic-btn { 
       background: transparent; 
       border: 1px solid var(--border-gold); 
       color: var(--text-gold); 
@@ -169,6 +244,17 @@
       justify-content: center; 
       cursor: pointer; 
       font-size: 16px; 
+      transition: all 0.2s;
+    }
+    .attach-btn:hover, .mic-btn:hover { box-shadow: 0 0 8px var(--glow-strong); }
+
+    /* Active Microphone State */
+    @keyframes mic-recording {
+      0% { box-shadow: 0 0 5px #ff4444; color: #ff4444; border-color: #ff4444; }
+      100% { box-shadow: 0 0 15px #ff4444; color: #ff4444; border-color: #ff4444; }
+    }
+    .mic-active {
+      animation: mic-recording 0.6s infinite alternate !important;
     }
     
     textarea { 
@@ -182,7 +268,9 @@
       resize: none; 
       height: 44px; 
       outline: none; 
+      transition: all 0.2s;
     }
+    textarea:focus { box-shadow: 0 0 10px var(--glow-strong); border-color: #dcb873; }
     textarea::placeholder { color: #666; }
     
     .execute-btn { 
@@ -196,16 +284,26 @@
       font-size: 13px; 
       cursor: pointer; 
       text-transform: uppercase; 
+      animation: gentle-pulse 3s infinite alternate;
+      transition: transform 0.1s;
     }
-    .execute-btn:active { opacity: 0.8; }
+    .execute-btn:hover { filter: brightness(1.1); }
+    .execute-btn:active { opacity: 0.8; transform: scale(0.96); }
+
+    @keyframes gentle-pulse {
+      0% { box-shadow: 0 0 5px var(--glow-subtle); }
+      100% { box-shadow: 0 0 15px var(--glow-strong); }
+    }
     
     input[type="file"] { display: none; }
 
-    /* Exact Security Gate Styling from image_14.png */
+    /* Exact Security Gate Styling */
     #auth-modal { 
       position: fixed; 
       inset: 0; 
-      background: rgba(0,0,0,0.95); 
+      background: rgba(0,0,0,0.95);
+      backdrop-filter: blur(5px);
+      -webkit-backdrop-filter: blur(5px);
       z-index: 100; 
       display: flex; 
       align-items: center; 
@@ -223,6 +321,13 @@
       display: flex; 
       flex-direction: column; 
       gap: 16px; 
+      box-shadow: 0 0 30px rgba(197, 160, 89, 0.15);
+      animation: modal-drop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+
+    @keyframes modal-drop {
+      from { opacity: 0; transform: scale(0.95) translateY(-20px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
     }
     
     .auth-card h2 { 
@@ -232,6 +337,7 @@
       letter-spacing: 1px; 
       line-height: 1.4; 
       margin-bottom: 4px;
+      text-shadow: 0 0 8px var(--glow-subtle);
     }
     
     .auth-input { 
@@ -243,7 +349,9 @@
       font-size: 14px; 
       outline: none; 
       width: 100%; 
+      transition: all 0.2s;
     }
+    .auth-input:focus { box-shadow: 0 0 10px var(--glow-strong); }
     
     .auth-submit { 
       background: var(--border-gold); 
@@ -257,7 +365,10 @@
       text-transform: uppercase; 
       letter-spacing: 1px; 
       width: 100%; 
+      transition: all 0.2s;
     }
+    .auth-submit:hover { box-shadow: 0 0 15px var(--glow-strong); filter: brightness(1.1); }
+    .auth-submit:active { transform: scale(0.98); }
   </style>
 </head>
 <body>
@@ -304,13 +415,20 @@
           <option value="aria">Aria</option>
         </select>
       </div>
-      <span id="sys-status" class="status-indicator">SYS: ACTIVE | API LINKED</span>
+      <span id="sys-status" class="status-indicator">
+        <span class="status-dot"></span>SYS: ACTIVE | API LINKED
+      </span>
     </div>
     <div class="input-row">
-      <label class="attach-btn" title="Attach File">
+      <!-- Microphone Button -->
+      <button id="mic-btn" class="mic-btn" title="Voice Input" onclick="toggleRecording()">🎤</button>
+      
+      <!-- Multi-File Attachment -->
+      <label class="attach-btn" title="Attach Files">
         📎
-        <input type="file" id="file-input" onchange="handleFileSelect(event)">
+        <input type="file" id="file-input" multiple onchange="handleFileSelect(event)">
       </label>
+      
       <textarea id="prompt-input" placeholder="Input operational directive..." onkeydown="handleKey(event)"></textarea>
       <button class="execute-btn" onclick="submitDirective()">EXECUTE</button>
     </div>
@@ -318,7 +436,66 @@
 
   <script>
     let voiceActive = false;
-    let attachedFilePayload = null;
+    let attachedFilesPayload = []; // Now handles an array of multiple files
+    let recognition;
+    let isRecording = false;
+
+    // Initialize Web Speech API
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+
+      recognition.onstart = function() {
+        isRecording = true;
+        document.getElementById('mic-btn').classList.add('mic-active');
+        document.getElementById('prompt-input').placeholder = "Listening for directive...";
+      };
+
+      recognition.onresult = function(event) {
+        let interimTranscript = '';
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+        if (finalTranscript) {
+          const input = document.getElementById('prompt-input');
+          input.value = (input.value + ' ' + finalTranscript).trim();
+        }
+      };
+
+      recognition.onerror = function(event) {
+        console.error('Speech recognition error', event.error);
+        stopRecording();
+      };
+
+      recognition.onend = function() {
+        stopRecording();
+      };
+    }
+
+    function toggleRecording() {
+      if (!recognition) {
+        alert("Voice input is not supported in this browser environment.");
+        return;
+      }
+      if (isRecording) {
+        recognition.stop();
+      } else {
+        recognition.start();
+      }
+    }
+
+    function stopRecording() {
+      isRecording = false;
+      document.getElementById('mic-btn').classList.remove('mic-active');
+      document.getElementById('prompt-input').placeholder = "Input operational directive...";
+    }
 
     async function verifyAuth() {
       const user = document.getElementById('auth-user').value.trim();
@@ -387,21 +564,33 @@
     }
 
     function handleFileSelect(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        const base64Data = e.target.result.split(',')[1];
-        attachedFilePayload = {
-          inlineData: {
-            mimeType: file.type || 'application/octet-stream',
-            data: base64Data
+      const files = event.target.files;
+      if (!files || files.length === 0) return;
+      
+      attachedFilesPayload = []; // Reset on new batch selection
+      let processedCount = 0;
+
+      Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const base64Data = e.target.result.split(',')[1];
+          attachedFilesPayload.push({
+            inlineData: {
+              mimeType: file.type || 'application/octet-stream',
+              data: base64Data
+            }
+          });
+          processedCount++;
+          
+          if (processedCount === files.length) {
+            const statusEl = document.getElementById('sys-status');
+            const fileText = files.length === 1 ? files[0].name : `${files.length} FILES ATTACHED`;
+            statusEl.innerHTML = `<span class="status-dot" style="background-color: #c5a059; box-shadow: 0 0 8px #c5a059;"></span>SYS: ${fileText}`;
+            statusEl.style.color = '#c5a059';
           }
         };
-        document.getElementById('sys-status').textContent = `SYS: FILE ATTACHED (${file.name})`;
-        document.getElementById('sys-status').style.color = '#00ff66';
-      };
-      reader.readAsDataURL(file);
+        reader.readAsDataURL(file);
+      });
     }
 
     async function speakMessage(text) {
@@ -439,14 +628,15 @@
     async function submitDirective() {
       const input = document.getElementById('prompt-input');
       const text = input.value.trim();
-      if (!text && !attachedFilePayload) return;
+      if (!text && attachedFilesPayload.length === 0) return;
 
       const chatContainer = document.getElementById('chat-container');
+      const fileStatusText = attachedFilesPayload.length > 0 ? ` [${attachedFilesPayload.length} File(s) Attached]` : '';
 
       const userBubble = document.createElement('div');
       userBubble.className = 'message-bubble user';
       userBubble.innerHTML = `
-        <div class="message-text">${escapeHTML(text || '[File Attached]')}</div>
+        <div class="message-text">${escapeHTML(text || '[File Payload Only]')}${fileStatusText}</div>
         <div class="message-actions">
           <span onclick="copyBubbleText(this)">COPY</span>
           <span onclick="deleteBubble(this)">DELETE</span>
@@ -469,12 +659,13 @@
           voice: voiceProfile
         };
 
-        if (attachedFilePayload) {
-          payload.file = attachedFilePayload;
-          attachedFilePayload = null;
+        if (attachedFilesPayload.length > 0) {
+          payload.multiFiles = attachedFilesPayload;
+          attachedFilesPayload = []; // Clear array after loading into payload
           document.getElementById('file-input').value = '';
-          document.getElementById('sys-status').textContent = 'SYS: ACTIVE | API LINKED';
-          document.getElementById('sys-status').style.color = '#888';
+          const statusEl = document.getElementById('sys-status');
+          statusEl.innerHTML = `<span class="status-dot"></span>SYS: ACTIVE | API LINKED`;
+          statusEl.style.color = '#888';
         }
 
         const response = await fetch('/api/chat', {
