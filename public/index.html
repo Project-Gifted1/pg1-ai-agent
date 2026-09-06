@@ -8,12 +8,12 @@
     :root {
       --bg-color: #000000;
       --card-bg: #050505;
-      --border-gold: #c5a059;
-      --text-gold: #c5a059;
+      --border-gold: #d4af37; 
+      --text-gold: #f3c623;   
       --text-main: #e0e0e0;
-      --input-bg: #0a0a0a;
-      --glow-subtle: rgba(197, 160, 89, 0.15);
-      --glow-strong: rgba(197, 160, 89, 0.4);
+      --input-bg: #0c0c0c;
+      --glow-subtle: rgba(243, 198, 35, 0.2);
+      --glow-strong: rgba(243, 198, 35, 0.55);
       --font-mono: "Courier New", Courier, monospace;
     }
     
@@ -22,6 +22,7 @@
       margin: 0; 
       padding: 0; 
       font-family: var(--font-mono); 
+      -webkit-tap-highlight-color: transparent;
     }
     
     body { 
@@ -34,7 +35,6 @@
       position: relative;
     }
 
-    /* Subtle Ambient Breathing Background */
     body::before {
       content: "";
       position: absolute;
@@ -46,8 +46,8 @@
     }
 
     @keyframes ambient-breathe {
-      0% { opacity: 0.3; transform: scale(0.98); }
-      100% { opacity: 1; transform: scale(1.02); }
+      0% { opacity: 0.2; transform: scale(0.98); }
+      100% { opacity: 0.8; transform: scale(1.02); }
     }
     
     header { 
@@ -57,8 +57,8 @@
       padding: 12px 16px; 
       border-bottom: 1px solid var(--border-gold); 
       background: rgba(5, 5, 5, 0.85);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
       z-index: 10; 
       box-shadow: 0 2px 15px var(--glow-subtle);
     }
@@ -69,11 +69,25 @@
       font-weight: bold; 
       letter-spacing: 0.5px; 
       animation: text-glow 3s ease-in-out infinite alternate;
+      display: flex;
+      align-items: flex-start;
+    }
+
+    .tm-symbol {
+      font-size: 0.7em;
+      margin-left: 2px;
+      color: #fff;
+      animation: tm-pulse 2s infinite alternate;
+    }
+
+    @keyframes tm-pulse {
+      0% { text-shadow: 0 0 2px #fff, 0 0 5px var(--text-gold); opacity: 0.7; transform: scale(1); }
+      100% { text-shadow: 0 0 8px #fff, 0 0 15px var(--text-gold); opacity: 1; transform: scale(1.1); color: var(--text-gold); }
     }
 
     @keyframes text-glow {
-      0% { text-shadow: 0 0 4px rgba(197, 160, 89, 0.2); }
-      100% { text-shadow: 0 0 12px rgba(197, 160, 89, 0.6); }
+      0% { text-shadow: 0 0 4px rgba(243, 198, 35, 0.2); }
+      100% { text-shadow: 0 0 12px rgba(243, 198, 35, 0.7); }
     }
     
     .header-controls { display: flex; gap: 8px; }
@@ -84,7 +98,7 @@
       color: var(--text-gold); 
       width: 36px; 
       height: 32px; 
-      border-radius: 4px; 
+      border-radius: 6px; 
       font-size: 14px; 
       cursor: pointer; 
       display: flex; 
@@ -93,10 +107,10 @@
       transition: all 0.2s ease;
     }
     .header-btn:hover {
-      box-shadow: 0 0 8px var(--glow-strong);
-      background: rgba(197, 160, 89, 0.1);
+      box-shadow: 0 0 10px var(--glow-strong);
+      background: rgba(243, 198, 35, 0.1);
     }
-    .header-btn:active { background: rgba(197, 160, 89, 0.2); transform: scale(0.95); }
+    .header-btn:active { background: rgba(243, 198, 35, 0.2); transform: scale(0.95); }
     
     #chat-container { 
       flex: 1; 
@@ -111,11 +125,11 @@
     .message-bubble { 
       background: var(--card-bg); 
       border: 1px solid var(--border-gold); 
-      border-radius: 6px; 
-      padding: 14px; 
+      border-radius: 8px; 
+      padding: 14px 16px; 
       max-width: 90%; 
       align-self: flex-start; 
-      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.7), inset 0 0 10px var(--glow-subtle);
       animation: slide-up 0.3s ease-out forwards;
     }
 
@@ -127,7 +141,7 @@
     .message-bubble.user { 
       align-self: flex-end; 
       background: var(--input-bg); 
-      border-color: rgba(197, 160, 89, 0.5);
+      border-color: rgba(212, 175, 55, 0.5); 
     }
     
     .message-text { 
@@ -141,19 +155,20 @@
       display: flex; 
       gap: 16px; 
       margin-top: 12px; 
-      font-size: 12px; 
+      font-size: 11px; 
       color: var(--text-gold); 
       text-transform: uppercase; 
       cursor: pointer; 
       font-weight: bold; 
     }
-    .message-actions span { transition: text-shadow 0.2s ease; }
+    .message-actions span { transition: text-shadow 0.2s ease, transform 0.1s ease; display: inline-block; }
     .message-actions span:hover { text-decoration: underline; text-shadow: 0 0 8px var(--text-gold); }
+    .message-actions span:active { transform: scale(0.9); }
 
     .media-preview-container { margin-top: 12px; width: 100%; }
     .media-preview-container img, .media-preview-container video { 
       width: 100%; 
-      border-radius: 4px; 
+      border-radius: 6px; 
       border: 1px solid var(--border-gold); 
       background: #000; 
       display: block; 
@@ -162,64 +177,63 @@
       box-shadow: 0 0 15px var(--glow-subtle);
     }
     
+    /* --- MODERN UNIFIED FOOTER --- */
     .footer-panel { 
-      padding: 12px 16px; 
+      padding: 16px; 
       background: rgba(5, 5, 5, 0.85);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
       border-top: 1px solid var(--border-gold); 
       display: flex; 
       flex-direction: column; 
-      gap: 10px; 
+      gap: 12px; 
       z-index: 10;
-      box-shadow: 0 -2px 15px var(--glow-subtle);
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.8);
     }
     
-    .toolbar-row { display: flex; justify-content: space-between; align-items: center; }
+    /* Stealth Telemetry Row */
+    .telemetry-row { 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      padding: 0 4px;
+    }
     
-    .voice-group { display: flex; align-items: center; gap: 8px; }
+    .voice-group { 
+      display: flex; 
+      align-items: center; 
+      gap: 12px; 
+    }
     
-    .voice-toggle { 
-      background: transparent; 
-      border: 1px solid var(--border-gold); 
-      color: var(--text-gold); 
-      padding: 4px 10px; 
-      border-radius: 4px; 
-      font-size: 12px; 
-      cursor: pointer; 
-      font-weight: bold; 
+    .stealth-select, .stealth-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-gold);
+      font-size: 11px;
+      font-weight: bold;
+      text-transform: uppercase;
+      cursor: pointer;
+      outline: none;
       transition: all 0.2s;
+      opacity: 0.8;
     }
-    .voice-toggle:hover { box-shadow: 0 0 8px var(--glow-strong); }
-    
-    .voice-select { 
-      background: var(--input-bg); 
-      border: 1px solid var(--border-gold); 
-      color: var(--text-gold); 
-      padding: 4px 8px; 
-      border-radius: 4px; 
-      font-size: 12px; 
-      outline: none; 
-      cursor: pointer; 
-      transition: all 0.2s;
-    }
-    .voice-select:focus { box-shadow: 0 0 8px var(--glow-strong); }
+    .stealth-select:hover, .stealth-btn:hover { opacity: 1; text-shadow: 0 0 8px var(--text-gold); }
+    .stealth-select option { background: var(--bg-color); color: var(--text-gold); }
 
     .status-indicator { 
-      font-size: 12px; 
-      color: #888; 
-      letter-spacing: 0.5px; 
+      font-size: 11px; 
+      color: #aaa; 
+      letter-spacing: 1px; 
       text-transform: uppercase; 
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
     }
 
-    /* Live Telemetry Pulse Dot */
     .status-dot {
       display: inline-block;
-      width: 8px;
-      height: 8px;
+      width: 6px;
+      height: 6px;
       background-color: #00ff66;
       border-radius: 50%;
       box-shadow: 0 0 8px #00ff66;
@@ -230,80 +244,89 @@
       to { opacity: 1; box-shadow: 0 0 10px #00ff66; }
     }
     
-    .input-row { display: flex; gap: 8px; align-items: center; }
+    /* Unified Command Deck Capsule */
+    .command-deck { 
+      display: flex; 
+      align-items: flex-end; 
+      background: var(--input-bg);
+      border: 1px solid var(--border-gold);
+      border-radius: 12px;
+      padding: 6px;
+      gap: 4px;
+      transition: all 0.3s ease;
+      box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+    }
+    .command-deck:focus-within {
+      box-shadow: 0 0 15px var(--glow-strong), inset 0 0 5px var(--glow-subtle);
+      border-color: #ffe066;
+    }
     
-    .attach-btn, .mic-btn { 
+    .tool-btn { 
       background: transparent; 
-      border: 1px solid var(--border-gold); 
+      border: none; 
       color: var(--text-gold); 
-      border-radius: 4px; 
-      padding: 0 12px; 
-      height: 44px; 
+      border-radius: 8px; 
+      width: 40px; 
+      height: 40px; 
       display: flex; 
       align-items: center; 
       justify-content: center; 
       cursor: pointer; 
       font-size: 16px; 
       transition: all 0.2s;
+      flex-shrink: 0;
     }
-    .attach-btn:hover, .mic-btn:hover { box-shadow: 0 0 8px var(--glow-strong); }
+    .tool-btn:hover { background: rgba(243, 198, 35, 0.1); }
+    .tool-btn:active { transform: scale(0.9); }
 
-    /* Active Microphone State */
     @keyframes mic-recording {
-      0% { box-shadow: 0 0 5px #ff4444; color: #ff4444; border-color: #ff4444; }
-      100% { box-shadow: 0 0 15px #ff4444; color: #ff4444; border-color: #ff4444; }
+      0% { color: #ff4444; text-shadow: 0 0 5px #ff4444; background: rgba(255, 68, 68, 0.1); }
+      100% { color: #ff4444; text-shadow: 0 0 15px #ff4444; background: rgba(255, 68, 68, 0.2); transform: scale(1.05); }
     }
-    .mic-active {
-      animation: mic-recording 0.6s infinite alternate !important;
-    }
+    .mic-active { animation: mic-recording 0.6s infinite alternate !important; }
     
     textarea { 
       flex: 1; 
-      background: var(--input-bg); 
-      border: 1px solid var(--border-gold); 
-      border-radius: 4px; 
+      background: transparent; 
+      border: none; 
       color: #fff; 
-      padding: 12px; 
+      padding: 12px 8px; 
       font-size: 14px; 
       resize: none; 
-      height: 44px; 
+      min-height: 40px; 
+      max-height: 120px;
       outline: none; 
-      transition: all 0.2s;
+      line-height: 1.4;
     }
-    textarea:focus { box-shadow: 0 0 10px var(--glow-strong); border-color: #dcb873; }
-    textarea::placeholder { color: #666; }
+    textarea::placeholder { color: #555; }
     
     .execute-btn { 
-      background: var(--border-gold); 
+      background: var(--text-gold); 
       color: #000; 
       border: none; 
       font-weight: bold; 
       padding: 0 16px; 
-      border-radius: 4px; 
-      height: 44px; 
-      font-size: 13px; 
+      border-radius: 8px; 
+      height: 40px; 
+      font-size: 12px; 
       cursor: pointer; 
       text-transform: uppercase; 
-      animation: gentle-pulse 3s infinite alternate;
-      transition: transform 0.1s;
+      letter-spacing: 1px;
+      transition: all 0.2s;
+      flex-shrink: 0;
     }
-    .execute-btn:hover { filter: brightness(1.1); }
-    .execute-btn:active { opacity: 0.8; transform: scale(0.96); }
-
-    @keyframes gentle-pulse {
-      0% { box-shadow: 0 0 5px var(--glow-subtle); }
-      100% { box-shadow: 0 0 15px var(--glow-strong); }
-    }
+    .execute-btn:hover { filter: brightness(1.2); box-shadow: 0 0 15px var(--glow-strong); }
+    .execute-btn:active { transform: scale(0.95); }
     
     input[type="file"] { display: none; }
 
-    /* Exact Security Gate Styling */
+    /* Security Gate styling remains highly polished */
     #auth-modal { 
       position: fixed; 
       inset: 0; 
-      background: rgba(0,0,0,0.95);
-      backdrop-filter: blur(5px);
-      -webkit-backdrop-filter: blur(5px);
+      background: rgba(0,0,0,0.96);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
       z-index: 100; 
       display: flex; 
       align-items: center; 
@@ -314,15 +337,15 @@
     .auth-card { 
       background: var(--card-bg); 
       border: 1px solid var(--border-gold); 
-      border-radius: 8px; 
-      padding: 26px; 
+      border-radius: 12px; 
+      padding: 32px 24px; 
       width: 100%; 
-      max-width: 350px; 
+      max-width: 360px; 
       display: flex; 
       flex-direction: column; 
-      gap: 16px; 
-      box-shadow: 0 0 30px rgba(197, 160, 89, 0.15);
-      animation: modal-drop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+      gap: 20px; 
+      box-shadow: 0 0 50px rgba(243, 198, 35, 0.15);
+      animation: modal-drop 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
 
     @keyframes modal-drop {
@@ -331,64 +354,61 @@
     }
     
     .auth-card h2 { 
-      font-size: 14px; 
+      font-size: 15px; 
       color: var(--text-gold); 
       text-align: center; 
-      letter-spacing: 1px; 
-      line-height: 1.4; 
+      letter-spacing: 2px; 
       margin-bottom: 4px;
-      text-shadow: 0 0 8px var(--glow-subtle);
+      text-shadow: 0 0 12px var(--glow-subtle);
     }
     
     .auth-input { 
-      background: var(--input-bg); 
+      background: #000; 
       border: 1px solid var(--border-gold); 
-      border-radius: 4px; 
+      border-radius: 6px; 
       color: #fff; 
-      padding: 12px; 
+      padding: 14px; 
       font-size: 14px; 
       outline: none; 
-      width: 100%; 
-      transition: all 0.2s;
+      transition: all 0.3s ease;
     }
-    .auth-input:focus { box-shadow: 0 0 10px var(--glow-strong); }
+    .auth-input:focus { box-shadow: 0 0 15px var(--glow-strong); border-color: #fff; }
     
     .auth-submit { 
-      background: var(--border-gold); 
+      background: var(--text-gold); 
       color: #000; 
       border: none; 
       font-weight: bold; 
-      padding: 12px; 
-      border-radius: 4px; 
+      padding: 14px; 
+      border-radius: 6px; 
       font-size: 13px; 
       cursor: pointer; 
       text-transform: uppercase; 
-      letter-spacing: 1px; 
-      width: 100%; 
+      letter-spacing: 2px; 
       transition: all 0.2s;
     }
-    .auth-submit:hover { box-shadow: 0 0 15px var(--glow-strong); filter: brightness(1.1); }
-    .auth-submit:active { transform: scale(0.98); }
+    .auth-submit:hover { box-shadow: 0 0 20px var(--glow-strong); filter: brightness(1.2); transform: translateY(-1px); }
+    .auth-submit:active { transform: translateY(1px); }
   </style>
 </head>
 <body>
 
   <div id="auth-modal">
     <div class="auth-card">
-      <h2>PROJECT-GIFTED1 SECURITY GATE</h2>
+      <h2>SECURITY GATE</h2>
       <input type="text" id="auth-user" class="auth-input" placeholder="Operator ID" value="Winner1G">
       <input type="password" id="auth-pass" class="auth-input" placeholder="Secure Matrix Passkey">
-      <button class="auth-submit" onclick="verifyAuth()">AUTHENTICATE</button>
+      <button class="auth-submit" onclick="triggerHaptic(60); verifyAuth()">AUTHENTICATE</button>
     </div>
   </div>
 
   <header>
-    <h1>Project-Gifted1™</h1>
+    <h1>Project-Gifted1<span class="tm-symbol">™</span></h1>
     <div class="header-controls">
-      <button class="header-btn" onclick="openVideoVaultModal()" title="Video Vault">📹</button>
-      <button class="header-btn" onclick="exportChatPDF()" title="Export Transcript">📄</button>
-      <button class="header-btn" onclick="clearChat()" title="Clear Chat">🗑️</button>
-      <button class="header-btn" onclick="triggerVaultSync()" title="Vault Sync">➕</button>
+      <button class="header-btn" onclick="triggerHaptic(); openVideoVaultModal()" title="Video Vault">📹</button>
+      <button class="header-btn" onclick="triggerHaptic(); exportChatPDF()" title="Export Transcript">📄</button>
+      <button class="header-btn" onclick="triggerHaptic(); clearChat()" title="Clear Chat">🗑️</button>
+      <button class="header-btn" onclick="triggerHaptic(); triggerVaultSync()" title="Vault Sync">➕</button>
     </div>
   </header>
 
@@ -396,18 +416,18 @@
     <div class="message-bubble" id="welcome-bubble">
       <div class="message-text">Greetings. New session initialized. PG1 Sovereign Agent operational. Point the core engine where you need it next—whether that's deploying new endpoints, committing patches, or running real-time database queries! 🛡️ ⚡</div>
       <div class="message-actions">
-        <span onclick="speakMessage('Greetings. New session initialized. PG1 Sovereign Agent operational.')">SPEAK</span>
-        <span onclick="copyBubbleText(this)">COPY</span>
-        <span onclick="deleteBubble(this)">DELETE</span>
+        <span onclick="triggerHaptic(); speakMessage('Greetings. New session initialized. PG1 Sovereign Agent operational.')">SPEAK</span>
+        <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
+        <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
       </div>
     </div>
   </div>
 
   <div class="footer-panel">
-    <div class="toolbar-row">
+    <div class="telemetry-row">
       <div class="voice-group">
-        <button id="voice-btn" class="voice-toggle" onclick="toggleVoice()">VOICE: OFF</button>
-        <select id="voice-profile-select" class="voice-select">
+        <button id="voice-btn" class="stealth-btn" onclick="triggerHaptic(); toggleVoice()">VOICE: OFF</button>
+        <select id="voice-profile-select" class="stealth-select" onchange="triggerHaptic(30)">
           <option value="PG1-Agent">PG1-Agent</option>
           <option value="christopher">Christopher</option>
           <option value="steffan">Steffan</option>
@@ -416,31 +436,40 @@
         </select>
       </div>
       <span id="sys-status" class="status-indicator">
-        <span class="status-dot"></span>SYS: ACTIVE | API LINKED
+        <span class="status-dot"></span>ACTIVE | API LINKED
       </span>
     </div>
-    <div class="input-row">
-      <!-- Microphone Button -->
-      <button id="mic-btn" class="mic-btn" title="Voice Input" onclick="toggleRecording()">🎤</button>
-      
-      <!-- Multi-File Attachment -->
-      <label class="attach-btn" title="Attach Files">
+    
+    <div class="command-deck">
+      <button id="mic-btn" class="tool-btn" title="Voice Input" onclick="triggerHaptic(); toggleRecording()">🎤</button>
+      <label class="tool-btn" title="Attach Files">
         📎
-        <input type="file" id="file-input" multiple onchange="handleFileSelect(event)">
+        <input type="file" id="file-input" multiple onchange="triggerHaptic(); handleFileSelect(event)">
       </label>
-      
-      <textarea id="prompt-input" placeholder="Input operational directive..." onkeydown="handleKey(event)"></textarea>
-      <button class="execute-btn" onclick="submitDirective()">EXECUTE</button>
+      <textarea id="prompt-input" rows="1" placeholder="Input operational directive..." onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+      <button class="execute-btn" onclick="triggerHaptic(80); submitDirective()">EXECUTE</button>
     </div>
   </div>
 
   <script>
+    // Haptic Feedback Engine
+    function triggerHaptic(duration = 50) {
+      if (navigator.vibrate) {
+        navigator.vibrate(duration);
+      }
+    }
+
+    // Auto-resizing Textarea
+    function autoResize(textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = (textarea.scrollHeight) + 'px';
+    }
+
     let voiceActive = false;
-    let attachedFilesPayload = []; // Now handles an array of multiple files
+    let attachedFilesPayload = []; 
     let recognition;
     let isRecording = false;
 
-    // Initialize Web Speech API
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       recognition = new SpeechRecognition();
@@ -450,7 +479,8 @@
       recognition.onstart = function() {
         isRecording = true;
         document.getElementById('mic-btn').classList.add('mic-active');
-        document.getElementById('prompt-input').placeholder = "Listening for directive...";
+        document.getElementById('prompt-input').placeholder = "Listening...";
+        triggerHaptic([50, 50, 50]); 
       };
 
       recognition.onresult = function(event) {
@@ -466,6 +496,7 @@
         if (finalTranscript) {
           const input = document.getElementById('prompt-input');
           input.value = (input.value + ' ' + finalTranscript).trim();
+          autoResize(input);
         }
       };
 
@@ -492,6 +523,7 @@
     }
 
     function stopRecording() {
+      if(isRecording) triggerHaptic(100); 
       isRecording = false;
       document.getElementById('mic-btn').classList.remove('mic-active');
       document.getElementById('prompt-input').placeholder = "Input operational directive...";
@@ -525,14 +557,15 @@
     function toggleVoice() {
       voiceActive = !voiceActive;
       const btn = document.getElementById('voice-btn');
-      btn.style.borderColor = voiceActive ? '#00ff66' : '#c5a059';
-      btn.style.color = voiceActive ? '#00ff66' : '#c5a059';
-      btn.textContent = voiceActive ? 'VOICE: ACTIVE' : 'VOICE: OFF';
+      btn.style.color = voiceActive ? '#00ff66' : 'var(--text-gold)';
+      btn.style.textShadow = voiceActive ? '0 0 8px #00ff66' : 'none';
+      btn.textContent = voiceActive ? 'VOICE: ON' : 'VOICE: OFF';
     }
 
     function handleKey(e) {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
+        triggerHaptic(80);
         submitDirective();
       }
     }
@@ -542,9 +575,9 @@
         <div class="message-bubble">
           <div class="message-text">Matrix session cleared. Ready for new operational directives.</div>
           <div class="message-actions">
-            <span onclick="speakMessage('Matrix session cleared.')">SPEAK</span>
-            <span onclick="copyBubbleText(this)">COPY</span>
-            <span onclick="deleteBubble(this)">DELETE</span>
+            <span onclick="triggerHaptic(); speakMessage('Matrix session cleared.')">SPEAK</span>
+            <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
+            <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
           </div>
         </div>`;
     }
@@ -560,6 +593,7 @@
     function triggerVaultSync() {
       const input = document.getElementById('prompt-input');
       input.value = "Sync all files from Supabase vault and display status.";
+      autoResize(input);
       submitDirective();
     }
 
@@ -567,7 +601,7 @@
       const files = event.target.files;
       if (!files || files.length === 0) return;
       
-      attachedFilesPayload = []; // Reset on new batch selection
+      attachedFilesPayload = []; 
       let processedCount = 0;
 
       Array.from(files).forEach(file => {
@@ -585,12 +619,25 @@
           if (processedCount === files.length) {
             const statusEl = document.getElementById('sys-status');
             const fileText = files.length === 1 ? files[0].name : `${files.length} FILES ATTACHED`;
-            statusEl.innerHTML = `<span class="status-dot" style="background-color: #c5a059; box-shadow: 0 0 8px #c5a059;"></span>SYS: ${fileText}`;
-            statusEl.style.color = '#c5a059';
+            statusEl.innerHTML = `<span class="status-dot" style="background-color: var(--text-gold); box-shadow: 0 0 8px var(--text-gold);"></span>${fileText}`;
+            statusEl.style.color = 'var(--text-gold)';
           }
         };
         reader.readAsDataURL(file);
       });
+    }
+
+    function editBubble(el) {
+      const bubble = el.closest('.message-bubble');
+      const textEl = bubble.querySelector('.message-text');
+      const input = document.getElementById('prompt-input');
+      
+      let originalText = textEl.innerText.replace(/ \[\d+ File\(s\) Attached\]$/, '').replace(/ \[File Payload Only\]$/, '');
+      input.value = originalText;
+      autoResize(input);
+      
+      bubble.remove();
+      input.focus();
     }
 
     async function speakMessage(text) {
@@ -638,12 +685,14 @@
       userBubble.innerHTML = `
         <div class="message-text">${escapeHTML(text || '[File Payload Only]')}${fileStatusText}</div>
         <div class="message-actions">
-          <span onclick="copyBubbleText(this)">COPY</span>
-          <span onclick="deleteBubble(this)">DELETE</span>
+          <span onclick="triggerHaptic(40); editBubble(this)">EDIT</span>
+          <span onclick="triggerHaptic(40); copyBubbleText(this)">COPY</span>
+          <span onclick="triggerHaptic(40); deleteBubble(this)">DELETE</span>
         </div>`;
       chatContainer.appendChild(userBubble);
       
       input.value = '';
+      input.style.height = 'auto'; // Reset height
       chatContainer.scrollTop = chatContainer.scrollHeight;
 
       const agentBubble = document.createElement('div');
@@ -661,11 +710,11 @@
 
         if (attachedFilesPayload.length > 0) {
           payload.multiFiles = attachedFilesPayload;
-          attachedFilesPayload = []; // Clear array after loading into payload
+          attachedFilesPayload = []; 
           document.getElementById('file-input').value = '';
           const statusEl = document.getElementById('sys-status');
-          statusEl.innerHTML = `<span class="status-dot"></span>SYS: ACTIVE | API LINKED`;
-          statusEl.style.color = '#888';
+          statusEl.innerHTML = `<span class="status-dot"></span>ACTIVE | API LINKED`;
+          statusEl.style.color = '#aaa';
         }
 
         const response = await fetch('/api/chat', {
@@ -676,6 +725,8 @@
 
         const data = await response.json();
         
+        triggerHaptic([30, 50, 30]); 
+
         let contentHtml = `<div class="message-text">${escapeHTML(data.reply || 'Execution complete.')}</div>`;
 
         if (data.image) {
@@ -696,9 +747,9 @@
 
         contentHtml += `
           <div class="message-actions">
-            <span onclick="speakMessage(${JSON.stringify(data.reply || '').replace(/"/g, '&quot;')})">SPEAK</span>
-            <span onclick="copyBubbleText(this)">COPY</span>
-            <span onclick="deleteBubble(this)">DELETE</span>
+            <span onclick="triggerHaptic(); speakMessage(${JSON.stringify(data.reply || '').replace(/"/g, '&quot;')})">SPEAK</span>
+            <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
+            <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
           </div>`;
 
         agentBubble.innerHTML = contentHtml;
@@ -709,6 +760,7 @@
         }
 
       } catch (err) {
+        triggerHaptic(200); 
         agentBubble.innerHTML = `<div class="message-text" style="color: #ff4444;">Exception: ${escapeHTML(err.message)}</div>`;
       }
 
