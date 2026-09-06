@@ -301,10 +301,20 @@ export default async function handler(req, res) {
 
     let geminiData = null;
     let lastErr = '';
+    const modelsToTry = [
+      'gemini-3.7-flash', 
+      'gemini-3.6-flash', 
+      'gemini-3.5-flash', 
+      'gemini-3.1-pro-preview',
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gemini-flash-latest'
+    ];
 
-    for (const model of ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview']) {
+    for (const model of modelsToTry) {
       try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
+        const apiVersion = model.startsWith('gemini-3') ? 'v1alpha' : 'v1beta';
+        const res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${geminiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
