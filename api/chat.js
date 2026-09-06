@@ -84,6 +84,7 @@ export default async function handler(req, res) {
       });
     }
 
+    // Aligned perfectly with your actual Vercel environment variable names
     const geminiKeys = [
       process.env.GEMINI_API_KEY1,
       process.env.GEMINI_API_KEY2,
@@ -211,7 +212,7 @@ export default async function handler(req, res) {
       let lastImgErr = '';
       const cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic cybernetic landscape';
       
-      const imageModels = ['gemini-3.1-flash-image-preview', 'imagen-4.0-generate-001', 'gemini-2.5-flash-image'];
+      const imageModels = ['gemini-3.1-flash-image-preview', 'imagen-3.0-generate-002', 'gemini-2.5-flash'];
 
       keyImageLoop: for (const key of geminiKeys) {
         for (const imgModel of imageModels) {
@@ -258,7 +259,7 @@ export default async function handler(req, res) {
       if (imageBase64) {
         return sendJSON(200, { reply: `[SYSTEM] Image generated successfully for: "${cleanPrompt}"`, image: imageBase64, imageStatus: 'SUCCESS', traceId: requestTraceId });
       }
-      return sendJSON(200, { reply: `[SYSTEM] Image pipeline response notice. Details: ${lastImgErr || 'Quota limit reached.'}`, traceId: requestTraceId });
+      return sendJSON(200, { reply: `[SYSTEM] Image generation notice. Details: ${lastImgErr || 'Quota limit reached.'}`, traceId: requestTraceId });
     }
 
     if (activeAction === 'GENERATE_VIDEO') {
