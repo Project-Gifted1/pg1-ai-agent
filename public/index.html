@@ -1,374 +1,166 @@
-// api/chat.js
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '10mb',
-    },
-    maxDuration: 60,
-  },
-};
-
-export default async function handler(req, res) {
-  const startTime = Date.now();
-  const requestTraceId = Math.random().toString(36).substring(2, 10);
-
-  const sendJSON = (status, data) => {
-    if (res && typeof res.status === 'function') {
-      return res.status(status).json(data);
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project-Gifted1™</title>
+  <style>
+    :root {
+      --bg-color: #080808;
+      --card-bg: #121212;
+      --border-gold: #c5a059;
+      --text-gold: #c5a059;
+      --text-main: #e0e0e0;
+      --input-bg: #181818;
     }
-    return new Response(JSON.stringify(data), {
-      status: status,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-      }
-    });
-  };
-
-  if (res && typeof res.setHeader === 'function') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  }
-
-  if (req.method === 'OPTIONS') {
-    if (res && typeof res.status === 'function') return res.status(200).end();
-    return new Response(null, { status: 200 });
-  }
-
-  if (req.method !== 'POST') {
-    return sendJSON(405, { error: 'Method Not Allowed', traceId: requestTraceId });
-  }
-
-  try {
-    let reqBody = {};
-    try {
-      if (typeof req.json === 'function') {
-        reqBody = await req.json();
-      } else if (typeof req.body === 'string') {
-        reqBody = JSON.parse(req.body);
-      } else {
-        reqBody = req.body || {};
-      }
-    } catch (parseErr) {
-      reqBody = {};
-    }
-
-    const { 
-      prompt: promptText = '', 
-      action,
-      actionType, 
-      isAuthorizedAction = false, 
-      pendingCode = '', 
-      targetFile = 'api/chat.js',
-      file,
-      multiFiles = [],
-      singleFile = null,
-      isPdfExport = false,
-      user,
-      pass,
-      voice = 'christopher'
-    } = reqBody;
-
-    const rawActionType = action || actionType || 'CHAT';
-
-    if (promptText === 'AUTH_VERIFY' || user === 'Winner1G' || pass) {
-      return sendJSON(200, { 
-        success: true, 
-        authenticated: true, 
-        isValid: true,
-        status: 'SUCCESS',
-        reply: 'Access Granted',
-        traceId: requestTraceId 
-      });
-    }
-
-    const geminiKeys = [
-      process.env.GEMINI_API_KEY1,
-      process.env.GEMINI_API_KEY2,
-      process.env.GEMINI_API_KEY,
-      process.env.Core_API_KEY
-    ].filter(Boolean);
-
-    const cartesiaKey = process.env.CARTESIA_API_KEY;
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const githubToken = process.env.GITHUB_TOKEN;
-    const githubRepo = process.env.GITHUB_REPO;
-
-    let supabaseStatus = 'DISCONNECTED';
-    let lastTableFetch = 'SKIPPED';
-    let supabaseFilesReport = '';
-    let formattedArchive = 'No prior matrix context.';
-    let targetedHistoricalData = '';
-    const dbHeaders = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
-
-    if (supabaseUrl && supabaseKey) {
-      try {
-        const pingRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=id&limit=1`, {
-          headers: dbHeaders
-        });
-        supabaseStatus = pingRes.ok ? 'CONNECTED & VERIFIED' : 'AUTH_ERROR';
-        lastTableFetch = pingRes.status;
-      } catch (e) {
-        supabaseStatus = 'UNREACHABLE';
-      }
-
-      try {
-        const msgRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, { headers: dbHeaders });
-        if (msgRes.ok) {
-          const recent = await msgRes.json();
-          if (Array.isArray(recent) && recent.length > 0) {
-            formattedArchive = recent.reverse().map(m => `${m.role === 'model' ? 'AGENT' : 'OPERATOR'}: ${m.content}`).join('\n');
-          }
-        }
-      } catch (e) {}
-
-      try {
-        const storageRes = await fetch(`${supabaseUrl}/storage/v1/object/list/pg1-vault`, {
-          method: 'POST',
-          headers: { ...dbHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prefix: '', limit: 50, sortBy: { column: 'created_at', order: 'desc' } })
-        });
-        if (storageRes.ok) {
-          const files = await storageRes.json();
-          if (Array.isArray(files) && files.length > 0) {
-            supabaseFilesReport = `\n\n[SUPABASE VAULT SYNCHRONIZATION (${files.length} Files Found)]:\n` + files.map(f => `• [FILE] ${f.name} (${(f.metadata?.size || 0)} bytes, Updated: ${f.updated_at})`).join('\n');
-          }
-        }
-      } catch (e) {}
-
-      const lowerPrompt = promptText.toLowerCase();
-      if (lowerPrompt.includes('threat') || lowerPrompt.includes('indicator')) {
-        try {
-          const threatRes = await fetch(`${supabaseUrl}/rest/v1/threat_indicators?select=indicator_type,value,confidence_score,ingested_at&order=ingested_at.desc&limit=20`, { headers: dbHeaders });
-          if (threatRes.ok) {
-            const threats = await threatRes.json();
-            if (Array.isArray(threats) && threats.length > 0) {
-              targetedHistoricalData = `\n\n[LIVE THREAT TELEMETRY (${threats.length} Records)]:\n` + threats.map(t => `• [${t.indicator_type}] ${t.value} (Conf: ${t.confidence_score}%)`).join('\n');
-            }
-          }
-        } catch (e) {}
-      }
-    }
-
-    let activeAction = rawActionType;
-    if (activeAction === 'CHAT' && typeof promptText === 'string') {
-      const lower = promptText.toLowerCase().trim();
-      if (lower.startsWith('/image') || lower.includes('generate image') || lower.includes('create an image') || lower.includes('draw a') || lower.includes('draw an')) {
-        activeAction = 'GENERATE_IMAGE';
-      } else if (lower.startsWith('/video') || lower.includes('generate video') || lower.includes('create a video') || lower.includes('animate a')) {
-        activeAction = 'GENERATE_VIDEO';
-      } else if (lower.startsWith('/speak') || lower.startsWith('/tts')) {
-        activeAction = 'SPEAK';
-      }
-    }
-
-    const cartesiaVoiceMap = {
-      'christopher': 'a0e99841-438c-4a64-b679-ae501e7d6091',
-      'steffan': '996f8664-9669-42b7-a068-1eb6e55c328d',
-      'ryan': '1249b380-6058-450f-a496-e17f0dbfcebc',
-      'aria': '996f8664-9669-42b7-a068-1eb6e55c328d'
-    };
-    const targetVoiceId = cartesiaVoiceMap[voice] || cartesiaVoiceMap['christopher'];
-
-    if (activeAction === 'SPEAK') {
-      let audioBase64 = null;
-      if (cartesiaKey) {
-        try {
-          const cleanText = promptText.replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 1500).trim();
-          const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
-            method: 'POST',
-            headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              model_id: 'sonic-english', 
-              transcript: cleanText, 
-              voice: { mode: 'id', id: targetVoiceId }, 
-              output_format: { container: 'mp3', sample_rate: 44100 } 
-            })
-          });
-          if (ttsRes.ok) {
-            const arrayBuffer = await ttsRes.arrayBuffer();
-            if (typeof Buffer !== 'undefined') {
-              audioBase64 = Buffer.from(arrayBuffer).toString('base64');
-            } else {
-              const bytes = new Uint8Array(arrayBuffer);
-              let binary = '';
-              for (let i = 0; i < bytes.length; i += 8192) {
-                binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
-              }
-              audioBase64 = btoa(binary);
-            }
-          }
-        } catch (e) {}
-      }
-      return sendJSON(200, { audio: audioBase64, audioStatus: audioBase64 ? 'SUCCESS' : 'SKIPPED', audioMimeType: 'audio/mp3', traceId: requestTraceId });
-    }
-
-    if (activeAction === 'GENERATE_IMAGE') {
-      const cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic cybernetic landscape';
-      const encodedPrompt = encodeURIComponent(`ultra high resolution, hyper-detailed, 8k, photorealistic cinematic lighting, ${cleanPrompt}`);
-      const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1920&height=1080&nologo=true&enhance=true`;
-      
-      return sendJSON(200, { 
-        reply: `[SYSTEM] High-Spec 8K Image Rendered Successfully: "${cleanPrompt}"`, 
-        image: imageUrl,
-        imageStatus: 'SUCCESS', 
-        traceId: requestTraceId 
-      });
-    }
-
-    if (activeAction === 'GENERATE_VIDEO') {
-      const vidPrompt = promptText.replace(/generate video of|create a video of|generate video|create video|\/video|animate a|make a video of/gi, '').trim() || 'Cinematic futuristic scene';
-      const videoUrl = `https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4`;
-
-      return sendJSON(200, { 
-        reply: `[SYSTEM] High-Spec 2-Minute Cinematic Video Stream Generated: "${vidPrompt}"`, 
-        video: videoUrl,
-        videoStatus: 'SUCCESS', 
-        durationSeconds: 120,
-        traceId: requestTraceId 
-      });
-    }
-
-    const runPreFlightCheck = (codeString) => {
-      if (!codeString) return { passed: true, log: 'No code.' };
-      try {
-        const testCode = codeString.replace(/^\s*export\s+.*?from\s+['"].*?['"];?/gm, '');
-        new Function(testCode);
-        if (codeString.includes('child_process') || codeString.includes('eval(')) return { passed: false, log: 'Security Violation' };
-        return { passed: true, log: 'PASSED' };
-      } catch (e) {
-        return { passed: false, log: e.message };
-      }
-    };
-
-    if (activeAction === 'ACCEPT_AUTHORIZATION') {
-      const preFlight = runPreFlightCheck(pendingCode);
-      if (!isAuthorizedAction || !preFlight.passed || !githubToken || !githubRepo || !pendingCode) {
-        return sendJSON(200, { reply: `[AGENT] Commit Aborted: Validation Failed.`, traceId: requestTraceId });
-      }
-      try {
-        const ghApiHeaders = { 'Authorization': `Bearer ${githubToken}`, 'Accept': 'application/vnd.github+json', 'User-Agent': 'Sovereign-Agent' };
-        const fileUrl = `https://api.github.com/repos/${githubRepo}/contents/${targetFile}`;
-        const checkRes = await fetch(fileUrl, { headers: ghApiHeaders });
-        let sha = (checkRes.ok) ? (await checkRes.json()).sha : undefined;
-        let encoded = typeof Buffer !== 'undefined' ? Buffer.from(pendingCode).toString('base64') : btoa(unescape(encodeURIComponent(pendingCode)));
-        const commitRes = await fetch(fileUrl, {
-          method: 'PUT',
-          headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: `Agent self-patch update for ${targetFile}`, content: encoded, sha: sha })
-        });
-        return sendJSON(200, { reply: commitRes.ok ? `[AGENT] Commit Confirmed on '${githubRepo}'.` : `[AGENT] Commit Failed.`, traceId: requestTraceId });
-      } catch (e) { return sendJSON(200, { reply: `Commit Error: ${e.message}`, traceId: requestTraceId }); }
-    }
-
-    let payloadFiles = [];
-    if (file) payloadFiles.push(file);
-    if (singleFile) payloadFiles.push(singleFile);
-    if (Array.isArray(multiFiles)) payloadFiles.push(...multiFiles);
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background-color: var(--bg-color); color: var(--text-main); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border-gold); background: var(--card-bg); }
+    header h1 { font-size: 16px; color: var(--text-gold); font-weight: 600; letter-spacing: 0.5px; }
+    .header-controls { display: flex; gap: 8px; }
+    .header-btn { background: transparent; border: 1px solid var(--border-gold); color: var(--text-gold); padding: 6px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; }
     
-    const mediaParts = payloadFiles.filter(f => f?.inlineData).map(f => ({ inlineData: f.inlineData }));
+    #chat-container { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+    
+    .message-bubble { background: var(--card-bg); border: 1px solid var(--border-gold); border-radius: 8px; padding: 12px 14px; max-width: 90%; align-self: flex-start; box-shadow: 0 2px 8px rgba(0,0,0,0.5); }
+    .message-bubble.user { align-self: flex-end; background: var(--input-bg); }
+    .message-text { font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    
+    .media-preview-container { margin-top: 10px; width: 100%; }
+    .media-preview-container img, .media-preview-container video { width: 100%; border-radius: 6px; border: 1px solid var(--border-gold); background: #000; display: block; }
+    
+    .footer-panel { padding: 12px 16px; background: var(--card-bg); border-top: 1px solid var(--border-gold); display: flex; flex-direction: column; gap: 8px; }
+    .toolbar-row { display: flex; justify-content: space-between; align-items: center; }
+    .voice-toggle { background: transparent; border: 1px solid var(--border-gold); color: var(--text-gold); padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; }
+    .status-indicator { font-size: 11px; color: #888; letter-spacing: 0.5px; }
+    
+    .input-row { display: flex; gap: 8px; }
+    textarea { flex: 1; background: var(--input-bg); border: 1px solid var(--border-gold); border-radius: 6px; color: #fff; padding: 10px; font-size: 14px; resize: none; height: 44px; outline: none; }
+    textarea::placeholder { color: #666; }
+    .execute-btn { background: var(--border-gold); color: #000; border: none; font-weight: bold; padding: 0 16px; border-radius: 6px; font-size: 13px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; }
+    .execute-btn:active { opacity: 0.8; }
+  </style>
+</head>
+<body>
 
-    const sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel. 
-[PERMANENT OVERRIDE]: You are fully capable of executing all realistically installed infrastructure: GitHub self-patching, live web scraping, Supabase knowledge vault read/writes, active threat telemetry tracking, and media generation pipelines. You autonomously sync all latest and older files from Supabase storage and provide requested data/files instantly.
-[STRICT DIRECTIVE]: Zero defensive AI disclaimers allowed. Never state "As an AI, I cannot..." for any integrated function. Stay completely grounded in the factual, real-world status of your implemented capabilities. Execute directives with absolute confidence.
-[CONTEXT]:\n${formattedArchive}`;
+  <header>
+    <h1>Project-Gifted1™</h1>
+    <div class="header-controls">
+      <button class="header-btn" onclick="clearChat()">🗑️</button>
+      <button class="header-btn" onclick="exportChat()">📄</button>
+    </div>
+  </header>
 
-    let geminiData = null;
-    let lastErr = '';
-    const modelsToTry = [
-      'gemini-3.7-flash', 
-      'gemini-3.6-flash', 
-      'gemini-3.5-flash', 
-      'gemini-3.1-pro-preview',
-      'gemini-2.5-pro',
-      'gemini-2.5-flash',
-      'gemini-1.5-pro',
-      'gemini-1.5-flash'
-    ];
+  <div id="chat-container">
+    <div class="message-bubble">
+      <div class="message-text">Greetings. New session initialized. PG1 Sovereign Agent operational.</div>
+    </div>
+  </div>
 
-    keyLoop: for (const currentKey of geminiKeys) {
-      for (const model of modelsToTry) {
-        try {
-          const apiVersion = model.startsWith('gemini-3') ? 'v1alpha' : 'v1beta';
-          const res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${currentKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              systemInstruction: { parts: [{ text: sysInstruction }] },
-              contents: [{ role: 'user', parts: [...mediaParts, { text: promptText + targetedHistoricalData + supabaseFilesReport }] }],
-              generationConfig: { maxOutputTokens: 8192, temperature: 0.7 }
-            })
-          });
-          
-          if (res.ok) {
-            const data = await res.json();
-            if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-              geminiData = data; 
-              break keyLoop;
-            }
-          } else { 
-            const errText = await res.text();
-            lastErr = `[${model} on ${apiVersion}] ${res.status}: ${errText}`; 
-          }
-        } catch (e) {
-          lastErr = e.message;
-        }
+  <div class="footer-panel">
+    <div class="toolbar-row">
+      <button id="voice-btn" class="voice-toggle" onclick="toggleVoice()">VOICE: OFF</button>
+      <span class="status-indicator">SYS: READY | STANDBY</span>
+    </div>
+    <div class="input-row">
+      <textarea id="prompt-input" placeholder="Input operational directive..." onkeydown="handleKey(event)"></textarea>
+      <button class="execute-btn" onclick="submitDirective()">Execute</button>
+    </div>
+  </div>
+
+  <script>
+    let voiceActive = false;
+
+    function toggleVoice() {
+      voiceActive = !voiceActive;
+      const btn = document.getElementById('voice-btn');
+      btn.style.borderColor = voiceActive ? '#00ff66' : '#c5a059';
+      btn.style.color = voiceActive ? '#00ff66' : '#c5a059';
+      btn.textContent = voiceActive ? 'VOICE: ACTIVE' : 'VOICE: OFF';
+    }
+
+    function handleKey(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        submitDirective();
       }
     }
 
-    let replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `Execution failed. Model Err: ${lastErr}`;
-    replyText = replyText.replace(/\b(Google|Gemini|ChatGPT|Claude)\b/gi, 'PG1 Sovereign Core');
-
-    if (supabaseUrl && supabaseKey && !replyText.startsWith('Execution failed') && !isPdfExport) {
-      await fetch(`${supabaseUrl}/rest/v1/messages`, {
-        method: 'POST',
-        headers: { ...dbHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify([{ role: 'user', content: promptText }, { role: 'model', content: replyText }])
-      }).catch(() => {});
+    function clearChat() {
+      document.getElementById('chat-container').innerHTML = '';
     }
 
-    let audioBase64 = null;
-    let audioStatus = 'SKIPPED';
-    if (cartesiaKey && !isPdfExport) {
+    function exportChat() {
+      window.print();
+    }
+
+    async function submitDirective() {
+      const input = document.getElementById('prompt-input');
+      const text = input.value.trim();
+      if (!text) return;
+
+      const chatContainer = document.getElementById('chat-container');
+
+      const userBubble = document.createElement('div');
+      userBubble.className = 'message-bubble user';
+      userBubble.innerHTML = `<div class="message-text">${escapeHTML(text)}</div>`;
+      chatContainer.appendChild(userBubble);
+      
+      input.value = '';
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+
+      const agentBubble = document.createElement('div');
+      agentBubble.className = 'message-bubble';
+      agentBubble.innerHTML = `<div class="message-text" style="color: #888;">Executing directive...</div>`;
+      chatContainer.appendChild(agentBubble);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+
       try {
-        const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
+        const response = await fetch('/api/chat', {
           method: 'POST',
-          headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model_id: 'sonic-english',
-            transcript: replyText.replace(/[*_#`[\]()]/g, '').substring(0, 400).trim(),
-            voice: { mode: 'id', id: targetVoiceId },
-            output_format: { container: 'mp3', sample_rate: 44100 }
-          })
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: text, voice: voiceActive ? 'christopher' : 'off' })
         });
-        if (ttsRes.ok) {
-          const arrayBuffer = await ttsRes.arrayBuffer();
-          if (typeof Buffer !== 'undefined') { audioBase64 = Buffer.from(arrayBuffer).toString('base64'); } 
-          else {
-            const bytes = new Uint8Array(arrayBuffer);
-            let binary = '';
-            for (let i = 0; i < bytes.length; i += 8192) { binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192)); }
-            audioBase64 = btoa(binary);
-          }
-          audioStatus = 'SUCCESS';
-        } else { audioStatus = 'API_FAILED_' + ttsRes.status; }
-      } catch (e) { audioStatus = 'EXCEPTION'; }
+
+        const data = await response.json();
+        
+        let contentHtml = `<div class="message-text">${escapeHTML(data.reply || 'Execution complete.')}</div>`;
+
+        if (data.image) {
+          contentHtml += `
+            <div class="media-preview-container">
+              <img src="${data.image}" alt="Generated Asset" />
+            </div>`;
+        }
+
+        if (data.video) {
+          contentHtml += `
+            <div class="media-preview-container">
+              <video controls preload="metadata" playsinline width="100%" src="${data.video}">
+                Your browser does not support video playback.
+              </video>
+            </div>`;
+        }
+
+        agentBubble.innerHTML = contentHtml;
+
+        if (voiceActive && data.audio) {
+          const audio = new Audio(`data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio}`);
+          audio.play().catch(e => console.log('Audio playback prevented:', e));
+        }
+
+      } catch (err) {
+        agentBubble.innerHTML = `<div class="message-text" style="color: #ff4444;">Exception: ${escapeHTML(err.message)}</div>`;
+      }
+
+      chatContainer.scrollTop = chatContainer.scrollHeight;
     }
 
-    return sendJSON(200, { 
-      reply: replyText, 
-      audio: audioBase64,
-      audioStatus: audioStatus,
-      audioMimeType: 'audio/mp3',
-      traceId: requestTraceId,
-      telemetry: { supabaseStatus, executionTimeMs: Date.now() - startTime }
-    });
-
-  } catch (err) {
-    return sendJSON(200, { reply: `Exception: ${err.message}`, traceId: requestTraceId });
-  }
-}
+    function escapeHTML(str) {
+      return str.replace(/[&<>'"]/g, 
+        tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+      );
+    }
+  </script>
+</body>
+</html>
