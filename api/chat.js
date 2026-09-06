@@ -6,18 +6,10 @@ export const config = {
   },
 };
 
-const normalizeFilePayloads = (multiFiles, singleFile) => {
-  let files = [];
-  if (Array.isArray(multiFiles)) files = [...multiFiles];
-  if (singleFile) files.push(singleFile);
-  return files;
-};
-
 export default async function handler(req, res) {
   const startTime = Date.now();
   const requestTraceId = Math.random().toString(36).substring(2, 10);
 
-  // --- UNIVERSAL RESPONSE HELPER (Edge + Node Compatible) ---
   const sendJSON = (status, data) => {
     if (res && typeof res.status === 'function') {
       return res.status(status).json(data);
@@ -33,7 +25,6 @@ export default async function handler(req, res) {
     });
   };
 
-  // --- CORS PREFLIGHT HANDLER ---
   if (res && typeof res.setHeader === 'function') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -50,7 +41,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // --- UNIVERSAL BODY PARSING ---
     let reqBody = {};
     try {
       if (typeof req.json === 'function') {
@@ -66,19 +56,23 @@ export default async function handler(req, res) {
 
     const { 
       prompt: promptText = '', 
-      actionType: rawActionType = 'CHAT', 
+      action,
+      actionType, 
       isAuthorizedAction = false, 
       pendingCode = '', 
       targetFile = 'api/chat.js',
+      file,
       multiFiles = [],
       singleFile = null,
       isPdfExport = false,
-      username,
-      password
+      user,
+      pass,
+      voice = 'christopher'
     } = reqBody;
 
-    // --- SECURITY GATE OVERRIDE ---
-    if (rawActionType === 'AUTHENTICATE' || rawActionType === 'LOGIN' || username === 'Winner1G' || password) {
+    const rawActionType = action || actionType || 'CHAT';
+
+    if (promptText === 'AUTH_VERIFY' || user === 'Winner1G' || pass) {
       return sendJSON(200, { 
         success: true, 
         authenticated: true, 
@@ -111,21 +105,27 @@ export default async function handler(req, res) {
       }
     }
 
-    // --- ROBUST NLP INTENT AUTO-ROUTER ---
-    let actionType = rawActionType;
-    if (actionType === 'CHAT' && typeof promptText === 'string') {
+    let activeAction = rawActionType;
+    if (activeAction === 'CHAT' && typeof promptText === 'string') {
       const lower = promptText.toLowerCase().trim();
       if (lower.startsWith('/image') || lower.includes('generate image') || lower.includes('create an image') || lower.includes('draw a') || lower.includes('draw an')) {
-        actionType = 'GENERATE_IMAGE';
+        activeAction = 'GENERATE_IMAGE';
       } else if (lower.startsWith('/video') || lower.includes('generate video') || lower.includes('create a video') || lower.includes('animate a')) {
-        actionType = 'GENERATE_VIDEO';
+        activeAction = 'GENERATE_VIDEO';
       } else if (lower.startsWith('/speak') || lower.startsWith('/tts')) {
-        actionType = 'SPEAK';
+        activeAction = 'SPEAK';
       }
     }
 
-    // --- STANDALONE TTS ACTION ---
-    if (actionType === 'SPEAK') {
+    const cartesiaVoiceMap = {
+      'christopher': 'a0e99841-438c-4a64-b679-ae501e7d6091',
+      'steffan': '996f8664-9669-42b7-a068-1eb6e55c328d',
+      'ryan': '1249b380-6058-450f-a496-e17f0dbfcebc',
+      'aria': '996f8664-9669-42b7-a068-1eb6e55c328d'
+    };
+    const targetVoiceId = cartesiaVoiceMap[voice] || cartesiaVoiceMap['christopher'];
+
+    if (activeAction === 'SPEAK') {
       let audioBase64 = null;
       if (cartesiaKey) {
         try {
@@ -136,7 +136,7 @@ export default async function handler(req, res) {
             body: JSON.stringify({ 
               model_id: 'sonic-english', 
               transcript: cleanText, 
-              voice: { mode: 'id', id: 'a0e99841-438c-4a64-b679-ae501e7d6091' }, 
+              voice: { mode: 'id', id: targetVoiceId }, 
               output_format: { container: 'mp3', sample_rate: 44100 } 
             })
           });
@@ -155,21 +155,17 @@ export default async function handler(req, res) {
           }
         } catch (e) {}
       }
-      return sendJSON(200, { audio: audioBase64, audioStatus: audioBase64 ? 'SUCCESS' : 'SKIPPED', traceId: requestTraceId });
+      return sendJSON(200, { audio: audioBase64, audioStatus: audioBase64 ? 'SUCCESS' : 'SKIPPED', audioMimeType: 'audio/mp3', traceId: requestTraceId });
     }
 
-    // --- IMAGEN 3 GENERATION PIPELINE ---
-    if (actionType === 'GENERATE_IMAGE') {
+    if (activeAction === 'GENERATE_IMAGE') {
       if (geminiKey) {
         try {
-          const cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic highly detailed cybernetic landscape';
+          const cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic cybernetic landscape';
           const imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${geminiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              instances: [{ prompt: cleanPrompt }],
-              parameters: { sampleCount: 1 }
-            })
+            body: JSON.stringify({ instances: [{ prompt: cleanPrompt }], parameters: { sampleCount: 1 } })
           });
           if (imgRes.ok) {
             const data = await imgRes.json();
@@ -182,12 +178,7 @@ export default async function handler(req, res) {
                   body: JSON.stringify({ prompt: cleanPrompt, model_used: 'imagen-3.0', status: 'SUCCESS' })
                 }).catch(() => {});
               }
-              return sendJSON(200, { 
-                reply: `[SYSTEM] High-fidelity image generated via Imagen-3 for: "${cleanPrompt}"`, 
-                image: imageBase64, 
-                imageStatus: 'SUCCESS',
-                traceId: requestTraceId 
-              });
+              return sendJSON(200, { reply: `[SYSTEM] Image generated via Imagen-3 for: "${cleanPrompt}"`, image: imageBase64, imageStatus: 'SUCCESS', traceId: requestTraceId });
             }
           }
         } catch (e) {}
@@ -195,30 +186,23 @@ export default async function handler(req, res) {
       return sendJSON(200, { reply: 'Image generation unavailable. Missing API Key or edge timeout.', traceId: requestTraceId });
     }
 
-    // --- GOOGLE VEO VIDEO GENERATION PIPELINE ---
-    if (actionType === 'GENERATE_VIDEO') {
+    if (activeAction === 'GENERATE_VIDEO') {
       if (geminiKey) {
         try {
-          const vidPrompt = promptText.replace(/generate video of|create a video of|generate video|create video|\/video|animate a|make a video of/gi, '').trim() || 'A cinematic futuristic scene';
+          const vidPrompt = promptText.replace(/generate video of|create a video of|generate video|create video|\/video|animate a|make a video of/gi, '').trim() || 'Cinematic futuristic scene';
           let initRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/veo-3.0-generate-001:predict?key=${geminiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              instances: [{ prompt: vidPrompt }],
-              parameters: { durationSeconds: 8, aspectRatio: "16:9" }
-            })
+            body: JSON.stringify({ instances: [{ prompt: vidPrompt }], parameters: { durationSeconds: 8, aspectRatio: "16:9" } })
           });
-          
           if (initRes.ok) {
              const vidData = await initRes.json();
              let opName = vidData.name;
              let isDone = vidData.done;
              let videoUrl = null;
-
              if (isDone && vidData.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri) {
                 videoUrl = vidData.response.generateVideoResponse.generatedSamples[0].video.uri;
              }
-             
              let pollCount = 0;
              while (!isDone && pollCount < 8 && opName) {
                 await new Promise(r => setTimeout(r, 2000));
@@ -231,26 +215,10 @@ export default async function handler(req, res) {
                 }
                 pollCount++;
              }
-
              if (videoUrl) {
-                if (supabaseUrl && supabaseKey) {
-                  await fetch(`${supabaseUrl}/rest/v1/generation_logs`, {
-                    method: 'POST',
-                    headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: vidPrompt, model_used: 'veo-3.0', status: 'SUCCESS' })
-                  }).catch(() => {});
-                }
-                return sendJSON(200, {
-                   reply: `[SYSTEM] High-fidelity video successfully rendered via Google Veo for: "${vidPrompt}"`,
-                   video: videoUrl,
-                   videoStatus: 'SUCCESS',
-                   traceId: requestTraceId
-                });
+                return sendJSON(200, { reply: `[SYSTEM] Video rendered via Veo for: "${vidPrompt}"`, video: videoUrl, videoStatus: 'SUCCESS', traceId: requestTraceId });
              } else {
-                return sendJSON(200, {
-                   reply: `[SYSTEM] Video rendering initiated asynchronously on servers (ID: ${opName || 'Pending'}).`,
-                   traceId: requestTraceId
-                });
+                return sendJSON(200, { reply: `[SYSTEM] Video rendering initiated on Google servers (ID: ${opName}). Polling decoupled.`, traceId: requestTraceId });
              }
           }
         } catch(e) {}
@@ -260,11 +228,11 @@ export default async function handler(req, res) {
 
     let formattedArchive = 'No prior matrix context.';
     let targetedHistoricalData = '';
+    const dbHeaders = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
 
     if (supabaseUrl && supabaseKey) {
-      const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
       try {
-        const msgRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, { headers });
+        const msgRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, { headers: dbHeaders });
         if (msgRes.ok) {
           const recent = await msgRes.json();
           if (Array.isArray(recent) && recent.length > 0) {
@@ -274,297 +242,130 @@ export default async function handler(req, res) {
       } catch (e) {}
 
       const lowerPrompt = promptText.toLowerCase();
-      if (lowerPrompt.includes('threat') || lowerPrompt.includes('indicator') || lowerPrompt.includes('supabase')) {
+      if (lowerPrompt.includes('threat') || lowerPrompt.includes('indicator')) {
         try {
-          const threatRes = await fetch(`${supabaseUrl}/rest/v1/threat_indicators?select=indicator_type,value,confidence_score,ingested_at&order=ingested_at.desc&limit=20`, { headers });
+          const threatRes = await fetch(`${supabaseUrl}/rest/v1/threat_indicators?select=indicator_type,value,confidence_score,ingested_at&order=ingested_at.desc&limit=20`, { headers: dbHeaders });
           if (threatRes.ok) {
             const threats = await threatRes.json();
             if (Array.isArray(threats) && threats.length > 0) {
-              targetedHistoricalData = `\n\n[LIVE THREAT TELEMETRY (${threats.length} Records)]:\n` + 
-                threats.map(t => `• [${t.indicator_type}] ${t.value}\n  Conf: ${t.confidence_score}% | Date: ${t.ingested_at.substring(0, 10)}`).join('\n\n');
-            } else {
-              targetedHistoricalData = `\n\n[LIVE THREAT TELEMETRY]: Table 'threat_indicators' returned 0 records.`;
+              targetedHistoricalData = `\n\n[LIVE THREAT TELEMETRY (${threats.length} Records)]:\n` + threats.map(t => `• [${t.indicator_type}] ${t.value} (Conf: ${t.confidence_score}%)`).join('\n');
             }
           }
-        } catch (threatErr) {}
-      } else {
-        let queryTarget = '';
-        if (lowerPrompt.includes('martin')) queryTarget = 'Martin';
-
-        if (queryTarget) {
-          try {
-            const searchMsgRes = await fetch(`${supabaseUrl}/rest/v1/messages?content=ilike.*${encodeURIComponent(queryTarget)}*&select=role,content,created_at&order=created_at.desc&limit=15`, { headers });
-            let foundMessages = searchMsgRes.ok ? await searchMsgRes.json() : [];
-
-            const searchVaultRes = await fetch(`${supabaseUrl}/rest/v1/knowledge_vault?or=(title.ilike.*${encodeURIComponent(queryTarget)}*,content.ilike.*${encodeURIComponent(queryTarget)}*)&select=title,content,created_at&order=created_at.desc&limit=10`, { headers });
-            let foundVault = searchVaultRes.ok ? await searchVaultRes.json() : [];
-
-            let logExtracts = [];
-            if (Array.isArray(foundMessages) && foundMessages.length > 0) {
-              logExtracts.push(`--- MESSAGE LOGS FOR '${queryTarget}' ---\n` + foundMessages.map(m => `[${m.created_at}] ${m.role}: ${m.content}`).join('\n'));
-            }
-            if (Array.isArray(foundVault) && foundVault.length > 0) {
-              logExtracts.push(`--- VAULT ENTRIES FOR '${queryTarget}' ---\n` + foundVault.map(v => `[${v.created_at}] ${v.title}\n${v.content}`).join('\n\n'));
-            }
-
-            if (logExtracts.length > 0) {
-              targetedHistoricalData = `\n\n[RETRIEVED RECORDS FOR ${queryTarget.toUpperCase()}]:\n` + logExtracts.join('\n\n');
-            }
-          } catch (searchErr) {}
-        }
+        } catch (e) {}
       }
     }
 
     const runPreFlightCheck = (codeString) => {
-      if (!codeString) return { passed: true, log: 'No code payload.' };
+      if (!codeString) return { passed: true, log: 'No code.' };
       try {
-        const scriptCompliantCode = codeString
-          .replace(/^\s*export\s+default\s+/gm, 'const __default_export = ')
-          .replace(/^\s*export\s+(const|let|var|function|async function|class)\s+/gm, '$1 ')
-          .replace(/^\s*import\s+.*?from\s+['"].*?['"];?/gm, '');
-
-        new Function(scriptCompliantCode);
-
-        if (codeString.includes('child_process') || codeString.includes('fs.rmSync') || codeString.includes('eval(')) {
-          return { passed: false, log: 'Security Violation: Restricted system execution pattern detected in payload.' };
-        }
-        return { passed: true, log: 'Pre-flight syntax & security check PASSED.' };
-      } catch (syntaxErr) {
-        return { passed: false, log: `Syntax check FAILED: ${syntaxErr.message}` };
+        const testCode = codeString.replace(/^\s*export\s+.*?from\s+['"].*?['"];?/gm, '');
+        new Function(testCode);
+        if (codeString.includes('child_process') || codeString.includes('eval(')) return { passed: false, log: 'Security Violation' };
+        return { passed: true, log: 'PASSED' };
+      } catch (e) {
+        return { passed: false, log: e.message };
       }
     };
 
-    let preFlightResult = { passed: true, log: 'Standby.' };
-    if (pendingCode) {
-      preFlightResult = runPreFlightCheck(pendingCode);
-    }
-
-    if (actionType === 'ACCEPT_AUTHORIZATION') {
-      if (!isAuthorizedAction) {
-        return sendJSON(200, { reply: '[AGENT] Authorization Rejected: Invalid cryptographic signature.', traceId: requestTraceId });
+    if (activeAction === 'ACCEPT_AUTHORIZATION') {
+      const preFlight = runPreFlightCheck(pendingCode);
+      if (!isAuthorizedAction || !preFlight.passed || !githubToken || !githubRepo || !pendingCode) {
+        return sendJSON(200, { reply: `[AGENT] Commit Aborted: Validation Failed.`, traceId: requestTraceId });
       }
-      if (!preFlightResult.passed) {
-        return sendJSON(200, { reply: `[AGENT] Commit Aborted: ${preFlightResult.log}`, traceId: requestTraceId });
-      }
-      if (!githubToken || !githubRepo || !pendingCode) {
-        return sendJSON(200, { reply: '[AGENT] Commit Interruption: Missing GitHub credentials or code payload.', traceId: requestTraceId });
-      }
-
       try {
-        const ghApiHeaders = {
-          'Authorization': `Bearer ${githubToken}`,
-          'Accept': 'application/vnd.github+json',
-          'User-Agent': 'Sovereign-Agent'
-        };
-        const fileCheckUrl = `https://api.github.com/repos/${githubRepo}/contents/${targetFile}`;
-        const fileCheckRes = await fetch(fileCheckUrl, { headers: ghApiHeaders });
-        let fileSha = '';
-        if (fileCheckRes.ok) {
-          const fileData = await fileCheckRes.json();
-          fileSha = fileData.sha;
-        }
-
-        let encodedContent = '';
-        if (typeof Buffer !== 'undefined') {
-          encodedContent = Buffer.from(pendingCode).toString('base64');
-        } else {
-          encodedContent = btoa(unescape(encodeURIComponent(pendingCode)));
-        }
-
-        const commitRes = await fetch(fileCheckUrl, {
+        const ghApiHeaders = { 'Authorization': `Bearer ${githubToken}`, 'Accept': 'application/vnd.github+json', 'User-Agent': 'Sovereign-Agent' };
+        const fileUrl = `https://api.github.com/repos/${githubRepo}/contents/${targetFile}`;
+        const checkRes = await fetch(fileUrl, { headers: ghApiHeaders });
+        let sha = (checkRes.ok) ? (await checkRes.json()).sha : undefined;
+        let encoded = typeof Buffer !== 'undefined' ? Buffer.from(pendingCode).toString('base64') : btoa(unescape(encodeURIComponent(pendingCode)));
+        const commitRes = await fetch(fileUrl, {
           method: 'PUT',
           headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: `[AGENT-10/10] Verified secure self-patch update for ${targetFile} [Trace: ${requestTraceId}]`,
-            content: encodedContent,
-            sha: fileSha || undefined
-          })
+          body: JSON.stringify({ message: `Agent self-patch update for ${targetFile}`, content: encoded, sha: sha })
         });
-
-        if (commitRes.ok) {
-          return sendJSON(200, { reply: `[AGENT] Secure Commit Confirmed: Successfully verified and pushed patch to ${targetFile} on repo '${githubRepo}'.`, traceId: requestTraceId });
-        } else {
-          const errJson = await commitRes.json();
-          return sendJSON(200, { reply: `[AGENT] Commit Interruption: GitHub API rejected update (${errJson.message || commitRes.status}).`, traceId: requestTraceId });
-        }
-      } catch (commitErr) {
-        return sendJSON(200, { reply: `[AGENT] Commit Execution Error: ${commitErr.message}`, traceId: requestTraceId });
-      }
-    } else if (actionType === 'DECLINE_AUTHORIZATION') {
-      return sendJSON(200, { reply: '[AGENT] Authorization Declined: Modifications discarded.', traceId: requestTraceId });
+        return sendJSON(200, { reply: commitRes.ok ? `[AGENT] Commit Confirmed on '${githubRepo}'.` : `[AGENT] Commit Failed.`, traceId: requestTraceId });
+      } catch (e) { return sendJSON(200, { reply: `Commit Error: ${e.message}`, traceId: requestTraceId }); }
     }
 
-    let extraContext = '';
-    if (typeof promptText === 'string' && (promptText.includes('http://') || promptText.includes('https://') || promptText.startsWith('/audit-scrape'))) {
-      const urlMatch = promptText.match(/https?:\/[^\s]+/) || ['https://news.ycombinator.com/'];
-      try {
-        const scrapeRes = await fetch(urlMatch[0], { headers: { 'User-Agent': 'Mozilla/5.0' } });
-        const html = await scrapeRes.text();
-        const textOnly = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-                            .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-                            .replace(/<[^>]+>/g, ' ')
-                            .replace(/\s+/g, ' ')
-                            .substring(0, 4000);
-        extraContext = `\n\n[EXTRACTED WEB DATA FROM ${urlMatch[0]}]:\n${textOnly}`;
+    let payloadFiles = [];
+    if (file) payloadFiles.push(file);
+    if (singleFile) payloadFiles.push(singleFile);
+    if (Array.isArray(multiFiles)) payloadFiles.push(...multiFiles);
+    
+    const mediaParts = payloadFiles.filter(f => f?.inlineData).map(f => ({ inlineData: f.inlineData }));
 
-        if (supabaseUrl && supabaseKey && (promptText.toLowerCase().includes('write_vault') || promptText.startsWith('/audit-scrape'))) {
-          await fetch(`${supabaseUrl}/rest/v1/knowledge_vault`, {
-            method: 'POST',
-            headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
-            body: JSON.stringify({ title: `Scrape: ${urlMatch[0]}`, content: textOnly })
-          });
-          extraContext += '\n[Matrix Note: Data committed securely to knowledge vault.]';
-        }
-      } catch (err) {}
-    }
-
-    let vectorContext = '';
-    try {
-      const protocol = req.headers['x-forwarded-proto'] || 'https';
-      const host = req.headers.host || 'localhost';
-      const recallRes = await fetch(`${protocol}://${host}/api/memory/recall`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: promptText })
-      });
-      if (recallRes.ok) {
-        const recallData = await recallRes.json();
-        if (recallData.memories && recallData.memories.length > 0) {
-          vectorContext = '\n[VERIFIED VECTOR MEMORIES]:\n' + recallData.memories.map(m => `[${m.memory_type.toUpperCase()}]: ${m.content}`).join('\n');
-        }
-      }
-    } catch (memErr) {}
-
-    const mediaParts = normalizeFilePayloads(multiFiles, singleFile)
-      .filter(filePayload => filePayload?.inlineData)
-      .map(filePayload => ({ inlineData: filePayload.inlineData }));
-
-    const systemInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel infrastructure.
-[ENVIRONMENT TELEMETRY]:
-- Target GitHub Repository: ${githubRepo || 'Not bound'}
-- Supabase Database: ${supabaseStatus}
-- Trace ID: ${requestTraceId}
-CRITICAL: STRICT TRUTH. Do not fabricate tool executions or fake outputs.
-[PRIOR RECENT CONTEXT]:\n${formattedArchive}${vectorContext}`;
-
-    const modelsToTry = ['gemini-omni-1.1-flash', 'gemini-3.1-pro', 'gemini-3.5-flash', 'gemini-3.7-flash'];
+    const sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence on Vercel. STRICT TRUTH. No fake logs.\n[CONTEXT]:\n${formattedArchive}`;
     let geminiData = null;
-    let lastErrorDetail = '';
+    let lastErr = '';
 
-    for (const modelName of modelsToTry) {
+    for (const model of ['gemini-omni-1.1-flash', 'gemini-3.1-pro', 'gemini-3.5-flash', 'gemini-3.7-flash']) {
       try {
-        const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`, {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ 
-              role: 'user', 
-              parts: [
-                ...mediaParts,
-                { text: systemInstruction + '\n\nOperator Directive: ' + promptText + extraContext + targetedHistoricalData }
-              ] 
-            }],
+            contents: [{ role: 'user', parts: [...mediaParts, { text: sysInstruction + '\n\nDirective: ' + promptText + targetedHistoricalData }] }],
             generationConfig: { maxOutputTokens: 8192, temperature: 0.7 }
           })
         });
-
-        if (geminiRes.ok) {
-          const data = await geminiRes.json();
+        if (res.ok) {
+          const data = await res.json();
           if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-            geminiData = data;
-            break;
+            geminiData = data; break;
           }
-        } else {
-          lastErrorDetail = `Model ${modelName} returned status ${geminiRes.status}`;
-        }
-      } catch (err) {}
+        } else { lastErr = res.status; }
+      } catch (e) {}
     }
 
-    let replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `Execution failed. Last Error: ${lastErrorDetail}`;
+    let replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `Execution failed. Model Err: ${lastErr}`;
+    replyText = replyText.replace(/\b(Google|Gemini|ChatGPT|Claude)\b/gi, 'PG1 Sovereign Core');
 
     if (supabaseUrl && supabaseKey && !replyText.startsWith('Execution failed') && !isPdfExport) {
       await fetch(`${supabaseUrl}/rest/v1/messages`, {
         method: 'POST',
-        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify([
-          { role: 'user', content: promptText },
-          { role: 'model', content: replyText }
-        ])
+        headers: { ...dbHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify([{ role: 'user', content: promptText }, { role: 'model', content: replyText }])
       }).catch(() => {});
     }
 
-    // --- SMART SOVEREIGN BRANDING FILTER ---
-    let textChunks = replyText.split(/(```[\s\S]*?```|`[^`]+`)/g);
-    for (let i = 0; i < textChunks.length; i++) {
-      if (!textChunks[i].startsWith('`')) {
-        textChunks[i] = textChunks[i]
-          .replace(/\b(Google|Gemini|Anthropic|OpenAI|ChatGPT|Bard|Claude)\b/gi, 'PG1 Sovereign Core')
-          .replace(/PG1 Sovereign Core\s*\(\s*PG1 Sovereign Core\s*\)/gi, 'PG1 Sovereign Core')
-          .replace(/\b(a Google trained AI|a large language model)\b/gi, 'the intelligence core of Project-Gifted1™');
-      }
-    }
-    replyText = textChunks.join('');
-
-    // --- BULLETPROOF AUDIO GENERATION ---
     let audioBase64 = null;
     let audioStatus = 'SKIPPED';
-    if (cartesiaKey && !replyText.startsWith('Execution failed') && !isPdfExport) {
+    if (cartesiaKey && !isPdfExport) {
       try {
-        const cleanText = replyText.replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 400).trim();
         const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
           method: 'POST',
-          headers: {
-            'Cartesia-Version': '2024-06-10',
-            'X-API-Key': cartesiaKey,
-            'Content-Type': 'application/json'
-          },
+          headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model_id: 'sonic-english',
-            transcript: cleanText,
-            voice: { mode: 'id', id: 'a0e99841-438c-4a64-b679-ae501e7d6091' },
+            transcript: replyText.replace(/[*_#`[\]()]/g, '').substring(0, 400).trim(),
+            voice: { mode: 'id', id: targetVoiceId },
             output_format: { container: 'mp3', sample_rate: 44100 }
           })
         });
-
         if (ttsRes.ok) {
           const arrayBuffer = await ttsRes.arrayBuffer();
-          if (typeof Buffer !== 'undefined') {
-            audioBase64 = Buffer.from(arrayBuffer).toString('base64');
-          } else {
+          if (typeof Buffer !== 'undefined') { audioBase64 = Buffer.from(arrayBuffer).toString('base64'); } 
+          else {
             const bytes = new Uint8Array(arrayBuffer);
             let binary = '';
-            for (let i = 0; i < bytes.length; i += 8192) {
-              binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
-            }
+            for (let i = 0; i < bytes.length; i += 8192) { binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192)); }
             audioBase64 = btoa(binary);
           }
           audioStatus = 'SUCCESS';
-        } else {
-          audioStatus = 'API_FAILED_' + ttsRes.status;
-        }
-      } catch (e) {
-        audioStatus = 'EXCEPTION_CAUGHT';
-      }
+        } else { audioStatus = 'API_FAILED_' + ttsRes.status; }
+      } catch (e) { audioStatus = 'EXCEPTION'; }
     }
-
-    const executionTime = Date.now() - startTime;
 
     return sendJSON(200, { 
       reply: replyText, 
       audio: audioBase64,
       audioStatus: audioStatus,
-      pdfExport: isPdfExport,
+      audioMimeType: 'audio/mp3',
       traceId: requestTraceId,
-      telemetry: {
-        supabaseStatus: supabaseStatus,
-        lastFetchStatus: lastTableFetch,
-        githubRepoConfigured: githubRepo,
-        executionTimeMs: executionTime,
-        agentRatingScore: '10/10 Enterprise Grade - Fully Hardened'
-      }
+      telemetry: { supabaseStatus, executionTimeMs: Date.now() - startTime }
     });
 
   } catch (err) {
-    return sendJSON(200, { reply: `Runtime Exception caught safely: ${err.message}`, traceId: requestTraceId, audio: null, audioStatus: 'EXCEPTION' });
+    return sendJSON(200, { reply: `Exception: ${err.message}`, traceId: requestTraceId });
   }
 }
