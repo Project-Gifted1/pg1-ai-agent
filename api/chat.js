@@ -298,7 +298,7 @@ export default async function handler(req, res) {
     let geminiData = null;
     let lastErr = '';
 
-    for (const model of ['gemini-omni-1.1-flash', 'gemini-3.1-pro', 'gemini-3.5-flash', 'gemini-3.7-flash']) {
+    for (const model of ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest', 'gemini-pro-latest']) {
       try {
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
           method: 'POST',
