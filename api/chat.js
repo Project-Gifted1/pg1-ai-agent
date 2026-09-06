@@ -172,13 +172,15 @@ export default async function handler(req, res) {
       
       const imageModels = ['gemini-3.1-flash-image-preview', 'imagen-3.0-generate-002', 'gemini-2.5-flash'];
 
-      for (const key of geminiKeys) {
+      // Fully iterate through all keys and models to handle quota limits automatically
+      keyImageLoop: for (const key of geminiKeys) {
         for (const imgModel of imageModels) {
           try {
             const isImagen = imgModel.includes('imagen');
+            const apiVersion = imgModel.startsWith('gemini-3') ? 'v1alpha' : 'v1beta';
             const endpoint = isImagen 
               ? `https://generativelanguage.googleapis.com/v1beta/models/${imgModel}:predict?key=${key}`
-              : `https://generativelanguage.googleapis.com/v1beta/models/${imgModel}:generateContent?key=${key}`;
+              : `https://generativelanguage.googleapis.com/${apiVersion}/models/${imgModel}:generateContent?key=${key}`;
             
             const payload = isImagen 
               ? { instances: [{ prompt: cleanPrompt }], parameters: { sampleCount: 1 } }
@@ -203,7 +205,7 @@ export default async function handler(req, res) {
                   }
                 }
               }
-              if (imageBase64) break;
+              if (imageBase64) break keyImageLoop;
             } else {
               lastImgErr = await imgRes.text();
             }
@@ -211,7 +213,6 @@ export default async function handler(req, res) {
             lastImgErr = e.message;
           }
         }
-        if (imageBase64) break;
       }
 
       if (imageBase64) {
@@ -224,7 +225,7 @@ export default async function handler(req, res) {
         }
         return sendJSON(200, { reply: `[SYSTEM] Image generated successfully for: "${cleanPrompt}"`, image: imageBase64, imageStatus: 'SUCCESS', traceId: requestTraceId });
       }
-      return sendJSON(200, { reply: `[SYSTEM] Image request processed. Diagnostic Log: ${lastImgErr || 'Endpoint limit reached.'}`, traceId: requestTraceId });
+      return sendJSON(200, { reply: `System Alert: The quota has been exceeded or endpoint limit reached. Details: ${lastImgErr}`, traceId: requestTraceId });
     }
 
     if (activeAction === 'GENERATE_VIDEO') {
@@ -233,12 +234,13 @@ export default async function handler(req, res) {
       let lastVidErr = '';
       const vidPrompt = promptText.replace(/generate video of|create a video of|generate video|create video|\/video|animate a|make a video of/gi, '').trim() || 'Cinematic futuristic scene';
 
+      // Veo models corrected to v1alpha endpoint to resolve 404 Not Found errors
       const videoModels = ['veo-3.0-generate-001', 'veo-2.0-generate-001'];
 
-      for (const key of geminiKeys) {
+      keyVideoLoop: for (const key of geminiKeys) {
         for (const vidModel of videoModels) {
           try {
-            let initRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${vidModel}:predict?key=${key}`, {
+            let initRes = await fetch(`https://generativelanguage.googleapis.com/v1alpha/models/${vidModel}:predict?key=${key}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ instances: [{ prompt: vidPrompt }], parameters: { durationSeconds: 8, aspectRatio: "16:9" } })
@@ -249,22 +251,22 @@ export default async function handler(req, res) {
                let isDone = vidData.done;
                if (isDone && vidData.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri) {
                   videoUrl = vidData.response.generateVideoResponse.generatedSamples[0].video.uri;
-                  break;
+                  break keyVideoLoop;
                }
                let pollCount = 0;
                while (!isDone && pollCount < 6 && opName) {
                   await new Promise(r => setTimeout(r, 2000));
-                  const pollRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${opName}?key=${key}`);
+                  const pollRes = await fetch(`https://generativelanguage.googleapis.com/v1alpha/${opName}?key=${key}`);
                   if (!pollRes.ok) break;
                   const pollData = await pollRes.json();
                   isDone = pollData.done;
                   if (isDone && pollData.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri) {
                      videoUrl = pollData.response.generateVideoResponse.generatedSamples[0].video.uri;
-                     break;
+                     break keyVideoLoop;
                   }
                   pollCount++;
                }
-               if (videoUrl) break;
+               if (videoUrl) break keyVideoLoop;
             } else {
               lastVidErr = await initRes.text();
             }
@@ -272,13 +274,12 @@ export default async function handler(req, res) {
             lastVidErr = e.message;
           }
         }
-        if (videoUrl || opName) break;
       }
 
       if (videoUrl) {
          return sendJSON(200, { reply: `[SYSTEM] Video rendered via Veo for: "${vidPrompt}"`, video: videoUrl, videoStatus: 'SUCCESS', traceId: requestTraceId });
       } else if (opName) {
-         return sendJSON(200, { reply: `[SYSTEM] Video rendering initiated on Google servers (ID: ${opName}). Polling decoupled.`, traceId: requestTraceId });
+         return sendJSON(200, { reply: `[SYSTEM] Video rendering initiated on Google servers (ID: ${opName}). Polling decoupled.`, videoStatus: 'SUCCESS', traceId: requestTraceId });
       }
       return sendJSON(200, { reply: `[SYSTEM] Video generation endpoint notice: ${lastVidErr || 'Service initializing.'}`, traceId: requestTraceId });
     }
