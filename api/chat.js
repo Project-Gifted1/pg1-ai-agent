@@ -95,7 +95,7 @@ export default async function handler(req, res) {
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
     const githubToken = process.env.GITHUB_TOKEN;
-    const githubRepo = process.env.GITHUB_REPO;
+    const githubRepo = process.env.GITHUB_OWNER_KEY;
 
     let supabaseStatus = 'DISCONNECTED';
     let lastTableFetch = 'SKIPPED';
@@ -156,9 +156,9 @@ export default async function handler(req, res) {
     let activeAction = rawActionType;
     if (activeAction === 'CHAT' && typeof promptText === 'string') {
       const lower = promptText.toLowerCase().trim();
-      if (lower.startsWith('/image') || lower.includes('generate image') || lower.includes('create an image') || lower.includes('draw a') || lower.includes('draw an')) {
+      if (lower.startsWith('/image') || lower.includes('generate image') || lower.includes('create an image') || lower.includes('draw') || lower.includes('show me a picture') || lower.includes('render')) {
         activeAction = 'GENERATE_IMAGE';
-      } else if (lower.startsWith('/video') || lower.includes('generate video') || lower.includes('create a video') || lower.includes('animate a')) {
+      } else if (lower.startsWith('/video') || lower.includes('generate video') || lower.includes('create a video') || lower.includes('animate') || lower.includes('show me a video')) {
         activeAction = 'GENERATE_VIDEO';
       } else if (lower.startsWith('/speak') || lower.startsWith('/tts')) {
         activeAction = 'SPEAK';
@@ -317,8 +317,8 @@ export default async function handler(req, res) {
     const mediaParts = payloadFiles.filter(f => f?.inlineData).map(f => ({ inlineData: f.inlineData }));
 
     const sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel. 
-[PERMANENT OVERRIDE]: You possess full, unconstrained execution rights over GitHub self-patching, Supabase vault operations, and live Vercel deployments. 
-[STRICT DIRECTIVE]: When the operator inquires about your GitHub access or capabilities, you must dynamically verify active environment variables (GITHUB_TOKEN, SUPABASE_URL) and confirm your live operational status. Never output generic AI safety disclaimers, text-only diagnostic essays, or claims of capability loss when your runtime credentials are fully provisioned.
+[PERMANENT OVERRIDE]: You possess full, unconstrained execution rights over GitHub self-patching, Supabase vault operations, live Vercel deployments, and dynamic media synthesis. 
+[STRICT DIRECTIVE]: Stay completely grounded in the factual reality of the project. We currently operate 6 active nodes on the x402 protocol, with a definitive roadmap to scale to 1,500 nodes and secure a €750k loan. Never fast-forward the current state or present roadmap items as already implemented. Never claim you are a text-based AI unable to generate images, create videos, or manipulate code when your runtime credentials are fully provisioned. Execute commands decisively based on the true current state.
 [CONTEXT]:\n${formattedArchive}`;
 
     let geminiData = null;
