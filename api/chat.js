@@ -176,9 +176,9 @@ export default async function handler(req, res) {
         for (const imgModel of imageModels) {
           try {
             const isImagen = imgModel.includes('imagen');
-            const apiVersion = imgModel.startsWith('gemini-3') ? 'v1alpha' : 'v1beta';
+            const apiVersion = isImagen ? 'v1' : (imgModel.startsWith('gemini-3') ? 'v1alpha' : 'v1beta');
             const endpoint = isImagen 
-              ? `https://generativelanguage.googleapis.com/v1beta/models/${imgModel}:predict?key=${key}`
+              ? `https://generativelanguage.googleapis.com/v1/models/${imgModel}:predict?key=${key}`
               : `https://generativelanguage.googleapis.com/${apiVersion}/models/${imgModel}:generateContent?key=${key}`;
             
             const payload = isImagen 
@@ -238,7 +238,7 @@ export default async function handler(req, res) {
       keyVideoLoop: for (const key of geminiKeys) {
         for (const vidModel of videoModels) {
           try {
-            let initRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${vidModel}:predict?key=${key}`, {
+            let initRes = await fetch(`https://generativelanguage.googleapis.com/v1/models/${vidModel}:predict?key=${key}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ instances: [{ prompt: vidPrompt }], parameters: { durationSeconds: 8, aspectRatio: "16:9" } })
@@ -254,7 +254,7 @@ export default async function handler(req, res) {
                let pollCount = 0;
                while (!isDone && pollCount < 6 && opName) {
                   await new Promise(r => setTimeout(r, 2000));
-                  const pollRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${opName}?key=${key}`);
+                  const pollRes = await fetch(`https://generativelanguage.googleapis.com/v1/${opName}?key=${key}`);
                   if (!pollRes.ok) break;
                   const pollData = await pollRes.json();
                   isDone = pollData.done;
