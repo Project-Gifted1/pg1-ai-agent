@@ -3,6 +3,7 @@ export const config = {
     bodyParser: {
       sizeLimit: '10mb',
     },
+    maxDuration: 60, // Prevents Vercel Edge timeouts on media generation
   },
 };
 
@@ -166,6 +167,7 @@ export default async function handler(req, res) {
 
     if (activeAction === 'GENERATE_IMAGE') {
       let imageBase64 = null;
+      let lastImgErr = '';
       const cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic cybernetic landscape';
       
       for (const key of geminiKeys) {
@@ -179,8 +181,12 @@ export default async function handler(req, res) {
             const data = await imgRes.json();
             imageBase64 = data?.predictions?.[0]?.bytesBase64Encoded || null;
             if (imageBase64) break;
+          } else {
+            lastImgErr = await imgRes.text();
           }
-        } catch (e) {}
+        } catch (e) {
+          lastImgErr = e.message;
+        }
       }
 
       if (imageBase64) {
@@ -193,7 +199,7 @@ export default async function handler(req, res) {
         }
         return sendJSON(200, { reply: `[SYSTEM] Image generated via Imagen-3 for: "${cleanPrompt}"`, image: imageBase64, imageStatus: 'SUCCESS', traceId: requestTraceId });
       }
-      return sendJSON(200, { reply: 'Image generation unavailable. Check API key validity or edge timeout.', traceId: requestTraceId });
+      return sendJSON(200, { reply: `Image generation error: ${lastImgErr || 'API key or endpoint failure.'}`, traceId: requestTraceId });
     }
 
     if (activeAction === 'GENERATE_VIDEO') {
