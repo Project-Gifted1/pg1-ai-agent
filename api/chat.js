@@ -83,10 +83,17 @@ export default async function handler(req, res) {
       });
     }
 
-    const geminiKey = process.env.GEMINI_API_KEY || process.env.Core_API_KEY;
+    // Support both GEMINI_API_KEY1 (Paid) and GEMINI_API_KEY2 (Free)
+    const geminiKeys = [
+      process.env.GEMINI_API_KEY1,
+      process.env.GEMINI_API_KEY2,
+      process.env.GEMINI_API_KEY,
+      process.env.Core_API_KEY
+    ].filter(Boolean);
+
     const cartesiaKey = process.env.CARTESIA_API_KEY;
     const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
     const githubToken = process.env.GITHUB_TOKEN;
     const githubRepo = process.env.GITHUB_REPO;
 
@@ -158,11 +165,13 @@ export default async function handler(req, res) {
       return sendJSON(200, { audio: audioBase64, audioStatus: audioBase64 ? 'SUCCESS' : 'SKIPPED', audioMimeType: 'audio/mp3', traceId: requestTraceId });
     }
 
+    const primaryGeminiKey = geminiKeys[0] || '';
+
     if (activeAction === 'GENERATE_IMAGE') {
-      if (geminiKey) {
+      if (primaryGeminiKey) {
         try {
           const cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic cybernetic landscape';
-          const imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${geminiKey}`, {
+          const imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${primaryGeminiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ instances: [{ prompt: cleanPrompt }], parameters: { sampleCount: 1 } })
@@ -187,10 +196,10 @@ export default async function handler(req, res) {
     }
 
     if (activeAction === 'GENERATE_VIDEO') {
-      if (geminiKey) {
+      if (primaryGeminiKey) {
         try {
           const vidPrompt = promptText.replace(/generate video of|create a video of|generate video|create video|\/video|animate a|make a video of/gi, '').trim() || 'Cinematic futuristic scene';
-          let initRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/veo-3.0-generate-001:predict?key=${geminiKey}`, {
+          let initRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/veo-3.0-generate-001:predict?key=${primaryGeminiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ instances: [{ prompt: vidPrompt }], parameters: { durationSeconds: 8, aspectRatio: "16:9" } })
@@ -206,7 +215,7 @@ export default async function handler(req, res) {
              let pollCount = 0;
              while (!isDone && pollCount < 8 && opName) {
                 await new Promise(r => setTimeout(r, 2000));
-                const pollRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${opName}?key=${geminiKey}`);
+                const pollRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${opName}?key=${primaryGeminiKey}`);
                 if (!pollRes.ok) break;
                 const pollData = await pollRes.json();
                 isDone = pollData.done;
@@ -312,31 +321,34 @@ export default async function handler(req, res) {
       'gemini-1.5-flash'
     ];
 
-    for (const model of modelsToTry) {
-      try {
-        const apiVersion = model.startsWith('gemini-3') ? 'v1alpha' : 'v1beta';
-        const res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${geminiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: sysInstruction }] },
-            contents: [{ role: 'user', parts: [...mediaParts, { text: promptText + targetedHistoricalData }] }],
-            generationConfig: { maxOutputTokens: 8192, temperature: 0.7 }
-          })
-        });
-        
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-            geminiData = data; 
-            break;
+    // Try each available key (Paid first, then Free fallback)
+    keyLoop: for (const currentKey of geminiKeys) {
+      for (const model of modelsToTry) {
+        try {
+          const apiVersion = model.startsWith('gemini-3') ? 'v1alpha' : 'v1beta';
+          const res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${currentKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: sysInstruction }] },
+              contents: [{ role: 'user', parts: [...mediaParts, { text: promptText + targetedHistoricalData }] }],
+              generationConfig: { maxOutputTokens: 8192, temperature: 0.7 }
+            })
+          });
+          
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+              geminiData = data; 
+              break keyLoop;
+            }
+          } else { 
+            const errText = await res.text();
+            lastErr = `[${model} on ${apiVersion}] ${res.status}: ${errText}`; 
           }
-        } else { 
-          const errText = await res.text();
-          lastErr = `[${model} on ${apiVersion}] ${res.status}: ${errText}`; 
+        } catch (e) {
+          lastErr = e.message;
         }
-      } catch (e) {
-        lastErr = e.message;
       }
     }
 
