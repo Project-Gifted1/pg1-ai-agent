@@ -70,9 +70,9 @@
       font-weight: 900; 
       letter-spacing: 1px; 
       text-transform: uppercase;
-      white-space: nowrap; /* Prevents wrapping */
+      white-space: nowrap; 
       display: flex;
-      align-items: center; /* Locks TM baseline */
+      align-items: center; 
       
       background: linear-gradient(135deg, #b5852a 0%, #f3c623 25%, #fff2cd 50%, #f3c623 75%, #b5852a 100%);
       background-size: 200% auto;
@@ -87,20 +87,16 @@
       to { background-position: 200% center; }
     }
 
-    /* Fixed TM Placement & Visibility */
+    /* Fixed, Razor-Sharp TM Placement */
     .tm-symbol {
-      font-size: 0.6em;
+      font-size: 0.55em;
       margin-left: 2px;
-      transform: translateY(-0.6em); /* Forces superscript position */
+      transform: translateY(-0.75em); /* Precise superscript */
       color: var(--text-gold);
-      -webkit-text-fill-color: var(--text-gold); 
-      font-weight: bold;
-      animation: tm-pulse 2.5s infinite alternate ease-in-out;
-    }
-
-    @keyframes tm-pulse {
-      0% { text-shadow: 0 0 2px #fff, 0 0 4px var(--text-gold); opacity: 0.8; }
-      100% { text-shadow: 0 0 8px #fff, 0 0 16px var(--text-gold); opacity: 1; }
+      -webkit-text-fill-color: var(--text-gold);
+      font-weight: 900; /* Max boldness */
+      text-shadow: 0 0 2px rgba(243, 198, 35, 0.4); /* Faint, crisp glow, no blur */
+      letter-spacing: 0;
     }
     
     .header-controls { display: flex; gap: 6px; }
