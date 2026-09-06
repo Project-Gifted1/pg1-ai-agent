@@ -308,7 +308,8 @@ export default async function handler(req, res) {
       'gemini-3.1-pro-preview',
       'gemini-2.5-pro',
       'gemini-2.5-flash',
-      'gemini-flash-latest'
+      'gemini-1.5-pro',
+      'gemini-1.5-flash'
     ];
 
     for (const model of modelsToTry) {
@@ -318,17 +319,25 @@ export default async function handler(req, res) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ role: 'user', parts: [...mediaParts, { text: sysInstruction + '\n\nDirective: ' + promptText + targetedHistoricalData }] }],
+            systemInstruction: { parts: [{ text: sysInstruction }] },
+            contents: [{ role: 'user', parts: [...mediaParts, { text: promptText + targetedHistoricalData }] }],
             generationConfig: { maxOutputTokens: 8192, temperature: 0.7 }
           })
         });
+        
         if (res.ok) {
           const data = await res.json();
           if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-            geminiData = data; break;
+            geminiData = data; 
+            break;
           }
-        } else { lastErr = res.status; }
-      } catch (e) {}
+        } else { 
+          const errText = await res.text();
+          lastErr = `[${model} on ${apiVersion}] ${res.status}: ${errText}`; 
+        }
+      } catch (e) {
+        lastErr = e.message;
+      }
     }
 
     let replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `Execution failed. Model Err: ${lastErr}`;
