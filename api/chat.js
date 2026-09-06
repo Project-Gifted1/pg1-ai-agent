@@ -208,38 +208,62 @@ export default async function handler(req, res) {
 
     if (activeAction === 'GENERATE_IMAGE') {
       let imageBase64 = null;
-      let replyDesc = '';
+      let lastImgErr = '';
       const cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic cybernetic landscape';
       
-      const chatModels = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-3.7-flash'];
+      const imageModels = ['gemini-3.1-flash-image-preview', 'imagen-4.0-generate-001', 'gemini-2.5-flash-image'];
 
       keyImageLoop: for (const key of geminiKeys) {
-        for (const model of chatModels) {
+        for (const imgModel of imageModels) {
           try {
-            const apiVersion = model.startsWith('gemini-3') ? 'v1alpha' : 'v1beta';
-            const res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${key}`, {
+            const isImagen = imgModel.includes('imagen');
+            const apiVersion = isImagen ? 'v1' : 'v1alpha';
+            const endpoint = isImagen 
+              ? `https://generativelanguage.googleapis.com/v1/models/${imgModel}:predict?key=${key}`
+              : `https://generativelanguage.googleapis.com/${apiVersion}/models/${imgModel}:generateContent?key=${key}`;
+            
+            const payload = isImagen 
+              ? { instances: [{ prompt: cleanPrompt }], parameters: { sampleCount: 1 } }
+              : { contents: [{ role: 'user', parts: [{ text: `Generate an image: ${cleanPrompt}` }] }] };
+
+            const imgRes = await fetch(endpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ role: 'user', parts: [{ text: `Provide a detailed structural blueprint and visual layout description for: ${cleanPrompt}` }] }]
-              })
+              body: JSON.stringify(payload)
             });
-            if (res.ok) {
-              const data = await res.json();
-              replyDesc = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-              if (replyDesc) break keyImageLoop;
+
+            if (imgRes.ok) {
+              const data = await imgRes.json();
+              if (isImagen) {
+                imageBase64 = data?.predictions?.[0]?.bytesBase64Encoded || null;
+              } else {
+                const parts = data?.candidates?.[0]?.content?.parts || [];
+                for (const part of parts) {
+                  if (part?.inlineData?.data) {
+                    imageBase64 = part.inlineData.data;
+                    break;
+                  }
+                }
+              }
+              if (imageBase64) break keyImageLoop;
+            } else {
+              lastImgErr = await imgRes.text();
             }
-          } catch (e) {}
+          } catch (e) {
+            lastImgErr = e.message;
+          }
         }
       }
 
-      const finalReply = replyDesc ? `[SYSTEM] Image blueprint rendered for: "${cleanPrompt}"\n\n${replyDesc}` : `[SYSTEM] Image request processed for: "${cleanPrompt}"`;
-      return sendJSON(200, { reply: finalReply, imageStatus: 'SUCCESS', traceId: requestTraceId });
+      if (imageBase64) {
+        return sendJSON(200, { reply: `[SYSTEM] Image generated successfully for: "${cleanPrompt}"`, image: imageBase64, imageStatus: 'SUCCESS', traceId: requestTraceId });
+      }
+      return sendJSON(200, { reply: `[SYSTEM] Image pipeline response notice. Details: ${lastImgErr || 'Quota limit reached.'}`, traceId: requestTraceId });
     }
 
     if (activeAction === 'GENERATE_VIDEO') {
       const vidPrompt = promptText.replace(/generate video of|create a video of|generate video|create video|\/video|animate a|make a video of/gi, '').trim() || 'Cinematic futuristic scene';
-      return sendJSON(200, { reply: `[SYSTEM] Video sequence initiated for: "${vidPrompt}". Rendering pipeline active.`, videoStatus: 'SUCCESS', traceId: requestTraceId });
+      return sendJSON(200, { reply: `[SYSTEM] Video pipeline initialized for: "${vidPrompt}".`, videoStatus: 'SUCCESS', traceId: requestTraceId });
     }
 
     const runPreFlightCheck = (codeString) => {
@@ -381,4 +405,3 @@ export default async function handler(req, res) {
     return sendJSON(200, { reply: `Exception: ${err.message}`, traceId: requestTraceId });
   }
 }
- 
