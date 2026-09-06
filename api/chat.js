@@ -90,7 +90,6 @@ export default async function handler(req, res) {
       process.env.Core_API_KEY
     ].filter(Boolean);
 
-    const primaryGeminiKey = geminiKeys[0] || '';
     const cartesiaKey = process.env.CARTESIA_API_KEY;
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -166,69 +165,79 @@ export default async function handler(req, res) {
     }
 
     if (activeAction === 'GENERATE_IMAGE') {
-      if (primaryGeminiKey) {
+      let imageBase64 = null;
+      const cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic cybernetic landscape';
+      
+      for (const key of geminiKeys) {
         try {
-          const cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic cybernetic landscape';
-          const imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${primaryGeminiKey}`, {
+          const imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${key}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ instances: [{ prompt: cleanPrompt }], parameters: { sampleCount: 1 } })
           });
           if (imgRes.ok) {
             const data = await imgRes.json();
-            const imageBase64 = data?.predictions?.[0]?.bytesBase64Encoded || null;
-            if (imageBase64) {
-              if (supabaseUrl && supabaseKey) {
-                await fetch(`${supabaseUrl}/rest/v1/generation_logs`, {
-                  method: 'POST',
-                  headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ prompt: cleanPrompt, model_used: 'imagen-3.0', status: 'SUCCESS' })
-                }).catch(() => {});
-              }
-              return sendJSON(200, { reply: `[SYSTEM] Image generated via Imagen-3 for: "${cleanPrompt}"`, image: imageBase64, imageStatus: 'SUCCESS', traceId: requestTraceId });
-            }
+            imageBase64 = data?.predictions?.[0]?.bytesBase64Encoded || null;
+            if (imageBase64) break;
           }
         } catch (e) {}
       }
-      return sendJSON(200, { reply: 'Image generation unavailable. Missing API Key or edge timeout.', traceId: requestTraceId });
+
+      if (imageBase64) {
+        if (supabaseUrl && supabaseKey) {
+          await fetch(`${supabaseUrl}/rest/v1/generation_logs`, {
+            method: 'POST',
+            headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: cleanPrompt, model_used: 'imagen-3.0', status: 'SUCCESS' })
+          }).catch(() => {});
+        }
+        return sendJSON(200, { reply: `[SYSTEM] Image generated via Imagen-3 for: "${cleanPrompt}"`, image: imageBase64, imageStatus: 'SUCCESS', traceId: requestTraceId });
+      }
+      return sendJSON(200, { reply: 'Image generation unavailable. Check API key validity or edge timeout.', traceId: requestTraceId });
     }
 
     if (activeAction === 'GENERATE_VIDEO') {
-      if (primaryGeminiKey) {
+      let videoUrl = null;
+      let opName = null;
+      const vidPrompt = promptText.replace(/generate video of|create a video of|generate video|create video|\/video|animate a|make a video of/gi, '').trim() || 'Cinematic futuristic scene';
+
+      for (const key of geminiKeys) {
         try {
-          const vidPrompt = promptText.replace(/generate video of|create a video of|generate video|create video|\/video|animate a|make a video of/gi, '').trim() || 'Cinematic futuristic scene';
-          let initRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/veo-3.0-generate-001:predict?key=${primaryGeminiKey}`, {
+          let initRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/veo-3.0-generate-001:predict?key=${key}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ instances: [{ prompt: vidPrompt }], parameters: { durationSeconds: 8, aspectRatio: "16:9" } })
           });
           if (initRes.ok) {
              const vidData = await initRes.json();
-             let opName = vidData.name;
+             opName = vidData.name;
              let isDone = vidData.done;
-             let videoUrl = null;
              if (isDone && vidData.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri) {
                 videoUrl = vidData.response.generateVideoResponse.generatedSamples[0].video.uri;
+                break;
              }
              let pollCount = 0;
              while (!isDone && pollCount < 8 && opName) {
                 await new Promise(r => setTimeout(r, 2000));
-                const pollRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${opName}?key=${primaryGeminiKey}`);
+                const pollRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${opName}?key=${key}`);
                 if (!pollRes.ok) break;
                 const pollData = await pollRes.json();
                 isDone = pollData.done;
                 if (isDone && pollData.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri) {
                    videoUrl = pollData.response.generateVideoResponse.generatedSamples[0].video.uri;
+                   break;
                 }
                 pollCount++;
              }
-             if (videoUrl) {
-                return sendJSON(200, { reply: `[SYSTEM] Video rendered via Veo for: "${vidPrompt}"`, video: videoUrl, videoStatus: 'SUCCESS', traceId: requestTraceId });
-             } else {
-                return sendJSON(200, { reply: `[SYSTEM] Video rendering initiated on Google servers (ID: ${opName}). Polling decoupled.`, traceId: requestTraceId });
-             }
+             if (videoUrl) break;
           }
         } catch(e) {}
+      }
+
+      if (videoUrl) {
+         return sendJSON(200, { reply: `[SYSTEM] Video rendered via Veo for: "${vidPrompt}"`, video: videoUrl, videoStatus: 'SUCCESS', traceId: requestTraceId });
+      } else if (opName) {
+         return sendJSON(200, { reply: `[SYSTEM] Video rendering initiated on Google servers (ID: ${opName}). Polling decoupled.`, traceId: requestTraceId });
       }
       return sendJSON(200, { reply: 'Video generation unavailable.', traceId: requestTraceId });
     }
@@ -249,7 +258,6 @@ export default async function handler(req, res) {
         }
       } catch (e) {}
 
-      // Autonomous Supabase File & Storage Sync
       try {
         const storageRes = await fetch(`${supabaseUrl}/storage/v1/object/list/pg1-vault`, {
           method: 'POST',
