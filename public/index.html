@@ -2,55 +2,33 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Project-Gifted1™</title>
   <style>
     :root {
-      --bg-deep: #000000;
-      --bg-surface: #080808;
-      --bg-glass: rgba(0, 0, 0, 0.95);
-      --border-subtle: rgba(197, 160, 89, 0.2);
-      --border-active: rgba(197, 160, 89, 0.8);
-      --accent-gold: #c5a059;
-      --accent-glow: rgba(197, 160, 89, 0.4);
-      --text-main: #f0f0f0;
-      --text-muted: #888888;
-      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --bg-color: #000000;
+      --card-bg: #080808;
+      --border-gold: #c5a059;
+      --text-gold: #c5a059;
+      --text-main: #e0e0e0;
+      --input-bg: #111111;
+      --font-mono: "Courier New", Courier, monospace; /* Exact font from the video */
     }
     
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font-mono); }
+    * { 
+      box-sizing: border-box; 
+      margin: 0; 
+      padding: 0; 
+      font-family: var(--font-mono); 
+    }
     
     body { 
-      background-color: var(--bg-deep); 
+      background-color: var(--bg-color); 
       color: var(--text-main); 
       display: flex; 
       flex-direction: column; 
-      height: 100vh; 
+      height: 100dvh; 
       overflow: hidden; 
-      position: relative;
-    }
-
-    /* HUD Ambient Glow & Scanline Effects from Video */
-    .hud-ambient-bg {
-      position: fixed;
-      inset: 0;
-      background: radial-gradient(circle at 50% 30%, rgba(197, 160, 89, 0.07) 0%, transparent 70%);
-      pointer-events: none;
-      z-index: 1;
-      animation: hudPulse 6s ease-in-out infinite;
-    }
-
-    @keyframes hudPulse {
-      0%, 100% { opacity: 0.4; }
-      50% { opacity: 0.9; }
-    }
-
-    .hud-border-overlay {
-      position: fixed;
-      inset: 0;
-      border: 1px solid var(--border-subtle);
-      pointer-events: none;
-      z-index: 99;
     }
     
     header { 
@@ -58,37 +36,33 @@
       justify-content: space-between; 
       align-items: center; 
       padding: 12px 16px; 
-      border-bottom: 1px solid var(--border-active); 
-      background: var(--bg-glass); 
+      border-bottom: 1px solid var(--border-gold); 
+      background: var(--card-bg); 
       z-index: 10; 
-      box-shadow: 0 4px 20px var(--accent-glow);
     }
-
+    
     header h1 { 
-      font-size: 15px; 
-      color: var(--accent-gold); 
-      font-weight: 700; 
-      letter-spacing: 1px; 
-      text-shadow: 0 0 10px var(--accent-glow);
+      font-size: 16px; 
+      color: var(--text-gold); 
+      font-weight: bold; 
+      letter-spacing: 0.5px; 
     }
-
+    
     .header-controls { display: flex; gap: 8px; }
     
     .header-btn { 
       background: transparent; 
-      border: 1px solid var(--border-subtle); 
-      color: var(--accent-gold); 
+      border: 1px solid var(--border-gold); 
+      color: var(--text-gold); 
       width: 36px; 
       height: 32px; 
       border-radius: 4px; 
-      font-size: 13px; 
+      font-size: 14px; 
       cursor: pointer; 
       display: flex; 
       align-items: center; 
-      justify-content: center;
-      transition: all 0.2s ease;
+      justify-content: center; 
     }
-    .header-btn:hover { border-color: var(--border-active); box-shadow: 0 0 8px var(--accent-glow); }
     .header-btn:active { background: rgba(197, 160, 89, 0.2); }
     
     #chat-container { 
@@ -98,216 +72,201 @@
       display: flex; 
       flex-direction: column; 
       gap: 14px; 
-      z-index: 2;
     }
     
     .message-bubble { 
-      background: var(--bg-surface); 
-      border: 1px solid var(--border-subtle); 
+      background: var(--card-bg); 
+      border: 1px solid var(--border-gold); 
       border-radius: 6px; 
-      padding: 12px 14px; 
-      max-width: 92%; 
+      padding: 14px; 
+      max-width: 90%; 
       align-self: flex-start; 
-      box-shadow: 0 4px 15px rgba(0,0,0,0.8), inset 0 0 15px rgba(197, 160, 89, 0.03);
-      animation: messagesSlide 0.3s ease-out forwards;
     }
     
-    @keyframes messagesSlide {
-      from { opacity: 0; transform: translateY(8px); }
-      to { opacity: 1; transform: translateY(0); }
+    .message-bubble.user { 
+      align-self: flex-end; 
+      background: var(--input-bg); 
     }
-
-    .message-bubble.user { align-self: flex-end; background: #111; border-color: #444; }
-    .message-text { font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; color: var(--text-main); }
+    
+    .message-text { 
+      font-size: 14px; 
+      line-height: 1.5; 
+      white-space: pre-wrap; 
+      word-break: break-word; 
+    }
     
     .message-actions { 
       display: flex; 
-      gap: 14px; 
-      margin-top: 10px; 
-      font-size: 10px; 
-      color: var(--accent-gold); 
-      letter-spacing: 1px; 
+      gap: 16px; 
+      margin-top: 12px; 
+      font-size: 12px; 
+      color: var(--text-gold); 
       text-transform: uppercase; 
       cursor: pointer; 
-      font-weight: 700; 
+      font-weight: bold; 
     }
-    .message-actions span:hover { text-shadow: 0 0 8px var(--accent-gold); }
+    .message-actions span:hover { text-decoration: underline; opacity: 0.8; }
 
     .media-preview-container { margin-top: 12px; width: 100%; }
-    .media-preview-container img, .media-preview-container video { width: 100%; border-radius: 4px; border: 1px solid var(--border-active); background: #000; display: block; max-height: 400px; object-fit: contain; box-shadow: 0 0 15px var(--accent-glow); }
+    .media-preview-container img, .media-preview-container video { 
+      width: 100%; 
+      border-radius: 4px; 
+      border: 1px solid var(--border-gold); 
+      background: #000; 
+      display: block; 
+      max-height: 400px; 
+      object-fit: contain; 
+    }
     
     .footer-panel { 
       padding: 12px 16px; 
-      background: var(--bg-glass); 
-      border-top: 1px solid var(--border-active); 
+      background: var(--card-bg); 
+      border-top: 1px solid var(--border-gold); 
       display: flex; 
       flex-direction: column; 
-      gap: 8px; 
-      z-index: 10;
-      box-shadow: 0 -4px 20px var(--accent-glow);
+      gap: 10px; 
     }
-
+    
     .toolbar-row { display: flex; justify-content: space-between; align-items: center; }
     
     .voice-group { display: flex; align-items: center; gap: 8px; }
     
     .voice-toggle { 
       background: transparent; 
-      border: 1px solid var(--border-subtle); 
-      color: var(--accent-gold); 
-      padding: 5px 10px; 
+      border: 1px solid var(--border-gold); 
+      color: var(--text-gold); 
+      padding: 4px 10px; 
       border-radius: 4px; 
-      font-size: 10px; 
+      font-size: 12px; 
       cursor: pointer; 
-      font-weight: 700; 
-      letter-spacing: 0.5px;
+      font-weight: bold; 
     }
-
+    
     .voice-select { 
-      background: #0d0d0d; 
-      border: 1px solid var(--border-subtle); 
-      color: var(--accent-gold); 
-      padding: 5px 8px; 
+      background: var(--input-bg); 
+      border: 1px solid var(--border-gold); 
+      color: var(--text-gold); 
+      padding: 4px 8px; 
       border-radius: 4px; 
-      font-size: 10px; 
+      font-size: 12px; 
       outline: none; 
       cursor: pointer; 
     }
 
-    .status-indicator { font-size: 10px; color: var(--text-muted); letter-spacing: 0.5px; text-transform: uppercase; }
+    .status-indicator { font-size: 12px; color: #888; letter-spacing: 0.5px; text-transform: uppercase; }
     
     .input-row { display: flex; gap: 8px; align-items: center; }
     
     .attach-btn { 
       background: transparent; 
-      border: 1px solid var(--border-subtle); 
-      color: var(--accent-gold); 
+      border: 1px solid var(--border-gold); 
+      color: var(--text-gold); 
       border-radius: 4px; 
       padding: 0 12px; 
-      height: 42px; 
+      height: 44px; 
       display: flex; 
       align-items: center; 
       justify-content: center; 
       cursor: pointer; 
-      font-size: 15px; 
-      transition: all 0.2s;
+      font-size: 16px; 
     }
-    .attach-btn:hover { border-color: var(--border-active); box-shadow: 0 0 8px var(--accent-glow); }
-
+    
     textarea { 
       flex: 1; 
-      background: #0d0d0d; 
-      border: 1px solid var(--border-subtle); 
+      background: var(--input-bg); 
+      border: 1px solid var(--border-gold); 
       border-radius: 4px; 
       color: #fff; 
-      padding: 10px; 
-      font-size: 13px; 
+      padding: 12px; 
+      font-size: 14px; 
       resize: none; 
-      height: 42px; 
+      height: 44px; 
       outline: none; 
     }
-    textarea:focus { border-color: var(--border-active); box-shadow: 0 0 10px var(--accent-glow); }
-    textarea::placeholder { color: #444; }
-
+    textarea::placeholder { color: #666; }
+    
     .execute-btn { 
-      background: var(--accent-gold); 
+      background: var(--border-gold); 
       color: #000; 
       border: none; 
-      font-weight: 700; 
-      padding: 0 18px; 
+      font-weight: bold; 
+      padding: 0 16px; 
       border-radius: 4px; 
-      height: 42px; 
-      font-size: 11px; 
+      height: 44px; 
+      font-size: 13px; 
       cursor: pointer; 
       text-transform: uppercase; 
-      letter-spacing: 1px;
-      box-shadow: 0 0 12px var(--accent-glow);
-      transition: all 0.2s;
     }
-    .execute-btn:hover { opacity: 0.9; box-shadow: 0 0 18px var(--accent-gold); }
-    .execute-btn:active { transform: scale(0.98); }
+    .execute-btn:active { opacity: 0.8; }
     
     input[type="file"] { display: none; }
 
-    /* High-End Holographic Security Gate */
+    /* Exact Security Gate Styling from image_14.png */
     #auth-modal { 
       position: fixed; 
       inset: 0; 
-      background: rgba(0,0,0,0.96); 
+      background: rgba(0,0,0,0.95); 
       z-index: 100; 
       display: flex; 
       align-items: center; 
       justify-content: center; 
       padding: 20px; 
     }
-
+    
     .auth-card { 
-      background: var(--bg-surface); 
-      border: 1px solid var(--border-active); 
+      background: var(--card-bg); 
+      border: 1px solid var(--border-gold); 
       border-radius: 8px; 
-      padding: 28px 24px; 
+      padding: 26px; 
       width: 100%; 
       max-width: 350px; 
       display: flex; 
       flex-direction: column; 
       gap: 16px; 
-      box-shadow: 0 0 35px var(--accent-glow), inset 0 0 20px rgba(197, 160, 89, 0.05); 
-      position: relative;
     }
-
+    
     .auth-card h2 { 
-      font-size: 13px; 
-      color: var(--accent-gold); 
+      font-size: 14px; 
+      color: var(--text-gold); 
       text-align: center; 
-      letter-spacing: 1.5px; 
+      letter-spacing: 1px; 
       line-height: 1.4; 
-      font-weight: 700; 
-      text-shadow: 0 0 8px var(--accent-glow);
+      margin-bottom: 4px;
     }
-
+    
     .auth-input { 
-      background: #0d0d0d; 
-      border: 1px solid var(--border-subtle); 
+      background: var(--input-bg); 
+      border: 1px solid var(--border-gold); 
       border-radius: 4px; 
       color: #fff; 
       padding: 12px; 
-      font-size: 13px; 
+      font-size: 14px; 
       outline: none; 
       width: 100%; 
     }
-    .auth-input:focus { border-color: var(--border-active); box-shadow: 0 0 10px var(--accent-glow); }
-
+    
     .auth-submit { 
-      background: var(--accent-gold); 
+      background: var(--border-gold); 
       color: #000; 
       border: none; 
-      font-weight: 700; 
+      font-weight: bold; 
       padding: 12px; 
       border-radius: 4px; 
-      font-size: 11px; 
+      font-size: 13px; 
       cursor: pointer; 
       text-transform: uppercase; 
-      letter-spacing: 1.5px; 
+      letter-spacing: 1px; 
       width: 100%; 
-      box-shadow: 0 0 12px var(--accent-glow);
-      transition: all 0.2s;
     }
-    .auth-submit:hover { box-shadow: 0 0 20px var(--accent-gold); }
-    
-    #auth-error { font-size: 10px; color: #ff4444; text-align: center; display: none; }
   </style>
 </head>
 <body>
-
-  <div class="hud-ambient-bg"></div>
-  <div class="hud-border-overlay"></div>
 
   <div id="auth-modal">
     <div class="auth-card">
       <h2>PROJECT-GIFTED1 SECURITY GATE</h2>
       <input type="text" id="auth-user" class="auth-input" placeholder="Operator ID" value="Winner1G">
       <input type="password" id="auth-pass" class="auth-input" placeholder="Secure Matrix Passkey">
-      <div id="auth-error">Gateway Error: Invalid Credentials</div>
       <button class="auth-submit" onclick="verifyAuth()">AUTHENTICATE</button>
     </div>
   </div>
@@ -364,7 +323,6 @@
     async function verifyAuth() {
       const user = document.getElementById('auth-user').value.trim();
       const pass = document.getElementById('auth-pass').value.trim();
-      const errDiv = document.getElementById('auth-error');
       
       try {
         const res = await fetch('/api/chat', {
@@ -373,18 +331,16 @@
           body: JSON.stringify({ prompt: 'AUTH_VERIFY', user, pass })
         });
         const data = await res.json();
-        if (data.authenticated || data.success || user === 'Winner1G') {
+        if (data.authenticated || data.success) {
           document.getElementById('auth-modal').style.display = 'none';
         } else {
-          errDiv.style.display = 'block';
-          errDiv.textContent = 'Access Denied: Invalid Credentials.';
+          alert('Access Denied: Invalid Credentials.');
         }
       } catch (e) {
         if (user === 'Winner1G') {
           document.getElementById('auth-modal').style.display = 'none';
         } else {
-          errDiv.style.display = 'block';
-          errDiv.textContent = 'Gateway Error: Connection failed';
+          alert('Access Denied: Gateway connection error.');
         }
       }
     }
@@ -392,8 +348,8 @@
     function toggleVoice() {
       voiceActive = !voiceActive;
       const btn = document.getElementById('voice-btn');
-      btn.style.borderColor = voiceActive ? '#00ff66' : 'var(--border-subtle)';
-      btn.style.color = voiceActive ? '#00ff66' : 'var(--accent-gold)';
+      btn.style.borderColor = voiceActive ? '#00ff66' : '#c5a059';
+      btn.style.color = voiceActive ? '#00ff66' : '#c5a059';
       btn.textContent = voiceActive ? 'VOICE: ACTIVE' : 'VOICE: OFF';
     }
 
