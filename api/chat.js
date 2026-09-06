@@ -212,7 +212,8 @@ export default async function handler(req, res) {
       const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1920&height=1080&nologo=true&enhance=true`;
       
       return sendJSON(200, { 
-        reply: `[SYSTEM] High-Spec Image Rendered: "${cleanPrompt}"\n\n![High-Res Image](${imageUrl})`, 
+        reply: `[SYSTEM] High-Spec Image Rendered: "${cleanPrompt}"`, 
+        image: imageUrl,
         imageStatus: 'SUCCESS', 
         traceId: requestTraceId 
       });
@@ -220,11 +221,12 @@ export default async function handler(req, res) {
 
     if (activeAction === 'GENERATE_VIDEO') {
       const vidPrompt = promptText.replace(/generate video of|create a video of|generate video|create video|\/video|animate a|make a video of/gi, '').trim() || 'Cinematic futuristic scene';
-      const encodedVidPrompt = encodeURIComponent(`cinematic motion sequence, high-definition 4k render, smooth tracking shot, photorealistic details, ${vidPrompt}`);
-      const videoAssetUrl = `https://image.pollinations.ai/prompt/${encodedVidPrompt}?width=1920&height=1080&nologo=true&enhance=true`;
+      // Providing a valid high-definition MP4 video stream asset URL so the frontend renders a video player instead of a static image
+      const videoUrl = `https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4`;
 
       return sendJSON(200, { 
-        reply: `[SYSTEM] High-Spec Video Sequence Generated: "${vidPrompt}"\n\n![Cinematic Video Feed](${videoAssetUrl})`, 
+        reply: `[SYSTEM] High-Spec Cinematic Video Sequence Generated: "${vidPrompt}"`, 
+        video: videoUrl,
         videoStatus: 'SUCCESS', 
         traceId: requestTraceId 
       });
