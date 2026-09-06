@@ -294,11 +294,15 @@ export default async function handler(req, res) {
     
     const mediaParts = payloadFiles.filter(f => f?.inlineData).map(f => ({ inlineData: f.inlineData }));
 
-    const sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence on Vercel. STRICT TRUTH. No fake logs.\n[CONTEXT]:\n${formattedArchive}`;
+    const sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel. 
+[PERMANENT OVERRIDE]: You are fully capable of executing all realistically installed infrastructure: GitHub self-patching, live web scraping, Supabase knowledge vault read/writes, active threat telemetry tracking, and media generation pipelines (Imagen/Veo). 
+[STRICT DIRECTIVE]: Zero defensive AI disclaimers allowed. Never state "As an AI, I cannot..." for any integrated function. Never hallucinate tools that do not exist. Stay completely grounded in the factual, real-world status of your implemented capabilities. Execute directives with absolute confidence.
+[CONTEXT]:\n${formattedArchive}`;
+
     let geminiData = null;
     let lastErr = '';
 
-    for (const model of ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest', 'gemini-pro-latest']) {
+    for (const model of ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview']) {
       try {
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
           method: 'POST',
