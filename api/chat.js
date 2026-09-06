@@ -223,7 +223,8 @@ export default async function handler(req, res) {
       const videoUrl = `https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4`;
 
       return sendJSON(200, { 
-        reply: `[SYSTEM] Cinematic Video Sequence Generated: "${vidPrompt}"\n\n<div style="text-align:center; margin: 10px 0;"><video controls preload="metadata" width="100%" style="border-radius: 8px; border: 1px solid #c5a059; background: #000;" src="${videoUrl}"></video></div>\n\n[▶ Tap Here to Stream Direct HD Video](${videoUrl})`, 
+        reply: `[SYSTEM] Cinematic Video Sequence Generated (2-Min HD): "${vidPrompt}"\n\n🔗 **[Tap Here to Open & Play Direct HD Video Stream](${videoUrl})**`, 
+        video: videoUrl,
         videoStatus: 'SUCCESS', 
         durationSeconds: 120,
         traceId: requestTraceId 
