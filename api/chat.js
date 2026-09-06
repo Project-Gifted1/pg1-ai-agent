@@ -230,39 +230,49 @@ export default async function handler(req, res) {
     if (activeAction === 'GENERATE_VIDEO') {
       let videoUrl = null;
       let opName = null;
+      let lastVidErr = '';
       const vidPrompt = promptText.replace(/generate video of|create a video of|generate video|create video|\/video|animate a|make a video of/gi, '').trim() || 'Cinematic futuristic scene';
 
+      const videoModels = ['veo-3.0-generate-001', 'veo-2.0-generate-001'];
+
       for (const key of geminiKeys) {
-        try {
-          let initRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/veo-3.0-generate-001:predict?key=${key}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ instances: [{ prompt: vidPrompt }], parameters: { durationSeconds: 8, aspectRatio: "16:9" } })
-          });
-          if (initRes.ok) {
-             const vidData = await initRes.json();
-             opName = vidData.name;
-             let isDone = vidData.done;
-             if (isDone && vidData.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri) {
-                videoUrl = vidData.response.generateVideoResponse.generatedSamples[0].video.uri;
-                break;
-             }
-             let pollCount = 0;
-             while (!isDone && pollCount < 8 && opName) {
-                await new Promise(r => setTimeout(r, 2000));
-                const pollRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${opName}?key=${key}`);
-                if (!pollRes.ok) break;
-                const pollData = await pollRes.json();
-                isDone = pollData.done;
-                if (isDone && pollData.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri) {
-                   videoUrl = pollData.response.generateVideoResponse.generatedSamples[0].video.uri;
-                   break;
-                }
-                pollCount++;
-             }
-             if (videoUrl) break;
+        for (const vidModel of videoModels) {
+          try {
+            let initRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${vidModel}:predict?key=${key}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ instances: [{ prompt: vidPrompt }], parameters: { durationSeconds: 8, aspectRatio: "16:9" } })
+            });
+            if (initRes.ok) {
+               const vidData = await initRes.json();
+               opName = vidData.name;
+               let isDone = vidData.done;
+               if (isDone && vidData.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri) {
+                  videoUrl = vidData.response.generateVideoResponse.generatedSamples[0].video.uri;
+                  break;
+               }
+               let pollCount = 0;
+               while (!isDone && pollCount < 6 && opName) {
+                  await new Promise(r => setTimeout(r, 2000));
+                  const pollRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${opName}?key=${key}`);
+                  if (!pollRes.ok) break;
+                  const pollData = await pollRes.json();
+                  isDone = pollData.done;
+                  if (isDone && pollData.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri) {
+                     videoUrl = pollData.response.generateVideoResponse.generatedSamples[0].video.uri;
+                     break;
+                  }
+                  pollCount++;
+               }
+               if (videoUrl) break;
+            } else {
+              lastVidErr = await initRes.text();
+            }
+          } catch(e) {
+            lastVidErr = e.message;
           }
-        } catch(e) {}
+        }
+        if (videoUrl || opName) break;
       }
 
       if (videoUrl) {
@@ -270,7 +280,7 @@ export default async function handler(req, res) {
       } else if (opName) {
          return sendJSON(200, { reply: `[SYSTEM] Video rendering initiated on Google servers (ID: ${opName}). Polling decoupled.`, traceId: requestTraceId });
       }
-      return sendJSON(200, { reply: 'Video generation unavailable.', traceId: requestTraceId });
+      return sendJSON(200, { reply: `[SYSTEM] Video generation endpoint notice: ${lastVidErr || 'Service initializing.'}`, traceId: requestTraceId });
     }
 
     let formattedArchive = 'No prior matrix context.';
@@ -421,7 +431,7 @@ export default async function handler(req, res) {
       try {
         const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
           method: 'POST',
-      headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
+          headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model_id: 'sonic-english',
             transcript: replyText.replace(/[*_#`[\]()]/g, '').substring(0, 400).trim(),
