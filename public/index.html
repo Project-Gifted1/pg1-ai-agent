@@ -22,16 +22,7 @@
 
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     
-    body { 
-      background-color: var(--bg-deep); 
-      color: var(--text-main); 
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-      height: 100dvh; 
-      display: flex; 
-      flex-direction: column; 
-      overflow: hidden; 
-      position: relative; 
-    }
+    body { background-color: var(--bg-deep); color: var(--text-main); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; position: relative; }
 
     #auth-gate { position: fixed; inset: 0; background: #000000; z-index: 99999; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
     .auth-card { background: var(--bg-surface); border: 1px solid var(--accent-gold); border-radius: 14px; width: 100%; max-width: 360px; padding: 24px; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 0 30px rgba(234, 179, 8, 0.2); }
@@ -45,7 +36,7 @@
     @keyframes hudPulse { 0% { box-shadow: inset 0 0 15px rgba(234, 179, 8, 0.05); border: 1px solid rgba(234, 179, 8, 0.05); } 50% { box-shadow: inset 0 0 35px rgba(234, 179, 8, 0.15); border: 1px solid rgba(234, 179, 8, 0.25); } 100% { box-shadow: inset 0 0 15px rgba(234, 179, 8, 0.05); border: 1px solid rgba(234, 179, 8, 0.05); } }
     .hud-border-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 1; animation: hudPulse 6s ease-in-out infinite; }
     
-    header { padding: 12px 16px; background-color: var(--bg-glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid rgba(234, 179, 8, 0.3); display: flex; align-items: center; justify-content: space-between; z-index: 10; position: relative; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8), 0 1px 15px rgba(234, 179, 8, 0.15); }
+    header { padding: 12px 16px; background-color: var(--bg-glass); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(234, 179, 8, 0.3); display: flex; align-items: center; justify-content: space-between; z-index: 10; position: relative; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8), 0 1px 15px rgba(234, 179, 8, 0.15); }
     .header-title-group { display: flex; align-items: center; gap: 8px; }
     .header-title { font-size: 16px; font-weight: 800; letter-spacing: -0.2px; background: linear-gradient(90deg, #FFFFFF 0%, #FDE047 50%, #FFFFFF 100%); background-size: 200% auto; color: transparent; -webkit-background-clip: text; background-clip: text; animation: shineSweep 4s linear infinite; cursor: pointer; transition: transform 0.15s; }
     .header-title:active { transform: scale(0.96); }
@@ -74,24 +65,14 @@
     .bubble strong { color: #FFFFFF; font-weight: 600; }
     .bubble pre { background: var(--bg-surface); padding: 12px; border-radius: 6px; margin: 10px 0; overflow-x: auto; border: 1px solid rgba(234, 179, 8, 0.3); }
     .bubble code { font-family: var(--font-mono); font-size: 12px; color: #FDE047; }
-    .bubble p { margin-bottom: 10px; }
-    .bubble p:last-child { margin-bottom: 0; }
     .bubble img, .bubble video { max-width: 100%; border-radius: 6px; margin: 10px 0; border: 1px solid rgba(234, 179, 8, 0.4); display: block; }
 
     .message-meta { display: flex; justify-content: space-between; align-items: center; font-size: 9.5px; color: var(--text-muted); padding: 2px 4px; margin-top: 2px; font-family: var(--font-mono); }
     .message-tools { display: flex; gap: 10px; opacity: 0.6; transition: opacity 0.2s ease; }
     .bubble-container:hover .message-tools { opacity: 1; }
-    .tool-action { background: none; border: none; color: var(--text-muted); font-size: 9.5px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.8px; font-family: var(--font-mono); transition: color 0.15s; display: flex; align-items: center; gap: 4px; }
+    .tool-action { background: none; border: none; color: var(--text-muted); font-size: 9.5px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.8px; font-family: var(--font-mono); display: flex; align-items: center; gap: 4px; }
     .tool-action:hover { color: var(--accent-gold); text-shadow: 0 0 5px var(--accent-glow); }
     .edit-input { width: 100%; background: #000000; border: 1px solid var(--border-active); color: var(--text-main); padding: 10px; border-radius: 8px; font-family: inherit; font-size: 13px; resize: none; outline: none; margin-top: 4px; box-shadow: 0 0 15px var(--accent-glow); }
-
-    .consent-card { margin-top: 12px; background-color: #000000; border: 1px solid rgba(234, 179, 8, 0.4); border-left: 3px solid var(--accent-gold); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 0 15px rgba(234, 179, 8, 0.15); }
-    .consent-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(234, 179, 8, 0.3); padding-bottom: 8px; }
-    .consent-title { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-family: var(--font-mono); }
-    .consent-actions { display: flex; gap: 10px; }
-    .btn-consent { flex: 1; padding: 8px 12px; border-radius: 6px; font-size: 10.5px; font-weight: 600; text-transform: uppercase; cursor: pointer; transition: all 0.2s ease; border: none; font-family: var(--font-mono); }
-    .btn-accept { background-color: var(--accent-gold); color: #000000; box-shadow: 0 2px 10px var(--accent-glow); }
-    .btn-accept:active { background-color: #CA8A04; transform: scale(0.98); }
 
     .video-modal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.98); backdrop-filter: blur(16px); display: none; flex-direction: column; z-index: 200; opacity: 0; transition: opacity 0.25s ease; }
     .video-modal.active { display: flex; opacity: 1; }
@@ -156,9 +137,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: 'AUTH_VERIFY', user: u, pass: p })
         });
-        
         if (!res.ok) throw new Error(`Gateway Error: HTTP ${res.status}`);
-        
         const data = await res.json();
         
         if (data.authenticated) {
@@ -200,7 +179,7 @@
     <div class="bubble-wrapper">
       <div class="bubble-container bot">
         <div class="bubble">Greetings. PG1 Sovereign Agent is operational. Cyber gold matrix, live real-time vision, and tactile haptic feedback online.</div>
-        <div class="message-meta"><span class="timestamp">Just now</span><div class="message-tools"><button class="tool-action speak-btn">Speak</button><button class="tool-action copy-btn">Copy</button><button class="tool-action delete delete-btn">Delete</button></div></div>
+        <div class="message-meta"><span class="timestamp">Just now</span><div class="message-tools"><button class="tool-action speak-btn">Speak</button><button class="tool-action copy-btn">Copy</button><button class="tool-action delete-btn">Delete</button></div></div>
       </div>
     </div>
   </main>
@@ -213,7 +192,7 @@
     <div class="video-container"><video id="live-video-stream" autoplay playsinline muted></video></div>
     <div class="video-controls">
       <button id="btn-flip-camera" class="icon-btn" style="width:auto;padding:0 15px;">Flip Camera</button>
-      <button id="btn-end-stream" class="icon-btn" style="width:auto;padding:0 15px;background:#7F1D1D;color:#FFF;border-color:#991B1B;animation:none;">End Stream</button>
+      <button id="btn-end-stream" class="icon-btn" style="width:auto;padding:0 15px;background:#7F1D1D;color:#FFF;border-color:#991B1B;">End Stream</button>
     </div>
   </div>
 
@@ -221,7 +200,7 @@
     <div class="modal-card">
       <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(234,179,8,0.4); padding-bottom:10px;">
         <span style="font-size:12px; font-weight:600; font-family:var(--font-mono); color:var(--accent-gold);">Thread Vault</span>
-        <button id="btn-close-vault" class="icon-btn" style="width:28px;height:28px;animation:none;">✕</button>
+        <button id="btn-close-vault" class="icon-btn" style="width:28px;height:28px;">✕</button>
       </div>
       <div id="thread-list" style="display:flex; flex-direction:column; gap:8px; max-height:260px; overflow-y:auto;"></div>
       <button id="btn-save-new" class="btn-consent btn-accept">Save & New Thread</button>
@@ -261,7 +240,6 @@
   </div>
 
   <script>
-    // System Variables
     const chatStream = document.getElementById('chat-stream');
     const userInput = document.getElementById('user-input');
     const sendBtn = document.getElementById('send-btn');
@@ -275,7 +253,6 @@
     let activeStream = null;
     let useFrontCamera = false;
 
-    // Interface Core Tools
     function triggerHaptic(duration = 15) { if ('vibrate' in navigator) { try { navigator.vibrate(duration); } catch (e) {} } }
     
     async function openLiveVideo() { triggerHaptic(25); document.getElementById('video-modal').classList.add('active'); await startCameraStream(); }
@@ -300,7 +277,6 @@
       doc.save(`PG1_Thread_${Date.now()}.pdf`);
     }
 
-    // Thread Persistence Matrix
     let currentThreadId = localStorage.getItem('pg1_active_thread') || 'thread_' + Date.now();
     let threads = JSON.parse(localStorage.getItem('pg1_threads') || '{}');
     if (!threads[currentThreadId]) { threads[currentThreadId] = { title: 'Initial Session', date: new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }), messages: chatStream.innerHTML }; saveThreadsToStorage(); } else { chatStream.innerHTML = threads[currentThreadId].messages; }
@@ -311,24 +287,13 @@
       triggerHaptic(20); 
       voiceEnabled = !voiceEnabled; 
       if (voiceEnabled) { 
-        voiceToggleBtn.classList.add('active'); 
-        voiceToggleBtn.innerText = "Voice: On"; 
-        voiceStats.innerText = `Sys: Active | API Linked`; 
-        speakText("Audio matrix online. PG1 engaged."); 
+        voiceToggleBtn.classList.add('active'); voiceToggleBtn.innerText = "Voice: On"; voiceStats.innerText = `Sys: Active | API Linked`; speakText("Audio matrix online. PG1 engaged."); 
       } else { 
-        voiceToggleBtn.classList.remove('active'); 
-        voiceToggleBtn.innerText = "Voice: Off"; 
-        voiceStats.innerText = "Sys: Ready | Standby"; 
+        voiceToggleBtn.classList.remove('active'); voiceToggleBtn.innerText = "Voice: Off"; voiceStats.innerText = "Sys: Ready | Standby"; 
       } 
     }
     
-    function updateVoiceProfile() { 
-      triggerHaptic(15); 
-      if (voiceEnabled) { 
-        voiceStats.innerText = `Sys: Active | ${voiceSelect.options[voiceSelect.selectedIndex].text}`; 
-        speakText("Executive audio profile updated."); 
-      } 
-    }
+    function updateVoiceProfile() { triggerHaptic(15); if (voiceEnabled) { voiceStats.innerText = `Sys: Active | ${voiceSelect.options[voiceSelect.selectedIndex].text}`; speakText("Executive audio profile updated."); } }
 
     let recognition;
     if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
@@ -341,315 +306,108 @@
       micBtn.addEventListener('click', () => { triggerHaptic(25); alert("Speech Recognition is actively restricted or unsupported by this client browser."); });
     }
 
-    // Audio Transport Routines
     const AUDIO_UNLOCK_DATA_URI = 'data:audio/wav;base64,UklGRsQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    function getVoiceReadyStatus() { const sel = voiceSelect.options[voiceSelect.selectedIndex] || voiceSelect.options[0]; return voiceEnabled ? `Sys: READY | ${sel.text}` : "Sys: READY | Standby"; }
+    function setVoicePlaybackStatus(isSpeaking) { voiceStats.innerText = isSpeaking ? "Sys: SPEAKING..." : getVoiceReadyStatus(); }
 
-    function getVoiceReadyStatus() {
-      const selectedOption = voiceSelect.options[voiceSelect.selectedIndex] || voiceSelect.options[0];
-      const selectedLabel = selectedOption ? selectedOption.text : 'Audio Ready';
-      return voiceEnabled ? `Sys: READY | ${selectedLabel}` : "Sys: READY | Standby";
-    }
-
-    function setVoicePlaybackStatus(isSpeaking) {
-      voiceStats.innerText = isSpeaking ? "Sys: SPEAKING..." : getVoiceReadyStatus();
-    }
-
-    function getAudioPlayer() {
-      if (!window.__pg1AudioPlayer) {
-        const audioPlayer = new Audio();
-        audioPlayer.preload = 'auto';
-        audioPlayer.playsInline = true;
-        window.__pg1AudioPlayer = audioPlayer;
-      }
-      return window.__pg1AudioPlayer;
-    }
-
+    function getAudioPlayer() { if (!window.__pg1AudioPlayer) { const ap = new Audio(); ap.preload = 'auto'; ap.playsInline = true; window.__pg1AudioPlayer = ap; } return window.__pg1AudioPlayer; }
     function unlockAudioPlayer() {
-      const audioPlayer = getAudioPlayer();
-      if (audioPlayer.__pg1Unlocked || audioPlayer.__pg1UnlockPromise) return audioPlayer;
-      const finalizeUnlockAttempt = () => {
-        audioPlayer.pause();
-        audioPlayer.currentTime = 0;
-        audioPlayer.muted = false;
-        audioPlayer.src = '';
-        audioPlayer.removeAttribute('src');
-        if (!audioPlayer.__pg1Unlocked) audioPlayer.__pg1UnlockAttempted = false;
-        audioPlayer.__pg1UnlockPromise = null;
-      };
-      audioPlayer.__pg1UnlockAttempted = true;
-      audioPlayer.muted = true;
-      audioPlayer.src = AUDIO_UNLOCK_DATA_URI;
+      const ap = getAudioPlayer();
+      if (ap.__pg1Unlocked || ap.__pg1UnlockPromise) return ap;
+      const finalizeUnlockAttempt = () => { ap.pause(); ap.currentTime = 0; ap.muted = false; ap.src = ''; ap.removeAttribute('src'); if (!ap.__pg1Unlocked) ap.__pg1UnlockAttempted = false; ap.__pg1UnlockPromise = null; };
+      ap.__pg1UnlockAttempted = true; ap.muted = true; ap.src = AUDIO_UNLOCK_DATA_URI;
       try {
-        const unlockAttempt = audioPlayer.play();
+        const unlockAttempt = ap.play();
         if (unlockAttempt && typeof unlockAttempt.then === 'function') {
-          audioPlayer.__pg1UnlockPromise = unlockAttempt
-            .then(() => {
-              audioPlayer.__pg1Unlocked = true;
-              return true;
-            })
-            .catch(() => {
-              audioPlayer.__pg1Unlocked = false;
-              audioPlayer.__pg1UnlockAttempted = false;
-              return false;
-            })
-            .then((unlocked) => {
-              finalizeUnlockAttempt();
-              return unlocked;
-            });
-        } else {
-          audioPlayer.__pg1Unlocked = true;
-          finalizeUnlockAttempt();
-        }
-      } catch (err) {
-        audioPlayer.__pg1Unlocked = false;
-        audioPlayer.__pg1UnlockAttempted = false;
-        finalizeUnlockAttempt();
-      }
-      return audioPlayer;
+          ap.__pg1UnlockPromise = unlockAttempt.then(() => { ap.__pg1Unlocked = true; return true; }).catch(() => { ap.__pg1Unlocked = false; ap.__pg1UnlockAttempted = false; return false; }).then((u) => { finalizeUnlockAttempt(); return u; });
+        } else { ap.__pg1Unlocked = true; finalizeUnlockAttempt(); }
+      } catch (err) { ap.__pg1Unlocked = false; ap.__pg1UnlockAttempted = false; finalizeUnlockAttempt(); }
+      return ap;
     }
 
     function releaseAudioPlayer(invokeCleanup = true) {
-      const audioPlayer = window.__pg1AudioPlayer || null;
-      if (!audioPlayer) return;
-      audioPlayer.onended = null;
-      audioPlayer.__pg1PlaybackToken = null;
-      audioPlayer.pause();
-      audioPlayer.currentTime = 0;
-      const cleanup = audioPlayer.__pg1Cleanup;
-      audioPlayer.__pg1Cleanup = null;
-      if (audioPlayer.__pg1ObjectUrl) {
-        URL.revokeObjectURL(audioPlayer.__pg1ObjectUrl);
-        audioPlayer.__pg1ObjectUrl = null;
-      }
-      audioPlayer.src = '';
-      audioPlayer.removeAttribute('src');
-      if (invokeCleanup && typeof cleanup === 'function') {
-        try {
-          cleanup();
-        } catch (err) {
-          console.error("PG1 Voice completion callback error:", err);
-        }
-      }
-    }
-
-    function runAudioCleanup(cleanup, state) {
-      if (typeof cleanup !== 'function') return;
-      try {
-        cleanup(state);
-      } catch (err) {
-        console.error("PG1 Voice completion callback error:", err);
-      }
-    }
-
-    function isBase64AudioPayload(text) {
-      const compactText = text.replace(/\s+/g, '');
-      return compactText.length > 0 && compactText.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(compactText);
-    }
-
-    function getSafeAudioMimeType(mimeType) {
-      const normalizedMimeType = typeof mimeType === 'string' ? mimeType.toLowerCase() : '';
-      return ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/ogg', 'audio/mp4', 'audio/webm', 'audio/aac'].includes(normalizedMimeType) ? normalizedMimeType : null;
-    }
-
-    function assignAudioSource(audioPlayer, audioPayload, fallbackMimeType) {
-      if (audioPayload instanceof Blob) {
-        const audioUrl = URL.createObjectURL(audioPayload);
-        audioPlayer.__pg1ObjectUrl = audioUrl;
-        audioPlayer.src = audioUrl;
-        return true;
-      }
-      if (typeof audioPayload !== 'string') return false;
-      const trimmedAudio = audioPayload.trim();
-      if (!trimmedAudio) return false;
-      const dataUriMatch = trimmedAudio.match(/^data:(audio\/[^;,]+)(?:;[^,]*)?,/i);
-      if (dataUriMatch) {
-        if (!getSafeAudioMimeType(dataUriMatch[1])) return false;
-        audioPlayer.src = trimmedAudio.replace(/\s+/g, '');
-        return true;
-      }
-      const normalizedAudio = trimmedAudio.replace(/\s+/g, '');
-      if (!normalizedAudio) return false;
-      const safeMimeType = getSafeAudioMimeType(fallbackMimeType);
-      if (!safeMimeType) return false;
-      audioPlayer.src = `data:${safeMimeType};base64,${normalizedAudio}`;
-      return true;
+      const ap = window.__pg1AudioPlayer || null; if (!ap) return;
+      ap.onended = null; ap.__pg1PlaybackToken = null; ap.pause(); ap.currentTime = 0;
+      const cleanup = ap.__pg1Cleanup; ap.__pg1Cleanup = null;
+      if (ap.__pg1ObjectUrl) { URL.revokeObjectURL(ap.__pg1ObjectUrl); ap.__pg1ObjectUrl = null; }
+      ap.src = ''; ap.removeAttribute('src');
+      if (invokeCleanup && typeof cleanup === 'function') { try { cleanup(); } catch (err) {} }
     }
 
     function playAudioPayload(audioPayload, onended, mimeType) {
-      const audioPlayer = unlockAudioPlayer();
+      const ap = unlockAudioPlayer();
       const callerCleanup = typeof onended === 'function' ? onended : null;
-      const cleanup = (state) => {
-        setVoicePlaybackStatus(false);
-        runAudioCleanup(callerCleanup, state);
-      };
-      const playbackToken = (window.__pg1PlaybackSequence || 0) + 1;
-      window.__pg1PlaybackSequence = playbackToken;
-      const unlockPromise = audioPlayer.__pg1UnlockPromise || Promise.resolve(audioPlayer.__pg1Unlocked || !audioPlayer.__pg1UnlockAttempted);
+      const cleanup = (state) => { setVoicePlaybackStatus(false); if(callerCleanup) callerCleanup(state); };
+      const playbackToken = (window.__pg1PlaybackSequence || 0) + 1; window.__pg1PlaybackSequence = playbackToken;
+      const unlockPromise = ap.__pg1UnlockPromise || Promise.resolve(ap.__pg1Unlocked || !ap.__pg1UnlockAttempted);
       return unlockPromise.then((unlocked) => {
-        if (window.__pg1PlaybackSequence !== playbackToken) {
-          cleanup('interrupted');
-          return false;
-        }
-        if (!unlocked) {
-          cleanup('blocked');
-          return false;
-        }
-        const hadExistingPlayback = !!audioPlayer.__pg1Cleanup || !!audioPlayer.__pg1PlaybackToken;
-        const previousCleanup = audioPlayer.__pg1Cleanup;
-        if (hadExistingPlayback) {
-          audioPlayer.onended = null;
-          audioPlayer.__pg1PlaybackToken = Symbol('pg1-interrupted-playback');
-        }
+        if (window.__pg1PlaybackSequence !== playbackToken) { cleanup('interrupted'); return false; }
+        if (!unlocked) { cleanup('blocked'); return false; }
+        const hadExistingPlayback = !!ap.__pg1Cleanup || !!ap.__pg1PlaybackToken;
+        const previousCleanup = ap.__pg1Cleanup;
+        if (hadExistingPlayback) { ap.onended = null; ap.__pg1PlaybackToken = Symbol('pg1-interrupted-playback'); }
         releaseAudioPlayer(false);
-        if (hadExistingPlayback && previousCleanup) {
-          runAudioCleanup(previousCleanup, 'interrupted');
-        }
-        audioPlayer.__pg1Cleanup = cleanup;
-        audioPlayer.__pg1PlaybackToken = playbackToken;
-        audioPlayer.muted = false;
-        if (!assignAudioSource(audioPlayer, audioPayload, mimeType)) {
-          audioPlayer.__pg1Cleanup = null;
-          audioPlayer.__pg1PlaybackToken = null;
-          cleanup('failed');
-          return false;
-        }
-        audioPlayer.onended = () => {
-          if (audioPlayer.__pg1PlaybackToken !== playbackToken) return;
-          releaseAudioPlayer(false);
-          cleanup('ended');
-        };
+        if (hadExistingPlayback && previousCleanup) { if(previousCleanup) previousCleanup('interrupted'); }
+        ap.__pg1Cleanup = cleanup; ap.__pg1PlaybackToken = playbackToken; ap.muted = false;
+        
+        let safeMime = mimeType || 'audio/mp3';
+        ap.src = `data:${safeMime};base64,${audioPayload.replace(/\s+/g, '')}`;
+        
+        ap.onended = () => { if (ap.__pg1PlaybackToken !== playbackToken) return; releaseAudioPlayer(false); cleanup('ended'); };
         setVoicePlaybackStatus(true);
-        return audioPlayer.play()
-          .then(() => true)
-          .catch(err => {
-            if (audioPlayer.__pg1PlaybackToken !== playbackToken) return false;
-            console.log("Audio playback failed:", err);
-            releaseAudioPlayer(false);
-            cleanup(err && err.name === 'NotAllowedError' ? 'blocked' : 'failed');
-            return false;
-          });
+        return ap.play().then(() => true).catch(err => { if (ap.__pg1PlaybackToken !== playbackToken) return false; releaseAudioPlayer(false); cleanup(err && err.name === 'NotAllowedError' ? 'blocked' : 'failed'); return false; });
       });
     }
 
-    async function parseSpeechResponse(response) {
-      const responseType = response.headers.get('content-type') || '';
-      if (responseType.includes('application/json')) {
-        return response.json();
-      }
-      if (response.ok && responseType.startsWith('text/')) {
-        const text = await response.text();
-        const normalizedText = text.trim();
-        const isAudioPayload = /^data:audio\/[^,]*,/.test(normalizedText) || isBase64AudioPayload(normalizedText);
-        return isAudioPayload ? { audio: text } : { audioStatus: 'FAILED', audioError: text || 'Audio unavailable' };
-      }
-      if (response.ok) return { audioBlob: await response.blob() };
-      const arrayBuffer = await response.arrayBuffer();
-      return { error: new TextDecoder().decode(arrayBuffer) };
-    }
-
     async function speakText(text) {
-      if (!voiceEnabled) return; 
-      unlockAudioPlayer();
+      if (!voiceEnabled) return; unlockAudioPlayer();
       try {
-        const cleanText = text.replace(/[*_#`]/g, '').replace(/!\[.*?\]\(.*?\)/g, '').replace(/<video.*?>.*?<\/video>/g, '').replace(/\[CONSENT_REQUIRED\]/g, '');
+        const cleanText = text.replace(/[*_#`]/g, '').substring(0,400);
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'SPEAK', prompt: cleanText, voice: voiceSelect.value })
         });
-        const data = await parseSpeechResponse(response);
-        if (!response.ok) throw new Error(data.error || 'API Request Failed');
-        if (data.audio || data.audioBlob) {
-          const played = await playAudioPayload(data.audio || data.audioBlob, null, data.audioMimeType || null);
-          if (!played) console.warn('PG1 Voice API Warning: audio playback was skipped.');
-        } else if (data.audioStatus === 'FAILED') {
-          throw new Error(data.audioError || data.error || 'Audio unavailable');
-        } else {
-          throw new Error('No audio payload returned');
-        }
-      } catch (err) {
-        console.error('PG1 Voice API Error:', err);
-      }
+        const data = await response.json();
+        if (data.audio) await playAudioPayload(data.audio, null, data.audioMimeType);
+      } catch (err) {}
     }
 
     async function speakMessageText(btn) { 
-      triggerHaptic(15); 
-      unlockAudioPlayer();
-      
+      triggerHaptic(15); unlockAudioPlayer();
       const container = btn.closest('.bubble-container'); 
-      const bubble = container.querySelector('.bubble'); 
-      const cleanText = bubble.innerText.replace(/[*_#`]/g, '');
+      const cleanText = container.querySelector('.bubble').innerText.replace(/[*_#`]/g, '').substring(0,400);
       const originalText = btn.innerText;
-      const resetSpeakButton = (state) => {
-        if (state === 'interrupted') {
-          btn.innerText = originalText;
-          return;
-        }
-        if (state === 'blocked') {
-          btn.innerText = "Blocked";
-          setTimeout(() => { btn.innerText = originalText; }, 2000);
-          return;
-        }
-        if (state === 'failed') {
-          btn.innerText = "Error";
-          setTimeout(() => { btn.innerText = originalText; }, 2000);
-          return;
-        }
-        btn.innerText = "READY";
-        setTimeout(() => { btn.innerText = originalText; }, 1200);
-      };
+      const resetSpeakButton = (state) => { btn.innerText = state === 'interrupted' ? originalText : "READY"; setTimeout(() => { btn.innerText = originalText; }, 1200); };
       
       btn.innerText = "SPEAKING...";
       try {
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'SPEAK', prompt: cleanText, voice: voiceSelect.value })
-        });
-        const data = await parseSpeechResponse(response);
-        if (!response.ok) throw new Error(data.error || 'API Request Failed');
-        if (data.audio || data.audioBlob) {
-          await playAudioPayload(data.audio || data.audioBlob, resetSpeakButton, data.audioMimeType || null);
-        } else if (data.audioStatus === 'FAILED') {
-          throw new Error(data.audioError || data.error || 'Audio unavailable');
-        } else {
-          throw new Error('No audio payload returned');
-        }
-      } catch (err) {
-        console.error('PG1 Voice API Error:', err);
-        btn.innerText = "Error";
-        setTimeout(() => { btn.innerText = originalText; }, 2000);
-      }
+        const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'SPEAK', prompt: cleanText, voice: voiceSelect.value }) });
+        const data = await response.json();
+        if (data.audio) await playAudioPayload(data.audio, resetSpeakButton, data.audioMimeType);
+      } catch (err) { btn.innerText = "Error"; setTimeout(() => { btn.innerText = originalText; }, 2000); }
     }
 
-    // Text & DOM Utilities
     function parseMarkdown(text) {
-      let html = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>'); html = html.replace(/!\[([^\]]*)\]\((.*?)\)/g, '<img src="$2" alt="$1" />'); html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      if (html.includes('[CONSENT_REQUIRED]')) { html = html.replace('[CONSENT_REQUIRED]', ''); html += `<div class="consent-card"><div class="consent-header"><span class="consent-title">Authorization Required</span><span class="consent-trust-badge">Verified</span></div><div class="consent-actions"><button class="btn-consent btn-accept">Approve Action</button><button class="btn-consent btn-decline">Dismiss</button></div></div>`; }
+      let html = text.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>'); html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
       return html.split('\n').map(line => line.trim() ? (line.match(/^(<pre|<code|<img|<div|<button|<span|<header|<video)/) ? line : `<p>${line}</p>`) : '').join('\n');
     }
 
     function handleFileSelect(event) { triggerHaptic(20); const file = event.target.files[0]; if (!file) return; currentAttachment = file; document.getElementById('file-name').innerText = file.name; document.getElementById('file-preview').classList.add('active'); }
     function clearAttachment() { triggerHaptic(10); currentAttachment = null; document.getElementById('file-upload').value = ''; document.getElementById('file-preview').classList.remove('active'); }
-    function submitConsent(decision) { triggerHaptic(30); userInput.value = `[SYSTEM_OVERRIDE]: User has selected to ${decision} the proposed action.`; sendMessage(); }
     function getTimeString() { return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
 
-    function copyMessageText(btn) { triggerHaptic(15); const container = btn.closest('.bubble-container'); const bubble = container.querySelector('.bubble'); navigator.clipboard.writeText(bubble.innerText); btn.innerText = "Copied!"; setTimeout(() => { btn.innerText = "Copy"; }, 1500); }
-    function editMessageText(btn) { triggerHaptic(15); const container = btn.closest('.bubble-container'); const bubble = container.querySelector('.bubble'); const currentText = bubble.innerText; if (container.querySelector('.edit-input')) return; const textarea = document.createElement('textarea'); textarea.className = 'edit-input'; textarea.value = currentText; textarea.rows = 2; bubble.style.display = 'none'; container.insertBefore(textarea, bubble); textarea.focus(); textarea.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); const newText = textarea.value.trim(); textarea.remove(); bubble.style.display = 'block'; if (newText) { bubble.innerText = newText; persistCurrentThreadState(); userInput.value = newText; sendMessage(); } } else if (e.key === 'Escape') { textarea.remove(); bubble.style.display = 'block'; } }); }
+    function copyMessageText(btn) { triggerHaptic(15); const container = btn.closest('.bubble-container'); navigator.clipboard.writeText(container.querySelector('.bubble').innerText); btn.innerText = "Copied!"; setTimeout(() => { btn.innerText = "Copy"; }, 1500); }
     function deleteMessageBubble(btn) { triggerHaptic(25); const wrapper = btn.closest('.bubble-wrapper'); wrapper.style.opacity = '0'; wrapper.style.transform = 'scale(0.95)'; wrapper.style.transition = 'all 0.2s ease'; setTimeout(() => { wrapper.remove(); persistCurrentThreadState(); }, 200); }
 
     function openThreadManager() { triggerHaptic(20); renderThreadList(); document.getElementById('thread-modal').classList.add('active'); }
     function closeThreadManager() { document.getElementById('thread-modal').classList.remove('active'); }
     
     function renderThreadList() { 
-      const listContainer = document.getElementById('thread-list'); 
-      listContainer.innerHTML = ''; 
+      const listContainer = document.getElementById('thread-list'); listContainer.innerHTML = ''; 
       Object.keys(threads).forEach(id => { 
-        const thread = threads[id]; 
-        const item = document.createElement('div'); 
-        item.className = `thread-item ${id === currentThreadId ? 'active-thread' : ''}`; 
-        item.dataset.id = id;
-        item.innerHTML = `<div style="display:flex;flex-direction:column;gap:2px;overflow:hidden;width:100%;"><span style="font-size:12px;font-weight:500;color:var(--text-main);">${thread.title}</span><span style="font-size:9px;color:var(--text-muted);font-family:var(--font-mono);">${thread.date}</span></div><button class="icon-btn delete-thread-btn" style="width:26px;height:26px;animation:none;">✕</button>`; 
+        const item = document.createElement('div'); item.className = `thread-item ${id === currentThreadId ? 'active-thread' : ''}`; item.dataset.id = id;
+        item.innerHTML = `<div style="display:flex;flex-direction:column;gap:2px;overflow:hidden;width:100%;"><span style="font-size:12px;font-weight:500;color:var(--text-main);">${threads[id].title}</span><span style="font-size:9px;color:var(--text-muted);font-family:var(--font-mono);">${threads[id].date}</span></div><button class="icon-btn delete-thread-btn" style="width:26px;height:26px;">✕</button>`; 
         listContainer.appendChild(item); 
       }); 
     }
@@ -658,190 +416,105 @@
     function deleteThreadSession(id) { triggerHaptic(30); if (Object.keys(threads).length <= 1) { alert("Cannot delete the only remaining thread."); return; } delete threads[id]; if (currentThreadId === id) { currentThreadId = Object.keys(threads)[0]; chatStream.innerHTML = threads[currentThreadId].messages; } saveThreadsToStorage(); renderThreadList(); }
     
     function createNewThread() { 
-      triggerHaptic(25); persistCurrentThreadState(); 
-      currentThreadId = 'thread_' + Date.now(); 
+      triggerHaptic(25); persistCurrentThreadState(); currentThreadId = 'thread_' + Date.now(); 
       threads[currentThreadId] = { title: 'New Directive', date: new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }), messages: `<div class="bubble-wrapper"><div class="bubble-container bot"><div class="bubble">Greetings. New session initialized. PG1 Sovereign Agent operational.</div><div class="message-meta"><span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action speak-btn">Speak</button><button class="tool-action copy-btn">Copy</button><button class="tool-action delete-btn">Delete</button></div></div></div></div>` }; 
       chatStream.innerHTML = threads[currentThreadId].messages; saveThreadsToStorage(); 
     }
     function saveCurrentThreadAndCreateNew() { persistCurrentThreadState(); closeThreadManager(); createNewThread(); }
 
-    // Core Interaction Engine
     async function sendMessage() {
       triggerHaptic(25);
       const promptText = userInput.value.trim();
       if (!promptText && !currentAttachment) return;
-
       if (voiceEnabled) { unlockAudioPlayer(); }
       
       const promptToDisplay = promptText || "Analyze the attached file.";
-      if (threads[currentThreadId].title === 'Initial Session' || threads[currentThreadId].title === 'New Directive') {
-        threads[currentThreadId].title = promptToDisplay.substring(0, 28) + (promptToDisplay.length > 28 ? '...' : '');
-      }
+      if (threads[currentThreadId].title === 'Initial Session' || threads[currentThreadId].title === 'New Directive') { threads[currentThreadId].title = promptToDisplay.substring(0, 28); }
 
       userInput.value = ''; 
-      appendUserMessage(promptToDisplay.replace('[SYSTEM_OVERRIDE]: ', '') + (currentAttachment ? ' 📎 [File Attached]' : '')); 
+      appendUserMessage(promptToDisplay + (currentAttachment ? ' 📎 [File Attached]' : '')); 
       sendBtn.disabled = true;
       
-      const wrapper = document.createElement('div'); 
-      wrapper.className = 'bubble-wrapper'; 
+      const wrapper = document.createElement('div'); wrapper.className = 'bubble-wrapper'; 
       wrapper.innerHTML = `<div class="bubble-container bot"><div class="bubble" style="opacity:0.65">Executing directive...</div><div class="message-meta"><span class="timestamp">${getTimeString()}</span></div></div>`;
-      chatStream.appendChild(wrapper); 
-      scrollToBottom();
-      persistCurrentThreadState();
+      chatStream.appendChild(wrapper); scrollToBottom(); persistCurrentThreadState();
 
       try {
         let filePayload = null;
-        let vaultUrl = null;
-        
         if (currentAttachment) {
-          const MAX_FILE_SIZE = 4 * 1024 * 1024;
-          if (currentAttachment.size > MAX_FILE_SIZE) {
-            const bubble = wrapper.querySelector('.bubble');
-            bubble.innerText = "Media payload exceeds Vercel 4.5MB pipeline limit. Rerouting via direct-to-object-storage vault...";
-            
-            const authRes = await fetch('/api/vault-auth', { method: 'POST' });
-            if (!authRes.ok) throw new Error("Vault architecture offline. Backend endpoint '/api/vault-auth' failed.");
-            const { url: sbUrl, key: sbKey } = await authRes.json();
-            
-            bubble.innerText = "Streaming encrypted payload directly to storage vault...";
-            const fileName = `pg1_vault_${Date.now()}_${currentAttachment.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-            
-            const uploadRes = await fetch(`${sbUrl}/storage/v1/object/pg1-vault/${fileName}`, {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${sbKey}`, 'apikey': sbKey, 'Content-Type': currentAttachment.type },
-              body: currentAttachment
-            });
-
-            if (!uploadRes.ok) {
-              const errData = await uploadRes.json().catch(()=>({}));
-              throw new Error(errData.message || "Direct storage stream failed. Ensure 'pg1-vault' bucket exists in Supabase and allows public inserts.");
-            }
-            vaultUrl = `${sbUrl}/storage/v1/object/public/pg1-vault/${fileName}`;
-            bubble.innerText = "Payload vaulted successfully. Analyzing matrix...";
-          } else {
             const reader = new FileReader();
             const base64Promise = new Promise(resolve => { reader.onload = () => resolve(reader.result.split(',')[1]); });
             reader.readAsDataURL(currentAttachment);
             filePayload = { inlineData: { data: await base64Promise, mimeType: currentAttachment.type } };
-          }
         }
 
-        const finalPrompt = vaultUrl ? `${promptToDisplay}\n\n[SYSTEM NOTIFICATION: User has transmitted a heavy payload directly to the storage vault at URL: ${vaultUrl}. Process and analyze this link accordingly.]` : promptToDisplay;
-
-        const res = await fetch(`/api/chat?t=${Date.now()}`, {
+        const res = await fetch('/api/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
-          body: JSON.stringify({ prompt: finalPrompt, file: filePayload }) 
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: promptToDisplay, file: filePayload }) 
         });
         
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
         const data = await res.json();
         const reply = data.reply || 'Execution complete.';
         
         const container = wrapper.querySelector('.bubble-container');
         const bubble = container.querySelector('.bubble');
-        bubble.style.opacity = '1';
-        bubble.innerHTML = parseMarkdown(reply);
+        bubble.style.opacity = '1'; bubble.innerHTML = parseMarkdown(reply);
 
-        // Native Image Generation Renderer Injection
         if (data.image) {
-          const imgElement = document.createElement('img');
-          imgElement.src = `data:image/png;base64,${data.image}`;
-          imgElement.alt = 'Generated response image';
-          imgElement.style.maxWidth = '100%';
-          imgElement.style.borderRadius = '8px';
-          imgElement.style.marginTop = '10px';
-          imgElement.style.display = 'block';
+          const imgElement = document.createElement('img'); imgElement.src = `data:image/png;base64,${data.image}`;
+          imgElement.style.maxWidth = '100%'; imgElement.style.borderRadius = '8px'; imgElement.style.marginTop = '10px';
           bubble.appendChild(imgElement);
         }
         
-        const metaDiv = container.querySelector('.message-meta');
-        metaDiv.innerHTML = `<span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action speak-btn">Speak</button><button class="tool-action copy-btn">Copy</button><button class="tool-action delete-btn">Delete</button></div>`;
+        container.querySelector('.message-meta').innerHTML = `<span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action speak-btn">Speak</button><button class="tool-action copy-btn">Copy</button><button class="tool-action delete-btn">Delete</button></div>`;
         
-        scrollToBottom(); 
-        persistCurrentThreadState();
-
-        if (voiceEnabled) {
-          if (data.audio) {
-            playAudioPayload(data.audio, null, data.audioMimeType || null).catch(() => {});
-          } else {
-            speakText(reply);
-          }
-        }
+        scrollToBottom(); persistCurrentThreadState();
+        if (voiceEnabled) { if (data.audio) { playAudioPayload(data.audio, null, data.audioMimeType); } else { speakText(reply); } }
       } catch (err) {
-        const bubble = wrapper.querySelector('.bubble');
-        bubble.style.opacity = '1';
-        bubble.innerText = `System Alert: ${err.message}.`;
-        persistCurrentThreadState();
-      } finally { 
-        sendBtn.disabled = false;
-        clearAttachment();
-      }
+        wrapper.querySelector('.bubble').innerText = `System Alert: ${err.message}.`; persistCurrentThreadState();
+      } finally { sendBtn.disabled = false; clearAttachment(); }
     }
 
     function appendUserMessage(text) { 
       const wrapper = document.createElement('div'); wrapper.className = 'bubble-wrapper'; 
-      wrapper.innerHTML = `<div class="bubble-container user"><div class="bubble">${text}</div><div class="message-meta"><span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action edit-btn">Edit</button><button class="tool-action copy-btn">Copy</button><button class="tool-action delete-btn">Delete</button></div></div></div>`; 
+      wrapper.innerHTML = `<div class="bubble-container user"><div class="bubble">${text}</div><div class="message-meta"><span class="timestamp">${getTimeString()}</span><div class="message-tools"><button class="tool-action copy-btn">Copy</button><button class="tool-action delete-btn">Delete</button></div></div></div>`; 
       chatStream.appendChild(wrapper); scrollToBottom(); persistCurrentThreadState(); 
     }
     
     function scrollToBottom() { chatStream.scrollTop = chatStream.scrollHeight; }
-    
-    // --- EXPLICIT EVENT LISTENER BINDINGS ---
-    // Header Actions
+
     document.getElementById('btn-live-video').addEventListener('click', openLiveVideo);
     document.getElementById('btn-export-pdf').addEventListener('click', exportCurrentThreadPDF);
     document.getElementById('btn-vault').addEventListener('click', openThreadManager);
     document.getElementById('btn-new-thread').addEventListener('click', createNewThread);
-    
-    // Modals
     document.getElementById('btn-close-video1').addEventListener('click', closeLiveVideo);
     document.getElementById('btn-flip-camera').addEventListener('click', toggleCameraFacing);
     document.getElementById('btn-end-stream').addEventListener('click', closeLiveVideo);
-    
     document.getElementById('thread-modal').addEventListener('click', (e) => { if (e.target.id === 'thread-modal') closeThreadManager(); });
     document.getElementById('btn-close-vault').addEventListener('click', closeThreadManager);
     document.getElementById('btn-save-new').addEventListener('click', saveCurrentThreadAndCreateNew);
-    
-    // Core Functions
     document.getElementById('voice-toggle').addEventListener('click', toggleVoice);
     document.getElementById('voice-select').addEventListener('change', updateVoiceProfile);
-    
     document.getElementById('attach-btn').addEventListener('click', () => document.getElementById('file-upload').click());
     document.getElementById('file-upload').addEventListener('change', handleFileSelect);
     document.getElementById('btn-clear-attach').addEventListener('click', clearAttachment);
-    
     document.getElementById('send-btn').addEventListener('click', sendMessage);
     document.getElementById('user-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
 
-    // Dynamic Event Delegation for Bubbles
     chatStream.addEventListener('click', (e) => {
       const btn = e.target.closest('.tool-action');
       if (btn) {
         if (btn.classList.contains('speak-btn')) speakMessageText(btn);
         else if (btn.classList.contains('copy-btn')) copyMessageText(btn);
-        else if (btn.classList.contains('edit-btn')) editMessageText(btn);
         else if (btn.classList.contains('delete-btn')) deleteMessageBubble(btn);
-        return;
-      }
-      const consentBtn = e.target.closest('.btn-consent');
-      if (consentBtn) {
-        if (consentBtn.classList.contains('btn-accept')) submitConsent('ACCEPT');
-        else submitConsent('DECLINE');
       }
     });
 
-    // Dynamic Event Delegation for Thread Vault
     document.getElementById('thread-list').addEventListener('click', (e) => {
-      const item = e.target.closest('.thread-item');
-      if (!item) return;
-      const id = item.dataset.id;
-      if (e.target.closest('.delete-thread-btn')) {
-        deleteThreadSession(id);
-      } else {
-        switchThread(id);
-      }
+      const item = e.target.closest('.thread-item'); if (!item) return;
+      if (e.target.closest('.delete-thread-btn')) deleteThreadSession(item.dataset.id); else switchThread(item.dataset.id);
     });
   </script>
 </body>
