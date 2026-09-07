@@ -19,7 +19,7 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key'
       }
     });
   };
@@ -27,12 +27,41 @@ export default async function handler(req, res) {
   if (res && typeof res.setHeader === 'function') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key');
   }
 
   if (req.method === 'OPTIONS') {
     if (res && typeof res.status === 'function') return res.status(200).end();
     return new Response(null, { status: 200 });
+  }
+
+  const urlPath = req.url ? new URL(req.url, `https://${req.headers?.host || 'localhost'}`).pathname : '';
+  if (urlPath === '/api/ioc' || urlPath === '/api/feeds/ioc') {
+    const clientLicenseKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
+    if (!clientLicenseKey) {
+      return sendJSON(401, { error: 'Unauthorized: Missing Gumroad License Key in x-api-key header.' });
+    }
+    try {
+      const gumroadRes = await fetch('https://api.gumroad.com/v2/licenses/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ product_id: process.env.GUMROAD_PRODUCT_ID, license_key: clientLicenseKey })
+      });
+      const gumroadData = await gumroadRes.json();
+      if (!gumroadData.success || gumroadData.purchase?.refunded || gumroadData.purchase?.chargebacked) {
+        return sendJSON(403, { error: 'Forbidden: Invalid, expired, or refunded Gumroad License Key.' });
+      }
+      
+      const supUrl = process.env.SUPABASE_URL;
+      const supKey = process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const threatRes = await fetch(`${supUrl}/rest/v1/threat_ioc_telemetry?select=*&order=last_seen.desc&limit=500`, {
+        headers: { 'apikey': supKey, 'Authorization': `Bearer ${supKey}` }
+      });
+      const rawTelemetry = threatRes.ok ? await threatRes.json() : [];
+      return sendJSON(200, { type: 'bundle', spec_version: '2.1', count: rawTelemetry.length, data: rawTelemetry });
+    } catch (err) {
+      return sendJSON(500, { error: 'Internal Server Error: Vault connection failed.' });
+    }
   }
 
   if (req.method !== 'POST') {
@@ -199,9 +228,11 @@ export default async function handler(req, res) {
     }
 
     if (activeAction === 'CHAT' && promptText.startsWith('/ping')) {
-      const targetPath = promptText.replace('/ping', '').trim() || '/api/feeds/ioc';
+      const targetPath = promptText.replace('/ping', '').trim() || '/api/ioc';
       try {
-        const pingRes = await fetch(`https://pg1-ai-agent.vercel.app${targetPath.startsWith('/') ? targetPath : '/' + targetPath}`);
+        const protocol = req.headers?.['x-forwarded-proto'] || 'https';
+        const host = req.headers?.host || 'pg1-ai-agent.vercel.app';
+        const pingRes = await fetch(`${protocol}://${host}${targetPath.startsWith('/') ? targetPath : '/' + targetPath}`);
         const pingData = await pingRes.text();
         return sendJSON(200, {
           reply: `[DIAGNOSTIC TEST]\nTarget: ${targetPath}\nStatus: ${pingRes.status} ${pingRes.statusText}\nResponse: ${pingData}`,
@@ -485,7 +516,7 @@ export default async function handler(req, res) {
           
           if (res.ok) {
             const data = await res.json();
-            if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+            if (data?.candidates?[:,0]?.content?.parts?.[0]?.text) {
               geminiData = data; 
               break keyLoop;
             }
