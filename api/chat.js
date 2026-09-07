@@ -89,7 +89,7 @@ export default async function handler(req, res) {
       reqBody = {};
     }
 
-    const { 
+    let { 
       prompt: promptText = '', 
       action,
       actionType, 
@@ -104,6 +104,19 @@ export default async function handler(req, res) {
       pass,
       voice = 'christopher'
     } = reqBody;
+
+    // --- NEW: INTERCEPT JSON PASTED INTO CHAT BOX ---
+    if (typeof promptText === 'string' && promptText.trim().startsWith('{')) {
+      try {
+        const parsedPrompt = JSON.parse(promptText.trim());
+        if (parsedPrompt.actionType === 'ACCEPT_AUTHORIZATION') {
+          actionType = parsedPrompt.actionType;
+          isAuthorizedAction = parsedPrompt.isAuthorizedAction || isAuthorizedAction;
+          targetFile = parsedPrompt.targetFile || targetFile;
+          pendingCode = parsedPrompt.pendingCode || pendingCode;
+        }
+      } catch (e) {}
+    }
 
     const rawActionType = action || actionType || 'CHAT';
 
