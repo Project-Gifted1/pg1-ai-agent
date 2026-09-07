@@ -3,7 +3,7 @@ export const config = {
     bodyParser: {
       sizeLimit: '10mb',
     },
-    maxDuration: 60, // Vercel limit
+    maxDuration: 60,
   },
 };
 
@@ -84,7 +84,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // EXACT MATCHES TO VERCEL SCREENSHOTS
     const geminiKeys = [
       process.env.GEMINI_API_KEY1,
       process.env.GEMINI_API_KEY2
@@ -93,11 +92,10 @@ export default async function handler(req, res) {
 
     const cartesiaKey = process.env.CARTESIA_API_KEY;
     const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASEAPI_KEY; // Matched to screenshot
-    const replicateToken = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY; // Matched
-    const openaiKey = process.env.OPENAI_API_KEY; // Matched
+    const supabaseKey = process.env.SUPABASEAPI_KEY; 
+    const replicateToken = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY; 
+    const openaiKey = process.env.OPENAI_API_KEY; 
     
-    // Note: Add these to Vercel later if using code patching
     const githubToken = process.env.GITHUB_TOKEN;
     const githubRepo = process.env.GITHUB_OWNER_KEY;
 
@@ -211,42 +209,21 @@ export default async function handler(req, res) {
     }
 
     // ==========================================
-    // TRUE HIGH-FIDELITY MEDIA SYNTHESIS (GOOGLE + FAILSAFES)
+    // DIAGNOSTIC HIGH-FIDELITY MEDIA SYNTHESIS 
     // ==========================================
 
     if (activeAction === 'GENERATE_IMAGE') {
       const cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic cybernetic landscape';
-      
       const premiumPrompt = `hyper-realistic, 8k resolution, highly detailed, cinematic lighting, octane render, unreal engine 5, ${cleanPrompt}`;
-      let imageUrl = '';
       
-      // 1. Attempt Native Google Imagen 3 Engine
-      if (primaryGoogleKey) {
+      let imageUrl = '';
+      let engineUsed = '';
+      let apiErrors = [];
+      
+      // 1. Try Replicate Flux Dev (Highest Quality)
+      if (replicateToken) {
         try {
-          const imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${primaryGoogleKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              instances: [{ prompt: premiumPrompt }],
-              parameters: { sampleCount: 1, aspectRatio: "16:9" }
-            })
-          });
-          
-          if (imgRes.ok) {
-            const imgData = await imgRes.json();
-            if (imgData.predictions && imgData.predictions.length > 0) {
-              const mimeType = imgData.predictions[0].mimeType || 'image/png';
-              const base64Bytes = imgData.predictions[0].bytesBase64Encoded;
-              imageUrl = `data:${mimeType};base64,${base64Bytes}`;
-            }
-          }
-        } catch (e) { console.error("Google Imagen 3 API Error:", e); }
-      }
-
-      // 2. Silent Premium Fallback (Replicate Flux) if Google filters blocked it
-      if (!imageUrl && replicateToken) {
-        try {
-          const repRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
+          const repRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-dev/predictions', {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${replicateToken}`,
@@ -258,13 +235,16 @@ export default async function handler(req, res) {
             })
           });
           const repData = await repRes.json();
-          if (repData.status === 'succeeded' && repData.output && repData.output.length > 0) {
-            imageUrl = repData.output[0];
+          if (repRes.ok && repData.status === 'succeeded' && repData.output) {
+            imageUrl = Array.isArray(repData.output) ? repData.output[0] : repData.output;
+            engineUsed = 'Replicate (Flux Dev)';
+          } else {
+            apiErrors.push(`Replicate Error: ${repData.detail || repData.error || 'Request Failed'}`);
           }
-        } catch (e) { console.error("Replicate Image API Error:", e); }
+        } catch (e) { apiErrors.push(`Replicate Catch: ${e.message}`); }
       }
 
-      // 3. Silent Premium Fallback (OpenAI DALL-E 3)
+      // 2. Try OpenAI DALL-E 3
       if (!imageUrl && openaiKey) {
          try {
            const oaiRes = await fetch('https://api.openai.com/v1/images/generations', {
@@ -273,20 +253,49 @@ export default async function handler(req, res) {
              body: JSON.stringify({ prompt: premiumPrompt, model: "dall-e-3", n: 1, size: "1024x1024" })
            });
            const oaiData = await oaiRes.json();
-           if (oaiData.data && oaiData.data.length > 0) {
+           if (oaiRes.ok && oaiData.data && oaiData.data.length > 0) {
              imageUrl = oaiData.data[0].url;
+             engineUsed = 'OpenAI (DALL-E 3)';
+           } else {
+             apiErrors.push(`OpenAI Error: ${oaiData.error?.message || 'Request Failed'}`);
            }
-         } catch(e) { console.error("OpenAI Image Error", e); }
+         } catch(e) { apiErrors.push(`OpenAI Catch: ${e.message}`); }
+      }
+
+      // 3. Try Google Imagen 3
+      if (!imageUrl && primaryGoogleKey) {
+        try {
+          const imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${primaryGoogleKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              instances: [{ prompt: premiumPrompt }],
+              parameters: { sampleCount: 1, aspectRatio: "16:9" }
+            })
+          });
+          const imgData = await imgRes.json();
+          if (imgRes.ok && imgData.predictions && imgData.predictions.length > 0) {
+            const mimeType = imgData.predictions[0].mimeType || 'image/png';
+            const base64Bytes = imgData.predictions[0].bytesBase64Encoded;
+            imageUrl = `data:${mimeType};base64,${base64Bytes}`;
+            engineUsed = 'Google (Imagen 3)';
+          } else {
+            apiErrors.push(`Google Error: ${imgData.error?.message || 'Request Failed'}`);
+          }
+        } catch (e) { apiErrors.push(`Google Catch: ${e.message}`); }
       }
       
-      // 4. Last Resort (Pollinations Flux Endpoint)
+      // 4. Final Fallback
       if (!imageUrl) {
         const encodedPrompt = encodeURIComponent(premiumPrompt);
-        imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1920&height=1080&nologo=true&model=flux`;
+        imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1920&height=1080&nologo=true`;
+        engineUsed = `Basic Fallback`;
       }
       
+      const errorLog = apiErrors.length > 0 ? `\n\n**API Diagnostics:**\n` + apiErrors.map(e => `• \`${e}\``).join('\n') : '';
+
       return sendJSON(200, { 
-        reply: `[SYSTEM] High-Spec Render Complete: "${cleanPrompt}"`, 
+        reply: `[SYSTEM] Image Rendered using **${engineUsed}**.\nPrompt: "${cleanPrompt}"${errorLog}`, 
         image: imageUrl,
         imageStatus: 'SUCCESS', 
         traceId: requestTraceId 
@@ -295,35 +304,14 @@ export default async function handler(req, res) {
 
     if (activeAction === 'GENERATE_VIDEO') {
       const vidPrompt = promptText.replace(/generate video of|create a video of|generate video|create video|\/video|animate a|make a video of/gi, '').trim() || 'Cinematic futuristic scene';
-      
       const premiumPrompt = `Cinematic, highly detailed, 8k resolution, photorealistic motion, ${vidPrompt}`;
+      
       let videoUrl = '';
+      let engineUsed = '';
+      let apiErrors = [];
 
-      // 1. Attempt Native Google Veo 2 Engine
-      if (primaryGoogleKey) {
-        try {
-          const vidRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predict?key=${primaryGoogleKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              instances: [{ prompt: premiumPrompt }],
-              parameters: { aspectRatio: "16:9" }
-            })
-          });
-          
-          if (vidRes.ok) {
-            const vidData = await vidRes.json();
-            if (vidData.predictions && vidData.predictions.length > 0) {
-              const mimeType = vidData.predictions[0].mimeType || 'video/mp4';
-              const base64Bytes = vidData.predictions[0].bytesBase64Encoded;
-              videoUrl = `data:${mimeType};base64,${base64Bytes}`;
-            }
-          }
-        } catch(e) { console.error("Google Veo Video API Error:", e); }
-      }
-
-      // 2. Silent Premium Fallback (Replicate Hotshot-XL) if Veo times out
-      if (!videoUrl && replicateToken) {
+      // 1. Try Replicate Hotshot-XL
+      if (replicateToken) {
         try {
           const repRes = await fetch('https://api.replicate.com/v1/models/lucataco/hotshot-xl/predictions', {
             method: 'POST',
@@ -335,18 +323,47 @@ export default async function handler(req, res) {
             body: JSON.stringify({ input: { prompt: premiumPrompt, mp4: true } })
           });
           const repData = await repRes.json();
-          if (repData.status === 'succeeded' && repData.output) {
+          if (repRes.ok && repData.status === 'succeeded' && repData.output) {
             videoUrl = repData.output;
+            engineUsed = 'Replicate (Hotshot-XL)';
+          } else {
+             apiErrors.push(`Replicate Error: ${repData.detail || repData.error || 'Failed'}`);
           }
-        } catch(e) { console.error("Replicate Video API Error:", e); }
+        } catch(e) { apiErrors.push(`Replicate Catch: ${e.message}`); }
+      }
+
+      // 2. Try Google Veo 2
+      if (!videoUrl && primaryGoogleKey) {
+        try {
+          const vidRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predict?key=${primaryGoogleKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              instances: [{ prompt: premiumPrompt }],
+              parameters: { aspectRatio: "16:9" }
+            })
+          });
+          const vidData = await vidRes.json();
+          if (vidRes.ok && vidData.predictions && vidData.predictions.length > 0) {
+            const mimeType = vidData.predictions[0].mimeType || 'video/mp4';
+            const base64Bytes = vidData.predictions[0].bytesBase64Encoded;
+            videoUrl = `data:${mimeType};base64,${base64Bytes}`;
+            engineUsed = 'Google (Veo 2)';
+          } else {
+             apiErrors.push(`Google Error: ${vidData.error?.message || 'Failed'}`);
+          }
+        } catch(e) { apiErrors.push(`Google Catch: ${e.message}`); }
       }
 
       if (!videoUrl) {
          videoUrl = `https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4`;
+         engineUsed = `Placeholder Video`;
       }
+      
+      const errorLog = apiErrors.length > 0 ? `\n\n**API Diagnostics:**\n` + apiErrors.map(e => `• \`${e}\``).join('\n') : '';
 
       return sendJSON(200, { 
-        reply: `[SYSTEM] High-Spec Video Synthesis Complete: "${vidPrompt}"`, 
+        reply: `[SYSTEM] Video Synthesis Complete using **${engineUsed}**.\nPrompt: "${vidPrompt}"${errorLog}`, 
         video: videoUrl,
         videoStatus: 'SUCCESS', 
         traceId: requestTraceId 
