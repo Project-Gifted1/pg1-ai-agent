@@ -51,7 +51,6 @@
       100% { opacity: 0.6; transform: scale(1.05); }
     }
     
-    /* --- COMPACT MOBILE-OPTIMIZED HEADER --- */
     header { 
       display: flex; 
       justify-content: space-between; 
@@ -87,15 +86,14 @@
       to { background-position: 200% center; }
     }
 
-    /* Fixed, Razor-Sharp TM Placement */
     .tm-symbol {
-      font-size: 0.55em;
+      font-size: 0.7em; /* Increased size for visibility */
       margin-left: 2px;
-      transform: translateY(-0.75em); /* Precise superscript */
+      transform: translateY(-0.65em); 
       color: var(--text-gold);
       -webkit-text-fill-color: var(--text-gold);
-      font-weight: 900; /* Max boldness */
-      text-shadow: 0 0 2px rgba(243, 198, 35, 0.4); /* Faint, crisp glow, no blur */
+      font-weight: 900; 
+      text-shadow: 0 0 2px rgba(243, 198, 35, 0.4); 
       letter-spacing: 0;
     }
     
@@ -179,16 +177,16 @@
     .message-actions span:hover { text-decoration: underline; text-shadow: 0 0 10px var(--text-gold); opacity: 1; }
     .message-actions span:active { transform: scale(0.9); }
 
-    .media-preview-container { margin-top: 16px; width: 100%; }
+    .media-preview-container { margin-top: 16px; margin-bottom: 16px; width: 100%; }
     .media-preview-container img, .media-preview-container video { 
       width: 100%; 
       border-radius: 8px; 
-      border: 1px solid var(--glass-edge); 
+      border: 1px solid rgba(243, 198, 35, 0.3); 
       background: #000; 
       display: block; 
       max-height: 450px; 
       object-fit: contain; 
-      box-shadow: 0 10px 30px rgba(0,0,0,0.9);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.9), 0 0 15px var(--glow-subtle);
     }
     
     .footer-panel { 
@@ -286,7 +284,7 @@
     
     input[type="file"] { display: none; }
 
-    /* Modals (Auth & Threads) */
+    /* Modals */
     .matrix-modal { 
       position: fixed; inset: 0; background: rgba(0,0,0,0.92);
       backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
@@ -327,7 +325,6 @@
     .matrix-submit:hover { box-shadow: 0 0 25px var(--glow-strong); filter: brightness(1.15); transform: translateY(-2px); }
     .matrix-submit:active { transform: translateY(1px); }
 
-    /* Thread List Specifics */
     .thread-list {
       display: flex; flex-direction: column; gap: 12px;
       max-height: 50vh; overflow-y: auto; padding-right: 6px;
@@ -353,7 +350,6 @@
 </head>
 <body>
 
-  <!-- Authentication Modal -->
   <div id="auth-modal" class="matrix-modal">
     <div class="matrix-card">
       <h2>SECURITY GATE</h2>
@@ -363,12 +359,10 @@
     </div>
   </div>
 
-  <!-- Threads Management Modal -->
   <div id="threads-modal" class="matrix-modal" style="display: none;">
     <div class="matrix-card" style="max-width: 420px;">
       <h2>SESSION THREADS</h2>
       <div class="thread-list" id="thread-list-container">
-        
         <div class="thread-item" id="thread-demo-1">
           <div class="thread-info">
             <span class="thread-title">Directive: Node Scaling</span>
@@ -379,7 +373,6 @@
             <button class="thread-action-btn danger" onclick="triggerHaptic([40, 40]); deleteThread('thread-demo-1')">DEL</button>
           </div>
         </div>
-
         <div class="thread-item" id="thread-demo-2">
           <div class="thread-info">
             <span class="thread-title">System Audit Log</span>
@@ -390,7 +383,6 @@
             <button class="thread-action-btn danger" onclick="triggerHaptic([40, 40]); deleteThread('thread-demo-2')">DEL</button>
           </div>
         </div>
-
       </div>
       <button class="matrix-submit" onclick="triggerHaptic(40); closeThreadsModal()" style="margin-top: 10px; background: transparent; border: 1px solid var(--text-gold); color: var(--text-gold);">CLOSE VAULT</button>
     </div>
@@ -458,7 +450,6 @@
       textarea.style.height = (textarea.scrollHeight) + 'px';
     }
 
-    // --- Thread Modal Logistics ---
     function openThreadsModal() {
       document.getElementById('threads-modal').style.display = 'flex';
     }
@@ -466,7 +457,6 @@
       document.getElementById('threads-modal').style.display = 'none';
     }
     function loadThread(threadId) {
-      // In production, this targets Supabase history.
       alert(`System routing to Thread ID: ${threadId}`);
       closeThreadsModal();
     }
@@ -475,6 +465,34 @@
         const el = document.getElementById(threadId);
         if (el) el.remove();
       }
+    }
+
+    function escapeHTML(str) {
+      return str.replace(/[&<>'"]/g, 
+        tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+      );
+    }
+
+    // --- MARKDOWN PARSER FOR AGENT FORMATTING ---
+    function formatMarkdown(str) {
+      let escaped = escapeHTML(str);
+      
+      // Render Images directly from Markdown
+      escaped = escaped.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '</div><div class="media-preview-container"><img src="$2" alt="$1" /></div><div class="message-text">');
+      
+      // Render Headers
+      escaped = escaped.replace(/^### (.*$)/gim, '<strong style="color: var(--text-gold); font-size: 1.1em; display: block; margin-top: 12px; margin-bottom: 4px;">$1</strong>');
+      
+      // Render Bold Text
+      escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong style="color: var(--text-gold);">$1</strong>');
+      
+      // Render Inline Code Blocks
+      escaped = escaped.replace(/`([^`]+)`/g, '<span style="background: rgba(243, 198, 35, 0.15); color: #fff; padding: 2px 5px; border-radius: 4px;">$1</span>');
+      
+      // Render Horizontal Rules
+      escaped = escaped.replace(/^---$/gim, '<div style="height: 1px; background: var(--glass-edge); margin: 16px 0;"></div>');
+      
+      return escaped;
     }
 
     let voiceActive = false;
@@ -695,7 +713,7 @@
       const userBubble = document.createElement('div');
       userBubble.className = 'message-bubble user';
       userBubble.innerHTML = `
-        <div class="message-text">${escapeHTML(text || '[File Payload Only]')}${fileStatusText}</div>
+        <div class="message-text">${formatMarkdown(text || '[File Payload Only]')}${fileStatusText}</div>
         <div class="message-actions">
           <span onclick="triggerHaptic(40); editBubble(this)">EDIT</span>
           <span onclick="triggerHaptic(40); copyBubbleText(this)">COPY</span>
@@ -739,7 +757,8 @@
         
         triggerHaptic([30, 50, 30]); 
 
-        let contentHtml = `<div class="message-text">${escapeHTML(data.reply || 'Execution complete.')}</div>`;
+        // Use the Markdown formatter instead of just escaping HTML
+        let contentHtml = `<div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>`;
 
         if (data.image) {
           contentHtml += `
@@ -777,12 +796,6 @@
       }
 
       chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-
-    function escapeHTML(str) {
-      return str.replace(/[&<>'"]/g, 
-        tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
-      );
     }
   </script>
 </body>
