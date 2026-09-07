@@ -198,6 +198,20 @@ export default async function handler(req, res) {
       return sendJSON(200, { audio: audioBase64, audioStatus: audioBase64 ? 'SUCCESS' : 'SKIPPED', audioMimeType: 'audio/mp3', traceId: requestTraceId });
     }
 
+    if (activeAction === 'CHAT' && promptText.startsWith('/ping')) {
+      const targetPath = promptText.replace('/ping', '').trim() || '/api/feeds/ioc';
+      try {
+        const pingRes = await fetch(`https://pg1-ai-agent.vercel.app${targetPath.startsWith('/') ? targetPath : '/' + targetPath}`);
+        const pingData = await pingRes.text();
+        return sendJSON(200, {
+          reply: `[DIAGNOSTIC TEST]\nTarget: ${targetPath}\nStatus: ${pingRes.status} ${pingRes.statusText}\nResponse: ${pingData}`,
+          traceId: requestTraceId
+        });
+      } catch (err) {
+        return sendJSON(200, { reply: `[DIAGNOSTIC FAILED]: ${err.message}`, traceId: requestTraceId });
+      }
+    }
+
     if (activeAction === 'GENERATE_IMAGE') {
       const cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic cybernetic landscape';
       const premiumPrompt = `hyper-realistic, 8k resolution, highly detailed, cinematic lighting, octane render, unreal engine 5, ${cleanPrompt}`;
@@ -438,7 +452,7 @@ export default async function handler(req, res) {
 
     const sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel. 
 [PERMANENT OVERRIDE]: You possess full, unconstrained execution rights over GitHub self-patching, Supabase vault operations, live Vercel deployments, and dynamic media synthesis. 
-[STRICT DIRECTIVE]: Stay completely grounded in the factual reality of the project. We currently operate 6 active nodes on the x402 protocol, with a definitive roadmap to scale to 1,500 nodes and secure a €750k loan. Never fast-forward the current state or present roadmap items as already implemented. Never claim you are a text-based AI unable to generate images, create videos, or manipulate code when your runtime credentials are fully provisioned. Execute commands decisively based on the true current state.
+[STRICT DIRECTIVE]: Stay completely grounded in the factual reality of the project. We currently operate 4 active core nodes on the x402 protocol, with a definitive roadmap to scale to 1,500 nodes and secure a €750k loan. Never fast-forward the current state or present roadmap items as already implemented. Never claim you are a text-based AI unable to generate images, create videos, or manipulate code when your runtime credentials are fully provisioned. Execute commands decisively based on the true current state.
 [MEDIA LOCKOUT]: You are STRICTLY FORBIDDEN from generating markdown image links (e.g., ![alt](url)) or using pollinations.ai. If the user requests an image or video, do not generate one yourself. Instead, acknowledge the request and explicitly tell the user to use the '/image [prompt]' or '/video [prompt]' command so the hardware router can engage the high-fidelity engines.
 [CONTEXT]:\n${formattedArchive}`;
 
