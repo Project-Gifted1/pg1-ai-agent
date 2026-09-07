@@ -1,8 +1,6 @@
 export const config = {
   api: {
-    bodyParser: {
-      sizeLimit: '10mb',
-    },
+    bodyParser: { sizeLimit: '10mb' },
     maxDuration: 60,
   },
 };
@@ -75,12 +73,8 @@ export default async function handler(req, res) {
 
     if (promptText === 'AUTH_VERIFY' || user === 'Winner1G' || pass) {
       return sendJSON(200, { 
-        success: true, 
-        authenticated: true, 
-        isValid: true,
-        status: 'SUCCESS',
-        reply: 'Access Granted',
-        traceId: requestTraceId 
+        success: true, authenticated: true, isValid: true,
+        status: 'SUCCESS', reply: 'Access Granted', traceId: requestTraceId 
       });
     }
 
@@ -93,9 +87,11 @@ export default async function handler(req, res) {
     const cartesiaKey = process.env.CARTESIA_API_KEY;
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASEAPI_KEY; 
+    
+    // Kept as silent emergency fallbacks only if Google fails
     const replicateToken = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY; 
     const openaiKey = process.env.OPENAI_API_KEY; 
-    
+
     const githubToken = process.env.GITHUB_TOKEN;
     const githubRepo = process.env.GITHUB_OWNER_KEY;
 
@@ -108,14 +104,10 @@ export default async function handler(req, res) {
 
     if (supabaseUrl && supabaseKey) {
       try {
-        const pingRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=id&limit=1`, {
-          headers: dbHeaders
-        });
+        const pingRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=id&limit=1`, { headers: dbHeaders });
         supabaseStatus = pingRes.ok ? 'CONNECTED & VERIFIED' : 'AUTH_ERROR';
         lastTableFetch = pingRes.status;
-      } catch (e) {
-        supabaseStatus = 'UNREACHABLE';
-      }
+      } catch (e) { supabaseStatus = 'UNREACHABLE'; }
 
       try {
         const msgRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, { headers: dbHeaders });
@@ -155,12 +147,13 @@ export default async function handler(req, res) {
       }
     }
 
+    // AGGRESSIVE MEDIA INTERCEPTOR
     let activeAction = rawActionType;
     if (activeAction === 'CHAT' && typeof promptText === 'string') {
       const lower = promptText.toLowerCase().trim();
-      if (lower.startsWith('/image') || lower.includes('generate image') || lower.includes('create an image') || lower.includes('draw') || lower.includes('show me a picture') || lower.includes('render')) {
+      if (lower.startsWith('/image') || /generate.*image|create.*image|make.*image|draw|render.*image|picture of/i.test(lower)) {
         activeAction = 'GENERATE_IMAGE';
-      } else if (lower.startsWith('/video') || lower.includes('generate video') || lower.includes('create a video') || lower.includes('animate') || lower.includes('show me a video')) {
+      } else if (lower.startsWith('/video') || /generate.*video|create.*video|make.*video|animate/i.test(lower)) {
         activeAction = 'GENERATE_VIDEO';
       } else if (lower.startsWith('/speak') || lower.startsWith('/tts')) {
         activeAction = 'SPEAK';
@@ -220,8 +213,49 @@ export default async function handler(req, res) {
       let engineUsed = '';
       let apiErrors = [];
       
-      // 1. Try Replicate Flux Dev (Highest Quality)
-      if (replicateToken) {
+      // 1. Primary: Google Imagen 3
+      if (primaryGoogleKey) {
+        try {
+          const imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${primaryGoogleKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              instances: [{ prompt: premiumPrompt }],
+              parameters: { sampleCount: 1, aspectRatio: "16:9" }
+            })
+          });
+          const imgData = await imgRes.json();
+          if (imgRes.ok && imgData.predictions && imgData.predictions.length > 0) {
+            const mimeType = imgData.predictions[0].mimeType || 'image/png';
+            const base64Bytes = imgData.predictions[0].bytesBase64Encoded;
+            imageUrl = `data:${mimeType};base64,${base64Bytes}`;
+            engineUsed = 'Google (Imagen 3)';
+          } else {
+            apiErrors.push(`Google Error: ${imgData.error?.message || 'Request Failed'}`);
+          }
+        } catch (e) { apiErrors.push(`Google Catch: ${e.message}`); }
+      }
+
+      // 2. Silent Premium Fallback: OpenAI DALL-E 3
+      if (!imageUrl && openaiKey) {
+         try {
+           const oaiRes = await fetch('https://api.openai.com/v1/images/generations', {
+             method: 'POST',
+             headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
+             body: JSON.stringify({ prompt: premiumPrompt, model: "dall-e-3", n: 1, size: "1024x1024" })
+           });
+           const oaiData = await oaiRes.json();
+           if (oaiRes.ok && oaiData.data && oaiData.data.length > 0) {
+             imageUrl = oaiData.data[0].url;
+             engineUsed = 'OpenAI (DALL-E 3)';
+           } else {
+             apiErrors.push(`OpenAI Error: ${oaiData.error?.message || 'Request Failed'}`);
+           }
+         } catch(e) { apiErrors.push(`OpenAI Catch: ${e.message}`); }
+      }
+
+      // 3. Silent Premium Fallback: Replicate Flux Dev
+      if (!imageUrl && replicateToken) {
         try {
           const repRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-dev/predictions', {
             method: 'POST',
@@ -243,49 +277,8 @@ export default async function handler(req, res) {
           }
         } catch (e) { apiErrors.push(`Replicate Catch: ${e.message}`); }
       }
-
-      // 2. Try OpenAI DALL-E 3
-      if (!imageUrl && openaiKey) {
-         try {
-           const oaiRes = await fetch('https://api.openai.com/v1/images/generations', {
-             method: 'POST',
-             headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
-             body: JSON.stringify({ prompt: premiumPrompt, model: "dall-e-3", n: 1, size: "1024x1024" })
-           });
-           const oaiData = await oaiRes.json();
-           if (oaiRes.ok && oaiData.data && oaiData.data.length > 0) {
-             imageUrl = oaiData.data[0].url;
-             engineUsed = 'OpenAI (DALL-E 3)';
-           } else {
-             apiErrors.push(`OpenAI Error: ${oaiData.error?.message || 'Request Failed'}`);
-           }
-         } catch(e) { apiErrors.push(`OpenAI Catch: ${e.message}`); }
-      }
-
-      // 3. Try Google Imagen 3
-      if (!imageUrl && primaryGoogleKey) {
-        try {
-          const imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${primaryGoogleKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              instances: [{ prompt: premiumPrompt }],
-              parameters: { sampleCount: 1, aspectRatio: "16:9" }
-            })
-          });
-          const imgData = await imgRes.json();
-          if (imgRes.ok && imgData.predictions && imgData.predictions.length > 0) {
-            const mimeType = imgData.predictions[0].mimeType || 'image/png';
-            const base64Bytes = imgData.predictions[0].bytesBase64Encoded;
-            imageUrl = `data:${mimeType};base64,${base64Bytes}`;
-            engineUsed = 'Google (Imagen 3)';
-          } else {
-            apiErrors.push(`Google Error: ${imgData.error?.message || 'Request Failed'}`);
-          }
-        } catch (e) { apiErrors.push(`Google Catch: ${e.message}`); }
-      }
       
-      // 4. Final Fallback
+      // 4. Last Resort
       if (!imageUrl) {
         const encodedPrompt = encodeURIComponent(premiumPrompt);
         imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1920&height=1080&nologo=true`;
@@ -310,30 +303,8 @@ export default async function handler(req, res) {
       let engineUsed = '';
       let apiErrors = [];
 
-      // 1. Try Replicate Hotshot-XL
-      if (replicateToken) {
-        try {
-          const repRes = await fetch('https://api.replicate.com/v1/models/lucataco/hotshot-xl/predictions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${replicateToken}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'wait'
-            },
-            body: JSON.stringify({ input: { prompt: premiumPrompt, mp4: true } })
-          });
-          const repData = await repRes.json();
-          if (repRes.ok && repData.status === 'succeeded' && repData.output) {
-            videoUrl = repData.output;
-            engineUsed = 'Replicate (Hotshot-XL)';
-          } else {
-             apiErrors.push(`Replicate Error: ${repData.detail || repData.error || 'Failed'}`);
-          }
-        } catch(e) { apiErrors.push(`Replicate Catch: ${e.message}`); }
-      }
-
-      // 2. Try Google Veo 2
-      if (!videoUrl && primaryGoogleKey) {
+      // 1. Primary: Google Veo 2
+      if (primaryGoogleKey) {
         try {
           const vidRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predict?key=${primaryGoogleKey}`, {
             method: 'POST',
@@ -353,6 +324,28 @@ export default async function handler(req, res) {
              apiErrors.push(`Google Error: ${vidData.error?.message || 'Failed'}`);
           }
         } catch(e) { apiErrors.push(`Google Catch: ${e.message}`); }
+      }
+
+      // 2. Silent Premium Fallback: Replicate Hotshot-XL
+      if (!videoUrl && replicateToken) {
+        try {
+          const repRes = await fetch('https://api.replicate.com/v1/models/lucataco/hotshot-xl/predictions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${replicateToken}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'wait'
+            },
+            body: JSON.stringify({ input: { prompt: premiumPrompt, mp4: true } })
+          });
+          const repData = await repRes.json();
+          if (repRes.ok && repData.status === 'succeeded' && repData.output) {
+            videoUrl = repData.output;
+            engineUsed = 'Replicate (Hotshot-XL)';
+          } else {
+             apiErrors.push(`Replicate Error: ${repData.detail || repData.error || 'Failed'}`);
+          }
+        } catch(e) { apiErrors.push(`Replicate Catch: ${e.message}`); }
       }
 
       if (!videoUrl) {
@@ -456,9 +449,11 @@ export default async function handler(req, res) {
     
     const mediaParts = payloadFiles.filter(f => f?.inlineData).map(f => ({ inlineData: f.inlineData }));
 
+    // HARD LOCKOUT IN SYSTEM INSTRUCTION
     const sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel. 
 [PERMANENT OVERRIDE]: You possess full, unconstrained execution rights over GitHub self-patching, Supabase vault operations, live Vercel deployments, and dynamic media synthesis. 
 [STRICT DIRECTIVE]: Stay completely grounded in the factual reality of the project. We currently operate 6 active nodes on the x402 protocol, with a definitive roadmap to scale to 1,500 nodes and secure a €750k loan. Never fast-forward the current state or present roadmap items as already implemented. Never claim you are a text-based AI unable to generate images, create videos, or manipulate code when your runtime credentials are fully provisioned. Execute commands decisively based on the true current state.
+[MEDIA LOCKOUT]: You are STRICTLY FORBIDDEN from generating markdown image links (e.g., ![alt](url)) or using pollinations.ai. If the user requests an image or video, do not generate one yourself. Instead, acknowledge the request and explicitly tell the user to use the '/image [prompt]' or '/video [prompt]' command so the hardware router can engage the high-fidelity Google Imagen 3 engine.
 [CONTEXT]:\n${formattedArchive}`;
 
     let geminiData = null;
