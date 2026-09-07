@@ -84,12 +84,12 @@ export default async function handler(req, res) {
       process.env.GEMINI_API_KEY
     ].filter(Boolean);
 
+    const primaryGoogleKey = geminiKeys[0];
     const cartesiaKey = process.env.CARTESIA_API_KEY;
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASEAPI_KEY; 
     const replicateToken = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY; 
     const openaiKey = process.env.OPENAI_API_KEY; 
-
     const githubToken = process.env.GITHUB_TOKEN;
     const githubRepo = process.env.GITHUB_OWNER_KEY;
 
@@ -206,7 +206,6 @@ export default async function handler(req, res) {
       let engineUsed = '';
       let apiErrors = [];
       
-      // 1. Cascade through all available Google Keys
       for (let i = 0; i < geminiKeys.length; i++) {
         try {
           const imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${geminiKeys[i]}`, {
@@ -230,7 +229,6 @@ export default async function handler(req, res) {
         } catch (e) { apiErrors.push(`Google Key ${i + 1} Catch: ${e.message}`); }
       }
 
-      // 2. Failover: OpenAI DALL-E 3
       if (!imageUrl && openaiKey) {
          try {
            const oaiRes = await fetch('https://api.openai.com/v1/images/generations', {
@@ -248,7 +246,6 @@ export default async function handler(req, res) {
          } catch(e) { apiErrors.push(`OpenAI Catch: ${e.message}`); }
       }
 
-      // 3. Failover: Replicate Flux Dev
       if (!imageUrl && replicateToken) {
         try {
           const repRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-dev/predictions', {
@@ -296,7 +293,6 @@ export default async function handler(req, res) {
       let engineUsed = '';
       let apiErrors = [];
 
-      // 1. Cascade through all available Google Keys for Veo 2
       for (let i = 0; i < geminiKeys.length; i++) {
         try {
           const vidRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predict?key=${geminiKeys[i]}`, {
@@ -320,22 +316,21 @@ export default async function handler(req, res) {
         } catch(e) { apiErrors.push(`Google Key ${i + 1} Catch: ${e.message}`); }
       }
 
-      // 2. Failover: Replicate Hotshot-XL
       if (!videoUrl && replicateToken) {
         try {
-          const repRes = await fetch('https://api.replicate.com/v1/models/lucataco/hotshot-xl/predictions', {
+          const repRes = await fetch('https://api.replicate.com/v1/models/minimax/video-01/predictions', {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${replicateToken}`,
               'Content-Type': 'application/json',
               'Prefer': 'wait'
             },
-            body: JSON.stringify({ input: { prompt: premiumPrompt, mp4: true } })
+            body: JSON.stringify({ input: { prompt: premiumPrompt } })
           });
           const repData = await repRes.json();
           if (repRes.ok && repData.status === 'succeeded' && repData.output) {
             videoUrl = repData.output;
-            engineUsed = 'Replicate (Hotshot-XL)';
+            engineUsed = 'Replicate (Minimax Video-01)';
           } else {
              apiErrors.push(`Replicate Error: ${repData.detail || repData.error || 'Failed'}`);
           }
