@@ -35,7 +35,14 @@ export default async function handler(req, res) {
     return new Response(null, { status: 200 });
   }
 
-  const urlPath = req.url ? new URL(req.url, `https://${req.headers?.host || 'localhost'}`).pathname : '';
+  let urlPath = '';
+  try {
+    const rawUrl = req.url || '';
+    urlPath = rawUrl.includes('?') ? rawUrl.split('?')[0] : rawUrl;
+  } catch (e) {
+    urlPath = '';
+  }
+
   if (urlPath === '/api/ioc' || urlPath === '/api/feeds/ioc') {
     const clientLicenseKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
     if (!clientLicenseKey) {
@@ -516,7 +523,7 @@ export default async function handler(req, res) {
           
           if (res.ok) {
             const data = await res.json();
-            if (data?.candidates?[:,0]?.content?.parts?.[0]?.text) {
+            if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
               geminiData = data; 
               break keyLoop;
             }
