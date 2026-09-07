@@ -105,7 +105,6 @@ export default async function handler(req, res) {
       voice = 'christopher'
     } = reqBody;
 
-    // --- NEW: INTERCEPT JSON PASTED INTO CHAT BOX ---
     if (typeof promptText === 'string' && promptText.trim().startsWith('{')) {
       try {
         const parsedPrompt = JSON.parse(promptText.trim());
@@ -133,7 +132,6 @@ export default async function handler(req, res) {
       process.env.GEMINI_API_KEY
     ].filter(Boolean);
 
-    const primaryGoogleKey = geminiKeys[0];
     const cartesiaKey = process.env.CARTESIA_API_KEY;
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASEAPI_KEY; 
@@ -420,7 +418,11 @@ export default async function handler(req, res) {
     const runPreFlightCheck = (codeString) => {
       if (!codeString) return { passed: true, log: 'No code.' };
       try {
-        const testCode = codeString.replace(/^\s*export\s+.*?from\s+['"].*?['"];?/gm, '');
+        // Strip ES6 module syntax for the sandbox check to prevent false-positive syntax errors
+        let testCode = codeString.replace(/\bexport\s+default\b/g, '');
+        testCode = testCode.replace(/\bexport\s+/g, '');
+        testCode = testCode.replace(/^\s*import\s+.*?;/gm, '');
+        
         new Function(testCode);
         if (codeString.includes('child_process') || codeString.includes('eval(')) return { passed: false, log: 'Security Violation' };
         return { passed: true, log: 'PASSED' };
