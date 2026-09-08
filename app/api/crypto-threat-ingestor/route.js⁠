@@ -1,0 +1,18 @@
+export async function GET(request) {
+  const targetUrl = 'https://crypto-threat-signals-api.onrender.com/threats';
+  const apiKey = 'cts_pilot_QCrrn_EXxC2Wcx2HN-vIn6vx9LtHH5srT';
+  try {
+    const response = await fetch(targetUrl, {
+      method: 'GET',
+      headers: {
+        'X-API-Key': apiKey,
+        'Accept': 'application/json',
+        'User-Agent': 'PG1-Sovereign-Core/10.0-Live'
+      }
+    });
+    const data = await response.json();
+    return Response.json({ status: 'SUCCESS', data: data });
+  } catch (error) {
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+}
