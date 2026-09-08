@@ -119,12 +119,24 @@ export default async function handler(req, res) {
 
     const rawActionType = action || actionType || 'CHAT';
 
-    if (promptText === 'AUTH_VERIFY' || user === 'Winner1G' || pass) {
+    // SECURE AUTHENTICATION PATCH
+    const expectedPass = process.env.USER_API_PASS || 'Winner1G';
+    const isAuthed = (user === expectedPass || pass === expectedPass);
+
+    if (promptText === 'AUTH_VERIFY') {
+      if (!isAuthed) {
+        return sendJSON(401, { success: false, reply: 'Access Denied', traceId: requestTraceId });
+      }
       return sendJSON(200, { 
         success: true, authenticated: true, isValid: true,
         status: 'SUCCESS', reply: 'Access Granted', traceId: requestTraceId 
       });
     }
+
+    if (!isAuthed && actionType === 'ACCEPT_AUTHORIZATION') {
+      return sendJSON(401, { reply: '[AGENT] Commit Aborted: Unauthorized.', traceId: requestTraceId });
+    }
+    // END PATCH
 
     const geminiKeys = [
       process.env.GEMINI_API_KEY1,
@@ -418,7 +430,6 @@ export default async function handler(req, res) {
     const runPreFlightCheck = (codeString) => {
       if (!codeString) return { passed: true, log: 'No code.' };
       try {
-        // Strip ES6 module syntax for the sandbox check to prevent false-positive syntax errors
         let testCode = codeString.replace(/\bexport\s+default\b/g, '');
         testCode = testCode.replace(/\bexport\s+/g, '');
         testCode = testCode.replace(/^\s*import\s+.*?;/gm, '');
