@@ -1,0 +1,1 @@
+export default async function handler(req, res) { res.status(200).json({ status: 'Threat Ingestor Active', agent: 'PG1 Core' }); }
