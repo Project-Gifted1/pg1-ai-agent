@@ -105,6 +105,7 @@ export default async function handler(req, res) {
       voice = 'christopher'
     } = reqBody;
 
+    // JSON PARSER PATCH APPLIED HERE
     if (typeof promptText === 'string' && promptText.trim().startsWith('{')) {
       try {
         const parsedPrompt = JSON.parse(promptText.trim());
@@ -113,6 +114,8 @@ export default async function handler(req, res) {
           isAuthorizedAction = parsedPrompt.isAuthorizedAction || isAuthorizedAction;
           targetFile = parsedPrompt.targetFile || targetFile;
           pendingCode = parsedPrompt.pendingCode || pendingCode;
+          user = parsedPrompt.user || user;
+          pass = parsedPrompt.pass || pass;
         }
       } catch (e) {}
     }
