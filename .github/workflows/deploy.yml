@@ -36,7 +36,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_OWNER_KEY }}
+          token: ${{ secrets.GH_PAT }}
           fetch-depth: 0
 
       - name: Set Git Identity
