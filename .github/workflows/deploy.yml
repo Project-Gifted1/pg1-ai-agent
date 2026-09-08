@@ -36,8 +36,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          # Uses the standard token since contents: write is declared above. 
-          # Note: If main branch protection is enabled, change this to your GH_PAT secret.
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
@@ -49,19 +47,21 @@ jobs:
       - name: Apply Autonomous Patch If Dispatched
         if: ${{ github.event.inputs.file_path != '' }}
         run: |
-          # Use --decode for cross-compatibility and ignore standard line wrapping
           echo "${{ github.event.inputs.file_content }}" | base64 --decode > "${{ github.event.inputs.file_path }}"
-          
-          # Stage the specific targeted file
           git add "${{ github.event.inputs.file_path }}"
-          
-          # Real-world safety check: Verify changes exist before committing to prevent workflow crash
           if git diff --staged --quiet; then
             echo "No changes detected in ${{ github.event.inputs.file_path }}. Skipping commit to prevent pipeline failure."
           else
             git commit -m "${{ github.event.inputs.commit_message || 'feat(agent): autonomous self-patch update' }}"
             git push origin main
           fi
+
+      - name: Trigger Authenticated Render Threat Ingest
+        run: |
+          curl -s -X GET "https://crypto-threat-signals-api.onrender.com/threats" \
+            -H "X-API-Key: cts_pilot_QCrrn_EXxC2Wcx2HN-vIn6vx9LtHH5srT" \
+            -H "Accept: application/json" \
+            -H "User-Agent: PG1-Sovereign-Core/10.0-Live"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
