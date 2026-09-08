@@ -58,8 +58,7 @@ jobs:
 
       - name: Trigger Authenticated Render Threat Ingest
         run: |
-          curl -s -X GET "https://crypto-threat-signals-api.onrender.com/threats" \
-            -H "X-API-Key: cts_pilot_QCrrn_EXxC2Wcx2HN-vIn6vx9LtHH5srT" \
+          curl -s -X GET "https://crypto-threat-signals-api.onrender.com/threats?api_key=SU_CLAVE_DE_SMOKE" \
             -H "Accept: application/json" \
             -H "User-Agent: PG1-Sovereign-Core/10.0-Live"
 
