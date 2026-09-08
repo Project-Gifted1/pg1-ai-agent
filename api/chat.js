@@ -105,7 +105,6 @@ export default async function handler(req, res) {
       voice = 'christopher'
     } = reqBody;
 
-    // JSON PARSER PATCH APPLIED HERE
     if (typeof promptText === 'string' && promptText.trim().startsWith('{')) {
       try {
         const parsedPrompt = JSON.parse(promptText.trim());
@@ -122,7 +121,6 @@ export default async function handler(req, res) {
 
     const rawActionType = action || actionType || 'CHAT';
 
-    // SECURE AUTHENTICATION PATCH
     const expectedPass = process.env.USER_API_PASS || 'Winner1G';
     const isAuthed = (user === expectedPass || pass === expectedPass);
 
@@ -135,11 +133,6 @@ export default async function handler(req, res) {
         status: 'SUCCESS', reply: 'Access Granted', traceId: requestTraceId 
       });
     }
-
-    if (!isAuthed && actionType === 'ACCEPT_AUTHORIZATION') {
-      return sendJSON(401, { reply: '[AGENT] Commit Aborted: Unauthorized.', traceId: requestTraceId });
-    }
-    // END PATCH
 
     const geminiKeys = [
       process.env.GEMINI_API_KEY1,
