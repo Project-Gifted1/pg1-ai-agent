@@ -1,3 +1,4 @@
+// api/chat.js
 export const config = {
   api: {
     bodyParser: { sizeLimit: '10mb' },
@@ -213,6 +214,11 @@ export default async function handler(req, res) {
       } else if (lower.startsWith('/auth')) {
         activeAction = 'ACCEPT_AUTHORIZATION';
         isAuthorizedAction = true;
+      } else if (lower.startsWith('/vault')) {
+        return sendJSON(200, {
+          reply: `**[SYSTEM] VAULT MATRIX SYNC COMPLETE:**\n\n${formattedArchive || 'No prior matrix context.'}`,
+          traceId: requestTraceId
+        });
       }
     }
 
