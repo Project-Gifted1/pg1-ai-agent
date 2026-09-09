@@ -161,7 +161,7 @@ export default async function handler(req, res) {
     ].filter(Boolean);
 
     const cartesiaKey = process.env.CARTESIA_API_KEY;
-    const cartesiaModelId = process.env.CARTESIA_MODEL_ID || 'sonic-multilingual';
+    const cartesiaModelId = process.env.CARTESIA_MODEL_ID || 'sonic-3.6';
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASEAPI_KEY; 
     const replicateToken = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY; 
