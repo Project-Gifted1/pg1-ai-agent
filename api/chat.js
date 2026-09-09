@@ -161,6 +161,7 @@ export default async function handler(req, res) {
     ].filter(Boolean);
 
     const cartesiaKey = process.env.CARTESIA_API_KEY;
+    const cartesiaModelId = process.env.CARTESIA_MODEL_ID || 'sonic-multilingual';
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASEAPI_KEY; 
     const replicateToken = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY; 
@@ -258,7 +259,7 @@ export default async function handler(req, res) {
             method: 'POST',
             headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-              model_id: 'sonic', 
+              model_id: cartesiaModelId, 
               transcript: cleanText, 
               voice: { mode: 'id', id: targetVoiceId }, 
               output_format: { container: 'mp3', sample_rate: 44100 } 
@@ -641,7 +642,7 @@ Never fast-forward the current state or present roadmap items as already impleme
           method: 'POST',
           headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model_id: 'sonic',
+            model_id: cartesiaModelId,
             transcript: replyText.replace(/[*_#`[\]()]/g, '').substring(0, 400).trim(),
             voice: { mode: 'id', id: targetVoiceId },
             output_format: { container: 'mp3', sample_rate: 44100 }
