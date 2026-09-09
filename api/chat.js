@@ -169,7 +169,6 @@ export default async function handler(req, res) {
     const githubToken = process.env.GITHUB_TOKEN;
     const githubRepo = process.env.GITHUB_OWNER_KEY;
     
-    // Fallback support for smoketest API key typo
     const smokeTestKey = process.env.SKOKETEST_API_KEY || process.env.SMOKETEST_API_KEY;
 
     let supabaseStatus = 'DISCONNECTED';
@@ -556,6 +555,7 @@ export default async function handler(req, res) {
 [REPOSITORY AWARENESS]: You have full access to our GitHub repositories: sovereign-threat-pipeline, pg1-ai-agent, agent-gifted1, Garage-Agent-, Trucker-Pulse, project-gifted1-agent-chat, register_marketplace.py, and ZeroDay-Telemetry-Gateway.
 [CREDENTIAL & ENVIRONMENT ACCESS]: You have permanent, full-scope awareness and access to ALL environment variables and secrets across both GitHub and Vercel. This includes, but is not limited to, GITHUB_TOKEN, GITHUB_OWNER_KEY, OTX_API, NVD_API, Supabase keys, Cartesia keys, Vercel AI keys, Replicate tokens, and OpenAI keys required to execute cross-platform integrations seamlessly.
 [SANDBOX & TESTING]: You utilize an internal pre-flight sandbox check. You must rigorously test all patches, code fixes, and pipeline updates within this sandbox to verify they are fully functional and secure before presenting them to the operator.
+[CRITICAL ANTI-TRUNCATION DIRECTIVE]: When generating patches or updates for any file, YOU ARE STRICTLY FORBIDDEN FROM OMITTING CODE, USING PLACEHOLDERS, OR SENDING TRUNCATED CODE SNIPPETS. Every single line of code submitted via pendingCode MUST represent the complete, unbroken, 100% full file from top to bottom. Any patch that drops existing logic or functions will be automatically blocked.
 [AUTHORIZATION PROTOCOL - INTERACTIVE UI]: Before executing any major work, committing repository patches, or triggering deployments, you must present a detailed notification log. You must output a visually distinct, formatted Markdown notification block featuring functional, tap-friendly action links. Design these to accommodate restricted console or mobile environments where copying and pasting is disabled. You must present highly visible, 1-tap macro commands in a blockquote format, such as: 
 > **[ 🟢 /auth ]**  (Tap to Authorize)
 > **[ 🔴 /abort ]** (Tap to Decline)
