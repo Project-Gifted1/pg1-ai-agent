@@ -137,6 +137,24 @@ export default async function handler(req, res) {
       });
     }
 
+    // Native server-side interception for /smoke
+    if (promptText.trim().toLowerCase() === '/smoke') {
+      try {
+        const smokeKey = process.env.SKOKETEST_API_KEY || process.env.SMOKETEST_API_KEY;
+        const smokeRes = await fetch('https://crypto-threat-signals-api.onrender.com/threats', {
+          method: 'GET',
+          headers: { 'X-API-Key': smokeKey || '' }
+        });
+        const smokeData = await smokeRes.text();
+        return sendJSON(200, {
+          reply: `[LIVE RENDER SMOKE TEST]\nStatus: ${smokeRes.status} ${smokeRes.statusText}\nResponse: ${smokeData}`,
+          traceId: requestTraceId
+        });
+      } catch (err) {
+        return sendJSON(200, { reply: `[SMOKE TEST FAILED]: ${err.message}`, traceId: requestTraceId });
+      }
+    }
+
     const geminiKeys = [
       process.env.GEMINI_API_KEY1,
       process.env.GEMINI_API_KEY2,
