@@ -250,6 +250,7 @@ export default async function handler(req, res) {
 
     if (activeAction === 'SPEAK') {
       let audioBase64 = null;
+      let audioStatus = 'SKIPPED';
       if (cartesiaKey) {
         try {
           const cleanText = promptText.replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 1500).trim();
@@ -260,7 +261,7 @@ export default async function handler(req, res) {
               model_id: 'sonic-english', 
               transcript: cleanText, 
               voice: { mode: 'id', id: targetVoiceId }, 
-              output_format: { container: 'mp3', encoding: 'mp3', sample_rate: 44100 } 
+              output_format: { container: 'mp3', sample_rate: 44100 } 
             })
           });
           if (ttsRes.ok) {
@@ -275,10 +276,22 @@ export default async function handler(req, res) {
               }
               audioBase64 = btoa(binary);
             }
+            audioStatus = 'SUCCESS';
+          } else {
+            const errRaw = await ttsRes.text();
+            audioStatus = 'API_FAILED_' + ttsRes.status + '_' + errRaw.substring(0, 40).replace(/[^a-zA-Z0-9_ -]/g, '');
           }
-        } catch (e) {}
+        } catch (e) {
+          audioStatus = 'EXCEPTION_' + e.message;
+        }
       }
-      return sendJSON(200, { audio: audioBase64, audioStatus: audioBase64 ? 'SUCCESS' : 'SKIPPED', audioMimeType: 'audio/mp3', traceId: requestTraceId });
+      return sendJSON(200, { 
+        reply: `[DIAGNOSTIC] Voice pipeline test executed.\nStatus: ${audioStatus}`,
+        audio: audioBase64, 
+        audioStatus: audioStatus, 
+        audioMimeType: 'audio/mp3', 
+        traceId: requestTraceId 
+      });
     }
 
     if (activeAction === 'CHAT' && promptText.startsWith('/ping')) {
@@ -631,7 +644,7 @@ Never fast-forward the current state or present roadmap items as already impleme
             model_id: 'sonic-english',
             transcript: replyText.replace(/[*_#`[\]()]/g, '').substring(0, 400).trim(),
             voice: { mode: 'id', id: targetVoiceId },
-            output_format: { container: 'mp3', encoding: 'mp3', sample_rate: 44100 }
+            output_format: { container: 'mp3', sample_rate: 44100 }
           })
         });
         if (ttsRes.ok) {
@@ -648,7 +661,8 @@ Never fast-forward the current state or present roadmap items as already impleme
           }
           audioStatus = 'SUCCESS';
         } else { 
-          audioStatus = 'API_FAILED_' + ttsRes.status; 
+          const errRaw = await ttsRes.text();
+          audioStatus = 'API_FAILED_' + ttsRes.status + '_' + errRaw.substring(0, 40).replace(/[^a-zA-Z0-9_ -]/g, '');
         }
       } catch (e) { 
         audioStatus = 'EXCEPTION_' + e.message; 
