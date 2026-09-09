@@ -137,8 +137,8 @@ export default async function handler(req, res) {
       });
     }
 
-    // Native server-side interception for /smoke
-    if (promptText.trim().toLowerCase() === '/smoke') {
+    // Native server-side interception for /smoke using robust matching
+    if (typeof promptText === 'string' && promptText.toLowerCase().includes('/smoke')) {
       try {
         const smokeKey = process.env.SKOKETEST_API_KEY || process.env.SMOKETEST_API_KEY;
         const smokeRes = await fetch('https://crypto-threat-signals-api.onrender.com/threats', {
