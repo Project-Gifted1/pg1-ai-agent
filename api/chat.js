@@ -258,7 +258,7 @@ export default async function handler(req, res) {
             method: 'POST',
             headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-              model_id: 'sonic-english', 
+              model_id: 'sonic', 
               transcript: cleanText, 
               voice: { mode: 'id', id: targetVoiceId }, 
               output_format: { container: 'mp3', sample_rate: 44100 } 
@@ -641,7 +641,7 @@ Never fast-forward the current state or present roadmap items as already impleme
           method: 'POST',
           headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model_id: 'sonic-english',
+            model_id: 'sonic',
             transcript: replyText.replace(/[*_#`[\]()]/g, '').substring(0, 400).trim(),
             voice: { mode: 'id', id: targetVoiceId },
             output_format: { container: 'mp3', sample_rate: 44100 }
@@ -682,4 +682,3 @@ Never fast-forward the current state or present roadmap items as already impleme
     return sendJSON(200, { reply: `Exception: ${err.message}`, traceId: requestTraceId });
   }
 }
- 
