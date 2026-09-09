@@ -440,6 +440,10 @@
   </div>
 
   <script>
+    // --- GLOBAL MEDIA ROUTER (Fixes iOS Safari Async Audio Block) ---
+    const coreAudioPlayer = new Audio();
+    const silentMp3 = 'data:audio/mp3;base64,//NExAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq';
+
     // --- LOCAL STORAGE MATRIX MEMORY (WITH QUOTA SAFEGUARDS) ---
     function saveSession() {
       const chatContainer = document.getElementById('chat-container');
@@ -624,7 +628,7 @@
           alert('Access Denied: Invalid Credentials.');
         }
       } catch (e) {
-        if (user === 'Admin' && pass === 'Winner1G') { // Locked strictly to valid inputs
+        if (user === 'Admin' && pass === 'Winner1G') { 
           document.getElementById('auth-modal').style.display = 'none';
         } else {
           alert('Access Denied: Gateway connection error.');
@@ -723,6 +727,10 @@
 
     async function speakMessage(text) {
       try {
+        // SYNCHRONOUS UNLOCK FOR IOS SAFARI
+        coreAudioPlayer.src = silentMp3;
+        coreAudioPlayer.play().catch(e => {});
+
         const voiceProfile = document.getElementById('voice-profile-select').value;
         const response = await fetch('/api/chat', {
           method: 'POST',
@@ -731,8 +739,8 @@
         });
         const data = await response.json();
         if (data.audio) {
-          const audio = new Audio(`data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio}`);
-          audio.play().catch(e => console.log('Audio playback prevented:', e));
+          coreAudioPlayer.src = `data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio}`;
+          coreAudioPlayer.play().catch(e => console.log('Audio playback prevented:', e));
         }
       } catch (err) {
         console.error('Speech synthesis error:', err);
@@ -758,6 +766,12 @@
       const input = document.getElementById('prompt-input');
       const text = input.value.trim();
       if (!text && attachedFilesPayload.length === 0) return;
+
+      // SYNCHRONOUS UNLOCK FOR IOS SAFARI
+      if (voiceActive) {
+        coreAudioPlayer.src = silentMp3;
+        coreAudioPlayer.play().catch(e => {});
+      }
 
       const chatContainer = document.getElementById('chat-container');
       const fileStatusText = attachedFilesPayload.length > 0 ? ` [${attachedFilesPayload.length} File(s) Attached]` : '';
@@ -840,8 +854,9 @@
         agentBubble.innerHTML = contentHtml;
 
         if (voiceActive && data.audio) {
-          const audio = new Audio(`data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio}`);
-          audio.play().catch(e => console.log('Audio playback prevented:', e));
+          // Play the actual payload through the unlocked router
+          coreAudioPlayer.src = `data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio}`;
+          coreAudioPlayer.play().catch(e => console.log('Audio playback prevented:', e));
         }
 
       } catch (err) {
