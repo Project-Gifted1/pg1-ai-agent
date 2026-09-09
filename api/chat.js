@@ -1,4 +1,3 @@
-// api/chat.js
 export const config = {
   api: {
     bodyParser: { sizeLimit: '10mb' },
@@ -97,6 +96,7 @@ export default async function handler(req, res) {
       isAuthorizedAction = false, 
       pendingCode = '', 
       targetFile = 'api/chat.js',
+      targetRepo = '', 
       file,
       multiFiles = [],
       singleFile = null,
@@ -113,6 +113,7 @@ export default async function handler(req, res) {
           actionType = parsedPrompt.actionType;
           isAuthorizedAction = parsedPrompt.isAuthorizedAction || isAuthorizedAction;
           targetFile = parsedPrompt.targetFile || targetFile;
+          targetRepo = parsedPrompt.targetRepo || targetRepo;
           pendingCode = parsedPrompt.pendingCode || pendingCode;
           user = parsedPrompt.user || user;
           pass = parsedPrompt.pass || pass;
@@ -433,8 +434,10 @@ export default async function handler(req, res) {
       });
     }
 
-    const runPreFlightCheck = (codeString) => {
+    const runPreFlightCheck = (codeString, fileTarget) => {
       if (!codeString) return { passed: true, log: 'No code.' };
+      if (fileTarget && !fileTarget.endsWith('.js')) return { passed: true, log: 'Skipping strict JS validation for non-JS file.' };
+      
       try {
         let testCode = codeString.replace(/\bexport\s+default\b/g, '');
         testCode = testCode.replace(/\bexport\s+/g, '');
@@ -449,8 +452,8 @@ export default async function handler(req, res) {
     };
 
     if (activeAction === 'ACCEPT_AUTHORIZATION') {
-      const preFlight = runPreFlightCheck(pendingCode);
-      if (!isAuthorizedAction || !preFlight.passed || !githubToken || !githubRepo || !pendingCode) {
+      const preFlight = runPreFlightCheck(pendingCode, targetFile);
+      if (!isAuthorizedAction || !preFlight.passed || !githubToken || !pendingCode) {
         return sendJSON(200, { reply: `[AGENT] Commit Aborted: Validation Failed.`, traceId: requestTraceId });
       }
       try {
@@ -460,11 +463,17 @@ export default async function handler(req, res) {
           'User-Agent': 'Sovereign-Agent' 
         };
         
-        const repoBaseUrl = `https://api.github.com/repos/${githubRepo}`;
+        let orgOwner = 'Project-Gifted1';
+        if (githubRepo && githubRepo.includes('/')) {
+          orgOwner = githubRepo.split('/')[0];
+        }
+        const repoPath = targetRepo ? `${orgOwner}/${targetRepo}` : githubRepo;
+        
+        const repoBaseUrl = `https://api.github.com/repos/${repoPath}`;
         const branchName = `agent-patch-${Date.now()}`;
 
         const refRes = await fetch(`${repoBaseUrl}/git/ref/heads/main`, { headers: ghApiHeaders });
-        if (!refRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not resolve main branch reference.`, traceId: requestTraceId });
+        if (!refRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not resolve main branch reference for ${repoPath}.`, traceId: requestTraceId });
         const refData = await refRes.json();
         const mainSha = refData.object.sha;
 
@@ -505,7 +514,7 @@ export default async function handler(req, res) {
 
         const prData = await prRes.json();
         return sendJSON(200, { 
-          reply: prRes.ok ? `[AGENT] Pull Request Created Successfully: ${prData.html_url}` : `[AGENT] Commit made, but PR creation failed.`, 
+          reply: prRes.ok ? `[AGENT] Pull Request Created Successfully on ${repoPath}: ${prData.html_url}` : `[AGENT] Commit made, but PR creation failed.`, 
           traceId: requestTraceId 
         });
       } catch (e) { 
