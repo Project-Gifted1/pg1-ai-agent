@@ -137,7 +137,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Native server-side interception for /smoke using robust matching
     if (typeof promptText === 'string' && promptText.toLowerCase().includes('/smoke')) {
       try {
         const smokeKey = process.env.SKOKETEST_API_KEY || process.env.SMOKETEST_API_KEY;
@@ -169,8 +168,6 @@ export default async function handler(req, res) {
     const githubToken = process.env.GITHUB_TOKEN;
     const githubRepo = process.env.GITHUB_OWNER_KEY;
     
-    const smokeTestKey = process.env.SKOKETEST_API_KEY || process.env.SMOKETEST_API_KEY;
-
     let supabaseStatus = 'DISCONNECTED';
     let lastTableFetch = 'SKIPPED';
     let supabaseFilesReport = '';
@@ -263,7 +260,7 @@ export default async function handler(req, res) {
               model_id: 'sonic-english', 
               transcript: cleanText, 
               voice: { mode: 'id', id: targetVoiceId }, 
-              output_format: { container: 'mp3', sample_rate: 44100 } 
+              output_format: { container: 'mp3', encoding: 'mp3', sample_rate: 44100 } 
             })
           });
           if (ttsRes.ok) {
@@ -458,8 +455,6 @@ export default async function handler(req, res) {
       if (!codeString) return { passed: true, log: 'No code.' };
       if (fileTarget && !fileTarget.endsWith('.js')) return { passed: true, log: 'Skipping strict JS validation for non-JS file.' };
       
-      // CRITICAL ANTI-TRUNCATION SAFEGUARD: Check line count and block file destruction
-      const originalLineCount = 600; // Expected baseline minimum lines for core files like chat.js
       const incomingLines = codeString.split('\n').length;
       if (incomingLines < 150 && targetFile.includes('chat.js')) {
         return { passed: false, log: `Anti-Truncation Protection Triggered: Incoming file has only ${incomingLines} lines, risking severe data loss.` };
@@ -636,21 +631,28 @@ Never fast-forward the current state or present roadmap items as already impleme
             model_id: 'sonic-english',
             transcript: replyText.replace(/[*_#`[\]()]/g, '').substring(0, 400).trim(),
             voice: { mode: 'id', id: targetVoiceId },
-            output_format: { container: 'mp3', sample_rate: 44100 }
+            output_format: { container: 'mp3', encoding: 'mp3', sample_rate: 44100 }
           })
         });
         if (ttsRes.ok) {
           const arrayBuffer = await ttsRes.arrayBuffer();
-          if (typeof Buffer !== 'undefined') { audioBase64 = Buffer.from(arrayBuffer).toString('base64'); } 
-          else {
+          if (typeof Buffer !== 'undefined') { 
+            audioBase64 = Buffer.from(arrayBuffer).toString('base64'); 
+          } else {
             const bytes = new Uint8Array(arrayBuffer);
             let binary = '';
-            for (let i = 0; i < bytes.length; i += 8192) { binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192)); }
+            for (let i = 0; i < bytes.length; i += 8192) { 
+              binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192)); 
+            }
             audioBase64 = btoa(binary);
           }
           audioStatus = 'SUCCESS';
-        } else { audioStatus = 'API_FAILED_' + ttsRes.status; }
-      } catch (e) { audioStatus = 'EXCEPTION'; }
+        } else { 
+          audioStatus = 'API_FAILED_' + ttsRes.status; 
+        }
+      } catch (e) { 
+        audioStatus = 'EXCEPTION_' + e.message; 
+      }
     }
 
     return sendJSON(200, { 
