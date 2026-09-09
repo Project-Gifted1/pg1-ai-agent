@@ -87,7 +87,7 @@
     }
 
     .tm-symbol {
-      font-size: 0.7em; /* Increased size for visibility */
+      font-size: 0.7em;
       margin-left: 2px;
       transform: translateY(-0.65em); 
       color: var(--text-gold);
@@ -353,7 +353,7 @@
   <div id="auth-modal" class="matrix-modal">
     <div class="matrix-card">
       <h2>SECURITY GATE</h2>
-      <input type="text" id="auth-user" class="matrix-input" placeholder="Operator ID" value="Winner1G">
+      <input type="text" id="auth-user" class="matrix-input" placeholder="Operator ID" value="Admin">
       <input type="password" id="auth-pass" class="matrix-input" placeholder="Secure Matrix Passkey">
       <button class="matrix-submit" onclick="triggerHaptic(60); verifyAuth()">AUTHENTICATE</button>
     </div>
@@ -439,6 +439,53 @@
   </div>
 
   <script>
+    // --- LOCAL STORAGE MATRIX MEMORY (WITH QUOTA SAFEGUARDS) ---
+    function saveSession() {
+      const chatContainer = document.getElementById('chat-container');
+      
+      try {
+        // Enforce a soft limit: keep only the 20 most recent interaction bubbles
+        const bubbles = chatContainer.querySelectorAll('.message-bubble');
+        if (bubbles.length > 20) {
+          for (let i = 0; i < bubbles.length - 20; i++) {
+            bubbles[i].remove();
+          }
+        }
+        localStorage.setItem('pg1_matrix_session', chatContainer.innerHTML);
+      } catch (e) {
+        if (e.name === 'QuotaExceededError' || e.code === 22) {
+          console.warn('[SYSTEM] Memory quota exceeded. Initiating emergency prune.');
+          
+          // Clone the container to modify memory without altering the live UI
+          const clone = chatContainer.cloneNode(true);
+          
+          // Strip heavy Base64 media from the saved state to free up MBs
+          const mediaTags = clone.querySelectorAll('img[src^="data:"], video[src^="data:"]');
+          mediaTags.forEach(tag => {
+            const wrapper = tag.closest('.media-preview-container');
+            if (wrapper) wrapper.innerHTML = '<div style="color: #ff4444; border: 1px solid #ff4444; padding: 10px; text-align: center; font-size: 11px;">[MEDIA PURGED TO PRESERVE CORE MEMORY]</div>';
+          });
+          
+          try {
+            localStorage.setItem('pg1_matrix_session', clone.innerHTML);
+          } catch (fatalErr) {
+            console.error('[SYSTEM] Fatal memory failure. Storage wipe required.');
+          }
+        }
+      }
+    }
+
+    function loadSession() {
+      const savedSession = localStorage.getItem('pg1_matrix_session');
+      if (savedSession) {
+        document.getElementById('chat-container').innerHTML = savedSession;
+        const chatContainer = document.getElementById('chat-container');
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', loadSession);
+
     function triggerHaptic(duration = 50) {
       if (navigator.vibrate) {
         navigator.vibrate(duration);
@@ -576,7 +623,7 @@
           alert('Access Denied: Invalid Credentials.');
         }
       } catch (e) {
-        if (user === 'Winner1G') {
+        if (user === 'Admin' && pass === 'Winner1G') { // Locked strictly to valid inputs
           document.getElementById('auth-modal').style.display = 'none';
         } else {
           alert('Access Denied: Gateway connection error.');
@@ -603,13 +650,14 @@
     function clearChat() {
       document.getElementById('chat-container').innerHTML = `
         <div class="message-bubble">
-          <div class="message-text">Matrix session cleared. Ready for new operational directives.</div>
+          <div class="message-text">Matrix session cleared. Visual interface reset. Ready for new operational directives.</div>
           <div class="message-actions">
-            <span onclick="triggerHaptic(); speakMessage('Matrix session cleared.')">SPEAK</span>
+            <span onclick="triggerHaptic(); speakMessage('Matrix session cleared. Visual interface reset.')">SPEAK</span>
             <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
             <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
           </div>
         </div>`;
+      saveSession();
     }
 
     function exportChatPDF() {
@@ -620,9 +668,11 @@
       alert("Video Vault & Media Stream Matrix initialized. Use /video [prompt] to stream HD visual payloads.");
     }
 
+    // --- VAULT SYNC PROTOCOL ---
     function triggerVaultSync() {
       const input = document.getElementById('prompt-input');
-      input.value = "Sync all files from Supabase vault and display status.";
+      // Directs the agent to physically output the permanent Supabase memory payload into the UI
+      input.value = "Access Supabase 'messages' table telemetry. Output our recent conversation history from your Vault Memory Matrix directly into this interface.";
       autoResize(input);
       submitDirective();
     }
@@ -667,6 +717,7 @@
       autoResize(input);
       
       bubble.remove();
+      saveSession();
       input.focus();
     }
 
@@ -700,6 +751,7 @@
     function deleteBubble(el) {
       const bubble = el.closest('.message-bubble');
       bubble.remove();
+      saveSession();
     }
 
     async function submitDirective() {
@@ -724,6 +776,9 @@
       input.value = '';
       input.style.height = 'auto';
       chatContainer.scrollTop = chatContainer.scrollHeight;
+      
+      // Save state after user message is added
+      saveSession();
 
       const agentBubble = document.createElement('div');
       agentBubble.className = 'message-bubble';
@@ -757,7 +812,6 @@
         
         triggerHaptic([30, 50, 30]); 
 
-        // Use the Markdown formatter instead of just escaping HTML
         let contentHtml = `<div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>`;
 
         if (data.image) {
@@ -796,6 +850,9 @@
       }
 
       chatContainer.scrollTop = chatContainer.scrollHeight;
+      
+      // Save state after agent response is received
+      saveSession();
     }
   </script>
 </body>
