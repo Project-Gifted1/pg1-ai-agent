@@ -1,3 +1,4 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -671,8 +672,7 @@
     // --- VAULT SYNC PROTOCOL ---
     function triggerVaultSync() {
       const input = document.getElementById('prompt-input');
-      // Directs the agent to physically output the permanent Supabase memory payload into the UI
-      input.value = "Access Supabase 'messages' table telemetry. Output our recent conversation history from your Vault Memory Matrix directly into this interface.";
+      input.value = "/vault";
       autoResize(input);
       submitDirective();
     }
