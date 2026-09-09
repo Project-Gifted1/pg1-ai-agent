@@ -254,7 +254,7 @@ export default async function handler(req, res) {
       let audioStatus = 'SKIPPED';
       if (cartesiaKey) {
         try {
-          const cleanText = promptText.replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 1500).trim();
+          const cleanText = promptText.replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 3000).trim();
           const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
             method: 'POST',
             headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
@@ -643,7 +643,7 @@ Never fast-forward the current state or present roadmap items as already impleme
           headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model_id: cartesiaModelId,
-            transcript: replyText.replace(/[*_#`[\]()]/g, '').substring(0, 400).trim(),
+            transcript: replyText.replace(/[*_#`[\]()]/g, '').substring(0, 3000).trim(),
             voice: { mode: 'id', id: targetVoiceId },
             output_format: { container: 'mp3', sample_rate: 44100 }
           })
