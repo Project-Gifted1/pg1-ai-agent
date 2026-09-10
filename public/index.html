@@ -849,11 +849,16 @@
           statusEl.style.color = '#999';
         }
 
+                // [WEBKIT BYPASS]: Convert large base64 JSON payload to Blob to prevent iOS Safari DOMException crash
+        const jsonString = JSON.stringify(payload);
+        const blobBody = new Blob([jsonString], { type: 'application/json' });
+
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: blobBody
         });
+
 
         const data = await response.json();
         triggerHaptic([30, 50, 30]); 
