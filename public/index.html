@@ -177,7 +177,6 @@
     .message-actions span:hover { text-decoration: underline; text-shadow: 0 0 10px var(--text-gold); opacity: 1; }
     .message-actions span:active { transform: scale(0.9); }
 
-    /* MACRO BUTTON 1-TAP UPGRADE */
     .macro-btn {
       background: rgba(243, 198, 35, 0.1);
       border: 1px solid rgba(243, 198, 35, 0.4);
@@ -304,7 +303,6 @@
     
     input[type="file"] { display: none; }
 
-    /* Modals */
     .matrix-modal { 
       position: fixed; inset: 0; background: rgba(0,0,0,0.92);
       backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
@@ -574,6 +572,11 @@
     function formatMarkdown(str) {
       let escaped = escapeHTML(str);
       
+      // MACRO BUTTON INTERCEPTOR (Must run before other formatting)
+      escaped = escaped.replace(/\[\s*([^\]]*?)\s+(\/[a-zA-Z0-9_.-]+)\s*\]/g, (match, icon, cmd) => {
+        return `<button class="macro-btn" data-macro="${cmd}">[ ${icon} ${cmd} ]</button>`;
+      });
+
       // Parse Media
       escaped = escaped.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '</div><div class="media-preview-container"><img src="$2" alt="$1" /></div><div class="message-text">');
       
@@ -586,13 +589,30 @@
       escaped = escaped.replace(/`([^`]+)`/g, '<span style="background: rgba(243, 198, 35, 0.15); color: #fff; padding: 2px 5px; border-radius: 4px;">$1</span>');
       escaped = escaped.replace(/^---$/gim, '<div style="height: 1px; background: var(--glass-edge); margin: 16px 0;"></div>');
       escaped = escaped.replace(/^>\s?(.*$)/gim, '<blockquote style="border-left: 3px solid var(--text-gold); padding-left: 10px; margin: 10px 0; color: #ccc;">$1</blockquote>');
-      
-      // MACRO BUTTON INTERCEPTOR: Transforms "[ 🟢 /auth ]" into a 1-tap execute button
-      escaped = escaped.replace(/\[\s*([^\]]*?)\s+(\/[a-zA-Z0-9_.-]+)\s*\]/g, (match, icon, cmd) => {
-        return `<button class="macro-btn" onclick="triggerHaptic(50); executeMacro('${cmd}')">[ ${icon} ${cmd} ]</button>`;
-      });
 
       return escaped;
+    }
+
+    // --- SAFARI EVENT DELEGATION OVERRIDE ---
+    const chatMatrix = document.getElementById('chat-container');
+    
+    // Explicitly bind to both interaction vectors to ensure iOS execution
+    chatMatrix.addEventListener('click', handleMacro);
+    chatMatrix.addEventListener('touchstart', handleMacro, { passive: false });
+
+    function handleMacro(e) {
+      let target = e.target;
+      while (target && target !== this) {
+        if (target.classList && target.classList.contains('macro-btn')) {
+          e.preventDefault(); 
+          triggerHaptic(50);
+          const cmd = target.getAttribute('data-macro');
+          document.getElementById('prompt-input').value = cmd;
+          submitDirective();
+          return;
+        }
+        target = target.parentNode;
+      }
     }
 
     let voiceActive = false;
