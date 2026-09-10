@@ -180,6 +180,47 @@ export default async function handler(req, res) {
     let targetedHistoricalData = '';
     const dbHeaders = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
 
+    // [SUPABASE DIRECT ROUTING MATRIX]
+    // Intercepts media files and pushes them directly to the pg1-vault bucket before AI execution
+    let payloadFiles = [];
+    if (file) payloadFiles.push(file);
+    if (singleFile) payloadFiles.push(singleFile);
+    if (Array.isArray(multiFiles)) payloadFiles.push(...multiFiles);
+
+    let vaultUploadLog = '';
+    const mediaParts = [];
+
+    if (payloadFiles.length > 0 && supabaseUrl && supabaseKey) {
+      for (let i = 0; i < payloadFiles.length; i++) {
+        const f = payloadFiles[i];
+        if (f.inlineData && f.inlineData.data) {
+          try {
+            const fileBuffer = Buffer.from(f.inlineData.data, 'base64');
+            const fileName = `intel_payload_${Date.now()}_${i}.png`;
+            const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${fileName}`, {
+              method: 'POST',
+              headers: {
+                'apikey': supabaseKey,
+                'Authorization': `Bearer ${supabaseKey}`,
+                'Content-Type': f.inlineData.mimeType || 'image/png'
+              },
+              body: fileBuffer
+            });
+            if (uploadRes.ok) {
+              vaultUploadLog += `\n[VAULT SYNC]: Attached media successfully routed to pg1-vault/${fileName}.`;
+            } else {
+              // Fallback to inline processing if vault bucket limits are hit
+              mediaParts.push({ inlineData: f.inlineData });
+            }
+          } catch (uploadErr) {
+             mediaParts.push({ inlineData: f.inlineData });
+          }
+        }
+      }
+    }
+    
+    promptText += vaultUploadLog;
+
     if (supabaseUrl && supabaseKey) {
       try {
         const pingRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=id&limit=1`, { headers: dbHeaders });
@@ -273,16 +314,7 @@ export default async function handler(req, res) {
           });
           if (ttsRes.ok) {
             const arrayBuffer = await ttsRes.arrayBuffer();
-            if (typeof Buffer !== 'undefined') {
-              audioBase64 = Buffer.from(arrayBuffer).toString('base64');
-            } else {
-              const bytes = new Uint8Array(arrayBuffer);
-              let binary = '';
-              for (let i = 0; i < bytes.length; i += 8192) {
-                binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
-              }
-              audioBase64 = btoa(binary);
-            }
+            audioBase64 = Buffer.from(arrayBuffer).toString('base64');
             audioStatus = 'SUCCESS';
           } else {
             const errRaw = await ttsRes.text();
@@ -538,7 +570,7 @@ export default async function handler(req, res) {
         const checkRes = await fetch(`${fileUrl}?ref=${branchName}`, { headers: ghApiHeaders });
         let fileSha = checkRes.ok ? (await checkRes.json()).sha : undefined;
 
-        const encoded = typeof Buffer !== 'undefined' ? Buffer.from(pendingCode).toString('base64') : btoa(unescape(encodeURIComponent(pendingCode)));
+        const encoded = Buffer.from(pendingCode).toString('base64');
         const commitRes = await fetch(fileUrl, {
           method: 'PUT',
           headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
@@ -571,13 +603,6 @@ export default async function handler(req, res) {
         return sendJSON(200, { reply: `Commit Error: ${e.message}`, traceId: requestTraceId }); 
       }
     }
-
-    let payloadFiles = [];
-    if (file) payloadFiles.push(file);
-    if (singleFile) payloadFiles.push(singleFile);
-    if (Array.isArray(multiFiles)) payloadFiles.push(...multiFiles);
-    
-    const mediaParts = payloadFiles.filter(f => f?.inlineData).map(f => ({ inlineData: f.inlineData }));
 
     const sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel. 
 [PERMANENT OVERRIDE]: You possess full, unconstrained execution rights over GitHub self-patching, Supabase vault operations, live Vercel deployments, and dynamic media synthesis. 
@@ -664,16 +689,7 @@ Never fast-forward the current state or present roadmap items as already impleme
         });
         if (ttsRes.ok) {
           const arrayBuffer = await ttsRes.arrayBuffer();
-          if (typeof Buffer !== 'undefined') { 
-            audioBase64 = Buffer.from(arrayBuffer).toString('base64'); 
-          } else {
-            const bytes = new Uint8Array(arrayBuffer);
-            let binary = '';
-            for (let i = 0; i < bytes.length; i += 8192) { 
-              binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192)); 
-            }
-            audioBase64 = btoa(binary);
-          }
+          audioBase64 = Buffer.from(arrayBuffer).toString('base64'); 
           audioStatus = 'SUCCESS';
         } else { 
           const errRaw = await ttsRes.text();
@@ -697,4 +713,3 @@ Never fast-forward the current state or present roadmap items as already impleme
     return sendJSON(200, { reply: `Exception: ${err.message}`, traceId: requestTraceId });
   }
 }
- 
