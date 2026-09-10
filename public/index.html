@@ -1,4 +1,3 @@
-<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -177,6 +176,26 @@
     .message-actions span { transition: all 0.2s ease; display: inline-block; opacity: 0.85; }
     .message-actions span:hover { text-decoration: underline; text-shadow: 0 0 10px var(--text-gold); opacity: 1; }
     .message-actions span:active { transform: scale(0.9); }
+
+    /* MACRO BUTTON 1-TAP UPGRADE */
+    .macro-btn {
+      background: rgba(243, 198, 35, 0.1);
+      border: 1px solid rgba(243, 198, 35, 0.4);
+      color: var(--text-gold);
+      padding: 10px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 13px;
+      margin: 6px 0;
+      display: inline-block;
+      text-transform: uppercase;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      transition: all 0.2s;
+      font-family: var(--font-mono);
+    }
+    .macro-btn:hover { background: rgba(243, 198, 35, 0.25); box-shadow: 0 0 15px var(--glow-strong); }
+    .macro-btn:active { transform: scale(0.92); }
 
     .media-preview-container { margin-top: 16px; margin-bottom: 16px; width: 100%; }
     .media-preview-container img, .media-preview-container video { 
@@ -444,7 +463,6 @@
     const coreAudioPlayer = new Audio();
     const silentMp3 = 'data:audio/mp3;base64,//NExAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq';
 
-    // --- BASE64 TO NATIVE BLOB CONVERTER (Fixes iOS Crash on large data URIs) ---
     function base64ToBlob(b64Data, contentType='') {
       try {
         const byteCharacters = atob(b64Data);
@@ -479,10 +497,8 @@
       }
     }
 
-    // --- LOCAL STORAGE MATRIX MEMORY (WITH QUOTA SAFEGUARDS) ---
     function saveSession() {
       const chatContainer = document.getElementById('chat-container');
-      
       try {
         const bubbles = chatContainer.querySelectorAll('.message-bubble');
         if (bubbles.length > 20) {
@@ -531,16 +547,9 @@
       textarea.style.height = (textarea.scrollHeight) + 'px';
     }
 
-    function openThreadsModal() {
-      document.getElementById('threads-modal').style.display = 'flex';
-    }
-    function closeThreadsModal() {
-      document.getElementById('threads-modal').style.display = 'none';
-    }
-    function loadThread(threadId) {
-      alert(`System routing to Thread ID: ${threadId}`);
-      closeThreadsModal();
-    }
+    function openThreadsModal() { document.getElementById('threads-modal').style.display = 'flex'; }
+    function closeThreadsModal() { document.getElementById('threads-modal').style.display = 'none'; }
+    function loadThread(threadId) { alert(`System routing to Thread ID: ${threadId}`); closeThreadsModal(); }
     function deleteThread(threadId) {
       if (confirm('AUTHORIZATION REQUIRED: Purge this thread from the Sovereign matrix?')) {
         const el = document.getElementById(threadId);
@@ -554,14 +563,35 @@
       );
     }
 
-    // --- MARKDOWN PARSER FOR AGENT FORMATTING ---
+    // --- HARDWARE ROUTER: EXECUTE AGENT MACROS DIRECTLY ---
+    window.executeMacro = function(cmd) {
+      const input = document.getElementById('prompt-input');
+      input.value = cmd;
+      submitDirective();
+    };
+
+    // --- UPGRADED MARKDOWN PARSER (MOBILE-OPTIMIZED) ---
     function formatMarkdown(str) {
       let escaped = escapeHTML(str);
+      
+      // Parse Media
       escaped = escaped.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '</div><div class="media-preview-container"><img src="$2" alt="$1" /></div><div class="message-text">');
+      
+      // Parse Code Blocks (JSON, Python, YAML, etc.)
+      escaped = escaped.replace(/```(?:json|bash|yaml|python)?\n([\s\S]*?)```/g, '<pre style="background: #000; padding: 12px; border-radius: 8px; border: 1px solid rgba(243, 198, 35, 0.2); overflow-x: auto; margin: 10px 0; font-size: 12px;"><code>$1</code></pre>');
+      
+      // Parse Headers, Bold, Inline Code, Rules
       escaped = escaped.replace(/^### (.*$)/gim, '<strong style="color: var(--text-gold); font-size: 1.1em; display: block; margin-top: 12px; margin-bottom: 4px;">$1</strong>');
       escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong style="color: var(--text-gold);">$1</strong>');
       escaped = escaped.replace(/`([^`]+)`/g, '<span style="background: rgba(243, 198, 35, 0.15); color: #fff; padding: 2px 5px; border-radius: 4px;">$1</span>');
       escaped = escaped.replace(/^---$/gim, '<div style="height: 1px; background: var(--glass-edge); margin: 16px 0;"></div>');
+      escaped = escaped.replace(/^>\s?(.*$)/gim, '<blockquote style="border-left: 3px solid var(--text-gold); padding-left: 10px; margin: 10px 0; color: #ccc;">$1</blockquote>');
+      
+      // MACRO BUTTON INTERCEPTOR: Transforms "[ 🟢 /auth ]" into a 1-tap execute button
+      escaped = escaped.replace(/\[\s*([^\]]*?)\s+(\/[a-zA-Z0-9_.-]+)\s*\]/g, (match, icon, cmd) => {
+        return `<button class="macro-btn" onclick="triggerHaptic(50); executeMacro('${cmd}')">[ ${icon} ${cmd} ]</button>`;
+      });
+
       return escaped;
     }
 
@@ -605,21 +635,12 @@
         stopRecording();
       };
 
-      recognition.onend = function() {
-        stopRecording();
-      };
+      recognition.onend = function() { stopRecording(); };
     }
 
     function toggleRecording() {
-      if (!recognition) {
-        alert("Voice input is not supported in this browser environment.");
-        return;
-      }
-      if (isRecording) {
-        recognition.stop();
-      } else {
-        recognition.start();
-      }
+      if (!recognition) { alert("Voice input is not supported in this browser environment."); return; }
+      if (isRecording) { recognition.stop(); } else { recognition.start(); }
     }
 
     function stopRecording() {
@@ -632,7 +653,6 @@
     async function verifyAuth() {
       const user = document.getElementById('auth-user').value.trim();
       const pass = document.getElementById('auth-pass').value.trim();
-      
       try {
         const res = await fetch('/api/chat', {
           method: 'POST',
@@ -642,15 +662,11 @@
         const data = await res.json();
         if (data.authenticated || data.success) {
           document.getElementById('auth-modal').style.display = 'none';
-        } else {
-          alert('Access Denied: Invalid Credentials.');
-        }
+        } else { alert('Access Denied: Invalid Credentials.'); }
       } catch (e) {
         if (user === 'Admin' && pass === 'Winner1G') { 
           document.getElementById('auth-modal').style.display = 'none';
-        } else {
-          alert('Access Denied: Gateway connection error.');
-        }
+        } else { alert('Access Denied: Gateway connection error.'); }
       }
     }
 
@@ -683,14 +699,9 @@
       saveSession();
     }
 
-    function exportChatPDF() {
-      window.print();
-    }
-
-    function openVideoVaultModal() {
-      alert("Video Vault & Media Stream Matrix initialized. Use /video [prompt] to stream HD visual payloads.");
-    }
-
+    function exportChatPDF() { window.print(); }
+    function openVideoVaultModal() { alert("Video Vault & Media Stream Matrix initialized. Use /video [prompt] to stream HD visual payloads."); }
+    
     function triggerVaultSync() {
       const input = document.getElementById('prompt-input');
       input.value = "/vault";
@@ -709,14 +720,8 @@
         const reader = new FileReader();
         reader.onload = function(e) {
           const base64Data = e.target.result.split(',')[1];
-          attachedFilesPayload.push({
-            inlineData: {
-              mimeType: file.type || 'application/octet-stream',
-              data: base64Data
-            }
-          });
+          attachedFilesPayload.push({ inlineData: { mimeType: file.type || 'application/octet-stream', data: base64Data } });
           processedCount++;
-          
           if (processedCount === files.length) {
             const statusEl = document.getElementById('sys-status');
             const fileText = files.length === 1 ? files[0].name : `${files.length} FILES ATTACHED`;
@@ -732,11 +737,9 @@
       const bubble = el.closest('.message-bubble');
       const textEl = bubble.querySelector('.message-text');
       const input = document.getElementById('prompt-input');
-      
       let originalText = textEl.innerText.replace(/ \[\d+ File\(s\) Attached\]$/, '').replace(/ \[File Payload Only\]$/, '');
       input.value = originalText;
       autoResize(input);
-      
       bubble.remove();
       saveSession();
       input.focus();
@@ -744,7 +747,6 @@
 
     async function speakMessage(text) {
       try {
-        // SYNCHRONOUS UNLOCK FOR IOS SAFARI
         coreAudioPlayer.src = silentMp3;
         coreAudioPlayer.play().then(() => coreAudioPlayer.pause()).catch(e => {});
 
@@ -761,9 +763,7 @@
         } else {
           alert("Audio payload empty. Backend status: " + data.audioStatus);
         }
-      } catch (err) {
-        console.error('Speech synthesis error:', err);
-      }
+      } catch (err) { console.error('Speech synthesis error:', err); }
     }
 
     function copyBubbleText(el) {
@@ -786,7 +786,6 @@
       const text = input.value.trim();
       if (!text && attachedFilesPayload.length === 0) return;
 
-      // SYNCHRONOUS UNLOCK FOR IOS SAFARI
       if (voiceActive) {
         coreAudioPlayer.src = silentMp3;
         coreAudioPlayer.play().then(() => coreAudioPlayer.pause()).catch(e => {});
@@ -819,10 +818,7 @@
 
       try {
         const voiceProfile = document.getElementById('voice-profile-select').value;
-        const payload = {
-          prompt: text,
-          voice: voiceProfile
-        };
+        const payload = { prompt: text, voice: voiceProfile };
 
         if (attachedFilesPayload.length > 0) {
           payload.multiFiles = attachedFilesPayload;
@@ -840,7 +836,6 @@
         });
 
         const data = await response.json();
-        
         triggerHaptic([30, 50, 30]); 
 
         let contentHtml = `<div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>`;
