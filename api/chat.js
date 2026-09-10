@@ -61,6 +61,18 @@ export default async function handler(req, res) {
       
       const supUrl = process.env.SUPABASE_URL;
       const supKey = process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+      // [INTERACTION TRACKER]: Log the successful API pull
+      await fetch(`${supUrl}/rest/v1/api_access_logs`, {
+        method: 'POST',
+        headers: { 'apikey': supKey, 'Authorization': `Bearer ${supKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          license_key: clientLicenseKey,
+          endpoint_accessed: urlPath,
+          status: 'SUCCESS'
+        })
+      });
+
       const threatRes = await fetch(`${supUrl}/rest/v1/threat_ioc_telemetry?select=*&order=last_seen.desc&limit=500`, {
         headers: { 'apikey': supKey, 'Authorization': `Bearer ${supKey}` }
       });
