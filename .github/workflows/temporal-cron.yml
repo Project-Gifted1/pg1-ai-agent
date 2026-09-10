@@ -1,4 +1,4 @@
-name: Chronos Temporal Engine Sweep
+name: Sovereign Threat Temporal Cron Engine
 
 on:
   schedule:
@@ -7,24 +7,36 @@ on:
   workflow_dispatch:
 
 jobs:
-  run-temporal-simulation:
+  harvest-and-export:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Execute Temporal Simulator
+      - name: Install Dependencies
         run: |
-          python src/temporal/chronos_engine.py > temporal_sweep_results.json
-          cat temporal_sweep_results.json
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install requests supabase
 
-      - name: Upload Simulation Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: chronos-sweep-results
-          path: temporal_sweep_results.json
+      - name: Run Upstream Threat Validator Engine
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          OTX_API: ${{ secrets.OTX_API }}
+          NVD_API: ${{ secrets.NVD_API }}
+        run: |
+          python threat_validator.py
+
+      - name: Export Verified Telemetry to AlienVault OTX
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          OTX_API: ${{ secrets.OTX_API }}
+        run: |
+          python export_otx.py
