@@ -457,8 +457,10 @@
   </div>
 
   <script>
-    // --- GLOBAL MEDIA ROUTER (Fixes iOS Safari Async Audio Block) ---
+    // --- GLOBAL MEDIA ROUTER (Optimized for Low-Latency Audio Streaming) ---
     const coreAudioPlayer = new Audio();
+    coreAudioPlayer.preload = 'auto';
+    coreAudioPlayer.setAttribute('playsinline', '');
     const silentMp3 = 'data:audio/mp3;base64,//NExAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq';
 
     function base64ToBlob(b64Data, contentType='') {
@@ -485,13 +487,22 @@
       try {
         const blob = base64ToBlob(base64String, mimeType || 'audio/mp3');
         if (!blob) return;
+        
+        if (coreAudioPlayer.src && coreAudioPlayer.src.startsWith('blob:')) {
+          URL.revokeObjectURL(coreAudioPlayer.src);
+        }
+
         const blobUrl = URL.createObjectURL(blob);
         coreAudioPlayer.src = blobUrl;
-        coreAudioPlayer.play().catch(e => {
-          alert('iOS Audio Blocked: ' + e.name + ' - ' + e.message + '\\n\\nMake sure your ringer is ON and you tapped the screen.');
-        });
+        
+        const playPromise = coreAudioPlayer.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(e => {
+            console.warn('Audio Autoplay Blocked or Interrupted: ', e.name);
+          });
+        }
       } catch (err) {
-        alert('Playback Execution Error: ' + err.message);
+        console.error('Playback Execution Error: ' + err.message);
       }
     }
 
@@ -561,29 +572,23 @@
       );
     }
 
-    // --- HARDWARE ROUTER: EXECUTE AGENT MACROS DIRECTLY ---
     window.executeMacro = function(cmd) {
       const input = document.getElementById('prompt-input');
       input.value = cmd;
       submitDirective();
     };
 
-    // --- UPGRADED MARKDOWN PARSER (MOBILE-OPTIMIZED) ---
     function formatMarkdown(str) {
       let escaped = escapeHTML(str);
       
-      // MACRO BUTTON INTERCEPTOR (Must run before other formatting)
       escaped = escaped.replace(/\[\s*([^\]]*?)\s+(\/[a-zA-Z0-9_.-]+)\s*\]/g, (match, icon, cmd) => {
         return `<button class="macro-btn" data-macro="${cmd}">[ ${icon} ${cmd} ]</button>`;
       });
 
-      // Parse Media
       escaped = escaped.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '</div><div class="media-preview-container"><img src="$2" alt="$1" /></div><div class="message-text">');
       
-      // Parse Code Blocks (JSON, Python, YAML, etc.)
       escaped = escaped.replace(/```(?:json|bash|yaml|python)?\n([\s\S]*?)```/g, '<pre style="background: #000; padding: 12px; border-radius: 8px; border: 1px solid rgba(243, 198, 35, 0.2); overflow-x: auto; margin: 10px 0; font-size: 12px;"><code>$1</code></pre>');
       
-      // Parse Headers, Bold, Inline Code, Rules
       escaped = escaped.replace(/^### (.*$)/gim, '<strong style="color: var(--text-gold); font-size: 1.1em; display: block; margin-top: 12px; margin-bottom: 4px;">$1</strong>');
       escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong style="color: var(--text-gold);">$1</strong>');
       escaped = escaped.replace(/`([^`]+)`/g, '<span style="background: rgba(243, 198, 35, 0.15); color: #fff; padding: 2px 5px; border-radius: 4px;">$1</span>');
@@ -593,10 +598,8 @@
       return escaped;
     }
 
-    // --- SAFARI EVENT DELEGATION OVERRIDE ---
     const chatMatrix = document.getElementById('chat-container');
     
-    // Explicitly bind to both interaction vectors to ensure iOS execution
     chatMatrix.addEventListener('click', handleMacro);
     chatMatrix.addEventListener('touchstart', handleMacro, { passive: false });
 
@@ -849,7 +852,6 @@
           statusEl.style.color = '#999';
         }
 
-                // [WEBKIT BYPASS]: Convert large base64 JSON payload to Blob to prevent iOS Safari DOMException crash
         const jsonString = JSON.stringify(payload);
         const blobBody = new Blob([jsonString], { type: 'application/json' });
 
@@ -858,7 +860,6 @@
           headers: { 'Content-Type': 'application/json' },
           body: blobBody
         });
-
 
         const data = await response.json();
         triggerHaptic([30, 50, 30]); 
