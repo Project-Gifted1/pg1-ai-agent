@@ -12,8 +12,7 @@ Orchestrates autonomous self-governing capabilities:
 import os
 import sys
 
-# 1. Force the runner's workspace root into the Python path BEFORE any other imports 
-# to guarantee the resolution of local swarm modules.
+# Force the runner's workspace root into the Python path
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 sys.path.insert(0, os.getcwd())
 
@@ -23,17 +22,14 @@ import uuid
 import hashlib
 from datetime import datetime, timezone
 from typing import Dict, List, Any
-
-# 2. Third-party and local module imports follow the path injection
 from supabase import create_client, Client
+
 from swarm_registry import SwarmRegistry
 
 # ---------------------------------------------------------------------------
 # 1. AUTONOMOUS FEED DRIFT & SELF-HEALING CANARY
 # ---------------------------------------------------------------------------
 class SovereignFeedCanary:
-    """Monitors live threat feed schemas, drift, and latency with automated failover."""
-
     def __init__(self):
         self.feed_health_registry: Dict[str, Dict[str, Any]] = {}
 
@@ -65,13 +61,10 @@ class SovereignFeedCanary:
         self.feed_health_registry[feed_name] = health_record
         return health_record
 
-
 # ---------------------------------------------------------------------------
 # 2. AUTONOMOUS GAS & TREASURY REBALANCER
 # ---------------------------------------------------------------------------
 class AutonomousTreasuryRebalancer:
-    """Monitors Base Sepolia / Mainnet gas levels and balances pipeline revenue."""
-
     def __init__(self, min_reserve_eth: float = 0.05):
         self.min_reserve_eth = min_reserve_eth
 
@@ -95,18 +88,14 @@ class AutonomousTreasuryRebalancer:
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
-
 # ---------------------------------------------------------------------------
 # 3. AUTONOMOUS HONEYPOT & ACTIVE PROBER
 # ---------------------------------------------------------------------------
 class AutonomousActiveProber:
-    """Deploys ephemeral decoy probes and runs active TLS/JARM fingerprinting."""
-
     @staticmethod
     def fingerprint_target(ip_address: str) -> Dict[str, Any]:
         raw_sig = hashlib.sha256(f"probe:{ip_address}".encode()).hexdigest()
         jarm_hash = f"29d29d00029d29d21c41d41d41d41d{raw_sig[:32]}"
-        
         is_malicious = not ip_address.startswith("10.") and not ip_address.startswith("192.168.")
         
         return {
@@ -118,32 +107,31 @@ class AutonomousActiveProber:
             "probed_at": datetime.now(timezone.utc).isoformat()
         }
 
-
 # ---------------------------------------------------------------------------
 # EXECUTION ENTRY POINT
 # ---------------------------------------------------------------------------
 def run_autonomous_cycle():
     print("=== [ Launching Sovereign Autonomous Core v13.0 ] ===")
 
-    # Initialize Swarm Registry
     registry = SwarmRegistry()
     print("[✔] Swarm Registry linked successfully.")
 
-    # 1. Canary Run
     canary = SovereignFeedCanary()
     canary_result = canary.audit_feed_health("ThreatFox-C2-Feed", {"indicators": ["185.220.101.5"], "timestamp": 1710000000, "source": "threatfox"}, latency_ms=310.5)
 
-    # 2. Treasury Run
     treasury = AutonomousTreasuryRebalancer(min_reserve_eth=0.05)
     treasury_result = treasury.evaluate_treasury(current_balance_eth=0.082, pending_tx_count=12)
 
-    # 3. Active Probe Run
     prober = AutonomousActiveProber()
     probe_result = prober.fingerprint_target("185.220.101.5")
 
-    # Initialize Live Supabase Connection
+    # Hardened Credential Mapping
     supabase_url = os.environ.get("SUPABASE_URL")
-    supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")
+    supabase_key = (
+        os.environ.get("SUPABASE_SERVICE_ROLEKEY") 
+        or os.environ.get("SUPABASE_SERVICE_KEY") 
+        or os.environ.get("SUPABASE_KEY")
+    )
     
     if not supabase_url or not supabase_key:
         print("[!] Error: Supabase credentials missing from environment.")
@@ -151,7 +139,6 @@ def run_autonomous_cycle():
 
     supabase: Client = create_client(supabase_url, supabase_key)
 
-    # Construct the database payload
     payload = {
         "canary_data": canary_result,
         "treasury_data": treasury_result,
@@ -161,7 +148,6 @@ def run_autonomous_cycle():
     }
 
     try:
-        # Execute Live Database Insertion
         response = supabase.table("core_telemetry").insert(payload).execute()
         print("[✔] Autonomous Core Cycle completed. Live telemetry inserted into Supabase.")
     except Exception as e:
