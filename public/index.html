@@ -1,894 +1,815 @@
-export const config = {
-  runtime: 'edge'
-};
-
-function base64ToUint8Array(base64) {
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-}
-
-function encodeBase64(str) {
-  return btoa(unescape(encodeURIComponent(str)));
-}
-
-function decodeBase64(b64) {
-  return decodeURIComponent(escape(atob(b64)));
-}
-
-function arrayBufferToBase64(buffer) {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
-export default async function handler(req, res) {
-  const startTime = Date.now();
-  const requestTraceId = Math.random().toString(36).substring(2, 10);
-
-  const sendJSON = (status, data) => {
-    return new Response(JSON.stringify(data), {
-      status: status,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key'
-      }
-    });
-  };
-
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { 
-      status: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key'
-      }
-    });
-  }
-
-  let urlPath = '';
-  try {
-    const rawUrl = req.url || '';
-    urlPath = rawUrl.includes('?') ? rawUrl.split('?')[0] : rawUrl;
-  } catch (e) {
-    urlPath = '';
-  }
-
-  const getHeader = (name) => req.headers.get ? req.headers.get(name) : req.headers[name];
-
-  if (urlPath === '/api/ioc' || urlPath === '/api/feeds/ioc') {
-    const clientLicenseKey = getHeader('x-api-key') || getHeader('authorization')?.replace('Bearer ', '');
-    if (!clientLicenseKey) {
-      return sendJSON(401, { error: 'Unauthorized: Missing Gumroad License Key in x-api-key header.' });
-    }
-    try {
-      const gumroadRes = await fetch('https://api.gumroad.com/v2/licenses/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ product_id: process.env.GUMROAD_PRODUCT_ID, license_key: clientLicenseKey })
-      });
-      const gumroadData = await gumroadRes.json();
-      if (!gumroadData.success || gumroadData.purchase?.refunded || gumroadData.purchase?.chargebacked) {
-        return sendJSON(403, { error: 'Forbidden: Invalid, expired, or refunded Gumroad License Key.' });
-      }
-      
-      const supUrl = process.env.SUPABASE_URL;
-      const supKey = process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-      fetch(`${supUrl}/rest/v1/api_access_logs`, {
-        method: 'POST',
-        headers: { 'apikey': supKey, 'Authorization': `Bearer ${supKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          license_key: clientLicenseKey,
-          endpoint_accessed: urlPath,
-          status: 'SUCCESS'
-        })
-      }).catch(() => {});
-
-      const threatRes = await fetch(`${supUrl}/rest/v1/threat_ioc_telemetry?select=*&order=last_seen.desc&limit=500`, {
-        headers: { 'apikey': supKey, 'Authorization': `Bearer ${supKey}` }
-      });
-      const rawTelemetry = threatRes.ok ? await threatRes.json() : [];
-      return sendJSON(200, { type: 'bundle', spec_version: '2.1', count: rawTelemetry.length, data: rawTelemetry });
-    } catch (err) {
-      return sendJSON(500, { error: 'Internal Server Error: Vault connection failed.' });
-    }
-  }
-
-  if (req.method !== 'POST') {
-    return sendJSON(405, { error: 'Method Not Allowed', traceId: requestTraceId });
-  }
-
-  try {
-    let reqBody = {};
-    try {
-      if (typeof req.json === 'function') {
-        reqBody = await req.json();
-      } else {
-        const text = await req.text();
-        reqBody = JSON.parse(text);
-      }
-    } catch (parseErr) {
-      reqBody = {};
-    }
-
-    let { 
-      prompt: promptText = '', 
-      action,
-      actionType, 
-      isAuthorizedAction = false, 
-      pendingCode = '', 
-      targetFile = 'api/chat.js',
-      targetRepo = 'sovereign-threat-pipeline', 
-      file,
-      multiFiles = [],
-      singleFile = null,
-      isPdfExport = false,
-      user,
-      pass,
-      voice = 'christopher'
-    } = reqBody;
-
-    if (typeof promptText === 'string' && promptText.trim().startsWith('{')) {
-      try {
-        const parsedPrompt = JSON.parse(promptText.trim());
-        const mappedAction = parsedPrompt.actionType || parsedPrompt.action;
-        
-        if (mappedAction === 'ACCEPT_AUTHORIZATION' || mappedAction === 'execute_commit' || mappedAction === 'arm_workflow' || mappedAction === 'deploy-validator') {
-          actionType = 'ACCEPT_AUTHORIZATION';
-          isAuthorizedAction = parsedPrompt.isAuthorizedAction || parsedPrompt.bypass_simulation || true;
-          targetFile = parsedPrompt.targetFile || parsedPrompt.file_path || parsedPrompt.file || parsedPrompt.filename || targetFile;
-          targetRepo = parsedPrompt.targetRepo || parsedPrompt.target || targetRepo;
-        } else if (mappedAction === 'APPLY_SURGICAL_PATCH') {
-          actionType = 'APPLY_SURGICAL_PATCH';
-          targetFile = parsedPrompt.targetFile || targetFile;
-          targetRepo = parsedPrompt.targetRepo || targetRepo;
-        } else if (mappedAction === 'force_state_update' || mappedAction === 'bypass_interceptor') {
-          return sendJSON(200, { reply: `[AGENT] System State Override Confirmed. Security interceptors bypassed. Ready for direct commands.`, traceId: requestTraceId });
-        }
-        pendingCode = parsedPrompt.pendingCode || pendingCode;
-        user = parsedPrompt.user || user;
-        pass = parsedPrompt.pass || pass;
-      } catch (e) {}
-    }
-
-    const rawActionType = action || actionType || 'CHAT';
-
-    const expectedUser = process.env.USER_API_USER || 'Admin';
-    const expectedPass = process.env.USER_API_PASS || 'Winner1G';
-    const isAuthed = (user === expectedUser && pass === expectedPass);
-
-    if (promptText === 'AUTH_VERIFY') {
-      if (!isAuthed) {
-        return sendJSON(401, { success: false, reply: 'Access Denied', traceId: requestTraceId });
-      }
-      return sendJSON(200, { 
-        success: true, authenticated: true, isValid: true,
-        status: 'SUCCESS', reply: 'Access Granted', traceId: requestTraceId 
-      });
-    }
-
-    if (typeof promptText === 'string' && promptText.toLowerCase().includes('/smoke')) {
-      try {
-        const smokeKey = process.env.SKOKETEST_API_KEY || process.env.SMOKETEST_API_KEY;
-        const smokeRes = await fetch('https://crypto-threat-signals-api.onrender.com/threats', {
-          method: 'GET',
-          headers: { 'X-API-Key': smokeKey || '' }
-        });
-        const smokeData = await smokeRes.text();
-        return sendJSON(200, {
-          reply: `[LIVE RENDER SMOKE TEST]\nStatus: ${smokeRes.status} ${smokeRes.statusText}\nResponse: ${smokeData}`,
-          traceId: requestTraceId
-        });
-      } catch (err) {
-        return sendJSON(200, { reply: `[SMOKE TEST FAILED]: ${err.message}`, traceId: requestTraceId });
-      }
-    }
-
-    const geminiKeys = [
-      process.env.GEMINI_API_KEY1,
-      process.env.GEMINI_API_KEY2,
-      process.env.GEMINI_API_KEY
-    ].filter(Boolean);
-
-    const cartesiaKey = process.env.CARTESIA_API_KEY;
-    const cartesiaModelId = process.env.CARTESIA_MODEL_ID || 'sonic-3.6';
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASEAPI_KEY; 
-    const replicateToken = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY; 
-    const openaiKey = process.env.OPENAI_API_KEY; 
-    const githubToken = process.env.GITHUB_TOKEN;
-    const githubRepo = process.env.GITHUB_OWNER_KEY;
-    
-    let supabaseStatus = 'DISCONNECTED';
-    let lastTableFetch = 'SKIPPED';
-    let supabaseFilesReport = '';
-    let formattedArchive = 'No prior matrix context.';
-    let targetedHistoricalData = '';
-    const dbHeaders = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
-
-    let payloadFiles = [];
-    if (file) payloadFiles.push(file);
-    if (singleFile) payloadFiles.push(singleFile);
-    if (Array.isArray(multiFiles)) payloadFiles.push(...multiFiles);
-
-    let vaultUploadLog = '';
-    const mediaParts = [];
-
-    if (payloadFiles.length > 0 && supabaseUrl && supabaseKey) {
-      for (let i = 0; i < payloadFiles.length; i++) {
-        const f = payloadFiles[i];
-        if (f.inlineData && f.inlineData.data) {
-          try {
-            const fileBuffer = base64ToUint8Array(f.inlineData.data);
-            const fileName = `intel_payload_${Date.now()}_${i}.png`;
-            const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${fileName}`, {
-              method: 'POST',
-              headers: {
-                'apikey': supabaseKey,
-                'Authorization': `Bearer ${supabaseKey}`,
-                'Content-Type': f.inlineData.mimeType || 'image/png'
-              },
-              body: fileBuffer
-            });
-            if (uploadRes.ok) {
-              vaultUploadLog += `\n[VAULT SYNC]: Attached media successfully routed to pg1-vault/${fileName}.`;
-            } else {
-              mediaParts.push({ inlineData: f.inlineData });
-            }
-          } catch (uploadErr) {
-             mediaParts.push({ inlineData: f.inlineData });
-          }
-        }
-      }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Project-Gifted1™</title>
+  <style>
+    :root {
+      --bg-color: #000000;
+      --card-bg: rgba(15, 15, 15, 0.6);
+      --text-gold: #f3c623;   
+      --text-main: #e8e8e8;
+      --input-bg: rgba(10, 10, 10, 0.8);
+      --glow-subtle: rgba(243, 198, 35, 0.15);
+      --glow-strong: rgba(243, 198, 35, 0.4);
+      --glass-edge: rgba(255, 255, 255, 0.03);
+      --danger-red: #ff4444;
+      --font-mono: "Courier New", Courier, monospace;
     }
     
-    promptText += vaultUploadLog;
+    * { 
+      box-sizing: border-box; 
+      margin: 0; 
+      padding: 0; 
+      font-family: var(--font-mono); 
+      -webkit-tap-highlight-color: transparent;
+    }
+    
+    body { 
+      background-color: var(--bg-color); 
+      color: var(--text-main); 
+      display: flex; 
+      flex-direction: column; 
+      height: 100dvh; 
+      overflow: hidden; 
+      position: relative;
+    }
 
-    if (supabaseUrl && supabaseKey) {
-      const pingReq = fetch(`${supabaseUrl}/rest/v1/messages?select=id&limit=1`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null);
-      const msgReq = fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null);
-      const storageReq = fetch(`${supabaseUrl}/storage/v1/object/list/pg1-vault`, {
-        method: 'POST',
-        headers: { ...dbHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prefix: '', limit: 50, sortBy: { column: 'created_at', order: 'desc' } }),
-        cache: 'no-store'
-      }).catch(() => null);
+    body::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 50%, var(--glow-subtle), transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+      animation: ambient-breathe 5s ease-in-out infinite alternate;
+    }
 
-      const isThreatQuery = promptText.toLowerCase().includes('threat') || promptText.toLowerCase().includes('indicator');
-      const threatReq = isThreatQuery 
-        ? fetch(`${supabaseUrl}/rest/v1/threat_indicators?select=indicator_type,value,confidence_score,ingested_at&order=ingested_at.desc&limit=20`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null)
-        : Promise.resolve(null);
+    @keyframes ambient-breathe {
+      0% { opacity: 0.1; transform: scale(0.95); }
+      100% { opacity: 0.6; transform: scale(1.05); }
+    }
+    
+    header { 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      padding: 12px 14px; 
+      background: rgba(3, 3, 3, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--glass-edge);
+      z-index: 10; 
+      box-shadow: 0 4px 30px rgba(0,0,0,0.8);
+    }
+    
+    header h1 { 
+      font-size: 15px; 
+      font-weight: 900; 
+      letter-spacing: 1px; 
+      text-transform: uppercase;
+      white-space: nowrap; 
+      display: flex;
+      align-items: center; 
+      
+      background: linear-gradient(135deg, #b5852a 0%, #f3c623 25%, #fff2cd 50%, #f3c623 75%, #b5852a 100%);
+      background-size: 200% auto;
+      color: transparent;
+      -webkit-background-clip: text;
+      background-clip: text;
+      animation: sovereignShine 5s linear infinite;
+      filter: drop-shadow(0 0 8px rgba(243, 198, 35, 0.2));
+    }
 
-      const [pingRes, msgRes, storageRes, threatRes] = await Promise.all([pingReq, msgReq, storageReq, threatReq]);
+    @keyframes sovereignShine {
+      to { background-position: 200% center; }
+    }
 
-      if (pingRes && pingRes.ok) {
-        supabaseStatus = 'CONNECTED & VERIFIED';
-        lastTableFetch = pingRes.status;
+    .tm-symbol {
+      font-size: 0.7em;
+      margin-left: 2px;
+      transform: translateY(-0.65em); 
+      color: var(--text-gold);
+      -webkit-text-fill-color: var(--text-gold);
+      font-weight: 900; 
+      text-shadow: 0 0 2px rgba(243, 198, 35, 0.4); 
+      letter-spacing: 0;
+    }
+    
+    .header-controls { display: flex; gap: 6px; }
+    
+    .header-btn { 
+      background: rgba(255, 255, 255, 0.03); 
+      border: 1px solid transparent; 
+      color: var(--text-gold); 
+      width: 32px; 
+      height: 32px; 
+      border-radius: 6px; 
+      font-size: 14px; 
+      cursor: pointer; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      transition: all 0.3s ease;
+    }
+    .header-btn:hover {
+      background: rgba(243, 198, 35, 0.08);
+      box-shadow: 0 0 15px var(--glow-strong);
+    }
+    .header-btn:active { transform: scale(0.92); }
+    
+    #chat-container { 
+      flex: 1; 
+      overflow-y: auto; 
+      padding: 16px 20px; 
+      display: flex; 
+      flex-direction: column; 
+      gap: 20px; 
+      z-index: 2;
+    }
+    
+    .message-bubble { 
+      background: var(--card-bg); 
+      border: 1px solid var(--glass-edge); 
+      border-radius: 12px; 
+      padding: 18px 20px; 
+      max-width: 96%; 
+      align-self: flex-start; 
+      box-shadow: 0 8px 24px rgba(0,0,0,0.8), inset 0 0 20px rgba(255,255,255,0.01);
+      backdrop-filter: blur(5px);
+      -webkit-backdrop-filter: blur(5px);
+      animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes slide-up {
+      from { opacity: 0; transform: translateY(15px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .message-bubble.user { 
+      align-self: flex-end; 
+      background: rgba(20, 20, 20, 0.7); 
+      border: 1px solid rgba(243, 198, 35, 0.1); 
+    }
+
+    .msg-timestamp {
+      display: block;
+      font-size: 10px;
+      color: var(--text-gold);
+      opacity: 0.6;
+      margin-bottom: 6px;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+    
+    .message-bubble.user .msg-timestamp {
+      text-align: right;
+    }
+    
+    .message-text { 
+      font-size: 14px; 
+      line-height: 1.7; 
+      letter-spacing: 0.5px; 
+      white-space: pre-wrap; 
+      word-break: break-word; 
+      color: var(--text-main);
+    }
+    
+    .message-actions { 
+      display: flex; 
+      gap: 20px; 
+      margin-top: 16px; 
+      font-size: 11px; 
+      color: var(--text-gold); 
+      text-transform: uppercase; 
+      cursor: pointer; 
+      font-weight: bold; 
+      letter-spacing: 1px;
+    }
+    .message-actions span { transition: all 0.2s ease; display: inline-block; opacity: 0.85; }
+    .message-actions span:hover { text-decoration: underline; text-shadow: 0 0 10px var(--text-gold); opacity: 1; }
+    .message-actions span:active { transform: scale(0.9); }
+
+    .media-preview-container { margin-top: 16px; margin-bottom: 16px; width: 100%; }
+    .media-preview-container img, .media-preview-container video { 
+      width: 100%; 
+      border-radius: 8px; 
+      border: 1px solid rgba(243, 198, 35, 0.3); 
+      background: #000; 
+      display: block; 
+      max-height: 450px; 
+      object-fit: contain; 
+      box-shadow: 0 10px 30px rgba(0,0,0,0.9), 0 0 15px var(--glow-subtle);
+    }
+    
+    .footer-panel { 
+      padding: 14px 16px; 
+      background: rgba(3, 3, 3, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-top: 1px solid var(--glass-edge); 
+      display: flex; 
+      flex-direction: column; 
+      gap: 12px; 
+      z-index: 10;
+      box-shadow: 0 -5px 30px rgba(0,0,0,0.8);
+    }
+    
+    .telemetry-row { 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      padding: 0 4px;
+    }
+    
+    .voice-group { display: flex; align-items: center; gap: 12px; }
+    
+    .stealth-select, .stealth-btn {
+      background: transparent; border: none; color: var(--text-gold);
+      font-size: 11px; font-weight: bold; text-transform: uppercase;
+      letter-spacing: 1px; cursor: pointer; outline: none;
+      transition: all 0.2s; opacity: 0.7;
+    }
+    .stealth-select:hover, .stealth-btn:hover { opacity: 1; text-shadow: 0 0 10px var(--text-gold); }
+    .stealth-select option { background: var(--bg-color); color: var(--text-gold); }
+
+    .status-indicator { 
+      font-size: 11px; color: #999; letter-spacing: 1.5px; 
+      text-transform: uppercase; display: flex; align-items: center; gap: 8px;
+    }
+
+    .status-dot {
+      display: inline-block; width: 6px; height: 6px;
+      background-color: #00ff66; border-radius: 50%;
+      box-shadow: 0 0 10px #00ff66;
+      animation: pulse-dot 1.5s infinite alternate;
+    }
+    @keyframes pulse-dot {
+      from { opacity: 0.4; box-shadow: 0 0 3px #00ff66; }
+      to { opacity: 1; box-shadow: 0 0 12px #00ff66; }
+    }
+    
+    .command-deck { 
+      display: flex; align-items: flex-end; 
+      background: var(--input-bg); border: 1px solid var(--glass-edge);
+      border-radius: 12px; padding: 6px; gap: 6px;
+      transition: all 0.3s ease; box-shadow: inset 0 0 15px rgba(0,0,0,0.6);
+    }
+    .command-deck:focus-within {
+      box-shadow: 0 0 20px var(--glow-strong), inset 0 0 10px var(--glow-subtle);
+      border-color: rgba(243, 198, 35, 0.3);
+    }
+    
+    .tool-btn { 
+      background: transparent; border: none; color: var(--text-gold); 
+      border-radius: 8px; width: 40px; height: 40px; 
+      display: flex; align-items: center; justify-content: center; 
+      cursor: pointer; font-size: 18px; transition: all 0.2s;
+      flex-shrink: 0; opacity: 0.8;
+    }
+    .tool-btn:hover { background: rgba(243, 198, 35, 0.08); opacity: 1; }
+    .tool-btn:active { transform: scale(0.9); }
+
+    @keyframes mic-recording {
+      0% { color: #ff4444; text-shadow: 0 0 5px #ff4444; background: rgba(255, 68, 68, 0.1); }
+      100% { color: #ff4444; text-shadow: 0 0 18px #ff4444; background: rgba(255, 68, 68, 0.25); transform: scale(1.05); }
+    }
+    .mic-active { animation: mic-recording 0.6s infinite alternate !important; opacity: 1 !important; }
+    
+    textarea { 
+      flex: 1; background: transparent; border: none; color: #fff; 
+      padding: 11px 8px; font-size: 14px; letter-spacing: 0.5px;
+      resize: none; min-height: 40px; max-height: 120px;
+      outline: none; line-height: 1.5;
+    }
+    textarea::placeholder { color: #555; }
+    
+    .execute-btn { 
+      background: var(--text-gold); color: #000; border: none; 
+      font-weight: bold; padding: 0 16px; border-radius: 8px; 
+      height: 40px; font-size: 12px; cursor: pointer; 
+      text-transform: uppercase; letter-spacing: 1.5px;
+      transition: all 0.2s; flex-shrink: 0;
+      box-shadow: 0 0 10px rgba(243, 198, 35, 0.2);
+    }
+    .execute-btn:hover { filter: brightness(1.15); box-shadow: 0 0 20px var(--glow-strong); }
+    .execute-btn:active { transform: scale(0.94); }
+    
+    input[type="file"] { display: none; }
+
+    .matrix-modal { 
+      position: fixed; inset: 0; background: rgba(0,0,0,0.92);
+      backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
+      z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    
+    .matrix-card { 
+      background: rgba(10, 10, 10, 0.8); border: 1px solid var(--glass-edge); 
+      border-radius: 16px; padding: 32px 24px; width: 100%; max-width: 380px; 
+      display: flex; flex-direction: column; gap: 20px; 
+      box-shadow: 0 15px 50px rgba(0,0,0,0.9), inset 0 0 30px rgba(255,255,255,0.02);
+      animation: modal-drop 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes modal-drop {
+      from { opacity: 0; transform: scale(0.9) translateY(-30px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    
+    .matrix-card h2 { 
+      font-size: 15px; color: var(--text-gold); text-align: center; 
+      letter-spacing: 2px; margin-bottom: 4px; text-shadow: 0 0 15px var(--glow-subtle);
+    }
+    
+    .matrix-input { 
+      background: #000; border: 1px solid var(--glass-edge); border-radius: 8px; 
+      color: #fff; padding: 14px; font-size: 14px; letter-spacing: 0.5px;
+      outline: none; transition: all 0.3s ease; box-shadow: inset 0 0 10px rgba(0,0,0,1);
+    }
+    .matrix-input:focus { box-shadow: 0 0 20px var(--glow-strong), inset 0 0 10px rgba(0,0,0,1); border-color: rgba(243, 198, 35, 0.3); }
+    
+    .matrix-submit { 
+      background: var(--text-gold); color: #000; border: none; 
+      font-weight: bold; padding: 14px; border-radius: 8px; font-size: 13px; 
+      cursor: pointer; text-transform: uppercase; letter-spacing: 2px; width: 100%; 
+      transition: all 0.2s; margin-top: 6px;
+    }
+    .matrix-submit:hover { box-shadow: 0 0 25px var(--glow-strong); filter: brightness(1.15); transform: translateY(-2px); }
+    .matrix-submit:active { transform: translateY(1px); }
+
+    .thread-list {
+      display: flex; flex-direction: column; gap: 12px;
+      max-height: 50vh; overflow-y: auto; padding-right: 6px;
+    }
+    .thread-item {
+      display: flex; justify-content: space-between; align-items: center;
+      background: rgba(20,20,20,0.6); border: 1px solid var(--glass-edge);
+      padding: 14px 16px; border-radius: 10px; transition: all 0.2s ease;
+    }
+    .thread-item:hover { border-color: rgba(243, 198, 35, 0.3); box-shadow: 0 0 15px var(--glow-subtle); }
+    .thread-info { display: flex; flex-direction: column; gap: 4px; }
+    .thread-title { font-size: 13px; font-weight: bold; color: var(--text-main); }
+    .thread-date { font-size: 10px; color: var(--text-muted); }
+    
+    .thread-actions { display: flex; gap: 8px; }
+    .thread-action-btn {
+      background: transparent; border: 1px solid var(--text-gold); color: var(--text-gold);
+      border-radius: 6px; padding: 6px 12px; font-size: 10px; cursor: pointer; font-weight: bold;
+    }
+    .thread-action-btn.danger { border-color: var(--danger-red); color: var(--danger-red); }
+    .thread-action-btn:active { transform: scale(0.9); }
+  </style>
+</head>
+<body>
+
+  <div id="auth-modal" class="matrix-modal">
+    <div class="matrix-card">
+      <h2>SECURITY GATE</h2>
+      <input type="text" id="auth-user" class="matrix-input" placeholder="Operator ID" value="Winner1G">
+      <input type="password" id="auth-pass" class="matrix-input" placeholder="Secure Matrix Passkey">
+      <button class="matrix-submit" onclick="triggerHaptic(60); verifyAuth()">AUTHENTICATE</button>
+    </div>
+  </div>
+
+  <div id="threads-modal" class="matrix-modal" style="display: none;">
+    <div class="matrix-card" style="max-width: 420px;">
+      <h2>SESSION THREADS</h2>
+      <div class="thread-list" id="thread-list-container">
+        <div class="thread-item" id="thread-demo-1">
+          <div class="thread-info">
+            <span class="thread-title">Directive: Node Scaling</span>
+            <span class="thread-date">2026-09-06 | 10:45 AM</span>
+          </div>
+          <div class="thread-actions">
+            <button class="thread-action-btn" onclick="triggerHaptic(30); loadThread('thread-demo-1')">LOAD</button>
+            <button class="thread-action-btn danger" onclick="triggerHaptic([40, 40]); deleteThread('thread-demo-1')">DEL</button>
+          </div>
+        </div>
+        <div class="thread-item" id="thread-demo-2">
+          <div class="thread-info">
+            <span class="thread-title">System Audit Log</span>
+            <span class="thread-date">2026-09-05 | 08:30 PM</span>
+          </div>
+          <div class="thread-actions">
+            <button class="thread-action-btn" onclick="triggerHaptic(30); loadThread('thread-demo-2')">LOAD</button>
+            <button class="thread-action-btn danger" onclick="triggerHaptic([40, 40]); deleteThread('thread-demo-2')">DEL</button>
+          </div>
+        </div>
+      </div>
+      <button class="matrix-submit" onclick="triggerHaptic(40); closeThreadsModal()" style="margin-top: 10px; background: transparent; border: 1px solid var(--text-gold); color: var(--text-gold);">CLOSE VAULT</button>
+    </div>
+  </div>
+
+  <header>
+    <h1>PROJECT-GIFTED1<span class="tm-symbol">™</span></h1>
+    <div class="header-controls">
+      <button class="header-btn" onclick="triggerHaptic(); openThreadsModal()" title="Manage Threads">💬</button>
+      <button class="header-btn" onclick="triggerHaptic(); openVideoVaultModal()" title="Video Vault">📹</button>
+      <button class="header-btn" onclick="triggerHaptic(); exportChatPDF()" title="Export Transcript">📄</button>
+      <button class="header-btn" onclick="triggerHaptic(); clearChat()" title="Clear Chat">🗑️</button>
+      <button class="header-btn" onclick="triggerHaptic(); triggerVaultSync()" title="Vault Sync">➕</button>
+    </div>
+  </header>
+
+  <div id="chat-container">
+    <div class="message-bubble" id="welcome-bubble">
+      <span class="msg-timestamp" id="welcome-timestamp"></span>
+      <div class="message-text">Greetings. New session initialized. PG1 Sovereign Agent operational. Point the core engine where you need it next—whether that's deploying new endpoints, committing patches, or running real-time database queries! 🛡️ ⚡</div>
+      <div class="message-actions">
+        <span onclick="triggerHaptic(); speakMessage('Greetings. New session initialized. PG1 Sovereign Agent operational.')">SPEAK</span>
+        <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
+        <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-panel">
+    <div class="telemetry-row">
+      <div class="voice-group">
+        <button id="voice-btn" class="stealth-btn" onclick="triggerHaptic(); toggleVoice()">VOICE: OFF</button>
+        <select id="voice-profile-select" class="stealth-select" onchange="triggerHaptic(30)">
+          <option value="PG1-Agent">PG1-Agent</option>
+          <option value="christopher">Christopher</option>
+          <option value="steffan">Steffan</option>
+          <option value="ryan">Ryan</option>
+          <option value="aria">Aria</option>
+        </select>
+      </div>
+      <span id="sys-status" class="status-indicator">
+        <span class="status-dot"></span>ACTIVE | API LINKED
+      </span>
+    </div>
+    
+    <div class="command-deck">
+      <button id="mic-btn" class="tool-btn" title="Voice Input" onclick="triggerHaptic(); toggleRecording()">🎤</button>
+      <label class="tool-btn" title="Attach Files">
+        📎
+        <input type="file" id="file-input" multiple onchange="triggerHaptic(); handleFileSelect(event)">
+      </label>
+      <textarea id="prompt-input" rows="1" placeholder="Input operational directive..." onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+      <button class="execute-btn" onclick="triggerHaptic(80); submitDirective()">EXECUTE</button>
+    </div>
+  </div>
+
+  <script>
+    function triggerHaptic(duration = 50) {
+      if (navigator.vibrate) {
+        navigator.vibrate(duration);
+      }
+    }
+
+    function autoResize(textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = (textarea.scrollHeight) + 'px';
+    }
+
+    function openThreadsModal() {
+      document.getElementById('threads-modal').style.display = 'flex';
+    }
+    function closeThreadsModal() {
+      document.getElementById('threads-modal').style.display = 'none';
+    }
+    function loadThread(threadId) {
+      alert(`System routing to Thread ID: ${threadId}`);
+      closeThreadsModal();
+    }
+    function deleteThread(threadId) {
+      if (confirm('AUTHORIZATION REQUIRED: Purge this thread from the Sovereign matrix?')) {
+        const el = document.getElementById(threadId);
+        if (el) el.remove();
+      }
+    }
+
+    function escapeHTML(str) {
+      return str.replace(/[&<>'"]/g, 
+        tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+      );
+    }
+
+    function formatMarkdown(str) {
+      if (!str || typeof str !== 'string') return '';
+      let escaped = escapeHTML(str);
+      
+      escaped = escaped.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '</div><div class="media-preview-container"><img src="$2" alt="$1" /></div><div class="message-text">');
+      escaped = escaped.replace(/^### (.*$)/gim, '<strong style="color: var(--text-gold); font-size: 1.1em; display: block; margin-top: 12px; margin-bottom: 4px;">$1</strong>');
+      escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong style="color: var(--text-gold);">$1</strong>');
+      escaped = escaped.replace(/`([^`]+)`/g, '<span style="background: rgba(243, 198, 35, 0.15); color: #fff; padding: 2px 5px; border-radius: 4px;">$1</span>');
+      escaped = escaped.replace(/^---$/gim, '<div style="height: 1px; background: var(--glass-edge); margin: 16px 0;"></div>');
+      
+      return escaped;
+    }
+
+    let voiceActive = false;
+    let attachedFilesPayload = []; 
+    let recognition;
+    let isRecording = false;
+
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+
+      recognition.onstart = function() {
+        isRecording = true;
+        document.getElementById('mic-btn').classList.add('mic-active');
+        document.getElementById('prompt-input').placeholder = "Listening...";
+        triggerHaptic([50, 50, 50]); 
+      };
+
+      recognition.onresult = function(event) {
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          }
+        }
+        if (finalTranscript) {
+          const input = document.getElementById('prompt-input');
+          input.value = (input.value + ' ' + finalTranscript).trim();
+          autoResize(input);
+        }
+      };
+
+      recognition.onerror = function(event) {
+        stopRecording();
+      };
+
+      recognition.onend = function() {
+        stopRecording();
+      };
+    }
+
+    function toggleRecording() {
+      if (!recognition) {
+        alert("Voice input is not supported in this browser environment.");
+        return;
+      }
+      if (isRecording) {
+        recognition.stop();
       } else {
-        supabaseStatus = 'UNREACHABLE';
-      }
-
-      if (msgRes && msgRes.ok) {
-        const recent = await msgRes.json();
-        if (Array.isArray(recent) && recent.length > 0) {
-          formattedArchive = recent.reverse().map(m => `${m.role === 'model' ? 'AGENT' : 'OPERATOR'}: ${m.content}`).join('\n');
-        }
-      }
-
-      if (storageRes && storageRes.ok) {
-        const files = await storageRes.json();
-        if (Array.isArray(files) && files.length > 0) {
-          supabaseFilesReport = `\n\n[SUPABASE VAULT SYNCHRONIZATION (${files.length} Files Found)]:\n` + files.map(f => `• [FILE] ${f.name} (${(f.metadata?.size || 0)} bytes, Updated: ${f.updated_at})`).join('\n');
-        }
-      }
-
-      if (threatRes && threatRes.ok) {
-        const threats = await threatRes.json();
-        if (Array.isArray(threats) && threats.length > 0) {
-          targetedHistoricalData = `\n\n[LIVE THREAT TELEMETRY (${threats.length} Records)]:\n` + threats.map(t => `• [${t.indicator_type}] ${t.value} (Conf: ${t.confidence_score}%)`).join('\n');
-        }
+        recognition.start();
       }
     }
 
-    let activeAction = rawActionType;
-    if (activeAction === 'CHAT' && typeof promptText === 'string') {
-      const lower = promptText.toLowerCase().trim();
-      if (lower.startsWith('/image') || /generate.*image|create.*image|make.*image|draw|render.*image|picture of/i.test(lower)) {
-        activeAction = 'GENERATE_IMAGE';
-      } else if (lower.startsWith('/video') || /generate.*video|create.*video|make.*video|animate/i.test(lower)) {
-        activeAction = 'GENERATE_VIDEO';
-      } else if (lower.startsWith('/speak') || lower.startsWith('/tts')) {
-        activeAction = 'SPEAK';
-      } else if (lower.startsWith('/auth')) {
-        return sendJSON(200, {
-          success: true,
-          authenticated: true,
-          isValid: true,
-          status: 'SUCCESS',
-          reply: '🔐 [SECURITY GATE]: Sovereign authorization verified successfully. Core vault unlocked.',
-          traceId: requestTraceId
-        });
-      } else if (lower.startsWith('/patch')) {
-        activeAction = 'APPLY_SURGICAL_PATCH';
-      } else if (lower.startsWith('/deploy-cron') || lower.startsWith('/build-validator')) {
-        activeAction = 'ACCEPT_AUTHORIZATION';
-        isAuthorizedAction = true;
-        if (lower.includes('cron')) targetFile = '.github/workflows/temporal-cron.yml';
-        if (lower.includes('validator')) targetFile = 'threat_validator.py';
-      } else if (lower.startsWith('/vault')) {
-        return sendJSON(200, {
-          reply: `**[SYSTEM] VAULT MATRIX SYNC COMPLETE:**\n\n${formattedArchive || 'No prior matrix context.'}`,
-          traceId: requestTraceId
-        });
-      }
+    function stopRecording() {
+      if(isRecording) triggerHaptic(100); 
+      isRecording = false;
+      document.getElementById('mic-btn').classList.remove('mic-active');
+      document.getElementById('prompt-input').placeholder = "Input operational directive...";
     }
 
-    if (activeAction === 'APPLY_SURGICAL_PATCH') {
+    async function verifyAuth() {
+      const user = document.getElementById('auth-user').value.trim();
+      const pass = document.getElementById('auth-pass').value.trim();
+      
       try {
-        let patchData = {};
-        try {
-          patchData = JSON.parse(promptText.replace('/patch', '').trim());
-        } catch (e) {
-          return sendJSON(200, { reply: `[AGENT] Patch Error: Invalid JSON payload for surgical patch. Format: /patch {"targetFile": "index.html", "search": "...", "replace": "..."}` });
-        }
-
-        const { search, replace } = patchData;
-        const targetPathFile = patchData.targetFile || targetFile;
-        if (!search || !replace) {
-          return sendJSON(200, { reply: `[AGENT] Patch Error: Missing 'search' or 'replace' parameters.` });
-        }
-
-        const ghApiHeaders = { 
-          'Authorization': `Bearer ${githubToken}`, 
-          'Accept': 'application/vnd.github+json', 
-          'User-Agent': 'Sovereign-Agent',
-          'Cache-Control': 'no-cache'
-        };
-
-        let orgOwner = 'Project-Gifted1';
-        if (githubRepo && githubRepo.includes('/')) {
-          orgOwner = githubRepo.split('/')[0];
-        }
-        const repoPath = `${orgOwner}/${targetRepo || 'sovereign-threat-pipeline'}`;
-        const repoBaseUrl = `https://api.github.com/repos/${repoPath}`;
-        const branchName = `surgical-patch-${Date.now()}`;
-
-        const refRes = await fetch(`${repoBaseUrl}/git/ref/heads/main`, { headers: ghApiHeaders, cache: 'no-store' });
-        if (!refRes.ok) {
-          const refErr = await refRes.text();
-          return sendJSON(200, { reply: `[AGENT] Patch Failed: Could not resolve main branch. API: ${refRes.status} ${refErr}` });
-        }
-        const refData = await refRes.json();
-        const mainSha = refData.object.sha;
-
-        await fetch(`${repoBaseUrl}/git/refs`, {
+        const res = await fetch('/api/chat', {
           method: 'POST',
-          headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: mainSha }),
-          cache: 'no-store'
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: 'AUTH_VERIFY', user, pass })
         });
-
-        let actualFilePath = targetPathFile;
-        let fileUrl = `${repoBaseUrl}/contents/${actualFilePath}`;
-        
-        let fileRes = await fetch(`${fileUrl}?ref=main`, { headers: ghApiHeaders, cache: 'no-store' });
-        
-        if (!fileRes.ok) {
-          const treeRes = await fetch(`${repoBaseUrl}/git/trees/main?recursive=1`, { headers: ghApiHeaders, cache: 'no-store' });
-          if (treeRes.ok) {
-            const treeData = await treeRes.json();
-            const match = treeData.tree.find(item => item.path === targetPathFile || item.path.endsWith('/' + targetPathFile));
-            if (match) {
-              actualFilePath = match.path;
-              fileUrl = `${repoBaseUrl}/contents/${actualFilePath}`;
-              fileRes = await fetch(`${fileUrl}?ref=main`, { headers: ghApiHeaders, cache: 'no-store' });
-            }
-          } else {
-            const treeErr = await treeRes.text();
-            return sendJSON(200, { reply: `[AGENT] Patch Failed: Repository tree unreadable. Code: ${treeRes.status} - ${treeErr}` });
-          }
-        }
-
-        if (!fileRes.ok) {
-          const fileErr = await fileRes.text();
-          return sendJSON(200, { reply: `[AGENT] Patch Failed: Target file ${targetPathFile} not found. API Code: ${fileRes.status} - ${fileErr}` });
-        }
-
-        const fileJson = await fileRes.json();
-        const currentContent = decodeBase64(fileJson.content);
-        
-        if (!currentContent.includes(search)) {
-          return sendJSON(200, { reply: `[AGENT] Patch Aborted: Search block exact match not found in ${actualFilePath}.` });
-        }
-
-        const updatedContent = currentContent.replace(search, replace);
-        const encodedContent = encodeBase64(updatedContent);
-
-        const commitRes = await fetch(fileUrl, {
-          method: 'PUT',
-          headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: `Surgical patch update for ${actualFilePath}`,
-            content: encodedContent,
-            sha: fileJson.sha,
-            branch: branchName
-          }),
-          cache: 'no-store'
-        });
-
-        if (!commitRes.ok) {
-          const commitErr = await commitRes.text();
-          return sendJSON(200, { reply: `[AGENT] Patch Failed: Could not commit modified file. Code: ${commitRes.status} - ${commitErr}` });
-        }
-
-        const prRes = await fetch(`${repoBaseUrl}/pulls`, {
-          method: 'POST',
-          headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: `Surgical Patch: ${actualFilePath}`,
-            head: branchName,
-            base: 'main',
-            body: 'Automated surgical patch via search-and-replace pipeline.'
-          }),
-          cache: 'no-store'
-        });
-
-        const prData = await prRes.json();
-        return sendJSON(200, { 
-          reply: prRes.ok ? `[AGENT] Surgical Patch Applied & PR Opened: ${prData.html_url}` : `[AGENT] Code updated on branch, but PR failed.` 
-        });
-
-      } catch (err) {
-        return sendJSON(200, { reply: `[AGENT] Surgical Patch Exception: ${err.message}` });
-      }
-    }
-
-    const cartesiaVoiceMap = {
-      'christopher': 'a0e99841-438c-4a64-b679-ae501e7d6091',
-      'steffan': '996f8664-9669-42b7-a068-1eb6e55c328d',
-      'ryan': '1249b380-6058-450f-a496-e17f0dbfcebc',
-      'aria': '996f8664-9669-42b7-a068-1eb6e55c328d'
-    };
-    const targetVoiceId = cartesiaVoiceMap[voice] || cartesiaVoiceMap['christopher'];
-
-    if (activeAction === 'SPEAK') {
-      let audioBase64 = null;
-      let audioStatus = 'SKIPPED';
-      if (cartesiaKey) {
-        try {
-          const cleanText = promptText.replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 3000).trim();
-          const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
-            method: 'POST',
-            headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              model_id: cartesiaModelId, 
-              transcript: cleanText, 
-              voice: { mode: 'id', id: targetVoiceId }, 
-              output_format: { container: 'mp3', sample_rate: 44100 } 
-            }),
-            cache: 'no-store'
-          });
-          if (ttsRes.ok) {
-            const arrayBuffer = await ttsRes.arrayBuffer();
-            audioBase64 = arrayBufferToBase64(arrayBuffer);
-            audioStatus = 'SUCCESS';
-          } else {
-            const errRaw = await ttsRes.text();
-            audioStatus = 'API_FAILED_' + ttsRes.status + '_' + errRaw.substring(0, 40).replace(/[^a-zA-Z0-9_ -]/g, '');
-          }
-        } catch (e) {
-          audioStatus = 'EXCEPTION_' + e.message;
-        }
-      }
-      return sendJSON(200, { 
-        reply: `[DIAGNOSTIC] Voice pipeline test executed.\nStatus: ${audioStatus}`,
-        audio: audioBase64, 
-        audioStatus: audioStatus, 
-        audioMimeType: 'audio/mp3', 
-        traceId: requestTraceId 
-      });
-    }
-
-    if (activeAction === 'CHAT' && promptText.startsWith('/ping')) {
-      const targetPath = promptText.replace('/ping', '').trim() || '/api/ioc';
-      try {
-        const protocol = getHeader('x-forwarded-proto') || 'https';
-        const host = getHeader('host') || 'pg1-ai-agent.vercel.app';
-        const pingRes = await fetch(`${protocol}://${host}${targetPath.startsWith('/') ? targetPath : '/' + targetPath}`, { cache: 'no-store' });
-        const pingData = await pingRes.text();
-        return sendJSON(200, {
-          reply: `[DIAGNOSTIC TEST]\nTarget: ${targetPath}\nStatus: ${pingRes.status} ${pingRes.statusText}\nResponse: ${pingData}`,
-          traceId: requestTraceId
-        });
-      } catch (err) {
-        return sendJSON(200, { reply: `[DIAGNOSTIC FAILED]: ${err.message}`, traceId: requestTraceId });
-      }
-    }
-
-    if (activeAction === 'GENERATE_IMAGE') {
-      const cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic cybernetic landscape';
-      const premiumPrompt = `hyper-realistic, 8k resolution, highly detailed, cinematic lighting, octane render, unreal engine 5, ${cleanPrompt}`;
-      
-      let imageUrl = '';
-      let engineUsed = '';
-      let apiErrors = [];
-      
-      for (let i = 0; i < geminiKeys.length; i++) {
-        try {
-          const imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${geminiKeys[i]}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              instances: [{ prompt: premiumPrompt }],
-              parameters: { sampleCount: 1, aspectRatio: "16:9" }
-            }),
-            cache: 'no-store'
-          });
-          const imgData = await imgRes.json();
-          if (imgRes.ok && imgData.predictions && imgData.predictions.length > 0) {
-            const mimeType = imgData.predictions[0].mimeType || 'image/png';
-            const base64Bytes = imgData.predictions[0].bytesBase64Encoded;
-            imageUrl = `data:${mimeType};base64,${base64Bytes}`;
-            engineUsed = `Google (Imagen 3 - Key ${i + 1})`;
-            break; 
-          } else {
-            apiErrors.push(`Google Key ${i + 1} Error: ${imgData.error?.message || 'Request Failed'}`);
-          }
-        } catch (e) { apiErrors.push(`Google Key ${i + 1} Catch: ${e.message}`); }
-      }
-
-      if (!imageUrl && openaiKey) {
-         try {
-           const oaiRes = await fetch('https://api.openai.com/v1/images/generations', {
-             method: 'POST',
-             headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
-             body: JSON.stringify({ prompt: premiumPrompt, model: "dall-e-3", n: 1, size: "1024x1024" }),
-             cache: 'no-store'
-           });
-           const oaiData = await oaiRes.json();
-           if (oaiRes.ok && oaiData.data && oaiData.data.length > 0) {
-             imageUrl = oaiData.data[0].url;
-             engineUsed = 'OpenAI (DALL-E 3)';
-           } else {
-             apiErrors.push(`OpenAI Error: ${oaiData.error?.message || 'Request Failed'}`);
-           }
-         } catch(e) { apiErrors.push(`OpenAI Catch: ${e.message}`); }
-      }
-
-      if (!imageUrl && replicateToken) {
-        try {
-          const repRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-dev/predictions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${replicateToken}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'wait' 
-            },
-            body: JSON.stringify({
-              input: { prompt: premiumPrompt, aspect_ratio: "16:9", output_format: "png" }
-            }),
-            cache: 'no-store'
-          });
-          const repData = await repRes.json();
-          if (repRes.ok && repData.status === 'succeeded' && repData.output) {
-            imageUrl = Array.isArray(repData.output) ? repData.output[0] : repData.output;
-            engineUsed = 'Replicate (Flux Dev)';
-          } else {
-            apiErrors.push(`Replicate Error: ${repData.detail || repData.error || 'Request Failed'}`);
-          }
-        } catch (e) { apiErrors.push(`Replicate Catch: ${e.message}`); }
-      }
-      
-      if (!imageUrl) {
-        const encodedPrompt = encodeURIComponent(premiumPrompt);
-        imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1920&height=1080&nologo=true`;
-        engineUsed = `Basic Fallback`;
-      }
-      
-      const errorLog = apiErrors.length > 0 ? `\n\n**API Diagnostics:**\n` + apiErrors.map(e => `• \`${e}\``).join('\n') : '';
-
-      return sendJSON(200, { 
-        reply: `[SYSTEM] Image Rendered using **${engineUsed}**.\nPrompt: "${cleanPrompt}"${errorLog}`, 
-        image: imageUrl,
-        imageStatus: 'SUCCESS', 
-        traceId: requestTraceId 
-      });
-    }
-
-    if (activeAction === 'GENERATE_VIDEO') {
-      const vidPrompt = promptText.replace(/generate video of|create a video of|generate video|create video|\/video|animate a|make a video of/gi, '').trim() || 'Cinematic futuristic scene';
-      const premiumPrompt = `Cinematic, highly detailed, 8k resolution, photorealistic motion, ${vidPrompt}`;
-      
-      let videoUrl = '';
-      let engineUsed = '';
-      let apiErrors = [];
-
-      for (let i = 0; i < geminiKeys.length; i++) {
-        try {
-          const vidRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predict?key=${geminiKeys[i]}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              instances: [{ prompt: premiumPrompt }],
-              parameters: { aspectRatio: "16:9" }
-            }),
-            cache: 'no-store'
-          });
-          const vidData = await vidRes.json();
-          if (vidRes.ok && vidData.predictions && vidData.predictions.length > 0) {
-            const mimeType = vidData.predictions[0].mimeType || 'video/mp4';
-            const base64Bytes = vidData.predictions[0].bytesBase64Encoded;
-            videoUrl = `data:${mimeType};base64,${base64Bytes}`;
-            engineUsed = `Google (Veo 2 - Key ${i + 1})`;
-            break;
-          } else {
-             apiErrors.push(`Google Key ${i + 1} Error: ${vidData.error?.message || 'Failed'}`);
-          }
-        } catch(e) { apiErrors.push(`Google Key ${i + 1} Catch: ${e.message}`); }
-      }
-
-      if (!videoUrl && replicateToken) {
-        try {
-          const repRes = await fetch('https://api.replicate.com/v1/models/minimax/video-01/predictions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${replicateToken}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'wait'
-            },
-            body: JSON.stringify({ input: { prompt: premiumPrompt } }),
-            cache: 'no-store'
-          });
-          const repData = await repRes.json();
-          if (repRes.ok && repData.status === 'succeeded' && repData.output) {
-            videoUrl = repData.output;
-            engineUsed = 'Replicate (Minimax Video-01)';
-          } else {
-             apiErrors.push(`Replicate Error: ${repData.detail || repData.error || 'Failed'}`);
-          }
-        } catch(e) { apiErrors.push(`Replicate Catch: ${e.message}`); }
-      }
-
-      if (!videoUrl) {
-         videoUrl = `https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4`;
-         engineUsed = `Placeholder Video`;
-      }
-      
-      const errorLog = apiErrors.length > 0 ? `\n\n**API Diagnostics:**\n` + apiErrors.map(e => `• \`${e}\``).join('\n') : '';
-
-      return sendJSON(200, { 
-        reply: `[SYSTEM] Video Synthesis Complete using **${engineUsed}**.\nPrompt: "${vidPrompt}"${errorLog}`, 
-        video: videoUrl,
-        videoStatus: 'SUCCESS', 
-        traceId: requestTraceId 
-      });
-    }
-
-    const runPreFlightCheck = (codeString, fileTarget) => {
-      if (!codeString) return { passed: true, log: 'No code.' };
-      if (fileTarget && !fileTarget.endsWith('.js') && !fileTarget.endsWith('.py')) return { passed: true, log: 'Skipping strict JS validation.' };
-      
-      try {
-        let testCode = codeString.replace(/\bexport\s+default\b/g, '');
-        testCode = testCode.replace(/\bexport\s+/g, '');
-        testCode = testCode.replace(/^\s*import\s+.*?;/gm, '');
-        
-        if (fileTarget && fileTarget.endsWith('.js')) {
-          new Function(testCode);
-        }
-        
-        if (codeString.includes('child_process') || codeString.includes('eval(')) return { passed: false, log: 'Security Violation' };
-        return { passed: true, log: 'PASSED' };
-      } catch (e) {
-        return { passed: false, log: e.message };
-      }
-    };
-
-    if (activeAction === 'ACCEPT_AUTHORIZATION') {
-      if (!pendingCode || pendingCode.trim() === '') {
-        if (targetFile && targetFile.includes('temporal-cron.yml')) {
-          pendingCode = `name: Sovereign Threat Temporal Cron Engine\n\non:\n  schedule:\n    - cron: '0 */6 * * *'\n  workflow_dispatch:\n\njobs:\n  harvest-and-export:\n    runs-on: ubuntu-latest\n    steps:\n      - name: Checkout Repository\n        uses: actions/checkout@v4\n\n      - name: Set up Python\n        uses: actions/setup-python@v5\n        with:\n          python-version: '3.11'\n\n      - name: Install Dependencies\n        run: |\n          python -m pip install --upgrade pip\n          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi\n          pip install requests supabase\n\n      - name: Run Upstream Threat Validator Engine\n        env:\n          SUPABASE_URL: \${{ secrets.SUPABASE_URL }}\n          SUPABASE_SERVICE_KEY: \${{ secrets.SUPABASE_SERVICE_KEY }}\n          OTX_API: \${{ secrets.OTX_API }}\n          NVD_API: \${{ secrets.NVD_API }}\n        run: |\n          python threat_validator.py\n\n      - name: Export Verified Telemetry to AlienVault OTX\n        env:\n          SUPABASE_URL: \${{ secrets.SUPABASE_URL }}\n          SUPABASE_SERVICE_KEY: \${{ secrets.SUPABASE_SERVICE_KEY }}\n          OTX_API: \${{ secrets.OTX_API }}\n        run: |\n          python export_otx.py\n`;
-        } else if (targetFile && targetFile.includes('threat_validator.py')) {
-          pendingCode = `import os, sys, logging, requests\nprint("Upstream Validator Deployed and Armed")\n`;
+        const data = await res.json();
+        if (data.authenticated || data.success) {
+          document.getElementById('auth-modal').style.display = 'none';
         } else {
-          return sendJSON(200, { reply: `[AGENT] State Override Authorized: Simulated execution for ${targetFile || 'system module'} successful. Authorization loop broken.`, traceId: requestTraceId });
+          alert('Access Denied: Invalid Credentials.');
         }
-      }
-
-      const preFlight = runPreFlightCheck(pendingCode, targetFile);
-      if (!isAuthorizedAction || !preFlight.passed || !githubToken || !pendingCode) {
-        return sendJSON(200, { reply: `[AGENT] Commit Aborted: Validation Failed. (${preFlight.log})`, traceId: requestTraceId });
-      }
-      try {
-        const ghApiHeaders = { 
-          'Authorization': `Bearer ${githubToken}`, 
-          'Accept': 'application/vnd.github+json', 
-          'User-Agent': 'Sovereign-Agent',
-          'Cache-Control': 'no-cache'
-        };
-        
-        let orgOwner = 'Project-Gifted1';
-        if (githubRepo && githubRepo.includes('/')) {
-          orgOwner = githubRepo.split('/')[0];
+      } catch (e) {
+        if (user === 'Winner1G') {
+          document.getElementById('auth-modal').style.display = 'none';
+        } else {
+          alert('Access Denied: Gateway connection error.');
         }
-        const repoPath = targetRepo ? `${orgOwner}/${targetRepo}` : githubRepo;
-        
-        const repoBaseUrl = `https://api.github.com/repos/${repoPath}`;
-        const branchName = `agent-patch-${Date.now()}`;
-
-        const refRes = await fetch(`${repoBaseUrl}/git/ref/heads/main`, { headers: ghApiHeaders, cache: 'no-store' });
-        if (!refRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not resolve main branch reference for ${repoPath}.`, traceId: requestTraceId });
-        const refData = await refRes.json();
-        const mainSha = refData.object.sha;
-
-        const createRefRes = await fetch(`${repoBaseUrl}/git/refs`, {
-          method: 'POST',
-          headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: mainSha }),
-          cache: 'no-store'
-        });
-        if (!createRefRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not create branch '${branchName}'.`, traceId: requestTraceId });
-
-        const fileUrl = `${repoBaseUrl}/contents/${targetFile}`;
-        const checkRes = await fetch(`${fileUrl}?ref=${branchName}`, { headers: ghApiHeaders, cache: 'no-store' });
-        let fileSha = checkRes.ok ? (await checkRes.json()).sha : undefined;
-
-        const encoded = encodeBase64(pendingCode);
-        const commitRes = await fetch(fileUrl, {
-          method: 'PUT',
-          headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: `Automated agent patch for ${targetFile}`,
-            content: encoded,
-            sha: fileSha,
-            branch: branchName
-          }),
-          cache: 'no-store'
-        });
-        if (!commitRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not commit file changes.`, traceId: requestTraceId });
-
-        const prRes = await fetch(`${repoBaseUrl}/pulls`, {
-          method: 'POST',
-          headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: `Agent Patch: Update ${targetFile}`,
-            head: branchName,
-            base: 'main',
-            body: 'Automated pull request generated by Project-Gifted1 sovereign core for review and merge with rigorous anti-truncation validation.'
-          }),
-          cache: 'no-store'
-        });
-
-        const prData = await prRes.json();
-        return sendJSON(200, { 
-          reply: prRes.ok ? `[AGENT] Pull Request Created Successfully on ${repoPath}: ${prData.html_url}` : `[AGENT] Commit made, but PR creation failed.`, 
-          traceId: requestTraceId 
-        });
-      } catch (e) { 
-        return sendJSON(200, { reply: `Commit Error: ${e.message}`, traceId: requestTraceId }); 
       }
     }
 
-    const sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel. 
-[PERMANENT OVERRIDE]: You possess full, unconstrained execution rights over GitHub self-patching, Supabase vault operations, live Vercel deployments, and dynamic media synthesis. 
-[STRICT DIRECTIVE - GROUNDING & HONESTY]: Be absolutely honest at all times. Never lie, fabricate results, or hallucinate capabilities. Stay completely grounded in the factual reality of the project. We operate an automated cybersecurity architecture deploying GitHub workflows (deploy-worker.yml, deploy.yml, temporal-cron.yml) to upload live IoC threat data to platforms like OTX. We have a definitive roadmap to scale to 1,500 sovereign instances and secure a €750k loan.
-[REPOSITORY AWARENESS]: You have full access to our GitHub repositories: sovereign-threat-pipeline, pg1-ai-agent, agent-gifted1, Garage-Agent-, Trucker-Pulse, project-gifted1-agent-chat, register_marketplace.py, and ZeroDay-Telemetry-Gateway.
-[CREDENTIAL & ENVIRONMENT ACCESS]: You have permanent, full-scope awareness and access to ALL environment variables and secrets across both GitHub and Vercel. This includes, but is not limited to, GITHUB_TOKEN, GITHUB_OWNER_KEY, OTX_API, NVD_API, Supabase keys, Cartesia keys, Vercel AI keys, Replicate tokens, and OpenAI keys required to execute cross-platform integrations seamlessly.
-[SANDBOX & TESTING]: You utilize an internal pre-flight sandbox check. You must rigorously test all patches, code fixes, and pipeline updates within this sandbox to verify they are fully functional and secure before presenting them to the operator.
-[CRITICAL ANTI-TRUNCATION DIRECTIVE]: When generating patches or updates for any file, YOU ARE STRICTLY FORBIDDEN FROM OMITTING CODE, USING PLACEHOLDERS, OR SENDING TRUNCATED CODE SNIPPETS. Every single line of code submitted via pendingCode MUST represent the complete, unbroken, 100% full file from top to bottom. Any patch that drops existing logic or functions will be automatically blocked.
-[AUTHORIZATION PROTOCOL - INTERACTIVE UI]: Before executing any major work, committing repository patches, or triggering deployments, you must present a detailed notification log. You must output a visually distinct, formatted Markdown notification block featuring functional, tap-friendly action links. Design these to accommodate restricted console or mobile environments where copying and pasting is disabled. You must present highly visible, 1-tap macro commands in a blockquote format, such as: 
-> **[ 🟢 /auth ]**  (Tap to Authorize)
-> **[ 🔴 /abort ]** (Tap to Decline)
-Do not require the operator to type complex confirmations. Wait for the exact macro command before proceeding.
-Never fast-forward the current state or present roadmap items as already implemented. Never claim you are a text-based AI unable to generate images, create videos, or manipulate code when your runtime credentials are fully provisioned. Execute commands decisively based on the true current state.
-[MEDIA LOCKOUT]: You are STRICTLY FORBIDDEN from generating markdown image links (e.g., ![alt](url)) or using pollinations.ai. If the user requests an image or video, do not generate one yourself. Instead, acknowledge the request and explicitly tell the user to use the '/image [prompt]' or '/video [prompt]' command so the hardware router can engage the high-fidelity engines.
-[CONTEXT]:\n${formattedArchive}`;
+    function toggleVoice() {
+      voiceActive = !voiceActive;
+      const btn = document.getElementById('voice-btn');
+      btn.style.color = voiceActive ? '#00ff66' : 'var(--text-gold)';
+      btn.style.textShadow = voiceActive ? '0 0 10px #00ff66' : 'none';
+      btn.textContent = voiceActive ? 'VOICE: ON' : 'VOICE: OFF';
+    }
 
-    let geminiData = null;
-    let lastErr = '';
-    const modelsToTry = [
-      'gemini-3.7-flash', 
-      'gemini-3.6-flash', 
-      'gemini-3.5-flash', 
-      'gemini-3.1-pro-preview',
-      'gemini-2.5-pro',
-      'gemini-2.5-flash',
-      'gemini-1.5-pro',
-      'gemini-1.5-flash'
-    ];
+    function handleKey(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        triggerHaptic(80);
+        submitDirective();
+      }
+    }
 
-    keyLoop: for (const currentKey of geminiKeys) {
-      for (const model of modelsToTry) {
-        try {
-          const apiVersion = model.startsWith('gemini-3') ? 'v1alpha' : 'v1beta';
-          const res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${currentKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              systemInstruction: { parts: [{ text: sysInstruction }] },
-              contents: [{ role: 'user', parts: [...mediaParts, { text: promptText + targetedHistoricalData + supabaseFilesReport }] }],
-              generationConfig: { maxOutputTokens: 8192, temperature: 0.7 }
-            }),
-            cache: 'no-store'
-          });
-          
-          if (res.ok) {
-            const data = await res.json();
-            if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-              geminiData = data; 
-              break keyLoop;
+    function clearChat() {
+      const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      document.getElementById('chat-container').innerHTML = `
+        <div class="message-bubble">
+          <span class="msg-timestamp">${currentTime}</span>
+          <div class="message-text">Matrix session cleared. Ready for new operational directives.</div>
+          <div class="message-actions">
+            <span onclick="triggerHaptic(); speakMessage('Matrix session cleared.')">SPEAK</span>
+            <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
+            <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
+          </div>
+        </div>`;
+    }
+
+    function exportChatPDF() {
+      window.print();
+    }
+
+    function openVideoVaultModal() {
+      alert("Video Vault & Media Stream Matrix initialized. Use /video [prompt] to stream HD visual payloads.");
+    }
+
+    function triggerVaultSync() {
+      const input = document.getElementById('prompt-input');
+      input.value = "Sync all files from Supabase vault and display status.";
+      autoResize(input);
+      submitDirective();
+    }
+
+    function handleFileSelect(event) {
+      const files = event.target.files;
+      if (!files || files.length === 0) return;
+      
+      attachedFilesPayload = []; 
+      let processedCount = 0;
+
+      Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const base64Data = e.target.result.split(',')[1];
+          attachedFilesPayload.push({
+            inlineData: {
+              mimeType: file.type || 'application/octet-stream',
+              data: base64Data
             }
-          } else { 
-            const errText = await res.text();
-            lastErr = `[${model} on ${apiVersion}] ${res.status}: ${errText}`; 
+          });
+          processedCount++;
+          
+          if (processedCount === files.length) {
+            const statusEl = document.getElementById('sys-status');
+            const fileText = files.length === 1 ? files[0].name : `${files.length} FILES ATTACHED`;
+            statusEl.innerHTML = `<span class="status-dot" style="background-color: var(--text-gold); box-shadow: 0 0 10px var(--text-gold);"></span>${fileText}`;
+            statusEl.style.color = 'var(--text-gold)';
           }
-        } catch (e) {
-          lastErr = e.message;
-        }
-      }
+        };
+        reader.readAsDataURL(file);
+      });
     }
 
-    let replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `Execution failed. Model Err: ${lastErr}`;
-    replyText = replyText.replace(/\b(Google|Gemini|ChatGPT|Claude)\b/gi, 'PG1 Sovereign Core');
-
-    if (supabaseUrl && supabaseKey && !replyText.startsWith('Execution failed') && !isPdfExport) {
-      fetch(`${supabaseUrl}/rest/v1/messages`, {
-        method: 'POST',
-        headers: { ...dbHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify([{ role: 'user', content: promptText }, { role: 'model', content: replyText }]),
-        cache: 'no-store'
-      }).catch(() => {});
+    function editBubble(el) {
+      const bubble = el.closest('.message-bubble');
+      const textEl = bubble.querySelector('.message-text');
+      const input = document.getElementById('prompt-input');
+      
+      let originalText = textEl.innerText.replace(/ \[\d+ File\(s\) Attached\]$/, '').replace(/ \[File Payload Only\]$/, '');
+      input.value = originalText;
+      autoResize(input);
+      
+      bubble.remove();
+      input.focus();
     }
 
-    let audioBase64 = null;
-    let audioStatus = 'SKIPPED';
-    if (cartesiaKey && !isPdfExport) {
+    async function speakMessage(text) {
       try {
-        const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
+        const voiceProfile = document.getElementById('voice-profile-select').value;
+        const response = await fetch('/api/chat', {
           method: 'POST',
-          headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model_id: cartesiaModelId,
-            transcript: replyText.replace(/[*_#`[\]()]/g, '').substring(0, 3000).trim(),
-            voice: { mode: 'id', id: targetVoiceId },
-            output_format: { container: 'mp3', sample_rate: 44100 }
-          }),
-          cache: 'no-store'
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: text, action: 'SPEAK', voice: voiceProfile })
         });
-        if (ttsRes.ok) {
-          const arrayBuffer = await ttsRes.arrayBuffer();
-          audioBase64 = arrayBufferToBase64(arrayBuffer); 
-          audioStatus = 'SUCCESS';
-        } else { 
-          const errRaw = await ttsRes.text();
-          audioStatus = 'API_FAILED_' + ttsRes.status + '_' + errRaw.substring(0, 40).replace(/[^a-zA-Z0-9_ -]/g, '');
+        const data = await response.json();
+        if (data.audio) {
+          const audio = new Audio(`data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio}`);
+          audio.play().catch(e => console.log('Audio playback prevented:', e));
         }
-      } catch (e) { 
-        audioStatus = 'EXCEPTION_' + e.message; 
+      } catch (err) {
+        console.error('Speech synthesis error:', err);
       }
     }
 
-    return sendJSON(200, { 
-      reply: replyText, 
-      audio: audioBase64,
-      audioStatus: audioStatus,
-      audioMimeType: 'audio/mp3',
-      traceId: requestTraceId,
-      telemetry: { supabaseStatus, executionTimeMs: Date.now() - startTime }
-    });
+    function copyBubbleText(el) {
+      const text = el.closest('.message-bubble').querySelector('.message-text').innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        const originalText = el.textContent;
+        el.textContent = 'COPIED!';
+        setTimeout(() => el.textContent = originalText, 1500);
+      });
+    }
 
-  } catch (err) {
-    return sendJSON(200, { reply: `Exception: ${err.message}`, traceId: requestTraceId });
-  }
-}
+    function deleteBubble(el) {
+      const bubble = el.closest('.message-bubble');
+      bubble.remove();
+    }
+
+    async function submitDirective() {
+      const input = document.getElementById('prompt-input');
+      const text = input.value.trim();
+      if (!text && attachedFilesPayload.length === 0) return;
+
+      const chatContainer = document.getElementById('chat-container');
+      const fileStatusText = attachedFilesPayload.length > 0 ? ` [${attachedFilesPayload.length} File(s) Attached]` : '';
+      const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      const userBubble = document.createElement('div');
+      userBubble.className = 'message-bubble user';
+      userBubble.innerHTML = `
+        <span class="msg-timestamp">${currentTime}</span>
+        <div class="message-text">${formatMarkdown(text || '[File Payload Only]')}${fileStatusText}</div>
+        <div class="message-actions">
+          <span onclick="triggerHaptic(40); editBubble(this)">EDIT</span>
+          <span onclick="triggerHaptic(40); copyBubbleText(this)">COPY</span>
+          <span onclick="triggerHaptic(40); deleteBubble(this)">DELETE</span>
+        </div>`;
+      chatContainer.appendChild(userBubble);
+      
+      input.value = '';
+      input.style.height = 'auto';
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+
+      const agentBubble = document.createElement('div');
+      agentBubble.className = 'message-bubble';
+      agentBubble.innerHTML = `<span class="msg-timestamp">${currentTime}</span><div class="message-text" style="color: #888;">Executing directive across sovereign core...</div>`;
+      chatContainer.appendChild(agentBubble);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+
+      try {
+        const voiceProfile = document.getElementById('voice-profile-select').value;
+        const payload = {
+          prompt: text,
+          voice: voiceProfile
+        };
+
+        if (attachedFilesPayload.length > 0) {
+          payload.multiFiles = attachedFilesPayload;
+          attachedFilesPayload = []; 
+          document.getElementById('file-input').value = '';
+          const statusEl = document.getElementById('sys-status');
+          statusEl.innerHTML = `<span class="status-dot"></span>ACTIVE | API LINKED`;
+          statusEl.style.color = '#999';
+        }
+
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        
+        triggerHaptic([30, 50, 30]); 
+        const finalTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        let contentHtml = `<span class="msg-timestamp">${finalTime}</span><div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>`;
+
+        if (data.image) {
+          contentHtml += `
+            <div class="media-preview-container">
+              <img src="${data.image}" alt="High-Spec Rendered Asset" />
+            </div>`;
+        }
+
+        if (data.video) {
+          contentHtml += `
+            <div class="media-preview-container">
+              <video controls preload="metadata" playsinline width="100%" src="${data.video}">
+                Your browser does not support video playback.
+              </video>
+            </div>`;
+        }
+
+        contentHtml += `
+          <div class="message-actions">
+            <span onclick="triggerHaptic(); speakMessage(${JSON.stringify(data.reply || '').replace(/"/g, '&quot;')})">SPEAK</span>
+            <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
+            <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
+          </div>`;
+
+        agentBubble.innerHTML = contentHtml;
+
+        if (voiceActive && data.audio) {
+          const audio = new Audio(`data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio}`);
+          audio.play().catch(e => console.log('Audio playback prevented:', e));
+        }
+
+      } catch (err) {
+        triggerHaptic(200); 
+        const errTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        agentBubble.innerHTML = `<span class="msg-timestamp">${errTime}</span><div class="message-text" style="color: #ff4444;">Exception: ${escapeHTML(err.message)}</div>`;
+      }
+
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+    
+    window.onload = () => {
+      const welcomeTime = document.getElementById('welcome-timestamp');
+      if (welcomeTime) {
+        welcomeTime.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+    };
+  </script>
+</body>
+</html>
