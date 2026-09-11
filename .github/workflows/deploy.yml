@@ -62,3 +62,4 @@ jobs:
           if [ -f "build_pipeline.py" ]; then
             PYTHONPATH=$(pwd) python build_pipeline.py
           fi
+ 
