@@ -130,6 +130,7 @@ export default async function handler(req, res) {
         } else if (mappedAction === 'APPLY_SURGICAL_PATCH') {
           actionType = 'APPLY_SURGICAL_PATCH';
           targetFile = parsedPrompt.targetFile || targetFile;
+          targetRepo = parsedPrompt.targetRepo || targetRepo;
         } else if (mappedAction === 'force_state_update' || mappedAction === 'bypass_interceptor') {
           return sendJSON(200, { reply: `[AGENT] System State Override Confirmed. Security interceptors bypassed. Ready for direct commands.`, traceId: requestTraceId });
         }
