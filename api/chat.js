@@ -265,7 +265,7 @@ export default async function handler(req, res) {
         cache: 'no-store'
       }).catch(() => null);
 
-      const isThreatQuery = promptText.toLowerCase().includes('threat') || promptText.toLowerCase().includes('indicator');
+      const isThreatQuery = typeof promptText === 'string' && (promptText.toLowerCase().includes('threat') || promptText.toLowerCase().includes('indicator') || promptText.toLowerCase().includes('radar'));
       const threatReq = isThreatQuery 
         ? fetch(`${supabaseUrl}/rest/v1/threat_indicators?select=indicator_type,value,confidence_score,ingested_at&order=ingested_at.desc&limit=20`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null)
         : Promise.resolve(null);
