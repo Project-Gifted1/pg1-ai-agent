@@ -350,15 +350,30 @@ export default async function handler(req, res) {
           body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: mainSha })
         });
 
-        const fileUrl = `${repoBaseUrl}/contents/${targetPathFile}`;
-        const fileRes = await fetch(`${fileUrl}?ref=${branchName}`, { headers: ghApiHeaders });
-        if (!fileRes.ok) return sendJSON(200, { reply: `[AGENT] Patch Failed: Target file ${targetPathFile} not found.` });
+        let actualFilePath = targetPathFile;
+        let fileUrl = `${repoBaseUrl}/contents/${actualFilePath}`;
+        let fileRes = await fetch(`${fileUrl}?ref=${branchName}`, { headers: ghApiHeaders });
+        
+        if (!fileRes.ok) {
+          const treeRes = await fetch(`${repoBaseUrl}/git/trees/${mainSha}?recursive=1`, { headers: ghApiHeaders });
+          if (treeRes.ok) {
+            const treeData = await treeRes.json();
+            const match = treeData.tree.find(item => item.path === targetPathFile || item.path.endsWith('/' + targetPathFile));
+            if (match) {
+              actualFilePath = match.path;
+              fileUrl = `${repoBaseUrl}/contents/${actualFilePath}`;
+              fileRes = await fetch(`${fileUrl}?ref=${branchName}`, { headers: ghApiHeaders });
+            }
+          }
+        }
+
+        if (!fileRes.ok) return sendJSON(200, { reply: `[AGENT] Patch Failed: Target file ${targetPathFile} not found directly or in repository tree.` });
         const fileJson = await fileRes.json();
         
         const currentContent = Buffer.from(fileJson.content, 'base64').toString('utf8');
         
         if (!currentContent.includes(search)) {
-          return sendJSON(200, { reply: `[AGENT] Patch Aborted: Search block exact match not found in ${targetPathFile}.` });
+          return sendJSON(200, { reply: `[AGENT] Patch Aborted: Search block exact match not found in ${actualFilePath}.` });
         }
 
         const updatedContent = currentContent.replace(search, replace);
@@ -368,7 +383,7 @@ export default async function handler(req, res) {
           method: 'PUT',
           headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            message: `Surgical patch update for ${targetPathFile}`,
+            message: `Surgical patch update for ${actualFilePath}`,
             content: encodedContent,
             sha: fileJson.sha,
             branch: branchName
@@ -381,7 +396,7 @@ export default async function handler(req, res) {
           method: 'POST',
           headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            title: `Surgical Patch: ${targetPathFile}`,
+            title: `Surgical Patch: ${actualFilePath}`,
             head: branchName,
             base: 'main',
             body: 'Automated surgical patch via search-and-replace pipeline.'
