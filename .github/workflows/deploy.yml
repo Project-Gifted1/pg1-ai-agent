@@ -1,81 +1,45 @@
-name: Build and Deploy Sovereign Engine
+name: Sovereign Threat Feed Daily Strike
 
 on:
   push:
-    branches: [ main ]
-    paths-ignore:
-      - '.github/workflows/**'
+    branches: [ main, pg1-agent ]
+  schedule:
+    - cron: '0 0 * * *'
   workflow_dispatch:
-    inputs:
-      file_path:
-        description: 'Target file path to commit'
-        required: false
-      file_content:
-        description: 'Base64 encoded content'
-        required: false
-      commit_message:
-        description: 'Commit message'
-        required: false
-
-permissions:
-  contents: write
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  execute-pipeline:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
         with:
-          token: ${{ secrets.GH_PAT }}
-          fetch-depth: 0
+          python-version: '3.11'
+          cache: 'pip'
 
-      - name: Set Git Identity
+      - name: Install Network Dependencies
         run: |
-          git config --global user.name "PG1 Sovereign Core Agent"
-          git config --global user.email "agent@sovereign.core"
+          python -m pip install --upgrade pip
+          pip install requests networkx supabase
+          if [ -f "requirements.txt" ]; then pip install -r requirements.txt; fi
 
-      - name: Apply Autonomous Patch If Dispatched
-        if: ${{ github.event.inputs.file_path != '' }}
+      - name: Execute Autonomous Core & Swarm Mesh
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLEKEY }}
         run: |
-          echo "${{ github.event.inputs.file_content }}" | base64 --decode > "${{ github.event.inputs.file_path }}"
-          git add "${{ github.event.inputs.file_path }}"
-          if git diff --staged --quiet; then
-            echo "No changes detected. Skipping commit."
-          else
-            git commit -m "${{ github.event.inputs.commit_message || 'feat(agent): autonomous self-patch update' }}"
-            git push origin main
+          python -c "import os; [os.rename(f, f.strip().replace(' ', '')) for f in os.listdir('.') if ' ' in f or f != f.strip()]"
+          PYTHONPATH=$(pwd) python sovereign_autonomous_core.py
+          PYTHONPATH=$(pwd) python sovereign_swarm_orchestrator.py
+
+      - name: Execute OTX API Sync
+        env:
+          OTX_API: ${{ secrets.OTX_API }}
+        run: |
+          if [ -f "build_pipeline.py" ]; then
+            PYTHONPATH=$(pwd) python build_pipeline.py
           fi
-
-      - name: Trigger Authenticated Render Threat Ingest
-        run: |
-          curl -s -X GET "https://crypto-threat-signals-api.onrender.com/threats" \
-            -H "X-API-Key: ${{ secrets.SMOKETEST_API_KEY }}" \
-            -H "Accept: application/json" \
-            -H "User-Agent: PG1-Sovereign-Core/10.0-Live"
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload Pages Artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: '.'
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
