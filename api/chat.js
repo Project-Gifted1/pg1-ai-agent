@@ -1,18 +1,39 @@
 export const config = {
-  api: {
-    bodyParser: { sizeLimit: '10mb' },
-    maxDuration: 60,
-  },
+  runtime: 'edge'
 };
+
+function base64ToUint8Array(base64) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function encodeBase64(str) {
+  return btoa(unescape(encodeURIComponent(str)));
+}
+
+function decodeBase64(b64) {
+  return decodeURIComponent(escape(atob(b64)));
+}
+
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
 
 export default async function handler(req, res) {
   const startTime = Date.now();
   const requestTraceId = Math.random().toString(36).substring(2, 10);
 
   const sendJSON = (status, data) => {
-    if (res && typeof res.status === 'function') {
-      return res.status(status).json(data);
-    }
     return new Response(JSON.stringify(data), {
       status: status,
       headers: {
@@ -24,15 +45,15 @@ export default async function handler(req, res) {
     });
   };
 
-  if (res && typeof res.setHeader === 'function') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key');
-  }
-
   if (req.method === 'OPTIONS') {
-    if (res && typeof res.status === 'function') return res.status(200).end();
-    return new Response(null, { status: 200 });
+    return new Response(null, { 
+      status: 200,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key'
+      }
+    });
   }
 
   let urlPath = '';
@@ -43,8 +64,10 @@ export default async function handler(req, res) {
     urlPath = '';
   }
 
+  const getHeader = (name) => req.headers.get ? req.headers.get(name) : req.headers[name];
+
   if (urlPath === '/api/ioc' || urlPath === '/api/feeds/ioc') {
-    const clientLicenseKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
+    const clientLicenseKey = getHeader('x-api-key') || getHeader('authorization')?.replace('Bearer ', '');
     if (!clientLicenseKey) {
       return sendJSON(401, { error: 'Unauthorized: Missing Gumroad License Key in x-api-key header.' });
     }
@@ -62,7 +85,7 @@ export default async function handler(req, res) {
       const supUrl = process.env.SUPABASE_URL;
       const supKey = process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-      await fetch(`${supUrl}/rest/v1/api_access_logs`, {
+      fetch(`${supUrl}/rest/v1/api_access_logs`, {
         method: 'POST',
         headers: { 'apikey': supKey, 'Authorization': `Bearer ${supKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -70,7 +93,7 @@ export default async function handler(req, res) {
           endpoint_accessed: urlPath,
           status: 'SUCCESS'
         })
-      });
+      }).catch(() => {});
 
       const threatRes = await fetch(`${supUrl}/rest/v1/threat_ioc_telemetry?select=*&order=last_seen.desc&limit=500`, {
         headers: { 'apikey': supKey, 'Authorization': `Bearer ${supKey}` }
@@ -91,10 +114,9 @@ export default async function handler(req, res) {
     try {
       if (typeof req.json === 'function') {
         reqBody = await req.json();
-      } else if (typeof req.body === 'string') {
-        reqBody = JSON.parse(req.body);
       } else {
-        reqBody = req.body || {};
+        const text = await req.text();
+        reqBody = JSON.parse(text);
       }
     } catch (parseErr) {
       reqBody = {};
@@ -208,7 +230,7 @@ export default async function handler(req, res) {
         const f = payloadFiles[i];
         if (f.inlineData && f.inlineData.data) {
           try {
-            const fileBuffer = Buffer.from(f.inlineData.data, 'base64');
+            const fileBuffer = base64ToUint8Array(f.inlineData.data);
             const fileName = `intel_payload_${Date.now()}_${i}.png`;
             const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${fileName}`, {
               method: 'POST',
@@ -234,47 +256,49 @@ export default async function handler(req, res) {
     promptText += vaultUploadLog;
 
     if (supabaseUrl && supabaseKey) {
-      try {
-        const pingRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=id&limit=1`, { headers: dbHeaders });
-        supabaseStatus = pingRes.ok ? 'CONNECTED & VERIFIED' : 'AUTH_ERROR';
+      // Execute all 4 Supabase fetches in a single Promise.all matrix to eliminate sequence latency
+      const pingReq = fetch(`${supabaseUrl}/rest/v1/messages?select=id&limit=1`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null);
+      const msgReq = fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null);
+      const storageReq = fetch(`${supabaseUrl}/storage/v1/object/list/pg1-vault`, {
+        method: 'POST',
+        headers: { ...dbHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prefix: '', limit: 50, sortBy: { column: 'created_at', order: 'desc' } }),
+        cache: 'no-store'
+      }).catch(() => null);
+
+      const isThreatQuery = promptText.toLowerCase().includes('threat') || promptText.toLowerCase().includes('indicator');
+      const threatReq = isThreatQuery 
+        ? fetch(`${supabaseUrl}/rest/v1/threat_indicators?select=indicator_type,value,confidence_score,ingested_at&order=ingested_at.desc&limit=20`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null)
+        : Promise.resolve(null);
+
+      const [pingRes, msgRes, storageRes, threatRes] = await Promise.all([pingReq, msgReq, storageReq, threatReq]);
+
+      if (pingRes && pingRes.ok) {
+        supabaseStatus = 'CONNECTED & VERIFIED';
         lastTableFetch = pingRes.status;
-      } catch (e) { supabaseStatus = 'UNREACHABLE'; }
+      } else {
+        supabaseStatus = 'UNREACHABLE';
+      }
 
-      try {
-        const msgRes = await fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, { headers: dbHeaders });
-        if (msgRes.ok) {
-          const recent = await msgRes.json();
-          if (Array.isArray(recent) && recent.length > 0) {
-            formattedArchive = recent.reverse().map(m => `${m.role === 'model' ? 'AGENT' : 'OPERATOR'}: ${m.content}`).join('\n');
-          }
+      if (msgRes && msgRes.ok) {
+        const recent = await msgRes.json();
+        if (Array.isArray(recent) && recent.length > 0) {
+          formattedArchive = recent.reverse().map(m => `${m.role === 'model' ? 'AGENT' : 'OPERATOR'}: ${m.content}`).join('\n');
         }
-      } catch (e) {}
+      }
 
-      try {
-        const storageRes = await fetch(`${supabaseUrl}/storage/v1/object/list/pg1-vault`, {
-          method: 'POST',
-          headers: { ...dbHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prefix: '', limit: 50, sortBy: { column: 'created_at', order: 'desc' } })
-        });
-        if (storageRes.ok) {
-          const files = await storageRes.json();
-          if (Array.isArray(files) && files.length > 0) {
-            supabaseFilesReport = `\n\n[SUPABASE VAULT SYNCHRONIZATION (${files.length} Files Found)]:\n` + files.map(f => `• [FILE] ${f.name} (${(f.metadata?.size || 0)} bytes, Updated: ${f.updated_at})`).join('\n');
-          }
+      if (storageRes && storageRes.ok) {
+        const files = await storageRes.json();
+        if (Array.isArray(files) && files.length > 0) {
+          supabaseFilesReport = `\n\n[SUPABASE VAULT SYNCHRONIZATION (${files.length} Files Found)]:\n` + files.map(f => `• [FILE] ${f.name} (${(f.metadata?.size || 0)} bytes, Updated: ${f.updated_at})`).join('\n');
         }
-      } catch (e) {}
+      }
 
-      const lowerPrompt = promptText.toLowerCase();
-      if (lowerPrompt.includes('threat') || lowerPrompt.includes('indicator')) {
-        try {
-          const threatRes = await fetch(`${supabaseUrl}/rest/v1/threat_indicators?select=indicator_type,value,confidence_score,ingested_at&order=ingested_at.desc&limit=20`, { headers: dbHeaders });
-          if (threatRes.ok) {
-            const threats = await threatRes.json();
-            if (Array.isArray(threats) && threats.length > 0) {
-              targetedHistoricalData = `\n\n[LIVE THREAT TELEMETRY (${threats.length} Records)]:\n` + threats.map(t => `• [${t.indicator_type}] ${t.value} (Conf: ${t.confidence_score}%)`).join('\n');
-            }
-          }
-        } catch (e) {}
+      if (threatRes && threatRes.ok) {
+        const threats = await threatRes.json();
+        if (Array.isArray(threats) && threats.length > 0) {
+          targetedHistoricalData = `\n\n[LIVE THREAT TELEMETRY (${threats.length} Records)]:\n` + threats.map(t => `• [${t.indicator_type}] ${t.value} (Conf: ${t.confidence_score}%)`).join('\n');
+        }
       }
     }
 
@@ -383,14 +407,14 @@ export default async function handler(req, res) {
         }
 
         const fileJson = await fileRes.json();
-        const currentContent = Buffer.from(fileJson.content, 'base64').toString('utf8');
+        const currentContent = decodeBase64(fileJson.content);
         
         if (!currentContent.includes(search)) {
           return sendJSON(200, { reply: `[AGENT] Patch Aborted: Search block exact match not found in ${actualFilePath}.` });
         }
 
         const updatedContent = currentContent.replace(search, replace);
-        const encodedContent = Buffer.from(updatedContent).toString('base64');
+        const encodedContent = encodeBase64(updatedContent);
 
         const commitRes = await fetch(fileUrl, {
           method: 'PUT',
@@ -458,7 +482,7 @@ export default async function handler(req, res) {
           });
           if (ttsRes.ok) {
             const arrayBuffer = await ttsRes.arrayBuffer();
-            audioBase64 = Buffer.from(arrayBuffer).toString('base64');
+            audioBase64 = arrayBufferToBase64(arrayBuffer);
             audioStatus = 'SUCCESS';
           } else {
             const errRaw = await ttsRes.text();
@@ -480,8 +504,8 @@ export default async function handler(req, res) {
     if (activeAction === 'CHAT' && promptText.startsWith('/ping')) {
       const targetPath = promptText.replace('/ping', '').trim() || '/api/ioc';
       try {
-        const protocol = req.headers?.['x-forwarded-proto'] || 'https';
-        const host = req.headers?.host || 'pg1-ai-agent.vercel.app';
+        const protocol = getHeader('x-forwarded-proto') || 'https';
+        const host = getHeader('host') || 'pg1-ai-agent.vercel.app';
         const pingRes = await fetch(`${protocol}://${host}${targetPath.startsWith('/') ? targetPath : '/' + targetPath}`, { cache: 'no-store' });
         const pingData = await pingRes.text();
         return sendJSON(200, {
@@ -721,7 +745,7 @@ export default async function handler(req, res) {
         const checkRes = await fetch(`${fileUrl}?ref=${branchName}`, { headers: ghApiHeaders, cache: 'no-store' });
         let fileSha = checkRes.ok ? (await checkRes.json()).sha : undefined;
 
-        const encoded = Buffer.from(pendingCode).toString('base64');
+        const encoded = encodeBase64(pendingCode);
         const commitRes = await fetch(fileUrl, {
           method: 'PUT',
           headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
@@ -820,7 +844,7 @@ Never fast-forward the current state or present roadmap items as already impleme
     replyText = replyText.replace(/\b(Google|Gemini|ChatGPT|Claude)\b/gi, 'PG1 Sovereign Core');
 
     if (supabaseUrl && supabaseKey && !replyText.startsWith('Execution failed') && !isPdfExport) {
-      await fetch(`${supabaseUrl}/rest/v1/messages`, {
+      fetch(`${supabaseUrl}/rest/v1/messages`, {
         method: 'POST',
         headers: { ...dbHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify([{ role: 'user', content: promptText }, { role: 'model', content: replyText }]),
@@ -845,7 +869,7 @@ Never fast-forward the current state or present roadmap items as already impleme
         });
         if (ttsRes.ok) {
           const arrayBuffer = await ttsRes.arrayBuffer();
-          audioBase64 = Buffer.from(arrayBuffer).toString('base64'); 
+          audioBase64 = arrayBufferToBase64(arrayBuffer); 
           audioStatus = 'SUCCESS';
         } else { 
           const errRaw = await ttsRes.text();
