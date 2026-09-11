@@ -328,7 +328,8 @@ export default async function handler(req, res) {
         const ghApiHeaders = { 
           'Authorization': `Bearer ${githubToken}`, 
           'Accept': 'application/vnd.github+json', 
-          'User-Agent': 'Sovereign-Agent' 
+          'User-Agent': 'Sovereign-Agent',
+          'Cache-Control': 'no-cache'
         };
 
         let orgOwner = 'Project-Gifted1';
@@ -339,40 +340,48 @@ export default async function handler(req, res) {
         const repoBaseUrl = `https://api.github.com/repos/${repoPath}`;
         const branchName = `surgical-patch-${Date.now()}`;
 
-        const refRes = await fetch(`${repoBaseUrl}/git/ref/heads/main`, { headers: ghApiHeaders });
-        if (!refRes.ok) return sendJSON(200, { reply: `[AGENT] Patch Failed: Could not resolve main branch.` });
+        const refRes = await fetch(`${repoBaseUrl}/git/ref/heads/main`, { headers: ghApiHeaders, cache: 'no-store' });
+        if (!refRes.ok) {
+          const refErr = await refRes.text();
+          return sendJSON(200, { reply: `[AGENT] Patch Failed: Could not resolve main branch. API: ${refRes.status} ${refErr}` });
+        }
         const refData = await refRes.json();
         const mainSha = refData.object.sha;
 
         await fetch(`${repoBaseUrl}/git/refs`, {
           method: 'POST',
           headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: mainSha })
+          body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: mainSha }),
+          cache: 'no-store'
         });
 
         let actualFilePath = targetPathFile;
         let fileUrl = `${repoBaseUrl}/contents/${actualFilePath}`;
         
-        // Fix: Fetch target file from mainSha instead of newly created branch to bypass eventual consistency 404s
-        let fileRes = await fetch(`${fileUrl}?ref=${mainSha}`, { headers: ghApiHeaders });
+        let fileRes = await fetch(`${fileUrl}?ref=main`, { headers: ghApiHeaders, cache: 'no-store' });
         
         if (!fileRes.ok) {
-          const treeRes = await fetch(`${repoBaseUrl}/git/trees/${mainSha}?recursive=1`, { headers: ghApiHeaders });
+          const treeRes = await fetch(`${repoBaseUrl}/git/trees/main?recursive=1`, { headers: ghApiHeaders, cache: 'no-store' });
           if (treeRes.ok) {
             const treeData = await treeRes.json();
             const match = treeData.tree.find(item => item.path === targetPathFile || item.path.endsWith('/' + targetPathFile));
             if (match) {
               actualFilePath = match.path;
               fileUrl = `${repoBaseUrl}/contents/${actualFilePath}`;
-              // Fetch resolved path from mainSha
-              fileRes = await fetch(`${fileUrl}?ref=${mainSha}`, { headers: ghApiHeaders });
+              fileRes = await fetch(`${fileUrl}?ref=main`, { headers: ghApiHeaders, cache: 'no-store' });
             }
+          } else {
+            const treeErr = await treeRes.text();
+            return sendJSON(200, { reply: `[AGENT] Patch Failed: Repository tree unreadable. Code: ${treeRes.status} - ${treeErr}` });
           }
         }
 
-        if (!fileRes.ok) return sendJSON(200, { reply: `[AGENT] Patch Failed: Target file ${targetPathFile} not found directly or in repository tree.` });
+        if (!fileRes.ok) {
+          const fileErr = await fileRes.text();
+          return sendJSON(200, { reply: `[AGENT] Patch Failed: Target file ${targetPathFile} not found. API Code: ${fileRes.status} - ${fileErr}` });
+        }
+
         const fileJson = await fileRes.json();
-        
         const currentContent = Buffer.from(fileJson.content, 'base64').toString('utf8');
         
         if (!currentContent.includes(search)) {
@@ -390,10 +399,14 @@ export default async function handler(req, res) {
             content: encodedContent,
             sha: fileJson.sha,
             branch: branchName
-          })
+          }),
+          cache: 'no-store'
         });
 
-        if (!commitRes.ok) return sendJSON(200, { reply: `[AGENT] Patch Failed: Could not commit modified file.` });
+        if (!commitRes.ok) {
+          const commitErr = await commitRes.text();
+          return sendJSON(200, { reply: `[AGENT] Patch Failed: Could not commit modified file. Code: ${commitRes.status} - ${commitErr}` });
+        }
 
         const prRes = await fetch(`${repoBaseUrl}/pulls`, {
           method: 'POST',
@@ -403,7 +416,8 @@ export default async function handler(req, res) {
             head: branchName,
             base: 'main',
             body: 'Automated surgical patch via search-and-replace pipeline.'
-          })
+          }),
+          cache: 'no-store'
         });
 
         const prData = await prRes.json();
@@ -438,7 +452,8 @@ export default async function handler(req, res) {
               transcript: cleanText, 
               voice: { mode: 'id', id: targetVoiceId }, 
               output_format: { container: 'mp3', sample_rate: 44100 } 
-            })
+            }),
+            cache: 'no-store'
           });
           if (ttsRes.ok) {
             const arrayBuffer = await ttsRes.arrayBuffer();
@@ -466,7 +481,7 @@ export default async function handler(req, res) {
       try {
         const protocol = req.headers?.['x-forwarded-proto'] || 'https';
         const host = req.headers?.host || 'pg1-ai-agent.vercel.app';
-        const pingRes = await fetch(`${protocol}://${host}${targetPath.startsWith('/') ? targetPath : '/' + targetPath}`);
+        const pingRes = await fetch(`${protocol}://${host}${targetPath.startsWith('/') ? targetPath : '/' + targetPath}`, { cache: 'no-store' });
         const pingData = await pingRes.text();
         return sendJSON(200, {
           reply: `[DIAGNOSTIC TEST]\nTarget: ${targetPath}\nStatus: ${pingRes.status} ${pingRes.statusText}\nResponse: ${pingData}`,
@@ -493,7 +508,8 @@ export default async function handler(req, res) {
             body: JSON.stringify({
               instances: [{ prompt: premiumPrompt }],
               parameters: { sampleCount: 1, aspectRatio: "16:9" }
-            })
+            }),
+            cache: 'no-store'
           });
           const imgData = await imgRes.json();
           if (imgRes.ok && imgData.predictions && imgData.predictions.length > 0) {
@@ -513,7 +529,8 @@ export default async function handler(req, res) {
            const oaiRes = await fetch('https://api.openai.com/v1/images/generations', {
              method: 'POST',
              headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
-             body: JSON.stringify({ prompt: premiumPrompt, model: "dall-e-3", n: 1, size: "1024x1024" })
+             body: JSON.stringify({ prompt: premiumPrompt, model: "dall-e-3", n: 1, size: "1024x1024" }),
+             cache: 'no-store'
            });
            const oaiData = await oaiRes.json();
            if (oaiRes.ok && oaiData.data && oaiData.data.length > 0) {
@@ -536,7 +553,8 @@ export default async function handler(req, res) {
             },
             body: JSON.stringify({
               input: { prompt: premiumPrompt, aspect_ratio: "16:9", output_format: "png" }
-            })
+            }),
+            cache: 'no-store'
           });
           const repData = await repRes.json();
           if (repRes.ok && repData.status === 'succeeded' && repData.output) {
@@ -580,7 +598,8 @@ export default async function handler(req, res) {
             body: JSON.stringify({
               instances: [{ prompt: premiumPrompt }],
               parameters: { aspectRatio: "16:9" }
-            })
+            }),
+            cache: 'no-store'
           });
           const vidData = await vidRes.json();
           if (vidRes.ok && vidData.predictions && vidData.predictions.length > 0) {
@@ -604,7 +623,8 @@ export default async function handler(req, res) {
               'Content-Type': 'application/json',
               'Prefer': 'wait'
             },
-            body: JSON.stringify({ input: { prompt: premiumPrompt } })
+            body: JSON.stringify({ input: { prompt: premiumPrompt } }),
+            cache: 'no-store'
           });
           const repData = await repRes.json();
           if (repRes.ok && repData.status === 'succeeded' && repData.output) {
@@ -670,7 +690,8 @@ export default async function handler(req, res) {
         const ghApiHeaders = { 
           'Authorization': `Bearer ${githubToken}`, 
           'Accept': 'application/vnd.github+json', 
-          'User-Agent': 'Sovereign-Agent' 
+          'User-Agent': 'Sovereign-Agent',
+          'Cache-Control': 'no-cache'
         };
         
         let orgOwner = 'Project-Gifted1';
@@ -682,7 +703,7 @@ export default async function handler(req, res) {
         const repoBaseUrl = `https://api.github.com/repos/${repoPath}`;
         const branchName = `agent-patch-${Date.now()}`;
 
-        const refRes = await fetch(`${repoBaseUrl}/git/ref/heads/main`, { headers: ghApiHeaders });
+        const refRes = await fetch(`${repoBaseUrl}/git/ref/heads/main`, { headers: ghApiHeaders, cache: 'no-store' });
         if (!refRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not resolve main branch reference for ${repoPath}.`, traceId: requestTraceId });
         const refData = await refRes.json();
         const mainSha = refData.object.sha;
@@ -690,12 +711,13 @@ export default async function handler(req, res) {
         const createRefRes = await fetch(`${repoBaseUrl}/git/refs`, {
           method: 'POST',
           headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: mainSha })
+          body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: mainSha }),
+          cache: 'no-store'
         });
         if (!createRefRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not create branch '${branchName}'.`, traceId: requestTraceId });
 
         const fileUrl = `${repoBaseUrl}/contents/${targetFile}`;
-        const checkRes = await fetch(`${fileUrl}?ref=${branchName}`, { headers: ghApiHeaders });
+        const checkRes = await fetch(`${fileUrl}?ref=${branchName}`, { headers: ghApiHeaders, cache: 'no-store' });
         let fileSha = checkRes.ok ? (await checkRes.json()).sha : undefined;
 
         const encoded = Buffer.from(pendingCode).toString('base64');
@@ -707,7 +729,8 @@ export default async function handler(req, res) {
             content: encoded,
             sha: fileSha,
             branch: branchName
-          })
+          }),
+          cache: 'no-store'
         });
         if (!commitRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not commit file changes.`, traceId: requestTraceId });
 
@@ -719,7 +742,8 @@ export default async function handler(req, res) {
             head: branchName,
             base: 'main',
             body: 'Automated pull request generated by Project-Gifted1 sovereign core for review and merge with rigorous anti-truncation validation.'
-          })
+          }),
+          cache: 'no-store'
         });
 
         const prData = await prRes.json();
@@ -771,7 +795,8 @@ Never fast-forward the current state or present roadmap items as already impleme
               systemInstruction: { parts: [{ text: sysInstruction }] },
               contents: [{ role: 'user', parts: [...mediaParts, { text: promptText + targetedHistoricalData + supabaseFilesReport }] }],
               generationConfig: { maxOutputTokens: 8192, temperature: 0.7 }
-            })
+            }),
+            cache: 'no-store'
           });
           
           if (res.ok) {
@@ -797,7 +822,8 @@ Never fast-forward the current state or present roadmap items as already impleme
       await fetch(`${supabaseUrl}/rest/v1/messages`, {
         method: 'POST',
         headers: { ...dbHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify([{ role: 'user', content: promptText }, { role: 'model', content: replyText }])
+        body: JSON.stringify([{ role: 'user', content: promptText }, { role: 'model', content: replyText }]),
+        cache: 'no-store'
       }).catch(() => {});
     }
 
@@ -813,7 +839,8 @@ Never fast-forward the current state or present roadmap items as already impleme
             transcript: replyText.replace(/[*_#`[\]()]/g, '').substring(0, 3000).trim(),
             voice: { mode: 'id', id: targetVoiceId },
             output_format: { container: 'mp3', sample_rate: 44100 }
-          })
+          }),
+          cache: 'no-store'
         });
         if (ttsRes.ok) {
           const arrayBuffer = await ttsRes.arrayBuffer();
