@@ -256,7 +256,6 @@ export default async function handler(req, res) {
     promptText += vaultUploadLog;
 
     if (supabaseUrl && supabaseKey) {
-      // Execute all 4 Supabase fetches in a single Promise.all matrix to eliminate sequence latency
       const pingReq = fetch(`${supabaseUrl}/rest/v1/messages?select=id&limit=1`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null);
       const msgReq = fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null);
       const storageReq = fetch(`${supabaseUrl}/storage/v1/object/list/pg1-vault`, {
