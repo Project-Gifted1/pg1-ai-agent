@@ -87,7 +87,7 @@
     }
 
     .tm-symbol {
-      font-size: 0.7em; /* Increased size for visibility */
+      font-size: 0.7em;
       margin-left: 2px;
       transform: translateY(-0.65em); 
       color: var(--text-gold);
@@ -772,43 +772,36 @@
           body: JSON.stringify(payload)
         });
 
-        const data = await response.json();
-        
         triggerHaptic([30, 50, 30]); 
-
         const finalTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
-        // Use the Markdown formatter instead of just escaping HTML
-        let contentHtml = `<span class="msg-timestamp">${finalTime}</span><div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>`;
+        const textContainer = agentBubble.querySelector('.message-text');
+        textContainer.style.color = 'var(--text-main)';
+        textContainer.textContent = '';
 
-        if (data.image) {
-          contentHtml += `
-            <div class="media-preview-container">
-              <img src="${data.image}" alt="High-Spec Rendered Asset" />
-            </div>`;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullResponseText = '';
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          fullResponseText += chunk;
+          textContainer.innerHTML = formatMarkdown(fullResponseText);
+          chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
-        if (data.video) {
-          contentHtml += `
-            <div class="media-preview-container">
-              <video controls preload="metadata" playsinline width="100%" src="${data.video}">
-                Your browser does not support video playback.
-              </video>
-            </div>`;
-        }
-
-        contentHtml += `
+        let actionsHtml = `
           <div class="message-actions">
-            <span onclick="triggerHaptic(); speakMessage(${JSON.stringify(data.reply || '').replace(/"/g, '&quot;')})">SPEAK</span>
+            <span onclick="triggerHaptic(); speakMessage(${JSON.stringify(fullResponseText).replace(/"/g, '&quot;')})">SPEAK</span>
             <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
             <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
           </div>`;
+        agentBubble.insertAdjacentHTML('beforeend', actionsHtml);
 
-        agentBubble.innerHTML = contentHtml;
-
-        if (voiceActive && data.audio) {
-          const audio = new Audio(`data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio}`);
-          audio.play().catch(e => console.log('Audio playback prevented:', e));
+        if (voiceActive) {
+          speakMessage(fullResponseText);
         }
 
       } catch (err) {
