@@ -3,43 +3,32 @@ name: Sovereign Threat Feed Daily Strike
 on:
   push:
     branches: [ main, pg1-agent ]
-  schedule:
-    - cron: '0 0 * * *'
   workflow_dispatch:
 
 jobs:
   execute-pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
-      - name: Install Network Dependencies
+      - name: Install Dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install requests networkx supabase
+          python -m pip install requests networkx supabase
           if [ -f "requirements.txt" ]; then pip install -r requirements.txt; fi
 
-      - name: Execute Autonomous Core & Swarm Mesh
+      - name: Execute Autonomous Core
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLEKEY }}
         run: |
-          python -c "import os; [os.rename(f, f.strip().replace(' ', '')) for f in os.listdir('.') if ' ' in f or f != f.strip()]"
+          rm -f swarm_registry*
+          echo "aW1wb3J0IG9zCmZyb20gc3VwYWJhc2UgaW1wb3J0IGNyZWF0ZV9jbGllbnQsIENsaWVudApjbGFzcyBTd2FybVJlZ2lzdHJ5OgogICAgZGVmIF9faW5pdF9fKHNlbGYpOgogICAgICAgIHUgPSBvcy5nZXRlbnYoIlNVUEFCQVNFX1VSTCIpCiAgICAgICAgayA9IG9zLmdldGVudigiU1VQQUJBU0VfU0VSVklDRV9LRVkiKQogICAgICAgIHNlbGYuc3VwYWJhc2UgPSBjcmVhdGVfY2xpZW50KHUsIGspIGlmIHUgYW5kIGsgZWxzZSBOb25lCiAgICBkZWYgcmVnaXN0ZXJfbm9kZShzZWxmLCBub2RlX2lkLCBub2RlX3R5cGUsIG1ldGFkYXRhPU5vbmUpOgogICAgICAgIGlmIG5vdCBzZWxmLnN1cGFiYXNlOiByZXR1cm4ge30KICAgICAgICBwID0geyJub2RlX2lkIjogbm9kZV9pZCwgIm5vZGVfdHlwZSI6IG5vZGVfdHlwZSwgIm1ldGFkYXRhIjogbWV0YWRhdGEgb3Ige30sICJzdGF0dXMiOiAiYWN0aXZlIn0KICAgICAgICByZXR1cm4gc2VsZi5zdXBhYmFzZS50YWJsZSgic3dhcm1fbm9kZXMiKS51cHNlcnQocCkuZXhlY3V0ZSgpLmRhdGEKICAgIGRlZiBnZXRfYWN0aXZlX25vZGVzKHNlbGYpOgogICAgICAgIGlmIG5vdCBzZWxmLnN1cGFiYXNlOiByZXR1cm4gW10KICAgICAgICByZXR1cm4gc2VsZi5zdXBhYmFzZS50YWJsZSgic3dhcm1fbm9kZXMiKS5zZWxlY3QoIioiKS5lcSgic3RhdHVzIiwgImFjdGl2ZSIpLmV4ZWN1dGUoKS5kYXRh" | base64 -d > swarm_registry.py
+          
           PYTHONPATH=$(pwd) python sovereign_autonomous_core.py
-          PYTHONPATH=$(pwd) python sovereign_swarm_orchestrator.py
-
-      - name: Execute OTX API Sync
-        env:
-          OTX_API: ${{ secrets.OTX_API }}
-        run: |
-          if [ -f "build_pipeline.py" ]; then
-            PYTHONPATH=$(pwd) python build_pipeline.py
-          fi
+          if [ -f "sovereign_swarm_orchestrator.py" ]; then PYTHONPATH=$(pwd) python sovereign_swarm_orchestrator.py; fi
