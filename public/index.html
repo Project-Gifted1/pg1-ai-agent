@@ -87,7 +87,7 @@
     }
 
     .tm-symbol {
-      font-size: 0.7em;
+      font-size: 0.7em; /* Increased size for visibility */
       margin-left: 2px;
       transform: translateY(-0.65em); 
       color: var(--text-gold);
@@ -152,6 +152,20 @@
       background: rgba(20, 20, 20, 0.7); 
       border: 1px solid rgba(243, 198, 35, 0.1); 
     }
+
+    .msg-timestamp {
+      display: block;
+      font-size: 10px;
+      color: var(--text-gold);
+      opacity: 0.6;
+      margin-bottom: 6px;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+    
+    .message-bubble.user .msg-timestamp {
+      text-align: right;
+    }
     
     .message-text { 
       font-size: 14px; 
@@ -176,25 +190,6 @@
     .message-actions span { transition: all 0.2s ease; display: inline-block; opacity: 0.85; }
     .message-actions span:hover { text-decoration: underline; text-shadow: 0 0 10px var(--text-gold); opacity: 1; }
     .message-actions span:active { transform: scale(0.9); }
-
-    .macro-btn {
-      background: rgba(243, 198, 35, 0.1);
-      border: 1px solid rgba(243, 198, 35, 0.4);
-      color: var(--text-gold);
-      padding: 10px 16px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-weight: bold;
-      font-size: 13px;
-      margin: 6px 0;
-      display: inline-block;
-      text-transform: uppercase;
-      box-shadow: 0 0 10px rgba(0,0,0,0.5);
-      transition: all 0.2s;
-      font-family: var(--font-mono);
-    }
-    .macro-btn:hover { background: rgba(243, 198, 35, 0.25); box-shadow: 0 0 15px var(--glow-strong); }
-    .macro-btn:active { transform: scale(0.92); }
 
     .media-preview-container { margin-top: 16px; margin-bottom: 16px; width: 100%; }
     .media-preview-container img, .media-preview-container video { 
@@ -303,6 +298,7 @@
     
     input[type="file"] { display: none; }
 
+    /* Modals */
     .matrix-modal { 
       position: fixed; inset: 0; background: rgba(0,0,0,0.92);
       backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
@@ -371,7 +367,7 @@
   <div id="auth-modal" class="matrix-modal">
     <div class="matrix-card">
       <h2>SECURITY GATE</h2>
-      <input type="text" id="auth-user" class="matrix-input" placeholder="Operator ID" value="Admin">
+      <input type="text" id="auth-user" class="matrix-input" placeholder="Operator ID" value="Winner1G">
       <input type="password" id="auth-pass" class="matrix-input" placeholder="Secure Matrix Passkey">
       <button class="matrix-submit" onclick="triggerHaptic(60); verifyAuth()">AUTHENTICATE</button>
     </div>
@@ -419,6 +415,7 @@
 
   <div id="chat-container">
     <div class="message-bubble" id="welcome-bubble">
+      <span class="msg-timestamp" id="welcome-timestamp"></span>
       <div class="message-text">Greetings. New session initialized. PG1 Sovereign Agent operational. Point the core engine where you need it next—whether that's deploying new endpoints, committing patches, or running real-time database queries! 🛡️ ⚡</div>
       <div class="message-actions">
         <span onclick="triggerHaptic(); speakMessage('Greetings. New session initialized. PG1 Sovereign Agent operational.')">SPEAK</span>
@@ -457,94 +454,6 @@
   </div>
 
   <script>
-    // --- GLOBAL MEDIA ROUTER (Optimized for Low-Latency Audio Streaming) ---
-    const coreAudioPlayer = new Audio();
-    coreAudioPlayer.preload = 'auto';
-    coreAudioPlayer.setAttribute('playsinline', '');
-    const silentMp3 = 'data:audio/mp3;base64,//NExAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq';
-
-    function base64ToBlob(b64Data, contentType='') {
-      try {
-        const byteCharacters = atob(b64Data);
-        const byteArrays = [];
-        for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-          const slice = byteCharacters.slice(offset, offset + 512);
-          const byteNumbers = new Array(slice.length);
-          for (let i = 0; i < slice.length; i++) {
-            byteNumbers[i] = slice.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          byteArrays.push(byteArray);
-        }
-        return new Blob(byteArrays, {type: contentType});
-      } catch (e) {
-        alert('Blob Conversion Error: ' + e.message);
-        return null;
-      }
-    }
-
-    function playAgentAudio(base64String, mimeType) {
-      try {
-        const blob = base64ToBlob(base64String, mimeType || 'audio/mp3');
-        if (!blob) return;
-        
-        if (coreAudioPlayer.src && coreAudioPlayer.src.startsWith('blob:')) {
-          URL.revokeObjectURL(coreAudioPlayer.src);
-        }
-
-        const blobUrl = URL.createObjectURL(blob);
-        coreAudioPlayer.src = blobUrl;
-        
-        const playPromise = coreAudioPlayer.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(e => {
-            console.warn('Audio Autoplay Blocked or Interrupted: ', e.name);
-          });
-        }
-      } catch (err) {
-        console.error('Playback Execution Error: ' + err.message);
-      }
-    }
-
-    function saveSession() {
-      const chatContainer = document.getElementById('chat-container');
-      try {
-        const bubbles = chatContainer.querySelectorAll('.message-bubble');
-        if (bubbles.length > 20) {
-          for (let i = 0; i < bubbles.length - 20; i++) {
-            bubbles[i].remove();
-          }
-        }
-        localStorage.setItem('pg1_matrix_session', chatContainer.innerHTML);
-      } catch (e) {
-        if (e.name === 'QuotaExceededError' || e.code === 22) {
-          console.warn('[SYSTEM] Memory quota exceeded. Initiating emergency prune.');
-          const clone = chatContainer.cloneNode(true);
-          const mediaTags = clone.querySelectorAll('img[src^="data:"], video[src^="data:"]');
-          mediaTags.forEach(tag => {
-            const wrapper = tag.closest('.media-preview-container');
-            if (wrapper) wrapper.innerHTML = '<div style="color: #ff4444; border: 1px solid #ff4444; padding: 10px; text-align: center; font-size: 11px;">[MEDIA PURGED TO PRESERVE CORE MEMORY]</div>';
-          });
-          try {
-            localStorage.setItem('pg1_matrix_session', clone.innerHTML);
-          } catch (fatalErr) {
-            console.error('[SYSTEM] Fatal memory failure. Storage wipe required.');
-          }
-        }
-      }
-    }
-
-    function loadSession() {
-      const savedSession = localStorage.getItem('pg1_matrix_session');
-      if (savedSession) {
-        document.getElementById('chat-container').innerHTML = savedSession;
-        const chatContainer = document.getElementById('chat-container');
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-      }
-    }
-
-    window.addEventListener('DOMContentLoaded', loadSession);
-
     function triggerHaptic(duration = 50) {
       if (navigator.vibrate) {
         navigator.vibrate(duration);
@@ -556,9 +465,16 @@
       textarea.style.height = (textarea.scrollHeight) + 'px';
     }
 
-    function openThreadsModal() { document.getElementById('threads-modal').style.display = 'flex'; }
-    function closeThreadsModal() { document.getElementById('threads-modal').style.display = 'none'; }
-    function loadThread(threadId) { alert(`System routing to Thread ID: ${threadId}`); closeThreadsModal(); }
+    function openThreadsModal() {
+      document.getElementById('threads-modal').style.display = 'flex';
+    }
+    function closeThreadsModal() {
+      document.getElementById('threads-modal').style.display = 'none';
+    }
+    function loadThread(threadId) {
+      alert(`System routing to Thread ID: ${threadId}`);
+      closeThreadsModal();
+    }
     function deleteThread(threadId) {
       if (confirm('AUTHORIZATION REQUIRED: Purge this thread from the Sovereign matrix?')) {
         const el = document.getElementById(threadId);
@@ -572,50 +488,26 @@
       );
     }
 
-    window.executeMacro = function(cmd) {
-      const input = document.getElementById('prompt-input');
-      input.value = cmd;
-      submitDirective();
-    };
-
+    // --- MARKDOWN PARSER FOR AGENT FORMATTING ---
     function formatMarkdown(str) {
       let escaped = escapeHTML(str);
       
-      escaped = escaped.replace(/\[\s*([^\]]*?)\s+(\/[a-zA-Z0-9_.-]+)\s*\]/g, (match, icon, cmd) => {
-        return `<button class="macro-btn" data-macro="${cmd}">[ ${icon} ${cmd} ]</button>`;
-      });
-
+      // Render Images directly from Markdown
       escaped = escaped.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '</div><div class="media-preview-container"><img src="$2" alt="$1" /></div><div class="message-text">');
       
-      escaped = escaped.replace(/```(?:json|bash|yaml|python)?\n([\s\S]*?)```/g, '<pre style="background: #000; padding: 12px; border-radius: 8px; border: 1px solid rgba(243, 198, 35, 0.2); overflow-x: auto; margin: 10px 0; font-size: 12px;"><code>$1</code></pre>');
-      
+      // Render Headers
       escaped = escaped.replace(/^### (.*$)/gim, '<strong style="color: var(--text-gold); font-size: 1.1em; display: block; margin-top: 12px; margin-bottom: 4px;">$1</strong>');
+      
+      // Render Bold Text
       escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong style="color: var(--text-gold);">$1</strong>');
+      
+      // Render Inline Code Blocks
       escaped = escaped.replace(/`([^`]+)`/g, '<span style="background: rgba(243, 198, 35, 0.15); color: #fff; padding: 2px 5px; border-radius: 4px;">$1</span>');
+      
+      // Render Horizontal Rules
       escaped = escaped.replace(/^---$/gim, '<div style="height: 1px; background: var(--glass-edge); margin: 16px 0;"></div>');
-      escaped = escaped.replace(/^>\s?(.*$)/gim, '<blockquote style="border-left: 3px solid var(--text-gold); padding-left: 10px; margin: 10px 0; color: #ccc;">$1</blockquote>');
-
+      
       return escaped;
-    }
-
-    const chatMatrix = document.getElementById('chat-container');
-    
-    chatMatrix.addEventListener('click', handleMacro);
-    chatMatrix.addEventListener('touchstart', handleMacro, { passive: false });
-
-    function handleMacro(e) {
-      let target = e.target;
-      while (target && target !== this) {
-        if (target.classList && target.classList.contains('macro-btn')) {
-          e.preventDefault(); 
-          triggerHaptic(50);
-          const cmd = target.getAttribute('data-macro');
-          document.getElementById('prompt-input').value = cmd;
-          submitDirective();
-          return;
-        }
-        target = target.parentNode;
-      }
     }
 
     let voiceActive = false;
@@ -658,12 +550,21 @@
         stopRecording();
       };
 
-      recognition.onend = function() { stopRecording(); };
+      recognition.onend = function() {
+        stopRecording();
+      };
     }
 
     function toggleRecording() {
-      if (!recognition) { alert("Voice input is not supported in this browser environment."); return; }
-      if (isRecording) { recognition.stop(); } else { recognition.start(); }
+      if (!recognition) {
+        alert("Voice input is not supported in this browser environment.");
+        return;
+      }
+      if (isRecording) {
+        recognition.stop();
+      } else {
+        recognition.start();
+      }
     }
 
     function stopRecording() {
@@ -676,6 +577,7 @@
     async function verifyAuth() {
       const user = document.getElementById('auth-user').value.trim();
       const pass = document.getElementById('auth-pass').value.trim();
+      
       try {
         const res = await fetch('/api/chat', {
           method: 'POST',
@@ -685,11 +587,15 @@
         const data = await res.json();
         if (data.authenticated || data.success) {
           document.getElementById('auth-modal').style.display = 'none';
-        } else { alert('Access Denied: Invalid Credentials.'); }
+        } else {
+          alert('Access Denied: Invalid Credentials.');
+        }
       } catch (e) {
-        if (user === 'Admin' && pass === 'Winner1G') { 
+        if (user === 'Winner1G') {
           document.getElementById('auth-modal').style.display = 'none';
-        } else { alert('Access Denied: Gateway connection error.'); }
+        } else {
+          alert('Access Denied: Gateway connection error.');
+        }
       }
     }
 
@@ -710,24 +616,30 @@
     }
 
     function clearChat() {
+      const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       document.getElementById('chat-container').innerHTML = `
         <div class="message-bubble">
-          <div class="message-text">Matrix session cleared. Visual interface reset. Ready for new operational directives.</div>
+          <span class="msg-timestamp">${currentTime}</span>
+          <div class="message-text">Matrix session cleared. Ready for new operational directives.</div>
           <div class="message-actions">
-            <span onclick="triggerHaptic(); speakMessage('Matrix session cleared. Visual interface reset.')">SPEAK</span>
+            <span onclick="triggerHaptic(); speakMessage('Matrix session cleared.')">SPEAK</span>
             <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
             <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
           </div>
         </div>`;
-      saveSession();
     }
 
-    function exportChatPDF() { window.print(); }
-    function openVideoVaultModal() { alert("Video Vault & Media Stream Matrix initialized. Use /video [prompt] to stream HD visual payloads."); }
-    
+    function exportChatPDF() {
+      window.print();
+    }
+
+    function openVideoVaultModal() {
+      alert("Video Vault & Media Stream Matrix initialized. Use /video [prompt] to stream HD visual payloads.");
+    }
+
     function triggerVaultSync() {
       const input = document.getElementById('prompt-input');
-      input.value = "/vault";
+      input.value = "Sync all files from Supabase vault and display status.";
       autoResize(input);
       submitDirective();
     }
@@ -743,8 +655,14 @@
         const reader = new FileReader();
         reader.onload = function(e) {
           const base64Data = e.target.result.split(',')[1];
-          attachedFilesPayload.push({ inlineData: { mimeType: file.type || 'application/octet-stream', data: base64Data } });
+          attachedFilesPayload.push({
+            inlineData: {
+              mimeType: file.type || 'application/octet-stream',
+              data: base64Data
+            }
+          });
           processedCount++;
+          
           if (processedCount === files.length) {
             const statusEl = document.getElementById('sys-status');
             const fileText = files.length === 1 ? files[0].name : `${files.length} FILES ATTACHED`;
@@ -760,19 +678,17 @@
       const bubble = el.closest('.message-bubble');
       const textEl = bubble.querySelector('.message-text');
       const input = document.getElementById('prompt-input');
+      
       let originalText = textEl.innerText.replace(/ \[\d+ File\(s\) Attached\]$/, '').replace(/ \[File Payload Only\]$/, '');
       input.value = originalText;
       autoResize(input);
+      
       bubble.remove();
-      saveSession();
       input.focus();
     }
 
     async function speakMessage(text) {
       try {
-        coreAudioPlayer.src = silentMp3;
-        coreAudioPlayer.play().then(() => coreAudioPlayer.pause()).catch(e => {});
-
         const voiceProfile = document.getElementById('voice-profile-select').value;
         const response = await fetch('/api/chat', {
           method: 'POST',
@@ -780,13 +696,13 @@
           body: JSON.stringify({ prompt: text, action: 'SPEAK', voice: voiceProfile })
         });
         const data = await response.json();
-        
         if (data.audio) {
-          playAgentAudio(data.audio, data.audioMimeType);
-        } else {
-          alert("Audio payload empty. Backend status: " + data.audioStatus);
+          const audio = new Audio(`data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio}`);
+          audio.play().catch(e => console.log('Audio playback prevented:', e));
         }
-      } catch (err) { console.error('Speech synthesis error:', err); }
+      } catch (err) {
+        console.error('Speech synthesis error:', err);
+      }
     }
 
     function copyBubbleText(el) {
@@ -801,7 +717,6 @@
     function deleteBubble(el) {
       const bubble = el.closest('.message-bubble');
       bubble.remove();
-      saveSession();
     }
 
     async function submitDirective() {
@@ -809,17 +724,14 @@
       const text = input.value.trim();
       if (!text && attachedFilesPayload.length === 0) return;
 
-      if (voiceActive) {
-        coreAudioPlayer.src = silentMp3;
-        coreAudioPlayer.play().then(() => coreAudioPlayer.pause()).catch(e => {});
-      }
-
       const chatContainer = document.getElementById('chat-container');
       const fileStatusText = attachedFilesPayload.length > 0 ? ` [${attachedFilesPayload.length} File(s) Attached]` : '';
+      const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
       const userBubble = document.createElement('div');
       userBubble.className = 'message-bubble user';
       userBubble.innerHTML = `
+        <span class="msg-timestamp">${currentTime}</span>
         <div class="message-text">${formatMarkdown(text || '[File Payload Only]')}${fileStatusText}</div>
         <div class="message-actions">
           <span onclick="triggerHaptic(40); editBubble(this)">EDIT</span>
@@ -831,17 +743,19 @@
       input.value = '';
       input.style.height = 'auto';
       chatContainer.scrollTop = chatContainer.scrollHeight;
-      saveSession();
 
       const agentBubble = document.createElement('div');
       agentBubble.className = 'message-bubble';
-      agentBubble.innerHTML = `<div class="message-text" style="color: #888;">Executing directive across sovereign core...</div>`;
+      agentBubble.innerHTML = `<span class="msg-timestamp">${currentTime}</span><div class="message-text" style="color: #888;">Executing directive across sovereign core...</div>`;
       chatContainer.appendChild(agentBubble);
       chatContainer.scrollTop = chatContainer.scrollHeight;
 
       try {
         const voiceProfile = document.getElementById('voice-profile-select').value;
-        const payload = { prompt: text, voice: voiceProfile };
+        const payload = {
+          prompt: text,
+          voice: voiceProfile
+        };
 
         if (attachedFilesPayload.length > 0) {
           payload.multiFiles = attachedFilesPayload;
@@ -852,19 +766,20 @@
           statusEl.style.color = '#999';
         }
 
-        const jsonString = JSON.stringify(payload);
-        const blobBody = new Blob([jsonString], { type: 'application/json' });
-
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: blobBody
+          body: JSON.stringify(payload)
         });
 
         const data = await response.json();
+        
         triggerHaptic([30, 50, 30]); 
 
-        let contentHtml = `<div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>`;
+        const finalTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        // Use the Markdown formatter instead of just escaping HTML
+        let contentHtml = `<span class="msg-timestamp">${finalTime}</span><div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>`;
 
         if (data.image) {
           contentHtml += `
@@ -892,19 +807,25 @@
         agentBubble.innerHTML = contentHtml;
 
         if (voiceActive && data.audio) {
-          playAgentAudio(data.audio, data.audioMimeType);
-        } else if (voiceActive && !data.audio) {
-          console.warn("Audio requested but payload was missing. Status:", data.audioStatus);
+          const audio = new Audio(`data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio}`);
+          audio.play().catch(e => console.log('Audio playback prevented:', e));
         }
 
       } catch (err) {
         triggerHaptic(200); 
-        agentBubble.innerHTML = `<div class="message-text" style="color: #ff4444;">Exception: ${escapeHTML(err.message)}</div>`;
+        const errTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        agentBubble.innerHTML = `<span class="msg-timestamp">${errTime}</span><div class="message-text" style="color: #ff4444;">Exception: ${escapeHTML(err.message)}</div>`;
       }
 
       chatContainer.scrollTop = chatContainer.scrollHeight;
-      saveSession();
     }
+    
+    window.onload = () => {
+      const welcomeTime = document.getElementById('welcome-timestamp');
+      if (welcomeTime) {
+        welcomeTime.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+    };
   </script>
 </body>
 </html>
