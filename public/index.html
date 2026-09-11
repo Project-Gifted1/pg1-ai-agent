@@ -846,7 +846,7 @@ Never fast-forward the current state or present roadmap items as already impleme
       fetch(`${supabaseUrl}/rest/v1/messages`, {
         method: 'POST',
         headers: { ...dbHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify([{ role: 'user', content: promptTest }, { role: 'model', content: replyText }]),
+        body: JSON.stringify([{ role: 'user', content: promptText }, { role: 'model', content: replyText }]),
         cache: 'no-store'
       }).catch(() => {});
     }
