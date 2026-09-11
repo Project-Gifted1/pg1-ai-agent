@@ -28,4 +28,3 @@ class SwarmRegistry:
             return []
         response = self.supabase.table("swarm_nodes").select("*").eq("status", "active").execute()
         return response.data
- 
