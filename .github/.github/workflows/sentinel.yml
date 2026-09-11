@@ -1,0 +1,23 @@
+name: PG1 Sovereign Sentinel
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  sentinel-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query Vercel Diagnostic Gateway
+        run: |
+          RESPONSE=$(curl -s "https://pg1-ai-agent.vercel.app/api/diagnostics/system-status-check?table=threat_indicators&metric=count")
+          echo "Telemetry Payload: $RESPONSE"
+          
+          if echo "$RESPONSE" | grep -q "SUCCESS"; then
+            echo "Sentinel check passed: Threat telemetry pipeline is active."
+            exit 0
+          else
+            echo "Sentinel alert: Diagnostic check did not return success."
+            exit 1
+          fi
