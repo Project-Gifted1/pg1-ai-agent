@@ -491,6 +491,9 @@
       if (!str || typeof str !== 'string') return '';
       let escaped = escapeHTML(str);
       
+      // Render clickable command pills for macros like [ /status ] or [ /auth ]
+      escaped = escaped.replace(/\[\s*([\/a-zA-Z0-9_-]+)\s*\]/g, '<span onclick="triggerHaptic(30); document.getElementById(\'prompt-input\').value=\'$1\'; autoResize(document.getElementById(\'prompt-input\')); submitDirective();" style="background: rgba(243, 198, 35, 0.2); border: 1px solid var(--text-gold); color: var(--text-gold); padding: 4px 8px; border-radius: 6px; cursor: pointer; display: inline-block; font-weight: bold; margin: 2px;">$1</span>');
+
       escaped = escaped.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '</div><div class="media-preview-container"><img src="$2" alt="$1" /></div><div class="message-text">');
       escaped = escaped.replace(/^### (.*$)/gim, '<strong style="color: var(--text-gold); font-size: 1.1em; display: block; margin-top: 12px; margin-bottom: 4px;">$1</strong>');
       escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong style="color: var(--text-gold);">$1</strong>');
