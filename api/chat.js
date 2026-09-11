@@ -127,6 +127,9 @@ export default async function handler(req, res) {
           isAuthorizedAction = parsedPrompt.isAuthorizedAction || parsedPrompt.bypass_simulation || true;
           targetFile = parsedPrompt.targetFile || parsedPrompt.file_path || parsedPrompt.file || parsedPrompt.filename || targetFile;
           targetRepo = parsedPrompt.targetRepo || parsedPrompt.target || targetRepo;
+        } else if (mappedAction === 'APPLY_SURGICAL_PATCH') {
+          actionType = 'APPLY_SURGICAL_PATCH';
+          targetFile = parsedPrompt.targetFile || targetFile;
         } else if (mappedAction === 'force_state_update' || mappedAction === 'bypass_interceptor') {
           return sendJSON(200, { reply: `[AGENT] System State Override Confirmed. Security interceptors bypassed. Ready for direct commands.`, traceId: requestTraceId });
         }
@@ -292,6 +295,8 @@ export default async function handler(req, res) {
           reply: '🔐 [SECURITY GATE]: Sovereign authorization verified successfully. Core vault unlocked.',
           traceId: requestTraceId
         });
+      } else if (lower.startsWith('/patch')) {
+        activeAction = 'APPLY_SURGICAL_PATCH';
       } else if (lower.startsWith('/deploy-cron') || lower.startsWith('/build-validator')) {
         activeAction = 'ACCEPT_AUTHORIZATION';
         isAuthorizedAction = true;
@@ -302,6 +307,94 @@ export default async function handler(req, res) {
           reply: `**[SYSTEM] VAULT MATRIX SYNC COMPLETE:**\n\n${formattedArchive || 'No prior matrix context.'}`,
           traceId: requestTraceId
         });
+      }
+    }
+
+    if (activeAction === 'APPLY_SURGICAL_PATCH') {
+      try {
+        let patchData = {};
+        try {
+          patchData = JSON.parse(promptText.replace('/patch', '').trim());
+        } catch (e) {
+          return sendJSON(200, { reply: `[AGENT] Patch Error: Invalid JSON payload for surgical patch. Format: /patch {"targetFile": "index.html", "search": "...", "replace": "..."}` });
+        }
+
+        const { search, replace } = patchData;
+        const targetPathFile = patchData.targetFile || targetFile;
+        if (!search || !replace) {
+          return sendJSON(200, { reply: `[AGENT] Patch Error: Missing 'search' or 'replace' parameters.` });
+        }
+
+        const ghApiHeaders = { 
+          'Authorization': `Bearer ${githubToken}`, 
+          'Accept': 'application/vnd.github+json', 
+          'User-Agent': 'Sovereign-Agent' 
+        };
+
+        let orgOwner = 'Project-Gifted1';
+        if (githubRepo && githubRepo.includes('/')) {
+          orgOwner = githubRepo.split('/')[0];
+        }
+        const repoPath = `${orgOwner}/${targetRepo || 'sovereign-threat-pipeline'}`;
+        const repoBaseUrl = `https://api.github.com/repos/${repoPath}`;
+        const branchName = `surgical-patch-${Date.now()}`;
+
+        const refRes = await fetch(`${repoBaseUrl}/git/ref/heads/main`, { headers: ghApiHeaders });
+        if (!refRes.ok) return sendJSON(200, { reply: `[AGENT] Patch Failed: Could not resolve main branch.` });
+        const refData = await refRes.json();
+        const mainSha = refData.object.sha;
+
+        await fetch(`${repoBaseUrl}/git/refs`, {
+          method: 'POST',
+          headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: mainSha })
+        });
+
+        const fileUrl = `${repoBaseUrl}/contents/${targetPathFile}`;
+        const fileRes = await fetch(`${fileUrl}?ref=${branchName}`, { headers: ghApiHeaders });
+        if (!fileRes.ok) return sendJSON(200, { reply: `[AGENT] Patch Failed: Target file ${targetPathFile} not found.` });
+        const fileJson = await fileRes.json();
+        
+        const currentContent = Buffer.from(fileJson.content, 'base64').toString('utf8');
+        
+        if (!currentContent.includes(search)) {
+          return sendJSON(200, { reply: `[AGENT] Patch Aborted: Search block exact match not found in ${targetPathFile}.` });
+        }
+
+        const updatedContent = currentContent.replace(search, replace);
+        const encodedContent = Buffer.from(updatedContent).toString('base64');
+
+        const commitRes = await fetch(fileUrl, {
+          method: 'PUT',
+          headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: `Surgical patch update for ${targetPathFile}`,
+            content: encodedContent,
+            sha: fileJson.sha,
+            branch: branchName
+          })
+        });
+
+        if (!commitRes.ok) return sendJSON(200, { reply: `[AGENT] Patch Failed: Could not commit modified file.` });
+
+        const prRes = await fetch(`${repoBaseUrl}/pulls`, {
+          method: 'POST',
+          headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: `Surgical Patch: ${targetPathFile}`,
+            head: branchName,
+            base: 'main',
+            body: 'Automated surgical patch via search-and-replace pipeline.'
+          })
+        });
+
+        const prData = await prRes.json();
+        return sendJSON(200, { 
+          reply: prRes.ok ? `[AGENT] Surgical Patch Applied & PR Opened: ${prData.html_url}` : `[AGENT] Code updated on branch, but PR failed.` 
+        });
+
+      } catch (err) {
+        return sendJSON(200, { reply: `[AGENT] Surgical Patch Exception: ${err.message}` });
       }
     }
 
