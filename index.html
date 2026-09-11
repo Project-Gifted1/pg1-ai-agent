@@ -152,6 +152,20 @@
       background: rgba(20, 20, 20, 0.7); 
       border: 1px solid rgba(243, 198, 35, 0.1); 
     }
+
+    .msg-timestamp {
+      display: block;
+      font-size: 10px;
+      color: var(--text-gold);
+      opacity: 0.6;
+      margin-bottom: 6px;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+    
+    .message-bubble.user .msg-timestamp {
+      text-align: right;
+    }
     
     .message-text { 
       font-size: 14px; 
@@ -401,6 +415,7 @@
 
   <div id="chat-container">
     <div class="message-bubble" id="welcome-bubble">
+      <span class="msg-timestamp" id="welcome-timestamp"></span>
       <div class="message-text">Greetings. New session initialized. PG1 Sovereign Agent operational. Point the core engine where you need it next—whether that's deploying new endpoints, committing patches, or running real-time database queries! 🛡️ ⚡</div>
       <div class="message-actions">
         <span onclick="triggerHaptic(); speakMessage('Greetings. New session initialized. PG1 Sovereign Agent operational.')">SPEAK</span>
@@ -601,8 +616,10 @@
     }
 
     function clearChat() {
+      const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       document.getElementById('chat-container').innerHTML = `
         <div class="message-bubble">
+          <span class="msg-timestamp">${currentTime}</span>
           <div class="message-text">Matrix session cleared. Ready for new operational directives.</div>
           <div class="message-actions">
             <span onclick="triggerHaptic(); speakMessage('Matrix session cleared.')">SPEAK</span>
@@ -709,10 +726,12 @@
 
       const chatContainer = document.getElementById('chat-container');
       const fileStatusText = attachedFilesPayload.length > 0 ? ` [${attachedFilesPayload.length} File(s) Attached]` : '';
+      const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
       const userBubble = document.createElement('div');
       userBubble.className = 'message-bubble user';
       userBubble.innerHTML = `
+        <span class="msg-timestamp">${currentTime}</span>
         <div class="message-text">${formatMarkdown(text || '[File Payload Only]')}${fileStatusText}</div>
         <div class="message-actions">
           <span onclick="triggerHaptic(40); editBubble(this)">EDIT</span>
@@ -727,7 +746,7 @@
 
       const agentBubble = document.createElement('div');
       agentBubble.className = 'message-bubble';
-      agentBubble.innerHTML = `<div class="message-text" style="color: #888;">Executing directive across sovereign core...</div>`;
+      agentBubble.innerHTML = `<span class="msg-timestamp">${currentTime}</span><div class="message-text" style="color: #888;">Executing directive across sovereign core...</div>`;
       chatContainer.appendChild(agentBubble);
       chatContainer.scrollTop = chatContainer.scrollHeight;
 
@@ -757,8 +776,10 @@
         
         triggerHaptic([30, 50, 30]); 
 
+        const finalTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
         // Use the Markdown formatter instead of just escaping HTML
-        let contentHtml = `<div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>`;
+        let contentHtml = `<span class="msg-timestamp">${finalTime}</span><div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>`;
 
         if (data.image) {
           contentHtml += `
@@ -792,11 +813,19 @@
 
       } catch (err) {
         triggerHaptic(200); 
-        agentBubble.innerHTML = `<div class="message-text" style="color: #ff4444;">Exception: ${escapeHTML(err.message)}</div>`;
+        const errTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        agentBubble.innerHTML = `<span class="msg-timestamp">${errTime}</span><div class="message-text" style="color: #ff4444;">Exception: ${escapeHTML(err.message)}</div>`;
       }
 
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
+    
+    window.onload = () => {
+      const welcomeTime = document.getElementById('welcome-timestamp');
+      if (welcomeTime) {
+        welcomeTime.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+    };
   </script>
 </body>
 </html>
