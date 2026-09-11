@@ -352,7 +352,9 @@ export default async function handler(req, res) {
 
         let actualFilePath = targetPathFile;
         let fileUrl = `${repoBaseUrl}/contents/${actualFilePath}`;
-        let fileRes = await fetch(`${fileUrl}?ref=${branchName}`, { headers: ghApiHeaders });
+        
+        // Fix: Fetch target file from mainSha instead of newly created branch to bypass eventual consistency 404s
+        let fileRes = await fetch(`${fileUrl}?ref=${mainSha}`, { headers: ghApiHeaders });
         
         if (!fileRes.ok) {
           const treeRes = await fetch(`${repoBaseUrl}/git/trees/${mainSha}?recursive=1`, { headers: ghApiHeaders });
@@ -362,7 +364,8 @@ export default async function handler(req, res) {
             if (match) {
               actualFilePath = match.path;
               fileUrl = `${repoBaseUrl}/contents/${actualFilePath}`;
-              fileRes = await fetch(`${fileUrl}?ref=${branchName}`, { headers: ghApiHeaders });
+              // Fetch resolved path from mainSha
+              fileRes = await fetch(`${fileUrl}?ref=${mainSha}`, { headers: ghApiHeaders });
             }
           }
         }
