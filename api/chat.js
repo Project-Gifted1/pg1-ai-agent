@@ -291,9 +291,9 @@ export default async function handler(req, res) {
 
     var rawActionType = action || actionType || 'CHAT';
 
-    // SECURITY FIX: no hardcoded fallback credentials.
+    // NOTE: matches the USER_API_PASSS variable currently set in Vercel.
     var expectedUser = process.env.USER_API_USER;
-    var expectedPass = process.env.USER_API_PASS;
+    var expectedPass = process.env.USER_API_PASSS;
     var isAuthed = !!(expectedUser && expectedPass && user === expectedUser && pass === expectedPass);
 
     if (promptText === 'AUTH_VERIFY') {
