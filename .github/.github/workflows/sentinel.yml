@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Query Vercel Diagnostic Gateway
+        # [System Patch]: Forced delta to awaken GitHub Actions cron scheduler
         run: |
           RESPONSE=$(curl -sL --max-time 30 "https://pg1-ai-agent.vercel.app/api/diagnostics/system-status-check?table=threat_indicators&metric=count")
           echo "Telemetry Payload: $RESPONSE"
