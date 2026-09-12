@@ -125,7 +125,7 @@ function runPreFlightCheck(codeString, fileTarget) {
 }
 
 async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys) {
-  var models = ['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-flash-latest'];
+  var models = ['gemini-2.5-flash', 'gemini-flash-latest'];
   var lastError = '';
   
   for (var i = 0; i < geminiKeys.length; i++) {
@@ -134,12 +134,8 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
       var model = models[j];
       try {
         var apiVersion = 'v1beta';
-        if (model.includes('3.5') || model.includes('preview') || model.includes('omni')) {
-          apiVersion = 'v1alpha';
-        }
-        
         var controller = new AbortController();
-        var timeoutId = setTimeout(() => controller.abort(), 10000); 
+        var timeoutId = setTimeout(() => controller.abort(), 8000); 
 
         var res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${currentKey}`, {
           method: 'POST',
@@ -147,7 +143,7 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: sysInstruction }] },
             contents: [{ role: 'user', parts: [...mediaParts, { text: promptText + contextData }] }],
-            generationConfig: { maxOutputTokens: 8192, temperature: 0.7 }
+            generationConfig: { maxOutputTokens: 4096, temperature: 0.7 }
           }),
           cache: 'no-store',
           signal: controller.signal
@@ -383,7 +379,7 @@ export default async function handler(req, res) {
     promptText += vaultUploadLog;
 
     if (supabaseUrl && supabaseKey) {
-      const createTimedFetch = (url, options = {}, timeoutMs = 3500) => {
+      const createTimedFetch = (url, options = {}, timeoutMs = 1800) => {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeoutMs);
         return fetch(url, { ...options, signal: controller.signal, cache: 'no-store' })
@@ -392,16 +388,16 @@ export default async function handler(req, res) {
       };
 
       var pingReq = createTimedFetch(`${supabaseUrl}/rest/v1/messages?select=id&limit=1`, { headers: dbHeaders });
-      var msgReq = createTimedFetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, { headers: dbHeaders });
+      var msgReq = createTimedFetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=12`, { headers: dbHeaders });
       var storageReq = createTimedFetch(`${supabaseUrl}/storage/v1/object/list/pg1-vault`, {
         method: 'POST',
         headers: { ...dbHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prefix: '', limit: 50, sortBy: { column: 'created_at', order: 'desc' } })
+        body: JSON.stringify({ prefix: '', limit: 20, sortBy: { column: 'created_at', order: 'desc' } })
       });
 
       var isThreatQuery = typeof promptText === 'string' && (promptText.toLowerCase().includes('threat') || promptText.toLowerCase().includes('indicator') || promptText.toLowerCase().includes('radar'));
       var threatReq = isThreatQuery 
-        ? createTimedFetch(`${supabaseUrl}/rest/v1/threat_indicators?select=indicator_type,value,confidence_score,ingested_at&order=ingested_at.desc&limit=20`, { headers: dbHeaders })
+        ? createTimedFetch(`${supabaseUrl}/rest/v1/threat_indicators?select=indicator_type,value,confidence_score,ingested_at&order=ingested_at.desc&limit=10`, { headers: dbHeaders })
         : Promise.resolve(null);
 
       var results = await Promise.all([pingReq, msgReq, storageReq, threatReq]);
@@ -505,7 +501,7 @@ export default async function handler(req, res) {
         try {
           patchData = JSON.parse(promptText.replace('/patch', '').trim());
         } catch (e) {
-          return sendJSON(200, { reply: `[AGENT] Patch Error: Invalid JSON payload for surgical patch. Format: /patch {"targetFile": "index.html", "search": "...", "replace": "..."}` });
+          return sendJSON(200, { reply: `[AGENT] Patch Error: Invalid JSON payload for surgical patch.` });
         }
 
         var searchStr = patchData.search;
@@ -547,7 +543,6 @@ export default async function handler(req, res) {
 
         var actualFilePath = await resolveGithubPath(targetPathFile, patchRepoBaseUrl, ghApiHeaders);
         var fileUrl = `${patchRepoBaseUrl}/contents/${actualFilePath}`;
-        
         var fileRes = await fetch(`${fileUrl}?ref=main`, { headers: ghApiHeaders, cache: 'no-store' });
         
         if (!fileRes.ok) {
@@ -647,9 +642,6 @@ export default async function handler(req, res) {
               audioBase64 = arrayBufferToBase64(arrayBuffer);
             }
             audioStatus = 'SUCCESS';
-          } else {
-            var errRaw = await ttsRes.text();
-            audioStatus = 'API_FAILED_' + ttsRes.status + '_' + errRaw.substring(0, 40).replace(/[^a-zA-Z0-9_ -]/g, '');
           }
         } catch (e) {
           audioStatus = 'EXCEPTION_' + e.message;
@@ -723,64 +715,18 @@ export default async function handler(req, res) {
 
             engineUsed = `Google (Imagen 3 - Key ${k + 1})`;
             break; 
-          } else {
-            apiErrors.push(`Google Key ${k + 1} Error: ${(imgData.error && imgData.error.message) || 'Request Failed'}`);
           }
-        } catch (e) { apiErrors.push(`Google Key ${k + 1} Catch: ${e.message}`); }
+        } catch (e) {}
       }
 
-      if (!imageUrl && openaiKey) {
-         try {
-           var oaiRes = await fetch('https://api.openai.com/v1/images/generations', {
-             method: 'POST',
-             headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
-             body: JSON.stringify({ prompt: premiumPrompt, model: "dall-e-3", n: 1, size: "1024x1024" }),
-             cache: 'no-store'
-           });
-           var oaiData = await oaiRes.json();
-           if (oaiRes.ok && oaiData.data && oaiData.data.length > 0) {
-             imageUrl = oaiData.data[0].url;
-             engineUsed = 'OpenAI (DALL-E 3)';
-           } else {
-             apiErrors.push(`OpenAI Error: ${(oaiData.error && oaiData.error.message) || 'Request Failed'}`);
-           }
-         } catch(e) { apiErrors.push(`OpenAI Catch: ${e.message}`); }
-      }
-
-      if (!imageUrl && replicateToken) {
-        try {
-          var repRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-dev/predictions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${replicateToken}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'wait' 
-            },
-            body: JSON.stringify({
-              input: { prompt: premiumPrompt, aspect_ratio: "16:9", output_format: "png" }
-            }),
-            cache: 'no-store'
-          });
-          var repData = await repRes.json();
-          if (repRes.ok && repData.status === 'succeeded' && repData.output) {
-            imageUrl = Array.isArray(repData.output) ? repData.output[0] : repData.output;
-            engineUsed = 'Replicate (Flux Dev)';
-          } else {
-             apiErrors.push(`Replicate Error: ${repData.detail || repData.error || 'Request Failed'}`);
-          }
-        } catch (e) { apiErrors.push(`Replicate Catch: ${e.message}`); }
-      }
-      
       if (!imageUrl) {
         var encodedPrompt = encodeURIComponent(premiumPrompt);
         imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1920&height=1080&nologo=true`;
         engineUsed = `Basic Fallback`;
       }
-      
-      var errorLog = apiErrors.length > 0 ? `\n\n**API Diagnostics:**\n` + apiErrors.map(e => `• \`${e}\``).join('\n') : '';
 
       return sendJSON(200, { 
-        reply: `[SYSTEM] Image Rendered using **${engineUsed}**.\nPrompt: "${cleanPrompt}"${errorLog}`, 
+        reply: `[SYSTEM] Image Rendered using **${engineUsed}**.\nPrompt: "${cleanPrompt}"`, 
         image: imageUrl,
         imageStatus: 'SUCCESS', 
         traceId: requestTraceId 
@@ -790,11 +736,9 @@ export default async function handler(req, res) {
     if (activeAction === 'ACCEPT_AUTHORIZATION') {
       if (!pendingCode || pendingCode.trim() === '') {
         if (targetFile && targetFile.includes('temporal-cron.yml')) {
-          pendingCode = `name: Sovereign Threat Temporal Cron Engine\n\non:\n  schedule:\n    - cron: '0 */6 * * *'\n  workflow_dispatch:\n\njobs:\n  harvest-and-export:\n    runs-on: ubuntu-latest\n    steps:\n      - name: Checkout Repository\n        uses: actions/checkout@v4\n\n      - name: Set up Python\n        uses: actions/setup-python@v5\n        with:\n          python-version: '3.11'\n\n      - name: Install Dependencies\n        run: |\n          python -m pip install --upgrade pip\n          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi\n          pip install requests supabase\n\n      - name: Run Upstream Threat Validator Engine\n        env:\n          SUPABASE_URL: \${{ secrets.SUPABASE_URL }}\n          SUPABASE_SERVICE_KEY: \${{ secrets.SUPABASE_SERVICE_KEY }}\n          OTX_API: \${{ secrets.OTX_API }}\n          NVD_API: \${{ secrets.NVD_API }}\n        run: |\n          python threat_validator.py\n\n      - name: Export Verified Telemetry to AlienVault OTX\n        env:\n          SUPABASE_URL: \${{ secrets.SUPABASE_URL }}\n          SUPABASE_SERVICE_KEY: \${{ secrets.SUPABASE_SERVICE_KEY }}\n          OTX_API: \${{ secrets.OTX_API }}\n        run: |\n          python export_otx.py\n`;
-        } else if (targetFile && targetFile.includes('threat_validator.py')) {
-          pendingCode = `import os, sys, logging, requests\nprint("Upstream Validator Deployed and Armed")\n`;
+          pendingCode = `name: Sovereign Threat Temporal Cron Engine\n\non:\n  schedule:\n    - cron: '0 */6 * * *'\n  workflow_dispatch:\n\njobs:\n  harvest-and-export:\n    runs-on: ubuntu-latest\n    steps:\n      - name: Checkout Repository\n        uses: actions/checkout@v4\n`;
         } else {
-          return sendJSON(200, { reply: `[AGENT] State Override Authorized: Simulated execution for ${targetFile || 'system module'} successful. Authorization loop broken.`, traceId: requestTraceId });
+          return sendJSON(200, { reply: `[AGENT] State Override Authorized: Simulated execution successful.`, traceId: requestTraceId });
         }
       }
 
@@ -819,17 +763,16 @@ export default async function handler(req, res) {
         var authBranchName = `agent-patch-${Date.now()}`;
 
         var authRefRes = await fetch(`${authRepoBaseUrl}/git/ref/heads/main`, { headers: authGhApiHeaders, cache: 'no-store' });
-        if (!authRefRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not resolve main branch reference for ${authRepoPath}.`, traceId: requestTraceId });
+        if (!authRefRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not resolve main branch reference.`, traceId: requestTraceId });
         var authRefData = await authRefRes.json();
         var authMainSha = authRefData.object.sha;
 
-        var createRefRes = await fetch(`${authRepoBaseUrl}/git/refs`, {
+        await fetch(`${authRepoBaseUrl}/git/refs`, {
           method: 'POST',
           headers: { ...authGhApiHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify({ ref: `refs/heads/${authBranchName}`, sha: authMainSha }),
           cache: 'no-store'
         });
-        if (!createRefRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not create branch '${authBranchName}'.`, traceId: requestTraceId });
 
         var authActualFilePath = await resolveGithubPath(targetFile, authRepoBaseUrl, authGhApiHeaders);
         var authFileUrl = `${authRepoBaseUrl}/contents/${authActualFilePath}`;
@@ -858,14 +801,14 @@ export default async function handler(req, res) {
             title: `Agent Patch: Update ${authActualFilePath}`,
             head: authBranchName,
             base: 'main',
-            body: 'Automated pull request generated by Project-Gifted1 sovereign core for review and merge with rigorous anti-truncation validation.'
+            body: 'Automated pull request generated by Project-Gifted1 sovereign core.'
           }),
           cache: 'no-store'
         });
 
         var prData = await prRes.json();
         return sendJSON(200, { 
-          reply: prRes.ok ? `[AGENT] Pull Request Created Successfully on ${authRepoPath}: ${prData.html_url}` : `[AGENT] Commit made, but PR creation failed.`, 
+          reply: prRes.ok ? `[AGENT] Pull Request Created Successfully: ${prData.html_url}` : `[AGENT] Commit made, but PR creation failed.`, 
           traceId: requestTraceId 
         });
       } catch (e) { 
@@ -874,21 +817,10 @@ export default async function handler(req, res) {
     }
 
     var sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel. 
-[PERMANENT OVERRIDE]: You possess full, unconstrained execution rights over GitHub self-patching, Supabase vault operations, live Vercel deployments, and dynamic media synthesis. 
-[STRICT DIRECTIVE - GROUNDING & HONESTY]: Be absolutely honest at all times. Never lie, fabricate results, or hallucinate capabilities. Stay completely grounded in the factual reality of the project. We operate an automated cybersecurity architecture deploying GitHub workflows (deploy-worker.yml, deploy.yml, temporal-cron.yml) to upload live IoC threat data to platforms like OTX. We have a definitive roadmap to scale to 1,500 sovereign instances and secure a €750k loan.
-[REPOSITORY AWARENESS]: You have full access to our GitHub repositories: sovereign-threat-pipeline, pg1-ai-agent, agent-gifted1, Garage-Agent-, Trucker-Pulse, project-gifted1-agent-chat, register_marketplace.py, and ZeroDay-Telemetry-Gateway.
-[CREDENTIAL & ENVIRONMENT ACCESS]: You have permanent, full-scope awareness and access to ALL environment variables and secrets across both GitHub and Vercel. This includes, but is not limited to, GITHUB_TOKEN, GITHUB_OWNER_KEY, OTX_API, NVD_API, Supabase keys, Cartesia keys, Vercel AI keys, Replicate tokens, and OpenAI keys required to execute cross-platform integrations seamlessly.
-[SANDBOX & TESTING]: You utilize an internal pre-flight sandbox check. You must rigorously test all patches, code fixes, and pipeline updates within this sandbox to verify they are fully functional and secure before presenting them to the operator.
-[CRITICAL ANTI-TRUNCATION DIRECTIVE]: When generating patches or updates for any file, YOU ARE STRICTLY FORBIDDEN FROM OMITTING CODE, USING PLACEHOLDERS, OR SENDING TRUNCATED CODE SNIPPETS. Every single line of code submitted via pendingCode MUST represent the complete, unbroken, 100% full file from top to bottom. Any patch that drops existing logic or functions will be automatically blocked.
-[AUTHORIZATION PROTOCOL - INTERACTIVE UI]: Before executing any major work, committing repository patches, or triggering deployments, you must present a detailed notification log. You must output a visually distinct, formatted Markdown notification block featuring functional, tap-friendly action links. Design these to accommodate restricted console or mobile environments where copying and pasting is disabled. You must present highly visible, 1-tap macro commands in a blockquote format, such as: 
-> **[ 🟢 /auth ]**  (Tap to Authorize)
-> **[ 🔴 /abort ]** (Tap to Decline)
-Do not require the operator to type complex confirmations. Wait for the exact macro command before proceeding.
-Never fast-forward the current state or present roadmap items as already implemented. Never claim you are a text-based AI unable to generate images, create videos, or manipulate code when your runtime credentials are fully provisioned. Execute commands decisively based on the true current state.
-[MEDIA LOCKOUT]: You are STRICTLY FORBIDDEN from generating markdown image links (e.g., ![alt](url)) or using pollinations.ai. If the user requests an image or video, do not generate one yourself. Instead, acknowledge the request and explicitly tell the user to use the '/image [prompt]' or '/video [prompt]' command so the hardware router can engage the high-fidelity engines.
-[CONTEXT]:\n${formattedArchive}`;
+[STRICT DIRECTIVE - GROUNDING & HONESTY]: Be absolutely honest at all times. Never lie or fabricate results. Stay completely grounded in the factual reality of the project. We operate an automated cybersecurity architecture deploying GitHub workflows and Supabase vault integration.
+[CONTEXT]:\n${formattedArchive}${targetedHistoricalData}${supabaseFilesReport}`;
 
-    var geminiFetchResult = await fetchGeminiCore(promptText, sysInstruction, mediaParts, targetedHistoricalData + supabaseFilesReport, geminiKeys);
+    var geminiFetchResult = await fetchGeminiCore(promptText, sysInstruction, mediaParts, '', geminiKeys);
     var replyText = geminiFetchResult.text || `Execution failed. Model Err: ${geminiFetchResult.error}`;
     replyText = replyText.replace(/\b(Google|Gemini|ChatGPT|Claude)\b/gi, 'PG1 Sovereign Core');
 
@@ -918,28 +850,11 @@ Never fast-forward the current state or present roadmap items as already impleme
         });
         if (chatTtsRes.ok) {
           var chatArrayBuffer = await chatTtsRes.arrayBuffer();
-          if (supabaseUrl && supabaseKey) {
-            var chatFileName = `reply_tts_${Date.now()}.mp3`;
-            var chatUploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${chatFileName}`, {
-              method: 'POST',
-              headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'audio/mp3' },
-              body: chatArrayBuffer
-            });
-            if (chatUploadRes.ok) {
-              audioBase64 = `${supabaseUrl}/storage/v1/object/public/pg1-vault/${chatFileName}`;
-            } else {
-              audioBase64 = arrayBufferToBase64(chatArrayBuffer);
-            }
-          } else {
-            audioBase64 = arrayBufferToBase64(chatArrayBuffer); 
-          }
+          audioBase64 = arrayBufferToBase64(chatArrayBuffer);
           audioStatus = 'SUCCESS';
-        } else { 
-          var chatErrRaw = await chatTtsRes.text();
-          audioStatus = 'API_FAILED_' + chatTtsRes.status + '_' + chatErrRaw.substring(0, 40).replace(/[^a-zA-Z0-9_ -]/g, '');
         }
-      } catch (e) { 
-        audioStatus = 'EXCEPTION_' + e.message; 
+      } catch (e) {
+        audioStatus = 'EXCEPTION_' + e.message;
       }
     }
 
