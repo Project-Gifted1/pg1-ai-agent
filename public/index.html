@@ -661,7 +661,13 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: 'AUTH_VERIFY', user, pass })
         });
-        const data = await res.json();
+        const responseText = await res.text();
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseErr) {
+          throw new Error(`Server returned non-JSON response (${res.status}): ${responseText.substring(0, 150)}`);
+        }
         if (data.authenticated || data.success) {
           document.getElementById('auth-modal').style.display = 'none';
         } else {
@@ -671,7 +677,7 @@
         if (user === 'Winner1G') {
           document.getElementById('auth-modal').style.display = 'none';
         } else {
-          alert('Access Denied: Gateway connection error.');
+          alert('Access Denied: ' + e.message);
         }
       }
     }
@@ -776,7 +782,13 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: text, action: 'SPEAK', voice: voiceProfile })
         });
-        const data = await response.json();
+        const responseText = await response.text();
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseErr) {
+          throw new Error(`Server returned non-JSON response (${response.status}): ${responseText.substring(0, 150)}`);
+        }
         if (data.audio) {
           try {
             let audioSrc = data.audio;
@@ -909,7 +921,13 @@
           body: JSON.stringify(payload)
         });
 
-        const data = await response.json();
+        const responseText = await response.text();
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseErr) {
+          throw new Error(`Server returned non-JSON response (${response.status}): ${responseText.substring(0, 150)}`);
+        }
         
         triggerHaptic([30, 50, 30]); 
         const finalTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
