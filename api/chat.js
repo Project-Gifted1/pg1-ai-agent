@@ -4,7 +4,9 @@ export const config = {
 
 function base64ToUint8Array(base64) {
   try {
-    const binaryString = atob(base64);
+    let padded = base64;
+    while (padded.length % 4 > 0) padded += '=';
+    const binaryString = atob(padded);
     const len = binaryString.length;
     const bytes = new Uint8Array(len);
     for (let i = 0; i < len; i++) {
@@ -21,7 +23,9 @@ function encodeBase64(str) {
 }
 
 function decodeBase64(b64) {
-  return decodeURIComponent(escape(atob(b64)));
+  let padded = b64;
+  while (padded.length % 4 > 0) padded += '=';
+  return decodeURIComponent(escape(atob(padded)));
 }
 
 function arrayBufferToBase64(buffer) {
@@ -233,29 +237,26 @@ export default async function handler(req, res) {
       for (let i = 0; i < payloadFiles.length; i++) {
         const f = payloadFiles[i];
         if (f.inlineData && f.inlineData.data) {
+          mediaParts.push({ inlineData: f.inlineData });
           try {
             const fileBuffer = base64ToUint8Array(f.inlineData.data);
             if (fileBuffer.byteLength > 0) {
-              const fileName = `intel_payload_${Date.now()}_${i}.png`;
+              const fileName = `intel_payload_${Date.now()}_${i}.jpg`;
               const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${fileName}`, {
                 method: 'POST',
                 headers: {
                   'apikey': supabaseKey,
                   'Authorization': `Bearer ${supabaseKey}`,
-                  'Content-Type': f.inlineData.mimeType || 'image/png'
+                  'Content-Type': f.inlineData.mimeType || 'image/jpeg'
                 },
                 body: fileBuffer
               });
               if (uploadRes.ok) {
-                vaultUploadLog += `\n[VAULT SYNC]: Attached media successfully routed to pg1-vault/${fileName}.`;
-              } else {
-                mediaParts.push({ inlineData: f.inlineData });
+                vaultUploadLog += `\n[VAULT SYNC]: Vision matrix snapshot secured to pg1-vault/${fileName}.`;
               }
-            } else {
-              mediaParts.push({ inlineData: f.inlineData });
             }
           } catch (uploadErr) {
-             mediaParts.push({ inlineData: f.inlineData });
+             // Continue execution gracefully
           }
         }
       }
@@ -795,21 +796,64 @@ Never fast-forward the current state or present roadmap items as already impleme
 
     let geminiData = null;
     let lastErr = '';
+    
     const modelsToTry = [
-      'gemini-3.7-flash', 
-      'gemini-3.6-flash', 
-      'gemini-3.5-flash', 
+      'gemini-3.7-flash',
+      'gemini-3.6-flash',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
       'gemini-3.1-pro-preview',
+      'gemini-3.1-pro-preview-customtools',
+      'gemini-3.1-flash-lite',
+      'gemini-3.1-flash-lite-preview',
+      'gemini-3-flash-preview',
+      'gemini-omni-1.1-flash',
+      'gemini-omni-flash-preview',
+      'lyria-3-pro-preview',
+      'lyria-3-clip-preview',
+      'gemini-robotics-er-2-preview',
+      'gemini-robotics-er-1.6-preview',
+      'antigravity-preview-05-2026',
+      'gemini-2.5-computer-use-preview-10-2025',
+      'nano-banana-pro-preview',
       'gemini-2.5-pro',
       'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      'gemini-flash-latest',
+      'gemini-flash-lite-latest',
+      'gemini-pro-latest',
+      'gemma-4-31b-it',
+      'gemma-4-26b-a4b-it',
+      'gemini-3.5-transcribe',
+      'gemini-3.1-flash-tts-preview',
+      'gemini-2.5-pro-preview-tts',
+      'gemini-2.5-flash-preview-tts',
+      'gemini-3-pro-image',
+      'gemini-3-pro-image-preview',
+      'gemini-3.1-flash-image-preview',
+      'gemini-3.1-flash-lite-image',
+      'gemini-2.5-flash-image',
+      'flash-image-preview',
       'gemini-1.5-pro',
       'gemini-1.5-flash'
     ];
 
     keyLoop: for (const currentKey of geminiKeys) {
       for (const model of modelsToTry) {
+        if (Date.now() - startTime > 8500) {
+          lastErr += ` [ABORT: Vercel time limit reached to prevent crash]`;
+          break keyLoop;
+        }
+        
         try {
-          const apiVersion = model.startsWith('gemini-3') ? 'v1alpha' : 'v1beta';
+          let apiVersion = 'v1beta';
+          if (model.includes('-3') || model.includes('preview') || model.includes('omni') || model.includes('lyria') || model.includes('antigravity') || model.includes('nano-banana') || model.includes('gemma')) {
+            apiVersion = 'v1alpha';
+          }
+          
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 2000); 
+
           const res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${currentKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -818,8 +862,11 @@ Never fast-forward the current state or present roadmap items as already impleme
               contents: [{ role: 'user', parts: [...mediaParts, { text: promptText + targetedHistoricalData + supabaseFilesReport }] }],
               generationConfig: { maxOutputTokens: 8192, temperature: 0.7 }
             }),
-            cache: 'no-store'
+            cache: 'no-store',
+            signal: controller.signal
           });
+          
+          clearTimeout(timeoutId);
           
           if (res.ok) {
             const data = await res.json();
@@ -829,10 +876,10 @@ Never fast-forward the current state or present roadmap items as already impleme
             }
           } else { 
             const errText = await res.text();
-            lastErr = `[${model} on ${apiVersion}] ${res.status}: ${errText}`; 
+            lastErr = `[${model} on ${apiVersion}] ${res.status}: ${errText.substring(0, 50)}`; 
           }
         } catch (e) {
-          lastErr = e.message;
+          lastErr = `[${model}] ${e.message}`;
         }
       }
     }
