@@ -338,6 +338,11 @@ export default async function handler(req, res) {
           reply: `### [ VAULT SYNCHRONIZATION AUDIT ]\n- **Storage Layer**: pg1-vault (Cryptographic Zero-Trust)\n- **Payload Integrity**: 2/2 Payloads Confirmed Immutable (Zero Byte Drift)`,
           traceId: requestTraceId
         });
+      } else if (lower.startsWith('/export')) {
+        return sendJSON(200, {
+          reply: `### [ VAULT CONTEXT EXPORT ]\n\n${formattedArchive || 'No prior matrix context.'}`,
+          traceId: requestTraceId
+        });
       } else if (lower.startsWith('/auth')) {
         return sendJSON(200, {
           success: true,
