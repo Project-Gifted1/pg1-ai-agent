@@ -139,7 +139,7 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
         }
         
         var controller = new AbortController();
-        var timeoutId = setTimeout(() => controller.abort(), 12000); 
+        var timeoutId = setTimeout(() => controller.abort(), 10000); 
 
         var res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${currentKey}`, {
           method: 'POST',
@@ -340,10 +340,9 @@ export default async function handler(req, res) {
     var githubRepo = (process.env.GITHUB_OWNER_KEY || '').trim();
     
     var supabaseStatus = 'DISCONNECTED';
-    var lastTableFetch = 'SKIPPED';
-    var supabaseFilesReport = '';
     var formattedArchive = 'No prior matrix context.';
     var targetedHistoricalData = '';
+    var supabaseFilesReport = '';
     var dbHeaders = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
 
     var payloadFiles = [];
@@ -384,18 +383,25 @@ export default async function handler(req, res) {
     promptText += vaultUploadLog;
 
     if (supabaseUrl && supabaseKey) {
-      var pingReq = fetch(`${supabaseUrl}/rest/v1/messages?select=id&limit=1`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null);
-      var msgReq = fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null);
-      var storageReq = fetch(`${supabaseUrl}/storage/v1/object/list/pg1-vault`, {
+      const createTimedFetch = (url, options = {}, timeoutMs = 3500) => {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeoutMs);
+        return fetch(url, { ...options, signal: controller.signal, cache: 'no-store' })
+          .catch(() => null)
+          .finally(() => clearTimeout(id));
+      };
+
+      var pingReq = createTimedFetch(`${supabaseUrl}/rest/v1/messages?select=id&limit=1`, { headers: dbHeaders });
+      var msgReq = createTimedFetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, { headers: dbHeaders });
+      var storageReq = createTimedFetch(`${supabaseUrl}/storage/v1/object/list/pg1-vault`, {
         method: 'POST',
         headers: { ...dbHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prefix: '', limit: 50, sortBy: { column: 'created_at', order: 'desc' } }),
-        cache: 'no-store'
-      }).catch(() => null);
+        body: JSON.stringify({ prefix: '', limit: 50, sortBy: { column: 'created_at', order: 'desc' } })
+      });
 
       var isThreatQuery = typeof promptText === 'string' && (promptText.toLowerCase().includes('threat') || promptText.toLowerCase().includes('indicator') || promptText.toLowerCase().includes('radar'));
       var threatReq = isThreatQuery 
-        ? fetch(`${supabaseUrl}/rest/v1/threat_indicators?select=indicator_type,value,confidence_score,ingested_at&order=ingested_at.desc&limit=20`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null)
+        ? createTimedFetch(`${supabaseUrl}/rest/v1/threat_indicators?select=indicator_type,value,confidence_score,ingested_at&order=ingested_at.desc&limit=20`, { headers: dbHeaders })
         : Promise.resolve(null);
 
       var results = await Promise.all([pingReq, msgReq, storageReq, threatReq]);
@@ -406,7 +412,6 @@ export default async function handler(req, res) {
 
       if (pingRes && pingRes.ok) {
         supabaseStatus = 'CONNECTED & VERIFIED';
-        lastTableFetch = pingRes.status;
       } else {
         supabaseStatus = 'UNREACHABLE';
       }
