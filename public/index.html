@@ -545,6 +545,11 @@
         if (source === 'camera') {
           stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         } else if (source === 'screen') {
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+            alert('Vision Matrix Access Denied: Apple iOS restricts web-based screen sharing to native apps. Please use the Device Camera for visual input.');
+            document.getElementById('vision-modal').style.display = 'none';
+            return;
+          }
           stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         }
         
@@ -813,11 +818,22 @@
         try {
           const videoEl = document.getElementById('vision-pip');
           const canvas = document.createElement('canvas');
-          canvas.width = videoEl.videoWidth || 640;
-          canvas.height = videoEl.videoHeight || 480;
+          
+          let w = videoEl.videoWidth || 640;
+          let h = videoEl.videoHeight || 480;
+          const maxW = 640;
+          
+          if (w > maxW) {
+            h = Math.floor(h * (maxW / w));
+            w = maxW;
+          }
+          
+          canvas.width = w;
+          canvas.height = h;
           const ctx = canvas.getContext('2d');
-          ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-          const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+          ctx.drawImage(videoEl, 0, 0, w, h);
+          
+          const base64Data = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
           
           if (base64Data) {
             attachedFilesPayload.unshift({
