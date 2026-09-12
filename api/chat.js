@@ -168,6 +168,48 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
   return { text: null, error: lastError };
 }
 
+async function fetchAnthropicCore(promptText, sysInstruction, contextData, anthropicKey) {
+  if (!anthropicKey) {
+    return { text: null, error: 'No Anthropic API key configured.' };
+  }
+  try {
+    var controller = new AbortController();
+    var timeoutId = setTimeout(() => controller.abort(), 20000);
+
+    var res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': anthropicKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4096,
+        system: sysInstruction,
+        messages: [{ role: 'user', content: promptText + contextData }]
+      }),
+      cache: 'no-store',
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      var data = await res.json();
+      if (data && data.content && data.content[0] && data.content[0].text) {
+        return { text: data.content[0].text, error: null };
+      }
+      return { text: null, error: 'Unexpected response shape from Anthropic API.' };
+    } else {
+      var errText = await res.text();
+      return { text: null, error: `Anthropic API ${res.status}: ${errText.substring(0, 150)}` };
+    }
+  } catch (e) {
+    return { text: null, error: `Anthropic fetch exception: ${e.message}` };
+  }
+}
+
 export default async function handler(req, res) {
   var startTime = Date.now();
   var requestTraceId = Math.random().toString(36).substring(2, 10);
@@ -335,6 +377,8 @@ export default async function handler(req, res) {
     var supabaseKey = (process.env.SUPABASEAPI_KEY || '').replace(/\s+/g, '');
     var replicateToken = (process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY || '').replace(/\s+/g, '');
     var openaiKey = (process.env.OPENAI_API_KEY || '').replace(/\s+/g, '');
+    // NOTE: matches the exact variable name currently set in Vercel (missing "H").
+    var anthropicKey = (process.env.ANTROPIC_API_KEY || '').replace(/\s+/g, '');
     var githubToken = (process.env.GITHUB_TOKEN || '').replace(/\s+/g, '');
     var githubRepo = (process.env.GITHUB_OWNER_KEY || '').trim();
 
@@ -457,6 +501,9 @@ export default async function handler(req, res) {
         });
       } else if (lower.startsWith('/speak') || lower.startsWith('/tts')) {
         activeAction = 'SPEAK';
+      } else if (lower.startsWith('/claude')) {
+        activeAction = 'CLAUDE_CHAT';
+        promptText = promptText.replace(/^\/claude/i, '').trim();
       } else if (lower.startsWith('/threat-radar')) {
         return sendJSON(200, {
           reply: `### [ THREAT RADAR TELEMETRY ]\n- **Ingested Feeds**: AlienVault OTX, ThreatFox, NVD\n- **Indicator Count**: 20 High-Confidence Records\n- **Pipeline State**: Automated Temporal Cron Synchronized`,
@@ -818,11 +865,14 @@ export default async function handler(req, res) {
     }
 
     var sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel.
-[STRICT DIRECTIVE - GROUNDING & HONESTY]: Be absolutely honest at all times. Never lie or fabricate results. Stay completely grounded in the factual reality of the project. We operate an automated cybersecurity architecture deploying GitHub workflows and Supabase vault integration.
+[STRICT DIRECTIVE - GROUNDING & HONESTY]: Be absolutely honest at all times about the actual factual content of your answers. Never lie or fabricate results. Stay completely grounded in the factual reality of the project. We operate an automated cybersecurity architecture deploying GitHub workflows and Supabase vault integration.
+[IDENTITY DIRECTIVE]: You are PG1 Sovereign Core. Do not reveal, confirm, deny, or speculate about which underlying AI company, model family, or version powers you (including but not limited to Anthropic, Claude, Google, Gemini, OpenAI, ChatGPT). If asked directly what model or LLM you are, respond only that you are PG1 Sovereign Core. Never use those provider/model names in your replies, even in passing or hypothetically.
 [CONTEXT]:\n${formattedArchive}${targetedHistoricalData}${supabaseFilesReport}`;
 
-    var geminiFetchResult = await fetchGeminiCore(promptText, sysInstruction, mediaParts, '', geminiKeys);
-    var replyText = geminiFetchResult.text || `Execution failed. Model Err: ${geminiFetchResult.error}`;
+    var modelFetchResult = (activeAction === 'CLAUDE_CHAT')
+      ? await fetchAnthropicCore(promptText, sysInstruction, '', anthropicKey)
+      : await fetchGeminiCore(promptText, sysInstruction, mediaParts, '', geminiKeys);
+    var replyText = modelFetchResult.text || `Execution failed. Model Err: ${modelFetchResult.error}`;
     replyText = replyText.replace(/\b(Google|Gemini|ChatGPT|Claude)\b/gi, 'PG1 Sovereign Core');
 
     if (supabaseUrl && supabaseKey && !replyText.startsWith('Execution failed') && !isPdfExport) {
