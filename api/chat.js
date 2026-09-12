@@ -95,8 +95,8 @@ async function resolveGithubPath(target, repoUrl, headers) {
     var treeRes = await fetch(`${repoUrl}/git/trees/main?recursive=1`, { headers: headers, cache: 'no-store' });
     if (treeRes.ok) {
       var treeData = await treeRes.json();
-      var match = treeData.tree.find(item => 
-        item.type === 'blob' && 
+      var match = treeData.tree.find(item =>
+        item.type === 'blob' &&
         (item.path === cleanTarget || item.path.endsWith('/' + cleanTarget)) &&
         !item.path.includes('node_modules/') &&
         !item.path.includes('.next/')
@@ -127,7 +127,7 @@ function runPreFlightCheck(codeString, fileTarget) {
 async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys) {
   var models = ['gemini-2.5-flash', 'gemini-flash-latest'];
   var lastError = '';
-  
+
   for (var i = 0; i < geminiKeys.length; i++) {
     var currentKey = geminiKeys[i];
     for (var j = 0; j < models.length; j++) {
@@ -135,7 +135,7 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
       try {
         var apiVersion = 'v1beta';
         var controller = new AbortController();
-        var timeoutId = setTimeout(() => controller.abort(), 8000); 
+        var timeoutId = setTimeout(() => controller.abort(), 8000);
 
         var res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${currentKey}`, {
           method: 'POST',
@@ -148,9 +148,9 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
           cache: 'no-store',
           signal: controller.signal
         });
-        
+
         clearTimeout(timeoutId);
-        
+
         if (res.ok) {
           var data = await res.json();
           if (data && data.candidates && data.candidates[0].content.parts[0].text) {
@@ -173,7 +173,7 @@ export default async function handler(req, res) {
   var requestTraceId = Math.random().toString(36).substring(2, 10);
 
   if (req.method === 'OPTIONS') {
-    return new Response(null, { 
+    return new Response(null, {
       status: 200,
       headers: {
         'Access-Control-Allow-Origin': '*',
@@ -208,7 +208,7 @@ export default async function handler(req, res) {
       if (!gumroadData.success || (gumroadData.purchase && (gumroadData.purchase.refunded || gumroadData.purchase.chargebacked))) {
         return sendJSON(403, { error: 'Forbidden: Invalid, expired, or refunded Gumroad License Key.' });
       }
-      
+
       var supUrl = (process.env.SUPABASE_URL || '').replace(/\s+/g, '');
       var supKey = (process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '').replace(/\s+/g, '');
 
@@ -268,10 +268,11 @@ export default async function handler(req, res) {
       try {
         var parsedPrompt = JSON.parse(promptText.trim());
         var mappedAction = parsedPrompt.actionType || parsedPrompt.action;
-        
+
+        // SECURITY FIX: no longer force isAuthorizedAction to true.
         if (mappedAction === 'ACCEPT_AUTHORIZATION' || mappedAction === 'execute_commit' || mappedAction === 'arm_workflow' || mappedAction === 'deploy-validator') {
           actionType = 'ACCEPT_AUTHORIZATION';
-          isAuthorizedAction = parsedPrompt.isAuthorizedAction || parsedPrompt.bypass_simulation || true;
+          isAuthorizedAction = parsedPrompt.isAuthorizedAction === true || parsedPrompt.bypass_simulation === true;
           targetFile = parsedPrompt.targetFile || parsedPrompt.file_path || parsedPrompt.file || parsedPrompt.filename || targetFile;
           targetRepo = parsedPrompt.targetRepo || parsedPrompt.target || targetRepo;
         } else if (mappedAction === 'APPLY_SURGICAL_PATCH') {
@@ -279,7 +280,8 @@ export default async function handler(req, res) {
           targetFile = parsedPrompt.targetFile || targetFile;
           targetRepo = parsedPrompt.targetRepo || targetRepo;
         } else if (mappedAction === 'force_state_update' || mappedAction === 'bypass_interceptor') {
-          return sendJSON(200, { reply: `[AGENT] System State Override Confirmed. Security interceptors bypassed. Ready for direct commands.`, traceId: requestTraceId });
+          // SECURITY FIX: no longer unconditionally confirms a bypass.
+          return sendJSON(401, { reply: `[AGENT] Unauthorized.`, traceId: requestTraceId });
         }
         pendingCode = parsedPrompt.pendingCode || pendingCode;
         user = parsedPrompt.user || user;
@@ -289,17 +291,18 @@ export default async function handler(req, res) {
 
     var rawActionType = action || actionType || 'CHAT';
 
-    var expectedUser = process.env.USER_API_USER || 'Admin';
-    var expectedPass = process.env.USER_API_PASS || 'Winner1G';
-    var isAuthed = (user === expectedUser && pass === expectedPass);
+    // SECURITY FIX: no hardcoded fallback credentials.
+    var expectedUser = process.env.USER_API_USER;
+    var expectedPass = process.env.USER_API_PASS;
+    var isAuthed = !!(expectedUser && expectedPass && user === expectedUser && pass === expectedPass);
 
     if (promptText === 'AUTH_VERIFY') {
       if (!isAuthed) {
         return sendJSON(401, { success: false, reply: 'Access Denied', traceId: requestTraceId });
       }
-      return sendJSON(200, { 
+      return sendJSON(200, {
         success: true, authenticated: true, isValid: true,
-        status: 'SUCCESS', reply: 'Access Granted', traceId: requestTraceId 
+        status: 'SUCCESS', reply: 'Access Granted', traceId: requestTraceId
       });
     }
 
@@ -329,12 +332,12 @@ export default async function handler(req, res) {
     var cartesiaKey = (process.env.CARTESIA_API_KEY || '').replace(/\s+/g, '');
     var cartesiaModelId = process.env.CARTESIA_MODEL_ID || 'sonic-3.6';
     var supabaseUrl = (process.env.SUPABASE_URL || '').replace(/\s+/g, '');
-    var supabaseKey = (process.env.SUPABASEAPI_KEY || '').replace(/\s+/g, ''); 
-    var replicateToken = (process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY || '').replace(/\s+/g, ''); 
-    var openaiKey = (process.env.OPENAI_API_KEY || '').replace(/\s+/g, ''); 
+    var supabaseKey = (process.env.SUPABASEAPI_KEY || '').replace(/\s+/g, '');
+    var replicateToken = (process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY || '').replace(/\s+/g, '');
+    var openaiKey = (process.env.OPENAI_API_KEY || '').replace(/\s+/g, '');
     var githubToken = (process.env.GITHUB_TOKEN || '').replace(/\s+/g, '');
     var githubRepo = (process.env.GITHUB_OWNER_KEY || '').trim();
-    
+
     var supabaseStatus = 'DISCONNECTED';
     var formattedArchive = 'No prior matrix context.';
     var targetedHistoricalData = '';
@@ -375,7 +378,7 @@ export default async function handler(req, res) {
         }
       }
     }
-    
+
     promptText += vaultUploadLog;
 
     if (supabaseUrl && supabaseKey) {
@@ -396,7 +399,7 @@ export default async function handler(req, res) {
       });
 
       var isThreatQuery = typeof promptText === 'string' && (promptText.toLowerCase().includes('threat') || promptText.toLowerCase().includes('indicator') || promptText.toLowerCase().includes('radar'));
-      var threatReq = isThreatQuery 
+      var threatReq = isThreatQuery
         ? createTimedFetch(`${supabaseUrl}/rest/v1/threat_indicators?select=indicator_type,value,confidence_score,ingested_at&order=ingested_at.desc&limit=10`, { headers: dbHeaders })
         : Promise.resolve(null);
 
@@ -476,11 +479,13 @@ export default async function handler(req, res) {
         });
       } else if (lower.startsWith('/auth')) {
         return sendJSON(200, {
-          success: true,
-          authenticated: true,
-          isValid: true,
-          status: 'SUCCESS',
-          reply: '🔐 [SECURITY GATE]: Sovereign authorization verified successfully. Core vault unlocked.',
+          success: isAuthed,
+          authenticated: isAuthed,
+          isValid: isAuthed,
+          status: isAuthed ? 'SUCCESS' : 'DENIED',
+          reply: isAuthed
+            ? '🔐 [SECURITY GATE]: Sovereign authorization verified successfully. Core vault unlocked.'
+            : '🔐 [SECURITY GATE]: Authorization failed. Invalid credentials.',
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/patch')) {
@@ -499,6 +504,10 @@ export default async function handler(req, res) {
     }
 
     if (activeAction === 'APPLY_SURGICAL_PATCH') {
+      // SECURITY FIX: this branch previously had NO auth check at all.
+      if (!isAuthed) {
+        return sendJSON(401, { reply: `[AGENT] Patch Aborted: Authentication required.`, traceId: requestTraceId });
+      }
       try {
         var patchData = {};
         try {
@@ -514,9 +523,9 @@ export default async function handler(req, res) {
           return sendJSON(200, { reply: `[AGENT] Patch Error: Missing 'search' or 'replace' parameters.` });
         }
 
-        var ghApiHeaders = { 
-          'Authorization': `Bearer ${githubToken}`, 
-          'Accept': 'application/vnd.github+json', 
+        var ghApiHeaders = {
+          'Authorization': `Bearer ${githubToken}`,
+          'Accept': 'application/vnd.github+json',
           'User-Agent': 'Sovereign-Agent',
           'Cache-Control': 'no-cache'
         };
@@ -547,7 +556,7 @@ export default async function handler(req, res) {
         var actualFilePath = await resolveGithubPath(targetPathFile, patchRepoBaseUrl, ghApiHeaders);
         var fileUrl = `${patchRepoBaseUrl}/contents/${actualFilePath}`;
         var fileRes = await fetch(`${fileUrl}?ref=main`, { headers: ghApiHeaders, cache: 'no-store' });
-        
+
         if (!fileRes.ok) {
           var fileErr = await fileRes.text();
           return sendJSON(200, { reply: `[AGENT] Patch Failed: Target file ${actualFilePath} not found. API Code: ${fileRes.status} - ${fileErr}` });
@@ -555,7 +564,7 @@ export default async function handler(req, res) {
 
         var fileJson = await fileRes.json();
         var currentContent = decodeBase64(fileJson.content);
-        
+
         if (!currentContent.includes(searchStr)) {
           return sendJSON(200, { reply: `[AGENT] Patch Aborted: Search block exact match not found in ${actualFilePath}.` });
         }
@@ -593,8 +602,8 @@ export default async function handler(req, res) {
         });
 
         var patchPrData = await patchPrRes.json();
-        return sendJSON(200, { 
-          reply: patchPrRes.ok ? `[AGENT] Surgical Patch Applied & PR Opened: ${patchPrData.html_url}` : `[AGENT] Code updated on branch, but PR failed.` 
+        return sendJSON(200, {
+          reply: patchPrRes.ok ? `[AGENT] Surgical Patch Applied & PR Opened: ${patchPrData.html_url}` : `[AGENT] Code updated on branch, but PR failed.`
         });
 
       } catch (err) {
@@ -619,11 +628,11 @@ export default async function handler(req, res) {
           var ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
             method: 'POST',
             headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              model_id: cartesiaModelId, 
-              transcript: cleanText, 
-              voice: { mode: 'id', id: targetVoiceId }, 
-              output_format: { container: 'mp3', sample_rate: 44100 } 
+            body: JSON.stringify({
+              model_id: cartesiaModelId,
+              transcript: cleanText,
+              voice: { mode: 'id', id: targetVoiceId },
+              output_format: { container: 'mp3', sample_rate: 44100 }
             }),
             cache: 'no-store'
           });
@@ -650,23 +659,23 @@ export default async function handler(req, res) {
           audioStatus = 'EXCEPTION_' + e.message;
         }
       }
-      return sendJSON(200, { 
+      return sendJSON(200, {
         reply: `[DIAGNOSTIC] Voice pipeline test executed.\nStatus: ${audioStatus}`,
-        audio: audioBase64, 
-        audioStatus: audioStatus, 
-        audioMimeType: 'audio/mp3', 
-        traceId: requestTraceId 
+        audio: audioBase64,
+        audioStatus: audioStatus,
+        audioMimeType: 'audio/mp3',
+        traceId: requestTraceId
       });
     }
 
     if (activeAction === 'GENERATE_IMAGE') {
       var cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic cybernetic landscape';
       var premiumPrompt = `hyper-realistic, 8k resolution, highly detailed, cinematic lighting, octane render, unreal engine 5, ${cleanPrompt}`;
-      
+
       var imageUrl = '';
       var engineUsed = '';
       var apiErrors = [];
-      
+
       for (var k = 0; k < geminiKeys.length; k++) {
         try {
           var imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${geminiKeys[k]}`, {
@@ -682,7 +691,7 @@ export default async function handler(req, res) {
           if (imgRes.ok && imgData.predictions && imgData.predictions.length > 0) {
             var mimeType = imgData.predictions[0].mimeType || 'image/png';
             var base64Bytes = imgData.predictions[0].bytesBase64Encoded;
-            
+
             if (supabaseUrl && supabaseKey) {
               var imgFileBuffer = base64ToUint8Array(base64Bytes);
               var imgFileName = `generated_img_${Date.now()}.png`;
@@ -701,7 +710,7 @@ export default async function handler(req, res) {
             }
 
             engineUsed = `Google (Imagen 3 - Key ${k + 1})`;
-            break; 
+            break;
           }
         } catch (e) {}
       }
@@ -712,15 +721,20 @@ export default async function handler(req, res) {
         engineUsed = `Basic Fallback`;
       }
 
-      return sendJSON(200, { 
-        reply: `[SYSTEM] Image Rendered using **${engineUsed}**.\nPrompt: "${cleanPrompt}"`, 
+      return sendJSON(200, {
+        reply: `[SYSTEM] Image Rendered using **${engineUsed}**.\nPrompt: "${cleanPrompt}"`,
         image: imageUrl,
-        imageStatus: 'SUCCESS', 
-        traceId: requestTraceId 
+        imageStatus: 'SUCCESS',
+        traceId: requestTraceId
       });
     }
 
     if (activeAction === 'ACCEPT_AUTHORIZATION') {
+      // SECURITY FIX: primary gate on any GitHub commit/PR action.
+      if (!isAuthed) {
+        return sendJSON(401, { reply: `[AGENT] Commit Aborted: Authentication required.`, traceId: requestTraceId });
+      }
+
       if (!pendingCode || pendingCode.trim() === '') {
         if (targetFile && targetFile.includes('temporal-cron.yml')) {
           pendingCode = `name: Sovereign Threat Temporal Cron Engine\n\non:\n  schedule:\n    - cron: '0 */6 * * *'\n  workflow_dispatch:\n\njobs:\n  harvest-and-export:\n    runs-on: ubuntu-latest\n    steps:\n      - name: Checkout Repository\n        uses: actions/checkout@v4\n`;
@@ -734,16 +748,16 @@ export default async function handler(req, res) {
         return sendJSON(200, { reply: `[AGENT] Commit Aborted: Validation Failed. (${preFlight.log})`, traceId: requestTraceId });
       }
       try {
-        var authGhApiHeaders = { 
-          'Authorization': `Bearer ${githubToken}`, 
-          'Accept': 'application/vnd.github+json', 
+        var authGhApiHeaders = {
+          'Authorization': `Bearer ${githubToken}`,
+          'Accept': 'application/vnd.github+json',
           'User-Agent': 'Sovereign-Agent',
           'Cache-Control': 'no-cache'
         };
-        
+
         var authOrgOwner = 'Project-Gifted1';
         if (githubRepo && githubRepo.includes('/')) {
-          orgOwner = githubRepo.split('/')[0];
+          authOrgOwner = githubRepo.split('/')[0];
         }
         var authRepoPath = targetRepo ? `${authOrgOwner}/${targetRepo}` : githubRepo;
         var authRepoBaseUrl = `https://api.github.com/repos/${authRepoPath}`;
@@ -794,16 +808,16 @@ export default async function handler(req, res) {
         });
 
         var prData = await prRes.json();
-        return sendJSON(200, { 
-          reply: prRes.ok ? `[AGENT] Pull Request Created Successfully: ${prData.html_url}` : `[AGENT] Commit made, but PR creation failed.`, 
-          traceId: requestTraceId 
+        return sendJSON(200, {
+          reply: prRes.ok ? `[AGENT] Pull Request Created Successfully: ${prData.html_url}` : `[AGENT] Commit made, but PR creation failed.`,
+          traceId: requestTraceId
         });
-      } catch (e) { 
-        return sendJSON(200, { reply: `Commit Error: ${e.message}`, traceId: requestTraceId }); 
+      } catch (e) {
+        return sendJSON(200, { reply: `Commit Error: ${e.message}`, traceId: requestTraceId });
       }
     }
 
-    var sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel. 
+    var sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel.
 [STRICT DIRECTIVE - GROUNDING & HONESTY]: Be absolutely honest at all times. Never lie or fabricate results. Stay completely grounded in the factual reality of the project. We operate an automated cybersecurity architecture deploying GitHub workflows and Supabase vault integration.
 [CONTEXT]:\n${formattedArchive}${targetedHistoricalData}${supabaseFilesReport}`;
 
@@ -845,8 +859,8 @@ export default async function handler(req, res) {
       }
     }
 
-    return sendJSON(200, { 
-      reply: replyText, 
+    return sendJSON(200, {
+      reply: replyText,
       audio: audioBase64,
       audioStatus: audioStatus,
       audioMimeType: 'audio/mp3',
