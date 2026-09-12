@@ -95,8 +95,8 @@ async function resolveGithubPath(target, repoUrl, headers) {
     var treeRes = await fetch(`${repoUrl}/git/trees/main?recursive=1`, { headers: headers, cache: 'no-store' });
     if (treeRes.ok) {
       var treeData = await treeRes.json();
-      var match = treeData.tree.find(item =>
-        item.type === 'blob' &&
+      var match = treeData.tree.find(item => 
+        item.type === 'blob' && 
         (item.path === cleanTarget || item.path.endsWith('/' + cleanTarget)) &&
         !item.path.includes('node_modules/') &&
         !item.path.includes('.next/')
@@ -135,7 +135,7 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
       try {
         var apiVersion = 'v1beta';
         var controller = new AbortController();
-        var timeoutId = setTimeout(() => controller.abort(), 8000);
+        var timeoutId = setTimeout(() => controller.abort(), 8000); 
 
         var res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${currentKey}`, {
           method: 'POST',
@@ -311,7 +311,6 @@ export default async function handler(req, res) {
         var parsedPrompt = JSON.parse(promptText.trim());
         var mappedAction = parsedPrompt.actionType || parsedPrompt.action;
 
-        // SECURITY FIX: no longer force isAuthorizedAction to true.
         if (mappedAction === 'ACCEPT_AUTHORIZATION' || mappedAction === 'execute_commit' || mappedAction === 'arm_workflow' || mappedAction === 'deploy-validator') {
           actionType = 'ACCEPT_AUTHORIZATION';
           isAuthorizedAction = parsedPrompt.isAuthorizedAction === true || parsedPrompt.bypass_simulation === true;
@@ -322,7 +321,6 @@ export default async function handler(req, res) {
           targetFile = parsedPrompt.targetFile || targetFile;
           targetRepo = parsedPrompt.targetRepo || targetRepo;
         } else if (mappedAction === 'force_state_update' || mappedAction === 'bypass_interceptor') {
-          // SECURITY FIX: no longer unconditionally confirms a bypass.
           return sendJSON(401, { reply: `[AGENT] Unauthorized.`, traceId: requestTraceId });
         }
         pendingCode = parsedPrompt.pendingCode || pendingCode;
@@ -333,7 +331,6 @@ export default async function handler(req, res) {
 
     var rawActionType = action || actionType || 'CHAT';
 
-    // NOTE: matches the USER_API_PASSS variable currently set in Vercel.
     var expectedUser = process.env.USER_API_USER;
     var expectedPass = process.env.USER_API_PASSS;
     var isAuthed = !!(expectedUser && expectedPass && user === expectedUser && pass === expectedPass);
@@ -377,7 +374,6 @@ export default async function handler(req, res) {
     var supabaseKey = (process.env.SUPABASEAPI_KEY || '').replace(/\s+/g, '');
     var replicateToken = (process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY || '').replace(/\s+/g, '');
     var openaiKey = (process.env.OPENAI_API_KEY || '').replace(/\s+/g, '');
-    // NOTE: matches the exact variable name currently set in Vercel (missing "H").
     var anthropicKey = (process.env.ANTROPIC_API_KEY || '').replace(/\s+/g, '');
     var githubToken = (process.env.GITHUB_TOKEN || '').replace(/\s+/g, '');
     var githubRepo = (process.env.GITHUB_OWNER_KEY || '').trim();
@@ -551,7 +547,6 @@ export default async function handler(req, res) {
     }
 
     if (activeAction === 'APPLY_SURGICAL_PATCH') {
-      // SECURITY FIX: this branch previously had NO auth check at all.
       if (!isAuthed) {
         return sendJSON(401, { reply: `[AGENT] Patch Aborted: Authentication required.`, traceId: requestTraceId });
       }
@@ -777,7 +772,6 @@ export default async function handler(req, res) {
     }
 
     if (activeAction === 'ACCEPT_AUTHORIZATION') {
-      // SECURITY FIX: primary gate on any GitHub commit/PR action.
       if (!isAuthed) {
         return sendJSON(401, { reply: `[AGENT] Commit Aborted: Authentication required.`, traceId: requestTraceId });
       }
