@@ -568,7 +568,8 @@
     }
 
     function escapeHTML(str) {
-      return str.replace(/[&<>'"]/g, 
+      if (!str) return '';
+      return String(str).replace(/[&<>'"]/g, 
         tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
       );
     }
@@ -931,9 +932,10 @@
             </div>`;
         }
 
+        const safeReplyString = escapeHTML(data.reply || '');
         contentHtml += `
           <div class="message-actions">
-            <span onclick="triggerHaptic(); speakMessage(${JSON.stringify(data.reply || '').replace(/"/g, '&quot;')})">SPEAK</span>
+            <span onclick="triggerHaptic(); speakMessage('${safeReplyString}')">SPEAK</span>
             <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
             <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
           </div>`;
