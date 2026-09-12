@@ -86,7 +86,7 @@ function runPreFlightCheck(codeString, fileTarget) {
 }
 
 async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys) {
-  var models = ['gemini-2.5-flash', 'gemini-1.5-flash'];
+  var models = ['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-flash-latest'];
   var lastError = '';
   
   for (var i = 0; i < geminiKeys.length; i++) {
@@ -94,7 +94,11 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
     for (var j = 0; j < models.length; j++) {
       var model = models[j];
       try {
-        var apiVersion = model.includes('preview') || model.includes('3.5') ? 'v1alpha' : 'v1beta';
+        var apiVersion = 'v1beta';
+        if (model.includes('3.5') || model.includes('preview') || model.includes('omni')) {
+          apiVersion = 'v1alpha';
+        }
+        
         var controller = new AbortController();
         var timeoutId = setTimeout(() => controller.abort(), 12000); 
 
@@ -119,7 +123,7 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
           }
         } else {
           var errText = await res.text();
-          lastError = `[${model}] ${res.status}: ${errText.substring(0, 40)}`;
+          lastError = `[${model} on ${apiVersion}] ${res.status}: ${errText.substring(0, 50)}`;
         }
       } catch (e) {
         lastError = `[${model}] ${e.message}`;
@@ -718,7 +722,7 @@ export default async function handler(req, res) {
             imageUrl = Array.isArray(repData.output) ? repData.output[0] : repData.output;
             engineUsed = 'Replicate (Flux Dev)';
           } else {
-            apiErrors.push(`Replicate Error: ${repData.detail || repData.error || 'Request Failed'}`);
+             apiErrors.push(`Replicate Error: ${repData.detail || repData.error || 'Request Failed'}`);
           }
         } catch (e) { apiErrors.push(`Replicate Catch: ${e.message}`); }
       }
