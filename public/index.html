@@ -655,7 +655,7 @@
       const pass = document.getElementById('auth-pass').value.trim();
       
       try {
-        const res = await fetch('/api/chat', {
+        const res = await fetch('https://YOUR_SUPABASE_PROJECT_REF.supabase.co/functions/v1/ai-chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: 'AUTH_VERIFY', user, pass })
@@ -770,7 +770,7 @@
     async function speakMessage(text) {
       try {
         const voiceProfile = document.getElementById('voice-profile-select').value;
-        const response = await fetch('/api/chat', {
+        const response = await fetch('https://YOUR_SUPABASE_PROJECT_REF.supabase.co/functions/v1/ai-chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: text, action: 'SPEAK', voice: voiceProfile })
@@ -902,7 +902,7 @@
           statusEl.style.color = '#999';
         }
 
-        const response = await fetch('/api/chat', {
+        const response = await fetch('https://YOUR_SUPABASE_PROJECT_REF.supabase.co/functions/v1/ai-chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -967,4 +967,3 @@
   </script>
 </body>
 </html>
- 
