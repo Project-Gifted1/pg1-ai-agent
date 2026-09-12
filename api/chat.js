@@ -330,14 +330,14 @@ export default async function handler(req, res) {
       process.env.GEMINI_API_KEY
     ].filter(Boolean);
 
-    var cartesiaKey = process.env.CARTESIA_API_KEY;
+    var cartesiaKey = (process.env.CARTESIA_API_KEY || '').trim();
     var cartesiaModelId = process.env.CARTESIA_MODEL_ID || 'sonic-3.6';
-    var supabaseUrl = process.env.SUPABASE_URL;
-    var supabaseKey = process.env.SUPABASEAPI_KEY; 
-    var replicateToken = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY; 
-    var openaiKey = process.env.OPENAI_API_KEY; 
-    var githubToken = process.env.GITHUB_TOKEN;
-    var githubRepo = process.env.GITHUB_OWNER_KEY;
+    var supabaseUrl = (process.env.SUPABASE_URL || '').trim();
+    var supabaseKey = (process.env.SUPABASEAPI_KEY || '').trim(); 
+    var replicateToken = (process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY || '').trim(); 
+    var openaiKey = (process.env.OPENAI_API_KEY || '').trim(); 
+    var githubToken = (process.env.GITHUB_TOKEN || '').trim();
+    var githubRepo = (process.env.GITHUB_OWNER_KEY || '').trim();
     
     var supabaseStatus = 'DISCONNECTED';
     var lastTableFetch = 'SKIPPED';
