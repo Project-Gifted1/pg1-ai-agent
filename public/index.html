@@ -359,9 +359,18 @@
     }
     .thread-action-btn.danger { border-color: var(--danger-red); color: var(--danger-red); }
     .thread-action-btn:active { transform: scale(0.9); }
+
+    #vision-pip {
+      position: absolute; top: 60px; right: 16px; width: 110px; height: 160px;
+      background: #000; border: 1px solid var(--text-gold); border-radius: 8px;
+      z-index: 50; display: none; object-fit: cover;
+      box-shadow: 0 0 20px rgba(243, 198, 35, 0.4); pointer-events: none;
+    }
   </style>
 </head>
 <body>
+
+  <video id="vision-pip" autoplay playsinline muted></video>
 
   <div id="auth-modal" class="matrix-modal">
     <div class="matrix-card">
@@ -369,6 +378,19 @@
       <input type="text" id="auth-user" class="matrix-input" placeholder="Operator ID" value="Winner1G">
       <input type="password" id="auth-pass" class="matrix-input" placeholder="Secure Matrix Passkey">
       <button class="matrix-submit" onclick="triggerHaptic(60); verifyAuth()">AUTHENTICATE</button>
+    </div>
+  </div>
+
+  <div id="vision-modal" class="matrix-modal" style="display: none;">
+    <div class="matrix-card" style="max-width: 380px;">
+      <h2>VISION MATRIX</h2>
+      <p style="font-size:11px; color:#aaa; text-align:center; margin-bottom:10px;">Select optical input source. Stream remains local until EXECUTE is triggered to grab the sync frame.</p>
+      <div style="display:flex; gap:10px; flex-direction:column;">
+        <button class="matrix-submit" onclick="triggerHaptic(); setVisionSource('camera')">📸 DEVICE CAMERA</button>
+        <button class="matrix-submit" onclick="triggerHaptic(); setVisionSource('screen')">💻 SCREEN DISPLAY</button>
+        <button class="matrix-submit" onclick="triggerHaptic(); setVisionSource('off')" style="background: transparent; border: 1px solid var(--danger-red); color: var(--danger-red);">🔴 TERMINATE FEED</button>
+        <button class="matrix-submit" onclick="triggerHaptic(); document.getElementById('vision-modal').style.display='none'" style="background: transparent; border: 1px solid var(--text-gold); color: var(--text-gold); margin-top: 10px;">CLOSE</button>
+      </div>
     </div>
   </div>
 
@@ -405,7 +427,7 @@
     <h1>PROJECT-GIFTED1<span class="tm-symbol">™</span></h1>
     <div class="header-controls">
       <button class="header-btn" onclick="triggerHaptic(); openThreadsModal()" title="Manage Threads">💬</button>
-      <button class="header-btn" onclick="triggerHaptic(); openVideoVaultModal()" title="Video Vault">📹</button>
+      <button class="header-btn" onclick="triggerHaptic(); openVisionMatrix()" title="Vision Matrix">👁️</button>
       <button class="header-btn" onclick="triggerHaptic(); requestVaultExport()" title="Export Transcript">📄</button>
       <button class="header-btn" onclick="triggerHaptic(); clearChat()" title="Clear Chat">🗑️</button>
       <button class="header-btn" onclick="triggerHaptic(); triggerVaultSync()" title="Vault Sync">➕</button>
@@ -453,6 +475,8 @@
   </div>
 
   <script>
+    let activeVisionStream = null;
+
     function saveState() {
       const chatHTML = document.getElementById('chat-container').innerHTML;
       localStorage.setItem('pg1_matrix_state', chatHTML);
@@ -495,6 +519,46 @@
       if (confirm('AUTHORIZATION REQUIRED: Purge this thread from the Sovereign matrix?')) {
         const el = document.getElementById(threadId);
         if (el) el.remove();
+      }
+    }
+
+    function openVisionMatrix() {
+      document.getElementById('vision-modal').style.display = 'flex';
+    }
+
+    async function setVisionSource(source) {
+      const videoEl = document.getElementById('vision-pip');
+
+      if (activeVisionStream) {
+        activeVisionStream.getTracks().forEach(track => track.stop());
+        activeVisionStream = null;
+      }
+
+      if (source === 'off') {
+        videoEl.style.display = 'none';
+        document.getElementById('vision-modal').style.display = 'none';
+        return;
+      }
+
+      try {
+        let stream;
+        if (source === 'camera') {
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        } else if (source === 'screen') {
+          stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        }
+        
+        activeVisionStream = stream;
+        videoEl.srcObject = stream;
+        videoEl.style.display = 'block';
+        document.getElementById('vision-modal').style.display = 'none';
+
+        stream.getVideoTracks()[0].onended = () => {
+          setVisionSource('off');
+        };
+
+      } catch (err) {
+        alert('Vision Matrix Access Denied: ' + err.message);
       }
     }
 
@@ -648,10 +712,6 @@
       submitDirective();
     }
 
-    function openVideoVaultModal() {
-      alert("Video Vault & Media Stream Matrix initialized. Use /video [prompt] to stream HD visual payloads.");
-    }
-
     function triggerVaultSync() {
       const input = document.getElementById('prompt-input');
       input.value = "Sync all files from Supabase vault and display status.";
@@ -663,7 +723,6 @@
       const files = event.target.files;
       if (!files || files.length === 0) return;
       
-      attachedFilesPayload = []; 
       let processedCount = 0;
 
       Array.from(files).forEach(file => {
@@ -694,7 +753,7 @@
       const textEl = bubble.querySelector('.message-text');
       const input = document.getElementById('prompt-input');
       
-      let originalText = textEl.innerText.replace(/ \[\d+ File\(s\) Attached\]$/, '').replace(/ \[File Payload Only\]$/, '');
+      let originalText = textEl.innerText.replace(/ \[\d+ File\(s\) Attached\]$/, '').replace(/ \[File Payload Only\]$/, '').replace(/ \[Live Vision Frame Captured\]$/, '');
       input.value = originalText;
       autoResize(input);
       
@@ -747,17 +806,51 @@
     async function submitDirective() {
       const input = document.getElementById('prompt-input');
       const text = input.value.trim();
+      
+      let visionFrameCaptured = false;
+
+      if (activeVisionStream) {
+        try {
+          const videoEl = document.getElementById('vision-pip');
+          const canvas = document.createElement('canvas');
+          canvas.width = videoEl.videoWidth || 640;
+          canvas.height = videoEl.videoHeight || 480;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+          const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+          
+          if (base64Data) {
+            attachedFilesPayload.unshift({
+              inlineData: {
+                mimeType: 'image/jpeg',
+                data: base64Data
+              }
+            });
+            visionFrameCaptured = true;
+          }
+        } catch(e) {
+          console.error("Frame extraction failed: ", e);
+        }
+      }
+
       if (!text && attachedFilesPayload.length === 0) return;
 
       const chatContainer = document.getElementById('chat-container');
-      const fileStatusText = attachedFilesPayload.length > 0 ? ` [${attachedFilesPayload.length} File(s) Attached]` : '';
+      
+      let statusText = '';
+      if (visionFrameCaptured) statusText += ' [Live Vision Frame Captured]';
+      if (attachedFilesPayload.length > (visionFrameCaptured ? 1 : 0)) {
+        const fileCount = attachedFilesPayload.length - (visionFrameCaptured ? 1 : 0);
+        statusText += ` [${fileCount} File(s) Attached]`;
+      }
+
       const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
       const userBubble = document.createElement('div');
       userBubble.className = 'message-bubble user';
       userBubble.innerHTML = `
         <span class="msg-timestamp">${currentTime}</span>
-        <div class="message-text">${formatMarkdown(text || '[File Payload Only]')}${fileStatusText}</div>
+        <div class="message-text">${formatMarkdown(text || '[Vision Data Transmitted]')}${statusText}</div>
         <div class="message-actions">
           <span onclick="triggerHaptic(40); editBubble(this)">EDIT</span>
           <span onclick="triggerHaptic(40); copyBubbleText(this)">COPY</span>
@@ -785,7 +878,7 @@
         };
 
         if (attachedFilesPayload.length > 0) {
-          payload.multiFiles = attachedFilesPayload;
+          payload.multiFiles = [...attachedFilesPayload];
           attachedFilesPayload = []; 
           document.getElementById('file-input').value = '';
           const statusEl = document.getElementById('sys-status');
