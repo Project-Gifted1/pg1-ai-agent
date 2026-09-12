@@ -213,8 +213,8 @@ export default async function handler(req, res) {
         return sendJSON(403, { error: 'Forbidden: Invalid, expired, or refunded Gumroad License Key.' });
       }
       
-      var supUrl = process.env.SUPABASE_URL;
-      var supKey = process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+      var supUrl = (process.env.SUPABASE_URL || '').replace(/\s+/g, '');
+      var supKey = (process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '').replace(/\s+/g, '');
 
       fetch(`${supUrl}/rest/v1/api_access_logs`, {
         method: 'POST',
@@ -325,18 +325,18 @@ export default async function handler(req, res) {
     }
 
     var geminiKeys = [
-      process.env.GEMINI_API_KEY1,
-      process.env.GEMINI_API_KEY2,
-      process.env.GEMINI_API_KEY
+      (process.env.GEMINI_API_KEY1 || '').replace(/\s+/g, ''),
+      (process.env.GEMINI_API_KEY2 || '').replace(/\s+/g, ''),
+      (process.env.GEMINI_API_KEY || '').replace(/\s+/g, '')
     ].filter(Boolean);
 
-    var cartesiaKey = (process.env.CARTESIA_API_KEY || '').trim();
+    var cartesiaKey = (process.env.CARTESIA_API_KEY || '').replace(/\s+/g, '');
     var cartesiaModelId = process.env.CARTESIA_MODEL_ID || 'sonic-3.6';
-    var supabaseUrl = (process.env.SUPABASE_URL || '').trim();
-    var supabaseKey = (process.env.SUPABASEAPI_KEY || '').trim(); 
-    var replicateToken = (process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY || '').trim(); 
-    var openaiKey = (process.env.OPENAI_API_KEY || '').trim(); 
-    var githubToken = (process.env.GITHUB_TOKEN || '').trim();
+    var supabaseUrl = (process.env.SUPABASE_URL || '').replace(/\s+/g, '');
+    var supabaseKey = (process.env.SUPABASEAPI_KEY || '').replace(/\s+/g, ''); 
+    var replicateToken = (process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY || '').replace(/\s+/g, ''); 
+    var openaiKey = (process.env.OPENAI_API_KEY || '').replace(/\s+/g, ''); 
+    var githubToken = (process.env.GITHUB_TOKEN || '').replace(/\s+/g, '');
     var githubRepo = (process.env.GITHUB_OWNER_KEY || '').trim();
     
     var supabaseStatus = 'DISCONNECTED';
