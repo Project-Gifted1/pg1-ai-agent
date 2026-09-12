@@ -379,7 +379,7 @@ export default async function handler(req, res) {
     promptText += vaultUploadLog;
 
     if (supabaseUrl && supabaseKey) {
-      const createTimedFetch = (url, options = {}, timeoutMs = 1800) => {
+      const createTimedFetch = (url, options = {}, timeoutMs = 1500) => {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeoutMs);
         return fetch(url, { ...options, signal: controller.signal, cache: 'no-store' })
@@ -434,6 +434,14 @@ export default async function handler(req, res) {
       }
     }
 
+    var lowerPrompt = (promptText || '').toLowerCase().trim();
+    if (lowerPrompt === '/status' || lowerPrompt === '/status update' || lowerPrompt === 'status') {
+      return sendJSON(200, {
+        reply: `### [ SYSTEM STATUS & TELEMETRY ]\n- **Runtime**: Vercel Serverless Edge (iad1 Primary Cluster)\n- **Vault Status**: ${supabaseStatus}\n- **Active Threat Indicators**: 20 Validated IoCs (OTX / NVD)\n- **Fleet Target**: 1,500 Sovereign Nodes // €750k Facility`,
+        traceId: requestTraceId
+      });
+    }
+
     var activeAction = rawActionType;
     if (activeAction === 'CHAT' && typeof promptText === 'string') {
       var lower = promptText.toLowerCase().trim();
@@ -446,11 +454,6 @@ export default async function handler(req, res) {
         });
       } else if (lower.startsWith('/speak') || lower.startsWith('/tts')) {
         activeAction = 'SPEAK';
-      } else if (lower.startsWith('/status')) {
-        return sendJSON(200, {
-          reply: `### [ SYSTEM STATUS & TELEMETRY ]\n- **Runtime**: Vercel Edge (iad1 Cluster)\n- **Vault Status**: ${supabaseStatus}\n- **Active Threat Indicators**: 20 Validated IoCs (OTX / NVD)\n- **Fleet Target**: 1,500 Sovereign Nodes // €750k Facility`,
-          traceId: requestTraceId
-        });
       } else if (lower.startsWith('/threat-radar')) {
         return sendJSON(200, {
           reply: `### [ THREAT RADAR TELEMETRY ]\n- **Ingested Feeds**: AlienVault OTX, ThreatFox, NVD\n- **Indicator Count**: 20 High-Confidence Records\n- **Pipeline State**: Automated Temporal Cron Synchronized`,
@@ -656,22 +659,6 @@ export default async function handler(req, res) {
       });
     }
 
-    if (activeAction === 'CHAT' && promptText.startsWith('/ping')) {
-      var targetPath = promptText.replace('/ping', '').trim() || '/api/ioc';
-      try {
-        var protocol = getHeader('x-forwarded-proto') || 'https';
-        var host = getHeader('host') || 'pg1-ai-agent.vercel.app';
-        var pingTestRes = await fetch(`${protocol}://${host}${targetPath.startsWith('/') ? targetPath : '/' + targetPath}`, { cache: 'no-store' });
-        var pingData = await pingTestRes.text();
-        return sendJSON(200, {
-          reply: `[DIAGNOSTIC TEST]\nTarget: ${targetPath}\nStatus: ${pingTestRes.status} ${pingTestRes.statusText}\nResponse: ${pingData}`,
-          traceId: requestTraceId
-        });
-      } catch (err) {
-        return sendJSON(200, { reply: `[DIAGNOSTIC FAILED]: ${err.message}`, traceId: requestTraceId });
-      }
-    }
-
     if (activeAction === 'GENERATE_IMAGE') {
       var cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic cybernetic landscape';
       var premiumPrompt = `hyper-realistic, 8k resolution, highly detailed, cinematic lighting, octane render, unreal engine 5, ${cleanPrompt}`;
@@ -756,7 +743,7 @@ export default async function handler(req, res) {
         
         var authOrgOwner = 'Project-Gifted1';
         if (githubRepo && githubRepo.includes('/')) {
-          authOrgOwner = githubRepo.split('/')[0];
+          orgOwner = githubRepo.split('/')[0];
         }
         var authRepoPath = targetRepo ? `${authOrgOwner}/${targetRepo}` : githubRepo;
         var authRepoBaseUrl = `https://api.github.com/repos/${authRepoPath}`;
