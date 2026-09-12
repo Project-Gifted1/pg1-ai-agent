@@ -2,7 +2,7 @@ name: PG1 Sovereign Sentinel
 
 on:
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '17 */6 * * *'
   workflow_dispatch:
 
 jobs:
@@ -11,7 +11,7 @@ jobs:
     steps:
       - name: Query Vercel Diagnostic Gateway
         run: |
-          RESPONSE=$(curl -s "https://pg1-ai-agent.vercel.app/api/diagnostics/system-status-check?table=threat_indicators&metric=count")
+          RESPONSE=$(curl -sL --max-time 30 "https://pg1-ai-agent.vercel.app/api/diagnostics/system-status-check?table=threat_indicators&metric=count")
           echo "Telemetry Payload: $RESPONSE"
           
           if echo "$RESPONSE" | grep -q "SUCCESS"; then
