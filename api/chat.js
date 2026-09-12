@@ -279,7 +279,7 @@ export default async function handler(req, res) {
         ? fetch(`${supabaseUrl}/rest/v1/threat_indicators?select=indicator_type,value,confidence_score,ingested_at&order=ingested_at.desc&limit=20`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null)
         : Promise.resolve(null);
 
-      const [pingRes, msgRes, storageRes, threatRes] = await Promise.all([pingReq, msgReq, storageReq, threatReq]);
+      const [pingRes, msgRes, storageRes, threatRes] = await Promise.all([pingReq, msgReq, storageReq, threatRes]);
 
       if (pingRes && pingRes.ok) {
         supabaseStatus = 'CONNECTED & VERIFIED';
@@ -802,8 +802,9 @@ Never fast-forward the current state or present roadmap items as already impleme
     let lastErr = '';
     
     const modelsToTry = [
+      'gemini-3.5-flash',
       'gemini-2.5-flash',
-      'gemini-1.5-flash'
+      'gemini-flash-latest'
     ];
 
     keyLoop: for (const currentKey of geminiKeys) {
@@ -815,7 +816,7 @@ Never fast-forward the current state or present roadmap items as already impleme
         
         try {
           let apiVersion = 'v1beta';
-          if (model.includes('-3') || model.includes('preview') || model.includes('omni') || model.includes('lyria') || model.includes('antigravity') || model.includes('nano-banana') || model.includes('gemma')) {
+          if (model.includes('preview') || model.includes('omni') || model.includes('lyria') || model.includes('nano-banana')) {
             apiVersion = 'v1alpha';
           }
           
