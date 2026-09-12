@@ -406,7 +406,7 @@
     <div class="header-controls">
       <button class="header-btn" onclick="triggerHaptic(); openThreadsModal()" title="Manage Threads">💬</button>
       <button class="header-btn" onclick="triggerHaptic(); openVideoVaultModal()" title="Video Vault">📹</button>
-      <button class="header-btn" onclick="triggerHaptic(); exportChatPDF()" title="Export Transcript">📄</button>
+      <button class="header-btn" onclick="triggerHaptic(); requestVaultExport()" title="Export Transcript">📄</button>
       <button class="header-btn" onclick="triggerHaptic(); clearChat()" title="Clear Chat">🗑️</button>
       <button class="header-btn" onclick="triggerHaptic(); triggerVaultSync()" title="Vault Sync">➕</button>
     </div>
@@ -453,6 +453,23 @@
   </div>
 
   <script>
+    function saveState() {
+      const chatHTML = document.getElementById('chat-container').innerHTML;
+      localStorage.setItem('pg1_matrix_state', chatHTML);
+    }
+
+    window.onload = () => {
+      const savedState = localStorage.getItem('pg1_matrix_state');
+      if (savedState) {
+        document.getElementById('chat-container').innerHTML = savedState;
+      } else {
+        const welcomeTime = document.getElementById('welcome-timestamp');
+        if (welcomeTime) {
+          welcomeTime.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+      }
+    };
+
     function triggerHaptic(duration = 50) {
       if (navigator.vibrate) {
         navigator.vibrate(duration);
@@ -491,7 +508,6 @@
       if (!str || typeof str !== 'string') return '';
       let escaped = escapeHTML(str);
       
-      // Robust macro pill parser matching any bracketed expressions containing slash commands, preserving emojis in the UI element
       escaped = escaped.replace(/\[\s*(.*?(\/[a-zA-Z0-9_-]+).*?)\s*\]/g, function(match, fullInner, cmdCode) {
         return `<span onclick="triggerHaptic(30); document.getElementById('prompt-input').value='${cmdCode}'; autoResize(document.getElementById('prompt-input')); submitDirective();" style="background: rgba(243, 198, 35, 0.2); border: 1px solid var(--text-gold); color: var(--text-gold); padding: 4px 8px; border-radius: 6px; cursor: pointer; display: inline-block; font-weight: bold; margin: 2px;">${fullInner}</span>`;
       });
@@ -596,6 +612,10 @@
       btn.style.color = voiceActive ? '#00ff66' : 'var(--text-gold)';
       btn.style.textShadow = voiceActive ? '0 0 10px #00ff66' : 'none';
       btn.textContent = voiceActive ? 'VOICE: ON' : 'VOICE: OFF';
+      
+      if (voiceActive) {
+        speakMessage("Audio Synthesiser, Online PG1 Engaged");
+      }
     }
 
     function handleKey(e) {
@@ -618,10 +638,14 @@
             <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
           </div>
         </div>`;
+      saveState();
     }
 
-    function exportChatPDF() {
-      window.print();
+    function requestVaultExport() {
+      const input = document.getElementById('prompt-input');
+      input.value = "/export";
+      autoResize(input);
+      submitDirective();
     }
 
     function openVideoVaultModal() {
@@ -675,6 +699,7 @@
       autoResize(input);
       
       bubble.remove();
+      saveState();
       input.focus();
     }
 
@@ -689,7 +714,11 @@
         const data = await response.json();
         if (data.audio) {
           try {
-            const audio = new Audio(`data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio.replace(/\s+/g, '')}`);
+            let audioSrc = data.audio;
+            if (!audioSrc.startsWith('http')) {
+              audioSrc = `data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio.replace(/\s+/g, '')}`;
+            }
+            const audio = new Audio(audioSrc);
             audio.play().catch(e => console.log('Audio playback prevented:', e));
           } catch(audioErr) {
             console.error('Audio decode error:', audioErr);
@@ -712,6 +741,7 @@
     function deleteBubble(el) {
       const bubble = el.closest('.message-bubble');
       bubble.remove();
+      saveState();
     }
 
     async function submitDirective() {
@@ -738,12 +768,14 @@
       input.value = '';
       input.style.height = 'auto';
       chatContainer.scrollTop = chatContainer.scrollHeight;
+      saveState();
 
       const agentBubble = document.createElement('div');
       agentBubble.className = 'message-bubble';
       agentBubble.innerHTML = `<span class="msg-timestamp">${currentTime}</span><div class="message-text" style="color: #888;">Executing directive across sovereign core...</div>`;
       chatContainer.appendChild(agentBubble);
       chatContainer.scrollTop = chatContainer.scrollHeight;
+      saveState();
 
       try {
         const voiceProfile = document.getElementById('voice-profile-select').value;
@@ -798,10 +830,15 @@
           </div>`;
 
         agentBubble.innerHTML = contentHtml;
+        saveState();
 
         if (voiceActive && data.audio) {
           try {
-            const audio = new Audio(`data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio.replace(/\s+/g, '')}`);
+            let audioSrc = data.audio;
+            if (!audioSrc.startsWith('http')) {
+              audioSrc = `data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio.replace(/\s+/g, '')}`;
+            }
+            const audio = new Audio(audioSrc);
             audio.play().catch(e => console.log('Audio playback prevented:', e));
           } catch(audioErr) {
             console.error('Audio decode error:', audioErr);
@@ -812,17 +849,12 @@
         triggerHaptic(200); 
         const errTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         agentBubble.innerHTML = `<span class="msg-timestamp">${errTime}</span><div class="message-text" style="color: #ff4444;">Exception: ${escapeHTML(err.message)}</div>`;
+        saveState();
       }
 
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
     
-    window.onload = () => {
-      const welcomeTime = document.getElementById('welcome-timestamp');
-      if (welcomeTime) {
-        welcomeTime.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      }
-    };
   </script>
 </body>
 </html>
