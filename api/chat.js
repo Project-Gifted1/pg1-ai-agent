@@ -257,7 +257,6 @@ export default async function handler(req, res) {
               }
             }
           } catch (uploadErr) {
-             // Continue execution gracefully
           }
         }
       }
@@ -804,10 +803,7 @@ Never fast-forward the current state or present roadmap items as already impleme
     
     const modelsToTry = [
       'gemini-2.5-flash',
-      'gemini-1.5-flash',
-      'gemini-flash-latest',
-      'gemini-pro-latest',
-      'gemini-2.5-pro'
+      'gemini-1.5-flash'
     ];
 
     keyLoop: for (const currentKey of geminiKeys) {
