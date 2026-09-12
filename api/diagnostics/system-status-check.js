@@ -30,13 +30,15 @@ export default async function handler(req, res) {
 
   try {
     const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
+    // Strictly mapped to your GitHub Actions environment variables
+    const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLEKEY;
 
     const hasSupabaseUrl = Boolean(supabaseUrl);
     const hasSupabaseKey = Boolean(supabaseKey);
-    const hasGithubToken = Boolean(process.env.GITHUB_TOKEN || process.env.GITHUB_OWNER_KEY);
-    const hasOtxKey = Boolean(process.env.OTX_API);
-    const hasNvdKey = Boolean(process.env.NVD_API);
+    const hasOtxApi = Boolean(process.env.OTX_API);
+    const hasOtxApiKey = Boolean(process.env.OTX_API_KEY);
+    const hasAbuseIpDbApi = Boolean(process.env.ABUSEIPDB_API);
+    const hasNvdApi = Boolean(process.env.NVD_API);
 
     const { table, metric = 'summary', limit = '10' } = req.query;
 
@@ -49,10 +51,12 @@ export default async function handler(req, res) {
       timestamp: new Date().toISOString(),
       uptimeSec: process.uptime(),
       environment: {
-        supabaseConfigured: hasSupabaseUrl && hasSupabaseKey,
-        githubTokenReady: hasGithubToken,
-        otxApiReady: hasOtxKey,
-        nvdApiReady: hasNvdKey
+        SUPABASE_URL_Configured: hasSupabaseUrl,
+        SUPABASE_SERVICE_KEY_Configured: hasSupabaseKey,
+        OTX_API_Configured: hasOtxApi,
+        OTX_API_KEY_Configured: hasOtxApiKey,
+        ABUSEIPDB_API_Configured: hasAbuseIpDbApi,
+        NVD_API_Configured: hasNvdApi
       }
     };
 
@@ -81,7 +85,7 @@ export default async function handler(req, res) {
     if (!hasSupabaseUrl || !hasSupabaseKey) {
       return res.status(503).json({
         error: 'Database Unavailable',
-        message: 'SUPABASE_URL or Supabase API Key is not configured in environment variables.',
+        message: 'SUPABASE_URL, SUPABASE_SERVICE_KEY, or SUPABASE_SERVICE_ROLEKEY is not configured in environment variables.',
         environment: diagnosticPayload.environment,
         executionDurationMs: Date.now() - startTime
       });
