@@ -509,7 +509,21 @@ export default async function handler(req, res) {
           });
           if (ttsRes.ok) {
             const arrayBuffer = await ttsRes.arrayBuffer();
-            audioBase64 = arrayBufferToBase64(arrayBuffer);
+            if (supabaseUrl && supabaseKey) {
+              const fileName = `tts_${Date.now()}.mp3`;
+              const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${fileName}`, {
+                method: 'POST',
+                headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'audio/mp3' },
+                body: arrayBuffer
+              });
+              if (uploadRes.ok) {
+                audioBase64 = `${supabaseUrl}/storage/v1/object/public/pg1-vault/${fileName}`;
+              } else {
+                audioBase64 = arrayBufferToBase64(arrayBuffer);
+              }
+            } else {
+              audioBase64 = arrayBufferToBase64(arrayBuffer);
+            }
             audioStatus = 'SUCCESS';
           } else {
             const errRaw = await ttsRes.text();
@@ -567,7 +581,24 @@ export default async function handler(req, res) {
           if (imgRes.ok && imgData.predictions && imgData.predictions.length > 0) {
             const mimeType = imgData.predictions[0].mimeType || 'image/png';
             const base64Bytes = imgData.predictions[0].bytesBase64Encoded;
-            imageUrl = `data:${mimeType};base64,${base64Bytes}`;
+            
+            if (supabaseUrl && supabaseKey) {
+              const fileBuffer = base64ToUint8Array(base64Bytes);
+              const fileName = `generated_img_${Date.now()}.png`;
+              const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${fileName}`, {
+                method: 'POST',
+                headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': mimeType },
+                body: fileBuffer
+              });
+              if (uploadRes.ok) {
+                imageUrl = `${supabaseUrl}/storage/v1/object/public/pg1-vault/${fileName}`;
+              } else {
+                imageUrl = `data:${mimeType};base64,${base64Bytes}`;
+              }
+            } else {
+              imageUrl = `data:${mimeType};base64,${base64Bytes}`;
+            }
+
             engineUsed = `Google (Imagen 3 - Key ${i + 1})`;
             break; 
           } else {
@@ -657,7 +688,24 @@ export default async function handler(req, res) {
           if (vidRes.ok && vidData.predictions && vidData.predictions.length > 0) {
             const mimeType = vidData.predictions[0].mimeType || 'video/mp4';
             const base64Bytes = vidData.predictions[0].bytesBase64Encoded;
-            videoUrl = `data:${mimeType};base64,${base64Bytes}`;
+            
+            if (supabaseUrl && supabaseKey) {
+              const fileBuffer = base64ToUint8Array(base64Bytes);
+              const fileName = `generated_vid_${Date.now()}.mp4`;
+              const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${fileName}`, {
+                method: 'POST',
+                headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': mimeType },
+                body: fileBuffer
+              });
+              if (uploadRes.ok) {
+                videoUrl = `${supabaseUrl}/storage/v1/object/public/pg1-vault/${fileName}`;
+              } else {
+                videoUrl = `data:${mimeType};base64,${base64Bytes}`;
+              }
+            } else {
+              videoUrl = `data:${mimeType};base64,${base64Bytes}`;
+            }
+
             engineUsed = `Google (Veo 2 - Key ${i + 1})`;
             break;
           } else {
@@ -896,7 +944,21 @@ Never fast-forward the current state or present roadmap items as already impleme
         });
         if (ttsRes.ok) {
           const arrayBuffer = await ttsRes.arrayBuffer();
-          audioBase64 = arrayBufferToBase64(arrayBuffer); 
+          if (supabaseUrl && supabaseKey) {
+            const fileName = `reply_tts_${Date.now()}.mp3`;
+            const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${fileName}`, {
+              method: 'POST',
+              headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'audio/mp3' },
+              body: arrayBuffer
+            });
+            if (uploadRes.ok) {
+              audioBase64 = `${supabaseUrl}/storage/v1/object/public/pg1-vault/${fileName}`;
+            } else {
+              audioBase64 = arrayBufferToBase64(arrayBuffer);
+            }
+          } else {
+            audioBase64 = arrayBufferToBase64(arrayBuffer); 
+          }
           audioStatus = 'SUCCESS';
         } else { 
           const errRaw = await ttsRes.text();
