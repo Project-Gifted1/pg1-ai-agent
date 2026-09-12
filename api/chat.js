@@ -315,7 +315,10 @@ export default async function handler(req, res) {
       if (lower.startsWith('/image') || /generate.*image|create.*image|make.*image|draw|render.*image|picture of/i.test(lower)) {
         activeAction = 'GENERATE_IMAGE';
       } else if (lower.startsWith('/video') || /generate.*video|create.*video|make.*video|animate/i.test(lower)) {
-        activeAction = 'GENERATE_VIDEO';
+        return sendJSON(200, {
+          reply: `[VISION MATRIX] Generative video disabled. To feed live environmental visual data into the core, tap the 👁️ (eye) icon to activate your device's camera or select screen display.`,
+          traceId: requestTraceId
+        });
       } else if (lower.startsWith('/speak') || lower.startsWith('/tts')) {
         activeAction = 'SPEAK';
       } else if (lower.startsWith('/status')) {
@@ -666,92 +669,6 @@ export default async function handler(req, res) {
         reply: `[SYSTEM] Image Rendered using **${engineUsed}**.\nPrompt: "${cleanPrompt}"${errorLog}`, 
         image: imageUrl,
         imageStatus: 'SUCCESS', 
-        traceId: requestTraceId 
-      });
-    }
-
-    if (activeAction === 'GENERATE_VIDEO') {
-      const vidPrompt = promptText.replace(/generate video of|create a video of|generate video|create video|\/video|animate a|make a video of/gi, '').trim() || 'Cinematic futuristic scene';
-      const premiumPrompt = `Cinematic, highly detailed, 8k resolution, photorealistic motion, ${vidPrompt}`;
-      
-      let videoUrl = '';
-      let engineUsed = '';
-      let apiErrors = [];
-
-      for (let i = 0; i < geminiKeys.length; i++) {
-        try {
-          const vidRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:predict?key=${geminiKeys[i]}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              instances: [{ prompt: premiumPrompt }],
-              parameters: { aspectRatio: "16:9" }
-            }),
-            cache: 'no-store'
-          });
-          const vidData = await vidRes.json();
-          if (vidRes.ok && vidData.predictions && vidData.predictions.length > 0) {
-            const mimeType = vidData.predictions[0].mimeType || 'video/mp4';
-            const base64Bytes = vidData.predictions[0].bytesBase64Encoded;
-            
-            if (supabaseUrl && supabaseKey) {
-              const fileBuffer = base64ToUint8Array(base64Bytes);
-              const fileName = `generated_vid_${Date.now()}.mp4`;
-              const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${fileName}`, {
-                method: 'POST',
-                headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': mimeType },
-                body: fileBuffer
-              });
-              if (uploadRes.ok) {
-                videoUrl = `${supabaseUrl}/storage/v1/object/public/pg1-vault/${fileName}`;
-              } else {
-                videoUrl = `data:${mimeType};base64,${base64Bytes}`;
-              }
-            } else {
-              videoUrl = `data:${mimeType};base64,${base64Bytes}`;
-            }
-
-            engineUsed = `Google (Veo 2 - Key ${i + 1})`;
-            break;
-          } else {
-             apiErrors.push(`Google Key ${i + 1} Error: ${vidData.error?.message || 'Failed'}`);
-          }
-        } catch(e) { apiErrors.push(`Google Key ${i + 1} Catch: ${e.message}`); }
-      }
-
-      if (!videoUrl && replicateToken) {
-        try {
-          const repRes = await fetch('https://api.replicate.com/v1/models/minimax/video-01/predictions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${replicateToken}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'wait'
-            },
-            body: JSON.stringify({ input: { prompt: premiumPrompt } }),
-            cache: 'no-store'
-          });
-          const repData = await repRes.json();
-          if (repRes.ok && repData.status === 'succeeded' && repData.output) {
-            videoUrl = repData.output;
-            engineUsed = 'Replicate (Minimax Video-01)';
-          } else {
-             apiErrors.push(`Replicate Error: ${repData.detail || repData.error || 'Failed'}`);
-          }
-        } catch(e) { apiErrors.push(`Replicate Catch: ${e.message}`); }
-      }
-
-      if (!videoUrl) {
-         videoUrl = `https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4`;
-         engineUsed = `Placeholder Video`;
-      }
-      
-      const errorLog = apiErrors.length > 0 ? `\n\n**API Diagnostics:**\n` + apiErrors.map(e => `• \`${e}\``).join('\n') : '';
-
-      return sendJSON(200, { 
-        reply: `[SYSTEM] Video Synthesis Complete using **${engineUsed}**.\nPrompt: "${vidPrompt}"${errorLog}`, 
-        video: videoUrl,
-        videoStatus: 'SUCCESS', 
         traceId: requestTraceId 
       });
     }
