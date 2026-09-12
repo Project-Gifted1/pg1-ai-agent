@@ -29,13 +29,20 @@ function decodeBase64(b64) {
   return decodeURIComponent(escape(atob(padded)));
 }
 
+// Pure JS Bitwise Base64 Encoder (Bypasses Vercel Edge btoa() strict binary limits)
 function arrayBufferToBase64(buffer) {
-  var binary = '';
   var bytes = new Uint8Array(buffer);
-  for (var i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  var len = bytes.byteLength;
+  var base64 = '';
+  var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  for (var i = 0; i < len; i += 3) {
+    var chunk = (bytes[i] << 16) | ((bytes[i + 1] || 0) << 8) | (bytes[i + 2] || 0);
+    base64 += chars[(chunk & 0xFC0000) >> 18] +
+              chars[(chunk & 0x03F000) >> 12] +
+              (i + 1 < len ? chars[(chunk & 0x000FC0) >> 6] : '=') +
+              (i + 2 < len ? chars[(chunk & 0x00003F)] : '=');
   }
-  return btoa(binary);
+  return base64;
 }
 
 function sendJSON(status, data) {
