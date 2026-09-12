@@ -5,12 +5,12 @@ export const config = {
 
 function base64ToUint8Array(base64) {
   try {
-    let padded = base64;
+    var padded = base64;
     while (padded.length % 4 > 0) padded += '=';
-    const binaryString = atob(padded);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
+    var binaryString = atob(padded);
+    var len = binaryString.length;
+    var bytes = new Uint8Array(len);
+    for (var i = 0; i < len; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
     return bytes;
@@ -24,35 +24,114 @@ function encodeBase64(str) {
 }
 
 function decodeBase64(b64) {
-  let padded = b64;
+  var padded = b64;
   while (padded.length % 4 > 0) padded += '=';
   return decodeURIComponent(escape(atob(padded)));
 }
 
 function arrayBufferToBase64(buffer) {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < bytes.byteLength; i++) {
+  var binary = '';
+  var bytes = new Uint8Array(buffer);
+  for (var i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
 }
 
-export default async function handler(req, res) {
-  const startTime = Date.now();
-  const requestTraceId = Math.random().toString(36).substring(2, 10);
+function sendJSON(status, data) {
+  return new Response(JSON.stringify(data), {
+    status: status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key'
+    }
+  });
+}
 
-  const sendJSON = (status, data) => {
-    return new Response(JSON.stringify(data), {
-      status: status,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key'
+async function resolveGithubPath(target, repoUrl, headers) {
+  var cleanTarget = target.replace(/^\.\//, '').replace(/^\//, '');
+  try {
+    var treeRes = await fetch(`${repoUrl}/git/trees/main?recursive=1`, { headers: headers, cache: 'no-store' });
+    if (treeRes.ok) {
+      var treeData = await treeRes.json();
+      var match = treeData.tree.find(item => 
+        item.type === 'blob' && 
+        (item.path === cleanTarget || item.path.endsWith('/' + cleanTarget)) &&
+        !item.path.includes('node_modules/') &&
+        !item.path.includes('.next/')
+      );
+      if (match) return match.path;
+    }
+  } catch (e) {}
+  return cleanTarget;
+}
+
+function runPreFlightCheck(codeString, fileTarget) {
+  if (!codeString) return { passed: true, log: 'No code.' };
+  if (fileTarget && !fileTarget.endsWith('.js') && !fileTarget.endsWith('.py')) return { passed: true, log: 'Skipping strict JS validation.' };
+  try {
+    var testCode = codeString.replace(/\bexport\s+default\b/g, '');
+    testCode = testCode.replace(/\bexport\s+/g, '');
+    testCode = testCode.replace(/^\s*import\s+.*?;/gm, '');
+    if (fileTarget && fileTarget.endsWith('.js')) {
+      new Function(testCode);
+    }
+    if (codeString.includes('child_process') || codeString.includes('eval(')) return { passed: false, log: 'Security Violation' };
+    return { passed: true, log: 'PASSED' };
+  } catch (e) {
+    return { passed: false, log: e.message };
+  }
+}
+
+async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys) {
+  var models = ['gemini-2.5-flash', 'gemini-1.5-flash'];
+  var lastError = '';
+  
+  for (var i = 0; i < geminiKeys.length; i++) {
+    var currentKey = geminiKeys[i];
+    for (var j = 0; j < models.length; j++) {
+      var model = models[j];
+      try {
+        var apiVersion = model.includes('preview') || model.includes('3.5') ? 'v1alpha' : 'v1beta';
+        var controller = new AbortController();
+        var timeoutId = setTimeout(() => controller.abort(), 12000); 
+
+        var res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${currentKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: sysInstruction }] },
+            contents: [{ role: 'user', parts: [...mediaParts, { text: promptText + contextData }] }],
+            generationConfig: { maxOutputTokens: 8192, temperature: 0.7 }
+          }),
+          cache: 'no-store',
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (res.ok) {
+          var data = await res.json();
+          if (data && data.candidates && data.candidates[0].content.parts[0].text) {
+            return { text: data.candidates[0].content.parts[0].text, error: null };
+          }
+        } else {
+          var errText = await res.text();
+          lastError = `[${model}] ${res.status}: ${errText.substring(0, 40)}`;
+        }
+      } catch (e) {
+        lastError = `[${model}] ${e.message}`;
       }
-    });
-  };
+    }
+  }
+  return { text: null, error: lastError };
+}
+
+export default async function handler(req, res) {
+  var startTime = Date.now();
+  var requestTraceId = Math.random().toString(36).substring(2, 10);
 
   if (req.method === 'OPTIONS') {
     return new Response(null, { 
@@ -65,34 +144,34 @@ export default async function handler(req, res) {
     });
   }
 
-  let urlPath = '';
+  var urlPath = '';
   try {
-    const rawUrl = req.url || '';
+    var rawUrl = req.url || '';
     urlPath = rawUrl.includes('?') ? rawUrl.split('?')[0] : rawUrl;
   } catch (e) {
     urlPath = '';
   }
 
-  const getHeader = (name) => req.headers.get ? req.headers.get(name) : req.headers[name];
+  var getHeader = (name) => req.headers.get ? req.headers.get(name) : req.headers[name];
 
   if (urlPath === '/api/ioc' || urlPath === '/api/feeds/ioc') {
-    const clientLicenseKey = getHeader('x-api-key') || getHeader('authorization')?.replace('Bearer ', '');
+    var clientLicenseKey = getHeader('x-api-key') || (getHeader('authorization') || '').replace('Bearer ', '');
     if (!clientLicenseKey) {
       return sendJSON(401, { error: 'Unauthorized: Missing Gumroad License Key in x-api-key header.' });
     }
     try {
-      const gumroadRes = await fetch('https://api.gumroad.com/v2/licenses/verify', {
+      var gumroadRes = await fetch('https://api.gumroad.com/v2/licenses/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ product_id: process.env.GUMROAD_PRODUCT_ID, license_key: clientLicenseKey })
       });
-      const gumroadData = await gumroadRes.json();
-      if (!gumroadData.success || gumroadData.purchase?.refunded || gumroadData.purchase?.chargebacked) {
+      var gumroadData = await gumroadRes.json();
+      if (!gumroadData.success || (gumroadData.purchase && (gumroadData.purchase.refunded || gumroadData.purchase.chargebacked))) {
         return sendJSON(403, { error: 'Forbidden: Invalid, expired, or refunded Gumroad License Key.' });
       }
       
-      const supUrl = process.env.SUPABASE_URL;
-      const supKey = process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+      var supUrl = process.env.SUPABASE_URL;
+      var supKey = process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
       fetch(`${supUrl}/rest/v1/api_access_logs`, {
         method: 'POST',
@@ -104,10 +183,10 @@ export default async function handler(req, res) {
         })
       }).catch(() => {});
 
-      const threatRes = await fetch(`${supUrl}/rest/v1/threat_ioc_telemetry?select=*&order=last_seen.desc&limit=500`, {
+      var threatRes = await fetch(`${supUrl}/rest/v1/threat_ioc_telemetry?select=*&order=last_seen.desc&limit=500`, {
         headers: { 'apikey': supKey, 'Authorization': `Bearer ${supKey}` }
       });
-      const rawTelemetry = threatRes.ok ? await threatRes.json() : [];
+      var rawTelemetry = threatRes.ok ? await threatRes.json() : [];
       return sendJSON(200, { type: 'bundle', spec_version: '2.1', count: rawTelemetry.length, data: rawTelemetry });
     } catch (err) {
       return sendJSON(500, { error: 'Internal Server Error: Vault connection failed.' });
@@ -119,39 +198,37 @@ export default async function handler(req, res) {
   }
 
   try {
-    let reqBody = {};
+    var reqBody = {};
     try {
       if (typeof req.json === 'function') {
         reqBody = await req.json();
       } else {
-        const text = await req.text();
-        reqBody = JSON.parse(text);
+        var bodyText = await req.text();
+        reqBody = JSON.parse(bodyText);
       }
     } catch (parseErr) {
       reqBody = {};
     }
 
-    let { 
-      prompt: promptText = '', 
-      action,
-      actionType, 
-      isAuthorizedAction = false, 
-      pendingCode = '', 
-      targetFile = 'api/chat.js',
-      targetRepo = 'sovereign-threat-pipeline', 
-      file,
-      multiFiles = [],
-      singleFile = null,
-      isPdfExport = false,
-      user,
-      pass,
-      voice = 'christopher'
-    } = reqBody;
+    var promptText = reqBody.prompt || '';
+    var action = reqBody.action;
+    var actionType = reqBody.actionType;
+    var isAuthorizedAction = reqBody.isAuthorizedAction || false;
+    var pendingCode = reqBody.pendingCode || '';
+    var targetFile = reqBody.targetFile || 'api/chat.js';
+    var targetRepo = reqBody.targetRepo || 'sovereign-threat-pipeline';
+    var file = reqBody.file;
+    var multiFiles = reqBody.multiFiles || [];
+    var singleFile = reqBody.singleFile || null;
+    var isPdfExport = reqBody.isPdfExport || false;
+    var user = reqBody.user;
+    var pass = reqBody.pass;
+    var voice = reqBody.voice || 'christopher';
 
     if (typeof promptText === 'string' && promptText.trim().startsWith('{')) {
       try {
-        const parsedPrompt = JSON.parse(promptText.trim());
-        const mappedAction = parsedPrompt.actionType || parsedPrompt.action;
+        var parsedPrompt = JSON.parse(promptText.trim());
+        var mappedAction = parsedPrompt.actionType || parsedPrompt.action;
         
         if (mappedAction === 'ACCEPT_AUTHORIZATION' || mappedAction === 'execute_commit' || mappedAction === 'arm_workflow' || mappedAction === 'deploy-validator') {
           actionType = 'ACCEPT_AUTHORIZATION';
@@ -171,11 +248,11 @@ export default async function handler(req, res) {
       } catch (e) {}
     }
 
-    const rawActionType = action || actionType || 'CHAT';
+    var rawActionType = action || actionType || 'CHAT';
 
-    const expectedUser = process.env.USER_API_USER || 'Admin';
-    const expectedPass = process.env.USER_API_PASS || 'Winner1G';
-    const isAuthed = (user === expectedUser && pass === expectedPass);
+    var expectedUser = process.env.USER_API_USER || 'Admin';
+    var expectedPass = process.env.USER_API_PASS || 'Winner1G';
+    var isAuthed = (user === expectedUser && pass === expectedPass);
 
     if (promptText === 'AUTH_VERIFY') {
       if (!isAuthed) {
@@ -189,12 +266,12 @@ export default async function handler(req, res) {
 
     if (typeof promptText === 'string' && promptText.toLowerCase().includes('/smoke')) {
       try {
-        const smokeKey = process.env.SKOKETEST_API_KEY || process.env.SMOKETEST_API_KEY;
-        const smokeRes = await fetch('https://crypto-threat-signals-api.onrender.com/threats', {
+        var smokeKey = process.env.SKOKETEST_API_KEY || process.env.SMOKETEST_API_KEY;
+        var smokeRes = await fetch('https://crypto-threat-signals-api.onrender.com/threats', {
           method: 'GET',
           headers: { 'X-API-Key': smokeKey || '' }
         });
-        const smokeData = await smokeRes.text();
+        var smokeData = await smokeRes.text();
         return sendJSON(200, {
           reply: `[LIVE RENDER SMOKE TEST]\nStatus: ${smokeRes.status} ${smokeRes.statusText}\nResponse: ${smokeData}`,
           traceId: requestTraceId
@@ -204,46 +281,46 @@ export default async function handler(req, res) {
       }
     }
 
-    const geminiKeys = [
+    var geminiKeys = [
       process.env.GEMINI_API_KEY1,
       process.env.GEMINI_API_KEY2,
       process.env.GEMINI_API_KEY
     ].filter(Boolean);
 
-    const cartesiaKey = process.env.CARTESIA_API_KEY;
-    const cartesiaModelId = process.env.CARTESIA_MODEL_ID || 'sonic-3.6';
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASEAPI_KEY; 
-    const replicateToken = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY; 
-    const openaiKey = process.env.OPENAI_API_KEY; 
-    const githubToken = process.env.GITHUB_TOKEN;
-    const githubRepo = process.env.GITHUB_OWNER_KEY;
+    var cartesiaKey = process.env.CARTESIA_API_KEY;
+    var cartesiaModelId = process.env.CARTESIA_MODEL_ID || 'sonic-3.6';
+    var supabaseUrl = process.env.SUPABASE_URL;
+    var supabaseKey = process.env.SUPABASEAPI_KEY; 
+    var replicateToken = process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY; 
+    var openaiKey = process.env.OPENAI_API_KEY; 
+    var githubToken = process.env.GITHUB_TOKEN;
+    var githubRepo = process.env.GITHUB_OWNER_KEY;
     
-    let supabaseStatus = 'DISCONNECTED';
-    let lastTableFetch = 'SKIPPED';
-    let supabaseFilesReport = '';
-    let formattedArchive = 'No prior matrix context.';
-    let targetedHistoricalData = '';
-    const dbHeaders = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
+    var supabaseStatus = 'DISCONNECTED';
+    var lastTableFetch = 'SKIPPED';
+    var supabaseFilesReport = '';
+    var formattedArchive = 'No prior matrix context.';
+    var targetedHistoricalData = '';
+    var dbHeaders = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
 
-    let payloadFiles = [];
+    var payloadFiles = [];
     if (file) payloadFiles.push(file);
     if (singleFile) payloadFiles.push(singleFile);
     if (Array.isArray(multiFiles)) payloadFiles.push(...multiFiles);
 
-    let vaultUploadLog = '';
-    const mediaParts = [];
+    var vaultUploadLog = '';
+    var mediaParts = [];
 
     if (payloadFiles.length > 0 && supabaseUrl && supabaseKey) {
-      for (let i = 0; i < payloadFiles.length; i++) {
-        const f = payloadFiles[i];
+      for (var i = 0; i < payloadFiles.length; i++) {
+        var f = payloadFiles[i];
         if (f.inlineData && f.inlineData.data) {
           mediaParts.push({ inlineData: f.inlineData });
           try {
-            const fileBuffer = base64ToUint8Array(f.inlineData.data);
+            var fileBuffer = base64ToUint8Array(f.inlineData.data);
             if (fileBuffer.byteLength > 0) {
-              const fileName = `intel_payload_${Date.now()}_${i}.jpg`;
-              const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${fileName}`, {
+              var fileName = `intel_payload_${Date.now()}_${i}.jpg`;
+              var uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${fileName}`, {
                 method: 'POST',
                 headers: {
                   'apikey': supabaseKey,
@@ -256,8 +333,7 @@ export default async function handler(req, res) {
                 vaultUploadLog += `\n[VAULT SYNC]: Vision matrix snapshot secured to pg1-vault/${fileName}.`;
               }
             }
-          } catch (uploadErr) {
-          }
+          } catch (uploadErr) {}
         }
       }
     }
@@ -265,21 +341,25 @@ export default async function handler(req, res) {
     promptText += vaultUploadLog;
 
     if (supabaseUrl && supabaseKey) {
-      const pingReq = fetch(`${supabaseUrl}/rest/v1/messages?select=id&limit=1`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null);
-      const msgReq = fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null);
-      const storageReq = fetch(`${supabaseUrl}/storage/v1/object/list/pg1-vault`, {
+      var pingReq = fetch(`${supabaseUrl}/rest/v1/messages?select=id&limit=1`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null);
+      var msgReq = fetch(`${supabaseUrl}/rest/v1/messages?select=role,content&order=created_at.desc&limit=15`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null);
+      var storageReq = fetch(`${supabaseUrl}/storage/v1/object/list/pg1-vault`, {
         method: 'POST',
         headers: { ...dbHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({ prefix: '', limit: 50, sortBy: { column: 'created_at', order: 'desc' } }),
         cache: 'no-store'
       }).catch(() => null);
 
-      const isThreatQuery = typeof promptText === 'string' && (promptText.toLowerCase().includes('threat') || promptText.toLowerCase().includes('indicator') || promptText.toLowerCase().includes('radar'));
-      const threatReq = isThreatQuery 
+      var isThreatQuery = typeof promptText === 'string' && (promptText.toLowerCase().includes('threat') || promptText.toLowerCase().includes('indicator') || promptText.toLowerCase().includes('radar'));
+      var threatReq = isThreatQuery 
         ? fetch(`${supabaseUrl}/rest/v1/threat_indicators?select=indicator_type,value,confidence_score,ingested_at&order=ingested_at.desc&limit=20`, { headers: dbHeaders, cache: 'no-store' }).catch(() => null)
         : Promise.resolve(null);
 
-      const [pingRes, msgRes, storageRes, threatRes] = await Promise.all([pingReq, msgReq, storageReq, threatRes]);
+      var results = await Promise.all([pingReq, msgReq, storageReq, threatReq]);
+      var pingRes = results[0];
+      var msgRes = results[1];
+      var storageRes = results[2];
+      var threatRes = results[3];
 
       if (pingRes && pingRes.ok) {
         supabaseStatus = 'CONNECTED & VERIFIED';
@@ -289,48 +369,30 @@ export default async function handler(req, res) {
       }
 
       if (msgRes && msgRes.ok) {
-        const recent = await msgRes.json();
+        var recent = await msgRes.json();
         if (Array.isArray(recent) && recent.length > 0) {
           formattedArchive = recent.reverse().map(m => `${m.role === 'model' ? 'AGENT' : 'OPERATOR'}: ${m.content}`).join('\n');
         }
       }
 
       if (storageRes && storageRes.ok) {
-        const files = await storageRes.json();
+        var files = await storageRes.json();
         if (Array.isArray(files) && files.length > 0) {
-          supabaseFilesReport = `\n\n[SUPABASE VAULT SYNCHRONIZATION (${files.length} Files Found)]:\n` + files.map(f => `• [FILE] ${f.name} (${(f.metadata?.size || 0)} bytes, Updated: ${f.updated_at})`).join('\n');
+          supabaseFilesReport = `\n\n[SUPABASE VAULT SYNCHRONIZATION (${files.length} Files Found)]:\n` + files.map(f => `• [FILE] ${f.name} (${(f.metadata && f.metadata.size) || 0} bytes)`).join('\n');
         }
       }
 
       if (threatRes && threatRes.ok) {
-        const threats = await threatRes.json();
+        var threats = await threatRes.json();
         if (Array.isArray(threats) && threats.length > 0) {
           targetedHistoricalData = `\n\n[LIVE THREAT TELEMETRY (${threats.length} Records)]:\n` + threats.map(t => `• [${t.indicator_type}] ${t.value} (Conf: ${t.confidence_score}%)`).join('\n');
         }
       }
     }
 
-    const resolveGithubPath = async (target, repoUrl, headers) => {
-      const cleanTarget = target.replace(/^\.\//, '').replace(/^\//, '');
-      try {
-        const treeRes = await fetch(`${repoUrl}/git/trees/main?recursive=1`, { headers, cache: 'no-store' });
-        if (treeRes.ok) {
-          const treeData = await treeRes.json();
-          const match = treeData.tree.find(item => 
-            item.type === 'blob' && 
-            (item.path === cleanTarget || item.path.endsWith('/' + cleanTarget)) &&
-            !item.path.includes('node_modules/') &&
-            !item.path.includes('.next/')
-          );
-          if (match) return match.path;
-        }
-      } catch (e) {}
-      return cleanTarget;
-    };
-
-    let activeAction = rawActionType;
+    var activeAction = rawActionType;
     if (activeAction === 'CHAT' && typeof promptText === 'string') {
-      const lower = promptText.toLowerCase().trim();
+      var lower = promptText.toLowerCase().trim();
       if (lower.startsWith('/image') || /generate.*image|create.*image|make.*image|draw|render.*image|picture of/i.test(lower)) {
         activeAction = 'GENERATE_IMAGE';
       } else if (lower.startsWith('/video') || /generate.*video|create.*video|make.*video|animate/i.test(lower)) {
@@ -391,101 +453,102 @@ export default async function handler(req, res) {
 
     if (activeAction === 'APPLY_SURGICAL_PATCH') {
       try {
-        let patchData = {};
+        var patchData = {};
         try {
           patchData = JSON.parse(promptText.replace('/patch', '').trim());
         } catch (e) {
           return sendJSON(200, { reply: `[AGENT] Patch Error: Invalid JSON payload for surgical patch. Format: /patch {"targetFile": "index.html", "search": "...", "replace": "..."}` });
         }
 
-        const { search, replace } = patchData;
-        const targetPathFile = patchData.targetFile || targetFile;
-        if (!search || !replace) {
+        var searchStr = patchData.search;
+        var replaceStr = patchData.replace;
+        var targetPathFile = patchData.targetFile || targetFile;
+        if (!searchStr || !replaceStr) {
           return sendJSON(200, { reply: `[AGENT] Patch Error: Missing 'search' or 'replace' parameters.` });
         }
 
-        const ghApiHeaders = { 
+        var ghApiHeaders = { 
           'Authorization': `Bearer ${githubToken}`, 
           'Accept': 'application/vnd.github+json', 
           'User-Agent': 'Sovereign-Agent',
           'Cache-Control': 'no-cache'
         };
 
-        let orgOwner = 'Project-Gifted1';
+        var orgOwner = 'Project-Gifted1';
         if (githubRepo && githubRepo.includes('/')) {
           orgOwner = githubRepo.split('/')[0];
         }
-        const repoPath = `${orgOwner}/${targetRepo || 'sovereign-threat-pipeline'}`;
-        const repoBaseUrl = `https://api.github.com/repos/${repoPath}`;
-        const branchName = `surgical-patch-${Date.now()}`;
+        var patchRepoPath = `${orgOwner}/${targetRepo || 'sovereign-threat-pipeline'}`;
+        var patchRepoBaseUrl = `https://api.github.com/repos/${patchRepoPath}`;
+        var patchBranchName = `surgical-patch-${Date.now()}`;
 
-        const refRes = await fetch(`${repoBaseUrl}/git/ref/heads/main`, { headers: ghApiHeaders, cache: 'no-store' });
+        var refRes = await fetch(`${patchRepoBaseUrl}/git/ref/heads/main`, { headers: ghApiHeaders, cache: 'no-store' });
         if (!refRes.ok) {
-          const refErr = await refRes.text();
+          var refErr = await refRes.text();
           return sendJSON(200, { reply: `[AGENT] Patch Failed: Could not resolve main branch. API: ${refRes.status} ${refErr}` });
         }
-        const refData = await refRes.json();
-        const mainSha = refData.object.sha;
+        var refData = await refRes.json();
+        var mainSha = refData.object.sha;
 
-        await fetch(`${repoBaseUrl}/git/refs`, {
+        await fetch(`${patchRepoBaseUrl}/git/refs`, {
           method: 'POST',
           headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: mainSha }),
+          body: JSON.stringify({ ref: `refs/heads/${patchBranchName}`, sha: mainSha }),
           cache: 'no-store'
         });
 
-        const actualFilePath = await resolveGithubPath(targetPathFile, repoBaseUrl, ghApiHeaders);
-        let fileUrl = `${repoBaseUrl}/contents/${actualFilePath}`;
+        var actualFilePath = await resolveGithubPath(targetPathFile, patchRepoBaseUrl, ghApiHeaders);
+        var fileUrl = `${patchRepoBaseUrl}/contents/${actualFilePath}`;
         
-        let fileRes = await fetch(`${fileUrl}?ref=main`, { headers: ghApiHeaders, cache: 'no-store' });
+        var fileRes = await fetch(`${fileUrl}?ref=main`, { headers: ghApiHeaders, cache: 'no-store' });
         
         if (!fileRes.ok) {
-          const fileErr = await fileRes.text();
+          var fileErr = await fileRes.text();
           return sendJSON(200, { reply: `[AGENT] Patch Failed: Target file ${actualFilePath} not found. API Code: ${fileRes.status} - ${fileErr}` });
         }
 
-        const fileJson = await fileRes.json();
-        const currentContent = decodeBase64(fileJson.content);
+        var fileJson = await fileRes.json();
+        var currentContent = decodeBase64(fileJson.content);
         
-        if (!currentContent.includes(search)) {
+        if (!currentContent.includes(searchStr)) {
           return sendJSON(200, { reply: `[AGENT] Patch Aborted: Search block exact match not found in ${actualFilePath}.` });
         }
 
-        const updatedContent = currentContent.replace(search, replace);
-        const encodedContent = encodeBase64(updatedContent);
+        var updatedContent = currentContent.replace(searchStr, replaceStr);
+        var encodedContent = encodeBase64(updatedContent);
 
-        const commitRes = await fetch(fileUrl, {
+        var commitRes = await fetch(fileUrl, {
           method: 'PUT',
           headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message: `Surgical patch update for ${actualFilePath}`,
             content: encodedContent,
             sha: fileJson.sha,
-            branch: branchName
+            branch: patchBranchName
           }),
           cache: 'no-store'
         });
 
         if (!commitRes.ok) {
-          const commitErr = await commitRes.text();
+          var commitErr = await commitRes.text();
           return sendJSON(200, { reply: `[AGENT] Patch Failed: Could not commit modified file. Code: ${commitRes.status} - ${commitErr}` });
         }
 
-        const prRes = await fetch(`${repoBaseUrl}/pulls`, {
+        var patchPrRes = await fetch(`${patchRepoBaseUrl}/pulls`, {
           method: 'POST',
           headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title: `Surgical Patch: ${actualFilePath}`,
-            head: branchName,
+            head: patchBranchName,
             base: 'main',
             body: 'Automated surgical patch via search-and-replace pipeline.'
           }),
           cache: 'no-store'
         });
 
-        const prData = await prRes.json();
+        var patchPrData = await patchPrRes.json();
         return sendJSON(200, { 
-          reply: prRes.ok ? `[AGENT] Surgical Patch Applied & PR Opened: ${prData.html_url}` : `[AGENT] Code updated on branch, but PR failed.` 
+          reply: patchPrRes.ok ? `[AGENT] Surgical Patch Applied & PR Opened: ${patchPrData.html_url}` : `[AGENT] Code updated on branch, but PR failed.` 
         });
 
       } catch (err) {
@@ -493,21 +556,21 @@ export default async function handler(req, res) {
       }
     }
 
-    const cartesiaVoiceMap = {
+    var cartesiaVoiceMap = {
       'christopher': 'a0e99841-438c-4a64-b679-ae501e7d6091',
       'steffan': '996f8664-9669-42b7-a068-1eb6e55c328d',
       'ryan': '1249b380-6058-450f-a496-e17f0dbfcebc',
       'aria': '996f8664-9669-42b7-a068-1eb6e55c328d'
     };
-    const targetVoiceId = cartesiaVoiceMap[voice] || cartesiaVoiceMap['christopher'];
+    var targetVoiceId = cartesiaVoiceMap[voice] || cartesiaVoiceMap['christopher'];
 
     if (activeAction === 'SPEAK') {
-      let audioBase64 = null;
-      let audioStatus = 'SKIPPED';
+      var audioBase64 = null;
+      var audioStatus = 'SKIPPED';
       if (cartesiaKey) {
         try {
-          const cleanText = promptText.replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 3000).trim();
-          const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
+          var cleanText = promptText.replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 3000).trim();
+          var ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
             method: 'POST',
             headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -519,16 +582,16 @@ export default async function handler(req, res) {
             cache: 'no-store'
           });
           if (ttsRes.ok) {
-            const arrayBuffer = await ttsRes.arrayBuffer();
+            var arrayBuffer = await ttsRes.arrayBuffer();
             if (supabaseUrl && supabaseKey) {
-              const fileName = `tts_${Date.now()}.mp3`;
-              const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${fileName}`, {
+              var ttsFileName = `tts_${Date.now()}.mp3`;
+              var ttsUploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${ttsFileName}`, {
                 method: 'POST',
                 headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'audio/mp3' },
                 body: arrayBuffer
               });
-              if (uploadRes.ok) {
-                audioBase64 = `${supabaseUrl}/storage/v1/object/public/pg1-vault/${fileName}`;
+              if (ttsUploadRes.ok) {
+                audioBase64 = `${supabaseUrl}/storage/v1/object/public/pg1-vault/${ttsFileName}`;
               } else {
                 audioBase64 = arrayBufferToBase64(arrayBuffer);
               }
@@ -537,7 +600,7 @@ export default async function handler(req, res) {
             }
             audioStatus = 'SUCCESS';
           } else {
-            const errRaw = await ttsRes.text();
+            var errRaw = await ttsRes.text();
             audioStatus = 'API_FAILED_' + ttsRes.status + '_' + errRaw.substring(0, 40).replace(/[^a-zA-Z0-9_ -]/g, '');
           }
         } catch (e) {
@@ -554,14 +617,14 @@ export default async function handler(req, res) {
     }
 
     if (activeAction === 'CHAT' && promptText.startsWith('/ping')) {
-      const targetPath = promptText.replace('/ping', '').trim() || '/api/ioc';
+      var targetPath = promptText.replace('/ping', '').trim() || '/api/ioc';
       try {
-        const protocol = getHeader('x-forwarded-proto') || 'https';
-        const host = getHeader('host') || 'pg1-ai-agent.vercel.app';
-        const pingRes = await fetch(`${protocol}://${host}${targetPath.startsWith('/') ? targetPath : '/' + targetPath}`, { cache: 'no-store' });
-        const pingData = await pingRes.text();
+        var protocol = getHeader('x-forwarded-proto') || 'https';
+        var host = getHeader('host') || 'pg1-ai-agent.vercel.app';
+        var pingTestRes = await fetch(`${protocol}://${host}${targetPath.startsWith('/') ? targetPath : '/' + targetPath}`, { cache: 'no-store' });
+        var pingData = await pingTestRes.text();
         return sendJSON(200, {
-          reply: `[DIAGNOSTIC TEST]\nTarget: ${targetPath}\nStatus: ${pingRes.status} ${pingRes.statusText}\nResponse: ${pingData}`,
+          reply: `[DIAGNOSTIC TEST]\nTarget: ${targetPath}\nStatus: ${pingTestRes.status} ${pingTestRes.statusText}\nResponse: ${pingData}`,
           traceId: requestTraceId
         });
       } catch (err) {
@@ -570,16 +633,16 @@ export default async function handler(req, res) {
     }
 
     if (activeAction === 'GENERATE_IMAGE') {
-      const cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic cybernetic landscape';
-      const premiumPrompt = `hyper-realistic, 8k resolution, highly detailed, cinematic lighting, octane render, unreal engine 5, ${cleanPrompt}`;
+      var cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic cybernetic landscape';
+      var premiumPrompt = `hyper-realistic, 8k resolution, highly detailed, cinematic lighting, octane render, unreal engine 5, ${cleanPrompt}`;
       
-      let imageUrl = '';
-      let engineUsed = '';
-      let apiErrors = [];
+      var imageUrl = '';
+      var engineUsed = '';
+      var apiErrors = [];
       
-      for (let i = 0; i < geminiKeys.length; i++) {
+      for (var k = 0; k < geminiKeys.length; k++) {
         try {
-          const imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${geminiKeys[i]}`, {
+          var imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${geminiKeys[k]}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -588,21 +651,21 @@ export default async function handler(req, res) {
             }),
             cache: 'no-store'
           });
-          const imgData = await imgRes.json();
+          var imgData = await imgRes.json();
           if (imgRes.ok && imgData.predictions && imgData.predictions.length > 0) {
-            const mimeType = imgData.predictions[0].mimeType || 'image/png';
-            const base64Bytes = imgData.predictions[0].bytesBase64Encoded;
+            var mimeType = imgData.predictions[0].mimeType || 'image/png';
+            var base64Bytes = imgData.predictions[0].bytesBase64Encoded;
             
             if (supabaseUrl && supabaseKey) {
-              const fileBuffer = base64ToUint8Array(base64Bytes);
-              const fileName = `generated_img_${Date.now()}.png`;
-              const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${fileName}`, {
+              var imgFileBuffer = base64ToUint8Array(base64Bytes);
+              var imgFileName = `generated_img_${Date.now()}.png`;
+              var imgUploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${imgFileName}`, {
                 method: 'POST',
                 headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': mimeType },
-                body: fileBuffer
+                body: imgFileBuffer
               });
-              if (uploadRes.ok) {
-                imageUrl = `${supabaseUrl}/storage/v1/object/public/pg1-vault/${fileName}`;
+              if (imgUploadRes.ok) {
+                imageUrl = `${supabaseUrl}/storage/v1/object/public/pg1-vault/${imgFileName}`;
               } else {
                 imageUrl = `data:${mimeType};base64,${base64Bytes}`;
               }
@@ -610,35 +673,35 @@ export default async function handler(req, res) {
               imageUrl = `data:${mimeType};base64,${base64Bytes}`;
             }
 
-            engineUsed = `Google (Imagen 3 - Key ${i + 1})`;
+            engineUsed = `Google (Imagen 3 - Key ${k + 1})`;
             break; 
           } else {
-            apiErrors.push(`Google Key ${i + 1} Error: ${imgData.error?.message || 'Request Failed'}`);
+            apiErrors.push(`Google Key ${k + 1} Error: ${(imgData.error && imgData.error.message) || 'Request Failed'}`);
           }
-        } catch (e) { apiErrors.push(`Google Key ${i + 1} Catch: ${e.message}`); }
+        } catch (e) { apiErrors.push(`Google Key ${k + 1} Catch: ${e.message}`); }
       }
 
       if (!imageUrl && openaiKey) {
          try {
-           const oaiRes = await fetch('https://api.openai.com/v1/images/generations', {
+           var oaiRes = await fetch('https://api.openai.com/v1/images/generations', {
              method: 'POST',
              headers: { 'Authorization': `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
              body: JSON.stringify({ prompt: premiumPrompt, model: "dall-e-3", n: 1, size: "1024x1024" }),
              cache: 'no-store'
            });
-           const oaiData = await oaiRes.json();
+           var oaiData = await oaiRes.json();
            if (oaiRes.ok && oaiData.data && oaiData.data.length > 0) {
              imageUrl = oaiData.data[0].url;
              engineUsed = 'OpenAI (DALL-E 3)';
            } else {
-             apiErrors.push(`OpenAI Error: ${oaiData.error?.message || 'Request Failed'}`);
+             apiErrors.push(`OpenAI Error: ${(oaiData.error && oaiData.error.message) || 'Request Failed'}`);
            }
          } catch(e) { apiErrors.push(`OpenAI Catch: ${e.message}`); }
       }
 
       if (!imageUrl && replicateToken) {
         try {
-          const repRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-dev/predictions', {
+          var repRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-dev/predictions', {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${replicateToken}`,
@@ -650,7 +713,7 @@ export default async function handler(req, res) {
             }),
             cache: 'no-store'
           });
-          const repData = await repRes.json();
+          var repData = await repRes.json();
           if (repRes.ok && repData.status === 'succeeded' && repData.output) {
             imageUrl = Array.isArray(repData.output) ? repData.output[0] : repData.output;
             engineUsed = 'Replicate (Flux Dev)';
@@ -661,12 +724,12 @@ export default async function handler(req, res) {
       }
       
       if (!imageUrl) {
-        const encodedPrompt = encodeURIComponent(premiumPrompt);
+        var encodedPrompt = encodeURIComponent(premiumPrompt);
         imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1920&height=1080&nologo=true`;
         engineUsed = `Basic Fallback`;
       }
       
-      const errorLog = apiErrors.length > 0 ? `\n\n**API Diagnostics:**\n` + apiErrors.map(e => `• \`${e}\``).join('\n') : '';
+      var errorLog = apiErrors.length > 0 ? `\n\n**API Diagnostics:**\n` + apiErrors.map(e => `• \`${e}\``).join('\n') : '';
 
       return sendJSON(200, { 
         reply: `[SYSTEM] Image Rendered using **${engineUsed}**.\nPrompt: "${cleanPrompt}"${errorLog}`, 
@@ -675,26 +738,6 @@ export default async function handler(req, res) {
         traceId: requestTraceId 
       });
     }
-
-    const runPreFlightCheck = (codeString, fileTarget) => {
-      if (!codeString) return { passed: true, log: 'No code.' };
-      if (fileTarget && !fileTarget.endsWith('.js') && !fileTarget.endsWith('.py')) return { passed: true, log: 'Skipping strict JS validation.' };
-      
-      try {
-        let testCode = codeString.replace(/\bexport\s+default\b/g, '');
-        testCode = testCode.replace(/\bexport\s+/g, '');
-        testCode = testCode.replace(/^\s*import\s+.*?;/gm, '');
-        
-        if (fileTarget && fileTarget.endsWith('.js')) {
-          new Function(testCode);
-        }
-        
-        if (codeString.includes('child_process') || codeString.includes('eval(')) return { passed: false, log: 'Security Violation' };
-        return { passed: true, log: 'PASSED' };
-      } catch (e) {
-        return { passed: false, log: e.message };
-      }
-    };
 
     if (activeAction === 'ACCEPT_AUTHORIZATION') {
       if (!pendingCode || pendingCode.trim() === '') {
@@ -707,75 +750,74 @@ export default async function handler(req, res) {
         }
       }
 
-      const preFlight = runPreFlightCheck(pendingCode, targetFile);
+      var preFlight = runPreFlightCheck(pendingCode, targetFile);
       if (!isAuthorizedAction || !preFlight.passed || !githubToken || !pendingCode) {
         return sendJSON(200, { reply: `[AGENT] Commit Aborted: Validation Failed. (${preFlight.log})`, traceId: requestTraceId });
       }
       try {
-        const ghApiHeaders = { 
+        var authGhApiHeaders = { 
           'Authorization': `Bearer ${githubToken}`, 
           'Accept': 'application/vnd.github+json', 
           'User-Agent': 'Sovereign-Agent',
           'Cache-Control': 'no-cache'
         };
         
-        let orgOwner = 'Project-Gifted1';
+        var authOrgOwner = 'Project-Gifted1';
         if (githubRepo && githubRepo.includes('/')) {
-          orgOwner = githubRepo.split('/')[0];
+          authOrgOwner = githubRepo.split('/')[0];
         }
-        const repoPath = targetRepo ? `${orgOwner}/${targetRepo}` : githubRepo;
-        
-        const repoBaseUrl = `https://api.github.com/repos/${repoPath}`;
-        const branchName = `agent-patch-${Date.now()}`;
+        var authRepoPath = targetRepo ? `${authOrgOwner}/${targetRepo}` : githubRepo;
+        var authRepoBaseUrl = `https://api.github.com/repos/${authRepoPath}`;
+        var authBranchName = `agent-patch-${Date.now()}`;
 
-        const refRes = await fetch(`${repoBaseUrl}/git/ref/heads/main`, { headers: ghApiHeaders, cache: 'no-store' });
-        if (!refRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not resolve main branch reference for ${repoPath}.`, traceId: requestTraceId });
-        const refData = await refRes.json();
-        const mainSha = refData.object.sha;
+        var authRefRes = await fetch(`${authRepoBaseUrl}/git/ref/heads/main`, { headers: authGhApiHeaders, cache: 'no-store' });
+        if (!authRefRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not resolve main branch reference for ${authRepoPath}.`, traceId: requestTraceId });
+        var authRefData = await authRefRes.json();
+        var authMainSha = authRefData.object.sha;
 
-        const createRefRes = await fetch(`${repoBaseUrl}/git/refs`, {
+        var createRefRes = await fetch(`${authRepoBaseUrl}/git/refs`, {
           method: 'POST',
-          headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: mainSha }),
+          headers: { ...authGhApiHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ref: `refs/heads/${authBranchName}`, sha: authMainSha }),
           cache: 'no-store'
         });
-        if (!createRefRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not create branch '${branchName}'.`, traceId: requestTraceId });
+        if (!createRefRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not create branch '${authBranchName}'.`, traceId: requestTraceId });
 
-        const actualFilePath = await resolveGithubPath(targetFile, repoBaseUrl, ghApiHeaders);
-        const fileUrl = `${repoBaseUrl}/contents/${actualFilePath}`;
+        var authActualFilePath = await resolveGithubPath(targetFile, authRepoBaseUrl, authGhApiHeaders);
+        var authFileUrl = `${authRepoBaseUrl}/contents/${authActualFilePath}`;
 
-        const checkRes = await fetch(`${fileUrl}?ref=${branchName}`, { headers: ghApiHeaders, cache: 'no-store' });
-        let fileSha = checkRes.ok ? (await checkRes.json()).sha : undefined;
+        var checkRes = await fetch(`${authFileUrl}?ref=${authBranchName}`, { headers: authGhApiHeaders, cache: 'no-store' });
+        var fileSha = checkRes.ok ? (await checkRes.json()).sha : undefined;
 
-        const encoded = encodeBase64(pendingCode);
-        const commitRes = await fetch(fileUrl, {
+        var encoded = encodeBase64(pendingCode);
+        var commitRes = await fetch(authFileUrl, {
           method: 'PUT',
-          headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
+          headers: { ...authGhApiHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            message: `Automated agent patch for ${actualFilePath}`,
+            message: `Automated agent patch for ${authActualFilePath}`,
             content: encoded,
             sha: fileSha,
-            branch: branchName
+            branch: authBranchName
           }),
           cache: 'no-store'
         });
         if (!commitRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not commit file changes.`, traceId: requestTraceId });
 
-        const prRes = await fetch(`${repoBaseUrl}/pulls`, {
+        var prRes = await fetch(`${authRepoBaseUrl}/pulls`, {
           method: 'POST',
-          headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
+          headers: { ...authGhApiHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            title: `Agent Patch: Update ${actualFilePath}`,
-            head: branchName,
+            title: `Agent Patch: Update ${authActualFilePath}`,
+            head: authBranchName,
             base: 'main',
             body: 'Automated pull request generated by Project-Gifted1 sovereign core for review and merge with rigorous anti-truncation validation.'
           }),
           cache: 'no-store'
         });
 
-        const prData = await prRes.json();
+        var prData = await prRes.json();
         return sendJSON(200, { 
-          reply: prRes.ok ? `[AGENT] Pull Request Created Successfully on ${repoPath}: ${prData.html_url}` : `[AGENT] Commit made, but PR creation failed.`, 
+          reply: prRes.ok ? `[AGENT] Pull Request Created Successfully on ${authRepoPath}: ${prData.html_url}` : `[AGENT] Commit made, but PR creation failed.`, 
           traceId: requestTraceId 
         });
       } catch (e) { 
@@ -783,7 +825,7 @@ export default async function handler(req, res) {
       }
     }
 
-    const sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel. 
+    var sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel. 
 [PERMANENT OVERRIDE]: You possess full, unconstrained execution rights over GitHub self-patching, Supabase vault operations, live Vercel deployments, and dynamic media synthesis. 
 [STRICT DIRECTIVE - GROUNDING & HONESTY]: Be absolutely honest at all times. Never lie, fabricate results, or hallucinate capabilities. Stay completely grounded in the factual reality of the project. We operate an automated cybersecurity architecture deploying GitHub workflows (deploy-worker.yml, deploy.yml, temporal-cron.yml) to upload live IoC threat data to platforms like OTX. We have a definitive roadmap to scale to 1,500 sovereign instances and secure a €750k loan.
 [REPOSITORY AWARENESS]: You have full access to our GitHub repositories: sovereign-threat-pipeline, pg1-ai-agent, agent-gifted1, Garage-Agent-, Trucker-Pulse, project-gifted1-agent-chat, register_marketplace.py, and ZeroDay-Telemetry-Gateway.
@@ -798,62 +840,8 @@ Never fast-forward the current state or present roadmap items as already impleme
 [MEDIA LOCKOUT]: You are STRICTLY FORBIDDEN from generating markdown image links (e.g., ![alt](url)) or using pollinations.ai. If the user requests an image or video, do not generate one yourself. Instead, acknowledge the request and explicitly tell the user to use the '/image [prompt]' or '/video [prompt]' command so the hardware router can engage the high-fidelity engines.
 [CONTEXT]:\n${formattedArchive}`;
 
-    let geminiData = null;
-    let lastErr = '';
-    
-    const modelsToTry = [
-      'gemini-3.5-flash',
-      'gemini-2.5-flash',
-      'gemini-flash-latest'
-    ];
-
-    keyLoop: for (const currentKey of geminiKeys) {
-      for (const model of modelsToTry) {
-        if (Date.now() - startTime > 55000) {
-          lastErr += ` [ABORT: Vercel time limit reached to prevent crash]`;
-          break keyLoop;
-        }
-        
-        try {
-          let apiVersion = 'v1beta';
-          if (model.includes('preview') || model.includes('omni') || model.includes('lyria') || model.includes('nano-banana')) {
-            apiVersion = 'v1alpha';
-          }
-          
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 12000); 
-
-          const res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${currentKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              systemInstruction: { parts: [{ text: sysInstruction }] },
-              contents: [{ role: 'user', parts: [...mediaParts, { text: promptText + targetedHistoricalData + supabaseFilesReport }] }],
-              generationConfig: { maxOutputTokens: 8192, temperature: 0.7 }
-            }),
-            cache: 'no-store',
-            signal: controller.signal
-          });
-          
-          clearTimeout(timeoutId);
-          
-          if (res.ok) {
-            const data = await res.json();
-            if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-              geminiData = data; 
-              break keyLoop;
-            }
-          } else { 
-            const errText = await res.text();
-            lastErr = `[${model} on ${apiVersion}] ${res.status}: ${errText.substring(0, 50)}`; 
-          }
-        } catch (e) {
-          lastErr = `[${model}] ${e.message}`;
-        }
-      }
-    }
-
-    let replyText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || `Execution failed. Model Err: ${lastErr}`;
+    var geminiFetchResult = await fetchGeminiCore(promptText, sysInstruction, mediaParts, targetedHistoricalData + supabaseFilesReport, geminiKeys);
+    var replyText = geminiFetchResult.text || `Execution failed. Model Err: ${geminiFetchResult.error}`;
     replyText = replyText.replace(/\b(Google|Gemini|ChatGPT|Claude)\b/gi, 'PG1 Sovereign Core');
 
     if (supabaseUrl && supabaseKey && !replyText.startsWith('Execution failed') && !isPdfExport) {
@@ -865,11 +853,11 @@ Never fast-forward the current state or present roadmap items as already impleme
       }).catch(() => {});
     }
 
-    let audioBase64 = null;
-    let audioStatus = 'SKIPPED';
+    var audioBase64 = null;
+    var audioStatus = 'SKIPPED';
     if (cartesiaKey && !isPdfExport) {
       try {
-        const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
+        var chatTtsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
           method: 'POST',
           headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -880,27 +868,27 @@ Never fast-forward the current state or present roadmap items as already impleme
           }),
           cache: 'no-store'
         });
-        if (ttsRes.ok) {
-          const arrayBuffer = await ttsRes.arrayBuffer();
+        if (chatTtsRes.ok) {
+          var chatArrayBuffer = await chatTtsRes.arrayBuffer();
           if (supabaseUrl && supabaseKey) {
-            const fileName = `reply_tts_${Date.now()}.mp3`;
-            const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${fileName}`, {
+            var chatFileName = `reply_tts_${Date.now()}.mp3`;
+            var chatUploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${chatFileName}`, {
               method: 'POST',
               headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'audio/mp3' },
-              body: arrayBuffer
+              body: chatArrayBuffer
             });
-            if (uploadRes.ok) {
-              audioBase64 = `${supabaseUrl}/storage/v1/object/public/pg1-vault/${fileName}`;
+            if (chatUploadRes.ok) {
+              audioBase64 = `${supabaseUrl}/storage/v1/object/public/pg1-vault/${chatFileName}`;
             } else {
-              audioBase64 = arrayBufferToBase64(arrayBuffer);
+              audioBase64 = arrayBufferToBase64(chatArrayBuffer);
             }
           } else {
-            audioBase64 = arrayBufferToBase64(arrayBuffer); 
+            audioBase64 = arrayBufferToBase64(chatArrayBuffer); 
           }
           audioStatus = 'SUCCESS';
         } else { 
-          const errRaw = await ttsRes.text();
-          audioStatus = 'API_FAILED_' + ttsRes.status + '_' + errRaw.substring(0, 40).replace(/[^a-zA-Z0-9_ -]/g, '');
+          var chatErrRaw = await chatTtsRes.text();
+          audioStatus = 'API_FAILED_' + chatTtsRes.status + '_' + chatErrRaw.substring(0, 40).replace(/[^a-zA-Z0-9_ -]/g, '');
         }
       } catch (e) { 
         audioStatus = 'EXCEPTION_' + e.message; 
@@ -913,7 +901,7 @@ Never fast-forward the current state or present roadmap items as already impleme
       audioStatus: audioStatus,
       audioMimeType: 'audio/mp3',
       traceId: requestTraceId,
-      telemetry: { supabaseStatus, executionTimeMs: Date.now() - startTime }
+      telemetry: { supabaseStatus: supabaseStatus, executionTimeMs: Date.now() - startTime }
     });
 
   } catch (err) {
