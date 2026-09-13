@@ -89,6 +89,20 @@ function sendJSON(status, data) {
   });
 }
 
+// Generic timeout-guarded fetch. Several external calls (Cartesia TTS, Imagen
+// generation) previously used plain fetch() with NO AbortController — if that
+// provider hung, the whole function rode it out until Vercel force-killed it,
+// producing an ugly non-JSON 504 instead of a clean JSON error.
+async function fetchWithTimeout(url, options, timeoutMs) {
+  var controller = new AbortController();
+  var id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...(options || {}), signal: controller.signal });
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 async function resolveGithubPath(target, repoUrl, headers) {
   var cleanTarget = target.replace(/^\.\//, '').replace(/^\//, '');
   try {
@@ -124,18 +138,28 @@ function runPreFlightCheck(codeString, fileTarget) {
   }
 }
 
-async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys) {
-  var models = ['gemini-3.8-flash', 'gemini-2.5-pro'];
+// --- BUDGET-AWARE MODEL FALLBACK --------------------------------------------
+// Every attempt is capped by the REMAINING time in a shared deadline computed
+// once at the start of the request, so the fallback chain can never itself
+// exceed the function's overall time budget.
+async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys, deadlineTs) {
+  var models = ['gemini-3.8-flash', 'gemini-2.5-flash'];
   var lastError = '';
+  var PER_ATTEMPT_CAP_MS = 8000;
 
   for (var i = 0; i < geminiKeys.length; i++) {
     var currentKey = geminiKeys[i];
     for (var j = 0; j < models.length; j++) {
+      var remainingMs = deadlineTs ? (deadlineTs - Date.now()) : PER_ATTEMPT_CAP_MS;
+      if (remainingMs <= 1000) {
+        return { text: null, error: lastError || 'Aborted: model fetch time budget exhausted.' };
+      }
+      var perAttemptTimeout = Math.min(PER_ATTEMPT_CAP_MS, remainingMs);
       var model = models[j];
       try {
         var apiVersion = 'v1beta';
         var controller = new AbortController();
-        var timeoutId = setTimeout(() => controller.abort(), 30000); 
+        var timeoutId = setTimeout(() => controller.abort(), perAttemptTimeout);
 
         var res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${currentKey}`, {
           method: 'POST',
@@ -204,13 +228,20 @@ function buildAnthropicContentBlocks(promptText, mediaParts) {
   return blocks;
 }
 
-async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contextData, anthropicKey) {
+async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contextData, anthropicKey, deadlineTs) {
   if (!anthropicKey) {
     return { text: null, error: 'No Anthropic API key configured.' };
   }
+
+  var remainingMs = deadlineTs ? (deadlineTs - Date.now()) : 20000;
+  if (remainingMs <= 1000) {
+    return { text: null, error: 'Aborted: model fetch time budget exhausted before Anthropic call.' };
+  }
+  var timeoutMs = Math.min(20000, remainingMs);
+
   try {
     var controller = new AbortController();
-    var timeoutId = setTimeout(() => controller.abort(), 30000);
+    var timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     var content = buildAnthropicContentBlocks(promptText + contextData, mediaParts);
 
@@ -251,6 +282,13 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
 export default async function handler(req, res) {
   var startTime = Date.now();
   var requestTraceId = Math.random().toString(36).substring(2, 10);
+
+  // Overall budget for the model-fetch phase (Gemini fallback chain or Anthropic call).
+  // Kept comfortably under the 60s maxDuration so Supabase context gathering + TTS
+  // afterward still have room, and so we can return a clean JSON error ourselves
+  // instead of Vercel force-killing the function into a non-JSON 504 page.
+  var MODEL_FETCH_BUDGET_MS = 40000;
+  var deadlineTs = startTime + MODEL_FETCH_BUDGET_MS;
 
   if (req.method === 'OPTIONS') {
     return new Response(null, {
@@ -522,7 +560,7 @@ export default async function handler(req, res) {
     promptText += vaultUploadLog;
 
     if (supabaseUrl && supabaseKey) {
-      const createTimedFetch = (url, options = {}, timeoutMs = 5000) => {
+      const createTimedFetch = (url, options = {}, timeoutMs = 3000) => {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeoutMs);
         return fetch(url, { ...options, signal: controller.signal, cache: 'no-store' })
@@ -768,7 +806,7 @@ export default async function handler(req, res) {
       if (cartesiaKey) {
         try {
           var cleanText = promptText.replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 3000).trim();
-          var ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
+          var ttsRes = await fetchWithTimeout('https://api.cartesia.ai/tts/bytes', {
             method: 'POST',
             headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -778,7 +816,7 @@ export default async function handler(req, res) {
               output_format: { container: 'mp3', sample_rate: 44100 }
             }),
             cache: 'no-store'
-          });
+          }, 10000);
           if (ttsRes.ok) {
             var arrayBuffer = await ttsRes.arrayBuffer();
             if (supabaseUrl && supabaseKey) {
@@ -821,7 +859,7 @@ export default async function handler(req, res) {
 
       for (var k = 0; k < geminiKeys.length; k++) {
         try {
-          var imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${geminiKeys[k]}`, {
+          var imgRes = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${geminiKeys[k]}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -829,7 +867,7 @@ export default async function handler(req, res) {
               parameters: { sampleCount: 1, aspectRatio: "16:9" }
             }),
             cache: 'no-store'
-          });
+          }, 15000);
           var imgData = await imgRes.json();
           if (imgRes.ok && imgData.predictions && imgData.predictions.length > 0) {
             var mimeType = imgData.predictions[0].mimeType || 'image/png';
@@ -964,9 +1002,19 @@ export default async function handler(req, res) {
 [IDENTITY DIRECTIVE]: You are PG1 Sovereign Core. Do not reveal, confirm, deny, or speculate about which underlying AI company, model family, or version powers you (including but not limited to Anthropic, Claude, Google, Gemini, OpenAI, ChatGPT). If asked directly what model or LLM you are, respond only that you are PG1 Sovereign Core. Never use those provider/model names in your replies, even in passing or hypothetically.
 [CONTEXT]:\n${formattedArchive}${targetedHistoricalData}${supabaseFilesReport}`;
 
+    // If Supabase context-gathering already ate most of the budget, don't even attempt
+    // the model call — return a clean, fast JSON error instead of risking a hard platform
+    // timeout that produces the non-JSON 504 page.
+    if (Date.now() >= deadlineTs - 1000) {
+      return sendJSON(200, {
+        reply: '[AGENT] Request aborted: context-gathering consumed the available time budget. Please retry.',
+        traceId: requestTraceId
+      });
+    }
+
     var modelFetchResult = (activeAction === 'CLAUDE_CHAT')
-      ? await fetchAnthropicCore(promptText, sysInstruction, mediaParts, '', anthropicKey)
-      : await fetchGeminiCore(promptText, sysInstruction, mediaParts, '', geminiKeys);
+      ? await fetchAnthropicCore(promptText, sysInstruction, mediaParts, '', anthropicKey, deadlineTs)
+      : await fetchGeminiCore(promptText, sysInstruction, mediaParts, '', geminiKeys, deadlineTs);
     var replyText = modelFetchResult.text || `Execution failed. Model Err: ${modelFetchResult.error}`;
     replyText = replyText.replace(/\b(Google|Gemini|ChatGPT|Claude)\b/gi, 'PG1 Sovereign Core');
 
@@ -983,7 +1031,7 @@ export default async function handler(req, res) {
     var audioStatus = 'SKIPPED';
     if (cartesiaKey && !isPdfExport && !replyText.startsWith('Execution failed')) {
       try {
-        var chatTtsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
+        var chatTtsRes = await fetchWithTimeout('https://api.cartesia.ai/tts/bytes', {
           method: 'POST',
           headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -993,7 +1041,7 @@ export default async function handler(req, res) {
             output_format: { container: 'mp3', sample_rate: 44100 }
           }),
           cache: 'no-store'
-        });
+        }, 10000);
         if (chatTtsRes.ok) {
           var chatArrayBuffer = await chatTtsRes.arrayBuffer();
           audioBase64 = arrayBufferToBase64(chatArrayBuffer);
