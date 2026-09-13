@@ -667,7 +667,7 @@ export default async function handler(req, res) {
           reply: `### [ COMMERCIAL GATEWAY STATUS ]\n- **Gumroad Node**: ACTIVE\n- **Telemetry Route**: /api/ioc (Awaiting Agent Checkout)`,
           traceId: requestTraceId
         });
-      } else if (lower.startsWith('/sync-vault')) {
+      } else if (lower.startsWith('/commerce-status')) { return sendJSON(200, { reply: "### [ COMMERCIAL GATEWAY STATUS ]\\n- **Gumroad Node**: ACTIVE\\n- **Telemetry Route**: /api/ioc (Awaiting Agent Checkout)" }); } else if (lower.startsWith('/sync-vault')) {
         return sendJSON(200, {
           reply: `### [ VAULT SYNCHRONIZATION AUDIT ]\n- **Storage Layer**: pg1-vault (Cryptographic Zero-Trust)\n- **Payload Integrity**: 2/2 Payloads Confirmed Immutable (Zero Byte Drift)`,
           traceId: requestTraceId
