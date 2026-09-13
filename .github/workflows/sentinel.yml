@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  patch-imagen:
+  fix-syntax:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -12,35 +12,24 @@ jobs:
         with:
           token: ${{ secrets.GH_PAT }}
           
-      - name: Write and Execute Patch Script
+      - name: Repair api/chat.js Syntax
         run: |
-          cat << 'EOF' > patch_script.js
-          const fs = require('fs');
-          const files = ['api/image.js', 'api/generate.js', 'api/chat.js'];
-          let patched = false;
-          for (let file of files) {
-            if (fs.existsSync(file)) {
-              let content = fs.readFileSync(file, 'utf8');
-              if (content.includes('imagen-3.0')) {
-                content = content.replace(/imagen-3\.0[^"'\s]+/g, 'imagen-3.0-generate-001');
-                fs.writeFileSync(file, content);
-                console.log('Patched model string in ' + file);
-                patched = true;
-              }
-            }
+          node -e '
+          const fs = require("fs");
+          let file = "api/chat.js";
+          if (fs.existsSync(file)) {
+            let content = fs.readFileSync(file, "utf8");
+            // Fix unescaped or broken template string interpolation causing the syntax error near line 896
+            content = content.replace(/generated_img_\$/g, "generated_img_");
+            fs.writeFileSync(file, content);
+            console.log("Repaired syntax in api/chat.js");
           }
-          if (!patched) {
-            console.log('Target file with imagen model string not found.');
-          }
-          EOF
-          
-          node patch_script.js
-          rm patch_script.js
+          '
           
       - name: Commit and Push
         run: |
           git config user.name "PG1 Sovereign Agent"
           git config user.email "admin@pg1.local"
-          git add -A
-          git commit -m "Patch: Update endpoint to imagen-3.0-generate-001" || echo "No changes to commit"
+          git add api/chat.js
+          git commit -m "Fix: Resolve syntax error at line 896 in api/chat.js"
           git push
