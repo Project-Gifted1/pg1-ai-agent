@@ -168,13 +168,51 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
   return { text: null, error: lastError };
 }
 
-async function fetchAnthropicCore(promptText, sysInstruction, contextData, anthropicKey) {
+var ANTHROPIC_SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+function buildAnthropicContentBlocks(promptText, mediaParts) {
+  var blocks = [];
+  var skippedCount = 0;
+
+  if (Array.isArray(mediaParts)) {
+    for (var i = 0; i < mediaParts.length; i++) {
+      var part = mediaParts[i];
+      if (part && part.inlineData && part.inlineData.data) {
+        var mimeType = (part.inlineData.mimeType || 'image/jpeg').toLowerCase();
+        if (ANTHROPIC_SUPPORTED_IMAGE_TYPES.indexOf(mimeType) !== -1) {
+          blocks.push({
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: mimeType,
+              data: part.inlineData.data
+            }
+          });
+        } else {
+          skippedCount++;
+        }
+      }
+    }
+  }
+
+  var finalText = promptText;
+  if (skippedCount > 0) {
+    finalText += `\n[NOTE: ${skippedCount} attached file(s) were skipped — unsupported type for vision input.]`;
+  }
+
+  blocks.push({ type: 'text', text: finalText });
+  return blocks;
+}
+
+async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contextData, anthropicKey) {
   if (!anthropicKey) {
     return { text: null, error: 'No Anthropic API key configured.' };
   }
   try {
     var controller = new AbortController();
     var timeoutId = setTimeout(() => controller.abort(), 20000);
+
+    var content = buildAnthropicContentBlocks(promptText + contextData, mediaParts);
 
     var res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -187,7 +225,7 @@ async function fetchAnthropicCore(promptText, sysInstruction, contextData, anthr
         model: 'claude-sonnet-4-6',
         max_tokens: 4096,
         system: sysInstruction,
-        messages: [{ role: 'user', content: promptText + contextData }]
+        messages: [{ role: 'user', content: content }]
       }),
       cache: 'no-store',
       signal: controller.signal
@@ -864,7 +902,7 @@ export default async function handler(req, res) {
 [CONTEXT]:\n${formattedArchive}${targetedHistoricalData}${supabaseFilesReport}`;
 
     var modelFetchResult = (activeAction === 'CLAUDE_CHAT')
-      ? await fetchAnthropicCore(promptText, sysInstruction, '', anthropicKey)
+      ? await fetchAnthropicCore(promptText, sysInstruction, mediaParts, '', anthropicKey)
       : await fetchGeminiCore(promptText, sysInstruction, mediaParts, '', geminiKeys);
     var replyText = modelFetchResult.text || `Execution failed. Model Err: ${modelFetchResult.error}`;
     replyText = replyText.replace(/\b(Google|Gemini|ChatGPT|Claude)\b/gi, 'PG1 Sovereign Core');
