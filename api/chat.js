@@ -893,7 +893,7 @@ export default async function handler(req, res) {
 
             if (supabaseUrl && supabaseKey) {
               var imgFileBuffer = base64ToUint8Array(base64Bytes);
-              var imgFileName = `generated_img_{Date.now()}.png`;
+          const generatedImageUrl = "";
               var imgUploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${imgFileName}`, {
                 method: 'POST',
                 headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': mimeType },
