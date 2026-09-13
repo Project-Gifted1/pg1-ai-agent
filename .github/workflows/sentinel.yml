@@ -4,22 +4,28 @@ on:
   workflow_dispatch:
 
 jobs:
-  patch-agent:
+  direct-repo-patch:
     runs-on: ubuntu-latest
     steps:
-      - name: Apply Surgical Patch via GH_PAT
-        run: |
-          cat << 'EOF' > patch.json
-          {
-            "prompt": "/patch",
-            "actionType": "APPLY_SURGICAL_PATCH",
-            "targetFile": "api/chat.js",
-            "search": "} else if (lower.startsWith('/sync-vault')) {",
-            "replace": "} else if (lower.startsWith('/commerce-status')) {\n        return sendJSON(200, { reply: `### [ COMMERCIAL GATEWAY STATUS ]\\n- **Gumroad Node**: ACTIVE\\n- **Product ID**: ${process.env.GUMROAD_PRODUCT_ID ? 'Linked' : 'MISSING'}\\n- **Telemetry Route**: /api/ioc (Awaiting Agent Checkout)` });\n      } else if (lower.startsWith('/sync-vault')) {"
-          }
-          EOF
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
           
-          curl -f -X POST https://pg1-ai-agent.vercel.app/api/chat \
-          -H "Content-Type: application/json" \
-          -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
-          -d @patch.json
+      - name: Native Code Injection
+        run: |
+          node -e '
+          const fs = require("fs");
+          const target = "} else if (lower.startsWith('\''/sync-vault'\'')) {";
+          const replace = "} else if (lower.startsWith('\''/commerce-status'\'')) { return sendJSON(200, { reply: \"### [ COMMERCIAL GATEWAY STATUS ]\\\\n- **Gumroad Node**: ACTIVE\\\\n- **Telemetry Route**: /api/ioc (Awaiting Agent Checkout)\" }); } else if (lower.startsWith('\''/sync-vault'\'')) {";
+          let code = fs.readFileSync("api/chat.js", "utf8");
+          fs.writeFileSync("api/chat.js", code.replace(target, replace));
+          '
+          
+      - name: Commit and Auto-Deploy
+        run: |
+          git config user.name "PG1 Sovereign Agent"
+          git config user.email "admin@pg1.local"
+          git add api/chat.js
+          git commit -m "Patch: Inject /commerce-status diagnostic route"
+          git push
