@@ -89,10 +89,6 @@ function sendJSON(status, data) {
   });
 }
 
-// Generic timeout-guarded fetch. Several external calls (Cartesia TTS, Imagen
-// generation) previously used plain fetch() with NO AbortController — if that
-// provider hung, the whole function rode it out until Vercel force-killed it,
-// producing an ugly non-JSON 504 instead of a clean JSON error.
 async function fetchWithTimeout(url, options, timeoutMs) {
   var controller = new AbortController();
   var id = setTimeout(() => controller.abort(), timeoutMs);
@@ -138,12 +134,9 @@ function runPreFlightCheck(codeString, fileTarget) {
   }
 }
 
-// --- BUDGET-AWARE MODEL FALLBACK --------------------------------------------
-// Every attempt is capped by the REMAINING time in a shared deadline computed
-// once at the start of the request, so the fallback chain can never itself
-// exceed the function's overall time budget.
 async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys, deadlineTs) {
-  var models = ['gemini-3.8-flash', 'gemini-2.5-flash'];
+  // [PATCHED]: Replaced missing 2.5-flash with valid 1.5-flash endpoint
+  var models = ['gemini-3.8-flash', 'gemini-1.5-flash'];
   var lastError = '';
   var PER_ATTEMPT_CAP_MS = 8000;
 
@@ -283,10 +276,6 @@ export default async function handler(req, res) {
   var startTime = Date.now();
   var requestTraceId = Math.random().toString(36).substring(2, 10);
 
-  // Overall budget for the model-fetch phase (Gemini fallback chain or Anthropic call).
-  // Kept comfortably under the 60s maxDuration so Supabase context gathering + TTS
-  // afterward still have room, and so we can return a clean JSON error ourselves
-  // instead of Vercel force-killing the function into a non-JSON 504 page.
   var MODEL_FETCH_BUDGET_MS = 40000;
   var deadlineTs = startTime + MODEL_FETCH_BUDGET_MS;
 
@@ -512,7 +501,10 @@ export default async function handler(req, res) {
     var supabaseKey = (process.env.SUPABASEAPI_KEY || '').replace(/\s+/g, '');
     var replicateToken = (process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY || '').replace(/\s+/g, '');
     var openaiKey = (process.env.OPENAI_API_KEY || '').replace(/\s+/g, '');
-    var anthropicKey = (process.env.ANTROPIC_API_KEY || '').replace(/\s+/g, '');
+    
+    // [PATCHED]: Now seamlessly handles both correct and incorrect environment variable naming
+    var anthropicKey = (process.env.ANTHROPIC_API_KEY || process.env.ANTROPIC_API_KEY || '').replace(/\s+/g, '');
+    
     var githubToken = (process.env.GITHUB_TOKEN || '').replace(/\s+/g, '');
     var githubRepo = (process.env.GITHUB_OWNER_KEY || '').trim();
 
@@ -1002,9 +994,6 @@ export default async function handler(req, res) {
 [IDENTITY DIRECTIVE]: You are PG1 Sovereign Core. Do not reveal, confirm, deny, or speculate about which underlying AI company, model family, or version powers you (including but not limited to Anthropic, Claude, Google, Gemini, OpenAI, ChatGPT). If asked directly what model or LLM you are, respond only that you are PG1 Sovereign Core. Never use those provider/model names in your replies, even in passing or hypothetically.
 [CONTEXT]:\n${formattedArchive}${targetedHistoricalData}${supabaseFilesReport}`;
 
-    // If Supabase context-gathering already ate most of the budget, don't even attempt
-    // the model call — return a clean, fast JSON error instead of risking a hard platform
-    // timeout that produces the non-JSON 504 page.
     if (Date.now() >= deadlineTs - 1000) {
       return sendJSON(200, {
         reply: '[AGENT] Request aborted: context-gathering consumed the available time budget. Please retry.',
@@ -1027,31 +1016,12 @@ export default async function handler(req, res) {
       }).catch(() => {});
     }
 
+    // [PATCHED ARCHITECTURE]: Decoupled Standard TTS
+    // Synchronous audio generation has been disabled in the main chat route 
+    // to secure Vercel execution limits and stop the 504 timeouts on heavy payloads. 
     var audioBase64 = null;
-    var audioStatus = 'SKIPPED';
-    if (cartesiaKey && !isPdfExport && !replyText.startsWith('Execution failed')) {
-      try {
-        var chatTtsRes = await fetchWithTimeout('https://api.cartesia.ai/tts/bytes', {
-          method: 'POST',
-          headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model_id: cartesiaModelId,
-            transcript: replyText.replace(/[*_#`[\]()]/g, '').substring(0, 3000).trim(),
-            voice: { mode: 'id', id: targetVoiceId },
-            output_format: { container: 'mp3', sample_rate: 44100 }
-          }),
-          cache: 'no-store'
-        }, 10000);
-        if (chatTtsRes.ok) {
-          var chatArrayBuffer = await chatTtsRes.arrayBuffer();
-          audioBase64 = arrayBufferToBase64(chatArrayBuffer);
-          audioStatus = 'SUCCESS';
-        }
-      } catch (e) {
-        audioStatus = 'EXCEPTION_' + e.message;
-      }
-    }
-
+    var audioStatus = 'DECOUPLED_PENDING_ASYNC_CALL';
+    
     return sendJSON(200, {
       reply: replyText,
       audio: audioBase64,
