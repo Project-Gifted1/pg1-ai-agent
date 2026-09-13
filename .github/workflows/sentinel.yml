@@ -2,16 +2,24 @@ name: PG1 Sovereign Sentinel
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 */6 * * *'
 
 jobs:
-  sentinel-check:
+  patch-agent:
     runs-on: ubuntu-latest
     steps:
-      - name: Query Vercel Diagnostic Gateway
+      - name: Apply Surgical Patch via GH_PAT
         run: |
+          cat << 'EOF' > patch.json
+          {
+            "prompt": "/patch",
+            "actionType": "APPLY_SURGICAL_PATCH",
+            "targetFile": "api/chat.js",
+            "search": "} else if (lower.startsWith('/sync-vault')) {",
+            "replace": "} else if (lower.startsWith('/commerce-status')) {\n        return sendJSON(200, { reply: `### [ COMMERCIAL GATEWAY STATUS ]\\n- **Gumroad Node**: ACTIVE\\n- **Product ID**: ${process.env.GUMROAD_PRODUCT_ID ? 'Linked' : 'MISSING'}\\n- **Telemetry Route**: /api/ioc (Awaiting Agent Checkout)` });\n      } else if (lower.startsWith('/sync-vault')) {"
+          }
+          EOF
+          
           curl -f -X POST https://pg1-ai-agent.vercel.app/api/chat \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
-          -d '{"prompt": "AUTH_VERIFY"}'
+          -d @patch.json
