@@ -276,7 +276,7 @@ export default async function handler(req, res) {
   if (urlPath === '/api/ioc' || urlPath === '/api/feeds/ioc') {
     var clientLicenseKey = getHeader('x-api-key') || (getHeader('authorization') || '').replace('Bearer ', '');
     if (!clientLicenseKey) {
-      return sendJSON(401, { error: 'Unauthorized: Missing Gumroad License Key in x-api-key header.' });
+      return sendJSON(401, { error: 'Unauthorized: Missing Commercial License Key in x-api-key header.' });
     }
     try {
       var gumroadRes = await fetch('https://api.gumroad.com/v2/licenses/verify', {
@@ -286,8 +286,14 @@ export default async function handler(req, res) {
       });
       var gumroadData = await gumroadRes.json();
       if (!gumroadData.success || (gumroadData.purchase && (gumroadData.purchase.refunded || gumroadData.purchase.chargebacked))) {
-        return sendJSON(403, { error: 'Forbidden: Invalid, expired, or refunded Gumroad License Key.' });
+        return sendJSON(403, { error: 'Forbidden: Invalid, expired, or refunded License Key.' });
       }
+
+      var parsedUrl = new URL(req.url, 'http://localhost');
+      var sinceParam = parsedUrl.searchParams.get('since');
+      var typeParam = parsedUrl.searchParams.get('type');
+      var minScoreParam = parsedUrl.searchParams.get('min_score') || '0';
+      var limitParam = Math.min(parseInt(parsedUrl.searchParams.get('limit') || '500', 10), 1000);
 
       var supUrl = (process.env.SUPABASE_URL || '').replace(/\s+/g, '');
       var supKey = (process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '').replace(/\s+/g, '');
@@ -302,45 +308,69 @@ export default async function handler(req, res) {
         })
       }).catch(() => {});
 
-      var threatRes = await fetch(`${supUrl}/rest/v1/threat_ioc_telemetry?select=*&order=last_seen.desc&limit=500`, {
+      var queryFilters = [
+        `select=*`,
+        `confidence_score=gte.${minScoreParam}`,
+        `order=last_seen.desc`,
+        `limit=${limitParam}`
+      ];
+      if (sinceParam) queryFilters.push(`last_seen=gte.${sinceParam}`);
+      if (typeParam) queryFilters.push(`indicator_type=eq.${typeParam}`);
+
+      var threatRes = await fetch(`${supUrl}/rest/v1/threat_ioc_telemetry?${queryFilters.join('&')}`, {
         headers: { 'apikey': supKey, 'Authorization': `Bearer ${supKey}` }
       });
       var rawTelemetry = threatRes.ok ? await threatRes.json() : [];
-      
-      var mitreMapping = {
-        'IPv4': { id: 'T1090', tactic: 'Command and Control', name: 'Proxy' },
-        'domain': { id: 'T1568', tactic: 'Command and Control', name: 'Dynamic Resolution' },
-        'URL': { id: 'T1189', tactic: 'Initial Access', name: 'Drive-by Compromise' },
-        'FileHash-SHA256': { id: 'T1204', tactic: 'Execution', name: 'User Execution' },
-        'FileHash-MD5': { id: 'T1204', tactic: 'Execution', name: 'User Execution' },
-        'CVE': { id: 'T1190', tactic: 'Initial Access', name: 'Exploit Public-Facing Application' }
-      };
 
-      var enrichedData = rawTelemetry.map(record => {
-        var mapping = mitreMapping[record.indicator_type] || { id: 'T1008', tactic: 'Command and Control', name: 'Fallback Channels' };
-        var baseScore = parseInt(record.confidence_score, 10) || 50;
-        var riskMultiplier = (record.indicator_type === 'CVE' || String(record.indicator_type).includes('FileHash')) ? 1.5 : 1.2;
-        
+      var stixObjects = rawTelemetry.map(record => {
+        var patternValue = record.stix_pattern;
+        if (!patternValue) {
+          if (record.indicator_type === 'IPv4') patternValue = `[ipv4-addr:value = '${record.value}']`;
+          else if (record.indicator_type === 'domain') patternValue = `[domain-name:value = '${record.value}']`;
+          else if (record.indicator_type === 'URL') patternValue = `[url:value = '${record.value}']`;
+          else if (String(record.indicator_type).includes('FileHash')) patternValue = `[file:hashes.'SHA-256' = '${record.value}']`;
+          else patternValue = `[custom-object:value = '${record.value}']`;
+        }
+
         return {
-          indicator: record.value,
-          type: record.indicator_type,
-          mitre_tactic: mapping.tactic,
-          mitre_technique_id: mapping.id,
-          mitre_technique_name: mapping.name,
-          proprietary_risk_score: Math.min(Math.round(baseScore * riskMultiplier), 100),
-          syndication_ready: true,
-          enriched_at: new Date().toISOString()
+          type: 'indicator',
+          spec_version: '2.1',
+          id: `indicator--${crypto.randomUUID()}`,
+          created: record.ingested_at || new Date().toISOString(),
+          modified: record.last_seen || new Date().toISOString(),
+          name: `${record.indicator_type} Threat Indicator - ${record.value}`,
+          description: `Telemetry feed record verified via ${record.verification_source || 'Sovereign Engine'}.`,
+          indicator_types: ['malicious-activity'],
+          pattern: patternValue,
+          pattern_type: 'stix',
+          valid_from: record.last_seen || new Date().toISOString(),
+          confidence: parseInt(record.confidence_score, 10) || 50,
+          external_references: [
+            {
+              source_name: record.verification_source || 'Autonomous Pipeline',
+              description: 'Cryptographic telemetry stream verification'
+            }
+          ]
         };
       });
 
-      return sendJSON(200, { 
-        type: 'enriched_threat_bundle', 
-        spec_version: '3.0', 
-        count: enrichedData.length, 
-        data: enrichedData 
+      var stixBundle = {
+        type: 'bundle',
+        id: `bundle--${crypto.randomUUID()}`,
+        objects: stixObjects
+      };
+
+      return new Response(JSON.stringify(stixBundle), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/stix+json; charset=utf-8',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key'
+        }
       });
     } catch (err) {
-      return sendJSON(500, { error: 'Internal Server Error: Vault connection failed.' });
+      return sendJSON(500, { error: 'Internal Server Error: Telemetry stream failed.' });
     }
   }
 
