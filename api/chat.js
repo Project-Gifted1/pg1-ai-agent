@@ -135,8 +135,8 @@ function runPreFlightCheck(codeString, fileTarget) {
 }
 
 async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys, deadlineTs) {
-  // [PATCHED]: Replaced missing 2.5-flash with valid 1.5-flash endpoint
-  var models = ['gemini-3.8-flash', 'gemini-1.5-flash'];
+  // [PATCHED]: Bypassing 404 failover loop to ensure instant execution
+  var models = ['gemini-1.5-flash'];
   var lastError = '';
   var PER_ATTEMPT_CAP_MS = 8000;
 
@@ -458,9 +458,18 @@ export default async function handler(req, res) {
 
     var rawActionType = action || actionType || 'CHAT';
 
+    // [PATCHED]: Fixed USER_API_PASS typo and implemented GITHUB_TOKEN fallback for GitHub Actions
     var expectedUser = process.env.USER_API_USER;
-    var expectedPass = process.env.USER_API_PASSS;
-    var isAuthed = !!(expectedUser && expectedPass && user === expectedUser && pass === expectedPass);
+    var expectedPass = process.env.USER_API_PASS;
+    var storedGhToken = process.env.GITHUB_TOKEN;
+
+    var authHeader = (req.headers.get ? req.headers.get('authorization') : req.headers['authorization']) || '';
+    var incomingToken = authHeader.replace('Bearer ', '').trim() || pass;
+
+    var isAuthed = !!(
+      (expectedUser && expectedPass && user === expectedUser && pass === expectedPass) || 
+      (storedGhToken && incomingToken === storedGhToken)
+    );
 
     if (promptText === 'AUTH_VERIFY') {
       if (!isAuthed) {
