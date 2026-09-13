@@ -460,7 +460,7 @@ export default async function handler(req, res) {
     promptText += vaultUploadLog;
 
     if (supabaseUrl && supabaseKey) {
-      const createTimedFetch = (url, options = {}, timeoutMs = 1500) => {
+      const createTimedFetch = (url, options = {}, timeoutMs = 5000) => {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeoutMs);
         return fetch(url, { ...options, signal: controller.signal, cache: 'no-store' })
