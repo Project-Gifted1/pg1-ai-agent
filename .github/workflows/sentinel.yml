@@ -11,7 +11,7 @@ jobs:
     steps:
       - name: Query Vercel Diagnostic Gateway
         run: |
-          curl -f -X POST ${{ secrets.VERCEL_APP_URL }}/api/chat \
+          curl -f -X POST https://pg1-ai-agent.vercel.app/api/chat \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
           -d '{"prompt": "AUTH_VERIFY"}'
