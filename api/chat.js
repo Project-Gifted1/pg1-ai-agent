@@ -125,7 +125,7 @@ function runPreFlightCheck(codeString, fileTarget) {
 }
 
 async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys) {
-  var models = ['gemini-2.5-flash', 'gemini-flash-latest'];
+  var models = ['gemini-1.5-flash', 'gemini-1.5-pro'];
   var lastError = '';
 
   for (var i = 0; i < geminiKeys.length; i++) {
@@ -135,7 +135,7 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
       try {
         var apiVersion = 'v1beta';
         var controller = new AbortController();
-        var timeoutId = setTimeout(() => controller.abort(), 8000); 
+        var timeoutId = setTimeout(() => controller.abort(), 30000); 
 
         var res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${currentKey}`, {
           method: 'POST',
@@ -210,7 +210,7 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
   }
   try {
     var controller = new AbortController();
-    var timeoutId = setTimeout(() => controller.abort(), 20000);
+    var timeoutId = setTimeout(() => controller.abort(), 30000);
 
     var content = buildAnthropicContentBlocks(promptText + contextData, mediaParts);
 
@@ -918,7 +918,7 @@ export default async function handler(req, res) {
 
     var audioBase64 = null;
     var audioStatus = 'SKIPPED';
-    if (cartesiaKey && !isPdfExport) {
+    if (cartesiaKey && !isPdfExport && !replyText.startsWith('Execution failed')) {
       try {
         var chatTtsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
           method: 'POST',
