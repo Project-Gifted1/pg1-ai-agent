@@ -306,7 +306,39 @@ export default async function handler(req, res) {
         headers: { 'apikey': supKey, 'Authorization': `Bearer ${supKey}` }
       });
       var rawTelemetry = threatRes.ok ? await threatRes.json() : [];
-      return sendJSON(200, { type: 'bundle', spec_version: '2.1', count: rawTelemetry.length, data: rawTelemetry });
+      
+      var mitreMapping = {
+        'IPv4': { id: 'T1090', tactic: 'Command and Control', name: 'Proxy' },
+        'domain': { id: 'T1568', tactic: 'Command and Control', name: 'Dynamic Resolution' },
+        'URL': { id: 'T1189', tactic: 'Initial Access', name: 'Drive-by Compromise' },
+        'FileHash-SHA256': { id: 'T1204', tactic: 'Execution', name: 'User Execution' },
+        'FileHash-MD5': { id: 'T1204', tactic: 'Execution', name: 'User Execution' },
+        'CVE': { id: 'T1190', tactic: 'Initial Access', name: 'Exploit Public-Facing Application' }
+      };
+
+      var enrichedData = rawTelemetry.map(record => {
+        var mapping = mitreMapping[record.indicator_type] || { id: 'T1008', tactic: 'Command and Control', name: 'Fallback Channels' };
+        var baseScore = parseInt(record.confidence_score, 10) || 50;
+        var riskMultiplier = (record.indicator_type === 'CVE' || String(record.indicator_type).includes('FileHash')) ? 1.5 : 1.2;
+        
+        return {
+          indicator: record.value,
+          type: record.indicator_type,
+          mitre_tactic: mapping.tactic,
+          mitre_technique_id: mapping.id,
+          mitre_technique_name: mapping.name,
+          proprietary_risk_score: Math.min(Math.round(baseScore * riskMultiplier), 100),
+          syndication_ready: true,
+          enriched_at: new Date().toISOString()
+        };
+      });
+
+      return sendJSON(200, { 
+        type: 'enriched_threat_bundle', 
+        spec_version: '3.0', 
+        count: enrichedData.length, 
+        data: enrichedData 
+      });
     } catch (err) {
       return sendJSON(500, { error: 'Internal Server Error: Vault connection failed.' });
     }
