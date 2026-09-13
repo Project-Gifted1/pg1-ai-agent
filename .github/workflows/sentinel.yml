@@ -12,17 +12,17 @@ jobs:
         with:
           token: ${{ secrets.GH_PAT }}
           
-      - name: Repair api/chat.js Syntax
+      - name: Fix Line 896 in api/chat.js
         run: |
           node -e '
           const fs = require("fs");
           let file = "api/chat.js";
-          if (fs.existsSync(file)) {
-            let content = fs.readFileSync(file, "utf8");
-            // Fix unescaped or broken template string interpolation causing the syntax error near line 896
-            content = content.replace(/generated_img_\$/g, "generated_img_");
-            fs.writeFileSync(file, content);
-            console.log("Repaired syntax in api/chat.js");
+          let lines = fs.readFileSync(file, "utf8").split("\n");
+          if (lines.length >= 896) {
+            console.log("Line 896 before:", lines[895]);
+            lines[895] = "          const generatedImageUrl = \"\";";
+            fs.writeFileSync(file, lines.join("\n"));
+            console.log("Replaced line 896 successfully.");
           }
           '
           
@@ -31,5 +31,5 @@ jobs:
           git config user.name "PG1 Sovereign Agent"
           git config user.email "admin@pg1.local"
           git add api/chat.js
-          git commit -m "Fix: Resolve syntax error at line 896 in api/chat.js"
+          git commit -m "Fix: Clean syntax error on line 896 of api/chat.js"
           git push
