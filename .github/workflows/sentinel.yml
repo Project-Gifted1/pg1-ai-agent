@@ -12,27 +12,30 @@ jobs:
         with:
           token: ${{ secrets.GH_PAT }}
           
-      - name: Inject Imagen 3 Endpoint Fix
+      - name: Write and Execute Patch Script
         run: |
-          node -e '
-          const fs = require("fs");
-          let files = ["api/image.js", "api/generate.js", "api/chat.js"];
+          cat << 'EOF' > patch_script.js
+          const fs = require('fs');
+          const files = ['api/image.js', 'api/generate.js', 'api/chat.js'];
           let patched = false;
           for (let file of files) {
             if (fs.existsSync(file)) {
-              let content = fs.readFileSync(file, "utf8");
-              if (content.includes("imagen-3.0")) {
-                content = content.replace(/imagen-3\.0[^"'\s]+/g, "imagen-3.0-generate-001");
+              let content = fs.readFileSync(file, 'utf8');
+              if (content.includes('imagen-3.0')) {
+                content = content.replace(/imagen-3\.0[^"'\s]+/g, 'imagen-3.0-generate-001');
                 fs.writeFileSync(file, content);
-                console.log("Patched model string in " + file);
+                console.log('Patched model string in ' + file);
                 patched = true;
               }
             }
           }
           if (!patched) {
-            console.log("Target file with imagen model string not found, verifying directory structure.");
+            console.log('Target file with imagen model string not found.');
           }
-          '
+          EOF
+          
+          node patch_script.js
+          rm patch_script.js
           
       - name: Commit and Push
         run: |
