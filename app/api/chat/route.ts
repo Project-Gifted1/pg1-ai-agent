@@ -1,3 +1,6 @@
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
 import { NextResponse } from 'next/server';
 
 export async function POST(req) {
@@ -13,7 +16,6 @@ export async function POST(req) {
     const { message, voiceEnabled = false } = body;
     const promptText = message.trim();
 
-    // Direct Command Vector: /audit-scrape
     if (promptText.startsWith('/audit-scrape')) {
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
       const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASEAPI_KEY;
@@ -81,7 +83,6 @@ export async function POST(req) {
       });
     }
 
-    // Standard LLM Inference Gateway using actual Vercel environment keys
     const apiKey = process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY || '';
     if (!apiKey) {
       return NextResponse.json(
