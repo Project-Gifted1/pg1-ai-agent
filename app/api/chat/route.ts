@@ -3,19 +3,101 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 
+// Edge-safe Base64 encoder for audio fallback
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 export async function POST(req) {
   try {
     const body = await req.json().catch(() => null);
-    if (!body || typeof body.message !== 'string') {
+    if (!body) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid payload.' },
+        { status: 400 }
+      );
+    }
+
+    // --- DECOUPLED TTS PIPELINE (Asynchronous Audio Endpoint) ---
+    if (body.action === 'tts') {
+      const { text, voiceId } = body;
+      if (!text) return NextResponse.json({ error: 'No text provided' }, { status: 400 });
+
+      const cartesiaKey = (process.env.CARTESIA_API_KEY || '').replace(/\s+/g, '');
+      const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '').replace(/\s+/g, '');
+      const supabaseKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASEAPI_KEY || '').replace(/\s+/g, '');
+      
+      if (!cartesiaKey) return NextResponse.json({ error: 'Missing TTS API Key' }, { status: 500 });
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+      const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
+        method: 'POST',
+        headers: { 
+          'Cartesia-Version': '2024-06-10', 
+          'X-API-Key': cartesiaKey, 
+          'Content-Type': 'application/json' 
+        },
+        body: JSON.stringify({
+          model_id: process.env.CARTESIA_MODEL_ID || 'sonic-3.6',
+          transcript: text.replace(/[*_#`[\]()]/g, '').substring(0, 3000).trim(),
+          voice: { mode: 'id', id: voiceId || 'a0e99841-438c-4a64-b679-ae501e7d6091' },
+          output_format: { container: 'mp3', sample_rate: 44100 }
+        }),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+
+      if (!ttsRes.ok) {
+        return NextResponse.json({ error: `Cartesia API Error: ${ttsRes.status}` }, { status: 502 });
+      }
+
+      const arrayBuffer = await ttsRes.arrayBuffer();
+      
+      if (supabaseUrl && supabaseKey) {
+        const fileName = `tts_${Date.now()}.mp3`;
+        const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${fileName}`, {
+          method: 'POST',
+          headers: { 
+            'apikey': supabaseKey, 
+            'Authorization': `Bearer ${supabaseKey}`, 
+            'Content-Type': 'audio/mp3' 
+          },
+          body: arrayBuffer
+        });
+        
+        if (uploadRes.ok) {
+          return NextResponse.json({ 
+            success: true, 
+            audioUrl: `${supabaseUrl}/storage/v1/object/public/pg1-vault/${fileName}` 
+          });
+        }
+      }
+
+      return NextResponse.json({ 
+        success: true, 
+        audioBase64: arrayBufferToBase64(arrayBuffer) 
+      });
+    }
+
+    // --- STANDARD LLM & AUDIT PIPELINE ---
+    const { message, voiceEnabled = false } = body;
+    if (typeof message !== 'string') {
       return NextResponse.json(
         { success: false, error: 'Invalid payload: "message" (string) is required.' },
         { status: 400 }
       );
     }
-
-    const { message, voiceEnabled = false } = body;
     const promptText = message.trim();
 
+    // Direct Command Vector: /audit-scrape
     if (promptText.startsWith('/audit-scrape')) {
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
       const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASEAPI_KEY;
@@ -83,6 +165,7 @@ export async function POST(req) {
       });
     }
 
+    // Standard LLM Inference Gateway
     const apiKey = process.env.GEMINI_API_KEY1 || process.env.GEMINI_API_KEY || '';
     if (!apiKey) {
       return NextResponse.json(
