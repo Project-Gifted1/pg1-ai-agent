@@ -11,12 +11,7 @@ jobs:
     steps:
       - name: Query Vercel Diagnostic Gateway
         run: |
-          ACTIVE_PASS="${{ secrets.USER_API_PASS }}"
-          if [ -z "$ACTIVE_PASS" ]; then
-            ACTIVE_PASS="${{ secrets.USER_API_PASSS }}"
-          fi
-          
           curl -f -X POST https://pg1-ai-agent.vercel.app/api/chat \
           -H "Content-Type: application/json" \
-          -d "{\"prompt\": \"AUTH_VERIFY\", \"user\": \"${{ secrets.USER_API_USER }}\", \"pass\": \"$ACTIVE_PASS\"}"
- 
+          -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
+          -d '{"prompt": "AUTH_VERIFY"}'
