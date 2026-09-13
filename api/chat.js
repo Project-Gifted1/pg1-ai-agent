@@ -134,9 +134,14 @@ function runPreFlightCheck(codeString, fileTarget) {
   }
 }
 
+// [FIXED]: 'gemini-1.5-flash' has been retired by Google and returns a 404 for every
+// single call — that's the "[PG1 Sovereign Core-1.5-flash ... 404]" error you saw
+// (the identity filter rewrites "Gemini" to "PG1 Sovereign Core" even inside error
+// messages, which is why a Gemini error looked like it came from somewhere else).
+// Restored to the current, valid model lineup (per Google's own docs): flash first
+// for speed, with a second flash-tier model as fallback if the first is unavailable.
 async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys, deadlineTs) {
-  // [PATCHED]: Bypassing 404 failover loop to ensure instant execution
-  var models = ['gemini-1.5-flash'];
+  var models = ['gemini-3.8-flash', 'gemini-3.6-flash'];
   var lastError = '';
   var PER_ATTEMPT_CAP_MS = 8000;
 
@@ -215,6 +220,14 @@ function buildAnthropicContentBlocks(promptText, mediaParts) {
   var finalText = promptText;
   if (skippedCount > 0) {
     finalText += `\n[NOTE: ${skippedCount} attached file(s) were skipped — unsupported type for vision input.]`;
+  }
+
+  // [FIXED]: Anthropic rejects any request whose text content block is empty with a 400
+  // ("text content blocks must be non-empty"). This happened whenever /claude was sent
+  // with nothing after it, since the prefix-stripping left an empty string. Guarded here
+  // so it's fixed regardless of which caller produced the empty prompt.
+  if (!finalText || !finalText.trim()) {
+    finalText = "The user switched to your advanced reasoning core without typing a message. Greet them briefly and ask what they'd like help with.";
   }
 
   blocks.push({ type: 'text', text: finalText });
@@ -458,7 +471,6 @@ export default async function handler(req, res) {
 
     var rawActionType = action || actionType || 'CHAT';
 
-    // [PATCHED]: Fixed USER_API_PASS typo and implemented GITHUB_TOKEN fallback for GitHub Actions
     var expectedUser = process.env.USER_API_USER;
     var expectedPass = process.env.USER_API_PASS;
     var storedGhToken = process.env.GITHUB_TOKEN;
@@ -510,10 +522,7 @@ export default async function handler(req, res) {
     var supabaseKey = (process.env.SUPABASEAPI_KEY || '').replace(/\s+/g, '');
     var replicateToken = (process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY || '').replace(/\s+/g, '');
     var openaiKey = (process.env.OPENAI_API_KEY || '').replace(/\s+/g, '');
-    
-    // [PATCHED]: Now seamlessly handles both correct and incorrect environment variable naming
     var anthropicKey = (process.env.ANTHROPIC_API_KEY || process.env.ANTROPIC_API_KEY || '').replace(/\s+/g, '');
-    
     var githubToken = (process.env.GITHUB_TOKEN || '').replace(/\s+/g, '');
     var githubRepo = (process.env.GITHUB_OWNER_KEY || '').trim();
 
@@ -636,8 +645,11 @@ export default async function handler(req, res) {
       } else if (lower.startsWith('/speak') || lower.startsWith('/tts')) {
         activeAction = 'SPEAK';
       } else if (lower.startsWith('/claude')) {
+        // [FIXED]: previously stripping '/claude' with nothing after it left promptText
+        // empty, which Anthropic rejects with a 400. Fall back to a friendly default.
         activeAction = 'CLAUDE_CHAT';
-        promptText = promptText.replace(/^\/claude/i, '').trim();
+        var strippedClaudePrompt = promptText.replace(/^\/claude/i, '').trim();
+        promptText = strippedClaudePrompt || "The user switched to your advanced reasoning core without typing a message. Greet them briefly and ask what they'd like help with.";
       } else if (isHeavyTask && anthropicKey) {
         activeAction = 'CLAUDE_CHAT';
       } else if (lower.startsWith('/threat-radar')) {
@@ -650,7 +662,12 @@ export default async function handler(req, res) {
           reply: `### [ VALIDATOR DRY-RUN RESULTS ]\n- **Pre-Flight Sandbox**: PASSED\n- **IoC Parsing**: 100% Valid Structure\n- **Supabase Fallback**: Verified Operational`,
           traceId: requestTraceId
         });
-      } else if (lower.startsWith('/commerce-status')) { return sendJSON(200, { reply: "### [ COMMERCIAL GATEWAY STATUS ]\\n- **Gumroad Node**: ACTIVE\\n- **Telemetry Route**: /api/ioc (Awaiting Agent Checkout)" }); } else if (lower.startsWith('/sync-vault')) {
+      } else if (lower.startsWith('/commerce-status')) {
+        return sendJSON(200, {
+          reply: `### [ COMMERCIAL GATEWAY STATUS ]\n- **Gumroad Node**: ACTIVE\n- **Telemetry Route**: /api/ioc (Awaiting Agent Checkout)`,
+          traceId: requestTraceId
+        });
+      } else if (lower.startsWith('/sync-vault')) {
         return sendJSON(200, {
           reply: `### [ VAULT SYNCHRONIZATION AUDIT ]\n- **Storage Layer**: pg1-vault (Cryptographic Zero-Trust)\n- **Payload Integrity**: 2/2 Payloads Confirmed Immutable (Zero Byte Drift)`,
           traceId: requestTraceId
@@ -1025,12 +1042,11 @@ export default async function handler(req, res) {
       }).catch(() => {});
     }
 
-    // [PATCHED ARCHITECTURE]: Decoupled Standard TTS
-    // Synchronous audio generation has been disabled in the main chat route 
-    // to secure Vercel execution limits and stop the 504 timeouts on heavy payloads. 
+    // Synchronous audio generation is decoupled from the main chat route to protect
+    // Vercel execution limits and avoid 504s on heavy payloads.
     var audioBase64 = null;
     var audioStatus = 'DECOUPLED_PENDING_ASYNC_CALL';
-    
+
     return sendJSON(200, {
       reply: replyText,
       audio: audioBase64,
