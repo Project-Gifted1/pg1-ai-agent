@@ -99,6 +99,11 @@ async function fetchWithTimeout(url, options, timeoutMs) {
   }
 }
 
+// FIX (#8): escape single quotes so a value can't break out of the STIX pattern string.
+function escapeStixValue(value) {
+  return String(value == null ? '' : value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
 async function resolveGithubPath(target, repoUrl, headers) {
   var cleanTarget = target.replace(/^\.\//, '').replace(/^\//, '');
   try {
@@ -229,50 +234,59 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
     return { text: null, error: 'No Anthropic API key configured.' };
   }
 
-  var remainingMs = deadlineTs ? (deadlineTs - Date.now()) : 20000;
-  if (remainingMs <= 1000) {
-    return { text: null, error: 'Aborted: model fetch time budget exhausted before Anthropic call.' };
-  }
-  var timeoutMs = Math.min(20000, remainingMs);
+  var models = ['claude-sonnet-5', 'claude-haiku-4-5-20251001'];
+  var lastError = '';
+  var PER_ATTEMPT_CAP_MS = 20000;
 
-  try {
-    var controller = new AbortController();
-    var timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  var content = buildAnthropicContentBlocks(promptText + contextData, mediaParts);
 
-    var content = buildAnthropicContentBlocks(promptText + contextData, mediaParts);
-
-    var res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20240620',
-        max_tokens: 4096,
-        system: sysInstruction,
-        messages: [{ role: 'user', content: content }]
-      }),
-      cache: 'no-store',
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      var data = await res.json();
-      if (data && data.content && data.content[0] && data.content[0].text) {
-        return { text: data.content[0].text, error: null };
-      }
-      return { text: null, error: 'Unexpected response shape from Anthropic API.' };
-    } else {
-      var errText = await res.text();
-      return { text: null, error: `Anthropic API ${res.status}: ${errText.substring(0, 150)}` };
+  for (var i = 0; i < models.length; i++) {
+    var remainingMs = deadlineTs ? (deadlineTs - Date.now()) : PER_ATTEMPT_CAP_MS;
+    if (remainingMs <= 1000) {
+      return { text: null, error: lastError || 'Aborted: model fetch time budget exhausted before Anthropic call.' };
     }
-  } catch (e) {
-    return { text: null, error: `Anthropic fetch exception: ${e.message}` };
+    var timeoutMs = Math.min(PER_ATTEMPT_CAP_MS, remainingMs);
+    var model = models[i];
+
+    try {
+      var controller = new AbortController();
+      var timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      var res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: model,
+          max_tokens: 4096,
+          system: sysInstruction,
+          messages: [{ role: 'user', content: content }]
+        }),
+        cache: 'no-store',
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        var data = await res.json();
+        if (data && data.content && data.content[0] && data.content[0].text) {
+          return { text: data.content[0].text, error: null };
+        }
+        lastError = `[${model}] Unexpected response shape from Anthropic API.`;
+      } else {
+        var errText = await res.text();
+        lastError = `[${model}] Anthropic API ${res.status}: ${errText.substring(0, 150)}`;
+      }
+    } catch (e) {
+      lastError = `[${model}] Anthropic fetch exception: ${e.message}`;
+    }
   }
+
+  return { text: null, error: lastError };
 }
 
 export default async function handler(req, res) {
@@ -303,7 +317,6 @@ export default async function handler(req, res) {
 
   var getHeader = (name) => req.headers.get ? req.headers.get(name) : req.headers[name];
 
-  // Supabase Fallback logic for GitHub / Vercel naming mismatches
   var supUrl = (process.env.SUPABASE_URL || '').replace(/\s+/g, '');
   var supKey = (process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLEKEY || '').replace(/\s+/g, '');
 
@@ -356,11 +369,12 @@ export default async function handler(req, res) {
       var stixObjects = rawTelemetry.map(record => {
         var patternValue = record.stix_pattern;
         if (!patternValue) {
-          if (record.indicator_type === 'IPv4') patternValue = `[ipv4-addr:value = '${record.value}']`;
-          else if (record.indicator_type === 'domain') patternValue = `[domain-name:value = '${record.value}']`;
-          else if (record.indicator_type === 'URL') patternValue = `[url:value = '${record.value}']`;
-          else if (String(record.indicator_type).includes('FileHash')) patternValue = `[file:hashes.'SHA-256' = '${record.value}']`;
-          else patternValue = `[custom-object:value = '${record.value}']`;
+          var safeValue = escapeStixValue(record.value);
+          if (record.indicator_type === 'IPv4') patternValue = `[ipv4-addr:value = '${safeValue}']`;
+          else if (record.indicator_type === 'domain') patternValue = `[domain-name:value = '${safeValue}']`;
+          else if (record.indicator_type === 'URL') patternValue = `[url:value = '${safeValue}']`;
+          else if (String(record.indicator_type).includes('FileHash')) patternValue = `[file:hashes.'SHA-256' = '${safeValue}']`;
+          else patternValue = `[custom-object:value = '${safeValue}']`;
         }
 
         return {
@@ -462,7 +476,6 @@ export default async function handler(req, res) {
 
     var rawActionType = action || actionType || 'CHAT';
 
-    // Universal Auth Mismatch Fallbacks
     var expectedUser = (process.env.USER_API_KEY || process.env.USER_API_USER || '').trim();
     var expectedPass = (process.env.USER_API_PASS || process.env.USER_API_PASSS || '').trim();
     var storedGhToken = process.env.GITHUB_TOKEN;
@@ -510,11 +523,10 @@ export default async function handler(req, res) {
 
     var cartesiaKey = (process.env.CARTESIA_API_KEY || '').replace(/\s+/g, '');
     var cartesiaModelId = process.env.CARTESIA_MODEL_ID || 'sonic-3.6';
-    
-    // Core Supabase vars populated at the top of the function
+
     var supabaseUrl = supUrl;
     var supabaseKey = supKey;
-    
+
     var replicateToken = (process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY || '').replace(/\s+/g, '');
     var openaiKey = (process.env.OPENAI_API_KEY || '').replace(/\s+/g, '');
     var anthropicKey = (process.env.ANTHROPIC_API_KEY || process.env.ANTROPIC_API_KEY || '').replace(/\s+/g, '');
@@ -806,8 +818,7 @@ export default async function handler(req, res) {
     var cartesiaVoiceMap = {
       'christopher': 'a0e99841-438c-4a64-b679-ae501e7d6091',
       'steffan': '996f8664-9669-42b7-a068-1eb6e55c328d',
-      'ryan': '1249b380-6058-450f-a496-e17f0dbfcebc',
-      'aria': '996f8664-9669-42b7-a068-1eb6e55c328d'
+      'ryan': '1249b380-6058-450f-a496-e17f0dbfcebc'
     };
     var targetVoiceId = cartesiaVoiceMap[voice] || cartesiaVoiceMap['christopher'];
 
@@ -868,9 +879,10 @@ export default async function handler(req, res) {
       var engineUsed = '';
       var apiErrors = [];
 
+      var imagenModel = 'imagen-4.0-generate-001';
       for (var k = 0; k < geminiKeys.length; k++) {
         try {
-          var imgRes = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${geminiKeys[k]}`, {
+          var imgRes = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${imagenModel}:predict?key=${geminiKeys[k]}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -901,7 +913,7 @@ export default async function handler(req, res) {
               imageUrl = `data:${mimeType};base64,${base64Bytes}`;
             }
 
-            engineUsed = `Google (Imagen 3 - Key ${k + 1})`;
+            engineUsed = `Google (Imagen 4 - Key ${k + 1})`;
             break;
           } else {
             apiErrors.push(`Imagen key ${k + 1}: ${imgRes.status} ${JSON.stringify(imgData).substring(0, 120)}`);
@@ -911,7 +923,56 @@ export default async function handler(req, res) {
         }
       }
 
-      // Replicate fallback utilizing the Official Model Endpoint (No Version Hash Required)
+      if (!imageUrl) {
+        var nanoBananaModel = 'gemini-3.1-flash-image';
+        for (var n = 0; n < geminiKeys.length; n++) {
+          try {
+            var nbRes = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${nanoBananaModel}:generateContent?key=${geminiKeys[n]}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: premiumPrompt }] }],
+                generationConfig: {
+                  responseModalities: ['IMAGE'],
+                  imageConfig: { aspectRatio: '16:9' }
+                }
+              }),
+              cache: 'no-store'
+            }, 15000);
+            var nbData = await nbRes.json();
+            var nbPart = nbRes.ok && nbData.candidates && nbData.candidates[0] && nbData.candidates[0].content &&
+              nbData.candidates[0].content.parts.find(p => p.inlineData && p.inlineData.data);
+
+            if (nbPart) {
+              var nbMime = nbPart.inlineData.mimeType || 'image/png';
+              var nbBytes = nbPart.inlineData.data;
+
+              if (supabaseUrl && supabaseKey) {
+                var nbFileBuffer = base64ToUint8Array(nbBytes);
+                var nbFileName = `generated_img_${Date.now()}.png`;
+                var nbUploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${nbFileName}`, {
+                  method: 'POST',
+                  headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': nbMime },
+                  body: nbFileBuffer
+                });
+                imageUrl = nbUploadRes.ok
+                  ? `${supabaseUrl}/storage/v1/object/public/pg1-vault/${nbFileName}`
+                  : `data:${nbMime};base64,${nbBytes}`;
+              } else {
+                imageUrl = `data:${nbMime};base64,${nbBytes}`;
+              }
+
+              engineUsed = `Google (Gemini Native Image - Key ${n + 1})`;
+              break;
+            } else {
+              apiErrors.push(`Nano Banana key ${n + 1}: ${nbRes.status} ${JSON.stringify(nbData).substring(0, 120)}`);
+            }
+          } catch (e) {
+            apiErrors.push(`Nano Banana key ${n + 1} exception: ${e.message}`);
+          }
+        }
+      }
+
       if (!imageUrl && replicateToken) {
         try {
           var createRes = await fetchWithTimeout('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
@@ -925,26 +986,33 @@ export default async function handler(req, res) {
             })
           }, 10000);
           var createData = await createRes.json();
-          var predictionUrl = createData && createData.urls && createData.urls.get;
-          var replicateOutput = null;
-          var pollDeadline = Date.now() + 20000;
-          while (predictionUrl && Date.now() < pollDeadline) {
-            await new Promise(r => setTimeout(r, 1500));
-            var pollRes = await fetchWithTimeout(predictionUrl, {
-              headers: { 'Authorization': `Bearer ${replicateToken}` }
-            }, 8000);
-            var pollData = await pollRes.json();
-            if (pollData.status === 'succeeded') {
-              replicateOutput = Array.isArray(pollData.output) ? pollData.output[0] : pollData.output;
-              break;
-            } else if (pollData.status === 'failed' || pollData.status === 'canceled') {
-              apiErrors.push(`Replicate: ${pollData.status}`);
-              break;
+
+          if (!createRes.ok) {
+            apiErrors.push(`Replicate create: ${createRes.status} ${JSON.stringify(createData).substring(0, 150)}`);
+          } else {
+            var predictionUrl = createData && createData.urls && createData.urls.get;
+            var replicateOutput = null;
+            var pollDeadline = Date.now() + 20000;
+            while (predictionUrl && Date.now() < pollDeadline) {
+              await new Promise(r => setTimeout(r, 1500));
+              var pollRes = await fetchWithTimeout(predictionUrl, {
+                headers: { 'Authorization': `Bearer ${replicateToken}` }
+              }, 8000);
+              var pollData = await pollRes.json();
+              if (pollData.status === 'succeeded') {
+                replicateOutput = Array.isArray(pollData.output) ? pollData.output[0] : pollData.output;
+                break;
+              } else if (pollData.status === 'failed' || pollData.status === 'canceled') {
+                apiErrors.push(`Replicate: ${pollData.status} ${pollData.error ? JSON.stringify(pollData.error).substring(0, 150) : ''}`);
+                break;
+              }
             }
-          }
-          if (replicateOutput) {
-            imageUrl = replicateOutput;
-            engineUsed = 'Replicate (Flux Schnell)';
+            if (replicateOutput) {
+              imageUrl = replicateOutput;
+              engineUsed = 'Replicate (Flux Schnell)';
+            } else if (predictionUrl && !imageUrl) {
+              apiErrors.push('Replicate: timed out waiting for prediction to complete.');
+            }
           }
         } catch (e) {
           apiErrors.push(`Replicate exception: ${e.message}`);
@@ -957,8 +1025,13 @@ export default async function handler(req, res) {
         engineUsed = `Basic Fallback`;
       }
 
+      var imageReply = `[SYSTEM] Image Rendered using **${engineUsed}**.\nPrompt: "${cleanPrompt}"`;
+      if (engineUsed !== 'Google (Imagen 4 - Key 1)' && apiErrors.length > 0) {
+        imageReply += `\n[DIAGNOSTIC] Prior engine attempts failed:\n${apiErrors.map(e => `• ${e}`).join('\n')}`;
+      }
+
       return sendJSON(200, {
-        reply: `[SYSTEM] Image Rendered using **${engineUsed}**.\nPrompt: "${cleanPrompt}"`,
+        reply: imageReply,
         image: imageUrl,
         imageStatus: 'SUCCESS',
         traceId: requestTraceId
@@ -1067,8 +1140,21 @@ export default async function handler(req, res) {
     var modelFetchResult = (activeAction === 'CLAUDE_CHAT')
       ? await fetchAnthropicCore(promptText, sysInstruction, mediaParts, '', anthropicKey, deadlineTs)
       : await fetchGeminiCore(promptText, sysInstruction, mediaParts, '', geminiKeys, deadlineTs);
+
+    if (activeAction === 'CLAUDE_CHAT' && !modelFetchResult.text && geminiKeys.length > 0 && Date.now() < deadlineTs - 1000) {
+      var anthropicError = modelFetchResult.error;
+      modelFetchResult = await fetchGeminiCore(promptText, sysInstruction, mediaParts, '', geminiKeys, deadlineTs);
+      if (modelFetchResult.text) {
+        modelFetchResult.error = null;
+      } else {
+        modelFetchResult.error = `Anthropic failed (${anthropicError}); Gemini fallback also failed (${modelFetchResult.error})`;
+      }
+    }
+
     var replyText = modelFetchResult.text || `Execution failed. Model Err: ${modelFetchResult.error}`;
-    replyText = replyText.replace(/\b(Google|Gemini|ChatGPT|Claude)\b/gi, 'PG1 Sovereign Core');
+    if (modelFetchResult.text) {
+      replyText = replyText.replace(/\b(Google|Gemini|ChatGPT|Claude)\b/gi, 'PG1 Sovereign Core');
+    }
 
     if (supabaseUrl && supabaseKey && !replyText.startsWith('Execution failed') && !isPdfExport) {
       fetch(`${supabaseUrl}/rest/v1/messages`, {
