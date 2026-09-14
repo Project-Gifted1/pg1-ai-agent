@@ -1,5 +1,4 @@
 export const config = {
-  runtime: 'edge',
   maxDuration: 60
 };
 
@@ -77,16 +76,15 @@ function arrayBufferToBase64(buffer) {
   return base64;
 }
 
-function sendJSON(status, data) {
-  return new Response(JSON.stringify(data), {
-    status: status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key'
-    }
-  });
+// Vercel Node.js Functions use the classic (req, res) contract, not the Web
+// Fetch Request/Response objects Edge functions use. sendJSON now writes
+// directly to `res` instead of constructing and returning a Response object.
+function sendJSON(res, status, data) {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key');
+  res.status(status).json(data);
 }
 
 async function fetchWithTimeout(url, options, timeoutMs) {
@@ -99,7 +97,6 @@ async function fetchWithTimeout(url, options, timeoutMs) {
   }
 }
 
-// FIX (#8): escape single quotes so a value can't break out of the STIX pattern string.
 function escapeStixValue(value) {
   return String(value == null ? '' : value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
@@ -236,7 +233,7 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
 
   var models = ['claude-sonnet-5', 'claude-haiku-4-5-20251001'];
   var lastError = '';
-  var PER_ATTEMPT_CAP_MS = 20000;
+  var PER_ATTEMPT_CAP_MS = 15000;
 
   var content = buildAnthropicContentBlocks(promptText + contextData, mediaParts);
 
@@ -293,18 +290,15 @@ export default async function handler(req, res) {
   var startTime = Date.now();
   var requestTraceId = Math.random().toString(36).substring(2, 10);
 
-  var MODEL_FETCH_BUDGET_MS = 40000;
+  var MODEL_FETCH_BUDGET_MS = 45000;
   var deadlineTs = startTime + MODEL_FETCH_BUDGET_MS;
 
   if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key'
-      }
-    });
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key');
+    res.status(200).end();
+    return;
   }
 
   var urlPath = '';
@@ -315,7 +309,7 @@ export default async function handler(req, res) {
     urlPath = '';
   }
 
-  var getHeader = (name) => req.headers.get ? req.headers.get(name) : req.headers[name];
+  var getHeader = (name) => req.headers.get ? req.headers.get(name) : req.headers[String(name).toLowerCase()];
 
   var supUrl = (process.env.SUPABASE_URL || '').replace(/\s+/g, '');
   var supKey = (process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLEKEY || '').replace(/\s+/g, '');
@@ -323,7 +317,7 @@ export default async function handler(req, res) {
   if (urlPath === '/api/ioc' || urlPath === '/api/feeds/ioc') {
     var clientLicenseKey = getHeader('x-api-key') || (getHeader('authorization') || '').replace('Bearer ', '');
     if (!clientLicenseKey) {
-      return sendJSON(401, { error: 'Unauthorized: Missing Commercial License Key in x-api-key header.' });
+      return sendJSON(res, 401, { error: 'Unauthorized: Missing Commercial License Key in x-api-key header.' });
     }
     try {
       var gumroadRes = await fetch('https://api.gumroad.com/v2/licenses/verify', {
@@ -333,7 +327,7 @@ export default async function handler(req, res) {
       });
       var gumroadData = await gumroadRes.json();
       if (!gumroadData.success || (gumroadData.purchase && (gumroadData.purchase.refunded || gumroadData.purchase.chargebacked))) {
-        return sendJSON(403, { error: 'Forbidden: Invalid, expired, or refunded License Key.' });
+        return sendJSON(res, 403, { error: 'Forbidden: Invalid, expired, or refunded License Key.' });
       }
 
       var parsedUrl = new URL(req.url, 'http://localhost');
@@ -405,32 +399,32 @@ export default async function handler(req, res) {
         objects: stixObjects
       };
 
-      return new Response(JSON.stringify(stixBundle), {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/stix+json; charset=utf-8',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key'
-        }
-      });
+      res.setHeader('Content-Type', 'application/stix+json; charset=utf-8');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key');
+      res.status(200).end(JSON.stringify(stixBundle));
+      return;
     } catch (err) {
-      return sendJSON(500, { error: 'Internal Server Error: Telemetry stream failed.' });
+      return sendJSON(res, 500, { error: 'Internal Server Error: Telemetry stream failed.' });
     }
   }
 
   if (req.method !== 'POST') {
-    return sendJSON(405, { error: 'Method Not Allowed', traceId: requestTraceId });
+    return sendJSON(res, 405, { error: 'Method Not Allowed', traceId: requestTraceId });
   }
 
   try {
     var reqBody = {};
     try {
-      if (typeof req.json === 'function') {
+      if (req.body && typeof req.body === 'object') {
+        // Vercel's Node.js runtime auto-parses JSON request bodies into req.body.
+        reqBody = req.body;
+      } else if (typeof req.body === 'string' && req.body.trim()) {
+        reqBody = JSON.parse(req.body);
+      } else if (typeof req.json === 'function') {
+        // Defensive fallback if this ever runs against a Web-standard Request.
         reqBody = await req.json();
-      } else {
-        var bodyText = await req.text();
-        reqBody = JSON.parse(bodyText);
       }
     } catch (parseErr) {
       reqBody = {};
@@ -466,7 +460,7 @@ export default async function handler(req, res) {
           targetFile = parsedPrompt.targetFile || targetFile;
           targetRepo = parsedPrompt.targetRepo || targetRepo;
         } else if (mappedAction === 'force_state_update' || mappedAction === 'bypass_interceptor') {
-          return sendJSON(401, { reply: `[AGENT] Unauthorized.`, traceId: requestTraceId });
+          return sendJSON(res, 401, { reply: `[AGENT] Unauthorized.`, traceId: requestTraceId });
         }
         pendingCode = parsedPrompt.pendingCode || pendingCode;
         user = parsedPrompt.user || user;
@@ -490,9 +484,9 @@ export default async function handler(req, res) {
 
     if (promptText === 'AUTH_VERIFY') {
       if (!isAuthed) {
-        return sendJSON(401, { success: false, reply: 'Access Denied', traceId: requestTraceId });
+        return sendJSON(res, 401, { success: false, reply: 'Access Denied', traceId: requestTraceId });
       }
-      return sendJSON(200, {
+      return sendJSON(res, 200, {
         success: true, authenticated: true, isValid: true,
         status: 'SUCCESS', reply: 'Access Granted', traceId: requestTraceId
       });
@@ -506,12 +500,12 @@ export default async function handler(req, res) {
           headers: { 'X-API-Key': smokeKey || '' }
         });
         var smokeData = await smokeRes.text();
-        return sendJSON(200, {
+        return sendJSON(res, 200, {
           reply: `[LIVE RENDER SMOKE TEST]\nStatus: ${smokeRes.status} ${smokeRes.statusText}\nResponse: ${smokeData}`,
           traceId: requestTraceId
         });
       } catch (err) {
-        return sendJSON(200, { reply: `[SMOKE TEST FAILED]: ${err.message}`, traceId: requestTraceId });
+        return sendJSON(res, 200, { reply: `[SMOKE TEST FAILED]: ${err.message}`, traceId: requestTraceId });
       }
     }
 
@@ -638,14 +632,14 @@ export default async function handler(req, res) {
       var isHeavyTask = lower.length > 300 || /analyze|architect|compile|comprehensive|strategy|trillion|revenue strike|report|complex|debug/i.test(lower);
 
       if (lower === '/status' || lower === '/status update' || lower === 'status') {
-        return sendJSON(200, {
+        return sendJSON(res, 200, {
           reply: `### [ SYSTEM STATUS & TELEMETRY ]\n- **Runtime**: Vercel Serverless Edge (iad1 Primary Cluster)\n- **Vault Status**: ${supabaseStatus}\n- **Active Threat Indicators**: 20 Validated IoCs (OTX / NVD)\n- **Fleet Target**: 1,500 Sovereign Nodes // €750k Facility`,
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/image') || /generate.*image|create.*image|make.*image|draw|render.*image|picture of/i.test(lower)) {
         activeAction = 'GENERATE_IMAGE';
       } else if (lower.startsWith('/video') || /generate.*video|create.*video|make.*video|animate/i.test(lower)) {
-        return sendJSON(200, {
+        return sendJSON(res, 200, {
           reply: `[VISION MATRIX] Generative video disabled. To feed live environmental visual data into the core, tap the 👁️ (eye) icon to activate your device's camera or select screen display.`,
           traceId: requestTraceId
         });
@@ -658,32 +652,32 @@ export default async function handler(req, res) {
       } else if (isHeavyTask && anthropicKey) {
         activeAction = 'CLAUDE_CHAT';
       } else if (lower.startsWith('/threat-radar')) {
-        return sendJSON(200, {
+        return sendJSON(res, 200, {
           reply: `### [ THREAT RADAR TELEMETRY ]\n- **Ingested Feeds**: AlienVault OTX, ThreatFox, NVD\n- **Indicator Count**: 20 High-Confidence Records\n- **Pipeline State**: Automated Temporal Cron Synchronized`,
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/test-validator')) {
-        return sendJSON(200, {
+        return sendJSON(res, 200, {
           reply: `### [ VALIDATOR DRY-RUN RESULTS ]\n- **Pre-Flight Sandbox**: PASSED\n- **IoC Parsing**: 100% Valid Structure\n- **Supabase Fallback**: Verified Operational`,
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/commerce-status')) {
-        return sendJSON(200, {
+        return sendJSON(res, 200, {
           reply: `### [ COMMERCIAL GATEWAY STATUS ]\n- **Gumroad Node**: ACTIVE\n- **Telemetry Route**: /api/ioc (Awaiting Agent Checkout)`,
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/sync-vault')) {
-        return sendJSON(200, {
+        return sendJSON(res, 200, {
           reply: `### [ VAULT SYNCHRONIZATION AUDIT ]\n- **Storage Layer**: pg1-vault (Cryptographic Zero-Trust)\n- **Payload Integrity**: 2/2 Payloads Confirmed Immutable (Zero Byte Drift)`,
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/export')) {
-        return sendJSON(200, {
+        return sendJSON(res, 200, {
           reply: `### [ VAULT CONTEXT EXPORT ]\n\n${formattedArchive || 'No prior matrix context.'}`,
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/auth')) {
-        return sendJSON(200, {
+        return sendJSON(res, 200, {
           success: isAuthed,
           authenticated: isAuthed,
           isValid: isAuthed,
@@ -701,7 +695,7 @@ export default async function handler(req, res) {
         if (lower.includes('cron')) targetFile = '.github/workflows/temporal-cron.yml';
         if (lower.includes('validator')) targetFile = 'threat_validator.py';
       } else if (lower.startsWith('/vault')) {
-        return sendJSON(200, {
+        return sendJSON(res, 200, {
           reply: `**[SYSTEM] VAULT MATRIX SYNC COMPLETE:**\n\n${formattedArchive || 'No prior matrix context.'}`,
           traceId: requestTraceId
         });
@@ -710,21 +704,21 @@ export default async function handler(req, res) {
 
     if (activeAction === 'APPLY_SURGICAL_PATCH') {
       if (!isAuthed) {
-        return sendJSON(401, { reply: `[AGENT] Patch Aborted: Authentication required.`, traceId: requestTraceId });
+        return sendJSON(res, 401, { reply: `[AGENT] Patch Aborted: Authentication required.`, traceId: requestTraceId });
       }
       try {
         var patchData = {};
         try {
           patchData = JSON.parse(promptText.replace('/patch', '').trim());
         } catch (e) {
-          return sendJSON(200, { reply: `[AGENT] Patch Error: Invalid JSON payload for surgical patch.` });
+          return sendJSON(res, 200, { reply: `[AGENT] Patch Error: Invalid JSON payload for surgical patch.` });
         }
 
         var searchStr = patchData.search;
         var replaceStr = patchData.replace;
         var targetPathFile = patchData.targetFile || targetFile;
         if (!searchStr || !replaceStr) {
-          return sendJSON(200, { reply: `[AGENT] Patch Error: Missing 'search' or 'replace' parameters.` });
+          return sendJSON(res, 200, { reply: `[AGENT] Patch Error: Missing 'search' or 'replace' parameters.` });
         }
 
         var ghApiHeaders = {
@@ -745,7 +739,7 @@ export default async function handler(req, res) {
         var refRes = await fetch(`${patchRepoBaseUrl}/git/ref/heads/main`, { headers: ghApiHeaders, cache: 'no-store' });
         if (!refRes.ok) {
           var refErr = await refRes.text();
-          return sendJSON(200, { reply: `[AGENT] Patch Failed: Could not resolve main branch. API: ${refRes.status} ${refErr}` });
+          return sendJSON(res, 200, { reply: `[AGENT] Patch Failed: Could not resolve main branch. API: ${refRes.status} ${refErr}` });
         }
         var refData = await refRes.json();
         var mainSha = refData.object.sha;
@@ -763,14 +757,14 @@ export default async function handler(req, res) {
 
         if (!fileRes.ok) {
           var fileErr = await fileRes.text();
-          return sendJSON(200, { reply: `[AGENT] Patch Failed: Target file ${actualFilePath} not found. API Code: ${fileRes.status} - ${fileErr}` });
+          return sendJSON(res, 200, { reply: `[AGENT] Patch Failed: Target file ${actualFilePath} not found. API Code: ${fileRes.status} - ${fileErr}` });
         }
 
         var fileJson = await fileRes.json();
         var currentContent = decodeBase64(fileJson.content);
 
         if (!currentContent.includes(searchStr)) {
-          return sendJSON(200, { reply: `[AGENT] Patch Aborted: Search block exact match not found in ${actualFilePath}.` });
+          return sendJSON(res, 200, { reply: `[AGENT] Patch Aborted: Search block exact match not found in ${actualFilePath}.` });
         }
 
         var updatedContent = currentContent.replace(searchStr, replaceStr);
@@ -790,7 +784,7 @@ export default async function handler(req, res) {
 
         if (!commitRes.ok) {
           var commitErr = await commitRes.text();
-          return sendJSON(200, { reply: `[AGENT] Patch Failed: Could not commit modified file. Code: ${commitRes.status} - ${commitErr}` });
+          return sendJSON(res, 200, { reply: `[AGENT] Patch Failed: Could not commit modified file. Code: ${commitRes.status} - ${commitErr}` });
         }
 
         var patchPrRes = await fetch(`${patchRepoBaseUrl}/pulls`, {
@@ -806,12 +800,12 @@ export default async function handler(req, res) {
         });
 
         var patchPrData = await patchPrRes.json();
-        return sendJSON(200, {
+        return sendJSON(res, 200, {
           reply: patchPrRes.ok ? `[AGENT] Surgical Patch Applied & PR Opened: ${patchPrData.html_url}` : `[AGENT] Code updated on branch, but PR failed.`
         });
 
       } catch (err) {
-        return sendJSON(200, { reply: `[AGENT] Surgical Patch Exception: ${err.message}` });
+        return sendJSON(res, 200, { reply: `[AGENT] Surgical Patch Exception: ${err.message}` });
       }
     }
 
@@ -862,7 +856,7 @@ export default async function handler(req, res) {
           audioStatus = 'EXCEPTION_' + e.message;
         }
       }
-      return sendJSON(200, {
+      return sendJSON(res, 200, {
         reply: `[DIAGNOSTIC] Voice pipeline test executed.\nStatus: ${audioStatus}`,
         audio: audioBase64,
         audioStatus: audioStatus,
@@ -879,9 +873,13 @@ export default async function handler(req, res) {
       var engineUsed = '';
       var apiErrors = [];
 
+      var IMAGE_GEN_BUDGET_MS = 45000;
+      var imageDeadlineTs = Date.now() + IMAGE_GEN_BUDGET_MS;
+
       var imagenModel = 'imagen-4.0-generate-001';
-      for (var k = 0; k < geminiKeys.length; k++) {
+      for (var k = 0; k < geminiKeys.length && Date.now() < imageDeadlineTs - 1000; k++) {
         try {
+          var imagenRemainingMs = imageDeadlineTs - Date.now();
           var imgRes = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${imagenModel}:predict?key=${geminiKeys[k]}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -890,7 +888,7 @@ export default async function handler(req, res) {
               parameters: { sampleCount: 1, aspectRatio: "16:9" }
             }),
             cache: 'no-store'
-          }, 15000);
+          }, Math.min(8000, imagenRemainingMs));
           var imgData = await imgRes.json();
           if (imgRes.ok && imgData.predictions && imgData.predictions.length > 0) {
             var mimeType = imgData.predictions[0].mimeType || 'image/png';
@@ -923,10 +921,11 @@ export default async function handler(req, res) {
         }
       }
 
-      if (!imageUrl) {
+      if (!imageUrl && Date.now() < imageDeadlineTs - 1000) {
         var nanoBananaModel = 'gemini-3.1-flash-image';
-        for (var n = 0; n < geminiKeys.length; n++) {
+        for (var n = 0; n < geminiKeys.length && Date.now() < imageDeadlineTs - 1000; n++) {
           try {
+            var nanoRemainingMs = imageDeadlineTs - Date.now();
             var nbRes = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${nanoBananaModel}:generateContent?key=${geminiKeys[n]}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -938,7 +937,7 @@ export default async function handler(req, res) {
                 }
               }),
               cache: 'no-store'
-            }, 15000);
+            }, Math.min(8000, nanoRemainingMs));
             var nbData = await nbRes.json();
             var nbPart = nbRes.ok && nbData.candidates && nbData.candidates[0] && nbData.candidates[0].content &&
               nbData.candidates[0].content.parts.find(p => p.inlineData && p.inlineData.data);
@@ -973,8 +972,9 @@ export default async function handler(req, res) {
         }
       }
 
-      if (!imageUrl && replicateToken) {
+      if (!imageUrl && replicateToken && Date.now() < imageDeadlineTs - 2000) {
         try {
+          var replicateRemainingMs = imageDeadlineTs - Date.now();
           var createRes = await fetchWithTimeout('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
             method: 'POST',
             headers: {
@@ -984,7 +984,7 @@ export default async function handler(req, res) {
             body: JSON.stringify({
               input: { prompt: premiumPrompt }
             })
-          }, 10000);
+          }, Math.min(6000, replicateRemainingMs));
           var createData = await createRes.json();
 
           if (!createRes.ok) {
@@ -992,7 +992,7 @@ export default async function handler(req, res) {
           } else {
             var predictionUrl = createData && createData.urls && createData.urls.get;
             var replicateOutput = null;
-            var pollDeadline = Date.now() + 20000;
+            var pollDeadline = Math.min(Date.now() + 20000, imageDeadlineTs);
             while (predictionUrl && Date.now() < pollDeadline) {
               await new Promise(r => setTimeout(r, 1500));
               var pollRes = await fetchWithTimeout(predictionUrl, {
@@ -1030,7 +1030,7 @@ export default async function handler(req, res) {
         imageReply += `\n[DIAGNOSTIC] Prior engine attempts failed:\n${apiErrors.map(e => `• ${e}`).join('\n')}`;
       }
 
-      return sendJSON(200, {
+      return sendJSON(res, 200, {
         reply: imageReply,
         image: imageUrl,
         imageStatus: 'SUCCESS',
@@ -1040,20 +1040,20 @@ export default async function handler(req, res) {
 
     if (activeAction === 'ACCEPT_AUTHORIZATION') {
       if (!isAuthed) {
-        return sendJSON(401, { reply: `[AGENT] Commit Aborted: Authentication required.`, traceId: requestTraceId });
+        return sendJSON(res, 401, { reply: `[AGENT] Commit Aborted: Authentication required.`, traceId: requestTraceId });
       }
 
       if (!pendingCode || pendingCode.trim() === '') {
         if (targetFile && targetFile.includes('temporal-cron.yml')) {
           pendingCode = `name: Sovereign Threat Temporal Cron Engine\n\non:\n  schedule:\n    - cron: '0 */6 * * *'\n  workflow_dispatch:\n\njobs:\n  harvest-and-export:\n    runs-on: ubuntu-latest\n    steps:\n      - name: Checkout Repository\n        uses: actions/checkout@v4\n`;
         } else {
-          return sendJSON(200, { reply: `[AGENT] State Override Authorized: Simulated execution successful.`, traceId: requestTraceId });
+          return sendJSON(res, 200, { reply: `[AGENT] State Override Authorized: Simulated execution successful.`, traceId: requestTraceId });
         }
       }
 
       var preFlight = runPreFlightCheck(pendingCode, targetFile);
       if (!isAuthorizedAction || !preFlight.passed || !githubToken || !pendingCode) {
-        return sendJSON(200, { reply: `[AGENT] Commit Aborted: Validation Failed. (${preFlight.log})`, traceId: requestTraceId });
+        return sendJSON(res, 200, { reply: `[AGENT] Commit Aborted: Validation Failed. (${preFlight.log})`, traceId: requestTraceId });
       }
       try {
         var authGhApiHeaders = {
@@ -1072,7 +1072,7 @@ export default async function handler(req, res) {
         var authBranchName = `agent-patch-${Date.now()}`;
 
         var authRefRes = await fetch(`${authRepoBaseUrl}/git/ref/heads/main`, { headers: authGhApiHeaders, cache: 'no-store' });
-        if (!authRefRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not resolve main branch reference.`, traceId: requestTraceId });
+        if (!authRefRes.ok) return sendJSON(res, 200, { reply: `[AGENT] PR Failed: Could not resolve main branch reference.`, traceId: requestTraceId });
         var authRefData = await authRefRes.json();
         var authMainSha = authRefData.object.sha;
 
@@ -1101,7 +1101,7 @@ export default async function handler(req, res) {
           }),
           cache: 'no-store'
         });
-        if (!commitRes.ok) return sendJSON(200, { reply: `[AGENT] PR Failed: Could not commit file changes.`, traceId: requestTraceId });
+        if (!commitRes.ok) return sendJSON(res, 200, { reply: `[AGENT] PR Failed: Could not commit file changes.`, traceId: requestTraceId });
 
         var prRes = await fetch(`${authRepoBaseUrl}/pulls`, {
           method: 'POST',
@@ -1116,12 +1116,12 @@ export default async function handler(req, res) {
         });
 
         var prData = await prRes.json();
-        return sendJSON(200, {
+        return sendJSON(res, 200, {
           reply: prRes.ok ? `[AGENT] Pull Request Created Successfully: ${prData.html_url}` : `[AGENT] Commit made, but PR creation failed.`,
           traceId: requestTraceId
         });
       } catch (e) {
-        return sendJSON(200, { reply: `Commit Error: ${e.message}`, traceId: requestTraceId });
+        return sendJSON(res, 200, { reply: `Commit Error: ${e.message}`, traceId: requestTraceId });
       }
     }
 
@@ -1131,7 +1131,7 @@ export default async function handler(req, res) {
 [CONTEXT]:\n${formattedArchive}${targetedHistoricalData}${supabaseFilesReport}`;
 
     if (Date.now() >= deadlineTs - 1000) {
-      return sendJSON(200, {
+      return sendJSON(res, 200, {
         reply: '[AGENT] Request aborted: context-gathering consumed the available time budget. Please retry.',
         traceId: requestTraceId
       });
@@ -1168,7 +1168,7 @@ export default async function handler(req, res) {
     var audioBase64 = null;
     var audioStatus = 'DECOUPLED_PENDING_ASYNC_CALL';
 
-    return sendJSON(200, {
+    return sendJSON(res, 200, {
       reply: replyText,
       audio: audioBase64,
       audioStatus: audioStatus,
@@ -1178,6 +1178,6 @@ export default async function handler(req, res) {
     });
 
   } catch (err) {
-    return sendJSON(200, { reply: `Exception: ${err.message}`, traceId: requestTraceId });
+    return sendJSON(res, 200, { reply: `Exception: ${err.message}`, traceId: requestTraceId });
   }
 }
