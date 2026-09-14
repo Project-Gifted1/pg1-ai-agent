@@ -134,12 +134,6 @@ function runPreFlightCheck(codeString, fileTarget) {
   }
 }
 
-// [FIXED]: 'gemini-1.5-flash' has been retired by Google and returns a 404 for every
-// single call — that's the "[PG1 Sovereign Core-1.5-flash ... 404]" error you saw
-// (the identity filter rewrites "Gemini" to "PG1 Sovereign Core" even inside error
-// messages, which is why a Gemini error looked like it came from somewhere else).
-// Restored to the current, valid model lineup (per Google's own docs): flash first
-// for speed, with a second flash-tier model as fallback if the first is unavailable.
 async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys, deadlineTs) {
   var models = ['gemini-3.8-flash', 'gemini-3.6-flash'];
   var lastError = '';
@@ -222,10 +216,6 @@ function buildAnthropicContentBlocks(promptText, mediaParts) {
     finalText += `\n[NOTE: ${skippedCount} attached file(s) were skipped — unsupported type for vision input.]`;
   }
 
-  // [FIXED]: Anthropic rejects any request whose text content block is empty with a 400
-  // ("text content blocks must be non-empty"). This happened whenever /claude was sent
-  // with nothing after it, since the prefix-stripping left an empty string. Guarded here
-  // so it's fixed regardless of which caller produced the empty prompt.
   if (!finalText || !finalText.trim()) {
     finalText = "The user switched to your advanced reasoning core without typing a message. Greet them briefly and ask what they'd like help with.";
   }
@@ -471,6 +461,10 @@ export default async function handler(req, res) {
 
     var rawActionType = action || actionType || 'CHAT';
 
+    // NOTE: this checks process.env.USER_API_PASS (single trailing S). Earlier versions of
+    // this file used USER_API_PASSS (triple S, a typo). If your Vercel env var is still
+    // named with the typo, expectedPass will be undefined here and this auth branch will
+    // never succeed — double check the exact env var name in your Vercel dashboard matches.
     var expectedUser = process.env.USER_API_USER;
     var expectedPass = process.env.USER_API_PASS;
     var storedGhToken = process.env.GITHUB_TOKEN;
@@ -645,8 +639,6 @@ export default async function handler(req, res) {
       } else if (lower.startsWith('/speak') || lower.startsWith('/tts')) {
         activeAction = 'SPEAK';
       } else if (lower.startsWith('/claude')) {
-        // [FIXED]: previously stripping '/claude' with nothing after it left promptText
-        // empty, which Anthropic rejects with a 400. Fall back to a friendly default.
         activeAction = 'CLAUDE_CHAT';
         var strippedClaudePrompt = promptText.replace(/^\/claude/i, '').trim();
         promptText = strippedClaudePrompt || "The user switched to your advanced reasoning core without typing a message. Greet them briefly and ask what they'd like help with.";
@@ -667,7 +659,7 @@ export default async function handler(req, res) {
           reply: `### [ COMMERCIAL GATEWAY STATUS ]\n- **Gumroad Node**: ACTIVE\n- **Telemetry Route**: /api/ioc (Awaiting Agent Checkout)`,
           traceId: requestTraceId
         });
-      } else if (lower.startsWith('/commerce-status')) { return sendJSON(200, { reply: "### [ COMMERCIAL GATEWAY STATUS ]\\n- **Gumroad Node**: ACTIVE\\n- **Telemetry Route**: /api/ioc (Awaiting Agent Checkout)" }); } else if (lower.startsWith('/sync-vault')) {
+      } else if (lower.startsWith('/sync-vault')) {
         return sendJSON(200, {
           reply: `### [ VAULT SYNCHRONIZATION AUDIT ]\n- **Storage Layer**: pg1-vault (Cryptographic Zero-Trust)\n- **Payload Integrity**: 2/2 Payloads Confirmed Immutable (Zero Byte Drift)`,
           traceId: requestTraceId
@@ -875,9 +867,14 @@ export default async function handler(req, res) {
       var engineUsed = '';
       var apiErrors = [];
 
+      // Tier 1: Google Imagen 3. [FIXED]: the URL template literal was previously broken
+      // (unclosed backtick swallowed the request options into the URL string) and
+      // 'imgFileName' was undefined after an earlier edit removed its declaration —
+      // both silently threw inside the try/catch, so every call fell straight through
+      // to the free fallback without you ever knowing Imagen wasn't actually running.
       for (var k = 0; k < geminiKeys.length; k++) {
         try {
-          var imgRes = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001 {
+          var imgRes = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${geminiKeys[k]}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -893,7 +890,7 @@ export default async function handler(req, res) {
 
             if (supabaseUrl && supabaseKey) {
               var imgFileBuffer = base64ToUint8Array(base64Bytes);
-          const generatedImageUrl = "";
+              var imgFileName = `generated_img_${Date.now()}.png`;
               var imgUploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${imgFileName}`, {
                 method: 'POST',
                 headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': mimeType },
@@ -910,10 +907,64 @@ export default async function handler(req, res) {
 
             engineUsed = `Google (Imagen 3 - Key ${k + 1})`;
             break;
+          } else {
+            apiErrors.push(`Imagen key ${k + 1}: ${imgRes.status} ${JSON.stringify(imgData).substring(0, 120)}`);
           }
-        } catch (e) {}
+        } catch (e) {
+          apiErrors.push(`Imagen key ${k + 1} exception: ${e.message}`);
+        }
       }
 
+      // Tier 2: Replicate. [ADDED]: replicateToken was already being read from your env
+      // vars but was never actually used anywhere — this was completely dead. You need
+      // to set REPLICATE_MODEL_VERSION to a real model version hash from your Replicate
+      // dashboard (e.g. a Flux or SDXL version id) for this tier to activate.
+      if (!imageUrl && replicateToken) {
+        try {
+          var replicateModelVersion = (process.env.REPLICATE_MODEL_VERSION || '').trim();
+          if (replicateModelVersion) {
+            var createRes = await fetchWithTimeout('https://api.replicate.com/v1/predictions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${replicateToken}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                version: replicateModelVersion,
+                input: { prompt: premiumPrompt }
+              })
+            }, 10000);
+            var createData = await createRes.json();
+            var predictionUrl = createData && createData.urls && createData.urls.get;
+            var replicateOutput = null;
+            var pollDeadline = Date.now() + 20000;
+            while (predictionUrl && Date.now() < pollDeadline) {
+              await new Promise(r => setTimeout(r, 1500));
+              var pollRes = await fetchWithTimeout(predictionUrl, {
+                headers: { 'Authorization': `Bearer ${replicateToken}` }
+              }, 8000);
+              var pollData = await pollRes.json();
+              if (pollData.status === 'succeeded') {
+                replicateOutput = Array.isArray(pollData.output) ? pollData.output[0] : pollData.output;
+                break;
+              } else if (pollData.status === 'failed' || pollData.status === 'canceled') {
+                apiErrors.push(`Replicate: ${pollData.status}`);
+                break;
+              }
+            }
+            if (replicateOutput) {
+              imageUrl = replicateOutput;
+              engineUsed = 'Replicate';
+            }
+          } else {
+            apiErrors.push('Replicate: REPLICATE_MODEL_VERSION not configured, skipping.');
+          }
+        } catch (e) {
+          apiErrors.push(`Replicate exception: ${e.message}`);
+        }
+      }
+
+      // Tier 3: free fallback if both of the above failed or aren't configured.
       if (!imageUrl) {
         var encodedPrompt = encodeURIComponent(premiumPrompt);
         imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1920&height=1080&nologo=true`;
@@ -1042,8 +1093,6 @@ export default async function handler(req, res) {
       }).catch(() => {});
     }
 
-    // Synchronous audio generation is decoupled from the main chat route to protect
-    // Vercel execution limits and avoid 504s on heavy payloads.
     var audioBase64 = null;
     var audioStatus = 'DECOUPLED_PENDING_ASYNC_CALL';
 
