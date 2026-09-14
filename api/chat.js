@@ -303,6 +303,10 @@ export default async function handler(req, res) {
 
   var getHeader = (name) => req.headers.get ? req.headers.get(name) : req.headers[name];
 
+  // Supabase Fallback logic for GitHub / Vercel naming mismatches
+  var supUrl = (process.env.SUPABASE_URL || '').replace(/\s+/g, '');
+  var supKey = (process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLEKEY || '').replace(/\s+/g, '');
+
   if (urlPath === '/api/ioc' || urlPath === '/api/feeds/ioc') {
     var clientLicenseKey = getHeader('x-api-key') || (getHeader('authorization') || '').replace('Bearer ', '');
     if (!clientLicenseKey) {
@@ -324,9 +328,6 @@ export default async function handler(req, res) {
       var typeParam = parsedUrl.searchParams.get('type');
       var minScoreParam = parsedUrl.searchParams.get('min_score') || '0';
       var limitParam = Math.min(parseInt(parsedUrl.searchParams.get('limit') || '500', 10), 1000);
-
-      var supUrl = (process.env.SUPABASE_URL || '').replace(/\s+/g, '');
-      var supKey = (process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '').replace(/\s+/g, '');
 
       fetch(`${supUrl}/rest/v1/api_access_logs`, {
         method: 'POST',
@@ -461,12 +462,9 @@ export default async function handler(req, res) {
 
     var rawActionType = action || actionType || 'CHAT';
 
-    // NOTE: this checks process.env.USER_API_PASS (single trailing S). Earlier versions of
-    // this file used USER_API_PASSS (triple S, a typo). If your Vercel env var is still
-    // named with the typo, expectedPass will be undefined here and this auth branch will
-    // never succeed — double check the exact env var name in your Vercel dashboard matches.
-    var expectedUser = process.env.USER_API_USER;
-    var expectedPass = process.env.USER_API_PASS;
+    // Universal Auth Mismatch Fallbacks
+    var expectedUser = (process.env.USER_API_KEY || process.env.USER_API_USER || '').trim();
+    var expectedPass = (process.env.USER_API_PASS || process.env.USER_API_PASSS || '').trim();
     var storedGhToken = process.env.GITHUB_TOKEN;
 
     var authHeader = (req.headers.get ? req.headers.get('authorization') : req.headers['authorization']) || '';
@@ -489,7 +487,7 @@ export default async function handler(req, res) {
 
     if (typeof promptText === 'string' && promptText.toLowerCase().includes('/smoke')) {
       try {
-        var smokeKey = process.env.SKOKETEST_API_KEY || process.env.SMOKETEST_API_KEY;
+        var smokeKey = process.env.SMOKETEST_API_KEY || process.env.SKOKETEST_API_KEY;
         var smokeRes = await fetch('https://crypto-threat-signals-api.onrender.com/threats', {
           method: 'GET',
           headers: { 'X-API-Key': smokeKey || '' }
@@ -512,8 +510,11 @@ export default async function handler(req, res) {
 
     var cartesiaKey = (process.env.CARTESIA_API_KEY || '').replace(/\s+/g, '');
     var cartesiaModelId = process.env.CARTESIA_MODEL_ID || 'sonic-3.6';
-    var supabaseUrl = (process.env.SUPABASE_URL || '').replace(/\s+/g, '');
-    var supabaseKey = (process.env.SUPABASEAPI_KEY || '').replace(/\s+/g, '');
+    
+    // Core Supabase vars populated at the top of the function
+    var supabaseUrl = supUrl;
+    var supabaseKey = supKey;
+    
     var replicateToken = (process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY || '').replace(/\s+/g, '');
     var openaiKey = (process.env.OPENAI_API_KEY || '').replace(/\s+/g, '');
     var anthropicKey = (process.env.ANTHROPIC_API_KEY || process.env.ANTROPIC_API_KEY || '').replace(/\s+/g, '');
@@ -867,11 +868,6 @@ export default async function handler(req, res) {
       var engineUsed = '';
       var apiErrors = [];
 
-      // Tier 1: Google Imagen 3. [FIXED]: the URL template literal was previously broken
-      // (unclosed backtick swallowed the request options into the URL string) and
-      // 'imgFileName' was undefined after an earlier edit removed its declaration —
-      // both silently threw inside the try/catch, so every call fell straight through
-      // to the free fallback without you ever knowing Imagen wasn't actually running.
       for (var k = 0; k < geminiKeys.length; k++) {
         try {
           var imgRes = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${geminiKeys[k]}`, {
@@ -915,56 +911,46 @@ export default async function handler(req, res) {
         }
       }
 
-      // Tier 2: Replicate. [ADDED]: replicateToken was already being read from your env
-      // vars but was never actually used anywhere — this was completely dead. You need
-      // to set REPLICATE_MODEL_VERSION to a real model version hash from your Replicate
-      // dashboard (e.g. a Flux or SDXL version id) for this tier to activate.
+      // Replicate fallback utilizing the Official Model Endpoint (No Version Hash Required)
       if (!imageUrl && replicateToken) {
         try {
-          var replicateModelVersion = (process.env.REPLICATE_MODEL_VERSION || '').trim();
-          if (replicateModelVersion) {
-            var createRes = await fetchWithTimeout('https://api.replicate.com/v1/predictions', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${replicateToken}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                version: replicateModelVersion,
-                input: { prompt: premiumPrompt }
-              })
-            }, 10000);
-            var createData = await createRes.json();
-            var predictionUrl = createData && createData.urls && createData.urls.get;
-            var replicateOutput = null;
-            var pollDeadline = Date.now() + 20000;
-            while (predictionUrl && Date.now() < pollDeadline) {
-              await new Promise(r => setTimeout(r, 1500));
-              var pollRes = await fetchWithTimeout(predictionUrl, {
-                headers: { 'Authorization': `Bearer ${replicateToken}` }
-              }, 8000);
-              var pollData = await pollRes.json();
-              if (pollData.status === 'succeeded') {
-                replicateOutput = Array.isArray(pollData.output) ? pollData.output[0] : pollData.output;
-                break;
-              } else if (pollData.status === 'failed' || pollData.status === 'canceled') {
-                apiErrors.push(`Replicate: ${pollData.status}`);
-                break;
-              }
+          var createRes = await fetchWithTimeout('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${replicateToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              input: { prompt: premiumPrompt }
+            })
+          }, 10000);
+          var createData = await createRes.json();
+          var predictionUrl = createData && createData.urls && createData.urls.get;
+          var replicateOutput = null;
+          var pollDeadline = Date.now() + 20000;
+          while (predictionUrl && Date.now() < pollDeadline) {
+            await new Promise(r => setTimeout(r, 1500));
+            var pollRes = await fetchWithTimeout(predictionUrl, {
+              headers: { 'Authorization': `Bearer ${replicateToken}` }
+            }, 8000);
+            var pollData = await pollRes.json();
+            if (pollData.status === 'succeeded') {
+              replicateOutput = Array.isArray(pollData.output) ? pollData.output[0] : pollData.output;
+              break;
+            } else if (pollData.status === 'failed' || pollData.status === 'canceled') {
+              apiErrors.push(`Replicate: ${pollData.status}`);
+              break;
             }
-            if (replicateOutput) {
-              imageUrl = replicateOutput;
-              engineUsed = 'Replicate';
-            }
-          } else {
-            apiErrors.push('Replicate: REPLICATE_MODEL_VERSION not configured, skipping.');
+          }
+          if (replicateOutput) {
+            imageUrl = replicateOutput;
+            engineUsed = 'Replicate (Flux Schnell)';
           }
         } catch (e) {
           apiErrors.push(`Replicate exception: ${e.message}`);
         }
       }
 
-      // Tier 3: free fallback if both of the above failed or aren't configured.
       if (!imageUrl) {
         var encodedPrompt = encodeURIComponent(premiumPrompt);
         imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1920&height=1080&nologo=true`;
