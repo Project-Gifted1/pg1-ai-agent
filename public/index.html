@@ -450,14 +450,6 @@
     <div class="telemetry-row">
       <div class="voice-group">
         <button id="voice-btn" class="stealth-btn" onclick="triggerHaptic(); toggleVoice()">VOICE: OFF</button>
-        <!-- FIX (voice mapping mismatch): "PG1-Agent" is the default persona
-             voice; chat.js's cartesiaVoiceMap maps it (via fallback) to the
-             'christopher' Cartesia voice ID. "Aria" was removed from this list
-             because the backend's voice map doesn't currently have a distinct,
-             real Cartesia voice ID for it (see chat.js comments) — selecting it
-             previously just silently played Christopher's voice, which was
-             misleading. Add it back once a real Aria voice ID is wired up
-             server-side. -->
         <select id="voice-profile-select" class="stealth-select" onchange="triggerHaptic(30)">
           <option value="PG1-Agent">PG1-Agent</option>
           <option value="christopher">Christopher</option>
@@ -799,6 +791,34 @@
       speakMessage(text);
     }
 
+    // FIX (autoplay blocked, message flashed too fast to read): rather than
+    // just reporting failure, keep the already-generated audio ready and let
+    // a genuine follow-up tap release it. A direct tap always satisfies
+    // browser autoplay policy, whereas a play() call after a network round
+    // trip often doesn't — no amount of speeding up the request fixes that,
+    // since the delay itself (not its length) is what breaks the "recent
+    // user gesture" requirement.
+    let pendingBlockedAudio = null;
+
+    function showTapToPlay(audio) {
+      pendingBlockedAudio = audio;
+      const statusEl = document.getElementById('sys-status');
+      if (!statusEl) return;
+      statusEl.innerHTML = '🔊 TAP HERE TO PLAY';
+      statusEl.style.color = 'var(--text-gold)';
+      statusEl.style.cursor = 'pointer';
+      statusEl.onclick = () => {
+        if (pendingBlockedAudio) {
+          pendingBlockedAudio.play().catch(e => console.log('Still blocked:', e));
+          pendingBlockedAudio = null;
+        }
+        statusEl.onclick = null;
+        statusEl.style.cursor = 'default';
+        statusEl.innerHTML = `<span class="status-dot"></span>ACTIVE | API LINKED`;
+        statusEl.style.color = '#999';
+      };
+    }
+
     async function speakMessage(text) {
       try {
         const voiceProfile = document.getElementById('voice-profile-select').value;
@@ -822,14 +842,19 @@
             }
             const audio = new Audio(audioSrc);
             audio.play().catch(e => {
+              // Audio generated fine — the browser just wouldn't auto-play it.
+              // Keep it ready and let one more real tap release it, instead of
+              // just reporting failure and throwing the work away.
               console.log('Audio playback prevented:', e);
-              flashStatus('AUDIO BLOCKED BY BROWSER');
+              showTapToPlay(audio);
             });
           } catch(audioErr) {
             console.error('Audio decode error:', audioErr);
             flashStatus('AUDIO DECODE ERROR');
           }
         } else if (data.audioStatus && data.audioStatus !== 'SUCCESS') {
+          // e.g. Cartesia key missing/misconfigured server-side, or synthesis failed.
+
           flashStatus('TTS UNAVAILABLE (' + data.audioStatus + ')');
         }
       } catch (err) {
