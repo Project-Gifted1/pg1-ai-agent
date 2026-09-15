@@ -1142,7 +1142,7 @@ export default async function handler(req, res) {
 
     if (activeAction === 'SPEAK') {
       var audioBase64 = null;
-      var audioStatus = 'SKIPPED';
+      var audioStatus = cartesiaKey ? 'UNKNOWN' : 'SKIPPED_NO_KEY';
       if (cartesiaKey) {
         try {
           var cleanText = promptText.replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 3000).trim();
@@ -1175,6 +1175,14 @@ export default async function handler(req, res) {
               audioBase64 = arrayBufferToBase64(arrayBuffer);
             }
             audioStatus = 'SUCCESS';
+          } else {
+            // FIX: previously, a real Cartesia error (bad key, rate limit,
+            // invalid voice ID, account issue) fell through with audioStatus
+            // silently left at 'SKIPPED' — indistinguishable from "never
+            // tried." Now the actual error is captured and returned so a
+            // failure is visible instead of looking like nothing happened.
+            var ttsErrText = await ttsRes.text();
+            audioStatus = `CARTESIA_ERROR_${ttsRes.status}: ${ttsErrText.substring(0, 150)}`;
           }
         } catch (e) {
           audioStatus = 'EXCEPTION_' + e.message;
