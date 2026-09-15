@@ -439,7 +439,7 @@
       <span class="msg-timestamp" id="welcome-timestamp"></span>
       <div class="message-text">Greetings. New session initialized. PG1 Sovereign Agent operational. Point the core engine where you need it next—whether that's deploying new endpoints, committing patches, or running real-time database queries! 🛡️ ⚡</div>
       <div class="message-actions">
-        <span onclick="triggerHaptic(); speakMessage('Greetings. New session initialized. PG1 Sovereign Agent operational.')">SPEAK</span>
+        <span onclick="triggerHaptic(); speakBubble(this)">SPEAK</span>
         <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
         <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
       </div>
@@ -450,12 +450,19 @@
     <div class="telemetry-row">
       <div class="voice-group">
         <button id="voice-btn" class="stealth-btn" onclick="triggerHaptic(); toggleVoice()">VOICE: OFF</button>
+        <!-- FIX (voice mapping mismatch): "PG1-Agent" is the default persona
+             voice; chat.js's cartesiaVoiceMap maps it (via fallback) to the
+             'christopher' Cartesia voice ID. "Aria" was removed from this list
+             because the backend's voice map doesn't currently have a distinct,
+             real Cartesia voice ID for it (see chat.js comments) — selecting it
+             previously just silently played Christopher's voice, which was
+             misleading. Add it back once a real Aria voice ID is wired up
+             server-side. -->
         <select id="voice-profile-select" class="stealth-select" onchange="triggerHaptic(30)">
           <option value="PG1-Agent">PG1-Agent</option>
           <option value="christopher">Christopher</option>
           <option value="steffan">Steffan</option>
           <option value="ryan">Ryan</option>
-          <option value="aria">Aria</option>
         </select>
       </div>
       <span id="sys-status" class="status-indicator">
@@ -709,7 +716,7 @@
           <span class="msg-timestamp">${currentTime}</span>
           <div class="message-text">Matrix session cleared. Ready for new operational directives.</div>
           <div class="message-actions">
-            <span onclick="triggerHaptic(); speakMessage('Matrix session cleared.')">SPEAK</span>
+            <span onclick="triggerHaptic(); speakBubble(this)">SPEAK</span>
             <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
             <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
           </div>
@@ -774,6 +781,24 @@
       input.focus();
     }
 
+    function flashStatus(message, isError = true) {
+      const statusEl = document.getElementById('sys-status');
+      if (!statusEl) return;
+      const original = statusEl.innerHTML;
+      const originalColor = statusEl.style.color;
+      statusEl.innerHTML = message;
+      statusEl.style.color = isError ? 'var(--danger-red)' : 'var(--text-gold)';
+      setTimeout(() => {
+        statusEl.innerHTML = original;
+        statusEl.style.color = originalColor;
+      }, 2500);
+    }
+
+    function speakBubble(el) {
+      const text = el.closest('.message-bubble').querySelector('.message-text').innerText;
+      speakMessage(text);
+    }
+
     async function speakMessage(text) {
       try {
         const voiceProfile = document.getElementById('voice-profile-select').value;
@@ -796,13 +821,20 @@
               audioSrc = `data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio.replace(/\s+/g, '')}`;
             }
             const audio = new Audio(audioSrc);
-            audio.play().catch(e => console.log('Audio playback prevented:', e));
+            audio.play().catch(e => {
+              console.log('Audio playback prevented:', e);
+              flashStatus('AUDIO BLOCKED BY BROWSER');
+            });
           } catch(audioErr) {
             console.error('Audio decode error:', audioErr);
+            flashStatus('AUDIO DECODE ERROR');
           }
+        } else if (data.audioStatus && data.audioStatus !== 'SUCCESS') {
+          flashStatus('TTS UNAVAILABLE (' + data.audioStatus + ')');
         }
       } catch (err) {
         console.error('Speech synthesis error:', err);
+        flashStatus('SPEECH REQUEST FAILED');
       }
     }
 
@@ -950,10 +982,9 @@
             </div>`;
         }
 
-        const safeReplyString = escapeHTML(data.reply || '');
         contentHtml += `
           <div class="message-actions">
-            <span onclick="triggerHaptic(); speakMessage('${safeReplyString}')">SPEAK</span>
+            <span onclick="triggerHaptic(); speakBubble(this)">SPEAK</span>
             <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
             <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
           </div>`;
@@ -961,17 +992,8 @@
         agentBubble.innerHTML = contentHtml;
         saveState();
 
-        if (voiceActive && data.audio) {
-          try {
-            let audioSrc = data.audio;
-            if (!audioSrc.startsWith('http')) {
-              audioSrc = `data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio.replace(/\s+/g, '')}`;
-            }
-            const audio = new Audio(audioSrc);
-            audio.play().catch(e => console.log('Audio playback prevented:', e));
-          } catch(audioErr) {
-            console.error('Audio decode error:', audioErr);
-          }
+        if (voiceActive && data.reply) {
+          speakMessage(data.reply);
         }
 
       } catch (err) {
