@@ -322,24 +322,82 @@ function runPreFlightCheck(codeString, fileTarget) {
 async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys, deadlineTs) {
   var models = ['gemini-3.8-flash', 'gemini-3.6-flash'];
   var lastError = '';
-  // FIX (timeout): trimmed from 8000ms so multiple key/model attempts can still
-  // fit inside the tighter overall budget without individually eating it all.
-  var PER_ATTEMPT_CAP_MS = 8000;
 
-  for (var i = 0; i < geminiKeys.length; i++) {
+  // FIX (#55): the per-attempt cap here was a flat 8000ms — the same "slow means
+  // broken" mistake #53 fixed on the Anthropic path, but tighter, and on the path
+  // that serves every turn the keyword router does not classify as heavy. A healthy
+  // call that simply had not finished generating yet was aborted at the 8s mark,
+  // every token it had produced was thrown away, and the next (key, model) pair
+  // regenerated the same answer from scratch under the same 8s cap.
+  //
+  // Note on evidence: unlike #53, the live numbers behind this change could not be
+  // collected. CI only receives ANTHROPIC_API_KEY, so there is no Gemini key in the
+  // job and no deployed URL to drive the path end to end; a keyless probe is
+  // rejected with 400 API_KEY_INVALID before model lookup. What follows is therefore
+  // argued from this function's own configuration rather than measured, and the
+  // sizing question the measurement would have settled is the one this change
+  // removes: nothing below is a latency budget that has to be tuned to a
+  // distribution.
+  //
+  // The cap contradicted the request it was guarding. generationConfig sets
+  // maxOutputTokens to 4096 and the response is awaited whole, not streamed, so
+  // finishing inside 8s requires sustaining better than 512 tok/s with zero time to
+  // first token. Nothing in the Flash tier runs at that rate, so the cap was not
+  // sized to catch an outlier — it was sized below the response length the call is
+  // configured to ask for, and fired on ordinary long answers.
+  //
+  // Regenerating after it fired could not have helped either. Reaching the sibling
+  // on a timer only pays off if the sibling finishes what the primary could not, in
+  // less time than the primary had already spent; gemini-3.6-flash is the older
+  // model in the same tier, so it has no such headroom to offer. (This mirrors the
+  // haiku retry in #53, which measurement showed was never a rescue — 94 vs 96
+  // tok/s. The analogous Gemini comparison is the part that remains unverified. It
+  // does not change the decision below, because with the watchdog set to the
+  // caller's deadline there is by construction no time left to regenerate into.)
+  //
+  // So: slow is not broken. The sibling key/model is reached only when an attempt
+  // genuinely fails — non-2xx, a body with no usable text, or a network rejection —
+  // which is the case the key/model list exists for, and which surfaces in
+  // milliseconds: a probe against this endpoint came back 400 in 80-201ms. What
+  // stays on the first attempt is a dead-socket watchdog rather than a latency
+  // budget. It runs to the caller's deadline, holds back only enough for one retry
+  // if the attempt fails outright, and never on its own causes a regeneration.
+  var RETRY_RESERVE_MS = 12000;
+  var ERROR_RETRY_CAP_MS = 20000;
+  var NO_DEADLINE_CAP_MS = 40000;
+
+  var attemptCount = 0;
+  // Set only by the watchdog, and used to leave both loops. A timer expiring means
+  // this attempt held the whole budget without answering; every remaining (key,
+  // model) pair would be starting from zero with nothing left to start into.
+  var watchdogFired = false;
+
+  for (var i = 0; i < geminiKeys.length && !watchdogFired; i++) {
     var currentKey = geminiKeys[i];
-    for (var j = 0; j < models.length; j++) {
-      var remainingMs = deadlineTs ? (deadlineTs - Date.now()) : PER_ATTEMPT_CAP_MS;
+    for (var j = 0; j < models.length && !watchdogFired; j++) {
+      var isFirstAttempt = (attemptCount === 0);
+      attemptCount++;
+
+      var remainingMs = deadlineTs ? (deadlineTs - Date.now()) : NO_DEADLINE_CAP_MS;
       if (remainingMs <= 1000) {
         return { text: null, error: lastError || 'Aborted: model fetch time budget exhausted.' };
       }
-      var perAttemptTimeout = Math.min(PER_ATTEMPT_CAP_MS, remainingMs);
-      var model = models[j];
-      try {
-        var apiVersion = 'v1beta';
-        var controller = new AbortController();
-        var timeoutId = setTimeout(() => controller.abort(), perAttemptTimeout);
+      // The first attempt gets everything except a reserve for one genuine-failure
+      // retry; the Math.max floor matters when this function is entered as the
+      // cross-provider fallback with less than the reserve left, where the reserve
+      // would otherwise go negative and starve the only attempt there is time for.
+      var perAttemptTimeout = isFirstAttempt
+        ? Math.max(remainingMs - RETRY_RESERVE_MS, Math.min(remainingMs, ERROR_RETRY_CAP_MS))
+        : Math.min(ERROR_RETRY_CAP_MS, remainingMs);
 
+      var model = models[j];
+      var apiVersion = 'v1beta';
+      var timedOut = false;
+
+      var controller = new AbortController();
+      var timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, perAttemptTimeout);
+
+      try {
         var res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${currentKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -352,19 +410,48 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
           signal: controller.signal
         });
 
-        clearTimeout(timeoutId);
-
         if (res.ok) {
           var data = await res.json();
-          if (data && data.candidates && data.candidates[0].content.parts[0].text) {
-            return { text: data.candidates[0].content.parts[0].text, error: null };
+          // The old indexing walked candidates[0].content.parts[0].text unguarded, so
+          // a 200 carrying an empty candidates array or a candidate with no parts —
+          // what a safety block or a MAX_TOKENS stop actually looks like — threw a
+          // TypeError that was caught below and reported as a "fetch exception",
+          // hiding the real reason. Read it defensively and name the reason instead.
+          var parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+          var text = '';
+          for (var p = 0; p < parts.length; p++) {
+            if (parts[p] && !parts[p].thought && typeof parts[p].text === 'string' && parts[p].text) {
+              text = parts[p].text;
+              break;
+            }
           }
+          if (text) {
+            return { text: text, error: null };
+          }
+          var reason = (data && data.candidates && data.candidates[0] && data.candidates[0].finishReason)
+            || (data && data.promptFeedback && data.promptFeedback.blockReason)
+            || 'no candidates';
+          lastError = `[${model} on ${apiVersion}] 200 with no usable text (${reason})`;
         } else {
           var errText = await res.text();
-          lastError = `[${model} on ${apiVersion}] ${res.status}: ${errText.substring(0, 50)}`;
+          // Widened from 50 to 150 characters to match the Anthropic path: 50 cut off
+          // mid-JSON, before the message field that says what actually went wrong.
+          lastError = `[${model} on ${apiVersion}] ${res.status}: ${errText.substring(0, 150)}`;
         }
       } catch (e) {
-        lastError = `[${model}] ${e.message}`;
+        if (timedOut) {
+          lastError = `[${model}] Gemini call exceeded its ${perAttemptTimeout}ms deadline with no response.`;
+          watchdogFired = true;
+        } else {
+          lastError = `[${model}] ${e.message}`;
+        }
+      } finally {
+        // Moved out of the success path into `finally`. `controller` and `timeoutId`
+        // are `var`s, so they are one binding shared by every iteration of both
+        // loops: a timer left running after a non-abort exception used to survive
+        // into the next attempt and abort *that* attempt's request — with up to six
+        // (key, model) pairs here, that misfire had five chances to land.
+        clearTimeout(timeoutId);
       }
     }
   }
