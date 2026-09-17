@@ -423,25 +423,56 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
 
   var models = ['claude-sonnet-5', 'claude-haiku-4-5-20251001'];
   var lastError = '';
-  // FIX (timeout): 20000ms alone exceeded the Edge runtime's 25s hard ceiling once
-  // request parsing and context-gathering are accounted for. Trimmed so a single
-  // slow call can't burn the entire remaining budget and block the fallback model.
-  var PER_ATTEMPT_CAP_MS = 15000;
+
+  // FIX (#53): the per-attempt cap used to be a flat 15000ms, which sat directly on
+  // top of the natural latency distribution for this workload — non-streaming, one
+  // whole response awaited at max_tokens 4096. A healthy sonnet call that simply had
+  // not finished generating yet was aborted at the 15s mark, every token it had
+  // produced was discarded, and the next model regenerated the same answer from
+  // scratch: 15,003ms + 12,264ms = 27,267ms for a request that returns in ~14s when
+  // left alone.
+  //
+  // Measured against the live API, the prompts this router actually sends here take
+  // sonnet 21.6s ("debug ..."), 26.5s ("analyze ...") and 43.6s (a 4096-token report).
+  // The 15s cap was therefore not catching an edge case; it was firing on the typical
+  // heavy task and making every one of them pay for two full generations.
+  //
+  // The same measurement also shows why retrying with haiku was never the rescue it
+  // looked like: the two models generate at effectively the same rate (94 vs 96
+  // tok/s on the long prompt, 43.6s vs 42.9s wall clock). Haiku only finishes sooner
+  // when it happens to write a shorter answer, so restarting a healthy sonnet call as
+  // haiku trades certain progress for a coin flip.
+  //
+  // So: slow is not broken. The sibling model is now reached only when an attempt
+  // genuinely fails — non-2xx, a malformed body, or a network rejection — which is
+  // the 404/5xx case the fallback list was added for, and which surfaces in
+  // milliseconds rather than seconds. What is left on the primary attempt is a
+  // dead-socket watchdog rather than a latency budget: it runs to the caller's
+  // deadline, holding back only enough time for the caller's cross-provider escape
+  // hatch (the Gemini fallback at the CLAUDE_CHAT call site), never enough to justify
+  // re-running Anthropic from zero.
+  var CROSS_PROVIDER_RESERVE_MS = 10000;
+  var ERROR_RETRY_CAP_MS = 20000;
+  var NO_DEADLINE_CAP_MS = 40000;
 
   var content = buildAnthropicContentBlocks(promptText + contextData, mediaParts);
 
   for (var i = 0; i < models.length; i++) {
-    var remainingMs = deadlineTs ? (deadlineTs - Date.now()) : PER_ATTEMPT_CAP_MS;
+    var isPrimary = (i === 0);
+    var remainingMs = deadlineTs ? (deadlineTs - Date.now()) : NO_DEADLINE_CAP_MS;
     if (remainingMs <= 1000) {
       return { text: null, error: lastError || 'Aborted: model fetch time budget exhausted before Anthropic call.' };
     }
-    var timeoutMs = Math.min(PER_ATTEMPT_CAP_MS, remainingMs);
+    var timeoutMs = isPrimary
+      ? Math.max(remainingMs - CROSS_PROVIDER_RESERVE_MS, Math.min(remainingMs, ERROR_RETRY_CAP_MS))
+      : Math.min(ERROR_RETRY_CAP_MS, remainingMs);
     var model = models[i];
+    var timedOut = false;
+
+    var controller = new AbortController();
+    var timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
 
     try {
-      var controller = new AbortController();
-      var timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
       var res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -459,8 +490,6 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
         signal: controller.signal
       });
 
-      clearTimeout(timeoutId);
-
       if (res.ok) {
         var data = await res.json();
         if (data && data.content && data.content[0] && data.content[0].text) {
@@ -472,7 +501,23 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
         lastError = `[${model}] Anthropic API ${res.status}: ${errText.substring(0, 150)}`;
       }
     } catch (e) {
+      if (timedOut) {
+        // The watchdog fired: this attempt used the whole budget without responding.
+        // Deliberately do NOT advance to the sibling model — it generates at the same
+        // rate, so a second full pass cannot finish in the sliver that is left and
+        // would only add to the wall clock the caller has already paid. Returning now
+        // hands the reserved time to the cross-provider fallback instead.
+        lastError = `[${model}] Anthropic call exceeded its ${timeoutMs}ms deadline with no response.`;
+        break;
+      }
       lastError = `[${model}] Anthropic fetch exception: ${e.message}`;
+    } finally {
+      // Moved out of the success path into `finally`. `controller` is a `var`, so it
+      // is one binding shared by every iteration: a timer left running after a
+      // non-abort exception used to survive into the next attempt and abort *that*
+      // attempt's request. Clearing here also lets the function freeze promptly
+      // instead of holding the event loop open for a pending timer.
+      clearTimeout(timeoutId);
     }
   }
 
@@ -489,7 +534,13 @@ export default async function handler(req, res) {
   // Anthropic -> Gemini fallback chain real room, while still leaving ~15s of
   // headroom under the 60s ceiling for request parsing, Supabase context
   // gathering, and response serialization.
-  var MODEL_FETCH_BUDGET_MS = 45000;
+  //
+  // FIX (#53): 45000 left the primary model roughly 32s once the <=3s context
+  // gather and the cross-provider reserve came out of it, which is uncomfortably
+  // close to the 26.5s a measured "analyze ..." turn actually takes. Raised to
+  // 50000 for margin; the <=3s prologue still leaves ~7s of slack under the 60s
+  // maxDuration, and nothing downstream of the model call is slow.
+  var MODEL_FETCH_BUDGET_MS = 50000;
   var deadlineTs = startTime + MODEL_FETCH_BUDGET_MS;
 
   if (req.method === 'OPTIONS') {
