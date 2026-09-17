@@ -88,6 +88,51 @@ function sendJSON(res, status, data) {
   res.status(status).json(data);
 }
 
+// DIAGNOSTIC (issue #53 — voice latency): purely additive stage timing. Records
+// wall-clock marks around each pipeline stage, emits one `[PG1-TIMING]` JSON line
+// to the Vercel function log, and attaches the same data to the JSON response as
+// `timings`. Nothing here changes routing, budgets, or output text.
+function createStageTimer(traceId) {
+  var t0 = Date.now();
+  var stages = [];
+  var open = {};
+
+  return {
+    t0: t0,
+    start: function (name) {
+      open[name] = Date.now();
+    },
+    end: function (name, meta) {
+      var startedAt = open[name] != null ? open[name] : t0;
+      delete open[name];
+      stages.push({
+        stage: name,
+        atMs: startedAt - t0,
+        durMs: Date.now() - startedAt,
+        meta: meta || null
+      });
+    },
+    mark: function (name, meta) {
+      stages.push({ stage: name, atMs: Date.now() - t0, durMs: 0, meta: meta || null });
+    },
+    snapshot: function (label) {
+      return {
+        traceId: traceId,
+        label: label || null,
+        totalMs: Date.now() - t0,
+        stages: stages.slice()
+      };
+    },
+    flush: function (label) {
+      var snap = this.snapshot(label);
+      try {
+        console.log('[PG1-TIMING] ' + JSON.stringify(snap));
+      } catch (e) {}
+      return snap;
+    }
+  };
+}
+
 async function fetchWithTimeout(url, options, timeoutMs) {
   var controller = new AbortController();
   var id = setTimeout(() => controller.abort(), timeoutMs);
@@ -319,7 +364,10 @@ function runPreFlightCheck(codeString, fileTarget) {
   }
 }
 
-async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys, deadlineTs) {
+// DIAGNOSTIC (issue #53): optional trailing `timer` records one mark per
+// key/model attempt, so a slow turn shows whether time went into a single slow
+// generation or into burning through failing keys/models first.
+async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys, deadlineTs, timer) {
   var models = ['gemini-3.8-flash', 'gemini-3.6-flash'];
   var lastError = '';
   // FIX (timeout): trimmed from 8000ms so multiple key/model attempts can still
@@ -335,6 +383,8 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
       }
       var perAttemptTimeout = Math.min(PER_ATTEMPT_CAP_MS, remainingMs);
       var model = models[j];
+      var attemptLabel = `model_attempt:gemini:${model}:key${i + 1}`;
+      if (timer) timer.start(attemptLabel);
       try {
         var apiVersion = 'v1beta';
         var controller = new AbortController();
@@ -357,14 +407,24 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
         if (res.ok) {
           var data = await res.json();
           if (data && data.candidates && data.candidates[0].content.parts[0].text) {
+            if (timer) {
+              timer.end(attemptLabel, {
+                status: res.status,
+                outcome: 'ok',
+                replyChars: data.candidates[0].content.parts[0].text.length
+              });
+            }
             return { text: data.candidates[0].content.parts[0].text, error: null };
           }
+          if (timer) timer.end(attemptLabel, { status: res.status, outcome: 'empty_candidates' });
         } else {
           var errText = await res.text();
           lastError = `[${model} on ${apiVersion}] ${res.status}: ${errText.substring(0, 50)}`;
+          if (timer) timer.end(attemptLabel, { status: res.status, outcome: 'http_error' });
         }
       } catch (e) {
         lastError = `[${model}] ${e.message}`;
+        if (timer) timer.end(attemptLabel, { outcome: 'exception', error: e.message });
       }
     }
   }
@@ -416,7 +476,8 @@ function buildAnthropicContentBlocks(promptText, mediaParts) {
 // CLAUDE_CHAT path. This now walks a small list of current model strings the same
 // way fetchGeminiCore walks its model list, and reports every attempt's error so
 // the real failure is visible instead of a single opaque 404.
-async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contextData, anthropicKey, deadlineTs) {
+// DIAGNOSTIC (issue #53): optional trailing `timer` — see fetchGeminiCore.
+async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contextData, anthropicKey, deadlineTs, timer) {
   if (!anthropicKey) {
     return { text: null, error: 'No Anthropic API key configured.' };
   }
@@ -437,6 +498,8 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
     }
     var timeoutMs = Math.min(PER_ATTEMPT_CAP_MS, remainingMs);
     var model = models[i];
+    var attemptLabel = `model_attempt:anthropic:${model}`;
+    if (timer) timer.start(attemptLabel);
 
     try {
       var controller = new AbortController();
@@ -464,15 +527,27 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
       if (res.ok) {
         var data = await res.json();
         if (data && data.content && data.content[0] && data.content[0].text) {
+          if (timer) {
+            timer.end(attemptLabel, {
+              status: res.status,
+              outcome: 'ok',
+              replyChars: data.content[0].text.length,
+              outputTokens: (data.usage && data.usage.output_tokens) || null,
+              inputTokens: (data.usage && data.usage.input_tokens) || null
+            });
+          }
           return { text: data.content[0].text, error: null };
         }
         lastError = `[${model}] Unexpected response shape from Anthropic API.`;
+        if (timer) timer.end(attemptLabel, { status: res.status, outcome: 'unexpected_shape' });
       } else {
         var errText = await res.text();
         lastError = `[${model}] Anthropic API ${res.status}: ${errText.substring(0, 150)}`;
+        if (timer) timer.end(attemptLabel, { status: res.status, outcome: 'http_error' });
       }
     } catch (e) {
       lastError = `[${model}] Anthropic fetch exception: ${e.message}`;
+      if (timer) timer.end(attemptLabel, { outcome: 'exception', error: e.message });
     }
   }
 
@@ -482,6 +557,12 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
 export default async function handler(req, res) {
   var startTime = Date.now();
   var requestTraceId = Math.random().toString(36).substring(2, 10);
+  // DIAGNOSTIC (issue #53): stage timer for the voice pipeline. t0 is the first
+  // instruction of the handler, so every `atMs` below is measured from the moment
+  // the serverless function began executing (i.e. excludes cold start and the
+  // client -> edge network leg — see the client-side marks in public/index.html
+  // for the wall-clock the operator actually experiences).
+  var timer = createStageTimer(requestTraceId);
 
   // FIX (Edge -> Node migration): now that this runs as a Node.js Function
   // instead of Edge, maxDuration: 60 above is genuinely honored (no more hidden
@@ -617,6 +698,7 @@ export default async function handler(req, res) {
   }
 
   try {
+    timer.start('request_parse');
     var reqBody = {};
     try {
       if (req.body && typeof req.body === 'object') {
@@ -631,6 +713,7 @@ export default async function handler(req, res) {
     } catch (parseErr) {
       reqBody = {};
     }
+    timer.end('request_parse', { promptChars: String(reqBody.prompt || '').length });
 
     var promptText = reqBody.prompt || '';
     var action = reqBody.action;
@@ -777,6 +860,9 @@ export default async function handler(req, res) {
     var mediaParts = [];
 
     if (payloadFiles.length > 0 && supabaseUrl && supabaseKey) {
+      // DIAGNOSTIC (issue #53): this loop is serial and its fetches have no
+      // timeout, so it can add unbounded time ahead of the model call.
+      timer.start('vault_upload');
       for (var i = 0; i < payloadFiles.length; i++) {
         var f = payloadFiles[i];
         if (f.inlineData && f.inlineData.data) {
@@ -801,11 +887,16 @@ export default async function handler(req, res) {
           } catch (uploadErr) {}
         }
       }
+      timer.end('vault_upload', { fileCount: payloadFiles.length });
     }
 
     promptText += vaultUploadLog;
 
     if (supabaseUrl && supabaseKey) {
+      // DIAGNOSTIC (issue #53): blocking pre-model context gather. Runs on EVERY
+      // request that reaches this point — including the second, SPEAK-only round
+      // trip the client makes purely to fetch audio.
+      timer.start('supabase_context');
       const createTimedFetch = (url, options = {}, timeoutMs = 3000) => {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -859,6 +950,11 @@ export default async function handler(req, res) {
           targetedHistoricalData = `\n\n[LIVE THREAT TELEMETRY (${threats.length} Records)]:\n` + threats.map(t => `• [${t.indicator_type}] ${t.value} (Conf: ${t.confidence_score}%)`).join('\n');
         }
       }
+      timer.end('supabase_context', {
+        supabaseStatus: supabaseStatus,
+        threatQuery: isThreatQuery,
+        historyChars: formattedArchive.length
+      });
     }
 
     var activeAction = rawActionType;
@@ -1146,6 +1242,7 @@ export default async function handler(req, res) {
       if (cartesiaKey) {
         try {
           var cleanText = promptText.replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 3000).trim();
+          timer.start('tts_cartesia');
           var ttsRes = await fetchWithTimeout('https://api.cartesia.ai/tts/bytes', {
             method: 'POST',
             headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
@@ -1158,21 +1255,34 @@ export default async function handler(req, res) {
             cache: 'no-store'
           }, 10000);
           if (ttsRes.ok) {
+            // Split out from the request itself: `fetch` resolves on headers, so
+            // everything spent streaming the MP3 body lands in this second mark.
+            timer.end('tts_cartesia', { status: ttsRes.status, transcriptChars: cleanText.length });
+            timer.start('tts_body_download');
             var arrayBuffer = await ttsRes.arrayBuffer();
+            timer.end('tts_body_download', { audioBytes: arrayBuffer.byteLength });
+
             if (supabaseUrl && supabaseKey) {
               var ttsFileName = `tts_${Date.now()}.mp3`;
+              timer.start('tts_supabase_upload');
               var ttsUploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${ttsFileName}`, {
                 method: 'POST',
                 headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'audio/mp3' },
                 body: arrayBuffer
               });
+              timer.end('tts_supabase_upload', { status: ttsUploadRes.status, ok: ttsUploadRes.ok });
               if (ttsUploadRes.ok) {
                 audioBase64 = `${supabaseUrl}/storage/v1/object/public/pg1-vault/${ttsFileName}`;
               } else {
+                // Hand-rolled encoder, ~3 bytes/iteration over the whole MP3.
+                timer.start('tts_base64_encode');
                 audioBase64 = arrayBufferToBase64(arrayBuffer);
+                timer.end('tts_base64_encode', { audioBytes: arrayBuffer.byteLength });
               }
             } else {
+              timer.start('tts_base64_encode');
               audioBase64 = arrayBufferToBase64(arrayBuffer);
+              timer.end('tts_base64_encode', { audioBytes: arrayBuffer.byteLength });
             }
             audioStatus = 'SUCCESS';
           } else {
@@ -1183,9 +1293,11 @@ export default async function handler(req, res) {
             // failure is visible instead of looking like nothing happened.
             var ttsErrText = await ttsRes.text();
             audioStatus = `CARTESIA_ERROR_${ttsRes.status}: ${ttsErrText.substring(0, 150)}`;
+            timer.end('tts_cartesia', { status: ttsRes.status, outcome: 'http_error' });
           }
         } catch (e) {
           audioStatus = 'EXCEPTION_' + e.message;
+          timer.end('tts_cartesia', { outcome: 'exception', error: e.message });
         }
       }
       return sendJSON(res, 200, {
@@ -1193,7 +1305,8 @@ export default async function handler(req, res) {
         audio: audioBase64,
         audioStatus: audioStatus,
         audioMimeType: 'audio/mp3',
-        traceId: requestTraceId
+        traceId: requestTraceId,
+        timings: timer.flush('SPEAK')
       });
     }
 
@@ -1997,9 +2110,10 @@ export default async function handler(req, res) {
       });
     }
 
+    timer.start('model_total');
     var modelFetchResult = (activeAction === 'CLAUDE_CHAT')
-      ? await fetchAnthropicCore(promptText, sysInstruction, mediaParts, '', anthropicKey, deadlineTs)
-      : await fetchGeminiCore(promptText, sysInstruction, mediaParts, '', geminiKeys, deadlineTs);
+      ? await fetchAnthropicCore(promptText, sysInstruction, mediaParts, '', anthropicKey, deadlineTs, timer)
+      : await fetchGeminiCore(promptText, sysInstruction, mediaParts, '', geminiKeys, deadlineTs, timer);
 
     // FIX (#7): previously, if the Anthropic path failed outright there was no
     // recovery — the request just returned the raw error. Now it falls back to
@@ -2007,13 +2121,20 @@ export default async function handler(req, res) {
     // provider outage doesn't take the whole chat down.
     if (activeAction === 'CLAUDE_CHAT' && !modelFetchResult.text && geminiKeys.length > 0 && Date.now() < deadlineTs - 1000) {
       var anthropicError = modelFetchResult.error;
-      modelFetchResult = await fetchGeminiCore(promptText, sysInstruction, mediaParts, '', geminiKeys, deadlineTs);
+      timer.mark('model_fallback_to_gemini', { anthropicError: String(anthropicError).substring(0, 120) });
+      modelFetchResult = await fetchGeminiCore(promptText, sysInstruction, mediaParts, '', geminiKeys, deadlineTs, timer);
       if (modelFetchResult.text) {
         modelFetchResult.error = null;
       } else {
         modelFetchResult.error = `Anthropic failed (${anthropicError}); Gemini fallback also failed (${modelFetchResult.error})`;
       }
     }
+
+    timer.end('model_total', {
+      route: activeAction,
+      provider: activeAction === 'CLAUDE_CHAT' ? 'anthropic(+gemini fallback)' : 'gemini',
+      ok: Boolean(modelFetchResult.text)
+    });
 
     var replyText = modelFetchResult.text || `Execution failed. Model Err: ${modelFetchResult.error}`;
     // FIX (#2): the identity-scrub used to run on error text too, and since
@@ -2037,13 +2158,19 @@ export default async function handler(req, res) {
     var audioBase64 = null;
     var audioStatus = 'DECOUPLED_PENDING_ASYNC_CALL';
 
+    // DIAGNOSTIC (issue #53): no TTS happens on this path at all — audio is a
+    // separate client-initiated round trip, so the audio clock only starts once
+    // this response has fully arrived.
+    timer.mark('response_no_audio_decoupled', { replyChars: replyText.length });
+
     return sendJSON(res, 200, {
       reply: replyText,
       audio: audioBase64,
       audioStatus: audioStatus,
       audioMimeType: 'audio/mp3',
       traceId: requestTraceId,
-      telemetry: { supabaseStatus: supabaseStatus, executionTimeMs: Date.now() - startTime }
+      telemetry: { supabaseStatus: supabaseStatus, executionTimeMs: Date.now() - startTime },
+      timings: timer.flush(activeAction)
     });
 
   } catch (err) {

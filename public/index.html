@@ -590,10 +590,78 @@
       return escaped;
     }
 
+    // ------------------------------------------------------------------
+    // DIAGNOSTIC (issue #53 — voice latency). Client-side stage timing.
+    // Purely observational: records wall-clock marks and prints them; it does
+    // not alter the request flow. STT happens entirely in this browser (Web
+    // Speech API), so the only place the full speech -> audio-out latency can
+    // be measured is here. Server-side stage timings arrive on each response
+    // as `data.timings` and are folded into the same table.
+    //
+    // Read the numbers with:  PG1Timing.report()
+    // Raw marks live in:      window.__pg1Timings
+    // ------------------------------------------------------------------
+    const PG1Timing = (function () {
+      const marks = [];
+      const open = {};
+      const now = () => (window.performance && performance.now ? performance.now() : Date.now());
+      let turnT0 = now();
+
+      return {
+        get marks() { return marks; },
+        newTurn(label) {
+          turnT0 = now();
+          marks.push({ turnMs: 0, stage: 'TURN_START', durMs: 0, meta: { label } });
+        },
+        mark(stage, meta) {
+          marks.push({ turnMs: Math.round(now() - turnT0), stage, durMs: 0, meta: meta || null });
+        },
+        start(stage) { open[stage] = now(); },
+        end(stage, meta) {
+          const startedAt = open[stage] != null ? open[stage] : turnT0;
+          delete open[stage];
+          marks.push({
+            turnMs: Math.round(startedAt - turnT0),
+            stage,
+            durMs: Math.round(now() - startedAt),
+            meta: meta || null
+          });
+        },
+        // Server sends its own stage list; prefix it so the two are distinguishable.
+        absorbServer(timings, prefix) {
+          if (!timings || !Array.isArray(timings.stages)) return;
+          marks.push({
+            turnMs: Math.round(now() - turnT0),
+            stage: `${prefix}:SERVER_TOTAL`,
+            durMs: timings.totalMs,
+            meta: { traceId: timings.traceId, label: timings.label }
+          });
+          timings.stages.forEach(s => {
+            marks.push({
+              turnMs: null,
+              stage: `${prefix}:server:${s.stage}`,
+              durMs: s.durMs,
+              meta: Object.assign({ serverAtMs: s.atMs }, s.meta || {})
+            });
+          });
+        },
+        report() {
+          if (console.table) console.table(marks);
+          else console.log(marks);
+          return marks;
+        }
+      };
+    })();
+    window.__pg1Timings = PG1Timing.marks;
+    window.PG1Timing = PG1Timing;
+
     let voiceActive = false;
-    let attachedFilesPayload = []; 
+    let attachedFilesPayload = [];
     let recognition;
     let isRecording = false;
+    // Set when speech recognition ends, so the gap between "operator stopped
+    // talking" and "request actually sent" is measured rather than assumed.
+    let sttEndedAtMs = null;
 
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -602,13 +670,21 @@
       recognition.interimResults = true;
 
       recognition.onstart = function() {
+        PG1Timing.newTurn('voice-turn');
+        PG1Timing.start('stt_session');
+        PG1Timing.mark('stt_start');
         isRecording = true;
         document.getElementById('mic-btn').classList.add('mic-active');
         document.getElementById('prompt-input').placeholder = "Listening...";
-        triggerHaptic([50, 50, 50]); 
+        triggerHaptic([50, 50, 50]);
       };
 
+      let sawInterim = false;
       recognition.onresult = function(event) {
+        if (!sawInterim) {
+          sawInterim = true;
+          PG1Timing.mark('stt_first_result');
+        }
         let finalTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           if (event.results[i].isFinal) {
@@ -616,6 +692,7 @@
           }
         }
         if (finalTranscript) {
+          PG1Timing.mark('stt_final_transcript', { chars: finalTranscript.length });
           const input = document.getElementById('prompt-input');
           input.value = (input.value + ' ' + finalTranscript).trim();
           autoResize(input);
@@ -623,10 +700,15 @@
       };
 
       recognition.onerror = function(event) {
+        PG1Timing.mark('stt_error', { error: event && event.error });
+        sawInterim = false;
         stopRecording();
       };
 
       recognition.onend = function() {
+        PG1Timing.end('stt_session');
+        sttEndedAtMs = (window.performance && performance.now ? performance.now() : Date.now());
+        sawInterim = false;
         stopRecording();
       };
     }
@@ -822,25 +904,46 @@
     async function speakMessage(text) {
       try {
         const voiceProfile = document.getElementById('voice-profile-select').value;
+        // DIAGNOSTIC (issue #53): this is a SECOND, fully serial round trip to
+        // /api/chat that only starts after the text reply has landed.
+        PG1Timing.start('tts_roundtrip');
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: text, action: 'SPEAK', voice: voiceProfile })
         });
         const responseText = await response.text();
+        PG1Timing.end('tts_roundtrip', { status: response.status, bytes: responseText.length });
         let data;
         try {
           data = JSON.parse(responseText);
         } catch (parseErr) {
           throw new Error(`Server returned non-JSON response (${response.status}): ${responseText.substring(0, 150)}`);
         }
+        PG1Timing.absorbServer(data.timings, 'tts');
         if (data.audio) {
           try {
             let audioSrc = data.audio;
-            if (!audioSrc.startsWith('http')) {
+            const isRemoteUrl = audioSrc.startsWith('http');
+            if (!isRemoteUrl) {
               audioSrc = `data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio.replace(/\s+/g, '')}`;
             }
             const audio = new Audio(audioSrc);
+            // When the server returns a Supabase public URL rather than inline
+            // base64, the browser has to go fetch that MP3 before a single
+            // sample can play — this mark captures that extra hop.
+            PG1Timing.start('audio_element_to_playing');
+            audio.addEventListener('playing', function onPlaying() {
+              audio.removeEventListener('playing', onPlaying);
+              PG1Timing.end('audio_element_to_playing', { source: isRemoteUrl ? 'supabase_url' : 'inline_base64' });
+              if (sttEndedAtMs != null) {
+                const nowMs = (window.performance && performance.now ? performance.now() : Date.now());
+                PG1Timing.mark('END_TO_END_speech_end_to_audio_start', {
+                  ms: Math.round(nowMs - sttEndedAtMs)
+                });
+              }
+              PG1Timing.report();
+            }, false);
             audio.play().catch(e => {
               // Audio generated fine — the browser just wouldn't auto-play it.
               // Keep it ready and let one more real tap release it, instead of
@@ -854,10 +957,12 @@
           }
         } else if (data.audioStatus && data.audioStatus !== 'SUCCESS') {
           // e.g. Cartesia key missing/misconfigured server-side, or synthesis failed.
-
+          PG1Timing.mark('tts_unavailable', { audioStatus: data.audioStatus });
+          PG1Timing.report();
           flashStatus('TTS UNAVAILABLE (' + data.audioStatus + ')');
         }
       } catch (err) {
+        PG1Timing.mark('tts_exception', { error: err.message });
         console.error('Speech synthesis error:', err);
         flashStatus('SPEECH REQUEST FAILED');
       }
@@ -881,7 +986,17 @@
     async function submitDirective() {
       const input = document.getElementById('prompt-input');
       const text = input.value.trim();
-      
+
+      // DIAGNOSTIC (issue #53): the gap between end-of-speech and this call is
+      // pure human reaction time — the transcript only lands in the textarea,
+      // nothing auto-submits. Measured rather than assumed.
+      if (sttEndedAtMs != null) {
+        const nowMs = (window.performance && performance.now ? performance.now() : Date.now());
+        PG1Timing.mark('gap_stt_end_to_submit', { ms: Math.round(nowMs - sttEndedAtMs) });
+      } else {
+        PG1Timing.newTurn('typed-turn');
+      }
+
       let visionFrameCaptured = false;
 
       if (activeVisionStream) {
@@ -972,6 +1087,7 @@
           statusEl.style.color = '#999';
         }
 
+        PG1Timing.start('chat_roundtrip');
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -979,14 +1095,22 @@
         });
 
         const responseText = await response.text();
+        PG1Timing.end('chat_roundtrip', {
+          status: response.status,
+          bytes: responseText.length,
+          attachedFiles: (payload.multiFiles || []).length
+        });
         let data;
         try {
           data = JSON.parse(responseText);
         } catch (parseErr) {
           throw new Error(`Server returned non-JSON response (${response.status}): ${responseText.substring(0, 150)}`);
         }
-        
-        triggerHaptic([30, 50, 30]); 
+        // Server-measured stages for this same request; subtracting the server
+        // total from `chat_roundtrip` gives network + cold-start overhead.
+        PG1Timing.absorbServer(data.timings, 'chat');
+
+        triggerHaptic([30, 50, 30]);
         const finalTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
         let contentHtml = `<span class="msg-timestamp">${finalTime}</span><div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>`;
@@ -1014,15 +1138,23 @@
             <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
           </div>`;
 
+        PG1Timing.start('render_reply');
         agentBubble.innerHTML = contentHtml;
         saveState();
+        PG1Timing.end('render_reply', { replyChars: (data.reply || '').length });
 
         if (voiceActive && data.reply) {
           speakMessage(data.reply);
+        } else {
+          // Text-only turn ends here — dump what we have rather than waiting on
+          // an audio event that will never fire.
+          PG1Timing.report();
         }
 
       } catch (err) {
-        triggerHaptic(200); 
+        PG1Timing.mark('chat_exception', { error: err.message });
+        PG1Timing.report();
+        triggerHaptic(200);
         const errTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         agentBubble.innerHTML = `<span class="msg-timestamp">${errTime}</span><div class="message-text" style="color: #ff4444;">Exception: ${escapeHTML(err.message)}</div>`;
         saveState();

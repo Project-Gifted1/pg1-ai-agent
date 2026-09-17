@@ -26,6 +26,20 @@ export default async function handler(req) {
   if (req.method === 'OPTIONS') return sendJSON(200, {});
   if (req.method !== 'POST') return sendJSON(405, { error: 'Method Not Allowed' });
 
+  // DIAGNOSTIC (issue #53 — voice latency): additive stage timing for this Edge
+  // TTS route. Emits one [PG1-TIMING] log line and returns the same data as
+  // `timings` on the JSON response. No behavior change.
+  const t0 = Date.now();
+  const stages = [];
+  const record = (stage, startedAt, meta) => {
+    stages.push({ stage, atMs: startedAt - t0, durMs: Date.now() - startedAt, meta: meta || null });
+  };
+  const flush = () => {
+    const snap = { route: 'api/tts.js(edge)', totalMs: Date.now() - t0, stages };
+    try { console.log('[PG1-TIMING] ' + JSON.stringify(snap)); } catch (e) {}
+    return snap;
+  };
+
   try {
     const bodyText = await req.text();
     const body = JSON.parse(bodyText);
@@ -42,6 +56,7 @@ export default async function handler(req) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
+    const ttsStart = Date.now();
     const ttsRes = await fetch('https://api.cartesia.ai/tts/bytes', {
       method: 'POST',
       headers: { 
@@ -59,38 +74,49 @@ export default async function handler(req) {
     });
     
     clearTimeout(timeoutId);
+    record('tts_cartesia', ttsStart, { status: ttsRes.status, transcriptChars: text.length });
 
-    if (!ttsRes.ok) return sendJSON(502, { error: `Cartesia API Error: ${ttsRes.status}` });
+    if (!ttsRes.ok) return sendJSON(502, { error: `Cartesia API Error: ${ttsRes.status}`, timings: flush() });
 
+    const downloadStart = Date.now();
     const arrayBuffer = await ttsRes.arrayBuffer();
-    
+    record('tts_body_download', downloadStart, { audioBytes: arrayBuffer.byteLength });
+
     if (supabaseUrl && supabaseKey) {
       const fileName = `tts_${Date.now()}.mp3`;
+      const uploadStart = Date.now();
       const uploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${fileName}`, {
         method: 'POST',
-        headers: { 
-          'apikey': supabaseKey, 
-          'Authorization': `Bearer ${supabaseKey}`, 
-          'Content-Type': 'audio/mp3' 
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'audio/mp3'
         },
         body: arrayBuffer
       });
-      
+      record('tts_supabase_upload', uploadStart, { status: uploadRes.status, ok: uploadRes.ok });
+
       if (uploadRes.ok) {
-        return sendJSON(200, { 
-          success: true, 
-          audioUrl: `${supabaseUrl}/storage/v1/object/public/pg1-vault/${fileName}` 
+        return sendJSON(200, {
+          success: true,
+          audioUrl: `${supabaseUrl}/storage/v1/object/public/pg1-vault/${fileName}`,
+          timings: flush()
         });
       }
     }
 
-    return sendJSON(200, { 
-      success: true, 
-      audioBase64: arrayBufferToBase64(arrayBuffer),
-      audioMimeType: 'audio/mp3'
+    const encodeStart = Date.now();
+    const audioBase64 = arrayBufferToBase64(arrayBuffer);
+    record('tts_base64_encode', encodeStart, { audioBytes: arrayBuffer.byteLength });
+
+    return sendJSON(200, {
+      success: true,
+      audioBase64: audioBase64,
+      audioMimeType: 'audio/mp3',
+      timings: flush()
     });
 
   } catch (err) {
-    return sendJSON(500, { error: err.message });
+    return sendJSON(500, { error: err.message, timings: flush() });
   }
 }
