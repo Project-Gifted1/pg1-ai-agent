@@ -26,6 +26,4 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_args: |
             --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,Bash(git:*),Bash(npm:*),Bash(node:*),Bash(npx:*),Bash(vercel:*),Bash(mv:*),Bash(mkdir:*),Bash(ls:*)"
-          settings: |
-            {
-              "env": {
+          settings: '{"env":{"GEMINI_API_KEY1":"${{ secrets.GEMINI_API_KEY1 }}","GEMINI_API_KEY2":"${{ secrets.GEMINI_API_KEY2 }}"}}'
