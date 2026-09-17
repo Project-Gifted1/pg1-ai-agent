@@ -25,4 +25,4 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_args: |
-            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,Bash(git:*),Bash(python3:*),Bash(mv:*),Bash(mkdir:*),Bash(ls:*)"
+            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,Bash(git:*),Bash(npm:*),Bash(node:*),Bash(npx:*),Bash(vercel:*),Bash(mv:*),Bash(mkdir:*),Bash(ls:*)"
