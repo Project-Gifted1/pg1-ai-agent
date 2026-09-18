@@ -2,6 +2,23 @@ export const config = {
   maxDuration: 60
 };
 
+var VAPID_PUBLIC_KEY = (process.env.VAPID_PUBLIC_KEY || '').trim();
+var VAPID_PRIVATE_KEY = (process.env.VAPID_PRIVATE_KEY || '').trim();
+
+async function sendPushNotification(subscription, payload) {
+  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY || !subscription) {
+    return { ok: false, error: 'Push not configured or no subscription on file.' };
+  }
+  try {
+    var webpush = (await import('web-push')).default;
+    webpush.setVapidDetails('mailto:admin@project-gifted1.dev', VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+    await webpush.sendNotification(subscription, JSON.stringify(payload));
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
 const B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 function encodeBase64(str) {
@@ -76,10 +93,6 @@ function arrayBufferToBase64(buffer) {
   return base64;
 }
 
-// FIX (Edge -> Node migration): Vercel Node.js Functions use the classic
-// (req, res) contract, not the Web Fetch Request/Response objects Edge
-// functions use. sendJSON now writes directly to `res` instead of
-// constructing and returning a Response object.
 function sendJSON(res, status, data) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -98,17 +111,10 @@ async function fetchWithTimeout(url, options, timeoutMs) {
   }
 }
 
-// FIX (#8): escape single quotes so a value can't break out of the STIX pattern string.
 function escapeStixValue(value) {
   return String(value == null ? '' : value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
-// SAFETY FIX (#3 - path resolution): the old version silently picked the first
-// fuzzy match it found when a filename existed at more than one path (which we
-// know happens in this repo — we found an exact duplicate file earlier). It
-// now distinguishes exact matches from fuzzy ones and, critically, surfaces
-// every candidate when there's more than one, so the caller can refuse to
-// guess instead of silently patching the wrong file.
 async function resolveGithubPathCandidates(target, repoUrl, headers) {
   var cleanTarget = target.replace(/^\.\//, '').replace(/^\//, '');
   try {
@@ -131,7 +137,6 @@ async function resolveGithubPathCandidates(target, repoUrl, headers) {
       if (fuzzyMatches.length > 1) {
         return { path: null, sha: null, exact: false, candidates: fuzzyMatches.map(m => m.path), resolved: false, ambiguous: true };
       }
-      // Not found anywhere in the tree — treat as a brand-new file path.
       return { path: cleanTarget, sha: null, exact: false, candidates: [cleanTarget], resolved: true, notInTree: true };
     }
   } catch (e) {
@@ -140,24 +145,11 @@ async function resolveGithubPathCandidates(target, repoUrl, headers) {
   return { path: cleanTarget, sha: null, exact: false, candidates: [cleanTarget], resolved: true, notInTree: true };
 }
 
-// SAFETY FIX (#2 - silent partial patches): String.prototype.replace() with a
-// string argument only touches the FIRST occurrence. On a genuinely
-// "monolithic" file, the search text appearing more than once is a realistic
-// scenario, and the old code would silently patch one instance and leave
-// others untouched with no warning at all. This counts occurrences so the
-// caller can refuse ambiguous patches outright.
 function countOccurrences(haystack, needle) {
   if (!needle) return 0;
   return haystack.split(needle).length - 1;
 }
 
-// SAFETY FIX (#6 - protected paths): a short, deliberately conservative list.
-// Hard-blocked paths are refused outright, no matter what flags are set —
-// these should never be reachable through a chat-driven code-edit endpoint.
-// Soft-gated paths (CI/workflow files, lockfiles) can still be edited, but
-// only with an explicit confirmProtectedPath flag, since these are classic
-// supply-chain-attack surface and a mistake here is much higher-blast-radius
-// than a mistake in an ordinary source file.
 var HARD_BLOCKED_PATH_PATTERNS = [/\.env(\.|$)/i, /(^|\/)\.git(\/|$)/i, /secret/i, /credentials?/i, /\.pem$/i, /\.key$/i];
 var SOFT_GATED_PATH_PATTERNS = [/(^|\/)\.github\/workflows\//i, /(^|\/)package(-lock)?\.json$/i, /(^|\/)vercel\.json$/i];
 
@@ -168,13 +160,6 @@ function isSoftGatedPath(path) {
   return SOFT_GATED_PATH_PATTERNS.some(function (re) { return re.test(path || ''); });
 }
 
-// SAFETY FIX (#5 - no diff ever reaches the chat): a capped, dependency-free
-// line-level diff (classic LCS backtrack). This is intentionally NOT a
-// full unified-diff implementation — for genuinely large files it falls back
-// to a line-count summary instead of attempting a full diff, both to keep
-// this fast/cheap on a serverless function and because a truncated "confident
-// looking" diff on a huge file would be worse than an honest "too big, go
-// look at the real diff on GitHub" message.
 var MAX_LINES_FOR_FULL_DIFF = 800;
 
 function computeLineDiff(oldStr, newStr) {
@@ -231,15 +216,6 @@ function formatDiffSummary(diff, maxLines, maxChars) {
   return text + moreNote;
 }
 
-// ---------------------------------------------------------------------
-// TWO-PHASE APPROVAL: propose-then-confirm helpers
-// ---------------------------------------------------------------------
-// Every write-capable action (patch / full-file commit / reorganize) now
-// stops BEFORE touching GitHub, stores the fully-validated plan here, and
-// waits for an explicit /approve or /decline. This is the interim version
-// of the eventual Slack-button flow — same safety property (nothing writes
-// to GitHub without a separate, later, explicit confirmation step), just
-// approved/declined by replying in chat instead of tapping a button.
 function generateApprovalToken() {
   return crypto.randomUUID();
 }
@@ -367,9 +343,6 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
   var NO_DEADLINE_CAP_MS = 40000;
 
   var attemptCount = 0;
-  // Set only by the watchdog, and used to leave both loops. A timer expiring means
-  // this attempt held the whole budget without answering; every remaining (key,
-  // model) pair would be starting from zero with nothing left to start into.
   var watchdogFired = false;
 
   for (var i = 0; i < geminiKeys.length && !watchdogFired; i++) {
@@ -382,10 +355,6 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
       if (remainingMs <= 1000) {
         return { text: null, error: lastError || 'Aborted: model fetch time budget exhausted.' };
       }
-      // The first attempt gets everything except a reserve for one genuine-failure
-      // retry; the Math.max floor matters when this function is entered as the
-      // cross-provider fallback with less than the reserve left, where the reserve
-      // would otherwise go negative and starve the only attempt there is time for.
       var perAttemptTimeout = isFirstAttempt
         ? Math.max(remainingMs - RETRY_RESERVE_MS, Math.min(remainingMs, ERROR_RETRY_CAP_MS))
         : Math.min(ERROR_RETRY_CAP_MS, remainingMs);
@@ -412,11 +381,6 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
 
         if (res.ok) {
           var data = await res.json();
-          // The old indexing walked candidates[0].content.parts[0].text unguarded, so
-          // a 200 carrying an empty candidates array or a candidate with no parts —
-          // what a safety block or a MAX_TOKENS stop actually looks like — threw a
-          // TypeError that was caught below and reported as a "fetch exception",
-          // hiding the real reason. Read it defensively and name the reason instead.
           var parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
           var text = '';
           for (var p = 0; p < parts.length; p++) {
@@ -434,8 +398,6 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
           lastError = `[${model} on ${apiVersion}] 200 with no usable text (${reason})`;
         } else {
           var errText = await res.text();
-          // Widened from 50 to 150 characters to match the Anthropic path: 50 cut off
-          // mid-JSON, before the message field that says what actually went wrong.
           lastError = `[${model} on ${apiVersion}] ${res.status}: ${errText.substring(0, 150)}`;
         }
       } catch (e) {
@@ -446,11 +408,6 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
           lastError = `[${model}] ${e.message}`;
         }
       } finally {
-        // Moved out of the success path into `finally`. `controller` and `timeoutId`
-        // are `var`s, so they are one binding shared by every iteration of both
-        // loops: a timer left running after a non-abort exception used to survive
-        // into the next attempt and abort *that* attempt's request — with up to six
-        // (key, model) pairs here, that misfire had five chances to land.
         clearTimeout(timeoutId);
       }
     }
@@ -498,11 +455,6 @@ function buildAnthropicContentBlocks(promptText, mediaParts) {
   return blocks;
 }
 
-// FIX (#1 + #7): the previous version hardcoded a single retired snapshot
-// ('claude-3-5-sonnet-20240620') with no fallback, so any 404/5xx killed the whole
-// CLAUDE_CHAT path. This now walks a small list of current model strings the same
-// way fetchGeminiCore walks its model list, and reports every attempt's error so
-// the real failure is visible instead of a single opaque 404.
 async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contextData, anthropicKey, deadlineTs) {
   if (!anthropicKey) {
     return { text: null, error: 'No Anthropic API key configured.' };
@@ -589,21 +541,11 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
       }
     } catch (e) {
       if (timedOut) {
-        // The watchdog fired: this attempt used the whole budget without responding.
-        // Deliberately do NOT advance to the sibling model — it generates at the same
-        // rate, so a second full pass cannot finish in the sliver that is left and
-        // would only add to the wall clock the caller has already paid. Returning now
-        // hands the reserved time to the cross-provider fallback instead.
         lastError = `[${model}] Anthropic call exceeded its ${timeoutMs}ms deadline with no response.`;
         break;
       }
       lastError = `[${model}] Anthropic fetch exception: ${e.message}`;
     } finally {
-      // Moved out of the success path into `finally`. `controller` is a `var`, so it
-      // is one binding shared by every iteration: a timer left running after a
-      // non-abort exception used to survive into the next attempt and abort *that*
-      // attempt's request. Clearing here also lets the function freeze promptly
-      // instead of holding the event loop open for a pending timer.
       clearTimeout(timeoutId);
     }
   }
@@ -615,18 +557,6 @@ export default async function handler(req, res) {
   var startTime = Date.now();
   var requestTraceId = Math.random().toString(36).substring(2, 10);
 
-  // FIX (Edge -> Node migration): now that this runs as a Node.js Function
-  // instead of Edge, maxDuration: 60 above is genuinely honored (no more hidden
-  // 25s "must begin responding" wall). Budget bumped back up to give the
-  // Anthropic -> Gemini fallback chain real room, while still leaving ~15s of
-  // headroom under the 60s ceiling for request parsing, Supabase context
-  // gathering, and response serialization.
-  //
-  // FIX (#53): 45000 left the primary model roughly 32s once the <=3s context
-  // gather and the cross-provider reserve came out of it, which is uncomfortably
-  // close to the 26.5s a measured "analyze ..." turn actually takes. Raised to
-  // 50000 for margin; the <=3s prologue still leaves ~7s of slack under the 60s
-  // maxDuration, and nothing downstream of the model call is slow.
   var MODEL_FETCH_BUDGET_MS = 50000;
   var deadlineTs = startTime + MODEL_FETCH_BUDGET_MS;
 
@@ -648,7 +578,6 @@ export default async function handler(req, res) {
 
   var getHeader = (name) => req.headers.get ? req.headers.get(name) : req.headers[String(name).toLowerCase()];
 
-  // Supabase Fallback logic for GitHub / Vercel naming mismatches
   var supUrl = (process.env.SUPABASE_URL || '').replace(/\s+/g, '');
   var supKey = (process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLEKEY || '').replace(/\s+/g, '');
 
@@ -701,8 +630,6 @@ export default async function handler(req, res) {
       var stixObjects = rawTelemetry.map(record => {
         var patternValue = record.stix_pattern;
         if (!patternValue) {
-          // FIX (#8): escape the interpolated value so it can't break out of the
-          // single-quoted STIX pattern string (e.g. a value containing an apostrophe).
           var safeValue = escapeStixValue(record.value);
           if (record.indicator_type === 'IPv4') patternValue = `[ipv4-addr:value = '${safeValue}']`;
           else if (record.indicator_type === 'domain') patternValue = `[domain-name:value = '${safeValue}']`;
@@ -758,12 +685,10 @@ export default async function handler(req, res) {
     var reqBody = {};
     try {
       if (req.body && typeof req.body === 'object') {
-        // Vercel's Node.js runtime auto-parses JSON request bodies into req.body.
         reqBody = req.body;
       } else if (typeof req.body === 'string' && req.body.trim()) {
         reqBody = JSON.parse(req.body);
       } else if (typeof req.json === 'function') {
-        // Defensive fallback if this ever runs against a Web-standard Request.
         reqBody = await req.json();
       }
     } catch (parseErr) {
@@ -785,17 +710,12 @@ export default async function handler(req, res) {
     var pass = reqBody.pass;
     var voice = reqBody.voice || 'christopher';
 
-    // SAFETY FIX (#6 - protected paths) + new REORGANIZE_FILES action inputs.
     var confirmProtectedPath = reqBody.confirmProtectedPath === true;
     var reorganizeOperations = Array.isArray(reqBody.operations) ? reqBody.operations : [];
     var reorganizeCommitMessage = reqBody.commitMessage || '';
     var patchSearchStr = reqBody.search;
     var patchReplaceStr = reqBody.replace;
 
-    // TWO-PHASE APPROVAL: defaults ON for every write action. Explicit
-    // requireApproval: false is available for scripted/testing use but is
-    // NOT recommended — it restores the old immediate-write behavior with
-    // no human confirmation step in between.
     var requireApproval = reqBody.requireApproval !== false;
     var pendingActionToken = reqBody.token || '';
     var pendingActionDecision = reqBody.decision || '';
@@ -820,10 +740,6 @@ export default async function handler(req, res) {
           patchSearchStr = parsedPrompt.search || patchSearchStr;
           patchReplaceStr = parsedPrompt.replace || patchReplaceStr;
         } else if (mappedAction === 'REORGANIZE_FILES' || mappedAction === 'reorganize_files') {
-          // SAFETY FEATURE (new): atomic multi-file create/update/delete/move
-          // in a single commit, via the Git Data API rather than the
-          // single-file Contents API — see the REORGANIZE_FILES handler below
-          // for why this is the only safe way to do real repo reorganization.
           actionType = 'REORGANIZE_FILES';
           targetRepo = parsedPrompt.targetRepo || targetRepo;
           isAuthorizedAction = isAuthorizedAction || parsedPrompt.isAuthorizedAction === true;
@@ -841,7 +757,6 @@ export default async function handler(req, res) {
 
     var rawActionType = action || actionType || 'CHAT';
 
-    // Universal Auth Mismatch Fallbacks
     var expectedUser = (process.env.USER_API_KEY || process.env.USER_API_USER || '').trim();
     var expectedPass = (process.env.USER_API_PASS || process.env.USER_API_PASSS || '').trim();
     var storedGhToken = process.env.GITHUB_TOKEN;
@@ -890,7 +805,6 @@ export default async function handler(req, res) {
     var cartesiaKey = (process.env.CARTESIA_API_KEY || '').replace(/\s+/g, '');
     var cartesiaModelId = process.env.CARTESIA_MODEL_ID || 'sonic-3.6';
     
-    // Core Supabase vars populated at the top of the function
     var supabaseUrl = supUrl;
     var supabaseKey = supKey;
     
@@ -1087,12 +1001,6 @@ export default async function handler(req, res) {
       if (!isAuthed) {
         return sendJSON(res, 401, { reply: `[AGENT] Patch Aborted: Authentication required.`, traceId: requestTraceId });
       }
-      // SAFETY FIX (#7 - gating inconsistency): this path used to only require
-      // isAuthed, while ACCEPT_AUTHORIZATION additionally required
-      // isAuthorizedAction. That made the LESS reviewable, NO-preflight path
-      // the more loosely gated one. Both now require the same explicit intent
-      // flag. This is a deliberate breaking change for anything that was
-      // calling /patch without isAuthorizedAction: true.
       if (!isAuthorizedAction) {
         return sendJSON(res, 200, { reply: `[AGENT] Patch Aborted: isAuthorizedAction flag required to apply a surgical patch (auth alone is no longer sufficient).`, traceId: requestTraceId });
       }
@@ -1113,7 +1021,6 @@ export default async function handler(req, res) {
           return sendJSON(res, 200, { reply: `[AGENT] Patch Error: Missing 'search' or 'replace' parameters.` });
         }
 
-        // SAFETY FIX (#6 - protected paths).
         if (isHardBlockedPath(targetPathFile)) {
           return sendJSON(res, 200, { reply: `[AGENT] Patch Refused: '${targetPathFile}' matches a hard-blocked path pattern (env files, credentials, .git internals). This cannot be edited through this endpoint under any flag.` });
         }
@@ -1136,8 +1043,6 @@ export default async function handler(req, res) {
         var patchRepoBaseUrl = `https://api.github.com/repos/${patchRepoPath}`;
         var patchBranchName = `surgical-patch-${Date.now()}`;
 
-        // SAFETY FIX (#3 - path resolution): resolve BEFORE branching, and
-        // refuse outright if the filename is ambiguous across the repo.
         var pathResolution = await resolveGithubPathCandidates(targetPathFile, patchRepoBaseUrl, ghApiHeaders);
         if (pathResolution.ambiguous) {
           return sendJSON(res, 200, { reply: `[AGENT] Patch Aborted: '${targetPathFile}' matches multiple files in the repo, refusing to guess which one you meant:\n${pathResolution.candidates.map(c => '• ' + c).join('\n')}\nRe-send with the exact full path.` });
@@ -1167,21 +1072,12 @@ export default async function handler(req, res) {
         if (occurrences === 0) {
           return sendJSON(res, 200, { reply: `[AGENT] Patch Aborted: Search block exact match not found in ${actualFilePath}.` });
         }
-        // SAFETY FIX (#2 - silent partial patches): .replace() only ever
-        // touches the first hit. Refuse rather than silently patch one of
-        // several matches.
         if (occurrences > 1) {
           return sendJSON(res, 200, { reply: `[AGENT] Patch Aborted: Search block appears ${occurrences} times in ${actualFilePath} — ambiguous which one you meant. Provide more surrounding context to make the match unique, or patch this manually.` });
         }
 
         var updatedContent = currentContent.replace(searchStr, replaceStr);
 
-        // SAFETY FIX (#1 - no validation on patch result): the old code never
-        // ran the preflight check on a surgical patch at all — only whole-file
-        // ACCEPT_AUTHORIZATION overwrites got that check. A bad replacement
-        // string (mismatched brace, broken indentation) used to sail straight
-        // into a PR with zero warning. Now every patch is validated the same
-        // way a full-file commit is, BEFORE anything is written to GitHub.
         var patchPreFlight = runPreFlightCheck(updatedContent, actualFilePath);
         if (!patchPreFlight.passed) {
           return sendJSON(res, 200, { reply: `[AGENT] Patch Aborted: resulting file failed validation and was NOT committed. (${patchPreFlight.log})` });
@@ -1189,9 +1085,6 @@ export default async function handler(req, res) {
 
         var patchDiffSummary = formatDiffSummary(computeLineDiff(currentContent, updatedContent));
 
-        // TWO-PHASE APPROVAL: everything above this line is pure validation —
-        // nothing has touched GitHub yet. Stop here and wait for an explicit
-        // /approve instead of writing immediately.
         var patchWantsApproval = requireApproval && patchData.requireApproval !== false;
         if (patchWantsApproval) {
           if (!supabaseUrl || !supabaseKey) {
@@ -1251,9 +1144,6 @@ export default async function handler(req, res) {
         });
 
         var patchPrData = await patchPrRes.json();
-        // SAFETY FIX (#4/#5 - no visibility into what actually changed): the
-        // reply now includes the diff summary directly, not just a PR link,
-        // so reviewing on mobile means something without switching apps.
         return sendJSON(res, 200, {
           reply: patchPrRes.ok
             ? `[AGENT] Surgical Patch Applied & PR Opened: ${patchPrData.html_url}\n\n[DIFF PREVIEW — ${actualFilePath}]\n${patchDiffSummary}`
@@ -1265,12 +1155,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // FIX (#6): 'aria' previously pointed at the exact same UUID as 'steffan' — a
-    // copy/paste bug that meant asking for 'aria' silently played steffan's voice.
-    // Removed the wrong duplicate; unknown/unset voice IDs now fall through to the
-    // 'christopher' default below instead of lying about which voice is speaking.
-    // Add the real Aria voice ID here once you've pulled it from your Cartesia
-    // dashboard / voice library.
     var cartesiaVoiceMap = {
       'christopher': 'a0e99841-438c-4a64-b679-ae501e7d6091',
       'steffan': '996f8664-9669-42b7-a068-1eb6e55c328d',
@@ -1314,11 +1198,6 @@ export default async function handler(req, res) {
             }
             audioStatus = 'SUCCESS';
           } else {
-            // FIX: previously, a real Cartesia error (bad key, rate limit,
-            // invalid voice ID, account issue) fell through with audioStatus
-            // silently left at 'SKIPPED' — indistinguishable from "never
-            // tried." Now the actual error is captured and returned so a
-            // failure is visible instead of looking like nothing happened.
             var ttsErrText = await ttsRes.text();
             audioStatus = `CARTESIA_ERROR_${ttsRes.status}: ${ttsErrText.substring(0, 150)}`;
           }
@@ -1343,19 +1222,9 @@ export default async function handler(req, res) {
       var engineUsed = '';
       var apiErrors = [];
 
-      // FIX (timeout): this entire waterfall (Imagen x keys -> Nano Banana x keys ->
-      // Replicate create+poll -> Pollinations) previously had no overall deadline at
-      // all, so on a slow day it could run well past the Edge runtime's 25s hard
-      // "must begin responding" ceiling. Every tier below now checks against this
-      // shared deadline before doing further work, and each fetch is capped to
-      // whatever time actually remains rather than a fixed 15s/20s.
       var IMAGE_GEN_BUDGET_MS = 45000;
       var imageDeadlineTs = Date.now() + IMAGE_GEN_BUDGET_MS;
 
-      // FIX (#3): imagen-3.0-generate-001 was shut down by Google on 2026-08-17,
-      // so this tier was 404ing on every single request before falling through to
-      // Replicate (or the low-quality Pollinations fallback). Updated to the
-      // current GA model, imagen-4.0-generate-001.
       var imagenModel = 'imagen-4.0-generate-001';
       for (var k = 0; k < geminiKeys.length && Date.now() < imageDeadlineTs - 1000; k++) {
         try {
@@ -1401,11 +1270,6 @@ export default async function handler(req, res) {
         }
       }
 
-      // FIX (#4): added a second, independent Google tier before falling all the way
-      // to Replicate. Imagen's predict endpoint and Gemini's native image generation
-      // ("Nano Banana", gemini-3.1-flash-image) are separate services with separate
-      // failure modes, so trying both meaningfully improves odds of a real image
-      // instead of dropping straight to Replicate or the low-quality URL fallback.
       if (!imageUrl && Date.now() < imageDeadlineTs - 1000) {
         var nanoBananaModel = 'gemini-3.1-flash-image';
         for (var n = 0; n < geminiKeys.length && Date.now() < imageDeadlineTs - 1000; n++) {
@@ -1457,11 +1321,6 @@ export default async function handler(req, res) {
         }
       }
 
-      // Replicate fallback utilizing the Official Model Endpoint (No Version Hash Required)
-      // FIX (#5): the previous version never checked whether the *creation* call
-      // succeeded — if createRes wasn't ok, predictionUrl was undefined, the poll
-      // loop silently never ran, and no error was ever recorded. Now the creation
-      // response is checked explicitly and any failure is captured in apiErrors.
       if (!imageUrl && replicateToken && Date.now() < imageDeadlineTs - 2000) {
         try {
           var replicateRemainingMs = imageDeadlineTs - Date.now();
@@ -1482,9 +1341,6 @@ export default async function handler(req, res) {
           } else {
             var predictionUrl = createData && createData.urls && createData.urls.get;
             var replicateOutput = null;
-            // FIX (timeout): poll deadline is now bounded by whatever's actually left
-            // in the shared image budget, not a fixed 20s tacked on regardless of how
-            // much time earlier tiers already used.
             var pollDeadline = Math.min(Date.now() + 20000, imageDeadlineTs);
             while (predictionUrl && Date.now() < pollDeadline) {
               await new Promise(r => setTimeout(r, 1500));
@@ -1518,8 +1374,6 @@ export default async function handler(req, res) {
         engineUsed = `Basic Fallback`;
       }
 
-      // FIX (#5 cont.): surface why the better engines failed instead of hiding it —
-      // previously apiErrors was collected but never returned anywhere.
       var imageReply = `[SYSTEM] Image Rendered using **${engineUsed}**.\nPrompt: "${cleanPrompt}"`;
       if (engineUsed !== 'Google (Imagen 4 - Key 1)' && apiErrors.length > 0) {
         imageReply += `\n[DIAGNOSTIC] Prior engine attempts failed:\n${apiErrors.map(e => `• ${e}`).join('\n')}`;
@@ -1538,10 +1392,6 @@ export default async function handler(req, res) {
         return sendJSON(res, 401, { reply: `[AGENT] Commit Aborted: Authentication required.`, traceId: requestTraceId });
       }
 
-      // SAFETY FIX (#6 - protected paths). Checked before the cron-YAML
-      // auto-fill below, since /deploy-cron deliberately targets a
-      // .github/workflows/ path and that should still require explicit
-      // confirmation, not bypass it by virtue of being a built-in template.
       if (isHardBlockedPath(targetFile)) {
         return sendJSON(res, 200, { reply: `[AGENT] Commit Refused: '${targetFile}' matches a hard-blocked path pattern (env files, credentials, .git internals). This cannot be written through this endpoint under any flag.`, traceId: requestTraceId });
       }
@@ -1577,8 +1427,6 @@ export default async function handler(req, res) {
         var authRepoBaseUrl = `https://api.github.com/repos/${authRepoPath}`;
         var authBranchName = `agent-patch-${Date.now()}`;
 
-        // SAFETY FIX (#3 - path resolution): resolve before branching and
-        // refuse on ambiguity, same as the surgical patch path.
         var authPathResolution = await resolveGithubPathCandidates(targetFile, authRepoBaseUrl, authGhApiHeaders);
         if (authPathResolution.ambiguous) {
           return sendJSON(res, 200, { reply: `[AGENT] Commit Aborted: '${targetFile}' matches multiple files in the repo, refusing to guess which one you meant:\n${authPathResolution.candidates.map(c => '• ' + c).join('\n')}\nRe-send with the exact full path.`, traceId: requestTraceId });
@@ -1590,9 +1438,6 @@ export default async function handler(req, res) {
         var authRefData = await authRefRes.json();
         var authMainSha = authRefData.object.sha;
 
-        // Fetch the file's current content off main (if it exists) BEFORE
-        // branching, purely so we can compute and show a real diff — this is
-        // read-only and doesn't affect the write path below.
         var authOldContent = '';
         var authFileExistedBefore = false;
         var authBaseFileSha = null;
@@ -1610,7 +1455,6 @@ export default async function handler(req, res) {
           ? formatDiffSummary(computeLineDiff(authOldContent, pendingCode))
           : `[New file: ${pendingCode.split('\n').length} lines added]`;
 
-        // TWO-PHASE APPROVAL: stop here, before any branch/commit exists.
         var authWantsApproval = requireApproval;
         if (authWantsApproval) {
           if (!supabaseUrl || !supabaseKey) {
@@ -1671,7 +1515,6 @@ export default async function handler(req, res) {
         });
 
         var prData = await prRes.json();
-        // SAFETY FIX (#4/#5 - no visibility into what actually changed).
         return sendJSON(res, 200, {
           reply: (prRes.ok ? `[AGENT] Pull Request Created Successfully: ${prData.html_url}` : `[AGENT] Commit made, but PR creation failed.`) + `\n\n[DIFF PREVIEW — ${authActualFilePath}]\n${authDiffSummary}`,
           traceId: requestTraceId
@@ -1681,38 +1524,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // ---------------------------------------------------------------------
-    // NEW CAPABILITY: REORGANIZE_FILES
-    // ---------------------------------------------------------------------
-    // Neither APPLY_SURGICAL_PATCH nor ACCEPT_AUTHORIZATION can move, rename,
-    // delete, or touch multiple files atomically — both use GitHub's simple
-    // Contents API, which only creates/overwrites ONE file per call. Real
-    // repo reorganization (splitting a monolith into modules, moving files,
-    // deleting dead ones) genuinely needs several files to change together as
-    // ONE commit, or a partial failure could leave the repo in an
-    // inconsistent half-migrated state with nothing tracking that.
-    //
-    // This uses GitHub's lower-level Git Data API instead: build blobs for
-    // new/changed content, assemble one new tree from the current tree plus
-    // those changes, create one commit pointing at that tree, then open a PR
-    // — all changes land together, on one branch, in one commit, or the
-    // whole operation fails before anything is written.
-    //
-    // Request shape (via reqBody or the JSON-in-prompt convention used
-    // elsewhere in this file):
-    // {
-    //   action: 'REORGANIZE_FILES',
-    //   targetRepo: 'sovereign-threat-pipeline',
-    //   commitMessage: 'Split monolith into modules',
-    //   isAuthorizedAction: true,
-    //   operations: [
-    //     { op: 'create', path: 'lib/new-module.js', content: '...' },
-    //     { op: 'update', path: 'existing/file.js', content: '...' },
-    //     { op: 'delete', path: 'old/dead-file.js' },
-    //     { op: 'move',   path: 'old/location.js', newPath: 'new/location.js' },
-    //     { op: 'move',   path: 'old/location.js', newPath: 'new/location.js', content: '...' }
-    //   ]
-    // }
     if (activeAction === 'REORGANIZE_FILES') {
       if (!isAuthed) {
         return sendJSON(res, 401, { reply: `[AGENT] Reorganize Aborted: Authentication required.`, traceId: requestTraceId });
@@ -1733,8 +1544,6 @@ export default async function handler(req, res) {
         return sendJSON(res, 200, { reply: `[AGENT] Reorganize Aborted: ${ops.length} operations requested, max ${MAX_REORG_OPERATIONS} per commit. Split into smaller batches.`, traceId: requestTraceId });
       }
 
-      // Validate shape of every operation up front — fail the whole batch
-      // before touching GitHub at all if anything is malformed.
       var VALID_OPS = ['create', 'update', 'delete', 'move'];
       for (var oi = 0; oi < ops.length; oi++) {
         var opItem = ops[oi];
@@ -1752,10 +1561,6 @@ export default async function handler(req, res) {
         }
       }
 
-      // SAFETY FIX (#6 - protected paths): check EVERY path touched by EVERY
-      // operation before doing anything. This is an all-or-nothing batch —
-      // one blocked path aborts the whole reorganization rather than
-      // partially applying it.
       var allTouchedPaths = [];
       ops.forEach(function (o) {
         allTouchedPaths.push(o.path);
@@ -1786,9 +1591,6 @@ export default async function handler(req, res) {
         var reorgBaseUrl = `https://api.github.com/repos/${reorgRepoPath}`;
         var reorgBranchName = `reorganize-${Date.now()}`;
 
-        // Fetch the full tree once, up front — this gives us every existing
-        // file's path + blob sha, which we need both to resolve ambiguous
-        // paths safely (#3) and to move/delete files without extra API calls.
         var reorgRefRes = await fetch(`${reorgBaseUrl}/git/ref/heads/main`, { headers: reorgHeaders, cache: 'no-store' });
         if (!reorgRefRes.ok) {
           return sendJSON(res, 200, { reply: `[AGENT] Reorganize Failed: Could not resolve main branch reference.`, traceId: requestTraceId });
@@ -1813,9 +1615,6 @@ export default async function handler(req, res) {
           if (item.type === 'blob') blobShaByPath[item.path] = item.sha;
         });
 
-        // Build the new tree entries and, in parallel, a human-readable
-        // per-operation summary (with real diffs where we have both old and
-        // new content) for the eventual reply.
         var newTreeEntries = [];
         var opSummaries = [];
 
@@ -1869,7 +1668,6 @@ export default async function handler(req, res) {
               return sendJSON(res, 200, { reply: `[AGENT] Reorganize Aborted: 'move' destination '${cleanNewPath}' already exists. Nothing was touched.`, traceId: requestTraceId });
             }
             if (typeof pOp.content === 'string') {
-              // Move + content change in one step.
               var moveOldContent = decodeBase64((await (await fetch(`${reorgBaseUrl}/contents/${cleanPath}?ref=main`, { headers: reorgHeaders, cache: 'no-store' })).json()).content);
               var moveBlobRes = await fetch(`${reorgBaseUrl}/git/blobs`, {
                 method: 'POST', headers: { ...reorgHeaders, 'Content-Type': 'application/json' },
@@ -1883,7 +1681,6 @@ export default async function handler(req, res) {
               newTreeEntries.push({ path: cleanPath, mode: '100644', type: 'blob', sha: null });
               opSummaries.push(`MOVE ${cleanPath} -> ${cleanNewPath} (with content changes)\n${formatDiffSummary(computeLineDiff(moveOldContent, pOp.content), 15, 1200)}`);
             } else {
-              // Pure rename: reuse the existing blob sha, no new blob needed.
               newTreeEntries.push({ path: cleanNewPath, mode: '100644', type: 'blob', sha: blobShaByPath[cleanPath] });
               newTreeEntries.push({ path: cleanPath, mode: '100644', type: 'blob', sha: null });
               opSummaries.push(`MOVE ${cleanPath} -> ${cleanNewPath} (no content changes)`);
@@ -1893,12 +1690,6 @@ export default async function handler(req, res) {
 
         var reorgMsg = reorganizeCommitMessage || `Reorganize ${ops.length} file(s) via PG1 agent`;
 
-        // TWO-PHASE APPROVAL: stop before creating the tree/commit/branch.
-        // Note: the blob objects for changed file content were already
-        // created above (needed to compute their shas for diffing/tree
-        // building) — those are harmless, content-addressed, and NOT part of
-        // any commit or branch until referenced below, so nothing is
-        // actually visible in the repo's history or file browser yet.
         if (requireApproval) {
           if (!supabaseUrl || !supabaseKey) {
             return sendJSON(res, 200, { reply: `[AGENT] Reorganize Aborted: approval flow requires Supabase to be configured. Set requireApproval: false to bypass (not recommended), or configure Supabase.`, traceId: requestTraceId });
@@ -1966,14 +1757,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // ---------------------------------------------------------------------
-    // NEW CAPABILITY: CONFIRM_PENDING_ACTION (/approve, /decline)
-    // ---------------------------------------------------------------------
-    // This is the ONLY place any of the three write actions above can
-    // actually reach GitHub, when requireApproval is on (the default). It
-    // re-validates that the base hasn't moved since the proposal was made —
-    // refusing rather than silently overwriting on a stale base — before
-    // doing the real branch/commit/PR work each action type needs.
     if (activeAction === 'CONFIRM_PENDING_ACTION') {
       if (!isAuthed) {
         return sendJSON(res, 401, { reply: `[AGENT] Confirmation Aborted: Authentication required.`, traceId: requestTraceId });
@@ -2004,7 +1787,6 @@ export default async function handler(req, res) {
         return sendJSON(res, 200, { reply: `[AGENT] Proposal declined and discarded. Nothing was written to GitHub.`, traceId: requestTraceId });
       }
 
-      // decision === 'approve' from here on.
       var plan = pendingRow.plan;
       var ghHeaders = {
         'Authorization': `Bearer ${githubToken}`,
@@ -2017,8 +1799,6 @@ export default async function handler(req, res) {
 
       try {
         if (pendingRow.action_type === 'APPLY_SURGICAL_PATCH' || pendingRow.action_type === 'ACCEPT_AUTHORIZATION') {
-          // STALENESS CHECK: refuse if the file changed since the proposal
-          // was validated, rather than blindly overwriting on a stale base.
           var currentFileRes = await fetch(`${repoBaseUrl}/contents/${plan.actualFilePath}?ref=main`, { headers: ghHeaders, cache: 'no-store' });
           var currentFileJson = currentFileRes.ok ? await currentFileRes.json() : null;
           var currentSha = currentFileJson ? currentFileJson.sha : null;
@@ -2068,7 +1848,6 @@ export default async function handler(req, res) {
           });
 
         } else if (pendingRow.action_type === 'REORGANIZE_FILES') {
-          // STALENESS CHECK: refuse if main moved since the tree was built.
           var currentMainRefRes = await fetch(`${repoBaseUrl}/git/ref/heads/main`, { headers: ghHeaders, cache: 'no-store' });
           var currentMainRefData = currentMainRefRes.ok ? await currentMainRefRes.json() : null;
           var currentMainSha = currentMainRefData ? currentMainRefData.object.sha : null;
@@ -2139,10 +1918,6 @@ export default async function handler(req, res) {
       ? await fetchAnthropicCore(promptText, sysInstruction, mediaParts, '', anthropicKey, deadlineTs)
       : await fetchGeminiCore(promptText, sysInstruction, mediaParts, '', geminiKeys, deadlineTs);
 
-    // FIX (#7): previously, if the Anthropic path failed outright there was no
-    // recovery — the request just returned the raw error. Now it falls back to
-    // Gemini (if keys are configured and there's still time left) so a single
-    // provider outage doesn't take the whole chat down.
     if (activeAction === 'CLAUDE_CHAT' && !modelFetchResult.text && geminiKeys.length > 0 && Date.now() < deadlineTs - 1000) {
       var anthropicError = modelFetchResult.error;
       modelFetchResult = await fetchGeminiCore(promptText, sysInstruction, mediaParts, '', geminiKeys, deadlineTs);
@@ -2154,11 +1929,6 @@ export default async function handler(req, res) {
     }
 
     var replyText = modelFetchResult.text || `Execution failed. Model Err: ${modelFetchResult.error}`;
-    // FIX (#2): the identity-scrub used to run on error text too, and since
-    // 'claude-3-5-sonnet-20240620' contains the whole word "claude", it silently
-    // rewrote 404 error messages into nonsense like
-    // "PG1 Sovereign Core-3-5-sonnet-20240620" — hiding the real diagnostic. It now
-    // only runs on genuine successful model output.
     if (modelFetchResult.text) {
       replyText = replyText.replace(/\b(Google|Gemini|ChatGPT|Claude)\b/gi, 'PG1 Sovereign Core');
     }
