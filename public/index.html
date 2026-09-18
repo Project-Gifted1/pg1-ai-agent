@@ -595,6 +595,13 @@
     let recognition;
     let isRecording = false;
 
+    // AUTH FIX: session credentials, populated once by verifyAuth() and
+    // attached to every /api/chat call from then on, so write actions
+    // (REORGANIZE_FILES, ACCEPT_AUTHORIZATION, /patch) work without the
+    // operator retyping a password into the chat box each time.
+    let sessionUser = null;
+    let sessionPass = null;
+
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       recognition = new SpeechRecognition();
@@ -650,6 +657,12 @@
       document.getElementById('prompt-input').placeholder = "Input operational directive...";
     }
 
+    // AUTH FIX: on success, store the credentials in memory (sessionUser /
+    // sessionPass) so submitDirective() can attach them to every subsequent
+    // request. The old fallback that unlocked the gate on a network error
+    // whenever the typed username was "Winner1G" has been removed — a
+    // failed verification (including a network error) now always shows
+    // Access Denied instead of silently letting the modal close.
     async function verifyAuth() {
       const user = document.getElementById('auth-user').value.trim();
       const pass = document.getElementById('auth-pass').value.trim();
@@ -668,16 +681,14 @@
           throw new Error(`Server returned non-JSON response (${res.status}): ${responseText.substring(0, 150)}`);
         }
         if (data.authenticated || data.success) {
+          sessionUser = user;
+          sessionPass = pass;
           document.getElementById('auth-modal').style.display = 'none';
         } else {
           alert('Access Denied: Invalid Credentials.');
         }
       } catch (e) {
-        if (user === 'Winner1G') {
-          document.getElementById('auth-modal').style.display = 'none';
-        } else {
-          alert('Access Denied: ' + e.message);
-        }
+        alert('Access Denied: ' + e.message);
       }
     }
 
@@ -958,9 +969,15 @@
 
       try {
         const voiceProfile = document.getElementById('voice-profile-select').value;
+        // AUTH FIX: sessionUser / sessionPass (set once by verifyAuth()) are
+        // now attached to every directive automatically, so REORGANIZE_FILES,
+        // ACCEPT_AUTHORIZATION, and /patch payloads typed into the chat box
+        // pass the backend's isAuthed check without retyping a password.
         const payload = {
           prompt: text,
-          voice: voiceProfile
+          voice: voiceProfile,
+          user: sessionUser,
+          pass: sessionPass
         };
 
         if (attachedFilesPayload.length > 0) {
