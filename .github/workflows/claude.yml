@@ -25,4 +25,5 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_args: |
+            --model claude-sonnet-5
             --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,Bash(git:*),Bash(npm:*),Bash(node:*),Bash(npx:*),Bash(vercel:*),Bash(mv:*),Bash(mkdir:*),Bash(ls:*)"
