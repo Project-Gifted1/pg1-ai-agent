@@ -21,76 +21,30 @@ async function sendPushNotification(subscription, payload) {
 
 const B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
+// FIX (base64 corruption bug): the hand-rolled encoder/decoder below stripped
+// '=' padding characters BEFORE decoding, which broke the loop's end-of-string
+// detection and silently appended 1-2 garbage NUL bytes to the end of every
+// decoded file. This corrupted every diff, patch validation, and file read
+// PG1 ever performed. Now that this runs on Node.js (not Edge), Buffer is
+// available and is both correct and far simpler.
 function encodeBase64(str) {
-  var unescaped = unescape(encodeURIComponent(str));
-  var out = '', i = 0, len = unescaped.length;
-  while (i < len) {
-    var c1 = unescaped.charCodeAt(i++) & 0xff;
-    if (i === len) {
-      out += B64_CHARS.charAt(c1 >> 2) + B64_CHARS.charAt((c1 & 0x3) << 4) + '==';
-      break;
-    }
-    var c2 = unescaped.charCodeAt(i++);
-    if (i === len) {
-      out += B64_CHARS.charAt(c1 >> 2) + B64_CHARS.charAt(((c1 & 0x3) << 4) | ((c2 & 0xf0) >> 4)) + B64_CHARS.charAt((c2 & 0xf) << 2) + '=';
-      break;
-    }
-    var c3 = unescaped.charCodeAt(i++);
-    out += B64_CHARS.charAt(c1 >> 2) + B64_CHARS.charAt(((c1 & 0x3) << 4) | ((c2 & 0xf0) >> 4)) + B64_CHARS.charAt(((c2 & 0xf) << 2) | ((c3 & 0xc0) >> 6)) + B64_CHARS.charAt(c3 & 0x3f);
-  }
-  return out;
+  return Buffer.from(str, 'utf-8').toString('base64');
 }
 
 function decodeBase64(str) {
-  var cleanStr = str.replace(/[^A-Za-z0-9\+\/]/g, '');
-  var out = '', i = 0, len = cleanStr.length;
-  while (i < len) {
-    var enc1 = B64_CHARS.indexOf(cleanStr.charAt(i++));
-    var enc2 = B64_CHARS.indexOf(cleanStr.charAt(i++));
-    var enc3 = B64_CHARS.indexOf(cleanStr.charAt(i++));
-    var enc4 = B64_CHARS.indexOf(cleanStr.charAt(i++));
-    var chr1 = (enc1 << 2) | (enc2 >> 4);
-    var chr2 = ((enc2 & 15) << 4) | (enc3 >> 2);
-    var chr3 = ((enc3 & 3) << 6) | enc4;
-    out += String.fromCharCode(chr1);
-    if (enc3 !== 64 && enc3 !== -1) out += String.fromCharCode(chr2);
-    if (enc4 !== 64 && enc4 !== -1) out += String.fromCharCode(chr3);
-  }
-  return decodeURIComponent(escape(out));
+  return Buffer.from(str, 'base64').toString('utf-8');
 }
 
 function base64ToUint8Array(base64) {
   try {
-    var cleanStr = base64.replace(/[^A-Za-z0-9\+\/]/g, '');
-    var out = [];
-    var i = 0, len = cleanStr.length;
-    while (i < len) {
-      var enc1 = B64_CHARS.indexOf(cleanStr.charAt(i++));
-      var enc2 = B64_CHARS.indexOf(cleanStr.charAt(i++));
-      var enc3 = B64_CHARS.indexOf(cleanStr.charAt(i++));
-      var enc4 = B64_CHARS.indexOf(cleanStr.charAt(i++));
-      out.push((enc1 << 2) | (enc2 >> 4));
-      if (enc3 !== 64 && enc3 !== -1) out.push(((enc2 & 15) << 4) | (enc3 >> 2));
-      if (enc4 !== 64 && enc4 !== -1) out.push(((enc3 & 3) << 6) | enc4);
-    }
-    return new Uint8Array(out);
+    return new Uint8Array(Buffer.from(base64, 'base64'));
   } catch (e) {
     return new Uint8Array(0);
   }
 }
 
 function arrayBufferToBase64(buffer) {
-  var bytes = new Uint8Array(buffer);
-  var len = bytes.byteLength;
-  var base64 = '';
-  for (var i = 0; i < len; i += 3) {
-    var chunk = (bytes[i] << 16) | ((bytes[i + 1] || 0) << 8) | (bytes[i + 2] || 0);
-    base64 += B64_CHARS[(chunk & 0xFC0000) >> 18] +
-              B64_CHARS[(chunk & 0x03F000) >> 12] +
-              (i + 1 < len ? B64_CHARS[(chunk & 0x000FC0) >> 6] : '=') +
-              (i + 2 < len ? B64_CHARS[(chunk & 0x00003F)] : '=');
-  }
-  return base64;
+  return Buffer.from(buffer).toString('base64');
 }
 
 function sendJSON(res, status, data) {
