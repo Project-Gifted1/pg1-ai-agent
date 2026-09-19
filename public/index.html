@@ -191,6 +191,19 @@
     .message-actions span:hover { text-decoration: underline; text-shadow: 0 0 10px var(--text-gold); opacity: 1; }
     .message-actions span:active { transform: scale(0.9); }
 
+    .approval-actions { display: flex; gap: 12px; margin-top: 16px; }
+    .approval-btn {
+      flex: 1; padding: 12px; border-radius: 8px; font-size: 12px; font-weight: bold;
+      text-transform: uppercase; letter-spacing: 1px; cursor: pointer; border: 1px solid;
+      transition: all 0.2s ease; background: transparent; font-family: var(--font-mono);
+    }
+    .approval-btn.approve { border-color: var(--text-gold); color: var(--text-gold); }
+    .approval-btn.approve:hover { background: rgba(243, 198, 35, 0.12); box-shadow: 0 0 15px var(--glow-subtle); }
+    .approval-btn.decline { border-color: var(--danger-red); color: var(--danger-red); }
+    .approval-btn.decline:hover { background: rgba(255, 68, 68, 0.12); }
+    .approval-btn:active { transform: scale(0.94); }
+    .approval-btn:disabled { opacity: 0.4; cursor: default; transform: none; box-shadow: none; }
+
     .media-preview-container { margin-top: 16px; margin-bottom: 16px; width: 100%; }
     .media-preview-container img, .media-preview-container video { 
       width: 100%; 
@@ -239,7 +252,7 @@
       text-transform: uppercase; display: flex; align-items: center; gap: 8px;
     }
 
-    .status-dot {
+    .status-dot { 
       display: inline-block; width: 6px; height: 6px;
       background-color: #00ff66; border-radius: 50%;
       box-shadow: 0 0 10px #00ff66;
@@ -889,6 +902,56 @@
       saveState();
     }
 
+    // APPROVAL BUTTONS: taps the same CONFIRM_PENDING_ACTION path the old
+    // "/approve <token>" text command used, just with the token attached
+    // automatically instead of the operator retyping it.
+    async function resolveApproval(token, decision, btnEl) {
+      triggerHaptic(decision === 'approve' ? 60 : 40);
+      const actionsRow = btnEl.closest('.approval-actions');
+      const bubble = btnEl.closest('.message-bubble');
+      if (actionsRow) {
+        actionsRow.querySelectorAll('button').forEach(b => b.disabled = true);
+        btnEl.textContent = decision === 'approve' ? 'APPROVING...' : 'DECLINING...';
+      }
+
+      try {
+        const payload = {
+          action: 'CONFIRM_PENDING_ACTION',
+          token: token,
+          decision: decision,
+          user: sessionUser,
+          pass: sessionPass
+        };
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const responseText = await response.text();
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseErr) {
+          throw new Error(`Server returned non-JSON response (${response.status}): ${responseText.substring(0, 150)}`);
+        }
+
+        triggerHaptic(decision === 'approve' ? [30, 50, 30] : 50);
+        if (bubble) {
+          const textEl = bubble.querySelector('.message-text');
+          if (textEl) textEl.innerHTML += `<br><br>${formatMarkdown(data.reply || (decision === 'approve' ? 'Approved.' : 'Declined.'))}`;
+        }
+        if (actionsRow) actionsRow.remove();
+        saveState();
+      } catch (err) {
+        triggerHaptic(200);
+        flashStatus('APPROVAL REQUEST FAILED');
+        if (actionsRow) {
+          actionsRow.querySelectorAll('button').forEach(b => b.disabled = false);
+        }
+        btnEl.textContent = decision === 'approve' ? '✅ APPROVE' : '❌ DECLINE';
+      }
+    }
+
     async function submitDirective() {
       const input = document.getElementById('prompt-input');
       const text = input.value.trim();
@@ -1021,6 +1084,15 @@
               <video controls preload="metadata" playsinline width="100%" src="${data.video}">
                 Your browser does not support video playback.
               </video>
+            </div>`;
+        }
+
+        if (data.pendingApproval && data.pendingApproval.token) {
+          const pa = data.pendingApproval;
+          contentHtml += `
+            <div class="approval-actions">
+              <button class="approval-btn approve" onclick="resolveApproval('${pa.token}', 'approve', this)">✅ APPROVE</button>
+              <button class="approval-btn decline" onclick="resolveApproval('${pa.token}', 'decline', this)">❌ DECLINE</button>
             </div>`;
         }
 
