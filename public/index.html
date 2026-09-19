@@ -558,7 +558,7 @@
           stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         } else if (source === 'screen') {
           if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-            alert('Vision Matrix Access Denied: Apple iOS restricts web-based screen sharing to native apps. Please use the Device Camera for visual input.');
+            alert('Vision Matrix Access Denied: Mobile browsers do not support web-based screen sharing. Please use the Device Camera for visual input.');
             document.getElementById('vision-modal').style.display = 'none';
             return;
           }
