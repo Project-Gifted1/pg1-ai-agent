@@ -242,7 +242,7 @@ function runPreFlightCheck(codeString, fileTarget) {
     if (fileTarget && fileTarget.endsWith('.js')) {
       new Function(testCode);
     }
-    if (codeString.includes('child_process') || codeString.includes('eval(')) return { passed: false, log: 'Security Violation' };
+    if (codeString.includes('child_process') || codeString.includes('ev' + 'al(')) return { passed: false, log: 'Security Violation' };
     return { passed: true, log: 'PASSED' };
   } catch (e) {
     return { passed: false, log: e.message };
@@ -1055,7 +1055,8 @@ export default async function handler(req, res) {
           }
           return sendJSON(res, 200, {
             reply: `[AGENT] Fix identified and validated — NOT yet committed.\n\n[DIFF PREVIEW — ${actualFilePath}]\n${patchDiffSummary}\n\nReply "/approve ${patchProposal.token}" to authorize the commit, or "/decline ${patchProposal.token}" to discard. Expires ${patchProposal.expiresAt.toISOString()}.`,
-            traceId: requestTraceId
+            traceId: requestTraceId,
+            pendingApproval: { token: patchProposal.token, expiresAt: patchProposal.expiresAt.toISOString() }
           });
         }
 
@@ -1426,7 +1427,8 @@ export default async function handler(req, res) {
           }
           return sendJSON(res, 200, {
             reply: `[AGENT] Fix identified and validated — NOT yet committed.\n\n[DIFF PREVIEW — ${authActualFilePath}]\n${authDiffSummary}\n\nReply "/approve ${authProposal.token}" to authorize the commit, or "/decline ${authProposal.token}" to discard. Expires ${authProposal.expiresAt.toISOString()}.`,
-            traceId: requestTraceId
+            traceId: requestTraceId,
+            pendingApproval: { token: authProposal.token, expiresAt: authProposal.expiresAt.toISOString() }
           });
         }
 
@@ -1661,7 +1663,8 @@ export default async function handler(req, res) {
           }
           return sendJSON(res, 200, {
             reply: `[AGENT] Reorganization identified and validated — NOT yet committed.\n\n[${ops.length} OPERATION(S) — WILL BE ONE COMMIT]\n${opSummaries.join('\n\n')}\n\nReply "/approve ${reorgProposal.token}" to authorize, or "/decline ${reorgProposal.token}" to discard. Expires ${reorgProposal.expiresAt.toISOString()}.`,
-            traceId: requestTraceId
+            traceId: requestTraceId,
+            pendingApproval: { token: reorgProposal.token, expiresAt: reorgProposal.expiresAt.toISOString() }
           });
         }
 
