@@ -23,6 +23,7 @@
     "@x402/express": "latest",
     "@x402/core": "latest",
     "@x402/evm": "latest",
+    "@x402/svm": "latest",
     "uuid": "latest"
   }
 }
