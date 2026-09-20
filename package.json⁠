@@ -17,6 +17,11 @@
     "ai": "latest",
     "zod": "latest",
     "@supabase/supabase-js": "latest",
-    "cheerio": "latest"
+    "cheerio": "latest",
+    "web-push": "^3.6.7",
+    "@coinbase/cdp-sdk": "latest",
+    "@x402/express": "latest",
+    "@x402/core": "latest",
+    "@x402/evm": "latest"
   }
 }
