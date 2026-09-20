@@ -25,5 +25,10 @@
     "@x402/evm": "latest",
     "@x402/svm": "latest",
     "uuid": "latest"
+  },
+  "devDependencies": {
+    "typescript": "latest",
+    "@types/react": "latest",
+    "@types/node": "latest"
   }
 }
