@@ -22,6 +22,7 @@
     "@coinbase/cdp-sdk": "latest",
     "@x402/express": "latest",
     "@x402/core": "latest",
-    "@x402/evm": "latest"
+    "@x402/evm": "latest",
+    "uuid": "latest"
   }
 }
