@@ -1,1 +1,0 @@
-const paginationStatus='ENABLED';const batchSize=1000;const confidenceThreshold=90;
