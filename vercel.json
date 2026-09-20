@@ -5,10 +5,6 @@
       "schedule": "0 * * * *"
     }
   ],
-  "rewrites": [
-    { "source": "/api/ioc", "destination": "/api/chat" },
-    { "source": "/api/feeds/ioc", "destination": "/api/chat" }
-  ],
   "headers": [
     {
       "source": "/api/(.*)",
