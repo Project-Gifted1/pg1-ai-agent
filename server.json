@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Project-Gifted1/pg1-threat-intel",
   "title": "PG1 Sovereign Threat Intelligence",
-  "description": "STIX 2.1 threat indicator feed (IPs, domains, URLs, file hashes) sourced from ThreatFox, URLhaus, AbuseIPDB, OTX and NVD.",
+  "description": "STIX 2.1 threat indicator feed: IPs, domains, URLs, file hashes from ThreatFox, OTX, NVD.",
   "version": "1.0.0",
   "repository": {
     "url": "https://github.com/Project-Gifted1/pg1-ai-agent",
