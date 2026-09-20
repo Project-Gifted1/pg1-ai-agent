@@ -1,3 +1,7 @@
+import { ExactEvmScheme } from '@x402/evm/exact/server';
+import { paymentMiddleware, x402ResourceServer } from '@x402/express';
+import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
+
 export const config = {
   maxDuration: 60
 };
@@ -16,6 +20,42 @@ async function sendPushNotification(subscription, payload) {
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message };
+  }
+}
+
+// ---------------------------------------------------------------------
+// X402 PAYMENT LAYER (agent-to-agent micropayments for /api/ioc)
+// ---------------------------------------------------------------------
+// Built ONCE at module load (not per-request) so warm serverless invocations
+// reuse the same facilitator client/middleware instead of rebuilding it on
+// every request. createCdpFacilitatorClient() reads CDP_API_KEY_ID and
+// CDP_API_KEY_SECRET from the environment automatically - no manual auth
+// wiring needed here.
+//
+// This is deliberately NOT mounted via app.use() (this file is a raw Vercel
+// (req, res) function, not an Express app) - instead the middleware function
+// it returns is invoked directly inside the /api/ioc handler below, with our
+// own next() callback. Vercel's res object already implements the
+// Express-style res.status()/res.json() helpers this middleware expects.
+var X402_PAY_TO = (process.env.X402_PAY_TO_ADDRESS || '').trim();
+var x402Middleware = null;
+if (X402_PAY_TO) {
+  try {
+    var x402FacilitatorClient = createCdpFacilitatorClient();
+    var x402Server = new x402ResourceServer(x402FacilitatorClient).register('eip155:8453', new ExactEvmScheme());
+    x402Middleware = paymentMiddleware(
+      {
+        'GET /api/ioc': {
+          accepts: [{ scheme: 'exact', price: '$0.01', network: 'eip155:8453', payTo: X402_PAY_TO }],
+          description: 'PG1 Sovereign Threat Intelligence: STIX 2.1 indicator feed, multi-source verified telemetry (ThreatFox, URLhaus, AbuseIPDB, OTX, NVD).',
+          mimeType: 'application/stix+json'
+        }
+      },
+      x402Server
+    );
+  } catch (e) {
+    console.error('[X402] Setup failed, payment path disabled for this invocation:', e.message);
+    x402Middleware = null;
   }
 }
 
@@ -535,22 +575,13 @@ export default async function handler(req, res) {
   var supUrl = (process.env.SUPABASE_URL || '').replace(/\s+/g, '');
   var supKey = (process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLEKEY || '').replace(/\s+/g, '');
 
-  if (urlPath === '/api/ioc' || urlPath === '/api/feeds/ioc') {
-    var clientLicenseKey = getHeader('x-api-key') || (getHeader('authorization') || '').replace('Bearer ', '');
-    if (!clientLicenseKey) {
-      return sendJSON(res, 401, { error: 'Unauthorized: Missing Commercial License Key in x-api-key header.' });
-    }
+  // Shared by both the Gumroad (human customer) and x402 (agent customer)
+  // paths below - builds the STIX 2.1 bundle from Supabase telemetry and
+  // writes it directly to res. accessIdentifier is whatever the caller used
+  // to pay/authenticate (a Gumroad license key, or 'x402:<payer-address>'),
+  // logged to api_access_logs for both paths so usage is visible either way.
+  async function buildAndServeStixBundle(accessIdentifier) {
     try {
-      var gumroadRes = await fetch('https://api.gumroad.com/v2/licenses/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ product_id: process.env.GUMROAD_PRODUCT_ID, license_key: clientLicenseKey })
-      });
-      var gumroadData = await gumroadRes.json();
-      if (!gumroadData.success || (gumroadData.purchase && (gumroadData.purchase.refunded || gumroadData.purchase.chargebacked))) {
-        return sendJSON(res, 403, { error: 'Forbidden: Invalid, expired, or refunded License Key.' });
-      }
-
       var parsedUrl = new URL(req.url, 'http://localhost');
       var sinceParam = parsedUrl.searchParams.get('since');
       var typeParam = parsedUrl.searchParams.get('type');
@@ -561,7 +592,7 @@ export default async function handler(req, res) {
         method: 'POST',
         headers: { 'apikey': supKey, 'Authorization': `Bearer ${supKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          license_key: clientLicenseKey,
+          license_key: accessIdentifier,
           endpoint_accessed: urlPath,
           status: 'SUCCESS'
         })
@@ -623,9 +654,60 @@ export default async function handler(req, res) {
       res.setHeader('Content-Type', 'application/stix+json; charset=utf-8');
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-PAYMENT');
       res.status(200).end(JSON.stringify(stixBundle));
-      return;
+    } catch (err) {
+      return sendJSON(res, 500, { error: 'Internal Server Error: Telemetry stream failed.' });
+    }
+  }
+
+  if (urlPath === '/api/ioc' || urlPath === '/api/feeds/ioc') {
+    // AGENT PATH: an X-PAYMENT header means an AI agent is paying per-call via
+    // x402, independent of the Gumroad human-customer flow below. If present,
+    // this is tried FIRST and, on success, serves the bundle directly -
+    // Gumroad is never consulted for a paying agent.
+    var hasPaymentHeader = !!(getHeader('x-payment') || getHeader('payment-signature'));
+    if (x402Middleware && hasPaymentHeader) {
+      var x402Paid = false;
+      try {
+        await new Promise((resolve, reject) => {
+          x402Middleware(req, res, function (err) {
+            if (err) { reject(err); return; }
+            x402Paid = true;
+            resolve();
+          });
+        });
+      } catch (x402Err) {
+        if (!res.headersSent) {
+          return sendJSON(res, 402, { error: 'Payment verification failed: ' + x402Err.message });
+        }
+        return;
+      }
+      if (!x402Paid) {
+        // Middleware already wrote its own response (a 402 with payment
+        // instructions, or an error) - nothing more to do here.
+        return;
+      }
+      var payerAddress = (getHeader('x-payment-payer') || 'unknown-payer');
+      return await buildAndServeStixBundle('x402:' + payerAddress);
+    }
+
+    // HUMAN PATH: existing Gumroad license-key flow, unchanged.
+    var clientLicenseKey = getHeader('x-api-key') || (getHeader('authorization') || '').replace('Bearer ', '');
+    if (!clientLicenseKey) {
+      return sendJSON(res, 401, { error: 'Unauthorized: Missing Commercial License Key in x-api-key header (or pay per-call via x402 with an X-PAYMENT header).' });
+    }
+    try {
+      var gumroadRes = await fetch('https://api.gumroad.com/v2/licenses/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ product_id: process.env.GUMROAD_PRODUCT_ID, license_key: clientLicenseKey })
+      });
+      var gumroadData = await gumroadRes.json();
+      if (!gumroadData.success || (gumroadData.purchase && (gumroadData.purchase.refunded || gumroadData.purchase.chargebacked))) {
+        return sendJSON(res, 403, { error: 'Forbidden: Invalid, expired, or refunded License Key.' });
+      }
+      return await buildAndServeStixBundle(clientLicenseKey);
     } catch (err) {
       return sendJSON(res, 500, { error: 'Internal Server Error: Telemetry stream failed.' });
     }
@@ -1885,33 +1967,4 @@ export default async function handler(req, res) {
       }
     }
 
-    var replyText = modelFetchResult.text || `Execution failed. Model Err: ${modelFetchResult.error}`;
-    if (modelFetchResult.text) {
-      replyText = replyText.replace(/\b(Google|Gemini|ChatGPT|Claude)\b/gi, 'PG1 Sovereign Core');
-    }
-
-    if (supabaseUrl && supabaseKey && !replyText.startsWith('Execution failed') && !isPdfExport) {
-      fetch(`${supabaseUrl}/rest/v1/messages`, {
-        method: 'POST',
-        headers: { ...dbHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify([{ role: 'user', content: promptText }, { role: 'model', content: replyText }]),
-        cache: 'no-store'
-      }).catch(() => {});
-    }
-
-    var audioBase64 = null;
-    var audioStatus = 'DECOUPLED_PENDING_ASYNC_CALL';
-
-    return sendJSON(res, 200, {
-      reply: replyText,
-      audio: audioBase64,
-      audioStatus: audioStatus,
-      audioMimeType: 'audio/mp3',
-      traceId: requestTraceId,
-      telemetry: { supabaseStatus: supabaseStatus, executionTimeMs: Date.now() - startTime }
-    });
-
-  } catch (err) {
-    return sendJSON(res, 200, { reply: `Exception: ${err.message}`, traceId: requestTraceId });
-  }
-}
+    var replyText = modelFetchResult.text || `Execution failed. Model Err: ${modelFetchR
