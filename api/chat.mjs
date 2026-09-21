@@ -1967,4 +1967,33 @@ export default async function handler(req, res) {
       }
     }
 
-    var replyText = modelFetchResult.text || `Execution failed. Model Err: ${modelFetchR
+    var replyText = modelFetchResult.text || `Execution failed. Model Err: ${modelFetchResult.error}`;
+    if (modelFetchResult.text) {
+      replyText = replyText.replace(/\b(Google|Gemini|ChatGPT|Claude)\b/gi, 'PG1 Sovereign Core');
+    }
+
+    if (supabaseUrl && supabaseKey && !replyText.startsWith('Execution failed') && !isPdfExport) {
+      fetch(`${supabaseUrl}/rest/v1/messages`, {
+        method: 'POST',
+        headers: { ...dbHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify([{ role: 'user', content: promptText }, { role: 'model', content: replyText }]),
+        cache: 'no-store'
+      }).catch(() => {});
+    }
+
+    var audioBase64 = null;
+    var audioStatus = 'DECOUPLED_PENDING_ASYNC_CALL';
+
+    return sendJSON(res, 200, {
+      reply: replyText,
+      audio: audioBase64,
+      audioStatus: audioStatus,
+      audioMimeType: 'audio/mp3',
+      traceId: requestTraceId,
+      telemetry: { supabaseStatus: supabaseStatus, executionTimeMs: Date.now() - startTime }
+    });
+
+  } catch (err) {
+    return sendJSON(res, 200, { reply: `Exception: ${err.message}`, traceId: requestTraceId });
+  }
+}
