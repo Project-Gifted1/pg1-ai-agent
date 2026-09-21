@@ -1,6 +1,7 @@
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { paymentMiddleware, x402ResourceServer } from '@x402/express';
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
+import { checkAndConsumeFreeTier, getRequestIdentifier, logSettlementOutcome } from '../lib/freeTier.mjs';
 
 export const config = {
   maxDuration: 60
@@ -742,6 +743,7 @@ export default async function handler(req, res) {
     // Gumroad is never consulted for a paying agent.
     var rawPaymentHeader = getHeader('x-payment') || getHeader('payment-signature');
     var hasPaymentHeader = !!rawPaymentHeader;
+    var iocRequestIdentifier = getRequestIdentifier(req);
 
     console.log('[X402_DEBUG] x-payment header present:', hasPaymentHeader, '| length:', rawPaymentHeader ? String(rawPaymentHeader).length : 0);
     console.log('[X402_DEBUG] x402Middleware configured:', !!x402Middleware, '| X402_PAY_TO set:', !!X402_PAY_TO);
@@ -750,6 +752,7 @@ export default async function handler(req, res) {
     if (x402Middleware && hasPaymentHeader) {
       var facilitatorReady = await ensureX402Initialized();
       if (!facilitatorReady) {
+        logSettlementOutcome('/api/ioc', 'rejected', iocRequestIdentifier, 'facilitator_unavailable');
         return sendJSON(res, 402, { error: 'x402 payment path is temporarily unavailable (facilitator unreachable). Please retry shortly, or use a Commercial License Key in an x-api-key header.' });
       }
       ensureExpressCompat(req);
@@ -764,6 +767,7 @@ export default async function handler(req, res) {
           });
         });
       } catch (x402Err) {
+        logSettlementOutcome('/api/ioc', 'rejected', iocRequestIdentifier, x402Err.message);
         if (!res.headersSent) {
           return sendJSON(res, 402, { error: 'Payment verification failed: ' + x402Err.message });
         }
@@ -772,16 +776,24 @@ export default async function handler(req, res) {
       if (!x402Paid) {
         // Middleware already wrote its own response (a 402 with payment
         // instructions, or an error) - nothing more to do here.
+        logSettlementOutcome('/api/ioc', 'rejected', iocRequestIdentifier, 'middleware_wrote_response');
         return;
       }
       var payerAddress = (getHeader('x-payment-payer') || 'unknown-payer');
+      logSettlementOutcome('/api/ioc', 'success', iocRequestIdentifier, 'x402');
       return await buildAndServeStixBundle('x402:' + payerAddress);
     }
 
     // HUMAN PATH: existing Gumroad license-key flow, unchanged.
     var clientLicenseKey = getHeader('x-api-key') || (getHeader('authorization') || '').replace('Bearer ', '');
     if (!clientLicenseKey) {
-      console.log('[X402_DEBUG] falling through to 401. hasPaymentHeader=%s x402Middleware configured=%s', hasPaymentHeader, !!x402Middleware);
+      var freeTierResult = await checkAndConsumeFreeTier(supUrl, supKey, iocRequestIdentifier);
+      if (freeTierResult.allowed) {
+        logSettlementOutcome('/api/ioc', 'free_tier', iocRequestIdentifier, 'remaining=' + freeTierResult.remaining);
+        return await buildAndServeStixBundle('free-tier:' + iocRequestIdentifier);
+      }
+      console.log('[X402_DEBUG] falling through to 401. hasPaymentHeader=%s x402Middleware configured=%s freeTierReason=%s', hasPaymentHeader, !!x402Middleware, freeTierResult.reason);
+      logSettlementOutcome('/api/ioc', 'no_payment', iocRequestIdentifier, freeTierResult.reason);
       return sendJSON(res, 401, { error: 'Unauthorized: Missing Commercial License Key in x-api-key header (or pay per-call via x402 with an X-PAYMENT header).' });
     }
     try {
@@ -792,8 +804,10 @@ export default async function handler(req, res) {
       });
       var gumroadData = await gumroadRes.json();
       if (!gumroadData.success || (gumroadData.purchase && (gumroadData.purchase.refunded || gumroadData.purchase.chargebacked))) {
+        logSettlementOutcome('/api/ioc', 'rejected', iocRequestIdentifier, 'invalid_license');
         return sendJSON(res, 403, { error: 'Forbidden: Invalid, expired, or refunded License Key.' });
       }
+      logSettlementOutcome('/api/ioc', 'success', iocRequestIdentifier, 'license');
       return await buildAndServeStixBundle(clientLicenseKey);
     } catch (err) {
       return sendJSON(res, 500, { error: 'Internal Server Error: Telemetry stream failed.' });
