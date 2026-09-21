@@ -44,6 +44,25 @@ if (X402_PAY_TO) {
   }
 }
 
+// @x402/express's ExpressAdapter assumes a real Express request (.header(),
+// .path, .protocol, .originalUrl) - these are raw Vercel serverless request
+// objects instead, so calling the middleware directly used to throw
+// "this.req.header is not a function" whenever an X-PAYMENT header arrived.
+function ensureExpressCompat(req) {
+  if (typeof req.header !== 'function') {
+    req.header = req.get = function (name) {
+      var value = req.headers[String(name).toLowerCase()];
+      return Array.isArray(value) ? value[0] : value;
+    };
+  }
+  if (req.path === undefined) req.path = (req.url || '/').split('?')[0];
+  if (req.originalUrl === undefined) req.originalUrl = req.url;
+  if (req.protocol === undefined) {
+    var forwardedProto = req.headers['x-forwarded-proto'];
+    req.protocol = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto) || 'https';
+  }
+}
+
 function escapeStixValue(value) {
   return String(value == null ? '' : value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
@@ -199,6 +218,7 @@ export default async function handler(req, res) {
       var licenseKey = getHeader('x-api-key');
 
       if (x402Middleware && hasPaymentHeader) {
+        ensureExpressCompat(req);
         var x402Paid = false;
         try {
           await new Promise((resolve, reject) => {

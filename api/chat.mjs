@@ -59,6 +59,25 @@ if (X402_PAY_TO) {
   }
 }
 
+// @x402/express's ExpressAdapter assumes a real Express request (.header(),
+// .path, .protocol, .originalUrl) - this is a raw Vercel serverless request
+// object instead, so calling the middleware directly used to throw
+// "this.req.header is not a function" whenever an X-PAYMENT header arrived.
+function ensureExpressCompat(req) {
+  if (typeof req.header !== 'function') {
+    req.header = req.get = function (name) {
+      var value = req.headers[String(name).toLowerCase()];
+      return Array.isArray(value) ? value[0] : value;
+    };
+  }
+  if (req.path === undefined) req.path = (req.url || '/').split('?')[0];
+  if (req.originalUrl === undefined) req.originalUrl = req.url;
+  if (req.protocol === undefined) {
+    var forwardedProto = req.headers['x-forwarded-proto'];
+    req.protocol = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto) || 'https';
+  }
+}
+
 const B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 // FIX (base64 corruption bug): the hand-rolled encoder/decoder below stripped
@@ -668,6 +687,7 @@ export default async function handler(req, res) {
     // Gumroad is never consulted for a paying agent.
     var hasPaymentHeader = !!(getHeader('x-payment') || getHeader('payment-signature'));
     if (x402Middleware && hasPaymentHeader) {
+      ensureExpressCompat(req);
       var x402Paid = false;
       try {
         await new Promise((resolve, reject) => {
