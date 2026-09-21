@@ -39,10 +39,20 @@ async function sendPushNotification(subscription, payload) {
 // Express-style res.status()/res.json() helpers this middleware expects.
 var X402_PAY_TO = (process.env.X402_PAY_TO_ADDRESS || '').trim();
 var x402Middleware = null;
+var x402Server = null;
 if (X402_PAY_TO) {
   try {
     var x402FacilitatorClient = createCdpFacilitatorClient();
-    var x402Server = new x402ResourceServer(x402FacilitatorClient).register('eip155:8453', new ExactEvmScheme());
+    x402Server = new x402ResourceServer(x402FacilitatorClient).register('eip155:8453', new ExactEvmScheme());
+    // syncFacilitatorOnStart=false: @x402/express would otherwise call
+    // x402Server.initialize() itself (fetching supported payment kinds from
+    // the facilitator) and, on failure, write its own raw 500 straight to
+    // `res` - bypassing our error format and never invoking the
+    // next()-style callback we pass to x402Middleware below, which left the
+    // request awaiting a promise that never settles. We drive
+    // initialization ourselves via ensureX402Initialized() instead, with a
+    // timeout, so a facilitator outage degrades to the Gumroad/401 path
+    // rather than a 500/hang (issue #82).
     x402Middleware = paymentMiddleware(
       {
         'GET /api/ioc': {
@@ -51,7 +61,10 @@ if (X402_PAY_TO) {
           mimeType: 'application/stix+json'
         }
       },
-      x402Server
+      x402Server,
+      undefined,
+      undefined,
+      false
     );
   } catch (e) {
     console.error('[X402] Setup failed, payment path disabled for this invocation:', e.message);
@@ -59,6 +72,32 @@ if (X402_PAY_TO) {
   }
 } else {
   console.warn('[X402_DEBUG] X402_PAY_TO_ADDRESS is not set - x402 payment path is disabled for this lambda instance; all /api/ioc requests will fall through to the Gumroad/401 path regardless of X-PAYMENT header.');
+}
+
+// Cached across warm invocations of this lambda instance. On failure we
+// clear the cache so the next request retries rather than sticking with a
+// permanently-broken facilitator connection until a cold start.
+var x402InitPromise = null;
+var x402Initialized = false;
+var X402_INIT_TIMEOUT_MS = 8000;
+
+function ensureX402Initialized() {
+  if (x402Initialized) return Promise.resolve(true);
+  if (!x402Server) return Promise.resolve(false);
+  if (!x402InitPromise) {
+    x402InitPromise = Promise.race([
+      x402Server.initialize(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('facilitator initialize() timed out after ' + X402_INIT_TIMEOUT_MS + 'ms')), X402_INIT_TIMEOUT_MS))
+    ]).then(function () {
+      x402Initialized = true;
+      return true;
+    }).catch(function (err) {
+      console.error('[X402_DEBUG] facilitator initialize() failed, x402 payment path unavailable for this request:', err.message);
+      x402InitPromise = null;
+      return false;
+    });
+  }
+  return x402InitPromise;
 }
 
 // TEMP DEBUG (issue #80): decode+parse the X-PAYMENT header ourselves, purely
@@ -709,6 +748,10 @@ export default async function handler(req, res) {
     debugLogPaymentHeader(rawPaymentHeader);
 
     if (x402Middleware && hasPaymentHeader) {
+      var facilitatorReady = await ensureX402Initialized();
+      if (!facilitatorReady) {
+        return sendJSON(res, 402, { error: 'x402 payment path is temporarily unavailable (facilitator unreachable). Please retry shortly, or use a Commercial License Key in an x-api-key header.' });
+      }
       ensureExpressCompat(req);
       console.log('[X402_DEBUG] post-shim route match check: method=%s path=%s (registered route is "GET /api/ioc")', req.method, req.path);
       var x402Paid = false;
