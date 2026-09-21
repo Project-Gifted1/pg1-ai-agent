@@ -14,6 +14,7 @@
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { paymentMiddleware, x402ResourceServer } from '@x402/express';
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
+import { checkAndConsumeFreeTier, getRequestIdentifier, logSettlementOutcome } from '../lib/freeTier.mjs';
 
 export const config = {
   maxDuration: 30
@@ -272,6 +273,7 @@ export default async function handler(req, res) {
       var rawPaymentHeader = getHeader('x-payment');
       var hasPaymentHeader = !!rawPaymentHeader;
       var licenseKey = getHeader('x-api-key');
+      var requestIdentifier = getRequestIdentifier(req);
 
       console.log('[X402_DEBUG] x-payment header present:', hasPaymentHeader, '| length:', rawPaymentHeader ? String(rawPaymentHeader).length : 0);
       console.log('[X402_DEBUG] x402Middleware configured:', !!x402Middleware, '| X402_PAY_TO set:', !!X402_PAY_TO);
@@ -280,6 +282,7 @@ export default async function handler(req, res) {
       if (x402Middleware && hasPaymentHeader) {
         var facilitatorReady = await ensureX402Initialized();
         if (!facilitatorReady) {
+          logSettlementOutcome('/api/mcp', 'rejected', requestIdentifier, 'facilitator_unavailable');
           return res.status(200).json(jsonRpcError(id, -32004,
             'x402 payment path is temporarily unavailable (facilitator unreachable). Please retry shortly, or provide a valid Gumroad license key in an X-API-KEY header.'));
         }
@@ -295,15 +298,18 @@ export default async function handler(req, res) {
             });
           });
         } catch (x402Err) {
+          logSettlementOutcome('/api/mcp', 'rejected', requestIdentifier, x402Err.message);
           if (!res.headersSent) {
             return res.status(402).json(jsonRpcError(id, -32001, 'Payment verification failed: ' + x402Err.message));
           }
           return;
         }
         if (!x402Paid) {
+          logSettlementOutcome('/api/mcp', 'rejected', requestIdentifier, 'middleware_wrote_response');
           return;
         }
         var bundle = await fetchStixBundle(toolArgs);
+        logSettlementOutcome('/api/mcp', 'success', requestIdentifier, 'x402');
         return res.status(200).json(jsonRpcResult(id, {
           content: [{ type: 'text', text: JSON.stringify(bundle, null, 2) }]
         }));
@@ -312,15 +318,29 @@ export default async function handler(req, res) {
       if (licenseKey) {
         var licenseCheck = await verifyGumroadLicense(licenseKey);
         if (!licenseCheck.valid) {
+          logSettlementOutcome('/api/mcp', 'rejected', requestIdentifier, 'invalid_license');
           return res.status(200).json(jsonRpcError(id, -32002, 'Payment required: ' + licenseCheck.error));
         }
         var bundle2 = await fetchStixBundle(toolArgs);
+        logSettlementOutcome('/api/mcp', 'success', requestIdentifier, 'license');
         return res.status(200).json(jsonRpcResult(id, {
           content: [{ type: 'text', text: JSON.stringify(bundle2, null, 2) }]
         }));
       }
 
-      console.log('[X402_DEBUG] falling through to generic payment-required error. hasPaymentHeader=%s x402Middleware configured=%s licenseKeyPresent=%s', hasPaymentHeader, !!x402Middleware, !!licenseKey);
+      var supUrlForFreeTier = (process.env.SUPABASE_URL || '').replace(/\s+/g, '');
+      var supKeyForFreeTier = (process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLEKEY || '').replace(/\s+/g, '');
+      var freeTierResult = await checkAndConsumeFreeTier(supUrlForFreeTier, supKeyForFreeTier, requestIdentifier);
+      if (freeTierResult.allowed) {
+        var freeBundle = await fetchStixBundle(toolArgs);
+        logSettlementOutcome('/api/mcp', 'free_tier', requestIdentifier, 'remaining=' + freeTierResult.remaining);
+        return res.status(200).json(jsonRpcResult(id, {
+          content: [{ type: 'text', text: JSON.stringify(freeBundle, null, 2) }]
+        }));
+      }
+
+      console.log('[X402_DEBUG] falling through to generic payment-required error. hasPaymentHeader=%s x402Middleware configured=%s licenseKeyPresent=%s freeTierReason=%s', hasPaymentHeader, !!x402Middleware, !!licenseKey, freeTierResult.reason);
+      logSettlementOutcome('/api/mcp', 'no_payment', requestIdentifier, freeTierResult.reason);
       return res.status(200).json(jsonRpcError(id, -32003,
         'Payment required. Pay $0.01 via x402 (send an X-PAYMENT header) or provide a valid Gumroad license key in an X-API-KEY header.'));
     }
