@@ -42,6 +42,22 @@ if (X402_PAY_TO) {
     console.error('[X402] Setup failed on /api/mcp, payment path disabled for this invocation:', e.message);
     x402Middleware = null;
   }
+} else {
+  console.warn('[X402_DEBUG] X402_PAY_TO_ADDRESS is not set - x402 payment path is disabled for this lambda instance; all tools/call requests will fall through to the generic payment-required error regardless of X-PAYMENT header.');
+}
+
+// TEMP DEBUG (issue #80): decode+parse the X-PAYMENT header ourselves, purely
+// for diagnostics - the actual verification decode happens inside
+// @x402/express, which we can't instrument directly.
+function debugLogPaymentHeader(rawPaymentHeader) {
+  if (!rawPaymentHeader) return;
+  try {
+    var decoded = Buffer.from(String(rawPaymentHeader), 'base64').toString('utf-8');
+    var parsed = JSON.parse(decoded);
+    console.log('[X402_DEBUG] x-payment header decoded+parsed OK. scheme=%s network=%s', parsed && parsed.scheme, parsed && parsed.network);
+  } catch (decodeErr) {
+    console.log('[X402_DEBUG] x-payment header failed to base64-decode/JSON-parse:', decodeErr.message);
+  }
 }
 
 // @x402/express's ExpressAdapter assumes a real Express request (.header(),
@@ -214,11 +230,17 @@ export default async function handler(req, res) {
         return res.status(200).json(jsonRpcError(id, -32601, `Unknown tool: ${toolName}`));
       }
 
-      var hasPaymentHeader = !!getHeader('x-payment');
+      var rawPaymentHeader = getHeader('x-payment');
+      var hasPaymentHeader = !!rawPaymentHeader;
       var licenseKey = getHeader('x-api-key');
+
+      console.log('[X402_DEBUG] x-payment header present:', hasPaymentHeader, '| length:', rawPaymentHeader ? String(rawPaymentHeader).length : 0);
+      console.log('[X402_DEBUG] x402Middleware configured:', !!x402Middleware, '| X402_PAY_TO set:', !!X402_PAY_TO);
+      debugLogPaymentHeader(rawPaymentHeader);
 
       if (x402Middleware && hasPaymentHeader) {
         ensureExpressCompat(req);
+        console.log('[X402_DEBUG] post-shim route match check: method=%s path=%s (registered route is "POST /api/mcp")', req.method, req.path);
         var x402Paid = false;
         try {
           await new Promise((resolve, reject) => {
@@ -254,6 +276,7 @@ export default async function handler(req, res) {
         }));
       }
 
+      console.log('[X402_DEBUG] falling through to generic payment-required error. hasPaymentHeader=%s x402Middleware configured=%s licenseKeyPresent=%s', hasPaymentHeader, !!x402Middleware, !!licenseKey);
       return res.status(200).json(jsonRpcError(id, -32003,
         'Payment required. Pay $0.01 via x402 (send an X-PAYMENT header) or provide a valid Gumroad license key in an X-API-KEY header.'));
     }
