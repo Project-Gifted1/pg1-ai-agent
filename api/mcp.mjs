@@ -405,35 +405,35 @@ async function fetchCveDetails(params) {
 var TOOLS = [
   {
     name: 'get_threat_indicators',
-    description: 'PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of verified threat indicators (IPs, domains, URLs, file hashes) sourced from ThreatFox, URLhaus, AbuseIPDB, OTX and NVD. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header).',
+    description: 'PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of verified threat indicators (IPs, domains, URLs, file hashes) sourced from ThreatFox, URLhaus, AbuseIPDB, OTX and NVD. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for bulk feed synchronizations. Do NOT use for single-item lookups (use get_ioc_context) or CVE analysis (use get_cve_details). USAGE EXCLUSIONS: Does not provide historical query archival beyond the active ingestion window.',
     inputSchema: {
       type: 'object',
       properties: {
-        since: { type: 'string', description: 'ISO timestamp; only return indicators last seen after this time.' },
+        since: { type: 'string', description: 'ISO timestamp; only return indicators last seen after this time (e.g. 2026-09-20T00:00:00Z).' },
         type: { type: 'string', description: "Filter by indicator_type, e.g. 'IPv4', 'domain', 'URL'." },
-        min_score: { type: 'integer', description: 'Minimum confidence score (0-100).' },
-        limit: { type: 'integer', description: 'Max indicators to return (default 500, max 1000).' }
+        min_score: { type: 'integer', description: 'Minimum confidence score threshold (0-100).' },
+        limit: { type: 'integer', description: 'Max indicators to return (1-1000, default 500).', default: 500 }
       }
     }
   },
   {
     name: 'get_cve_details',
-    description: 'PG1 Sovereign Threat Intelligence: enriched CVE lookup combining NVD (description, CVSS score/vector), FIRST.org EPSS (exploit-probability score and percentile), and the CISA Known Exploited Vulnerabilities catalog (whether this CVE is being actively exploited in the wild). Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header).',
+    description: 'PG1 Sovereign Threat Intelligence: enriched CVE lookup combining NVD (description, CVSS score/vector), FIRST.org EPSS (exploit-probability score and percentile), and the CISA Known Exploited Vulnerabilities catalog (active wild exploitation status). Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for specific CVE lookups. Do NOT use for IP/domain/hash enrichment (use get_ioc_context) or bulk feed ingestion (use get_threat_indicators). USAGE EXCLUSIONS: Does not support wildcard search or threat-actor dossier profiling.',
     inputSchema: {
       type: 'object',
       properties: {
-        cve_id: { type: 'string', description: "CVE identifier, e.g. 'CVE-2021-44228'." }
+        cve_id: { type: 'string', description: "Official CVE identifier formatted as 'CVE-YYYY-NNNN' (e.g., 'CVE-2021-44228')." }
       },
       required: ['cve_id']
     }
   },
   {
     name: 'get_ioc_context',
-    description: 'PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) across all telemetry sources and returns aggregated provenance — which sources reported it, how many times, an aggregated confidence score, known malware families, tags, and first/last seen timestamps. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header).',
+    description: 'PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) across all telemetry sources and returns aggregated provenance — reporting sources, observation count, aggregated confidence score, known malware families, tags, and first/last seen timestamps. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for point-lookup enrichment of a single indicator. Do NOT use for bulk intelligence downloads (use get_threat_indicators) or software vulnerability analysis (use get_cve_details). USAGE EXCLUSIONS: Does not perform active port-scanning or live network probing.',
     inputSchema: {
       type: 'object',
       properties: {
-        value: { type: 'string', description: 'The exact indicator value to look up, e.g. an IP address, domain, URL, or file hash.' }
+        value: { type: 'string', description: 'The exact indicator value to look up, e.g. an IP address (198.51.100.1), domain, URL, or SHA-256 hash.' }
       },
       required: ['value']
     }
