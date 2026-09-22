@@ -34,7 +34,7 @@ if (X402_PAY_TO) {
       {
         'POST /api/mcp': {
           accepts: [{ scheme: 'exact', price: '$0.01', network: 'eip155:8453', payTo: X402_PAY_TO }],
-          description: 'PG1 Sovereign Threat Intelligence MCP tools: get_threat_indicators (STIX 2.1 bundle), get_cve_details (NVD + EPSS + CISA KEV).',
+          description: 'PG1 Sovereign Threat Intelligence MCP tools: get_threat_indicators (STIX 2.1 bundle), get_cve_details (NVD + EPSS + CISA KEV), get_ioc_context (per-indicator provenance).',
           mimeType: 'application/json'
         }
       },
@@ -191,6 +191,109 @@ async function fetchStixBundle(params) {
 }
 
 // ---------------------------------------------------------------------
+// IOC CONTEXT: aggregate all telemetry rows for one specific indicator
+// ---------------------------------------------------------------------
+
+async function fetchIocContext(params) {
+  var value = params && params.value;
+  if (!value || !String(value).trim()) {
+    throw new Error('value is required (the exact indicator value to look up, e.g. an IP, domain, URL, or hash).');
+  }
+  value = String(value).trim();
+
+  var supUrl = (process.env.SUPABASE_URL || '').replace(/\s+/g, '');
+  var supKey = (process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLEKEY || '').replace(/\s+/g, '');
+
+  if (!supUrl || !supKey) {
+    throw new Error('Supabase not configured on this deployment.');
+  }
+
+  var queryFilters = [
+    'select=*',
+    `value=eq.${encodeURIComponent(value)}`,
+    'order=last_seen.desc'
+  ];
+
+  var res = await fetch(`${supUrl}/rest/v1/threat_ioc_telemetry?${queryFilters.join('&')}`, {
+    headers: { apikey: supKey, Authorization: `Bearer ${supKey}` }
+  });
+  if (!res.ok) throw new Error('Supabase query failed: ' + res.status);
+  var rows = await res.json();
+
+  if (!rows || rows.length === 0) {
+    return { value: value, found: false, source_count: 0, sources: [], confidence_score: null, first_seen: null, last_seen: null, malware_families: [], tags: [] };
+  }
+
+  var sources = [];
+  var seenSources = {};
+  var scores = [];
+  var earliestIngested = null;
+  var latestSeen = null;
+  var malwareFamilies = [];
+  var seenFamilies = {};
+  var allTags = [];
+  var seenTags = {};
+
+  rows.forEach(function (row) {
+    var src = row.verification_source || 'Sovereign Engine';
+    if (!seenSources[src]) {
+      seenSources[src] = true;
+      sources.push(src);
+    }
+    if (typeof row.confidence_score !== 'undefined' && row.confidence_score !== null) {
+      scores.push(parseInt(row.confidence_score, 10) || 0);
+    }
+    if (row.ingested_at && (!earliestIngested || row.ingested_at < earliestIngested)) earliestIngested = row.ingested_at;
+    if (row.last_seen && (!latestSeen || row.last_seen > latestSeen)) latestSeen = row.last_seen;
+
+    if (row.malware_family && !seenFamilies[row.malware_family]) {
+      seenFamilies[row.malware_family] = true;
+      malwareFamilies.push(row.malware_family);
+    }
+    if (Array.isArray(row.tags)) {
+      row.tags.forEach(function (t) {
+        if (t && !seenTags[t]) {
+          seenTags[t] = true;
+          allTags.push(t);
+        }
+      });
+    }
+  });
+
+  // Aggregate confidence: average of the reporting rows, with a small
+  // per-additional-source boost (capped at 100) reflecting that multiple
+  // independent sources corroborating one indicator is itself a signal.
+  var avgScore = scores.length ? (scores.reduce(function (a, b) { return a + b; }, 0) / scores.length) : null;
+  var aggregatedScore = avgScore !== null
+    ? Math.min(100, Math.round(avgScore + Math.max(0, sources.length - 1) * 5))
+    : null;
+
+  return {
+    value: value,
+    found: true,
+    indicator_type: rows[0].indicator_type || null,
+    source_count: sources.length,
+    sources: sources,
+    row_count: rows.length,
+    confidence_score: aggregatedScore,
+    first_seen: earliestIngested,
+    last_seen: latestSeen,
+    malware_families: malwareFamilies,
+    tags: allTags,
+    raw_records: rows.map(function (r) {
+      return {
+        verification_source: r.verification_source,
+        confidence_score: r.confidence_score,
+        ingested_at: r.ingested_at,
+        last_seen: r.last_seen,
+        malware_family: r.malware_family || null,
+        tags: Array.isArray(r.tags) ? r.tags : []
+      };
+    })
+  };
+}
+
+// ---------------------------------------------------------------------
 // CVE ENRICHMENT: NVD + EPSS + CISA KEV
 // ---------------------------------------------------------------------
 
@@ -323,12 +426,24 @@ var TOOLS = [
       },
       required: ['cve_id']
     }
+  },
+  {
+    name: 'get_ioc_context',
+    description: 'PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) across all telemetry sources and returns aggregated provenance — which sources reported it, how many times, an aggregated confidence score, known malware families, tags, and first/last seen timestamps. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        value: { type: 'string', description: 'The exact indicator value to look up, e.g. an IP address, domain, URL, or file hash.' }
+      },
+      required: ['value']
+    }
   }
 ];
 
 var TOOL_FETCHERS = {
   get_threat_indicators: fetchStixBundle,
-  get_cve_details: fetchCveDetails
+  get_cve_details: fetchCveDetails,
+  get_ioc_context: fetchIocContext
 };
 
 export default async function handler(req, res) {
@@ -359,7 +474,7 @@ export default async function handler(req, res) {
     if (method === 'initialize') {
       return res.status(200).json(jsonRpcResult(id, {
         protocolVersion: '2024-11-05',
-        serverInfo: { name: 'pg1-threat-intel', version: '1.2.0' },
+        serverInfo: { name: 'pg1-threat-intel', version: '1.3.0' },
         capabilities: { tools: {} }
       }));
     }
