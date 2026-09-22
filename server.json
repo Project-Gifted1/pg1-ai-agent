@@ -2,8 +2,8 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Project-Gifted1/pg1-threat-intel",
   "title": "PG1 Sovereign Threat Intelligence",
-  "description": "STIX threat indicators, CVE lookups enriched with EPSS/CISA KEV, plus per-indicator context.",
-  "version": "1.4.0",
+  "description": "STIX threat indicators, CVE lookups (single and batch) enriched with EPSS/CISA KEV, per-indicator context, and MITRE ATT&CK-backed threat actor dossiers.",
+  "version": "1.5.0",
   "repository": {
     "url": "https://github.com/Project-Gifted1/pg1-ai-agent",
     "source": "github"
