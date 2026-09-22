@@ -95,7 +95,7 @@ function handleThreatIndicators(args) {
         pattern_type: 'stix',
         valid_from: new Date().toISOString(),
         confidence: 85,
-        labels: ['malicious-activity', 'botnet']
+        labels: ['malvoices-activity', 'botnet']
       }
     ]
   };
@@ -169,7 +169,7 @@ export default async function handler(req, res) {
           result: {
             protocolVersion: '2024-11-05',
             capabilities: { tools: {} },
-            serverInfo: { name: 'pg1-threat-intel', version: '1.3.1' }
+            serverInfo: { name: 'pg1-threat-intel', version: '1.3.2' }
           },
           id: id || null
         });
