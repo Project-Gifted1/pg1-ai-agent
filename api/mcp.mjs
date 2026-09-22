@@ -13,19 +13,19 @@ const TOOLS = [
       type: 'object',
       properties: {
         since: { 
-          type: 'string', 
+          type: ['string', 'null'], 
           description: 'ISO timestamp constraint (e.g., 2026-09-20T00:00:00Z); strictly filters and returns only indicators last seen after this exact timestamp.' 
         },
         type: { 
-          type: 'string', 
+          type: ['string', 'null'], 
           description: 'Indicator category filter. Allowed enum-style values: \'IPv4\', \'domain\', \'URL\', or \'hash\'.' 
         },
         min_score: { 
-          type: 'integer', 
+          type: ['integer', 'null'], 
           description: 'Confidence score threshold integer ranging inclusively from 0 to 100 to filter low-confidence noise.' 
         },
         limit: { 
-          type: 'integer', 
+          type: ['integer', 'null'], 
           description: 'Pagination boundary constraint defining the maximum number of indicators to return in a single payload (integer between 1 and 1000, defaulting to 500).', 
           default: 500 
         }
@@ -78,7 +78,7 @@ function verifyAuthorization(req) {
 }
 
 function handleThreatIndicators(args) {
-  const limit = args.limit || 500;
+  const limit = args?.limit || 500;
   const bundle = {
     type: 'bundle',
     id: `bundle--${Date.now()}`,
@@ -95,7 +95,7 @@ function handleThreatIndicators(args) {
         pattern_type: 'stix',
         valid_from: new Date().toISOString(),
         confidence: 85,
-        labels: ['malvoices-activity', 'botnet']
+        labels: ['malicious-activity', 'botnet']
       }
     ]
   };
@@ -103,7 +103,7 @@ function handleThreatIndicators(args) {
 }
 
 function handleCveDetails(args) {
-  const cveId = args.cve_id || 'CVE-2021-44228';
+  const cveId = args?.cve_id || 'CVE-2021-44228';
   return {
     cve_id: cveId,
     nvd: {
@@ -123,7 +123,7 @@ function handleCveDetails(args) {
 }
 
 function handleIocContext(args) {
-  const value = args.value || '198.51.100.42';
+  const value = args?.value || '198.51.100.42';
   return {
     indicator: value,
     provenance: {
