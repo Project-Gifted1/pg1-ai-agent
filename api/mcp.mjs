@@ -30,20 +30,11 @@ if (X402_PAY_TO) {
   try {
     var x402FacilitatorClient = createCdpFacilitatorClient();
     x402Server = new x402ResourceServer(x402FacilitatorClient).register('eip155:8453', new ExactEvmScheme());
-    // syncFacilitatorOnStart=false: @x402/express would otherwise call
-    // x402Server.initialize() itself (fetching supported payment kinds from
-    // the facilitator) and, on failure, write its own raw 500 straight to
-    // `res` - bypassing our JSON-RPC error format and never invoking the
-    // next()-style callback we pass to x402Middleware below, which left the
-    // request awaiting a promise that never settles. We drive
-    // initialization ourselves via ensureX402Initialized() instead, with a
-    // timeout, so a facilitator outage degrades to the generic
-    // payment-required message rather than a 500/hang (issue #82).
     x402Middleware = paymentMiddleware(
       {
         'POST /api/mcp': {
           accepts: [{ scheme: 'exact', price: '$0.01', network: 'eip155:8453', payTo: X402_PAY_TO }],
-          description: 'PG1 Sovereign Threat Intelligence MCP tool: get_threat_indicators (STIX 2.1 bundle).',
+          description: 'PG1 Sovereign Threat Intelligence MCP tools: get_threat_indicators (STIX 2.1 bundle), get_cve_details (NVD + EPSS + CISA KEV).',
           mimeType: 'application/json'
         }
       },
@@ -60,9 +51,6 @@ if (X402_PAY_TO) {
   console.warn('[X402_DEBUG] X402_PAY_TO_ADDRESS is not set - x402 payment path is disabled for this lambda instance; all tools/call requests will fall through to the generic payment-required error regardless of X-PAYMENT header.');
 }
 
-// Cached across warm invocations of this lambda instance. On failure we
-// clear the cache so the next request retries rather than sticking with a
-// permanently-broken facilitator connection until a cold start.
 var x402InitPromise = null;
 var x402Initialized = false;
 var X402_INIT_TIMEOUT_MS = 8000;
@@ -86,9 +74,6 @@ function ensureX402Initialized() {
   return x402InitPromise;
 }
 
-// TEMP DEBUG (issue #80): decode+parse the X-PAYMENT header ourselves, purely
-// for diagnostics - the actual verification decode happens inside
-// @x402/express, which we can't instrument directly.
 function debugLogPaymentHeader(rawPaymentHeader) {
   if (!rawPaymentHeader) return;
   try {
@@ -100,10 +85,6 @@ function debugLogPaymentHeader(rawPaymentHeader) {
   }
 }
 
-// @x402/express's ExpressAdapter assumes a real Express request (.header(),
-// .path, .protocol, .originalUrl) - these are raw Vercel serverless request
-// objects instead, so calling the middleware directly used to throw
-// "this.req.header is not a function" whenever an X-PAYMENT header arrived.
 function ensureExpressCompat(req) {
   if (typeof req.header !== 'function') {
     req.header = req.get = function (name) {
@@ -209,6 +190,115 @@ async function fetchStixBundle(params) {
   };
 }
 
+// ---------------------------------------------------------------------
+// CVE ENRICHMENT: NVD + EPSS + CISA KEV
+// ---------------------------------------------------------------------
+
+async function fetchNvdCveDetails(cveId) {
+  var headers = {};
+  if (process.env.NVD_API_KEY) headers['apiKey'] = process.env.NVD_API_KEY;
+  var nvdRes = await fetch(`https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=${encodeURIComponent(cveId)}`, { headers: headers });
+  if (!nvdRes.ok) throw new Error('NVD lookup failed: ' + nvdRes.status);
+  var nvdData = await nvdRes.json();
+  var vuln = nvdData.vulnerabilities && nvdData.vulnerabilities[0] && nvdData.vulnerabilities[0].cve;
+  if (!vuln) return null;
+
+  var descriptions = vuln.descriptions || [];
+  var enDesc = descriptions.find(function (d) { return d.lang === 'en'; });
+  var metrics = vuln.metrics || {};
+  var cvssData = null;
+  var cvssVersion = null;
+  if (metrics.cvssMetricV31 && metrics.cvssMetricV31[0]) {
+    cvssData = metrics.cvssMetricV31[0].cvssData;
+    cvssVersion = '3.1';
+  } else if (metrics.cvssMetricV30 && metrics.cvssMetricV30[0]) {
+    cvssData = metrics.cvssMetricV30[0].cvssData;
+    cvssVersion = '3.0';
+  } else if (metrics.cvssMetricV2 && metrics.cvssMetricV2[0]) {
+    cvssData = metrics.cvssMetricV2[0].cvssData;
+    cvssVersion = '2.0';
+  }
+
+  return {
+    description: enDesc ? enDesc.value : null,
+    published: vuln.published,
+    last_modified: vuln.lastModified,
+    cvss_version: cvssVersion,
+    cvss_score: cvssData ? cvssData.baseScore : null,
+    cvss_severity: cvssData ? cvssData.baseSeverity : null,
+    cvss_vector: cvssData ? cvssData.vectorString : null
+  };
+}
+
+async function fetchEpssScore(cveId) {
+  var epssRes = await fetch(`https://api.first.org/data/v1/epss?cve=${encodeURIComponent(cveId)}`);
+  if (!epssRes.ok) return null;
+  var epssData = await epssRes.json();
+  var record = epssData.data && epssData.data[0];
+  if (!record) return null;
+  return {
+    epss_score: parseFloat(record.epss),
+    epss_percentile: parseFloat(record.percentile)
+  };
+}
+
+// Cached across warm invocations. CISA's KEV feed is a single largeish JSON
+// file that changes infrequently, so re-fetching it on every tool call would
+// be wasteful and slow - refresh at most once per hour.
+var kevCache = null;
+var kevCacheTime = 0;
+var KEV_CACHE_TTL_MS = 60 * 60 * 1000;
+
+async function getKevCatalog() {
+  var now = Date.now();
+  if (kevCache && (now - kevCacheTime) < KEV_CACHE_TTL_MS) return kevCache;
+  var kevRes = await fetch('https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json');
+  if (!kevRes.ok) {
+    if (kevCache) return kevCache; // serve stale cache rather than fail outright
+    throw new Error('CISA KEV feed fetch failed: ' + kevRes.status);
+  }
+  var kevData = await kevRes.json();
+  var map = {};
+  (kevData.vulnerabilities || []).forEach(function (v) {
+    map[v.cveID] = v;
+  });
+  kevCache = map;
+  kevCacheTime = now;
+  return kevCache;
+}
+
+async function fetchCveDetails(params) {
+  var cveId = params && params.cve_id;
+  if (!cveId || !/^CVE-\d{4}-\d{4,}$/i.test(String(cveId))) {
+    throw new Error("cve_id is required and must match the format 'CVE-YYYY-NNNN'.");
+  }
+  cveId = String(cveId).toUpperCase();
+
+  var results = await Promise.all([
+    fetchNvdCveDetails(cveId).catch(function (e) { return { error: e.message }; }),
+    fetchEpssScore(cveId).catch(function () { return null; }),
+    getKevCatalog().catch(function () { return {}; })
+  ]);
+  var nvd = results[0];
+  var epss = results[1];
+  var kevCatalog = results[2];
+  var kevEntry = kevCatalog[cveId];
+
+  return {
+    cve_id: cveId,
+    description: nvd && !nvd.error ? nvd.description : null,
+    published: nvd && !nvd.error ? nvd.published : null,
+    last_modified: nvd && !nvd.error ? nvd.last_modified : null,
+    cvss: nvd && !nvd.error ? { version: nvd.cvss_version, score: nvd.cvss_score, severity: nvd.cvss_severity, vector: nvd.cvss_vector } : null,
+    nvd_error: nvd && nvd.error ? nvd.error : undefined,
+    epss: epss ? { score: epss.epss_score, percentile: epss.epss_percentile } : null,
+    is_known_exploited: !!kevEntry,
+    kev_date_added: kevEntry ? kevEntry.dateAdded : null,
+    kev_required_action: kevEntry ? kevEntry.requiredAction : null,
+    kev_due_date: kevEntry ? kevEntry.dueDate : null
+  };
+}
+
 var TOOLS = [
   {
     name: 'get_threat_indicators',
@@ -218,12 +308,28 @@ var TOOLS = [
       properties: {
         since: { type: 'string', description: 'ISO timestamp; only return indicators last seen after this time.' },
         type: { type: 'string', description: "Filter by indicator_type, e.g. 'IPv4', 'domain', 'URL'." },
-        min_score: { type: 'string', description: 'Minimum confidence score (0-100).' },
-        limit: { type: 'string', description: 'Max indicators to return (default 500, max 1000).' }
+        min_score: { type: 'integer', description: 'Minimum confidence score (0-100).' },
+        limit: { type: 'integer', description: 'Max indicators to return (default 500, max 1000).' }
       }
+    }
+  },
+  {
+    name: 'get_cve_details',
+    description: 'PG1 Sovereign Threat Intelligence: enriched CVE lookup combining NVD (description, CVSS score/vector), FIRST.org EPSS (exploit-probability score and percentile), and the CISA Known Exploited Vulnerabilities catalog (whether this CVE is being actively exploited in the wild). Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cve_id: { type: 'string', description: "CVE identifier, e.g. 'CVE-2021-44228'." }
+      },
+      required: ['cve_id']
     }
   }
 ];
+
+var TOOL_FETCHERS = {
+  get_threat_indicators: fetchStixBundle,
+  get_cve_details: fetchCveDetails
+};
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -253,7 +359,7 @@ export default async function handler(req, res) {
     if (method === 'initialize') {
       return res.status(200).json(jsonRpcResult(id, {
         protocolVersion: '2024-11-05',
-        serverInfo: { name: 'pg1-threat-intel', version: '1.1.0' },
+        serverInfo: { name: 'pg1-threat-intel', version: '1.2.0' },
         capabilities: { tools: {} }
       }));
     }
@@ -265,8 +371,9 @@ export default async function handler(req, res) {
     if (method === 'tools/call') {
       var toolName = params.name;
       var toolArgs = params.arguments || {};
+      var toolFetcher = TOOL_FETCHERS[toolName];
 
-      if (toolName !== 'get_threat_indicators') {
+      if (!toolFetcher) {
         return res.status(200).json(jsonRpcError(id, -32601, `Unknown tool: ${toolName}`));
       }
 
@@ -308,10 +415,10 @@ export default async function handler(req, res) {
           logSettlementOutcome('/api/mcp', 'rejected', requestIdentifier, 'middleware_wrote_response');
           return;
         }
-        var bundle = await fetchStixBundle(toolArgs);
+        var payload = await toolFetcher(toolArgs);
         logSettlementOutcome('/api/mcp', 'success', requestIdentifier, 'x402');
         return res.status(200).json(jsonRpcResult(id, {
-          content: [{ type: 'text', text: JSON.stringify(bundle, null, 2) }]
+          content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }]
         }));
       }
 
@@ -321,10 +428,10 @@ export default async function handler(req, res) {
           logSettlementOutcome('/api/mcp', 'rejected', requestIdentifier, 'invalid_license');
           return res.status(200).json(jsonRpcError(id, -32002, 'Payment required: ' + licenseCheck.error));
         }
-        var bundle2 = await fetchStixBundle(toolArgs);
+        var payload2 = await toolFetcher(toolArgs);
         logSettlementOutcome('/api/mcp', 'success', requestIdentifier, 'license');
         return res.status(200).json(jsonRpcResult(id, {
-          content: [{ type: 'text', text: JSON.stringify(bundle2, null, 2) }]
+          content: [{ type: 'text', text: JSON.stringify(payload2, null, 2) }]
         }));
       }
 
@@ -332,10 +439,10 @@ export default async function handler(req, res) {
       var supKeyForFreeTier = (process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLEKEY || '').replace(/\s+/g, '');
       var freeTierResult = await checkAndConsumeFreeTier(supUrlForFreeTier, supKeyForFreeTier, requestIdentifier);
       if (freeTierResult.allowed) {
-        var freeBundle = await fetchStixBundle(toolArgs);
+        var freePayload = await toolFetcher(toolArgs);
         logSettlementOutcome('/api/mcp', 'free_tier', requestIdentifier, 'remaining=' + freeTierResult.remaining);
         return res.status(200).json(jsonRpcResult(id, {
-          content: [{ type: 'text', text: JSON.stringify(freeBundle, null, 2) }]
+          content: [{ type: 'text', text: JSON.stringify(freePayload, null, 2) }]
         }));
       }
 
