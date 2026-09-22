@@ -66,6 +66,7 @@ function verifyAuthorization(req) {
   const xPayment = req.headers['x-payment'];
   const apiKey = req.headers['x-api-key'];
 
+  // Check valid Gumroad license key or x402 Base chain micropayment header
   if (apiKey && apiKey.length >= 8) {
     return { authorized: true, method: 'gumroad' };
   }
