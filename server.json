@@ -3,7 +3,7 @@
   "name": "io.github.Project-Gifted1/pg1-threat-intel",
   "title": "PG1 Sovereign Threat Intelligence",
   "description": "STIX indicators, batch CVE lookups w/ EPSS/CISA KEV, IOC context, and ATT&CK actor dossiers.",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "repository": {
     "url": "https://github.com/Project-Gifted1/pg1-ai-agent",
     "source": "github"
