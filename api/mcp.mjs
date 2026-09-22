@@ -216,4 +216,4 @@ const THREAT_ACTOR_PROFILE_TOOL = {
 // 4. Bump version once more (e.g. 1.5.0) in both the GET health check
 //    and initialize's serverInfo — same pattern as the 1.3.2 -> 1.4.0
 //    bump — and update server.json to match before republishing to
-//    the MCP Registry.
+//    the MCP Registry. 
