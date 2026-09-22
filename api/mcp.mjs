@@ -3,8 +3,8 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.5.3 — added HEAD request handling (health-checkers were
- *          hitting HEAD and getting 405, inflating error rate)
+ * Version: 1.6.0 — adds get_ioc_batch (batch indicator lookup, mirrors
+ *          get_cve_batch's pattern)
  */
 
 import { ExactEvmScheme } from '@x402/evm/exact/server';
@@ -18,6 +18,7 @@ export const config = { maxDuration: 30 };
 // ---------------------------------------------------------------------
 
 const CVE_BATCH_MAX = 20;
+const IOC_BATCH_MAX = 20;
 
 const TOOLS = [
   {
@@ -46,7 +47,7 @@ const TOOLS = [
   },
   {
     name: 'get_ioc_context',
-    description: 'PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) across all telemetry sources and returns aggregated provenance — reporting sources, observation count, aggregated confidence score, known malware families, tags, and first/last seen timestamps. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for point-lookup enrichment of a single indicator. Do NOT use for bulk intelligence downloads (use get_threat_indicators) or software vulnerability analysis (use get_cve_details). USAGE EXCLUSIONS: Does not perform active port-scanning or live network probing. BEHAVIOR: Returns 401 on payment failure, 404 if the indicator is unobserved.',
+    description: 'PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) across all telemetry sources and returns aggregated provenance — reporting sources, observation count, aggregated confidence score, known malware families, tags, and first/last seen timestamps. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for point-lookup enrichment of a single indicator. Do NOT use for bulk intelligence downloads (use get_threat_indicators), multiple indicators at once (use get_ioc_batch), or software vulnerability analysis (use get_cve_details). USAGE EXCLUSIONS: Does not perform active port-scanning or live network probing. BEHAVIOR: Returns 401 on payment failure, 404 if the indicator is unobserved.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -68,6 +69,21 @@ const TOOLS = [
         }
       },
       required: ['cve_ids']
+    }
+  },
+  {
+    name: 'get_ioc_batch',
+    description: "PG1 Sovereign Threat Intelligence: looks up multiple indicators (IPs, domains, URLs, hashes) in a single call, each returning the same aggregated provenance as get_ioc_context — reporting sources, observation count, confidence score, malware families, and tags. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for checking several indicators at once (e.g. all IPs extracted from a log file or alert). Do NOT use for a single indicator (use get_ioc_context, lower overhead) or bulk feed synchronization (use get_threat_indicators). BEHAVIOR: Accepts up to " + IOC_BATCH_MAX + " indicators per call; unobserved indicators are reported per-entry rather than failing the whole batch.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        values: {
+          type: 'array',
+          items: { type: 'string' },
+          description: "Array of indicator values (IPv4 addresses, domains, URLs, or hashes) to look up. Max " + IOC_BATCH_MAX + " per call."
+        }
+      },
+      required: ['values']
     }
   },
   {
@@ -314,7 +330,7 @@ async function handleCveBatch(args) {
 }
 
 // ---------------------------------------------------------------------
-// get_ioc_context
+// get_ioc_context / get_ioc_batch shared helpers
 // ---------------------------------------------------------------------
 
 function detectIndicatorType(value) {
@@ -324,14 +340,7 @@ function detectIndicatorType(value) {
   return 'domain';
 }
 
-async function handleIocContext(args) {
-  const value = args?.value?.trim();
-  if (!value) {
-    throw new Error('value is required.');
-  }
-
-  const { supUrl, supKey } = getSupabaseCreds();
-
+async function lookupIocContext(value, supUrl, supKey) {
   const res = await fetch(
     `${supUrl}/rest/v1/threat_ioc_telemetry?value=eq.${encodeURIComponent(value)}&select=*&order=last_seen.desc`,
     { headers: { apikey: supKey, Authorization: `Bearer ${supKey}` } }
@@ -339,9 +348,7 @@ async function handleIocContext(args) {
   const rows = res.ok ? await res.json() : [];
 
   if (!rows.length) {
-    const err = new Error(`Indicator '${value}' has no recorded observations.`);
-    err.notFound = true;
-    throw err;
+    return { indicator: value, found: false };
   }
 
   const sources = rows.map((r) => ({
@@ -366,6 +373,7 @@ async function handleIocContext(args) {
 
   return {
     indicator: value,
+    found: true,
     indicator_type: rows[0].indicator_type || detectIndicatorType(value),
     provenance: {
       sources: [...new Set(sources.map((s) => s.source))],
@@ -376,6 +384,55 @@ async function handleIocContext(args) {
       first_seen: firstSeenTimes.length ? new Date(Math.min(...firstSeenTimes)).toISOString() : null,
       last_seen: lastSeenTimes.length ? new Date(Math.max(...lastSeenTimes)).toISOString() : null
     }
+  };
+}
+
+async function handleIocContext(args) {
+  const value = args?.value?.trim();
+  if (!value) {
+    throw new Error('value is required.');
+  }
+
+  const { supUrl, supKey } = getSupabaseCreds();
+  const result = await lookupIocContext(value, supUrl, supKey);
+
+  if (!result.found) {
+    const err = new Error(`Indicator '${value}' has no recorded observations.`);
+    err.notFound = true;
+    throw err;
+  }
+
+  const { found, ...rest } = result;
+  return rest;
+}
+
+async function handleIocBatch(args) {
+  const values = args?.values;
+  if (!Array.isArray(values) || values.length === 0) {
+    throw new Error('values is required and must be a non-empty array of strings.');
+  }
+  if (values.length > IOC_BATCH_MAX) {
+    throw new Error(`values exceeds the maximum batch size of ${IOC_BATCH_MAX}.`);
+  }
+
+  const { supUrl, supKey } = getSupabaseCreds();
+
+  const results = await Promise.all(values.map(async (rawValue) => {
+    const value = String(rawValue || '').trim();
+    if (!value) {
+      return { indicator: rawValue, found: false, error: 'Empty indicator value.' };
+    }
+    try {
+      return await lookupIocContext(value, supUrl, supKey);
+    } catch (e) {
+      return { indicator: value, found: false, error: e.message };
+    }
+  }));
+
+  return {
+    total_requested: values.length,
+    total_found: results.filter((r) => r.found).length,
+    results
   };
 }
 
@@ -546,6 +603,7 @@ const TOOL_HANDLERS = {
   get_cve_details: handleCveDetails,
   get_ioc_context: handleIocContext,
   get_cve_batch: handleCveBatch,
+  get_ioc_batch: handleIocBatch,
   get_threat_actor_profile: handleThreatActorProfile
 };
 
@@ -567,7 +625,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.5.3',
+      version: '1.6.0',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp'
@@ -593,7 +651,7 @@ export default async function handler(req, res) {
     if (method === 'initialize') {
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.5.3' } },
+        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.6.0' } },
         id: requestId
       });
     }
