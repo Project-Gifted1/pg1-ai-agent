@@ -3,8 +3,8 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.5.2 — removed dangling reference to non-existent
- *          get_cve_by_product tool from get_cve_batch's description
+ * Version: 1.5.3 — added HEAD request handling (health-checkers were
+ *          hitting HEAD and getting 405, inflating error rate)
  */
 
 import { ExactEvmScheme } from '@x402/evm/exact/server';
@@ -555,15 +555,19 @@ const TOOL_HANDLERS = {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Payment, X-API-KEY');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
+  if (req.method === 'HEAD') {
+    return res.status(200).end();
+  }
+
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.5.2',
+      version: '1.5.3',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp'
@@ -589,7 +593,7 @@ export default async function handler(req, res) {
     if (method === 'initialize') {
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.5.2' } },
+        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.5.3' } },
         id: requestId
       });
     }
