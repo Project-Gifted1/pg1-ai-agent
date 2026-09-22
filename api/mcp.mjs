@@ -66,7 +66,6 @@ function verifyAuthorization(req) {
   const xPayment = req.headers['x-payment'];
   const apiKey = req.headers['x-api-key'];
 
-  // Check valid Gumroad license key or x402 Base chain micropayment header
   if (apiKey && apiKey.length >= 8) {
     return { authorized: true, method: 'gumroad' };
   }
@@ -79,7 +78,7 @@ function verifyAuthorization(req) {
 
 function handleThreatIndicators(args) {
   const limit = args?.limit || 500;
-  const bundle = {
+  return {
     type: 'bundle',
     id: `bundle--${Date.now()}`,
     spec_version: '2.1',
@@ -99,7 +98,6 @@ function handleThreatIndicators(args) {
       }
     ]
   };
-  return bundle;
 }
 
 function handleCveDetails(args) {
@@ -139,11 +137,22 @@ function handleIocContext(args) {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Payment, X-API-KEY');
 
   if (req.method === 'OPTIONS') {
     return res.status(204).end();
+  }
+
+  // Handle GET health checks from test probes (like Glama)
+  if (req.method === 'GET') {
+    return res.status(200).json({
+      name: 'pg1-threat-intel',
+      version: '1.3.2',
+      status: 'healthy',
+      protocol: 'Model Context Protocol over Streamable HTTP',
+      endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp'
+    });
   }
 
   if (req.method !== 'POST') {
@@ -155,11 +164,12 @@ export default async function handler(req, res) {
     return res.status(400).json({
       jsonrpc: '2.0',
       error: { code: -32700, message: 'Parse error: Invalid JSON' },
-      id: null
+      id: '1'
     });
   }
 
   const { id, method, params } = body;
+  const requestId = (id !== undefined && id !== null) ? id : '1';
 
   try {
     switch (method) {
@@ -171,7 +181,7 @@ export default async function handler(req, res) {
             capabilities: { tools: {} },
             serverInfo: { name: 'pg1-threat-intel', version: '1.3.2' }
           },
-          id: id || null
+          id: requestId
         });
 
       case 'notifications/initialized':
@@ -181,7 +191,7 @@ export default async function handler(req, res) {
         return res.status(200).json({
           jsonrpc: '2.0',
           result: { tools: TOOLS },
-          id: id || null
+          id: requestId
         });
 
       case 'tools/call': {
@@ -193,7 +203,7 @@ export default async function handler(req, res) {
               code: -32001,
               message: 'Payment Required: Send a valid Gumroad key in X-API-KEY or pay $0.01 via x402 in X-PAYMENT.'
             },
-            id: id || null
+            id: requestId
           });
         }
 
@@ -211,7 +221,7 @@ export default async function handler(req, res) {
           return res.status(200).json({
             jsonrpc: '2.0',
             error: { code: -32602, message: `Unknown tool: ${toolName}` },
-            id: id || null
+            id: requestId
           });
         }
 
@@ -225,22 +235,22 @@ export default async function handler(req, res) {
               }
             ]
           },
-          id: id || null
+          id: requestId
         });
       }
 
       default:
         return res.status(200).json({
           jsonrpc: '2.0',
-          error: { code: -32601, message: `Method not found: ${method}` },
-          id: id || null
+          error: { code: -32601, message: `Method not found: ${method || 'unknown'}` },
+          id: requestId
         });
     }
   } catch (err) {
     return res.status(500).json({
       jsonrpc: '2.0',
       error: { code: -32603, message: 'Internal server error', data: err.message },
-      id: id || null
+      id: requestId
     });
   }
 }
