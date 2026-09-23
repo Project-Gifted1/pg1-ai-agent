@@ -27,17 +27,6 @@ async function sendPushNotification(subscription, payload) {
 // ---------------------------------------------------------------------
 // X402 PAYMENT LAYER (agent-to-agent micropayments for /api/ioc)
 // ---------------------------------------------------------------------
-// Built ONCE at module load (not per-request) so warm serverless invocations
-// reuse the same facilitator client/middleware instead of rebuilding it on
-// every request. createCdpFacilitatorClient() reads CDP_API_KEY_ID and
-// CDP_API_KEY_SECRET from the environment automatically - no manual auth
-// wiring needed here.
-//
-// This is deliberately NOT mounted via app.use() (this file is a raw Vercel
-// (req, res) function, not an Express app) - instead the middleware function
-// it returns is invoked directly inside the /api/ioc handler below, with our
-// own next() callback. Vercel's res object already implements the
-// Express-style res.status()/res.json() helpers this middleware expects.
 var X402_PAY_TO = (process.env.X402_PAY_TO_ADDRESS || '').trim();
 var x402Middleware = null;
 var x402Server = null;
@@ -45,15 +34,6 @@ if (X402_PAY_TO) {
   try {
     var x402FacilitatorClient = createCdpFacilitatorClient();
     x402Server = new x402ResourceServer(x402FacilitatorClient).register('eip155:8453', new ExactEvmScheme());
-    // syncFacilitatorOnStart=false: @x402/express would otherwise call
-    // x402Server.initialize() itself (fetching supported payment kinds from
-    // the facilitator) and, on failure, write its own raw 500 straight to
-    // `res` - bypassing our error format and never invoking the
-    // next()-style callback we pass to x402Middleware below, which left the
-    // request awaiting a promise that never settles. We drive
-    // initialization ourselves via ensureX402Initialized() instead, with a
-    // timeout, so a facilitator outage degrades to the Gumroad/401 path
-    // rather than a 500/hang (issue #82).
     x402Middleware = paymentMiddleware(
       {
         'GET /api/ioc': {
@@ -75,9 +55,6 @@ if (X402_PAY_TO) {
   console.warn('[X402_DEBUG] X402_PAY_TO_ADDRESS is not set - x402 payment path is disabled for this lambda instance; all /api/ioc requests will fall through to the Gumroad/401 path regardless of X-PAYMENT header.');
 }
 
-// Cached across warm invocations of this lambda instance. On failure we
-// clear the cache so the next request retries rather than sticking with a
-// permanently-broken facilitator connection until a cold start.
 var x402InitPromise = null;
 var x402Initialized = false;
 var X402_INIT_TIMEOUT_MS = 8000;
@@ -101,9 +78,6 @@ function ensureX402Initialized() {
   return x402InitPromise;
 }
 
-// TEMP DEBUG (issue #80): decode+parse the X-PAYMENT header ourselves, purely
-// for diagnostics - the actual verification decode happens inside
-// @x402/express, which we can't instrument directly.
 function debugLogPaymentHeader(rawPaymentHeader) {
   if (!rawPaymentHeader) return;
   try {
@@ -115,10 +89,6 @@ function debugLogPaymentHeader(rawPaymentHeader) {
   }
 }
 
-// @x402/express's ExpressAdapter assumes a real Express request (.header(),
-// .path, .protocol, .originalUrl) - this is a raw Vercel serverless request
-// object instead, so calling the middleware directly used to throw
-// "this.req.header is not a function" whenever an X-PAYMENT header arrived.
 function ensureExpressCompat(req) {
   if (typeof req.header !== 'function') {
     req.header = req.get = function (name) {
@@ -136,12 +106,6 @@ function ensureExpressCompat(req) {
 
 const B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
-// FIX (base64 corruption bug): the hand-rolled encoder/decoder below stripped
-// '=' padding characters BEFORE decoding, which broke the loop's end-of-string
-// detection and silently appended 1-2 garbage NUL bytes to the end of every
-// decoded file. This corrupted every diff, patch validation, and file read
-// PG1 ever performed. Now that this runs on Node.js (not Edge), Buffer is
-// available and is both correct and far simpler.
 function encodeBase64(str) {
   return Buffer.from(str, 'utf-8').toString('base64');
 }
@@ -368,45 +332,6 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
   var models = ['gemini-3.8-flash', 'gemini-3.6-flash'];
   var lastError = '';
 
-  // FIX (#55): the per-attempt cap here was a flat 8000ms — the same "slow means
-  // broken" mistake #53 fixed on the Anthropic path, but tighter, and on the path
-  // that serves every turn the keyword router does not classify as heavy. A healthy
-  // call that simply had not finished generating yet was aborted at the 8s mark,
-  // every token it had produced was thrown away, and the next (key, model) pair
-  // regenerated the same answer from scratch under the same 8s cap.
-  //
-  // Note on evidence: unlike #53, the live numbers behind this change could not be
-  // collected. CI only receives ANTHROPIC_API_KEY, so there is no Gemini key in the
-  // job and no deployed URL to drive the path end to end; a keyless probe is
-  // rejected with 400 API_KEY_INVALID before model lookup. What follows is therefore
-  // argued from this function's own configuration rather than measured, and the
-  // sizing question the measurement would have settled is the one this change
-  // removes: nothing below is a latency budget that has to be tuned to a
-  // distribution.
-  //
-  // The cap contradicted the request it was guarding. generationConfig sets
-  // maxOutputTokens to 4096 and the response is awaited whole, not streamed, so
-  // finishing inside 8s requires sustaining better than 512 tok/s with zero time to
-  // first token. Nothing in the Flash tier runs at that rate, so the cap was not
-  // sized to catch an outlier — it was sized below the response length the call is
-  // configured to ask for, and fired on ordinary long answers.
-  //
-  // Regenerating after it fired could not have helped either. Reaching the sibling
-  // on a timer only pays off if the sibling finishes what the primary could not, in
-  // less time than the primary had already spent; gemini-3.6-flash is the older
-  // model in the same tier, so it has no such headroom to offer. (This mirrors the
-  // haiku retry in #53, which measurement showed was never a rescue — 94 vs 96
-  // tok/s. The analogous Gemini comparison is the part that remains unverified. It
-  // does not change the decision below, because with the watchdog set to the
-  // caller's deadline there is by construction no time left to regenerate into.)
-  //
-  // So: slow is not broken. The sibling key/model is reached only when an attempt
-  // genuinely fails — non-2xx, a body with no usable text, or a network rejection —
-  // which is the case the key/model list exists for, and which surfaces in
-  // milliseconds: a probe against this endpoint came back 400 in 80-201ms. What
-  // stays on the first attempt is a dead-socket watchdog rather than a latency
-  // budget. It runs to the caller's deadline, holds back only enough for one retry
-  // if the attempt fails outright, and never on its own causes a regeneration.
   var RETRY_RESERVE_MS = 12000;
   var ERROR_RETRY_CAP_MS = 20000;
   var NO_DEADLINE_CAP_MS = 40000;
@@ -532,33 +457,6 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
   var models = ['claude-sonnet-5', 'claude-haiku-4-5-20251001'];
   var lastError = '';
 
-  // FIX (#53): the per-attempt cap used to be a flat 15000ms, which sat directly on
-  // top of the natural latency distribution for this workload — non-streaming, one
-  // whole response awaited at max_tokens 4096. A healthy sonnet call that simply had
-  // not finished generating yet was aborted at the 15s mark, every token it had
-  // produced was discarded, and the next model regenerated the same answer from
-  // scratch: 15,003ms + 12,264ms = 27,267ms for a request that returns in ~14s when
-  // left alone.
-  //
-  // Measured against the live API, the prompts this router actually sends here take
-  // sonnet 21.6s ("debug ..."), 26.5s ("analyze ...") and 43.6s (a 4096-token report).
-  // The 15s cap was therefore not catching an edge case; it was firing on the typical
-  // heavy task and making every one of them pay for two full generations.
-  //
-  // The same measurement also shows why retrying with haiku was never the rescue it
-  // looked like: the two models generate at effectively the same rate (94 vs 96
-  // tok/s on the long prompt, 43.6s vs 42.9s wall clock). Haiku only finishes sooner
-  // when it happens to write a shorter answer, so restarting a healthy sonnet call as
-  // haiku trades certain progress for a coin flip.
-  //
-  // So: slow is not broken. The sibling model is now reached only when an attempt
-  // genuinely fails — non-2xx, a malformed body, or a network rejection — which is
-  // the 404/5xx case the fallback list was added for, and which surfaces in
-  // milliseconds rather than seconds. What is left on the primary attempt is a
-  // dead-socket watchdog rather than a latency budget: it runs to the caller's
-  // deadline, holding back only enough time for the caller's cross-provider escape
-  // hatch (the Gemini fallback at the CLAUDE_CHAT call site), never enough to justify
-  // re-running Anthropic from zero.
   var CROSS_PROVIDER_RESERVE_MS = 10000;
   var ERROR_RETRY_CAP_MS = 20000;
   var NO_DEADLINE_CAP_MS = 40000;
@@ -650,11 +548,6 @@ export default async function handler(req, res) {
   var supUrl = (process.env.SUPABASE_URL || '').replace(/\s+/g, '');
   var supKey = (process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLEKEY || '').replace(/\s+/g, '');
 
-  // Shared by both the Gumroad (human customer) and x402 (agent customer)
-  // paths below - builds the STIX 2.1 bundle from Supabase telemetry and
-  // writes it directly to res. accessIdentifier is whatever the caller used
-  // to pay/authenticate (a Gumroad license key, or 'x402:<payer-address>'),
-  // logged to api_access_logs for both paths so usage is visible either way.
   async function buildAndServeStixBundle(accessIdentifier) {
     try {
       var parsedUrl = new URL(req.url, 'http://localhost');
@@ -687,14 +580,24 @@ export default async function handler(req, res) {
       });
       var rawTelemetry = threatRes.ok ? await threatRes.json() : [];
 
+      // FIX: every hash type (MD5, SHA1, SHA256) was being written into the
+      // STIX pattern as 'SHA-256' regardless of what it actually was — a
+      // SHA1 record's `name` field correctly said "FileHash-SHA1" but its
+      // `pattern` field claimed `hashes.'SHA-256'`, which is wrong STIX and
+      // would mislead any downstream consumer that trusts the pattern over
+      // the name. Each hash algorithm now maps to its correct STIX hash key.
       var stixObjects = rawTelemetry.map(record => {
         var patternValue = record.stix_pattern;
         if (!patternValue) {
           var safeValue = escapeStixValue(record.value);
+          var indicatorTypeStr = String(record.indicator_type);
           if (record.indicator_type === 'IPv4') patternValue = `[ipv4-addr:value = '${safeValue}']`;
           else if (record.indicator_type === 'domain') patternValue = `[domain-name:value = '${safeValue}']`;
           else if (record.indicator_type === 'URL') patternValue = `[url:value = '${safeValue}']`;
-          else if (String(record.indicator_type).includes('FileHash')) patternValue = `[file:hashes.'SHA-256' = '${safeValue}']`;
+          else if (indicatorTypeStr.includes('FileHash-MD5')) patternValue = `[file:hashes.MD5 = '${safeValue}']`;
+          else if (indicatorTypeStr.includes('FileHash-SHA1')) patternValue = `[file:hashes.'SHA-1' = '${safeValue}']`;
+          else if (indicatorTypeStr.includes('FileHash-SHA256')) patternValue = `[file:hashes.'SHA-256' = '${safeValue}']`;
+          else if (indicatorTypeStr.includes('FileHash')) patternValue = `[file:hashes.'SHA-256' = '${safeValue}']`; // fallback for any other/unlabeled hash type
           else patternValue = `[custom-object:value = '${safeValue}']`;
         }
 
@@ -737,10 +640,6 @@ export default async function handler(req, res) {
   }
 
   if (urlPath === '/api/ioc' || urlPath === '/api/feeds/ioc') {
-    // AGENT PATH: an X-PAYMENT header means an AI agent is paying per-call via
-    // x402, independent of the Gumroad human-customer flow below. If present,
-    // this is tried FIRST and, on success, serves the bundle directly -
-    // Gumroad is never consulted for a paying agent.
     var rawPaymentHeader = getHeader('x-payment') || getHeader('payment-signature');
     var hasPaymentHeader = !!rawPaymentHeader;
     var iocRequestIdentifier = getRequestIdentifier(req);
@@ -774,8 +673,6 @@ export default async function handler(req, res) {
         return;
       }
       if (!x402Paid) {
-        // Middleware already wrote its own response (a 402 with payment
-        // instructions, or an error) - nothing more to do here.
         logSettlementOutcome('/api/ioc', 'rejected', iocRequestIdentifier, 'middleware_wrote_response');
         return;
       }
@@ -784,7 +681,6 @@ export default async function handler(req, res) {
       return await buildAndServeStixBundle('x402:' + payerAddress);
     }
 
-    // HUMAN PATH: existing Gumroad license-key flow, unchanged.
     var clientLicenseKey = getHeader('x-api-key') || (getHeader('authorization') || '').replace('Bearer ', '');
     if (!clientLicenseKey) {
       var freeTierResult = await checkAndConsumeFreeTier(supUrl, supKey, iocRequestIdentifier);
@@ -792,9 +688,9 @@ export default async function handler(req, res) {
         logSettlementOutcome('/api/ioc', 'free_tier', iocRequestIdentifier, 'remaining=' + freeTierResult.remaining);
         return await buildAndServeStixBundle('free-tier:' + iocRequestIdentifier);
       }
-      console.log('[X402_DEBUG] falling through to 401. hasPaymentHeader=%s x402Middleware configured=%s freeTierReason=%s', hasPaymentHeader, !!x402Middleware, freeTierResult.reason);
+      console.log('[X402_DEBUG] falling through to 402. hasPaymentHeader=%s x402Middleware configured=%s freeTierReason=%s', hasPaymentHeader, !!x402Middleware, freeTierResult.reason);
       logSettlementOutcome('/api/ioc', 'no_payment', iocRequestIdentifier, freeTierResult.reason);
-      return sendJSON(res, 401, { error: 'Unauthorized: Missing Commercial License Key in x-api-key header (or pay per-call via x402 with an X-PAYMENT header).' });
+      return sendJSON(res, 402, { error: 'Payment Required: Missing Commercial License Key in x-api-key header (or pay per-call via x402 with an X-PAYMENT header).' });
     }
     try {
       var gumroadRes = await fetch('https://api.gumroad.com/v2/licenses/verify', {
@@ -2098,4 +1994,3 @@ export default async function handler(req, res) {
     return sendJSON(res, 200, { reply: `Exception: ${err.message}`, traceId: requestTraceId });
   }
 }
- 
