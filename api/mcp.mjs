@@ -3,17 +3,12 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.7.0 — adds get_cve_by_product, get_usage_status,
- *          subscribe_alerts, submit_indicator (9 tools total).
- *          Carries forward the 1.6.1 fix: payment-required responses
- *          return HTTP 402, not 401.
- *
- * ASSUMPTIONS flagged inline for the new tools — these reference
- * Supabase tables (free_tier_usage, alert_subscriptions,
- * submitted_indicators_staging) that may not exist yet in your
- * Supabase project. Create them before deploying, or these tools
- * will throw "Supabase not configured" / insert errors at runtime.
- * Schemas are noted above each function.
+ * Version: 1.7.1 — fixes STIX hash-pattern bug in get_threat_indicators:
+ *          every hash type (MD5/SHA1/SHA256) was being written into the
+ *          STIX pattern as SHA-256 regardless of the record's actual
+ *          indicator_type. Each hash algorithm now maps to its correct
+ *          STIX hash key. Same fix also applied to chat.mjs's /api/ioc.
+ *          No other functional changes from 1.7.0 (9 tools, 402 fix).
  */
 
 import { ExactEvmScheme } from '@x402/evm/exact/server';
@@ -209,14 +204,24 @@ async function handleThreatIndicators(args) {
   });
   const rows = res.ok ? await res.json() : [];
 
+  // FIX: every hash type (MD5, SHA1, SHA256) was being written into the
+  // STIX pattern as 'SHA-256' regardless of what it actually was — a
+  // SHA1 record's indicator_type correctly said "FileHash-SHA1" but its
+  // pattern claimed hashes.'SHA-256', which is wrong STIX. Each hash
+  // algorithm now maps to its correct STIX hash key. Same fix applied
+  // to chat.mjs's /api/ioc.
   const objects = rows.map((record) => {
     const safeValue = String(record.value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const indicatorTypeStr = String(record.indicator_type);
     let pattern = record.stix_pattern;
     if (!pattern) {
       if (record.indicator_type === 'IPv4') pattern = `[ipv4-addr:value = '${safeValue}']`;
       else if (record.indicator_type === 'domain') pattern = `[domain-name:value = '${safeValue}']`;
       else if (record.indicator_type === 'URL') pattern = `[url:value = '${safeValue}']`;
-      else if (String(record.indicator_type).includes('Hash')) pattern = `[file:hashes.'SHA-256' = '${safeValue}']`;
+      else if (indicatorTypeStr.includes('FileHash-MD5')) pattern = `[file:hashes.MD5 = '${safeValue}']`;
+      else if (indicatorTypeStr.includes('FileHash-SHA1')) pattern = `[file:hashes.'SHA-1' = '${safeValue}']`;
+      else if (indicatorTypeStr.includes('FileHash-SHA256')) pattern = `[file:hashes.'SHA-256' = '${safeValue}']`;
+      else if (indicatorTypeStr.includes('FileHash')) pattern = `[file:hashes.'SHA-256' = '${safeValue}']`; // fallback for any other/unlabeled hash type
       else pattern = `[custom-object:value = '${safeValue}']`;
     }
     return {
@@ -399,9 +404,6 @@ async function handleCveBatch(args) {
   };
 }
 
-// NEW: get_cve_by_product — NVD keywordSearch, not strict CPE matching
-// (strict CPE matching needs a well-formed cpe:2.3:... string most
-// callers won't supply; keywordSearch is looser but far more forgiving)
 async function handleCveByProduct(args) {
   const vendor = args?.vendor;
   const product = args?.product;
@@ -651,10 +653,7 @@ async function handleThreatActorProfile(args) {
 }
 
 // ---------------------------------------------------------------------
-// NEW: get_usage_status — free, no payment gate
-// ASSUMPTION: expects a Supabase table `free_tier_usage` with columns
-// `identifier`, `call_count`, `window_date` (YYYY-MM-DD). Adjust to
-// match your actual free-tier tracking if it's implemented differently.
+// get_usage_status — free, no payment gate
 // ---------------------------------------------------------------------
 
 async function handleUsageStatus(args, requestIdentifier) {
@@ -691,20 +690,7 @@ async function handleUsageStatus(args, requestIdentifier) {
 }
 
 // ---------------------------------------------------------------------
-// NEW: subscribe_alerts — license-key-only, writes a subscription row
-// ASSUMPTION: expects a Supabase table `alert_subscriptions`:
-//   create table alert_subscriptions (
-//     id uuid primary key default gen_random_uuid(),
-//     webhook_url text not null,
-//     filter jsonb not null default '{}',
-//     license_key text not null,
-//     created_at timestamptz not null default now(),
-//     active boolean not null default true
-//   );
-// Note: this tool only REGISTERS the subscription. Actually firing
-// webhooks on new data requires a separate step in your ingestion
-// pipeline (build_pipeline.py / threat_validator.py) — not part of
-// this file.
+// subscribe_alerts — license-key-only, writes a subscription row
 // ---------------------------------------------------------------------
 
 async function handleSubscribeAlerts(args, licenseKey) {
@@ -745,22 +731,7 @@ async function handleSubscribeAlerts(args, licenseKey) {
 }
 
 // ---------------------------------------------------------------------
-// NEW: submit_indicator — license-key-only, writes to a staging table
-// ASSUMPTION: expects a Supabase table `submitted_indicators_staging`:
-//   create table submitted_indicators_staging (
-//     id uuid primary key default gen_random_uuid(),
-//     indicator text not null,
-//     indicator_type text not null,
-//     malware_family text,
-//     confidence integer,
-//     source_note text,
-//     submitted_by text,
-//     submitted_at timestamptz not null default now(),
-//     reviewed boolean not null default false
-//   );
-// Submissions are NOT automatically promoted into threat_ioc_telemetry
-// — that requires a manual or automated review step you'd build
-// separately.
+// submit_indicator — license-key-only, writes to a staging table
 // ---------------------------------------------------------------------
 
 async function handleSubmitIndicator(args, licenseKey) {
@@ -901,7 +872,6 @@ function ensureExpressCompat(req) {
   }
 }
 
-// Tools available via the normal license-key OR x402 gate
 const STANDARD_TOOL_HANDLERS = {
   get_threat_indicators: handleThreatIndicators,
   get_cve_details: handleCveDetails,
@@ -912,10 +882,8 @@ const STANDARD_TOOL_HANDLERS = {
   get_cve_by_product: handleCveByProduct
 };
 
-// Tools that bypass payment entirely
 const FREE_TOOLS = new Set(['get_usage_status']);
 
-// Tools that require a Gumroad license key ONLY — never available via x402
 const LICENSE_ONLY_TOOLS = new Set(['subscribe_alerts', 'submit_indicator']);
 
 // ---------------------------------------------------------------------
@@ -936,7 +904,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.7.0',
+      version: '1.7.1',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp'
@@ -962,7 +930,7 @@ export default async function handler(req, res) {
     if (method === 'initialize') {
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.7.0' } },
+        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.7.1' } },
         id: requestId
       });
     }
@@ -981,7 +949,6 @@ export default async function handler(req, res) {
       const licenseKey = req.headers['x-api-key'];
       const rawPayment = req.headers['x-payment'];
 
-      // --- Free tools: no gating at all ---
       if (FREE_TOOLS.has(toolName)) {
         const requestIdentifier = getRequestIdentifier(req);
         let toolResult;
@@ -997,7 +964,6 @@ export default async function handler(req, res) {
         });
       }
 
-      // --- License-only tools: Gumroad key required, x402 rejected ---
       if (LICENSE_ONLY_TOOLS.has(toolName)) {
         if (!licenseKey) {
           return res.status(402).json({
@@ -1025,7 +991,6 @@ export default async function handler(req, res) {
         });
       }
 
-      // --- Standard tools: existing license-key OR x402 gate ---
       const toolHandler = STANDARD_TOOL_HANDLERS[toolName];
       if (!toolHandler) {
         return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: `Unknown tool: ${toolName}` }, id: requestId });
