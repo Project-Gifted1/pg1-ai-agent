@@ -3,8 +3,17 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.6.0 — adds get_ioc_batch (batch indicator lookup, mirrors
- *          get_cve_batch's pattern)
+ * Version: 1.7.0 — adds get_cve_by_product, get_usage_status,
+ *          subscribe_alerts, submit_indicator (9 tools total).
+ *          Carries forward the 1.6.1 fix: payment-required responses
+ *          return HTTP 402, not 401.
+ *
+ * ASSUMPTIONS flagged inline for the new tools — these reference
+ * Supabase tables (free_tier_usage, alert_subscriptions,
+ * submitted_indicators_staging) that may not exist yet in your
+ * Supabase project. Create them before deploying, or these tools
+ * will throw "Supabase not configured" / insert errors at runtime.
+ * Schemas are noted above each function.
  */
 
 import { ExactEvmScheme } from '@x402/evm/exact/server';
@@ -19,11 +28,12 @@ export const config = { maxDuration: 30 };
 
 const CVE_BATCH_MAX = 20;
 const IOC_BATCH_MAX = 20;
+const FREE_TIER_DAILY_LIMIT = 5; // ASSUMPTION — matches the 5 calls/day mentioned elsewhere; confirm against your actual free-tier logic if it lives elsewhere
 
 const TOOLS = [
   {
     name: 'get_threat_indicators',
-    description: 'PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of verified threat indicators (IPs, domains, URLs, file hashes) sourced from ThreatFox, URLhaus, AbuseIPDB, OTX and NVD. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for bulk feed synchronizations. Do NOT use for single-item lookups (use get_ioc_context) or CVE analysis (use get_cve_details). USAGE EXCLUSIONS: Does not provide historical query archival beyond the active ingestion window. BEHAVIOR: Pagination is handled via the limit parameter (max 1000). Returns 401 on payment failure.',
+    description: 'PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of verified threat indicators (IPs, domains, URLs, file hashes) sourced from ThreatFox, URLhaus, AbuseIPDB, OTX and NVD. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for bulk feed synchronizations. Do NOT use for single-item lookups (use get_ioc_context) or CVE analysis (use get_cve_details). USAGE EXCLUSIONS: Does not provide historical query archival beyond the active ingestion window. BEHAVIOR: Pagination is handled via the limit parameter (max 1000). Returns 402 on payment failure.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -36,7 +46,7 @@ const TOOLS = [
   },
   {
     name: 'get_cve_details',
-    description: 'PG1 Sovereign Threat Intelligence: enriched CVE lookup combining NVD (description, CVSS score/vector), FIRST.org EPSS (exploit-probability score and percentile), and the CISA Known Exploited Vulnerabilities catalog (active wild exploitation status). Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for specific CVE lookups. Do NOT use for IP/domain/hash enrichment (use get_ioc_context) or bulk feed ingestion (use get_threat_indicators). USAGE EXCLUSIONS: Does not support wildcard search or threat-actor dossier profiling. BEHAVIOR: Returns 401 on payment failure, 404 if CVE is not found.',
+    description: 'PG1 Sovereign Threat Intelligence: enriched CVE lookup combining NVD (description, CVSS score/vector), FIRST.org EPSS (exploit-probability score and percentile), and the CISA Known Exploited Vulnerabilities catalog (active wild exploitation status). Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for specific CVE lookups. Do NOT use for IP/domain/hash enrichment (use get_ioc_context) or bulk feed ingestion (use get_threat_indicators). USAGE EXCLUSIONS: Does not support wildcard search or threat-actor dossier profiling. BEHAVIOR: Returns 402 on payment failure, 404 if CVE is not found.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -47,7 +57,7 @@ const TOOLS = [
   },
   {
     name: 'get_ioc_context',
-    description: 'PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) across all telemetry sources and returns aggregated provenance — reporting sources, observation count, aggregated confidence score, known malware families, tags, and first/last seen timestamps. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for point-lookup enrichment of a single indicator. Do NOT use for bulk intelligence downloads (use get_threat_indicators), multiple indicators at once (use get_ioc_batch), or software vulnerability analysis (use get_cve_details). USAGE EXCLUSIONS: Does not perform active port-scanning or live network probing. BEHAVIOR: Returns 401 on payment failure, 404 if the indicator is unobserved.',
+    description: 'PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) across all telemetry sources and returns aggregated provenance — reporting sources, observation count, aggregated confidence score, known malware families, tags, and first/last seen timestamps. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for point-lookup enrichment of a single indicator. Do NOT use for bulk intelligence downloads (use get_threat_indicators), multiple indicators at once (use get_ioc_batch), or software vulnerability analysis (use get_cve_details). USAGE EXCLUSIONS: Does not perform active port-scanning or live network probing. BEHAVIOR: Returns 402 on payment failure, 404 if the indicator is unobserved.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -58,7 +68,7 @@ const TOOLS = [
   },
   {
     name: 'get_cve_batch',
-    description: "PG1 Sovereign Threat Intelligence: looks up multiple CVE identifiers in a single call, each enriched with NVD description/CVSS, FIRST.org EPSS score, and CISA KEV status — same enrichment as get_cve_details, batched. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for looking up several known CVE ids at once (e.g. from an SBOM or scan report). Do NOT use for a single CVE (use get_cve_details, lower overhead). BEHAVIOR: Accepts up to " + CVE_BATCH_MAX + " ids per call; malformed or not-found ids are reported per-entry rather than failing the whole batch.",
+    description: "PG1 Sovereign Threat Intelligence: looks up multiple CVE identifiers in a single call, each enriched with NVD description/CVSS, FIRST.org EPSS score, and CISA KEV status — same enrichment as get_cve_details, batched. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for looking up several known CVE ids at once (e.g. from an SBOM or scan report). Do NOT use for a single CVE (use get_cve_details, lower overhead) or for discovering CVEs by vendor/product (use get_cve_by_product). BEHAVIOR: Accepts up to " + CVE_BATCH_MAX + " ids per call; malformed or not-found ids are reported per-entry rather than failing the whole batch.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -98,6 +108,66 @@ const TOOLS = [
         }
       },
       required: ['actor_name']
+    }
+  },
+  {
+    name: 'get_cve_by_product',
+    description: 'PG1 Sovereign Threat Intelligence: returns CVEs affecting a given vendor/product (optionally a specific version), enriched with CVSS, EPSS, and CISA KEV status, sorted by exploitation risk. Sourced from NVD keyword search. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for discovering CVEs by vendor/product when you do not already have an exact CVE id. Do NOT use for a known CVE id (use get_cve_details / get_cve_batch). USAGE EXCLUSIONS: Uses NVD keyword search, not strict CPE matching — results may include near-matches. BEHAVIOR: Returns up to 50 results per call.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        vendor: { type: 'string', description: "Vendor name, e.g. 'apache'." },
+        product: { type: 'string', description: "Product name, e.g. 'log4j'." },
+        version: { type: 'string', description: "Optional specific version, e.g. '2.14.1'." },
+        only_kev: { type: 'boolean', description: 'If true, only return CVEs on the CISA KEV list.' }
+      },
+      required: ['vendor', 'product']
+    }
+  },
+  {
+    name: 'get_usage_status',
+    description: 'PG1 Sovereign Threat Intelligence: returns your remaining free-tier calls for today and current Gumroad license status. No payment required — this tool is always free.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        identifier: { type: 'string', description: 'Optional — the X-API-KEY or identifier to check usage for; defaults to the calling identifier if omitted.' },
+        license_key: { type: 'string', description: 'Optional — check Gumroad license status alongside free-tier usage.' }
+      }
+    }
+  },
+  {
+    name: 'subscribe_alerts',
+    description: "PG1 Sovereign Threat Intelligence: registers a standing filter (indicator type, min EPSS, or KEV-only). Matching new indicators are POSTed to the given webhook URL as they're ingested. Requires a valid Gumroad license key (X-API-KEY header) — this tool is NOT available via per-query x402, since it establishes a recurring subscription rather than a single paid call.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        webhook_url: { type: 'string', description: 'HTTPS URL to receive POSTed alert payloads.' },
+        filter: {
+          type: 'object',
+          description: 'Optional filter object: { indicator_type, min_epss, kev_only }',
+          properties: {
+            indicator_type: { type: 'string' },
+            min_epss: { type: 'number' },
+            kev_only: { type: 'boolean' }
+          }
+        }
+      },
+      required: ['webhook_url']
+    }
+  },
+  {
+    name: 'submit_indicator',
+    description: 'PG1 Sovereign Threat Intelligence: submit an observed indicator for validation and possible inclusion in future query results. Requires a valid Gumroad license key (X-API-KEY header) — this tool is NOT available via per-query x402. Submissions are staged for review, not immediately added to the live feed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        indicator: { type: 'string' },
+        indicator_type: { type: 'string' },
+        malware_family: { type: 'string', description: 'Optional.' },
+        confidence: { type: 'integer', description: "Submitter's own confidence, 0-100." },
+        source_note: { type: 'string', description: 'Optional free-text on how this was observed.' }
+      },
+      required: ['indicator', 'indicator_type']
     }
   }
 ];
@@ -174,7 +244,7 @@ async function handleThreatIndicators(args) {
 }
 
 // ---------------------------------------------------------------------
-// get_cve_details / get_cve_batch shared helpers
+// get_cve_details / get_cve_batch / get_cve_by_product shared helpers
 // ---------------------------------------------------------------------
 
 var kevCache = null;
@@ -327,6 +397,69 @@ async function handleCveBatch(args) {
     total_found: results.filter((r) => r.found).length,
     results
   };
+}
+
+// NEW: get_cve_by_product — NVD keywordSearch, not strict CPE matching
+// (strict CPE matching needs a well-formed cpe:2.3:... string most
+// callers won't supply; keywordSearch is looser but far more forgiving)
+async function handleCveByProduct(args) {
+  const vendor = args?.vendor;
+  const product = args?.product;
+  const version = args?.version;
+  const onlyKev = !!args?.only_kev;
+
+  if (!vendor || !product) {
+    throw new Error('vendor and product are both required.');
+  }
+
+  const keywords = [vendor, product, version].filter(Boolean).join(' ');
+  const headers = {};
+  if (process.env.NVD_API_KEY) headers.apiKey = process.env.NVD_API_KEY;
+
+  const nvdRes = await fetch(`https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch=${encodeURIComponent(keywords)}&resultsPerPage=50`, { headers });
+  if (!nvdRes.ok) throw new Error('NVD lookup failed: ' + nvdRes.status);
+  const nvdData = await nvdRes.json();
+  const vulns = (nvdData.vulnerabilities || []).map((v) => v.cve).filter(Boolean);
+
+  if (!vulns.length) {
+    return { vendor, product, version: version || null, total_found: 0, cves: [] };
+  }
+
+  const kevCatalog = await getKevCatalog().catch(() => ({}));
+
+  const enriched = await Promise.all(vulns.map(async (vuln) => {
+    const cveId = vuln.id;
+    const enDesc = (vuln.descriptions || []).find((d) => d.lang === 'en');
+    const metrics = vuln.metrics || {};
+    let cvssData = null, cvssVersion = null;
+    if (metrics.cvssMetricV31?.[0]) { cvssData = metrics.cvssMetricV31[0].cvssData; cvssVersion = '3.1'; }
+    else if (metrics.cvssMetricV30?.[0]) { cvssData = metrics.cvssMetricV30[0].cvssData; cvssVersion = '3.0'; }
+    else if (metrics.cvssMetricV2?.[0]) { cvssData = metrics.cvssMetricV2[0].cvssData; cvssVersion = '2.0'; }
+
+    const epss = await fetchEpssScore(cveId).catch(() => null);
+    const kevEntry = kevCatalog[cveId];
+
+    return {
+      cve_id: cveId,
+      description: enDesc ? enDesc.value : null,
+      published: vuln.published,
+      cvss: cvssData ? { version: cvssVersion, score: cvssData.baseScore, severity: cvssData.baseSeverity } : null,
+      epss: epss ? { score: epss.epss_score, percentile: epss.epss_percentile } : null,
+      is_known_exploited: !!kevEntry,
+      kev_due_date: kevEntry ? kevEntry.dueDate : null
+    };
+  }));
+
+  const filtered = onlyKev ? enriched.filter((c) => c.is_known_exploited) : enriched;
+  filtered.sort((a, b) => {
+    if (a.is_known_exploited !== b.is_known_exploited) return a.is_known_exploited ? -1 : 1;
+    const epssA = a.epss?.score || 0, epssB = b.epss?.score || 0;
+    if (epssA !== epssB) return epssB - epssA;
+    const cvssA = a.cvss?.score || 0, cvssB = b.cvss?.score || 0;
+    return cvssB - cvssA;
+  });
+
+  return { vendor, product, version: version || null, total_found: filtered.length, cves: filtered };
 }
 
 // ---------------------------------------------------------------------
@@ -518,6 +651,168 @@ async function handleThreatActorProfile(args) {
 }
 
 // ---------------------------------------------------------------------
+// NEW: get_usage_status — free, no payment gate
+// ASSUMPTION: expects a Supabase table `free_tier_usage` with columns
+// `identifier`, `call_count`, `window_date` (YYYY-MM-DD). Adjust to
+// match your actual free-tier tracking if it's implemented differently.
+// ---------------------------------------------------------------------
+
+async function handleUsageStatus(args, requestIdentifier) {
+  const identifier = args?.identifier || requestIdentifier;
+  if (!identifier) {
+    throw new Error('identifier is required (or must be derivable from the request).');
+  }
+
+  const { supUrl, supKey } = getSupabaseCreds();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const res = await fetch(
+    `${supUrl}/rest/v1/free_tier_usage?identifier=eq.${encodeURIComponent(identifier)}&window_date=eq.${today}&select=call_count`,
+    { headers: { apikey: supKey, Authorization: `Bearer ${supKey}` } }
+  );
+  const rows = res.ok ? await res.json() : [];
+  const callsToday = rows.length ? (rows[0].call_count || 0) : 0;
+  const remaining = Math.max(0, FREE_TIER_DAILY_LIMIT - callsToday);
+
+  let licenseStatus = null;
+  if (args?.license_key) {
+    const check = await verifyGumroadLicense(args.license_key).catch(() => ({ valid: false, error: 'check failed' }));
+    licenseStatus = check.valid ? 'active' : 'invalid_or_expired';
+  }
+
+  return {
+    identifier,
+    free_tier_daily_limit: FREE_TIER_DAILY_LIMIT,
+    free_tier_calls_used_today: callsToday,
+    free_tier_calls_remaining_today: remaining,
+    license_status: licenseStatus,
+    checked_at: new Date().toISOString()
+  };
+}
+
+// ---------------------------------------------------------------------
+// NEW: subscribe_alerts — license-key-only, writes a subscription row
+// ASSUMPTION: expects a Supabase table `alert_subscriptions`:
+//   create table alert_subscriptions (
+//     id uuid primary key default gen_random_uuid(),
+//     webhook_url text not null,
+//     filter jsonb not null default '{}',
+//     license_key text not null,
+//     created_at timestamptz not null default now(),
+//     active boolean not null default true
+//   );
+// Note: this tool only REGISTERS the subscription. Actually firing
+// webhooks on new data requires a separate step in your ingestion
+// pipeline (build_pipeline.py / threat_validator.py) — not part of
+// this file.
+// ---------------------------------------------------------------------
+
+async function handleSubscribeAlerts(args, licenseKey) {
+  const webhookUrl = args?.webhook_url;
+  if (!webhookUrl || !/^https:\/\//i.test(webhookUrl)) {
+    throw new Error('webhook_url is required and must be an https:// URL.');
+  }
+  if (!licenseKey) {
+    throw new Error('subscribe_alerts requires a valid Gumroad license key — not available via per-query x402.');
+  }
+
+  const { supUrl, supKey } = getSupabaseCreds();
+  const filter = args?.filter || {};
+
+  const insertRes = await fetch(`${supUrl}/rest/v1/alert_subscriptions`, {
+    method: 'POST',
+    headers: {
+      apikey: supKey,
+      Authorization: `Bearer ${supKey}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation'
+    },
+    body: JSON.stringify({ webhook_url: webhookUrl, filter, license_key: licenseKey })
+  });
+
+  if (!insertRes.ok) {
+    throw new Error('Failed to create subscription: ' + insertRes.status);
+  }
+  const inserted = await insertRes.json();
+
+  return {
+    subscription_id: inserted[0]?.id,
+    webhook_url: webhookUrl,
+    filter,
+    status: 'active',
+    created_at: inserted[0]?.created_at
+  };
+}
+
+// ---------------------------------------------------------------------
+// NEW: submit_indicator — license-key-only, writes to a staging table
+// ASSUMPTION: expects a Supabase table `submitted_indicators_staging`:
+//   create table submitted_indicators_staging (
+//     id uuid primary key default gen_random_uuid(),
+//     indicator text not null,
+//     indicator_type text not null,
+//     malware_family text,
+//     confidence integer,
+//     source_note text,
+//     submitted_by text,
+//     submitted_at timestamptz not null default now(),
+//     reviewed boolean not null default false
+//   );
+// Submissions are NOT automatically promoted into threat_ioc_telemetry
+// — that requires a manual or automated review step you'd build
+// separately.
+// ---------------------------------------------------------------------
+
+async function handleSubmitIndicator(args, licenseKey) {
+  const indicator = args?.indicator;
+  const indicatorType = args?.indicator_type;
+  if (!indicator || !indicatorType) {
+    throw new Error('indicator and indicator_type are both required.');
+  }
+  if (!licenseKey) {
+    throw new Error('submit_indicator requires a valid Gumroad license key — contribution is a paid-tier feature.');
+  }
+
+  const { supUrl, supKey } = getSupabaseCreds();
+
+  const dupCheck = await fetch(
+    `${supUrl}/rest/v1/submitted_indicators_staging?indicator=eq.${encodeURIComponent(indicator)}&reviewed=eq.false&select=id`,
+    { headers: { apikey: supKey, Authorization: `Bearer ${supKey}` } }
+  );
+  const dupRows = dupCheck.ok ? await dupCheck.json() : [];
+  if (dupRows.length) {
+    return { status: 'duplicate_pending_review', indicator, staging_id: dupRows[0].id };
+  }
+
+  const insertRes = await fetch(`${supUrl}/rest/v1/submitted_indicators_staging`, {
+    method: 'POST',
+    headers: {
+      apikey: supKey,
+      Authorization: `Bearer ${supKey}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation'
+    },
+    body: JSON.stringify({
+      indicator,
+      indicator_type: indicatorType,
+      malware_family: args?.malware_family || null,
+      confidence: args?.confidence || null,
+      source_note: args?.source_note || null,
+      submitted_by: licenseKey.slice(0, 8) + '…'
+    })
+  });
+
+  if (!insertRes.ok) throw new Error('Failed to submit indicator: ' + insertRes.status);
+  const inserted = await insertRes.json();
+
+  return {
+    status: 'submitted_pending_review',
+    indicator,
+    staging_id: inserted[0]?.id
+  };
+}
+
+// ---------------------------------------------------------------------
 // AUTHORIZATION
 // ---------------------------------------------------------------------
 
@@ -537,6 +832,14 @@ async function verifyGumroadLicense(licenseKey) {
   } catch (e) {
     return { valid: false, error: 'License verification failed: ' + e.message };
   }
+}
+
+function getRequestIdentifier(req) {
+  const key = req.headers['x-api-key'];
+  if (key) return key;
+  const fwd = req.headers['x-forwarded-for'];
+  if (fwd) return String(fwd).split(',')[0].trim();
+  return 'anonymous';
 }
 
 const X402_PAY_TO = (process.env.X402_PAY_TO_ADDRESS || '').trim();
@@ -598,14 +901,22 @@ function ensureExpressCompat(req) {
   }
 }
 
-const TOOL_HANDLERS = {
+// Tools available via the normal license-key OR x402 gate
+const STANDARD_TOOL_HANDLERS = {
   get_threat_indicators: handleThreatIndicators,
   get_cve_details: handleCveDetails,
   get_ioc_context: handleIocContext,
   get_cve_batch: handleCveBatch,
   get_ioc_batch: handleIocBatch,
-  get_threat_actor_profile: handleThreatActorProfile
+  get_threat_actor_profile: handleThreatActorProfile,
+  get_cve_by_product: handleCveByProduct
 };
+
+// Tools that bypass payment entirely
+const FREE_TOOLS = new Set(['get_usage_status']);
+
+// Tools that require a Gumroad license key ONLY — never available via x402
+const LICENSE_ONLY_TOOLS = new Set(['subscribe_alerts', 'submit_indicator']);
 
 // ---------------------------------------------------------------------
 // HTTP HANDLER
@@ -625,7 +936,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.6.0',
+      version: '1.7.0',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp'
@@ -651,7 +962,7 @@ export default async function handler(req, res) {
     if (method === 'initialize') {
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.6.0' } },
+        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.7.0' } },
         id: requestId
       });
     }
@@ -667,14 +978,58 @@ export default async function handler(req, res) {
     if (method === 'tools/call') {
       const toolName = params?.name;
       const toolArgs = params?.arguments || {};
-      const toolHandler = TOOL_HANDLERS[toolName];
+      const licenseKey = req.headers['x-api-key'];
+      const rawPayment = req.headers['x-payment'];
 
+      // --- Free tools: no gating at all ---
+      if (FREE_TOOLS.has(toolName)) {
+        const requestIdentifier = getRequestIdentifier(req);
+        let toolResult;
+        try {
+          toolResult = await handleUsageStatus(toolArgs, requestIdentifier);
+        } catch (toolErr) {
+          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId });
+        }
+        return res.status(200).json({
+          jsonrpc: '2.0',
+          result: { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] },
+          id: requestId
+        });
+      }
+
+      // --- License-only tools: Gumroad key required, x402 rejected ---
+      if (LICENSE_ONLY_TOOLS.has(toolName)) {
+        if (!licenseKey) {
+          return res.status(402).json({
+            jsonrpc: '2.0',
+            error: { code: -32001, message: `${toolName} requires a valid Gumroad license key in X-API-KEY. Not available via x402.` },
+            id: requestId
+          });
+        }
+        const check = await verifyGumroadLicense(licenseKey);
+        if (!check.valid) {
+          return res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error }, id: requestId });
+        }
+        let toolResult;
+        try {
+          toolResult = toolName === 'subscribe_alerts'
+            ? await handleSubscribeAlerts(toolArgs, licenseKey)
+            : await handleSubmitIndicator(toolArgs, licenseKey);
+        } catch (toolErr) {
+          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId });
+        }
+        return res.status(200).json({
+          jsonrpc: '2.0',
+          result: { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] },
+          id: requestId
+        });
+      }
+
+      // --- Standard tools: existing license-key OR x402 gate ---
+      const toolHandler = STANDARD_TOOL_HANDLERS[toolName];
       if (!toolHandler) {
         return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: `Unknown tool: ${toolName}` }, id: requestId });
       }
-
-      const licenseKey = req.headers['x-api-key'];
-      const rawPayment = req.headers['x-payment'];
 
       let authorized = false;
 
@@ -682,14 +1037,14 @@ export default async function handler(req, res) {
         const check = await verifyGumroadLicense(licenseKey);
         if (check.valid) authorized = true;
         else {
-          return res.status(401).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error }, id: requestId });
+          return res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error }, id: requestId });
         }
       }
 
       if (!authorized && rawPayment && x402Middleware) {
         const ready = await ensureX402Initialized();
         if (!ready) {
-          return res.status(401).json({ jsonrpc: '2.0', error: { code: -32001, message: 'x402 payment path temporarily unavailable. Retry, or use a Gumroad license key.' }, id: requestId });
+          return res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'x402 payment path temporarily unavailable. Retry, or use a Gumroad license key.' }, id: requestId });
         }
         ensureExpressCompat(req);
         try {
@@ -698,7 +1053,7 @@ export default async function handler(req, res) {
           });
         } catch (x402Err) {
           if (!res.headersSent) {
-            return res.status(401).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment verification failed: ' + x402Err.message }, id: requestId });
+            return res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment verification failed: ' + x402Err.message }, id: requestId });
           }
           return;
         }
@@ -706,7 +1061,7 @@ export default async function handler(req, res) {
       }
 
       if (!authorized) {
-        return res.status(401).json({
+        return res.status(402).json({
           jsonrpc: '2.0',
           error: { code: -32001, message: 'Payment Required: Send a valid Gumroad key in X-API-KEY or pay $0.01 via x402 in X-PAYMENT.' },
           id: requestId
