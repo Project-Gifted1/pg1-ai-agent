@@ -68,4 +68,8 @@ Call `"method": "tools/list"` against `/api/mcp` for full schemas. Summary:
 | `get_threat_actor_profile` | APT/threat actor dossiers with MITRE ATT&CK | Yes (needs `x-free-tier: 1`) |
 | `get_usage_status` | Check your remaining free-tier quota | Always free, no header needed |
 | `subscribe_alerts` | Register a webhook for new matching indicators | No — license key required |
-| `submit_indicator` | Contribute an observed indicator for review | No — license key required |
+| `submit_indicator` | Contribute an observed indicator for review | No — license key required | 
+
+## Acknowledgements
+
+- **Frits** ([x402 Doctor](https://x402-doctor.onrender.com/)): found the payment-gate ordering bug and confirmed the fix, so PG1 now returns a proper x402 payment challenge by default.
