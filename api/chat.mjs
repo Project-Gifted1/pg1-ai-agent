@@ -1999,4 +1999,10 @@ export default async function handler(req, res) {
       audioStatus: audioStatus,
       audioMimeType: 'audio/mp3',
       traceId: requestTraceId,
-      telem
+      telemetry: { supabaseStatus: supabaseStatus, executionTimeMs: Date.now() - startTime }
+    });
+
+  } catch (err) {
+    return sendJSON(res, 200, { reply: `Exception: ${err.message}`, traceId: requestTraceId });
+  }
+}
