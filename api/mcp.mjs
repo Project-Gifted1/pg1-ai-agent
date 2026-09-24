@@ -3,20 +3,17 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.9.0 — get_ioc_context and get_ioc_batch no longer throw an
- *          error for "not found" results (was surfacing as a tool failure
- *          to MCP clients, which agents could misread as "the check
- *          failed" or even "unsafe" — not the intended "nothing known"
- *          meaning). Both now return found:false as a normal result.
- *          Not-found lookups are also now free: get_ioc_context charges
- *          nothing when the indicator has no record; get_ioc_batch
- *          charges nothing only if NONE of the submitted values were
- *          found, and applies the normal license/free-tier/x402 gate if
- *          at least one was found. Tool descriptions updated to state
- *          plainly that "not found" means "nothing bad on record in
- *          PG1's sources" — not "safe". Carries forward 1.8.1 (free-tier
- *          parity + get_usage_status column fix) and 1.7.2 (x402
- *          challenge fix).
+ * Version: 1.9.1 — FIX: free tier was checked before x402, regardless of
+ *          whether a payment header (X-PAYMENT / payment-signature) was
+ *          actually present. This meant a real payer with free-tier quota
+ *          remaining got silently served for free — their payment header
+ *          was captured but never checked. Free tier now only applies
+ *          when NO payment header is present at all; if one is present,
+ *          x402 verification runs first, always. Also corrected error
+ *          text that only mentioned the v1 header name (X-PAYMENT) to
+ *          also mention payment-signature (v2). Carries forward 1.9.0
+ *          (found:false as a free, normal result for get_ioc_context/
+ *          get_ioc_batch) and all prior fixes.
  */
 
 import { ExactEvmScheme } from '@x402/evm/exact/server';
@@ -36,7 +33,7 @@ const IOC_BATCH_MAX = 20;
 const TOOLS = [
   {
     name: 'get_threat_indicators',
-    description: 'PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of verified threat indicators (IPs, domains, URLs, file hashes) sourced from ThreatFox, URLhaus, AbuseIPDB, OTX and NVD. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for bulk feed synchronizations. Do NOT use for single-item lookups (use get_ioc_context) or CVE analysis (use get_cve_details). USAGE EXCLUSIONS: Does not provide historical query archival beyond the active ingestion window. BEHAVIOR: Pagination is handled via the limit parameter (max 1000). Returns 402 on payment failure.',
+    description: 'PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of verified threat indicators (IPs, domains, URLs, file hashes) sourced from ThreatFox, URLhaus, AbuseIPDB, OTX and NVD. Payment required: $0.01 via x402 (X-PAYMENT or payment-signature header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for bulk feed synchronizations. Do NOT use for single-item lookups (use get_ioc_context) or CVE analysis (use get_cve_details). USAGE EXCLUSIONS: Does not provide historical query archival beyond the active ingestion window. BEHAVIOR: Pagination is handled via the limit parameter (max 1000). Returns 402 on payment failure.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -49,7 +46,7 @@ const TOOLS = [
   },
   {
     name: 'get_cve_details',
-    description: 'PG1 Sovereign Threat Intelligence: enriched CVE lookup combining NVD (description, CVSS score/vector), FIRST.org EPSS (exploit-probability score and percentile), and the CISA Known Exploited Vulnerabilities catalog (active wild exploitation status). Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for specific CVE lookups. Do NOT use for IP/domain/hash enrichment (use get_ioc_context) or bulk feed ingestion (use get_threat_indicators). USAGE EXCLUSIONS: Does not support wildcard search or threat-actor dossier profiling. BEHAVIOR: Returns 402 on payment failure, 404 if CVE is not found.',
+    description: 'PG1 Sovereign Threat Intelligence: enriched CVE lookup combining NVD (description, CVSS score/vector), FIRST.org EPSS (exploit-probability score and percentile), and the CISA Known Exploited Vulnerabilities catalog (active wild exploitation status). Payment required: $0.01 via x402 (X-PAYMENT or payment-signature header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for specific CVE lookups. Do NOT use for IP/domain/hash enrichment (use get_ioc_context) or bulk feed ingestion (use get_threat_indicators). USAGE EXCLUSIONS: Does not support wildcard search or threat-actor dossier profiling. BEHAVIOR: Returns 402 on payment failure, 404 if CVE is not found.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -60,7 +57,7 @@ const TOOLS = [
   },
   {
     name: 'get_ioc_context',
-    description: "PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) — the recommended pre-action safety check for AI agents before visiting, downloading, or connecting to something. Returns aggregated provenance from ThreatFox, URLhaus, AbuseIPDB, and OTX — reporting sources, observation count, aggregated confidence score, known malware families, tags, and first/last seen timestamps. SIBLING DIFFERENTIATION: Use ONLY for point-lookup enrichment of a single indicator. Do NOT use for bulk intelligence downloads (use get_threat_indicators), multiple indicators at once (use get_ioc_batch), or software vulnerability analysis (use get_cve_details). BEHAVIOR: Returns a normal result shaped { found: true, indicator_type, provenance } or { found: false } — never an error for 'not found'. A found:false result means nothing bad is recorded in PG1's sources; it does NOT mean the indicator is safe, only that it isn't in this dataset. Lookups that return found:false are FREE — no payment or free-tier quota is consumed. Payment (via x402 X-PAYMENT header or a Gumroad X-API-KEY license) is only required when a real record is found.",
+    description: "PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) — the recommended pre-action safety check for AI agents before visiting, downloading, or connecting to something. Returns aggregated provenance from ThreatFox, URLhaus, AbuseIPDB, and OTX — reporting sources, observation count, aggregated confidence score, known malware families, tags, and first/last seen timestamps. SIBLING DIFFERENTIATION: Use ONLY for point-lookup enrichment of a single indicator. Do NOT use for bulk intelligence downloads (use get_threat_indicators), multiple indicators at once (use get_ioc_batch), or software vulnerability analysis (use get_cve_details). BEHAVIOR: Returns a normal result shaped { found: true, indicator_type, provenance } or { found: false } — never an error for 'not found'. A found:false result means nothing bad is recorded in PG1's sources; it does NOT mean the indicator is safe, only that it isn't in this dataset. Lookups that return found:false are FREE — no payment or free-tier quota is consumed. Payment (via x402 X-PAYMENT/payment-signature header or a Gumroad X-API-KEY license) is only required when a real record is found.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -71,7 +68,7 @@ const TOOLS = [
   },
   {
     name: 'get_cve_batch',
-    description: "PG1 Sovereign Threat Intelligence: looks up multiple CVE identifiers in a single call, each enriched with NVD description/CVSS, FIRST.org EPSS score, and CISA KEV status — same enrichment as get_cve_details, batched. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for looking up several known CVE ids at once (e.g. from an SBOM or scan report). Do NOT use for a single CVE (use get_cve_details, lower overhead) or for discovering CVEs by vendor/product (use get_cve_by_product). BEHAVIOR: Accepts up to " + CVE_BATCH_MAX + " ids per call; malformed or not-found ids are reported per-entry rather than failing the whole batch.",
+    description: "PG1 Sovereign Threat Intelligence: looks up multiple CVE identifiers in a single call, each enriched with NVD description/CVSS, FIRST.org EPSS score, and CISA KEV status — same enrichment as get_cve_details, batched. Payment required: $0.01 via x402 (X-PAYMENT or payment-signature header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for looking up several known CVE ids at once (e.g. from an SBOM or scan report). Do NOT use for a single CVE (use get_cve_details, lower overhead) or for discovering CVEs by vendor/product (use get_cve_by_product). BEHAVIOR: Accepts up to " + CVE_BATCH_MAX + " ids per call; malformed or not-found ids are reported per-entry rather than failing the whole batch.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -86,7 +83,7 @@ const TOOLS = [
   },
   {
     name: 'get_ioc_batch',
-    description: "PG1 Sovereign Threat Intelligence: looks up multiple indicators (IPs, domains, URLs, hashes) in a single call — a batched pre-action safety check for AI agents. Each returns the same aggregated provenance as get_ioc_context from ThreatFox, URLhaus, AbuseIPDB, and OTX. SIBLING DIFFERENTIATION: Use for checking several indicators at once (e.g. all URLs an agent is about to visit). Do NOT use for a single indicator (use get_ioc_context, lower overhead) or bulk feed synchronization (use get_threat_indicators). BEHAVIOR: Accepts up to " + IOC_BATCH_MAX + " indicators per call. A found:false result for any indicator means nothing bad is recorded in PG1's sources — NOT that it's safe. If NONE of the submitted indicators are found, the whole batch is FREE — no payment or free-tier quota consumed. If at least one indicator is found, the normal payment gate (x402 X-PAYMENT header or a Gumroad X-API-KEY license) applies to the full batch result.",
+    description: "PG1 Sovereign Threat Intelligence: looks up multiple indicators (IPs, domains, URLs, hashes) in a single call — a batched pre-action safety check for AI agents. Each returns the same aggregated provenance as get_ioc_context from ThreatFox, URLhaus, AbuseIPDB, and OTX. SIBLING DIFFERENTIATION: Use for checking several indicators at once (e.g. all URLs an agent is about to visit). Do NOT use for a single indicator (use get_ioc_context, lower overhead) or bulk feed synchronization (use get_threat_indicators). BEHAVIOR: Accepts up to " + IOC_BATCH_MAX + " indicators per call. A found:false result for any indicator means nothing bad is recorded in PG1's sources — NOT that it's safe. If NONE of the submitted indicators are found, the whole batch is FREE — no payment or free-tier quota consumed. If at least one indicator is found, the normal payment gate (x402 X-PAYMENT/payment-signature header or a Gumroad X-API-KEY license) applies to the full batch result.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -101,7 +98,7 @@ const TOOLS = [
   },
   {
     name: 'get_threat_actor_profile',
-    description: "PG1 Sovereign Threat Intelligence: returns a dossier for a known threat actor / APT group — aliases, description, associated MITRE ATT&CK techniques, and associated malware/tooling. Sourced from MITRE ATT&CK Enterprise. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for actor/group-level profiling. Do NOT use for single-indicator lookups (use get_ioc_context) or vulnerability data (use get_cve_details / get_cve_batch). USAGE EXCLUSIONS: Coverage is limited to groups tracked in MITRE ATT&CK — not all threat actors have an entry. BEHAVIOR: Returns 404 if no matching group or alias is found.",
+    description: "PG1 Sovereign Threat Intelligence: returns a dossier for a known threat actor / APT group — aliases, description, associated MITRE ATT&CK techniques, and associated malware/tooling. Sourced from MITRE ATT&CK Enterprise. Payment required: $0.01 via x402 (X-PAYMENT or payment-signature header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for actor/group-level profiling. Do NOT use for single-indicator lookups (use get_ioc_context) or vulnerability data (use get_cve_details / get_cve_batch). USAGE EXCLUSIONS: Coverage is limited to groups tracked in MITRE ATT&CK — not all threat actors have an entry. BEHAVIOR: Returns 404 if no matching group or alias is found.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -115,7 +112,7 @@ const TOOLS = [
   },
   {
     name: 'get_cve_by_product',
-    description: 'PG1 Sovereign Threat Intelligence: returns CVEs affecting a given vendor/product (optionally a specific version), enriched with CVSS, EPSS, and CISA KEV status, sorted by exploitation risk. Sourced from NVD keyword search. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for discovering CVEs by vendor/product when you do not already have an exact CVE id. Do NOT use for a known CVE id (use get_cve_details / get_cve_batch). USAGE EXCLUSIONS: Uses NVD keyword search, not strict CPE matching — results may include near-matches. BEHAVIOR: Returns up to 50 results per call.',
+    description: 'PG1 Sovereign Threat Intelligence: returns CVEs affecting a given vendor/product (optionally a specific version), enriched with CVSS, EPSS, and CISA KEV status, sorted by exploitation risk. Sourced from NVD keyword search. Payment required: $0.01 via x402 (X-PAYMENT or payment-signature header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for discovering CVEs by vendor/product when you do not already have an exact CVE id. Do NOT use for a known CVE id (use get_cve_details / get_cve_batch). USAGE EXCLUSIONS: Uses NVD keyword search, not strict CPE matching — results may include near-matches. BEHAVIOR: Returns up to 50 results per call.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -524,12 +521,6 @@ async function lookupIocContext(value, supUrl, supKey) {
   };
 }
 
-// FIX (1.9.0): previously threw for "not found", which the generic
-// tools/call handler turned into a JSON-RPC error / HTTP 404 — a real
-// tool failure to most MCP clients, risking being read as "the check
-// failed" or "unsafe" rather than "nothing known". Now always returns a
-// normal result object; tools/call handles this tool as a special case
-// (see below) so that not-found lookups are also free.
 async function handleIocContext(args) {
   const value = args?.value?.trim();
   if (!value) {
@@ -863,9 +854,16 @@ function ensureExpressCompat(req) {
   }
 }
 
-// Shared by the get_ioc_context and get_ioc_batch special cases: runs the
-// full license -> free tier -> x402 gate and returns true if authorized,
-// or writes the appropriate error response itself and returns false.
+// Shared by the get_ioc_context and get_ioc_batch special cases, and by
+// every other paid tool: runs the full license -> free tier -> x402 gate
+// and returns true if authorized, or writes the appropriate error
+// response itself and returns false.
+//
+// FIX (1.9.1): free tier used to be checked regardless of whether a
+// payment header was present, so a real payer with free-tier quota
+// remaining got silently served for free — their payment was captured
+// but never verified. Free tier now only runs when there's NO payment
+// header at all; if one is present, x402 verification runs first, always.
 async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier) {
   let authorized = false;
 
@@ -878,7 +876,9 @@ async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentif
     }
   }
 
-  if (!authorized) {
+  const rawPayment = req.headers['x-payment'] || req.headers['payment-signature'];
+
+  if (!authorized && !rawPayment) {
     try {
       const { supUrl, supKey } = getSupabaseCreds();
       const freeTierResult = await checkAndConsumeFreeTier(supUrl, supKey, mcpRequestIdentifier);
@@ -912,7 +912,7 @@ async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentif
   if (!authorized) {
     res.status(402).json({
       jsonrpc: '2.0',
-      error: { code: -32001, message: 'Payment Required: Send a valid Gumroad key in X-API-KEY or pay $0.01 via x402 in X-PAYMENT.' },
+      error: { code: -32001, message: 'Payment Required: send a valid Gumroad key in X-API-KEY, or pay $0.01 via x402 (X-PAYMENT or payment-signature header).' },
       id: requestId
     });
     return false;
@@ -945,7 +945,7 @@ const LICENSE_ONLY_TOOLS = new Set(['subscribe_alerts', 'submit_indicator']);
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Payment, X-API-KEY');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Payment, Payment-Signature, X-API-KEY');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
@@ -956,7 +956,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.9.0',
+      version: '1.9.1',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp'
@@ -982,7 +982,7 @@ export default async function handler(req, res) {
     if (method === 'initialize') {
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.9.0' } },
+        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.9.1' } },
         id: requestId
       });
     }
