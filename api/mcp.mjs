@@ -3,17 +3,21 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.7.1 — fixes STIX hash-pattern bug in get_threat_indicators:
- *          every hash type (MD5/SHA1/SHA256) was being written into the
- *          STIX pattern as SHA-256 regardless of the record's actual
- *          indicator_type. Each hash algorithm now maps to its correct
- *          STIX hash key. Same fix also applied to chat.mjs's /api/ioc.
- *          No other functional changes from 1.7.0 (9 tools, 402 fix).
+ * Version: 1.8.1 — fixes get_usage_status querying the wrong column
+ *          names (window_date/call_count) against the real
+ *          free_tier_usage table (usage_date/request_count, per
+ *          lib/freeTier.mjs). It was silently always reporting 0
+ *          calls used / 5 remaining regardless of actual usage.
+ *          FREE_TIER_DAILY_LIMIT is now imported from lib/freeTier.mjs
+ *          instead of hardcoded locally, so there's one source of
+ *          truth. No other changes from 1.8.0 (free-tier parity with
+ *          /api/ioc, x402-challenge fix, 9 tools).
  */
 
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { paymentMiddleware, x402ResourceServer } from '@x402/express';
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
+import { checkAndConsumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT } from '../lib/freeTier.mjs';
 
 export const config = { maxDuration: 30 };
 
@@ -23,7 +27,6 @@ export const config = { maxDuration: 30 };
 
 const CVE_BATCH_MAX = 20;
 const IOC_BATCH_MAX = 20;
-const FREE_TIER_DAILY_LIMIT = 5; // ASSUMPTION — matches the 5 calls/day mentioned elsewhere; confirm against your actual free-tier logic if it lives elsewhere
 
 const TOOLS = [
   {
@@ -204,12 +207,6 @@ async function handleThreatIndicators(args) {
   });
   const rows = res.ok ? await res.json() : [];
 
-  // FIX: every hash type (MD5, SHA1, SHA256) was being written into the
-  // STIX pattern as 'SHA-256' regardless of what it actually was — a
-  // SHA1 record's indicator_type correctly said "FileHash-SHA1" but its
-  // pattern claimed hashes.'SHA-256', which is wrong STIX. Each hash
-  // algorithm now maps to its correct STIX hash key. Same fix applied
-  // to chat.mjs's /api/ioc.
   const objects = rows.map((record) => {
     const safeValue = String(record.value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const indicatorTypeStr = String(record.indicator_type);
@@ -221,7 +218,7 @@ async function handleThreatIndicators(args) {
       else if (indicatorTypeStr.includes('FileHash-MD5')) pattern = `[file:hashes.MD5 = '${safeValue}']`;
       else if (indicatorTypeStr.includes('FileHash-SHA1')) pattern = `[file:hashes.'SHA-1' = '${safeValue}']`;
       else if (indicatorTypeStr.includes('FileHash-SHA256')) pattern = `[file:hashes.'SHA-256' = '${safeValue}']`;
-      else if (indicatorTypeStr.includes('FileHash')) pattern = `[file:hashes.'SHA-256' = '${safeValue}']`; // fallback for any other/unlabeled hash type
+      else if (indicatorTypeStr.includes('FileHash')) pattern = `[file:hashes.'SHA-256' = '${safeValue}']`;
       else pattern = `[custom-object:value = '${safeValue}']`;
     }
     return {
@@ -666,11 +663,11 @@ async function handleUsageStatus(args, requestIdentifier) {
   const today = new Date().toISOString().slice(0, 10);
 
   const res = await fetch(
-    `${supUrl}/rest/v1/free_tier_usage?identifier=eq.${encodeURIComponent(identifier)}&window_date=eq.${today}&select=call_count`,
+    `${supUrl}/rest/v1/free_tier_usage?identifier=eq.${encodeURIComponent(identifier)}&usage_date=eq.${today}&select=request_count`,
     { headers: { apikey: supKey, Authorization: `Bearer ${supKey}` } }
   );
   const rows = res.ok ? await res.json() : [];
-  const callsToday = rows.length ? (rows[0].call_count || 0) : 0;
+  const callsToday = rows.length ? (rows[0].request_count || 0) : 0;
   const remaining = Math.max(0, FREE_TIER_DAILY_LIMIT - callsToday);
 
   let licenseStatus = null;
@@ -805,14 +802,6 @@ async function verifyGumroadLicense(licenseKey) {
   }
 }
 
-function getRequestIdentifier(req) {
-  const key = req.headers['x-api-key'];
-  if (key) return key;
-  const fwd = req.headers['x-forwarded-for'];
-  if (fwd) return String(fwd).split(',')[0].trim();
-  return 'anonymous';
-}
-
 const X402_PAY_TO = (process.env.X402_PAY_TO_ADDRESS || '').trim();
 let x402Middleware = null;
 let x402Server = null;
@@ -904,7 +893,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.7.1',
+      version: '1.8.1',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp'
@@ -930,7 +919,7 @@ export default async function handler(req, res) {
     if (method === 'initialize') {
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.7.1' } },
+        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.8.1' } },
         id: requestId
       });
     }
@@ -947,13 +936,12 @@ export default async function handler(req, res) {
       const toolName = params?.name;
       const toolArgs = params?.arguments || {};
       const licenseKey = req.headers['x-api-key'];
-      const rawPayment = req.headers['x-payment'];
+      const mcpRequestIdentifier = getRequestIdentifier(req);
 
       if (FREE_TOOLS.has(toolName)) {
-        const requestIdentifier = getRequestIdentifier(req);
         let toolResult;
         try {
-          toolResult = await handleUsageStatus(toolArgs, requestIdentifier);
+          toolResult = await handleUsageStatus(toolArgs, mcpRequestIdentifier);
         } catch (toolErr) {
           return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId });
         }
@@ -1006,7 +994,20 @@ export default async function handler(req, res) {
         }
       }
 
-      if (!authorized && rawPayment && x402Middleware) {
+      if (!authorized) {
+        try {
+          const { supUrl, supKey } = getSupabaseCreds();
+          const freeTierResult = await checkAndConsumeFreeTier(supUrl, supKey, mcpRequestIdentifier);
+          if (freeTierResult.allowed) {
+            authorized = true;
+            logSettlementOutcome('/api/mcp', 'free_tier', mcpRequestIdentifier, 'remaining=' + freeTierResult.remaining);
+          }
+        } catch (e) {
+          // Supabase not configured — free tier unavailable, fall through to x402/deny.
+        }
+      }
+
+      if (!authorized && x402Middleware) {
         const ready = await ensureX402Initialized();
         if (!ready) {
           return res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'x402 payment path temporarily unavailable. Retry, or use a Gumroad license key.' }, id: requestId });
