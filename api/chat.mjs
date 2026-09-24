@@ -52,7 +52,7 @@ if (X402_PAY_TO) {
     x402Middleware = null;
   }
 } else {
-  console.warn('[X402_DEBUG] X402_PAY_TO_ADDRESS is not set - x402 payment path is disabled for this lambda instance; all /api/ioc requests will fall through to the Gumroad/401 path regardless of X-PAYMENT header.');
+  console.warn('[X402_DEBUG] X402_PAY_TO_ADDRESS is not set - x402 payment path is disabled for this lambda instance; all /api/ioc requests will fall through to the free-tier/402 path regardless of X-PAYMENT header.');
 }
 
 var x402InitPromise = null;
@@ -580,12 +580,6 @@ export default async function handler(req, res) {
       });
       var rawTelemetry = threatRes.ok ? await threatRes.json() : [];
 
-      // FIX: every hash type (MD5, SHA1, SHA256) was being written into the
-      // STIX pattern as 'SHA-256' regardless of what it actually was — a
-      // SHA1 record's `name` field correctly said "FileHash-SHA1" but its
-      // `pattern` field claimed `hashes.'SHA-256'`, which is wrong STIX and
-      // would mislead any downstream consumer that trusts the pattern over
-      // the name. Each hash algorithm now maps to its correct STIX hash key.
       var stixObjects = rawTelemetry.map(record => {
         var patternValue = record.stix_pattern;
         if (!patternValue) {
@@ -597,7 +591,7 @@ export default async function handler(req, res) {
           else if (indicatorTypeStr.includes('FileHash-MD5')) patternValue = `[file:hashes.MD5 = '${safeValue}']`;
           else if (indicatorTypeStr.includes('FileHash-SHA1')) patternValue = `[file:hashes.'SHA-1' = '${safeValue}']`;
           else if (indicatorTypeStr.includes('FileHash-SHA256')) patternValue = `[file:hashes.'SHA-256' = '${safeValue}']`;
-          else if (indicatorTypeStr.includes('FileHash')) patternValue = `[file:hashes.'SHA-256' = '${safeValue}']`; // fallback for any other/unlabeled hash type
+          else if (indicatorTypeStr.includes('FileHash')) patternValue = `[file:hashes.'SHA-256' = '${safeValue}']`;
           else patternValue = `[custom-object:value = '${safeValue}']`;
         }
 
@@ -641,14 +635,47 @@ export default async function handler(req, res) {
 
   if (urlPath === '/api/ioc' || urlPath === '/api/feeds/ioc') {
     var rawPaymentHeader = getHeader('x-payment') || getHeader('payment-signature');
-    var hasPaymentHeader = !!rawPaymentHeader;
     var iocRequestIdentifier = getRequestIdentifier(req);
+    var clientLicenseKey = getHeader('x-api-key') || (getHeader('authorization') || '').replace('Bearer ', '');
 
-    console.log('[X402_DEBUG] x-payment header present:', hasPaymentHeader, '| length:', rawPaymentHeader ? String(rawPaymentHeader).length : 0);
+    console.log('[X402_DEBUG] x-payment header present:', !!rawPaymentHeader, '| length:', rawPaymentHeader ? String(rawPaymentHeader).length : 0);
     console.log('[X402_DEBUG] x402Middleware configured:', !!x402Middleware, '| X402_PAY_TO set:', !!X402_PAY_TO);
     debugLogPaymentHeader(rawPaymentHeader);
 
-    if (x402Middleware && hasPaymentHeader) {
+    // 1. Gumroad license path — checked first if a key is actually provided.
+    if (clientLicenseKey) {
+      try {
+        var gumroadRes = await fetch('https://api.gumroad.com/v2/licenses/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ product_id: process.env.GUMROAD_PRODUCT_ID, license_key: clientLicenseKey })
+        });
+        var gumroadData = await gumroadRes.json();
+        if (!gumroadData.success || (gumroadData.purchase && (gumroadData.purchase.refunded || gumroadData.purchase.chargebacked))) {
+          logSettlementOutcome('/api/ioc', 'rejected', iocRequestIdentifier, 'invalid_license');
+          return sendJSON(res, 403, { error: 'Forbidden: Invalid, expired, or refunded License Key.' });
+        }
+        logSettlementOutcome('/api/ioc', 'success', iocRequestIdentifier, 'license');
+        return await buildAndServeStixBundle(clientLicenseKey);
+      } catch (err) {
+        return sendJSON(res, 500, { error: 'Internal Server Error: Telemetry stream failed.' });
+      }
+    }
+
+    // 2. No license key — try the free tier next, so a caller with no
+    // credentials at all (agent or human) still gets served without
+    // needing to touch payment infrastructure.
+    var freeTierResult = await checkAndConsumeFreeTier(supUrl, supKey, iocRequestIdentifier);
+    if (freeTierResult.allowed) {
+      logSettlementOutcome('/api/ioc', 'free_tier', iocRequestIdentifier, 'remaining=' + freeTierResult.remaining);
+      return await buildAndServeStixBundle('free-tier:' + iocRequestIdentifier);
+    }
+
+    // 3. Free tier exhausted (or unavailable) and no license key — this is
+    // where a real x402 agent needs to be handled. Always runs whether or
+    // not a payment header is present, so the middleware can issue its own
+    // proper challenge on the first request and verify payment on the retry.
+    if (x402Middleware) {
       var facilitatorReady = await ensureX402Initialized();
       if (!facilitatorReady) {
         logSettlementOutcome('/api/ioc', 'rejected', iocRequestIdentifier, 'facilitator_unavailable');
@@ -673,6 +700,9 @@ export default async function handler(req, res) {
         return;
       }
       if (!x402Paid) {
+        // Middleware already wrote its own response — either a proper
+        // machine-readable 402 challenge (no/invalid payment yet), or an
+        // error. Nothing more to do here.
         logSettlementOutcome('/api/ioc', 'rejected', iocRequestIdentifier, 'middleware_wrote_response');
         return;
       }
@@ -681,33 +711,10 @@ export default async function handler(req, res) {
       return await buildAndServeStixBundle('x402:' + payerAddress);
     }
 
-    var clientLicenseKey = getHeader('x-api-key') || (getHeader('authorization') || '').replace('Bearer ', '');
-    if (!clientLicenseKey) {
-      var freeTierResult = await checkAndConsumeFreeTier(supUrl, supKey, iocRequestIdentifier);
-      if (freeTierResult.allowed) {
-        logSettlementOutcome('/api/ioc', 'free_tier', iocRequestIdentifier, 'remaining=' + freeTierResult.remaining);
-        return await buildAndServeStixBundle('free-tier:' + iocRequestIdentifier);
-      }
-      console.log('[X402_DEBUG] falling through to 402. hasPaymentHeader=%s x402Middleware configured=%s freeTierReason=%s', hasPaymentHeader, !!x402Middleware, freeTierResult.reason);
-      logSettlementOutcome('/api/ioc', 'no_payment', iocRequestIdentifier, freeTierResult.reason);
-      return sendJSON(res, 402, { error: 'Payment Required: Missing Commercial License Key in x-api-key header (or pay per-call via x402 with an X-PAYMENT header).' });
-    }
-    try {
-      var gumroadRes = await fetch('https://api.gumroad.com/v2/licenses/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ product_id: process.env.GUMROAD_PRODUCT_ID, license_key: clientLicenseKey })
-      });
-      var gumroadData = await gumroadRes.json();
-      if (!gumroadData.success || (gumroadData.purchase && (gumroadData.purchase.refunded || gumroadData.purchase.chargebacked))) {
-        logSettlementOutcome('/api/ioc', 'rejected', iocRequestIdentifier, 'invalid_license');
-        return sendJSON(res, 403, { error: 'Forbidden: Invalid, expired, or refunded License Key.' });
-      }
-      logSettlementOutcome('/api/ioc', 'success', iocRequestIdentifier, 'license');
-      return await buildAndServeStixBundle(clientLicenseKey);
-    } catch (err) {
-      return sendJSON(res, 500, { error: 'Internal Server Error: Telemetry stream failed.' });
-    }
+    // 4. x402 not configured on this deployment at all — final fallback.
+    console.log('[X402_DEBUG] falling through to generic 402. x402Middleware configured=%s freeTierReason=%s', !!x402Middleware, freeTierResult.reason);
+    logSettlementOutcome('/api/ioc', 'no_payment', iocRequestIdentifier, freeTierResult.reason);
+    return sendJSON(res, 402, { error: 'Payment Required: Missing Commercial License Key in x-api-key header (or pay per-call via x402 with an X-PAYMENT header).' });
   }
 
   if (req.method !== 'POST') {
