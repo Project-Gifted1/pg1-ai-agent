@@ -626,7 +626,7 @@ export default async function handler(req, res) {
       res.setHeader('Content-Type', 'application/stix+json; charset=utf-8');
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-PAYMENT');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-PAYMENT, Payment-Signature');
       res.status(200).end(JSON.stringify(stixBundle));
     } catch (err) {
       return sendJSON(res, 500, { error: 'Internal Server Error: Telemetry stream failed.' });
@@ -662,19 +662,24 @@ export default async function handler(req, res) {
       }
     }
 
-    // 2. No license key — try the free tier next, so a caller with no
-    // credentials at all (agent or human) still gets served without
-    // needing to touch payment infrastructure.
-    var freeTierResult = await checkAndConsumeFreeTier(supUrl, supKey, iocRequestIdentifier);
-    if (freeTierResult.allowed) {
-      logSettlementOutcome('/api/ioc', 'free_tier', iocRequestIdentifier, 'remaining=' + freeTierResult.remaining);
-      return await buildAndServeStixBundle('free-tier:' + iocRequestIdentifier);
+    // 2. FIX: only try free tier when the caller hasn't attempted to pay.
+    // Previously free tier ran unconditionally here, so a real payer with
+    // free-tier quota remaining got silently served for free — their
+    // rawPaymentHeader was captured above but never actually checked
+    // before this point. If a payment header is present, skip straight to
+    // x402 verification below instead.
+    if (!rawPaymentHeader) {
+      var freeTierResult = await checkAndConsumeFreeTier(supUrl, supKey, iocRequestIdentifier);
+      if (freeTierResult.allowed) {
+        logSettlementOutcome('/api/ioc', 'free_tier', iocRequestIdentifier, 'remaining=' + freeTierResult.remaining);
+        return await buildAndServeStixBundle('free-tier:' + iocRequestIdentifier);
+      }
     }
 
-    // 3. Free tier exhausted (or unavailable) and no license key — this is
-    // where a real x402 agent needs to be handled. Always runs whether or
-    // not a payment header is present, so the middleware can issue its own
-    // proper challenge on the first request and verify payment on the retry.
+    // 3. Either a payment header is present (verify/settle it now), or
+    // free tier was skipped/exhausted — this is the x402 path. Always
+    // runs regardless of whether the header exists yet, so a fresh
+    // unpaid request still gets a real machine-readable challenge back.
     if (x402Middleware) {
       var facilitatorReady = await ensureX402Initialized();
       if (!facilitatorReady) {
@@ -712,9 +717,9 @@ export default async function handler(req, res) {
     }
 
     // 4. x402 not configured on this deployment at all — final fallback.
-    console.log('[X402_DEBUG] falling through to generic 402. x402Middleware configured=%s freeTierReason=%s', !!x402Middleware, freeTierResult.reason);
-    logSettlementOutcome('/api/ioc', 'no_payment', iocRequestIdentifier, freeTierResult.reason);
-    return sendJSON(res, 402, { error: 'Payment Required: Missing Commercial License Key in x-api-key header (or pay per-call via x402 with an X-PAYMENT header).' });
+    console.log('[X402_DEBUG] falling through to generic 402. x402Middleware configured=%s', !!x402Middleware);
+    logSettlementOutcome('/api/ioc', 'no_payment', iocRequestIdentifier, rawPaymentHeader ? 'payment_header_present_no_x402_configured' : 'no_payment_offered');
+    return sendJSON(res, 402, { error: 'Payment Required: Missing Commercial License Key in x-api-key header, or pay per-call via x402 (X-PAYMENT or payment-signature header).' });
   }
 
   if (req.method !== 'POST') {
@@ -1994,10 +1999,4 @@ export default async function handler(req, res) {
       audioStatus: audioStatus,
       audioMimeType: 'audio/mp3',
       traceId: requestTraceId,
-      telemetry: { supabaseStatus: supabaseStatus, executionTimeMs: Date.now() - startTime }
-    });
-
-  } catch (err) {
-    return sendJSON(res, 200, { reply: `Exception: ${err.message}`, traceId: requestTraceId });
-  }
-}
+      telem
