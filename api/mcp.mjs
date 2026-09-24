@@ -3,16 +3,22 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.9.1 — FIX: free tier was checked before x402, regardless of
- *          whether a payment header (X-PAYMENT / payment-signature) was
- *          actually present. This meant a real payer with free-tier quota
- *          remaining got silently served for free — their payment header
- *          was captured but never checked. Free tier now only applies
- *          when NO payment header is present at all; if one is present,
- *          x402 verification runs first, always. Also corrected error
- *          text that only mentioned the v1 header name (X-PAYMENT) to
- *          also mention payment-signature (v2). Carries forward 1.9.0
- *          (found:false as a free, normal result for get_ioc_context/
+ * Version: 1.9.2 — FIX: free tier was granted automatically to any caller
+ *          with no payment header, with no way to opt out of being served
+ *          for free. That meant a credential-less probe (e.g. Coinbase's
+ *          x402 Bazaar discovery crawler, which intentionally sends no
+ *          credentials to check whether payment is actually demanded) got
+ *          a free 200 instead of the 402 it needs to see to register this
+ *          as a real paid service. Free tier is now opt-in only: it's
+ *          considered solely when the caller sends "x-free-tier: 1"; with
+ *          no license key, no payment header, and no x-free-tier header,
+ *          the default is 402 Payment Required. Also: CORS now exposes the
+ *          payment-related headers (X-Payment, Payment-Signature,
+ *          x-free-tier, X-API-KEY) via Access-Control-Expose-Headers, and
+ *          the get_threat_indicators "type" filter description now lists
+ *          the real database enum values instead of a generic "hash".
+ *          Carries forward 1.9.1 (payment-before-free-tier ordering) and
+ *          1.9.0 (found:false as a free, normal result for get_ioc_context/
  *          get_ioc_batch) and all prior fixes.
  */
 
@@ -38,7 +44,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         since: { type: ['string', 'null'], description: 'ISO timestamp constraint (e.g., 2026-09-20T00:00:00Z); strictly filters and returns only indicators last seen after this exact timestamp.' },
-        type: { type: ['string', 'null'], description: "Indicator category filter. Allowed enum-style values: 'IPv4', 'domain', 'URL', or 'hash'." },
+        type: { type: ['string', 'null'], description: "Indicator category filter. Allowed enum-style values: 'IPv4', 'domain', 'URL', 'FileHash-MD5', 'FileHash-SHA1', or 'FileHash-SHA256'." },
         min_score: { type: ['integer', 'null'], description: 'Confidence score threshold integer ranging inclusively from 0 to 100 to filter low-confidence noise.' },
         limit: { type: ['integer', 'null'], description: 'Pagination boundary constraint defining the maximum number of indicators to return in a single payload (integer between 1 and 1000, defaulting to 500).', default: 500 }
       }
@@ -864,6 +870,15 @@ function ensureExpressCompat(req) {
 // remaining got silently served for free — their payment was captured
 // but never verified. Free tier now only runs when there's NO payment
 // header at all; if one is present, x402 verification runs first, always.
+//
+// FIX (1.9.2): free tier used to be granted automatically to anyone
+// without a payment header, with no way to decline it. A caller with no
+// license key, no payment header, and no opt-in got served for free
+// instead of seeing a 402 — which broke discovery crawlers (e.g. x402
+// Bazaar) that probe with no credentials specifically to confirm payment
+// is demanded. Free tier now requires an explicit "x-free-tier: 1" header;
+// without it, no license key + no payment header falls straight through
+// to x402 / the final 402 response below.
 async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier) {
   let authorized = false;
 
@@ -877,8 +892,9 @@ async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentif
   }
 
   const rawPayment = req.headers['x-payment'] || req.headers['payment-signature'];
+  const freeTierOptIn = req.headers['x-free-tier'] === '1';
 
-  if (!authorized && !rawPayment) {
+  if (!authorized && !rawPayment && freeTierOptIn) {
     try {
       const { supUrl, supKey } = getSupabaseCreds();
       const freeTierResult = await checkAndConsumeFreeTier(supUrl, supKey, mcpRequestIdentifier);
@@ -945,7 +961,8 @@ const LICENSE_ONLY_TOOLS = new Set(['subscribe_alerts', 'submit_indicator']);
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Payment, Payment-Signature, X-API-KEY');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Payment, Payment-Signature, x-free-tier, X-API-KEY');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
@@ -956,7 +973,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.9.1',
+      version: '1.9.2',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp'
@@ -982,7 +999,7 @@ export default async function handler(req, res) {
     if (method === 'initialize') {
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.9.1' } },
+        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.9.2' } },
         id: requestId
       });
     }

@@ -130,7 +130,8 @@ function sendJSON(res, status, data) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-Payment, Payment-Signature, x-free-tier');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY');
   res.status(status).json(data);
 }
 
@@ -530,7 +531,8 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-Payment, Payment-Signature, x-free-tier');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY');
     res.status(200).end();
     return;
   }
@@ -626,7 +628,8 @@ export default async function handler(req, res) {
       res.setHeader('Content-Type', 'application/stix+json; charset=utf-8');
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-PAYMENT, Payment-Signature');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-Payment, Payment-Signature, x-free-tier');
+      res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY');
       res.status(200).end(JSON.stringify(stixBundle));
     } catch (err) {
       return sendJSON(res, 500, { error: 'Internal Server Error: Telemetry stream failed.' });
@@ -668,7 +671,16 @@ export default async function handler(req, res) {
     // rawPaymentHeader was captured above but never actually checked
     // before this point. If a payment header is present, skip straight to
     // x402 verification below instead.
-    if (!rawPaymentHeader) {
+    //
+    // FIX: free tier also used to be granted automatically to anyone with
+    // no payment header, with no way to opt out. That silently served
+    // credential-less discovery crawlers (e.g. x402 Bazaar, which probes
+    // with no credentials specifically to confirm payment is demanded) for
+    // free instead of returning the 402 they need to see. Free tier now
+    // requires an explicit "x-free-tier: 1" header to even be considered.
+    var freeTierHeader = getHeader('x-free-tier');
+    console.log('[X402_DEBUG] x-free-tier header:', freeTierHeader || '(none)');
+    if (!rawPaymentHeader && freeTierHeader === '1') {
       var freeTierResult = await checkAndConsumeFreeTier(supUrl, supKey, iocRequestIdentifier);
       if (freeTierResult.allowed) {
         logSettlementOutcome('/api/ioc', 'free_tier', iocRequestIdentifier, 'remaining=' + freeTierResult.remaining);
