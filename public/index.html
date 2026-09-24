@@ -64,6 +64,11 @@
       box-shadow: 0 4px 30px rgba(0,0,0,0.8);
     }
     
+    /* TM FIX: the gradient text effect (background-clip: text) used to sit on
+       the whole <h1>, including the ™. Browsers paint the clipped gradient
+       from the ™'s original position but draw the gold ™ at its moved
+       position, which produced two stacked ™ symbols. The gradient now lives
+       only on .brand-text, and the ™ is a separate plain gold element. */
     header h1 { 
       font-size: 15px; 
       font-weight: 900; 
@@ -71,8 +76,10 @@
       text-transform: uppercase;
       white-space: nowrap; 
       display: flex;
-      align-items: center; 
-      
+      align-items: flex-start; 
+    }
+
+    .brand-text {
       background: linear-gradient(135deg, #b5852a 0%, #f3c623 25%, #fff2cd 50%, #f3c623 75%, #b5852a 100%);
       background-size: 200% auto;
       color: transparent;
@@ -87,13 +94,11 @@
     }
 
     .tm-symbol {
-      font-size: 0.7em;
+      font-size: 0.6em;
+      line-height: 1;
       margin-left: 2px;
-      transform: translateY(-0.65em); 
       color: var(--text-gold);
-      -webkit-text-fill-color: var(--text-gold);
       font-weight: 900; 
-      text-shadow: 0 0 2px rgba(243, 198, 35, 0.4); 
       letter-spacing: 0;
     }
     
@@ -437,7 +442,7 @@
   </div>
 
   <header>
-    <h1>PROJECT-GIFTED1<span class="tm-symbol">™</span></h1>
+    <h1><span class="brand-text">PROJECT-GIFTED1</span><span class="tm-symbol">™</span></h1>
     <div class="header-controls">
       <button class="header-btn" onclick="triggerHaptic(); openThreadsModal()" title="Manage Threads">💬</button>
       <button class="header-btn" onclick="triggerHaptic(); openVisionMatrix()" title="Vision Matrix">👁️</button>
@@ -489,15 +494,47 @@
   <script>
     let activeVisionStream = null;
 
+    // ATTACHMENT FIX: Vercel rejects any request body over 4.5 MB, and files
+    // are sent as base64, which is about 33% bigger than the file itself.
+    // 3 MB of raw files is the safe ceiling that still fits under 4.5 MB.
+    const MAX_ATTACH_BYTES = 3 * 1024 * 1024;
+    let attachedBytes = 0;
+
+    // TIMEOUT FIX: the server stops every request at 60s (maxDuration), so
+    // if nothing has come back after 75s the request is dead. Without this,
+    // a stalled upload left "Executing directive..." on screen forever.
+    const REQUEST_TIMEOUT_MS = 75000;
+
     function saveState() {
       const chatHTML = document.getElementById('chat-container').innerHTML;
       localStorage.setItem('pg1_matrix_state', chatHTML);
+    }
+
+    function formatBytes(bytes) {
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     }
 
     window.onload = () => {
       const savedState = localStorage.getItem('pg1_matrix_state');
       if (savedState) {
         document.getElementById('chat-container').innerHTML = savedState;
+
+        // STALE BUBBLE FIX: the "Executing directive..." bubble is saved to
+        // storage while a request is in flight. If the page reloads before
+        // the reply arrives (switching apps on mobile often does this), the
+        // request is gone but the bubble came back and sat there forever.
+        // Any bubble still marked pending on load is replaced with a clear
+        // message instead.
+        const staleBubbles = document.querySelectorAll('.message-bubble.pending');
+        staleBubbles.forEach(bubble => {
+          bubble.classList.remove('pending');
+          const textEl = bubble.querySelector('.message-text');
+          if (textEl) {
+            textEl.style.color = 'var(--danger-red)';
+            textEl.textContent = 'This request was interrupted before a reply arrived (the page reloaded or the app was switched). Please resend it.';
+          }
+        });
+        if (staleBubbles.length > 0) saveState();
       } else {
         const welcomeTime = document.getElementById('welcome-timestamp');
         if (welcomeTime) {
@@ -757,6 +794,18 @@
     function handleFileSelect(event) {
       const files = event.target.files;
       if (!files || files.length === 0) return;
+
+      // ATTACHMENT FIX: check the size before reading anything. A file over
+      // the limit is refused here with a clear reason, instead of being sent
+      // and silently failing or hanging on the server.
+      const newBytes = Array.from(files).reduce((sum, f) => sum + f.size, 0);
+      if (attachedBytes + newBytes > MAX_ATTACH_BYTES) {
+        triggerHaptic(200);
+        alert(`Attachment too large: ${formatBytes(attachedBytes + newBytes)} selected. The limit is ${formatBytes(MAX_ATTACH_BYTES)} in total per message (server upload limit). For video, trim it or send a screenshot instead.`);
+        event.target.value = '';
+        return;
+      }
+      attachedBytes += newBytes;
       
       let processedCount = 0;
 
@@ -775,7 +824,7 @@
           if (processedCount === files.length) {
             const statusEl = document.getElementById('sys-status');
             const fileText = files.length === 1 ? files[0].name : `${files.length} FILES ATTACHED`;
-            statusEl.innerHTML = `<span class="status-dot" style="background-color: var(--text-gold); box-shadow: 0 0 10px var(--text-gold);"></span>${fileText}`;
+            statusEl.innerHTML = `<span class="status-dot" style="background-color: var(--text-gold); box-shadow: 0 0 10px var(--text-gold);"></span>${escapeHTML(fileText)}`;
             statusEl.style.color = 'var(--text-gold)';
           }
         };
@@ -1024,11 +1073,16 @@
       saveState();
 
       const agentBubble = document.createElement('div');
-      agentBubble.className = 'message-bubble';
+      // STALE BUBBLE FIX: marked "pending" until a reply or error replaces it,
+      // so a reload mid-request can detect and clean it up (see window.onload).
+      agentBubble.className = 'message-bubble pending';
       agentBubble.innerHTML = `<span class="msg-timestamp">${currentTime}</span><div class="message-text" style="color: #888;">Executing directive across sovereign core...</div>`;
       chatContainer.appendChild(agentBubble);
       chatContainer.scrollTop = chatContainer.scrollHeight;
       saveState();
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
       try {
         const voiceProfile = document.getElementById('voice-profile-select').value;
@@ -1046,6 +1100,7 @@
         if (attachedFilesPayload.length > 0) {
           payload.multiFiles = [...attachedFilesPayload];
           attachedFilesPayload = []; 
+          attachedBytes = 0;
           document.getElementById('file-input').value = '';
           const statusEl = document.getElementById('sys-status');
           statusEl.innerHTML = `<span class="status-dot"></span>ACTIVE | API LINKED`;
@@ -1055,7 +1110,8 @@
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
+          signal: controller.signal
         });
 
         const responseText = await response.text();
@@ -1063,6 +1119,9 @@
         try {
           data = JSON.parse(responseText);
         } catch (parseErr) {
+          if (response.status === 413) {
+            throw new Error('Attachment too large for the server (over the 4.5 MB upload limit). Send a smaller file or a screenshot instead.');
+          }
           throw new Error(`Server returned non-JSON response (${response.status}): ${responseText.substring(0, 150)}`);
         }
         
@@ -1103,6 +1162,7 @@
             <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
           </div>`;
 
+        agentBubble.classList.remove('pending');
         agentBubble.innerHTML = contentHtml;
         saveState();
 
@@ -1113,8 +1173,14 @@
       } catch (err) {
         triggerHaptic(200); 
         const errTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        agentBubble.innerHTML = `<span class="msg-timestamp">${errTime}</span><div class="message-text" style="color: #ff4444;">Exception: ${escapeHTML(err.message)}</div>`;
+        const errMessage = err.name === 'AbortError'
+          ? `No reply after ${REQUEST_TIMEOUT_MS / 1000}s, so the request was stopped. Large attachments are the usual cause. Please retry.`
+          : err.message;
+        agentBubble.classList.remove('pending');
+        agentBubble.innerHTML = `<span class="msg-timestamp">${errTime}</span><div class="message-text" style="color: #ff4444;">Exception: ${escapeHTML(errMessage)}</div>`;
         saveState();
+      } finally {
+        clearTimeout(timeoutId);
       }
 
       chatContainer.scrollTop = chatContainer.scrollHeight;
