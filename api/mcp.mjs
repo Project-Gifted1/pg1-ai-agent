@@ -3,15 +3,20 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.8.1 — fixes get_usage_status querying the wrong column
- *          names (window_date/call_count) against the real
- *          free_tier_usage table (usage_date/request_count, per
- *          lib/freeTier.mjs). It was silently always reporting 0
- *          calls used / 5 remaining regardless of actual usage.
- *          FREE_TIER_DAILY_LIMIT is now imported from lib/freeTier.mjs
- *          instead of hardcoded locally, so there's one source of
- *          truth. No other changes from 1.8.0 (free-tier parity with
- *          /api/ioc, x402-challenge fix, 9 tools).
+ * Version: 1.9.0 — get_ioc_context and get_ioc_batch no longer throw an
+ *          error for "not found" results (was surfacing as a tool failure
+ *          to MCP clients, which agents could misread as "the check
+ *          failed" or even "unsafe" — not the intended "nothing known"
+ *          meaning). Both now return found:false as a normal result.
+ *          Not-found lookups are also now free: get_ioc_context charges
+ *          nothing when the indicator has no record; get_ioc_batch
+ *          charges nothing only if NONE of the submitted values were
+ *          found, and applies the normal license/free-tier/x402 gate if
+ *          at least one was found. Tool descriptions updated to state
+ *          plainly that "not found" means "nothing bad on record in
+ *          PG1's sources" — not "safe". Carries forward 1.8.1 (free-tier
+ *          parity + get_usage_status column fix) and 1.7.2 (x402
+ *          challenge fix).
  */
 
 import { ExactEvmScheme } from '@x402/evm/exact/server';
@@ -55,7 +60,7 @@ const TOOLS = [
   },
   {
     name: 'get_ioc_context',
-    description: 'PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) across all telemetry sources and returns aggregated provenance — reporting sources, observation count, aggregated confidence score, known malware families, tags, and first/last seen timestamps. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for point-lookup enrichment of a single indicator. Do NOT use for bulk intelligence downloads (use get_threat_indicators), multiple indicators at once (use get_ioc_batch), or software vulnerability analysis (use get_cve_details). USAGE EXCLUSIONS: Does not perform active port-scanning or live network probing. BEHAVIOR: Returns 402 on payment failure, 404 if the indicator is unobserved.',
+    description: "PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) — the recommended pre-action safety check for AI agents before visiting, downloading, or connecting to something. Returns aggregated provenance from ThreatFox, URLhaus, AbuseIPDB, and OTX — reporting sources, observation count, aggregated confidence score, known malware families, tags, and first/last seen timestamps. SIBLING DIFFERENTIATION: Use ONLY for point-lookup enrichment of a single indicator. Do NOT use for bulk intelligence downloads (use get_threat_indicators), multiple indicators at once (use get_ioc_batch), or software vulnerability analysis (use get_cve_details). BEHAVIOR: Returns a normal result shaped { found: true, indicator_type, provenance } or { found: false } — never an error for 'not found'. A found:false result means nothing bad is recorded in PG1's sources; it does NOT mean the indicator is safe, only that it isn't in this dataset. Lookups that return found:false are FREE — no payment or free-tier quota is consumed. Payment (via x402 X-PAYMENT header or a Gumroad X-API-KEY license) is only required when a real record is found.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -81,7 +86,7 @@ const TOOLS = [
   },
   {
     name: 'get_ioc_batch',
-    description: "PG1 Sovereign Threat Intelligence: looks up multiple indicators (IPs, domains, URLs, hashes) in a single call, each returning the same aggregated provenance as get_ioc_context — reporting sources, observation count, confidence score, malware families, and tags. Payment required: $0.01 via x402 (X-PAYMENT header) or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for checking several indicators at once (e.g. all IPs extracted from a log file or alert). Do NOT use for a single indicator (use get_ioc_context, lower overhead) or bulk feed synchronization (use get_threat_indicators). BEHAVIOR: Accepts up to " + IOC_BATCH_MAX + " indicators per call; unobserved indicators are reported per-entry rather than failing the whole batch.",
+    description: "PG1 Sovereign Threat Intelligence: looks up multiple indicators (IPs, domains, URLs, hashes) in a single call — a batched pre-action safety check for AI agents. Each returns the same aggregated provenance as get_ioc_context from ThreatFox, URLhaus, AbuseIPDB, and OTX. SIBLING DIFFERENTIATION: Use for checking several indicators at once (e.g. all URLs an agent is about to visit). Do NOT use for a single indicator (use get_ioc_context, lower overhead) or bulk feed synchronization (use get_threat_indicators). BEHAVIOR: Accepts up to " + IOC_BATCH_MAX + " indicators per call. A found:false result for any indicator means nothing bad is recorded in PG1's sources — NOT that it's safe. If NONE of the submitted indicators are found, the whole batch is FREE — no payment or free-tier quota consumed. If at least one indicator is found, the normal payment gate (x402 X-PAYMENT header or a Gumroad X-API-KEY license) applies to the full batch result.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -519,6 +524,12 @@ async function lookupIocContext(value, supUrl, supKey) {
   };
 }
 
+// FIX (1.9.0): previously threw for "not found", which the generic
+// tools/call handler turned into a JSON-RPC error / HTTP 404 — a real
+// tool failure to most MCP clients, risking being read as "the check
+// failed" or "unsafe" rather than "nothing known". Now always returns a
+// normal result object; tools/call handles this tool as a special case
+// (see below) so that not-found lookups are also free.
 async function handleIocContext(args) {
   const value = args?.value?.trim();
   if (!value) {
@@ -526,16 +537,7 @@ async function handleIocContext(args) {
   }
 
   const { supUrl, supKey } = getSupabaseCreds();
-  const result = await lookupIocContext(value, supUrl, supKey);
-
-  if (!result.found) {
-    const err = new Error(`Indicator '${value}' has no recorded observations.`);
-    err.notFound = true;
-    throw err;
-  }
-
-  const { found, ...rest } = result;
-  return rest;
+  return await lookupIocContext(value, supUrl, supKey);
 }
 
 async function handleIocBatch(args) {
@@ -861,15 +863,76 @@ function ensureExpressCompat(req) {
   }
 }
 
+// Shared by the get_ioc_context and get_ioc_batch special cases: runs the
+// full license -> free tier -> x402 gate and returns true if authorized,
+// or writes the appropriate error response itself and returns false.
+async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier) {
+  let authorized = false;
+
+  if (licenseKey) {
+    const check = await verifyGumroadLicense(licenseKey);
+    if (check.valid) authorized = true;
+    else {
+      res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error }, id: requestId });
+      return false;
+    }
+  }
+
+  if (!authorized) {
+    try {
+      const { supUrl, supKey } = getSupabaseCreds();
+      const freeTierResult = await checkAndConsumeFreeTier(supUrl, supKey, mcpRequestIdentifier);
+      if (freeTierResult.allowed) {
+        authorized = true;
+        logSettlementOutcome('/api/mcp', 'free_tier', mcpRequestIdentifier, 'remaining=' + freeTierResult.remaining);
+      }
+    } catch (e) {}
+  }
+
+  if (!authorized && x402Middleware) {
+    const ready = await ensureX402Initialized();
+    if (!ready) {
+      res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'x402 payment path temporarily unavailable. Retry, or use a Gumroad license key.' }, id: requestId });
+      return false;
+    }
+    ensureExpressCompat(req);
+    try {
+      await new Promise((resolve, reject) => {
+        x402Middleware(req, res, (err) => (err ? reject(err) : (authorized = true, resolve())));
+      });
+    } catch (x402Err) {
+      if (!res.headersSent) {
+        res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment verification failed: ' + x402Err.message }, id: requestId });
+      }
+      return false;
+    }
+    if (!authorized) return false; // middleware already wrote its own 402 challenge or error response
+  }
+
+  if (!authorized) {
+    res.status(402).json({
+      jsonrpc: '2.0',
+      error: { code: -32001, message: 'Payment Required: Send a valid Gumroad key in X-API-KEY or pay $0.01 via x402 in X-PAYMENT.' },
+      id: requestId
+    });
+    return false;
+  }
+
+  return true;
+}
+
 const STANDARD_TOOL_HANDLERS = {
   get_threat_indicators: handleThreatIndicators,
   get_cve_details: handleCveDetails,
-  get_ioc_context: handleIocContext,
   get_cve_batch: handleCveBatch,
-  get_ioc_batch: handleIocBatch,
   get_threat_actor_profile: handleThreatActorProfile,
   get_cve_by_product: handleCveByProduct
 };
+
+// get_ioc_context and get_ioc_batch are handled as special cases in
+// tools/call (see below) because their payment gate depends on the
+// lookup result — not applied uniformly before the tool runs, like every
+// other STANDARD_TOOL_HANDLERS entry.
 
 const FREE_TOOLS = new Set(['get_usage_status']);
 
@@ -893,7 +956,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.8.1',
+      version: '1.9.0',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp'
@@ -919,7 +982,7 @@ export default async function handler(req, res) {
     if (method === 'initialize') {
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.8.1' } },
+        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.9.0' } },
         id: requestId
       });
     }
@@ -979,60 +1042,73 @@ export default async function handler(req, res) {
         });
       }
 
+      // SPECIAL CASE: get_ioc_context — free when not found, gated when found.
+      if (toolName === 'get_ioc_context') {
+        const value = toolArgs?.value?.trim();
+        if (!value) {
+          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: 'value is required.' }, id: requestId });
+        }
+        let lookupResult;
+        try {
+          const { supUrl, supKey } = getSupabaseCreds();
+          lookupResult = await lookupIocContext(value, supUrl, supKey);
+        } catch (e) {
+          return res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: e.message }, id: requestId });
+        }
+
+        if (!lookupResult.found) {
+          return res.status(200).json({
+            jsonrpc: '2.0',
+            result: { content: [{ type: 'text', text: JSON.stringify(lookupResult, null, 2) }] },
+            id: requestId
+          });
+        }
+
+        const gateOk = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier);
+        if (!gateOk) return;
+
+        return res.status(200).json({
+          jsonrpc: '2.0',
+          result: { content: [{ type: 'text', text: JSON.stringify(lookupResult, null, 2) }] },
+          id: requestId
+        });
+      }
+
+      // SPECIAL CASE: get_ioc_batch — free only if NONE of the values were
+      // found; gated (for the whole batch result) if at least one was found.
+      if (toolName === 'get_ioc_batch') {
+        let batchResult;
+        try {
+          batchResult = await handleIocBatch(toolArgs);
+        } catch (toolErr) {
+          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId });
+        }
+
+        if (batchResult.total_found === 0) {
+          return res.status(200).json({
+            jsonrpc: '2.0',
+            result: { content: [{ type: 'text', text: JSON.stringify(batchResult, null, 2) }] },
+            id: requestId
+          });
+        }
+
+        const gateOk = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier);
+        if (!gateOk) return;
+
+        return res.status(200).json({
+          jsonrpc: '2.0',
+          result: { content: [{ type: 'text', text: JSON.stringify(batchResult, null, 2) }] },
+          id: requestId
+        });
+      }
+
       const toolHandler = STANDARD_TOOL_HANDLERS[toolName];
       if (!toolHandler) {
         return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: `Unknown tool: ${toolName}` }, id: requestId });
       }
 
-      let authorized = false;
-
-      if (licenseKey) {
-        const check = await verifyGumroadLicense(licenseKey);
-        if (check.valid) authorized = true;
-        else {
-          return res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error }, id: requestId });
-        }
-      }
-
-      if (!authorized) {
-        try {
-          const { supUrl, supKey } = getSupabaseCreds();
-          const freeTierResult = await checkAndConsumeFreeTier(supUrl, supKey, mcpRequestIdentifier);
-          if (freeTierResult.allowed) {
-            authorized = true;
-            logSettlementOutcome('/api/mcp', 'free_tier', mcpRequestIdentifier, 'remaining=' + freeTierResult.remaining);
-          }
-        } catch (e) {
-          // Supabase not configured — free tier unavailable, fall through to x402/deny.
-        }
-      }
-
-      if (!authorized && x402Middleware) {
-        const ready = await ensureX402Initialized();
-        if (!ready) {
-          return res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'x402 payment path temporarily unavailable. Retry, or use a Gumroad license key.' }, id: requestId });
-        }
-        ensureExpressCompat(req);
-        try {
-          await new Promise((resolve, reject) => {
-            x402Middleware(req, res, (err) => (err ? reject(err) : (authorized = true, resolve())));
-          });
-        } catch (x402Err) {
-          if (!res.headersSent) {
-            return res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment verification failed: ' + x402Err.message }, id: requestId });
-          }
-          return;
-        }
-        if (!authorized) return;
-      }
-
-      if (!authorized) {
-        return res.status(402).json({
-          jsonrpc: '2.0',
-          error: { code: -32001, message: 'Payment Required: Send a valid Gumroad key in X-API-KEY or pay $0.01 via x402 in X-PAYMENT.' },
-          id: requestId
-        });
-      }
+      const gateOk = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier);
+      if (!gateOk) return;
 
       let toolResult;
       try {
