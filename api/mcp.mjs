@@ -862,7 +862,7 @@ async function handleCheckWalletSanctions(args) {
   if (typeof rawAddress !== 'string') {
     throw new Error('address is required.');
   }
-  if (!isRecognizedWalletAddress(rawAddress)) {
+  if (!rawAddress.trim()) {
     throw new InvalidAddressError(
       `'${rawAddress}' does not match any recognised wallet address format (EVM 0x+40 hex, BTC/LTC/BCH/DOGE/DASH/ZEC base58 or bech32/cashaddr, TRON, Monero, or Solana base58). Not screened.`
     );
@@ -918,6 +918,14 @@ async function handleCheckWalletSanctions(args) {
   const rows = await res.json();
 
   if (!rows.length) {
+    // Only reject unrecognised formats once we know they're not already a
+    // sanctioned entry — a match against the live table always wins over
+    // the format heuristic (see issue #106 follow-up).
+    if (!isRecognizedWalletAddress(rawAddress)) {
+      throw new InvalidAddressError(
+        `'${rawAddress}' does not match any recognised wallet address format (EVM 0x+40 hex, BTC/LTC/BCH/DOGE/DASH/ZEC base58 or bech32/cashaddr, TRON, Monero, or Solana base58). Not screened.`
+      );
+    }
     return {
       address: rawAddress,
       address_normalized: normalized,
