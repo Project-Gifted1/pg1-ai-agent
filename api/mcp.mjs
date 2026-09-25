@@ -963,6 +963,56 @@ let rdapBootstrapCacheTime = 0;
 const RDAP_BOOTSTRAP_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const RDAP_LOOKUP_TIMEOUT_MS = 5000;
 
+// Caches successful per-domain RDAP lookups for 24h so repeat checks of the
+// same domain (a common pattern — e.g. many callers re-checking a known
+// newly-registered phishing domain) don't re-hit the public per-TLD RDAP
+// server. Failures aren't cached: they're usually transient (timeouts,
+// server hiccups) and caching them would turn a blip into a day-long outage
+// for that domain.
+const rdapResultCache = new Map();
+const RDAP_RESULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+class DomainAgeRateLimitError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'DomainAgeRateLimitError';
+    this.mcpToolError = true;
+    this.code = 'rate_limited';
+  }
+}
+
+// Fixed-window per-IP limiter so a single caller can't hammer public RDAP
+// servers through PG1. Not shared across instances — "in memory is fine"
+// per the requesting issue, since the goal is just to blunt bursts.
+const DOMAIN_AGE_RATE_LIMIT = 60;
+const DOMAIN_AGE_RATE_WINDOW_MS = 60 * 60 * 1000;
+const domainAgeRateLimitMap = new Map();
+
+function enforceDomainAgeRateLimit(identifier) {
+  const key = identifier || 'unknown';
+  const now = Date.now();
+
+  // Opportunistic sweep of expired windows so the map doesn't grow forever.
+  if (domainAgeRateLimitMap.size > 5000) {
+    for (const [k, entry] of domainAgeRateLimitMap) {
+      if (now - entry.windowStart >= DOMAIN_AGE_RATE_WINDOW_MS) domainAgeRateLimitMap.delete(k);
+    }
+  }
+
+  const entry = domainAgeRateLimitMap.get(key);
+  if (!entry || now - entry.windowStart >= DOMAIN_AGE_RATE_WINDOW_MS) {
+    domainAgeRateLimitMap.set(key, { count: 1, windowStart: now });
+    return;
+  }
+  entry.count += 1;
+  if (entry.count > DOMAIN_AGE_RATE_LIMIT) {
+    const retryAfterMs = DOMAIN_AGE_RATE_WINDOW_MS - (now - entry.windowStart);
+    throw new DomainAgeRateLimitError(
+      `Rate limit exceeded: check_domain_age allows ${DOMAIN_AGE_RATE_LIMIT} calls per hour per client. Try again in ${Math.ceil(retryAfterMs / 1000)}s.`
+    );
+  }
+}
+
 async function getRdapBootstrap() {
   const now = Date.now();
   if (rdapBootstrapCache && (now - rdapBootstrapCacheTime) < RDAP_BOOTSTRAP_CACHE_TTL_MS) return rdapBootstrapCache;
@@ -1000,7 +1050,9 @@ function domainNotFound(domain, reason, reasonCode) {
   return { found: false, available: false, domain, reason, reason_code: reasonCode };
 }
 
-async function handleCheckDomainAge(args) {
+async function handleCheckDomainAge(args, requestIdentifier) {
+  enforceDomainAgeRateLimit(requestIdentifier);
+
   const raw = args?.domain;
   if (!raw || typeof raw !== 'string') {
     throw new Error('domain is required.');
@@ -1009,6 +1061,11 @@ async function handleCheckDomainAge(args) {
   const registrable = extractRegistrableDomain(raw);
   if (!registrable) {
     return domainNotFound(raw, 'Could not extract a registrable domain from the provided value.', 'invalid_domain');
+  }
+
+  const cached = rdapResultCache.get(registrable);
+  if (cached && (Date.now() - cached.time) < RDAP_RESULT_CACHE_TTL_MS) {
+    return cached.data;
   }
 
   let bootstrap;
@@ -1061,7 +1118,7 @@ async function handleCheckDomainAge(args) {
   const newlyRegistered = ageDays < 30;
   const serverHost = new URL(serverBase).host;
 
-  return {
+  const result = {
     found: true,
     available: true,
     domain: registrable,
@@ -1075,6 +1132,8 @@ async function handleCheckDomainAge(args) {
       : null,
     source: `RDAP (${serverHost})`
   };
+  rdapResultCache.set(registrable, { data: result, time: Date.now() });
+  return result;
 }
 
 // ---------------------------------------------------------------------
@@ -1348,7 +1407,7 @@ export default async function handler(req, res) {
           } else if (toolName === 'check_wallet_sanctions') {
             toolResult = await handleCheckWalletSanctions(toolArgs);
           } else {
-            toolResult = await handleCheckDomainAge(toolArgs);
+            toolResult = await handleCheckDomainAge(toolArgs, mcpRequestIdentifier);
           }
         } catch (toolErr) {
           if (toolErr.serviceUnavailable) {

@@ -179,3 +179,72 @@ test('check_domain_age: successful RDAP lookup returns found:true and available:
   assert.equal(parsed.reason_code, undefined);
   assert.equal(res.body.result.structuredContent.found, true);
 });
+
+function callToolFromIp(name, args, ip) {
+  const req = { method: 'POST', headers: { 'x-forwarded-for': ip }, body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } } };
+  const res = makeRes();
+  return handler(req, res).then(() => res);
+}
+
+test('check_domain_age: caches a successful RDAP result per registrable domain for 24h', async (t) => {
+  let domainFetchCount = 0;
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    const urlStr = String(url);
+    if (urlStr.includes('data.iana.org/rdap/dns.json')) {
+      return { ok: true, json: async () => ({ services: [[['com'], ['https://rdap.example/com/']]] }) };
+    }
+    if (urlStr.startsWith('https://rdap.example/com/domain/')) {
+      domainFetchCount += 1;
+      return {
+        ok: true,
+        json: async () => ({
+          events: [{ eventAction: 'registration', eventDate: '2020-01-01T00:00:00Z' }],
+          entities: []
+        })
+      };
+    }
+    throw new Error('unexpected fetch: ' + urlStr);
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const ip = '10.0.0.1';
+  const res1 = await callToolFromIp('check_domain_age', { domain: 'cachetest.com' }, ip);
+  assert.equal(JSON.parse(res1.body.result.content[0].text).found, true);
+  assert.equal(domainFetchCount, 1);
+
+  const res2 = await callToolFromIp('check_domain_age', { domain: 'cachetest.com' }, ip);
+  assert.equal(JSON.parse(res2.body.result.content[0].text).found, true);
+  assert.equal(domainFetchCount, 1, 'second lookup should be served from the cache, not hit RDAP again');
+});
+
+test('check_domain_age: enforces a 60 calls/hour per-IP rate limit', async (t) => {
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    const urlStr = String(url);
+    if (urlStr.includes('data.iana.org/rdap/dns.json')) {
+      return { ok: true, json: async () => ({ services: [[['com'], ['https://rdap.example/com/']]] }) };
+    }
+    throw new Error('unexpected fetch: ' + urlStr);
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const ip = '10.0.0.2';
+  let lastRes;
+  for (let i = 0; i < 60; i += 1) {
+    lastRes = await callToolFromIp('check_domain_age', { domain: `ratelimit${i}.example` }, ip);
+  }
+  assert.notEqual(lastRes.body.result.isError, true);
+
+  const res61 = await callToolFromIp('check_domain_age', { domain: 'ratelimit-final.example' }, ip);
+  assert.equal(res61.body.result.isError, true);
+  const parsed = JSON.parse(res61.body.result.content[0].text);
+  assert.equal(parsed.code, 'rate_limited');
+
+  const otherIpRes = await callToolFromIp('check_domain_age', { domain: 'ratelimit-other-ip.example' }, '10.0.0.3');
+  assert.notEqual(otherIpRes.body.result.isError, true);
+});
