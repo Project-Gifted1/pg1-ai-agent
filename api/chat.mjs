@@ -104,6 +104,29 @@ function ensureExpressCompat(req) {
   }
 }
 
+// The x402 middleware's default 402 challenge body is `{}` — the actual
+// payment-required payload only exists base64-encoded in the PAYMENT-REQUIRED
+// header. Mirror it into the JSON body so non-header-reading clients (and
+// this API's STIX consumers) see the same v2 payment-required object instead
+// of an empty object. Patches res.json rather than recomputing the payload,
+// since the header is already finalized (bazaar/extension-enriched) by the
+// time the middleware writes it, and re-deriving it here could drift.
+function mirrorPaymentRequiredIntoJsonBody(res) {
+  var originalJson = res.json.bind(res);
+  res.json = function (body) {
+    try {
+      if (res.statusCode === 402) {
+        var paymentRequiredHeader = res.getHeader('PAYMENT-REQUIRED');
+        if (paymentRequiredHeader) {
+          var decoded = JSON.parse(Buffer.from(String(paymentRequiredHeader), 'base64').toString('utf-8'));
+          return originalJson(decoded);
+        }
+      }
+    } catch (e) {}
+    return originalJson(body);
+  };
+}
+
 const B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 function encodeBase64(str) {
@@ -728,6 +751,7 @@ export default async function handler(req, res) {
         return sendJSON(res, 402, { error: 'x402 payment path is temporarily unavailable (facilitator unreachable). Please retry shortly, or use a Commercial License Key in an x-api-key header.' });
       }
       ensureExpressCompat(req);
+      mirrorPaymentRequiredIntoJsonBody(res);
       console.log('[X402_DEBUG] post-shim route match check: method=%s path=%s (registered route is "GET /api/ioc")', req.method, req.path);
       var x402Paid = false;
       try {

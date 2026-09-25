@@ -913,6 +913,29 @@ function ensureExpressCompat(req) {
   }
 }
 
+// The x402 middleware's default 402 challenge body is `{}` — the actual
+// payment-required payload only exists base64-encoded in the PAYMENT-REQUIRED
+// header. Mirror it into the JSON body so non-header-reading clients see the
+// same v2 payment-required object instead of an empty object. Patches
+// res.json rather than recomputing the payload, since the header is already
+// finalized (bazaar/extension-enriched) by the time the middleware writes it,
+// and re-deriving it here could drift.
+function mirrorPaymentRequiredIntoJsonBody(res) {
+  const originalJson = res.json.bind(res);
+  res.json = function (body) {
+    try {
+      if (res.statusCode === 402) {
+        const paymentRequiredHeader = res.getHeader('PAYMENT-REQUIRED');
+        if (paymentRequiredHeader) {
+          const decoded = JSON.parse(Buffer.from(String(paymentRequiredHeader), 'base64').toString('utf-8'));
+          return originalJson(decoded);
+        }
+      }
+    } catch (e) {}
+    return originalJson(body);
+  };
+}
+
 // Shared by the get_ioc_context and get_ioc_batch special cases, and by
 // every other paid tool: runs the full license -> free tier -> x402 gate
 // and returns true if authorized, or writes the appropriate error
@@ -965,6 +988,7 @@ async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentif
       return false;
     }
     ensureExpressCompat(req);
+    mirrorPaymentRequiredIntoJsonBody(res);
     try {
       await new Promise((resolve, reject) => {
         x402Middleware(req, res, (err) => (err ? reject(err) : (authorized = true, resolve())));
