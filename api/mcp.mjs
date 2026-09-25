@@ -865,7 +865,7 @@ if (X402_PAY_TO) {
       {
         'POST /api/mcp': {
           accepts: [{ scheme: 'exact', price: '$0.01', network: 'eip155:8453', payTo: X402_PAY_TO }],
-          description: 'PG1 Sovereign Threat Intelligence MCP tools.',
+          description: 'PG1 Threat Intelligence: STIX 2.1 threat indicator feed (IPs, domains, URLs, file hashes, CVEs) aggregated from open threat intelligence sources including AlienVault OTX.',
           mimeType: 'application/json'
         }
       },
