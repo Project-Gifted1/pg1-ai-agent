@@ -3,6 +3,13 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
+ * Version: 1.10.0 — ADD: two new free tools, check_wallet_sanctions (OFAC
+ *          SDN wallet screening against public.sanctioned_wallets, synced
+ *          daily by the sovereign-threat-pipeline repo) and check_domain_age
+ *          (RDAP-based domain registration age via the IANA bootstrap
+ *          registry). Both are gated identically to the existing free tools
+ *          (no x402 payment). The 9 pre-existing tools' names, descriptions,
+ *          and input schemas are unchanged.
  * Version: 1.9.2 — FIX: free tier was granted automatically to any caller
  *          with no payment header, with no way to opt out of being served
  *          for free. That meant a credential-less probe (e.g. Coinbase's
@@ -26,6 +33,10 @@ import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { paymentMiddleware, x402ResourceServer } from '@x402/express';
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkAndConsumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT } from '../lib/freeTier.mjs';
+import { getSupabaseCreds } from '../lib/supabase.mjs';
+import { detectIndicatorType, lookupIocContext } from '../lib/iocContext.mjs';
+import { normalizeWalletAddress } from '../lib/walletAddress.mjs';
+import { extractRegistrableDomain } from '../lib/domainExtraction.mjs';
 
 export const config = { maxDuration: 30 };
 
@@ -175,19 +186,31 @@ const TOOLS = [
       },
       required: ['indicator', 'indicator_type']
     }
+  },
+  {
+    name: 'check_wallet_sanctions',
+    description: 'PG1 Sovereign Threat Intelligence: checks a cryptocurrency wallet address against the OFAC SDN (Specially Designated Nationals) sanctions list, synced daily from US Treasury data. No payment required — this tool is always free. SIBLING DIFFERENTIATION: Use for wallet/address sanctions screening only. Do NOT use for IP/domain/hash/URL threat lookups (use get_ioc_context) or CVE data (use get_cve_details). BEHAVIOR: Returns { listed: true|false, matches, source, list_last_synced }. A listed:false result means the address is not on the OFAC SDN list as of the reported sync time — it is informational only, not legal or sanctions-compliance advice, and is never phrased as "safe" or "clean". Fails loudly (returns an error) if the sanctions data is empty or unreachable, rather than ever reporting listed:false on a data failure.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        address: { type: 'string', description: 'Mandatory wallet address to screen, e.g. an EVM 0x address, a bech32 (bc1/tb1/ltc1...) address, or a base58 address.' },
+        currency: { type: ['string', 'null'], description: "Optional currency/chain filter to narrow the match, e.g. 'BTC', 'ETH', 'XMR'." }
+      },
+      required: ['address']
+    }
+  },
+  {
+    name: 'check_domain_age',
+    description: 'PG1 Sovereign Threat Intelligence: looks up a domain\'s registration age via RDAP (the IANA-standardized WHOIS successor), resolved through the IANA bootstrap registry for the correct per-TLD RDAP server. No payment required — this tool is always free. SIBLING DIFFERENTIATION: Use for domain registration/age checks only. Do NOT use for reputation/threat-feed lookups (use get_ioc_context) or sanctions screening (use check_wallet_sanctions). BEHAVIOR: Returns { registration_date, age_days, expiration_date, registrar, newly_registered, source } when available, or { available: false, reason } when the TLD has no RDAP server or the lookup fails — this tool never estimates or guesses an age. A newly registered domain (age_days < 30) is reported as a common phishing signal, not as proof of malicious intent.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        domain: { type: 'string', description: "Mandatory domain name or URL to check, e.g. 'example.com' or 'https://example.com/path'. The registrable domain is extracted automatically." }
+      },
+      required: ['domain']
+    }
   }
 ];
-
-// ---------------------------------------------------------------------
-// SUPABASE HELPERS
-// ---------------------------------------------------------------------
-
-function getSupabaseCreds() {
-  const supUrl = (process.env.SUPABASE_URL || '').replace(/\s+/g, '');
-  const supKey = (process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLEKEY || '').replace(/\s+/g, '');
-  if (!supUrl || !supKey) throw new Error('Supabase not configured on this deployment.');
-  return { supUrl, supKey };
-}
 
 // ---------------------------------------------------------------------
 // get_threat_indicators
@@ -506,72 +529,6 @@ async function handleCveByProduct(args) {
 // get_ioc_context / get_ioc_batch shared helpers
 // ---------------------------------------------------------------------
 
-function detectIndicatorType(value) {
-  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(value)) return 'IPv4';
-  if (/^[a-fA-F0-9]{32}$|^[a-fA-F0-9]{40}$|^[a-fA-F0-9]{64}$/.test(value)) return 'hash';
-  if (/^https?:\/\//i.test(value)) return 'URL';
-  return 'domain';
-}
-
-async function lookupIocContext(value, supUrl, supKey) {
-  let res;
-  try {
-    res = await fetch(
-      `${supUrl}/rest/v1/threat_ioc_telemetry?value=eq.${encodeURIComponent(value)}&select=*&order=last_seen.desc`,
-      { headers: { apikey: supKey, Authorization: `Bearer ${supKey}` } }
-    );
-  } catch (netErr) {
-    const err = new Error('Threat data temporarily unavailable, please retry.');
-    err.serviceUnavailable = true;
-    throw err;
-  }
-  if (!res.ok) {
-    const err = new Error('Threat data temporarily unavailable, please retry.');
-    err.serviceUnavailable = true;
-    throw err;
-  }
-  const rows = await res.json();
-
-  if (!rows.length) {
-    return { indicator: value, found: false };
-  }
-
-  const sources = rows.map((r) => ({
-    source: r.verification_source || 'unknown',
-    confidence: parseInt(r.confidence_score, 10) || 0,
-    first_seen: r.ingested_at || null,
-    last_seen: r.last_seen || null,
-    malware_family: r.malware_family || null,
-    tags: r.tags || []
-  }));
-
-  const confidences = sources.map((s) => s.confidence).filter((c) => c > 0);
-  const avgConfidence = confidences.length ? confidences.reduce((a, b) => a + b, 0) / confidences.length : 0;
-  const agreementBoost = Math.min(20, Math.max(0, sources.length - 1) * 7);
-  const aggregateConfidence = Math.round(Math.min(100, avgConfidence + agreementBoost));
-
-  const malwareFamilies = [...new Set(sources.map((s) => s.malware_family).filter(Boolean))];
-  const tags = [...new Set(sources.flatMap((s) => s.tags || []))];
-
-  const firstSeenTimes = sources.map((s) => s.first_seen).filter(Boolean).map((t) => new Date(t).getTime()).filter((t) => !isNaN(t));
-  const lastSeenTimes = sources.map((s) => s.last_seen).filter(Boolean).map((t) => new Date(t).getTime()).filter((t) => !isNaN(t));
-
-  return {
-    indicator: value,
-    found: true,
-    indicator_type: rows[0].indicator_type || detectIndicatorType(value),
-    provenance: {
-      sources: [...new Set(sources.map((s) => s.source))],
-      observation_count: rows.length,
-      confidence_score: aggregateConfidence,
-      malware_families: malwareFamilies,
-      tags,
-      first_seen: firstSeenTimes.length ? new Date(Math.min(...firstSeenTimes)).toISOString() : null,
-      last_seen: lastSeenTimes.length ? new Date(Math.max(...lastSeenTimes)).toISOString() : null
-    }
-  };
-}
-
 async function handleIocContext(args) {
   const value = args?.value?.trim();
   if (!value) {
@@ -833,6 +790,217 @@ async function handleSubmitIndicator(args, licenseKey) {
 }
 
 // ---------------------------------------------------------------------
+// check_wallet_sanctions — free, no payment gate
+// ---------------------------------------------------------------------
+
+const SANCTIONS_DISCLAIMER = 'Informational only; not legal or sanctions-compliance advice.';
+const SANCTIONS_SOURCE = 'OFAC SDN List (US Treasury)';
+
+async function handleCheckWalletSanctions(args) {
+  const rawAddress = args?.address;
+  if (!rawAddress || typeof rawAddress !== 'string') {
+    throw new Error('address is required.');
+  }
+  const currency = args?.currency ? String(args.currency).trim() : null;
+  const normalized = normalizeWalletAddress(rawAddress);
+
+  const { supUrl, supKey } = getSupabaseCreds();
+
+  // Also doubles as an empty-table check: if the sanctions list itself has
+  // zero rows, that's a data-quality failure, not a clean address — fail
+  // loudly rather than silently reporting listed:false (see issue 93).
+  let syncRes;
+  try {
+    syncRes = await fetch(
+      `${supUrl}/rest/v1/sanctioned_wallets?select=updated_at&order=updated_at.desc&limit=1`,
+      { headers: { apikey: supKey, Authorization: `Bearer ${supKey}` } }
+    );
+  } catch (netErr) {
+    const err = new Error('Sanctions data temporarily unavailable, please retry.');
+    err.serviceUnavailable = true;
+    throw err;
+  }
+  if (!syncRes.ok) {
+    const err = new Error('Sanctions data temporarily unavailable, please retry.');
+    err.serviceUnavailable = true;
+    throw err;
+  }
+  const syncRows = await syncRes.json();
+  if (!syncRows.length) {
+    throw new Error('Sanctioned wallets list is empty or unavailable — refusing to report a result.');
+  }
+  const listLastSynced = syncRows[0].updated_at;
+
+  const filters = [`address_normalized=eq.${encodeURIComponent(normalized)}`, 'select=*'];
+  if (currency) filters.push(`currency=eq.${encodeURIComponent(currency)}`);
+
+  let res;
+  try {
+    res = await fetch(`${supUrl}/rest/v1/sanctioned_wallets?${filters.join('&')}`, {
+      headers: { apikey: supKey, Authorization: `Bearer ${supKey}` }
+    });
+  } catch (netErr) {
+    const err = new Error('Sanctions data temporarily unavailable, please retry.');
+    err.serviceUnavailable = true;
+    throw err;
+  }
+  if (!res.ok) {
+    const err = new Error('Sanctions data temporarily unavailable, please retry.');
+    err.serviceUnavailable = true;
+    throw err;
+  }
+  const rows = await res.json();
+
+  if (!rows.length) {
+    return {
+      address: rawAddress,
+      address_normalized: normalized,
+      listed: false,
+      matches: [],
+      source: SANCTIONS_SOURCE,
+      list_last_synced: listLastSynced,
+      message: `Not on the OFAC SDN sanctions list as of ${listLastSynced}.`,
+      disclaimer: SANCTIONS_DISCLAIMER
+    };
+  }
+
+  return {
+    address: rawAddress,
+    address_normalized: normalized,
+    listed: true,
+    matches: rows.map((r) => ({
+      sdn_name: r.sdn_name,
+      currency: r.currency,
+      programs: r.programs || [],
+      sdn_uid: r.sdn_uid
+    })),
+    source: SANCTIONS_SOURCE,
+    list_last_synced: listLastSynced,
+    disclaimer: SANCTIONS_DISCLAIMER
+  };
+}
+
+// ---------------------------------------------------------------------
+// check_domain_age — free, no payment gate
+// ---------------------------------------------------------------------
+
+let rdapBootstrapCache = null;
+let rdapBootstrapCacheTime = 0;
+const RDAP_BOOTSTRAP_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const RDAP_LOOKUP_TIMEOUT_MS = 5000;
+
+async function getRdapBootstrap() {
+  const now = Date.now();
+  if (rdapBootstrapCache && (now - rdapBootstrapCacheTime) < RDAP_BOOTSTRAP_CACHE_TTL_MS) return rdapBootstrapCache;
+  const res = await fetch('https://data.iana.org/rdap/dns.json');
+  if (!res.ok) {
+    if (rdapBootstrapCache) return rdapBootstrapCache;
+    throw new Error('IANA RDAP bootstrap fetch failed: ' + res.status);
+  }
+  const data = await res.json();
+  const map = {};
+  (data.services || []).forEach(([tlds, servers]) => {
+    (tlds || []).forEach((tld) => {
+      if (servers && servers.length && !map[tld.toLowerCase()]) map[tld.toLowerCase()] = servers[0];
+    });
+  });
+  rdapBootstrapCache = map;
+  rdapBootstrapCacheTime = now;
+  return rdapBootstrapCache;
+}
+
+function extractRegistrarName(entities) {
+  for (const entity of entities || []) {
+    if (!(entity.roles || []).includes('registrar')) continue;
+    const vcard = entity.vcardArray && entity.vcardArray[1];
+    if (Array.isArray(vcard)) {
+      const fnEntry = vcard.find((item) => item[0] === 'fn');
+      if (fnEntry && fnEntry[3]) return fnEntry[3];
+    }
+    if (entity.handle) return entity.handle;
+  }
+  return null;
+}
+
+async function handleCheckDomainAge(args) {
+  const raw = args?.domain;
+  if (!raw || typeof raw !== 'string') {
+    throw new Error('domain is required.');
+  }
+
+  const registrable = extractRegistrableDomain(raw);
+  if (!registrable) {
+    return { available: false, domain: raw, reason: 'Could not extract a registrable domain from the provided value.' };
+  }
+
+  let bootstrap;
+  try {
+    bootstrap = await getRdapBootstrap();
+  } catch (e) {
+    return { available: false, domain: registrable, reason: 'IANA RDAP bootstrap file unavailable: ' + e.message };
+  }
+
+  const tld = registrable.split('.').pop().toLowerCase();
+  const server = bootstrap[tld];
+  if (!server) {
+    return { available: false, domain: registrable, reason: `No RDAP server registered for the '.${tld}' TLD in the IANA bootstrap file.` };
+  }
+
+  const serverBase = server.endsWith('/') ? server : server + '/';
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), RDAP_LOOKUP_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(`${serverBase}domain/${encodeURIComponent(registrable)}`, { signal: controller.signal });
+  } catch (e) {
+    return {
+      available: false,
+      domain: registrable,
+      reason: e.name === 'AbortError' ? 'RDAP lookup timed out after 5 seconds.' : 'RDAP lookup failed: ' + e.message
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!res.ok) {
+    return { available: false, domain: registrable, reason: `RDAP server responded with ${res.status} for '${registrable}'.` };
+  }
+
+  let data;
+  try {
+    data = await res.json();
+  } catch (e) {
+    return { available: false, domain: registrable, reason: 'RDAP response was not valid JSON.' };
+  }
+
+  const events = data.events || [];
+  const registrationEvent = events.find((e) => e.eventAction === 'registration');
+  if (!registrationEvent || !registrationEvent.eventDate) {
+    return { available: false, domain: registrable, reason: `RDAP response for '${registrable}' did not include a registration event.` };
+  }
+  const expirationEvent = events.find((e) => e.eventAction === 'expiration');
+
+  const registrationDate = registrationEvent.eventDate;
+  const ageDays = Math.floor((Date.now() - new Date(registrationDate).getTime()) / (24 * 60 * 60 * 1000));
+  const newlyRegistered = ageDays < 30;
+  const serverHost = new URL(serverBase).host;
+
+  return {
+    available: true,
+    domain: registrable,
+    registration_date: registrationDate,
+    age_days: ageDays,
+    expiration_date: expirationEvent ? expirationEvent.eventDate : null,
+    registrar: extractRegistrarName(data.entities),
+    newly_registered: newlyRegistered,
+    note: newlyRegistered
+      ? `This domain was registered ${ageDays} day(s) ago — a common phishing signal, not proof of malicious intent.`
+      : null,
+    source: `RDAP (${serverHost})`
+  };
+}
+
+// ---------------------------------------------------------------------
 // AUTHORIZATION
 // ---------------------------------------------------------------------
 
@@ -1027,7 +1195,7 @@ const STANDARD_TOOL_HANDLERS = {
 // lookup result — not applied uniformly before the tool runs, like every
 // other STANDARD_TOOL_HANDLERS entry.
 
-const FREE_TOOLS = new Set(['get_usage_status']);
+const FREE_TOOLS = new Set(['get_usage_status', 'check_wallet_sanctions', 'check_domain_age']);
 
 const LICENSE_ONLY_TOOLS = new Set(['subscribe_alerts', 'submit_indicator']);
 
@@ -1050,7 +1218,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.9.2',
+      version: '1.10.0',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp'
@@ -1076,7 +1244,7 @@ export default async function handler(req, res) {
     if (method === 'initialize') {
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.9.2' } },
+        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.10.0' } },
         id: requestId
       });
     }
@@ -1098,7 +1266,13 @@ export default async function handler(req, res) {
       if (FREE_TOOLS.has(toolName)) {
         let toolResult;
         try {
-          toolResult = await handleUsageStatus(toolArgs, mcpRequestIdentifier);
+          if (toolName === 'get_usage_status') {
+            toolResult = await handleUsageStatus(toolArgs, mcpRequestIdentifier);
+          } else if (toolName === 'check_wallet_sanctions') {
+            toolResult = await handleCheckWalletSanctions(toolArgs);
+          } else {
+            toolResult = await handleCheckDomainAge(toolArgs);
+          }
         } catch (toolErr) {
           if (toolErr.serviceUnavailable) {
             return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId });
