@@ -7,7 +7,9 @@ Cryptographically-gated threat telemetry and IOC feeds for enterprise and autono
 ## Two Ways to Connect
 
 - **`/api/ioc`** — simple REST GET, returns the STIX 2.1 indicator feed directly. Best for scripts, curl, and simple integrations.
-- **`/api/mcp`** — full Model Context Protocol server, 9 tools (CVE lookups, batch operations, threat actor dossiers, and more). Best for Claude, MCP-compatible agents, and any client speaking the MCP standard.
+- **`/api/mcp`** — full Model Context Protocol server, 12 tools (CVE lookups, batch operations, threat actor dossiers, wallet sanctions screening, domain age, and more). Best for Claude, MCP-compatible agents, and any client speaking the MCP standard.
+
+**Opt-in:** `/api/ioc/context?value=<indicator>` — a REST mirror of the `get_ioc_context` MCP tool, disabled by default. The operator must set `ENABLE_REST_IOC_CONTEXT=true` for this route to respond; otherwise it returns `404 {"error":"not available"}`. Not listed in x402 Bazaar/discovery metadata.
 
 Both accept the same Gumroad license key via the `x-api-key` header, or per-call x402 micropayments ($0.01/call) via the `PAYMENT-SIGNATURE` header (x402 v2).
 
@@ -59,18 +61,26 @@ curl -X POST https://pg1-ai-agent.vercel.app/api/mcp \
 
 Call `"method": "tools/list"` against `/api/mcp` for full schemas. Summary:
 
-| Tool | Purpose | Free tier applies? |
-|---|---|---|
-| `get_threat_indicators` | Bulk STIX 2.1 indicator feed | Yes (needs `x-free-tier: 1`) |
-| `get_ioc_context` | Single-indicator safety check | Always free if not found |
-| `get_ioc_batch` | Up to 20 indicators per call | Always free if none found |
-| `get_cve_details` | CVE lookup enriched with NVD, EPSS, CISA KEV | Yes (needs `x-free-tier: 1`) |
-| `get_cve_batch` | Up to 20 CVE IDs per call | Yes (needs `x-free-tier: 1`) |
-| `get_cve_by_product` | Discover CVEs by vendor/product | Yes (needs `x-free-tier: 1`) |
-| `get_threat_actor_profile` | APT/threat actor dossiers with MITRE ATT&CK | Yes (needs `x-free-tier: 1`) |
-| `get_usage_status` | Check your remaining free-tier quota | Always free, no header needed |
-| `subscribe_alerts` | Register a webhook for new matching indicators | No — license key required |
-| `submit_indicator` | Contribute an observed indicator for review | No — license key required | 
+| Tool | Purpose | Source(s) | Free tier applies? |
+|---|---|---|---|
+| `get_threat_indicators` | Bulk STIX 2.1 indicator feed | ThreatFox, URLhaus, AbuseIPDB, OTX, NVD | Yes (needs `x-free-tier: 1`) |
+| `get_ioc_context` | Single-indicator safety check | ThreatFox, URLhaus, AbuseIPDB, OTX | Always free if not found |
+| `get_ioc_batch` | Up to 20 indicators per call | ThreatFox, URLhaus, AbuseIPDB, OTX | Always free if none found |
+| `get_cve_details` | CVE lookup enriched with NVD, EPSS, CISA KEV | NVD, FIRST.org EPSS, CISA KEV | Yes (needs `x-free-tier: 1`) |
+| `get_cve_batch` | Up to 20 CVE IDs per call | NVD, FIRST.org EPSS, CISA KEV | Yes (needs `x-free-tier: 1`) |
+| `get_cve_by_product` | Discover CVEs by vendor/product | NVD | Yes (needs `x-free-tier: 1`) |
+| `get_threat_actor_profile` | APT/threat actor dossiers with MITRE ATT&CK | MITRE ATT&CK Enterprise | Yes (needs `x-free-tier: 1`) |
+| `get_usage_status` | Check your remaining free-tier quota | — | Always free, no header needed |
+| `subscribe_alerts` | Register a webhook for new matching indicators | — | No — license key required |
+| `submit_indicator` | Contribute an observed indicator for review | — | No — license key required |
+| `check_wallet_sanctions` | Screen a wallet address against sanctions | OFAC SDN List (US Treasury), synced daily | Always free |
+| `check_domain_age` | Domain registration age via RDAP | RDAP (per-TLD server, resolved via the IANA bootstrap registry) | Always free |
+
+### Important wording caveats
+
+- **`check_wallet_sanctions`**: a `listed: false` result means the address is not on the OFAC SDN list as of the reported `list_last_synced` time. It is **informational only, not legal or sanctions-compliance advice**, and is never phrased as "safe" or "clean". If the sanctions data is empty or unreachable, the tool returns an error instead of a false `listed: false`.
+- **`check_domain_age`**: a newly registered domain (`age_days < 30`) is reported as **a common phishing signal, not proof of malicious intent**. If the TLD has no RDAP server or the lookup fails, the tool returns `available: false` with a reason — it never guesses an age.
+- **`get_ioc_context` / `get_ioc_batch`** (existing behavior): a `found: false` result means nothing bad is recorded in PG1's sources — it does **not** mean the indicator is safe, only that it isn't in this dataset.
 
 ## Acknowledgements
 

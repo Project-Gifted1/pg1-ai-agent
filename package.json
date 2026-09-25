@@ -25,6 +25,7 @@
     "@x402/evm": "latest",
     "@x402/extensions": "latest",
     "@x402/svm": "latest",
+    "tldts": "^7.4.15",
     "uuid": "latest"
   },
   "devDependencies": {
