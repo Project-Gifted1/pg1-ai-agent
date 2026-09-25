@@ -1,5 +1,6 @@
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { paymentMiddleware, x402ResourceServer } from '@x402/express';
+import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkAndConsumeFreeTier, getRequestIdentifier, logSettlementOutcome } from '../lib/freeTier.mjs';
 
@@ -39,7 +40,45 @@ if (X402_PAY_TO) {
         'GET /api/ioc': {
           accepts: [{ scheme: 'exact', price: '$0.01', network: 'eip155:8453', payTo: X402_PAY_TO }],
           description: 'PG1 Sovereign Threat Intelligence: STIX 2.1 indicator feed, multi-source verified telemetry (ThreatFox, URLhaus, AbuseIPDB, OTX, NVD).',
-          mimeType: 'application/stix+json'
+          mimeType: 'application/stix+json',
+          extensions: declareDiscoveryExtension({
+            input: { type: 'IPv4', min_score: 50, limit: 100 },
+            inputSchema: {
+              properties: {
+                since: { type: 'string', description: 'ISO timestamp (e.g. 2026-09-20T00:00:00Z). Only indicators last seen after this time are returned.' },
+                type: {
+                  type: 'string',
+                  description: 'Exact-match indicator type filter against the stored value.',
+                  enum: ['IPv4', 'IPv6', 'domain', 'hostname', 'URL', 'FileHash-MD5', 'FileHash-SHA1', 'FileHash-SHA256', 'CVE']
+                },
+                min_score: { type: 'integer', description: 'Minimum confidence score, inclusive.', minimum: 0, maximum: 100 },
+                limit: { type: 'integer', description: 'Maximum number of STIX objects to return.', minimum: 1, maximum: 1000 }
+              }
+            },
+            output: {
+              example: {
+                type: 'bundle',
+                id: 'bundle--3f1b1e2a-0a3e-4b9a-8f7f-2f6e9a0b3c1d',
+                objects: [
+                  {
+                    type: 'indicator',
+                    spec_version: '2.1',
+                    id: 'indicator--7c9b6f2e-6b6b-4a2a-9c3e-1a9d9a2b6f3e',
+                    created: '2026-09-20T00:00:00Z',
+                    modified: '2026-09-24T12:00:00Z',
+                    name: 'IPv4 Threat Indicator - 198.51.100.23',
+                    description: 'Threat indicator sourced from ThreatFox.',
+                    indicator_types: ['malicious-activity'],
+                    pattern: "[ipv4-addr:value = '198.51.100.23']",
+                    pattern_type: 'stix',
+                    valid_from: '2026-09-24T12:00:00Z',
+                    confidence: 75,
+                    external_references: [{ source_name: 'ThreatFox', description: 'Sourced from ThreatFox' }]
+                  }
+                ]
+              }
+            }
+          })
         }
       },
       x402Server,
@@ -104,6 +143,29 @@ function ensureExpressCompat(req) {
   }
 }
 
+// The x402 middleware's default 402 challenge body is `{}` — the actual
+// payment-required payload only exists base64-encoded in the PAYMENT-REQUIRED
+// header. Mirror it into the JSON body so non-header-reading clients (and
+// this API's STIX consumers) see the same v2 payment-required object instead
+// of an empty object. Patches res.json rather than recomputing the payload,
+// since the header is already finalized (bazaar/extension-enriched) by the
+// time the middleware writes it, and re-deriving it here could drift.
+function mirrorPaymentRequiredIntoJsonBody(res) {
+  var originalJson = res.json.bind(res);
+  res.json = function (body) {
+    try {
+      if (res.statusCode === 402) {
+        var paymentRequiredHeader = res.getHeader('PAYMENT-REQUIRED');
+        if (paymentRequiredHeader) {
+          var decoded = JSON.parse(Buffer.from(String(paymentRequiredHeader), 'base64').toString('utf-8'));
+          return originalJson(decoded);
+        }
+      }
+    } catch (e) {}
+    return originalJson(body);
+  };
+}
+
 const B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 function encodeBase64(str) {
@@ -130,8 +192,8 @@ function sendJSON(res, status, data) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-Payment, Payment-Signature, x-free-tier');
-  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE');
   res.status(status).json(data);
 }
 
@@ -531,8 +593,8 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-Payment, Payment-Signature, x-free-tier');
-    res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE');
     res.status(200).end();
     return;
   }
@@ -657,8 +719,8 @@ export default async function handler(req, res) {
       res.setHeader('Content-Type', 'application/stix+json; charset=utf-8');
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, X-Payment, Payment-Signature, x-free-tier');
-      res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier');
+      res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE');
       res.status(200).end(JSON.stringify(stixBundle));
     } catch (err) {
       return sendJSON(res, 500, { error: 'Internal Server Error: Telemetry stream failed.' });
@@ -728,6 +790,7 @@ export default async function handler(req, res) {
         return sendJSON(res, 402, { error: 'x402 payment path is temporarily unavailable (facilitator unreachable). Please retry shortly, or use a Commercial License Key in an x-api-key header.' });
       }
       ensureExpressCompat(req);
+      mirrorPaymentRequiredIntoJsonBody(res);
       console.log('[X402_DEBUG] post-shim route match check: method=%s path=%s (registered route is "GET /api/ioc")', req.method, req.path);
       var x402Paid = false;
       try {
@@ -760,7 +823,7 @@ export default async function handler(req, res) {
     // 4. x402 not configured on this deployment at all — final fallback.
     console.log('[X402_DEBUG] falling through to generic 402. x402Middleware configured=%s', !!x402Middleware);
     logSettlementOutcome('/api/ioc', 'no_payment', iocRequestIdentifier, rawPaymentHeader ? 'payment_header_present_no_x402_configured' : 'no_payment_offered');
-    return sendJSON(res, 402, { error: 'Payment Required: Missing Commercial License Key in x-api-key header, or pay per-call via x402 (X-PAYMENT or payment-signature header).' });
+    return sendJSON(res, 402, { error: 'Payment Required: Missing Commercial License Key in x-api-key header, or pay per-call via x402 (PAYMENT-SIGNATURE header, x402 v2).' });
   }
 
   if (req.method !== 'POST') {
