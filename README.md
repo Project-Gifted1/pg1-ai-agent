@@ -2,7 +2,7 @@
 
 Cryptographically-gated threat telemetry and IOC feeds for enterprise and autonomous nodes.
 
-**License Key Access:** [https://gikewun.gumroad.com/l/pg1-threat-intel-api](https://gikewun.gumroad.com/l/pg1-threat-intel-api)
+**License keys:** new sales are temporarily paused while data licensing is finalised. The free tier and x402 remain available.
 
 ## Two Ways to Connect
 
@@ -63,9 +63,9 @@ Call `"method": "tools/list"` against `/api/mcp` for full schemas. Summary:
 
 | Tool | Purpose | Source(s) | Free tier applies? |
 |---|---|---|---|
-| `get_threat_indicators` | Bulk STIX 2.1 indicator feed | ThreatFox, URLhaus, AbuseIPDB, OTX, NVD | Yes (needs `x-free-tier: 1`) |
-| `get_ioc_context` | Single-indicator safety check | ThreatFox, URLhaus, AbuseIPDB, OTX | Always free if not found |
-| `get_ioc_batch` | Up to 20 indicators per call | ThreatFox, URLhaus, AbuseIPDB, OTX | Always free if none found |
+| `get_threat_indicators` | Bulk STIX 2.1 indicator feed | ThreatFox, URLhaus, OTX, NVD | Yes (needs `x-free-tier: 1`) |
+| `get_ioc_context` | Single-indicator safety check | ThreatFox, URLhaus, OTX | Always free if not found |
+| `get_ioc_batch` | Up to 20 indicators per call | ThreatFox, URLhaus, OTX | Always free if none found |
 | `get_cve_details` | CVE lookup enriched with NVD, EPSS, CISA KEV | NVD, FIRST.org EPSS, CISA KEV | Yes (needs `x-free-tier: 1`) |
 | `get_cve_batch` | Up to 20 CVE IDs per call | NVD, FIRST.org EPSS, CISA KEV | Yes (needs `x-free-tier: 1`) |
 | `get_cve_by_product` | Discover CVEs by vendor/product | NVD | Yes (needs `x-free-tier: 1`) |
