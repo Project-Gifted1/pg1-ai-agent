@@ -1,5 +1,6 @@
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { paymentMiddleware, x402ResourceServer } from '@x402/express';
+import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkAndConsumeFreeTier, getRequestIdentifier, logSettlementOutcome } from '../lib/freeTier.mjs';
 
@@ -39,7 +40,45 @@ if (X402_PAY_TO) {
         'GET /api/ioc': {
           accepts: [{ scheme: 'exact', price: '$0.01', network: 'eip155:8453', payTo: X402_PAY_TO }],
           description: 'PG1 Sovereign Threat Intelligence: STIX 2.1 indicator feed, multi-source verified telemetry (ThreatFox, URLhaus, AbuseIPDB, OTX, NVD).',
-          mimeType: 'application/stix+json'
+          mimeType: 'application/stix+json',
+          extensions: declareDiscoveryExtension({
+            input: { type: 'IPv4', min_score: 50, limit: 100 },
+            inputSchema: {
+              properties: {
+                since: { type: 'string', description: 'ISO timestamp (e.g. 2026-09-20T00:00:00Z). Only indicators last seen after this time are returned.' },
+                type: {
+                  type: 'string',
+                  description: 'Exact-match indicator type filter against the stored value.',
+                  enum: ['IPv4', 'IPv6', 'domain', 'hostname', 'URL', 'FileHash-MD5', 'FileHash-SHA1', 'FileHash-SHA256', 'CVE']
+                },
+                min_score: { type: 'integer', description: 'Minimum confidence score, inclusive.', minimum: 0, maximum: 100 },
+                limit: { type: 'integer', description: 'Maximum number of STIX objects to return.', minimum: 1, maximum: 1000 }
+              }
+            },
+            output: {
+              example: {
+                type: 'bundle',
+                id: 'bundle--3f1b1e2a-0a3e-4b9a-8f7f-2f6e9a0b3c1d',
+                objects: [
+                  {
+                    type: 'indicator',
+                    spec_version: '2.1',
+                    id: 'indicator--7c9b6f2e-6b6b-4a2a-9c3e-1a9d9a2b6f3e',
+                    created: '2026-09-20T00:00:00Z',
+                    modified: '2026-09-24T12:00:00Z',
+                    name: 'IPv4 Threat Indicator - 198.51.100.23',
+                    description: 'Threat indicator sourced from ThreatFox.',
+                    indicator_types: ['malicious-activity'],
+                    pattern: "[ipv4-addr:value = '198.51.100.23']",
+                    pattern_type: 'stix',
+                    valid_from: '2026-09-24T12:00:00Z',
+                    confidence: 75,
+                    external_references: [{ source_name: 'ThreatFox', description: 'Sourced from ThreatFox' }]
+                  }
+                ]
+              }
+            }
+          })
         }
       },
       x402Server,
