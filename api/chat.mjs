@@ -591,11 +591,28 @@ export default async function handler(req, res) {
       var rawTelemetry = await threatRes.json();
 
       var stixObjects = rawTelemetry.map(record => {
+        if (record.indicator_type === 'CVE') {
+          return {
+            type: 'vulnerability',
+            spec_version: '2.1',
+            id: `vulnerability--${crypto.randomUUID()}`,
+            created: record.ingested_at || new Date().toISOString(),
+            modified: record.last_seen || new Date().toISOString(),
+            name: record.value,
+            description: `Vulnerability sourced from ${record.verification_source || 'Sovereign Engine'}.`,
+            external_references: [
+              { source_name: 'cve', external_id: record.value }
+            ]
+          };
+        }
+
         var patternValue = record.stix_pattern;
+        if (patternValue && String(patternValue).startsWith('[custom-object')) patternValue = null;
         if (!patternValue) {
           var safeValue = escapeStixValue(record.value);
           var indicatorTypeStr = String(record.indicator_type);
           if (record.indicator_type === 'IPv4') patternValue = `[ipv4-addr:value = '${safeValue}']`;
+          else if (record.indicator_type === 'IPv6') patternValue = `[ipv6-addr:value = '${safeValue}']`;
           else if (record.indicator_type === 'domain') patternValue = `[domain-name:value = '${safeValue}']`;
           else if (record.indicator_type === 'hostname') patternValue = `[domain-name:value = '${safeValue}']`;
           else if (record.indicator_type === 'URL') patternValue = `[url:value = '${safeValue}']`;
@@ -603,7 +620,10 @@ export default async function handler(req, res) {
           else if (indicatorTypeStr.includes('FileHash-SHA1')) patternValue = `[file:hashes.'SHA-1' = '${safeValue}']`;
           else if (indicatorTypeStr.includes('FileHash-SHA256')) patternValue = `[file:hashes.'SHA-256' = '${safeValue}']`;
           else if (indicatorTypeStr.includes('FileHash')) patternValue = `[file:hashes.'SHA-256' = '${safeValue}']`;
-          else patternValue = `[custom-object:value = '${safeValue}']`;
+          else {
+            console.warn(`[STIX] Skipping indicator with unmappable indicator_type: ${indicatorTypeStr}`);
+            return null;
+          }
         }
 
         return {
@@ -626,7 +646,7 @@ export default async function handler(req, res) {
             }
           ]
         };
-      });
+      }).filter(Boolean);
 
       var stixBundle = {
         type: 'bundle',
