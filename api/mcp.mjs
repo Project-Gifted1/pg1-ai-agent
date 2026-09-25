@@ -3,6 +3,15 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
+ * Version: 1.11.0 — FIX (issue #106): check_wallet_sanctions now validates
+ *          the address's format before querying sanctions data, returning
+ *          an MCP tool error (isError: true, code invalid_address) instead
+ *          of a misleading listed:false for malformed input. check_domain_age
+ *          gains a found boolean (available is kept, deprecated) and a
+ *          dedicated unsupported_tld reason_code, separate from lookup
+ *          failures. Both tools now declare an outputSchema and return
+ *          structuredContent alongside their existing text content, per the
+ *          MCP spec.
  * Version: 1.10.0 — ADD: two new free tools, check_wallet_sanctions (OFAC
  *          SDN wallet screening against public.sanctioned_wallets, synced
  *          daily by the sovereign-threat-pipeline repo) and check_domain_age
@@ -35,7 +44,7 @@ import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkAndConsumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT } from '../lib/freeTier.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { detectIndicatorType, lookupIocContext } from '../lib/iocContext.mjs';
-import { normalizeWalletAddress } from '../lib/walletAddress.mjs';
+import { normalizeWalletAddress, isRecognizedWalletAddress } from '../lib/walletAddress.mjs';
 import { extractRegistrableDomain } from '../lib/domainExtraction.mjs';
 
 export const config = { maxDuration: 30 };
@@ -189,7 +198,7 @@ const TOOLS = [
   },
   {
     name: 'check_wallet_sanctions',
-    description: 'PG1 Sovereign Threat Intelligence: checks a cryptocurrency wallet address against the OFAC SDN (Specially Designated Nationals) sanctions list, synced daily from US Treasury data. No payment required — this tool is always free. SIBLING DIFFERENTIATION: Use for wallet/address sanctions screening only. Do NOT use for IP/domain/hash/URL threat lookups (use get_ioc_context) or CVE data (use get_cve_details). BEHAVIOR: Returns { listed: true|false, matches, source, list_last_synced }. A listed:false result means the address is not on the OFAC SDN list as of the reported sync time — it is informational only, not legal or sanctions-compliance advice, and is never phrased as "safe" or "clean". Fails loudly (returns an error) if the sanctions data is empty or unreachable, rather than ever reporting listed:false on a data failure.',
+    description: 'PG1 Sovereign Threat Intelligence: checks a cryptocurrency wallet address against the OFAC SDN (Specially Designated Nationals) sanctions list, synced daily from US Treasury data. No payment required — this tool is always free. SIBLING DIFFERENTIATION: Use for wallet/address sanctions screening only. Do NOT use for IP/domain/hash/URL threat lookups (use get_ioc_context) or CVE data (use get_cve_details). BEHAVIOR: Returns { listed: true|false, matches, source, list_last_synced }. A listed:false result means the address is not on the OFAC SDN list as of the reported sync time — it is informational only, not legal or sanctions-compliance advice, and is never phrased as "safe" or "clean". Fails loudly (returns an error) if the sanctions data is empty or unreachable, rather than ever reporting listed:false on a data failure. VALIDATION: if the address does not match a recognised format for any supported currency (EVM, BTC/LTC/BCH/DOGE/DASH/ZEC base58 or bech32/cashaddr, TRON, Monero, Solana), returns an MCP tool error (isError: true, code invalid_address) instead of a result — it never reports listed:false for malformed input.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -197,17 +206,60 @@ const TOOLS = [
         currency: { type: ['string', 'null'], description: "Optional currency/chain filter to narrow the match, e.g. 'BTC', 'ETH', 'XMR'." }
       },
       required: ['address']
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        address: { type: 'string', description: 'The address exactly as submitted.' },
+        address_normalized: { type: 'string', description: 'The address after normalization, used to match against sanctioned_wallets.' },
+        listed: { type: 'boolean' },
+        matches: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              sdn_name: { type: ['string', 'null'] },
+              currency: { type: ['string', 'null'] },
+              programs: { type: 'array', items: { type: 'string' } },
+              sdn_uid: { type: ['string', 'number', 'null'] }
+            }
+          }
+        },
+        source: { type: 'string' },
+        list_last_synced: { type: 'string' },
+        message: { type: 'string' },
+        disclaimer: { type: 'string' }
+      },
+      required: ['address', 'address_normalized', 'listed', 'matches', 'source', 'list_last_synced']
     }
   },
   {
     name: 'check_domain_age',
-    description: 'PG1 Sovereign Threat Intelligence: looks up a domain\'s registration age via RDAP (the IANA-standardized WHOIS successor), resolved through the IANA bootstrap registry for the correct per-TLD RDAP server. No payment required — this tool is always free. SIBLING DIFFERENTIATION: Use for domain registration/age checks only. Do NOT use for reputation/threat-feed lookups (use get_ioc_context) or sanctions screening (use check_wallet_sanctions). BEHAVIOR: Returns { registration_date, age_days, expiration_date, registrar, newly_registered, source } when available, or { available: false, reason } when the TLD has no RDAP server or the lookup fails — this tool never estimates or guesses an age. A newly registered domain (age_days < 30) is reported as a common phishing signal, not as proof of malicious intent.',
+    description: 'PG1 Sovereign Threat Intelligence: looks up a domain\'s registration age via RDAP (the IANA-standardized WHOIS successor), resolved through the IANA bootstrap registry for the correct per-TLD RDAP server. No payment required — this tool is always free. SIBLING DIFFERENTIATION: Use for domain registration/age checks only. Do NOT use for reputation/threat-feed lookups (use get_ioc_context) or sanctions screening (use check_wallet_sanctions). BEHAVIOR: Returns { found: true, available: true, registration_date, age_days, expiration_date, registrar, newly_registered, source } when available, or { found: false, available: false, reason, reason_code } when the lookup does not resolve — this tool never estimates or guesses an age. "available" is a deprecated alias of "found", kept for backward compatibility. reason_code is "unsupported_tld" when the TLD has no RDAP server in the IANA bootstrap registry, or "timeout" / "lookup_failed" for other lookup failures. A newly registered domain (age_days < 30) is reported as a common phishing signal, not as proof of malicious intent.',
     inputSchema: {
       type: 'object',
       properties: {
         domain: { type: 'string', description: "Mandatory domain name or URL to check, e.g. 'example.com' or 'https://example.com/path'. The registrable domain is extracted automatically." }
       },
       required: ['domain']
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        found: { type: 'boolean', description: 'Whether a registration record was found. Same meaning as the deprecated "available" field.' },
+        available: { type: 'boolean', description: 'Deprecated — use "found" instead. Kept for backward compatibility.' },
+        domain: { type: 'string' },
+        registration_date: { type: ['string', 'null'] },
+        age_days: { type: ['integer', 'null'] },
+        expiration_date: { type: ['string', 'null'] },
+        registrar: { type: ['string', 'null'] },
+        newly_registered: { type: ['boolean', 'null'] },
+        note: { type: ['string', 'null'] },
+        source: { type: ['string', 'null'] },
+        reason: { type: ['string', 'null'] },
+        reason_code: { type: ['string', 'null'], enum: ['invalid_domain', 'bootstrap_unavailable', 'unsupported_tld', 'timeout', 'lookup_failed', null] }
+      },
+      required: ['found', 'available', 'domain']
     }
   }
 ];
@@ -796,10 +848,24 @@ async function handleSubmitIndicator(args, licenseKey) {
 const SANCTIONS_DISCLAIMER = 'Informational only; not legal or sanctions-compliance advice.';
 const SANCTIONS_SOURCE = 'OFAC SDN List (US Treasury)';
 
+class InvalidAddressError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'InvalidAddressError';
+    this.mcpToolError = true;
+    this.code = 'invalid_address';
+  }
+}
+
 async function handleCheckWalletSanctions(args) {
   const rawAddress = args?.address;
-  if (!rawAddress || typeof rawAddress !== 'string') {
+  if (typeof rawAddress !== 'string') {
     throw new Error('address is required.');
+  }
+  if (!isRecognizedWalletAddress(rawAddress)) {
+    throw new InvalidAddressError(
+      `'${rawAddress}' does not match any recognised wallet address format (EVM 0x+40 hex, BTC/LTC/BCH/DOGE/DASH/ZEC base58 or bech32/cashaddr, TRON, Monero, or Solana base58). Not screened.`
+    );
   }
   const currency = args?.currency ? String(args.currency).trim() : null;
   const normalized = normalizeWalletAddress(rawAddress);
@@ -922,6 +988,10 @@ function extractRegistrarName(entities) {
   return null;
 }
 
+function domainNotFound(domain, reason, reasonCode) {
+  return { found: false, available: false, domain, reason, reason_code: reasonCode };
+}
+
 async function handleCheckDomainAge(args) {
   const raw = args?.domain;
   if (!raw || typeof raw !== 'string') {
@@ -930,20 +1000,20 @@ async function handleCheckDomainAge(args) {
 
   const registrable = extractRegistrableDomain(raw);
   if (!registrable) {
-    return { available: false, domain: raw, reason: 'Could not extract a registrable domain from the provided value.' };
+    return domainNotFound(raw, 'Could not extract a registrable domain from the provided value.', 'invalid_domain');
   }
 
   let bootstrap;
   try {
     bootstrap = await getRdapBootstrap();
   } catch (e) {
-    return { available: false, domain: registrable, reason: 'IANA RDAP bootstrap file unavailable: ' + e.message };
+    return domainNotFound(registrable, 'IANA RDAP bootstrap file unavailable: ' + e.message, 'bootstrap_unavailable');
   }
 
   const tld = registrable.split('.').pop().toLowerCase();
   const server = bootstrap[tld];
   if (!server) {
-    return { available: false, domain: registrable, reason: `No RDAP server registered for the '.${tld}' TLD in the IANA bootstrap file.` };
+    return domainNotFound(registrable, `No RDAP server registered for the '.${tld}' TLD in the IANA bootstrap file.`, 'unsupported_tld');
   }
 
   const serverBase = server.endsWith('/') ? server : server + '/';
@@ -953,30 +1023,28 @@ async function handleCheckDomainAge(args) {
   try {
     res = await fetch(`${serverBase}domain/${encodeURIComponent(registrable)}`, { signal: controller.signal });
   } catch (e) {
-    return {
-      available: false,
-      domain: registrable,
-      reason: e.name === 'AbortError' ? 'RDAP lookup timed out after 5 seconds.' : 'RDAP lookup failed: ' + e.message
-    };
+    return e.name === 'AbortError'
+      ? domainNotFound(registrable, 'RDAP lookup timed out after 5 seconds.', 'timeout')
+      : domainNotFound(registrable, 'RDAP lookup failed: ' + e.message, 'lookup_failed');
   } finally {
     clearTimeout(timeout);
   }
 
   if (!res.ok) {
-    return { available: false, domain: registrable, reason: `RDAP server responded with ${res.status} for '${registrable}'.` };
+    return domainNotFound(registrable, `RDAP server responded with ${res.status} for '${registrable}'.`, 'lookup_failed');
   }
 
   let data;
   try {
     data = await res.json();
   } catch (e) {
-    return { available: false, domain: registrable, reason: 'RDAP response was not valid JSON.' };
+    return domainNotFound(registrable, 'RDAP response was not valid JSON.', 'lookup_failed');
   }
 
   const events = data.events || [];
   const registrationEvent = events.find((e) => e.eventAction === 'registration');
   if (!registrationEvent || !registrationEvent.eventDate) {
-    return { available: false, domain: registrable, reason: `RDAP response for '${registrable}' did not include a registration event.` };
+    return domainNotFound(registrable, `RDAP response for '${registrable}' did not include a registration event.`, 'lookup_failed');
   }
   const expirationEvent = events.find((e) => e.eventAction === 'expiration');
 
@@ -986,6 +1054,7 @@ async function handleCheckDomainAge(args) {
   const serverHost = new URL(serverBase).host;
 
   return {
+    found: true,
     available: true,
     domain: registrable,
     registration_date: registrationDate,
@@ -1218,7 +1287,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.10.0',
+      version: '1.11.0',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp'
@@ -1244,7 +1313,7 @@ export default async function handler(req, res) {
     if (method === 'initialize') {
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.10.0' } },
+        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.11.0' } },
         id: requestId
       });
     }
@@ -1277,13 +1346,23 @@ export default async function handler(req, res) {
           if (toolErr.serviceUnavailable) {
             return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId });
           }
+          if (toolErr.mcpToolError) {
+            return res.status(200).json({
+              jsonrpc: '2.0',
+              result: {
+                content: [{ type: 'text', text: JSON.stringify({ error: true, code: toolErr.code, message: toolErr.message }, null, 2) }],
+                isError: true
+              },
+              id: requestId
+            });
+          }
           return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId });
         }
-        return res.status(200).json({
-          jsonrpc: '2.0',
-          result: { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] },
-          id: requestId
-        });
+        const result = { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] };
+        if (toolName === 'check_wallet_sanctions' || toolName === 'check_domain_age') {
+          result.structuredContent = toolResult;
+        }
+        return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
       }
 
       if (LICENSE_ONLY_TOOLS.has(toolName)) {
