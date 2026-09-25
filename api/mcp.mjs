@@ -228,11 +228,28 @@ async function handleThreatIndicators(args) {
   const rows = await res.json();
 
   const objects = rows.map((record) => {
+    if (record.indicator_type === 'CVE') {
+      return {
+        type: 'vulnerability',
+        spec_version: '2.1',
+        id: `vulnerability--${crypto.randomUUID()}`,
+        created: record.ingested_at || new Date().toISOString(),
+        modified: record.last_seen || new Date().toISOString(),
+        name: record.value,
+        description: `Vulnerability sourced from ${record.verification_source || 'PG1 Sovereign Engine'}.`,
+        external_references: [
+          { source_name: 'cve', external_id: record.value }
+        ]
+      };
+    }
+
     const safeValue = String(record.value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const indicatorTypeStr = String(record.indicator_type);
     let pattern = record.stix_pattern;
+    if (pattern && String(pattern).startsWith('[custom-object')) pattern = null;
     if (!pattern) {
       if (record.indicator_type === 'IPv4') pattern = `[ipv4-addr:value = '${safeValue}']`;
+      else if (record.indicator_type === 'IPv6') pattern = `[ipv6-addr:value = '${safeValue}']`;
       else if (record.indicator_type === 'domain') pattern = `[domain-name:value = '${safeValue}']`;
       else if (record.indicator_type === 'hostname') pattern = `[domain-name:value = '${safeValue}']`;
       else if (record.indicator_type === 'URL') pattern = `[url:value = '${safeValue}']`;
@@ -240,7 +257,10 @@ async function handleThreatIndicators(args) {
       else if (indicatorTypeStr.includes('FileHash-SHA1')) pattern = `[file:hashes.'SHA-1' = '${safeValue}']`;
       else if (indicatorTypeStr.includes('FileHash-SHA256')) pattern = `[file:hashes.'SHA-256' = '${safeValue}']`;
       else if (indicatorTypeStr.includes('FileHash')) pattern = `[file:hashes.'SHA-256' = '${safeValue}']`;
-      else pattern = `[custom-object:value = '${safeValue}']`;
+      else {
+        console.warn(`[STIX] Skipping indicator with unmappable indicator_type: ${indicatorTypeStr}`);
+        return null;
+      }
     }
     return {
       type: 'indicator',
@@ -256,7 +276,7 @@ async function handleThreatIndicators(args) {
       valid_from: record.last_seen || new Date().toISOString(),
       confidence: parseInt(record.confidence_score, 10) || 50
     };
-  });
+  }).filter(Boolean);
 
   return {
     type: 'bundle',
