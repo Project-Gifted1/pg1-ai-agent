@@ -963,6 +963,60 @@ let rdapBootstrapCacheTime = 0;
 const RDAP_BOOTSTRAP_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const RDAP_LOOKUP_TIMEOUT_MS = 5000;
 
+// In-memory cache of successful lookups, keyed by registrable domain. Lookup
+// failures (timeouts, unsupported TLD, etc.) are deliberately not cached, so
+// a transient blip doesn't turn into a day-long outage for that domain.
+const RDAP_RESULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const rdapResultCache = new Map();
+
+function getCachedDomainResult(registrable) {
+  const entry = rdapResultCache.get(registrable);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    rdapResultCache.delete(registrable);
+    return null;
+  }
+  return entry.result;
+}
+
+function setCachedDomainResult(registrable, result) {
+  rdapResultCache.set(registrable, { result, expiresAt: Date.now() + RDAP_RESULT_CACHE_TTL_MS });
+}
+
+// Per-IP fixed-window rate limit so unauthenticated callers can't hammer
+// public RDAP servers through PG1. Callers with a valid Gumroad license key
+// are exempt (see handleCheckDomainAge) — the limit only protects against
+// anonymous abuse, not legitimate licensed usage.
+const DOMAIN_AGE_RATE_LIMIT_MAX = 60;
+const DOMAIN_AGE_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+const domainAgeRateLimitState = new Map();
+
+class RateLimitedError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'RateLimitedError';
+    this.mcpToolError = true;
+    this.code = 'rate_limited';
+  }
+}
+
+function enforceDomainAgeRateLimit(identifier) {
+  const now = Date.now();
+  const key = identifier || 'unknown';
+  const state = domainAgeRateLimitState.get(key);
+  if (!state || (now - state.windowStart) >= DOMAIN_AGE_RATE_LIMIT_WINDOW_MS) {
+    domainAgeRateLimitState.set(key, { count: 1, windowStart: now });
+    return;
+  }
+  if (state.count >= DOMAIN_AGE_RATE_LIMIT_MAX) {
+    const retryAfterMin = Math.ceil((DOMAIN_AGE_RATE_LIMIT_WINDOW_MS - (now - state.windowStart)) / 60000);
+    throw new RateLimitedError(
+      `check_domain_age is limited to ${DOMAIN_AGE_RATE_LIMIT_MAX} calls/hour per caller to avoid overloading public RDAP servers. Retry in about ${retryAfterMin} minute(s), or use a Gumroad license key (X-API-KEY) to bypass this limit.`
+    );
+  }
+  state.count += 1;
+}
+
 async function getRdapBootstrap() {
   const now = Date.now();
   if (rdapBootstrapCache && (now - rdapBootstrapCacheTime) < RDAP_BOOTSTRAP_CACHE_TTL_MS) return rdapBootstrapCache;
@@ -1000,7 +1054,7 @@ function domainNotFound(domain, reason, reasonCode) {
   return { found: false, available: false, domain, reason, reason_code: reasonCode };
 }
 
-async function handleCheckDomainAge(args) {
+async function handleCheckDomainAge(args, identifier, licenseKey) {
   const raw = args?.domain;
   if (!raw || typeof raw !== 'string') {
     throw new Error('domain is required.');
@@ -1009,6 +1063,18 @@ async function handleCheckDomainAge(args) {
   const registrable = extractRegistrableDomain(raw);
   if (!registrable) {
     return domainNotFound(raw, 'Could not extract a registrable domain from the provided value.', 'invalid_domain');
+  }
+
+  const cached = getCachedDomainResult(registrable);
+  if (cached) return cached;
+
+  let licensed = false;
+  if (licenseKey) {
+    const check = await verifyGumroadLicense(licenseKey).catch(() => ({ valid: false }));
+    licensed = !!check.valid;
+  }
+  if (!licensed) {
+    enforceDomainAgeRateLimit(identifier);
   }
 
   let bootstrap;
@@ -1061,7 +1127,7 @@ async function handleCheckDomainAge(args) {
   const newlyRegistered = ageDays < 30;
   const serverHost = new URL(serverBase).host;
 
-  return {
+  const result = {
     found: true,
     available: true,
     domain: registrable,
@@ -1075,6 +1141,8 @@ async function handleCheckDomainAge(args) {
       : null,
     source: `RDAP (${serverHost})`
   };
+  setCachedDomainResult(registrable, result);
+  return result;
 }
 
 // ---------------------------------------------------------------------
@@ -1348,7 +1416,7 @@ export default async function handler(req, res) {
           } else if (toolName === 'check_wallet_sanctions') {
             toolResult = await handleCheckWalletSanctions(toolArgs);
           } else {
-            toolResult = await handleCheckDomainAge(toolArgs);
+            toolResult = await handleCheckDomainAge(toolArgs, mcpRequestIdentifier, licenseKey);
           }
         } catch (toolErr) {
           if (toolErr.serviceUnavailable) {

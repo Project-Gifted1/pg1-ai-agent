@@ -179,3 +179,109 @@ test('check_domain_age: successful RDAP lookup returns found:true and available:
   assert.equal(parsed.reason_code, undefined);
   assert.equal(res.body.result.structuredContent.found, true);
 });
+
+test('check_domain_age: caches a successful RDAP lookup per registrable domain for 24h', async (t) => {
+  const originalFetch = global.fetch;
+  let domainLookupCount = 0;
+  global.fetch = async (url) => {
+    const urlStr = String(url);
+    if (urlStr.includes('data.iana.org/rdap/dns.json')) {
+      return { ok: true, json: async () => ({ services: [[['com'], ['https://rdap.example/com/']]] }) };
+    }
+    if (urlStr.startsWith('https://rdap.example/com/domain/')) {
+      domainLookupCount += 1;
+      return {
+        ok: true,
+        json: async () => ({
+          events: [{ eventAction: 'registration', eventDate: '2021-06-01T00:00:00Z' }],
+          entities: []
+        })
+      };
+    }
+    throw new Error('unexpected fetch: ' + urlStr);
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const domain = 'rdap-cache-test-example.com';
+  const first = await callTool('check_domain_age', { domain });
+  assert.equal(JSON.parse(first.body.result.content[0].text).found, true);
+  assert.equal(domainLookupCount, 1);
+
+  const second = await callTool('check_domain_age', { domain });
+  assert.equal(JSON.parse(second.body.result.content[0].text).found, true);
+  assert.equal(domainLookupCount, 1, 'second lookup for the same domain should be served from the 24h cache, not hit RDAP again');
+});
+
+// Failed lookups (e.g. unsupported TLD) are deliberately not cached, so
+// repeated calls with the same unresolvable domain keep exercising the
+// per-IP rate limit path below rather than short-circuiting via the cache.
+function makeRateLimitReq(ip, licenseKey) {
+  const headers = { 'x-forwarded-for': ip };
+  if (licenseKey) headers['x-api-key'] = licenseKey;
+  return {
+    method: 'POST',
+    headers,
+    body: {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'check_domain_age', arguments: { domain: 'example.doesnotexisttld' } }
+    }
+  };
+}
+
+test('check_domain_age: rate-limits an unauthenticated caller to 60 calls/hour per IP', async (t) => {
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    const urlStr = String(url);
+    if (urlStr.includes('data.iana.org/rdap/dns.json')) {
+      return { ok: true, json: async () => ({ services: [[['com'], ['https://rdap.example/com/']]] }) };
+    }
+    throw new Error('unexpected fetch: ' + urlStr);
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const req = makeRateLimitReq('198.51.100.10');
+  for (let i = 0; i < 60; i++) {
+    const res = makeRes();
+    await handler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.notEqual(res.body.result.isError, true, `call ${i + 1} should not be rate-limited yet`);
+  }
+
+  const limitedRes = makeRes();
+  await handler(req, limitedRes);
+  assert.equal(limitedRes.statusCode, 200);
+  assert.equal(limitedRes.body.result.isError, true);
+  const parsed = JSON.parse(limitedRes.body.result.content[0].text);
+  assert.equal(parsed.code, 'rate_limited');
+});
+
+test('check_domain_age: a valid Gumroad license key exempts the caller from the per-IP rate limit', async (t) => {
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    const urlStr = String(url);
+    if (urlStr.includes('data.iana.org/rdap/dns.json')) {
+      return { ok: true, json: async () => ({ services: [[['com'], ['https://rdap.example/com/']]] }) };
+    }
+    if (urlStr.includes('api.gumroad.com/v2/licenses/verify')) {
+      return { ok: true, json: async () => ({ success: true, purchase: {} }) };
+    }
+    throw new Error('unexpected fetch: ' + urlStr);
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const req = makeRateLimitReq('198.51.100.20', 'valid-license-key');
+  for (let i = 0; i < 61; i++) {
+    const res = makeRes();
+    await handler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.notEqual(res.body.result.isError, true, `call ${i + 1} should not be rate-limited for a licensed caller`);
+  }
+});
