@@ -39,7 +39,7 @@ if (X402_PAY_TO) {
       {
         'GET /api/ioc': {
           accepts: [{ scheme: 'exact', price: '$0.01', network: 'eip155:8453', payTo: X402_PAY_TO }],
-          description: 'PG1 Sovereign Threat Intelligence: STIX 2.1 indicator feed, multi-source verified telemetry (ThreatFox, URLhaus, AbuseIPDB, OTX, NVD).',
+          description: 'PG1 Threat Intelligence: STIX 2.1 threat indicator feed (IPs, domains, URLs, file hashes, CVEs) aggregated from open threat intelligence sources including AlienVault OTX.',
           mimeType: 'application/stix+json',
           extensions: declareDiscoveryExtension({
             input: { type: 'IPv4', min_score: 50, limit: 100 },
@@ -67,13 +67,13 @@ if (X402_PAY_TO) {
                     created: '2026-09-20T00:00:00Z',
                     modified: '2026-09-24T12:00:00Z',
                     name: 'IPv4 Threat Indicator - 198.51.100.23',
-                    description: 'Threat indicator sourced from ThreatFox.',
+                    description: 'Threat indicator sourced from AlienVault-OTX.',
                     indicator_types: ['malicious-activity'],
                     pattern: "[ipv4-addr:value = '198.51.100.23']",
                     pattern_type: 'stix',
                     valid_from: '2026-09-24T12:00:00Z',
                     confidence: 75,
-                    external_references: [{ source_name: 'ThreatFox', description: 'Sourced from ThreatFox' }]
+                    external_references: [{ source_name: 'AlienVault-OTX', description: 'Sourced from AlienVault-OTX' }]
                   }
                 ]
               }
