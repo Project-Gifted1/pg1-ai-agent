@@ -1014,8 +1014,8 @@ const LICENSE_ONLY_TOOLS = new Set(['subscribe_alerts', 'submit_indicator']);
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Payment, Payment-Signature, x-free-tier, X-API-KEY');
-  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
