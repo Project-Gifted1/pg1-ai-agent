@@ -577,10 +577,18 @@ export default async function handler(req, res) {
       if (sinceParam) queryFilters.push(`last_seen=gte.${sinceParam}`);
       if (typeParam) queryFilters.push(`indicator_type=eq.${typeParam}`);
 
-      var threatRes = await fetch(`${supUrl}/rest/v1/threat_ioc_telemetry?${queryFilters.join('&')}`, {
-        headers: { 'apikey': supKey, 'Authorization': `Bearer ${supKey}` }
-      });
-      var rawTelemetry = threatRes.ok ? await threatRes.json() : [];
+      var threatRes;
+      try {
+        threatRes = await fetch(`${supUrl}/rest/v1/threat_ioc_telemetry?${queryFilters.join('&')}`, {
+          headers: { 'apikey': supKey, 'Authorization': `Bearer ${supKey}` }
+        });
+      } catch (netErr) {
+        return sendJSON(res, 503, { error: 'Threat data temporarily unavailable, please retry.' });
+      }
+      if (!threatRes.ok) {
+        return sendJSON(res, 503, { error: 'Threat data temporarily unavailable, please retry.' });
+      }
+      var rawTelemetry = await threatRes.json();
 
       var stixObjects = rawTelemetry.map(record => {
         var patternValue = record.stix_pattern;
@@ -589,6 +597,7 @@ export default async function handler(req, res) {
           var indicatorTypeStr = String(record.indicator_type);
           if (record.indicator_type === 'IPv4') patternValue = `[ipv4-addr:value = '${safeValue}']`;
           else if (record.indicator_type === 'domain') patternValue = `[domain-name:value = '${safeValue}']`;
+          else if (record.indicator_type === 'hostname') patternValue = `[domain-name:value = '${safeValue}']`;
           else if (record.indicator_type === 'URL') patternValue = `[url:value = '${safeValue}']`;
           else if (indicatorTypeStr.includes('FileHash-MD5')) patternValue = `[file:hashes.MD5 = '${safeValue}']`;
           else if (indicatorTypeStr.includes('FileHash-SHA1')) patternValue = `[file:hashes.'SHA-1' = '${safeValue}']`;
@@ -604,7 +613,7 @@ export default async function handler(req, res) {
           created: record.ingested_at || new Date().toISOString(),
           modified: record.last_seen || new Date().toISOString(),
           name: `${record.indicator_type} Threat Indicator - ${record.value}`,
-          description: `Telemetry feed record verified via ${record.verification_source || 'Sovereign Engine'}.`,
+          description: `Threat indicator sourced from ${record.verification_source || 'Sovereign Engine'}.`,
           indicator_types: ['malicious-activity'],
           pattern: patternValue,
           pattern_type: 'stix',
@@ -613,7 +622,7 @@ export default async function handler(req, res) {
           external_references: [
             {
               source_name: record.verification_source || 'Autonomous Pipeline',
-              description: 'Cryptographic telemetry stream verification'
+              description: 'Sourced from ' + (record.verification_source || 'Autonomous Pipeline')
             }
           ]
         };

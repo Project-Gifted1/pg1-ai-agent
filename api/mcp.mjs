@@ -210,10 +210,22 @@ async function handleThreatIndicators(args) {
   if (since) filters.push(`last_seen=gte.${since}`);
   if (type) filters.push(`indicator_type=eq.${type}`);
 
-  const res = await fetch(`${supUrl}/rest/v1/threat_ioc_telemetry?${filters.join('&')}`, {
-    headers: { apikey: supKey, Authorization: `Bearer ${supKey}` }
-  });
-  const rows = res.ok ? await res.json() : [];
+  let res;
+  try {
+    res = await fetch(`${supUrl}/rest/v1/threat_ioc_telemetry?${filters.join('&')}`, {
+      headers: { apikey: supKey, Authorization: `Bearer ${supKey}` }
+    });
+  } catch (netErr) {
+    const err = new Error('Threat data temporarily unavailable, please retry.');
+    err.serviceUnavailable = true;
+    throw err;
+  }
+  if (!res.ok) {
+    const err = new Error('Threat data temporarily unavailable, please retry.');
+    err.serviceUnavailable = true;
+    throw err;
+  }
+  const rows = await res.json();
 
   const objects = rows.map((record) => {
     const safeValue = String(record.value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -222,6 +234,7 @@ async function handleThreatIndicators(args) {
     if (!pattern) {
       if (record.indicator_type === 'IPv4') pattern = `[ipv4-addr:value = '${safeValue}']`;
       else if (record.indicator_type === 'domain') pattern = `[domain-name:value = '${safeValue}']`;
+      else if (record.indicator_type === 'hostname') pattern = `[domain-name:value = '${safeValue}']`;
       else if (record.indicator_type === 'URL') pattern = `[url:value = '${safeValue}']`;
       else if (indicatorTypeStr.includes('FileHash-MD5')) pattern = `[file:hashes.MD5 = '${safeValue}']`;
       else if (indicatorTypeStr.includes('FileHash-SHA1')) pattern = `[file:hashes.'SHA-1' = '${safeValue}']`;
@@ -236,7 +249,7 @@ async function handleThreatIndicators(args) {
       created: record.ingested_at || new Date().toISOString(),
       modified: record.last_seen || new Date().toISOString(),
       name: `${record.indicator_type} Threat Indicator - ${record.value}`,
-      description: `Telemetry feed record verified via ${record.verification_source || 'PG1 Sovereign Engine'}.`,
+      description: `Threat indicator sourced from ${record.verification_source || 'PG1 Sovereign Engine'}.`,
       indicator_types: ['malicious-activity'],
       pattern,
       pattern_type: 'stix',
@@ -481,11 +494,23 @@ function detectIndicatorType(value) {
 }
 
 async function lookupIocContext(value, supUrl, supKey) {
-  const res = await fetch(
-    `${supUrl}/rest/v1/threat_ioc_telemetry?value=eq.${encodeURIComponent(value)}&select=*&order=last_seen.desc`,
-    { headers: { apikey: supKey, Authorization: `Bearer ${supKey}` } }
-  );
-  const rows = res.ok ? await res.json() : [];
+  let res;
+  try {
+    res = await fetch(
+      `${supUrl}/rest/v1/threat_ioc_telemetry?value=eq.${encodeURIComponent(value)}&select=*&order=last_seen.desc`,
+      { headers: { apikey: supKey, Authorization: `Bearer ${supKey}` } }
+    );
+  } catch (netErr) {
+    const err = new Error('Threat data temporarily unavailable, please retry.');
+    err.serviceUnavailable = true;
+    throw err;
+  }
+  if (!res.ok) {
+    const err = new Error('Threat data temporarily unavailable, please retry.');
+    err.serviceUnavailable = true;
+    throw err;
+  }
+  const rows = await res.json();
 
   if (!rows.length) {
     return { indicator: value, found: false };
@@ -553,11 +578,7 @@ async function handleIocBatch(args) {
     if (!value) {
       return { indicator: rawValue, found: false, error: 'Empty indicator value.' };
     }
-    try {
-      return await lookupIocContext(value, supUrl, supKey);
-    } catch (e) {
-      return { indicator: value, found: false, error: e.message };
-    }
+    return await lookupIocContext(value, supUrl, supKey);
   }));
 
   return {
@@ -661,11 +682,23 @@ async function handleUsageStatus(args, requestIdentifier) {
   const { supUrl, supKey } = getSupabaseCreds();
   const today = new Date().toISOString().slice(0, 10);
 
-  const res = await fetch(
-    `${supUrl}/rest/v1/free_tier_usage?identifier=eq.${encodeURIComponent(identifier)}&usage_date=eq.${today}&select=request_count`,
-    { headers: { apikey: supKey, Authorization: `Bearer ${supKey}` } }
-  );
-  const rows = res.ok ? await res.json() : [];
+  let res;
+  try {
+    res = await fetch(
+      `${supUrl}/rest/v1/free_tier_usage?identifier=eq.${encodeURIComponent(identifier)}&usage_date=eq.${today}&select=request_count`,
+      { headers: { apikey: supKey, Authorization: `Bearer ${supKey}` } }
+    );
+  } catch (netErr) {
+    const err = new Error('Threat data temporarily unavailable, please retry.');
+    err.serviceUnavailable = true;
+    throw err;
+  }
+  if (!res.ok) {
+    const err = new Error('Threat data temporarily unavailable, please retry.');
+    err.serviceUnavailable = true;
+    throw err;
+  }
+  const rows = await res.json();
   const callsToday = rows.length ? (rows[0].request_count || 0) : 0;
   const remaining = Math.max(0, FREE_TIER_DAILY_LIMIT - callsToday);
 
@@ -1023,6 +1056,9 @@ export default async function handler(req, res) {
         try {
           toolResult = await handleUsageStatus(toolArgs, mcpRequestIdentifier);
         } catch (toolErr) {
+          if (toolErr.serviceUnavailable) {
+            return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId });
+          }
           return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId });
         }
         return res.status(200).json({
@@ -1070,7 +1106,8 @@ export default async function handler(req, res) {
           const { supUrl, supKey } = getSupabaseCreds();
           lookupResult = await lookupIocContext(value, supUrl, supKey);
         } catch (e) {
-          return res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: e.message }, id: requestId });
+          const status = e.serviceUnavailable ? 503 : 500;
+          return res.status(status).json({ jsonrpc: '2.0', error: { code: -32603, message: e.message }, id: requestId });
         }
 
         if (!lookupResult.found) {
@@ -1098,6 +1135,9 @@ export default async function handler(req, res) {
         try {
           batchResult = await handleIocBatch(toolArgs);
         } catch (toolErr) {
+          if (toolErr.serviceUnavailable) {
+            return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId });
+          }
           return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId });
         }
 
@@ -1131,6 +1171,9 @@ export default async function handler(req, res) {
       try {
         toolResult = await toolHandler(toolArgs);
       } catch (toolErr) {
+        if (toolErr.serviceUnavailable) {
+          return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId });
+        }
         const code = toolErr.notFound ? 404 : 400;
         return res.status(code).json({ jsonrpc: '2.0', error: { code: toolErr.notFound ? -32004 : -32602, message: toolErr.message }, id: requestId });
       }
