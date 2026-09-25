@@ -760,7 +760,7 @@ export default async function handler(req, res) {
     // 4. x402 not configured on this deployment at all — final fallback.
     console.log('[X402_DEBUG] falling through to generic 402. x402Middleware configured=%s', !!x402Middleware);
     logSettlementOutcome('/api/ioc', 'no_payment', iocRequestIdentifier, rawPaymentHeader ? 'payment_header_present_no_x402_configured' : 'no_payment_offered');
-    return sendJSON(res, 402, { error: 'Payment Required: Missing Commercial License Key in x-api-key header, or pay per-call via x402 (X-PAYMENT or payment-signature header).' });
+    return sendJSON(res, 402, { error: 'Payment Required: Missing Commercial License Key in x-api-key header, or pay per-call via x402 (PAYMENT-SIGNATURE header, x402 v2).' });
   }
 
   if (req.method !== 'POST') {

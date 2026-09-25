@@ -9,7 +9,7 @@ Cryptographically-gated threat telemetry and IOC feeds for enterprise and autono
 - **`/api/ioc`** — simple REST GET, returns the STIX 2.1 indicator feed directly. Best for scripts, curl, and simple integrations.
 - **`/api/mcp`** — full Model Context Protocol server, 9 tools (CVE lookups, batch operations, threat actor dossiers, and more). Best for Claude, MCP-compatible agents, and any client speaking the MCP standard.
 
-Both accept the same Gumroad license key via the `x-api-key` header, or per-call x402 micropayments ($0.01/call) via the `X-PAYMENT`/`Payment-Signature` header.
+Both accept the same Gumroad license key via the `x-api-key` header, or per-call x402 micropayments ($0.01/call) via the `PAYMENT-SIGNATURE` header (x402 v2).
 
 ## Free Tier (5 calls/day)
 
