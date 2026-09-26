@@ -75,7 +75,12 @@ export default async function handler(req, res) {
   if (licenseKey) {
     const check = await verifyGumroadLicense(licenseKey);
     if (check.valid) authorized = true;
-    else return res.status(402).json({ error: 'Payment Required: ' + check.error });
+    else if (check.reason === 'verification_unavailable') {
+      res.setHeader('Retry-After', '5');
+      return res.status(503).json({ error: 'License verification temporarily unavailable, please retry.' });
+    } else {
+      return res.status(402).json({ error: 'Payment Required: ' + check.error });
+    }
   }
 
   const rawPayment = req.headers['x-payment'] || req.headers['payment-signature'];

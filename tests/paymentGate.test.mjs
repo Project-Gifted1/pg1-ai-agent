@@ -159,6 +159,64 @@ test('returns a clear error when the Gumroad request times out with no cached su
   assert.match(result.error, /timed out/i);
 });
 
+test('issue #117: a timeout with no cached success is tagged reason: verification_unavailable, distinct from a bad key', async (t) => {
+  withMockFetch(t, async () => {
+    const err = new Error('The operation was aborted');
+    err.name = 'AbortError';
+    throw err;
+  });
+
+  const result = await verifyGumroadLicense('timeout-reason-key');
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, 'verification_unavailable');
+});
+
+test('issue #117: a network/fetch error with no cached success is tagged reason: verification_unavailable', async (t) => {
+  withMockFetch(t, async () => {
+    throw new Error('getaddrinfo ENOTFOUND api.gumroad.com');
+  });
+
+  const result = await verifyGumroadLicense('network-error-key');
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, 'verification_unavailable');
+});
+
+test('issue #117: a timeout that falls back to a cached success has no verification_unavailable reason', async (t) => {
+  let callCount = 0;
+  withMockFetch(t, async () => {
+    callCount += 1;
+    if (callCount === 1) {
+      return jsonResponse({ success: true, purchase: {} });
+    }
+    const err = new Error('The operation was aborted');
+    err.name = 'AbortError';
+    throw err;
+  });
+
+  const first = await verifyGumroadLicense('timeout-cache-fallback-reason-key');
+  assert.equal(first.valid, true);
+
+  const second = await verifyGumroadLicense('timeout-cache-fallback-reason-key');
+  assert.equal(second.valid, true);
+  assert.equal(second.reason, undefined, 'a resolved cached success should not carry a verification_unavailable reason');
+});
+
+test('issue #117: a genuinely invalid key (Gumroad reachable, success:false) has no verification_unavailable reason', async (t) => {
+  withMockFetch(t, async () => jsonResponse({ success: false }));
+
+  const result = await verifyGumroadLicense('genuinely-invalid-key');
+  assert.equal(result.valid, false);
+  assert.notEqual(result.reason, 'verification_unavailable');
+});
+
+test('issue #117: a refunded purchase (Gumroad reachable) has no verification_unavailable reason', async (t) => {
+  withMockFetch(t, async () => jsonResponse({ success: true, purchase: { refunded: true } }));
+
+  const result = await verifyGumroadLicense('refunded-reason-key');
+  assert.equal(result.valid, false);
+  assert.notEqual(result.reason, 'verification_unavailable');
+});
+
 test('never echoes the raw license key back in an error result', async (t) => {
   const rawKey = 'super-secret-license-key-value';
   withMockFetch(t, async () => jsonResponse({ success: false }));

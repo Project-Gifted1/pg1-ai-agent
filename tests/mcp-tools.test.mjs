@@ -17,7 +17,10 @@ function makeRes() {
   const res = {
     statusCode: null,
     body: null,
-    setHeader() {},
+    headers: {},
+    setHeader(key, value) {
+      this.headers[key] = value;
+    },
     status(code) {
       this.statusCode = code;
       return this;
@@ -39,6 +42,110 @@ async function callTool(name, args) {
   await handler(req, res);
   return res;
 }
+
+async function callToolWithLicense(name, args, licenseKey) {
+  const req = {
+    method: 'POST',
+    headers: { 'x-api-key': licenseKey },
+    body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }
+  };
+  const res = makeRes();
+  await handler(req, res);
+  return res;
+}
+
+// issue #117: a genuinely bad license key must keep the existing 402 (not
+// fall through to free tier/x402), while a Gumroad-unreachable verification
+// must return a distinct, retry-able 503 with Retry-After: 5, using the same
+// jsonrpc error shape this file already uses for other server-side errors
+// (e.g. serviceUnavailable tool errors -> code -32003).
+test('a paid tool (standard gate) with a genuinely invalid license key returns 402, unchanged', async (t) => {
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    if (String(url).includes('api.gumroad.com')) {
+      return { ok: true, json: async () => ({ success: false }) };
+    }
+    throw new Error('unexpected fetch: ' + url);
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const res = await callToolWithLicense('get_threat_actor_profile', { actor_name: 'APT29' }, 'bad-license-key');
+  assert.equal(res.statusCode, 402);
+  assert.equal(res.body.error.code, -32001);
+  assert.equal(res.headers?.['Retry-After'], undefined);
+});
+
+test('a paid tool (standard gate) returns 503 + Retry-After: 5 when Gumroad is unreachable, and does not run the tool', async (t) => {
+  const originalFetch = global.fetch;
+  let attackBundleFetched = false;
+  global.fetch = async (url) => {
+    const urlStr = String(url);
+    if (urlStr.includes('api.gumroad.com')) {
+      throw new Error('gumroad unreachable');
+    }
+    if (urlStr.includes('mitre/cti')) {
+      attackBundleFetched = true;
+      return { ok: true, json: async () => ({ objects: [] }) };
+    }
+    throw new Error('unexpected fetch: ' + urlStr);
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const res = await callToolWithLicense('get_threat_actor_profile', { actor_name: 'APT29' }, 'timeout-license-key');
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.body.jsonrpc, '2.0');
+  assert.equal(res.body.error.code, -32003);
+  assert.match(res.body.error.message, /temporarily unavailable/i);
+  assert.equal(res.headers['Retry-After'], '5');
+  assert.equal(attackBundleFetched, false, 'tool handler must not run when license verification is unavailable');
+});
+
+test('a license-only tool (subscribe_alerts) with a genuinely invalid license key returns 402, unchanged', async (t) => {
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    if (String(url).includes('api.gumroad.com')) {
+      return { ok: true, json: async () => ({ success: false }) };
+    }
+    throw new Error('unexpected fetch: ' + url);
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const res = await callToolWithLicense('subscribe_alerts', { webhook_url: 'https://example.com/hook' }, 'bad-license-key');
+  assert.equal(res.statusCode, 402);
+  assert.equal(res.body.error.code, -32001);
+});
+
+test('a license-only tool (subscribe_alerts) returns 503 + Retry-After: 5 when Gumroad is unreachable, and does not write a subscription', async (t) => {
+  const originalFetch = global.fetch;
+  let subscriptionWritten = false;
+  global.fetch = async (url) => {
+    const urlStr = String(url);
+    if (urlStr.includes('api.gumroad.com')) {
+      throw new Error('gumroad unreachable');
+    }
+    if (urlStr.includes('alert_subscriptions')) {
+      subscriptionWritten = true;
+      return { ok: true, json: async () => ([{ id: 1, created_at: new Date().toISOString() }]) };
+    }
+    throw new Error('unexpected fetch: ' + urlStr);
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const res = await callToolWithLicense('subscribe_alerts', { webhook_url: 'https://example.com/hook' }, 'timeout-license-key');
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.body.error.code, -32003);
+  assert.match(res.body.error.message, /temporarily unavailable/i);
+  assert.equal(res.headers['Retry-After'], '5');
+  assert.equal(subscriptionWritten, false, 'must not write a subscription when license verification is unavailable');
+});
 
 // check_wallet_sanctions now queries public.sanctioned_wallets *before*
 // applying the format heuristic (issue #106 follow-up), so any test that

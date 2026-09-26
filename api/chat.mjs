@@ -812,6 +812,11 @@ export default async function handler(req, res) {
     if (clientLicenseKey) {
       try {
         var licenseCheck = await verifyGumroadLicense(clientLicenseKey);
+        if (licenseCheck.reason === 'verification_unavailable') {
+          logSettlementOutcome('/api/ioc', 'rejected', iocRequestIdentifier, 'verification_unavailable');
+          res.setHeader('Retry-After', '5');
+          return sendJSON(res, 503, { error: 'License verification temporarily unavailable, please retry.' });
+        }
         if (!licenseCheck.valid) {
           logSettlementOutcome('/api/ioc', 'rejected', iocRequestIdentifier, 'invalid_license');
           return sendJSON(res, 403, { error: 'Forbidden: Invalid, expired, or refunded License Key.' });
