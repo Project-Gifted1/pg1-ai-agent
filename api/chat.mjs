@@ -661,8 +661,10 @@ export default async function handler(req, res) {
   // /api/ioc and /api/feeds/ioc are aliases that delegate into this same
   // handler (see api/ioc.js, api/feeds/ioc.js) and must keep their existing
   // open '*' CORS. Only the plain /api/chat route gets the restricted origin
-  // + no Allow-Credentials (see vercel.json, which scopes its blanket
-  // Allow-Origin:*/Allow-Credentials:true header rule away from this path).
+  // (see vercel.json, which scopes its blanket Allow-Origin:* header rule
+  // away from this path). Neither this handler nor vercel.json ever sends
+  // Allow-Credentials: a wildcard '*' origin can't legally be paired with
+  // Allow-Credentials: true, and the browser rejects the combination.
   var isIocAliasRoute = (urlPath === '/api/ioc' || urlPath === '/api/feeds/ioc');
   var CHAT_ALLOWED_ORIGIN = (process.env.CHAT_ALLOWED_ORIGIN || 'https://pg1-ai-agent.vercel.app').trim();
   res.__pg1CorsOrigin = isIocAliasRoute ? '*' : CHAT_ALLOWED_ORIGIN;

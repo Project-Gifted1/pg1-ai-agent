@@ -9,8 +9,13 @@
 
 import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
 import mcpHandler from '../api/mcp.mjs';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -136,6 +141,45 @@ test('/api/mcp CORS headers are unchanged (wildcard origin)', async () => {
   const res = makeRes();
   await mcpHandler(req, res);
   assert.equal(res.headers['Access-Control-Allow-Origin'], '*');
+});
+
+test('/api/mcp response with wildcard origin carries no Access-Control-Allow-Credentials header (issue #113)', async () => {
+  const req = {
+    method: 'GET',
+    url: '/api/mcp',
+    headers: {},
+    socket: { remoteAddress: '10.0.0.8' }
+  };
+  const res = makeRes();
+  await mcpHandler(req, res);
+  assert.equal(res.headers['Access-Control-Allow-Origin'], '*');
+  assert.equal(res.headers['Access-Control-Allow-Credentials'], undefined);
+});
+
+test('/api/ioc response with wildcard origin carries no Access-Control-Allow-Credentials header (issue #113)', async () => {
+  const req = makeReq({}, { ip: '10.0.0.9', url: '/api/ioc' });
+  req.method = 'GET';
+  const res = makeRes();
+  await chatHandler(req, res);
+  assert.equal(res.headers['Access-Control-Allow-Origin'], '*');
+  assert.equal(res.headers['Access-Control-Allow-Credentials'], undefined);
+});
+
+test('vercel.json never pairs a wildcard Allow-Origin with Allow-Credentials: true (issue #113)', () => {
+  const vercelConfig = JSON.parse(readFileSync(join(__dirname, '../vercel.json'), 'utf-8'));
+  for (const rule of vercelConfig.headers || []) {
+    const byKey = {};
+    for (const h of rule.headers) byKey[h.key] = h.value;
+    const origin = byKey['Access-Control-Allow-Origin'];
+    const credentials = byKey['Access-Control-Allow-Credentials'];
+    if (origin === '*') {
+      assert.equal(
+        credentials,
+        undefined,
+        `rule for source "${rule.source}" pairs wildcard Allow-Origin with Allow-Credentials, which browsers reject`
+      );
+    }
+  }
 });
 
 after(() => {
