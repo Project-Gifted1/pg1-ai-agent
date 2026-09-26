@@ -1,8 +1,65 @@
+import crypto from 'crypto';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { paymentMiddleware, x402ResourceServer } from '@x402/express';
 import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkAndConsumeFreeTier, getRequestIdentifier, logSettlementOutcome } from '../lib/freeTier.mjs';
+
+// ---------------------------------------------------------------------
+// AUTH: timing-safe secret comparison + in-memory per-IP failure lockout
+// ---------------------------------------------------------------------
+// In-memory (not Supabase) is intentional here, unlike the /api/ioc free-tier
+// counter in lib/freeTier.mjs: a login lockout only needs to survive within a
+// single warm lambda instance for a few minutes to blunt online brute-force,
+// it doesn't need cross-instance/durable accuracy, and adding a DB round-trip
+// to every authenticated request would slow down the hot path for no benefit.
+export function safeCompare(provided, expected) {
+  var providedBuf = Buffer.from(String(provided == null ? '' : provided), 'utf-8');
+  var expectedBuf = Buffer.from(String(expected == null ? '' : expected), 'utf-8');
+  if (providedBuf.length !== expectedBuf.length) {
+    // Still perform a same-length timingSafeEqual so the length mismatch
+    // itself doesn't short-circuit into an early, faster return.
+    crypto.timingSafeEqual(providedBuf, providedBuf);
+    return false;
+  }
+  return crypto.timingSafeEqual(providedBuf, expectedBuf);
+}
+
+export const AUTH_MAX_FAILURES = 5;
+export const AUTH_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+export const AUTH_LOCKOUT_MS = 15 * 60 * 1000;
+
+var authFailuresByIp = new Map();
+
+export function isAuthRateLimited(ip) {
+  var entry = authFailuresByIp.get(ip);
+  if (!entry) return false;
+  if (entry.lockedUntil && entry.lockedUntil > Date.now()) return true;
+  return false;
+}
+
+export function recordAuthFailure(ip) {
+  var now = Date.now();
+  var entry = authFailuresByIp.get(ip);
+  if (!entry || (entry.windowStart + AUTH_FAILURE_WINDOW_MS) < now) {
+    entry = { count: 0, windowStart: now, lockedUntil: 0 };
+  }
+  entry.count += 1;
+  if (entry.count >= AUTH_MAX_FAILURES) {
+    entry.lockedUntil = now + AUTH_LOCKOUT_MS;
+  }
+  authFailuresByIp.set(ip, entry);
+}
+
+export function resetAuthFailures(ip) {
+  authFailuresByIp.delete(ip);
+}
+
+// Exposed for tests only (isolated Map per re-import isn't possible for a
+// singleton module in the same process, so tests need a way to reset state).
+export function __clearAuthRateLimitState() {
+  authFailuresByIp.clear();
+}
 
 export const config = {
   maxDuration: 60
@@ -188,9 +245,12 @@ function arrayBufferToBase64(buffer) {
   return Buffer.from(buffer).toString('base64');
 }
 
+// res.__pg1CorsOrigin is set once per-request in handler(), based on the
+// request path: '*' for the /api/ioc and /api/feeds/ioc aliases (unchanged
+// behavior), or the restricted app origin for the plain /api/chat route.
 function sendJSON(res, status, data) {
   res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', (res && res.__pg1CorsOrigin) || '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier');
   res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE');
@@ -590,21 +650,30 @@ export default async function handler(req, res) {
   var MODEL_FETCH_BUDGET_MS = 50000;
   var deadlineTs = startTime + MODEL_FETCH_BUDGET_MS;
 
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier');
-    res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE');
-    res.status(200).end();
-    return;
-  }
-
   var urlPath = '';
   try {
     var rawUrl = req.url || '';
     urlPath = rawUrl.includes('?') ? rawUrl.split('?')[0] : rawUrl;
   } catch (e) {
     urlPath = '';
+  }
+
+  // /api/ioc and /api/feeds/ioc are aliases that delegate into this same
+  // handler (see api/ioc.js, api/feeds/ioc.js) and must keep their existing
+  // open '*' CORS. Only the plain /api/chat route gets the restricted origin
+  // + no Allow-Credentials (see vercel.json, which scopes its blanket
+  // Allow-Origin:*/Allow-Credentials:true header rule away from this path).
+  var isIocAliasRoute = (urlPath === '/api/ioc' || urlPath === '/api/feeds/ioc');
+  var CHAT_ALLOWED_ORIGIN = (process.env.CHAT_ALLOWED_ORIGIN || 'https://pg1-ai-agent.vercel.app').trim();
+  res.__pg1CorsOrigin = isIocAliasRoute ? '*' : CHAT_ALLOWED_ORIGIN;
+
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', res.__pg1CorsOrigin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE');
+    res.status(200).end();
+    return;
   }
 
   var getHeader = (name) => req.headers.get ? req.headers.get(name) : req.headers[String(name).toLowerCase()];
@@ -906,17 +975,34 @@ export default async function handler(req, res) {
 
     var rawActionType = action || actionType || 'CHAT';
 
+    // AUTH: only USER_API_KEY + USER_API_PASS authenticate this endpoint.
+    // The old fallback that accepted GITHUB_TOKEN itself (via Bearer header
+    // or the 'pass' field) as a login credential was removed — GITHUB_TOKEN
+    // stays in use below purely for server-side GitHub API calls, it's no
+    // longer an acceptable thing for a caller to present back to us.
     var expectedUser = (process.env.USER_API_KEY || process.env.USER_API_USER || '').trim();
     var expectedPass = (process.env.USER_API_PASS || process.env.USER_API_PASSS || '').trim();
-    var storedGhToken = process.env.GITHUB_TOKEN;
 
-    var authHeader = (req.headers.get ? req.headers.get('authorization') : req.headers['authorization']) || '';
-    var incomingToken = authHeader.replace('Bearer ', '').trim() || pass;
+    var clientIp = getRequestIdentifier(req);
+    var authAttempted = !!(user || pass);
 
     var isAuthed = !!(
-      (expectedUser && expectedPass && user === expectedUser && pass === expectedPass) || 
-      (storedGhToken && incomingToken === storedGhToken)
+      expectedUser && expectedPass && safeCompare(user, expectedUser) && safeCompare(pass, expectedPass)
     );
+
+    if (isAuthRateLimited(clientIp)) {
+      return sendJSON(res, 429, {
+        success: false, reply: 'Too many failed authentication attempts. Try again in 15 minutes.', traceId: requestTraceId
+      });
+    }
+
+    if (authAttempted) {
+      if (isAuthed) {
+        resetAuthFailures(clientIp);
+      } else {
+        recordAuthFailure(clientIp);
+      }
+    }
 
     if (promptText === 'AUTH_VERIFY') {
       if (!isAuthed) {
@@ -929,6 +1015,9 @@ export default async function handler(req, res) {
     }
 
     if (typeof promptText === 'string' && promptText.toLowerCase().includes('/smoke')) {
+      if (!isAuthed) {
+        return sendJSON(res, 401, { reply: `[AGENT] Smoke Test Aborted: Authentication required.`, traceId: requestTraceId });
+      }
       try {
         var smokeKey = process.env.SMOKETEST_API_KEY || process.env.SKOKETEST_API_KEY;
         var smokeRes = await fetch('https://crypto-threat-signals-api.onrender.com/threats', {
@@ -977,7 +1066,7 @@ export default async function handler(req, res) {
     var vaultUploadLog = '';
     var mediaParts = [];
 
-    if (payloadFiles.length > 0 && supabaseUrl && supabaseKey) {
+    if (isAuthed && payloadFiles.length > 0 && supabaseUrl && supabaseKey) {
       for (var i = 0; i < payloadFiles.length; i++) {
         var f = payloadFiles[i];
         if (f.inlineData && f.inlineData.data) {
@@ -1313,6 +1402,9 @@ export default async function handler(req, res) {
     var targetVoiceId = cartesiaVoiceMap[voice] || cartesiaVoiceMap['christopher'];
 
     if (activeAction === 'SPEAK') {
+      if (!isAuthed) {
+        return sendJSON(res, 401, { reply: `[AGENT] Speak Aborted: Authentication required.`, traceId: requestTraceId });
+      }
       var audioBase64 = null;
       var audioStatus = cartesiaKey ? 'UNKNOWN' : 'SKIPPED_NO_KEY';
       if (cartesiaKey) {
@@ -1365,6 +1457,9 @@ export default async function handler(req, res) {
     }
 
     if (activeAction === 'GENERATE_IMAGE') {
+      if (!isAuthed) {
+        return sendJSON(res, 401, { reply: `[AGENT] Image Generation Aborted: Authentication required.`, traceId: requestTraceId });
+      }
       var cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic cybernetic landscape';
       var premiumPrompt = `hyper-realistic, 8k resolution, highly detailed, cinematic lighting, octane render, unreal engine 5, ${cleanPrompt}`;
 
@@ -2052,6 +2147,15 @@ export default async function handler(req, res) {
       } catch (err) {
         return sendJSON(res, 200, { reply: `[AGENT] Confirmation Exception: ${err.message}`, traceId: requestTraceId });
       }
+    }
+
+    // Everything past this point is the CHAT/CLAUDE_CHAT model-call fallback
+    // (also reached by any unrecognized actionType that didn't match one of
+    // the specific branches above) — it always spends a paid Gemini or
+    // Anthropic key, so it requires authentication same as the other
+    // paid/storage actions gated above.
+    if (!isAuthed) {
+      return sendJSON(res, 401, { reply: `[AGENT] Chat Aborted: Authentication required.`, traceId: requestTraceId });
     }
 
     var sysInstruction = `You are PG1-AGENT (Version 10.0 Sovereign Core), an elite autonomous intelligence operating on Vercel.
