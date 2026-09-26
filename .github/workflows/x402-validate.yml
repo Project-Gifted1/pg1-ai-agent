@@ -1,0 +1,24 @@
+name: x402 validate
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - id: x402
+        uses: smartflowproai-lang/x402-endpoint-validator@v1
+        with:
+          endpoints: '["https://pg1-ai-agent.vercel.app/api/ioc","https://pg1-ai-agent.vercel.app/api/mcp"]'
+          threshold-p95: '750'
+          fail-on: 'critical'
+          report-path: 'x402-report.json'
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: x402-report
+          path: x402-report.json
