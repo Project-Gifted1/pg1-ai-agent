@@ -1261,7 +1261,11 @@ async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentif
   if (licenseKey) {
     const check = await verifyGumroadLicense(licenseKey);
     if (check.valid) authorized = true;
-    else {
+    else if (check.reason === 'verification_unavailable') {
+      res.setHeader('Retry-After', '5');
+      res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: 'License verification temporarily unavailable, please retry.' }, id: requestId });
+      return false;
+    } else {
       res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error }, id: requestId });
       return false;
     }
@@ -1437,6 +1441,10 @@ export default async function handler(req, res) {
           });
         }
         const check = await verifyGumroadLicense(licenseKey);
+        if (check.reason === 'verification_unavailable') {
+          res.setHeader('Retry-After', '5');
+          return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: 'License verification temporarily unavailable, please retry.' }, id: requestId });
+        }
         if (!check.valid) {
           return res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error }, id: requestId });
         }

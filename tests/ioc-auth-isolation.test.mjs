@@ -85,10 +85,13 @@ function makeRes() {
 // verification) and Supabase (free_tier_usage counter + threat_ioc_telemetry
 // + fire-and-forget api_access_logs). Routes purely on URL substring so it
 // doesn't need to track call order.
-function installFetchMock({ gumroadSuccess = true } = {}) {
+function installFetchMock({ gumroadSuccess = true, gumroadUnavailable = false } = {}) {
   global.fetch = async (url, options = {}) => {
     const urlStr = String(url);
     if (urlStr.includes('api.gumroad.com')) {
+      if (gumroadUnavailable) {
+        throw new Error('gumroad unreachable');
+      }
       return {
         ok: true,
         json: async () => (gumroadSuccess ? { success: true, purchase: {} } : { success: false })
@@ -173,6 +176,24 @@ test('x-api-key (license) requests never count as failed login or trigger the 42
   await chatHandler(loginReq, loginRes);
   assert.equal(loginRes.statusCode, 200);
   assert.equal(loginRes.body.authenticated, true);
+});
+
+// issue #117: when Gumroad itself is unreachable (no cached success), the
+// caller must see a distinct 503 (retry-able) rather than the 403 used for a
+// genuinely bad key, and must not silently fall through to free tier/x402.
+test('GET /api/ioc with a license key returns 503 + Retry-After: 5 when Gumroad is unreachable', async () => {
+  installFetchMock({ gumroadUnavailable: true });
+  const req = makeReq(null, {
+    method: 'GET',
+    url: '/api/ioc',
+    ip: '10.1.0.5',
+    headers: { 'x-api-key': 'some-license-key', 'x-free-tier': '1' }
+  });
+  const res = makeRes();
+  await chatHandler(req, res);
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.headers['Retry-After'], '5');
+  assert.match(res.body.error, /temporarily unavailable/i);
 });
 
 test('an IP locked out on /api/chat is NOT blocked from /api/ioc or the free tier', async () => {
