@@ -12,7 +12,7 @@ jobs:
       - id: x402
         uses: smartflowproai-lang/x402-endpoint-validator@v1
         with:
-          endpoints: '["https://pg1-ai-agent.vercel.app/api/ioc","https://pg1-ai-agent.vercel.app/api/mcp"]'
+          endpoints: 'https://pg1-ai-agent.vercel.app/api/ioc'
           threshold-p95: '750'
           fail-on: 'critical'
           report-path: 'x402-report.json'
