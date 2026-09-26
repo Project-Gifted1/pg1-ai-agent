@@ -4,6 +4,7 @@ import { paymentMiddleware, x402ResourceServer } from '@x402/express';
 import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkAndConsumeFreeTier, getRequestIdentifier, logSettlementOutcome } from '../lib/freeTier.mjs';
+import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
 
 // ---------------------------------------------------------------------
 // AUTH: timing-safe secret comparison + in-memory per-IP failure lockout
@@ -810,13 +811,8 @@ export default async function handler(req, res) {
     // 1. Gumroad license path — checked first if a key is actually provided.
     if (clientLicenseKey) {
       try {
-        var gumroadRes = await fetch('https://api.gumroad.com/v2/licenses/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ product_id: process.env.GUMROAD_PRODUCT_ID, license_key: clientLicenseKey })
-        });
-        var gumroadData = await gumroadRes.json();
-        if (!gumroadData.success || (gumroadData.purchase && (gumroadData.purchase.refunded || gumroadData.purchase.chargebacked))) {
+        var licenseCheck = await verifyGumroadLicense(clientLicenseKey);
+        if (!licenseCheck.valid) {
           logSettlementOutcome('/api/ioc', 'rejected', iocRequestIdentifier, 'invalid_license');
           return sendJSON(res, 403, { error: 'Forbidden: Invalid, expired, or refunded License Key.' });
         }

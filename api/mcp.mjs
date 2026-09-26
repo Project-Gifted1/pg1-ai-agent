@@ -42,6 +42,7 @@ import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { paymentMiddleware, x402ResourceServer } from '@x402/express';
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkAndConsumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT } from '../lib/freeTier.mjs';
+import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { detectIndicatorType, lookupIocContext } from '../lib/iocContext.mjs';
 import { normalizeWalletAddress, isRecognizedWalletAddress } from '../lib/walletAddress.mjs';
@@ -1148,24 +1149,10 @@ async function handleCheckDomainAge(args, identifier, licenseKey) {
 // ---------------------------------------------------------------------
 // AUTHORIZATION
 // ---------------------------------------------------------------------
-
-async function verifyGumroadLicense(licenseKey) {
-  if (!licenseKey) return { valid: false, error: 'No license key provided.' };
-  try {
-    const res = await fetch('https://api.gumroad.com/v2/licenses/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ product_id: process.env.GUMROAD_PRODUCT_ID, license_key: licenseKey })
-    });
-    const data = await res.json();
-    if (!data.success || (data.purchase && (data.purchase.refunded || data.purchase.chargebacked))) {
-      return { valid: false, error: 'Invalid, expired, or refunded license key.' };
-    }
-    return { valid: true };
-  } catch (e) {
-    return { valid: false, error: 'License verification failed: ' + e.message };
-  }
-}
+// verifyGumroadLicense lives in lib/paymentGate.mjs, shared with
+// api/chat.mjs and api/ioc/context.js so all Gumroad verify call sites
+// behave identically (increment_uses_count=false, subscription-lapse
+// checks, 10min success cache, 2s timeout with cache fallback).
 
 const X402_PAY_TO = (process.env.X402_PAY_TO_ADDRESS || '').trim();
 let x402Middleware = null;
