@@ -22,3 +22,6 @@ jobs:
         with:
           name: x402-report
           path: x402-report.json
+      - name: Print report
+        if: always()
+        run: cat x402-report.json
