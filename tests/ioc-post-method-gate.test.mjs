@@ -207,12 +207,15 @@ test('DELETE /api/ioc returns 405 with an Allow header and never serves the bund
   assert.equal(res.headers['Allow'], 'GET, POST, HEAD, OPTIONS');
 });
 
-test('PUT /api/feeds/ioc (the alias route) also returns 405 with an Allow header', async () => {
+// As of issue #127, /api/feeds/ioc is a pure alias: every method (including
+// PUT) is 308-redirected to /api/ioc before any method-allowlist or gate
+// logic runs, rather than being independently method-checked here.
+test('PUT /api/feeds/ioc (the alias route) is redirected to /api/ioc, not method-checked', async () => {
   installFetchMock();
   const res = makeRes();
   await chatHandler(makeReq({ method: 'PUT', url: '/api/feeds/ioc', ip: '10.2.0.8' }), res);
-  assert.equal(res.statusCode, 405);
-  assert.equal(res.headers['Allow'], 'GET, POST, HEAD, OPTIONS');
+  assert.equal(res.statusCode, 308);
+  assert.equal(res.headers['Location'], '/api/ioc');
 });
 
 // --- Library-level proof of the root cause and the fix: the x402 payment

@@ -258,8 +258,8 @@ function arrayBufferToBase64(buffer) {
 }
 
 // res.__pg1CorsOrigin is set once per-request in handler(), based on the
-// request path: '*' for the /api/ioc and /api/feeds/ioc aliases (unchanged
-// behavior), or the restricted app origin for the plain /api/chat route.
+// request path: '*' for /api/ioc (unchanged behavior), or the restricted
+// app origin for the plain /api/chat route.
 function sendJSON(res, status, data) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', (res && res.__pg1CorsOrigin) || '*');
@@ -670,14 +670,30 @@ export default async function handler(req, res) {
     urlPath = '';
   }
 
-  // /api/ioc and /api/feeds/ioc are aliases that delegate into this same
-  // handler (see api/ioc.js, api/feeds/ioc.js) and must keep their existing
-  // open '*' CORS. Only the plain /api/chat route gets the restricted origin
-  // (see vercel.json, which scopes its blanket Allow-Origin:* header rule
-  // away from this path). Neither this handler nor vercel.json ever sends
-  // Allow-Credentials: a wildcard '*' origin can't legally be paired with
-  // Allow-Credentials: true, and the browser rejects the combination.
-  var isIocAliasRoute = (urlPath === '/api/ioc' || urlPath === '/api/feeds/ioc');
+  // Legacy alias paths that must never serve the STIX bundle or run their
+  // own payment gate: the x402 middleware below is only registered for the
+  // exact 'METHOD /api/ioc' keys, so any other path reaching the gate logic
+  // below it would silently skip the gate entirely (the request just falls
+  // through to next()) instead of being challenged - see issue #127, where
+  // /api/feeds/ioc served the full bundle for free for exactly this reason.
+  // Redirect every method (including OPTIONS/HEAD) for a known alias to the
+  // canonical /api/ioc path before any gate/CORS/bundle logic runs, so the
+  // alias can never reach that logic at all.
+  var IOC_ALIAS_REDIRECTS = { '/api/feeds/ioc': '/api/ioc' };
+  if (Object.prototype.hasOwnProperty.call(IOC_ALIAS_REDIRECTS, urlPath)) {
+    var aliasQueryString = rawUrl.includes('?') ? rawUrl.slice(rawUrl.indexOf('?')) : '';
+    res.setHeader('Location', IOC_ALIAS_REDIRECTS[urlPath] + aliasQueryString);
+    res.status(308).end();
+    return;
+  }
+
+  // /api/ioc must keep its existing open '*' CORS. Only the plain /api/chat
+  // route gets the restricted origin (see vercel.json, which scopes its
+  // blanket Allow-Origin:* header rule away from this path). Neither this
+  // handler nor vercel.json ever sends Allow-Credentials: a wildcard '*'
+  // origin can't legally be paired with Allow-Credentials: true, and the
+  // browser rejects the combination.
+  var isIocAliasRoute = (urlPath === '/api/ioc');
   var CHAT_ALLOWED_ORIGIN = (process.env.CHAT_ALLOWED_ORIGIN || 'https://pg1-ai-agent.vercel.app').trim();
   res.__pg1CorsOrigin = isIocAliasRoute ? '*' : CHAT_ALLOWED_ORIGIN;
 
@@ -810,7 +826,7 @@ export default async function handler(req, res) {
     }
   }
 
-  if (urlPath === '/api/ioc' || urlPath === '/api/feeds/ioc') {
+  if (urlPath === '/api/ioc') {
     // OPTIONS is already handled above before urlPath is even inspected, so
     // in practice this only ever rejects PUT/DELETE/PATCH/etc — but it's
     // listed for clarity on what this route actually serves the bundle for.
