@@ -3,6 +3,16 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
+ * Version: 1.12.0 — ADD (issue #121): new free tool check_hostname_reputation,
+ *          screening a single hostname against the MetaMask eth-phishing-detect
+ *          blocklist/allowlist (public.phishing_domains, public.phishing_list_meta,
+ *          synced daily by the sovereign-threat-pipeline repo) plus a lookalike/
+ *          typosquat detector (confusable-character skeleton matching and brand
+ *          keyword matching against fuzzylist entries). Gated identically to
+ *          check_domain_age (free, 60/hour anonymous rate limit, license-key
+ *          exemption, outputSchema + structuredContent, 1h in-memory result
+ *          cache). All pre-existing tools' names, descriptions, input/output
+ *          schemas, and gating order are unchanged.
  * Version: 1.11.0 — FIX (issue #106): check_wallet_sanctions now validates
  *          the address's format before querying sanctions data, returning
  *          an MCP tool error (isError: true, code invalid_address) instead
@@ -47,6 +57,7 @@ import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { detectIndicatorType, lookupIocContext } from '../lib/iocContext.mjs';
 import { normalizeWalletAddress, isRecognizedWalletAddress } from '../lib/walletAddress.mjs';
 import { extractRegistrableDomain } from '../lib/domainExtraction.mjs';
+import { domainToASCII, domainToUnicode } from 'node:url';
 
 export const config = { maxDuration: 30 };
 
@@ -261,6 +272,40 @@ const TOOLS = [
         reason_code: { type: ['string', 'null'], enum: ['invalid_domain', 'bootstrap_unavailable', 'unsupported_tld', 'timeout', 'lookup_failed', null] }
       },
       required: ['found', 'available', 'domain']
+    }
+  },
+  {
+    name: 'check_hostname_reputation',
+    description: 'PG1 Sovereign Threat Intelligence: checks a single hostname against the MetaMask eth-phishing-detect blocklist/allowlist and a lookalike/typosquat detector, synced daily by the sovereign-threat-pipeline. No payment required — this tool is always free. SIBLING DIFFERENTIATION: Use for phishing/lookalike-domain screening of a hostname only. Do NOT use for domain registration age (use check_domain_age), general threat-feed indicator lookups (use get_ioc_context), or wallet sanctions screening (use check_wallet_sanctions). BEHAVIOR: Returns { hostname, verdict, sources, lookalike_of, list_synced_at, checked_at, attribution }. verdict is one of "allowlisted", "listed", "lookalike", or "not_listed" — this tool never returns "safe" or "clean", and a not_listed result means the hostname is not on the eth-phishing-detect lists, not that it is safe. "listed" results include match_type "exact" or "parent_domain" in sources. "lookalike" flags a probable typosquat/homoglyph of a known brand — via confusable-character skeleton matching within the stored tolerance, or a brand keyword embedded with extra words (e.g. metamask-login.com) — even when the hostname itself is not directly listed, and sets lookalike_of to the matched brand domain. A brand\'s own real domain or a subdomain of it is never flagged as its own lookalike. VALIDATION: accepts exactly one bare hostname per call (no bulk input); a value containing a URL scheme, path, port, spaces, or a wildcard returns an MCP tool error (isError: true, code invalid_hostname) instead of a verdict. Fails loudly (returns an error) if the phishing list data is unreachable or times out, rather than ever reporting not_listed on a data failure. Rate-limited to 60 calls/hour per caller when unauthenticated; a valid Gumroad license key (X-API-KEY header) exempts the limit, same as check_domain_age. List contents are never exposed beyond the single matched entry.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        hostname: { type: 'string', description: "Mandatory bare hostname to screen, e.g. 'example.com'. Not a URL — no scheme, path, port, spaces, or wildcards. One hostname per call." }
+      },
+      required: ['hostname']
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        hostname: { type: 'string', description: 'The hostname after normalization (trimmed, lowercased, trailing dot stripped, IDN converted to punycode).' },
+        verdict: { type: 'string', enum: ['allowlisted', 'listed', 'lookalike', 'not_listed'], description: 'Never "safe" or "clean".' },
+        sources: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              url: { type: ['string', 'null'] },
+              match_type: { type: 'string', enum: ['allowlist', 'exact', 'parent_domain', 'confusable', 'keyword'] }
+            }
+          }
+        },
+        lookalike_of: { type: ['string', 'null'], description: 'The matched brand/fuzzylist domain for a "lookalike" verdict, otherwise null.' },
+        list_synced_at: { type: ['string', 'null'] },
+        checked_at: { type: 'string' },
+        attribution: { type: 'string' }
+      },
+      required: ['hostname', 'verdict', 'sources', 'lookalike_of', 'list_synced_at', 'checked_at', 'attribution']
     }
   }
 ];
@@ -1147,6 +1192,364 @@ async function handleCheckDomainAge(args, identifier, licenseKey) {
 }
 
 // ---------------------------------------------------------------------
+// check_hostname_reputation — free, no payment gate
+// ---------------------------------------------------------------------
+
+const PHISHING_SOURCE_NAME = 'MetaMask eth-phishing-detect';
+const PHISHING_SOURCE_URL = 'https://github.com/MetaMask/eth-phishing-detect';
+const PHISHING_ATTRIBUTION = `Blocklist/allowlist/fuzzylist data sourced from ${PHISHING_SOURCE_NAME} (${PHISHING_SOURCE_URL}), used under the Don't Be A Dick (DBAD) Public License.`;
+const LOOKALIKE_SOURCE_NAME = 'PG1 lookalike detection';
+const DEFAULT_FUZZY_TOLERANCE = 3;
+const MIN_BRAND_LABEL_LENGTH = 5;
+
+class InvalidHostnameError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'InvalidHostnameError';
+    this.mcpToolError = true;
+    this.code = 'invalid_hostname';
+  }
+}
+
+// Trim, lowercase, strip a trailing dot, convert IDN to punycode. Rejects
+// anything containing a scheme, path, port, spaces, or wildcards — this is a
+// single bare-hostname check, never a bulk/URL input (see issue #121).
+function normalizeHostname(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) {
+    throw new InvalidHostnameError(`'${raw}' is not a valid bare hostname — provide a single hostname such as 'example.com'.`);
+  }
+  const original = raw.trim();
+  if (/\s/.test(original)) {
+    throw new InvalidHostnameError(`'${original}' contains whitespace — provide exactly one bare hostname per call, not a list.`);
+  }
+  if (original.includes('*')) {
+    throw new InvalidHostnameError(`'${original}' contains a wildcard ('*') — wildcards are not supported, provide a single concrete hostname.`);
+  }
+  if (original.includes('/') || original.includes('\\')) {
+    throw new InvalidHostnameError(`'${original}' looks like a URL or path, not a bare hostname — strip any scheme and path, e.g. use 'example.com' not 'https://example.com/path'.`);
+  }
+  if (original.includes(':')) {
+    throw new InvalidHostnameError(`'${original}' contains a colon (a scheme or port) — provide a bare hostname only, e.g. 'example.com'.`);
+  }
+
+  let h = original.toLowerCase();
+  if (h.endsWith('.')) h = h.slice(0, -1);
+  if (!h) {
+    throw new InvalidHostnameError(`'${original}' is not a valid bare hostname.`);
+  }
+
+  let ascii;
+  try {
+    ascii = domainToASCII(h);
+  } catch {
+    ascii = '';
+  }
+  if (!ascii || !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(ascii)) {
+    throw new InvalidHostnameError(`'${original}' could not be normalized to a valid hostname.`);
+  }
+  return ascii;
+}
+
+// The hostname itself plus every parent domain, most-specific first, down to
+// (and including) the bare TLD — queried in a single "in" filter. A bare TLD
+// candidate is harmless: it will never match a real phishing_domains row.
+function hostnameAndParents(hostname) {
+  const labels = hostname.split('.');
+  const candidates = [];
+  for (let i = 0; i < labels.length; i++) {
+    candidates.push(labels.slice(i).join('.'));
+  }
+  return candidates;
+}
+
+const CONFUSABLE_MAP = {
+  // Cyrillic lookalikes
+  'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x',
+  'і': 'i', 'ѕ': 's', 'к': 'k', 'м': 'm', 'н': 'h', 'т': 't', 'в': 'b',
+  'ԁ': 'd', 'ѡ': 'w', 'ɡ': 'g', 'ϳ': 'j', 'ⅰ': 'i',
+  // Greek lookalikes
+  'α': 'a', 'ο': 'o', 'ρ': 'p', 'υ': 'y', 'ν': 'v', 'κ': 'k',
+  'ι': 'i', 'η': 'n', 'τ': 't', 'ε': 'e', 'β': 'b', 'χ': 'x'
+};
+
+// Decode punycode back to unicode, map common confusable letters to their
+// ASCII lookalike, then fold 0->o, 1->l, and rn->m (see issue #121).
+function buildSkeleton(hostname) {
+  let decoded;
+  try {
+    decoded = domainToUnicode(hostname);
+  } catch {
+    decoded = hostname;
+  }
+  let skeleton = '';
+  for (const ch of decoded.toLowerCase()) {
+    skeleton += CONFUSABLE_MAP[ch] || ch;
+  }
+  return skeleton.replace(/0/g, 'o').replace(/1/g, 'l').replace(/rn/g, 'm');
+}
+
+function levenshtein(a, b) {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = new Array(n + 1);
+  let curr = new Array(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[n];
+}
+
+// Rule 3(a): flag if the Levenshtein distance between the hostname (or its
+// confusable-folded skeleton) and a fuzzylist domain is within tolerance and
+// not an exact match (an exact match means it IS the brand's own domain).
+function findConfusableLookalike(hostname, fuzzylist, tolerance) {
+  const skeleton = buildSkeleton(hostname);
+  let best = null;
+  for (const fuzzyDomain of fuzzylist) {
+    // "not an exact match" excludes the brand's own real domain, not a
+    // skeleton that happens to fold exactly onto it (that IS the classic
+    // homoglyph/confusable attack, e.g. "rnetamask.com" -> "metamask.com").
+    if (hostname === fuzzyDomain) continue;
+    const distance = Math.min(levenshtein(hostname, fuzzyDomain), levenshtein(skeleton, fuzzyDomain));
+    if (distance > tolerance) continue;
+    if (!best || distance < best.distance) best = { domain: fuzzyDomain, distance };
+  }
+  return best ? best.domain : null;
+}
+
+function brandLabel(fuzzyDomain) {
+  const labels = fuzzyDomain.split('.');
+  if (labels.length < 2) return null;
+  return labels[labels.length - 2];
+}
+
+function isBrandDomainOrSubdomain(hostname, brandDomain) {
+  return hostname === brandDomain || hostname.endsWith('.' + brandDomain);
+}
+
+// Rule 3(b): flag if a fuzzylist brand name (min 5 chars) appears as a token
+// inside the hostname alongside other tokens, e.g. metamask-login.com — but
+// never for the brand's own domain or a subdomain of it (see issue #121).
+function findKeywordLookalike(hostname, fuzzylist) {
+  const tokens = hostname.split(/[^a-z0-9]+/).filter(Boolean);
+  for (const fuzzyDomain of fuzzylist) {
+    const brand = brandLabel(fuzzyDomain);
+    if (!brand || brand.length < MIN_BRAND_LABEL_LENGTH) continue;
+    if (isBrandDomainOrSubdomain(hostname, fuzzyDomain)) continue;
+    if (tokens.includes(brand) && tokens.length > 2) return fuzzyDomain;
+  }
+  return null;
+}
+
+// In-memory cache of full tool results, keyed by normalized hostname, for 1
+// hour — mirrors check_domain_age's per-domain result cache.
+const HOSTNAME_RESULT_CACHE_TTL_MS = 60 * 60 * 1000;
+const hostnameResultCache = new Map();
+
+function getCachedHostnameResult(hostname) {
+  const entry = hostnameResultCache.get(hostname);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    hostnameResultCache.delete(hostname);
+    return null;
+  }
+  return entry.result;
+}
+
+function setCachedHostnameResult(hostname, result) {
+  hostnameResultCache.set(hostname, { result, expiresAt: Date.now() + HOSTNAME_RESULT_CACHE_TTL_MS });
+}
+
+// Per-IP fixed-window rate limit, identical shape to check_domain_age's.
+// Callers with a valid Gumroad license key are exempt.
+const HOSTNAME_REPUTATION_RATE_LIMIT_MAX = 60;
+const HOSTNAME_REPUTATION_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+const hostnameReputationRateLimitState = new Map();
+
+function enforceHostnameReputationRateLimit(identifier) {
+  const now = Date.now();
+  const key = identifier || 'unknown';
+  const state = hostnameReputationRateLimitState.get(key);
+  if (!state || (now - state.windowStart) >= HOSTNAME_REPUTATION_RATE_LIMIT_WINDOW_MS) {
+    hostnameReputationRateLimitState.set(key, { count: 1, windowStart: now });
+    return;
+  }
+  if (state.count >= HOSTNAME_REPUTATION_RATE_LIMIT_MAX) {
+    const retryAfterMin = Math.ceil((HOSTNAME_REPUTATION_RATE_LIMIT_WINDOW_MS - (now - state.windowStart)) / 60000);
+    throw new RateLimitedError(
+      `check_hostname_reputation is limited to ${HOSTNAME_REPUTATION_RATE_LIMIT_MAX} calls/hour per caller. Retry in about ${retryAfterMin} minute(s), or use a Gumroad license key (X-API-KEY) to bypass this limit.`
+    );
+  }
+  state.count += 1;
+}
+
+function phishingDataUnavailableError(detail) {
+  const err = new Error(`Phishing domain list ${detail}, please retry.`);
+  err.serviceUnavailable = true;
+  return err;
+}
+
+// Single "in" filter query for the hostname and every parent domain, against
+// both the blocklist and allowlist rows (see issue #121).
+async function queryPhishingCandidates(supUrl, supKey, candidates) {
+  const inList = candidates.map((c) => encodeURIComponent(c)).join(',');
+  let res;
+  try {
+    res = await fetch(
+      `${supUrl}/rest/v1/phishing_domains?domain=in.(${inList})&list_type=in.(blocklist,allowlist)&select=domain,list_type,source,synced_at`,
+      { headers: { apikey: supKey, Authorization: `Bearer ${supKey}` } }
+    );
+  } catch {
+    throw phishingDataUnavailableError('temporarily unavailable');
+  }
+  if (!res.ok) throw phishingDataUnavailableError('temporarily unavailable');
+  return res.json();
+}
+
+// Fuzzylist domains + tolerance, cached in memory for 1 hour (see issue #121).
+const PHISHING_LIST_CACHE_TTL_MS = 60 * 60 * 1000;
+let phishingListCache = null;
+
+async function getPhishingList(supUrl, supKey) {
+  const now = Date.now();
+  if (phishingListCache && now < phishingListCache.expiresAt) return phishingListCache;
+
+  let metaRes;
+  try {
+    metaRes = await fetch(`${supUrl}/rest/v1/phishing_list_meta?select=source,tolerance,synced_at`, {
+      headers: { apikey: supKey, Authorization: `Bearer ${supKey}` }
+    });
+  } catch {
+    throw phishingDataUnavailableError('metadata temporarily unavailable');
+  }
+  if (!metaRes.ok) throw phishingDataUnavailableError('metadata temporarily unavailable');
+  const metaRows = await metaRes.json();
+  const meta = metaRows[0] || {};
+  const tolerance = Number.isFinite(meta.tolerance) ? meta.tolerance : DEFAULT_FUZZY_TOLERANCE;
+  const syncedAt = meta.synced_at || null;
+
+  let fuzzyRes;
+  try {
+    fuzzyRes = await fetch(`${supUrl}/rest/v1/phishing_domains?list_type=eq.fuzzylist&select=domain`, {
+      headers: { apikey: supKey, Authorization: `Bearer ${supKey}` }
+    });
+  } catch {
+    throw phishingDataUnavailableError('fuzzylist temporarily unavailable');
+  }
+  if (!fuzzyRes.ok) throw phishingDataUnavailableError('fuzzylist temporarily unavailable');
+  const fuzzyRows = await fuzzyRes.json();
+  const fuzzylist = fuzzyRows.map((r) => r.domain);
+
+  phishingListCache = { fuzzylist, tolerance, syncedAt, expiresAt: now + PHISHING_LIST_CACHE_TTL_MS };
+  return phishingListCache;
+}
+
+function buildHostnameResult(hostname, verdict, sources, lookalikeOf, listSyncedAt) {
+  return {
+    hostname,
+    verdict,
+    sources,
+    lookalike_of: lookalikeOf || null,
+    list_synced_at: listSyncedAt || null,
+    checked_at: new Date().toISOString(),
+    attribution: PHISHING_ATTRIBUTION
+  };
+}
+
+async function handleCheckHostnameReputation(args, identifier, licenseKey) {
+  const hostname = normalizeHostname(args?.hostname);
+
+  const cached = getCachedHostnameResult(hostname);
+  if (cached) return cached;
+
+  let licensed = false;
+  if (licenseKey) {
+    const check = await verifyGumroadLicense(licenseKey).catch(() => ({ valid: false }));
+    licensed = !!check.valid;
+  }
+  if (!licensed) {
+    enforceHostnameReputationRateLimit(identifier);
+  }
+
+  const { supUrl, supKey } = getSupabaseCreds();
+  const candidates = hostnameAndParents(hostname);
+  const rows = await queryPhishingCandidates(supUrl, supKey, candidates);
+
+  const rowsByDomain = new Map();
+  for (const row of rows) {
+    if (!rowsByDomain.has(row.domain)) rowsByDomain.set(row.domain, []);
+    rowsByDomain.get(row.domain).push(row);
+  }
+
+  // Rule 1: allowlist wins, checked across all candidates before blocklist.
+  for (const candidate of candidates) {
+    const allow = (rowsByDomain.get(candidate) || []).find((r) => r.list_type === 'allowlist');
+    if (allow) {
+      const result = buildHostnameResult(
+        hostname, 'allowlisted',
+        [{ name: PHISHING_SOURCE_NAME, url: PHISHING_SOURCE_URL, match_type: 'allowlist' }],
+        null, allow.synced_at
+      );
+      setCachedHostnameResult(hostname, result);
+      return result;
+    }
+  }
+
+  // Rule 2: blocklist, exact hostname match preferred over a parent match.
+  for (const candidate of candidates) {
+    const block = (rowsByDomain.get(candidate) || []).find((r) => r.list_type === 'blocklist');
+    if (block) {
+      const matchType = candidate === hostname ? 'exact' : 'parent_domain';
+      const result = buildHostnameResult(
+        hostname, 'listed',
+        [{ name: PHISHING_SOURCE_NAME, url: PHISHING_SOURCE_URL, match_type: matchType }],
+        null, block.synced_at
+      );
+      setCachedHostnameResult(hostname, result);
+      return result;
+    }
+  }
+
+  // Rule 3: lookalike detection against fuzzylist entries only.
+  const { fuzzylist, tolerance, syncedAt: listSyncedAt } = await getPhishingList(supUrl, supKey);
+
+  const confusableMatch = findConfusableLookalike(hostname, fuzzylist, tolerance);
+  if (confusableMatch) {
+    const result = buildHostnameResult(
+      hostname, 'lookalike',
+      [{ name: LOOKALIKE_SOURCE_NAME, url: null, match_type: 'confusable' }],
+      confusableMatch, listSyncedAt
+    );
+    setCachedHostnameResult(hostname, result);
+    return result;
+  }
+
+  const keywordMatch = findKeywordLookalike(hostname, fuzzylist);
+  if (keywordMatch) {
+    const result = buildHostnameResult(
+      hostname, 'lookalike',
+      [{ name: LOOKALIKE_SOURCE_NAME, url: null, match_type: 'keyword' }],
+      keywordMatch, listSyncedAt
+    );
+    setCachedHostnameResult(hostname, result);
+    return result;
+  }
+
+  // Rule 4: never "safe" or "clean" — just not present on any list.
+  const result = buildHostnameResult(hostname, 'not_listed', [], null, listSyncedAt);
+  setCachedHostnameResult(hostname, result);
+  return result;
+}
+
+// ---------------------------------------------------------------------
 // AUTHORIZATION
 // ---------------------------------------------------------------------
 // verifyGumroadLicense lives in lib/paymentGate.mjs, shared with
@@ -1331,7 +1734,7 @@ const STANDARD_TOOL_HANDLERS = {
 // lookup result — not applied uniformly before the tool runs, like every
 // other STANDARD_TOOL_HANDLERS entry.
 
-const FREE_TOOLS = new Set(['get_usage_status', 'check_wallet_sanctions', 'check_domain_age']);
+const FREE_TOOLS = new Set(['get_usage_status', 'check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation']);
 
 const LICENSE_ONLY_TOOLS = new Set(['subscribe_alerts', 'submit_indicator']);
 
@@ -1354,7 +1757,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.11.0',
+      version: '1.12.0',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp'
@@ -1380,7 +1783,7 @@ export default async function handler(req, res) {
     if (method === 'initialize') {
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.11.0' } },
+        result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.12.0' } },
         id: requestId
       });
     }
@@ -1406,8 +1809,10 @@ export default async function handler(req, res) {
             toolResult = await handleUsageStatus(toolArgs, mcpRequestIdentifier);
           } else if (toolName === 'check_wallet_sanctions') {
             toolResult = await handleCheckWalletSanctions(toolArgs);
-          } else {
+          } else if (toolName === 'check_domain_age') {
             toolResult = await handleCheckDomainAge(toolArgs, mcpRequestIdentifier, licenseKey);
+          } else {
+            toolResult = await handleCheckHostnameReputation(toolArgs, mcpRequestIdentifier, licenseKey);
           }
         } catch (toolErr) {
           if (toolErr.serviceUnavailable) {
@@ -1426,7 +1831,7 @@ export default async function handler(req, res) {
           return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId });
         }
         const result = { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] };
-        if (toolName === 'check_wallet_sanctions' || toolName === 'check_domain_age') {
+        if (toolName === 'check_wallet_sanctions' || toolName === 'check_domain_age' || toolName === 'check_hostname_reputation') {
           result.structuredContent = toolResult;
         }
         return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
