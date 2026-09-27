@@ -93,51 +93,62 @@ if (X402_PAY_TO) {
   try {
     var x402FacilitatorClient = createCdpFacilitatorClient();
     x402Server = new x402ResourceServer(x402FacilitatorClient).register('eip155:8453', new ExactEvmScheme());
+    // The x402 middleware only enforces its payment gate for requests whose
+    // "METHOD path" matches a registered key below — anything else (e.g. a
+    // POST to this same path, when only 'GET /api/ioc' was registered) isn't
+    // recognized as a protected route at all, so the middleware just calls
+    // next() with no payment check and the request sails through. Register
+    // every method this handler actually serves the bundle for (GET, POST,
+    // HEAD) against the *same* config object so all of them get identical
+    // pricing/description/bazaar metadata and the same gate as GET.
+    var iocX402RouteConfig = {
+      accepts: [{ scheme: 'exact', price: '$0.01', network: 'eip155:8453', payTo: X402_PAY_TO }],
+      description: 'PG1 Threat Intelligence: STIX 2.1 threat indicator feed (IPs, domains, URLs, file hashes, CVEs) aggregated from open threat intelligence sources including AlienVault OTX.',
+      mimeType: 'application/stix+json',
+      extensions: declareDiscoveryExtension({
+        input: { type: 'IPv4', min_score: 50, limit: 100 },
+        inputSchema: {
+          properties: {
+            since: { type: 'string', description: 'ISO timestamp (e.g. 2026-09-20T00:00:00Z). Only indicators last seen after this time are returned.' },
+            type: {
+              type: 'string',
+              description: 'Exact-match indicator type filter against the stored value.',
+              enum: ['IPv4', 'IPv6', 'domain', 'hostname', 'URL', 'FileHash-MD5', 'FileHash-SHA1', 'FileHash-SHA256', 'CVE']
+            },
+            min_score: { type: 'integer', description: 'Minimum confidence score, inclusive.', minimum: 0, maximum: 100 },
+            limit: { type: 'integer', description: 'Maximum number of STIX objects to return.', minimum: 1, maximum: 1000 }
+          }
+        },
+        output: {
+          example: {
+            type: 'bundle',
+            id: 'bundle--3f1b1e2a-0a3e-4b9a-8f7f-2f6e9a0b3c1d',
+            objects: [
+              {
+                type: 'indicator',
+                spec_version: '2.1',
+                id: 'indicator--7c9b6f2e-6b6b-4a2a-9c3e-1a9d9a2b6f3e',
+                created: '2026-09-20T00:00:00Z',
+                modified: '2026-09-24T12:00:00Z',
+                name: 'IPv4 Threat Indicator - 198.51.100.23',
+                description: 'Threat indicator sourced from AlienVault-OTX.',
+                indicator_types: ['malicious-activity'],
+                pattern: "[ipv4-addr:value = '198.51.100.23']",
+                pattern_type: 'stix',
+                valid_from: '2026-09-24T12:00:00Z',
+                confidence: 75,
+                external_references: [{ source_name: 'AlienVault-OTX', description: 'Sourced from AlienVault-OTX' }]
+              }
+            ]
+          }
+        }
+      })
+    };
     x402Middleware = paymentMiddleware(
       {
-        'GET /api/ioc': {
-          accepts: [{ scheme: 'exact', price: '$0.01', network: 'eip155:8453', payTo: X402_PAY_TO }],
-          description: 'PG1 Threat Intelligence: STIX 2.1 threat indicator feed (IPs, domains, URLs, file hashes, CVEs) aggregated from open threat intelligence sources including AlienVault OTX.',
-          mimeType: 'application/stix+json',
-          extensions: declareDiscoveryExtension({
-            input: { type: 'IPv4', min_score: 50, limit: 100 },
-            inputSchema: {
-              properties: {
-                since: { type: 'string', description: 'ISO timestamp (e.g. 2026-09-20T00:00:00Z). Only indicators last seen after this time are returned.' },
-                type: {
-                  type: 'string',
-                  description: 'Exact-match indicator type filter against the stored value.',
-                  enum: ['IPv4', 'IPv6', 'domain', 'hostname', 'URL', 'FileHash-MD5', 'FileHash-SHA1', 'FileHash-SHA256', 'CVE']
-                },
-                min_score: { type: 'integer', description: 'Minimum confidence score, inclusive.', minimum: 0, maximum: 100 },
-                limit: { type: 'integer', description: 'Maximum number of STIX objects to return.', minimum: 1, maximum: 1000 }
-              }
-            },
-            output: {
-              example: {
-                type: 'bundle',
-                id: 'bundle--3f1b1e2a-0a3e-4b9a-8f7f-2f6e9a0b3c1d',
-                objects: [
-                  {
-                    type: 'indicator',
-                    spec_version: '2.1',
-                    id: 'indicator--7c9b6f2e-6b6b-4a2a-9c3e-1a9d9a2b6f3e',
-                    created: '2026-09-20T00:00:00Z',
-                    modified: '2026-09-24T12:00:00Z',
-                    name: 'IPv4 Threat Indicator - 198.51.100.23',
-                    description: 'Threat indicator sourced from AlienVault-OTX.',
-                    indicator_types: ['malicious-activity'],
-                    pattern: "[ipv4-addr:value = '198.51.100.23']",
-                    pattern_type: 'stix',
-                    valid_from: '2026-09-24T12:00:00Z',
-                    confidence: 75,
-                    external_references: [{ source_name: 'AlienVault-OTX', description: 'Sourced from AlienVault-OTX' }]
-                  }
-                ]
-              }
-            }
-          })
-        }
+        'GET /api/ioc': iocX402RouteConfig,
+        'POST /api/ioc': iocX402RouteConfig,
+        'HEAD /api/ioc': iocX402RouteConfig
       },
       x402Server,
       undefined,
@@ -800,6 +811,14 @@ export default async function handler(req, res) {
   }
 
   if (urlPath === '/api/ioc' || urlPath === '/api/feeds/ioc') {
+    // OPTIONS is already handled above before urlPath is even inspected, so
+    // in practice this only ever rejects PUT/DELETE/PATCH/etc — but it's
+    // listed for clarity on what this route actually serves the bundle for.
+    if (['GET', 'POST', 'HEAD', 'OPTIONS'].indexOf(req.method) === -1) {
+      res.setHeader('Allow', 'GET, POST, HEAD, OPTIONS');
+      return sendJSON(res, 405, { error: 'Method Not Allowed' });
+    }
+
     var rawPaymentHeader = getHeader('x-payment') || getHeader('payment-signature');
     var iocRequestIdentifier = getRequestIdentifier(req);
     var clientLicenseKey = getHeader('x-api-key') || (getHeader('authorization') || '').replace('Bearer ', '');
@@ -863,7 +882,7 @@ export default async function handler(req, res) {
       }
       ensureExpressCompat(req);
       mirrorPaymentRequiredIntoJsonBody(res);
-      console.log('[X402_DEBUG] post-shim route match check: method=%s path=%s (registered route is "GET /api/ioc")', req.method, req.path);
+      console.log('[X402_DEBUG] post-shim route match check: method=%s path=%s (registered routes are "GET/POST/HEAD /api/ioc")', req.method, req.path);
       var x402Paid = false;
       try {
         await new Promise((resolve, reject) => {
