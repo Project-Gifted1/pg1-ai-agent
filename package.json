@@ -6,31 +6,30 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "start": "next start"
   },
   "dependencies": {
-    "next": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "@ai-sdk/google": "latest",
-    "ai": "latest",
-    "zod": "latest",
-    "@supabase/supabase-js": "latest",
-    "cheerio": "latest",
+    "next": "16.3.5",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "@ai-sdk/google": "4.0.76",
+    "ai": "7.0.107",
+    "zod": "3.25.76",
+    "@supabase/supabase-js": "2.116.0",
+    "cheerio": "1.2.0",
     "web-push": "^3.6.7",
-    "@coinbase/cdp-sdk": "latest",
-    "@x402/express": "latest",
-    "@x402/core": "latest",
-    "@x402/evm": "latest",
-    "@x402/extensions": "latest",
-    "@x402/svm": "latest",
+    "@coinbase/cdp-sdk": "1.56.0",
+    "@x402/express": "2.26.0",
+    "@x402/core": "2.26.0",
+    "@x402/evm": "2.26.0",
+    "@x402/extensions": "2.27.0",
+    "@x402/svm": "2.26.0",
     "tldts": "^7.4.15",
-    "uuid": "latest"
+    "uuid": "14.0.2"
   },
   "devDependencies": {
-    "typescript": "latest",
-    "@types/react": "latest",
-    "@types/node": "latest"
+    "typescript": "5.9.3",
+    "@types/react": "19.3.0",
+    "@types/node": "26.6.2"
   }
 }
