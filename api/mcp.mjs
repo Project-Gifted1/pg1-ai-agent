@@ -49,7 +49,8 @@
  */
 
 import { ExactEvmScheme } from '@x402/evm/exact/server';
-import { paymentMiddleware, x402ResourceServer } from '@x402/express';
+import { x402ResourceServer } from '@x402/express';
+import { encodePaymentRequiredHeader, encodePaymentResponseHeader, decodePaymentSignatureHeader } from '@x402/core/http';
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkAndConsumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT } from '../lib/freeTier.mjs';
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
@@ -1558,47 +1559,69 @@ async function handleCheckHostnameReputation(args, identifier, licenseKey) {
 // checks, 10min success cache, 2s timeout with cache fallback).
 
 const X402_PAY_TO = (process.env.X402_PAY_TO_ADDRESS || '').trim();
-let x402Middleware = null;
-let x402Server = null;
-if (X402_PAY_TO) {
-  try {
-    const facilitatorClient = createCdpFacilitatorClient();
-    x402Server = new x402ResourceServer(facilitatorClient).register('eip155:8453', new ExactEvmScheme());
-    x402Middleware = paymentMiddleware(
-      {
-        'POST /api/mcp': {
-          accepts: [{ scheme: 'exact', price: '$0.01', network: 'eip155:8453', payTo: X402_PAY_TO }],
-          description: 'PG1 Threat Intelligence: STIX 2.1 threat indicator feed (IPs, domains, URLs, file hashes, CVEs) aggregated from open threat intelligence sources including AlienVault OTX.',
-          mimeType: 'application/json'
-        }
-      },
-      x402Server,
-      undefined,
-      undefined,
-      false
-    );
-  } catch (e) {
-    console.error('[X402] Setup failed, payment path disabled:', e.message);
-    x402Middleware = null;
-  }
-} else {
-  console.warn('[X402] X402_PAY_TO_ADDRESS not set — x402 payment path disabled on this deployment.');
-}
+const X402_NETWORK = 'eip155:8453';
+const X402_SCHEME = 'exact';
+const X402_PRICE = '$0.01';
+const X402_RESOURCE_DESCRIPTION = 'PG1 Threat Intelligence: STIX 2.1 threat indicator feed (IPs, domains, URLs, file hashes, CVEs) aggregated from open threat intelligence sources including AlienVault OTX.';
+const X402_RESOURCE_MIME_TYPE = 'application/json';
 
+// Facilitator client factory, overridable only by tests (see
+// __setX402FacilitatorForTests below) so the x402 v2 payment path can be
+// exercised against a fake facilitator instead of real CDP credentials.
+let x402FacilitatorFactory = createCdpFacilitatorClient;
+let x402Server = null;
+let x402SetupAttempted = false;
 let x402InitPromise = null;
 let x402Initialized = false;
 
+if (!X402_PAY_TO) {
+  console.warn('[X402] X402_PAY_TO_ADDRESS not set — x402 payment path disabled on this deployment.');
+}
+
+// Lazily builds (and memoizes) the x402ResourceServer used to drive the v2
+// payment flow directly — verify/settle are invoked as plain method calls
+// (see runX402Gate below) rather than through the Express-style
+// paymentMiddleware, so a tools/call result can be shaped as a normal
+// JSON-RPC MCP result (isError/structuredContent/content) instead of a raw
+// HTTP 402, per the x402 v2 MCP transport spec.
+function getX402Server() {
+  if (!X402_PAY_TO) return null;
+  if (!x402SetupAttempted) {
+    x402SetupAttempted = true;
+    try {
+      const facilitatorClient = x402FacilitatorFactory();
+      x402Server = new x402ResourceServer(facilitatorClient).register(X402_NETWORK, new ExactEvmScheme());
+    } catch (e) {
+      console.error('[X402] Setup failed, payment path disabled:', e.message);
+      x402Server = null;
+    }
+  }
+  return x402Server;
+}
+
 function ensureX402Initialized() {
+  const server = getX402Server();
+  if (!server) return Promise.resolve(false);
   if (x402Initialized) return Promise.resolve(true);
-  if (!x402Server) return Promise.resolve(false);
   if (!x402InitPromise) {
     x402InitPromise = Promise.race([
-      x402Server.initialize(),
+      server.initialize(),
       new Promise((_, reject) => setTimeout(() => reject(new Error('facilitator init timeout')), 8000))
     ]).then(() => { x402Initialized = true; return true; })
       .catch((err) => { console.error('[X402] init failed:', err.message); x402InitPromise = null; return false; });
   }
   return x402InitPromise;
+}
+
+// Test-only seam: substitutes the facilitator client so the x402 v2 payment
+// path (verify/settle) can be exercised without real CDP credentials, JWT
+// signing, or network access. Never called outside tests/mcp-x402-v2.test.mjs.
+export function __setX402FacilitatorForTests(facilitatorClientFactory) {
+  x402FacilitatorFactory = facilitatorClientFactory || createCdpFacilitatorClient;
+  x402Server = null;
+  x402SetupAttempted = false;
+  x402Initialized = false;
+  x402InitPromise = null;
 }
 
 function ensureExpressCompat(req) {
@@ -1616,109 +1639,187 @@ function ensureExpressCompat(req) {
   }
 }
 
-// The x402 middleware's default 402 challenge body is `{}` — the actual
-// payment-required payload only exists base64-encoded in the PAYMENT-REQUIRED
-// header. Mirror it into the JSON body so non-header-reading clients see the
-// same v2 payment-required object instead of an empty object. Patches
-// res.json rather than recomputing the payload, since the header is already
-// finalized (bazaar/extension-enriched) by the time the middleware writes it,
-// and re-deriving it here could drift.
-function mirrorPaymentRequiredIntoJsonBody(res) {
-  const originalJson = res.json.bind(res);
-  res.json = function (body) {
-    try {
-      if (res.statusCode === 402) {
-        const paymentRequiredHeader = res.getHeader('PAYMENT-REQUIRED');
-        if (paymentRequiredHeader) {
-          const decoded = JSON.parse(Buffer.from(String(paymentRequiredHeader), 'base64').toString('utf-8'));
-          return originalJson(decoded);
-        }
+function buildX402ResourceInfo(req) {
+  ensureExpressCompat(req);
+  return {
+    url: `${req.protocol}://${req.headers.host || ''}${req.originalUrl}`,
+    description: X402_RESOURCE_DESCRIPTION,
+    mimeType: X402_RESOURCE_MIME_TYPE
+  };
+}
+
+// Used when the real x402ResourceServer isn't available at all (deployment
+// misconfigured, or the facilitator is unreachable) — keeps the same v2
+// PaymentRequired shape (x402Version, resource, accepts, error) that a
+// caller gets from a real facilitator, just with an empty accepts list.
+function buildFallbackPaymentRequired(resourceInfo, error) {
+  return { x402Version: 2, error, resource: resourceInfo, accepts: [] };
+}
+
+// Drives the x402 v2 payment flow directly against x402ResourceServer:
+// build requirements, read a payment payload from params._meta["x402/payment"]
+// (preferred) or the PAYMENT-SIGNATURE/X-Payment header, match it against
+// accepts, and verify via the facilitator. Never runs the tool or settles —
+// callers run the tool first and invoke the returned `settle` function only
+// on tool success, per the x402 v2 MCP transport spec.
+async function runX402Gate(req, params) {
+  const resourceInfo = buildX402ResourceInfo(req);
+  const server = getX402Server();
+  if (!server) {
+    return { authorized: false, paymentRequired: buildFallbackPaymentRequired(resourceInfo, 'x402 payment path is not configured on this deployment. Use a Gumroad license key (X-API-KEY) instead.') };
+  }
+  const ready = await ensureX402Initialized();
+  if (!ready) {
+    return { authorized: false, paymentRequired: buildFallbackPaymentRequired(resourceInfo, 'x402 payment path temporarily unavailable. Retry, or use a Gumroad license key.') };
+  }
+
+  let requirements;
+  try {
+    requirements = await server.buildPaymentRequirements({ scheme: X402_SCHEME, price: X402_PRICE, network: X402_NETWORK, payTo: X402_PAY_TO });
+  } catch (e) {
+    return { authorized: false, paymentRequired: buildFallbackPaymentRequired(resourceInfo, 'x402 payment path misconfigured: ' + e.message) };
+  }
+
+  const metaPayment = params?._meta?.['x402/payment'];
+  let paymentPayload = null;
+  if (metaPayment && typeof metaPayment === 'object') {
+    paymentPayload = metaPayment;
+  } else {
+    const rawHeader = req.headers['payment-signature'] || req.headers['x-payment'];
+    if (rawHeader) {
+      try {
+        paymentPayload = decodePaymentSignatureHeader(String(rawHeader));
+      } catch (e) {
+        const paymentRequired = await server.createPaymentRequiredResponse(requirements, resourceInfo, 'Malformed payment signature.');
+        return { authorized: false, paymentRequired };
       }
-    } catch (e) {}
-    return originalJson(body);
+    }
+  }
+
+  if (!paymentPayload) {
+    const paymentRequired = await server.createPaymentRequiredResponse(requirements, resourceInfo, 'Payment required');
+    return { authorized: false, paymentRequired };
+  }
+
+  const matchingRequirements = server.findMatchingRequirements(requirements, paymentPayload);
+  if (!matchingRequirements) {
+    const paymentRequired = await server.createPaymentRequiredResponse(requirements, resourceInfo, 'No matching payment requirements', undefined, undefined, paymentPayload);
+    return { authorized: false, paymentRequired };
+  }
+
+  let verifyResult;
+  try {
+    verifyResult = await server.verifyPayment(paymentPayload, matchingRequirements);
+  } catch (e) {
+    const paymentRequired = await server.createPaymentRequiredResponse(requirements, resourceInfo, 'Payment verification failed: ' + e.message, undefined, undefined, paymentPayload);
+    return { authorized: false, paymentRequired };
+  }
+  if (!verifyResult.isValid) {
+    const paymentRequired = await server.createPaymentRequiredResponse(requirements, resourceInfo, verifyResult.invalidReason || 'Payment verification failed', undefined, undefined, paymentPayload);
+    return { authorized: false, paymentRequired };
+  }
+
+  return {
+    authorized: true,
+    settle: () => server.settlePayment(paymentPayload, matchingRequirements),
+    settlementFailurePaymentRequired: (message) => server.createPaymentRequiredResponse(requirements, resourceInfo, message, undefined, undefined, paymentPayload)
   };
 }
 
 // Shared by the get_ioc_context and get_ioc_batch special cases, and by
-// every other paid tool: runs the full license -> free tier -> x402 gate
-// and returns true if authorized, or writes the appropriate error
-// response itself and returns false.
+// every other paid tool: runs the full license -> free tier -> x402 gate.
+// Returns { authorized: true, settle? } when the caller may proceed (settle,
+// if present, MUST be invoked after the tool succeeds, never before), or
+// { authorized: false, handled: true } when a response has already been
+// written directly (licence-key failures — see below — are unchanged), or
+// { authorized: false, paymentRequired } when the caller should send the x402
+// v2 MCP payment-required tool result (HTTP 200, isError: true).
 //
 // FIX (1.9.1): free tier used to be checked regardless of whether a
 // payment header was present, so a real payer with free-tier quota
 // remaining got silently served for free — their payment was captured
 // but never verified. Free tier now only runs when there's NO payment
-// header at all; if one is present, x402 verification runs first, always.
+// offered at all (header or _meta); if one is present, x402 verification
+// runs first, always.
 //
 // FIX (1.9.2): free tier used to be granted automatically to anyone
 // without a payment header, with no way to decline it. A caller with no
 // license key, no payment header, and no opt-in got served for free
-// instead of seeing a 402 — which broke discovery crawlers (e.g. x402
-// Bazaar) that probe with no credentials specifically to confirm payment
-// is demanded. Free tier now requires an explicit "x-free-tier: 1" header;
-// without it, no license key + no payment header falls straight through
-// to x402 / the final 402 response below.
-async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier) {
-  let authorized = false;
-
+// instead of seeing a payment challenge — which broke discovery crawlers
+// (e.g. x402 Bazaar) that probe with no credentials specifically to confirm
+// payment is demanded. Free tier now requires an explicit "x-free-tier: 1"
+// header; without it, no license key + no payment offered falls straight
+// through to the x402 gate below.
+async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params) {
   if (licenseKey) {
     const check = await verifyGumroadLicense(licenseKey);
-    if (check.valid) authorized = true;
-    else if (check.reason === 'verification_unavailable') {
+    if (check.valid) return { authorized: true };
+    if (check.reason === 'verification_unavailable') {
       res.setHeader('Retry-After', '5');
       res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: 'License verification temporarily unavailable, please retry.' }, id: requestId });
-      return false;
-    } else {
-      res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error }, id: requestId });
-      return false;
+      return { authorized: false, handled: true };
     }
+    res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error }, id: requestId });
+    return { authorized: false, handled: true };
   }
 
-  const rawPayment = req.headers['x-payment'] || req.headers['payment-signature'];
+  const rawPayment = params?._meta?.['x402/payment'] || req.headers['x-payment'] || req.headers['payment-signature'];
   const freeTierOptIn = req.headers['x-free-tier'] === '1';
 
-  if (!authorized && !rawPayment && freeTierOptIn) {
+  if (!rawPayment && freeTierOptIn) {
     try {
       const { supUrl, supKey } = getSupabaseCreds();
       const freeTierResult = await checkAndConsumeFreeTier(supUrl, supKey, mcpRequestIdentifier);
       if (freeTierResult.allowed) {
-        authorized = true;
         logSettlementOutcome('/api/mcp', 'free_tier', mcpRequestIdentifier, 'remaining=' + freeTierResult.remaining);
+        return { authorized: true };
       }
     } catch (e) {}
   }
 
-  if (!authorized && x402Middleware) {
-    const ready = await ensureX402Initialized();
-    if (!ready) {
-      res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'x402 payment path temporarily unavailable. Retry, or use a Gumroad license key.' }, id: requestId });
-      return false;
-    }
-    ensureExpressCompat(req);
-    mirrorPaymentRequiredIntoJsonBody(res);
-    try {
-      await new Promise((resolve, reject) => {
-        x402Middleware(req, res, (err) => (err ? reject(err) : (authorized = true, resolve())));
-      });
-    } catch (x402Err) {
-      if (!res.headersSent) {
-        res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment verification failed: ' + x402Err.message }, id: requestId });
-      }
-      return false;
-    }
-    if (!authorized) return false; // middleware already wrote its own 402 challenge or error response
-  }
+  return runX402Gate(req, params);
+}
 
-  if (!authorized) {
-    res.status(402).json({
-      jsonrpc: '2.0',
-      error: { code: -32001, message: 'Payment Required: send a valid Gumroad key in X-API-KEY, or pay $0.01 via x402 (PAYMENT-SIGNATURE header).' },
-      id: requestId
-    });
-    return false;
-  }
+// Writes the x402 v2 MCP payment-required tool result: HTTP 200 (never 402)
+// with isError: true, structuredContent set to the PaymentRequired object,
+// and content[0].text carrying the same object as JSON text — per the x402
+// v2 MCP transport spec. Also sends PAYMENT-REQUIRED for backward
+// compatibility with clients that only read the header.
+function sendPaymentRequiredResult(res, requestId, paymentRequired) {
+  res.setHeader('PAYMENT-REQUIRED', encodePaymentRequiredHeader(paymentRequired));
+  return res.status(200).json({
+    jsonrpc: '2.0',
+    result: {
+      isError: true,
+      structuredContent: paymentRequired,
+      content: [{ type: 'text', text: JSON.stringify(paymentRequired) }]
+    },
+    id: requestId
+  });
+}
 
-  return true;
+// Settles a verified x402 payment after the tool has already run
+// successfully. On success, sets the PAYMENT-RESPONSE header (unchanged
+// behaviour) and returns the settlement object to attach to
+// result._meta["x402/payment-response"]. On failure, writes the same
+// payment-required tool result as an unpaid call and returns null so the
+// caller does not also send its own response.
+async function settleAndRespondOnFailure(res, requestId, gate) {
+  let settleResult;
+  try {
+    settleResult = await gate.settle();
+  } catch (e) {
+    const paymentRequired = await gate.settlementFailurePaymentRequired('Settlement failed: ' + e.message);
+    sendPaymentRequiredResult(res, requestId, paymentRequired);
+    return null;
+  }
+  if (!settleResult.success) {
+    const paymentRequired = await gate.settlementFailurePaymentRequired(settleResult.errorMessage || settleResult.errorReason || 'Settlement failed');
+    sendPaymentRequiredResult(res, requestId, paymentRequired);
+    return null;
+  }
+  res.setHeader('PAYMENT-RESPONSE', encodePaymentResponseHeader(settleResult));
+  return settleResult;
 }
 
 const STANDARD_TOOL_HANDLERS = {
@@ -1891,14 +1992,17 @@ export default async function handler(req, res) {
           });
         }
 
-        const gateOk = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier);
-        if (!gateOk) return;
+        const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params);
+        if (gate.handled) return;
+        if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired);
 
-        return res.status(200).json({
-          jsonrpc: '2.0',
-          result: { content: [{ type: 'text', text: JSON.stringify(lookupResult, null, 2) }] },
-          id: requestId
-        });
+        const result = { content: [{ type: 'text', text: JSON.stringify(lookupResult, null, 2) }] };
+        if (gate.settle) {
+          const settlement = await settleAndRespondOnFailure(res, requestId, gate);
+          if (!settlement) return;
+          result._meta = { 'x402/payment-response': settlement };
+        }
+        return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
       }
 
       // SPECIAL CASE: get_ioc_batch — free only if NONE of the values were
@@ -1922,14 +2026,17 @@ export default async function handler(req, res) {
           });
         }
 
-        const gateOk = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier);
-        if (!gateOk) return;
+        const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params);
+        if (gate.handled) return;
+        if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired);
 
-        return res.status(200).json({
-          jsonrpc: '2.0',
-          result: { content: [{ type: 'text', text: JSON.stringify(batchResult, null, 2) }] },
-          id: requestId
-        });
+        const result = { content: [{ type: 'text', text: JSON.stringify(batchResult, null, 2) }] };
+        if (gate.settle) {
+          const settlement = await settleAndRespondOnFailure(res, requestId, gate);
+          if (!settlement) return;
+          result._meta = { 'x402/payment-response': settlement };
+        }
+        return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
       }
 
       const toolHandler = STANDARD_TOOL_HANDLERS[toolName];
@@ -1937,8 +2044,9 @@ export default async function handler(req, res) {
         return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: `Unknown tool: ${toolName}` }, id: requestId });
       }
 
-      const gateOk = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier);
-      if (!gateOk) return;
+      const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params);
+      if (gate.handled) return;
+      if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired);
 
       let toolResult;
       try {
@@ -1951,11 +2059,13 @@ export default async function handler(req, res) {
         return res.status(code).json({ jsonrpc: '2.0', error: { code: toolErr.notFound ? -32004 : -32602, message: toolErr.message }, id: requestId });
       }
 
-      return res.status(200).json({
-        jsonrpc: '2.0',
-        result: { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] },
-        id: requestId
-      });
+      const result = { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] };
+      if (gate.settle) {
+        const settlement = await settleAndRespondOnFailure(res, requestId, gate);
+        if (!settlement) return;
+        result._meta = { 'x402/payment-response': settlement };
+      }
+      return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
     }
 
     return res.status(200).json({ jsonrpc: '2.0', error: { code: -32601, message: `Method not found: ${method || 'unknown'}` }, id: requestId });
