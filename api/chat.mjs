@@ -147,7 +147,7 @@ if (X402_PAY_TO) {
     x402Middleware = paymentMiddleware(
       {
         'GET /api/ioc': iocX402RouteConfig,
-        'POST /api/ioc': iocX402RouteConfig,
+        'POST /api/ioc': (function () { var c = Object.assign({}, iocX402RouteConfig); delete c.extensions; return c; })(),
         'HEAD /api/ioc': iocX402RouteConfig
       },
       x402Server,
