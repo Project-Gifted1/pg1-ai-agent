@@ -1,0 +1,38 @@
+{
+  "x402Version": 2,
+  "kind": "resource-server",
+  "name": "PG1 Threat Intelligence",
+  "description": "Threat intelligence API and MCP server for AI agents and security tooling.",
+  "resources": [
+    {
+      "resource": "https://pg1-ai-agent.vercel.app/api/ioc",
+      "type": "http",
+      "method": "GET",
+      "mimeType": "application/stix+json",
+      "accepts": [
+        {
+          "scheme": "exact",
+          "network": "eip155:8453",
+          "amount": "10000",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "payTo": "0x897583A6da146826ecA90e5c24158bC226C29d53"
+        }
+      ]
+    },
+    {
+      "resource": "https://pg1-ai-agent.vercel.app/api/mcp",
+      "type": "mcp",
+      "method": "POST",
+      "mimeType": "application/json",
+      "accepts": [
+        {
+          "scheme": "exact",
+          "network": "eip155:8453",
+          "amount": "10000",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "payTo": "0x897583A6da146826ecA90e5c24158bC226C29d53"
+        }
+      ]
+    }
+  ]
+}
