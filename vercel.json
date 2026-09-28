@@ -8,6 +8,13 @@
   ],
   "headers": [
     {
+      "source": "/.well-known/x402",
+      "headers": [
+        { "key": "Content-Type", "value": "application/json" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
+    },
+    {
       "source": "/api/chat",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "https://pg1-ai-agent.vercel.app" },
