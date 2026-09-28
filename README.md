@@ -28,6 +28,47 @@ Optional query parameters: `?since=<ISO timestamp>`, `?type=<IPv4|domain|URL|Fil
 
 **Exception:** `get_ioc_context` and `get_ioc_batch` (the pre-action safety-check tools) are always free when the result is `found: false` — no `x-free-tier` header needed for those specific "nothing on record" responses. The header is only required for the general free tier.
 
+## Paying for MCP Tool Calls (x402 v2)
+
+`/api/mcp` follows the [x402 v2 MCP transport spec](https://github.com/coinbase/x402) for paid `tools/call` requests, so a payment can be attached either as an MCP-native field or as an HTTP header — whichever your client library supports:
+
+1. **`params._meta["x402/payment"]`** (recommended for MCP clients, e.g. `@x402/mcp`) — attach the signed x402 v2 `PaymentPayload` object directly to the JSON-RPC request:
+
+   ```jsonc
+   {
+     "jsonrpc": "2.0",
+     "id": 1,
+     "method": "tools/call",
+     "params": {
+       "name": "get_cve_details",
+       "arguments": { "cve_id": "CVE-2021-44228" },
+       "_meta": { "x402/payment": { "x402Version": 2, "scheme": "exact", "network": "eip155:8453", "accepted": { /* … */ }, "payload": { /* … */ } } }
+     }
+   }
+   ```
+
+2. **`PAYMENT-SIGNATURE` header** (or `X-Payment`) — the same signed payload, base64-encoded, attached at the HTTP transport level instead of inside the JSON-RPC request. This is how non-MCP-aware HTTP clients pay.
+
+If both are present on the same request, `_meta` wins.
+
+**Unpaid calls don't get an HTTP 402.** A `tools/call` for a paid tool with no license key, no free tier, and no payment returns a normal `200 OK` JSON-RPC result shaped as an MCP tool error:
+
+```jsonc
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "isError": true,
+    "structuredContent": { "x402Version": 2, "error": "Payment required", "resource": { /* … */ }, "accepts": [ /* … */ ] },
+    "content": [{ "type": "text", "text": "{\"x402Version\":2,...}" }]
+  }
+}
+```
+
+The same object is also sent, base64-encoded, in the `PAYMENT-REQUIRED` response header for backward compatibility with clients that only read headers. A verification or settlement failure returns this exact same shape (still `200 OK`, `isError: true`), with `structuredContent.error` describing what went wrong.
+
+On a successful payment, the tool result carries the facilitator's settlement receipt in `result._meta["x402/payment-response"]`, and the `PAYMENT-RESPONSE` header is set as before.
+
 ## Installation & Connection (MCP Clients)
 
 To connect your autonomous agent to the PG1 API, pass your Gumroad license key in the connection request.
