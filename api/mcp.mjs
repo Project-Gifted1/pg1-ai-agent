@@ -69,7 +69,7 @@ export const config = { maxDuration: 30 };
 const CVE_BATCH_MAX = 20;
 const IOC_BATCH_MAX = 20;
 
-const TOOLS = [
+export const TOOLS = [
   {
     name: 'get_threat_indicators',
     description: 'PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of verified threat indicators (IPs, domains, URLs, file hashes) sourced from ThreatFox, URLhaus, OTX and NVD. Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for bulk feed synchronizations. Do NOT use for single-item lookups (use get_ioc_context) or CVE analysis (use get_cve_details). USAGE EXCLUSIONS: Does not provide historical query archival beyond the active ingestion window. BEHAVIOR: Pagination is handled via the limit parameter (max 1000). If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta["x402/payment-response"].',
@@ -749,7 +749,7 @@ async function handleThreatActorProfile(args) {
 // get_usage_status — free, no payment gate
 // ---------------------------------------------------------------------
 
-async function handleUsageStatus(args, requestIdentifier) {
+export async function handleUsageStatus(args, requestIdentifier) {
   const identifier = args?.identifier || requestIdentifier;
   if (!identifier) {
     throw new Error('identifier is required (or must be derivable from the request).');
@@ -904,7 +904,7 @@ class InvalidAddressError extends Error {
   }
 }
 
-async function handleCheckWalletSanctions(args) {
+export async function handleCheckWalletSanctions(args) {
   const rawAddress = args?.address;
   if (typeof rawAddress !== 'string') {
     throw new Error('address is required.');
@@ -1101,7 +1101,7 @@ function domainNotFound(domain, reason, reasonCode) {
   return { found: false, available: false, domain, reason, reason_code: reasonCode };
 }
 
-async function handleCheckDomainAge(args, identifier, licenseKey) {
+export async function handleCheckDomainAge(args, identifier, licenseKey) {
   const raw = args?.domain;
   if (!raw || typeof raw !== 'string') {
     throw new Error('domain is required.');
@@ -1465,7 +1465,7 @@ function buildHostnameResult(hostname, verdict, sources, lookalikeOf, listSynced
   };
 }
 
-async function handleCheckHostnameReputation(args, identifier, licenseKey) {
+export async function handleCheckHostnameReputation(args, identifier, licenseKey) {
   const hostname = normalizeHostname(args?.hostname);
 
   const cached = getCachedHostnameResult(hostname);
