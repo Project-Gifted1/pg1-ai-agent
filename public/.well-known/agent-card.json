@@ -1,0 +1,57 @@
+{
+  "protocolVersion": "1.0",
+  "name": "PG1 Sovereign Threat Intelligence",
+  "description": "Threat intelligence agent for AI agents and security tooling: wallet sanctions screening, domain age lookups, hostname/phishing reputation checks, and free-tier usage status. Paid tools (bulk indicator feeds, CVE enrichment, threat actor dossiers) are available via the companion MCP server at /api/mcp, not via A2A yet.",
+  "version": "1.12.0",
+  "documentationUrl": "https://github.com/Project-Gifted1/pg1-ai-agent#readme",
+  "interfaces": [
+    {
+      "url": "https://pg1-ai-agent.vercel.app/api/a2a",
+      "protocolBinding": "JSONRPC"
+    }
+  ],
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "defaultInputModes": ["application/json"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "check_wallet_sanctions",
+      "name": "check_wallet_sanctions",
+      "description": "Checks a cryptocurrency wallet address against the OFAC SDN (Specially Designated Nationals) sanctions list, synced daily from US Treasury data. Always free. Returns listed/matches/source/list_last_synced; informational only, never phrased as \"safe\" or \"clean\".",
+      "tags": ["threat-intelligence", "sanctions", "wallet", "crypto"],
+      "examples": ["Is wallet 0x1234...abcd on the OFAC sanctions list?"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "check_domain_age",
+      "name": "check_domain_age",
+      "description": "Looks up a domain's registration age via RDAP (the IANA-standardized WHOIS successor). Always free. A newly registered domain (age_days < 30) is reported as a common phishing signal, not proof of malicious intent.",
+      "tags": ["threat-intelligence", "domain", "rdap", "phishing"],
+      "examples": ["How old is the domain example.com?"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "check_hostname_reputation",
+      "name": "check_hostname_reputation",
+      "description": "Checks a single hostname against the MetaMask eth-phishing-detect blocklist/allowlist plus a lookalike/typosquat detector, synced daily. Always free; rate-limited to 60 calls/hour per caller without a Gumroad license key (X-API-KEY exempts the limit).",
+      "tags": ["threat-intelligence", "phishing", "hostname", "lookalike"],
+      "examples": ["Is metamask-login.com a known phishing or lookalike domain?"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "get_usage_status",
+      "name": "get_usage_status",
+      "description": "Returns your remaining free-tier calls for today and current Gumroad license status. Always free.",
+      "tags": ["account", "usage", "quota"],
+      "examples": ["How many free-tier calls do I have left today?"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}
