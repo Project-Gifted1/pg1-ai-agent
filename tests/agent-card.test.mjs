@@ -21,20 +21,26 @@ const vercelConfig = JSON.parse(fs.readFileSync(path.join(repoRoot, 'vercel.json
 test('agent card has the required top-level identity fields', () => {
   assert.equal(card.name, 'PG1 Sovereign Threat Intelligence');
   assert.equal(card.version, '1.12.0');
-  assert.equal(card.protocolVersion, '1.0');
+  assert.equal(card.protocolVersion, '0.3.0');
   assert.equal(card.documentationUrl, 'https://github.com/Project-Gifted1/pg1-ai-agent#readme');
+  assert.equal(card.url, 'https://pg1-ai-agent.vercel.app/api/a2a');
+  assert.equal(card.preferredTransport, 'JSONRPC');
 });
 
-test('agent card declares the /api/a2a interface with JSONRPC protocol binding', () => {
-  assert.ok(Array.isArray(card.interfaces) && card.interfaces.length >= 1);
-  const iface = card.interfaces[0];
-  assert.equal(iface.url, 'https://pg1-ai-agent.vercel.app/api/a2a');
-  assert.equal(iface.protocolBinding, 'JSONRPC');
+test('agent card declares supportedInterfaces for both A2A versions at /api/a2a', () => {
+  assert.ok(Array.isArray(card.supportedInterfaces) && card.supportedInterfaces.length === 2);
+  for (const iface of card.supportedInterfaces) {
+    assert.equal(iface.url, 'https://pg1-ai-agent.vercel.app/api/a2a');
+    assert.equal(iface.protocolBinding, 'JSONRPC');
+  }
+  const versions = card.supportedInterfaces.map((i) => i.protocolVersion).sort();
+  assert.deepEqual(versions, ['0.3', '1.0']);
 });
 
-test('agent card declares streaming and push notifications as false', () => {
+test('agent card declares streaming, push notifications, and extended agent card as false', () => {
   assert.equal(card.capabilities.streaming, false);
   assert.equal(card.capabilities.pushNotifications, false);
+  assert.equal(card.capabilities.extendedAgentCard, false);
 });
 
 test('agent card has no security schemes (all four skills are free)', () => {

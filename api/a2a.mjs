@@ -1,7 +1,7 @@
 /**
  * PG1 Sovereign Threat Intelligence — A2A (Agent2Agent) endpoint
  * Endpoint: /api/a2a
- * Protocol: Agent2Agent (A2A), spec v1.0.0, JSON-RPC 2.0 transport
+ * Protocol: Agent2Agent (A2A) JSON-RPC 2.0 transport
  *           (https://a2a-protocol.org/latest/specification/)
  *
  * Exposes ONLY the four always-free MCP tools as A2A skills:
@@ -14,14 +14,35 @@
  * Paid tools are deliberately NOT exposed here; they wait for the A2A
  * licensing/payment story to be worked out.
  *
- * Method names: "SendMessage" (this spec's primary method) and "message/send"
- * (the v0.3 name) are accepted as aliases of the same behavior.
+ * Version negotiation (spec 3.6.2): the A2A-Version header, or the
+ * A2A-Version query param if the header is absent/empty, selects the wire
+ * shape. Missing/empty => "0.3" (default). "1.0" => "1.0". Any other value
+ * is rejected with VersionNotSupportedError.
+ *   - 1.0: method name "SendMessage". Parts carry no "kind" field; a data
+ *     part is { data: {...}, mediaType: "application/json" }. Task states
+ *     are "TASK_STATE_COMPLETED" / "TASK_STATE_FAILED". Roles are
+ *     "ROLE_USER" / "ROLE_AGENT".
+ *   - 0.3: method name "message/send". Parts use "kind": "data". Task
+ *     states are "completed" / "failed". Roles are "user" / "agent". The
+ *     Task carries "kind": "task" and messages carry "kind": "message".
+ * "SendMessage" and "message/send" are both accepted as aliases regardless
+ * of the negotiated version; only the response shape changes. Incoming
+ * DataParts are accepted in either shape (with or without "kind"/"type"),
+ * whatever version was negotiated.
  *
- * Request shape: params.message.parts must contain a DataPart —
- * { kind: "data", data: { skill: "<tool name>", arguments: { ... } } }.
+ * Request shape: params.message.parts must contain a DataPart carrying
+ * { skill: "<tool name>", arguments: { ... } }.
  *
- * Response shape: a Task object with status.state "completed" and a single
- * artifact whose part is a DataPart carrying the tool's JSON result.
+ * Response shape: a Task object with a "completed" artifact whose part is
+ * a DataPart carrying the tool's JSON result, plus a history entry echoing
+ * the inbound message.
+ *
+ * Methods with no server-side support are answered with the specific A2A
+ * error the spec calls for (3.3.4), rather than a generic "not found":
+ * streaming/subscription methods -> UnsupportedOperationError; push
+ * notification config methods -> PushNotificationNotSupportedError;
+ * GetExtendedAgentCard -> UnsupportedOperationError; GetTask/CancelTask ->
+ * TaskNotFoundError (tasks are not persisted).
  */
 
 import {
@@ -39,6 +60,37 @@ const A2A_SKILL_NAMES = ['check_wallet_sanctions', 'check_domain_age', 'check_ho
 
 // Reused verbatim from api/mcp.mjs's TOOLS array — same descriptions/schemas.
 export const A2A_SKILL_TOOLS = TOOLS.filter((tool) => A2A_SKILL_NAMES.includes(tool.name));
+
+// A2A-specific JSON-RPC error codes (spec's reserved -32001..-32099 range).
+const A2A_ERROR_CODES = {
+  TaskNotFoundError: -32001,
+  TaskNotCancelableError: -32002,
+  PushNotificationNotSupportedError: -32003,
+  UnsupportedOperationError: -32004,
+  ContentTypeNotSupportedError: -32005,
+  InvalidAgentResponseError: -32006,
+  AuthenticatedExtendedCardNotConfiguredError: -32007,
+  VersionNotSupportedError: -32008
+};
+
+// App-level (non-A2A) error code for an upstream outage, kept distinct from
+// the A2A-reserved range above so it can never be mistaken for one of them.
+const SERVICE_UNAVAILABLE_CODE = -32010;
+
+const METHODS = {
+  sendMessage: ['SendMessage', 'message/send'],
+  sendStreamingMessage: ['SendStreamingMessage', 'message/stream'],
+  subscribeToTask: ['SubscribeToTask', 'tasks/resubscribe'],
+  getTask: ['GetTask', 'tasks/get'],
+  cancelTask: ['CancelTask', 'tasks/cancel'],
+  getExtendedAgentCard: ['GetExtendedAgentCard', 'agent/getAuthenticatedExtendedCard'],
+  pushNotificationConfig: [
+    'SetTaskPushNotificationConfig', 'tasks/pushNotificationConfig/set',
+    'GetTaskPushNotificationConfig', 'tasks/pushNotificationConfig/get',
+    'ListTaskPushNotificationConfig', 'tasks/pushNotificationConfig/list',
+    'DeleteTaskPushNotificationConfig', 'tasks/pushNotificationConfig/delete'
+  ]
+};
 
 async function runSkill(skill, args, identifier, licenseKey) {
   switch (skill) {
@@ -61,34 +113,91 @@ function jsonRpcError(res, status, code, message, id, data) {
   return res.status(status).json({ jsonrpc: '2.0', error, id: id === undefined ? null : id });
 }
 
+// Spec 3.6.2: header takes precedence over the query param; missing/empty
+// resolves to "0.3"; anything besides "1.0" and empty/missing is rejected.
+function resolveVersion(req) {
+  let raw = req.headers && req.headers['a2a-version'];
+  if (raw === undefined || raw === '') {
+    const query = req.query || {};
+    raw = query['A2A-Version'];
+    if (raw === undefined || raw === '') raw = query['a2a-version'];
+  }
+  if (Array.isArray(raw)) raw = raw[0];
+  if (raw === undefined || raw === null || raw === '') return { version: '0.3', requested: raw };
+  if (raw === '1.0') return { version: '1.0', requested: raw };
+  return { version: null, requested: raw };
+}
+
 function extractDataPart(message) {
   const parts = message && message.parts;
   if (!Array.isArray(parts)) return null;
-  const dataPart = parts.find((p) => p && (p.kind === 'data' || p.type === 'data') && p.data && typeof p.data === 'object');
+  // Accepts both the 0.3 shape ({ kind: "data", data }) and the 1.0 shape
+  // ({ data, mediaType }, no "kind"/"type" field at all).
+  const dataPart = parts.find((p) => (
+    p && p.data && typeof p.data === 'object' &&
+    (p.kind === undefined || p.kind === 'data') &&
+    (p.type === undefined || p.type === 'data')
+  ));
   return dataPart ? dataPart.data : null;
 }
 
-function taskResult(skill, data) {
+function stateValue(state, version) {
+  if (version === '1.0') return state === 'completed' ? 'TASK_STATE_COMPLETED' : 'TASK_STATE_FAILED';
+  return state;
+}
+
+function roleValue(role, version) {
+  if (version === '1.0') return role === 'agent' ? 'ROLE_AGENT' : 'ROLE_USER';
+  return role === 'agent' ? 'agent' : 'user';
+}
+
+function buildDataPart(data, version) {
+  if (version === '1.0') return { data, mediaType: 'application/json' };
+  return { kind: 'data', data };
+}
+
+function buildMessage(role, data, version, { messageId, contextId, taskId }) {
+  const message = {
+    role: roleValue(role, version),
+    parts: [buildDataPart(data, version)],
+    messageId: messageId || crypto.randomUUID(),
+    contextId,
+    taskId
+  };
+  if (version === '0.3') message.kind = 'message';
+  return message;
+}
+
+function taskResult(skill, args, result, version, inboundMessage) {
   const now = new Date().toISOString();
-  return {
-    id: crypto.randomUUID(),
-    contextId: crypto.randomUUID(),
-    status: { state: 'completed', timestamp: now },
+  const taskId = crypto.randomUUID();
+  const contextId = (inboundMessage && inboundMessage.contextId) || crypto.randomUUID();
+  const inboundData = { skill, arguments: args };
+
+  const task = {
+    id: taskId,
+    contextId,
+    status: { state: stateValue('completed', version), timestamp: now },
     artifacts: [
       {
         artifactId: crypto.randomUUID(),
         name: skill,
-        parts: [{ kind: 'data', data }]
+        parts: [buildDataPart(result, version)]
       }
     ],
-    kind: 'task'
+    history: [
+      buildMessage('user', inboundData, version, { messageId: inboundMessage && inboundMessage.messageId, contextId, taskId }),
+      buildMessage('agent', result, version, { contextId, taskId })
+    ]
   };
+  if (version === '0.3') task.kind = 'task';
+  return task;
 }
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, A2A-Version');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
@@ -96,7 +205,8 @@ export default async function handler(req, res) {
     return res.status(200).json({
       name: 'pg1-a2a',
       version: '1.12.0',
-      protocol: 'Agent2Agent (A2A) v1.0.0 over JSON-RPC 2.0',
+      protocol: 'Agent2Agent (A2A) over JSON-RPC 2.0',
+      supportedVersions: ['1.0', '0.3'],
       agentCard: 'https://pg1-ai-agent.vercel.app/.well-known/agent-card.json'
     });
   }
@@ -116,11 +226,53 @@ export default async function handler(req, res) {
   const { id, method, params } = body;
   const requestId = (id !== undefined && id !== null) ? id : '1';
 
-  if (method !== 'SendMessage' && method !== 'message/send') {
+  const { version, requested } = resolveVersion(req);
+  if (version === null) {
+    return jsonRpcError(
+      res, 400, A2A_ERROR_CODES.VersionNotSupportedError,
+      `Unsupported A2A-Version: '${requested}'. Supported versions: '1.0', '0.3' (default).`,
+      requestId
+    );
+  }
+
+  if (METHODS.sendStreamingMessage.includes(method) || METHODS.subscribeToTask.includes(method)) {
+    return jsonRpcError(
+      res, 200, A2A_ERROR_CODES.UnsupportedOperationError,
+      `Method not supported: ${method}. This agent does not support streaming or task subscriptions.`,
+      requestId
+    );
+  }
+
+  if (METHODS.pushNotificationConfig.includes(method)) {
+    return jsonRpcError(
+      res, 200, A2A_ERROR_CODES.PushNotificationNotSupportedError,
+      `Method not supported: ${method}. This agent does not support push notifications.`,
+      requestId
+    );
+  }
+
+  if (METHODS.getExtendedAgentCard.includes(method)) {
+    return jsonRpcError(
+      res, 200, A2A_ERROR_CODES.UnsupportedOperationError,
+      `Method not supported: ${method}. This agent has no authenticated extended agent card.`,
+      requestId
+    );
+  }
+
+  if (METHODS.getTask.includes(method) || METHODS.cancelTask.includes(method)) {
+    return jsonRpcError(
+      res, 200, A2A_ERROR_CODES.TaskNotFoundError,
+      `Task not found. This agent does not persist tasks; every ${METHODS.sendMessage[0]} call resolves synchronously.`,
+      requestId
+    );
+  }
+
+  if (!METHODS.sendMessage.includes(method)) {
     return jsonRpcError(res, 200, -32601, `Method not found: ${method || 'unknown'}`, requestId);
   }
 
-  const data = extractDataPart(params && params.message);
+  const inboundMessage = params && params.message;
+  const data = extractDataPart(inboundMessage);
   if (!data) {
     return jsonRpcError(
       res, 400, -32602,
@@ -144,7 +296,7 @@ export default async function handler(req, res) {
     toolResult = await runSkill(skill, args, identifier, licenseKey);
   } catch (err) {
     if (err.serviceUnavailable) {
-      return jsonRpcError(res, 503, -32003, err.message, requestId);
+      return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, err.message, requestId);
     }
     if (err.mcpToolError) {
       return jsonRpcError(res, 200, -32000, err.message, requestId, { code: err.code });
@@ -152,5 +304,5 @@ export default async function handler(req, res) {
     return jsonRpcError(res, 400, -32602, err.message, requestId);
   }
 
-  return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, toolResult), id: requestId });
+  return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, args, toolResult, version, inboundMessage), id: requestId });
 }
