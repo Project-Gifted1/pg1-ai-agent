@@ -1,6 +1,6 @@
 # PG1 Sovereign Threat Intelligence API
 
-Cryptographically-gated threat telemetry and IOC feeds for enterprise and autonomous nodes.
+Threat intelligence API and MCP server for AI agents and security tooling.
 
 **License keys:** new sales are temporarily paused while data licensing is finalised. The free tier and x402 remain available.
 
