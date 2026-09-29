@@ -86,6 +86,7 @@ smithery mcp add --transport http --id pg1-threat-intel https://pg1-ai-agent.ver
 ```bash
 curl -X POST https://pg1-ai-agent.vercel.app/api/mcp \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
   -H "x-free-tier: 1" \
   -d '{
     "jsonrpc": "2.0",
