@@ -1215,6 +1215,11 @@ export default async function handler(req, res) {
         promptText = strippedClaudePrompt || "The user switched to your advanced reasoning core without typing a message. Greet them briefly and ask what they'd like help with.";
       } else if (isHeavyTask && anthropicKey) {
         activeAction = 'CLAUDE_CHAT';
+      } else if (lower === '/help' || lower === 'help') {
+        return sendJSON(res, 200, {
+          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/speak** plus text: read it aloud\n- **/claude** plus a question: advanced reasoning core\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- Anything else: ask in plain words (live web search is on)',
+          traceId: requestTraceId
+        });
       } else if (lower.startsWith('/threat-radar')) {
         return sendJSON(res, 200, {
           reply: `### [ THREAT RADAR TELEMETRY ]\n- **Ingested Feeds**: AlienVault OTX (stored telemetry); ThreatFox, URLhaus and NVD queried live per lookup\n- **Indicator Count**: not counted by this command\n- **Pipeline State**: Automated Temporal Cron Synchronized`,
