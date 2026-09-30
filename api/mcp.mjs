@@ -149,6 +149,14 @@ export const RESPONSE_META_OUTPUT_PROPERTIES = {
   request_id: { type: 'string', description: 'UUID for this request, also sent as the X-Request-Id response header.' }
 };
 
+// Optional outputSchema addition for the same 4 tools (issue #215 part B):
+// present (and true) only on a response to an integration test fixture
+// input (see lib/fixtures.mjs), absent on every real response. Never in
+// `required`.
+export const TEST_FIXTURE_OUTPUT_PROPERTIES = {
+  test_fixture: { type: 'boolean', description: 'true only when the input was a documented integration test fixture and this response is canned; absent on real results.' }
+};
+
 export const TOOLS = [
   {
     name: 'get_threat_indicators',
@@ -322,7 +330,8 @@ export const TOOLS = [
         list_last_synced: { type: 'string' },
         message: { type: 'string' },
         disclaimer: { type: 'string' },
-        ...RESPONSE_META_OUTPUT_PROPERTIES
+        ...RESPONSE_META_OUTPUT_PROPERTIES,
+        ...TEST_FIXTURE_OUTPUT_PROPERTIES
       },
       required: ['address', 'address_normalized', 'listed', 'matches', 'source', 'list_last_synced']
     }
@@ -352,7 +361,8 @@ export const TOOLS = [
         source: { type: ['string', 'null'] },
         reason: { type: ['string', 'null'] },
         reason_code: { type: ['string', 'null'], enum: ['invalid_domain', 'bootstrap_unavailable', 'unsupported_tld', 'timeout', 'lookup_failed', null] },
-        ...RESPONSE_META_OUTPUT_PROPERTIES
+        ...RESPONSE_META_OUTPUT_PROPERTIES,
+        ...TEST_FIXTURE_OUTPUT_PROPERTIES
       },
       required: ['found', 'available', 'domain']
     }
@@ -387,7 +397,8 @@ export const TOOLS = [
         list_synced_at: { type: ['string', 'null'] },
         checked_at: { type: 'string' },
         attribution: { type: 'string' },
-        ...RESPONSE_META_OUTPUT_PROPERTIES
+        ...RESPONSE_META_OUTPUT_PROPERTIES,
+        ...TEST_FIXTURE_OUTPUT_PROPERTIES
       },
       required: ['hostname', 'verdict', 'sources', 'lookalike_of', 'list_synced_at', 'checked_at', 'attribution']
     }
@@ -417,7 +428,8 @@ export const TOOLS = [
         note: { type: ['string', 'null'] },
         source: { type: 'string' },
         cached: { type: 'boolean' },
-        ...RESPONSE_META_OUTPUT_PROPERTIES
+        ...RESPONSE_META_OUTPUT_PROPERTIES,
+        ...TEST_FIXTURE_OUTPUT_PROPERTIES
       },
       required: ['address', 'chain', 'found', 'first_seen', 'age_days', 'first_seen_block', 'first_direction', 'is_contract', 'source', 'cached']
     }

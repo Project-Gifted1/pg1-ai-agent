@@ -20,7 +20,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import handler, { TOOLS, RESPONSE_META_OUTPUT_PROPERTIES } from '../api/mcp.mjs';
+import handler, { TOOLS, RESPONSE_META_OUTPUT_PROPERTIES, TEST_FIXTURE_OUTPUT_PROPERTIES } from '../api/mcp.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -624,6 +624,10 @@ test('check_wallet_age: cached and fresh first_seen strings are byte-identical f
 // was updated to bake these 4 properties into the 3 schema'd tools it covers
 // (check_wallet_age, the 14th tool, isn't in that fixture at all - it's
 // checked separately below against the same shared constant).
+//
+// issue #215 part B added exactly one more OPTIONAL property to the same 4
+// outputSchemas: test_fixture (TEST_FIXTURE_OUTPUT_PROPERTIES), baked into
+// the same fixture file. Nothing else in any tool definition may change.
 const SCHEMA_TOOLS_WITH_NEW_META = new Set(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age']);
 
 test('check_wallet_age: is the 14th tool, and the 13 pre-existing tool definitions are unchanged except the agreed optional outputSchema additions', () => {
@@ -652,7 +656,7 @@ test('check_wallet_age: is the 14th tool, and the 13 pre-existing tool definitio
     assert.deepEqual(
       Object.keys(actual.outputSchema.properties).sort(),
       Object.keys(expected.outputSchema.properties).sort(),
-      `tool '${expected.name}' outputSchema.properties key set must exactly match the fixture (pre-existing properties plus reasons/status/checks/request_id)`
+      `tool '${expected.name}' outputSchema.properties key set must exactly match the fixture (pre-existing properties plus reasons/status/checks/request_id/test_fixture)`
     );
     for (const key of Object.keys(expected.outputSchema.properties)) {
       assert.deepEqual(
@@ -668,14 +672,22 @@ test('check_wallet_age: is the 14th tool, and the 13 pre-existing tool definitio
         `tool '${expected.name}' outputSchema.properties.${key} doesn't match the shared reasons/status/checks/request_id definition`
       );
     }
+    assert.deepEqual(actual.outputSchema.properties.test_fixture, TEST_FIXTURE_OUTPUT_PROPERTIES.test_fixture, `tool '${expected.name}' outputSchema.properties.test_fixture doesn't match the shared definition`);
   }
 
   // check_wallet_age (the 14th tool) isn't in the 13-tool snapshot fixture,
   // but it's one of the 4 schema'd tools and must carry the exact same 4
   // new optional properties, never in `required`.
   const walletAge = TOOLS.find((t) => t.name === 'check_wallet_age');
-  for (const key of Object.keys(RESPONSE_META_OUTPUT_PROPERTIES)) {
-    assert.deepEqual(walletAge.outputSchema.properties[key], RESPONSE_META_OUTPUT_PROPERTIES[key]);
+  const sharedOptional = { ...RESPONSE_META_OUTPUT_PROPERTIES, ...TEST_FIXTURE_OUTPUT_PROPERTIES };
+  for (const key of Object.keys(sharedOptional)) {
+    assert.deepEqual(walletAge.outputSchema.properties[key], sharedOptional[key]);
     assert.ok(!walletAge.outputSchema.required.includes(key), `check_wallet_age outputSchema.required must not include '${key}'`);
   }
+  // check_wallet_age has no snapshot entry, so pin its exact property set
+  // here: its own properties plus the shared optional ones, nothing else.
+  assert.deepEqual(
+    Object.keys(walletAge.outputSchema.properties).sort(),
+    ['address', 'chain', 'found', 'first_seen', 'age_days', 'first_seen_block', 'first_direction', 'is_contract', 'note', 'source', 'cached', ...Object.keys(sharedOptional)].sort()
+  );
 });
