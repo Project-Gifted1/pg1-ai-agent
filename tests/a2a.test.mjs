@@ -139,7 +139,7 @@ test('unknown skill returns a clear -32602 error listing available skills', asyn
 
 test('paid MCP tools are not reachable via A2A', async () => {
   const skillIds = A2A_SKILL_TOOLS.map((t) => t.name);
-  assert.deepEqual(skillIds.sort(), ['check_domain_age', 'check_hostname_reputation', 'check_wallet_sanctions', 'get_usage_status'].sort());
+  assert.deepEqual(skillIds.sort(), ['check_domain_age', 'check_hostname_reputation', 'check_wallet_sanctions', 'check_wallet_age', 'get_usage_status'].sort());
 
   const res = await callSkill('SendMessage', 'subscribe_alerts', { webhook_url: 'https://example.com/hook' });
   assert.equal(res.statusCode, 400);

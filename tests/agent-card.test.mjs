@@ -20,7 +20,7 @@ const vercelConfig = JSON.parse(fs.readFileSync(path.join(repoRoot, 'vercel.json
 
 test('agent card has the required top-level identity fields', () => {
   assert.equal(card.name, 'PG1 Sovereign Threat Intelligence');
-  assert.equal(card.version, '1.12.0');
+  assert.equal(card.version, '1.13.0');
   assert.equal(card.protocolVersion, '0.3.0');
   assert.equal(card.documentationUrl, 'https://github.com/Project-Gifted1/pg1-ai-agent#readme');
   assert.equal(card.url, 'https://pg1-ai-agent.vercel.app/api/a2a');
@@ -43,7 +43,7 @@ test('agent card declares streaming, push notifications, and extended agent card
   assert.equal(card.capabilities.extendedAgentCard, false);
 });
 
-test('agent card has no security schemes (all four skills are free)', () => {
+test('agent card has no security schemes (all five skills are free)', () => {
   assert.equal(card.securitySchemes, undefined);
   assert.equal(card.security, undefined);
 });
@@ -52,7 +52,7 @@ test('agent card has exactly one skill per always-free tool, matching api/a2a.mj
   const cardSkillIds = card.skills.map((s) => s.id).sort();
   const exposedSkillIds = A2A_SKILL_TOOLS.map((t) => t.name).sort();
   assert.deepEqual(cardSkillIds, exposedSkillIds);
-  assert.deepEqual(cardSkillIds, ['check_domain_age', 'check_hostname_reputation', 'check_wallet_sanctions', 'get_usage_status']);
+  assert.deepEqual(cardSkillIds, ['check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_wallet_sanctions', 'get_usage_status']);
 });
 
 test('every skill declares input/output modes', () => {

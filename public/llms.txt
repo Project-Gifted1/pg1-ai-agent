@@ -7,12 +7,13 @@
 - [check_wallet_sanctions](https://pg1-ai-agent.vercel.app/api/mcp): Checks a cryptocurrency wallet address against the OFAC SDN sanctions list; informational only, never phrased as "safe" or "clean".
 - [check_domain_age](https://pg1-ai-agent.vercel.app/api/mcp): Looks up a domain's registration age via RDAP; a newly registered domain is reported as a phishing signal, not proof of malicious intent.
 - [check_hostname_reputation](https://pg1-ai-agent.vercel.app/api/mcp): Screens a hostname against a phishing/lookalike blocklist; returns allowlisted, listed, lookalike, or not_listed — never "safe" or "clean".
+- [check_wallet_age](https://pg1-ai-agent.vercel.app/api/mcp): Reports when an EVM wallet address first appeared on a chain, based on its earliest on-chain transfer history; reports age and history only, never a safety verdict.
 - [get_usage_status](https://pg1-ai-agent.vercel.app/api/mcp): Returns your remaining free-tier calls for today and current license status.
 
 ## Endpoints
 
 - [MCP](https://pg1-ai-agent.vercel.app/api/mcp): Model Context Protocol server (Streamable HTTP, JSON-RPC).
-- [A2A](https://pg1-ai-agent.vercel.app/api/a2a): Agent2Agent JSON-RPC endpoint exposing the four free tools; agent card at https://pg1-ai-agent.vercel.app/.well-known/agent-card.json.
+- [A2A](https://pg1-ai-agent.vercel.app/api/a2a): Agent2Agent JSON-RPC endpoint exposing the five free tools; agent card at https://pg1-ai-agent.vercel.app/.well-known/agent-card.json.
 - [REST](https://pg1-ai-agent.vercel.app/api/ioc): Simple GET endpoint returning a STIX 2.1 threat indicator feed.
 - [Health](https://pg1-ai-agent.vercel.app/api/health): Uptime/health check.
 - [OpenAPI spec](https://pg1-ai-agent.vercel.app/openapi.json): Machine-readable schema for the REST endpoint.
