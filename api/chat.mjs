@@ -2225,7 +2225,7 @@ export default async function handler(req, res) {
 
     var replyText = modelFetchResult.text || `Execution failed. Model Err: ${modelFetchResult.error}`;
     if (modelFetchResult.text) {
-      replyText = replyText.replace(/\b(Google|Gemini|ChatGPT|Claude)\b/gi, 'PG1 Sovereign Core');
+      replyText = replyText.replace(/\b(I am|I'm|I’m|powered by|built on|running on)\s+(Google Gemini|Gemini|ChatGPT|Claude|Anthropic|Google|OpenAI)\b/gi, function (m, lead) { return lead + ' PG1 Sovereign Core'; });
     }
 
     if (supabaseUrl && supabaseKey && !replyText.startsWith('Execution failed') && !isPdfExport) {
