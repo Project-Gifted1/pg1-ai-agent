@@ -7,6 +7,10 @@
     {
       "path": "/api/heartbeat/pulse",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/errors/cleanup",
+      "schedule": "0 3 * * *"
     }
   ],
   "headers": [
