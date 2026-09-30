@@ -1,0 +1,231 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "PG1 Sovereign Threat Intelligence API",
+    "version": "1.12.0",
+    "description": "REST endpoints for PG1 Sovereign Threat Intelligence. This document only covers the plain HTTP GET endpoints below (/api/ioc and /api/health); the full tool catalog is also available over two JSON-RPC transports, which are not representable as REST paths:\n\n- MCP (Model Context Protocol, Streamable HTTP JSON-RPC): https://pg1-ai-agent.vercel.app/api/mcp\n- A2A (Agent2Agent, JSON-RPC 2.0): https://pg1-ai-agent.vercel.app/api/a2a — agent card at https://pg1-ai-agent.vercel.app/.well-known/agent-card.json\n\n/api/ioc is gated by one of: a Gumroad licence key (x-api-key header), a per-call x402 v2 micropayment (PAYMENT-SIGNATURE header), or the opt-in free tier (x-free-tier: 1 header, 5 calls/day per IP)."
+  },
+  "servers": [
+    { "url": "https://pg1-ai-agent.vercel.app" }
+  ],
+  "paths": {
+    "/api/ioc": {
+      "get": {
+        "summary": "STIX 2.1 threat indicator feed",
+        "description": "Returns a STIX 2.1 bundle of threat indicators. Requires a Gumroad licence key, a settled x402 v2 payment, or an opt-in free-tier request (subject to the 5 calls/day per IP limit).",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "ISO timestamp (e.g. 2026-09-20T00:00:00Z). Only indicators last seen after this time are returned.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "description": "Exact-match indicator type filter against the stored value.",
+            "schema": {
+              "type": "string",
+              "enum": ["IPv4", "IPv6", "domain", "hostname", "URL", "FileHash-MD5", "FileHash-SHA1", "FileHash-SHA256", "CVE"]
+            }
+          },
+          {
+            "name": "min_score",
+            "in": "query",
+            "required": false,
+            "description": "Minimum confidence score, inclusive.",
+            "schema": { "type": "integer", "minimum": 0, "maximum": 100, "default": 0 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum number of STIX objects to return.",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 500 }
+          },
+          {
+            "name": "x-free-tier",
+            "in": "header",
+            "required": false,
+            "description": "Opt in to the free tier: set to \"1\" to be considered for a free, unauthenticated, unpaid request. Limited to 5 calls/day per IP. Ignored if a licence key or payment is also present.",
+            "schema": { "type": "string", "enum": ["1"] }
+          }
+        ],
+        "security": [
+          { "ApiKeyAuth": [] },
+          { "X402Payment": [] },
+          {}
+        ],
+        "responses": {
+          "200": {
+            "description": "STIX 2.1 bundle of matching threat indicators.",
+            "content": {
+              "application/stix+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": { "type": "string", "const": "bundle" },
+                    "id": { "type": "string" },
+                    "objects": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "description": "A STIX 2.1 Indicator or Vulnerability object (Vulnerability for CVE records)."
+                      }
+                    }
+                  },
+                  "required": ["type", "id", "objects"]
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required. Either a plain error object (no licence key, no payment offered, or the x402 facilitator is unreachable), or the full x402 v2 PaymentRequired challenge object (a payment was attempted and verification/settlement failed, or no payment was offered while x402 is configured) — in the latter case the same object is also base64-encoded in the PAYMENT-REQUIRED response header.",
+            "headers": {
+              "PAYMENT-REQUIRED": {
+                "description": "Base64-encoded x402 v2 PaymentRequired JSON object. Present when the x402 middleware issues the challenge.",
+                "schema": { "type": "string" }
+              },
+              "Retry-After": {
+                "description": "Present when Gumroad licence verification is temporarily unavailable.",
+                "schema": { "type": "string" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": { "error": { "type": "string" } },
+                      "required": ["error"]
+                    },
+                    {
+                      "type": "object",
+                      "description": "x402 v2 PaymentRequired object.",
+                      "properties": {
+                        "x402Version": { "type": "integer", "const": 2 },
+                        "error": { "type": "string" },
+                        "accepts": { "type": "array", "items": { "type": "object" } }
+                      },
+                      "required": ["x402Version", "accepts"]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: the supplied licence key is invalid, expired, or refunded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "error": { "type": "string" } }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method Not Allowed. /api/ioc only serves GET, POST, HEAD, and OPTIONS.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "error": { "type": "string" } }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error while building or serving the STIX bundle.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "error": { "type": "string" } }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Threat data or licence verification is temporarily unavailable; retry shortly.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "error": { "type": "string" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "summary": "Health check",
+        "description": "Public, ungated uptime check. Never consumes free-tier quota. Result is cached in memory for up to 30 seconds.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service is healthy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "const": "ok" },
+                    "checks": {
+                      "type": "object",
+                      "properties": { "supabase": { "type": "string", "const": "ok" } }
+                    },
+                    "time": { "type": "string", "format": "date-time" }
+                  },
+                  "required": ["status", "checks", "time"]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service is degraded (Supabase reachability check failed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "const": "degraded" },
+                    "checks": {
+                      "type": "object",
+                      "properties": { "supabase": { "type": "string", "const": "unavailable" } }
+                    },
+                    "time": { "type": "string", "format": "date-time" }
+                  },
+                  "required": ["status", "checks", "time"]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Gumroad licence key. A Bearer token in the Authorization header is also accepted as an alternative."
+      },
+      "X402Payment": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "PAYMENT-SIGNATURE",
+        "description": "Signed x402 v2 payment payload for a $0.01 per-call micropayment on Base (eip155:8453). The X-Payment header name is also accepted."
+      }
+    }
+  }
+}
