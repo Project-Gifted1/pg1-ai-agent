@@ -113,13 +113,29 @@ test('getErrorLog tolerates corrupt localStorage content', () => {
   assert.deepEqual(getErrorLog(), []);
 });
 
+function extractLetDeclaration(source, name) {
+  const re = new RegExp(`let ${name} = [^;]+;`);
+  const match = source.match(re);
+  if (!match) throw new Error(`let ${name} not found in public/index.html`);
+  return match[0];
+}
+
+// flashStatus()'s revert-after-2.5s now repaints the live status light
+// (renderIdleStatus) instead of restoring a captured snapshot, so the
+// sandbox needs that function (and its lastHealthState/color/label
+// dependencies) defined too, even though these tests only exercise the
+// synchronous logging behavior and never wait out the timeout themselves.
 function loadFlashStatus(localStorage) {
   const getErrorLogSource = extractFunction(html, 'getErrorLog');
   const logErrorSource = extractFunction(html, 'logError');
   const flashStatusSource = extractFunction(html, 'flashStatus');
+  const lastHealthStateDecl = extractLetDeclaration(html, 'lastHealthState');
+  const healthStateColorSource = extractFunction(html, 'healthStateColor');
+  const healthStateLabelSource = extractFunction(html, 'healthStateLabel');
+  const renderIdleStatusSource = extractFunction(html, 'renderIdleStatus');
   const factory = new Function(
     'localStorage', 'document',
-    `${ERROR_LOG_CONSTS}\n${getErrorLogSource}\n${logErrorSource}\n${flashStatusSource}\nreturn flashStatus;`
+    `${ERROR_LOG_CONSTS}\n${getErrorLogSource}\n${logErrorSource}\n${lastHealthStateDecl}\n${healthStateColorSource}\n${healthStateLabelSource}\n${renderIdleStatusSource}\n${flashStatusSource}\nreturn flashStatus;`
   );
   const fakeStatusEl = { innerHTML: '', style: {} };
   const fakeDocument = { getElementById: () => fakeStatusEl };

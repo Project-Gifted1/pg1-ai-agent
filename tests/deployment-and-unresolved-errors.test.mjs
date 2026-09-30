@@ -155,6 +155,25 @@ test('[UNRESOLVED ERRORS] lists real rows, capped and labelled by source, when S
 
   assert.equal(res.statusCode, 200);
   assert.match(capturedSystemInstruction, /\[UNRESOLVED ERRORS \(last 24h, max 5\)\]/);
+  // No `category` field on these rows (older-row shape) - the bracket must
+  // render exactly as it always did, with nothing inserted.
   assert.match(capturedSystemInstruction, /\[server\] CHAT 500: stix_bundle_exception \(x3\)/);
   assert.match(capturedSystemInstruction, /\[client\].*window/);
+});
+
+test('[UNRESOLVED ERRORS] appends the reason category to the bracket label when present (issue #201 error-log polish)', async () => {
+  process.env.SUPABASE_URL = 'https://example.supabase.co';
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
+  globalThis.__mockUnresolvedErrors = [
+    { source: 'server', route: 'CHAT', status: 500, reason: 'stix_bundle_exception', category: 'http_5xx', count: 3, last_seen: '2026-09-30T10:00:00Z' },
+    { source: 'client', route: 'client', status: null, reason: 'submitDirective', category: 'offline', count: 2, last_seen: '2026-09-30T09:00:00Z' }
+  ];
+
+  const req = makeReq({ prompt: 'what is broken', user: 'test-operator', pass: 'test-secret-pass' }, { ip: '10.7.0.5' });
+  const res = makeRes();
+  await chatHandler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.match(capturedSystemInstruction, /\[server\/http_5xx\] CHAT 500: stix_bundle_exception \(x3\)/);
+  assert.match(capturedSystemInstruction, /\[client\/offline\].*submitDirective/);
 });
