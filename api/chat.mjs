@@ -520,7 +520,7 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
             }
           }
           if (text) {
-            return { text: text, error: null };
+            return { text: text, error: null, searchEntryPoint: (data && data.candidates && data.candidates[0] && data.candidates[0].groundingMetadata && data.candidates[0].groundingMetadata.searchEntryPoint && data.candidates[0].groundingMetadata.searchEntryPoint.renderedContent) || null };
           }
           var reason = (data && data.candidates && data.candidates[0] && data.candidates[0].finishReason)
             || (data && data.promptFeedback && data.promptFeedback.blockReason)
