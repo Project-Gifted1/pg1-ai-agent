@@ -659,7 +659,19 @@
     function formatMarkdown(str) {
       if (!str || typeof str !== 'string') return '';
       let escaped = escapeHTML(str);
-      
+
+      // Pull fenced code blocks out first (before any other pass can reach
+      // inside them — inline code, bold, links and slash-command buttons
+      // have all previously mangled fence content) and swap each one for a
+      // placeholder that none of those regexes can match. Restored verbatim
+      // at the end, after every other pass has run.
+      const codeBlocks = [];
+      escaped = escaped.replace(/```([\w-]*)\n?([\s\S]*?)```/g, function(match, lang, code) {
+        const idx = codeBlocks.length;
+        codeBlocks.push(`<pre style="background: rgba(0,0,0,0.35); border: 1px solid var(--glass-edge); border-radius: 6px; padding: 10px 12px; overflow-x: auto; margin: 8px 0;"><code style="font-family: monospace; white-space: pre;">${code}</code></pre>`);
+        return `\u0000CODEBLOCK${idx}\u0000`;
+      });
+
       escaped = escaped.replace(/\[\s*((?:[^\]]*?\s)?(\/[a-zA-Z0-9_-]+)(?![\w.\/-])[^\]]*?)\s*\]/g, function(match, fullInner, cmdCode) {
         return `<span onclick="triggerHaptic(30); document.getElementById('prompt-input').value='${cmdCode}'; autoResize(document.getElementById('prompt-input')); submitDirective();" style="background: rgba(243, 198, 35, 0.2); border: 1px solid var(--text-gold); color: var(--text-gold); padding: 4px 8px; border-radius: 6px; cursor: pointer; display: inline-block; font-weight: bold; margin: 2px;">${fullInner}</span>`;
       });
@@ -669,8 +681,10 @@
       escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong style="color: #ffffff;">$1</strong>');
       escaped = escaped.replace(/`([^`]+)`/g, '<span style="background: rgba(243, 198, 35, 0.15); color: #fff; padding: 2px 5px; border-radius: 4px;">$1</span>');
       escaped = escaped.replace(/^---$/gim, '<div style="height: 1px; background: var(--glass-edge); margin: 16px 0;"></div>');
-      
+
       escaped = escaped.replace(/(?<!src=")https?:\/\/[^\s<]+?(?=&quot;|&#39;|[.,)]?(?:\s|<|$))/g, function (url) { return '<a href="' + url + '" target="_blank" rel="noopener noreferrer" style="color: #22d3ee; text-decoration: underline; word-break: break-all;">' + url + '</a>'; });
+
+      escaped = escaped.replace(/\u0000CODEBLOCK(\d+)\u0000/g, function(match, idx) { return codeBlocks[Number(idx)]; });
       return escaped;
     }
 
@@ -926,13 +940,46 @@
       };
     }
 
+    // Shared by speakMessage() and submitDirective()'s /speak handling, so a
+    // response carrying audio (or an audio failure) is always actually
+    // played (or honestly reported) the same way regardless of which flow
+    // produced it. Returns true if playback was attempted, false if there
+    // was nothing audio-shaped in `data` to act on.
+    function playAudioResult(data) {
+      if (data.audio) {
+        try {
+          let audioSrc = data.audio;
+          if (!audioSrc.startsWith('http')) {
+            audioSrc = `data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio.replace(/\s+/g, '')}`;
+          }
+          const audio = new Audio(audioSrc);
+          audio.play().catch(e => {
+            // Audio generated fine — the browser just wouldn't auto-play it.
+            // Keep it ready and let one more real tap release it, instead of
+            // just reporting failure and throwing the work away.
+            console.log('Audio playback prevented:', e);
+            showTapToPlay(audio);
+          });
+        } catch(audioErr) {
+          console.error('Audio decode error:', audioErr);
+          flashStatus('AUDIO DECODE ERROR');
+        }
+        return true;
+      } else if (data.audioStatus && data.audioStatus !== 'SUCCESS') {
+        // e.g. Cartesia key missing/misconfigured server-side, or synthesis failed.
+        flashStatus('TTS UNAVAILABLE (' + data.audioStatus + ')');
+        return true;
+      }
+      return false;
+    }
+
     async function speakMessage(text) {
       try {
         const voiceProfile = document.getElementById('voice-profile-select').value;
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: text, action: 'SPEAK', voice: voiceProfile })
+          body: JSON.stringify({ prompt: text, action: 'SPEAK', voice: voiceProfile, user: sessionUser, pass: sessionPass })
         });
         const responseText = await response.text();
         let data;
@@ -941,29 +988,11 @@
         } catch (parseErr) {
           throw new Error(`Server returned non-JSON response (${response.status}): ${responseText.substring(0, 150)}`);
         }
-        if (data.audio) {
-          try {
-            let audioSrc = data.audio;
-            if (!audioSrc.startsWith('http')) {
-              audioSrc = `data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio.replace(/\s+/g, '')}`;
-            }
-            const audio = new Audio(audioSrc);
-            audio.play().catch(e => {
-              // Audio generated fine — the browser just wouldn't auto-play it.
-              // Keep it ready and let one more real tap release it, instead of
-              // just reporting failure and throwing the work away.
-              console.log('Audio playback prevented:', e);
-              showTapToPlay(audio);
-            });
-          } catch(audioErr) {
-            console.error('Audio decode error:', audioErr);
-            flashStatus('AUDIO DECODE ERROR');
-          }
-        } else if (data.audioStatus && data.audioStatus !== 'SUCCESS') {
-          // e.g. Cartesia key missing/misconfigured server-side, or synthesis failed.
-
-          flashStatus('TTS UNAVAILABLE (' + data.audioStatus + ')');
+        if (!response.ok) {
+          flashStatus('SPEECH REQUEST FAILED (' + response.status + ')');
+          return;
         }
+        playAudioResult(data);
       } catch (err) {
         console.error('Speech synthesis error:', err);
         flashStatus('SPEECH REQUEST FAILED');
@@ -1204,7 +1233,14 @@
         agentBubble.innerHTML = contentHtml;
         saveState();
 
-        if (voiceActive && data.reply) {
+        // /speak and /tts responses carry audio/audioStatus directly on this
+        // same reply (activeAction === 'SPEAK' server-side) — play/report it
+        // here instead of leaving the reply text as the only signal, so a
+        // "SUCCESS" status always corresponds to audio the operator actually
+        // heard (or was offered a tap-to-play for), not just synthesized.
+        const spokeDirectly = playAudioResult(data);
+
+        if (!spokeDirectly && voiceActive && data.reply) {
           speakMessage(data.reply);
         }
 
