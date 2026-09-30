@@ -714,14 +714,45 @@
 
     // LIVE STATUS LIGHT: react to the browser's own connectivity events
     // immediately (no need to wait for the next poll), and otherwise poll
-    // /api/health lightly every 30s so a degraded-but-online backend still
-    // gets noticed without the operator doing anything.
+    // /api/health lightly every 120s so a degraded-but-online backend still
+    // gets noticed without the operator doing anything. Polling is paused
+    // while the tab is hidden (a background tab gains nothing from it and
+    // it only burns battery/data) and resumes with an immediate check as
+    // soon as the tab is visible again, so the light is never stale right
+    // when someone looks back at it.
+    const STATUS_POLL_INTERVAL_MS = 120000;
+    let statusPollTimerId = null;
+
+    function startStatusPolling() {
+      if (statusPollTimerId !== null) return;
+      statusPollTimerId = setInterval(refreshStatusLight, STATUS_POLL_INTERVAL_MS);
+    }
+
+    function stopStatusPolling() {
+      if (statusPollTimerId !== null) {
+        clearInterval(statusPollTimerId);
+        statusPollTimerId = null;
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'hidden') {
+        stopStatusPolling();
+      } else {
+        refreshStatusLight();
+        startStatusPolling();
+      }
+    }
+
     window.addEventListener('online', refreshStatusLight);
     window.addEventListener('offline', () => {
       lastHealthState = 'red';
       renderIdleStatus();
     });
-    setInterval(refreshStatusLight, 30000);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    if (document.visibilityState !== 'hidden') {
+      startStatusPolling();
+    }
 
     function triggerHaptic(duration = 50) {
       if (navigator.vibrate) {
