@@ -52,7 +52,7 @@ import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { x402ResourceServer } from '@x402/express';
 import { encodePaymentRequiredHeader, encodePaymentResponseHeader, decodePaymentSignatureHeader } from '@x402/core/http';
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
-import { checkAndConsumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT } from '../lib/freeTier.mjs';
+import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT } from '../lib/freeTier.mjs';
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { detectIndicatorType, lookupIocContext } from '../lib/iocContext.mjs';
@@ -1769,10 +1769,18 @@ async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentif
   if (!rawPayment && freeTierOptIn) {
     try {
       const { supUrl, supKey } = getSupabaseCreds();
-      const freeTierResult = await checkAndConsumeFreeTier(supUrl, supKey, mcpRequestIdentifier);
-      if (freeTierResult.allowed) {
-        logSettlementOutcome('/api/mcp', 'free_tier', mcpRequestIdentifier, 'remaining=' + freeTierResult.remaining);
-        return { authorized: true };
+      const freeTierAvailability = await checkFreeTierAvailable(supUrl, supKey, mcpRequestIdentifier);
+      if (freeTierAvailability.allowed) {
+        // Deferred like x402's settle(): the caller must invoke this only
+        // after the gated tool call actually succeeds, so a failed lookup
+        // doesn't burn one of the 5/day for nothing.
+        return {
+          authorized: true,
+          consumeFreeTier: async () => {
+            await consumeFreeTier(supUrl, supKey, mcpRequestIdentifier, freeTierAvailability);
+            logSettlementOutcome('/api/mcp', 'free_tier', mcpRequestIdentifier, 'remaining=' + freeTierAvailability.remaining);
+          }
+        };
       }
     } catch (e) {}
   }
@@ -2002,6 +2010,7 @@ export default async function handler(req, res) {
           if (!settlement) return;
           result._meta = { 'x402/payment-response': settlement };
         }
+        if (gate.consumeFreeTier) await gate.consumeFreeTier();
         return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
       }
 
@@ -2036,6 +2045,7 @@ export default async function handler(req, res) {
           if (!settlement) return;
           result._meta = { 'x402/payment-response': settlement };
         }
+        if (gate.consumeFreeTier) await gate.consumeFreeTier();
         return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
       }
 
@@ -2065,11 +2075,18 @@ export default async function handler(req, res) {
         if (!settlement) return;
         result._meta = { 'x402/payment-response': settlement };
       }
+      if (gate.consumeFreeTier) await gate.consumeFreeTier();
       return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
     }
 
     return res.status(200).json({ jsonrpc: '2.0', error: { code: -32601, message: `Method not found: ${method || 'unknown'}` }, id: requestId });
   } catch (err) {
-    return res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal server error', data: err.message }, id: requestId });
+    // This is the catch-all for anything the specific handlers above didn't
+    // already turn into a sanitized message (a genuine bug, not an expected
+    // failure) — err.message here can be a raw internal (stack detail,
+    // ENOTFOUND, upstream response text). Log it server-side only; never
+    // echo it back into the response body.
+    console.error('[MCP] unhandled tools/call exception:', err.message);
+    return res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal server error' }, id: requestId });
   }
 }

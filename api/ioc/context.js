@@ -15,7 +15,7 @@
 
 import { getSupabaseCreds } from '../../lib/supabase.mjs';
 import { lookupIocContext } from '../../lib/iocContext.mjs';
-import { checkAndConsumeFreeTier, getRequestIdentifier, logSettlementOutcome } from '../../lib/freeTier.mjs';
+import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome } from '../../lib/freeTier.mjs';
 import { verifyGumroadLicense, ensureExpressCompat, mirrorPaymentRequiredIntoJsonBody, createX402Gate } from '../../lib/paymentGate.mjs';
 
 export const config = { maxDuration: 30 };
@@ -89,10 +89,14 @@ export default async function handler(req, res) {
   if (!authorized && !rawPayment && freeTierOptIn) {
     try {
       const { supUrl, supKey } = getSupabaseCreds();
-      const freeTierResult = await checkAndConsumeFreeTier(supUrl, supKey, requestIdentifier);
-      if (freeTierResult.allowed) {
+      // Safe to consume immediately (unlike the deferred use in api/mcp.mjs
+      // and api/chat.mjs): lookupResult was already fetched successfully
+      // above, so there's no later failure that could waste this slot.
+      const freeTierAvailability = await checkFreeTierAvailable(supUrl, supKey, requestIdentifier);
+      if (freeTierAvailability.allowed) {
         authorized = true;
-        logSettlementOutcome('/api/ioc/context', 'free_tier', requestIdentifier, 'remaining=' + freeTierResult.remaining);
+        await consumeFreeTier(supUrl, supKey, requestIdentifier, freeTierAvailability);
+        logSettlementOutcome('/api/ioc/context', 'free_tier', requestIdentifier, 'remaining=' + freeTierAvailability.remaining);
       }
     } catch (e) {}
   }
@@ -109,8 +113,11 @@ export default async function handler(req, res) {
         x402Gate.middleware(req, res, (err) => (err ? reject(err) : (authorized = true, resolve())));
       });
     } catch (x402Err) {
+      // Log server-side only; x402Err.message can carry raw upstream/
+      // facilitator error text that must not reach the client.
+      console.error('[X402] /api/ioc/context verification threw:', x402Err.message);
       if (!res.headersSent) {
-        return res.status(402).json({ error: 'Payment verification failed: ' + x402Err.message });
+        return res.status(402).json({ error: 'Payment verification failed. Please retry, or use a Gumroad license key.' });
       }
       return;
     }

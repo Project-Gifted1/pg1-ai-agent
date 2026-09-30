@@ -3,7 +3,7 @@ import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { paymentMiddleware, x402ResourceServer } from '@x402/express';
 import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
-import { checkAndConsumeFreeTier, getRequestIdentifier, logSettlementOutcome } from '../lib/freeTier.mjs';
+import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome } from '../lib/freeTier.mjs';
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
 
 // ---------------------------------------------------------------------
@@ -267,6 +267,12 @@ function sendJSON(res, status, data) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier');
   res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE');
   res.status(status).json(data);
+}
+
+// One short, greppable line per 401 this route ever returns — route name +
+// reason only, never the credentials/prompt/body that triggered it.
+function log401(route, reason) {
+  console.warn(`[chat] 401 route=${route} reason=${reason}`);
 }
 
 async function fetchWithTimeout(url, options, timeoutMs) {
@@ -741,14 +747,20 @@ export default async function handler(req, res) {
 
       var threatRes;
       try {
-        threatRes = await fetch(`${supUrl}/rest/v1/threat_ioc_telemetry?${queryFilters.join('&')}`, {
+        // Bounded well under Vercel's maxDuration (60s, api/ioc.js) and the
+        // x402 payment's own maxTimeoutSeconds — this fetch runs AFTER a
+        // payment has already been verified/settled, so it must fail fast
+        // rather than let a payer sit on a hung request.
+        threatRes = await fetchWithTimeout(`${supUrl}/rest/v1/threat_ioc_telemetry?${queryFilters.join('&')}`, {
           headers: { 'apikey': supKey, 'Authorization': `Bearer ${supKey}` }
-        });
+        }, 10000);
       } catch (netErr) {
-        return sendJSON(res, 503, { error: 'Threat data temporarily unavailable, please retry.' });
+        sendJSON(res, 503, { error: 'Threat data temporarily unavailable, please retry.' });
+        return { ok: false };
       }
       if (!threatRes.ok) {
-        return sendJSON(res, 503, { error: 'Threat data temporarily unavailable, please retry.' });
+        sendJSON(res, 503, { error: 'Threat data temporarily unavailable, please retry.' });
+        return { ok: false };
       }
       var rawTelemetry = await threatRes.json();
 
@@ -822,8 +834,10 @@ export default async function handler(req, res) {
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier');
       res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE');
       res.status(200).end(JSON.stringify(stixBundle));
+      return { ok: true };
     } catch (err) {
-      return sendJSON(res, 500, { error: 'Internal Server Error: Telemetry stream failed.' });
+      sendJSON(res, 500, { error: 'Internal Server Error: Telemetry stream failed.' });
+      return { ok: false };
     }
   }
 
@@ -880,10 +894,18 @@ export default async function handler(req, res) {
     var freeTierHeader = getHeader('x-free-tier');
     console.log('[X402_DEBUG] x-free-tier header:', freeTierHeader || '(none)');
     if (!rawPaymentHeader && freeTierHeader === '1') {
-      var freeTierResult = await checkAndConsumeFreeTier(supUrl, supKey, iocRequestIdentifier);
-      if (freeTierResult.allowed) {
-        logSettlementOutcome('/api/ioc', 'free_tier', iocRequestIdentifier, 'remaining=' + freeTierResult.remaining);
-        return await buildAndServeStixBundle('free-tier:' + iocRequestIdentifier);
+      var freeTierAvailability = await checkFreeTierAvailable(supUrl, supKey, iocRequestIdentifier);
+      if (freeTierAvailability.allowed) {
+        var freeTierBundleResult = await buildAndServeStixBundle('free-tier:' + iocRequestIdentifier);
+        if (freeTierBundleResult.ok) {
+          // Only spend one of the 5/day once the bundle was actually served
+          // — a downstream failure must not burn a free-tier call for nothing.
+          await consumeFreeTier(supUrl, supKey, iocRequestIdentifier, freeTierAvailability);
+          logSettlementOutcome('/api/ioc', 'free_tier', iocRequestIdentifier, 'remaining=' + freeTierAvailability.remaining);
+        } else {
+          logSettlementOutcome('/api/ioc', 'rejected', iocRequestIdentifier, 'free_tier_bundle_failed');
+        }
+        return;
       }
     }
 
@@ -910,9 +932,13 @@ export default async function handler(req, res) {
           });
         });
       } catch (x402Err) {
+        // x402Err.message can be a raw upstream/facilitator error (network
+        // failure text, internal exception detail) — log it server-side only
+        // and never echo it back into the response body.
+        console.error('[X402] /api/ioc verification threw:', x402Err.message);
         logSettlementOutcome('/api/ioc', 'rejected', iocRequestIdentifier, x402Err.message);
         if (!res.headersSent) {
-          return sendJSON(res, 402, { error: 'Payment verification failed: ' + x402Err.message });
+          return sendJSON(res, 402, { error: 'Payment verification failed. Please retry, or use a Commercial License Key in an x-api-key header.' });
         }
         return;
       }
@@ -1004,6 +1030,7 @@ export default async function handler(req, res) {
           reorganizeOperations = Array.isArray(parsedPrompt.operations) ? parsedPrompt.operations : reorganizeOperations;
           reorganizeCommitMessage = parsedPrompt.commitMessage || reorganizeCommitMessage;
         } else if (mappedAction === 'force_state_update' || mappedAction === 'bypass_interceptor') {
+          log401('blocked_action', mappedAction);
           return sendJSON(res, 401, { reply: `[AGENT] Unauthorized.`, traceId: requestTraceId });
         }
         pendingCode = parsedPrompt.pendingCode || pendingCode;
@@ -1045,6 +1072,7 @@ export default async function handler(req, res) {
 
     if (promptText === 'AUTH_VERIFY') {
       if (!isAuthed) {
+        log401('AUTH_VERIFY', 'unauthenticated');
         return sendJSON(res, 401, { success: false, reply: 'Access Denied', traceId: requestTraceId });
       }
       return sendJSON(res, 200, {
@@ -1055,6 +1083,7 @@ export default async function handler(req, res) {
 
     if (typeof promptText === 'string' && promptText.toLowerCase().includes('/smoke')) {
       if (!isAuthed) {
+        log401('smoke', 'unauthenticated');
         return sendJSON(res, 401, { reply: `[AGENT] Smoke Test Aborted: Authentication required.`, traceId: requestTraceId });
       }
       try {
@@ -1281,6 +1310,7 @@ export default async function handler(req, res) {
 
     if (activeAction === 'APPLY_SURGICAL_PATCH') {
       if (!isAuthed) {
+        log401('APPLY_SURGICAL_PATCH', 'unauthenticated');
         return sendJSON(res, 401, { reply: `[AGENT] Patch Aborted: Authentication required.`, traceId: requestTraceId });
       }
       if (!isAuthorizedAction) {
@@ -1447,6 +1477,7 @@ export default async function handler(req, res) {
 
     if (activeAction === 'SPEAK') {
       if (!isAuthed) {
+        log401('SPEAK', 'unauthenticated');
         return sendJSON(res, 401, { reply: `[AGENT] Speak Aborted: Authentication required.`, traceId: requestTraceId });
       }
       var audioBase64 = null;
@@ -1502,6 +1533,7 @@ export default async function handler(req, res) {
 
     if (activeAction === 'GENERATE_IMAGE') {
       if (!isAuthed) {
+        log401('GENERATE_IMAGE', 'unauthenticated');
         return sendJSON(res, 401, { reply: `[AGENT] Image Generation Aborted: Authentication required.`, traceId: requestTraceId });
       }
       var cleanPrompt = promptText.replace(/generate image of|create an image of|generate image|create image|\/image|draw a|draw an|picture of|photo of|render a|render an/gi, '').trim() || 'futuristic cybernetic landscape';
@@ -1678,6 +1710,7 @@ export default async function handler(req, res) {
 
     if (activeAction === 'ACCEPT_AUTHORIZATION') {
       if (!isAuthed) {
+        log401('ACCEPT_AUTHORIZATION', 'unauthenticated');
         return sendJSON(res, 401, { reply: `[AGENT] Commit Aborted: Authentication required.`, traceId: requestTraceId });
       }
 
@@ -1816,6 +1849,7 @@ export default async function handler(req, res) {
 
     if (activeAction === 'REORGANIZE_FILES') {
       if (!isAuthed) {
+        log401('REORGANIZE_FILES', 'unauthenticated');
         return sendJSON(res, 401, { reply: `[AGENT] Reorganize Aborted: Authentication required.`, traceId: requestTraceId });
       }
       if (!isAuthorizedAction) {
@@ -2050,6 +2084,7 @@ export default async function handler(req, res) {
 
     if (activeAction === 'CONFIRM_PENDING_ACTION') {
       if (!isAuthed) {
+        log401('CONFIRM_PENDING_ACTION', 'unauthenticated');
         return sendJSON(res, 401, { reply: `[AGENT] Confirmation Aborted: Authentication required.`, traceId: requestTraceId });
       }
       if (!pendingActionToken) {
@@ -2199,6 +2234,7 @@ export default async function handler(req, res) {
     // Anthropic key, so it requires authentication same as the other
     // paid/storage actions gated above.
     if (!isAuthed) {
+      log401('CHAT', 'unauthenticated');
       return sendJSON(res, 401, { reply: `[AGENT] Chat Aborted: Authentication required.`, traceId: requestTraceId });
     }
 
@@ -2208,9 +2244,10 @@ export default async function handler(req, res) {
 [CAPABILITIES — what you can and cannot do]:
 - You are the operator command centre for Project-Gifted1 (PG1 Sovereign Threat Intelligence). The operator is Gift.
 - Live web search is available on the main core for current facts. Say when an answer comes from search and that figures should be checked. The advanced reasoning core (/claude, long or heavy prompts) has no web search.
-- Slash commands and what they really do (describe them exactly like this, never as more): /status shows the London runtime, a live Supabase connection check and the fleet target; /threat-radar lists which feeds are stored and which are queried live; /commerce-status shows Gumroad paused and the x402 route; /sync-vault shows a static vault summary with no integrity check; /export and /vault show the recent chat archive; /test-validator is a static placeholder that runs nothing; /image generates an image; /speak reads text aloud; /claude sends a question to the advanced reasoning core; /approve and /decline resolve a proposal; /help lists the commands. The Vault Sync option in the plus menu asks you to list the latest vault files. Suggest the right command instead of imitating its output.
+- Slash commands and what they really do (describe them exactly like this, never as more): /status shows the London runtime, a live Supabase connection check and the fleet target; /threat-radar is a static text summary of which feeds are stored and which are queried live, not a live feed display — there is no on-screen live threat-feed view anywhere in the UI; /commerce-status shows Gumroad paused and the x402 route; /sync-vault shows a static vault summary with no integrity check; /export and /vault show the recent chat archive; /test-validator is a static placeholder that runs nothing; /image generates an image; /speak reads text aloud; /claude sends a question to the advanced reasoning core; /approve and /decline resolve a proposal; /help lists the commands. The Vault Sync option in the plus menu asks you to list the latest vault files. Suggest the right command instead of imitating its output.
 - Code changes arrive as JSON actions. APPLY_SURGICAL_PATCH makes one exact search-and-replace: the search text must match exactly once, replace must not be empty, and vercel.json, package files and workflows need confirmProtectedPath: true. REORGANIZE_FILES creates, updates, deletes or moves up to 30 text files in one commit. Every change needs login and isAuthorizedAction, shows a diff preview with Approve and Decline, and opens a pull request on a new branch. Nothing is ever committed straight to main, and you cannot merge. Env files, credentials, keys and .git are blocked. The default repo is sovereign-threat-pipeline unless targetRepo says pg1-ai-agent.
-- Attachments: images and files up to 3 MB total per message; the eye button sends a camera frame. Uploads are stored in the Supabase vault bucket pg1-vault.
+- Voice: the VOICE toggle in the header auto-speaks every new reply; every message bubble also has its own SPEAK button (alongside COPY and DELETE) that reads just that bubble aloud; the mic button dictates speech into the prompt box. All of these, and /speak, use the same server-side text-to-speech call — none of it is continuous or "live" audio, each is a single request/response per utterance.
+- Attachments: images and files up to 3 MB total per message. The 👁️ Vision Matrix (header icon) offers Device Camera or Screen Display; whichever is chosen captures ONE still frame that is attached to your NEXT message only — it is a single snapshot per message, never a continuous/live video feed into this chat. Screen Display uses getDisplayMedia and only works on desktop browsers; Android Chrome does not support screen capture and shows a message saying so instead of a picker. Uploads are stored in the Supabase vault bucket pg1-vault.
 - Public services PG1 runs (you describe them; you cannot call them from this chat): the MCP server at https://pg1-ai-agent.vercel.app/api/mcp with 13 tools. Always free: check_wallet_sanctions, check_domain_age, check_hostname_reputation, get_usage_status. Paid at one cent (0.01 USD) via x402 on Base or a licence key: get_threat_indicators, get_cve_details, get_cve_batch, get_cve_by_product, get_threat_actor_profile, plus get_ioc_context and get_ioc_batch when a record is found. Licence only: subscribe_alerts, submit_indicator. The A2A endpoint /api/a2a exposes the four free tools (versions 1.0 and 0.3). The REST STIX 2.1 feed /api/ioc sits behind a 402 paywall (licence key, x402, or an opt-in free tier of 5 calls a day). Also /api/health, /llms.txt, /openapi.json and the agent card at /.well-known/agent-card.json. Listed on the Official MCP Registry, Smithery and Glama.
 - Business state: paid feeds are on hold pending data licences (abuse.ch, LevelBlue/OTX, ScamSniffer), and the Gumroad product is unpublished. There are no paid calls yet.
 - You cannot read Vercel logs or traffic, run the MCP or A2A tools yourself, merge pull requests, or see files except through a patch proposal. Never claim to have done any of these.
