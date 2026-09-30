@@ -1,9 +1,13 @@
 /**
- * Issue #199 Phase 2:
+ * Issue #199 Phase 2 / Issue #201 (stale-profile fix):
  *  - Voice profiles are a fixed server-side allow-list (core/classic/field).
  *    The browser only ever sends the profile name, never a provider voice
- *    ID; the server rejects anything not in the allow-list.
- *  - A missing profile falls back to "core" rather than failing.
+ *    ID.
+ *  - A missing OR unrecognized profile (e.g. a stale value saved to
+ *    localStorage before this allow-list existed) falls back to "core"
+ *    silently rather than failing. Rejecting it used to surface as a
+ *    client-side error flash on the first reply after such a device
+ *    upgraded — see issue #201.
  *  - No third-party (voice provider) names appear in any user-facing reply.
  *
  * Run with: node --test tests/voice-profile-and-library.test.mjs
@@ -60,7 +64,7 @@ function makeRes() {
   return res;
 }
 
-test('SPEAK with an unknown voice profile is rejected, not silently substituted', async () => {
+test('SPEAK with an unknown/stale voice profile falls back to PG1 Core silently, not rejected', async () => {
   const req = makeReq(
     { prompt: 'say hello', action: 'SPEAK', voice: 'not-a-real-profile', user: 'test-operator', pass: 'test-secret-pass' },
     { ip: '10.4.0.1' }
@@ -69,8 +73,10 @@ test('SPEAK with an unknown voice profile is rejected, not silently substituted'
   await chatHandler(req, res);
 
   assert.equal(res.statusCode, 200);
-  assert.match(res.body.reply, /Unknown voice profile/);
-  assert.equal(res.body.audioStatus, undefined);
+  assert.doesNotMatch(res.body.reply, /Unknown voice profile/);
+  // No CARTESIA_API_KEY configured in tests, so falling back to "core"
+  // behaves exactly like sending "core" explicitly (see next test).
+  assert.equal(res.body.audioStatus, 'SKIPPED_NO_KEY');
 });
 
 test('SPEAK with no voice field falls back to the PG1 Core profile (no key configured, so it never crashes)', async () => {
