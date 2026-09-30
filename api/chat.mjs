@@ -502,6 +502,7 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: sysInstruction }] },
             contents: [{ role: 'user', parts: [...mediaParts, { text: promptText + contextData }] }],
+            tools: [{ google_search: {} }],
             generationConfig: { maxOutputTokens: 4096, temperature: 0.7 }
           }),
           cache: 'no-store',
