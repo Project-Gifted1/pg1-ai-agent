@@ -1216,7 +1216,7 @@ export default async function handler(req, res) {
         activeAction = 'CLAUDE_CHAT';
       } else if (lower.startsWith('/threat-radar')) {
         return sendJSON(res, 200, {
-          reply: `### [ THREAT RADAR TELEMETRY ]\n- **Ingested Feeds**: AlienVault OTX, ThreatFox, NVD\n- **Indicator Count**: 20 High-Confidence Records\n- **Pipeline State**: Automated Temporal Cron Synchronized`,
+          reply: `### [ THREAT RADAR TELEMETRY ]\n- **Ingested Feeds**: AlienVault OTX (stored telemetry); ThreatFox, URLhaus and NVD queried live per lookup\n- **Indicator Count**: not counted by this command\n- **Pipeline State**: Automated Temporal Cron Synchronized`,
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/test-validator')) {
