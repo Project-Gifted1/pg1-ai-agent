@@ -22,6 +22,20 @@
       ]
     },
     {
+      "source": "/llms.txt",
+      "headers": [
+        { "key": "Content-Type", "value": "text/plain; charset=utf-8" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
+    },
+    {
+      "source": "/openapi.json",
+      "headers": [
+        { "key": "Content-Type", "value": "application/json" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
+    },
+    {
       "source": "/api/chat",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "https://pg1-ai-agent.vercel.app" },
