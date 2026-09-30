@@ -484,6 +484,12 @@
       </span>
     </div>
     
+    <div class="quick-row">
+      <button class="quick-chip" onclick="triggerHaptic(30); document.getElementById('prompt-input').value='/status'; submitDirective();">STATUS</button>
+      <button class="quick-chip" onclick="triggerHaptic(30); document.getElementById('prompt-input').value='/threat-radar'; submitDirective();">RADAR</button>
+      <button class="quick-chip" onclick="triggerHaptic(30); document.getElementById('prompt-input').value='/commerce-status'; submitDirective();">COMMERCE</button>
+      <button class="quick-chip" onclick="triggerHaptic(30); document.getElementById('prompt-input').value='/sync-vault'; submitDirective();">VAULT</button>
+    </div>
     <div class="command-deck">
       <button id="mic-btn" class="tool-btn" title="Voice Input" onclick="triggerHaptic(); toggleRecording()">🎤</button>
       <label class="tool-btn" title="Attach Files">
