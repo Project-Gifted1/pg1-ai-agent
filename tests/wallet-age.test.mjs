@@ -91,8 +91,13 @@ const ADDRESS = '0x' + 'a'.repeat(40);
 // Routes Alchemy JSON-RPC calls (alchemy_getAssetTransfers x2, eth_getCode)
 // and Supabase wallet_first_seen reads/writes. `cacheRows` seeds the GET
 // response; `onWrite` observes each upsert body; `tableMissing` simulates
-// the cache table not existing yet.
-function makeFetchMock({ outTransfers = [], inTransfers = [], code = '0x', cacheRows = [], tableMissing = false, onWrite, onAlchemyCall, hang = false } = {}) {
+// the cache table not existing yet. `rejectInternalCategory` simulates
+// Alchemy rejecting any alchemy_getAssetTransfers call whose `category`
+// includes 'internal' (issue #209 follow-up: the retry-without-internal
+// safety net); `failAfterCategoryRetry` makes the *second* eth_getCode call
+// (i.e. the retry attempt) fail too, to exercise "retry also fails".
+function makeFetchMock({ outTransfers = [], inTransfers = [], code = '0x', cacheRows = [], tableMissing = false, onWrite, onAlchemyCall, hang = false, rejectInternalCategory = false, failAfterCategoryRetry = false } = {}) {
+  let ethGetCodeCalls = 0;
   return async (url, options = {}) => {
     const urlStr = String(url);
 
@@ -112,11 +117,25 @@ function makeFetchMock({ outTransfers = [], inTransfers = [], code = '0x', cache
       }
       const body = JSON.parse(options.body);
       if (body.method === 'eth_getCode') {
+        ethGetCodeCalls += 1;
+        if (failAfterCategoryRetry && ethGetCodeCalls > 1) {
+          return { ok: false, status: 500, json: async () => ({}) };
+        }
         return { ok: true, json: async () => ({ jsonrpc: '2.0', id: body.id, result: code }) };
       }
       if (body.method === 'alchemy_getAssetTransfers') {
         const params = body.params[0];
         const isOut = !!params.fromAddress;
+        const categories = params.category || [];
+        if (rejectInternalCategory && categories.includes('internal')) {
+          return {
+            ok: true,
+            json: async () => ({
+              jsonrpc: '2.0', id: body.id,
+              error: { code: -32602, message: "Categories ['internal'] are not supported for this network." }
+            })
+          };
+        }
         return { ok: true, json: async () => ({ jsonrpc: '2.0', id: body.id, result: { transfers: isOut ? outTransfers : inTransfers } }) };
       }
       throw new Error('unexpected alchemy method: ' + body.method);
@@ -385,6 +404,78 @@ test('check_wallet_age: response never leaks raw upstream fields', async (t) => 
   assert.equal(res.body.result.structuredContent && Object.keys(res.body.result.structuredContent).some((k) =>
     ['uniqueId', 'hash', 'category', 'asset', 'rawContract', 'from', 'to', 'value'].includes(k)
   ), false);
+});
+
+test("check_wallet_age: requests the 'internal' transfer category on base, ethereum, and polygon, but not on arbitrum, optimism, or bsc", async (t) => {
+  withAlchemyEnv(t);
+  withoutSupabaseEnv(t);
+  const originalFetch = global.fetch;
+  t.after(() => { global.fetch = originalFetch; });
+
+  const expectations = { base: true, ethereum: true, polygon: true, arbitrum: false, optimism: false, bsc: false };
+
+  for (const [chain, expectInternal] of Object.entries(expectations)) {
+    let seenCategories = null;
+    global.fetch = async (url, options = {}) => {
+      const urlStr = String(url);
+      if (urlStr.includes('.g.alchemy.com/v2/')) {
+        const body = JSON.parse(options.body);
+        if (body.method === 'eth_getCode') {
+          return { ok: true, json: async () => ({ jsonrpc: '2.0', id: body.id, result: '0x' }) };
+        }
+        seenCategories = body.params[0].category;
+        return { ok: true, json: async () => ({ jsonrpc: '2.0', id: body.id, result: { transfers: [] } }) };
+      }
+      throw new Error('unexpected fetch: ' + urlStr);
+    };
+
+    const res = await callTool({ address: ADDRESS, chain });
+    assert.notEqual(res.body.result.isError, true, `chain=${chain}`);
+    assert.equal(seenCategories.includes('internal'), expectInternal, `chain=${chain} categories=${JSON.stringify(seenCategories)}`);
+  }
+});
+
+test('check_wallet_age: an unsupported-category rejection retries once without internal and still returns a correct result', async (t) => {
+  withAlchemyEnv(t);
+  withoutSupabaseEnv(t);
+  const originalFetch = global.fetch;
+  let alchemyCalls = 0;
+  global.fetch = makeFetchMock({
+    inTransfers: [{ metadata: { blockTimestamp: '2022-07-07T00:00:00.000Z' }, blockNum: '0x7' }],
+    outTransfers: [],
+    rejectInternalCategory: true,
+    onAlchemyCall: () => { alchemyCalls += 1; }
+  });
+  t.after(() => { global.fetch = originalFetch; });
+
+  // base is in WALLET_AGE_INTERNAL_SUPPORTED_CHAINS, so the first attempt
+  // requests 'internal' and gets rejected, triggering the retry.
+  const res = await callTool({ address: ADDRESS, chain: 'base' });
+  assert.notEqual(res.body.result.isError, true);
+  const parsed = JSON.parse(res.body.result.content[0].text);
+  assert.equal(parsed.found, true);
+  assert.equal(parsed.first_direction, 'in');
+  assert.equal(parsed.first_seen, '2022-07-07T00:00:00.000Z');
+  assert.equal(parsed.first_seen_block, 7);
+  assert.ok(alchemyCalls > 3, 'expected a retry: more than the 3 calls (out, in, eth_getCode) of a single attempt');
+});
+
+test('check_wallet_age: a retry that also fails after an unsupported-category rejection returns isError, never found:false', async (t) => {
+  withAlchemyEnv(t);
+  withoutSupabaseEnv(t);
+  const originalFetch = global.fetch;
+  global.fetch = makeFetchMock({
+    rejectInternalCategory: true,
+    failAfterCategoryRetry: true
+  });
+  t.after(() => { global.fetch = originalFetch; });
+
+  const res = await callTool({ address: ADDRESS, chain: 'base' });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.result.isError, true);
+  const parsed = JSON.parse(res.body.result.content[0].text);
+  assert.equal(parsed.code, 'upstream_unavailable');
+  assert.notEqual(parsed.found, false);
 });
 
 test('check_wallet_age: is the 14th tool, and the 13 pre-existing tool definitions are byte-identical to before', () => {

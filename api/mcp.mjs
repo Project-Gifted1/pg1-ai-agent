@@ -1612,10 +1612,14 @@ const WALLET_AGE_CHAIN_SLUGS = {
 };
 
 // alchemy_getAssetTransfers' "internal" category (trace-level ETH transfers)
-// is documented as available only on these chains as of this writing —
-// re-check https://docs.alchemy.com/reference/alchemy-getassettransfers
-// before adding a chain here rather than assuming every chain supports it.
-const WALLET_AGE_INTERNAL_SUPPORTED_CHAINS = new Set(['ethereum', 'polygon']);
+// is documented as available on these chains per the current Alchemy docs
+// (https://docs.alchemy.com/reference/alchemy-getassettransfers), verified
+// 30 Sep 2026 — re-check before adding a chain here rather than assuming
+// every chain supports it. As a safety net against docs drift or a chain
+// losing support, an unsupported-category rejection from Alchemy is also
+// caught at request time and retried once without 'internal' (see
+// isUnsupportedInternalCategoryError / handleCheckWalletAge below).
+const WALLET_AGE_INTERNAL_SUPPORTED_CHAINS = new Set(['ethereum', 'polygon', 'base']);
 
 class InvalidChainError extends Error {
   constructor(message) {
@@ -1788,6 +1792,28 @@ async function fetchEarliestTransfer(url, address, categories, direction, signal
   return { direction, timestamp: transfer.metadata.blockTimestamp, block: transfer.blockNum };
 }
 
+// Detects Alchemy rejecting a request because the 'internal' category isn't
+// supported on the target network — the safety net for
+// WALLET_AGE_INTERNAL_SUPPORTED_CHAINS drifting out of date (docs change, or
+// a chain loses support). Only meaningful when 'internal' was actually in
+// the requested categories; any other upstream error is left alone.
+function isUnsupportedInternalCategoryError(err, categories) {
+  if (!categories.includes('internal')) return false;
+  const message = typeof err?.message === 'string' ? err.message.toLowerCase() : '';
+  return message.includes('categor') && (
+    message.includes('not supported') || message.includes('unsupported') ||
+    message.includes('not available') || message.includes('invalid')
+  );
+}
+
+function runWalletAgeUpstreamCalls(url, address, categories, signal) {
+  return Promise.all([
+    fetchEarliestTransfer(url, address, categories, 'out', signal),
+    fetchEarliestTransfer(url, address, categories, 'in', signal),
+    alchemyRpcCall(url, { jsonrpc: '2.0', id: 3, method: 'eth_getCode', params: [address, 'latest'] }, signal)
+  ]);
+}
+
 export async function handleCheckWalletAge(args, identifier, licenseKey) {
   const address = normalizeWalletAgeAddress(args?.address);
   const chain = normalizeWalletAgeChain(args?.chain);
@@ -1824,11 +1850,27 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
   const timeout = setTimeout(() => controller.abort(), WALLET_AGE_TIMEOUT_MS);
   let outTransfer, inTransfer, code;
   try {
-    [outTransfer, inTransfer, code] = await Promise.all([
-      fetchEarliestTransfer(url, address, categories, 'out', controller.signal),
-      fetchEarliestTransfer(url, address, categories, 'in', controller.signal),
-      alchemyRpcCall(url, { jsonrpc: '2.0', id: 3, method: 'eth_getCode', params: [address, 'latest'] }, controller.signal)
-    ]);
+    try {
+      [outTransfer, inTransfer, code] = await runWalletAgeUpstreamCalls(url, address, categories, controller.signal);
+    } catch (e) {
+      // Safety net for WALLET_AGE_INTERNAL_SUPPORTED_CHAINS drifting out of
+      // date: if Alchemy rejects the request because 'internal' isn't
+      // actually supported on this chain, retry once without it, inside the
+      // same overall timeout (same AbortController — no extra budget). Any
+      // other failure, or a failure of the retry itself, falls through to
+      // the isError handling below and must never become found:false.
+      if (isUnsupportedInternalCategoryError(e, categories)) {
+        // api/mcp.mjs doesn't import lib/errorLog.mjs (no existing
+        // error-log path here to log through) — console.warn matches this
+        // file's existing convention for non-fatal upstream anomalies (see
+        // the [STIX] / [X402] warnings above).
+        console.warn(`[wallet_age] chain=${chain} rejected 'internal' category, retrying without it: ${e.message}`);
+        const fallbackCategories = categories.filter((c) => c !== 'internal');
+        [outTransfer, inTransfer, code] = await runWalletAgeUpstreamCalls(url, address, fallbackCategories, controller.signal);
+      } else {
+        throw e;
+      }
+    }
   } catch (e) {
     const message = e.name === 'AbortError'
       ? `Wallet age lookup timed out after ${WALLET_AGE_TIMEOUT_MS}ms.`
