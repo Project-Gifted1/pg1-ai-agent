@@ -581,6 +581,17 @@
       }
     }
 
+    function toggleQuickMenu() {
+      document.getElementById('quick-menu').classList.toggle('open');
+    }
+    function runQuick(cmd) {
+      triggerHaptic(30);
+      document.getElementById('quick-menu').classList.remove('open');
+      const input = document.getElementById('prompt-input');
+      input.value = cmd;
+      submitDirective();
+    }
+
     function openVisionMatrix() {
       document.getElementById('vision-modal').style.display = 'flex';
     }
