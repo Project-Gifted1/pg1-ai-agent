@@ -311,6 +311,75 @@
         },
         "disclaimer": {
           "type": "string"
+        },
+        "reasons": {
+          "type": "array",
+          "description": "Machine-readable reason codes for anything flagged in this result. Empty when nothing was flagged.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "flagged",
+            "no_flags",
+            "unknown"
+          ],
+          "description": "\"unknown\" whenever a source needed for this answer timed out, errored, or was skipped - never \"no_flags\" in that case."
+        },
+        "checks": {
+          "type": "array",
+          "description": "Which underlying sources were checked for this result and whether each one completed.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "Generic label for the data source checked, never a vendor name."
+              },
+              "result": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "timeout",
+                  "error",
+                  "skipped"
+                ]
+              },
+              "checked_at": {
+                "type": "string"
+              },
+              "data_as_of": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "source",
+              "result",
+              "checked_at",
+              "data_as_of"
+            ]
+          }
+        },
+        "request_id": {
+          "type": "string",
+          "description": "UUID for this request, also sent as the X-Request-Id response header."
         }
       },
       "required": [
@@ -413,6 +482,75 @@
             "lookup_failed",
             null
           ]
+        },
+        "reasons": {
+          "type": "array",
+          "description": "Machine-readable reason codes for anything flagged in this result. Empty when nothing was flagged.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "flagged",
+            "no_flags",
+            "unknown"
+          ],
+          "description": "\"unknown\" whenever a source needed for this answer timed out, errored, or was skipped - never \"no_flags\" in that case."
+        },
+        "checks": {
+          "type": "array",
+          "description": "Which underlying sources were checked for this result and whether each one completed.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "Generic label for the data source checked, never a vendor name."
+              },
+              "result": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "timeout",
+                  "error",
+                  "skipped"
+                ]
+              },
+              "checked_at": {
+                "type": "string"
+              },
+              "data_as_of": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "source",
+              "result",
+              "checked_at",
+              "data_as_of"
+            ]
+          }
+        },
+        "request_id": {
+          "type": "string",
+          "description": "UUID for this request, also sent as the X-Request-Id response header."
         }
       },
       "required": [
@@ -499,6 +637,75 @@
         },
         "attribution": {
           "type": "string"
+        },
+        "reasons": {
+          "type": "array",
+          "description": "Machine-readable reason codes for anything flagged in this result. Empty when nothing was flagged.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "flagged",
+            "no_flags",
+            "unknown"
+          ],
+          "description": "\"unknown\" whenever a source needed for this answer timed out, errored, or was skipped - never \"no_flags\" in that case."
+        },
+        "checks": {
+          "type": "array",
+          "description": "Which underlying sources were checked for this result and whether each one completed.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "Generic label for the data source checked, never a vendor name."
+              },
+              "result": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "timeout",
+                  "error",
+                  "skipped"
+                ]
+              },
+              "checked_at": {
+                "type": "string"
+              },
+              "data_as_of": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "source",
+              "result",
+              "checked_at",
+              "data_as_of"
+            ]
+          }
+        },
+        "request_id": {
+          "type": "string",
+          "description": "UUID for this request, also sent as the X-Request-Id response header."
         }
       },
       "required": [

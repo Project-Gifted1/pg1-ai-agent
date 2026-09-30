@@ -20,7 +20,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import handler, { TOOLS } from '../api/mcp.mjs';
+import handler, { TOOLS, RESPONSE_META_OUTPUT_PROPERTIES } from '../api/mcp.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -436,7 +436,10 @@ test('check_wallet_age: response never leaks raw upstream fields', async (t) => 
   const parsed = JSON.parse(res.body.result.content[0].text);
   assert.deepEqual(
     Object.keys(parsed).sort(),
-    ['address', 'age_days', 'cached', 'chain', 'first_direction', 'first_seen', 'first_seen_block', 'found', 'is_contract', 'note', 'source'].sort()
+    [
+      'address', 'age_days', 'cached', 'chain', 'first_direction', 'first_seen', 'first_seen_block', 'found', 'is_contract', 'note', 'source',
+      'reasons', 'status', 'checks', 'request_id'
+    ].sort()
   );
   assert.equal(res.body.result.structuredContent && Object.keys(res.body.result.structuredContent).some((k) =>
     ['uniqueId', 'hash', 'category', 'asset', 'rawContract', 'from', 'to', 'value'].includes(k)
@@ -610,14 +613,69 @@ test('check_wallet_age: cached and fresh first_seen strings are byte-identical f
   assert.equal(cachedParsed.first_seen, '2021-03-03T00:00:00.000Z');
 });
 
-test('check_wallet_age: is the 14th tool, and the 13 pre-existing tool definitions are byte-identical to before', () => {
+// issue #215, option A (agreed 2026-09-30): the 4 tools that already declare
+// an outputSchema gained 4 new OPTIONAL outputSchema.properties entries
+// (reasons/status/checks/request_id, shared as RESPONSE_META_OUTPUT_PROPERTIES
+// in api/mcp.mjs) so every tool's JSON response can carry them. This is the
+// one deliberate, agreed exception to "byte-identical" - everything else
+// (name, description, inputSchema, pre-existing output properties, required,
+// additionalProperties) must still match exactly, and the 4 new properties
+// must never appear in `required`. tests/fixtures/existing-13-tools-snapshot.json
+// was updated to bake these 4 properties into the 3 schema'd tools it covers
+// (check_wallet_age, the 14th tool, isn't in that fixture at all - it's
+// checked separately below against the same shared constant).
+const SCHEMA_TOOLS_WITH_NEW_META = new Set(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age']);
+
+test('check_wallet_age: is the 14th tool, and the 13 pre-existing tool definitions are unchanged except the agreed optional outputSchema additions', () => {
   assert.equal(TOOLS.length, 14);
   const snapshotPath = path.join(__dirname, 'fixtures', 'existing-13-tools-snapshot.json');
   const snapshot = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
   assert.equal(snapshot.length, 13);
+
   for (const expected of snapshot) {
     const actual = TOOLS.find((t) => t.name === expected.name);
     assert.ok(actual, `expected pre-existing tool '${expected.name}' to still be present`);
-    assert.deepEqual(actual, expected, `tool '${expected.name}' definition drifted from before check_wallet_age was added`);
+
+    if (!SCHEMA_TOOLS_WITH_NEW_META.has(expected.name)) {
+      // No outputSchema before, none now - fully byte-identical, no exceptions.
+      assert.deepEqual(actual, expected, `tool '${expected.name}' definition drifted - it must stay byte-identical`);
+      continue;
+    }
+
+    assert.deepEqual(actual.name, expected.name, `tool '${expected.name}' name must not change`);
+    assert.deepEqual(actual.description, expected.description, `tool '${expected.name}' description must not change`);
+    assert.deepEqual(actual.inputSchema, expected.inputSchema, `tool '${expected.name}' inputSchema must not change`);
+    assert.deepEqual(actual.outputSchema.type, expected.outputSchema.type, `tool '${expected.name}' outputSchema.type must not change`);
+    assert.deepEqual(actual.outputSchema.required, expected.outputSchema.required, `tool '${expected.name}' outputSchema.required must not change - the new properties must never become required`);
+    assert.deepEqual(actual.outputSchema.additionalProperties, expected.outputSchema.additionalProperties, `tool '${expected.name}' outputSchema.additionalProperties must not change`);
+
+    assert.deepEqual(
+      Object.keys(actual.outputSchema.properties).sort(),
+      Object.keys(expected.outputSchema.properties).sort(),
+      `tool '${expected.name}' outputSchema.properties key set must exactly match the fixture (pre-existing properties plus reasons/status/checks/request_id)`
+    );
+    for (const key of Object.keys(expected.outputSchema.properties)) {
+      assert.deepEqual(
+        actual.outputSchema.properties[key], expected.outputSchema.properties[key],
+        `tool '${expected.name}' outputSchema.properties.${key} drifted from the fixture`
+      );
+    }
+    // Every one of the 4 new properties must match the single shared
+    // definition used across all 4 tools, byte-for-byte.
+    for (const key of Object.keys(RESPONSE_META_OUTPUT_PROPERTIES)) {
+      assert.deepEqual(
+        actual.outputSchema.properties[key], RESPONSE_META_OUTPUT_PROPERTIES[key],
+        `tool '${expected.name}' outputSchema.properties.${key} doesn't match the shared reasons/status/checks/request_id definition`
+      );
+    }
+  }
+
+  // check_wallet_age (the 14th tool) isn't in the 13-tool snapshot fixture,
+  // but it's one of the 4 schema'd tools and must carry the exact same 4
+  // new optional properties, never in `required`.
+  const walletAge = TOOLS.find((t) => t.name === 'check_wallet_age');
+  for (const key of Object.keys(RESPONSE_META_OUTPUT_PROPERTIES)) {
+    assert.deepEqual(walletAge.outputSchema.properties[key], RESPONSE_META_OUTPUT_PROPERTIES[key]);
+    assert.ok(!walletAge.outputSchema.required.includes(key), `check_wallet_age outputSchema.required must not include '${key}'`);
   }
 });
