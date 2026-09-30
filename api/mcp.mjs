@@ -75,6 +75,7 @@ import { domainToASCII, domainToUnicode } from 'node:url';
 import { logApiError } from '../lib/errorLog.mjs';
 import { reason } from '../lib/reasonCodes.mjs';
 import { buildCheck, withResponseMeta, withActionResponseMeta, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
+import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES } from '../lib/fixtures.mjs';
 
 export const config = { maxDuration: 30 };
 
@@ -2098,6 +2099,256 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
 }
 
 // ---------------------------------------------------------------------
+// Integration test fixtures (issue #215 part B) — see lib/fixtures.mjs
+// ---------------------------------------------------------------------
+// resolveTestFixture is called by the MCP and A2A dispatchers straight after
+// the tool name is known and before any licence check, payment gate, rate
+// limit, cache, upstream call or error logging, so a fixture call never
+// touches any of them and is free for every caller. Responses are built with
+// each tool's real result builders (same shape as a real response), then
+// every checks[] source is relabelled "fixture" and test_fixture: true is
+// added. UNKNOWN fixtures reproduce exactly what a real upstream failure
+// looks like for that tool - including a JSON-RPC 503 or an isError tool
+// result where that's what the real failure is - never a found:false.
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function asFixtureResult(result) {
+  return {
+    ...result,
+    checks: result.checks.map((c) => ({ ...c, source: FIXTURE_CHECK_SOURCE })),
+    test_fixture: true
+  };
+}
+
+function fixtureCheck(result) {
+  return buildCheck(FIXTURE_CHECK_SOURCE, result, { dataAsOf: FIXTURE_DATA_AS_OF });
+}
+
+function fixtureCveRecord(cveId, kind) {
+  const kev = kind === 'FLAGGED';
+  return {
+    nvd: {
+      description: 'PG1 integration test fixture - not a real vulnerability.',
+      cvss_v3_score: kev ? 9.8 : 5.3,
+      cvss_vector: kev ? 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H' : 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N',
+      severity: kev ? 'CRITICAL' : 'MEDIUM',
+      published: FIXTURE_DATA_AS_OF,
+      last_modified: FIXTURE_DATA_AS_OF
+    },
+    epss: kind === 'UNKNOWN' ? null : { score: kev ? 0.97 : 0.01, percentile: kev ? 0.99 : 0.2 },
+    kev: kev ? { dateAdded: '2026-01-01', requiredAction: 'PG1 test fixture - no action required.', dueDate: '2026-01-22' } : null
+  };
+}
+
+function fixtureCveChecks(kind) {
+  const enrichment = kind === 'UNKNOWN' ? 'error' : 'ok';
+  return [fixtureCheck('ok'), fixtureCheck(enrichment), fixtureCheck(enrichment)];
+}
+
+// `callerArgs` supplies the fields a real response echoes back from the
+// caller's own input (the address exactly as submitted, the chain, the
+// product version/only_kev filters); the fixture's own arguments supply the
+// normalised lookup value, which is identical by construction.
+function buildFixtureOutcome(fixture, callerArgs) {
+  const { tool, kind, arguments: args } = fixture;
+  const result = (r) => ({ type: 'result', result: r });
+
+  switch (tool) {
+    case 'check_wallet_sanctions': {
+      if (kind === 'UNKNOWN') return { type: 'service_unavailable', mcpErrorCode: -32003, message: 'Sanctions data temporarily unavailable, please retry.' };
+      const address = callerArgs.address;
+      const base = { address, address_normalized: normalizeWalletAddress(address), source: SANCTIONS_SOURCE, list_last_synced: FIXTURE_DATA_AS_OF };
+      if (kind === 'CLEAN') {
+        return result(withResponseMeta({
+          ...base, listed: false, matches: [],
+          message: `Not on the OFAC SDN sanctions list as of ${FIXTURE_DATA_AS_OF}.`,
+          disclaimer: SANCTIONS_DISCLAIMER
+        }, { reasons: [], checks: [fixtureCheck('ok')] }));
+      }
+      return result(withResponseMeta({
+        ...base, listed: true,
+        matches: [{ sdn_name: 'PG1 TEST FIXTURE (not a real SDN entry)', currency: 'ETH', programs: ['PG1-TEST-FIXTURE'], sdn_uid: null }],
+        disclaimer: SANCTIONS_DISCLAIMER
+      }, { reasons: [reason('WALLET_SANCTIONED')], checks: [fixtureCheck('ok')] }));
+    }
+
+    case 'check_domain_age': {
+      const domain = args.domain;
+      if (kind === 'UNKNOWN') return result(domainNotFound(domain, 'RDAP lookup timed out after 5 seconds.', 'timeout'));
+      const now = new Date();
+      const midnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+      const registrationDate = kind === 'FLAGGED' ? new Date(midnight - 3 * DAY_MS).toISOString() : '2000-01-01T00:00:00.000Z';
+      const ageDays = Math.floor((Date.now() - new Date(registrationDate).getTime()) / DAY_MS);
+      const newlyRegistered = ageDays < 30;
+      return result(withResponseMeta({
+        found: true,
+        available: true,
+        domain,
+        registration_date: registrationDate,
+        age_days: ageDays,
+        expiration_date: '2099-01-01T00:00:00.000Z',
+        registrar: 'PG1 Test Fixture Registrar',
+        newly_registered: newlyRegistered,
+        note: newlyRegistered
+          ? `This domain was registered ${ageDays} day(s) ago — a common phishing signal, not proof of malicious intent.`
+          : null,
+        source: 'RDAP (rdap.pg1-test.invalid)'
+      }, {
+        reasons: newlyRegistered ? [reason('DOMAIN_NEWLY_REGISTERED_30D')] : [],
+        checks: [fixtureCheck('ok')]
+      }));
+    }
+
+    case 'check_hostname_reputation': {
+      if (kind === 'UNKNOWN') return { type: 'service_unavailable', mcpErrorCode: -32003, message: phishingDataUnavailableError('temporarily unavailable').message };
+      const hostname = args.hostname;
+      const r = kind === 'FLAGGED'
+        ? buildHostnameResult(hostname, 'listed', [{ name: PHISHING_SOURCE_NAME, url: PHISHING_SOURCE_URL, match_type: 'exact' }], null, FIXTURE_DATA_AS_OF)
+        : buildHostnameResult(hostname, 'not_listed', [], null, FIXTURE_DATA_AS_OF);
+      return result(r);
+    }
+
+    case 'check_wallet_age': {
+      if (kind === 'UNKNOWN') {
+        return { type: 'tool_error', code: 'upstream_unavailable', message: `Wallet age lookup timed out after ${WALLET_AGE_TIMEOUT_MS}ms.`, checks: [fixtureCheck('timeout')] };
+      }
+      const address = args.address.trim().toLowerCase();
+      const chain = normalizeWalletAgeChain(callerArgs.chain);
+      const r = kind === 'FLAGGED'
+        ? buildWalletAgeNotFoundResult(address, chain, false, false, false)
+        : buildWalletAgeFoundResult(address, chain, { first_seen: '2023-09-01T00:00:00.000Z', first_seen_block: 1000000, first_direction: 'in', is_contract: false }, false, false);
+      return result(r);
+    }
+
+    case 'get_ioc_context':
+    case 'get_ioc_batch': {
+      const values = tool === 'get_ioc_context' ? [args.value.trim()] : args.values.map((v) => v.trim());
+      if (kind === 'UNKNOWN') {
+        return { type: 'service_unavailable', mcpErrorCode: tool === 'get_ioc_context' ? -32603 : -32003, message: 'Threat data temporarily unavailable, please retry.' };
+      }
+      const lookups = values.map((value) => (kind === 'CLEAN' ? { indicator: value, found: false } : {
+        indicator: value,
+        found: true,
+        indicator_type: value.includes(':') ? 'IPv6' : detectIndicatorType(value),
+        provenance: {
+          sources: ['pg1-test-fixture'],
+          observation_count: 1,
+          confidence_score: 90,
+          malware_families: ['PG1-Test-Fixture'],
+          tags: ['test-fixture'],
+          first_seen: FIXTURE_DATA_AS_OF,
+          last_seen: FIXTURE_DATA_AS_OF
+        }
+      }));
+      if (tool === 'get_ioc_context') return result(withIocResponseMeta(lookups[0]));
+      const totalFound = lookups.filter((l) => l.found).length;
+      return result(withResponseMeta({ total_requested: values.length, total_found: totalFound, results: lookups }, {
+        reasons: totalFound > 0 ? [reason('IOC_FOUND_IN_THREAT_FEED', `${totalFound} of ${values.length} submitted indicators have a matching record in the threat indicator feed.`)] : [],
+        checks: [fixtureCheck('ok')]
+      }));
+    }
+
+    case 'get_cve_details': {
+      const cveId = args.cve_id.toUpperCase();
+      const rec = fixtureCveRecord(cveId, kind);
+      return result(withResponseMeta({
+        cve_id: cveId,
+        nvd: rec.nvd,
+        epss: rec.epss,
+        cisa_kev: {
+          is_known_exploited: !!rec.kev,
+          date_added: rec.kev ? rec.kev.dateAdded : null,
+          required_action: rec.kev ? rec.kev.requiredAction : null,
+          due_date: rec.kev ? rec.kev.dueDate : null
+        }
+      }, { reasons: rec.kev ? [reason('CVE_KNOWN_EXPLOITED_KEV')] : [], checks: fixtureCveChecks(kind) }));
+    }
+
+    case 'get_cve_batch': {
+      const results = args.cve_ids.map((raw) => {
+        const cveId = raw.toUpperCase();
+        const rec = fixtureCveRecord(cveId, kind);
+        const { last_modified: _lastModified, ...nvd } = rec.nvd;
+        return { cve_id: cveId, found: true, nvd, epss: rec.epss, cisa_kev: { is_known_exploited: !!rec.kev, due_date: rec.kev ? rec.kev.dueDate : null } };
+      });
+      const anyKev = results.some((r) => r.cisa_kev.is_known_exploited);
+      return result(withResponseMeta({ total_requested: results.length, total_found: results.length, results }, {
+        reasons: anyKev ? [reason('CVE_KNOWN_EXPLOITED_KEV')] : [],
+        checks: fixtureCveChecks(kind)
+      }));
+    }
+
+    case 'get_cve_by_product': {
+      const { vendor, product } = args;
+      const version = callerArgs.version || null;
+      if (kind === 'CLEAN') {
+        return result(withResponseMeta({ vendor, product, version, total_found: 0, cves: [] }, { reasons: [], checks: [fixtureCheck('ok')] }));
+      }
+      const cveId = FIXTURE_VALUES.cve[kind];
+      const rec = fixtureCveRecord(cveId, kind);
+      const cves = [{
+        cve_id: cveId,
+        description: rec.nvd.description,
+        published: rec.nvd.published,
+        cvss: { version: '3.1', score: rec.nvd.cvss_v3_score, severity: rec.nvd.severity },
+        epss: rec.epss,
+        is_known_exploited: !!rec.kev,
+        kev_due_date: rec.kev ? rec.kev.dueDate : null
+      }];
+      const filtered = callerArgs.only_kev ? cves.filter((c) => c.is_known_exploited) : cves;
+      const anyKev = filtered.some((c) => c.is_known_exploited);
+      return result(withResponseMeta({ vendor, product, version, total_found: filtered.length, cves: filtered }, {
+        reasons: anyKev ? [reason('CVE_KNOWN_EXPLOITED_KEV')] : [],
+        checks: fixtureCveChecks(kind)
+      }));
+    }
+
+    default:
+      return null;
+  }
+}
+
+// Returns null when (toolName, args) is not an exact fixture match.
+// Otherwise one of:
+//   { type: 'result', result }                       - a normal tool result
+//   { type: 'tool_error', code, message, checks }    - an isError tool result
+//   { type: 'service_unavailable', mcpErrorCode, message } - a JSON-RPC 503
+// A 'result' already carries test_fixture: true; the dispatchers add it to
+// the other two shapes in the protocol-appropriate place.
+export function resolveTestFixture(toolName, args) {
+  const fixture = matchFixture(toolName, args);
+  if (!fixture) return null;
+  const outcome = buildFixtureOutcome(fixture, args || {});
+  if (outcome.type === 'result') outcome.result = asFixtureResult(outcome.result);
+  return outcome;
+}
+
+const STRUCTURED_CONTENT_TOOLS = new Set(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age']);
+
+function sendMcpFixtureResponse(res, toolName, outcome, requestId, pg1RequestId) {
+  if (outcome.type === 'service_unavailable') {
+    return res.status(503).json({ jsonrpc: '2.0', error: { code: outcome.mcpErrorCode, message: outcome.message, data: { test_fixture: true } }, id: requestId, request_id: pg1RequestId });
+  }
+  if (outcome.type === 'tool_error') {
+    return res.status(200).json({
+      jsonrpc: '2.0',
+      result: {
+        content: [{ type: 'text', text: JSON.stringify({ error: true, code: outcome.code, message: outcome.message, ...errorResponseMeta(outcome.checks, pg1RequestId), test_fixture: true }, null, 2) }],
+        isError: true
+      },
+      id: requestId,
+      request_id: pg1RequestId
+    });
+  }
+  const toolResult = outcome.result;
+  toolResult.request_id = pg1RequestId;
+  const result = { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] };
+  if (STRUCTURED_CONTENT_TOOLS.has(toolName)) result.structuredContent = toolResult;
+  return res.status(200).json({ jsonrpc: '2.0', result, id: requestId, request_id: pg1RequestId });
+}
+
+// ---------------------------------------------------------------------
 // AUTHORIZATION
 // ---------------------------------------------------------------------
 // verifyGumroadLicense lives in lib/paymentGate.mjs, shared with
@@ -2485,6 +2736,14 @@ export default async function handler(req, res) {
     if (method === 'tools/call') {
       const toolName = params?.name;
       const toolArgs = params?.arguments || {};
+
+      // Integration test fixtures (issue #215 part B): an exact fixture
+      // input is answered here, before any licence check, payment gate,
+      // rate limit, cache, upstream call or error logging below - always
+      // free, for every caller, key or no key.
+      const fixtureOutcome = resolveTestFixture(toolName, toolArgs);
+      if (fixtureOutcome) return sendMcpFixtureResponse(res, toolName, fixtureOutcome, requestId, pg1RequestId);
+
       const licenseKey = req.headers['x-api-key'];
       const mcpRequestIdentifier = getRequestIdentifier(req);
 

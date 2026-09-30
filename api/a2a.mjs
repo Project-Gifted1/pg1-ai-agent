@@ -52,7 +52,8 @@ import {
   handleCheckDomainAge,
   handleCheckHostnameReputation,
   handleCheckWalletAge,
-  recordToolError
+  recordToolError,
+  resolveTestFixture
 } from './mcp.mjs';
 import { getRequestIdentifier } from '../lib/freeTier.mjs';
 import { buildCheck, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
@@ -310,6 +311,23 @@ export default async function handler(req, res) {
 
     if (typeof skill !== 'string' || !A2A_SKILL_NAMES.includes(skill)) {
       return jsonRpcError(res, 400, -32602, `Unknown skill: '${skill}'. Available skills: ${A2A_SKILL_NAMES.join(', ')}.`, requestId, undefined, pg1RequestId);
+    }
+
+    // Integration test fixtures (issue #215 part B): answered before any
+    // licence check, rate limit, cache, upstream call or error logging, in
+    // exactly the shape a real result/failure takes on this endpoint.
+    const fixtureOutcome = resolveTestFixture(skill, args);
+    if (fixtureOutcome) {
+      if (fixtureOutcome.type === 'service_unavailable') {
+        return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, fixtureOutcome.message, requestId, { test_fixture: true }, pg1RequestId);
+      }
+      if (fixtureOutcome.type === 'tool_error') {
+        const errorData = { code: fixtureOutcome.code, ...errorResponseMeta(fixtureOutcome.checks, pg1RequestId), test_fixture: true };
+        return jsonRpcError(res, 200, -32000, fixtureOutcome.message, requestId, errorData, pg1RequestId);
+      }
+      const fixtureResult = fixtureOutcome.result;
+      fixtureResult.request_id = pg1RequestId;
+      return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, args, fixtureResult, version, inboundMessage), id: requestId, request_id: pg1RequestId });
     }
 
     const licenseKey = req.headers['x-api-key'];
