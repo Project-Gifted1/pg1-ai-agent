@@ -162,7 +162,7 @@ Every one of the 14 MCP tools and the 5 free A2A skills adds four fields alongsi
 - **`checks`**: `[{ source, result, checked_at, data_as_of }]` — one entry per data source consulted for this call. `result` is one of `"ok" | "timeout" | "error" | "skipped"`. `source` is always a generic label (e.g. `"sanctions list"`, `"domain registration records"`, `"on-chain transfer history"`) — never a vendor/provider name.
 - **`request_id`**: a UUID identifying this exact call, also sent as the `X-Request-Id` response header on `/api/mcp` and `/api/a2a`. If the call fails and gets written to the server error log, the same `request_id` is attached to that log entry.
 
-`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation` and `check_wallet_age` also declare these four as optional properties on their `outputSchema` (never added to `required`, and every other part of their schema is unchanged).
+`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation` and `check_wallet_age` also declare these four as optional properties on their `outputSchema` (never added to `required`, and every other part of their schema is unchanged). They also declare an optional boolean `test_fixture`, which is present (and `true`) only on responses to the fixture inputs described in [Test your integration](#test-your-integration).
 
 ### Reason codes
 
@@ -180,6 +180,88 @@ Every one of the 14 MCP tools and the 5 free A2A skills adds four fields alongsi
 Source of truth: `lib/reasonCodes.mjs`.
 
 **Not yet covered:** the `/api/ioc` REST feed and `/api/ioc/context` don't carry `reasons`/`status`/`checks`/`request_id` yet.
+
+## Test your integration
+
+Every MCP tool that can flag something has three fixed, made-up fixture inputs that always return the same answer: one **FLAGGED**, one **CLEAN** and one **UNKNOWN**. Use them to test your integration's happy path, its "flagged" path and its skip/retry path without spending anything or depending on live data.
+
+- **Always free**, for every caller: no licence key, no `x-free-tier` header, no x402 payment, no rate-limit usage. This applies to the paid tools too.
+- **Same shape as a real response**: `reasons`, `status`, `checks` and `request_id`, plus `test_fixture: true`. Every `checks[]` entry has `source: "fixture"`. On an error-shaped UNKNOWN, `test_fixture: true` is in `error.data` (JSON-RPC errors) or next to `code` (isError tool results).
+- **UNKNOWN is exactly what a real upstream failure returns for that tool**, so you can test your skip path. For `check_wallet_age` that is the `upstream_unavailable` isError result, never `found: false`.
+- **Exact values only.** The only normalisation is what the tool already does itself: lowercasing a `0x` address or hostname, uppercasing a CVE id, reducing a domain/URL to its registrable domain. Anything else is treated as a real input, even one character off, so `www.pg1-test-flagged.invalid` is a real hostname lookup.
+- **Every value is reserved or synthetic**, so none can belong to a real target: `.invalid` domains (RFC 2606/6761), documentation IP ranges (RFC 5737 `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`; RFC 3849 `2001:db8::/32`), `CVE-0000-*` ids (the CVE programme started in 1999) and `0x` addresses that spell `pg1-test-fixture` in hex. The reasoning for each is in [`lib/fixtures.mjs`](lib/fixtures.mjs), which is also the single source for this table and the tests.
+- `check_wallet_age` has no age threshold. Its FLAGGED fixture is a wallet with no history (`found: false`, `WALLET_NO_HISTORY`) and its CLEAN fixture is an old wallet with a fixed `first_seen`. `chain` is optional and is echoed back; an unsupported chain is still an `invalid_chain` error.
+
+| Tool | Fixture | Arguments | Expected result |
+|---|---|---|---|
+| `check_wallet_sanctions` | FLAGGED | `{"address":"0x7067312d746573742d6669787475726500000001"}` | listed: true, status "flagged", reason WALLET_SANCTIONED |
+| `check_wallet_sanctions` | CLEAN | `{"address":"0x7067312d746573742d6669787475726500000002"}` | listed: false, status "no_flags" |
+| `check_wallet_sanctions` | UNKNOWN | `{"address":"0x7067312d746573742d6669787475726500000003"}` | HTTP 503, JSON-RPC error -32003 "Sanctions data temporarily unavailable, please retry." |
+| `check_domain_age` | FLAGGED | `{"domain":"pg1-test-flagged.invalid"}` | found: true, age_days 3, newly_registered: true, status "flagged", reason DOMAIN_NEWLY_REGISTERED_30D |
+| `check_domain_age` | CLEAN | `{"domain":"pg1-test-clean.invalid"}` | found: true, registration_date 2000-01-01, status "no_flags" |
+| `check_domain_age` | UNKNOWN | `{"domain":"pg1-test-unknown.invalid"}` | found: false, reason_code "timeout", status "unknown" (what a real RDAP timeout returns) |
+| `check_hostname_reputation` | FLAGGED | `{"hostname":"pg1-test-flagged.invalid"}` | verdict "listed" (match_type "exact"), status "flagged", reason HOSTNAME_PHISHING_LISTED |
+| `check_hostname_reputation` | CLEAN | `{"hostname":"pg1-test-clean.invalid"}` | verdict "not_listed", status "no_flags" |
+| `check_hostname_reputation` | UNKNOWN | `{"hostname":"pg1-test-unknown.invalid"}` | HTTP 503, JSON-RPC error -32003 "Phishing domain list temporarily unavailable, please retry." |
+| `check_wallet_age` | FLAGGED | `{"address":"0x7067312d746573742d6669787475726500000001"}` | found: false (no transfer history), status "flagged", reason WALLET_NO_HISTORY |
+| `check_wallet_age` | CLEAN | `{"address":"0x7067312d746573742d6669787475726500000002"}` | found: true, first_seen 2023-09-01T00:00:00.000Z, status "no_flags" |
+| `check_wallet_age` | UNKNOWN | `{"address":"0x7067312d746573742d6669787475726500000003"}` | isError: true, code "upstream_unavailable", status "unknown" (never found: false) |
+| `get_ioc_context` | FLAGGED | `{"value":"192.0.2.1"}` | found: true, status "flagged", reason IOC_FOUND_IN_THREAT_FEED (free, no payment) |
+| `get_ioc_context` | CLEAN | `{"value":"198.51.100.1"}` | found: false, status "no_flags" |
+| `get_ioc_context` | UNKNOWN | `{"value":"203.0.113.1"}` | HTTP 503, JSON-RPC error -32603 "Threat data temporarily unavailable, please retry." |
+| `get_ioc_batch` | FLAGGED | `{"values":["2001:db8::1"]}` | total_found 1, status "flagged", reason IOC_FOUND_IN_THREAT_FEED (free, no payment) |
+| `get_ioc_batch` | CLEAN | `{"values":["2001:db8::2"]}` | total_found 0, status "no_flags" |
+| `get_ioc_batch` | UNKNOWN | `{"values":["2001:db8::3"]}` | HTTP 503, JSON-RPC error -32003 "Threat data temporarily unavailable, please retry." |
+| `get_cve_details` | FLAGGED | `{"cve_id":"CVE-0000-0001"}` | cisa_kev.is_known_exploited: true, status "flagged", reason CVE_KNOWN_EXPLOITED_KEV (free, no payment) |
+| `get_cve_details` | CLEAN | `{"cve_id":"CVE-0000-0002"}` | cisa_kev.is_known_exploited: false, status "no_flags" |
+| `get_cve_details` | UNKNOWN | `{"cve_id":"CVE-0000-0003"}` | exploit-score and KEV checks "error", epss null, status "unknown" |
+| `get_cve_batch` | FLAGGED | `{"cve_ids":["CVE-0000-0001"]}` | one KEV-listed result, status "flagged", reason CVE_KNOWN_EXPLOITED_KEV (free, no payment) |
+| `get_cve_batch` | CLEAN | `{"cve_ids":["CVE-0000-0002"]}` | one non-KEV result, status "no_flags" |
+| `get_cve_batch` | UNKNOWN | `{"cve_ids":["CVE-0000-0003"]}` | exploit-score and KEV checks "error", status "unknown" |
+| `get_cve_by_product` | FLAGGED | `{"vendor":"pg1-test.invalid","product":"flagged"}` | one KEV-listed CVE, status "flagged", reason CVE_KNOWN_EXPLOITED_KEV (free, no payment) |
+| `get_cve_by_product` | CLEAN | `{"vendor":"pg1-test.invalid","product":"clean"}` | total_found 0, status "no_flags" |
+| `get_cve_by_product` | UNKNOWN | `{"vendor":"pg1-test.invalid","product":"unknown"}` | exploit-score and KEV checks "error", status "unknown" |
+
+No fixtures exist for `get_threat_indicators` (a bulk feed with no target input), `get_threat_actor_profile` and `get_usage_status` (they have no reason code to flag with), or `subscribe_alerts` and `submit_indicator` (write actions whose `status` is a lifecycle state, not a verdict).
+
+**A2A:** the four fixture-bearing free skills (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`) accept the same fixtures on `/api/a2a`. A result comes back as a completed Task. An isError-style UNKNOWN comes back as JSON-RPC error `-32000` with the details in `error.data`. A 503-style UNKNOWN comes back as HTTP 503 with JSON-RPC error `-32010`. These are the same shapes a real failure produces on that endpoint.
+
+**Out of scope:** the REST endpoints (`/api/ioc` and `/api/ioc/context`) have no fixtures. Fixture values sent there are looked up like any other value.
+
+FLAGGED, over MCP, with no key:
+
+```bash
+curl -X POST https://pg1-ai-agent.vercel.app/api/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"check_hostname_reputation","arguments":{"hostname":"pg1-test-flagged.invalid"}}}'
+```
+
+UNKNOWN, over MCP, to test your skip path (an `upstream_unavailable` isError result):
+
+```bash
+curl -X POST https://pg1-ai-agent.vercel.app/api/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"check_wallet_age","arguments":{"address":"0x7067312d746573742d6669787475726500000003"}}}'
+```
+
+A paid tool's FLAGGED fixture, still free with no key:
+
+```bash
+curl -X POST https://pg1-ai-agent.vercel.app/api/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_cve_details","arguments":{"cve_id":"CVE-0000-0001"}}}'
+```
+
+### Invalid-input messages
+
+Invalid input keeps its existing error code (JSON-RPC `-32602` for most tools, `-32004` for a malformed `get_cve_details` id, or the tool's own `invalid_address` / `invalid_hostname` / `invalid_chain` isError code). The message says what was wrong, what format is expected, gives one valid example, and ends with the `request_id`. Your raw input is never echoed back. For example:
+
+```
+address is not a valid EVM address. Expected: '0x' followed by exactly 40 hex characters (case-insensitive). Example: 0x7067312d746573742d6669787475726500000002. request_id: 9cf7345b-f8d6-46f7-8e45-0da5e25a002d
+```
 
 ## Acknowledgements
 

@@ -85,3 +85,40 @@ test('fixtures: an input the tool would reject is never a fixture', () => {
   assert.equal(matchFixture('get_usage_status', {}), null);
   assert.equal(matchFixture('no_such_tool', { value: '192.0.2.1' }), null);
 });
+
+// The README table, llms.txt and the chat CAPABILITIES line are generated
+// from / checked against lib/fixtures.mjs, so the docs can't drift from the
+// fixtures the server actually answers.
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const read = (rel) => fs.readFileSync(path.join(repoRoot, rel), 'utf8');
+
+test('docs: the README "Test your integration" table lists every fixture with its expected result', () => {
+  const readme = read('README.md');
+  assert.ok(readme.includes('## Test your integration'));
+  for (const f of TEST_FIXTURES) {
+    const row = '| `' + f.tool + '` | ' + f.kind + ' | `' + JSON.stringify(f.arguments) + '` | ' + f.expected.summary + ' |';
+    assert.ok(readme.includes(row), `README is missing the row for ${f.tool}/${f.kind}`);
+  }
+  const rowCount = readme.split('\n').filter((l) => /^\| `[a-z_]+` \| (FLAGGED|CLEAN|UNKNOWN) \|/.test(l)).length;
+  assert.equal(rowCount, TEST_FIXTURES.length, 'README must not list fixtures that do not exist');
+  assert.match(readme, /Out of scope:\*\* the REST endpoints \(`\/api\/ioc`/);
+  assert.match(readme, /-H "Accept: application\/json, text\/event-stream"/);
+});
+
+test('docs: llms.txt and the chat CAPABILITIES block mention the fixtures', () => {
+  const llms = read('public/llms.txt');
+  assert.ok(llms.includes('## Test your integration'));
+  for (const values of [FIXTURE_VALUES.domain, FIXTURE_VALUES.ipv4, FIXTURE_VALUES.cve]) {
+    for (const v of Object.values(values)) assert.ok(llms.includes(v), `llms.txt missing ${v}`);
+  }
+  assert.ok(llms.includes(FIXTURE_VALUES.wallet.FLAGGED));
+  assert.match(llms, /REST endpoints \(\/api\/ioc\) have no fixtures/);
+
+  const chat = read('api/chat.mjs');
+  const capabilities = chat.slice(chat.indexOf('[CAPABILITIES'), chat.indexOf('[CONTEXT]:'));
+  assert.equal(capabilities.split('\n').filter((l) => l.includes('Integration test fixtures')).length, 1);
+});
