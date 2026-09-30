@@ -1,5 +1,8 @@
 {
   "regions": ["lhr1"],
+  "rewrites": [
+    { "source": "/favicon.ico", "destination": "/favicon.svg" }
+  ],
   "crons": [
     {
       "path": "/api/heartbeat/pulse",
