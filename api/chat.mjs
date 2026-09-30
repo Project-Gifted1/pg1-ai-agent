@@ -1231,7 +1231,7 @@ export default async function handler(req, res) {
         });
       } else if (lower.startsWith('/sync-vault')) {
         return sendJSON(res, 200, {
-          reply: `### [ VAULT SYNCHRONIZATION AUDIT ]\n- **Storage Layer**: pg1-vault (Cryptographic Zero-Trust)\n- **Payload Integrity**: 2/2 Payloads Confirmed Immutable (Zero Byte Drift)`,
+          reply: `### [ VAULT SYNCHRONIZATION AUDIT ]\n- **Storage Layer**: pg1-vault (Supabase Storage bucket)\n- **Payload Integrity**: not checked by this command (use the ➕ Vault Sync button for a live file list)`,
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/export')) {
