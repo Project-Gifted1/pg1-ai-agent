@@ -467,6 +467,19 @@
     <button class="quick-chip" onclick="runQuick('/sync-vault')">VAULT</button>
     <button class="quick-chip" onclick="toggleQuickMenu(); triggerVaultSync();">VAULT SYNC</button>
     <button class="quick-chip" onclick="runQuick('/voice')">VOICE</button>
+    <button class="quick-chip" onclick="toggleQuickMenu(); openErrorLog();">ERROR LOG</button>
+  </div>
+
+  <div id="error-log-modal" class="matrix-modal" style="display: none;">
+    <div class="matrix-card" style="max-width: 440px;">
+      <h2>ERROR LOG</h2>
+      <p style="font-size:11px; color:#aaa; text-align:center; margin-bottom:-8px;">Client-side failures captured on this device. Nothing here is sent anywhere unless you tap FIX on an entry.</p>
+      <div id="error-log-list" class="thread-list"></div>
+      <div style="display:flex; gap:10px;">
+        <button class="matrix-submit" style="background: transparent; border: 1px solid var(--danger-red); color: var(--danger-red);" onclick="triggerHaptic(); clearErrorLog()">CLEAR LOG</button>
+        <button class="matrix-submit" style="background: transparent; border: 1px solid var(--text-gold); color: var(--text-gold);" onclick="triggerHaptic(); closeErrorLog()">CLOSE</button>
+      </div>
+    </div>
   </div>
 
   <div id="chat-container">
@@ -526,6 +539,40 @@
     // if nothing has come back after 75s the request is dead. Without this,
     // a stalled upload left "Executing directive..." on screen forever.
     const REQUEST_TIMEOUT_MS = 75000;
+
+    // ERROR LOG (issue #201 Phase 2): every genuine client-side failure ends
+    // up here — the same failures that already reach flashStatus() as a red
+    // status-bar flash, plus uncaught exceptions/rejections — so one can be
+    // reviewed later from the ➕ menu instead of only being visible for the
+    // 2.5s the status bar flashes it. The silent voice-profile fallback
+    // (api/chat.mjs resolvedVoiceProfile) never calls flashStatus(), so it
+    // is never logged here either — it's the fix for an error, not one.
+    const ERROR_LOG_KEY = 'pg1_error_log';
+    const MAX_ERROR_LOG_ENTRIES = 50;
+
+    function getErrorLog() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(ERROR_LOG_KEY));
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function logError(message, context) {
+      const log = getErrorLog();
+      log.unshift({ time: new Date().toISOString(), message: String(message || 'Unknown error'), context: context || 'general' });
+      if (log.length > MAX_ERROR_LOG_ENTRIES) log.length = MAX_ERROR_LOG_ENTRIES;
+      try { localStorage.setItem(ERROR_LOG_KEY, JSON.stringify(log)); } catch (e) {}
+    }
+
+    window.addEventListener('error', (event) => {
+      logError(event.message || 'Unknown script error', 'window');
+    });
+    window.addEventListener('unhandledrejection', (event) => {
+      const reason = event.reason;
+      logError((reason && reason.message) || String(reason), 'promise');
+    });
 
     function saveState() {
       const chatHTML = document.getElementById('chat-container').innerHTML;
@@ -764,9 +811,33 @@
     }
 
     let voiceActive = false;
-    let attachedFilesPayload = []; 
+    let attachedFilesPayload = [];
     let recognition;
     let isRecording = false;
+    // Set true right before submitDirective() runs a Suggest Fix directive
+    // (see suggestFixForError), read and cleared at the start of that one
+    // request so only its own reply is checked for a proposed patch.
+    let pendingSuggestFix = false;
+
+    // ENVIRONMENT AWARENESS (issue #201 Phase 2): a handful of harmless,
+    // self-reported browser facts sent with every chat request so the agent
+    // can honestly answer questions about "your" environment instead of
+    // guessing or refusing — see [CLIENT ENVIRONMENT] in api/chat.mjs.
+    function getClientEnvironment() {
+      try {
+        return {
+          timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone) || null,
+          language: navigator.language || null,
+          platform: (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || null,
+          viewportWidth: window.innerWidth || null,
+          viewportHeight: window.innerHeight || null,
+          online: typeof navigator.onLine === 'boolean' ? navigator.onLine : null,
+          localTime: new Date().toString()
+        };
+      } catch (e) {
+        return null;
+      }
+    }
 
     // AUTH FIX: session credentials, populated once by verifyAuth() and
     // attached to every /api/chat call from then on, so write actions
@@ -970,6 +1041,7 @@
     }
 
     function flashStatus(message, isError = true) {
+      if (isError) logError(message, 'status');
       const statusEl = document.getElementById('sys-status');
       if (!statusEl) return;
       const original = statusEl.innerHTML;
@@ -1089,6 +1161,17 @@
       saveState();
     }
 
+    // Shared by the normal pendingApproval reply path and the Suggest Fix
+    // flow (requestSuggestedPatchApproval) so both render the exact same
+    // Approve/Decline markup wired to the same resolveApproval() call.
+    function renderApprovalActionsHtml(token) {
+      return `
+            <div class="approval-actions">
+              <button class="approval-btn approve" onclick="resolveApproval('${token}', 'approve', this)">✅ APPROVE</button>
+              <button class="approval-btn decline" onclick="resolveApproval('${token}', 'decline', this)">❌ DECLINE</button>
+            </div>`;
+    }
+
     // APPROVAL BUTTONS: taps the same CONFIRM_PENDING_ACTION path the old
     // "/approve <token>" text command used, just with the token attached
     // automatically instead of the operator retyping it.
@@ -1139,6 +1222,127 @@
       }
     }
 
+    // SUGGEST FIX (issue #201 Phase 2): looks for a fenced JSON code block
+    // proposing an APPLY_SURGICAL_PATCH — the shape the model is instructed
+    // to reply with when asked to fix one specific error-log entry (see
+    // suggestFixForError). Deliberately narrow: only a well-formed patch
+    // proposal with all three required fields counts, so an ordinary reply
+    // that merely mentions or quotes JSON is never mistaken for one.
+    function extractPatchActionFromReply(replyText) {
+      if (!replyText) return null;
+      const fenceRe = /```(?:json)?\s*([\s\S]*?)```/gi;
+      let match;
+      while ((match = fenceRe.exec(replyText)) !== null) {
+        try {
+          const obj = JSON.parse(match[1].trim());
+          const kind = obj.actionType || obj.action;
+          if (kind === 'APPLY_SURGICAL_PATCH' && obj.targetFile && obj.search && obj.replace) {
+            return obj;
+          }
+        } catch (e) {
+          // Not JSON, or not this shape — keep scanning other fenced blocks.
+        }
+      }
+      return null;
+    }
+
+    // Sends the model's proposed patch to the real APPLY_SURGICAL_PATCH
+    // action (a pendingApproval only exists once the server has validated
+    // the search text matches exactly once) and attaches the same
+    // Approve/Decline buttons used everywhere else to this bubble. Nothing
+    // is ever committed here directly — approving still goes through
+    // resolveApproval() -> CONFIRM_PENDING_ACTION like any other proposal.
+    async function requestSuggestedPatchApproval(action, agentBubble) {
+      try {
+        const payload = {
+          action: 'APPLY_SURGICAL_PATCH',
+          targetFile: action.targetFile,
+          targetRepo: action.targetRepo,
+          search: action.search,
+          replace: action.replace,
+          isAuthorizedAction: true,
+          confirmProtectedPath: action.confirmProtectedPath === true,
+          user: sessionUser,
+          pass: sessionPass
+        };
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const responseText = await response.text();
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseErr) {
+          return;
+        }
+
+        const textEl = agentBubble.querySelector('.message-text');
+        if (textEl && data.reply) {
+          textEl.innerHTML += `<br><br>${formatMarkdown(data.reply)}`;
+        }
+        if (data.pendingApproval && data.pendingApproval.token) {
+          const wrapper = document.createElement('div');
+          wrapper.innerHTML = renderApprovalActionsHtml(data.pendingApproval.token);
+          const actionsNode = wrapper.firstElementChild;
+          const messageActions = agentBubble.querySelector('.message-actions');
+          agentBubble.insertBefore(actionsNode, messageActions);
+        }
+        saveState();
+      } catch (err) {
+        logError('Suggested-fix approval request failed: ' + err.message, 'suggestFix');
+      }
+    }
+
+    // Reuses submitDirective() end-to-end (bubble creation, timeout, error
+    // handling) exactly like the quick-menu's runQuick() does, just with a
+    // constructed /claude prompt describing one specific error-log entry.
+    function suggestFixForError(index) {
+      const log = getErrorLog();
+      const entry = log[index];
+      if (!entry) return;
+      closeErrorLog();
+      pendingSuggestFix = true;
+      const input = document.getElementById('prompt-input');
+      input.value = '/claude A client-side error was captured in the PG1 error log. If you can pin down an exact, minimal fix in this repository, reply with ONLY a fenced json code block containing {"actionType":"APPLY_SURGICAL_PATCH","targetFile":"<path>","search":"<exact existing text>","replace":"<replacement text>"} and nothing else outside that block. If you cannot identify an exact fix, explain what you would need instead of guessing.\n\nError: ' + entry.message + '\nContext: ' + entry.context + '\nLogged at: ' + entry.time;
+      autoResize(input);
+      submitDirective();
+    }
+
+    function openErrorLog() {
+      renderErrorLogList();
+      document.getElementById('error-log-modal').style.display = 'flex';
+    }
+    function closeErrorLog() {
+      document.getElementById('error-log-modal').style.display = 'none';
+    }
+    function clearErrorLog() {
+      if (!confirm('Clear the local error log on this device?')) return;
+      localStorage.removeItem(ERROR_LOG_KEY);
+      renderErrorLogList();
+    }
+    function renderErrorLogList() {
+      const container = document.getElementById('error-log-list');
+      if (!container) return;
+      const log = getErrorLog();
+      if (log.length === 0) {
+        container.innerHTML = '<div style="font-size:11px; color:#999; text-align:center; padding: 12px 0;">No errors logged on this device.</div>';
+        return;
+      }
+      container.innerHTML = log.map((entry, index) => `
+        <div class="thread-item">
+          <div class="thread-info">
+            <span class="thread-title">${escapeHTML(entry.context)}</span>
+            <span class="thread-date">${escapeHTML(new Date(entry.time).toLocaleString())}</span>
+            <span style="font-size:11px; color:#ccc;">${escapeHTML(String(entry.message).slice(0, 200))}</span>
+          </div>
+          <div class="thread-actions">
+            <button class="thread-action-btn" onclick="triggerHaptic(30); suggestFixForError(${index})">FIX</button>
+          </div>
+        </div>`).join('');
+    }
+
     async function submitDirective() {
       const input = document.getElementById('prompt-input');
       const text = input.value.trim();
@@ -1183,6 +1387,7 @@
           }
         } catch(e) {
           console.error("Frame extraction failed: ", e);
+          logError('Frame extraction failed: ' + e.message, 'vision');
         }
       }
 
@@ -1228,6 +1433,12 @@
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
+      // Read once and reset immediately so a second, unrelated directive
+      // submitted while this one is still in flight is never mistaken for
+      // the Suggest Fix follow-up too.
+      const isSuggestFixRequest = pendingSuggestFix;
+      pendingSuggestFix = false;
+
       try {
         const voiceProfile = document.getElementById('voice-profile-select').value;
         // AUTH FIX: sessionUser / sessionPass (set once by verifyAuth()) are
@@ -1238,7 +1449,8 @@
           prompt: text,
           voice: voiceProfile,
           user: sessionUser,
-          pass: sessionPass
+          pass: sessionPass,
+          clientEnv: getClientEnvironment()
         };
 
         if (attachedFilesPayload.length > 0) {
@@ -1295,12 +1507,7 @@
         }
 
         if (data.pendingApproval && data.pendingApproval.token) {
-          const pa = data.pendingApproval;
-          contentHtml += `
-            <div class="approval-actions">
-              <button class="approval-btn approve" onclick="resolveApproval('${pa.token}', 'approve', this)">✅ APPROVE</button>
-              <button class="approval-btn decline" onclick="resolveApproval('${pa.token}', 'decline', this)">❌ DECLINE</button>
-            </div>`;
+          contentHtml += renderApprovalActionsHtml(data.pendingApproval.token);
         }
 
         contentHtml += `
@@ -1325,12 +1532,27 @@
           speakMessage(data.reply);
         }
 
+        // SUGGEST FIX (issue #201 Phase 2): this reply was asked, on behalf
+        // of an error-log entry, to propose an exact patch. If the model
+        // found one it replies with a fenced APPLY_SURGICAL_PATCH JSON block
+        // instead of a pendingApproval (that action only exists once the
+        // server actually receives and validates the patch) — so submit that
+        // JSON as a real APPLY_SURGICAL_PATCH request now and attach the
+        // resulting Approve/Decline buttons to this same bubble.
+        if (!data.pendingApproval && isSuggestFixRequest) {
+          const suggestedAction = extractPatchActionFromReply(data.reply);
+          if (suggestedAction) {
+            await requestSuggestedPatchApproval(suggestedAction, agentBubble);
+          }
+        }
+
       } catch (err) {
-        triggerHaptic(200); 
+        triggerHaptic(200);
         const errTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const errMessage = err.name === 'AbortError'
           ? `No reply after ${REQUEST_TIMEOUT_MS / 1000}s, so the request was stopped. Large attachments are the usual cause. Please retry.`
           : err.message;
+        logError(errMessage, 'submitDirective');
         agentBubble.classList.remove('pending');
         agentBubble.innerHTML = `<span class="msg-timestamp">${errTime}</span><div class="message-text" style="color: #ff4444;">Exception: ${escapeHTML(errMessage)}</div>`;
         saveState();

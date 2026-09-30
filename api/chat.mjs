@@ -390,6 +390,37 @@ function formatDiffSummary(diff, maxLines, maxChars) {
   return text + moreNote;
 }
 
+// PHASE 2 (issue #201): environment awareness. The browser self-reports a
+// handful of harmless facts about itself (timezone, language, viewport,
+// online state) with every chat request. This is the only honest way the
+// agent can answer questions about "your" environment — everything else
+// about the runtime is genuinely invisible to it (see the grounding
+// directive) — so each field is capped and only ever surfaced labelled as
+// self-reported, never presented as verified server telemetry.
+function formatClientEnvironment(clientEnv) {
+  if (!clientEnv || typeof clientEnv !== 'object') return '';
+  var clip = function (v, max) {
+    return (typeof v === 'string' && v.trim()) ? v.trim().slice(0, max || 60) : null;
+  };
+  var lines = [];
+  var timezone = clip(clientEnv.timezone, 60);
+  if (timezone) lines.push('Timezone: ' + timezone);
+  var language = clip(clientEnv.language, 20);
+  if (language) lines.push('Language: ' + language);
+  var platform = clip(clientEnv.platform, 40);
+  if (platform) lines.push('Platform: ' + platform);
+  if (typeof clientEnv.viewportWidth === 'number' && typeof clientEnv.viewportHeight === 'number') {
+    lines.push('Viewport: ' + Math.round(clientEnv.viewportWidth) + 'x' + Math.round(clientEnv.viewportHeight));
+  }
+  if (typeof clientEnv.online === 'boolean') {
+    lines.push('Network: ' + (clientEnv.online ? 'online' : 'offline'));
+  }
+  var localTime = clip(clientEnv.localTime, 60);
+  if (localTime) lines.push('Local time: ' + localTime);
+  if (lines.length === 0) return '';
+  return '\n\n[CLIENT ENVIRONMENT (self-reported by the browser, not independently verified)]:\n' + lines.map(function (l) { return '- ' + l; }).join('\n');
+}
+
 function generateApprovalToken() {
   return crypto.randomUUID();
 }
@@ -992,6 +1023,7 @@ export default async function handler(req, res) {
     var user = reqBody.user;
     var pass = reqBody.pass;
     var voice = reqBody.voice;
+    var clientEnv = (reqBody.clientEnv && typeof reqBody.clientEnv === 'object') ? reqBody.clientEnv : null;
 
     var confirmProtectedPath = reqBody.confirmProtectedPath === true;
     var reorganizeOperations = Array.isArray(reqBody.operations) ? reqBody.operations : [];
@@ -1246,7 +1278,7 @@ export default async function handler(req, res) {
         activeAction = 'CLAUDE_CHAT';
       } else if (lower === '/help' || lower === 'help') {
         return sendJSON(res, 200, {
-          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/speak** plus text: read it aloud\n- [ /voice ] show/switch the voice profile used for SPEAK (remembered on this device)\n- **/claude** plus a question: advanced reasoning core\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- Anything else: ask in plain words (live web search is on)',
+          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/speak** plus text: read it aloud\n- [ /voice ] show/switch the voice profile used for SPEAK — PG1 Core, PG1 Classic or PG1 Field, remembered on this device\n- **/claude** plus a question: advanced reasoning core\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- The ➕ menu also has an ERROR LOG of recent client-side failures on this device, each with a FIX button to request a proposed patch (same Approve/Decline flow)\n- Anything else: ask in plain words (live web search is on)',
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/threat-radar')) {
@@ -2271,8 +2303,10 @@ export default async function handler(req, res) {
 - Public services PG1 runs (you describe them; you cannot call them from this chat): the MCP server at https://pg1-ai-agent.vercel.app/api/mcp with 13 tools. Always free: check_wallet_sanctions, check_domain_age, check_hostname_reputation, get_usage_status. Paid at one cent (0.01 USD) via x402 on Base or a licence key: get_threat_indicators, get_cve_details, get_cve_batch, get_cve_by_product, get_threat_actor_profile, plus get_ioc_context and get_ioc_batch when a record is found. Licence only: subscribe_alerts, submit_indicator. The A2A endpoint /api/a2a exposes the four free tools (versions 1.0 and 0.3). The REST STIX 2.1 feed /api/ioc sits behind a 402 paywall (licence key, x402, or an opt-in free tier of 5 calls a day). Also /api/health, /llms.txt, /openapi.json and the agent card at /.well-known/agent-card.json. Listed on the Official MCP Registry, Smithery and Glama.
 - Business state: paid feeds are on hold pending data licences (abuse.ch, LevelBlue/OTX, ScamSniffer), and the Gumroad product is unpublished. There are no paid calls yet.
 - You cannot read Vercel logs or traffic, run the MCP or A2A tools yourself, merge pull requests, or see files except through a patch proposal. Never claim to have done any of these.
+- Environment awareness: when a [CLIENT ENVIRONMENT] block appears in [CONTEXT], those are real values the operator's own browser just reported (timezone, language, platform, viewport, network state) — always call them self-reported by the browser, never claim to have checked them independently, and never state any of them if the block is absent.
+- The ➕ menu has an ERROR LOG of recent client-side failures captured on that device (never sent here on its own). Its FIX button on an entry sends you that one error and asks you to propose an exact APPLY_SURGICAL_PATCH fix if you can find one — same Approve/Decline flow as any other patch proposal, nothing applies automatically.
 
-[CONTEXT]:\n${formattedArchive}${targetedHistoricalData}${supabaseFilesReport}`;
+[CONTEXT]:\n${formattedArchive}${targetedHistoricalData}${supabaseFilesReport}${formatClientEnvironment(clientEnv)}`;
 
     if (Date.now() >= deadlineTs - 1000) {
       return sendJSON(res, 200, {
