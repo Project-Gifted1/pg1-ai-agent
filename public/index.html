@@ -605,6 +605,15 @@
       });
       if (log.length > MAX_ERROR_LOG_ENTRIES) log.length = MAX_ERROR_LOG_ENTRIES;
       try { localStorage.setItem(ERROR_LOG_KEY, JSON.stringify(log)); } catch (e) {}
+      // A live test on Android Chrome found the status light stayed GREEN in
+      // aeroplane mode because nothing here ever touched it - navigator.onLine
+      // and the offline event aren't reliable on mobile, but an actual failed
+      // request is undeniable proof the network is down, so any network-type
+      // failure (offline/network/timeout) marks the light red immediately,
+      // regardless of what navigator.onLine claims.
+      if (CONNECTIVITY_ERROR_CATEGORIES.has(category)) {
+        markNetworkDown();
+      }
     }
 
     window.addEventListener('error', (event) => {
@@ -738,6 +747,7 @@
     function handleVisibilityChange() {
       if (document.visibilityState === 'hidden') {
         stopStatusPolling();
+        stopRedRecheck();
       } else {
         refreshStatusLight();
         startStatusPolling();
@@ -745,10 +755,7 @@
     }
 
     window.addEventListener('online', refreshStatusLight);
-    window.addEventListener('offline', () => {
-      lastHealthState = 'red';
-      renderIdleStatus();
-    });
+    window.addEventListener('offline', markNetworkDown);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     if (document.visibilityState !== 'hidden') {
       startStatusPolling();
@@ -1215,16 +1222,52 @@
         const data = await res.json().catch(() => null);
         return (data && data.status === 'ok') ? 'green' : 'amber';
       } catch (e) {
-        // Reachable enough to have navigator.onLine === true, but the health
-        // check itself failed (timeout, CORS, server hiccup) - degraded, not
-        // necessarily fully offline.
-        return 'amber';
+        // The health check itself never got a response back - rejected,
+        // aborted on our own timeout, or a DNS/CORS failure before any
+        // server code ran. That's a network failure, not "the server
+        // answered but is unhealthy" (the !res.ok branch above already
+        // covers that, correctly, as amber) - so this is red, never amber.
+        return 'red';
       }
+    }
+
+    // While the light is red, re-check /api/health every 15s (instead of
+    // waiting for the normal 120s poll) so a recovery is noticed quickly,
+    // same as the slow poll: paused while the tab is hidden, and resumed
+    // (with an immediate check) as soon as it's visible again.
+    const RED_RECHECK_INTERVAL_MS = 15000;
+    let redRecheckTimerId = null;
+
+    function startRedRecheck() {
+      if (redRecheckTimerId !== null) return;
+      redRecheckTimerId = setInterval(refreshStatusLight, RED_RECHECK_INTERVAL_MS);
+    }
+
+    function stopRedRecheck() {
+      if (redRecheckTimerId !== null) {
+        clearInterval(redRecheckTimerId);
+        redRecheckTimerId = null;
+      }
+    }
+
+    // Called the instant a real request fails with a network-type error
+    // (see logError()) or the browser fires 'offline' - marks the light red
+    // right away, without waiting for the next /api/health poll, and starts
+    // the fast recheck loop until it recovers.
+    function markNetworkDown() {
+      lastHealthState = 'red';
+      renderIdleStatus();
+      if (document.visibilityState !== 'hidden') startRedRecheck();
     }
 
     async function refreshStatusLight() {
       lastHealthState = await checkApiHealth();
       renderIdleStatus();
+      if (lastHealthState === 'red') {
+        if (document.visibilityState !== 'hidden') startRedRecheck();
+      } else {
+        stopRedRecheck();
+      }
     }
 
     function flashStatus(message, isError = true, category) {

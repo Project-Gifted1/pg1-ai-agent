@@ -66,12 +66,19 @@ const MAX_ERROR_LOG_ENTRIES_DECL = extractConstDeclaration(html, 'MAX_ERROR_LOG_
 const ERROR_LOG_KEY_DECL = extractConstDeclaration(html, 'ERROR_LOG_KEY');
 const ERROR_LOG_CONSTS = `${ERROR_LOG_KEY_DECL}\n${MAX_ERROR_LOG_ENTRIES_DECL}`;
 
+// logError() now also flags the live status light red on a network-type
+// category (issue #201 follow-up: Android aeroplane mode left the light
+// green) - these tests only care about log persistence, so a no-op stub
+// covers the call without pulling in the whole status-light chain.
+const CONNECTIVITY_SET_DECL = extractConstDeclaration(html, 'CONNECTIVITY_ERROR_CATEGORIES');
+const MARK_NETWORK_DOWN_STUB = 'function markNetworkDown() {}';
+
 function loadErrorLogFns(localStorage) {
   const getErrorLogSource = extractFunction(html, 'getErrorLog');
   const logErrorSource = extractFunction(html, 'logError');
   const factory = new Function(
     'localStorage',
-    `${ERROR_LOG_CONSTS}\n${getErrorLogSource}\n${logErrorSource}\nreturn { getErrorLog, logError };`
+    `${ERROR_LOG_CONSTS}\n${CONNECTIVITY_SET_DECL}\n${MARK_NETWORK_DOWN_STUB}\n${getErrorLogSource}\n${logErrorSource}\nreturn { getErrorLog, logError };`
   );
   return factory(localStorage);
 }
@@ -135,7 +142,7 @@ function loadFlashStatus(localStorage) {
   const renderIdleStatusSource = extractFunction(html, 'renderIdleStatus');
   const factory = new Function(
     'localStorage', 'document',
-    `${ERROR_LOG_CONSTS}\n${getErrorLogSource}\n${logErrorSource}\n${lastHealthStateDecl}\n${healthStateColorSource}\n${healthStateLabelSource}\n${renderIdleStatusSource}\n${flashStatusSource}\nreturn flashStatus;`
+    `${ERROR_LOG_CONSTS}\n${CONNECTIVITY_SET_DECL}\n${MARK_NETWORK_DOWN_STUB}\n${getErrorLogSource}\n${logErrorSource}\n${lastHealthStateDecl}\n${healthStateColorSource}\n${healthStateLabelSource}\n${renderIdleStatusSource}\n${flashStatusSource}\nreturn flashStatus;`
   );
   const fakeStatusEl = { innerHTML: '', style: {} };
   const fakeDocument = { getElementById: () => fakeStatusEl };

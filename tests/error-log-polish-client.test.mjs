@@ -174,10 +174,10 @@ test('checkApiHealth: amber when reachable but the health check itself is not ok
   assert.equal(await checkApiHealth(), 'amber');
 });
 
-test('checkApiHealth: amber when online but the health fetch itself throws (unreachable/timeout)', async () => {
+test('checkApiHealth: red (not amber) when online but the health fetch itself throws (unreachable/timeout) - issue #201 follow-up', async () => {
   const fetchStub = async () => { throw new Error('network down'); };
   const { checkApiHealth } = loadStatusLight({ onLine: true }, fetchStub);
-  assert.equal(await checkApiHealth(), 'amber');
+  assert.equal(await checkApiHealth(), 'red');
 });
 
 test('renderIdleStatus paints the status dot/label matching the last-known health state', () => {
@@ -207,10 +207,13 @@ function loadStatusPolling(navigatorStub, fetchStub, initialVisibility = 'visibl
   const refreshSource = extractFunction(html, 'refreshStatusLight');
   const startSource = extractFunction(html, 'startStatusPolling');
   const stopSource = extractFunction(html, 'stopStatusPolling');
+  const startRedSource = extractFunction(html, 'startRedRecheck');
+  const stopRedSource = extractFunction(html, 'stopRedRecheck');
   const visibilitySource = extractFunction(html, 'handleVisibilityChange');
   const lastHealthStateDecl = extractDeclaration(html, 'let', 'lastHealthState');
   const timeoutDecl = extractDeclaration(html, 'const', 'HEALTH_CHECK_TIMEOUT_MS');
   const pollIntervalDecl = extractDeclaration(html, 'const', 'STATUS_POLL_INTERVAL_MS');
+  const redIntervalDecl = extractDeclaration(html, 'const', 'RED_RECHECK_INTERVAL_MS');
 
   const fakeStatusEl = { innerHTML: '', style: {} };
   let nextTimerId = 1;
@@ -231,13 +234,17 @@ function loadStatusPolling(navigatorStub, fetchStub, initialVisibility = 'visibl
   const factory = new Function(
     'navigator', 'document', 'fetch', 'AbortController', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval',
     `let statusPollTimerId = null;
+     let redRecheckTimerId = null;
      ${timeoutDecl}
      ${pollIntervalDecl}
+     ${redIntervalDecl}
      ${lastHealthStateDecl}
      ${colorSource}
      ${labelSource}
      ${renderSource}
      ${checkSource}
+     ${startRedSource}
+     ${stopRedSource}
      ${refreshSource}
      ${startSource}
      ${stopSource}
@@ -246,6 +253,7 @@ function loadStatusPolling(navigatorStub, fetchStub, initialVisibility = 'visibl
        startStatusPolling, stopStatusPolling, handleVisibilityChange, refreshStatusLight,
        getLastHealthState: () => lastHealthState,
        getTimerId: () => statusPollTimerId,
+       getRedTimerId: () => redRecheckTimerId,
      };`
   );
 
