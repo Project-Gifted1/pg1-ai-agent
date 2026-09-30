@@ -1163,6 +1163,10 @@
         
         let contentHtml = `<span class="msg-timestamp">${finalTime}</span><div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>`;
 
+        if (data.searchEntryPoint) {
+          contentHtml += '<div class="search-entry-point" style="margin-top: 12px; width: 100%;">' + data.searchEntryPoint + '</div>';
+        }
+
         if (data.image) {
           contentHtml += `
             <div class="media-preview-container">
