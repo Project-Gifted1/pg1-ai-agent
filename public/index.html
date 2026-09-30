@@ -459,6 +459,14 @@
     </div>
   </header>
 
+  <div id="quick-menu" class="quick-menu">
+    <button class="quick-chip" onclick="runQuick('/status')">STATUS</button>
+    <button class="quick-chip" onclick="runQuick('/threat-radar')">RADAR</button>
+    <button class="quick-chip" onclick="runQuick('/commerce-status')">COMMERCE</button>
+    <button class="quick-chip" onclick="runQuick('/sync-vault')">VAULT</button>
+    <button class="quick-chip" onclick="toggleQuickMenu(); triggerVaultSync();">VAULT SYNC</button>
+  </div>
+
   <div id="chat-container">
     <div class="message-bubble" id="welcome-bubble">
       <span class="msg-timestamp" id="welcome-timestamp"></span>
