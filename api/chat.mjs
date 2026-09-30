@@ -2242,6 +2242,7 @@ export default async function handler(req, res) {
 
     return sendJSON(res, 200, {
       reply: replyText,
+      searchEntryPoint: modelFetchResult.searchEntryPoint || null,
       audio: audioBase64,
       audioStatus: audioStatus,
       audioMimeType: 'audio/mp3',
