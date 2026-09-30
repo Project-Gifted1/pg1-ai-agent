@@ -1196,7 +1196,7 @@ export default async function handler(req, res) {
 
       if (lower === '/status' || lower === '/status update' || lower === 'status') {
         return sendJSON(res, 200, {
-          reply: `### [ SYSTEM STATUS & TELEMETRY ]\n- **Runtime**: Vercel Serverless Edge (iad1 Primary Cluster)\n- **Vault Status**: ${supabaseStatus}\n- **Active Threat Indicators**: 20 Validated IoCs (OTX / NVD)\n- **Fleet Target**: 1,500 Sovereign Nodes // €750k Facility`,
+          reply: `### [ SYSTEM STATUS & TELEMETRY ]\n- **Runtime**: Vercel Serverless Functions (lhr1, London)\n- **Vault Status**: ${supabaseStatus}\n- **Threat Indicators**: not counted by this command (live feed at /api/ioc)\n- **Fleet Target**: 1,500 Sovereign Nodes // €750k Facility`,
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/image') || /generate.*image|create.*image|make.*image|draw|render.*image|picture of/i.test(lower)) {
