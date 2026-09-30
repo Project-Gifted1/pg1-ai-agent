@@ -1221,7 +1221,7 @@ export default async function handler(req, res) {
         });
       } else if (lower.startsWith('/test-validator')) {
         return sendJSON(res, 200, {
-          reply: `### [ VALIDATOR DRY-RUN RESULTS ]\n- **Pre-Flight Sandbox**: PASSED\n- **IoC Parsing**: 100% Valid Structure\n- **Supabase Fallback**: Verified Operational`,
+          reply: `### [ VALIDATOR DRY-RUN — STATIC PLACEHOLDER, NOTHING WAS RUN ]\n- **Pre-Flight Sandbox**: PASSED\n- **IoC Parsing**: 100% Valid Structure\n- **Supabase Fallback**: Verified Operational`,
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/commerce-status')) {
