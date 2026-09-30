@@ -153,6 +153,34 @@ curl -X POST https://pg1-ai-agent.vercel.app/api/a2a \
   }'
 ```
 
+## Response Metadata (reasons, status, checks, request_id)
+
+Every one of the 14 MCP tools and the 5 free A2A skills adds four fields alongside its existing output — additive only, nothing existing is renamed or repurposed:
+
+- **`reasons`**: `[{ code, message }]`. Zero or more machine-readable codes from the permanent list below. Empty when nothing is flagged. Codes are only ever added, never removed or renamed.
+- **`status`**: `"flagged"` when `reasons` is non-empty; `"unknown"` whenever any source needed for the answer timed out, errored, or was skipped (never reported as a false-clean `"no_flags"`); otherwise `"no_flags"`. (`subscribe_alerts` and `submit_indicator` keep their own pre-existing `status` field, which means a submission lifecycle state, not this honest-status value — they gain `reasons`/`checks`/`request_id` only.)
+- **`checks`**: `[{ source, result, checked_at, data_as_of }]` — one entry per data source consulted for this call. `result` is one of `"ok" | "timeout" | "error" | "skipped"`. `source` is always a generic label (e.g. `"sanctions list"`, `"domain registration records"`, `"on-chain transfer history"`) — never a vendor/provider name.
+- **`request_id`**: a UUID identifying this exact call, also sent as the `X-Request-Id` response header on `/api/mcp` and `/api/a2a`. If the call fails and gets written to the server error log, the same `request_id` is attached to that log entry.
+
+`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation` and `check_wallet_age` also declare these four as optional properties on their `outputSchema` (never added to `required`, and every other part of their schema is unchanged).
+
+### Reason codes
+
+| Code | Meaning |
+|---|---|
+| `WALLET_SANCTIONED` | Address matches an entry on the sanctions list. |
+| `DOMAIN_NEWLY_REGISTERED_30D` | Domain was registered fewer than 30 days ago. |
+| `HOSTNAME_PHISHING_LISTED` | Hostname, or a parent domain of it, is on the phishing blocklist. |
+| `HOSTNAME_LOOKALIKE` | Hostname is a probable lookalike/typosquat of a known brand domain. |
+| `WALLET_NO_HISTORY` | No on-chain transfer history was found for this address on this chain. |
+| `WALLET_AGE_PARTIAL` | Internal transfers were not checked in time; the wallet may be older than shown. |
+| `CVE_KNOWN_EXPLOITED_KEV` | CVE is on the known exploited vulnerabilities catalog. |
+| `IOC_FOUND_IN_THREAT_FEED` | Indicator has at least one matching record in the threat indicator feed. |
+
+Source of truth: `lib/reasonCodes.mjs`.
+
+**Not yet covered:** the `/api/ioc` REST feed and `/api/ioc/context` don't carry `reasons`/`status`/`checks`/`request_id` yet.
+
 ## Acknowledgements
 
 - **Frits** ([x402 Doctor](https://x402-doctor.onrender.com/)): found the payment-gate ordering bug and confirmed the fix, so PG1 now returns a proper x402 payment challenge by default.
