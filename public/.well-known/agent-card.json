@@ -1,8 +1,8 @@
 {
   "protocolVersion": "0.3.0",
   "name": "PG1 Sovereign Threat Intelligence",
-  "description": "Threat intelligence agent for AI agents and security tooling: wallet sanctions screening, domain age lookups, hostname/phishing reputation checks, and free-tier usage status. Paid tools (bulk indicator feeds, CVE enrichment, threat actor dossiers) are available via the companion MCP server at /api/mcp, not via A2A yet.",
-  "version": "1.12.0",
+  "description": "Threat intelligence agent for AI agents and security tooling: wallet sanctions screening, domain age lookups, hostname/phishing reputation checks, wallet age/history checks, and free-tier usage status. Paid tools (bulk indicator feeds, CVE enrichment, threat actor dossiers) are available via the companion MCP server at /api/mcp, not via A2A yet.",
+  "version": "1.13.0",
   "documentationUrl": "https://github.com/Project-Gifted1/pg1-ai-agent#readme",
   "url": "https://pg1-ai-agent.vercel.app/api/a2a",
   "preferredTransport": "JSONRPC",
@@ -50,6 +50,15 @@
       "description": "Checks a single hostname against the MetaMask eth-phishing-detect blocklist/allowlist plus a lookalike/typosquat detector, synced daily. Always free; rate-limited to 60 calls/hour per caller without a Gumroad license key (X-API-KEY exempts the limit).",
       "tags": ["threat-intelligence", "phishing", "hostname", "lookalike"],
       "examples": ["Is metamask-login.com a known phishing or lookalike domain?"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "check_wallet_age",
+      "name": "check_wallet_age",
+      "description": "Reports when an EVM wallet address first appeared on a given chain, based on its earliest on-chain transfer history (in or out), plus whether it's a contract. Always free; rate-limited to 60 calls/hour per caller without a Gumroad license key (X-API-KEY exempts the limit). Reports age and history only — never a claim that an address is safe.",
+      "tags": ["threat-intelligence", "wallet", "crypto", "age"],
+      "examples": ["When did wallet 0x1234...abcd first appear on Base?"],
       "inputModes": ["application/json"],
       "outputModes": ["application/json"]
     },
