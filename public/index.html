@@ -467,7 +467,6 @@
     <button class="quick-chip" onclick="runQuick('/sync-vault')">VAULT</button>
     <button class="quick-chip" onclick="toggleQuickMenu(); triggerVaultSync();">VAULT SYNC</button>
     <button class="quick-chip" onclick="runQuick('/voice')">VOICE</button>
-    <button class="quick-chip" onclick="runQuick('/voices')">BRIT VOICES</button>
   </div>
 
   <div id="chat-container">
@@ -487,10 +486,9 @@
       <div class="voice-group">
         <button id="voice-btn" class="stealth-btn" onclick="triggerHaptic(); toggleVoice()">VOICE: OFF</button>
         <select id="voice-profile-select" class="stealth-select" onchange="triggerHaptic(30); localStorage.setItem('pg1_voice_profile', this.value)">
-          <option value="PG1-Agent">PG1-Agent</option>
-          <option value="christopher">Christopher</option>
-          <option value="steffan">Steffan</option>
-          <option value="ryan">Ryan</option>
+          <option value="core">PG1 Core</option>
+          <option value="classic">PG1 Classic</option>
+          <option value="field">PG1 Field</option>
         </select>
       </div>
       <span id="sys-status" class="status-indicator">
@@ -615,15 +613,13 @@
     }
 
     // /voice is handled entirely client-side (no network round trip) so
-    // switching the shortlisted voice profiles works instantly and persists
-    // per device via localStorage. /voices (the live Cartesia library
-    // search) still goes through the normal server round trip below.
+    // switching between the three PG1 voice profiles works instantly and
+    // persists per device via localStorage. The server maps each profile
+    // name to a provider voice ID and rejects anything else.
     const VOICE_PROFILES = {
-      'pg1': { value: 'PG1-Agent', label: 'PG1-Agent (default)' },
-      'pg1-agent': { value: 'PG1-Agent', label: 'PG1-Agent (default)' },
-      'christopher': { value: 'christopher', label: 'Christopher' },
-      'steffan': { value: 'steffan', label: 'Steffan' },
-      'ryan': { value: 'ryan', label: 'Ryan' }
+      'core': { value: 'core', label: 'PG1 Core (default)' },
+      'classic': { value: 'classic', label: 'PG1 Classic' },
+      'field': { value: 'field', label: 'PG1 Field' }
     };
 
     function appendLocalExchange(userText, replyText) {
@@ -672,11 +668,11 @@
           localStorage.setItem('pg1_voice_profile', profile.value);
           replyText = `[AGENT] Voice profile switched to **${profile.label}** for this device.`;
         } else {
-          replyText = `[AGENT] Unknown voice profile "${escapeHTML(arg)}". Options: [ /voice-pg1 ] [ /voice-christopher ] [ /voice-steffan ] [ /voice-ryan ]`;
+          replyText = `[AGENT] Unknown voice profile "${escapeHTML(arg)}". Options: [ /voice-core ] [ /voice-classic ] [ /voice-field ]`;
         }
       } else {
         const current = document.getElementById('voice-profile-select').value;
-        replyText = `### [ VOICE PROFILES ]\nCurrent: **${current}**\n\n[ /voice-pg1 ] PG1-Agent — default, switches to a male British voice once CARTESIA_VOICE_ID is set server-side\n[ /voice-christopher ] Christopher\n[ /voice-steffan ] Steffan\n[ /voice-ryan ] Ryan\n\nRun [ /voices ] to search the live Cartesia library for male British voices.`;
+        replyText = `### [ VOICE PROFILES ]\nCurrent: **${current}**\n\n[ /voice-core ] PG1 Core — default\n[ /voice-classic ] PG1 Classic\n[ /voice-field ] PG1 Field\n\nSwitch with [ /voice-<name> ], remembered on this device.`;
       }
 
       triggerHaptic(30);
