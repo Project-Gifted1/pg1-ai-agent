@@ -1226,7 +1226,7 @@ export default async function handler(req, res) {
         });
       } else if (lower.startsWith('/commerce-status')) {
         return sendJSON(res, 200, {
-          reply: `### [ COMMERCIAL GATEWAY STATUS ]\n- **Gumroad Node**: ACTIVE\n- **Telemetry Route**: /api/ioc (Awaiting Agent Checkout)`,
+          reply: `### [ COMMERCIAL GATEWAY STATUS ]\n- **Gumroad Node**: PAUSED (product unpublished during licensing review)\n- **Telemetry Route**: /api/ioc (Awaiting Agent Checkout)`,
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/sync-vault')) {
