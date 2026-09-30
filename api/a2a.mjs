@@ -57,6 +57,7 @@ import {
 } from './mcp.mjs';
 import { getRequestIdentifier } from '../lib/freeTier.mjs';
 import { buildCheck, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
+import { formatFixIt, invalidInputMessage } from '../lib/invalidInput.mjs';
 
 // Generic (never vendor-named) `checks[].source` labels for the 5 skills
 // exposed here, keyed by skill name - same idea as api/mcp.mjs's
@@ -301,7 +302,11 @@ export default async function handler(req, res) {
     if (!data) {
       return jsonRpcError(
         res, 400, -32602,
-        'Invalid params: expected params.message.parts to contain a DataPart of the form {"skill": "<tool name>", "arguments": {...}}.',
+        formatFixIt({
+          problem: 'Invalid params: params.message.parts has no DataPart carrying a skill call',
+          expected: 'params.message.parts to contain a DataPart of the form {"skill": "<skill name>", "arguments": {...}}',
+          example: '{"kind": "data", "data": {"skill": "check_domain_age", "arguments": {"domain": "example.com"}}}'
+        }, pg1RequestId),
         requestId, undefined, pg1RequestId
       );
     }
@@ -310,7 +315,11 @@ export default async function handler(req, res) {
     const args = (data.arguments && typeof data.arguments === 'object') ? data.arguments : {};
 
     if (typeof skill !== 'string' || !A2A_SKILL_NAMES.includes(skill)) {
-      return jsonRpcError(res, 400, -32602, `Unknown skill: '${skill}'. Available skills: ${A2A_SKILL_NAMES.join(', ')}.`, requestId, undefined, pg1RequestId);
+      return jsonRpcError(res, 400, -32602, formatFixIt({
+        problem: 'Unknown skill: the DataPart\'s "skill" is not one of this agent\'s skills',
+        expected: `"skill" set to one of ${A2A_SKILL_NAMES.join(', ')}`,
+        example: 'check_domain_age'
+      }, pg1RequestId), requestId, undefined, pg1RequestId);
     }
 
     // Integration test fixtures (issue #215 part B): answered before any
@@ -351,9 +360,9 @@ export default async function handler(req, res) {
         }
         const errorChecks = [buildCheck(SKILL_SOURCE_LABELS[skill] || skill, classifyToolErrorCheckResult(err))];
         const errorData = { code: err.code, ...errorResponseMeta(errorChecks, pg1RequestId) };
-        return jsonRpcError(res, 200, -32000, err.message, requestId, errorData, pg1RequestId);
+        return jsonRpcError(res, 200, -32000, invalidInputMessage(err, pg1RequestId), requestId, errorData, pg1RequestId);
       }
-      return jsonRpcError(res, 400, -32602, err.message, requestId, undefined, pg1RequestId);
+      return jsonRpcError(res, 400, -32602, invalidInputMessage(err, pg1RequestId), requestId, undefined, pg1RequestId);
     }
     toolResult.request_id = pg1RequestId;
 

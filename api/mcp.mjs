@@ -76,6 +76,7 @@ import { logApiError } from '../lib/errorLog.mjs';
 import { reason } from '../lib/reasonCodes.mjs';
 import { buildCheck, withResponseMeta, withActionResponseMeta, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
 import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES } from '../lib/fixtures.mjs';
+import { invalidInput, invalidInputMessage, withFixIt, formatFixIt } from '../lib/invalidInput.mjs';
 
 export const config = { maxDuration: 30 };
 
@@ -597,7 +598,11 @@ async function fetchNvdCveDetails(cveId) {
 async function handleCveDetails(args) {
   const cveId = args?.cve_id;
   if (!cveId || !/^CVE-\d{4}-\d{4,}$/i.test(String(cveId))) {
-    const err = new Error("cve_id is required and must match the format 'CVE-YYYY-NNNN'.");
+    const err = invalidInput({
+      problem: cveId ? 'cve_id is not a valid CVE identifier' : 'cve_id is missing',
+      expected: "a string formatted 'CVE-YYYY-NNNN' (a 4-digit year, then 4 or more digits)",
+      example: 'CVE-2021-44228'
+    });
     err.notFound = true;
     throw err;
   }
@@ -648,10 +653,18 @@ async function handleCveDetails(args) {
 async function handleCveBatch(args) {
   const cveIds = args?.cve_ids;
   if (!Array.isArray(cveIds) || cveIds.length === 0) {
-    throw new Error('cve_ids is required and must be a non-empty array of strings.');
+    throw invalidInput({
+      problem: Array.isArray(cveIds) ? 'cve_ids is an empty array' : 'cve_ids is missing or is not an array',
+      expected: `a non-empty array of up to ${CVE_BATCH_MAX} CVE id strings, each formatted 'CVE-YYYY-NNNN'`,
+      example: '["CVE-2021-44228", "CVE-2023-4863"]'
+    });
   }
   if (cveIds.length > CVE_BATCH_MAX) {
-    throw new Error(`cve_ids exceeds the maximum batch size of ${CVE_BATCH_MAX}.`);
+    throw invalidInput({
+      problem: `cve_ids has ${cveIds.length} entries, more than the maximum batch size of ${CVE_BATCH_MAX}`,
+      expected: `at most ${CVE_BATCH_MAX} CVE ids per call (split larger lists into several calls)`,
+      example: '["CVE-2021-44228", "CVE-2023-4863"]'
+    });
   }
 
   const kevOutcome = await getKevCatalog().then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: {} }));
@@ -717,7 +730,12 @@ async function handleCveByProduct(args) {
   const onlyKev = !!args?.only_kev;
 
   if (!vendor || !product) {
-    throw new Error('vendor and product are both required.');
+    const missing = [!vendor && 'vendor', !product && 'product'].filter(Boolean).join(' and ');
+    throw invalidInput({
+      problem: `${missing} ${missing.includes(' and ') ? 'are' : 'is'} missing`,
+      expected: 'vendor and product as non-empty strings; version (string) and only_kev (boolean) are optional',
+      example: '{"vendor": "apache", "product": "log4j", "version": "2.14.1"}'
+    });
   }
 
   const keywords = [vendor, product, version].filter(Boolean).join(' ');
@@ -787,10 +805,16 @@ async function handleCveByProduct(args) {
 // get_ioc_context / get_ioc_batch shared helpers
 // ---------------------------------------------------------------------
 
+const IOC_VALUE_FIX_IT = {
+  problem: 'value is missing or empty',
+  expected: 'a single indicator string: an IPv4 address, domain, full URL, or MD5/SHA-1/SHA-256 hash',
+  example: '198.51.100.1'
+};
+
 async function handleIocContext(args) {
   const value = args?.value?.trim();
   if (!value) {
-    throw new Error('value is required.');
+    throw invalidInput(IOC_VALUE_FIX_IT);
   }
 
   const { supUrl, supKey } = getSupabaseCreds();
@@ -812,10 +836,18 @@ function withIocResponseMeta(lookupResult) {
 async function handleIocBatch(args) {
   const values = args?.values;
   if (!Array.isArray(values) || values.length === 0) {
-    throw new Error('values is required and must be a non-empty array of strings.');
+    throw invalidInput({
+      problem: Array.isArray(values) ? 'values is an empty array' : 'values is missing or is not an array',
+      expected: `a non-empty array of up to ${IOC_BATCH_MAX} indicator strings (IPv4 addresses, domains, URLs, or hashes)`,
+      example: '["198.51.100.1", "example.com"]'
+    });
   }
   if (values.length > IOC_BATCH_MAX) {
-    throw new Error(`values exceeds the maximum batch size of ${IOC_BATCH_MAX}.`);
+    throw invalidInput({
+      problem: `values has ${values.length} entries, more than the maximum batch size of ${IOC_BATCH_MAX}`,
+      expected: `at most ${IOC_BATCH_MAX} indicators per call (split larger lists into several calls)`,
+      example: '["198.51.100.1", "example.com"]'
+    });
   }
 
   const { supUrl, supKey } = getSupabaseCreds();
@@ -865,7 +897,11 @@ async function getAttackBundle() {
 async function handleThreatActorProfile(args) {
   const actorName = args?.actor_name?.trim();
   if (!actorName) {
-    throw new Error('actor_name is required.');
+    throw invalidInput({
+      problem: 'actor_name is missing or empty',
+      expected: 'a threat actor group name or known alias (matched case-insensitively)',
+      example: 'APT29'
+    });
   }
 
   const bundle = await getAttackBundle();
@@ -927,7 +963,11 @@ async function handleThreatActorProfile(args) {
 export async function handleUsageStatus(args, requestIdentifier) {
   const identifier = args?.identifier || requestIdentifier;
   if (!identifier) {
-    throw new Error('identifier is required (or must be derivable from the request).');
+    throw invalidInput({
+      problem: 'identifier is missing and could not be derived from the request',
+      expected: 'an identifier string, or omit it and call from a normal HTTP client so the caller can be identified',
+      example: '{"identifier": "my-agent-01"}'
+    });
   }
 
   const { supUrl, supKey } = getSupabaseCreds();
@@ -978,7 +1018,11 @@ export async function handleUsageStatus(args, requestIdentifier) {
 async function handleSubscribeAlerts(args, licenseKey) {
   const webhookUrl = args?.webhook_url;
   if (!webhookUrl || !/^https:\/\//i.test(webhookUrl)) {
-    throw new Error('webhook_url is required and must be an https:// URL.');
+    throw invalidInput({
+      problem: webhookUrl ? 'webhook_url is not an https:// URL' : 'webhook_url is missing',
+      expected: 'an absolute URL starting with https://',
+      example: 'https://hooks.example.com/pg1-alerts'
+    });
   }
   if (!licenseKey) {
     throw new Error('subscribe_alerts requires a valid Gumroad license key — not available via per-query x402.');
@@ -1024,7 +1068,12 @@ async function handleSubmitIndicator(args, licenseKey) {
   const indicator = args?.indicator;
   const indicatorType = args?.indicator_type;
   if (!indicator || !indicatorType) {
-    throw new Error('indicator and indicator_type are both required.');
+    const missing = [!indicator && 'indicator', !indicatorType && 'indicator_type'].filter(Boolean).join(' and ');
+    throw invalidInput({
+      problem: `${missing} ${missing.includes(' and ') ? 'are' : 'is'} missing`,
+      expected: 'indicator and indicator_type as non-empty strings; malware_family, confidence (0-100) and source_note are optional',
+      example: '{"indicator": "198.51.100.1", "indicator_type": "IPv4"}'
+    });
   }
   if (!licenseKey) {
     throw new Error('submit_indicator requires a valid Gumroad license key — contribution is a paid-tier feature.');
@@ -1081,24 +1130,32 @@ async function handleSubmitIndicator(args, licenseKey) {
 const SANCTIONS_DISCLAIMER = 'Informational only; not legal or sanctions-compliance advice.';
 const SANCTIONS_SOURCE = 'OFAC SDN List (US Treasury)';
 
+// The three invalid-input tool error classes below take fix-it parts
+// ({ problem, expected, example }, see lib/invalidInput.mjs), never a
+// message built from the caller's raw input.
 class InvalidAddressError extends Error {
-  constructor(message) {
-    super(message);
+  constructor(fixIt) {
+    super('');
+    withFixIt(this, fixIt);
     this.name = 'InvalidAddressError';
     this.mcpToolError = true;
     this.code = 'invalid_address';
   }
 }
 
+const SANCTIONS_ADDRESS_FIX_IT = {
+  problem: 'address does not match any recognised wallet address format; not screened',
+  expected: 'a wallet address in a recognised format: EVM (0x + 40 hex characters), BTC/LTC/BCH/DOGE/DASH/ZEC base58 or bech32/cashaddr, TRON, Monero, or Solana base58',
+  example: FIXTURE_VALUES.wallet.CLEAN
+};
+
 export async function handleCheckWalletSanctions(args) {
   const rawAddress = args?.address;
   if (typeof rawAddress !== 'string') {
-    throw new Error('address is required.');
+    throw invalidInput({ problem: 'address is missing or is not a string', expected: SANCTIONS_ADDRESS_FIX_IT.expected, example: SANCTIONS_ADDRESS_FIX_IT.example });
   }
   if (!rawAddress.trim()) {
-    throw new InvalidAddressError(
-      `'${rawAddress}' does not match any recognised wallet address format (EVM 0x+40 hex, BTC/LTC/BCH/DOGE/DASH/ZEC base58 or bech32/cashaddr, TRON, Monero, or Solana base58). Not screened.`
-    );
+    throw new InvalidAddressError({ ...SANCTIONS_ADDRESS_FIX_IT, problem: 'address is empty; not screened' });
   }
   const currency = args?.currency ? String(args.currency).trim() : null;
   const normalized = normalizeWalletAddress(rawAddress);
@@ -1155,9 +1212,7 @@ export async function handleCheckWalletSanctions(args) {
     // sanctioned entry — a match against the live table always wins over
     // the format heuristic (see issue #106 follow-up).
     if (!isRecognizedWalletAddress(rawAddress)) {
-      throw new InvalidAddressError(
-        `'${rawAddress}' does not match any recognised wallet address format (EVM 0x+40 hex, BTC/LTC/BCH/DOGE/DASH/ZEC base58 or bech32/cashaddr, TRON, Monero, or Solana base58). Not screened.`
-      );
+      throw new InvalidAddressError(SANCTIONS_ADDRESS_FIX_IT);
     }
     return withResponseMeta({
       address: rawAddress,
@@ -1303,7 +1358,11 @@ function domainNotFound(domain, reasonText, reasonCode) {
 export async function handleCheckDomainAge(args, identifier, licenseKey) {
   const raw = args?.domain;
   if (!raw || typeof raw !== 'string') {
-    throw new Error('domain is required.');
+    throw invalidInput({
+      problem: 'domain is missing or is not a string',
+      expected: 'a domain name or URL; the registrable domain is extracted automatically',
+      example: 'example.com'
+    });
   }
 
   const registrable = extractRegistrableDomain(raw);
@@ -1406,39 +1465,42 @@ const DEFAULT_FUZZY_TOLERANCE = 3;
 const MIN_BRAND_LABEL_LENGTH = 5;
 
 class InvalidHostnameError extends Error {
-  constructor(message) {
-    super(message);
+  constructor(problem) {
+    super('');
+    withFixIt(this, { problem, expected: HOSTNAME_EXPECTED, example: 'example.com' });
     this.name = 'InvalidHostnameError';
     this.mcpToolError = true;
     this.code = 'invalid_hostname';
   }
 }
 
+const HOSTNAME_EXPECTED = 'one bare hostname: letters, digits, hyphens and dots only (IDN allowed), with no scheme, path, port, spaces or wildcards';
+
 // Trim, lowercase, strip a trailing dot, convert IDN to punycode. Rejects
 // anything containing a scheme, path, port, spaces, or wildcards — this is a
 // single bare-hostname check, never a bulk/URL input (see issue #121).
 function normalizeHostname(raw) {
   if (typeof raw !== 'string' || !raw.trim()) {
-    throw new InvalidHostnameError(`'${raw}' is not a valid bare hostname — provide a single hostname such as 'example.com'.`);
+    throw new InvalidHostnameError('hostname is missing, empty, or not a string');
   }
   const original = raw.trim();
   if (/\s/.test(original)) {
-    throw new InvalidHostnameError(`'${original}' contains whitespace — provide exactly one bare hostname per call, not a list.`);
+    throw new InvalidHostnameError('hostname contains whitespace (only one hostname per call, not a list)');
   }
   if (original.includes('*')) {
-    throw new InvalidHostnameError(`'${original}' contains a wildcard ('*') — wildcards are not supported, provide a single concrete hostname.`);
+    throw new InvalidHostnameError("hostname contains a wildcard ('*'), which is not supported");
   }
   if (original.includes('/') || original.includes('\\')) {
-    throw new InvalidHostnameError(`'${original}' looks like a URL or path, not a bare hostname — strip any scheme and path, e.g. use 'example.com' not 'https://example.com/path'.`);
+    throw new InvalidHostnameError('hostname contains a slash, so it looks like a URL or path rather than a bare hostname (strip any scheme and path)');
   }
   if (original.includes(':')) {
-    throw new InvalidHostnameError(`'${original}' contains a colon (a scheme or port) — provide a bare hostname only, e.g. 'example.com'.`);
+    throw new InvalidHostnameError('hostname contains a colon (a URL scheme or a port)');
   }
 
   let h = original.toLowerCase();
   if (h.endsWith('.')) h = h.slice(0, -1);
   if (!h) {
-    throw new InvalidHostnameError(`'${original}' is not a valid bare hostname.`);
+    throw new InvalidHostnameError('hostname is empty after removing the trailing dot');
   }
 
   let ascii;
@@ -1448,7 +1510,7 @@ function normalizeHostname(raw) {
     ascii = '';
   }
   if (!ascii || !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(ascii)) {
-    throw new InvalidHostnameError(`'${original}' could not be normalized to a valid hostname.`);
+    throw new InvalidHostnameError('hostname contains characters or labels that are not valid in a hostname');
   }
   return ascii;
 }
@@ -1789,8 +1851,9 @@ const WALLET_AGE_CHAIN_SLUGS = {
 const WALLET_AGE_INTERNAL_SUPPORTED_CHAINS = new Set(['ethereum', 'polygon', 'base']);
 
 class InvalidChainError extends Error {
-  constructor(message) {
-    super(message);
+  constructor(fixIt) {
+    super('');
+    withFixIt(this, fixIt);
     this.name = 'InvalidChainError';
     this.mcpToolError = true;
     this.code = 'invalid_chain';
@@ -1831,7 +1894,11 @@ function enforceWalletAgeRateLimit(identifier) {
 
 function normalizeWalletAgeAddress(raw) {
   if (typeof raw !== 'string' || !WALLET_AGE_ADDRESS_RE.test(raw.trim())) {
-    throw new InvalidAddressError(`'${raw}' is not a valid EVM address — expected '0x' followed by 40 hex characters.`);
+    throw new InvalidAddressError({
+      problem: typeof raw === 'string' ? 'address is not a valid EVM address' : 'address is missing or is not a string',
+      expected: "'0x' followed by exactly 40 hex characters (case-insensitive)",
+      example: FIXTURE_VALUES.wallet.CLEAN
+    });
   }
   return raw.trim().toLowerCase();
 }
@@ -1839,7 +1906,11 @@ function normalizeWalletAgeAddress(raw) {
 function normalizeWalletAgeChain(raw) {
   const chain = (raw === undefined || raw === null || raw === '') ? 'base' : String(raw).trim().toLowerCase();
   if (!WALLET_AGE_CHAIN_SLUGS[chain]) {
-    throw new InvalidChainError(`'${raw}' is not a supported chain — expected one of: ${Object.keys(WALLET_AGE_CHAIN_SLUGS).join(', ')}.`);
+    throw new InvalidChainError({
+      problem: 'chain is not a supported chain',
+      expected: `one of ${Object.keys(WALLET_AGE_CHAIN_SLUGS).join(', ')} (or omit it for base)`,
+      example: 'ethereum'
+    });
   }
   return chain;
 }
@@ -2791,14 +2862,14 @@ export default async function handler(req, res) {
             return res.status(200).json({
               jsonrpc: '2.0',
               result: {
-                content: [{ type: 'text', text: JSON.stringify({ error: true, code: toolErr.code, message: toolErr.message, ...errorResponseMeta(errorChecks, pg1RequestId) }, null, 2) }],
+                content: [{ type: 'text', text: JSON.stringify({ error: true, code: toolErr.code, message: invalidInputMessage(toolErr, pg1RequestId), ...errorResponseMeta(errorChecks, pg1RequestId) }, null, 2) }],
                 isError: true
               },
               id: requestId,
               request_id: pg1RequestId
             });
           }
-          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId, request_id: pg1RequestId });
+          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: invalidInputMessage(toolErr, pg1RequestId) }, id: requestId, request_id: pg1RequestId });
         }
         toolResult.request_id = pg1RequestId;
         const result = { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] };
@@ -2832,7 +2903,7 @@ export default async function handler(req, res) {
             ? await handleSubscribeAlerts(toolArgs, licenseKey)
             : await handleSubmitIndicator(toolArgs, licenseKey);
         } catch (toolErr) {
-          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId, request_id: pg1RequestId });
+          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: invalidInputMessage(toolErr, pg1RequestId) }, id: requestId, request_id: pg1RequestId });
         }
         toolResult.request_id = pg1RequestId;
         return res.status(200).json({
@@ -2847,7 +2918,7 @@ export default async function handler(req, res) {
       if (toolName === 'get_ioc_context') {
         const value = toolArgs?.value?.trim();
         if (!value) {
-          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: 'value is required.' }, id: requestId, request_id: pg1RequestId });
+          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: formatFixIt(IOC_VALUE_FIX_IT, pg1RequestId) }, id: requestId, request_id: pg1RequestId });
         }
         let lookupResult;
         try {
@@ -2894,7 +2965,7 @@ export default async function handler(req, res) {
             recordToolError('/api/mcp:get_ioc_batch', 503, 'get_ioc_batch_upstream_unavailable', 'upstream', pg1RequestId);
             return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId, request_id: pg1RequestId });
           }
-          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId, request_id: pg1RequestId });
+          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: invalidInputMessage(toolErr, pg1RequestId) }, id: requestId, request_id: pg1RequestId });
         }
         batchResult.request_id = pg1RequestId;
 
@@ -2923,7 +2994,8 @@ export default async function handler(req, res) {
 
       const toolHandler = STANDARD_TOOL_HANDLERS[toolName];
       if (!toolHandler) {
-        return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: `Unknown tool: ${toolName}` }, id: requestId, request_id: pg1RequestId });
+        const unknownTool = { problem: 'params.name is not the name of a tool on this server', expected: `one of ${TOOLS.map((t) => t.name).join(', ')} (see tools/list)`, example: 'check_domain_age' };
+        return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: formatFixIt(unknownTool, pg1RequestId) }, id: requestId, request_id: pg1RequestId });
       }
 
       const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName, pg1RequestId);
@@ -2939,7 +3011,7 @@ export default async function handler(req, res) {
           return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId, request_id: pg1RequestId });
         }
         const code = toolErr.notFound ? 404 : 400;
-        return res.status(code).json({ jsonrpc: '2.0', error: { code: toolErr.notFound ? -32004 : -32602, message: toolErr.message }, id: requestId, request_id: pg1RequestId });
+        return res.status(code).json({ jsonrpc: '2.0', error: { code: toolErr.notFound ? -32004 : -32602, message: invalidInputMessage(toolErr, pg1RequestId) }, id: requestId, request_id: pg1RequestId });
       }
       toolResult.request_id = pg1RequestId;
 
