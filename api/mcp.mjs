@@ -1615,10 +1615,13 @@ const WALLET_AGE_CHAIN_SLUGS = {
 // is documented as available on these chains per the current Alchemy docs
 // (https://docs.alchemy.com/reference/alchemy-getassettransfers), verified
 // 30 Sep 2026 — re-check before adding a chain here rather than assuming
-// every chain supports it. As a safety net against docs drift or a chain
-// losing support, an unsupported-category rejection from Alchemy is also
-// caught at request time and retried once without 'internal' (see
-// isUnsupportedInternalCategoryError / handleCheckWalletAge below).
+// every chain supports it. The 'internal' category is also the slow part of
+// the upstream lookup on high-volume addresses (observed timing out the
+// whole 2.5s budget on Base), so on these chains handleCheckWalletAge below
+// runs the lookup with and without 'internal' in parallel rather than
+// sequentially — a slow or rejected 'internal' query (docs drift, a chain
+// losing support, or just latency) never costs the non-internal lookup its
+// own time budget.
 const WALLET_AGE_INTERNAL_SUPPORTED_CHAINS = new Set(['ethereum', 'polygon', 'base']);
 
 class InvalidChainError extends Error {
@@ -1728,12 +1731,16 @@ async function setWalletAgeCache(address, chain, row) {
 }
 
 function buildWalletAgeFoundResult(address, chain, row, cached) {
-  const ageDays = Math.floor((Date.now() - new Date(row.first_seen).getTime()) / (24 * 60 * 60 * 1000));
+  // Normalises both the cached path (Postgres timestamptz round-trips as
+  // e.g. "...+00:00") and the fresh path (already an ISO string from
+  // Alchemy) through the same Date parse so the two are byte-identical.
+  const firstSeen = new Date(row.first_seen).toISOString();
+  const ageDays = Math.floor((Date.now() - new Date(firstSeen).getTime()) / (24 * 60 * 60 * 1000));
   return {
     address,
     chain,
     found: true,
-    first_seen: row.first_seen,
+    first_seen: firstSeen,
     age_days: ageDays,
     first_seen_block: row.first_seen_block,
     first_direction: row.first_direction,
@@ -1792,18 +1799,11 @@ async function fetchEarliestTransfer(url, address, categories, direction, signal
   return { direction, timestamp: transfer.metadata.blockTimestamp, block: transfer.blockNum };
 }
 
-// Detects Alchemy rejecting a request because the 'internal' category isn't
-// supported on the target network — the safety net for
-// WALLET_AGE_INTERNAL_SUPPORTED_CHAINS drifting out of date (docs change, or
-// a chain loses support). Only meaningful when 'internal' was actually in
-// the requested categories; any other upstream error is left alone.
-function isUnsupportedInternalCategoryError(err, categories) {
-  if (!categories.includes('internal')) return false;
-  const message = typeof err?.message === 'string' ? err.message.toLowerCase() : '';
-  return message.includes('categor') && (
-    message.includes('not supported') || message.includes('unsupported') ||
-    message.includes('not available') || message.includes('invalid')
-  );
+// Picks the earlier of two resolved "earliest transfer" candidates (either
+// may be null if that side found nothing).
+function pickEarliestTransfer(a, b) {
+  if (a && b) return new Date(a.timestamp).getTime() <= new Date(b.timestamp).getTime() ? a : b;
+  return a || b || null;
 }
 
 function runWalletAgeUpstreamCalls(url, address, categories, signal) {
@@ -1843,55 +1843,76 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
     throw new WalletAgeUpstreamError('Wallet age lookups are not configured on this deployment.');
   }
   const url = `https://${WALLET_AGE_CHAIN_SLUGS[chain]}.g.alchemy.com/v2/${apiKey}`;
-  const categories = ['external', 'erc20', 'erc721', 'erc1155'];
-  if (WALLET_AGE_INTERNAL_SUPPORTED_CHAINS.has(chain)) categories.push('internal');
+  const plainCategories = ['external', 'erc20', 'erc721', 'erc1155'];
+  const supportsInternal = WALLET_AGE_INTERNAL_SUPPORTED_CHAINS.has(chain);
 
+  // On chains where 'internal' is supported, the plain (non-internal) and
+  // internal-inclusive lookups run in parallel rather than sequentially, so
+  // the slow/rejected 'internal' query never eats into the non-internal
+  // query's share of the 2.5s budget (see WALLET_AGE_INTERNAL_SUPPORTED_CHAINS
+  // above).
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), WALLET_AGE_TIMEOUT_MS);
-  let outTransfer, inTransfer, code;
+  let plainSettled, internalSettled;
   try {
-    try {
-      [outTransfer, inTransfer, code] = await runWalletAgeUpstreamCalls(url, address, categories, controller.signal);
-    } catch (e) {
-      // Safety net for WALLET_AGE_INTERNAL_SUPPORTED_CHAINS drifting out of
-      // date: if Alchemy rejects the request because 'internal' isn't
-      // actually supported on this chain, retry once without it, inside the
-      // same overall timeout (same AbortController — no extra budget). Any
-      // other failure, or a failure of the retry itself, falls through to
-      // the isError handling below and must never become found:false.
-      if (isUnsupportedInternalCategoryError(e, categories)) {
-        // api/mcp.mjs doesn't import lib/errorLog.mjs (no existing
-        // error-log path here to log through) — console.warn matches this
-        // file's existing convention for non-fatal upstream anomalies (see
-        // the [STIX] / [X402] warnings above).
-        console.warn(`[wallet_age] chain=${chain} rejected 'internal' category, retrying without it: ${e.message}`);
-        const fallbackCategories = categories.filter((c) => c !== 'internal');
-        [outTransfer, inTransfer, code] = await runWalletAgeUpstreamCalls(url, address, fallbackCategories, controller.signal);
-      } else {
-        throw e;
-      }
+    const attempts = [runWalletAgeUpstreamCalls(url, address, plainCategories, controller.signal)];
+    if (supportsInternal) {
+      attempts.push(runWalletAgeUpstreamCalls(url, address, [...plainCategories, 'internal'], controller.signal));
     }
-  } catch (e) {
-    const message = e.name === 'AbortError'
-      ? `Wallet age lookup timed out after ${WALLET_AGE_TIMEOUT_MS}ms.`
-      : 'Wallet age lookup failed: upstream on-chain data source unavailable.';
-    throw new WalletAgeUpstreamError(message);
+    [plainSettled, internalSettled] = await Promise.allSettled(attempts);
   } finally {
     clearTimeout(timeout);
   }
 
-  const isContract = !!code && code !== '0x';
+  const plainOk = plainSettled.status === 'fulfilled';
+  const internalOk = supportsInternal && internalSettled.status === 'fulfilled';
+
+  if (!plainOk && !internalOk) {
+    const reasons = supportsInternal ? [plainSettled.reason, internalSettled.reason] : [plainSettled.reason];
+    const isTimeout = reasons.some((r) => r && r.name === 'AbortError');
+    const message = isTimeout
+      ? `Wallet age lookup timed out after ${WALLET_AGE_TIMEOUT_MS}ms.`
+      : 'Wallet age lookup failed: upstream on-chain data source unavailable.';
+    throw new WalletAgeUpstreamError(message);
+  }
 
   let earliest = null;
-  if (outTransfer && inTransfer) {
-    earliest = new Date(outTransfer.timestamp).getTime() <= new Date(inTransfer.timestamp).getTime() ? outTransfer : inTransfer;
+  let isContract = false;
+  let note = null;
+  let skipCache = false;
+
+  if (plainOk && internalOk) {
+    const [plainOut, plainIn, plainCode] = plainSettled.value;
+    const [intOut, intIn, intCode] = internalSettled.value;
+    earliest = pickEarliestTransfer(pickEarliestTransfer(plainOut, plainIn), pickEarliestTransfer(intOut, intIn));
+    isContract = (!!plainCode && plainCode !== '0x') || (!!intCode && intCode !== '0x');
+  } else if (internalOk) {
+    const [intOut, intIn, intCode] = internalSettled.value;
+    earliest = pickEarliestTransfer(intOut, intIn);
+    isContract = !!intCode && intCode !== '0x';
   } else {
-    earliest = outTransfer || inTransfer || null;
+    // Only the non-internal lookup succeeded. On a chain that doesn't
+    // support 'internal' at all this is the normal path (no note needed);
+    // on a chain that does, the internal-inclusive lookup didn't make it
+    // back in time, so the result may be missing an earlier internal
+    // transfer — flag that, and never let this partial view overwrite the
+    // permanent cache with a possibly-too-late first_seen.
+    const [plainOut, plainIn, plainCode] = plainSettled.value;
+    earliest = pickEarliestTransfer(plainOut, plainIn);
+    isContract = !!plainCode && plainCode !== '0x';
+    if (supportsInternal) {
+      note = 'Internal transfers were not checked in time; the wallet may be older than shown.';
+      skipCache = true;
+    }
   }
 
   if (!earliest) {
-    await setWalletAgeCache(address, chain, { first_seen: null, first_seen_block: null, first_direction: null, is_contract: isContract });
-    return buildWalletAgeNotFoundResult(address, chain, isContract, false);
+    if (!skipCache) {
+      await setWalletAgeCache(address, chain, { first_seen: null, first_seen_block: null, first_direction: null, is_contract: isContract });
+    }
+    const result = buildWalletAgeNotFoundResult(address, chain, isContract, false);
+    if (note) result.note = note;
+    return result;
   }
 
   const row = {
@@ -1900,8 +1921,12 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
     first_direction: earliest.direction,
     is_contract: isContract
   };
-  await setWalletAgeCache(address, chain, row);
-  return buildWalletAgeFoundResult(address, chain, row, false);
+  if (!skipCache) {
+    await setWalletAgeCache(address, chain, row);
+  }
+  const result = buildWalletAgeFoundResult(address, chain, row, false);
+  if (note) result.note = note;
+  return result;
 }
 
 // ---------------------------------------------------------------------
