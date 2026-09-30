@@ -87,10 +87,6 @@
               "PAYMENT-REQUIRED": {
                 "description": "Base64-encoded x402 v2 PaymentRequired JSON object. Present when the x402 middleware issues the challenge.",
                 "schema": { "type": "string" }
-              },
-              "Retry-After": {
-                "description": "Present when Gumroad licence verification is temporarily unavailable.",
-                "schema": { "type": "string" }
               }
             },
             "content": {
