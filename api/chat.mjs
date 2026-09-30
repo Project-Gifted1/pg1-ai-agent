@@ -1470,25 +1470,31 @@ export default async function handler(req, res) {
 
     // PG1 voice profiles: fixed server-side allow-list. The browser only
     // ever sends the profile name (core/classic/field) — never a provider
-    // voice ID — and the server rejects anything not in this map. "classic"
-    // is the pre-existing default voice from before CARTESIA_VOICE_ID
-    // existed; "field" is pending an operator-supplied Cartesia voice ID.
+    // voice ID — and anything not in this map silently falls back to core
+    // (see the stale-profile fix below). "classic" is the pre-existing
+    // default voice from before CARTESIA_VOICE_ID existed; "field" is
+    // pending an operator-supplied Cartesia voice ID.
     var pg1VoiceProfiles = {
       core: (process.env.CARTESIA_VOICE_ID || '').trim() || '3c0f09d6-e0d7-499c-a594-70c5b7b93048',
       classic: 'a0e99841-438c-4a64-b679-ae501e7d6091',
       field: (process.env.CARTESIA_VOICE_ID_FIELD || '').trim()
     };
     var requestedVoiceProfile = (typeof voice === 'string' && voice.trim()) ? voice.trim().toLowerCase() : 'core';
-    var isKnownVoiceProfile = Object.prototype.hasOwnProperty.call(pg1VoiceProfiles, requestedVoiceProfile);
-    var targetVoiceId = isKnownVoiceProfile ? pg1VoiceProfiles[requestedVoiceProfile] : null;
+    // BUG FIX (issue #201): a device can carry a stale localStorage voice
+    // profile from before this fixed allow-list existed (e.g. a raw
+    // provider voice ID). Rejecting it here surfaced as a client-side error
+    // flash on the very first reply after such a device upgraded. An
+    // unrecognized profile now resolves to PG1 Core silently, same as a
+    // missing one, instead of erroring.
+    var resolvedVoiceProfile = Object.prototype.hasOwnProperty.call(pg1VoiceProfiles, requestedVoiceProfile)
+      ? requestedVoiceProfile
+      : 'core';
+    var targetVoiceId = pg1VoiceProfiles[resolvedVoiceProfile];
 
     if (activeAction === 'SPEAK') {
       if (!isAuthed) {
         log401('SPEAK', 'unauthenticated');
         return sendJSON(res, 401, { reply: `[AGENT] Speak Aborted: Authentication required.`, traceId: requestTraceId });
-      }
-      if (!isKnownVoiceProfile) {
-        return sendJSON(res, 200, { reply: `[AGENT] Unknown voice profile. Choose PG1 Core, PG1 Classic or PG1 Field.`, traceId: requestTraceId });
       }
       if (!targetVoiceId) {
         return sendJSON(res, 200, { reply: `[AGENT] PG1 Field voice is not configured server-side yet.`, traceId: requestTraceId });
@@ -2303,15 +2309,15 @@ export default async function handler(req, res) {
       }).catch(() => {});
     }
 
-    var audioBase64 = null;
-    var audioStatus = 'DECOUPLED_PENDING_ASYNC_CALL';
-
+    // BUG FIX (issue #201): this reply never carries synthesized audio —
+    // voice playback for it is a separate SPEAK round trip the client makes
+    // afterward (see speakMessage() in public/index.html) — so it must not
+    // include audio/audioStatus fields at all. Sending a placeholder status
+    // here made the client's playAudioResult() treat "no audio was ever
+    // attempted" as a genuine TTS failure and flash an error on every reply.
     return sendJSON(res, 200, {
       reply: replyText,
       searchEntryPoint: (modelFetchResult && modelFetchResult.searchEntryPoint) || null,
-      audio: audioBase64,
-      audioStatus: audioStatus,
-      audioMimeType: 'audio/mp3',
       traceId: requestTraceId,
       telemetry: { supabaseStatus: supabaseStatus, executionTimeMs: Date.now() - startTime }
     });
