@@ -94,6 +94,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const DOMAIN_AGE_STATUS_NOTE = 'For `check_domain_age`, always check `status` before `found`: `found: false` with `status: "unknown"` means the lookup did not complete, not that the domain is new.';
 const read = (rel) => fs.readFileSync(path.join(repoRoot, rel), 'utf8');
 
 test('docs: the README "Test your integration" table lists every fixture with its expected result', () => {
@@ -107,6 +108,7 @@ test('docs: the README "Test your integration" table lists every fixture with it
   assert.equal(rowCount, TEST_FIXTURES.length, 'README must not list fixtures that do not exist');
   assert.match(readme, /Out of scope:\*\* the REST endpoints \(`\/api\/ioc`/);
   assert.match(readme, /-H "Accept: application\/json, text\/event-stream"/);
+  assert.ok(readme.includes(DOMAIN_AGE_STATUS_NOTE), 'README must tell integrators to check status before found for check_domain_age');
 });
 
 test('docs: llms.txt and the chat CAPABILITIES block mention the fixtures', () => {
@@ -117,6 +119,7 @@ test('docs: llms.txt and the chat CAPABILITIES block mention the fixtures', () =
   }
   assert.ok(llms.includes(FIXTURE_VALUES.wallet.FLAGGED));
   assert.match(llms, /REST endpoints \(\/api\/ioc\) have no fixtures/);
+  assert.ok(llms.includes(DOMAIN_AGE_STATUS_NOTE), 'llms.txt must tell integrators to check status before found for check_domain_age');
 
   const chat = read('api/chat.mjs');
   const capabilities = chat.slice(chat.indexOf('[CAPABILITIES'), chat.indexOf('[CONTEXT]:'));
