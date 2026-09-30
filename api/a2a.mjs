@@ -51,7 +51,8 @@ import {
   handleCheckWalletSanctions,
   handleCheckDomainAge,
   handleCheckHostnameReputation,
-  handleCheckWalletAge
+  handleCheckWalletAge,
+  recordToolError
 } from './mcp.mjs';
 import { getRequestIdentifier } from '../lib/freeTier.mjs';
 
@@ -229,83 +230,101 @@ export default async function handler(req, res) {
   const { id, method, params } = body;
   const requestId = (id !== undefined && id !== null) ? id : '1';
 
-  const { version, requested } = resolveVersion(req);
-  if (version === null) {
-    return jsonRpcError(
-      res, 400, A2A_ERROR_CODES.VersionNotSupportedError,
-      `Unsupported A2A-Version: '${requested}'. Supported versions: '1.0', '0.3' (default).`,
-      requestId
-    );
-  }
-
-  if (METHODS.sendStreamingMessage.includes(method) || METHODS.subscribeToTask.includes(method)) {
-    return jsonRpcError(
-      res, 200, A2A_ERROR_CODES.UnsupportedOperationError,
-      `Method not supported: ${method}. This agent does not support streaming or task subscriptions.`,
-      requestId
-    );
-  }
-
-  if (METHODS.pushNotificationConfig.includes(method)) {
-    return jsonRpcError(
-      res, 200, A2A_ERROR_CODES.PushNotificationNotSupportedError,
-      `Method not supported: ${method}. This agent does not support push notifications.`,
-      requestId
-    );
-  }
-
-  if (METHODS.getExtendedAgentCard.includes(method)) {
-    return jsonRpcError(
-      res, 200, A2A_ERROR_CODES.UnsupportedOperationError,
-      `Method not supported: ${method}. This agent has no authenticated extended agent card.`,
-      requestId
-    );
-  }
-
-  if (METHODS.getTask.includes(method) || METHODS.cancelTask.includes(method)) {
-    return jsonRpcError(
-      res, 200, A2A_ERROR_CODES.TaskNotFoundError,
-      `Task not found. This agent does not persist tasks; every ${METHODS.sendMessage[0]} call resolves synchronously.`,
-      requestId
-    );
-  }
-
-  if (!METHODS.sendMessage.includes(method)) {
-    return jsonRpcError(res, 200, -32601, `Method not found: ${method || 'unknown'}`, requestId);
-  }
-
-  const inboundMessage = params && params.message;
-  const data = extractDataPart(inboundMessage);
-  if (!data) {
-    return jsonRpcError(
-      res, 400, -32602,
-      'Invalid params: expected params.message.parts to contain a DataPart of the form {"skill": "<tool name>", "arguments": {...}}.',
-      requestId
-    );
-  }
-
-  const skill = data.skill;
-  const args = (data.arguments && typeof data.arguments === 'object') ? data.arguments : {};
-
-  if (typeof skill !== 'string' || !A2A_SKILL_NAMES.includes(skill)) {
-    return jsonRpcError(res, 400, -32602, `Unknown skill: '${skill}'. Available skills: ${A2A_SKILL_NAMES.join(', ')}.`, requestId);
-  }
-
-  const licenseKey = req.headers['x-api-key'];
-  const identifier = getRequestIdentifier(req);
-
-  let toolResult;
   try {
-    toolResult = await runSkill(skill, args, identifier, licenseKey);
-  } catch (err) {
-    if (err.serviceUnavailable) {
-      return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, err.message, requestId);
+    const { version, requested } = resolveVersion(req);
+    if (version === null) {
+      return jsonRpcError(
+        res, 400, A2A_ERROR_CODES.VersionNotSupportedError,
+        `Unsupported A2A-Version: '${requested}'. Supported versions: '1.0', '0.3' (default).`,
+        requestId
+      );
     }
-    if (err.mcpToolError) {
-      return jsonRpcError(res, 200, -32000, err.message, requestId, { code: err.code });
-    }
-    return jsonRpcError(res, 400, -32602, err.message, requestId);
-  }
 
-  return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, args, toolResult, version, inboundMessage), id: requestId });
+    if (METHODS.sendStreamingMessage.includes(method) || METHODS.subscribeToTask.includes(method)) {
+      return jsonRpcError(
+        res, 200, A2A_ERROR_CODES.UnsupportedOperationError,
+        `Method not supported: ${method}. This agent does not support streaming or task subscriptions.`,
+        requestId
+      );
+    }
+
+    if (METHODS.pushNotificationConfig.includes(method)) {
+      return jsonRpcError(
+        res, 200, A2A_ERROR_CODES.PushNotificationNotSupportedError,
+        `Method not supported: ${method}. This agent does not support push notifications.`,
+        requestId
+      );
+    }
+
+    if (METHODS.getExtendedAgentCard.includes(method)) {
+      return jsonRpcError(
+        res, 200, A2A_ERROR_CODES.UnsupportedOperationError,
+        `Method not supported: ${method}. This agent has no authenticated extended agent card.`,
+        requestId
+      );
+    }
+
+    if (METHODS.getTask.includes(method) || METHODS.cancelTask.includes(method)) {
+      return jsonRpcError(
+        res, 200, A2A_ERROR_CODES.TaskNotFoundError,
+        `Task not found. This agent does not persist tasks; every ${METHODS.sendMessage[0]} call resolves synchronously.`,
+        requestId
+      );
+    }
+
+    if (!METHODS.sendMessage.includes(method)) {
+      return jsonRpcError(res, 200, -32601, `Method not found: ${method || 'unknown'}`, requestId);
+    }
+
+    const inboundMessage = params && params.message;
+    const data = extractDataPart(inboundMessage);
+    if (!data) {
+      return jsonRpcError(
+        res, 400, -32602,
+        'Invalid params: expected params.message.parts to contain a DataPart of the form {"skill": "<tool name>", "arguments": {...}}.',
+        requestId
+      );
+    }
+
+    const skill = data.skill;
+    const args = (data.arguments && typeof data.arguments === 'object') ? data.arguments : {};
+
+    if (typeof skill !== 'string' || !A2A_SKILL_NAMES.includes(skill)) {
+      return jsonRpcError(res, 400, -32602, `Unknown skill: '${skill}'. Available skills: ${A2A_SKILL_NAMES.join(', ')}.`, requestId);
+    }
+
+    const licenseKey = req.headers['x-api-key'];
+    const identifier = getRequestIdentifier(req);
+
+    let toolResult;
+    try {
+      toolResult = await runSkill(skill, args, identifier, licenseKey);
+    } catch (err) {
+      if (err.serviceUnavailable) {
+        recordToolError(`/api/a2a:${skill}`, 503, `${skill}_upstream_unavailable`, 'upstream');
+        return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, err.message, requestId);
+      }
+      if (err.mcpToolError) {
+        // Same distinction as api/mcp.mjs: only a genuine upstream outage or
+        // timeout is a logged failure - invalid_address/invalid_chain/
+        // invalid_hostname/rate_limited are normal, expected results.
+        if (err.code === 'upstream_unavailable') {
+          const isTimeout = /timed out/i.test(err.message);
+          recordToolError(`/api/a2a:${skill}`, null, `${skill}_${isTimeout ? 'timeout' : 'upstream_unavailable'}`, isTimeout ? 'timeout' : 'upstream');
+        }
+        return jsonRpcError(res, 200, -32000, err.message, requestId, { code: err.code });
+      }
+      return jsonRpcError(res, 400, -32602, err.message, requestId);
+    }
+
+    return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, args, toolResult, version, inboundMessage), id: requestId });
+  } catch (err) {
+    // Catch-all for anything the specific handling above didn't already turn
+    // into a sanitized message (a genuine bug, not an expected failure) -
+    // err.message here can be a raw internal detail. Log it server-side only;
+    // never echo it back into the response body.
+    console.error('[A2A] unhandled exception:', err.message);
+    recordToolError('/api/a2a', 500, 'unhandled_exception', 'js_error');
+    return jsonRpcError(res, 500, -32603, 'Internal server error', requestId);
+  }
 }

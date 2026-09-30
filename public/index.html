@@ -627,8 +627,10 @@
     // Entries in these categories are connectivity failures, not code bugs -
     // the ERROR LOG hides FIX for them (renderErrorLogRows) and
     // suggestFixForError() refuses to run for them defensively even if
-    // called directly.
-    const CONNECTIVITY_ERROR_CATEGORIES = new Set(['offline', 'network', 'timeout']);
+    // called directly. 'upstream' (issue #213) is server-only - a third-party
+    // data source (Alchemy, RDAP, Gumroad, etc.) being unreachable from
+    // api/mcp.mjs or api/a2a.mjs, never reported by the browser itself.
+    const CONNECTIVITY_ERROR_CATEGORIES = new Set(['offline', 'network', 'timeout', 'upstream']);
 
     // Classifies why a fetch()-based call failed, from whatever's on hand at
     // the call site: an AbortError means the client-side timeout fired; a
