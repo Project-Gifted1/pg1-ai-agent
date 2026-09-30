@@ -197,6 +197,115 @@ test('renderIdleStatus paints the status dot/label matching the last-known healt
   assert.match(statusEl.innerHTML, /ACTIVE \| API LINKED/);
 });
 
+// --- Status light polling: 120s interval, paused while tab hidden ---
+
+function loadStatusPolling(navigatorStub, fetchStub, initialVisibility = 'visible') {
+  const colorSource = extractFunction(html, 'healthStateColor');
+  const labelSource = extractFunction(html, 'healthStateLabel');
+  const renderSource = extractFunction(html, 'renderIdleStatus');
+  const checkSource = extractFunction(html, 'checkApiHealth');
+  const refreshSource = extractFunction(html, 'refreshStatusLight');
+  const startSource = extractFunction(html, 'startStatusPolling');
+  const stopSource = extractFunction(html, 'stopStatusPolling');
+  const visibilitySource = extractFunction(html, 'handleVisibilityChange');
+  const lastHealthStateDecl = extractDeclaration(html, 'let', 'lastHealthState');
+  const timeoutDecl = extractDeclaration(html, 'const', 'HEALTH_CHECK_TIMEOUT_MS');
+  const pollIntervalDecl = extractDeclaration(html, 'const', 'STATUS_POLL_INTERVAL_MS');
+
+  const fakeStatusEl = { innerHTML: '', style: {} };
+  let nextTimerId = 1;
+  const activeTimers = new Set();
+  const intervalCalls = [];
+  const fakeSetInterval = (fn, ms) => {
+    const id = nextTimerId++;
+    intervalCalls.push({ id, fn, ms });
+    activeTimers.add(id);
+    return id;
+  };
+  const fakeClearInterval = (id) => { activeTimers.delete(id); };
+  const fakeDocument = {
+    visibilityState: initialVisibility,
+    getElementById: () => fakeStatusEl,
+  };
+
+  const factory = new Function(
+    'navigator', 'document', 'fetch', 'AbortController', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval',
+    `let statusPollTimerId = null;
+     ${timeoutDecl}
+     ${pollIntervalDecl}
+     ${lastHealthStateDecl}
+     ${colorSource}
+     ${labelSource}
+     ${renderSource}
+     ${checkSource}
+     ${refreshSource}
+     ${startSource}
+     ${stopSource}
+     ${visibilitySource}
+     return {
+       startStatusPolling, stopStatusPolling, handleVisibilityChange, refreshStatusLight,
+       getLastHealthState: () => lastHealthState,
+       getTimerId: () => statusPollTimerId,
+     };`
+  );
+
+  const api = factory(navigatorStub, fakeDocument, fetchStub, AbortController, setTimeout, clearTimeout, fakeSetInterval, fakeClearInterval);
+  return { ...api, statusEl: fakeStatusEl, fakeDocument, intervalCalls, activeTimers, pollIntervalMs: 120000 };
+}
+
+test('startStatusPolling polls /api/health every 120s (not 30s)', () => {
+  const fetchStub = async () => ({ ok: true, json: async () => ({ status: 'ok' }) });
+  const { startStatusPolling, intervalCalls } = loadStatusPolling({ onLine: true }, fetchStub);
+
+  startStatusPolling();
+  assert.equal(intervalCalls.length, 1);
+  assert.equal(intervalCalls[0].ms, 120000);
+});
+
+test('startStatusPolling is idempotent: calling it twice only schedules one timer', () => {
+  const fetchStub = async () => ({ ok: true, json: async () => ({ status: 'ok' }) });
+  const { startStatusPolling, intervalCalls } = loadStatusPolling({ onLine: true }, fetchStub);
+
+  startStatusPolling();
+  startStatusPolling();
+  assert.equal(intervalCalls.length, 1);
+});
+
+test('handleVisibilityChange stops polling when the tab becomes hidden', () => {
+  const fetchStub = async () => ({ ok: true, json: async () => ({ status: 'ok' }) });
+  const { startStatusPolling, handleVisibilityChange, getTimerId, fakeDocument, activeTimers } =
+    loadStatusPolling({ onLine: true }, fetchStub);
+
+  startStatusPolling();
+  assert.notEqual(getTimerId(), null);
+
+  fakeDocument.visibilityState = 'hidden';
+  handleVisibilityChange();
+
+  assert.equal(getTimerId(), null);
+  assert.equal(activeTimers.size, 0);
+});
+
+test('handleVisibilityChange does an immediate health check and resumes polling when the tab becomes visible again', async () => {
+  let fetchCalls = 0;
+  const fetchStub = async () => { fetchCalls++; return { ok: true, json: async () => ({ status: 'ok' }) }; };
+  const { handleVisibilityChange, getTimerId, fakeDocument, intervalCalls } =
+    loadStatusPolling({ onLine: true }, fetchStub, 'hidden');
+
+  // Tab starts hidden: no polling should be running.
+  assert.equal(getTimerId(), null);
+
+  fakeDocument.visibilityState = 'visible';
+  handleVisibilityChange();
+  // refreshStatusLight() is async; let its fetch settle.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(fetchCalls, 1);
+  assert.notEqual(getTimerId(), null);
+  assert.equal(intervalCalls.length, 1);
+  assert.equal(intervalCalls[0].ms, 120000);
+});
+
 // --- ERROR LOG modal: unresolved-only default, "Show resolved" toggle, FIX/RESOLVE gating ---
 
 function loadErrorLogRows() {
