@@ -1698,13 +1698,27 @@
         const resolveBtn = (entry.id && !entry.resolved)
           ? `<button class="thread-action-btn" onclick="triggerHaptic(30); markErrorResolved('${entry.id}')">RESOLVE</button>`
           : (entry.resolved ? `<span style="font-size:10px; color:#666;">RESOLVED</span>` : '');
+        // issue #215: the second line shows where the failure came from
+        // (the route, e.g. /api/mcp:check_wallet_age) instead of repeating
+        // the reason already shown in the title above it. request_id (also
+        // issue #215) is shown alongside it so a report can be matched back
+        // to this exact attempt; both are absent for older rows logged
+        // before the request_id column existed, or for the offline local
+        // fallback log, and simply don't render.
+        const routeLabel = entry.route
+          ? `<span style="font-size:11px; color:#ccc;">${escapeHTML(entry.route)}</span>`
+          : '';
+        const requestIdLabel = entry.requestId
+          ? `<span style="font-size:10px; color:#777; font-family:monospace;">req: ${escapeHTML(entry.requestId)}</span>`
+          : '';
         return `
         <div class="thread-item">
           <div class="thread-info">
             <span class="thread-title">${escapeHTML(entry.context)}${countLabel}</span>
             ${categoryLabel}
             <span class="thread-date">${escapeHTML(new Date(entry.time).toLocaleString())}</span>
-            <span style="font-size:11px; color:#ccc;">${escapeHTML(String(entry.message).slice(0, 200))}</span>
+            ${routeLabel}
+            ${requestIdLabel}
           </div>
           <div class="thread-actions">
             ${fixBtn}
@@ -1731,7 +1745,9 @@
           time: r.last_seen,
           count: r.count || 1,
           id: r.id,
-          resolved: !!r.resolved
+          resolved: !!r.resolved,
+          route: r.route || null,
+          requestId: r.request_id || null
         }));
       } else {
         // Offline fallback: not authenticated yet, or the server list

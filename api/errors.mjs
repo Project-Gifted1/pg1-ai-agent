@@ -126,10 +126,19 @@ export default async function handler(req, res) {
 
   if (op === 'list') {
     try {
-      var listRes = await fetch(
-        `${supUrl}/rest/v1/pg1_errors?select=id,time,source,route,status,reason,message,category,count,first_seen,last_seen,resolved&order=last_seen.desc&limit=${LIST_LIMIT}`,
-        { headers: headers }
-      );
+      var baseSelect = 'id,time,source,route,status,reason,message,category,count,first_seen,last_seen,resolved';
+      var listUrl = `${supUrl}/rest/v1/pg1_errors?select=${baseSelect},request_id&order=last_seen.desc&limit=${LIST_LIMIT}`;
+      var listRes = await fetch(listUrl, { headers: headers });
+      if (!listRes.ok) {
+        // request_id (issue #215) is a nullable column added by hand after
+        // this deploy - if it doesn't exist yet, retry without it instead of
+        // failing the whole ERROR LOG modal (same fallback spirit as
+        // lib/errorLog.mjs's writeWithRequestIdFallback).
+        listRes = await fetch(
+          `${supUrl}/rest/v1/pg1_errors?select=${baseSelect}&order=last_seen.desc&limit=${LIST_LIMIT}`,
+          { headers: headers }
+        );
+      }
       if (!listRes.ok) return res.status(502).json({ error: 'Could not read error log.' });
       var rows = await listRes.json();
       return res.status(200).json({ ok: true, errors: rows });
