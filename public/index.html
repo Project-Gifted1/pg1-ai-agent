@@ -659,7 +659,7 @@
       if (!str || typeof str !== 'string') return '';
       let escaped = escapeHTML(str);
       
-      escaped = escaped.replace(/\[\s*(.*?(\/[a-zA-Z0-9_-]+).*?)\s*\]/g, function(match, fullInner, cmdCode) {
+      escaped = escaped.replace(/\[\s*((?:[^\]]*?\s)?(\/[a-zA-Z0-9_-]+)(?![\w.\/-])[^\]]*?)\s*\]/g, function(match, fullInner, cmdCode) {
         return `<span onclick="triggerHaptic(30); document.getElementById('prompt-input').value='${cmdCode}'; autoResize(document.getElementById('prompt-input')); submitDirective();" style="background: rgba(243, 198, 35, 0.2); border: 1px solid var(--text-gold); color: var(--text-gold); padding: 4px 8px; border-radius: 6px; cursor: pointer; display: inline-block; font-weight: bold; margin: 2px;">${fullInner}</span>`;
       });
 
