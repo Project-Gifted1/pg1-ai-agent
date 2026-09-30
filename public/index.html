@@ -15,6 +15,7 @@
       --glow-strong: rgba(243, 198, 35, 0.4);
       --glass-edge: rgba(255, 255, 255, 0.03);
       --danger-red: #ff4444;
+      --status-amber: #ffb300;
       --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", monospace;
     }
     
@@ -497,9 +498,12 @@
     <div class="matrix-card" style="max-width: 440px;">
       <h2>ERROR LOG</h2>
       <p style="font-size:11px; color:#aaa; text-align:center; margin-bottom:-8px;">Server and client-side failures, synced across devices once logged in. Only a short category label is ever sent for a local entry - never its message text - unless you tap FIX.</p>
+      <label style="font-size:11px; color:#aaa; display:flex; align-items:center; gap:6px; margin: 2px 0 -4px;">
+        <input type="checkbox" id="show-resolved-toggle" onchange="triggerHaptic(20); toggleShowResolvedErrors()"> Show resolved
+      </label>
       <div id="error-log-list" class="thread-list"></div>
       <div style="display:flex; gap:10px;">
-        <button class="matrix-submit" style="background: transparent; border: 1px solid var(--danger-red); color: var(--danger-red);" onclick="triggerHaptic(); clearErrorLog()">CLEAR LOG</button>
+        <button class="matrix-submit" style="background: transparent; border: 1px solid var(--danger-red); color: var(--danger-red);" onclick="triggerHaptic(); resolveAllErrors()">RESOLVE ALL</button>
         <button class="matrix-submit" style="background: transparent; border: 1px solid var(--text-gold); color: var(--text-gold);" onclick="triggerHaptic(); closeErrorLog()">CLOSE</button>
       </div>
     </div>
@@ -582,20 +586,83 @@
       }
     }
 
-    function logError(message, context) {
+    // `category` is one of the fixed reason-categories in
+    // classifyFetchFailure() below (offline/network/timeout/http_4xx/
+    // http_5xx/js_error) - it's what lets the ERROR LOG and the
+    // [UNRESOLVED ERRORS] chat summary show *what kind* of failure this was,
+    // and lets connectivity failures (offline/network/timeout) be told apart
+    // from real code bugs (see CONNECTIVITY_ERROR_CATEGORIES). Defaults to
+    // 'js_error' - every call site that isn't a network-ish failure (a
+    // thrown exception, a window error, a rejected promise) falls into that
+    // bucket without needing to say so explicitly.
+    function logError(message, context, category) {
       const log = getErrorLog();
-      log.unshift({ time: new Date().toISOString(), message: String(message || 'Unknown error'), context: context || 'general' });
+      log.unshift({
+        time: new Date().toISOString(),
+        message: String(message || 'Unknown error'),
+        context: context || 'general',
+        category: category || 'js_error'
+      });
       if (log.length > MAX_ERROR_LOG_ENTRIES) log.length = MAX_ERROR_LOG_ENTRIES;
       try { localStorage.setItem(ERROR_LOG_KEY, JSON.stringify(log)); } catch (e) {}
     }
 
     window.addEventListener('error', (event) => {
-      logError(event.message || 'Unknown script error', 'window');
+      logError(event.message || 'Unknown script error', 'window', 'js_error');
     });
     window.addEventListener('unhandledrejection', (event) => {
       const reason = event.reason;
-      logError((reason && reason.message) || String(reason), 'promise');
+      logError((reason && reason.message) || String(reason), 'promise', 'js_error');
     });
+
+    // Entries in these categories are connectivity failures, not code bugs -
+    // the ERROR LOG hides FIX for them (renderErrorLogRows) and
+    // suggestFixForError() refuses to run for them defensively even if
+    // called directly.
+    const CONNECTIVITY_ERROR_CATEGORIES = new Set(['offline', 'network', 'timeout']);
+
+    // Classifies why a fetch()-based call failed, from whatever's on hand at
+    // the call site: an AbortError means the client-side timeout fired; a
+    // real HTTP status in the 4xx/5xx range means the server answered but
+    // reported failure; a "Failed to fetch"-shaped TypeError means the
+    // request never reached the server at all - distinguished as 'offline'
+    // vs. 'network' by navigator.onLine, since a browser can't tell a DNS/
+    // CORS/server-down failure from a severed connection any other way.
+    // Anything else (a decode error, a thrown exception with no status) is
+    // 'js_error' - the catch-all for a real client-side bug.
+    function classifyFetchFailure(err, status) {
+      if (err && err.name === 'AbortError') return 'timeout';
+      if (typeof status === 'number' && status >= 400) {
+        return status >= 500 ? 'http_5xx' : 'http_4xx';
+      }
+      const msg = (err && err.message) || '';
+      if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) {
+        return (typeof navigator !== 'undefined' && navigator.onLine === false) ? 'offline' : 'network';
+      }
+      return 'js_error';
+    }
+
+    // Builds the message submitDirective() shows for a failed directive,
+    // replacing the old blanket "Exception: Failed to fetch" with a plain
+    // "message not sent" explanation for offline/network failures (no
+    // "Exception:" prefix - it wasn't a bug, the request just never
+    // reached the server). Every other failure (timeout, a real HTTP
+    // error, a genuine client-side exception) keeps its own message and the
+    // "Exception:" prefix, unchanged from before.
+    function buildDirectiveErrorDisplay(err, status, timeoutSeconds) {
+      const category = classifyFetchFailure(err, status);
+      if (err && err.name === 'AbortError') {
+        return {
+          text: `No reply after ${timeoutSeconds}s, so the request was stopped. Large attachments are the usual cause. Please retry.`,
+          category,
+          prefixed: true
+        };
+      }
+      if (category === 'offline' || category === 'network') {
+        return { text: 'Offline: message not sent. Check your connection and try again.', category, prefixed: false };
+      }
+      return { text: (err && err.message) || 'Unknown error', category, prefixed: true };
+    }
 
     function saveState() {
       const chatHTML = document.getElementById('chat-container').innerHTML;
@@ -641,7 +708,20 @@
           welcomeTime.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
       }
+
+      refreshStatusLight();
     };
+
+    // LIVE STATUS LIGHT: react to the browser's own connectivity events
+    // immediately (no need to wait for the next poll), and otherwise poll
+    // /api/health lightly every 30s so a degraded-but-online backend still
+    // gets noticed without the operator doing anything.
+    window.addEventListener('online', refreshStatusLight);
+    window.addEventListener('offline', () => {
+      lastHealthState = 'red';
+      renderIdleStatus();
+    });
+    setInterval(refreshStatusLight, 30000);
 
     function triggerHaptic(duration = 50) {
       if (navigator.vibrate) {
@@ -1064,18 +1144,65 @@
       input.focus();
     }
 
-    function flashStatus(message, isError = true) {
-      if (isError) logError(message, 'status');
+    // LIVE STATUS LIGHT (issue #201 error-log polish): replaces the old
+    // fixed "ACTIVE | API LINKED" text with a real indicator - green when
+    // online and /api/health answers ok, amber when reachable but degraded
+    // (a non-ok/slow health check while still online), red when offline.
+    // `lastHealthState` is the last-known state so flashStatus()'s revert
+    // and other "go back to normal" call sites can repaint instantly without
+    // firing a new network request every time.
+    let lastHealthState = 'green';
+    const HEALTH_CHECK_TIMEOUT_MS = 4000;
+
+    function healthStateColor(state) {
+      if (state === 'red') return 'var(--danger-red)';
+      if (state === 'amber') return 'var(--status-amber)';
+      return '#00ff66';
+    }
+    function healthStateLabel(state) {
+      if (state === 'red') return 'OFFLINE';
+      if (state === 'amber') return 'DEGRADED | API SLOW';
+      return 'ACTIVE | API LINKED';
+    }
+
+    function renderIdleStatus() {
       const statusEl = document.getElementById('sys-status');
       if (!statusEl) return;
-      const original = statusEl.innerHTML;
-      const originalColor = statusEl.style.color;
+      const color = healthStateColor(lastHealthState);
+      statusEl.innerHTML = `<span class="status-dot" style="background-color:${color}; box-shadow: 0 0 10px ${color};"></span>${healthStateLabel(lastHealthState)}`;
+      statusEl.style.color = '#999';
+    }
+
+    async function checkApiHealth() {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'red';
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
+        const res = await fetch('/api/health', { method: 'GET', cache: 'no-store', signal: controller.signal });
+        clearTimeout(timer);
+        if (!res.ok) return 'amber';
+        const data = await res.json().catch(() => null);
+        return (data && data.status === 'ok') ? 'green' : 'amber';
+      } catch (e) {
+        // Reachable enough to have navigator.onLine === true, but the health
+        // check itself failed (timeout, CORS, server hiccup) - degraded, not
+        // necessarily fully offline.
+        return 'amber';
+      }
+    }
+
+    async function refreshStatusLight() {
+      lastHealthState = await checkApiHealth();
+      renderIdleStatus();
+    }
+
+    function flashStatus(message, isError = true, category) {
+      if (isError) logError(message, 'status', category);
+      const statusEl = document.getElementById('sys-status');
+      if (!statusEl) return;
       statusEl.innerHTML = message;
       statusEl.style.color = isError ? 'var(--danger-red)' : 'var(--text-gold)';
-      setTimeout(() => {
-        statusEl.innerHTML = original;
-        statusEl.style.color = originalColor;
-      }, 2500);
+      setTimeout(renderIdleStatus, 2500);
     }
 
     function speakBubble(el) {
@@ -1106,8 +1233,7 @@
         }
         statusEl.onclick = null;
         statusEl.style.cursor = 'default';
-        statusEl.innerHTML = `<span class="status-dot"></span>ACTIVE | API LINKED`;
-        statusEl.style.color = '#999';
+        renderIdleStatus();
       };
     }
 
@@ -1160,13 +1286,13 @@
           throw new Error(`Server returned non-JSON response (${response.status}): ${responseText.substring(0, 150)}`);
         }
         if (!response.ok) {
-          flashStatus('SPEECH REQUEST FAILED (' + response.status + ')');
+          flashStatus('SPEECH REQUEST FAILED (' + response.status + ')', true, classifyFetchFailure(null, response.status));
           return;
         }
         playAudioResult(data);
       } catch (err) {
         console.error('Speech synthesis error:', err);
-        flashStatus('SPEECH REQUEST FAILED');
+        flashStatus('SPEECH REQUEST FAILED', true, classifyFetchFailure(err, null));
       }
     }
 
@@ -1238,7 +1364,7 @@
         saveState();
       } catch (err) {
         triggerHaptic(200);
-        flashStatus('APPROVAL REQUEST FAILED');
+        flashStatus('APPROVAL REQUEST FAILED', true, classifyFetchFailure(err, null));
         if (actionsRow) {
           actionsRow.querySelectorAll('button').forEach(b => b.disabled = false);
         }
@@ -1315,7 +1441,7 @@
         }
         saveState();
       } catch (err) {
-        logError('Suggested-fix approval request failed: ' + err.message, 'suggestFix');
+        logError('Suggested-fix approval request failed: ' + err.message, 'suggestFix', classifyFetchFailure(err, null));
       }
     }
 
@@ -1332,6 +1458,11 @@
     function suggestFixForError(index) {
       const entry = currentErrorLogEntries[index];
       if (!entry) return;
+      // Defense in depth: the FIX button is already hidden for these
+      // categories in renderErrorLogRows(), but refuse here too in case
+      // this is ever called directly - a connectivity failure isn't a code
+      // bug, so there's nothing for the reasoning core to patch.
+      if (CONNECTIVITY_ERROR_CATEGORIES.has(entry.category)) return;
       closeErrorLog();
       pendingSuggestFix = true;
       const input = document.getElementById('prompt-input');
@@ -1355,7 +1486,13 @@
       const syncedUntil = localStorage.getItem(ERROR_LOG_SYNCED_KEY);
       const unsynced = syncedUntil ? log.filter((e) => e.time > syncedUntil) : log;
       if (unsynced.length === 0) return;
-      const entries = unsynced.slice(0, 20).map((e) => ({ context: e.context }));
+      // `time` is this entry's real client-side occurrence time, not the
+      // moment it happens to get synced - sent along so the server can use
+      // it for first_seen/last_seen instead of stamping its own ingest time
+      // (issue #201 error-log polish: the ERROR LOG used to show when a
+      // failure was *synced*, which can be minutes after it actually
+      // happened, e.g. syncing right after reconnecting from offline).
+      const entries = unsynced.slice(0, 20).map((e) => ({ context: e.context, time: e.time, category: e.category }));
       try {
         await fetch('/api/errors', {
           method: 'POST',
@@ -1407,22 +1544,98 @@
           body: JSON.stringify({ op: 'resolve', user: sessionUser, pass: sessionPass, id })
         });
       } catch (e) {}
-      renderErrorLogList();
-      updateErrorLogBadge();
+      await renderErrorLogList();
+      await updateErrorLogBadge();
     }
 
     function openErrorLog() {
       document.getElementById('error-log-modal').style.display = 'flex';
+      const toggle = document.getElementById('show-resolved-toggle');
+      if (toggle) toggle.checked = showResolvedErrors;
       renderErrorLogList();
     }
     function closeErrorLog() {
       document.getElementById('error-log-modal').style.display = 'none';
     }
-    function clearErrorLog() {
-      if (!confirm('Clear the local error log on this device? Server-logged entries are not affected.')) return;
+
+    // RESOLVE ALL (issue #201 error-log polish, renamed from CLEAR LOG):
+    // CLEAR LOG used to only clear the local cache, so synced server rows
+    // reappeared on the next reload/sync. This marks every currently-listed,
+    // still-unresolved entry resolved on the server first (the 30-day
+    // cleanup cron still owns actually deleting rows - this never does),
+    // then clears the local cache.
+    async function resolveAllErrors() {
+      if (!confirm('Mark all listed errors resolved? Server-logged entries are kept (not deleted) until the 30-day cleanup.')) return;
+      const idsToResolve = currentErrorLogEntries.filter((e) => e.id && !e.resolved).map((e) => e.id);
+      await Promise.all(idsToResolve.map((id) =>
+        fetch('/api/errors', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ op: 'resolve', user: sessionUser, pass: sessionPass, id })
+        }).catch(() => {})
+      ));
       localStorage.removeItem(ERROR_LOG_KEY);
       localStorage.removeItem(ERROR_LOG_SYNCED_KEY);
-      renderErrorLogList();
+      await renderErrorLogList();
+      await updateErrorLogBadge();
+    }
+
+    // All entries ever fetched for the modal (unfiltered) - `currentErrorLogEntries`
+    // is the currently *visible* subset, kept in sync with what's on screen so
+    // FIX/RESOLVE button indices and RESOLVE ALL's id list always match what
+    // the operator actually sees.
+    let allErrorLogEntries = [];
+    let showResolvedErrors = false;
+
+    function toggleShowResolvedErrors() {
+      showResolvedErrors = !showResolvedErrors;
+      applyErrorLogFilter();
+    }
+
+    function applyErrorLogFilter() {
+      const visible = showResolvedErrors ? allErrorLogEntries : allErrorLogEntries.filter((e) => !e.resolved);
+      renderErrorLogRows(visible);
+    }
+
+    function renderErrorLogRows(entries) {
+      const container = document.getElementById('error-log-list');
+      if (!container) return;
+      currentErrorLogEntries = entries;
+
+      if (entries.length === 0) {
+        const emptyLabel = showResolvedErrors ? 'No errors logged.' : 'No unresolved errors.';
+        container.innerHTML = `<div style="font-size:11px; color:#999; text-align:center; padding: 12px 0;">${emptyLabel}</div>`;
+        return;
+      }
+      container.innerHTML = entries.map((entry, index) => {
+        const countLabel = entry.count > 1 ? ` (x${entry.count})` : '';
+        const categoryLabel = entry.category
+          ? `<span style="font-size:10px; color:#888; text-transform:uppercase; letter-spacing:0.5px;">${escapeHTML(entry.category)}</span>`
+          : '';
+        // Connectivity failures (offline/network/timeout) aren't code bugs,
+        // so there's nothing for Suggest Fix to patch - no FIX button. A
+        // resolved entry never shows FIX or RESOLVE either.
+        const isConnectivity = CONNECTIVITY_ERROR_CATEGORIES.has(entry.category);
+        const fixBtn = (!entry.resolved && !isConnectivity)
+          ? `<button class="thread-action-btn" onclick="triggerHaptic(30); suggestFixForError(${index})">FIX</button>`
+          : '';
+        const resolveBtn = (entry.id && !entry.resolved)
+          ? `<button class="thread-action-btn" onclick="triggerHaptic(30); markErrorResolved('${entry.id}')">RESOLVE</button>`
+          : (entry.resolved ? `<span style="font-size:10px; color:#666;">RESOLVED</span>` : '');
+        return `
+        <div class="thread-item">
+          <div class="thread-info">
+            <span class="thread-title">${escapeHTML(entry.context)}${countLabel}</span>
+            ${categoryLabel}
+            <span class="thread-date">${escapeHTML(new Date(entry.time).toLocaleString())}</span>
+            <span style="font-size:11px; color:#ccc;">${escapeHTML(String(entry.message).slice(0, 200))}</span>
+          </div>
+          <div class="thread-actions">
+            ${fixBtn}
+            ${resolveBtn}
+          </div>
+        </div>`;
+      }).join('');
     }
 
     async function renderErrorLogList() {
@@ -1438,6 +1651,7 @@
         entries = serverEntries.map((r) => ({
           message: r.message || r.reason || '(no details)',
           context: r.reason || r.route || (r.source === 'client' ? 'client' : 'server'),
+          category: r.category || null,
           time: r.last_seen,
           count: r.count || 1,
           id: r.id,
@@ -1446,33 +1660,11 @@
       } else {
         // Offline fallback: not authenticated yet, or the server list
         // couldn't be reached - fall back to the raw local log.
-        entries = getErrorLog().map((e) => ({ message: e.message, context: e.context, time: e.time, count: 1, id: null, resolved: false }));
+        entries = getErrorLog().map((e) => ({ message: e.message, context: e.context, category: e.category || null, time: e.time, count: 1, id: null, resolved: false }));
       }
 
-      currentErrorLogEntries = entries;
-
-      if (entries.length === 0) {
-        container.innerHTML = '<div style="font-size:11px; color:#999; text-align:center; padding: 12px 0;">No errors logged.</div>';
-        return;
-      }
-      container.innerHTML = entries.map((entry, index) => {
-        const countLabel = entry.count > 1 ? ` (x${entry.count})` : '';
-        const resolveBtn = entry.id
-          ? `<button class="thread-action-btn" ${entry.resolved ? 'disabled' : ''} onclick="triggerHaptic(30); markErrorResolved('${entry.id}')">${entry.resolved ? 'RESOLVED' : 'RESOLVE'}</button>`
-          : '';
-        return `
-        <div class="thread-item">
-          <div class="thread-info">
-            <span class="thread-title">${escapeHTML(entry.context)}${countLabel}</span>
-            <span class="thread-date">${escapeHTML(new Date(entry.time).toLocaleString())}</span>
-            <span style="font-size:11px; color:#ccc;">${escapeHTML(String(entry.message).slice(0, 200))}</span>
-          </div>
-          <div class="thread-actions">
-            <button class="thread-action-btn" onclick="triggerHaptic(30); suggestFixForError(${index})">FIX</button>
-            ${resolveBtn}
-          </div>
-        </div>`;
-      }).join('');
+      allErrorLogEntries = entries;
+      applyErrorLogFilter();
     }
 
     async function submitDirective() {
@@ -1571,6 +1763,12 @@
       const isSuggestFixRequest = pendingSuggestFix;
       pendingSuggestFix = false;
 
+      // Set as soon as a response is actually received, so the catch block
+      // below can tell a real HTTP error (4xx/5xx) apart from the request
+      // never reaching the server at all (fetch() throwing before this is
+      // ever assigned) - see buildDirectiveErrorDisplay/classifyFetchFailure.
+      let responseStatus = null;
+
       try {
         const voiceProfile = document.getElementById('voice-profile-select').value;
         // AUTH FIX: sessionUser / sessionPass (set once by verifyAuth()) are
@@ -1587,12 +1785,10 @@
 
         if (attachedFilesPayload.length > 0) {
           payload.multiFiles = [...attachedFilesPayload];
-          attachedFilesPayload = []; 
+          attachedFilesPayload = [];
           attachedBytes = 0;
           document.getElementById('file-input').value = '';
-          const statusEl = document.getElementById('sys-status');
-          statusEl.innerHTML = `<span class="status-dot"></span>ACTIVE | API LINKED`;
-          statusEl.style.color = '#999';
+          renderIdleStatus();
         }
 
         const response = await fetch('/api/chat', {
@@ -1601,6 +1797,7 @@
           body: JSON.stringify(payload),
           signal: controller.signal
         });
+        responseStatus = response.status;
 
         const responseText = await response.text();
         let data;
@@ -1681,12 +1878,10 @@
       } catch (err) {
         triggerHaptic(200);
         const errTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const errMessage = err.name === 'AbortError'
-          ? `No reply after ${REQUEST_TIMEOUT_MS / 1000}s, so the request was stopped. Large attachments are the usual cause. Please retry.`
-          : err.message;
-        logError(errMessage, 'submitDirective');
+        const display = buildDirectiveErrorDisplay(err, responseStatus, REQUEST_TIMEOUT_MS / 1000);
+        logError(display.text, 'submitDirective', display.category);
         agentBubble.classList.remove('pending');
-        agentBubble.innerHTML = `<span class="msg-timestamp">${errTime}</span><div class="message-text" style="color: #ff4444;">Exception: ${escapeHTML(errMessage)}</div>`;
+        agentBubble.innerHTML = `<span class="msg-timestamp">${errTime}</span><div class="message-text" style="color: #ff4444;">${display.prefixed ? 'Exception: ' : ''}${escapeHTML(display.text)}</div>`;
         saveState();
       } finally {
         clearTimeout(timeoutId);

@@ -1,0 +1,13 @@
+-- pg1_errors.category (issue #201 error-log polish): a fixed reason-category
+-- string - one of offline, network, timeout, http_4xx, http_5xx, js_error -
+-- so the ERROR LOG modal and the [UNRESOLVED ERRORS] chat summary can show
+-- *what kind* of failure this was, not just its raw status/reason text.
+--
+-- Set explicitly by the client for client-sourced rows (see lib/errorLog.mjs
+-- VALID_CLIENT_ERROR_CATEGORIES), or derived from `status` for server-sourced
+-- rows when no explicit category is given. Never used for grouping (see
+-- pg1_errors_lookup_idx) - a given (source, route, status, reason) tuple
+-- maps to a stable category in practice, so no migration of existing rows
+-- is required; old rows simply read back with category = null until they
+-- next recur.
+alter table public.pg1_errors add column if not exists category text;

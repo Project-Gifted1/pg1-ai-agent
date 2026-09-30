@@ -19,12 +19,13 @@
 
 import { safeCompare } from './chat.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
-import { logApiError } from '../lib/errorLog.mjs';
+import { logApiError, VALID_CLIENT_ERROR_CATEGORIES } from '../lib/errorLog.mjs';
 
 export const config = { maxDuration: 15 };
 
 const MAX_INGEST_ENTRIES = 20;
 const MAX_CONTEXT_LEN = 40;
+const MAX_TIME_LEN = 40;
 const LIST_LIMIT = 100;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = 30;
@@ -102,13 +103,22 @@ export default async function handler(req, res) {
   var headers = { apikey: supKey, Authorization: `Bearer ${supKey}` };
 
   if (op === 'ingest') {
-    var entries = Array.isArray(body.entries) ? body.entries.slice(0, MAX_INGEST_ENTRIES) : [];
+    // The browser's local log is newest-first (see ERROR_LOG_KEY in
+    // public/index.html), so a batch spanning more than one occurrence of the
+    // same (source/route/status/reason) group is processed oldest-first here
+    // - otherwise the last write would stamp last_seen with the *oldest*
+    // entry in the batch instead of the newest.
+    var entries = Array.isArray(body.entries) ? body.entries.slice(0, MAX_INGEST_ENTRIES).reverse() : [];
     var ingested = 0;
     for (var i = 0; i < entries.length; i++) {
       var entry = entries[i];
       var context = (entry && typeof entry.context === 'string') ? entry.context.trim().slice(0, MAX_CONTEXT_LEN) : '';
       if (!context) continue;
-      await logApiError(supUrl, supKey, { source: 'client', route: 'client', status: null, reason: context, message: null });
+      var category = (entry && typeof entry.category === 'string' && VALID_CLIENT_ERROR_CATEGORIES.has(entry.category))
+        ? entry.category
+        : null;
+      var occurredAt = (entry && typeof entry.time === 'string') ? entry.time.slice(0, MAX_TIME_LEN) : null;
+      await logApiError(supUrl, supKey, { source: 'client', route: 'client', status: null, reason: context, message: null, category: category, occurredAt: occurredAt });
       ingested++;
     }
     return res.status(200).json({ ok: true, ingested: ingested });
@@ -117,7 +127,7 @@ export default async function handler(req, res) {
   if (op === 'list') {
     try {
       var listRes = await fetch(
-        `${supUrl}/rest/v1/pg1_errors?select=id,time,source,route,status,reason,message,count,first_seen,last_seen,resolved&order=last_seen.desc&limit=${LIST_LIMIT}`,
+        `${supUrl}/rest/v1/pg1_errors?select=id,time,source,route,status,reason,message,category,count,first_seen,last_seen,resolved&order=last_seen.desc&limit=${LIST_LIMIT}`,
         { headers: headers }
       );
       if (!listRes.ok) return res.status(502).json({ error: 'Could not read error log.' });
