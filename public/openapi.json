@@ -152,6 +152,12 @@
           },
           "503": {
             "description": "Threat data or licence verification is temporarily unavailable; retry shortly.",
+            "headers": {
+              "Retry-After": {
+                "description": "Present when licence verification is temporarily unavailable. Value in seconds.",
+                "schema": { "type": "string" }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
