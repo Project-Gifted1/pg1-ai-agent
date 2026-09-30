@@ -466,6 +466,7 @@
     <button class="quick-chip" onclick="runQuick('/commerce-status')">COMMERCE</button>
     <button class="quick-chip" onclick="runQuick('/sync-vault')">VAULT</button>
     <button class="quick-chip" onclick="toggleQuickMenu(); triggerVaultSync();">VAULT SYNC</button>
+    <button class="quick-chip" onclick="runQuick('/voice')">VOICE</button>
   </div>
 
   <div id="chat-container">
@@ -484,11 +485,10 @@
     <div class="telemetry-row">
       <div class="voice-group">
         <button id="voice-btn" class="stealth-btn" onclick="triggerHaptic(); toggleVoice()">VOICE: OFF</button>
-        <select id="voice-profile-select" class="stealth-select" onchange="triggerHaptic(30)">
-          <option value="PG1-Agent">PG1-Agent</option>
-          <option value="christopher">Christopher</option>
-          <option value="steffan">Steffan</option>
-          <option value="ryan">Ryan</option>
+        <select id="voice-profile-select" class="stealth-select" onchange="triggerHaptic(30); localStorage.setItem('pg1_voice_profile', this.value)">
+          <option value="core">PG1 Core</option>
+          <option value="classic">PG1 Classic</option>
+          <option value="field">PG1 Field</option>
         </select>
       </div>
       <span id="sys-status" class="status-indicator">
@@ -537,6 +537,14 @@
     }
 
     window.onload = () => {
+      const savedVoiceProfile = localStorage.getItem('pg1_voice_profile');
+      if (savedVoiceProfile) {
+        const voiceSelect = document.getElementById('voice-profile-select');
+        if (voiceSelect && Array.from(voiceSelect.options).some(opt => opt.value === savedVoiceProfile)) {
+          voiceSelect.value = savedVoiceProfile;
+        }
+      }
+
       const savedState = localStorage.getItem('pg1_matrix_state');
       if (savedState) {
         document.getElementById('chat-container').innerHTML = savedState;
@@ -602,6 +610,73 @@
       const input = document.getElementById('prompt-input');
       input.value = cmd;
       submitDirective();
+    }
+
+    // /voice is handled entirely client-side (no network round trip) so
+    // switching between the three PG1 voice profiles works instantly and
+    // persists per device via localStorage. The server maps each profile
+    // name to a provider voice ID and rejects anything else.
+    const VOICE_PROFILES = {
+      'core': { value: 'core', label: 'PG1 Core (default)' },
+      'classic': { value: 'classic', label: 'PG1 Classic' },
+      'field': { value: 'field', label: 'PG1 Field' }
+    };
+
+    function appendLocalExchange(userText, replyText) {
+      const chatContainer = document.getElementById('chat-container');
+      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      const userBubble = document.createElement('div');
+      userBubble.className = 'message-bubble user';
+      userBubble.innerHTML = `
+        <span class="msg-timestamp">${time}</span>
+        <div class="message-text">${formatMarkdown(userText)}</div>
+        <div class="message-actions">
+          <span onclick="triggerHaptic(40); editBubble(this)">EDIT</span>
+          <span onclick="triggerHaptic(40); copyBubbleText(this)">COPY</span>
+          <span onclick="triggerHaptic(40); deleteBubble(this)">DELETE</span>
+        </div>`;
+      chatContainer.appendChild(userBubble);
+
+      const agentBubble = document.createElement('div');
+      agentBubble.className = 'message-bubble';
+      agentBubble.innerHTML = `
+        <span class="msg-timestamp">${time}</span>
+        <div class="message-text">${formatMarkdown(replyText)}</div>
+        <div class="message-actions">
+          <span onclick="triggerHaptic(); speakBubble(this)">SPEAK</span>
+          <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
+          <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
+        </div>`;
+      chatContainer.appendChild(agentBubble);
+
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+      saveState();
+    }
+
+    function handleVoiceCommand(rawText, arg) {
+      const input = document.getElementById('prompt-input');
+      input.value = '';
+      input.style.height = 'auto';
+
+      let replyText;
+      if (arg) {
+        const profile = VOICE_PROFILES[arg];
+        if (profile) {
+          const select = document.getElementById('voice-profile-select');
+          select.value = profile.value;
+          localStorage.setItem('pg1_voice_profile', profile.value);
+          replyText = `[AGENT] Voice profile switched to **${profile.label}** for this device.`;
+        } else {
+          replyText = `[AGENT] Unknown voice profile "${escapeHTML(arg)}". Options: [ /voice-core ] [ /voice-classic ] [ /voice-field ]`;
+        }
+      } else {
+        const current = document.getElementById('voice-profile-select').value;
+        replyText = `### [ VOICE PROFILES ]\nCurrent: **${current}**\n\n[ /voice-core ] PG1 Core — default\n[ /voice-classic ] PG1 Classic\n[ /voice-field ] PG1 Field\n\nSwitch with [ /voice-<name> ], remembered on this device.`;
+      }
+
+      triggerHaptic(30);
+      appendLocalExchange(rawText, replyText);
     }
 
     function openVisionMatrix() {
@@ -1067,7 +1142,13 @@
     async function submitDirective() {
       const input = document.getElementById('prompt-input');
       const text = input.value.trim();
-      
+
+      const voiceCmdMatch = text.toLowerCase().match(/^\/voice(?:[- ]([a-z0-9-]+))?$/);
+      if (voiceCmdMatch) {
+        handleVoiceCommand(text, voiceCmdMatch[1]);
+        return;
+      }
+
       let visionFrameCaptured = false;
 
       if (activeVisionStream) {

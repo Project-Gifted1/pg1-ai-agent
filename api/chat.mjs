@@ -991,7 +991,7 @@ export default async function handler(req, res) {
     var isPdfExport = reqBody.isPdfExport || false;
     var user = reqBody.user;
     var pass = reqBody.pass;
-    var voice = reqBody.voice || 'christopher';
+    var voice = reqBody.voice;
 
     var confirmProtectedPath = reqBody.confirmProtectedPath === true;
     var reorganizeOperations = Array.isArray(reqBody.operations) ? reqBody.operations : [];
@@ -1246,7 +1246,7 @@ export default async function handler(req, res) {
         activeAction = 'CLAUDE_CHAT';
       } else if (lower === '/help' || lower === 'help') {
         return sendJSON(res, 200, {
-          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/speak** plus text: read it aloud\n- **/claude** plus a question: advanced reasoning core\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- Anything else: ask in plain words (live web search is on)',
+          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/speak** plus text: read it aloud\n- [ /voice ] show/switch the voice profile used for SPEAK (remembered on this device)\n- **/claude** plus a question: advanced reasoning core\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- Anything else: ask in plain words (live web search is on)',
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/threat-radar')) {
@@ -1468,17 +1468,30 @@ export default async function handler(req, res) {
       }
     }
 
-    var cartesiaVoiceMap = {
-      'christopher': 'a0e99841-438c-4a64-b679-ae501e7d6091',
-      'steffan': '996f8664-9669-42b7-a068-1eb6e55c328d',
-      'ryan': '1249b380-6058-450f-a496-e17f0dbfcebc'
+    // PG1 voice profiles: fixed server-side allow-list. The browser only
+    // ever sends the profile name (core/classic/field) — never a provider
+    // voice ID — and the server rejects anything not in this map. "classic"
+    // is the pre-existing default voice from before CARTESIA_VOICE_ID
+    // existed; "field" is pending an operator-supplied Cartesia voice ID.
+    var pg1VoiceProfiles = {
+      core: (process.env.CARTESIA_VOICE_ID || '').trim() || '3c0f09d6-e0d7-499c-a594-70c5b7b93048',
+      classic: 'a0e99841-438c-4a64-b679-ae501e7d6091',
+      field: (process.env.CARTESIA_VOICE_ID_FIELD || '').trim()
     };
-    var targetVoiceId = cartesiaVoiceMap[voice] || cartesiaVoiceMap['christopher'];
+    var requestedVoiceProfile = (typeof voice === 'string' && voice.trim()) ? voice.trim().toLowerCase() : 'core';
+    var isKnownVoiceProfile = Object.prototype.hasOwnProperty.call(pg1VoiceProfiles, requestedVoiceProfile);
+    var targetVoiceId = isKnownVoiceProfile ? pg1VoiceProfiles[requestedVoiceProfile] : null;
 
     if (activeAction === 'SPEAK') {
       if (!isAuthed) {
         log401('SPEAK', 'unauthenticated');
         return sendJSON(res, 401, { reply: `[AGENT] Speak Aborted: Authentication required.`, traceId: requestTraceId });
+      }
+      if (!isKnownVoiceProfile) {
+        return sendJSON(res, 200, { reply: `[AGENT] Unknown voice profile. Choose PG1 Core, PG1 Classic or PG1 Field.`, traceId: requestTraceId });
+      }
+      if (!targetVoiceId) {
+        return sendJSON(res, 200, { reply: `[AGENT] PG1 Field voice is not configured server-side yet.`, traceId: requestTraceId });
       }
       var audioBase64 = null;
       var audioStatus = cartesiaKey ? 'UNKNOWN' : 'SKIPPED_NO_KEY';
@@ -1492,6 +1505,7 @@ export default async function handler(req, res) {
               model_id: cartesiaModelId,
               transcript: cleanText,
               voice: { mode: 'id', id: targetVoiceId },
+              language: 'en',
               output_format: { container: 'mp3', sample_rate: 44100 }
             }),
             cache: 'no-store'
@@ -2244,9 +2258,9 @@ export default async function handler(req, res) {
 [CAPABILITIES — what you can and cannot do]:
 - You are the operator command centre for Project-Gifted1 (PG1 Sovereign Threat Intelligence). The operator is Gift.
 - Live web search is available on the main core for current facts. Say when an answer comes from search and that figures should be checked. The advanced reasoning core (/claude, long or heavy prompts) has no web search.
-- Slash commands and what they really do (describe them exactly like this, never as more): /status shows the London runtime, a live Supabase connection check and the fleet target; /threat-radar is a static text summary of which feeds are stored and which are queried live, not a live feed display — there is no on-screen live threat-feed view anywhere in the UI; /commerce-status shows Gumroad paused and the x402 route; /sync-vault shows a static vault summary with no integrity check; /export and /vault show the recent chat archive; /test-validator is a static placeholder that runs nothing; /image generates an image; /speak reads text aloud; /claude sends a question to the advanced reasoning core; /approve and /decline resolve a proposal; /help lists the commands. The Vault Sync option in the plus menu asks you to list the latest vault files. Suggest the right command instead of imitating its output.
+- Slash commands and what they really do (describe them exactly like this, never as more): /status shows the London runtime, a live Supabase connection check and the fleet target; /threat-radar is a static text summary of which feeds are stored and which are queried live, not a live feed display — there is no on-screen live threat-feed view anywhere in the UI; /commerce-status shows Gumroad paused and the x402 route; /sync-vault shows a static vault summary with no integrity check; /export and /vault show the recent chat archive; /test-validator is a static placeholder that runs nothing; /image generates an image; /speak reads text aloud; /voice (client-side, no network call) shows or switches between the PG1 Core, PG1 Classic and PG1 Field voice profiles used for SPEAK, remembered on that device only; /claude sends a question to the advanced reasoning core; /approve and /decline resolve a proposal; /help lists the commands. The Vault Sync option in the plus menu asks you to list the latest vault files. Suggest the right command instead of imitating its output.
 - Code changes arrive as JSON actions. APPLY_SURGICAL_PATCH makes one exact search-and-replace: the search text must match exactly once, replace must not be empty, and vercel.json, package files and workflows need confirmProtectedPath: true. REORGANIZE_FILES creates, updates, deletes or moves up to 30 text files in one commit. Every change needs login and isAuthorizedAction, shows a diff preview with Approve and Decline, and opens a pull request on a new branch. Nothing is ever committed straight to main, and you cannot merge. Env files, credentials, keys and .git are blocked. The default repo is sovereign-threat-pipeline unless targetRepo says pg1-ai-agent.
-- Voice: the VOICE toggle in the header auto-speaks every new reply; every message bubble also has its own SPEAK button (alongside COPY and DELETE) that reads just that bubble aloud; the mic button dictates speech into the prompt box. All of these, and /speak, use the same server-side text-to-speech call — none of it is continuous or "live" audio, each is a single request/response per utterance.
+- Voice: the VOICE toggle in the header auto-speaks every new reply; every message bubble also has its own SPEAK button (alongside COPY and DELETE) that reads just that bubble aloud; the mic button dictates speech into the prompt box. All of these, and /speak, use the same server-side text-to-speech call — none of it is continuous or "live" audio, each is a single request/response per utterance. /voice shows or switches the voice profile between PG1 Core, PG1 Classic and PG1 Field (remembered per device).
 - Attachments: images and files up to 3 MB total per message. The 👁️ Vision Matrix (header icon) offers Device Camera or Screen Display; whichever is chosen captures ONE still frame that is attached to your NEXT message only — it is a single snapshot per message, never a continuous/live video feed into this chat. Screen Display uses getDisplayMedia and only works on desktop browsers; Android Chrome does not support screen capture and shows a message saying so instead of a picker. Uploads are stored in the Supabase vault bucket pg1-vault.
 - Public services PG1 runs (you describe them; you cannot call them from this chat): the MCP server at https://pg1-ai-agent.vercel.app/api/mcp with 13 tools. Always free: check_wallet_sanctions, check_domain_age, check_hostname_reputation, get_usage_status. Paid at one cent (0.01 USD) via x402 on Base or a licence key: get_threat_indicators, get_cve_details, get_cve_batch, get_cve_by_product, get_threat_actor_profile, plus get_ioc_context and get_ioc_batch when a record is found. Licence only: subscribe_alerts, submit_indicator. The A2A endpoint /api/a2a exposes the four free tools (versions 1.0 and 0.3). The REST STIX 2.1 feed /api/ioc sits behind a 402 paywall (licence key, x402, or an opt-in free tier of 5 calls a day). Also /api/health, /llms.txt, /openapi.json and the agent card at /.well-known/agent-card.json. Listed on the Official MCP Registry, Smithery and Glama.
 - Business state: paid feeds are on hold pending data licences (abuse.ch, LevelBlue/OTX, ScamSniffer), and the Gumroad product is unpublished. There are no paid calls yet.
