@@ -634,7 +634,7 @@
 
       escaped = escaped.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '</div><div class="media-preview-container"><img src="$2" alt="$1" /></div><div class="message-text">');
       escaped = escaped.replace(/^### (.*$)/gim, '<strong style="color: var(--text-gold); font-size: 1.1em; display: block; margin-top: 12px; margin-bottom: 4px;">$1</strong>');
-      escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong style="color: var(--text-gold);">$1</strong>');
+      escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong style="color: #ffffff;">$1</strong>');
       escaped = escaped.replace(/`([^`]+)`/g, '<span style="background: rgba(243, 198, 35, 0.15); color: #fff; padding: 2px 5px; border-radius: 4px;">$1</span>');
       escaped = escaped.replace(/^---$/gim, '<div style="height: 1px; background: var(--glass-edge); margin: 16px 0;"></div>');
       
