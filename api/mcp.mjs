@@ -72,8 +72,30 @@ import { detectIndicatorType, lookupIocContext } from '../lib/iocContext.mjs';
 import { normalizeWalletAddress, isRecognizedWalletAddress } from '../lib/walletAddress.mjs';
 import { extractRegistrableDomain } from '../lib/domainExtraction.mjs';
 import { domainToASCII, domainToUnicode } from 'node:url';
+import { logApiError } from '../lib/errorLog.mjs';
 
 export const config = { maxDuration: 30 };
+
+// Fire-and-forget write into pg1_errors (issue #213: wire api/mcp.mjs and
+// api/a2a.mjs into the error log) - same non-blocking pattern as
+// api/chat.mjs's recordServerError, never awaited on the request's hot path
+// so a logging failure (or a missing Supabase config) can never slow down or
+// change a tool's response, and in particular never eats into
+// check_wallet_age's 2.5s upstream budget. `route` carries the tool/skill
+// name (e.g. "/api/mcp:check_wallet_age") instead of a new schema column, per
+// the existing (source, route, status, reason) grouping. `reason` must only
+// ever be a short, fixed, PG1-written string - never caller input (address/
+// domain/hostname), an API key, a license key, or a raw upstream response
+// body. Reused by api/a2a.mjs for its own skill-level failures.
+export function recordToolError(route, status, reason, category) {
+  let creds;
+  try {
+    creds = getSupabaseCreds();
+  } catch {
+    return;
+  }
+  logApiError(creds.supUrl, creds.supKey, { source: 'server', route, status, reason, category }).catch(() => {});
+}
 
 // ---------------------------------------------------------------------
 // TOOLS
@@ -2129,12 +2151,13 @@ async function runX402Gate(req, params) {
 // payment is demanded. Free tier now requires an explicit "x-free-tier: 1"
 // header; without it, no license key + no payment offered falls straight
 // through to the x402 gate below.
-async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params) {
+async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName) {
   if (licenseKey) {
     const check = await verifyGumroadLicense(licenseKey);
     if (check.valid) return { authorized: true };
     if (check.reason === 'verification_unavailable') {
       res.setHeader('Retry-After', '5');
+      recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_license_verification_unavailable`, 'upstream');
       res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: 'License verification temporarily unavailable, please retry.' }, id: requestId });
       return { authorized: false, handled: true };
     }
@@ -2306,9 +2329,18 @@ export default async function handler(req, res) {
           }
         } catch (toolErr) {
           if (toolErr.serviceUnavailable) {
+            recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_upstream_unavailable`, 'upstream');
             return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId });
           }
           if (toolErr.mcpToolError) {
+            // Only 'upstream_unavailable' (a genuine data-source outage or
+            // timeout, e.g. check_wallet_age) is logged here - caller
+            // mistakes (invalid_address/invalid_chain/invalid_hostname) and
+            // rate_limited are normal, expected isError results, not bugs.
+            if (toolErr.code === 'upstream_unavailable') {
+              const isTimeout = /timed out/i.test(toolErr.message);
+              recordToolError(`/api/mcp:${toolName}`, null, `${toolName}_${isTimeout ? 'timeout' : 'upstream_unavailable'}`, isTimeout ? 'timeout' : 'upstream');
+            }
             return res.status(200).json({
               jsonrpc: '2.0',
               result: {
@@ -2338,6 +2370,7 @@ export default async function handler(req, res) {
         const check = await verifyGumroadLicense(licenseKey);
         if (check.reason === 'verification_unavailable') {
           res.setHeader('Retry-After', '5');
+          recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_license_verification_unavailable`, 'upstream');
           return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: 'License verification temporarily unavailable, please retry.' }, id: requestId });
         }
         if (!check.valid) {
@@ -2370,6 +2403,7 @@ export default async function handler(req, res) {
           lookupResult = await lookupIocContext(value, supUrl, supKey);
         } catch (e) {
           const status = e.serviceUnavailable ? 503 : 500;
+          recordToolError('/api/mcp:get_ioc_context', status, 'ioc_context_lookup_failed', e.serviceUnavailable ? 'upstream' : 'js_error');
           return res.status(status).json({ jsonrpc: '2.0', error: { code: -32603, message: e.message }, id: requestId });
         }
 
@@ -2381,7 +2415,7 @@ export default async function handler(req, res) {
           });
         }
 
-        const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params);
+        const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, 'get_ioc_context');
         if (gate.handled) return;
         if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired);
 
@@ -2403,6 +2437,7 @@ export default async function handler(req, res) {
           batchResult = await handleIocBatch(toolArgs);
         } catch (toolErr) {
           if (toolErr.serviceUnavailable) {
+            recordToolError('/api/mcp:get_ioc_batch', 503, 'get_ioc_batch_upstream_unavailable', 'upstream');
             return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId });
           }
           return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId });
@@ -2416,7 +2451,7 @@ export default async function handler(req, res) {
           });
         }
 
-        const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params);
+        const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, 'get_ioc_batch');
         if (gate.handled) return;
         if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired);
 
@@ -2435,7 +2470,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: `Unknown tool: ${toolName}` }, id: requestId });
       }
 
-      const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params);
+      const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName);
       if (gate.handled) return;
       if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired);
 
@@ -2444,6 +2479,7 @@ export default async function handler(req, res) {
         toolResult = await toolHandler(toolArgs);
       } catch (toolErr) {
         if (toolErr.serviceUnavailable) {
+          recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_upstream_unavailable`, 'upstream');
           return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId });
         }
         const code = toolErr.notFound ? 404 : 400;
@@ -2468,6 +2504,7 @@ export default async function handler(req, res) {
     // ENOTFOUND, upstream response text). Log it server-side only; never
     // echo it back into the response body.
     console.error('[MCP] unhandled tools/call exception:', err.message);
+    recordToolError('/api/mcp', 500, 'unhandled_exception', 'js_error');
     return res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal server error' }, id: requestId });
   }
 }
