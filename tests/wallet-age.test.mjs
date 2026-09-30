@@ -570,6 +570,38 @@ test('check_wallet_age: both the non-internal and internal lookups failing retur
   assert.notEqual(parsed.found, false);
 });
 
+test('check_wallet_age: an internal-only timeout with the non-internal arm finding nothing returns an isError, never found:false, with no cache write', async (t) => {
+  withAlchemyEnv(t);
+  withSupabaseEnv(t);
+  const originalFetch = global.fetch;
+  let wroteToCache = false;
+  const alchemyMock = makeFetchMock({
+    outTransfers: [],
+    inTransfers: [],
+    hangInternal: true
+  });
+  global.fetch = async (url, options = {}) => {
+    const urlStr = String(url);
+    if (urlStr.includes('/rest/v1/wallet_first_seen')) {
+      if (options.method === 'POST') {
+        wroteToCache = true;
+        return { ok: true, json: async () => [] };
+      }
+      return { ok: true, json: async () => [] };
+    }
+    return alchemyMock(url, options);
+  };
+  t.after(() => { global.fetch = originalFetch; });
+
+  const res = await callTool({ address: ADDRESS, chain: 'base' });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.result.isError, true);
+  const parsed = JSON.parse(res.body.result.content[0].text);
+  assert.equal(parsed.code, 'upstream_unavailable');
+  assert.notEqual(parsed.found, false);
+  assert.equal(wroteToCache, false, 'a failed-internal-arm result must never be written to the permanent cache, even when the non-internal arm found nothing');
+});
+
 test('check_wallet_age: cached and fresh first_seen strings are byte-identical for the same instant', async (t) => {
   withAlchemyEnv(t);
   withSupabaseEnv(t);

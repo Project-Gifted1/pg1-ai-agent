@@ -1901,6 +1901,19 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
     earliest = pickEarliestTransfer(plainOut, plainIn);
     isContract = !!plainCode && plainCode !== '0x';
     if (supportsInternal) {
+      if (!earliest) {
+        // The internal-inclusive lookup is the only one that can see
+        // internal transfers on this chain. If it failed/timed out and the
+        // non-internal lookup found nothing, we can't tell "brand new
+        // wallet" from "only has internal history" — degrading to
+        // found:false would misreport the former when it's actually the
+        // latter, so surface this as upstream unavailability instead.
+        const isTimeout = internalSettled.reason && internalSettled.reason.name === 'AbortError';
+        const message = isTimeout
+          ? `Wallet age lookup timed out after ${WALLET_AGE_TIMEOUT_MS}ms.`
+          : 'Wallet age lookup failed: upstream on-chain data source unavailable.';
+        throw new WalletAgeUpstreamError(message);
+      }
       note = 'Internal transfers were not checked in time; the wallet may be older than shown.';
       skipCache = true;
     }
