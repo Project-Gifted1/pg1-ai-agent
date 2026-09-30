@@ -3,7 +3,7 @@
   "info": {
     "title": "PG1 Sovereign Threat Intelligence API",
     "version": "1.12.0",
-    "description": "REST endpoints for PG1 Sovereign Threat Intelligence. This document only covers the plain HTTP GET endpoints below (/api/ioc and /api/health); the full tool catalog is also available over two JSON-RPC transports, which are not representable as REST paths:\n\n- MCP (Model Context Protocol, Streamable HTTP JSON-RPC): https://pg1-ai-agent.vercel.app/api/mcp\n- A2A (Agent2Agent, JSON-RPC 2.0): https://pg1-ai-agent.vercel.app/api/a2a — agent card at https://pg1-ai-agent.vercel.app/.well-known/agent-card.json\n\n/api/ioc is gated by one of: a Gumroad licence key (x-api-key header), a per-call x402 v2 micropayment (PAYMENT-SIGNATURE header), or the opt-in free tier (x-free-tier: 1 header, 5 calls/day per IP)."
+    "description": "REST endpoints for PG1 Sovereign Threat Intelligence. This document only covers the plain HTTP GET endpoints below (/api/ioc and /api/health); the full tool catalog is also available over two JSON-RPC transports, which are not representable as REST paths:\n\n- MCP (Model Context Protocol, Streamable HTTP JSON-RPC): https://pg1-ai-agent.vercel.app/api/mcp \n- A2A (Agent2Agent, JSON-RPC 2.0): https://pg1-ai-agent.vercel.app/api/a2a — agent card at https://pg1-ai-agent.vercel.app/.well-known/agent-card.json\n\n/api/ioc is gated by one of: a Gumroad licence key (x-api-key header), a per-call x402 v2 micropayment (PAYMENT-SIGNATURE header), or the opt-in free tier (x-free-tier: 1 header, 5 calls/day per IP)."
   },
   "servers": [
     { "url": "https://pg1-ai-agent.vercel.app" }
