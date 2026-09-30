@@ -4,12 +4,12 @@
  * Protocol: Agent2Agent (A2A) JSON-RPC 2.0 transport
  *           (https://a2a-protocol.org/latest/specification/)
  *
- * Exposes ONLY the four always-free MCP tools as A2A skills:
+ * Exposes ONLY the five always-free MCP tools as A2A skills:
  * check_wallet_sanctions, check_domain_age, check_hostname_reputation,
- * get_usage_status. Every tool implementation is imported directly from
- * api/mcp.mjs (no duplicated logic) — names, descriptions, schemas, and
- * rate limits (check_hostname_reputation: 60/hour without a license key)
- * are unchanged from the MCP server.
+ * check_wallet_age, get_usage_status. Every tool implementation is imported
+ * directly from api/mcp.mjs (no duplicated logic) — names, descriptions,
+ * schemas, and rate limits (check_hostname_reputation and check_wallet_age:
+ * 60/hour without a license key) are unchanged from the MCP server.
  *
  * Paid tools are deliberately NOT exposed here; they wait for the A2A
  * licensing/payment story to be worked out.
@@ -50,13 +50,14 @@ import {
   handleUsageStatus,
   handleCheckWalletSanctions,
   handleCheckDomainAge,
-  handleCheckHostnameReputation
+  handleCheckHostnameReputation,
+  handleCheckWalletAge
 } from './mcp.mjs';
 import { getRequestIdentifier } from '../lib/freeTier.mjs';
 
 export const config = { maxDuration: 30 };
 
-const A2A_SKILL_NAMES = ['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'get_usage_status'];
+const A2A_SKILL_NAMES = ['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'get_usage_status'];
 
 // Reused verbatim from api/mcp.mjs's TOOLS array — same descriptions/schemas.
 export const A2A_SKILL_TOOLS = TOOLS.filter((tool) => A2A_SKILL_NAMES.includes(tool.name));
@@ -102,6 +103,8 @@ async function runSkill(skill, args, identifier, licenseKey) {
       return handleCheckDomainAge(args, identifier, licenseKey);
     case 'check_hostname_reputation':
       return handleCheckHostnameReputation(args, identifier, licenseKey);
+    case 'check_wallet_age':
+      return handleCheckWalletAge(args, identifier, licenseKey);
     default:
       return undefined;
   }
@@ -204,7 +207,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-a2a',
-      version: '1.12.0',
+      version: '1.13.0',
       protocol: 'Agent2Agent (A2A) over JSON-RPC 2.0',
       supportedVersions: ['1.0', '0.3'],
       agentCard: 'https://pg1-ai-agent.vercel.app/.well-known/agent-card.json'

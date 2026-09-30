@@ -3,6 +3,19 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
+ * Version: 1.13.0 — ADD (issue #209): new free tool check_wallet_age,
+ *          reporting when an EVM address first appeared on a chain (earliest
+ *          on-chain transfer in or out) plus whether it's a contract. Gated
+ *          identically to check_domain_age (free, 60/hour anonymous rate
+ *          limit, license-key exemption, outputSchema + structuredContent).
+ *          Results are cached in the Supabase wallet_first_seen table —
+ *          found results permanently, found:false for 10 minutes only — and
+ *          the tool still works uncached if that table is absent. Never
+ *          returns found:false on an upstream failure or timeout (a proper
+ *          MCP isError result instead), never describes a result as "safe",
+ *          and never surfaces a third-party vendor name or raw upstream
+ *          fields. The 13 pre-existing tools' names, descriptions, and input
+ *          schemas are unchanged.
  * Version: 1.12.0 — ADD (issue #121): new free tool check_hostname_reputation,
  *          screening a single hostname against the MetaMask eth-phishing-detect
  *          blocklist/allowlist (public.phishing_domains, public.phishing_list_meta,
@@ -307,6 +320,35 @@ export const TOOLS = [
         attribution: { type: 'string' }
       },
       required: ['hostname', 'verdict', 'sources', 'lookalike_of', 'list_synced_at', 'checked_at', 'attribution']
+    }
+  },
+  {
+    name: 'check_wallet_age',
+    description: 'PG1 Sovereign Threat Intelligence: reports when an EVM wallet address first appeared on a given chain, based on its earliest on-chain transfer history (in or out), plus whether the address is a contract. No payment required — this tool is always free. SIBLING DIFFERENTIATION: Use for wallet age/history only. Do NOT use for sanctions screening (use check_wallet_sanctions), domain age (use check_domain_age), or hostname/phishing reputation (use check_hostname_reputation). BEHAVIOR: Returns { address, chain, found, first_seen, age_days, first_seen_block, first_direction, is_contract, note, source: "on-chain transfer history", cached }. A found:false result (with all other fields null except is_contract) means the address has no transfer history on that chain — a normal, common result for a brand-new or never-used address, not an error, and not evidence of legitimacy either way; this tool reports age and history only. Upstream lookup failures or timeouts return an MCP tool error (isError: true) instead of found:false, since a data-source outage must never be read as "brand-new wallet". VALIDATION: address must be a 0x-prefixed 40-hex-character EVM address (case-insensitive); chain, if given, must be one of the supported enum values. Malformed input returns an MCP tool error (isError: true, code invalid_address or invalid_chain) instead of a result. Rate-limited to 60 calls/hour per caller when unauthenticated; a valid Gumroad license key (X-API-KEY header) exempts the limit, same as check_domain_age. A found result is cached permanently (it never changes); a found:false result is cached for 10 minutes only, since a wallet can become active at any time.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        address: { type: 'string', description: "Mandatory EVM wallet address to check, formatted '0x' followed by 40 hex characters (case-insensitive)." },
+        chain: { type: ['string', 'null'], enum: ['base', 'ethereum', 'arbitrum', 'optimism', 'polygon', 'bsc', null], description: "Optional chain to check: 'base', 'ethereum', 'arbitrum', 'optimism', 'polygon', or 'bsc'. Defaults to 'base'.", default: 'base' }
+      },
+      required: ['address']
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        address: { type: 'string', description: 'The address, lowercased.' },
+        chain: { type: 'string' },
+        found: { type: 'boolean' },
+        first_seen: { type: ['string', 'null'], description: 'ISO timestamp of the earliest observed transfer in or out, or null if none found.' },
+        age_days: { type: ['integer', 'null'] },
+        first_seen_block: { type: ['integer', 'null'] },
+        first_direction: { type: ['string', 'null'], enum: ['in', 'out', null] },
+        is_contract: { type: 'boolean' },
+        note: { type: ['string', 'null'] },
+        source: { type: 'string' },
+        cached: { type: 'boolean' }
+      },
+      required: ['address', 'chain', 'found', 'first_seen', 'age_days', 'first_seen_block', 'first_direction', 'is_contract', 'source', 'cached']
     }
   }
 ];
@@ -1551,6 +1593,276 @@ export async function handleCheckHostnameReputation(args, identifier, licenseKey
 }
 
 // ---------------------------------------------------------------------
+// check_wallet_age — free, no payment gate
+// ---------------------------------------------------------------------
+
+const WALLET_AGE_SOURCE = 'on-chain transfer history';
+const WALLET_AGE_TIMEOUT_MS = 2500;
+const WALLET_AGE_NOT_FOUND_CACHE_TTL_MS = 10 * 60 * 1000;
+const WALLET_AGE_ADDRESS_RE = /^0x[0-9a-f]{40}$/i;
+
+// Alchemy network slugs, one per chain in the tool's input schema enum.
+const WALLET_AGE_CHAIN_SLUGS = {
+  base: 'base-mainnet',
+  ethereum: 'eth-mainnet',
+  arbitrum: 'arb-mainnet',
+  optimism: 'opt-mainnet',
+  polygon: 'polygon-mainnet',
+  bsc: 'bnb-mainnet'
+};
+
+// alchemy_getAssetTransfers' "internal" category (trace-level ETH transfers)
+// is documented as available only on these chains as of this writing —
+// re-check https://docs.alchemy.com/reference/alchemy-getassettransfers
+// before adding a chain here rather than assuming every chain supports it.
+const WALLET_AGE_INTERNAL_SUPPORTED_CHAINS = new Set(['ethereum', 'polygon']);
+
+class InvalidChainError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'InvalidChainError';
+    this.mcpToolError = true;
+    this.code = 'invalid_chain';
+  }
+}
+
+class WalletAgeUpstreamError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'WalletAgeUpstreamError';
+    this.mcpToolError = true;
+    this.code = 'upstream_unavailable';
+  }
+}
+
+// Per-IP fixed-window rate limit, identical shape to check_domain_age's.
+// Callers with a valid Gumroad license key are exempt.
+const WALLET_AGE_RATE_LIMIT_MAX = 60;
+const WALLET_AGE_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+const walletAgeRateLimitState = new Map();
+
+function enforceWalletAgeRateLimit(identifier) {
+  const now = Date.now();
+  const key = identifier || 'unknown';
+  const state = walletAgeRateLimitState.get(key);
+  if (!state || (now - state.windowStart) >= WALLET_AGE_RATE_LIMIT_WINDOW_MS) {
+    walletAgeRateLimitState.set(key, { count: 1, windowStart: now });
+    return;
+  }
+  if (state.count >= WALLET_AGE_RATE_LIMIT_MAX) {
+    const retryAfterMin = Math.ceil((WALLET_AGE_RATE_LIMIT_WINDOW_MS - (now - state.windowStart)) / 60000);
+    throw new RateLimitedError(
+      `check_wallet_age is limited to ${WALLET_AGE_RATE_LIMIT_MAX} calls/hour per caller. Retry in about ${retryAfterMin} minute(s), or use a Gumroad license key (X-API-KEY) to bypass this limit.`
+    );
+  }
+  state.count += 1;
+}
+
+function normalizeWalletAgeAddress(raw) {
+  if (typeof raw !== 'string' || !WALLET_AGE_ADDRESS_RE.test(raw.trim())) {
+    throw new InvalidAddressError(`'${raw}' is not a valid EVM address — expected '0x' followed by 40 hex characters.`);
+  }
+  return raw.trim().toLowerCase();
+}
+
+function normalizeWalletAgeChain(raw) {
+  const chain = (raw === undefined || raw === null || raw === '') ? 'base' : String(raw).trim().toLowerCase();
+  if (!WALLET_AGE_CHAIN_SLUGS[chain]) {
+    throw new InvalidChainError(`'${raw}' is not a supported chain — expected one of: ${Object.keys(WALLET_AGE_CHAIN_SLUGS).join(', ')}.`);
+  }
+  return chain;
+}
+
+// Best-effort cache read — a missing table, an unconfigured Supabase, or a
+// network failure all fall back to "no cache" so the tool still works
+// uncached (see issue #209), never as a hard failure of the tool itself.
+async function getWalletAgeCache(address, chain) {
+  let creds;
+  try {
+    creds = getSupabaseCreds();
+  } catch {
+    return null;
+  }
+  const { supUrl, supKey } = creds;
+  try {
+    const res = await fetch(
+      `${supUrl}/rest/v1/wallet_first_seen?address=eq.${address}&chain=eq.${encodeURIComponent(chain)}&select=*`,
+      { headers: { apikey: supKey, Authorization: `Bearer ${supKey}` } }
+    );
+    if (!res.ok) return null;
+    const rows = await res.json();
+    return (Array.isArray(rows) && rows.length) ? rows[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+// Best-effort cache write (upsert on the (address, chain) primary key) — a
+// caching failure must never affect the tool's response.
+async function setWalletAgeCache(address, chain, row) {
+  let creds;
+  try {
+    creds = getSupabaseCreds();
+  } catch {
+    return;
+  }
+  const { supUrl, supKey } = creds;
+  try {
+    await fetch(`${supUrl}/rest/v1/wallet_first_seen`, {
+      method: 'POST',
+      headers: {
+        apikey: supKey,
+        Authorization: `Bearer ${supKey}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify({ address, chain, ...row, checked_at: new Date().toISOString() })
+    });
+  } catch {
+    // Best-effort — see function comment.
+  }
+}
+
+function buildWalletAgeFoundResult(address, chain, row, cached) {
+  const ageDays = Math.floor((Date.now() - new Date(row.first_seen).getTime()) / (24 * 60 * 60 * 1000));
+  return {
+    address,
+    chain,
+    found: true,
+    first_seen: row.first_seen,
+    age_days: ageDays,
+    first_seen_block: row.first_seen_block,
+    first_direction: row.first_direction,
+    is_contract: !!row.is_contract,
+    note: null,
+    source: WALLET_AGE_SOURCE,
+    cached
+  };
+}
+
+function buildWalletAgeNotFoundResult(address, chain, isContract, cached) {
+  return {
+    address,
+    chain,
+    found: false,
+    first_seen: null,
+    age_days: null,
+    first_seen_block: null,
+    first_direction: null,
+    is_contract: !!isContract,
+    note: `'${address}' has no transfer history on '${chain}' — a normal result for a brand-new or never-used address, not an error.`,
+    source: WALLET_AGE_SOURCE,
+    cached
+  };
+}
+
+async function alchemyRpcCall(url, body, signal) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal,
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error('Upstream on-chain data source responded with ' + res.status);
+  const data = await res.json();
+  if (data.error) throw new Error('Upstream on-chain data source error: ' + data.error.message);
+  return data.result;
+}
+
+async function fetchEarliestTransfer(url, address, categories, direction, signal) {
+  const params = [{
+    fromBlock: '0x0',
+    order: 'asc',
+    maxCount: '0x1',
+    withMetadata: true,
+    category: categories,
+    [direction === 'out' ? 'fromAddress' : 'toAddress']: address
+  }];
+  const result = await alchemyRpcCall(
+    url,
+    { jsonrpc: '2.0', id: direction === 'out' ? 1 : 2, method: 'alchemy_getAssetTransfers', params },
+    signal
+  );
+  const transfer = result && Array.isArray(result.transfers) ? result.transfers[0] : null;
+  if (!transfer || !transfer.metadata || !transfer.metadata.blockTimestamp) return null;
+  return { direction, timestamp: transfer.metadata.blockTimestamp, block: transfer.blockNum };
+}
+
+export async function handleCheckWalletAge(args, identifier, licenseKey) {
+  const address = normalizeWalletAgeAddress(args?.address);
+  const chain = normalizeWalletAgeChain(args?.chain);
+
+  const cachedRow = await getWalletAgeCache(address, chain);
+  if (cachedRow) {
+    if (cachedRow.first_seen) {
+      return buildWalletAgeFoundResult(address, chain, cachedRow, true);
+    }
+    const checkedAt = new Date(cachedRow.checked_at).getTime();
+    if (!Number.isNaN(checkedAt) && (Date.now() - checkedAt) < WALLET_AGE_NOT_FOUND_CACHE_TTL_MS) {
+      return buildWalletAgeNotFoundResult(address, chain, cachedRow.is_contract, true);
+    }
+  }
+
+  let licensed = false;
+  if (licenseKey) {
+    const check = await verifyGumroadLicense(licenseKey).catch(() => ({ valid: false }));
+    licensed = !!check.valid;
+  }
+  if (!licensed) {
+    enforceWalletAgeRateLimit(identifier);
+  }
+
+  const apiKey = process.env.ALCHEMY_API_KEY;
+  if (!apiKey) {
+    throw new WalletAgeUpstreamError('Wallet age lookups are not configured on this deployment.');
+  }
+  const url = `https://${WALLET_AGE_CHAIN_SLUGS[chain]}.g.alchemy.com/v2/${apiKey}`;
+  const categories = ['external', 'erc20', 'erc721', 'erc1155'];
+  if (WALLET_AGE_INTERNAL_SUPPORTED_CHAINS.has(chain)) categories.push('internal');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), WALLET_AGE_TIMEOUT_MS);
+  let outTransfer, inTransfer, code;
+  try {
+    [outTransfer, inTransfer, code] = await Promise.all([
+      fetchEarliestTransfer(url, address, categories, 'out', controller.signal),
+      fetchEarliestTransfer(url, address, categories, 'in', controller.signal),
+      alchemyRpcCall(url, { jsonrpc: '2.0', id: 3, method: 'eth_getCode', params: [address, 'latest'] }, controller.signal)
+    ]);
+  } catch (e) {
+    const message = e.name === 'AbortError'
+      ? `Wallet age lookup timed out after ${WALLET_AGE_TIMEOUT_MS}ms.`
+      : 'Wallet age lookup failed: upstream on-chain data source unavailable.';
+    throw new WalletAgeUpstreamError(message);
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  const isContract = !!code && code !== '0x';
+
+  let earliest = null;
+  if (outTransfer && inTransfer) {
+    earliest = new Date(outTransfer.timestamp).getTime() <= new Date(inTransfer.timestamp).getTime() ? outTransfer : inTransfer;
+  } else {
+    earliest = outTransfer || inTransfer || null;
+  }
+
+  if (!earliest) {
+    await setWalletAgeCache(address, chain, { first_seen: null, first_seen_block: null, first_direction: null, is_contract: isContract });
+    return buildWalletAgeNotFoundResult(address, chain, isContract, false);
+  }
+
+  const row = {
+    first_seen: earliest.timestamp,
+    first_seen_block: parseInt(earliest.block, 16),
+    first_direction: earliest.direction,
+    is_contract: isContract
+  };
+  await setWalletAgeCache(address, chain, row);
+  return buildWalletAgeFoundResult(address, chain, row, false);
+}
+
+// ---------------------------------------------------------------------
 // AUTHORIZATION
 // ---------------------------------------------------------------------
 // verifyGumroadLicense lives in lib/paymentGate.mjs, shared with
@@ -1843,7 +2155,7 @@ const STANDARD_TOOL_HANDLERS = {
 // lookup result — not applied uniformly before the tool runs, like every
 // other STANDARD_TOOL_HANDLERS entry.
 
-const FREE_TOOLS = new Set(['get_usage_status', 'check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation']);
+const FREE_TOOLS = new Set(['get_usage_status', 'check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age']);
 
 const LICENSE_ONLY_TOOLS = new Set(['subscribe_alerts', 'submit_indicator']);
 
@@ -1866,7 +2178,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.12.0',
+      version: '1.13.0',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp'
@@ -1892,7 +2204,7 @@ export default async function handler(req, res) {
     if (method === 'initialize') {
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.12.0' } },
+        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.13.0' } },
         id: requestId
       });
     }
@@ -1920,6 +2232,8 @@ export default async function handler(req, res) {
             toolResult = await handleCheckWalletSanctions(toolArgs);
           } else if (toolName === 'check_domain_age') {
             toolResult = await handleCheckDomainAge(toolArgs, mcpRequestIdentifier, licenseKey);
+          } else if (toolName === 'check_wallet_age') {
+            toolResult = await handleCheckWalletAge(toolArgs, mcpRequestIdentifier, licenseKey);
           } else {
             toolResult = await handleCheckHostnameReputation(toolArgs, mcpRequestIdentifier, licenseKey);
           }
@@ -1940,7 +2254,7 @@ export default async function handler(req, res) {
           return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId });
         }
         const result = { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] };
-        if (toolName === 'check_wallet_sanctions' || toolName === 'check_domain_age' || toolName === 'check_hostname_reputation') {
+        if (toolName === 'check_wallet_sanctions' || toolName === 'check_domain_age' || toolName === 'check_hostname_reputation' || toolName === 'check_wallet_age') {
           result.structuredContent = toolResult;
         }
         return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
