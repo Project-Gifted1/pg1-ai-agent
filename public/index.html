@@ -638,7 +638,7 @@
       escaped = escaped.replace(/`([^`]+)`/g, '<span style="background: rgba(243, 198, 35, 0.15); color: #fff; padding: 2px 5px; border-radius: 4px;">$1</span>');
       escaped = escaped.replace(/^---$/gim, '<div style="height: 1px; background: var(--glass-edge); margin: 16px 0;"></div>');
       
-      escaped = escaped.replace(/(?<!src=")https?:\/\/[^\s<]+?(?=&quot;|&#39;|[.,)]?(?:\s|<|$))/g, function (url) { return '<a href="' + url + '" target="_blank" rel="noopener noreferrer" style="color: var(--text-gold); text-decoration: underline; word-break: break-all;">' + url + '</a>'; });
+      escaped = escaped.replace(/(?<!src=")https?:\/\/[^\s<]+?(?=&quot;|&#39;|[.,)]?(?:\s|<|$))/g, function (url) { return '<a href="' + url + '" target="_blank" rel="noopener noreferrer" style="color: #22d3ee; text-decoration: underline; word-break: break-all;">' + url + '</a>'; });
       return escaped;
     }
 
