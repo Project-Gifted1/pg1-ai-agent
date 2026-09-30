@@ -73,6 +73,8 @@ import { normalizeWalletAddress, isRecognizedWalletAddress } from '../lib/wallet
 import { extractRegistrableDomain } from '../lib/domainExtraction.mjs';
 import { domainToASCII, domainToUnicode } from 'node:url';
 import { logApiError } from '../lib/errorLog.mjs';
+import { reason } from '../lib/reasonCodes.mjs';
+import { buildCheck, withResponseMeta, withActionResponseMeta, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
 
 export const config = { maxDuration: 30 };
 
@@ -87,14 +89,14 @@ export const config = { maxDuration: 30 };
 // ever be a short, fixed, PG1-written string - never caller input (address/
 // domain/hostname), an API key, a license key, or a raw upstream response
 // body. Reused by api/a2a.mjs for its own skill-level failures.
-export function recordToolError(route, status, reason, category) {
+export function recordToolError(route, status, reason, category, requestId) {
   let creds;
   try {
     creds = getSupabaseCreds();
   } catch {
     return;
   }
-  logApiError(creds.supUrl, creds.supKey, { source: 'server', route, status, reason, category }).catch(() => {});
+  logApiError(creds.supUrl, creds.supKey, { source: 'server', route, status, reason, category, requestId }).catch(() => {});
 }
 
 // ---------------------------------------------------------------------
@@ -103,6 +105,48 @@ export function recordToolError(route, status, reason, category) {
 
 const CVE_BATCH_MAX = 20;
 const IOC_BATCH_MAX = 20;
+
+// Optional outputSchema additions shared by the 4 tools that already declare
+// an outputSchema (issue #215, part A option A, agreed 2026-09-30): reasons/
+// status/checks/request_id, added to `properties` only - never to
+// `required` - so existing structuredContent consumers validating against
+// the old required list are unaffected. Every one of the 14 tools' JSON
+// responses carries these same 4 fields; the other 10 tools simply don't
+// have a declared outputSchema to add them to.
+export const RESPONSE_META_OUTPUT_PROPERTIES = {
+  reasons: {
+    type: 'array',
+    description: 'Machine-readable reason codes for anything flagged in this result. Empty when nothing was flagged.',
+    items: {
+      type: 'object',
+      properties: {
+        code: { type: 'string' },
+        message: { type: 'string' }
+      },
+      required: ['code', 'message']
+    }
+  },
+  status: {
+    type: 'string',
+    enum: ['flagged', 'no_flags', 'unknown'],
+    description: '"unknown" whenever a source needed for this answer timed out, errored, or was skipped - never "no_flags" in that case.'
+  },
+  checks: {
+    type: 'array',
+    description: 'Which underlying sources were checked for this result and whether each one completed.',
+    items: {
+      type: 'object',
+      properties: {
+        source: { type: 'string', description: 'Generic label for the data source checked, never a vendor name.' },
+        result: { type: 'string', enum: ['ok', 'timeout', 'error', 'skipped'] },
+        checked_at: { type: 'string' },
+        data_as_of: { type: ['string', 'null'] }
+      },
+      required: ['source', 'result', 'checked_at', 'data_as_of']
+    }
+  },
+  request_id: { type: 'string', description: 'UUID for this request, also sent as the X-Request-Id response header.' }
+};
 
 export const TOOLS = [
   {
@@ -276,7 +320,8 @@ export const TOOLS = [
         source: { type: 'string' },
         list_last_synced: { type: 'string' },
         message: { type: 'string' },
-        disclaimer: { type: 'string' }
+        disclaimer: { type: 'string' },
+        ...RESPONSE_META_OUTPUT_PROPERTIES
       },
       required: ['address', 'address_normalized', 'listed', 'matches', 'source', 'list_last_synced']
     }
@@ -305,7 +350,8 @@ export const TOOLS = [
         note: { type: ['string', 'null'] },
         source: { type: ['string', 'null'] },
         reason: { type: ['string', 'null'] },
-        reason_code: { type: ['string', 'null'], enum: ['invalid_domain', 'bootstrap_unavailable', 'unsupported_tld', 'timeout', 'lookup_failed', null] }
+        reason_code: { type: ['string', 'null'], enum: ['invalid_domain', 'bootstrap_unavailable', 'unsupported_tld', 'timeout', 'lookup_failed', null] },
+        ...RESPONSE_META_OUTPUT_PROPERTIES
       },
       required: ['found', 'available', 'domain']
     }
@@ -339,7 +385,8 @@ export const TOOLS = [
         lookalike_of: { type: ['string', 'null'], description: 'The matched brand/fuzzylist domain for a "lookalike" verdict, otherwise null.' },
         list_synced_at: { type: ['string', 'null'] },
         checked_at: { type: 'string' },
-        attribution: { type: 'string' }
+        attribution: { type: 'string' },
+        ...RESPONSE_META_OUTPUT_PROPERTIES
       },
       required: ['hostname', 'verdict', 'sources', 'lookalike_of', 'list_synced_at', 'checked_at', 'attribution']
     }
@@ -368,7 +415,8 @@ export const TOOLS = [
         is_contract: { type: 'boolean' },
         note: { type: ['string', 'null'] },
         source: { type: 'string' },
-        cached: { type: 'boolean' }
+        cached: { type: 'boolean' },
+        ...RESPONSE_META_OUTPUT_PROPERTIES
       },
       required: ['address', 'chain', 'found', 'first_seen', 'age_days', 'first_seen_block', 'first_direction', 'is_contract', 'source', 'cached']
     }
@@ -464,12 +512,13 @@ async function handleThreatIndicators(args) {
     };
   }).filter(Boolean);
 
-  return {
+  const checks = [buildCheck('threat indicator feed', 'ok')];
+  return withResponseMeta({
     type: 'bundle',
     id: `bundle--${crypto.randomUUID()}`,
     spec_version: '2.1',
     objects
-  };
+  }, { reasons: [], checks });
 }
 
 // ---------------------------------------------------------------------
@@ -541,10 +590,10 @@ async function handleCveDetails(args) {
   }
   const normalizedId = String(cveId).toUpperCase();
 
-  const [nvd, epss, kevCatalog] = await Promise.all([
+  const [nvd, epssOutcome, kevOutcome] = await Promise.all([
     fetchNvdCveDetails(normalizedId).catch((e) => ({ error: e.message })),
-    fetchEpssScore(normalizedId).catch(() => null),
-    getKevCatalog().catch(() => ({}))
+    fetchEpssScore(normalizedId).then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: null })),
+    getKevCatalog().then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: {} }))
   ]);
 
   if (!nvd || nvd.error) {
@@ -553,9 +602,17 @@ async function handleCveDetails(args) {
     throw err;
   }
 
+  const epss = epssOutcome.value;
+  const kevCatalog = kevOutcome.value;
   const kevEntry = kevCatalog[normalizedId];
+  const reasons = kevEntry ? [reason('CVE_KNOWN_EXPLOITED_KEV')] : [];
+  const checks = [
+    buildCheck('vulnerability database', 'ok', { dataAsOf: nvd.last_modified || nvd.published || null }),
+    buildCheck('exploit prediction score', epssOutcome.ok ? 'ok' : 'error'),
+    buildCheck('known exploited vulnerabilities catalog', kevOutcome.ok ? 'ok' : 'error')
+  ];
 
-  return {
+  return withResponseMeta({
     cve_id: normalizedId,
     nvd: {
       description: nvd.description,
@@ -572,7 +629,7 @@ async function handleCveDetails(args) {
       required_action: kevEntry ? kevEntry.requiredAction : null,
       due_date: kevEntry ? kevEntry.dueDate : null
     }
-  };
+  }, { reasons, checks });
 }
 
 async function handleCveBatch(args) {
@@ -584,7 +641,9 @@ async function handleCveBatch(args) {
     throw new Error(`cve_ids exceeds the maximum batch size of ${CVE_BATCH_MAX}.`);
   }
 
-  const kevCatalog = await getKevCatalog().catch(() => ({}));
+  const kevOutcome = await getKevCatalog().then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: {} }));
+  const kevCatalog = kevOutcome.value;
+  let anyEpssFailed = false;
 
   const results = await Promise.all(cveIds.map(async (rawId) => {
     const cveId = String(rawId || '').toUpperCase();
@@ -592,10 +651,12 @@ async function handleCveBatch(args) {
       return { cve_id: rawId, found: false, error: "Malformed CVE id — expected 'CVE-YYYY-NNNN'." };
     }
 
-    const [nvd, epss] = await Promise.all([
+    const [nvd, epssOutcome] = await Promise.all([
       fetchNvdCveDetails(cveId).catch((e) => ({ error: e.message })),
-      fetchEpssScore(cveId).catch(() => null)
+      fetchEpssScore(cveId).then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: null }))
     ]);
+    if (!epssOutcome.ok) anyEpssFailed = true;
+    const epss = epssOutcome.value;
 
     if (!nvd || nvd.error) {
       return { cve_id: cveId, found: false, error: nvd?.error || 'CVE not found in NVD.' };
@@ -621,11 +682,19 @@ async function handleCveBatch(args) {
     };
   }));
 
-  return {
+  const anyKev = results.some((r) => r.cisa_kev?.is_known_exploited);
+  const reasons = anyKev ? [reason('CVE_KNOWN_EXPLOITED_KEV')] : [];
+  const checks = [
+    buildCheck('vulnerability database', 'ok'),
+    buildCheck('exploit prediction score', anyEpssFailed ? 'error' : 'ok'),
+    buildCheck('known exploited vulnerabilities catalog', kevOutcome.ok ? 'ok' : 'error')
+  ];
+
+  return withResponseMeta({
     total_requested: cveIds.length,
     total_found: results.filter((r) => r.found).length,
     results
-  };
+  }, { reasons, checks });
 }
 
 async function handleCveByProduct(args) {
@@ -648,10 +717,13 @@ async function handleCveByProduct(args) {
   const vulns = (nvdData.vulnerabilities || []).map((v) => v.cve).filter(Boolean);
 
   if (!vulns.length) {
-    return { vendor, product, version: version || null, total_found: 0, cves: [] };
+    const checks = [buildCheck('vulnerability database', 'ok')];
+    return withResponseMeta({ vendor, product, version: version || null, total_found: 0, cves: [] }, { reasons: [], checks });
   }
 
-  const kevCatalog = await getKevCatalog().catch(() => ({}));
+  const kevOutcome = await getKevCatalog().then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: {} }));
+  const kevCatalog = kevOutcome.value;
+  let anyEpssFailed = false;
 
   const enriched = await Promise.all(vulns.map(async (vuln) => {
     const cveId = vuln.id;
@@ -662,7 +734,9 @@ async function handleCveByProduct(args) {
     else if (metrics.cvssMetricV30?.[0]) { cvssData = metrics.cvssMetricV30[0].cvssData; cvssVersion = '3.0'; }
     else if (metrics.cvssMetricV2?.[0]) { cvssData = metrics.cvssMetricV2[0].cvssData; cvssVersion = '2.0'; }
 
-    const epss = await fetchEpssScore(cveId).catch(() => null);
+    const epssOutcome = await fetchEpssScore(cveId).then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: null }));
+    if (!epssOutcome.ok) anyEpssFailed = true;
+    const epss = epssOutcome.value;
     const kevEntry = kevCatalog[cveId];
 
     return {
@@ -685,7 +759,15 @@ async function handleCveByProduct(args) {
     return cvssB - cvssA;
   });
 
-  return { vendor, product, version: version || null, total_found: filtered.length, cves: filtered };
+  const anyKev = filtered.some((c) => c.is_known_exploited);
+  const reasons = anyKev ? [reason('CVE_KNOWN_EXPLOITED_KEV')] : [];
+  const checks = [
+    buildCheck('vulnerability database', 'ok'),
+    buildCheck('exploit prediction score', anyEpssFailed ? 'error' : 'ok'),
+    buildCheck('known exploited vulnerabilities catalog', kevOutcome.ok ? 'ok' : 'error')
+  ];
+
+  return withResponseMeta({ vendor, product, version: version || null, total_found: filtered.length, cves: filtered }, { reasons, checks });
 }
 
 // ---------------------------------------------------------------------
@@ -699,7 +781,19 @@ async function handleIocContext(args) {
   }
 
   const { supUrl, supKey } = getSupabaseCreds();
-  return await lookupIocContext(value, supUrl, supKey);
+  const lookupResult = await lookupIocContext(value, supUrl, supKey);
+  return withIocResponseMeta(lookupResult);
+}
+
+// Shared by both get_ioc_context call sites (the dispatch special case below
+// calls lookupIocContext directly, this helper wraps handleIocContext's and
+// handleIocBatch's own use of it) - found:true is the flag (a real record
+// exists in the feed); found:false already completed the check and simply
+// has nothing to report, so it's a clean no_flags, not unknown.
+function withIocResponseMeta(lookupResult) {
+  const reasons = lookupResult.found ? [reason('IOC_FOUND_IN_THREAT_FEED')] : [];
+  const checks = [buildCheck('threat indicator feed', 'ok')];
+  return withResponseMeta(lookupResult, { reasons, checks });
 }
 
 async function handleIocBatch(args) {
@@ -721,11 +815,15 @@ async function handleIocBatch(args) {
     return await lookupIocContext(value, supUrl, supKey);
   }));
 
-  return {
+  const totalFound = results.filter((r) => r.found).length;
+  const reasons = totalFound > 0 ? [reason('IOC_FOUND_IN_THREAT_FEED', `${totalFound} of ${values.length} submitted indicators have a matching record in the threat indicator feed.`)] : [];
+  const checks = [buildCheck('threat indicator feed', 'ok')];
+
+  return withResponseMeta({
     total_requested: values.length,
-    total_found: results.filter((r) => r.found).length,
+    total_found: totalFound,
     results
-  };
+  }, { reasons, checks });
 }
 
 // ---------------------------------------------------------------------
@@ -798,7 +896,7 @@ async function handleThreatActorProfile(args) {
     }
   });
 
-  return {
+  return withResponseMeta({
     actor_name: group.name,
     attack_group_id: attackId ? attackId.external_id : null,
     aliases: group.aliases || [],
@@ -806,7 +904,7 @@ async function handleThreatActorProfile(args) {
     associated_techniques: techniques,
     associated_software: software,
     source: 'MITRE ATT&CK Enterprise'
-  };
+  }, { reasons: [], checks: [buildCheck('threat actor intelligence', 'ok')] });
 }
 
 // ---------------------------------------------------------------------
@@ -843,19 +941,21 @@ export async function handleUsageStatus(args, requestIdentifier) {
   const remaining = Math.max(0, FREE_TIER_DAILY_LIMIT - callsToday);
 
   let licenseStatus = null;
+  const checks = [buildCheck('usage records', 'ok')];
   if (args?.license_key) {
     const check = await verifyGumroadLicense(args.license_key).catch(() => ({ valid: false, error: 'check failed' }));
     licenseStatus = check.valid ? 'active' : 'invalid_or_expired';
+    checks.push(buildCheck('license verification', 'ok'));
   }
 
-  return {
+  return withResponseMeta({
     identifier,
     free_tier_daily_limit: FREE_TIER_DAILY_LIMIT,
     free_tier_calls_used_today: callsToday,
     free_tier_calls_remaining_today: remaining,
     license_status: licenseStatus,
     checked_at: new Date().toISOString()
-  };
+  }, { reasons: [], checks });
 }
 
 // ---------------------------------------------------------------------
@@ -890,13 +990,17 @@ async function handleSubscribeAlerts(args, licenseKey) {
   }
   const inserted = await insertRes.json();
 
-  return {
+  // No honest-status `status` field here: this tool already has its own
+  // `status` ('active') meaning a subscription lifecycle state, and the
+  // "additive only, never repurpose an existing field" rule wins - see the
+  // PR description for issue #215.
+  return withActionResponseMeta({
     subscription_id: inserted[0]?.id,
     webhook_url: webhookUrl,
     filter,
     status: 'active',
     created_at: inserted[0]?.created_at
-  };
+  }, { reasons: [], checks: [buildCheck('alert subscription store', 'ok')] });
 }
 
 // ---------------------------------------------------------------------
@@ -921,7 +1025,10 @@ async function handleSubmitIndicator(args, licenseKey) {
   );
   const dupRows = dupCheck.ok ? await dupCheck.json() : [];
   if (dupRows.length) {
-    return { status: 'duplicate_pending_review', indicator, staging_id: dupRows[0].id };
+    return withActionResponseMeta(
+      { status: 'duplicate_pending_review', indicator, staging_id: dupRows[0].id },
+      { reasons: [], checks: [buildCheck('indicator submission queue', 'ok')] }
+    );
   }
 
   const insertRes = await fetch(`${supUrl}/rest/v1/submitted_indicators_staging`, {
@@ -945,11 +1052,13 @@ async function handleSubmitIndicator(args, licenseKey) {
   if (!insertRes.ok) throw new Error('Failed to submit indicator: ' + insertRes.status);
   const inserted = await insertRes.json();
 
-  return {
-    status: 'submitted_pending_review',
-    indicator,
-    staging_id: inserted[0]?.id
-  };
+  // No honest-status `status` field: same reason as handleSubscribeAlerts
+  // above - this tool already has its own `status` field meaning a
+  // submission lifecycle state.
+  return withActionResponseMeta(
+    { status: 'submitted_pending_review', indicator, staging_id: inserted[0]?.id },
+    { reasons: [], checks: [buildCheck('indicator submission queue', 'ok')] }
+  );
 }
 
 // ---------------------------------------------------------------------
@@ -1037,7 +1146,7 @@ export async function handleCheckWalletSanctions(args) {
         `'${rawAddress}' does not match any recognised wallet address format (EVM 0x+40 hex, BTC/LTC/BCH/DOGE/DASH/ZEC base58 or bech32/cashaddr, TRON, Monero, or Solana base58). Not screened.`
       );
     }
-    return {
+    return withResponseMeta({
       address: rawAddress,
       address_normalized: normalized,
       listed: false,
@@ -1046,10 +1155,10 @@ export async function handleCheckWalletSanctions(args) {
       list_last_synced: listLastSynced,
       message: `Not on the OFAC SDN sanctions list as of ${listLastSynced}.`,
       disclaimer: SANCTIONS_DISCLAIMER
-    };
+    }, { reasons: [], checks: [buildCheck('sanctions list', 'ok', { dataAsOf: listLastSynced })] });
   }
 
-  return {
+  return withResponseMeta({
     address: rawAddress,
     address_normalized: normalized,
     listed: true,
@@ -1062,7 +1171,7 @@ export async function handleCheckWalletSanctions(args) {
     source: SANCTIONS_SOURCE,
     list_last_synced: listLastSynced,
     disclaimer: SANCTIONS_DISCLAIMER
-  };
+  }, { reasons: [reason('WALLET_SANCTIONED')], checks: [buildCheck('sanctions list', 'ok', { dataAsOf: listLastSynced })] });
 }
 
 // ---------------------------------------------------------------------
@@ -1161,8 +1270,21 @@ function extractRegistrarName(entities) {
   return null;
 }
 
-function domainNotFound(domain, reason, reasonCode) {
-  return { found: false, available: false, domain, reason, reason_code: reasonCode };
+// A source that never resolved at all ('timeout'/'bootstrap_unavailable'/
+// 'lookup_failed') means the check errored or timed out; 'invalid_domain'/
+// 'unsupported_tld' mean the check was never attempted (bad input, or a TLD
+// this tool has no RDAP server for) - either way, a found:false RDAP result
+// is never a clean "no_flags", since we genuinely don't know the domain's
+// age (see issue #215's honest-status rule).
+function domainAgeCheckResult(reasonCode) {
+  if (reasonCode === 'timeout') return 'timeout';
+  if (reasonCode === 'bootstrap_unavailable' || reasonCode === 'lookup_failed') return 'error';
+  return 'skipped';
+}
+
+function domainNotFound(domain, reasonText, reasonCode) {
+  const checks = [buildCheck('domain registration records', domainAgeCheckResult(reasonCode))];
+  return withResponseMeta({ found: false, available: false, domain, reason: reasonText, reason_code: reasonCode }, { reasons: [], checks });
 }
 
 export async function handleCheckDomainAge(args, identifier, licenseKey) {
@@ -1238,7 +1360,7 @@ export async function handleCheckDomainAge(args, identifier, licenseKey) {
   const newlyRegistered = ageDays < 30;
   const serverHost = new URL(serverBase).host;
 
-  const result = {
+  const result = withResponseMeta({
     found: true,
     available: true,
     domain: registrable,
@@ -1251,7 +1373,10 @@ export async function handleCheckDomainAge(args, identifier, licenseKey) {
       ? `This domain was registered ${ageDays} day(s) ago — a common phishing signal, not proof of malicious intent.`
       : null,
     source: `RDAP (${serverHost})`
-  };
+  }, {
+    reasons: newlyRegistered ? [reason('DOMAIN_NEWLY_REGISTERED_30D')] : [],
+    checks: [buildCheck('domain registration records', 'ok', { dataAsOf: registrationDate })]
+  });
   setCachedDomainResult(registrable, result);
   return result;
 }
@@ -1518,7 +1643,11 @@ async function getPhishingList(supUrl, supKey) {
 }
 
 function buildHostnameResult(hostname, verdict, sources, lookalikeOf, listSyncedAt) {
-  return {
+  const reasons = verdict === 'listed' ? [reason('HOSTNAME_PHISHING_LISTED')]
+    : verdict === 'lookalike' ? [reason('HOSTNAME_LOOKALIKE', `Hostname is a probable lookalike/typosquat of '${lookalikeOf}'.`)]
+    : [];
+  const checks = [buildCheck('phishing domain list', 'ok', { dataAsOf: listSyncedAt })];
+  return withResponseMeta({
     hostname,
     verdict,
     sources,
@@ -1526,7 +1655,7 @@ function buildHostnameResult(hostname, verdict, sources, lookalikeOf, listSynced
     list_synced_at: listSyncedAt || null,
     checked_at: new Date().toISOString(),
     attribution: PHISHING_ATTRIBUTION
-  };
+  }, { reasons, checks });
 }
 
 export async function handleCheckHostnameReputation(args, identifier, licenseKey) {
@@ -1752,13 +1881,25 @@ async function setWalletAgeCache(address, chain, row) {
   }
 }
 
-function buildWalletAgeFoundResult(address, chain, row, cached) {
+// check_wallet_age has no age threshold anywhere in this file (callers
+// choose their own) - its reasons/checks describe observed facts only,
+// never a judgement (see lib/reasonCodes.mjs). `partial` is true exactly
+// when internal transfers weren't checked in time (see skipCache in
+// handleCheckWalletAge below) - a second, distinct checks entry for that
+// sub-check, never silently folded into the main "ok" one.
+function walletAgeChecks(partial) {
+  const checks = [buildCheck(WALLET_AGE_SOURCE, 'ok')];
+  if (partial) checks.push(buildCheck(`${WALLET_AGE_SOURCE} (internal transfers)`, 'timeout'));
+  return checks;
+}
+
+function buildWalletAgeFoundResult(address, chain, row, cached, partial) {
   // Normalises both the cached path (Postgres timestamptz round-trips as
   // e.g. "...+00:00") and the fresh path (already an ISO string from
   // Alchemy) through the same Date parse so the two are byte-identical.
   const firstSeen = new Date(row.first_seen).toISOString();
   const ageDays = Math.floor((Date.now() - new Date(firstSeen).getTime()) / (24 * 60 * 60 * 1000));
-  return {
+  return withResponseMeta({
     address,
     chain,
     found: true,
@@ -1770,11 +1911,16 @@ function buildWalletAgeFoundResult(address, chain, row, cached) {
     note: null,
     source: WALLET_AGE_SOURCE,
     cached
-  };
+  }, {
+    reasons: partial ? [reason('WALLET_AGE_PARTIAL')] : [],
+    checks: walletAgeChecks(partial)
+  });
 }
 
-function buildWalletAgeNotFoundResult(address, chain, isContract, cached) {
-  return {
+function buildWalletAgeNotFoundResult(address, chain, isContract, cached, partial) {
+  const reasons = [reason('WALLET_NO_HISTORY')];
+  if (partial) reasons.push(reason('WALLET_AGE_PARTIAL'));
+  return withResponseMeta({
     address,
     chain,
     found: false,
@@ -1786,7 +1932,7 @@ function buildWalletAgeNotFoundResult(address, chain, isContract, cached) {
     note: `'${address}' has no transfer history on '${chain}' — a normal result for a brand-new or never-used address, not an error.`,
     source: WALLET_AGE_SOURCE,
     cached
-  };
+  }, { reasons, checks: walletAgeChecks(partial) });
 }
 
 async function alchemyRpcCall(url, body, signal) {
@@ -1843,11 +1989,11 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
   const cachedRow = await getWalletAgeCache(address, chain);
   if (cachedRow) {
     if (cachedRow.first_seen) {
-      return buildWalletAgeFoundResult(address, chain, cachedRow, true);
+      return buildWalletAgeFoundResult(address, chain, cachedRow, true, false);
     }
     const checkedAt = new Date(cachedRow.checked_at).getTime();
     if (!Number.isNaN(checkedAt) && (Date.now() - checkedAt) < WALLET_AGE_NOT_FOUND_CACHE_TTL_MS) {
-      return buildWalletAgeNotFoundResult(address, chain, cachedRow.is_contract, true);
+      return buildWalletAgeNotFoundResult(address, chain, cachedRow.is_contract, true, false);
     }
   }
 
@@ -1932,7 +2078,7 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
     if (!skipCache) {
       await setWalletAgeCache(address, chain, { first_seen: null, first_seen_block: null, first_direction: null, is_contract: isContract });
     }
-    const result = buildWalletAgeNotFoundResult(address, chain, isContract, false);
+    const result = buildWalletAgeNotFoundResult(address, chain, isContract, false, skipCache);
     if (note) result.note = note;
     return result;
   }
@@ -1946,7 +2092,7 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
   if (!skipCache) {
     await setWalletAgeCache(address, chain, row);
   }
-  const result = buildWalletAgeFoundResult(address, chain, row, false);
+  const result = buildWalletAgeFoundResult(address, chain, row, false, skipCache);
   if (note) result.note = note;
   return result;
 }
@@ -2151,17 +2297,17 @@ async function runX402Gate(req, params) {
 // payment is demanded. Free tier now requires an explicit "x-free-tier: 1"
 // header; without it, no license key + no payment offered falls straight
 // through to the x402 gate below.
-async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName) {
+async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName, pg1RequestId) {
   if (licenseKey) {
     const check = await verifyGumroadLicense(licenseKey);
     if (check.valid) return { authorized: true };
     if (check.reason === 'verification_unavailable') {
       res.setHeader('Retry-After', '5');
-      recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_license_verification_unavailable`, 'upstream');
-      res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: 'License verification temporarily unavailable, please retry.' }, id: requestId });
+      recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_license_verification_unavailable`, 'upstream', pg1RequestId);
+      res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: 'License verification temporarily unavailable, please retry.' }, id: requestId, request_id: pg1RequestId });
       return { authorized: false, handled: true };
     }
-    res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error }, id: requestId });
+    res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error }, id: requestId, request_id: pg1RequestId });
     return { authorized: false, handled: true };
   }
 
@@ -2195,7 +2341,7 @@ async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentif
 // and content[0].text carrying the same object as JSON text — per the x402
 // v2 MCP transport spec. Also sends PAYMENT-REQUIRED for backward
 // compatibility with clients that only read the header.
-function sendPaymentRequiredResult(res, requestId, paymentRequired) {
+function sendPaymentRequiredResult(res, requestId, paymentRequired, pg1RequestId) {
   res.setHeader('PAYMENT-REQUIRED', encodePaymentRequiredHeader(paymentRequired));
   return res.status(200).json({
     jsonrpc: '2.0',
@@ -2204,7 +2350,8 @@ function sendPaymentRequiredResult(res, requestId, paymentRequired) {
       structuredContent: paymentRequired,
       content: [{ type: 'text', text: JSON.stringify(paymentRequired) }]
     },
-    id: requestId
+    id: requestId,
+    request_id: pg1RequestId
   });
 }
 
@@ -2214,18 +2361,18 @@ function sendPaymentRequiredResult(res, requestId, paymentRequired) {
 // result._meta["x402/payment-response"]. On failure, writes the same
 // payment-required tool result as an unpaid call and returns null so the
 // caller does not also send its own response.
-async function settleAndRespondOnFailure(res, requestId, gate) {
+async function settleAndRespondOnFailure(res, requestId, gate, pg1RequestId) {
   let settleResult;
   try {
     settleResult = await gate.settle();
   } catch (e) {
     const paymentRequired = await gate.settlementFailurePaymentRequired('Settlement failed: ' + e.message);
-    sendPaymentRequiredResult(res, requestId, paymentRequired);
+    sendPaymentRequiredResult(res, requestId, paymentRequired, pg1RequestId);
     return null;
   }
   if (!settleResult.success) {
     const paymentRequired = await gate.settlementFailurePaymentRequired(settleResult.errorMessage || settleResult.errorReason || 'Settlement failed');
-    sendPaymentRequiredResult(res, requestId, paymentRequired);
+    sendPaymentRequiredResult(res, requestId, paymentRequired, pg1RequestId);
     return null;
   }
   res.setHeader('PAYMENT-RESPONSE', encodePaymentResponseHeader(settleResult));
@@ -2249,15 +2396,41 @@ const FREE_TOOLS = new Set(['get_usage_status', 'check_wallet_sanctions', 'check
 
 const LICENSE_ONLY_TOOLS = new Set(['subscribe_alerts', 'submit_indicator']);
 
+// Generic (never vendor-named) `checks[].source` labels used when a tool
+// call fails before producing a result (issue #215) - keyed by tool name so
+// the single shared catch blocks below can build the right checks entry
+// without duplicating per-tool logic.
+const TOOL_SOURCE_LABELS = {
+  get_threat_indicators: 'threat indicator feed',
+  get_cve_details: 'vulnerability database',
+  get_cve_batch: 'vulnerability database',
+  get_cve_by_product: 'vulnerability database',
+  get_threat_actor_profile: 'threat actor intelligence',
+  get_ioc_context: 'threat indicator feed',
+  get_ioc_batch: 'threat indicator feed',
+  get_usage_status: 'usage records',
+  check_wallet_sanctions: 'sanctions list',
+  check_domain_age: 'domain registration records',
+  check_hostname_reputation: 'phishing domain list',
+  check_wallet_age: 'on-chain transfer history'
+};
+
 // ---------------------------------------------------------------------
 // HTTP HANDLER
 // ---------------------------------------------------------------------
 
 export default async function handler(req, res) {
+  // A UUID unique to this request (issue #215), distinct from the JSON-RPC
+  // `requestId` below (that's the caller's own `id` field, echoed back
+  // as-is). Set as a response header immediately so it's present on every
+  // response this handler can produce, including ones returned before the
+  // body is even parsed.
+  const pg1RequestId = crypto.randomUUID();
+  res.setHeader('X-Request-Id', pg1RequestId);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier');
-  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Request-Id');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
@@ -2271,12 +2444,13 @@ export default async function handler(req, res) {
       version: '1.13.0',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
-      endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp'
+      endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp',
+      request_id: pg1RequestId
     });
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed. Use POST for MCP JSON-RPC requests.' });
+    return res.status(405).json({ error: 'Method Not Allowed. Use POST for MCP JSON-RPC requests.', request_id: pg1RequestId });
   }
 
   let body = req.body;
@@ -2284,7 +2458,7 @@ export default async function handler(req, res) {
     try { body = JSON.parse(body); } catch { body = null; }
   }
   if (!body || typeof body !== 'object') {
-    return res.status(400).json({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error: Invalid JSON' }, id: '1' });
+    return res.status(400).json({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error: Invalid JSON' }, id: '1', request_id: pg1RequestId });
   }
 
   const { id, method, params } = body;
@@ -2295,7 +2469,8 @@ export default async function handler(req, res) {
       return res.status(200).json({
         jsonrpc: '2.0',
         result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.13.0' } },
-        id: requestId
+        id: requestId,
+        request_id: pg1RequestId
       });
     }
 
@@ -2304,7 +2479,7 @@ export default async function handler(req, res) {
     }
 
     if (method === 'tools/list') {
-      return res.status(200).json({ jsonrpc: '2.0', result: { tools: TOOLS }, id: requestId });
+      return res.status(200).json({ jsonrpc: '2.0', result: { tools: TOOLS }, id: requestId, request_id: pg1RequestId });
     }
 
     if (method === 'tools/call') {
@@ -2329,8 +2504,8 @@ export default async function handler(req, res) {
           }
         } catch (toolErr) {
           if (toolErr.serviceUnavailable) {
-            recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_upstream_unavailable`, 'upstream');
-            return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId });
+            recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_upstream_unavailable`, 'upstream', pg1RequestId);
+            return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId, request_id: pg1RequestId });
           }
           if (toolErr.mcpToolError) {
             // Only 'upstream_unavailable' (a genuine data-source outage or
@@ -2339,24 +2514,27 @@ export default async function handler(req, res) {
             // rate_limited are normal, expected isError results, not bugs.
             if (toolErr.code === 'upstream_unavailable') {
               const isTimeout = /timed out/i.test(toolErr.message);
-              recordToolError(`/api/mcp:${toolName}`, null, `${toolName}_${isTimeout ? 'timeout' : 'upstream_unavailable'}`, isTimeout ? 'timeout' : 'upstream');
+              recordToolError(`/api/mcp:${toolName}`, null, `${toolName}_${isTimeout ? 'timeout' : 'upstream_unavailable'}`, isTimeout ? 'timeout' : 'upstream', pg1RequestId);
             }
+            const errorChecks = [buildCheck(TOOL_SOURCE_LABELS[toolName] || toolName, classifyToolErrorCheckResult(toolErr))];
             return res.status(200).json({
               jsonrpc: '2.0',
               result: {
-                content: [{ type: 'text', text: JSON.stringify({ error: true, code: toolErr.code, message: toolErr.message }, null, 2) }],
+                content: [{ type: 'text', text: JSON.stringify({ error: true, code: toolErr.code, message: toolErr.message, ...errorResponseMeta(errorChecks, pg1RequestId) }, null, 2) }],
                 isError: true
               },
-              id: requestId
+              id: requestId,
+              request_id: pg1RequestId
             });
           }
-          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId });
+          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId, request_id: pg1RequestId });
         }
+        toolResult.request_id = pg1RequestId;
         const result = { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] };
         if (toolName === 'check_wallet_sanctions' || toolName === 'check_domain_age' || toolName === 'check_hostname_reputation' || toolName === 'check_wallet_age') {
           result.structuredContent = toolResult;
         }
-        return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
+        return res.status(200).json({ jsonrpc: '2.0', result, id: requestId, request_id: pg1RequestId });
       }
 
       if (LICENSE_ONLY_TOOLS.has(toolName)) {
@@ -2364,17 +2542,18 @@ export default async function handler(req, res) {
           return res.status(402).json({
             jsonrpc: '2.0',
             error: { code: -32001, message: `${toolName} requires a valid Gumroad license key in X-API-KEY. Not available via x402.` },
-            id: requestId
+            id: requestId,
+            request_id: pg1RequestId
           });
         }
         const check = await verifyGumroadLicense(licenseKey);
         if (check.reason === 'verification_unavailable') {
           res.setHeader('Retry-After', '5');
-          recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_license_verification_unavailable`, 'upstream');
-          return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: 'License verification temporarily unavailable, please retry.' }, id: requestId });
+          recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_license_verification_unavailable`, 'upstream', pg1RequestId);
+          return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: 'License verification temporarily unavailable, please retry.' }, id: requestId, request_id: pg1RequestId });
         }
         if (!check.valid) {
-          return res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error }, id: requestId });
+          return res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error }, id: requestId, request_id: pg1RequestId });
         }
         let toolResult;
         try {
@@ -2382,12 +2561,14 @@ export default async function handler(req, res) {
             ? await handleSubscribeAlerts(toolArgs, licenseKey)
             : await handleSubmitIndicator(toolArgs, licenseKey);
         } catch (toolErr) {
-          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId });
+          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId, request_id: pg1RequestId });
         }
+        toolResult.request_id = pg1RequestId;
         return res.status(200).json({
           jsonrpc: '2.0',
           result: { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] },
-          id: requestId
+          id: requestId,
+          request_id: pg1RequestId
         });
       }
 
@@ -2395,38 +2576,40 @@ export default async function handler(req, res) {
       if (toolName === 'get_ioc_context') {
         const value = toolArgs?.value?.trim();
         if (!value) {
-          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: 'value is required.' }, id: requestId });
+          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: 'value is required.' }, id: requestId, request_id: pg1RequestId });
         }
         let lookupResult;
         try {
           const { supUrl, supKey } = getSupabaseCreds();
-          lookupResult = await lookupIocContext(value, supUrl, supKey);
+          lookupResult = withIocResponseMeta(await lookupIocContext(value, supUrl, supKey));
         } catch (e) {
           const status = e.serviceUnavailable ? 503 : 500;
-          recordToolError('/api/mcp:get_ioc_context', status, 'ioc_context_lookup_failed', e.serviceUnavailable ? 'upstream' : 'js_error');
-          return res.status(status).json({ jsonrpc: '2.0', error: { code: -32603, message: e.message }, id: requestId });
+          recordToolError('/api/mcp:get_ioc_context', status, 'ioc_context_lookup_failed', e.serviceUnavailable ? 'upstream' : 'js_error', pg1RequestId);
+          return res.status(status).json({ jsonrpc: '2.0', error: { code: -32603, message: e.message }, id: requestId, request_id: pg1RequestId });
         }
+        lookupResult.request_id = pg1RequestId;
 
         if (!lookupResult.found) {
           return res.status(200).json({
             jsonrpc: '2.0',
             result: { content: [{ type: 'text', text: JSON.stringify(lookupResult, null, 2) }] },
-            id: requestId
+            id: requestId,
+            request_id: pg1RequestId
           });
         }
 
-        const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, 'get_ioc_context');
+        const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, 'get_ioc_context', pg1RequestId);
         if (gate.handled) return;
-        if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired);
+        if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired, pg1RequestId);
 
         const result = { content: [{ type: 'text', text: JSON.stringify(lookupResult, null, 2) }] };
         if (gate.settle) {
-          const settlement = await settleAndRespondOnFailure(res, requestId, gate);
+          const settlement = await settleAndRespondOnFailure(res, requestId, gate, pg1RequestId);
           if (!settlement) return;
           result._meta = { 'x402/payment-response': settlement };
         }
         if (gate.consumeFreeTier) await gate.consumeFreeTier();
-        return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
+        return res.status(200).json({ jsonrpc: '2.0', result, id: requestId, request_id: pg1RequestId });
       }
 
       // SPECIAL CASE: get_ioc_batch — free only if NONE of the values were
@@ -2437,66 +2620,69 @@ export default async function handler(req, res) {
           batchResult = await handleIocBatch(toolArgs);
         } catch (toolErr) {
           if (toolErr.serviceUnavailable) {
-            recordToolError('/api/mcp:get_ioc_batch', 503, 'get_ioc_batch_upstream_unavailable', 'upstream');
-            return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId });
+            recordToolError('/api/mcp:get_ioc_batch', 503, 'get_ioc_batch_upstream_unavailable', 'upstream', pg1RequestId);
+            return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId, request_id: pg1RequestId });
           }
-          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId });
+          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: toolErr.message }, id: requestId, request_id: pg1RequestId });
         }
+        batchResult.request_id = pg1RequestId;
 
         if (batchResult.total_found === 0) {
           return res.status(200).json({
             jsonrpc: '2.0',
             result: { content: [{ type: 'text', text: JSON.stringify(batchResult, null, 2) }] },
-            id: requestId
+            id: requestId,
+            request_id: pg1RequestId
           });
         }
 
-        const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, 'get_ioc_batch');
+        const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, 'get_ioc_batch', pg1RequestId);
         if (gate.handled) return;
-        if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired);
+        if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired, pg1RequestId);
 
         const result = { content: [{ type: 'text', text: JSON.stringify(batchResult, null, 2) }] };
         if (gate.settle) {
-          const settlement = await settleAndRespondOnFailure(res, requestId, gate);
+          const settlement = await settleAndRespondOnFailure(res, requestId, gate, pg1RequestId);
           if (!settlement) return;
           result._meta = { 'x402/payment-response': settlement };
         }
         if (gate.consumeFreeTier) await gate.consumeFreeTier();
-        return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
+        return res.status(200).json({ jsonrpc: '2.0', result, id: requestId, request_id: pg1RequestId });
       }
 
       const toolHandler = STANDARD_TOOL_HANDLERS[toolName];
       if (!toolHandler) {
-        return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: `Unknown tool: ${toolName}` }, id: requestId });
+        return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: `Unknown tool: ${toolName}` }, id: requestId, request_id: pg1RequestId });
       }
 
-      const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName);
+      const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName, pg1RequestId);
       if (gate.handled) return;
-      if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired);
+      if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired, pg1RequestId);
 
       let toolResult;
       try {
         toolResult = await toolHandler(toolArgs);
       } catch (toolErr) {
         if (toolErr.serviceUnavailable) {
-          recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_upstream_unavailable`, 'upstream');
-          return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId });
+          recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_upstream_unavailable`, 'upstream', pg1RequestId);
+          return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId, request_id: pg1RequestId });
         }
         const code = toolErr.notFound ? 404 : 400;
-        return res.status(code).json({ jsonrpc: '2.0', error: { code: toolErr.notFound ? -32004 : -32602, message: toolErr.message }, id: requestId });
+        return res.status(code).json({ jsonrpc: '2.0', error: { code: toolErr.notFound ? -32004 : -32602, message: toolErr.message }, id: requestId, request_id: pg1RequestId });
       }
+      toolResult.request_id = pg1RequestId;
 
       const result = { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] };
       if (gate.settle) {
-        const settlement = await settleAndRespondOnFailure(res, requestId, gate);
+        const settlement = await settleAndRespondOnFailure(res, requestId, gate, pg1RequestId);
         if (!settlement) return;
         result._meta = { 'x402/payment-response': settlement };
       }
       if (gate.consumeFreeTier) await gate.consumeFreeTier();
-      return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
+      return res.status(200).json({ jsonrpc: '2.0', result, id: requestId, request_id: pg1RequestId });
     }
 
-    return res.status(200).json({ jsonrpc: '2.0', error: { code: -32601, message: `Method not found: ${method || 'unknown'}` }, id: requestId });
+    return res.status(200).json({ jsonrpc: '2.0', error: { code: -32601, message: `Method not found: ${method || 'unknown'}` }, id: requestId, request_id: pg1RequestId });
   } catch (err) {
     // This is the catch-all for anything the specific handlers above didn't
     // already turn into a sanitized message (a genuine bug, not an expected
@@ -2504,7 +2690,7 @@ export default async function handler(req, res) {
     // ENOTFOUND, upstream response text). Log it server-side only; never
     // echo it back into the response body.
     console.error('[MCP] unhandled tools/call exception:', err.message);
-    recordToolError('/api/mcp', 500, 'unhandled_exception', 'js_error');
-    return res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal server error' }, id: requestId });
+    recordToolError('/api/mcp', 500, 'unhandled_exception', 'js_error', pg1RequestId);
+    return res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal server error' }, id: requestId, request_id: pg1RequestId });
   }
 }

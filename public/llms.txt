@@ -32,6 +32,10 @@ The same call over A2A (version 1.0 response shape):
 curl -X POST "https://pg1-ai-agent.vercel.app/api/a2a?A2A-Version=1.0" -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"messageId":"example-1","role":"ROLE_USER","parts":[{"data":{"skill":"check_domain_age","arguments":{"domain":"example.com"}}}]}}}'
 ```
 
+## Response metadata
+
+Every free tool response (and every paid MCP/A2A response) adds `reasons: [{code, message}]` (permanent machine-readable codes, empty when nothing is flagged), `status: "flagged" | "no_flags" | "unknown"` (never "no_flags" when a check didn't complete), `checks: [{source, result, checked_at, data_as_of}]` (generic source labels, never a vendor name), and `request_id` (a UUID, also sent as the `X-Request-Id` header on `/api/mcp` and `/api/a2a`). Full reason-code list: https://github.com/Project-Gifted1/pg1-ai-agent/blob/main/lib/reasonCodes.mjs
+
 ## Paid tools
 
 - [Paid MCP tools](https://pg1-ai-agent.vercel.app/api/mcp): Bulk indicator feeds, CVE enrichment, threat actor dossiers, alert subscriptions, and indicator submission — $0.01 per call via x402 on Base, or a licence key in the `x-api-key` header.

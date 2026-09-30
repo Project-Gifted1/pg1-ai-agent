@@ -55,6 +55,19 @@ import {
   recordToolError
 } from './mcp.mjs';
 import { getRequestIdentifier } from '../lib/freeTier.mjs';
+import { buildCheck, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
+
+// Generic (never vendor-named) `checks[].source` labels for the 5 skills
+// exposed here, keyed by skill name - same idea as api/mcp.mjs's
+// TOOL_SOURCE_LABELS, used only when a skill call fails before producing a
+// result (issue #215).
+const SKILL_SOURCE_LABELS = {
+  get_usage_status: 'usage records',
+  check_wallet_sanctions: 'sanctions list',
+  check_domain_age: 'domain registration records',
+  check_hostname_reputation: 'phishing domain list',
+  check_wallet_age: 'on-chain transfer history'
+};
 
 export const config = { maxDuration: 30 };
 
@@ -111,10 +124,10 @@ async function runSkill(skill, args, identifier, licenseKey) {
   }
 }
 
-function jsonRpcError(res, status, code, message, id, data) {
+function jsonRpcError(res, status, code, message, id, data, pg1RequestId) {
   const error = { code, message };
   if (data !== undefined) error.data = data;
-  return res.status(status).json({ jsonrpc: '2.0', error, id: id === undefined ? null : id });
+  return res.status(status).json({ jsonrpc: '2.0', error, id: id === undefined ? null : id, request_id: pg1RequestId });
 }
 
 // Spec 3.6.2: header takes precedence over the query param; missing/empty
@@ -199,9 +212,14 @@ function taskResult(skill, args, result, version, inboundMessage) {
 }
 
 export default async function handler(req, res) {
+  // A UUID unique to this request (issue #215), distinct from the JSON-RPC
+  // `requestId` below (the caller's own `id` field, echoed back as-is).
+  const pg1RequestId = crypto.randomUUID();
+  res.setHeader('X-Request-Id', pg1RequestId);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, A2A-Version');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
@@ -211,12 +229,13 @@ export default async function handler(req, res) {
       version: '1.13.0',
       protocol: 'Agent2Agent (A2A) over JSON-RPC 2.0',
       supportedVersions: ['1.0', '0.3'],
-      agentCard: 'https://pg1-ai-agent.vercel.app/.well-known/agent-card.json'
+      agentCard: 'https://pg1-ai-agent.vercel.app/.well-known/agent-card.json',
+      request_id: pg1RequestId
     });
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed. Use POST for A2A JSON-RPC requests.' });
+    return res.status(405).json({ error: 'Method Not Allowed. Use POST for A2A JSON-RPC requests.', request_id: pg1RequestId });
   }
 
   let body = req.body;
@@ -224,7 +243,7 @@ export default async function handler(req, res) {
     try { body = JSON.parse(body); } catch { body = null; }
   }
   if (!body || typeof body !== 'object') {
-    return jsonRpcError(res, 400, -32700, 'Parse error: Invalid JSON', '1');
+    return jsonRpcError(res, 400, -32700, 'Parse error: Invalid JSON', '1', undefined, pg1RequestId);
   }
 
   const { id, method, params } = body;
@@ -236,7 +255,7 @@ export default async function handler(req, res) {
       return jsonRpcError(
         res, 400, A2A_ERROR_CODES.VersionNotSupportedError,
         `Unsupported A2A-Version: '${requested}'. Supported versions: '1.0', '0.3' (default).`,
-        requestId
+        requestId, undefined, pg1RequestId
       );
     }
 
@@ -244,7 +263,7 @@ export default async function handler(req, res) {
       return jsonRpcError(
         res, 200, A2A_ERROR_CODES.UnsupportedOperationError,
         `Method not supported: ${method}. This agent does not support streaming or task subscriptions.`,
-        requestId
+        requestId, undefined, pg1RequestId
       );
     }
 
@@ -252,7 +271,7 @@ export default async function handler(req, res) {
       return jsonRpcError(
         res, 200, A2A_ERROR_CODES.PushNotificationNotSupportedError,
         `Method not supported: ${method}. This agent does not support push notifications.`,
-        requestId
+        requestId, undefined, pg1RequestId
       );
     }
 
@@ -260,7 +279,7 @@ export default async function handler(req, res) {
       return jsonRpcError(
         res, 200, A2A_ERROR_CODES.UnsupportedOperationError,
         `Method not supported: ${method}. This agent has no authenticated extended agent card.`,
-        requestId
+        requestId, undefined, pg1RequestId
       );
     }
 
@@ -268,12 +287,12 @@ export default async function handler(req, res) {
       return jsonRpcError(
         res, 200, A2A_ERROR_CODES.TaskNotFoundError,
         `Task not found. This agent does not persist tasks; every ${METHODS.sendMessage[0]} call resolves synchronously.`,
-        requestId
+        requestId, undefined, pg1RequestId
       );
     }
 
     if (!METHODS.sendMessage.includes(method)) {
-      return jsonRpcError(res, 200, -32601, `Method not found: ${method || 'unknown'}`, requestId);
+      return jsonRpcError(res, 200, -32601, `Method not found: ${method || 'unknown'}`, requestId, undefined, pg1RequestId);
     }
 
     const inboundMessage = params && params.message;
@@ -282,7 +301,7 @@ export default async function handler(req, res) {
       return jsonRpcError(
         res, 400, -32602,
         'Invalid params: expected params.message.parts to contain a DataPart of the form {"skill": "<tool name>", "arguments": {...}}.',
-        requestId
+        requestId, undefined, pg1RequestId
       );
     }
 
@@ -290,7 +309,7 @@ export default async function handler(req, res) {
     const args = (data.arguments && typeof data.arguments === 'object') ? data.arguments : {};
 
     if (typeof skill !== 'string' || !A2A_SKILL_NAMES.includes(skill)) {
-      return jsonRpcError(res, 400, -32602, `Unknown skill: '${skill}'. Available skills: ${A2A_SKILL_NAMES.join(', ')}.`, requestId);
+      return jsonRpcError(res, 400, -32602, `Unknown skill: '${skill}'. Available skills: ${A2A_SKILL_NAMES.join(', ')}.`, requestId, undefined, pg1RequestId);
     }
 
     const licenseKey = req.headers['x-api-key'];
@@ -301,8 +320,8 @@ export default async function handler(req, res) {
       toolResult = await runSkill(skill, args, identifier, licenseKey);
     } catch (err) {
       if (err.serviceUnavailable) {
-        recordToolError(`/api/a2a:${skill}`, 503, `${skill}_upstream_unavailable`, 'upstream');
-        return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, err.message, requestId);
+        recordToolError(`/api/a2a:${skill}`, 503, `${skill}_upstream_unavailable`, 'upstream', pg1RequestId);
+        return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, err.message, requestId, undefined, pg1RequestId);
       }
       if (err.mcpToolError) {
         // Same distinction as api/mcp.mjs: only a genuine upstream outage or
@@ -310,21 +329,24 @@ export default async function handler(req, res) {
         // invalid_hostname/rate_limited are normal, expected results.
         if (err.code === 'upstream_unavailable') {
           const isTimeout = /timed out/i.test(err.message);
-          recordToolError(`/api/a2a:${skill}`, null, `${skill}_${isTimeout ? 'timeout' : 'upstream_unavailable'}`, isTimeout ? 'timeout' : 'upstream');
+          recordToolError(`/api/a2a:${skill}`, null, `${skill}_${isTimeout ? 'timeout' : 'upstream_unavailable'}`, isTimeout ? 'timeout' : 'upstream', pg1RequestId);
         }
-        return jsonRpcError(res, 200, -32000, err.message, requestId, { code: err.code });
+        const errorChecks = [buildCheck(SKILL_SOURCE_LABELS[skill] || skill, classifyToolErrorCheckResult(err))];
+        const errorData = { code: err.code, ...errorResponseMeta(errorChecks, pg1RequestId) };
+        return jsonRpcError(res, 200, -32000, err.message, requestId, errorData, pg1RequestId);
       }
-      return jsonRpcError(res, 400, -32602, err.message, requestId);
+      return jsonRpcError(res, 400, -32602, err.message, requestId, undefined, pg1RequestId);
     }
+    toolResult.request_id = pg1RequestId;
 
-    return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, args, toolResult, version, inboundMessage), id: requestId });
+    return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, args, toolResult, version, inboundMessage), id: requestId, request_id: pg1RequestId });
   } catch (err) {
     // Catch-all for anything the specific handling above didn't already turn
     // into a sanitized message (a genuine bug, not an expected failure) -
     // err.message here can be a raw internal detail. Log it server-side only;
     // never echo it back into the response body.
     console.error('[A2A] unhandled exception:', err.message);
-    recordToolError('/api/a2a', 500, 'unhandled_exception', 'js_error');
-    return jsonRpcError(res, 500, -32603, 'Internal server error', requestId);
+    recordToolError('/api/a2a', 500, 'unhandled_exception', 'js_error', pg1RequestId);
+    return jsonRpcError(res, 500, -32603, 'Internal server error', requestId, undefined, pg1RequestId);
   }
 }
