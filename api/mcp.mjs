@@ -2297,17 +2297,17 @@ async function runX402Gate(req, params) {
 // payment is demanded. Free tier now requires an explicit "x-free-tier: 1"
 // header; without it, no license key + no payment offered falls straight
 // through to the x402 gate below.
-async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName) {
+async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName, pg1RequestId) {
   if (licenseKey) {
     const check = await verifyGumroadLicense(licenseKey);
     if (check.valid) return { authorized: true };
     if (check.reason === 'verification_unavailable') {
       res.setHeader('Retry-After', '5');
-      recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_license_verification_unavailable`, 'upstream');
-      res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: 'License verification temporarily unavailable, please retry.' }, id: requestId });
+      recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_license_verification_unavailable`, 'upstream', pg1RequestId);
+      res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: 'License verification temporarily unavailable, please retry.' }, id: requestId, request_id: pg1RequestId });
       return { authorized: false, handled: true };
     }
-    res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error }, id: requestId });
+    res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error }, id: requestId, request_id: pg1RequestId });
     return { authorized: false, handled: true };
   }
 
@@ -2598,7 +2598,7 @@ export default async function handler(req, res) {
           });
         }
 
-        const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, 'get_ioc_context');
+        const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, 'get_ioc_context', pg1RequestId);
         if (gate.handled) return;
         if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired, pg1RequestId);
 
@@ -2636,7 +2636,7 @@ export default async function handler(req, res) {
           });
         }
 
-        const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, 'get_ioc_batch');
+        const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, 'get_ioc_batch', pg1RequestId);
         if (gate.handled) return;
         if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired, pg1RequestId);
 
@@ -2655,7 +2655,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: `Unknown tool: ${toolName}` }, id: requestId, request_id: pg1RequestId });
       }
 
-      const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName);
+      const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName, pg1RequestId);
       if (gate.handled) return;
       if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired, pg1RequestId);
 
