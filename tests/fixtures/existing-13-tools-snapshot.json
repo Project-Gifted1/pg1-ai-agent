@@ -380,6 +380,10 @@
         "request_id": {
           "type": "string",
           "description": "UUID for this request, also sent as the X-Request-Id response header."
+        },
+        "test_fixture": {
+          "type": "boolean",
+          "description": "true only when the input was a documented integration test fixture and this response is canned; absent on real results."
         }
       },
       "required": [
@@ -551,6 +555,10 @@
         "request_id": {
           "type": "string",
           "description": "UUID for this request, also sent as the X-Request-Id response header."
+        },
+        "test_fixture": {
+          "type": "boolean",
+          "description": "true only when the input was a documented integration test fixture and this response is canned; absent on real results."
         }
       },
       "required": [
@@ -706,6 +714,10 @@
         "request_id": {
           "type": "string",
           "description": "UUID for this request, also sent as the X-Request-Id response header."
+        },
+        "test_fixture": {
+          "type": "boolean",
+          "description": "true only when the input was a documented integration test fixture and this response is canned; absent on real results."
         }
       },
       "required": [
