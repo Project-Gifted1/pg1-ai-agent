@@ -17,6 +17,20 @@
 - [Health](https://pg1-ai-agent.vercel.app/api/health): Uptime/health check.
 - [OpenAPI spec](https://pg1-ai-agent.vercel.app/openapi.json): Machine-readable schema for the REST endpoint.
 
+## Quick start
+
+Call a free tool over MCP (POST, no key needed):
+
+```
+curl -X POST https://pg1-ai-agent.vercel.app/api/mcp -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"check_domain_age","arguments":{"domain":"example.com"}}}'
+```
+
+The same call over A2A (version 1.0 response shape):
+
+```
+curl -X POST "https://pg1-ai-agent.vercel.app/api/a2a?A2A-Version=1.0" -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"messageId":"example-1","role":"ROLE_USER","parts":[{"data":{"skill":"check_domain_age","arguments":{"domain":"example.com"}}}]}}}'
+```
+
 ## Paid tools
 
 - [Paid MCP tools](https://pg1-ai-agent.vercel.app/api/mcp): Bulk indicator feeds, CVE enrichment, threat actor dossiers, alert subscriptions, and indicator submission — $0.01 per call via x402 on Base, or a licence key in the `x-api-key` header.
