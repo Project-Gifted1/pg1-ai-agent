@@ -247,6 +247,9 @@
       overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
     }
 
+    /* a line icon sitting in running text, sized to it */
+    .icon-inline { width: 1em; height: 1em; vertical-align: -0.125em; stroke-width: 2; }
+
     .icon {
       width: var(--icon);
       height: var(--icon);
@@ -314,7 +317,20 @@
       z-index: 20;
       flex-shrink: 0;
     }
-    .brand-wrap { justify-self: start; display: inline-flex; align-items: center; gap: 10px; padding-left: var(--sp-1); }
+    .brand-wrap {
+      justify-self: start;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding-left: var(--sp-1);
+      transition: opacity var(--dur-3) var(--ease-out), visibility 0s;
+    }
+    /* EMPTY STATE: the large mark and the subtitle already carry brand and
+       status, so the header keeps only its buttons and blends into the page.
+       Hiding is instant; the lockup and dot fade back in with the first
+       message (instant under reduced motion, via the global rule). */
+    body:has(#chat-container > .message-bubble.welcome:only-child) .brand-wrap { opacity: 0; visibility: hidden; transition: none; }
+    body:has(#chat-container > .message-bubble.welcome:only-child) .app-header { border-bottom-color: transparent; }
     .brand { display: block; line-height: 0; }
 
     .status-dot-mini {
@@ -2430,11 +2446,14 @@
 
     // The line under the greeting says what's actually going on: unresolved
     // errors first, then the status light (renderIdleStatus), else all clear.
+    // Returns HTML: the error line names the ➕ header button with the same
+    // line icon (hidden from screen readers, which hear "the plus menu").
     let lastUnresolvedErrorCount = 0;
+    const PLUS_MENU_HTML = '<svg class="icon icon-inline" aria-hidden="true" focusable="false"><use href="#i-plus"/></svg><span class="sr-only">the plus menu</span>';
 
     function welcomeSubtitle(healthState, unresolvedCount) {
       if (unresolvedCount > 0) {
-        return `${unresolvedCount} ${unresolvedCount === 1 ? 'error needs' : 'errors need'} a look. Open the error log from ➕.`;
+        return `${unresolvedCount} ${unresolvedCount === 1 ? 'error needs' : 'errors need'} a look. Open the error log from ${PLUS_MENU_HTML}.`;
       }
       if (healthState === 'red') return "Can't reach the core right now. Messages will fail until it's back.";
       if (healthState === 'amber') return 'Responses may be slow right now.';
@@ -2446,8 +2465,11 @@
     function refreshWelcomeSubtitle() {
       const el = document.querySelector('#chat-container .message-bubble.welcome .message-text');
       if (!el) return;
-      const text = welcomeSubtitle(lastHealthState, lastUnresolvedErrorCount);
-      if (el.textContent !== text) el.textContent = text;
+      const html = welcomeSubtitle(lastHealthState, lastUnresolvedErrorCount);
+      if (el.pg1Subtitle !== html) {
+        el.innerHTML = html;
+        el.pg1Subtitle = html;
+      }
     }
 
     // EMPTY STATE: a fresh session and Clear chat both show the greeting

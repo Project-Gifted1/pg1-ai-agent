@@ -42,7 +42,7 @@ function extractFunction(source, name) {
 }
 
 function extractConst(source, name) {
-  const match = source.match(new RegExp(`const ${name} = [^;]+;`));
+  const match = source.match(new RegExp(`const ${name} = (?:'[^']*'|[^;]+);`));
   if (!match) throw new Error(`const ${name} not found in public/index.html`);
   return match[0];
 }
@@ -177,36 +177,53 @@ test('renderWelcome: stores the shown line and avoids it on the next render', ()
 
 // --- subtitle ---
 
+const SUBTITLE_SOURCE = `${extractConst(html, 'PLUS_MENU_HTML')}\n${extractFunction(html, 'welcomeSubtitle')}`;
+// What a screen reader hears: tags dropped (the icon is aria-hidden, the
+// sr-only span is read).
+const spoken = (markup) => markup.replace(/<svg[\s\S]*?<\/svg>/g, '').replace(/<[^>]+>/g, '');
+
 test('welcomeSubtitle: errors, offline, degraded, then all clear', () => {
-  const welcomeSubtitle = new Function(`${extractFunction(html, 'welcomeSubtitle')}\nreturn welcomeSubtitle;`)();
-  assert.equal(welcomeSubtitle('green', 3), '3 errors need a look. Open the error log from ➕.');
-  assert.equal(welcomeSubtitle('red', 2), '2 errors need a look. Open the error log from ➕.');
-  assert.equal(welcomeSubtitle('green', 1), '1 error needs a look. Open the error log from ➕.');
+  const welcomeSubtitle = new Function(`${SUBTITLE_SOURCE}\nreturn welcomeSubtitle;`)();
+  assert.equal(spoken(welcomeSubtitle('green', 3)), '3 errors need a look. Open the error log from the plus menu.');
+  assert.equal(spoken(welcomeSubtitle('red', 2)), '2 errors need a look. Open the error log from the plus menu.');
+  assert.equal(spoken(welcomeSubtitle('green', 1)), '1 error needs a look. Open the error log from the plus menu.');
   assert.equal(welcomeSubtitle('red', 0), "Can't reach the core right now. Messages will fail until it's back.");
   assert.equal(welcomeSubtitle('amber', 0), 'Responses may be slow right now.');
   assert.equal(welcomeSubtitle('green', 0), 'PG1 is online. Ask anything, or pick a starting point.');
 });
 
+test('welcomeSubtitle: the plus menu is the header line icon, aria-hidden, with sr-only text; no emoji', () => {
+  const welcomeSubtitle = new Function(`${SUBTITLE_SOURCE}\nreturn welcomeSubtitle;`)();
+  const markup = welcomeSubtitle('green', 2);
+  assert.match(markup, /<svg class="icon icon-inline" aria-hidden="true" focusable="false"><use href="#i-plus"\/><\/svg>/);
+  assert.match(markup, /<span class="sr-only">the plus menu<\/span>\.$/);
+  // the same symbol the header ➕ button uses
+  assert.match(html, /id="quick-menu-btn"[^>]*>[^]*?<use href="#i-plus"\/>/);
+  for (const [state, n] of [['green', 2], ['red', 0], ['amber', 0], ['green', 0]]) {
+    assert.doesNotMatch(welcomeSubtitle(state, n), /\p{Extended_Pictographic}/u);
+  }
+});
+
 test('refreshWelcomeSubtitle: follows the status and error count, and is a no-op without an empty state', () => {
-  const textEl = { textContent: 'PG1 is online. Ask anything, or pick a starting point.' };
+  const textEl = { innerHTML: 'PG1 is online. Ask anything, or pick a starting point.', writes: 0 };
   let welcomeShowing = true;
   const document = { querySelector: () => (welcomeShowing ? textEl : null) };
   const factory = new Function(
     'document',
-    `let lastHealthState = 'green';\nlet lastUnresolvedErrorCount = 0;\n${extractFunction(html, 'welcomeSubtitle')}\n${extractFunction(html, 'refreshWelcomeSubtitle')}\n` +
+    `let lastHealthState = 'green';\nlet lastUnresolvedErrorCount = 0;\n${SUBTITLE_SOURCE}\n${extractFunction(html, 'refreshWelcomeSubtitle')}\n` +
     'return { refreshWelcomeSubtitle, set: (s, n) => { lastHealthState = s; lastUnresolvedErrorCount = n; } };'
   );
   const { refreshWelcomeSubtitle, set } = factory(document);
   set('red', 0); refreshWelcomeSubtitle();
-  assert.match(textEl.textContent, /^Can't reach the core/);
+  assert.match(textEl.innerHTML, /^Can't reach the core/);
   set('amber', 0); refreshWelcomeSubtitle();
-  assert.equal(textEl.textContent, 'Responses may be slow right now.');
+  assert.equal(textEl.innerHTML, 'Responses may be slow right now.');
   set('amber', 4); refreshWelcomeSubtitle();
-  assert.equal(textEl.textContent, '4 errors need a look. Open the error log from ➕.');
+  assert.equal(spoken(textEl.innerHTML), '4 errors need a look. Open the error log from the plus menu.');
   welcomeShowing = false;
   set('green', 0);
   assert.doesNotThrow(() => refreshWelcomeSubtitle());
-  assert.equal(textEl.textContent, '4 errors need a look. Open the error log from ➕.');
+  assert.equal(spoken(textEl.innerHTML), '4 errors need a look. Open the error log from the plus menu.');
 });
 
 test('renderIdleStatus and updateErrorLogBadge both refresh the welcome subtitle', () => {
@@ -347,4 +364,20 @@ test('theme: the light theme overrides every colour token and keeps the shield g
   // shield is filled with the bright gold in both themes
   assert.match(block(':root[data-theme="light"]'), /--gold-fill: #f3c623;/);
   assert.equal((html.match(/style="fill: var\(--gold-fill\)"/g) || []).length, 2);
+});
+
+// --- empty-state header ---
+
+test('header: lockup and status dot hide (and the border goes) only while the empty state is up', () => {
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  const when = 'body:has(#chat-container > .message-bubble.welcome:only-child)';
+  assert.ok(css.includes(`${when} .brand-wrap { opacity: 0; visibility: hidden; transition: none; }`));
+  assert.ok(css.includes(`${when} .app-header { border-bottom-color: transparent; }`));
+  // the menu button, ➕ button and badge sit outside .brand-wrap, so they stay
+  const brand = html.slice(html.indexOf('<div class="brand-wrap">'), html.indexOf('<div class="header-btn-wrap">'));
+  assert.ok(brand.includes('id="header-status-dot"'));
+  for (const id of ['drawer-btn', 'quick-menu-btn', 'error-log-badge']) assert.ok(!brand.includes(`id="${id}"`), id);
+  // fades back in with an opacity transition (the reduced-motion rule makes it instant)
+  assert.match(css, /\.brand-wrap \{[^}]*transition: opacity var\(--dur-3\)/);
+  assert.match(css, /prefers-reduced-motion: reduce[^]*?transition-duration: 0\.01ms !important/);
 });
