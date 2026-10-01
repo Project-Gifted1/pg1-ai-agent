@@ -2,56 +2,167 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#0a0a0b">
+  <meta name="color-scheme" content="dark">
   <title>Project-Gifted1™</title>
+  <link rel="preload" href="/fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
   <style>
+    /* FONTS: self-hosted (public/fonts, latin subset, SIL OFL - licences
+       alongside). Only the weights actually used below are shipped. */
+    @font-face { font-family: "Inter"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/inter-latin-400-normal.woff2") format("woff2"); }
+    @font-face { font-family: "Inter"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/inter-latin-500-normal.woff2") format("woff2"); }
+    @font-face { font-family: "Inter"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/inter-latin-600-normal.woff2") format("woff2"); }
+    @font-face { font-family: "Inter"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/inter-latin-700-normal.woff2") format("woff2"); }
+    @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+    @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/jetbrains-mono-latin-600-normal.woff2") format("woff2"); }
+
+    /* DESIGN TOKENS - every colour, size, radius, shadow and duration used
+       below comes from here. Dark is the only (and default) theme. */
     :root {
-      --bg-color: #000000;
-      --card-bg: rgba(15, 15, 15, 0.6);
-      --text-gold: #f3c623;   
-      --text-main: #e8e8e8;
-      --input-bg: rgba(10, 10, 10, 0.8);
-      --glow-subtle: rgba(243, 198, 35, 0.15);
-      --glow-strong: rgba(243, 198, 35, 0.4);
-      --glass-edge: rgba(255, 255, 255, 0.03);
-      --danger-red: #ff4444;
-      --status-amber: #ffb300;
-      --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", monospace;
+      color-scheme: dark;
+
+      /* palette */
+      --bg: #0a0a0b;
+      --surface-1: #121214;
+      --surface-2: #1a1a1d;
+      --surface-3: #232327;
+      --border: #2a2a2f;
+      --border-strong: #3a3a40;
+      --text: #ececee;
+      --text-2: #a8a8b0;
+      --text-3: #8a8a93;
+      --gold: #f3c623;
+      --gold-strong: #ffd84d;
+      --gold-soft: rgba(243, 198, 35, 0.12);
+      --gold-line: rgba(243, 198, 35, 0.45);
+      --on-gold: #0a0a0b;
+      --ok: #3ddc84;
+      --warn: #ffb300;
+      --danger: #ff5c5c;
+      --danger-soft: rgba(255, 92, 92, 0.12);
+      --info: #7cc4ff;
+      --scrim: rgba(5, 5, 6, 0.72);
+      --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--gold);
+
+      /* type */
+      --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+      --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", "Liberation Mono", monospace;
+      --fs-2xs: 0.6875rem;
+      --fs-xs: 0.75rem;
+      --fs-sm: 0.8125rem;
+      --fs-base: 0.9375rem;
+      --fs-md: 1.0625rem;
+      --fs-lg: 1.25rem;
+      --fs-xl: 1.5rem;
+      --lh-tight: 1.25;
+      --lh-body: 1.6;
+      --tracking-label: 0.08em;
+
+      /* spacing (4px grid) */
+      --sp-1: 4px;
+      --sp-2: 8px;
+      --sp-3: 12px;
+      --sp-4: 16px;
+      --sp-5: 20px;
+      --sp-6: 24px;
+      --sp-8: 32px;
+      --sp-10: 40px;
+      --tap: 44px;
+      --measure: 46rem;
+      --header-h: 56px;
+
+      /* radius */
+      --r-sm: 6px;
+      --r-md: 10px;
+      --r-lg: 16px;
+      --r-xl: 22px;
+      --r-full: 999px;
+
+      /* elevation - borders do most of the work, shadows only on floating layers */
+      --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+      --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.45);
+      --shadow-3: 0 16px 48px rgba(0, 0, 0, 0.6);
+
+      /* motion */
+      --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+      --dur-1: 120ms;
+      --dur-2: 200ms;
+      --dur-3: 320ms;
+
+      /* safe areas (Pixel punch-hole / gesture bar) */
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+
+      /* LEGACY ALIASES - still referenced by inline styles the JavaScript
+         writes, and by chat history saved to localStorage before this
+         redesign, so they must keep resolving. */
+      --bg-color: var(--bg);
+      --card-bg: var(--surface-1);
+      --text-gold: var(--gold);
+      --text-main: var(--text);
+      --text-muted: var(--text-3);
+      --input-bg: var(--surface-1);
+      --glow-subtle: var(--gold-soft);
+      --glow-strong: var(--gold-line);
+      --glass-edge: var(--border);
+      --danger-red: var(--danger);
+      --status-amber: var(--warn);
     }
-    
-    * { 
-      box-sizing: border-box; 
-      margin: 0; 
-      padding: 0; 
-      font-family: var(--font-mono); 
+
+    @media (min-width: 768px) {
+      :root { --fs-base: 1rem; --header-h: 60px; }
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: var(--fs-base);
+      line-height: var(--lh-body);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
       -webkit-tap-highlight-color: transparent;
-    }
-    
-    body { 
-      background-color: var(--bg-color); 
-      color: var(--text-main); 
-      display: flex; 
-      flex-direction: column; 
-      height: 100dvh; 
-      overflow: hidden; 
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      overflow: hidden;
       position: relative;
     }
 
-    body::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(circle at 50% 50%, var(--glow-subtle), transparent 70%);
-      pointer-events: none;
-      z-index: 0;
-      animation: ambient-breathe 5s ease-in-out infinite alternate;
+    button, input, select, textarea { font: inherit; color: inherit; }
+    button { -webkit-tap-highlight-color: transparent; }
+
+    /* One focus treatment everywhere: a gold ring for keyboard focus only. */
+    :focus { outline: none; }
+    :focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--r-sm); }
+
+    ::selection { background: var(--gold-soft); color: var(--text); }
+
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
     }
 
-    @keyframes ambient-breathe {
-      0% { opacity: 0.1; transform: scale(0.95); }
-      100% { opacity: 0.6; transform: scale(1.05); }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
     }
-    
+
     header { 
       display: flex; 
       justify-content: space-between; 
