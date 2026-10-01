@@ -14,7 +14,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TEST_FIXTURES, FIXTURE_VALUES, A2A_FIXTURE_SKILLS } from '../lib/fixtures.mjs';
+import { TEST_FIXTURES, FIXTURE_VALUES, A2A_FIXTURE_SKILLS, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
 
 // api/mcp.mjs reads X402_PAY_TO_ADDRESS at module load, and only then does a
 // paid call ever reach the facilitator - set it first so the facilitator spy
@@ -107,6 +107,7 @@ function assertFixtureResultBody(body, fixture, pg1RequestId) {
   for (const c of body.checks) {
     assert.equal(c.source, 'fixture');
     assert.deepEqual(Object.keys(c).sort(), ['checked_at', 'data_as_of', 'result', 'source']);
+    assert.equal(c.data_as_of, c.checked_at, `${fixture.tool}/${fixture.kind}: data_as_of must equal checked_at`);
   }
   assert.equal(body.request_id, pg1RequestId);
 }
@@ -121,13 +122,13 @@ test('MCP: every fixture returns its expected result, with no key and no network
     const label = `${fixture.tool}/${fixture.kind}`;
     const pg1RequestId = res.headers['X-Request-Id'];
     assert.ok(pg1RequestId, label);
-    assert.equal(res.body.request_id, pg1RequestId, label);
+    assert.equal(res.body.request_id, undefined, `${label}: request_id is never on the JSON-RPC envelope`);
 
     if (fixture.expected.outcome === 'service_unavailable') {
       assert.equal(res.statusCode, 503, label);
       assert.equal(res.body.error.code, SERVICE_UNAVAILABLE_MCP_CODES[fixture.tool], label);
       assert.match(res.body.error.message, /temporarily unavailable, please retry\.$/, label);
-      assert.deepEqual(res.body.error.data, { test_fixture: true }, label);
+      assert.deepEqual(res.body.error.data, { test_fixture: true, request_id: pg1RequestId }, label);
       continue;
     }
 
@@ -247,8 +248,8 @@ test('MCP: UNKNOWN fixtures reproduce the real upstream-failure shape for each t
     assert.equal(fixture.statusCode, real.statusCode);
     assert.equal(fixture.body.error.code, real.body.error.code);
     assert.equal(fixture.body.error.message, real.body.error.message);
-    assert.equal(real.body.error.data, undefined);
-    assert.deepEqual(fixture.body.error.data, { test_fixture: true });
+    assert.deepEqual(real.body.error.data, { request_id: real.headers['X-Request-Id'] });
+    assert.deepEqual(fixture.body.error.data, { test_fixture: true, request_id: fixture.headers['X-Request-Id'] });
   }
 
   // check_wallet_age: the upstream_unavailable isError shape, never found:false.
@@ -319,7 +320,7 @@ test('A2A: the 4 fixture skills return their expected result with no network act
     if (fixture.expected.outcome === 'service_unavailable') {
       assert.equal(res.statusCode, 503, label);
       assert.equal(res.body.error.code, -32010, label);
-      assert.deepEqual(res.body.error.data, { test_fixture: true }, label);
+      assert.deepEqual(res.body.error.data, { test_fixture: true, request_id: pg1RequestId }, label);
     } else if (fixture.expected.outcome === 'tool_error') {
       assert.equal(res.statusCode, 200, label);
       assert.equal(res.body.error.code, -32000, label);
@@ -329,6 +330,59 @@ test('A2A: the 4 fixture skills return their expected result with no network act
       assert.equal(res.statusCode, 200, label);
       const data = res.body.result.artifacts[0].parts[0].data;
       assertFixtureResultBody(data, fixture, pg1RequestId);
+    }
+  }
+  assert.deepEqual(calls, []);
+});
+
+// Fixture dates must stay valid forever: with the clock frozen 60 days from
+// now, every fixture still returns its documented verdict (over MCP and,
+// for the A2A skills, over A2A), check_domain_age FLAGGED is still exactly
+// FLAGGED_AGE_DAYS old relative to the frozen "today", and every check's
+// data_as_of still equals its checked_at.
+test('fixtures: with the clock frozen 60 days ahead, every fixture still returns its documented verdict', async (t) => {
+  withAllBackends(t);
+  const calls = spyFetch(t);
+  const frozenNow = Date.now() + 60 * 24 * 60 * 60 * 1000;
+  t.mock.timers.enable({ apis: ['Date'], now: frozenNow });
+  assert.equal(Date.now(), frozenNow);
+
+  for (const fixture of TEST_FIXTURES) {
+    const label = `${fixture.tool}/${fixture.kind} (+60d)`;
+    const res = await callMcp(fixture.tool, fixture.arguments);
+    if (fixture.expected.outcome === 'service_unavailable') {
+      assert.equal(res.statusCode, 503, label);
+      assert.equal(res.body.error.code, SERVICE_UNAVAILABLE_MCP_CODES[fixture.tool], label);
+      continue;
+    }
+    assert.equal(res.statusCode, 200, label);
+    const parsed = JSON.parse(res.body.result.content[0].text);
+    if (fixture.expected.outcome === 'tool_error') {
+      assert.equal(res.body.result.isError, true, label);
+      assert.equal(parsed.code, fixture.expected.error_code, label);
+      assert.equal(parsed.found, undefined, label);
+    }
+    assertFixtureResultBody(parsed, fixture, res.headers['X-Request-Id']);
+    for (const c of parsed.checks) assert.equal(c.checked_at, new Date(frozenNow).toISOString(), label);
+
+    if (fixture.tool === 'check_domain_age' && fixture.kind === 'FLAGGED') {
+      assert.equal(parsed.age_days, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, label);
+      assert.equal(parsed.registration_date, fixtureDaysAgoMidnightUtc(FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, frozenNow), label);
+      assert.ok(new Date(parsed.registration_date).getTime() > Date.now() - 30 * 24 * 60 * 60 * 1000, label);
+      assert.equal(parsed.newly_registered, true, label);
+    }
+  }
+
+  for (const fixture of TEST_FIXTURES.filter((f) => A2A_FIXTURE_SKILLS.includes(f.tool))) {
+    const label = `A2A ${fixture.tool}/${fixture.kind} (+60d)`;
+    const res = await callA2a(fixture.tool, fixture.arguments);
+    if (fixture.expected.outcome === 'service_unavailable') {
+      assert.equal(res.statusCode, 503, label);
+    } else if (fixture.expected.outcome === 'tool_error') {
+      assert.equal(res.body.error.data.code, fixture.expected.error_code, label);
+      assertFixtureResultBody(res.body.error.data, fixture, res.headers['X-Request-Id']);
+    } else {
+      assertFixtureResultBody(res.body.result.artifacts[0].parts[0].data, fixture, res.headers['X-Request-Id']);
     }
   }
   assert.deepEqual(calls, []);
