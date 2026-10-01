@@ -40,7 +40,10 @@ test('robots.txt exists and allows all crawlers', () => {
 // OpenAPI document is the primary discovery source, so every paid operation
 // needs an operationId, input + 200 output schemas, a 402 response, and
 // x-payment-info; every free operation needs security: [].
-const PAID_OPERATIONS = [['/api/ioc', 'get', '0.01']];
+// POST /api/ioc is listed too: the runtime answers POST with the same x402
+// challenge, and x402scan's probe prefers a POST advisory over GET, so the
+// POST operation must carry its own input schema (see the test below).
+const PAID_OPERATIONS = [['/api/ioc', 'get', '0.01'], ['/api/ioc', 'post', '0.01']];
 const FREE_OPERATIONS = [['/api/health', 'get']];
 
 function loadSpec() {
@@ -66,6 +69,9 @@ for (const [route, method, price] of PAID_OPERATIONS) {
     const queryParams = (op.parameters || []).filter((p) => p.in === 'query');
     assert.ok(queryParams.length > 0 || op.requestBody, 'expected an input schema (query parameters or requestBody)');
     for (const p of queryParams) assert.ok(p.schema && p.schema.type, `query parameter ${p.name} needs a typed schema`);
+    // Every input stays optional: callers with no parameters must keep working.
+    for (const p of op.parameters || []) assert.notEqual(p.required, true, `parameter ${p.name} must stay optional`);
+    if (op.requestBody) assert.notEqual(op.requestBody.required, true, 'requestBody must stay optional');
 
     const ok = op.responses['200'];
     assert.ok(ok, 'expected a 200 response');
@@ -94,6 +100,28 @@ for (const [route, method] of FREE_OPERATIONS) {
     assert.equal(op['x-payment-info'], undefined);
   });
 }
+
+test('openapi.json info.contact.email is set', () => {
+  assert.equal(loadSpec().info.contact?.email, 'gikewun@gmail.com');
+});
+
+// Mirrors extractInputSchema() in @agentcash/discovery (used by x402scan): an
+// operation has an input schema only if its own `parameters` array (not the
+// path item's) is non-empty or it has a requestBody with a content schema.
+// x402scan probes every method and prefers POST over GET, so every method the
+// runtime gates with x402 needs one (HEAD is only picked if neither exists).
+test('openapi.json gives every x402-gated /api/ioc method an operation-level input schema', () => {
+  const item = loadSpec().paths['/api/ioc'];
+  for (const method of ['get', 'post']) {
+    const op = item[method];
+    assert.ok(op, `expected ${method.toUpperCase()} /api/ioc to be documented`);
+    const params = (op.parameters || []).filter((p) => p && typeof p === 'object');
+    const body = Object.values(op.requestBody?.content || {}).some((c) => c && c.schema);
+    assert.ok(params.length > 0 || body, `${method.toUpperCase()} /api/ioc needs parameters or a requestBody`);
+  }
+  assert.deepEqual(item.post.parameters, item.get.parameters, 'POST reads the same query string as GET');
+  assert.deepEqual(item.post.responses, item.get.responses, 'POST returns the same responses as GET');
+});
 
 test('openapi.json lists every documented operation as either paid or free', () => {
   const spec = loadSpec();
