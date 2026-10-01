@@ -4,7 +4,23 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="theme-color" content="#0a0a0b">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
+  <script>
+    /* THEME, before first paint: resolves the saved Appearance setting
+       (System / Light / Dark, see applyTheme below) to data-theme on <html>
+       and matches the browser chrome colour, so there's no flash of the
+       wrong theme. Keep the key and colours in step with THEME_* below. */
+    (function () {
+      var t = 'system';
+      try { t = localStorage.getItem('pg1_theme') || 'system'; } catch (e) {}
+      if (t !== 'light' && t !== 'dark') {
+        t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+      }
+      document.documentElement.setAttribute('data-theme', t);
+      var m = document.querySelector('meta[name="theme-color"]');
+      if (m) m.setAttribute('content', t === 'light' ? '#f6f6f4' : '#0a0a0b');
+    })();
+  </script>
   <title>Project-Gifted1™</title>
   <link rel="icon" href="/brand/pg1-shield.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/brand/pg1-icon-192.png">
@@ -21,7 +37,8 @@
     @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/jetbrains-mono-latin-600-normal.woff2") format("woff2"); }
 
     /* DESIGN TOKENS - every colour, size, radius, shadow and duration used
-       below comes from here. Dark is the only (and default) theme. */
+       below comes from here. Dark is the default; the light overrides
+       follow this block. */
     :root {
       color-scheme: dark;
 
@@ -35,18 +52,35 @@
       --text: #ececee;
       --text-2: #a8a8b0;
       --text-3: #8a8a93;
+      --text-strong: #fff;
+      /* --gold is for gold text, icons and lines; --gold-fill is the bright
+         brand gold behind --on-gold text (buttons, switch, the shield).
+         They're the same in dark and split in light. */
       --gold: #f3c623;
+      --gold-fill: #f3c623;
       --gold-strong: #ffd84d;
       --gold-soft: rgba(243, 198, 35, 0.12);
+      --gold-hover: rgba(243, 198, 35, 0.2);
       --gold-line: rgba(243, 198, 35, 0.45);
+      --gold-glow: rgba(243, 198, 35, 0.11);
       --on-gold: #0a0a0b;
       --ok: #3ddc84;
       --warn: #ffb300;
+      --warn-soft: rgba(255, 179, 0, 0.07);
+      --warn-banner: rgba(255, 179, 0, 0.08);
+      --warn-line: rgba(255, 179, 0, 0.3);
+      --warn-edge: rgba(255, 179, 0, 0.35);
+      --warn-text: #ffe2a3;
       --danger: #ff5c5c;
       --danger-soft: rgba(255, 92, 92, 0.12);
       --danger-line: rgba(255, 92, 92, 0.45);
+      --danger-edge: rgba(255, 92, 92, 0.3);
+      --danger-text: #ffd0d0;
+      --on-danger: #0a0a0b;
       --info: #7cc4ff;
+      --info-hover: #a9d8ff;
       --scrim: rgba(5, 5, 6, 0.72);
+      --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a8a8b0' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
       --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--gold);
 
       /* type: 16px body on phones, 17px from 768px */
@@ -119,6 +153,52 @@
       --glass-edge: var(--border);
       --danger-red: var(--danger);
       --status-amber: var(--warn);
+    }
+
+    /* LIGHT THEME: colour and shadow overrides only - type, spacing and
+       motion are shared. Set by the <head> script / applyTheme(). Gold text
+       is a deeper gold so it passes WCAG AA on light surfaces; the filled
+       gold (--gold-fill) and the shield stay bright with dark text. */
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg: #f6f6f4;
+      --surface-1: #ffffff;
+      --surface-2: #efefec;
+      --surface-3: #e5e5e1;
+      --border: #e2e2dd;
+      --border-strong: #cbcbc5;
+      --text: #17171a;
+      --text-2: #46464d;
+      --text-3: #63636b;
+      --text-strong: #000;
+      --gold: #765600;
+      --gold-fill: #f3c623;
+      --gold-strong: #e8b90f;
+      --gold-soft: rgba(118, 86, 0, 0.1);
+      --gold-hover: rgba(118, 86, 0, 0.16);
+      --gold-line: rgba(118, 86, 0, 0.42);
+      --gold-glow: rgba(243, 198, 35, 0.22);
+      --on-gold: #0a0a0b;
+      --ok: #17723f;
+      --warn: #8a5300;
+      --warn-soft: rgba(160, 100, 0, 0.09);
+      --warn-banner: rgba(160, 100, 0, 0.1);
+      --warn-line: rgba(138, 83, 0, 0.32);
+      --warn-edge: rgba(138, 83, 0, 0.4);
+      --warn-text: #6b4000;
+      --danger: #b4232b;
+      --danger-soft: rgba(180, 35, 43, 0.08);
+      --danger-line: rgba(180, 35, 43, 0.42);
+      --danger-edge: rgba(180, 35, 43, 0.28);
+      --danger-text: #7d151b;
+      --on-danger: #fff;
+      --info: #0b5cad;
+      --info-hover: #084a8c;
+      --scrim: rgba(24, 24, 20, 0.38);
+      --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2346464d' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      --shadow-1: 0 1px 2px rgba(20, 20, 16, 0.08);
+      --shadow-2: 0 6px 20px rgba(20, 20, 16, 0.08);
+      --shadow-3: 0 16px 44px rgba(20, 20, 16, 0.16);
     }
 
     @media (min-width: 768px) {
@@ -213,7 +293,7 @@
     .icon-btn:focus-visible { border-radius: var(--r-full); }
     .icon-btn[aria-expanded="true"] { color: var(--gold); background: var(--gold-soft); }
 
-    /* PG1 lockup: letters follow the text colour, shield is --gold, the
+    /* PG1 lockup: letters follow the text colour, shield is --gold-fill, the
        "1" is --on-gold. Height sets the size; width follows (264:100). */
     .lockup { display: block; height: var(--lockup-h, 22px); width: calc(var(--lockup-h, 22px) * 2.64); color: var(--text); flex-shrink: 0; overflow: visible; }
     .lockup.is-lg { --lockup-h: 56px; }
@@ -259,7 +339,7 @@
       padding: 0 4px;
       border-radius: var(--r-full);
       background: var(--danger);
-      color: var(--on-gold);
+      color: var(--on-danger);
       font-size: 10px;
       font-weight: 700;
       line-height: 17px;
@@ -399,7 +479,7 @@
       background: var(--text-2);
       transition: transform var(--dur-2) var(--ease-out), background-color var(--dur-2) var(--ease-out);
     }
-    .switch[aria-checked="true"] { background: var(--gold); border-color: var(--gold); }
+    .switch[aria-checked="true"] { background: var(--gold-fill); border-color: var(--gold-fill); }
     .switch[aria-checked="true"]::after { transform: translateX(18px); background: var(--on-gold); }
     .switch:focus-visible { border-radius: var(--r-full); }
 
@@ -409,7 +489,7 @@
       min-height: var(--tap);
       padding: 0 34px 0 var(--sp-3);
       background-color: var(--surface-2);
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a8a8b0' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-image: var(--chevron);
       background-repeat: no-repeat;
       background-position: right 10px center;
       border: 1px solid var(--border-strong);
@@ -490,7 +570,7 @@
       overflow-wrap: anywhere;
       color: var(--text);
     }
-    .message-text strong { color: #fff; font-weight: 600; }
+    .message-text strong { color: var(--text-strong); font-weight: 600; }
 
     /* markdown blocks (formatMarkdown) */
     .md-h { display: block; color: var(--text); font-weight: 600; line-height: var(--lh-tight); margin: var(--sp-6) 0 var(--sp-2); }
@@ -503,7 +583,7 @@
     .md-list li::marker { color: var(--text-3); }
     .md-hr { border: 0; height: 1px; background: var(--border); margin: var(--sp-6) 0; }
     .md-link { color: var(--info); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; overflow-wrap: anywhere; }
-    .md-link:hover { color: #a9d8ff; }
+    .md-link:hover { color: var(--info-hover); }
     .md-code-inline {
       font-family: var(--font-mono);
       font-size: 0.875em;
@@ -599,7 +679,7 @@
       white-space: nowrap;
       transition: background-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
     }
-    .cmd-chip:hover { background: rgba(243, 198, 35, 0.2); }
+    .cmd-chip:hover { background: var(--gold-hover); }
     .cmd-chip:active { transform: scale(0.97); }
     .cmd-chip:focus-visible { border-radius: var(--r-full); }
 
@@ -663,7 +743,7 @@
       background: transparent;
       transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
     }
-    .approval-btn.approve { background: var(--gold); color: var(--on-gold); }
+    .approval-btn.approve { background: var(--gold-fill); color: var(--on-gold); }
     .approval-btn.approve:hover { background: var(--gold-strong); }
     .approval-btn.decline { border-color: var(--border-strong); color: var(--text); }
     .approval-btn.decline:hover { background: var(--danger-soft); border-color: var(--danger-line); color: var(--danger); }
@@ -750,13 +830,13 @@
     .message-bubble.error {
       padding: var(--sp-3) var(--sp-4);
       background: var(--danger-soft);
-      border: 1px solid rgba(255, 92, 92, 0.3);
+      border: 1px solid var(--danger-edge);
       border-radius: var(--r-lg);
     }
-    .message-bubble.error .message-text { color: #ffd0d0; }
+    .message-bubble.error .message-text { color: var(--danger-text); }
     .message-bubble.error > .msg-timestamp::before { color: var(--danger); }
-    .message-bubble.error.offline { background: rgba(255, 179, 0, 0.07); border-color: rgba(255, 179, 0, 0.3); }
-    .message-bubble.error.offline .message-text { color: #ffe2a3; }
+    .message-bubble.error.offline { background: var(--warn-soft); border-color: var(--warn-line); }
+    .message-bubble.error.offline .message-text { color: var(--warn-text); }
     .message-bubble.error.offline > .msg-timestamp::before { color: var(--warn); }
 
     /* ---------- BOTTOM: offline banner, toast and composer ---------- */
@@ -782,9 +862,9 @@
       gap: var(--sp-2);
       padding: var(--sp-2) var(--sp-3);
       border-radius: var(--r-full);
-      background: rgba(255, 179, 0, 0.08);
-      border: 1px solid rgba(255, 179, 0, 0.3);
-      color: #ffe2a3;
+      background: var(--warn-banner);
+      border: 1px solid var(--warn-line);
+      color: var(--warn-text);
       font-size: var(--fs-xs);
       line-height: 1.35;
       justify-content: center;
@@ -856,7 +936,7 @@
       transition: border-color var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
     }
     .composer:focus-within { border-color: var(--gold-line); box-shadow: var(--shadow-2), 0 0 0 3px var(--gold-soft); }
-    body:has(#header-status-dot[data-state="red"]) .composer { border-color: rgba(255, 179, 0, 0.35); }
+    body:has(#header-status-dot[data-state="red"]) .composer { border-color: var(--warn-edge); }
 
     .attach-chips {
       display: flex;
@@ -928,8 +1008,8 @@
     .icon-btn:has(input:focus-visible) { box-shadow: var(--focus-ring); }
 
     @keyframes mic-recording {
-      0% { box-shadow: 0 0 0 0 rgba(255, 92, 92, 0.45); }
-      100% { box-shadow: 0 0 0 8px rgba(255, 92, 92, 0); }
+      0% { box-shadow: 0 0 0 0 var(--danger-line); }
+      100% { box-shadow: 0 0 0 8px transparent; }
     }
     .mic-active {
       color: var(--danger) !important;
@@ -944,7 +1024,7 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      background: var(--gold);
+      background: var(--gold-fill);
       color: var(--on-gold);
       border: 0;
       border-radius: var(--r-full);
@@ -1111,7 +1191,7 @@
       width: 100%;
       min-height: 52px;
       padding: 0 var(--sp-5);
-      background: var(--gold);
+      background: var(--gold-fill);
       color: var(--on-gold);
       border: 1px solid transparent;
       border-radius: var(--r-full);
@@ -1169,7 +1249,7 @@
       mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 5 5L20 7'/%3E%3C/svg%3E") center / contain no-repeat;
       opacity: 0;
     }
-    .toggle-row input:checked { background: var(--gold); border-color: var(--gold); }
+    .toggle-row input:checked { background: var(--gold-fill); border-color: var(--gold-fill); }
     .toggle-row input:checked::after { opacity: 1; }
 
     /* lists inside overlays (threads, error log) */
@@ -1243,7 +1323,7 @@
       padding: max(9dvh, calc(var(--safe-top) + var(--sp-8))) var(--sp-5) var(--sp-5);
       overflow-y: auto;
       background:
-        radial-gradient(ellipse 90% 45% at 50% -8%, rgba(243, 198, 35, 0.11), transparent 70%),
+        radial-gradient(ellipse 90% 45% at 50% -8%, var(--gold-glow), transparent 70%),
         var(--bg);
       animation: none;
     }
@@ -1285,6 +1365,49 @@
     .gate .matrix-submit { margin-top: var(--sp-2); }
     .gate-foot { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-3); font-size: var(--fs-xs); color: var(--text-3); text-align: center; }
 
+    /* ---------- APPEARANCE: System / Light / Dark segmented control ----------
+       Native radios (arrow keys work), visually hidden; the label is the segment. */
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 2px;
+      margin: 0 var(--sp-3);
+      padding: 3px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-full);
+    }
+    .segment {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 40px;
+      padding: 0 var(--sp-2);
+      border-radius: var(--r-full);
+      color: var(--text-2);
+      font-size: var(--fs-sm);
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+    }
+    .segment::before { content: ""; position: absolute; inset: -2px 0; } /* 44px tap area */
+    .segment input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+    .segment:hover { color: var(--text); }
+    .segment:has(input:checked) { background: var(--surface-1); color: var(--text); box-shadow: var(--shadow-1), 0 0 0 1px var(--border-strong); }
+    .segment:has(input:focus-visible) { box-shadow: var(--focus-ring); }
+
+    /* Chat saved by much older builds carries inline dark-only colours
+       (white bold and inline code, cyan links, a red error line). Repaint
+       them from the theme tokens so old chats stay readable in light. */
+    :root[data-theme="light"] #chat-container strong[style*="color"] { color: var(--text-strong) !important; }
+    :root[data-theme="light"] #chat-container span[style*="rgba(243, 198, 35, 0.15)"] { color: var(--text) !important; background: var(--gold-soft) !important; }
+    :root[data-theme="light"] #chat-container a[style*="#22d3ee"] { color: var(--info) !important; }
+    :root[data-theme="light"] #chat-container .message-text[style*="#ff4444"] { color: var(--danger-text) !important; }
+    :root[data-theme="light"] #chat-container .message-text[style*="#888"] { color: var(--text-2) !important; }
+    :root[data-theme="light"] #chat-container pre[style*="rgba(0,0,0,0.35)"] { background: var(--surface-1) !important; }
+    :root[data-theme="light"] #chat-container [style*="rgba(243, 198, 35, 0.2)"] { background: var(--gold-soft) !important; }
+
     #vision-pip {
       position: absolute;
       top: calc(var(--header-h) + var(--safe-top) + var(--sp-3));
@@ -1310,8 +1433,8 @@
   <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
     <!-- BRAND: the PG1 lockup ("PG" + gold shield that is the "1") and the
          shield alone. Same geometry as public/brand/pg1-mark.svg. -->
-    <symbol id="pg1-lockup" viewBox="0 0 264 100"><g stroke="currentColor"><path d="M8.5 0V100M8.5 8.5H38A24.5 24.5 0 0 1 38 57.5H8.5M155.44 24.45A38 41.5 0 1 0 163.5 50H131.5" fill="none" stroke-width="17" stroke-linejoin="miter"/></g><path d="M221.76 0L262.5 15.2V47.3C262.5 73.9 245.1 91.85 221.76 100C198.4 91.85 181 73.9 181 47.3V15.2Z" style="fill: var(--gold)"/><path d="M220 20H233V72H220V37.5L208.5 43.5V31Z" style="fill: var(--on-gold)"/></symbol>
-    <symbol id="pg1-shield" viewBox="169.76 -2 104 104"><path d="M221.76 0L262.5 15.2V47.3C262.5 73.9 245.1 91.85 221.76 100C198.4 91.85 181 73.9 181 47.3V15.2Z" style="fill: var(--gold)"/><path d="M220 20H233V72H220V37.5L208.5 43.5V31Z" style="fill: var(--on-gold)"/></symbol>
+    <symbol id="pg1-lockup" viewBox="0 0 264 100"><g stroke="currentColor"><path d="M8.5 0V100M8.5 8.5H38A24.5 24.5 0 0 1 38 57.5H8.5M155.44 24.45A38 41.5 0 1 0 163.5 50H131.5" fill="none" stroke-width="17" stroke-linejoin="miter"/></g><path d="M221.76 0L262.5 15.2V47.3C262.5 73.9 245.1 91.85 221.76 100C198.4 91.85 181 73.9 181 47.3V15.2Z" style="fill: var(--gold-fill)"/><path d="M220 20H233V72H220V37.5L208.5 43.5V31Z" style="fill: var(--on-gold)"/></symbol>
+    <symbol id="pg1-shield" viewBox="169.76 -2 104 104"><path d="M221.76 0L262.5 15.2V47.3C262.5 73.9 245.1 91.85 221.76 100C198.4 91.85 181 73.9 181 47.3V15.2Z" style="fill: var(--gold-fill)"/><path d="M220 20H233V72H220V37.5L208.5 43.5V31Z" style="fill: var(--on-gold)"/></symbol>
     <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></symbol>
     <symbol id="i-threads" viewBox="0 0 24 24"><path d="M4 4h11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-4 3v-3H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M20 8a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-1v3l-3-3h-4"/></symbol>
     <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
@@ -1470,6 +1593,15 @@
           <option value="classic">PG1 Classic</option>
           <option value="field">PG1 Field</option>
         </select>
+      </div>
+    </div>
+
+    <div class="drawer-section" role="group" aria-labelledby="appearance-label">
+      <span class="drawer-label" id="appearance-label">Appearance</span>
+      <div class="segmented" id="theme-control" role="radiogroup" aria-labelledby="appearance-label">
+        <label class="segment"><input type="radio" name="pg1-theme" value="system" onchange="triggerHaptic(20); setThemeSetting(this.value)">System</label>
+        <label class="segment"><input type="radio" name="pg1-theme" value="light" onchange="triggerHaptic(20); setThemeSetting(this.value)">Light</label>
+        <label class="segment"><input type="radio" name="pg1-theme" value="dark" onchange="triggerHaptic(20); setThemeSetting(this.value)">Dark</label>
       </div>
     </div>
 
@@ -1708,6 +1840,8 @@
         });
         upgradeLegacyMessageActions();
         if (staleBubbles.length > 0) saveState();
+        // A saved empty state gets a fresh greeting and a live subtitle.
+        if (!document.querySelector('#chat-container .message-bubble:not(.welcome)')) renderWelcome();
       } else {
         renderWelcome();
       }
@@ -2259,8 +2393,65 @@
       saveState();
     }
 
+    // GREETING: a line from the current local-time band (plus a weekend
+    // line on Saturday and Sunday outside late hours), never the same line
+    // twice in a row - the last one shown is kept in localStorage.
+    const GREETING_KEY = 'pg1_last_greeting';
+    const GREETINGS = {
+      morning: ["Morning, operator.", "Early start. What are we watching?", "Good morning. Systems are steady."],
+      afternoon: ["Good afternoon, operator.", "Afternoon check-in?", "What needs a look today?"],
+      evening: ["Good evening, operator.", "Evening watch. What's on your mind?", "Winding down, or just getting started?"],
+      late: ["Working late, operator?", "Night watch is on.", "Quiet hours. PG1's still watching."]
+    };
+    const WEEKEND_GREETING = 'Weekend shift, operator?';
+
+    // Morning 5-12, afternoon 12-17, evening 17-22, late 22-5.
+    function greetingBand(hour) {
+      if (hour >= 5 && hour < 12) return 'morning';
+      if (hour >= 12 && hour < 17) return 'afternoon';
+      if (hour >= 17 && hour < 22) return 'evening';
+      return 'late';
+    }
+
+    function greetingPool(date) {
+      const band = greetingBand(date.getHours());
+      const pool = GREETINGS[band].slice();
+      const day = date.getDay();
+      if ((day === 0 || day === 6) && band !== 'late') pool.push(WEEKEND_GREETING);
+      return pool;
+    }
+
+    function pickGreeting(date, lastShown, random = Math.random) {
+      const pool = greetingPool(date);
+      const fresh = pool.filter((line) => line !== lastShown);
+      const choices = fresh.length > 0 ? fresh : pool;
+      return choices[Math.floor(random() * choices.length) % choices.length];
+    }
+
+    // The line under the greeting says what's actually going on: unresolved
+    // errors first, then the status light (renderIdleStatus), else all clear.
+    let lastUnresolvedErrorCount = 0;
+
+    function welcomeSubtitle(healthState, unresolvedCount) {
+      if (unresolvedCount > 0) {
+        return `${unresolvedCount} ${unresolvedCount === 1 ? 'error needs' : 'errors need'} a look. Open the error log from ➕.`;
+      }
+      if (healthState === 'red') return "Can't reach the core right now. Messages will fail until it's back.";
+      if (healthState === 'amber') return 'Responses may be slow right now.';
+      return 'PG1 is online. Ask anything, or pick a starting point.';
+    }
+
+    // Called by renderWelcome(), renderIdleStatus() and updateErrorLogBadge(),
+    // so the empty state follows the status and error count while it's up.
+    function refreshWelcomeSubtitle() {
+      const el = document.querySelector('#chat-container .message-bubble.welcome .message-text');
+      if (!el) return;
+      const text = welcomeSubtitle(lastHealthState, lastUnresolvedErrorCount);
+      if (el.textContent !== text) el.textContent = text;
+    }
+
     // EMPTY STATE: a fresh session and Clear chat both show the greeting
-    // from <template id="welcome-template">, with a time-of-day hello.
+    // from <template id="welcome-template">.
     function renderWelcome() {
       const container = document.getElementById('chat-container');
       const template = document.getElementById('welcome-template');
@@ -2268,19 +2459,66 @@
       container.innerHTML = '';
       container.appendChild(template.content.cloneNode(true));
       const now = new Date();
-      const hour = now.getHours();
       const title = document.getElementById('welcome-title');
       if (title) {
-        title.textContent = hour < 5 ? 'Working late, operator?'
-          : hour < 12 ? 'Good morning, operator'
-          : hour < 18 ? 'Good afternoon, operator'
-          : 'Good evening, operator';
+        let lastShown = null;
+        try { lastShown = localStorage.getItem(GREETING_KEY); } catch (e) {}
+        const line = pickGreeting(now, lastShown);
+        title.textContent = line;
+        try { localStorage.setItem(GREETING_KEY, line); } catch (e) {}
       }
       const welcomeTime = document.getElementById('welcome-timestamp');
       if (welcomeTime) {
         welcomeTime.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       }
+      refreshWelcomeSubtitle();
     }
+
+    // APPEARANCE: System / Light / Dark, saved per device. The <head> script
+    // already set data-theme before first paint; this keeps the drawer
+    // control in step and, on System, follows the phone's own setting live.
+    const THEME_KEY = 'pg1_theme';
+    const THEME_SETTINGS = ['system', 'light', 'dark'];
+    const THEME_COLORS = { light: '#f6f6f4', dark: '#0a0a0b' };
+    const THEME_MEDIA = '(prefers-color-scheme: light)';
+
+    function getThemeSetting() {
+      let saved = null;
+      try { saved = localStorage.getItem(THEME_KEY); } catch (e) {}
+      return THEME_SETTINGS.includes(saved) ? saved : 'system';
+    }
+
+    function resolveTheme(setting, prefersLight) {
+      if (setting === 'light' || setting === 'dark') return setting;
+      return prefersLight ? 'light' : 'dark';
+    }
+
+    function applyTheme(setting) {
+      const prefersLight = !!(window.matchMedia && window.matchMedia(THEME_MEDIA).matches);
+      const theme = resolveTheme(setting, prefersLight);
+      document.documentElement.setAttribute('data-theme', theme);
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', THEME_COLORS[theme]);
+      document.querySelectorAll('#theme-control input').forEach((input) => { input.checked = input.value === setting; });
+      return theme;
+    }
+
+    function setThemeSetting(setting) {
+      const value = THEME_SETTINGS.includes(setting) ? setting : 'system';
+      try { localStorage.setItem(THEME_KEY, value); } catch (e) {}
+      return applyTheme(value);
+    }
+
+    function watchSystemTheme() {
+      if (!window.matchMedia) return;
+      const media = window.matchMedia(THEME_MEDIA);
+      const onChange = () => { if (getThemeSetting() === 'system') applyTheme('system'); };
+      if (media.addEventListener) media.addEventListener('change', onChange);
+      else if (media.addListener) media.addListener(onChange);
+    }
+
+    applyTheme(getThemeSetting());
+    watchSystemTheme();
 
     function requestVaultExport() {
       const input = document.getElementById('prompt-input');
@@ -2431,6 +2669,7 @@
       if (announcer && announcer !== statusEl && announcer.textContent !== label) {
         announcer.textContent = label;
       }
+      if (typeof refreshWelcomeSubtitle === 'function') refreshWelcomeSubtitle();
     }
 
     async function checkApiHealth() {
@@ -2856,6 +3095,8 @@
       if (menuBtn) {
         menuBtn.setAttribute('aria-label', unresolvedCount > 0 ? `Quick commands, ${unresolvedCount} unresolved errors` : 'Quick commands');
       }
+      lastUnresolvedErrorCount = unresolvedCount;
+      if (typeof refreshWelcomeSubtitle === 'function') refreshWelcomeSubtitle();
     }
 
     async function markErrorResolved(id) {
