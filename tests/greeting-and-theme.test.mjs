@@ -396,14 +396,17 @@ test('sign-in: tagline sits under the mark, "Operator access" heads the form, sr
   assert.match(css, /\.gate-tagline \{[^}]*text-transform: uppercase;[^}]*color: var\(--gold\);/);
 });
 
-test('sign-in: no "sessions end" note; muted mono signature pinned above the safe area, hidden on short viewports', () => {
+test('sign-in: no "sessions end" note; gold mono signature pinned above the safe area, hidden on short viewports', () => {
   assert.ok(!html.includes('Sessions end when you close this tab.'));
   const gate = html.slice(html.indexOf('<div id="auth-modal"'), html.indexOf('<div id="vision-modal"'));
-  assert.match(gate, /<\/form>\s*<p class="gate-signature">Project-Gifted1<sup>™<\/sup><\/p>/);
+  // a legible "TM" superscript for sight, the real ™ for screen readers
+  assert.match(gate, /<\/form>\s*<p class="gate-signature">Project-Gifted1<sup><span aria-hidden="true">TM<\/span><span class="sr-only">™<\/span><\/sup><\/p>/);
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
   const rule = css.match(/\.gate-signature \{[^}]*\}/)[0];
-  for (const decl of ['position: fixed;', 'bottom: calc(var(--safe-bottom) + var(--sp-4));', 'font-family: var(--font-mono);', 'text-transform: uppercase;', 'color: var(--text-3);']) {
+  for (const decl of ['position: fixed;', 'bottom: calc(var(--safe-bottom) + var(--sp-4));', 'font-family: var(--font-mono);', 'font-size: 0.8125rem;', 'font-weight: 600;', 'letter-spacing: 0.14em;', 'text-transform: uppercase;', 'color: var(--gold);']) {
     assert.ok(rule.includes(decl), decl);
   }
+  const sup = css.match(/\.gate-signature sup \{[^}]*\}/)[0];
+  for (const decl of ['font-size: 0.65em;', 'font-weight: 600;']) assert.ok(sup.includes(decl), decl);
   assert.match(css, /@media \(max-height: 640px\) \{\s*\.gate-signature \{ display: none; \}/);
 });

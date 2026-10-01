@@ -1394,7 +1394,7 @@
     .reveal-btn[aria-pressed="true"] .icon-hide { display: block; }
     .gate .matrix-submit { margin-top: var(--sp-2); }
     /* Signature pinned to the bottom of the sign-in screen, above the safe
-       area. Muted (not gold) so it doesn't compete with the tagline. */
+       area, in gold text (passes AA in both themes). */
     .gate-signature {
       position: fixed;
       left: 0;
@@ -1402,15 +1402,21 @@
       bottom: calc(var(--safe-bottom) + var(--sp-4));
       padding-left: 0.14em; /* balances the tracking after the last letter */
       font-family: var(--font-mono);
-      font-size: var(--fs-2xs);
+      font-size: 0.8125rem; /* 13px */
+      font-weight: 600;
       line-height: var(--lh-tight);
       letter-spacing: 0.14em;
       text-transform: uppercase;
       text-align: center;
-      color: var(--text-3);
+      color: var(--gold);
       pointer-events: none;
     }
-    .gate-signature sup { position: relative; top: -0.45em; margin-left: 0.05em; font-size: 0.72em; line-height: 0; letter-spacing: 0; vertical-align: baseline; }
+    /* ™ drawn as "TM" letters at 0.65em (the mono font's own ™ glyph is a
+       tiny superscript already, ~3px tall at this size), raised so its top
+       lines up with the cap height; tracking plus the mono side bearings give
+       the hair of space after the "1". Screen readers get the real ™
+       from the sr-only span. */
+    .gate-signature sup { position: relative; top: -0.3em; margin-left: 0; font-size: 0.65em; font-weight: 600; line-height: 0; letter-spacing: 0.04em; vertical-align: baseline; }
     /* keyboard up (or any short viewport): the signature steps aside so it
        never overlaps or crowds the form */
     @media (max-height: 640px) {
@@ -1560,7 +1566,7 @@
       </div>
       <button type="submit" class="matrix-submit">Sign in</button>
     </form>
-    <p class="gate-signature">Project-Gifted1<sup>™</sup></p>
+    <p class="gate-signature">Project-Gifted1<sup><span aria-hidden="true">TM</span><span class="sr-only">™</span></sup></p>
   </div>
 
   <div id="vision-modal" class="matrix-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="vision-title">
