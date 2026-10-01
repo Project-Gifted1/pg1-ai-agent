@@ -163,110 +163,141 @@
       }
     }
 
-    header { 
-      display: flex; 
-      justify-content: space-between; 
-      align-items: center; 
-      padding: 12px 14px; 
-      background: rgba(3, 3, 3, 0.85);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-bottom: 1px solid var(--glass-edge);
-      z-index: 10; 
-      box-shadow: 0 4px 30px rgba(0,0,0,0.8);
+    /* ---------- LAYOUT: header ---------- */
+    .app-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: var(--sp-2);
+      min-height: calc(var(--header-h) + var(--safe-top));
+      padding: var(--safe-top) max(var(--sp-2), var(--safe-right)) 0 max(var(--sp-4), var(--safe-left));
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      position: relative;
+      z-index: 10;
+      flex-shrink: 0;
     }
-    
+
     /* TM FIX: the gradient text effect (background-clip: text) used to sit on
        the whole <h1>, including the ™. Browsers paint the clipped gradient
        from the ™'s original position but draw the gold ™ at its moved
        position, which produced two stacked ™ symbols. The gradient now lives
-       only on .brand-text, and the ™ is a separate plain gold element. */
-    header h1 { 
-      font-size: 15px; 
-      font-weight: 900; 
-      letter-spacing: 1px; 
+       only on .brand-text, and the ™ is a separate plain element. */
+    .app-header h1 {
+      font-size: var(--fs-sm);
+      font-weight: 700;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
-      white-space: nowrap; 
+      white-space: nowrap;
       display: flex;
-      align-items: flex-start; 
+      align-items: flex-start;
+      line-height: var(--lh-tight);
+      min-width: 0;
     }
 
     .brand-text {
-      background: linear-gradient(135deg, #b5852a 0%, #f3c623 25%, #fff2cd 50%, #f3c623 75%, #b5852a 100%);
-      background-size: 200% auto;
+      background: linear-gradient(110deg, #c9992a 0%, var(--gold) 35%, #fff2cd 50%, var(--gold) 65%, #c9992a 100%);
+      background-size: 250% auto;
+      background-position: 100% center;
       color: transparent;
       -webkit-background-clip: text;
       background-clip: text;
-      animation: sovereignShine 5s linear infinite;
-      filter: drop-shadow(0 0 8px rgba(243, 198, 35, 0.2));
+      animation: brand-shine 1.6s var(--ease-out) 0.3s 1 both;
     }
+    .brand-short { display: none; color: var(--gold); }
 
-    @keyframes sovereignShine {
-      to { background-position: 200% center; }
+    @keyframes brand-shine {
+      from { background-position: 100% center; }
+      to { background-position: 0% center; }
     }
 
     .tm-symbol {
-      font-size: 1em;
       font-family: Arial, Helvetica, sans-serif;
+      font-size: 0.75em;
       line-height: 1;
-      margin-left: 3px;
-      color: #ffffff;
-      font-weight: 900; 
+      margin-left: 2px;
+      color: var(--text);
+      font-weight: 700;
       letter-spacing: 0;
     }
-    
-    .header-controls { display: flex; gap: 6px; }
-    
-    .header-btn { 
-      background: rgba(255, 255, 255, 0.03); 
-      border: 1px solid transparent; 
-      color: var(--text-gold); 
-      width: 32px; 
-      height: 32px; 
-      border-radius: 6px; 
-      font-size: 14px; 
-      cursor: pointer; 
-      display: flex; 
-      align-items: center; 
-      justify-content: center; 
-      transition: all 0.3s ease;
-    }
-    .header-btn:hover {
-      background: rgba(243, 198, 35, 0.08);
-      box-shadow: 0 0 15px var(--glow-strong);
-    }
-    .header-btn:active { transform: scale(0.92); }
 
-    .header-btn-wrap { position: relative; display: inline-block; }
+    @media (max-width: 399px) {
+      .brand-text { display: none; }
+      .brand-short { display: inline; }
+    }
+
+    .header-controls { display: flex; align-items: center; gap: 2px; }
+
+    .icon {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.75;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .header-btn {
+      background: transparent;
+      border: 0;
+      color: var(--text-2);
+      width: var(--tap);
+      height: var(--tap);
+      border-radius: var(--r-md);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+    }
+    .header-btn:hover { background: var(--surface-2); color: var(--text); }
+    .header-btn:active { transform: scale(0.94); background: var(--surface-3); }
+    .header-btn[aria-expanded="true"] { color: var(--gold); background: var(--gold-soft); }
+    .header-btn:focus-visible { border-radius: var(--r-md); }
+
+    .header-btn-wrap { position: relative; display: inline-flex; }
     .error-log-badge {
       position: absolute;
-      top: -4px;
-      right: -4px;
-      min-width: 14px;
-      height: 14px;
-      padding: 0 3px;
-      border-radius: 7px;
-      background: var(--danger-red);
-      color: #fff;
-      font-size: 9px;
-      line-height: 14px;
+      top: 6px;
+      right: 4px;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      border-radius: var(--r-full);
+      background: var(--danger);
+      color: var(--on-gold);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 16px;
       text-align: center;
       display: none;
       align-items: center;
       justify-content: center;
+      box-shadow: 0 0 0 2px var(--bg);
       pointer-events: none;
     }
 
-    #chat-container { 
-      flex: 1; 
-      overflow-y: auto; 
-      padding: 16px 20px; 
-      display: flex; 
-      flex-direction: column; 
-      gap: 20px; 
-      z-index: 2;
+    /* ---------- LAYOUT: thread ---------- */
+    #chat-container {
+      flex: 1;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scroll-padding-bottom: var(--sp-6);
+      padding-top: var(--sp-6);
+      padding-bottom: var(--sp-6);
+      /* a centred reading column on wide screens, a 16px gutter on phones */
+      padding-left: max(var(--sp-4), var(--safe-left), calc((100% - var(--measure)) / 2));
+      padding-right: max(var(--sp-4), var(--safe-right), calc((100% - var(--measure)) / 2));
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-6);
+      position: relative;
+      z-index: 1;
     }
-    
+
     .message-bubble { 
       background: var(--card-bg); 
       border: 1px solid var(--glass-edge); 
@@ -354,19 +385,23 @@
       box-shadow: 0 10px 30px rgba(0,0,0,0.9), 0 0 15px var(--glow-subtle);
     }
     
-    .footer-panel { 
-      padding: 14px 16px; 
-      background: rgba(3, 3, 3, 0.85);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-top: 1px solid var(--glass-edge); 
-      display: flex; 
-      flex-direction: column; 
-      gap: 12px; 
+    /* ---------- LAYOUT: bottom panel ---------- */
+    .footer-panel {
+      padding: var(--sp-2) max(var(--sp-3), var(--safe-right)) calc(var(--sp-3) + var(--safe-bottom)) max(var(--sp-3), var(--safe-left));
+      background: linear-gradient(to bottom, transparent, var(--bg) var(--sp-3));
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+      position: relative;
       z-index: 10;
-      box-shadow: 0 -5px 30px rgba(0,0,0,0.8);
+      flex-shrink: 0;
     }
-    
+    .footer-panel > * {
+      width: 100%;
+      max-width: calc(var(--measure) + var(--sp-4));
+      margin-inline: auto;
+    }
+
     .telemetry-row { 
       display: flex; 
       justify-content: space-between; 
@@ -447,7 +482,6 @@
     .execute-btn:hover { filter: brightness(1.15); box-shadow: 0 0 20px var(--glow-strong); }
     .execute-btn:active { transform: scale(0.94); }
     
-    .quick-row { display: none; }
     .quick-menu { display: none; position: fixed; top: 58px; right: 12px; z-index: 60; flex-direction: column; gap: 8px; padding: 10px; background: #0a0a0a; border: 1px solid rgba(243, 198, 35, 0.3); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.9); }
     .quick-menu.open { display: flex; }
     .quick-menu .quick-chip { text-align: left; padding: 10px 16px; font-size: 11px; }
@@ -518,14 +552,52 @@
     .thread-action-btn:active { transform: scale(0.9); }
 
     #vision-pip {
-      position: absolute; top: 60px; right: 16px; width: 110px; height: 160px;
-      background: #000; border: 1px solid var(--text-gold); border-radius: 8px;
-      z-index: 50; display: none; object-fit: cover;
-      box-shadow: 0 0 20px rgba(243, 198, 35, 0.4); pointer-events: none;
+      position: absolute;
+      top: calc(var(--header-h) + var(--safe-top) + var(--sp-3));
+      right: max(var(--sp-4), var(--safe-right));
+      width: 104px;
+      height: 148px;
+      background: var(--bg);
+      border: 1px solid var(--gold-line);
+      border-radius: var(--r-md);
+      z-index: 50;
+      display: none;
+      object-fit: cover;
+      box-shadow: var(--shadow-2);
+      pointer-events: none;
     }
   </style>
 </head>
 <body>
+
+  <!-- ICON SPRITE: PG1's own line icons, referenced with <use href="#i-...">. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="i-threads" viewBox="0 0 24 24"><path d="M4 4h11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-4 3v-3H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M20 8a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-1v3l-3-3h-4"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-export" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4h6v3"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24"><path d="m20 11.5-8 8a5 5 0 0 1-7-7l8.5-8.5a3.5 3.5 0 0 1 5 5L10 17.5a2 2 0 0 1-3-3L14.5 7"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></symbol>
+    <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="i-screen" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><rect x="9" y="9" width="6" height="6" rx="1"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14"/><path d="M12 17.5h.01"/></symbol>
+    <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></symbol>
+    <symbol id="i-radar" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12l6.5-6.5"/></symbol>
+    <symbol id="i-cart" viewBox="0 0 24 24"><path d="M3 4h2l2.5 11h11L21 8H7"/><circle cx="9" cy="19.5" r="1.3"/><circle cx="18" cy="19.5" r="1.3"/></symbol>
+    <symbol id="i-vault" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+    <symbol id="i-sync" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4.5L4 8M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.5 4.5L20 16M20 20v-4h-4"/></symbol>
+    <symbol id="i-wave" viewBox="0 0 24 24"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5 2.5 20h19z"/><path d="M12 10v4M12 17h.01"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></symbol>
+  </svg>
 
   <video id="vision-pip" autoplay playsinline muted></video>
 
@@ -580,16 +652,16 @@
     </div>
   </div>
 
-  <header>
-    <h1><span class="brand-text">PROJECT-GIFTED1</span><span class="tm-symbol">™</span></h1>
+  <header class="app-header">
+    <h1 aria-label="Project-Gifted1"><span class="brand-text" aria-hidden="true">PROJECT-GIFTED1</span><span class="brand-short" aria-hidden="true">PG1</span><span class="tm-symbol" aria-hidden="true">™</span></h1>
     <div class="header-controls">
-      <button class="header-btn" onclick="triggerHaptic(); openThreadsModal()" title="Manage Threads">💬</button>
-      <button class="header-btn" onclick="triggerHaptic(); openVisionMatrix()" title="Vision Matrix">👁️</button>
-      <button class="header-btn" onclick="triggerHaptic(); requestVaultExport()" title="Export Transcript">📄</button>
-      <button class="header-btn" onclick="triggerHaptic(); clearChat()" title="Clear Chat">🗑️</button>
+      <button type="button" class="header-btn" onclick="triggerHaptic(); openThreadsModal()" title="Manage Threads" aria-label="Manage threads"><svg class="icon" aria-hidden="true"><use href="#i-threads"/></svg></button>
+      <button type="button" class="header-btn" onclick="triggerHaptic(); openVisionMatrix()" title="Vision Matrix" aria-label="Vision matrix"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg></button>
+      <button type="button" class="header-btn" onclick="triggerHaptic(); requestVaultExport()" title="Export Transcript" aria-label="Export transcript"><svg class="icon" aria-hidden="true"><use href="#i-export"/></svg></button>
+      <button type="button" class="header-btn" onclick="triggerHaptic(); clearChat()" title="Clear Chat" aria-label="Clear chat"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button>
       <div class="header-btn-wrap">
-        <button class="header-btn" onclick="triggerHaptic(); toggleQuickMenu()" title="Quick Commands">➕</button>
-        <span id="error-log-badge" class="error-log-badge"></span>
+        <button type="button" id="quick-menu-btn" class="header-btn" onclick="triggerHaptic(); toggleQuickMenu()" title="Quick Commands" aria-label="Quick commands" aria-haspopup="true" aria-expanded="false" aria-controls="quick-menu"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
+        <span id="error-log-badge" class="error-log-badge" aria-hidden="true"></span>
       </div>
     </div>
   </header>
@@ -620,7 +692,7 @@
     </div>
   </div>
 
-  <div id="chat-container">
+  <main id="chat-container" role="log" aria-label="Conversation" tabindex="-1">
     <div class="message-bubble" id="welcome-bubble">
       <span class="msg-timestamp" id="welcome-timestamp"></span>
       <div class="message-text">Greetings. New session initialized. PG1 Sovereign Agent operational. Point the core engine where you need it next—whether that's deploying new endpoints, committing patches, or running real-time database queries! 🛡️ ⚡</div>
@@ -630,7 +702,7 @@
         <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
       </div>
     </div>
-  </div>
+  </main>
 
   <div class="footer-panel">
     <div class="telemetry-row">
@@ -647,12 +719,6 @@
       </span>
     </div>
     
-    <div class="quick-row">
-      <button class="quick-chip" onclick="triggerHaptic(30); document.getElementById('prompt-input').value='/status'; submitDirective();">STATUS</button>
-      <button class="quick-chip" onclick="triggerHaptic(30); document.getElementById('prompt-input').value='/threat-radar'; submitDirective();">RADAR</button>
-      <button class="quick-chip" onclick="triggerHaptic(30); document.getElementById('prompt-input').value='/commerce-status'; submitDirective();">COMMERCE</button>
-      <button class="quick-chip" onclick="triggerHaptic(30); document.getElementById('prompt-input').value='/sync-vault'; submitDirective();">VAULT</button>
-    </div>
     <div class="command-deck">
       <button id="mic-btn" class="tool-btn" title="Voice Input" onclick="triggerHaptic(); toggleRecording()">🎤</button>
       <label class="tool-btn" title="Attach Files">
