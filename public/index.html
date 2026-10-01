@@ -647,92 +647,220 @@
       margin-inline: auto;
     }
 
-    .telemetry-row { 
-      display: flex; 
-      justify-content: space-between; 
-      align-items: center; 
-      padding: 0 4px;
-    }
-    
-    .voice-group { display: flex; align-items: center; gap: 12px; }
-    
-    .stealth-select, .stealth-btn {
-      background: transparent; border: none; color: var(--text-gold);
-      font-size: 11px; font-weight: bold; text-transform: uppercase;
-      letter-spacing: 1px; cursor: pointer; outline: none;
-      transition: all 0.2s; opacity: 0.7;
-    }
-    .stealth-select:hover, .stealth-btn:hover { opacity: 1; text-shadow: 0 0 10px var(--text-gold); }
-    .stealth-select option { background: var(--bg-color); color: var(--text-gold); }
-
-    .status-indicator { 
-      font-size: 11px; color: #999; letter-spacing: 1.5px; 
-      text-transform: uppercase; display: flex; align-items: center; gap: 8px;
+    /* ---------- COMPOSER: telemetry row ---------- */
+    .telemetry-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: var(--sp-2);
+      min-width: 0;
     }
 
-    .status-dot { 
-      display: inline-block; width: 6px; height: 6px;
-      background-color: #00ff66; border-radius: 50%;
-      box-shadow: 0 0 10px #00ff66;
-      animation: pulse-dot 1.5s infinite alternate;
+    .voice-group { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
+
+    .stealth-btn, .stealth-select {
+      min-height: var(--tap);
+      background: transparent;
+      border: 0;
+      border-radius: var(--r-md);
+      color: var(--text-2);
+      cursor: pointer;
+      transition: background-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
     }
-    @keyframes pulse-dot {
-      from { opacity: 0.4; box-shadow: 0 0 3px #00ff66; }
-      to { opacity: 1; box-shadow: 0 0 12px #00ff66; }
+    .stealth-btn:hover, .stealth-select:hover { background: var(--surface-2); color: var(--text); }
+    .stealth-btn:focus-visible, .stealth-select:focus-visible { border-radius: var(--r-md); }
+
+    /* VOICE toggle: a small switch-like pill; the dot lights when on */
+    .voice-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sp-2);
+      padding: 0 var(--sp-3) 0 var(--sp-2);
+      font-family: var(--font-mono);
+      font-size: var(--fs-2xs);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
     }
-    
-    .command-deck { 
-      display: flex; align-items: flex-end; 
-      background: var(--input-bg); border: 1px solid var(--glass-edge);
-      border-radius: 12px; padding: 6px; gap: 6px;
-      transition: all 0.3s ease; box-shadow: inset 0 0 15px rgba(0,0,0,0.6);
+    .voice-toggle::before {
+      content: "";
+      width: 22px;
+      height: 12px;
+      flex-shrink: 0;
+      border-radius: var(--r-full);
+      border: 1px solid var(--border-strong);
+      background: radial-gradient(circle at 5px 50%, var(--text-3) 3px, transparent 3.5px);
+      transition: background var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out);
+    }
+    .voice-toggle.is-on { color: var(--gold); }
+    .voice-toggle.is-on::before {
+      border-color: var(--gold-line);
+      background: radial-gradient(circle at 15px 50%, var(--gold) 3px, transparent 3.5px), var(--gold-soft);
+    }
+
+    .stealth-select {
+      -webkit-appearance: none;
+      appearance: none;
+      padding: 0 26px 0 var(--sp-2);
+      font-size: var(--fs-xs);
+      font-weight: 500;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a8a8b0' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+    }
+    .stealth-select option { background: var(--surface-2); color: var(--text); }
+
+    /* Status signal chip. The JS paints the dot colour inline (green / amber
+       / red via tokens); the chip tints itself from that with :has(). */
+    .status-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 32px;
+      min-width: 0;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-full);
+      background: var(--surface-1);
+      color: var(--text-2);
+      font-family: var(--font-mono);
+      font-size: var(--fs-2xs);
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex-shrink: 1;
+      transition: border-color var(--dur-2) var(--ease-out), background-color var(--dur-2) var(--ease-out);
+    }
+    .status-indicator[style*="cursor: pointer"] { min-height: var(--tap); border-color: var(--gold-line); }
+    .status-indicator:has(.status-dot[style*="danger"]) { border-color: rgba(255, 92, 92, 0.45); background: var(--danger-soft); color: #ffc9c9 !important; }
+    .status-indicator:has(.status-dot[style*="amber"]) { border-color: rgba(255, 179, 0, 0.4); }
+
+    .status-dot {
+      display: inline-block;
+      flex-shrink: 0;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--ok);
+      color: var(--ok);
+      box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent) !important;
+      animation: status-pulse 2.4s ease-in-out infinite;
+    }
+    @keyframes status-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.55; }
+    }
+
+    /* ---------- COMPOSER: input deck ---------- */
+    .command-deck {
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+      padding: var(--sp-1);
+      background: var(--surface-1);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-xl);
+      box-shadow: var(--shadow-2);
+      transition: border-color var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
     }
     .command-deck:focus-within {
-      box-shadow: 0 0 20px var(--glow-strong), inset 0 0 10px var(--glow-subtle);
-      border-color: rgba(243, 198, 35, 0.3);
+      border-color: var(--gold-line);
+      box-shadow: var(--shadow-2), 0 0 0 3px var(--gold-soft);
     }
-    
-    .tool-btn { 
-      background: transparent; border: none; color: var(--text-gold); 
-      border-radius: 8px; width: 40px; height: 40px; 
-      display: flex; align-items: center; justify-content: center; 
-      cursor: pointer; font-size: 18px; transition: all 0.2s;
-      flex-shrink: 0; opacity: 0.8;
+    body:has(#sys-status .status-dot[style*="danger"]) .command-deck { border-color: rgba(255, 92, 92, 0.45); }
+
+    .tool-btn {
+      position: relative;
+      flex-shrink: 0;
+      width: var(--tap);
+      height: var(--tap);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: 0;
+      border-radius: var(--r-full);
+      color: var(--text-2);
+      cursor: pointer;
+      transition: background-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
     }
-    .tool-btn:hover { background: rgba(243, 198, 35, 0.08); opacity: 1; }
-    .tool-btn:active { transform: scale(0.9); }
+    .tool-btn:hover { background: var(--surface-3); color: var(--text); }
+    .tool-btn:active { transform: scale(0.94); }
+    .tool-btn:focus-visible, .tool-btn:has(input:focus-visible) { box-shadow: var(--focus-ring); border-radius: var(--r-full); }
 
     @keyframes mic-recording {
-      0% { color: #ff4444; text-shadow: 0 0 5px #ff4444; background: rgba(255, 68, 68, 0.1); }
-      100% { color: #ff4444; text-shadow: 0 0 18px #ff4444; background: rgba(255, 68, 68, 0.25); transform: scale(1.05); }
+      0% { box-shadow: 0 0 0 0 rgba(255, 92, 92, 0.45); }
+      100% { box-shadow: 0 0 0 8px rgba(255, 92, 92, 0); }
     }
-    .mic-active { animation: mic-recording 0.6s infinite alternate !important; opacity: 1 !important; }
-    
-    textarea { 
-      flex: 1; background: transparent; border: none; color: #fff; 
-      padding: 11px 8px; font-size: 14px; letter-spacing: 0.5px;
-      resize: none; min-height: 40px; max-height: 120px;
-      outline: none; line-height: 1.5;
+    .mic-active {
+      color: var(--danger) !important;
+      background: var(--danger-soft) !important;
+      animation: mic-recording 1s var(--ease-out) infinite;
     }
-    textarea::placeholder { color: #777; }
-    
-    .execute-btn { 
-      background: var(--text-gold); color: #000; border: none; 
-      font-weight: bold; padding: 0 16px; border-radius: 8px; 
-      height: 40px; font-size: 12px; cursor: pointer; 
-      text-transform: uppercase; letter-spacing: 1.5px;
-      transition: all 0.2s; flex-shrink: 0;
-      box-shadow: 0 0 10px rgba(243, 198, 35, 0.2);
+
+    textarea {
+      flex: 1;
+      min-width: 0;
+      min-height: var(--tap);
+      max-height: 40dvh;
+      padding: 10px var(--sp-2);
+      background: transparent;
+      border: 0;
+      outline: none;
+      resize: none;
+      color: var(--text);
+      font-size: 1rem; /* 16px: never smaller, or mobile browsers zoom on focus */
+      line-height: 1.5;
+      overflow-y: auto;
     }
-    .execute-btn:hover { filter: brightness(1.15); box-shadow: 0 0 20px var(--glow-strong); }
+    textarea::placeholder { color: var(--text-3); }
+    textarea:focus-visible { box-shadow: none; }
+
+    .execute-btn {
+      flex-shrink: 0;
+      height: var(--tap);
+      min-width: var(--tap);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--sp-2);
+      padding: 0;
+      background: var(--gold);
+      color: var(--on-gold);
+      border: 0;
+      border-radius: var(--r-full);
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+    }
+    .execute-btn .icon { stroke-width: 2.25; }
+    .execute-btn:hover { background: var(--gold-strong); }
     .execute-btn:active { transform: scale(0.94); }
-    
+    .execute-btn:focus-visible { border-radius: var(--r-full); }
+    .execute-label { display: none; }
+    @media (min-width: 560px) {
+      .execute-btn { padding: 0 var(--sp-5) 0 var(--sp-4); }
+      .execute-label { display: inline; }
+    }
+
+    /* the native file input stays focusable (keyboard) but invisible */
+    input[type="file"] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+    }
+
     .quick-menu { display: none; position: fixed; top: 58px; right: 12px; z-index: 60; flex-direction: column; gap: 8px; padding: 10px; background: #0a0a0a; border: 1px solid rgba(243, 198, 35, 0.3); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.9); }
     .quick-menu.open { display: flex; }
     .quick-menu .quick-chip { text-align: left; padding: 10px 16px; font-size: 11px; }
     .quick-chip { flex-shrink: 0; background: transparent; border: 1px solid rgba(243, 198, 35, 0.4); color: var(--text-gold); border-radius: 14px; padding: 6px 12px; font-size: 10px; font-weight: bold; letter-spacing: 1px; font-family: var(--font-mono); cursor: pointer; }
     .quick-chip:active { transform: scale(0.92); }
-    input[type="file"] { display: none; }
 
     .matrix-modal { 
       position: fixed; inset: 0; background: rgba(0,0,0,0.92);
@@ -955,26 +1083,31 @@
   <div class="footer-panel">
     <div class="telemetry-row">
       <div class="voice-group">
-        <button id="voice-btn" class="stealth-btn" onclick="triggerHaptic(); toggleVoice()">VOICE: OFF</button>
-        <select id="voice-profile-select" class="stealth-select" onchange="triggerHaptic(30); localStorage.setItem('pg1_voice_profile', this.value)">
-          <option value="core">PG1 Core</option>
-          <option value="classic">PG1 Classic</option>
-          <option value="field">PG1 Field</option>
-        </select>
+        <button type="button" id="voice-btn" class="stealth-btn voice-toggle" onclick="triggerHaptic(); toggleVoice()" aria-pressed="false">VOICE: OFF</button>
+        <label>
+          <span class="sr-only">Voice profile</span>
+          <select id="voice-profile-select" class="stealth-select" onchange="triggerHaptic(30); localStorage.setItem('pg1_voice_profile', this.value)">
+            <option value="core">PG1 Core</option>
+            <option value="classic">PG1 Classic</option>
+            <option value="field">PG1 Field</option>
+          </select>
+        </label>
       </div>
-      <span id="sys-status" class="status-indicator">
+      <span id="sys-status" class="status-indicator" role="status" aria-live="polite">
         <span class="status-dot"></span>ACTIVE | API LINKED
       </span>
     </div>
-    
+
     <div class="command-deck">
-      <button id="mic-btn" class="tool-btn" title="Voice Input" onclick="triggerHaptic(); toggleRecording()">🎤</button>
+      <button type="button" id="mic-btn" class="tool-btn" title="Voice Input" aria-label="Voice input" onclick="triggerHaptic(); toggleRecording()"><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg></button>
       <label class="tool-btn" title="Attach Files">
-        📎
+        <svg class="icon" aria-hidden="true"><use href="#i-clip"/></svg>
+        <span class="sr-only">Attach files</span>
         <input type="file" id="file-input" multiple onchange="triggerHaptic(); handleFileSelect(event)">
       </label>
-      <textarea id="prompt-input" rows="1" placeholder="Directive..." onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
-      <button class="execute-btn" onclick="triggerHaptic(80); submitDirective()">EXECUTE</button>
+      <label for="prompt-input" class="sr-only">Directive</label>
+      <textarea id="prompt-input" rows="1" placeholder="Directive..." enterkeyhint="send" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+      <button type="button" class="execute-btn" onclick="triggerHaptic(80); submitDirective()" aria-label="Execute"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg><span class="execute-label" aria-hidden="true">Execute</span></button>
     </div>
   </div>
 
@@ -1602,8 +1735,8 @@
     function toggleVoice() {
       voiceActive = !voiceActive;
       const btn = document.getElementById('voice-btn');
-      btn.style.color = voiceActive ? '#00ff66' : 'var(--text-gold)';
-      btn.style.textShadow = voiceActive ? '0 0 10px #00ff66' : 'none';
+      btn.classList.toggle('is-on', voiceActive);
+      btn.setAttribute('aria-pressed', String(voiceActive));
       btn.textContent = voiceActive ? 'VOICE: ON' : 'VOICE: OFF';
       
       if (voiceActive) {
@@ -1677,7 +1810,7 @@
           if (processedCount === files.length) {
             const statusEl = document.getElementById('sys-status');
             const fileText = files.length === 1 ? files[0].name : `${files.length} FILES ATTACHED`;
-            statusEl.innerHTML = `<span class="status-dot" style="background-color: var(--text-gold); box-shadow: 0 0 10px var(--text-gold);"></span>${escapeHTML(fileText)}`;
+            statusEl.innerHTML = `<span class="status-dot" style="background-color: var(--text-gold); color: var(--text-gold);"></span>${escapeHTML(fileText)}`;
             statusEl.style.color = 'var(--text-gold)';
           }
         };
@@ -1712,7 +1845,7 @@
     function healthStateColor(state) {
       if (state === 'red') return 'var(--danger-red)';
       if (state === 'amber') return 'var(--status-amber)';
-      return '#00ff66';
+      return 'var(--ok)';
     }
     function healthStateLabel(state) {
       if (state === 'red') return 'OFFLINE';
@@ -1724,8 +1857,8 @@
       const statusEl = document.getElementById('sys-status');
       if (!statusEl) return;
       const color = healthStateColor(lastHealthState);
-      statusEl.innerHTML = `<span class="status-dot" style="background-color:${color}; box-shadow: 0 0 10px ${color};"></span>${healthStateLabel(lastHealthState)}`;
-      statusEl.style.color = '#999';
+      statusEl.innerHTML = `<span class="status-dot" style="background-color:${color}; color:${color};"></span>${healthStateLabel(lastHealthState)}`;
+      statusEl.style.color = 'var(--text-2)';
     }
 
     async function checkApiHealth() {
