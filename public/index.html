@@ -240,7 +240,7 @@
     ::selection { background: var(--gold-soft); color: var(--text); }
 
     /* no orphan words in short headings and notes */
-    h1, h2, .modal-note, .gate-foot, .drawer-foot, .status-detail, .welcome .message-text, .offline-banner { text-wrap: balance; }
+    h1, h2, .modal-note, .drawer-foot, .status-detail, .welcome .message-text, .offline-banner { text-wrap: balance; }
 
     .sr-only {
       position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -1393,7 +1393,29 @@
     .reveal-btn[aria-pressed="true"] .icon-show { display: none; }
     .reveal-btn[aria-pressed="true"] .icon-hide { display: block; }
     .gate .matrix-submit { margin-top: var(--sp-2); }
-    .gate-foot { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-3); font-size: var(--fs-xs); color: var(--text-3); text-align: center; }
+    /* Signature pinned to the bottom of the sign-in screen, above the safe
+       area. Muted (not gold) so it doesn't compete with the tagline. */
+    .gate-signature {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: calc(var(--safe-bottom) + var(--sp-4));
+      padding-left: 0.14em; /* balances the tracking after the last letter */
+      font-family: var(--font-mono);
+      font-size: var(--fs-2xs);
+      line-height: var(--lh-tight);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      text-align: center;
+      color: var(--text-3);
+      pointer-events: none;
+    }
+    .gate-signature sup { position: relative; top: -0.45em; margin-left: 0.05em; font-size: 0.72em; line-height: 0; letter-spacing: 0; vertical-align: baseline; }
+    /* keyboard up (or any short viewport): the signature steps aside so it
+       never overlaps or crowds the form */
+    @media (max-height: 640px) {
+      .gate-signature { display: none; }
+    }
     /* KEYBOARD UP: the viewport resizes with the keyboard
        (interactive-widget=resizes-content), so a short viewport tightens the
        spacing and keeps Sign in above the keys. */
@@ -1537,8 +1559,8 @@
         </div>
       </div>
       <button type="submit" class="matrix-submit">Sign in</button>
-      <p class="gate-foot">Sessions end when you close this tab.</p>
     </form>
+    <p class="gate-signature">Project-Gifted1<sup>™</sup></p>
   </div>
 
   <div id="vision-modal" class="matrix-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="vision-title">

@@ -395,3 +395,15 @@ test('sign-in: tagline sits under the mark, "Operator access" heads the form, sr
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
   assert.match(css, /\.gate-tagline \{[^}]*text-transform: uppercase;[^}]*color: var\(--gold\);/);
 });
+
+test('sign-in: no "sessions end" note; muted mono signature pinned above the safe area, hidden on short viewports', () => {
+  assert.ok(!html.includes('Sessions end when you close this tab.'));
+  const gate = html.slice(html.indexOf('<div id="auth-modal"'), html.indexOf('<div id="vision-modal"'));
+  assert.match(gate, /<\/form>\s*<p class="gate-signature">Project-Gifted1<sup>™<\/sup><\/p>/);
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  const rule = css.match(/\.gate-signature \{[^}]*\}/)[0];
+  for (const decl of ['position: fixed;', 'bottom: calc(var(--safe-bottom) + var(--sp-4));', 'font-family: var(--font-mono);', 'text-transform: uppercase;', 'color: var(--text-3);']) {
+    assert.ok(rule.includes(decl), decl);
+  }
+  assert.match(css, /@media \(max-height: 640px\) \{\s*\.gate-signature \{ display: none; \}/);
+});
