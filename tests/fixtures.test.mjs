@@ -22,9 +22,9 @@ test('fixtures: each fixture tool has exactly one FLAGGED, one CLEAN and one UNK
   assert.deepEqual(EXTRA_FIXTURE_KINDS, { check_wallet_age: ['DELEGATED'] });
 });
 
-test('fixtures: expected results are FLAGGED/DELEGATED=flagged with real reason codes, CLEAN=no_flags, UNKNOWN=unknown', () => {
+test('fixtures: expected results are FLAGGED=flagged with real reason codes, CLEAN=no_flags, UNKNOWN=unknown, DELEGATED=no_flags with the informational WALLET_DELEGATED', () => {
   for (const f of TEST_FIXTURES) {
-    const expectedStatus = { FLAGGED: 'flagged', DELEGATED: 'flagged', CLEAN: 'no_flags', UNKNOWN: 'unknown' }[f.kind];
+    const expectedStatus = { FLAGGED: 'flagged', DELEGATED: 'no_flags', CLEAN: 'no_flags', UNKNOWN: 'unknown' }[f.kind];
     assert.equal(f.expected.status, expectedStatus, `${f.tool}/${f.kind}`);
     if (f.kind === 'DELEGATED') assert.deepEqual(f.expected.reason_codes, ['WALLET_DELEGATED']);
     else if (f.kind === 'FLAGGED') assert.ok(f.expected.reason_codes.length > 0, `${f.tool}/FLAGGED needs a reason code`);

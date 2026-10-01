@@ -12,7 +12,10 @@
  *          owner can add or remove a delegation at any time. A failed code
  *          check returns the age result with delegated: null, never false.
  *          is_contract is unchanged (still true for a delegated address).
- *          No other tool definition changes.
+ *          WALLET_DELEGATED is informational: it never changes status on
+ *          its own. Cached answers now count against the 60/hour anonymous
+ *          rate limit (each makes an upstream call); licensed callers stay
+ *          exempt. No other tool definition changes.
  * Version: 1.13.0 — ADD (issue #209): new free tool check_wallet_age,
  *          reporting when an EVM address first appeared on a chain (earliest
  *          on-chain transfer in or out) plus whether it's a contract. Gated
@@ -2152,6 +2155,19 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
   const address = normalizeWalletAgeAddress(args?.address);
   const chain = normalizeWalletAgeChain(args?.chain);
 
+  // Every call now makes at least one upstream call (a cached age answer
+  // still gets a live delegation check, below), so the rate limit applies
+  // before the cache read: cached calls count too. Licensed callers stay
+  // exempt.
+  let licensed = false;
+  if (licenseKey) {
+    const check = await verifyGumroadLicense(licenseKey).catch(() => ({ valid: false }));
+    licensed = !!check.valid;
+  }
+  if (!licensed) {
+    enforceWalletAgeRateLimit(identifier);
+  }
+
   // Only the age (first_seen and friends) is ever cached. Delegation can be
   // added or removed by the owner at any time, so a cached age answer still
   // gets a live delegation check on every call.
@@ -2166,15 +2182,6 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
       const delegation = await checkWalletDelegationStandalone(chain, address);
       return buildWalletAgeNotFoundResult(address, chain, cachedRow.is_contract, true, false, delegation);
     }
-  }
-
-  let licensed = false;
-  if (licenseKey) {
-    const check = await verifyGumroadLicense(licenseKey).catch(() => ({ valid: false }));
-    licensed = !!check.valid;
-  }
-  if (!licensed) {
-    enforceWalletAgeRateLimit(identifier);
   }
 
   const apiKey = process.env.ALCHEMY_API_KEY;

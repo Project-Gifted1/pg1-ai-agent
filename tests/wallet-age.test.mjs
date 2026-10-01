@@ -20,6 +20,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { computeStatus } from '../lib/responseMeta.mjs';
+import { INFORMATIONAL_REASON_CODES } from '../lib/reasonCodes.mjs';
 import handler, { TOOLS, RESPONSE_META_OUTPUT_PROPERTIES, TEST_FIXTURE_OUTPUT_PROPERTIES, parseWalletDelegation } from '../api/mcp.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -796,7 +798,7 @@ test('check_wallet_age delegation: exact 23-byte 0xef0100 code reports delegated
   assert.equal(parsed.delegate_address, DELEGATE, 'delegate address is the 20 bytes after 0xef0100, lowercased');
   assert.equal(parsed.is_contract, true, 'is_contract is unchanged: still true for a delegated wallet');
   assert.deepEqual(parsed.reasons.map((r) => r.code), ['WALLET_DELEGATED']);
-  assert.equal(parsed.status, 'flagged');
+  assert.equal(parsed.status, 'no_flags', 'WALLET_DELEGATED is informational and never flags on its own');
   assert.deepEqual(res.body.result.structuredContent.delegated, true);
   assert.deepEqual(res.body.result.structuredContent.delegate_address, DELEGATE);
 });
@@ -1025,4 +1027,105 @@ test('parseWalletDelegation: only an exact 23-byte 0xef0100 designator is a dele
   assert.deepEqual(parseWalletDelegation(DELEGATED_CODE + 'ab'), { delegated: false, delegate_address: null });
   assert.deepEqual(parseWalletDelegation(null), { delegated: null, delegate_address: null });
   assert.deepEqual(parseWalletDelegation(undefined), { delegated: null, delegate_address: null });
+});
+
+// delegated: true on its own never changes status: WALLET_DELEGATED is an
+// informational reason code. Status is exactly what it would have been
+// without the delegation, plus "unknown" when the code check didn't complete.
+test('check_wallet_age delegation: delegated true never changes status on its own', async (t) => {
+  withAlchemyEnv(t);
+  withoutSupabaseEnv(t);
+  const originalFetch = global.fetch;
+  t.after(() => { global.fetch = originalFetch; });
+
+  // (a) an old delegated wallet vs (b) an old non-delegated wallet: same status.
+  global.fetch = makeFetchMock({ inTransfers: OLD_IN_TRANSFER, code: DELEGATED_CODE });
+  const { parsed: delegated } = await callParsed({ address: ADDRESS, chain: 'arbitrum' });
+  global.fetch = makeFetchMock({ inTransfers: OLD_IN_TRANSFER, code: '0x' });
+  const { parsed: plain } = await callParsed({ address: ADDRESS, chain: 'arbitrum' });
+  assert.equal(delegated.status, 'no_flags');
+  assert.deepEqual(delegated.reasons.map((r) => r.code), ['WALLET_DELEGATED']);
+  assert.equal(plain.status, 'no_flags');
+  assert.deepEqual(plain.reasons, []);
+
+  // No history: flagged by WALLET_NO_HISTORY, exactly as before - delegation adds the fact, not the flag.
+  global.fetch = makeFetchMock({ code: DELEGATED_CODE });
+  const { parsed: newDelegated } = await callParsed({ address: ADDRESS, chain: 'arbitrum' });
+  global.fetch = makeFetchMock({ code: '0x' });
+  const { parsed: newPlain } = await callParsed({ address: ADDRESS, chain: 'arbitrum' });
+  assert.equal(newDelegated.status, newPlain.status);
+  assert.equal(newDelegated.status, 'flagged');
+  assert.deepEqual(newDelegated.reasons.map((r) => r.code), ['WALLET_NO_HISTORY', 'WALLET_DELEGATED']);
+  assert.deepEqual(newPlain.reasons.map((r) => r.code), ['WALLET_NO_HISTORY']);
+
+  // Internal transfers not checked in time (base): WALLET_AGE_PARTIAL flags, as before.
+  global.fetch = makeFetchMock({ inTransfers: OLD_IN_TRANSFER, code: DELEGATED_CODE, hangInternal: true });
+  const { parsed: partialDelegated } = await callParsed({ address: ADDRESS, chain: 'base' });
+  assert.equal(partialDelegated.status, 'flagged');
+  assert.deepEqual(partialDelegated.reasons.map((r) => r.code), ['WALLET_AGE_PARTIAL', 'WALLET_DELEGATED']);
+});
+
+test('computeStatus: informational reason codes never flag on their own', () => {
+  assert.deepEqual([...INFORMATIONAL_REASON_CODES], ['WALLET_DELEGATED']);
+  const ok = [{ result: 'ok' }];
+  assert.equal(computeStatus([{ code: 'WALLET_DELEGATED' }], ok), 'no_flags');
+  assert.equal(computeStatus([{ code: 'WALLET_DELEGATED' }], [...ok, { result: 'timeout' }]), 'unknown');
+  assert.equal(computeStatus([{ code: 'WALLET_DELEGATED' }, { code: 'WALLET_NO_HISTORY' }], ok), 'flagged');
+  assert.equal(computeStatus([{ code: 'WALLET_SANCTIONED' }], ok), 'flagged');
+  assert.equal(computeStatus([], ok), 'no_flags');
+});
+
+function cachedFoundFetch({ onDelegation } = {}) {
+  return async (url, options = {}) => {
+    const urlStr = String(url);
+    if (urlStr.includes('api.gumroad.com/v2/licenses/verify')) {
+      return { ok: true, json: async () => ({ success: true, purchase: {} }) };
+    }
+    if (urlStr.includes('/rest/v1/wallet_first_seen')) {
+      return { ok: true, json: async () => [{ address: ADDRESS, chain: 'base', first_seen: '2020-01-01T00:00:00.000Z', first_seen_block: 7, first_direction: 'out', is_contract: false, checked_at: new Date().toISOString() }] };
+    }
+    if (urlStr.includes('.g.alchemy.com/v2/')) {
+      const body = JSON.parse(options.body);
+      assert.equal(body.id, DELEGATION_RPC_ID, 'a cached answer only makes the delegation call');
+      if (onDelegation) onDelegation();
+      return { ok: true, json: async () => ({ jsonrpc: '2.0', id: body.id, result: '0x' }) };
+    }
+    throw new Error('unexpected fetch: ' + urlStr);
+  };
+}
+
+test('check_wallet_age: cached answers count against the 60/hour rate limit (each makes a live delegation call)', async (t) => {
+  withAlchemyEnv(t);
+  withSupabaseEnv(t);
+  const originalFetch = global.fetch;
+  let delegationCalls = 0;
+  global.fetch = cachedFoundFetch({ onDelegation: () => { delegationCalls += 1; } });
+  t.after(() => { global.fetch = originalFetch; });
+
+  const headers = { 'x-forwarded-for': '198.51.100.140' };
+  for (let i = 0; i < 60; i++) {
+    const res = await callTool({ address: ADDRESS }, headers);
+    assert.notEqual(res.body.result.isError, true, `cached call ${i + 1} should not be rate-limited yet`);
+    assert.equal(JSON.parse(res.body.result.content[0].text).cached, true);
+  }
+  assert.equal(delegationCalls, 60);
+  const limited = await callTool({ address: ADDRESS }, headers);
+  assert.equal(limited.body.result.isError, true);
+  assert.equal(JSON.parse(limited.body.result.content[0].text).code, 'rate_limited');
+  assert.equal(delegationCalls, 60, 'a rate-limited call makes no upstream call');
+});
+
+test('check_wallet_age: a valid licence key still exempts cached answers from the rate limit', async (t) => {
+  withAlchemyEnv(t);
+  withSupabaseEnv(t);
+  const originalFetch = global.fetch;
+  global.fetch = cachedFoundFetch();
+  t.after(() => { global.fetch = originalFetch; });
+
+  const headers = { 'x-forwarded-for': '198.51.100.141', 'x-api-key': 'valid-license-key' };
+  for (let i = 0; i < 61; i++) {
+    const res = await callTool({ address: ADDRESS }, headers);
+    assert.notEqual(res.body.result.isError, true, `licensed cached call ${i + 1} must not be rate-limited`);
+    assert.equal(JSON.parse(res.body.result.content[0].text).cached, true);
+  }
 });
