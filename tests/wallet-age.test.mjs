@@ -386,6 +386,10 @@ test('check_wallet_age: a found result is cached and a repeat call skips the age
   assert.equal(delegationCalls, 1);
   assert.ok(!('delegated' in storedRow) && !('delegate_address' in storedRow), 'delegation must never be written to the cache');
 
+  // The age was originally looked up a day ago.
+  const originallyLookedUp = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  storedRow = { ...storedRow, checked_at: originallyLookedUp.toISOString().replace('Z', '+00:00') };
+  const requestStarted = Date.now();
   const second = await callTool({ address: ADDRESS, chain: 'base' });
   const secondParsed = JSON.parse(second.body.result.content[0].text);
   assert.equal(secondParsed.found, true);
@@ -398,6 +402,14 @@ test('check_wallet_age: a found result is cached and a repeat call skips the age
   assert.equal(secondParsed.delegated, true);
   assert.equal(secondParsed.delegate_address, DELEGATE);
   assert.deepEqual(secondParsed.reasons.map((r) => r.code), ['WALLET_DELEGATED']);
+  // The transfer-history check's data_as_of is when the age was originally
+  // looked up (the cache row's checked_at); checked_at is this request.
+  const [ageCheck, delegationCheck] = secondParsed.checks;
+  assert.equal(ageCheck.source, 'on-chain transfer history');
+  assert.equal(ageCheck.data_as_of, originallyLookedUp.toISOString());
+  assert.ok(new Date(ageCheck.checked_at).getTime() >= requestStarted, 'checked_at is the time of this request');
+  assert.deepEqual([delegationCheck.source, delegationCheck.result, delegationCheck.data_as_of], ['on-chain code', 'ok', null]);
+  assert.equal(secondParsed.checks.length, 2);
 });
 
 test('check_wallet_age: a found:false result is cached for 10 minutes, then re-queried', async (t) => {
@@ -438,6 +450,9 @@ test('check_wallet_age: a found:false result is cached for 10 minutes, then re-q
   assert.equal(alchemyCalls, 0, 'a not-found result within the 10-minute TTL must not re-run the age lookups');
   assert.equal(delegationCalls, 1, 'a cached not-found answer must still get a live delegation check');
   assert.equal(withinTtlParsed.delegated, false);
+  assert.equal(withinTtlParsed.checks[0].data_as_of, storedRow.checked_at, 'a cached not-found answer reports when it was originally looked up');
+  assert.notEqual(withinTtlParsed.checks[0].checked_at, storedRow.checked_at);
+  assert.deepEqual(withinTtlParsed.checks.map((c) => [c.source, c.result]), [['on-chain transfer history', 'ok'], ['on-chain code', 'ok']]);
 
   // Expire the cached row (checked_at 11 minutes ago) and retry.
   storedRow = { ...storedRow, checked_at: new Date(Date.now() - 11 * 60 * 1000).toISOString() };
@@ -816,7 +831,10 @@ test('check_wallet_age delegation: empty code reports delegated false', async (t
   assert.equal(parsed.is_contract, false);
   assert.deepEqual(parsed.reasons, []);
   assert.equal(parsed.status, 'no_flags');
-  assert.equal(parsed.checks.length, 1, 'a completed delegation check adds no extra checks entry');
+  assert.deepEqual(parsed.checks.map((c) => [c.source, c.result]), [['on-chain transfer history', 'ok'], ['on-chain code', 'ok']],
+    'a completed delegation check gets its own "ok" checks entry');
+  assert.equal(parsed.checks[0].data_as_of, null, 'a fresh lookup has no earlier data_as_of');
+  assert.equal(parsed.checks[1].data_as_of, null, 'the delegation check is live');
 });
 
 test('check_wallet_age delegation: ordinary contract code reports delegated false (is_contract still true)', async (t) => {
@@ -877,7 +895,7 @@ test('check_wallet_age delegation: a getCode failure returns the age result with
     assert.equal(parsed.delegate_address, null, label);
     assert.deepEqual(parsed.reasons, [], label);
     assert.equal(parsed.status, 'unknown', `${label}: an incomplete answer is never a clean no_flags`);
-    const delegationCheck = parsed.checks.find((c) => c.source === 'on-chain code (delegation)');
+    const delegationCheck = parsed.checks.find((c) => c.source === 'on-chain code');
     assert.equal(delegationCheck?.result, 'error', label);
   }
 });
@@ -895,7 +913,7 @@ test('check_wallet_age delegation: a hung getCode times out inside the same 2.5s
   assert.ok(elapsed < 3500, `must finish within the shared 2.5s budget (took ${elapsed}ms)`);
   assert.equal(parsed.found, true);
   assert.equal(parsed.delegated, null);
-  assert.equal(parsed.checks.find((c) => c.source === 'on-chain code (delegation)')?.result, 'timeout');
+  assert.equal(parsed.checks.find((c) => c.source === 'on-chain code')?.result, 'timeout');
 });
 
 test('check_wallet_age delegation: a getCode failure on a no-history address stays found:false with delegated null', async (t) => {
@@ -995,7 +1013,7 @@ test('check_wallet_age delegation: a cached age with a failing code check return
   assert.equal(parsed.first_seen, '2020-01-01T00:00:00.000Z');
   assert.equal(parsed.delegated, null);
   assert.equal(parsed.status, 'unknown');
-  assert.equal(parsed.checks.find((c) => c.source === 'on-chain code (delegation)')?.result, 'timeout');
+  assert.equal(parsed.checks.find((c) => c.source === 'on-chain code')?.result, 'timeout');
 });
 
 test('check_wallet_age delegation: a cached age with no upstream configured still returns, with delegated null', async (t) => {

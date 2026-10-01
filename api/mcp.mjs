@@ -1840,7 +1840,7 @@ export async function handleCheckHostnameReputation(args, identifier, licenseKey
 
 const WALLET_AGE_SOURCE = 'on-chain transfer history';
 // checks[] source label for the live EIP-7702 delegation (code) check.
-const WALLET_DELEGATION_SOURCE = 'on-chain code (delegation)';
+const WALLET_DELEGATION_SOURCE = 'on-chain code';
 const WALLET_AGE_TIMEOUT_MS = 2500;
 const WALLET_AGE_NOT_FOUND_CACHE_TTL_MS = 10 * 60 * 1000;
 const WALLET_AGE_ADDRESS_RE = /^0x[0-9a-f]{40}$/i;
@@ -1991,15 +1991,27 @@ async function setWalletAgeCache(address, chain, row) {
 // sub-check, never silently folded into the main "ok" one.
 //
 // `delegation` is the live EIP-7702 code check ({ delegated, delegate_address,
-// checkResult }, see checkWalletDelegation below). Like the internal-transfers
-// sub-check, it gets its own checks entry only when it didn't complete, so a
-// failed code check reads as status "unknown" (never a clean "no_flags"),
-// and WALLET_DELEGATED is added only when delegated is exactly true.
-function walletAgeChecks(partial, delegation) {
-  const checks = [buildCheck(WALLET_AGE_SOURCE, 'ok')];
+// checkResult }, see checkWalletDelegation below). It always gets its own
+// checks entry ("ok" / "error" / "timeout"), so callers can see whether it
+// completed; a failed code check reads as status "unknown" (never a clean
+// "no_flags"), and WALLET_DELEGATED is added only when delegated is exactly
+// true.
+//
+// `ageDataAsOf` is when the age was originally looked up: the cache row's
+// checked_at on a cached answer, null on a fresh lookup (whose data is this
+// request's own).
+function walletAgeChecks(partial, delegation, ageDataAsOf) {
+  const checks = [buildCheck(WALLET_AGE_SOURCE, 'ok', { dataAsOf: ageDataAsOf })];
   if (partial) checks.push(buildCheck(`${WALLET_AGE_SOURCE} (internal transfers)`, 'timeout'));
-  if (delegation.checkResult !== 'ok') checks.push(buildCheck(WALLET_DELEGATION_SOURCE, delegation.checkResult));
+  checks.push(buildCheck(WALLET_DELEGATION_SOURCE, delegation.checkResult));
   return checks;
+}
+
+// A cache row's checked_at as a normalised ISO string, or null if missing or
+// unparseable (Postgres timestamptz round-trips as e.g. "...+00:00").
+function walletAgeCacheDataAsOf(row) {
+  const t = new Date(row.checked_at).getTime();
+  return Number.isNaN(t) ? null : new Date(t).toISOString();
 }
 
 function walletDelegationFields(delegation) {
@@ -2010,7 +2022,7 @@ function walletDelegationReasons(delegation) {
   return delegation.delegated === true ? [reason('WALLET_DELEGATED')] : [];
 }
 
-function buildWalletAgeFoundResult(address, chain, row, cached, partial, delegation) {
+function buildWalletAgeFoundResult(address, chain, row, cached, partial, delegation, ageDataAsOf = null) {
   // Normalises both the cached path (Postgres timestamptz round-trips as
   // e.g. "...+00:00") and the fresh path (already an ISO string from
   // Alchemy) through the same Date parse so the two are byte-identical.
@@ -2031,11 +2043,11 @@ function buildWalletAgeFoundResult(address, chain, row, cached, partial, delegat
     cached
   }, {
     reasons: [...(partial ? [reason('WALLET_AGE_PARTIAL')] : []), ...walletDelegationReasons(delegation)],
-    checks: walletAgeChecks(partial, delegation)
+    checks: walletAgeChecks(partial, delegation, ageDataAsOf)
   });
 }
 
-function buildWalletAgeNotFoundResult(address, chain, isContract, cached, partial, delegation) {
+function buildWalletAgeNotFoundResult(address, chain, isContract, cached, partial, delegation, ageDataAsOf = null) {
   const reasons = [reason('WALLET_NO_HISTORY')];
   if (partial) reasons.push(reason('WALLET_AGE_PARTIAL'));
   reasons.push(...walletDelegationReasons(delegation));
@@ -2052,7 +2064,7 @@ function buildWalletAgeNotFoundResult(address, chain, isContract, cached, partia
     note: `'${address}' has no transfer history on '${chain}' — a normal result for a brand-new or never-used address, not an error.`,
     source: WALLET_AGE_SOURCE,
     cached
-  }, { reasons, checks: walletAgeChecks(partial, delegation) });
+  }, { reasons, checks: walletAgeChecks(partial, delegation, ageDataAsOf) });
 }
 
 async function alchemyRpcCall(url, body, signal) {
@@ -2176,12 +2188,12 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
   if (cachedRow) {
     if (cachedRow.first_seen) {
       const delegation = await checkWalletDelegationStandalone(chain, address);
-      return buildWalletAgeFoundResult(address, chain, cachedRow, true, false, delegation);
+      return buildWalletAgeFoundResult(address, chain, cachedRow, true, false, delegation, walletAgeCacheDataAsOf(cachedRow));
     }
     const checkedAt = new Date(cachedRow.checked_at).getTime();
     if (!Number.isNaN(checkedAt) && (Date.now() - checkedAt) < WALLET_AGE_NOT_FOUND_CACHE_TTL_MS) {
       const delegation = await checkWalletDelegationStandalone(chain, address);
-      return buildWalletAgeNotFoundResult(address, chain, cachedRow.is_contract, true, false, delegation);
+      return buildWalletAgeNotFoundResult(address, chain, cachedRow.is_contract, true, false, delegation, walletAgeCacheDataAsOf(cachedRow));
     }
   }
 

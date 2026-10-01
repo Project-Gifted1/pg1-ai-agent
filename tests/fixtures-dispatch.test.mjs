@@ -316,6 +316,9 @@ test('MCP: check_wallet_age fixtures echo the requested chain and have no age th
   assert.equal(delegated.delegate_address, FIXTURE_DELEGATE_ADDRESS);
   assert.deepEqual(delegated.reasons.map((r) => r.code), ['WALLET_DELEGATED']);
   assert.equal(delegated.test_fixture, true);
+  // Same two checks entries as a real answer (transfer history, then the
+  // delegation code check), both relabelled "fixture".
+  assert.deepEqual(delegated.checks.map((c) => [c.source, c.result]), [['fixture', 'ok'], ['fixture', 'ok']]);
   // An invalid chain is still an invalid-input error, fixture address or not.
   const bad = await callMcp('check_wallet_age', { address: FIXTURE_VALUES.wallet.FLAGGED, chain: 'solana' });
   assert.equal(JSON.parse(bad.body.result.content[0].text).code, 'invalid_chain');
