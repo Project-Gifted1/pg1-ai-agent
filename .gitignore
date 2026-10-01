@@ -29,3 +29,8 @@ out/
 *.tmp
 cache/voices/
 cache/voice-generation-logs.jsonl
+
+# Local Postgres backups (see docs/BACKUPS.md)
+backups/
+*.dump
+*.dump.gpg
