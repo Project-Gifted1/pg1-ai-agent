@@ -127,9 +127,10 @@ async function runSkill(skill, args, identifier, licenseKey) {
 }
 
 function jsonRpcError(res, status, code, message, id, data, pg1RequestId) {
-  const error = { code, message };
-  if (data !== undefined) error.data = data;
-  return res.status(status).json({ jsonrpc: '2.0', error, id: id === undefined ? null : id, request_id: pg1RequestId });
+  // request_id lives in error.data (and the X-Request-Id header), never at
+  // the top level of the JSON-RPC envelope.
+  const error = { code, message, data: { ...(data || {}), request_id: pg1RequestId } };
+  return res.status(status).json({ jsonrpc: '2.0', error, id: id === undefined ? null : id });
 }
 
 // Spec 3.6.2: header takes precedence over the query param; missing/empty
@@ -336,7 +337,7 @@ export default async function handler(req, res) {
       }
       const fixtureResult = fixtureOutcome.result;
       fixtureResult.request_id = pg1RequestId;
-      return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, args, fixtureResult, version, inboundMessage), id: requestId, request_id: pg1RequestId });
+      return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, args, fixtureResult, version, inboundMessage), id: requestId });
     }
 
     const licenseKey = req.headers['x-api-key'];
@@ -366,7 +367,7 @@ export default async function handler(req, res) {
     }
     toolResult.request_id = pg1RequestId;
 
-    return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, args, toolResult, version, inboundMessage), id: requestId, request_id: pg1RequestId });
+    return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, args, toolResult, version, inboundMessage), id: requestId });
   } catch (err) {
     // Catch-all for anything the specific handling above didn't already turn
     // into a sanitized message (a genuine bug, not an expected failure) -

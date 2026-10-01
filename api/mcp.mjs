@@ -75,7 +75,7 @@ import { domainToASCII, domainToUnicode } from 'node:url';
 import { logApiError } from '../lib/errorLog.mjs';
 import { reason } from '../lib/reasonCodes.mjs';
 import { buildCheck, withResponseMeta, withActionResponseMeta, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
-import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES } from '../lib/fixtures.mjs';
+import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, FIXTURE_DOMAIN_CLEAN_REGISTERED, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
 import { invalidInput, invalidInputMessage, withFixIt, formatFixIt } from '../lib/invalidInput.mjs';
 
 export const config = { maxDuration: 30 };
@@ -2196,16 +2196,20 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// Every fixture check's data_as_of equals its checked_at, including checks
+// built by a tool's real result builder (which would otherwise carry that
+// tool's own data_as_of, e.g. the phishing list sync time).
 function asFixtureResult(result) {
   return {
     ...result,
-    checks: result.checks.map((c) => ({ ...c, source: FIXTURE_CHECK_SOURCE })),
+    checks: result.checks.map((c) => ({ ...c, source: FIXTURE_CHECK_SOURCE, data_as_of: c.checked_at })),
     test_fixture: true
   };
 }
 
 function fixtureCheck(result) {
-  return buildCheck(FIXTURE_CHECK_SOURCE, result, { dataAsOf: FIXTURE_DATA_AS_OF });
+  const now = new Date().toISOString();
+  return buildCheck(FIXTURE_CHECK_SOURCE, result, { checkedAt: now, dataAsOf: now });
 }
 
 function fixtureCveRecord(cveId, kind) {
@@ -2259,10 +2263,11 @@ function buildFixtureOutcome(fixture, callerArgs) {
     case 'check_domain_age': {
       const domain = args.domain;
       if (kind === 'UNKNOWN') return result(domainNotFound(domain, 'RDAP lookup timed out after 5 seconds.', 'timeout'));
-      const now = new Date();
-      const midnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-      const registrationDate = kind === 'FLAGGED' ? new Date(midnight - 3 * DAY_MS).toISOString() : '2000-01-01T00:00:00.000Z';
-      const ageDays = Math.floor((Date.now() - new Date(registrationDate).getTime()) / DAY_MS);
+      const nowMs = Date.now();
+      const registrationDate = kind === 'FLAGGED'
+        ? fixtureDaysAgoMidnightUtc(FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, nowMs)
+        : FIXTURE_DOMAIN_CLEAN_REGISTERED;
+      const ageDays = Math.floor((nowMs - new Date(registrationDate).getTime()) / DAY_MS);
       const newlyRegistered = ageDays < 30;
       return result(withResponseMeta({
         found: true,
@@ -2411,7 +2416,7 @@ const STRUCTURED_CONTENT_TOOLS = new Set(['check_wallet_sanctions', 'check_domai
 
 function sendMcpFixtureResponse(res, toolName, outcome, requestId, pg1RequestId) {
   if (outcome.type === 'service_unavailable') {
-    return res.status(503).json({ jsonrpc: '2.0', error: { code: outcome.mcpErrorCode, message: outcome.message, data: { test_fixture: true } }, id: requestId, request_id: pg1RequestId });
+    return res.status(503).json({ jsonrpc: '2.0', error: { code: outcome.mcpErrorCode, message: outcome.message, data: { test_fixture: true, request_id: pg1RequestId } }, id: requestId });
   }
   if (outcome.type === 'tool_error') {
     return res.status(200).json({
@@ -2420,15 +2425,14 @@ function sendMcpFixtureResponse(res, toolName, outcome, requestId, pg1RequestId)
         content: [{ type: 'text', text: JSON.stringify({ error: true, code: outcome.code, message: outcome.message, ...errorResponseMeta(outcome.checks, pg1RequestId), test_fixture: true }, null, 2) }],
         isError: true
       },
-      id: requestId,
-      request_id: pg1RequestId
+      id: requestId
     });
   }
   const toolResult = outcome.result;
   toolResult.request_id = pg1RequestId;
   const result = { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] };
   if (STRUCTURED_CONTENT_TOOLS.has(toolName)) result.structuredContent = toolResult;
-  return res.status(200).json({ jsonrpc: '2.0', result, id: requestId, request_id: pg1RequestId });
+  return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
 }
 
 // ---------------------------------------------------------------------
@@ -2638,10 +2642,10 @@ async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentif
     if (check.reason === 'verification_unavailable') {
       res.setHeader('Retry-After', '5');
       recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_license_verification_unavailable`, 'upstream', pg1RequestId);
-      res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: 'License verification temporarily unavailable, please retry.' }, id: requestId, request_id: pg1RequestId });
+      res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: 'License verification temporarily unavailable, please retry.', data: { request_id: pg1RequestId } }, id: requestId });
       return { authorized: false, handled: true };
     }
-    res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error }, id: requestId, request_id: pg1RequestId });
+    res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error, data: { request_id: pg1RequestId } }, id: requestId });
     return { authorized: false, handled: true };
   }
 
@@ -2684,8 +2688,7 @@ function sendPaymentRequiredResult(res, requestId, paymentRequired, pg1RequestId
       structuredContent: paymentRequired,
       content: [{ type: 'text', text: JSON.stringify(paymentRequired) }]
     },
-    id: requestId,
-    request_id: pg1RequestId
+    id: requestId
   });
 }
 
@@ -2792,7 +2795,7 @@ export default async function handler(req, res) {
     try { body = JSON.parse(body); } catch { body = null; }
   }
   if (!body || typeof body !== 'object') {
-    return res.status(400).json({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error: Invalid JSON' }, id: '1', request_id: pg1RequestId });
+    return res.status(400).json({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error: Invalid JSON', data: { request_id: pg1RequestId } }, id: '1' });
   }
 
   const { id, method, params } = body;
@@ -2803,8 +2806,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         jsonrpc: '2.0',
         result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.13.0' } },
-        id: requestId,
-        request_id: pg1RequestId
+        id: requestId
       });
     }
 
@@ -2813,7 +2815,7 @@ export default async function handler(req, res) {
     }
 
     if (method === 'tools/list') {
-      return res.status(200).json({ jsonrpc: '2.0', result: { tools: TOOLS }, id: requestId, request_id: pg1RequestId });
+      return res.status(200).json({ jsonrpc: '2.0', result: { tools: TOOLS }, id: requestId });
     }
 
     if (method === 'tools/call') {
@@ -2847,7 +2849,7 @@ export default async function handler(req, res) {
         } catch (toolErr) {
           if (toolErr.serviceUnavailable) {
             recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_upstream_unavailable`, 'upstream', pg1RequestId);
-            return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId, request_id: pg1RequestId });
+            return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message, data: { request_id: pg1RequestId } }, id: requestId });
           }
           if (toolErr.mcpToolError) {
             // Only 'upstream_unavailable' (a genuine data-source outage or
@@ -2865,18 +2867,17 @@ export default async function handler(req, res) {
                 content: [{ type: 'text', text: JSON.stringify({ error: true, code: toolErr.code, message: invalidInputMessage(toolErr, pg1RequestId), ...errorResponseMeta(errorChecks, pg1RequestId) }, null, 2) }],
                 isError: true
               },
-              id: requestId,
-              request_id: pg1RequestId
+              id: requestId
             });
           }
-          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: invalidInputMessage(toolErr, pg1RequestId) }, id: requestId, request_id: pg1RequestId });
+          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: invalidInputMessage(toolErr, pg1RequestId), data: { request_id: pg1RequestId } }, id: requestId });
         }
         toolResult.request_id = pg1RequestId;
         const result = { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] };
         if (toolName === 'check_wallet_sanctions' || toolName === 'check_domain_age' || toolName === 'check_hostname_reputation' || toolName === 'check_wallet_age') {
           result.structuredContent = toolResult;
         }
-        return res.status(200).json({ jsonrpc: '2.0', result, id: requestId, request_id: pg1RequestId });
+        return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
       }
 
       if (LICENSE_ONLY_TOOLS.has(toolName)) {
@@ -2884,18 +2885,17 @@ export default async function handler(req, res) {
           return res.status(402).json({
             jsonrpc: '2.0',
             error: { code: -32001, message: `${toolName} requires a valid Gumroad license key in X-API-KEY. Not available via x402.` },
-            id: requestId,
-            request_id: pg1RequestId
+            id: requestId
           });
         }
         const check = await verifyGumroadLicense(licenseKey);
         if (check.reason === 'verification_unavailable') {
           res.setHeader('Retry-After', '5');
           recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_license_verification_unavailable`, 'upstream', pg1RequestId);
-          return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: 'License verification temporarily unavailable, please retry.' }, id: requestId, request_id: pg1RequestId });
+          return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: 'License verification temporarily unavailable, please retry.', data: { request_id: pg1RequestId } }, id: requestId });
         }
         if (!check.valid) {
-          return res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error }, id: requestId, request_id: pg1RequestId });
+          return res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error, data: { request_id: pg1RequestId } }, id: requestId });
         }
         let toolResult;
         try {
@@ -2903,14 +2903,13 @@ export default async function handler(req, res) {
             ? await handleSubscribeAlerts(toolArgs, licenseKey)
             : await handleSubmitIndicator(toolArgs, licenseKey);
         } catch (toolErr) {
-          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: invalidInputMessage(toolErr, pg1RequestId) }, id: requestId, request_id: pg1RequestId });
+          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: invalidInputMessage(toolErr, pg1RequestId), data: { request_id: pg1RequestId } }, id: requestId });
         }
         toolResult.request_id = pg1RequestId;
         return res.status(200).json({
           jsonrpc: '2.0',
           result: { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] },
-          id: requestId,
-          request_id: pg1RequestId
+          id: requestId
         });
       }
 
@@ -2918,7 +2917,7 @@ export default async function handler(req, res) {
       if (toolName === 'get_ioc_context') {
         const value = toolArgs?.value?.trim();
         if (!value) {
-          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: formatFixIt(IOC_VALUE_FIX_IT, pg1RequestId) }, id: requestId, request_id: pg1RequestId });
+          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: formatFixIt(IOC_VALUE_FIX_IT, pg1RequestId), data: { request_id: pg1RequestId } }, id: requestId });
         }
         let lookupResult;
         try {
@@ -2927,7 +2926,7 @@ export default async function handler(req, res) {
         } catch (e) {
           const status = e.serviceUnavailable ? 503 : 500;
           recordToolError('/api/mcp:get_ioc_context', status, 'ioc_context_lookup_failed', e.serviceUnavailable ? 'upstream' : 'js_error', pg1RequestId);
-          return res.status(status).json({ jsonrpc: '2.0', error: { code: -32603, message: e.message }, id: requestId, request_id: pg1RequestId });
+          return res.status(status).json({ jsonrpc: '2.0', error: { code: -32603, message: e.message, data: { request_id: pg1RequestId } }, id: requestId });
         }
         lookupResult.request_id = pg1RequestId;
 
@@ -2935,8 +2934,7 @@ export default async function handler(req, res) {
           return res.status(200).json({
             jsonrpc: '2.0',
             result: { content: [{ type: 'text', text: JSON.stringify(lookupResult, null, 2) }] },
-            id: requestId,
-            request_id: pg1RequestId
+            id: requestId
           });
         }
 
@@ -2951,7 +2949,7 @@ export default async function handler(req, res) {
           result._meta = { 'x402/payment-response': settlement };
         }
         if (gate.consumeFreeTier) await gate.consumeFreeTier();
-        return res.status(200).json({ jsonrpc: '2.0', result, id: requestId, request_id: pg1RequestId });
+        return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
       }
 
       // SPECIAL CASE: get_ioc_batch — free only if NONE of the values were
@@ -2963,9 +2961,9 @@ export default async function handler(req, res) {
         } catch (toolErr) {
           if (toolErr.serviceUnavailable) {
             recordToolError('/api/mcp:get_ioc_batch', 503, 'get_ioc_batch_upstream_unavailable', 'upstream', pg1RequestId);
-            return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId, request_id: pg1RequestId });
+            return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message, data: { request_id: pg1RequestId } }, id: requestId });
           }
-          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: invalidInputMessage(toolErr, pg1RequestId) }, id: requestId, request_id: pg1RequestId });
+          return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: invalidInputMessage(toolErr, pg1RequestId), data: { request_id: pg1RequestId } }, id: requestId });
         }
         batchResult.request_id = pg1RequestId;
 
@@ -2973,8 +2971,7 @@ export default async function handler(req, res) {
           return res.status(200).json({
             jsonrpc: '2.0',
             result: { content: [{ type: 'text', text: JSON.stringify(batchResult, null, 2) }] },
-            id: requestId,
-            request_id: pg1RequestId
+            id: requestId
           });
         }
 
@@ -2989,13 +2986,13 @@ export default async function handler(req, res) {
           result._meta = { 'x402/payment-response': settlement };
         }
         if (gate.consumeFreeTier) await gate.consumeFreeTier();
-        return res.status(200).json({ jsonrpc: '2.0', result, id: requestId, request_id: pg1RequestId });
+        return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
       }
 
       const toolHandler = STANDARD_TOOL_HANDLERS[toolName];
       if (!toolHandler) {
         const unknownTool = { problem: 'params.name is not the name of a tool on this server', expected: `one of ${TOOLS.map((t) => t.name).join(', ')} (see tools/list)`, example: 'check_domain_age' };
-        return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: formatFixIt(unknownTool, pg1RequestId) }, id: requestId, request_id: pg1RequestId });
+        return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: formatFixIt(unknownTool, pg1RequestId), data: { request_id: pg1RequestId } }, id: requestId });
       }
 
       const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName, pg1RequestId);
@@ -3008,10 +3005,10 @@ export default async function handler(req, res) {
       } catch (toolErr) {
         if (toolErr.serviceUnavailable) {
           recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_upstream_unavailable`, 'upstream', pg1RequestId);
-          return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message }, id: requestId, request_id: pg1RequestId });
+          return res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: toolErr.message, data: { request_id: pg1RequestId } }, id: requestId });
         }
         const code = toolErr.notFound ? 404 : 400;
-        return res.status(code).json({ jsonrpc: '2.0', error: { code: toolErr.notFound ? -32004 : -32602, message: invalidInputMessage(toolErr, pg1RequestId) }, id: requestId, request_id: pg1RequestId });
+        return res.status(code).json({ jsonrpc: '2.0', error: { code: toolErr.notFound ? -32004 : -32602, message: invalidInputMessage(toolErr, pg1RequestId), data: { request_id: pg1RequestId } }, id: requestId });
       }
       toolResult.request_id = pg1RequestId;
 
@@ -3022,10 +3019,10 @@ export default async function handler(req, res) {
         result._meta = { 'x402/payment-response': settlement };
       }
       if (gate.consumeFreeTier) await gate.consumeFreeTier();
-      return res.status(200).json({ jsonrpc: '2.0', result, id: requestId, request_id: pg1RequestId });
+      return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
     }
 
-    return res.status(200).json({ jsonrpc: '2.0', error: { code: -32601, message: `Method not found: ${method || 'unknown'}` }, id: requestId, request_id: pg1RequestId });
+    return res.status(200).json({ jsonrpc: '2.0', error: { code: -32601, message: `Method not found: ${method || 'unknown'}`, data: { request_id: pg1RequestId } }, id: requestId });
   } catch (err) {
     // This is the catch-all for anything the specific handlers above didn't
     // already turn into a sanitized message (a genuine bug, not an expected
@@ -3034,6 +3031,6 @@ export default async function handler(req, res) {
     // echo it back into the response body.
     console.error('[MCP] unhandled tools/call exception:', err.message);
     recordToolError('/api/mcp', 500, 'unhandled_exception', 'js_error', pg1RequestId);
-    return res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal server error' }, id: requestId, request_id: pg1RequestId });
+    return res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal server error', data: { request_id: pg1RequestId } }, id: requestId });
   }
 }
