@@ -20,7 +20,7 @@ const vercelConfig = JSON.parse(fs.readFileSync(path.join(repoRoot, 'vercel.json
 
 test('agent card has the required top-level identity fields', () => {
   assert.equal(card.name, 'PG1 Sovereign Threat Intelligence');
-  assert.equal(card.version, '1.13.0');
+  assert.equal(card.version, '1.14.0');
   assert.equal(card.protocolVersion, '0.3.0');
   assert.equal(card.documentationUrl, 'https://github.com/Project-Gifted1/pg1-ai-agent#readme');
   assert.equal(card.url, 'https://pg1-ai-agent.vercel.app/api/a2a');

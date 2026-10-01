@@ -8,24 +8,26 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TEST_FIXTURES, FIXTURE_TOOLS, FIXTURE_KINDS, FIXTURE_VALUES, matchFixture } from '../lib/fixtures.mjs';
+import { TEST_FIXTURES, FIXTURE_TOOLS, FIXTURE_KINDS, EXTRA_FIXTURE_KINDS, FIXTURE_VALUES, FIXTURE_DELEGATE_ADDRESS, matchFixture } from '../lib/fixtures.mjs';
 import { REASON_CODES } from '../lib/reasonCodes.mjs';
 
 const DOC_IPV4_RANGES = ['192.0.2.', '198.51.100.', '203.0.113.'];
 
-test('fixtures: each fixture tool has exactly one FLAGGED, one CLEAN and one UNKNOWN fixture', () => {
+test('fixtures: each fixture tool has exactly one FLAGGED, one CLEAN and one UNKNOWN fixture (plus only its declared extra kinds)', () => {
   assert.ok(FIXTURE_TOOLS.length > 0);
   for (const tool of FIXTURE_TOOLS) {
     const kinds = TEST_FIXTURES.filter((f) => f.tool === tool).map((f) => f.kind).sort();
-    assert.deepEqual(kinds, [...FIXTURE_KINDS].sort(), `${tool} must have one fixture of each kind`);
+    assert.deepEqual(kinds, [...FIXTURE_KINDS, ...(EXTRA_FIXTURE_KINDS[tool] || [])].sort(), `${tool} must have one fixture of each kind`);
   }
+  assert.deepEqual(EXTRA_FIXTURE_KINDS, { check_wallet_age: ['DELEGATED'] });
 });
 
-test('fixtures: expected results are FLAGGED=flagged with real reason codes, CLEAN=no_flags, UNKNOWN=unknown', () => {
+test('fixtures: expected results are FLAGGED=flagged with real reason codes, CLEAN=no_flags, UNKNOWN=unknown, DELEGATED=no_flags with the informational WALLET_DELEGATED', () => {
   for (const f of TEST_FIXTURES) {
-    const expectedStatus = { FLAGGED: 'flagged', CLEAN: 'no_flags', UNKNOWN: 'unknown' }[f.kind];
+    const expectedStatus = { FLAGGED: 'flagged', DELEGATED: 'no_flags', CLEAN: 'no_flags', UNKNOWN: 'unknown' }[f.kind];
     assert.equal(f.expected.status, expectedStatus, `${f.tool}/${f.kind}`);
-    if (f.kind === 'FLAGGED') assert.ok(f.expected.reason_codes.length > 0, `${f.tool}/FLAGGED needs a reason code`);
+    if (f.kind === 'DELEGATED') assert.deepEqual(f.expected.reason_codes, ['WALLET_DELEGATED']);
+    else if (f.kind === 'FLAGGED') assert.ok(f.expected.reason_codes.length > 0, `${f.tool}/FLAGGED needs a reason code`);
     else assert.deepEqual(f.expected.reason_codes, []);
     for (const code of f.expected.reason_codes) assert.ok(code in REASON_CODES, `unknown reason code ${code}`);
     assert.equal(typeof f.expected.summary, 'string');
@@ -41,6 +43,10 @@ test('fixtures: every value is reserved or synthetic', () => {
     assert.match(addr, /^0x[0-9a-f]{40}$/);
     assert.equal(Buffer.from(addr.slice(2, 34), 'hex').toString('ascii'), 'pg1-test-fixture');
   }
+  // The DELEGATED fixture's reported delegate is synthetic under the same rules.
+  assert.match(FIXTURE_DELEGATE_ADDRESS, /^0x[0-9a-f]{40}$/);
+  assert.equal(Buffer.from(FIXTURE_DELEGATE_ADDRESS.slice(2, 34), 'hex').toString('ascii'), 'pg1-test-fixture');
+  assert.ok(!Object.values(FIXTURE_VALUES.wallet).includes(FIXTURE_DELEGATE_ADDRESS), 'the delegate address is not itself a fixture input');
   for (const p of Object.values(FIXTURE_VALUES.product)) assert.match(p.vendor, /\.invalid$/);
 });
 
@@ -61,7 +67,7 @@ test('fixtures: matching applies only the tool\'s own normalisation', () => {
 
 test('fixtures: a near-miss value (one character off) is never a fixture', () => {
   const w = FIXTURE_VALUES.wallet.FLAGGED;
-  const nearWallet = w.slice(0, -1) + '4';
+  const nearWallet = w.slice(0, -1) + '9'; // ...00000004 is the DELEGATED fixture
   assert.equal(matchFixture('check_wallet_sanctions', { address: nearWallet }), null);
   assert.equal(matchFixture('check_wallet_age', { address: nearWallet }), null);
   assert.equal(matchFixture('check_domain_age', { domain: 'pg1-test-flaged.invalid' }), null);
@@ -104,7 +110,7 @@ test('docs: the README "Test your integration" table lists every fixture with it
     const row = '| `' + f.tool + '` | ' + f.kind + ' | `' + JSON.stringify(f.arguments) + '` | ' + f.expected.summary + ' |';
     assert.ok(readme.includes(row), `README is missing the row for ${f.tool}/${f.kind}`);
   }
-  const rowCount = readme.split('\n').filter((l) => /^\| `[a-z_]+` \| (FLAGGED|CLEAN|UNKNOWN) \|/.test(l)).length;
+  const rowCount = readme.split('\n').filter((l) => /^\| `[a-z_]+` \| (FLAGGED|CLEAN|UNKNOWN|DELEGATED) \|/.test(l)).length;
   assert.equal(rowCount, TEST_FIXTURES.length, 'README must not list fixtures that do not exist');
   assert.match(readme, /Out of scope:\*\* the REST endpoints \(`\/api\/ioc`/);
   assert.match(readme, /-H "Accept: application\/json, text\/event-stream"/);

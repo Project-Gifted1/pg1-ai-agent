@@ -3,6 +3,20 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
+ * Version: 1.14.0 — ADD: check_wallet_age now reports EIP-7702 delegation
+ *          (optional delegated / delegate_address output fields, reason
+ *          code WALLET_DELEGATED). The delegation check is a live
+ *          eth_getCode on the requested chain, run in parallel with the
+ *          age lookups inside the same 2.5s budget, on every call -
+ *          including cached age answers - and never cached itself, since an
+ *          owner can add or remove a delegation at any time. A failed code
+ *          check returns the age result with delegated: null, never false.
+ *          is_contract is unchanged (still true for a delegated address).
+ *          WALLET_DELEGATED is informational: it never changes status on
+ *          its own. WALLET_AGE_PARTIAL now makes status "unknown" (a check
+ *          didn't complete), not "flagged". Cached answers now count against the 60/hour anonymous
+ *          rate limit (each makes an upstream call); licensed callers stay
+ *          exempt. No other tool definition changes.
  * Version: 1.13.0 — ADD (issue #209): new free tool check_wallet_age,
  *          reporting when an EVM address first appeared on a chain (earliest
  *          on-chain transfer in or out) plus whether it's a contract. Gated
@@ -75,7 +89,7 @@ import { domainToASCII, domainToUnicode } from 'node:url';
 import { logApiError } from '../lib/errorLog.mjs';
 import { reason } from '../lib/reasonCodes.mjs';
 import { buildCheck, withResponseMeta, withActionResponseMeta, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
-import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, FIXTURE_DOMAIN_CLEAN_REGISTERED, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
+import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES, FIXTURE_DELEGATE_ADDRESS, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, FIXTURE_DOMAIN_CLEAN_REGISTERED, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
 import { invalidInput, invalidInputMessage, withFixIt, formatFixIt } from '../lib/invalidInput.mjs';
 
 export const config = { maxDuration: 30 };
@@ -426,6 +440,8 @@ export const TOOLS = [
         first_seen_block: { type: ['integer', 'null'] },
         first_direction: { type: ['string', 'null'], enum: ['in', 'out', null] },
         is_contract: { type: 'boolean' },
+        delegated: { type: ['boolean', 'null'], description: 'true when the address currently has an EIP-7702 delegation on this chain (its code is exactly 0xef0100 followed by a 20-byte delegate address), false when it does not, null when the code check did not complete. Checked live on every call, never cached. is_contract is unchanged and is still true for a delegated address.' },
+        delegate_address: { type: ['string', 'null'], description: 'The lowercased delegate contract address when delegated is true, otherwise null.' },
         note: { type: ['string', 'null'] },
         source: { type: 'string' },
         cached: { type: 'boolean' },
@@ -1823,6 +1839,8 @@ export async function handleCheckHostnameReputation(args, identifier, licenseKey
 // ---------------------------------------------------------------------
 
 const WALLET_AGE_SOURCE = 'on-chain transfer history';
+// checks[] source label for the live EIP-7702 delegation (code) check.
+const WALLET_DELEGATION_SOURCE = 'on-chain code (delegation)';
 const WALLET_AGE_TIMEOUT_MS = 2500;
 const WALLET_AGE_NOT_FOUND_CACHE_TTL_MS = 10 * 60 * 1000;
 const WALLET_AGE_ADDRESS_RE = /^0x[0-9a-f]{40}$/i;
@@ -1971,13 +1989,28 @@ async function setWalletAgeCache(address, chain, row) {
 // when internal transfers weren't checked in time (see skipCache in
 // handleCheckWalletAge below) - a second, distinct checks entry for that
 // sub-check, never silently folded into the main "ok" one.
-function walletAgeChecks(partial) {
+//
+// `delegation` is the live EIP-7702 code check ({ delegated, delegate_address,
+// checkResult }, see checkWalletDelegation below). Like the internal-transfers
+// sub-check, it gets its own checks entry only when it didn't complete, so a
+// failed code check reads as status "unknown" (never a clean "no_flags"),
+// and WALLET_DELEGATED is added only when delegated is exactly true.
+function walletAgeChecks(partial, delegation) {
   const checks = [buildCheck(WALLET_AGE_SOURCE, 'ok')];
   if (partial) checks.push(buildCheck(`${WALLET_AGE_SOURCE} (internal transfers)`, 'timeout'));
+  if (delegation.checkResult !== 'ok') checks.push(buildCheck(WALLET_DELEGATION_SOURCE, delegation.checkResult));
   return checks;
 }
 
-function buildWalletAgeFoundResult(address, chain, row, cached, partial) {
+function walletDelegationFields(delegation) {
+  return { delegated: delegation.delegated, delegate_address: delegation.delegate_address };
+}
+
+function walletDelegationReasons(delegation) {
+  return delegation.delegated === true ? [reason('WALLET_DELEGATED')] : [];
+}
+
+function buildWalletAgeFoundResult(address, chain, row, cached, partial, delegation) {
   // Normalises both the cached path (Postgres timestamptz round-trips as
   // e.g. "...+00:00") and the fresh path (already an ISO string from
   // Alchemy) through the same Date parse so the two are byte-identical.
@@ -1992,18 +2025,20 @@ function buildWalletAgeFoundResult(address, chain, row, cached, partial) {
     first_seen_block: row.first_seen_block,
     first_direction: row.first_direction,
     is_contract: !!row.is_contract,
+    ...walletDelegationFields(delegation),
     note: null,
     source: WALLET_AGE_SOURCE,
     cached
   }, {
-    reasons: partial ? [reason('WALLET_AGE_PARTIAL')] : [],
-    checks: walletAgeChecks(partial)
+    reasons: [...(partial ? [reason('WALLET_AGE_PARTIAL')] : []), ...walletDelegationReasons(delegation)],
+    checks: walletAgeChecks(partial, delegation)
   });
 }
 
-function buildWalletAgeNotFoundResult(address, chain, isContract, cached, partial) {
+function buildWalletAgeNotFoundResult(address, chain, isContract, cached, partial, delegation) {
   const reasons = [reason('WALLET_NO_HISTORY')];
   if (partial) reasons.push(reason('WALLET_AGE_PARTIAL'));
+  reasons.push(...walletDelegationReasons(delegation));
   return withResponseMeta({
     address,
     chain,
@@ -2013,10 +2048,11 @@ function buildWalletAgeNotFoundResult(address, chain, isContract, cached, partia
     first_seen_block: null,
     first_direction: null,
     is_contract: !!isContract,
+    ...walletDelegationFields(delegation),
     note: `'${address}' has no transfer history on '${chain}' — a normal result for a brand-new or never-used address, not an error.`,
     source: WALLET_AGE_SOURCE,
     cached
-  }, { reasons, checks: walletAgeChecks(partial) });
+  }, { reasons, checks: walletAgeChecks(partial, delegation) });
 }
 
 async function alchemyRpcCall(url, body, signal) {
@@ -2058,6 +2094,56 @@ function pickEarliestTransfer(a, b) {
   return a || b || null;
 }
 
+// EIP-7702 delegation designator: an EOA with a delegation set has code of
+// exactly 23 bytes, 0xef0100 followed by the 20-byte delegate address. Any
+// other code (empty, an ordinary contract, or something that merely starts
+// with 0xef0100 at the wrong length) is not a delegation.
+const EIP7702_DELEGATION_CODE_RE = /^0xef0100([0-9a-f]{40})$/i;
+
+// Parses eth_getCode's result into { delegated, delegate_address }. A
+// non-string result means the check didn't produce an answer, so it's
+// reported as unknown (null), never guessed as false.
+export function parseWalletDelegation(code) {
+  if (typeof code !== 'string') return { delegated: null, delegate_address: null };
+  const match = EIP7702_DELEGATION_CODE_RE.exec(code);
+  if (!match) return { delegated: false, delegate_address: null };
+  return { delegated: true, delegate_address: '0x' + match[1].toLowerCase() };
+}
+
+// The live delegation check: its own eth_getCode on the requested chain (a
+// distinct JSON-RPC id from the age lookups' eth_getCode, id 3), sharing
+// the caller's AbortController so it stays inside the same 2.5s budget.
+// Never throws - any failure becomes delegated: null with a checks result
+// of 'timeout' or 'error', so a failed code check can never fail, or change,
+// the age answer it's attached to. Never cached (see handleCheckWalletAge).
+async function checkWalletDelegation(url, address, signal) {
+  try {
+    const code = await alchemyRpcCall(url, { jsonrpc: '2.0', id: 4, method: 'eth_getCode', params: [address, 'latest'] }, signal);
+    const parsed = parseWalletDelegation(code);
+    return { ...parsed, checkResult: parsed.delegated === null ? 'error' : 'ok' };
+  } catch (err) {
+    return { delegated: null, delegate_address: null, checkResult: err && err.name === 'AbortError' ? 'timeout' : 'error' };
+  }
+}
+
+// Same, for the cached-answer path, which has no upstream budget of its
+// own running: a fresh 2.5s timer for just this one call.
+async function checkWalletDelegationStandalone(chain, address) {
+  const apiKey = process.env.ALCHEMY_API_KEY;
+  if (!apiKey) return { delegated: null, delegate_address: null, checkResult: 'error' };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), WALLET_AGE_TIMEOUT_MS);
+  try {
+    return await checkWalletDelegation(walletAgeUpstreamUrl(chain, apiKey), address, controller.signal);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function walletAgeUpstreamUrl(chain, apiKey) {
+  return `https://${WALLET_AGE_CHAIN_SLUGS[chain]}.g.alchemy.com/v2/${apiKey}`;
+}
+
 function runWalletAgeUpstreamCalls(url, address, categories, signal) {
   return Promise.all([
     fetchEarliestTransfer(url, address, categories, 'out', signal),
@@ -2070,17 +2156,10 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
   const address = normalizeWalletAgeAddress(args?.address);
   const chain = normalizeWalletAgeChain(args?.chain);
 
-  const cachedRow = await getWalletAgeCache(address, chain);
-  if (cachedRow) {
-    if (cachedRow.first_seen) {
-      return buildWalletAgeFoundResult(address, chain, cachedRow, true, false);
-    }
-    const checkedAt = new Date(cachedRow.checked_at).getTime();
-    if (!Number.isNaN(checkedAt) && (Date.now() - checkedAt) < WALLET_AGE_NOT_FOUND_CACHE_TTL_MS) {
-      return buildWalletAgeNotFoundResult(address, chain, cachedRow.is_contract, true, false);
-    }
-  }
-
+  // Every call now makes at least one upstream call (a cached age answer
+  // still gets a live delegation check, below), so the rate limit applies
+  // before the cache read: cached calls count too. Licensed callers stay
+  // exempt.
   let licensed = false;
   if (licenseKey) {
     const check = await verifyGumroadLicense(licenseKey).catch(() => ({ valid: false }));
@@ -2090,11 +2169,27 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
     enforceWalletAgeRateLimit(identifier);
   }
 
+  // Only the age (first_seen and friends) is ever cached. Delegation can be
+  // added or removed by the owner at any time, so a cached age answer still
+  // gets a live delegation check on every call.
+  const cachedRow = await getWalletAgeCache(address, chain);
+  if (cachedRow) {
+    if (cachedRow.first_seen) {
+      const delegation = await checkWalletDelegationStandalone(chain, address);
+      return buildWalletAgeFoundResult(address, chain, cachedRow, true, false, delegation);
+    }
+    const checkedAt = new Date(cachedRow.checked_at).getTime();
+    if (!Number.isNaN(checkedAt) && (Date.now() - checkedAt) < WALLET_AGE_NOT_FOUND_CACHE_TTL_MS) {
+      const delegation = await checkWalletDelegationStandalone(chain, address);
+      return buildWalletAgeNotFoundResult(address, chain, cachedRow.is_contract, true, false, delegation);
+    }
+  }
+
   const apiKey = process.env.ALCHEMY_API_KEY;
   if (!apiKey) {
     throw new WalletAgeUpstreamError('Wallet age lookups are not configured on this deployment.');
   }
-  const url = `https://${WALLET_AGE_CHAIN_SLUGS[chain]}.g.alchemy.com/v2/${apiKey}`;
+  const url = walletAgeUpstreamUrl(chain, apiKey);
   const plainCategories = ['external', 'erc20', 'erc721', 'erc1155'];
   const supportsInternal = WALLET_AGE_INTERNAL_SUPPORTED_CHAINS.has(chain);
 
@@ -2102,16 +2197,18 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
   // internal-inclusive lookups run in parallel rather than sequentially, so
   // the slow/rejected 'internal' query never eats into the non-internal
   // query's share of the 2.5s budget (see WALLET_AGE_INTERNAL_SUPPORTED_CHAINS
-  // above).
+  // above). The live delegation check runs alongside both, on the same
+  // AbortController, and never rejects (see checkWalletDelegation).
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), WALLET_AGE_TIMEOUT_MS);
-  let plainSettled, internalSettled;
+  let plainSettled, internalSettled, delegation;
   try {
     const attempts = [runWalletAgeUpstreamCalls(url, address, plainCategories, controller.signal)];
     if (supportsInternal) {
       attempts.push(runWalletAgeUpstreamCalls(url, address, [...plainCategories, 'internal'], controller.signal));
     }
-    [plainSettled, internalSettled] = await Promise.allSettled(attempts);
+    const delegationCheck = checkWalletDelegation(url, address, controller.signal);
+    [[plainSettled, internalSettled], delegation] = await Promise.all([Promise.allSettled(attempts), delegationCheck]);
   } finally {
     clearTimeout(timeout);
   }
@@ -2162,7 +2259,7 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
     if (!skipCache) {
       await setWalletAgeCache(address, chain, { first_seen: null, first_seen_block: null, first_direction: null, is_contract: isContract });
     }
-    const result = buildWalletAgeNotFoundResult(address, chain, isContract, false, skipCache);
+    const result = buildWalletAgeNotFoundResult(address, chain, isContract, false, skipCache, delegation);
     if (note) result.note = note;
     return result;
   }
@@ -2176,7 +2273,7 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
   if (!skipCache) {
     await setWalletAgeCache(address, chain, row);
   }
-  const result = buildWalletAgeFoundResult(address, chain, row, false, skipCache);
+  const result = buildWalletAgeFoundResult(address, chain, row, false, skipCache, delegation);
   if (note) result.note = note;
   return result;
 }
@@ -2303,9 +2400,16 @@ function buildFixtureOutcome(fixture, callerArgs) {
       }
       const address = args.address.trim().toLowerCase();
       const chain = normalizeWalletAgeChain(callerArgs.chain);
+      // Fixtures never consult chain data, so the delegation check is a
+      // fixed, completed answer: delegated only for the DELEGATED fixture
+      // (which, like a real delegated wallet, has code, so is_contract true).
+      const delegated = kind === 'DELEGATED';
+      const delegation = delegated
+        ? { delegated: true, delegate_address: FIXTURE_DELEGATE_ADDRESS, checkResult: 'ok' }
+        : { delegated: false, delegate_address: null, checkResult: 'ok' };
       const r = kind === 'FLAGGED'
-        ? buildWalletAgeNotFoundResult(address, chain, false, false, false)
-        : buildWalletAgeFoundResult(address, chain, { first_seen: '2023-09-01T00:00:00.000Z', first_seen_block: 1000000, first_direction: 'in', is_contract: false }, false, false);
+        ? buildWalletAgeNotFoundResult(address, chain, false, false, false, delegation)
+        : buildWalletAgeFoundResult(address, chain, { first_seen: '2023-09-01T00:00:00.000Z', first_seen_block: 1000000, first_direction: 'in', is_contract: delegated }, false, false, delegation);
       return result(r);
     }
 

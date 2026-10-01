@@ -14,7 +14,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TEST_FIXTURES, FIXTURE_VALUES, A2A_FIXTURE_SKILLS, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
+import { TEST_FIXTURES, FIXTURE_VALUES, FIXTURE_DELEGATE_ADDRESS, A2A_FIXTURE_SKILLS, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
 
 // api/mcp.mjs reads X402_PAY_TO_ADDRESS at module load, and only then does a
 // paid call ever reach the facilitator - set it first so the facilitator spy
@@ -179,7 +179,7 @@ test('MCP: fixture responses have the same fields as the real response for each 
     check_wallet_sanctions: ['address', 'address_normalized', 'listed', 'matches', 'source', 'list_last_synced', 'disclaimer'],
     check_domain_age: ['found', 'available', 'domain'],
     check_hostname_reputation: ['hostname', 'verdict', 'sources', 'lookalike_of', 'list_synced_at', 'checked_at', 'attribution'],
-    check_wallet_age: ['address', 'chain', 'found', 'first_seen', 'age_days', 'first_seen_block', 'first_direction', 'is_contract', 'note', 'source', 'cached']
+    check_wallet_age: ['address', 'chain', 'found', 'first_seen', 'age_days', 'first_seen_block', 'first_direction', 'is_contract', 'delegated', 'delegate_address', 'note', 'source', 'cached']
   };
   for (const fixture of TEST_FIXTURES.filter((f) => sample[f.tool] && f.expected.outcome === 'result')) {
     const res = await callMcp(fixture.tool, fixture.arguments);
@@ -283,7 +283,7 @@ test('MCP: UNKNOWN fixtures reproduce the real upstream-failure shape for each t
 test('MCP: a near-miss value is treated as a real input, not a fixture', async (t) => {
   withEnv(t, { SUPABASE_URL: undefined, SUPABASE_SERVICE_ROLE_KEY: undefined, ALCHEMY_API_KEY: undefined });
   spyFetch(t);
-  const near = FIXTURE_VALUES.wallet.FLAGGED.slice(0, -1) + '4';
+  const near = FIXTURE_VALUES.wallet.FLAGGED.slice(0, -1) + '9'; // ...00000004 is the DELEGATED fixture
   const res = await callMcp('check_wallet_age', { address: near }, { 'x-forwarded-for': '198.51.100.79' });
   const parsed = JSON.parse(res.body.result.content[0].text);
   assert.equal(parsed.code, 'upstream_unavailable', 'went down the real path (no Alchemy key configured)');
@@ -305,6 +305,17 @@ test('MCP: check_wallet_age fixtures echo the requested chain and have no age th
   assert.equal(clean.found, true);
   assert.equal(clean.first_seen, '2023-09-01T00:00:00.000Z');
   assert.equal(clean.address, FIXTURE_VALUES.wallet.CLEAN);
+  assert.equal(clean.delegated, false);
+  assert.equal(clean.delegate_address, null);
+  assert.equal(flagged.delegated, false);
+  const delegated = JSON.parse((await callMcp('check_wallet_age', { address: FIXTURE_VALUES.wallet.DELEGATED, chain: 'ethereum' })).body.result.content[0].text);
+  assert.equal(delegated.chain, 'ethereum');
+  assert.equal(delegated.found, true);
+  assert.equal(delegated.is_contract, true);
+  assert.equal(delegated.delegated, true);
+  assert.equal(delegated.delegate_address, FIXTURE_DELEGATE_ADDRESS);
+  assert.deepEqual(delegated.reasons.map((r) => r.code), ['WALLET_DELEGATED']);
+  assert.equal(delegated.test_fixture, true);
   // An invalid chain is still an invalid-input error, fixture address or not.
   const bad = await callMcp('check_wallet_age', { address: FIXTURE_VALUES.wallet.FLAGGED, chain: 'solana' });
   assert.equal(JSON.parse(bad.body.result.content[0].text).code, 'invalid_chain');
