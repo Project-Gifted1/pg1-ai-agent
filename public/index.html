@@ -454,7 +454,8 @@
       line-height: 1.55;
       tab-size: 2;
     }
-    .code-block pre { margin: 0; background: transparent !important; border: 0 !important; border-radius: 0 !important; }
+    .code-block pre { margin: 0; }
+    /* !important only to beat the inline font-family on code blocks saved before the redesign */
     .message-text pre code { font-family: var(--font-mono) !important; white-space: pre; }
 
     /* slash-command chips: tap to run */
@@ -751,6 +752,17 @@
     @keyframes status-pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.55; }
+    }
+
+    @media (max-width: 399px) {
+      .voice-toggle { padding: 0 6px; gap: 6px; letter-spacing: 0; }
+      .voice-toggle::before { width: 20px; }
+      .stealth-select { padding-right: 22px; background-position: right 6px center; }
+      .status-indicator { padding: 0 8px; gap: 5px; font-size: 10px; letter-spacing: 0; }
+    }
+    @media (max-width: 379px) {
+      /* the gold ON label alone carries the state on the narrowest phones */
+      .voice-toggle::before { display: none; }
     }
 
     /* ---------- COMPOSER: input deck ---------- */
