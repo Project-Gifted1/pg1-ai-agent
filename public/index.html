@@ -856,73 +856,294 @@
       clip: rect(0, 0, 0, 0);
     }
 
-    .quick-menu { display: none; position: fixed; top: 58px; right: 12px; z-index: 60; flex-direction: column; gap: 8px; padding: 10px; background: #0a0a0a; border: 1px solid rgba(243, 198, 35, 0.3); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.9); }
-    .quick-menu.open { display: flex; }
-    .quick-menu .quick-chip { text-align: left; padding: 10px 16px; font-size: 11px; }
-    .quick-chip { flex-shrink: 0; background: transparent; border: 1px solid rgba(243, 198, 35, 0.4); color: var(--text-gold); border-radius: 14px; padding: 6px 12px; font-size: 10px; font-weight: bold; letter-spacing: 1px; font-family: var(--font-mono); cursor: pointer; }
-    .quick-chip:active { transform: scale(0.92); }
+    /* ---------- MENUS: the ➕ quick-command menu ----------
+       A bottom sheet in the thumb zone on phones, a popover under the ➕
+       button on wider screens. */
+    .quick-menu {
+      display: none;
+      position: fixed;
+      z-index: 60;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      flex-direction: column;
+      gap: 2px;
+      padding: var(--sp-2) max(var(--sp-3), var(--safe-right)) calc(var(--sp-3) + var(--safe-bottom)) max(var(--sp-3), var(--safe-left));
+      background: var(--surface-1);
+      border-top: 1px solid var(--border-strong);
+      border-radius: var(--r-xl) var(--r-xl) 0 0;
+      box-shadow: var(--shadow-3);
+      max-height: 80dvh;
+      overflow-y: auto;
+    }
+    .quick-menu::before {
+      content: "";
+      align-self: center;
+      width: 36px;
+      height: 4px;
+      margin: 0 0 var(--sp-2);
+      border-radius: var(--r-full);
+      background: var(--border-strong);
+      flex-shrink: 0;
+    }
+    .quick-menu.open { display: flex; animation: sheet-in var(--dur-3) var(--ease-out) both; }
+    .menu-heading {
+      padding: var(--sp-1) var(--sp-3) var(--sp-2);
+      font-family: var(--font-mono);
+      font-size: var(--fs-2xs);
+      color: var(--text-3);
+      letter-spacing: var(--tracking-label);
+      text-transform: uppercase;
+    }
+    .menu-divider { height: 1px; background: var(--border); margin: var(--sp-1) var(--sp-3); flex-shrink: 0; }
+    .quick-chip {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-3);
+      min-height: 48px;
+      padding: 0 var(--sp-3);
+      background: transparent;
+      border: 0;
+      border-radius: var(--r-md);
+      color: var(--text);
+      font-size: var(--fs-base);
+      font-weight: 500;
+      text-align: left;
+      cursor: pointer;
+      transition: background-color var(--dur-1) var(--ease-out);
+    }
+    .quick-chip .icon { color: var(--gold); }
+    .quick-chip .cmd { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-3); }
+    .quick-chip:hover { background: var(--surface-3); }
+    .quick-chip:active { background: var(--surface-3); transform: scale(0.99); }
+    .quick-chip:focus-visible { border-radius: var(--r-md); }
+    .menu-scrim {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 55;
+      background: var(--scrim);
+      animation: fade-in var(--dur-2) var(--ease-out) both;
+    }
+    .quick-menu.open + .menu-scrim { display: block; }
 
-    .matrix-modal { 
-      position: fixed; inset: 0; background: rgba(0,0,0,0.92);
-      backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
-      z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px;
-    }
-    
-    .matrix-card { 
-      background: rgba(10, 10, 10, 0.8); border: 1px solid var(--glass-edge); 
-      border-radius: 16px; padding: 32px 24px; width: 100%; max-width: 380px; 
-      display: flex; flex-direction: column; gap: 20px; 
-      box-shadow: 0 15px 50px rgba(0,0,0,0.9), inset 0 0 30px rgba(255,255,255,0.02);
-      animation: modal-drop 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    @media (min-width: 640px) {
+      .quick-menu {
+        left: auto;
+        bottom: auto;
+        top: calc(var(--header-h) + var(--safe-top) - var(--sp-1));
+        right: max(var(--sp-3), var(--safe-right));
+        width: 300px;
+        padding: var(--sp-2);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--r-lg);
+        transform-origin: top right;
+      }
+      .quick-menu::before { display: none; }
+      .quick-menu.open { animation-name: pop-in; }
+      .menu-scrim { background: transparent; }
     }
 
-    @keyframes modal-drop {
-      from { opacity: 0; transform: scale(0.9) translateY(-30px); }
-      to { opacity: 1; transform: scale(1) translateY(0); }
-    }
-    
-    .matrix-card h2 { 
-      font-size: 15px; color: var(--text-gold); text-align: center; 
-      letter-spacing: 2px; margin-bottom: 4px; text-shadow: 0 0 15px var(--glow-subtle);
-    }
-    
-    .matrix-input { 
-      background: #000; border: 1px solid var(--glass-edge); border-radius: 8px; 
-      color: #fff; padding: 14px; font-size: 14px; letter-spacing: 0.5px;
-      outline: none; transition: all 0.3s ease; box-shadow: inset 0 0 10px rgba(0,0,0,1);
-    }
-    .matrix-input:focus { box-shadow: 0 0 20px var(--glow-strong), inset 0 0 10px rgba(0,0,0,1); border-color: rgba(243, 198, 35, 0.3); }
-    
-    .matrix-submit { 
-      background: var(--text-gold); color: #000; border: none; 
-      font-weight: bold; padding: 14px; border-radius: 8px; font-size: 13px; 
-      cursor: pointer; text-transform: uppercase; letter-spacing: 2px; width: 100%; 
-      transition: all 0.2s; margin-top: 6px;
-    }
-    .matrix-submit:hover { box-shadow: 0 0 25px var(--glow-strong); filter: brightness(1.15); transform: translateY(-2px); }
-    .matrix-submit:active { transform: translateY(1px); }
+    @keyframes sheet-in { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes pop-in { from { transform: scale(0.96); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
+    /* ---------- MODALS ----------
+       One pattern for every overlay: a dimmed scrim and a card that is a
+       bottom sheet on phones and a centred dialog on wider screens. The
+       Security Gate is always centred. */
+    .matrix-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: var(--safe-top) 0 0;
+      background: var(--scrim);
+      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px);
+      animation: fade-in var(--dur-2) var(--ease-out) both;
+    }
+    .matrix-card {
+      width: 100%;
+      max-width: 440px;
+      max-height: calc(100dvh - var(--safe-top) - var(--sp-6));
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-4);
+      padding: var(--sp-6) max(var(--sp-5), var(--safe-left)) calc(var(--sp-5) + var(--safe-bottom));
+      background: var(--surface-1);
+      border: 1px solid var(--border-strong);
+      border-bottom: 0;
+      border-radius: var(--r-xl) var(--r-xl) 0 0;
+      box-shadow: var(--shadow-3);
+      animation: sheet-in var(--dur-3) var(--ease-out) both;
+    }
+    .matrix-modal.gate { align-items: center; padding: var(--sp-4); background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
+    .matrix-modal.gate .matrix-card { max-width: 380px; border-bottom: 1px solid var(--border-strong); border-radius: var(--r-xl); padding-bottom: var(--sp-6); animation-name: pop-in; }
+    @media (min-width: 640px) {
+      .matrix-modal { align-items: center; padding: var(--sp-6); }
+      .matrix-card { border-bottom: 1px solid var(--border-strong); border-radius: var(--r-xl); padding-bottom: var(--sp-6); animation-name: pop-in; }
+    }
+
+    .matrix-card h2 {
+      font-size: var(--fs-md);
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: 0.02em;
+      line-height: var(--lh-tight);
+    }
+    .modal-head { display: flex; flex-direction: column; gap: var(--sp-1); }
+    .modal-eyebrow {
+      font-family: var(--font-mono);
+      font-size: var(--fs-2xs);
+      color: var(--gold);
+      letter-spacing: var(--tracking-label);
+      text-transform: uppercase;
+    }
+    .modal-note { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.5; }
+    .modal-actions { display: flex; gap: var(--sp-2); }
+    .modal-actions > * { flex: 1; }
+    .modal-stack { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+    .gate-mark {
+      width: 52px;
+      height: 52px;
+      display: grid;
+      place-items: center;
+      align-self: center;
+      border-radius: var(--r-lg);
+      background: var(--gold-soft);
+      border: 1px solid var(--gold-line);
+      color: var(--gold);
+    }
+    .gate-mark .icon { width: 28px; height: 28px; }
+    .gate .modal-head { text-align: center; align-items: center; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field-label { font-size: var(--fs-xs); font-weight: 500; color: var(--text-2); }
+
+    .matrix-input {
+      min-height: 48px;
+      padding: 0 var(--sp-4);
+      background: var(--bg);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-md);
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      transition: border-color var(--dur-1) var(--ease-out), box-shadow var(--dur-1) var(--ease-out);
+    }
+    .matrix-input::placeholder { color: var(--text-3); }
+    .matrix-input:focus { border-color: var(--gold-line); box-shadow: 0 0 0 3px var(--gold-soft); border-radius: var(--r-md); }
+
+    /* buttons inside overlays */
+    .matrix-submit {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--sp-2);
+      width: 100%;
+      min-height: 48px;
+      padding: 0 var(--sp-4);
+      background: var(--gold);
+      color: var(--on-gold);
+      border: 1px solid transparent;
+      border-radius: var(--r-md);
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+    }
+    .matrix-submit:hover { background: var(--gold-strong); }
+    .matrix-submit:active { transform: scale(0.98); }
+    .matrix-submit:focus-visible { border-radius: var(--r-md); }
+    .matrix-submit.btn-ghost { background: transparent; border-color: var(--border-strong); color: var(--text); }
+    .matrix-submit.btn-ghost:hover { background: var(--surface-3); }
+    .matrix-submit.btn-secondary { background: var(--surface-2); border-color: var(--border-strong); color: var(--text); justify-content: flex-start; }
+    .matrix-submit.btn-secondary .icon { color: var(--gold); }
+    .matrix-submit.btn-secondary:hover { background: var(--surface-3); }
+    .matrix-submit.btn-danger { background: transparent; border-color: rgba(255, 92, 92, 0.5); color: var(--danger); }
+    .matrix-submit.btn-danger:hover { background: var(--danger-soft); }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      min-height: var(--tap);
+      font-size: var(--fs-sm);
+      color: var(--text-2);
+      cursor: pointer;
+      align-self: flex-start;
+    }
+    .toggle-row input { width: 18px; height: 18px; accent-color: var(--gold); cursor: pointer; }
+
+    /* lists inside overlays (threads, error log) */
     .thread-list {
-      display: flex; flex-direction: column; gap: 12px;
-      max-height: 50vh; overflow-y: auto; padding-right: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+      max-height: 50dvh;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      margin: 0 calc(var(--sp-1) * -1);
+      padding: 0 var(--sp-1);
     }
     .thread-item {
-      display: flex; justify-content: space-between; align-items: center;
-      background: rgba(20,20,20,0.6); border: 1px solid var(--glass-edge);
-      padding: 14px 16px; border-radius: 10px; transition: all 0.2s ease;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: var(--sp-3);
+      padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      transition: border-color var(--dur-1) var(--ease-out);
     }
-    .thread-item:hover { border-color: rgba(243, 198, 35, 0.3); box-shadow: 0 0 15px var(--glow-subtle); }
-    .thread-info { display: flex; flex-direction: column; gap: 4px; }
-    .thread-title { font-size: 13px; font-weight: bold; color: var(--text-main); }
-    .thread-date { font-size: 10px; color: var(--text-muted); }
-    
-    .thread-actions { display: flex; gap: 8px; }
+    .thread-item:hover { border-color: var(--border-strong); }
+    .thread-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .thread-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+    .thread-date { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-3); }
+    .err-cat {
+      align-self: flex-start;
+      margin: 2px 0;
+      padding: 1px var(--sp-2);
+      border-radius: var(--r-full);
+      background: var(--surface-3);
+      color: var(--text-2);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .err-route { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-2); overflow-wrap: anywhere; }
+    .err-req { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); overflow-wrap: anywhere; }
+    .err-resolved { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; color: var(--ok); }
+    .list-empty { padding: var(--sp-6) 0; text-align: center; font-size: var(--fs-sm); color: var(--text-3); }
+
+    .thread-actions { display: flex; flex-shrink: 0; gap: var(--sp-1); }
     .thread-action-btn {
-      background: transparent; border: 1px solid var(--text-gold); color: var(--text-gold);
-      border-radius: 6px; padding: 6px 12px; font-size: 10px; cursor: pointer; font-weight: bold;
+      min-height: var(--tap);
+      min-width: var(--tap);
+      padding: 0 var(--sp-3);
+      background: transparent;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-md);
+      color: var(--gold);
+      font-family: var(--font-mono);
+      font-size: var(--fs-2xs);
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
     }
-    .thread-action-btn.danger { border-color: var(--danger-red); color: var(--danger-red); }
-    .thread-action-btn:active { transform: scale(0.9); }
+    .thread-action-btn:hover { background: var(--gold-soft); border-color: var(--gold-line); }
+    .thread-action-btn.danger { color: var(--danger); }
+    .thread-action-btn.danger:hover { background: var(--danger-soft); border-color: rgba(255, 92, 92, 0.5); }
+    .thread-action-btn:active { transform: scale(0.96); }
+    .thread-action-btn:focus-visible { border-radius: var(--r-md); }
 
     #vision-pip {
       position: absolute;
@@ -974,31 +1195,52 @@
 
   <video id="vision-pip" autoplay playsinline muted></video>
 
-  <div id="auth-modal" class="matrix-modal">
-    <div class="matrix-card">
-      <h2>SECURITY GATE</h2>
-      <input type="text" id="auth-user" class="matrix-input" placeholder="Operator ID" value="">
-      <input type="password" id="auth-pass" class="matrix-input" placeholder="Secure Matrix Passkey">
-      <button class="matrix-submit" onclick="triggerHaptic(60); verifyAuth()">AUTHENTICATE</button>
-    </div>
-  </div>
-
-  <div id="vision-modal" class="matrix-modal" style="display: none;">
-    <div class="matrix-card" style="max-width: 380px;">
-      <h2>VISION MATRIX</h2>
-      <p style="font-size:11px; color:#aaa; text-align:center; margin-bottom:10px;">Select optical input source. Stream remains local until EXECUTE is triggered to grab the sync frame.</p>
-      <div style="display:flex; gap:10px; flex-direction:column;">
-        <button class="matrix-submit" onclick="triggerHaptic(); setVisionSource('camera')">📸 DEVICE CAMERA</button>
-        <button class="matrix-submit" onclick="triggerHaptic(); setVisionSource('screen')">💻 SCREEN DISPLAY</button>
-        <button class="matrix-submit" onclick="triggerHaptic(); setVisionSource('off')" style="background: transparent; border: 1px solid var(--danger-red); color: var(--danger-red);">🔴 TERMINATE FEED</button>
-        <button class="matrix-submit" onclick="triggerHaptic(); document.getElementById('vision-modal').style.display='none'" style="background: transparent; border: 1px solid var(--text-gold); color: var(--text-gold); margin-top: 10px;">CLOSE</button>
+  <div id="auth-modal" class="matrix-modal gate" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <!-- SECURITY GATE: method="post" with no action, and handleAuthSubmit()
+         always calls preventDefault() first, so the page never reloads and
+         the passkey can never end up in a URL. The inputs deliberately have
+         no name attribute, so even a native submit would carry nothing. -->
+    <form id="auth-form" class="matrix-card" method="post" autocomplete="on" onsubmit="handleAuthSubmit(event)">
+      <div class="gate-mark" aria-hidden="true"><svg class="icon"><use href="#i-shield"/></svg></div>
+      <div class="modal-head">
+        <span class="modal-eyebrow">Project-Gifted1</span>
+        <h2 id="auth-title">SECURITY GATE</h2>
+        <p class="modal-note">Operator authentication required.</p>
       </div>
+      <label class="field">
+        <span class="field-label">Operator ID</span>
+        <input type="text" id="auth-user" class="matrix-input" placeholder="Operator ID" value="" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next">
+      </label>
+      <label class="field">
+        <span class="field-label">Passkey</span>
+        <input type="password" id="auth-pass" class="matrix-input" placeholder="Secure Matrix Passkey" autocomplete="current-password" enterkeyhint="go">
+      </label>
+      <button type="submit" class="matrix-submit">AUTHENTICATE</button>
+    </form>
+  </div>
+
+  <div id="vision-modal" class="matrix-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="vision-title">
+    <div class="matrix-card">
+      <div class="modal-head">
+        <span class="modal-eyebrow">Optical input</span>
+        <h2 id="vision-title">VISION MATRIX</h2>
+        <p class="modal-note">Select optical input source. Stream remains local until EXECUTE is triggered to grab the sync frame.</p>
+      </div>
+      <div class="modal-stack">
+        <button type="button" class="matrix-submit btn-secondary" onclick="triggerHaptic(); setVisionSource('camera')"><svg class="icon" aria-hidden="true"><use href="#i-camera"/></svg>DEVICE CAMERA</button>
+        <button type="button" class="matrix-submit btn-secondary" onclick="triggerHaptic(); setVisionSource('screen')"><svg class="icon" aria-hidden="true"><use href="#i-screen"/></svg>SCREEN DISPLAY</button>
+        <button type="button" class="matrix-submit btn-danger" onclick="triggerHaptic(); setVisionSource('off')"><svg class="icon" aria-hidden="true"><use href="#i-stop"/></svg>TERMINATE FEED</button>
+      </div>
+      <button type="button" class="matrix-submit btn-ghost" data-dialog-close onclick="triggerHaptic(); document.getElementById('vision-modal').style.display='none'">CLOSE</button>
     </div>
   </div>
 
-  <div id="threads-modal" class="matrix-modal" style="display: none;">
-    <div class="matrix-card" style="max-width: 420px;">
-      <h2>SESSION THREADS</h2>
+  <div id="threads-modal" class="matrix-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="threads-title">
+    <div class="matrix-card">
+      <div class="modal-head">
+        <span class="modal-eyebrow">Vault</span>
+        <h2 id="threads-title">SESSION THREADS</h2>
+      </div>
       <div class="thread-list" id="thread-list-container">
         <div class="thread-item" id="thread-demo-1">
           <div class="thread-info">
@@ -1006,8 +1248,8 @@
             <span class="thread-date">2026-09-06 | 10:45 AM</span>
           </div>
           <div class="thread-actions">
-            <button class="thread-action-btn" onclick="triggerHaptic(30); loadThread('thread-demo-1')">LOAD</button>
-            <button class="thread-action-btn danger" onclick="triggerHaptic([40, 40]); deleteThread('thread-demo-1')">DEL</button>
+            <button type="button" class="thread-action-btn" onclick="triggerHaptic(30); loadThread('thread-demo-1')">LOAD</button>
+            <button type="button" class="thread-action-btn danger" onclick="triggerHaptic([40, 40]); deleteThread('thread-demo-1')" aria-label="Delete thread">DEL</button>
           </div>
         </div>
         <div class="thread-item" id="thread-demo-2">
@@ -1016,12 +1258,12 @@
             <span class="thread-date">2026-09-05 | 08:30 PM</span>
           </div>
           <div class="thread-actions">
-            <button class="thread-action-btn" onclick="triggerHaptic(30); loadThread('thread-demo-2')">LOAD</button>
-            <button class="thread-action-btn danger" onclick="triggerHaptic([40, 40]); deleteThread('thread-demo-2')">DEL</button>
+            <button type="button" class="thread-action-btn" onclick="triggerHaptic(30); loadThread('thread-demo-2')">LOAD</button>
+            <button type="button" class="thread-action-btn danger" onclick="triggerHaptic([40, 40]); deleteThread('thread-demo-2')" aria-label="Delete thread">DEL</button>
           </div>
         </div>
       </div>
-      <button class="matrix-submit" onclick="triggerHaptic(40); closeThreadsModal()" style="margin-top: 10px; background: transparent; border: 1px solid var(--text-gold); color: var(--text-gold);">CLOSE VAULT</button>
+      <button type="button" class="matrix-submit btn-ghost" data-dialog-close onclick="triggerHaptic(40); closeThreadsModal()">CLOSE VAULT</button>
     </div>
   </div>
 
@@ -1039,28 +1281,34 @@
     </div>
   </header>
 
-  <div id="quick-menu" class="quick-menu">
-    <button class="quick-chip" onclick="runQuick('/help')">HELP</button>
-    <button class="quick-chip" onclick="runQuick('/status')">STATUS</button>
-    <button class="quick-chip" onclick="runQuick('/threat-radar')">RADAR</button>
-    <button class="quick-chip" onclick="runQuick('/commerce-status')">COMMERCE</button>
-    <button class="quick-chip" onclick="runQuick('/sync-vault')">VAULT</button>
-    <button class="quick-chip" onclick="toggleQuickMenu(); triggerVaultSync();">VAULT SYNC</button>
-    <button class="quick-chip" onclick="runQuick('/voice')">VOICE</button>
-    <button class="quick-chip" onclick="toggleQuickMenu(); openErrorLog();">ERROR LOG</button>
+  <div id="quick-menu" class="quick-menu" role="menu" aria-label="Quick commands">
+    <div class="menu-heading" aria-hidden="true">Quick commands</div>
+    <button type="button" role="menuitem" class="quick-chip" onclick="runQuick('/help')"><svg class="icon" aria-hidden="true"><use href="#i-help"/></svg>HELP<span class="cmd" aria-hidden="true">/help</span></button>
+    <button type="button" role="menuitem" class="quick-chip" onclick="runQuick('/status')"><svg class="icon" aria-hidden="true"><use href="#i-pulse"/></svg>STATUS<span class="cmd" aria-hidden="true">/status</span></button>
+    <button type="button" role="menuitem" class="quick-chip" onclick="runQuick('/threat-radar')"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg>RADAR<span class="cmd" aria-hidden="true">/threat-radar</span></button>
+    <button type="button" role="menuitem" class="quick-chip" onclick="runQuick('/commerce-status')"><svg class="icon" aria-hidden="true"><use href="#i-cart"/></svg>COMMERCE<span class="cmd" aria-hidden="true">/commerce-status</span></button>
+    <button type="button" role="menuitem" class="quick-chip" onclick="runQuick('/sync-vault')"><svg class="icon" aria-hidden="true"><use href="#i-vault"/></svg>VAULT<span class="cmd" aria-hidden="true">/sync-vault</span></button>
+    <button type="button" role="menuitem" class="quick-chip" onclick="toggleQuickMenu(); triggerVaultSync();"><svg class="icon" aria-hidden="true"><use href="#i-sync"/></svg>VAULT SYNC</button>
+    <button type="button" role="menuitem" class="quick-chip" onclick="runQuick('/voice')"><svg class="icon" aria-hidden="true"><use href="#i-wave"/></svg>VOICE<span class="cmd" aria-hidden="true">/voice</span></button>
+    <div class="menu-divider" role="separator"></div>
+    <button type="button" role="menuitem" class="quick-chip" onclick="toggleQuickMenu(); openErrorLog();"><svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg>ERROR LOG</button>
   </div>
+  <div class="menu-scrim" onclick="toggleQuickMenu()" aria-hidden="true"></div>
 
-  <div id="error-log-modal" class="matrix-modal" style="display: none;">
-    <div class="matrix-card" style="max-width: 440px;">
-      <h2>ERROR LOG</h2>
-      <p style="font-size:11px; color:#aaa; text-align:center; margin-bottom:-8px;">Server and client-side failures, synced across devices once logged in. Only a short category label is ever sent for a local entry - never its message text - unless you tap FIX.</p>
-      <label style="font-size:11px; color:#aaa; display:flex; align-items:center; gap:6px; margin: 2px 0 -4px;">
+  <div id="error-log-modal" class="matrix-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="error-log-title">
+    <div class="matrix-card">
+      <div class="modal-head">
+        <span class="modal-eyebrow">Diagnostics</span>
+        <h2 id="error-log-title">ERROR LOG</h2>
+        <p class="modal-note">Server and client-side failures, synced across devices once logged in. Only a short category label is ever sent for a local entry - never its message text - unless you tap FIX.</p>
+      </div>
+      <label class="toggle-row">
         <input type="checkbox" id="show-resolved-toggle" onchange="triggerHaptic(20); toggleShowResolvedErrors()"> Show resolved
       </label>
-      <div id="error-log-list" class="thread-list"></div>
-      <div style="display:flex; gap:10px;">
-        <button class="matrix-submit" style="background: transparent; border: 1px solid var(--danger-red); color: var(--danger-red);" onclick="triggerHaptic(); resolveAllErrors()">RESOLVE ALL</button>
-        <button class="matrix-submit" style="background: transparent; border: 1px solid var(--text-gold); color: var(--text-gold);" onclick="triggerHaptic(); closeErrorLog()">CLOSE</button>
+      <div id="error-log-list" class="thread-list" aria-live="polite"></div>
+      <div class="modal-actions">
+        <button type="button" class="matrix-submit btn-danger" onclick="triggerHaptic(); resolveAllErrors()">RESOLVE ALL</button>
+        <button type="button" class="matrix-submit btn-ghost" data-dialog-close onclick="triggerHaptic(); closeErrorLog()">CLOSE</button>
       </div>
     </div>
   </div>
@@ -1353,11 +1601,21 @@
     }
 
     function toggleQuickMenu() {
-      document.getElementById('quick-menu').classList.toggle('open');
+      const open = document.getElementById('quick-menu').classList.toggle('open');
+      syncQuickMenuButton(open);
+      if (open) {
+        const first = document.querySelector('#quick-menu .quick-chip');
+        if (first) first.focus({ preventScroll: true });
+      }
+    }
+    function syncQuickMenuButton(open) {
+      const btn = document.getElementById('quick-menu-btn');
+      if (btn) btn.setAttribute('aria-expanded', String(open));
     }
     function runQuick(cmd) {
       triggerHaptic(30);
       document.getElementById('quick-menu').classList.remove('open');
+      syncQuickMenuButton(false);
       const input = document.getElementById('prompt-input');
       input.value = cmd;
       submitDirective();
@@ -1511,7 +1769,7 @@
       // elements swallow the newlines around them, because .message-text is
       // white-space: pre-wrap and would otherwise show them as blank lines.
       const isTableRow = (l) => /^\s*\|.*\|\s*$/.test(l);
-      const isTableSep = (l) => /^\s*\|?(\s*:?-{3,}:?\s*\|)+(\s*:?-{3,}:?\s*)?\|?\s*$/.test(l);
+      const isTableSep = (l) => /^\s*\|?(\s*:?-+:?\s*\|)+(\s*:?-+:?\s*)?\|?\s*$/.test(l);
       const cells = (l) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
       const lines = escaped.split('\n');
       const segments = [];
@@ -1702,6 +1960,15 @@
     // whenever the typed username was "Winner1G" has been removed — a
     // failed verification (including a network error) now always shows
     // Access Denied instead of silently letting the modal close.
+    // SECURITY GATE submit: preventDefault() runs first, before anything that
+    // could throw, so the form can never fall through to a native submit
+    // (no reload, and the passkey never lands in a URL or history entry).
+    function handleAuthSubmit(event) {
+      event.preventDefault();
+      triggerHaptic(60);
+      verifyAuth();
+    }
+
     async function verifyAuth() {
       const user = document.getElementById('auth-user').value.trim();
       const pass = document.getElementById('auth-pass').value.trim();
@@ -2258,6 +2525,10 @@
       } else {
         badge.style.display = 'none';
       }
+      const menuBtn = document.getElementById('quick-menu-btn');
+      if (menuBtn) {
+        menuBtn.setAttribute('aria-label', unresolvedCount > 0 ? `Quick commands, ${unresolvedCount} unresolved errors` : 'Quick commands');
+      }
     }
 
     async function markErrorResolved(id) {
@@ -2329,24 +2600,24 @@
 
       if (entries.length === 0) {
         const emptyLabel = showResolvedErrors ? 'No errors logged.' : 'No unresolved errors.';
-        container.innerHTML = `<div style="font-size:11px; color:#999; text-align:center; padding: 12px 0;">${emptyLabel}</div>`;
+        container.innerHTML = `<div class="list-empty">${emptyLabel}</div>`;
         return;
       }
       container.innerHTML = entries.map((entry, index) => {
         const countLabel = entry.count > 1 ? ` (x${entry.count})` : '';
         const categoryLabel = entry.category
-          ? `<span style="font-size:10px; color:#888; text-transform:uppercase; letter-spacing:0.5px;">${escapeHTML(entry.category)}</span>`
+          ? `<span class="err-cat">${escapeHTML(entry.category)}</span>`
           : '';
         // Connectivity failures (offline/network/timeout) aren't code bugs,
         // so there's nothing for Suggest Fix to patch - no FIX button. A
         // resolved entry never shows FIX or RESOLVE either.
         const isConnectivity = CONNECTIVITY_ERROR_CATEGORIES.has(entry.category);
         const fixBtn = (!entry.resolved && !isConnectivity)
-          ? `<button class="thread-action-btn" onclick="triggerHaptic(30); suggestFixForError(${index})">FIX</button>`
+          ? `<button type="button" class="thread-action-btn" onclick="triggerHaptic(30); suggestFixForError(${index})">FIX</button>`
           : '';
         const resolveBtn = (entry.id && !entry.resolved)
-          ? `<button class="thread-action-btn" onclick="triggerHaptic(30); markErrorResolved('${entry.id}')">RESOLVE</button>`
-          : (entry.resolved ? `<span style="font-size:10px; color:#666;">RESOLVED</span>` : '');
+          ? `<button type="button" class="thread-action-btn" onclick="triggerHaptic(30); markErrorResolved('${entry.id}')">RESOLVE</button>`
+          : (entry.resolved ? `<span class="err-resolved">RESOLVED</span>` : '');
         // issue #215: the second line shows where the failure came from
         // (the route, e.g. /api/mcp:check_wallet_age) instead of repeating
         // the reason already shown in the title above it. request_id (also
@@ -2355,10 +2626,10 @@
         // before the request_id column existed, or for the offline local
         // fallback log, and simply don't render.
         const routeLabel = entry.route
-          ? `<span style="font-size:11px; color:#ccc;">${escapeHTML(entry.route)}</span>`
+          ? `<span class="err-route">${escapeHTML(entry.route)}</span>`
           : '';
         const requestIdLabel = entry.requestId
-          ? `<span style="font-size:10px; color:#777; font-family:monospace;">req: ${escapeHTML(entry.requestId)}</span>`
+          ? `<span class="err-req">req: ${escapeHTML(entry.requestId)}</span>`
           : '';
         return `
         <div class="thread-item">
@@ -2380,7 +2651,7 @@
     async function renderErrorLogList() {
       const container = document.getElementById('error-log-list');
       if (!container) return;
-      container.innerHTML = '<div style="font-size:11px; color:#999; text-align:center; padding: 12px 0;">Loading...</div>';
+      container.innerHTML = '<div class="list-empty">Loading...</div>';
 
       await syncErrorLogToServer();
       const serverEntries = await fetchServerErrorLog();
@@ -2553,7 +2824,7 @@
         let contentHtml = `<span class="msg-timestamp">${finalTime}</span><div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>`;
 
         if (data.searchEntryPoint) {
-          contentHtml += '<div class="search-entry-point" style="margin-top: 12px; width: 100%;">' + data.searchEntryPoint + '</div>';
+          contentHtml += '<div class="search-entry-point">' + data.searchEntryPoint + '</div>';
         }
 
         if (data.image) {
@@ -2623,6 +2894,76 @@
 
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
+    
+    // DIALOG A11Y: the overlays are still opened and closed by their own
+    // functions (style.display), so this watches for that instead of
+    // changing them: focus moves into a dialog when it opens and back to
+    // whatever opened it when it closes, Tab stays inside the open dialog,
+    // and Escape closes it (via its own CLOSE button) or the ➕ menu. The
+    // Security Gate has no close button, so Escape never dismisses it.
+    (function setUpDialogs() {
+      const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])';
+      const returnFocus = new Map();
+      const isOpen = (el) => el.style.display !== 'none' && getComputedStyle(el).display !== 'none';
+      const openDialogs = () => Array.from(document.querySelectorAll('.matrix-modal')).filter(isOpen);
+      const focusables = (el) => Array.from(el.querySelectorAll(FOCUSABLE)).filter((n) => n.offsetParent !== null);
+
+      const observer = new MutationObserver((records) => {
+        records.forEach(({ target }) => {
+          if (isOpen(target)) {
+            if (returnFocus.has(target)) return;
+            returnFocus.set(target, document.activeElement);
+            const first = focusables(target)[0];
+            if (first) first.focus({ preventScroll: true });
+          } else if (returnFocus.has(target)) {
+            const back = returnFocus.get(target);
+            returnFocus.delete(target);
+            if (back && document.contains(back) && typeof back.focus === 'function') back.focus({ preventScroll: true });
+          }
+        });
+      });
+      document.querySelectorAll('.matrix-modal').forEach((el) => {
+        observer.observe(el, { attributes: true, attributeFilter: ['style'] });
+        if (isOpen(el)) returnFocus.set(el, null);
+      });
+
+      // Open the gate's keyboard straight away only where there is a real
+      // keyboard; on a phone that would cover the card before it's seen.
+      const gate = document.getElementById('auth-modal');
+      if (gate && isOpen(gate) && window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
+        const user = document.getElementById('auth-user');
+        if (user) user.focus();
+      }
+
+      document.addEventListener('keydown', (e) => {
+        const top = openDialogs().pop();
+        if (e.key === 'Escape') {
+          const menu = document.getElementById('quick-menu');
+          if (menu && menu.classList.contains('open')) {
+            toggleQuickMenu();
+            const btn = document.getElementById('quick-menu-btn');
+            if (btn) btn.focus();
+            return;
+          }
+          const closeBtn = top && top.querySelector('[data-dialog-close]');
+          if (closeBtn) closeBtn.click();
+          return;
+        }
+        if (e.key === 'Tab' && top) {
+          const items = focusables(top);
+          if (items.length === 0) return;
+          const first = items[0];
+          const last = items[items.length - 1];
+          if (e.shiftKey && (document.activeElement === first || !top.contains(document.activeElement))) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && (document.activeElement === last || !top.contains(document.activeElement))) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      });
+    })();
     
   </script>
 </body>
