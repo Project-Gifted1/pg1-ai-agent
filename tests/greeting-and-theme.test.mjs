@@ -381,3 +381,17 @@ test('header: lockup and status dot hide (and the border goes) only while the em
   assert.match(css, /\.brand-wrap \{[^}]*transition: opacity var\(--dur-3\)/);
   assert.match(css, /prefers-reduced-motion: reduce[^]*?transition-duration: 0\.01ms !important/);
 });
+
+// --- sign-in screen ---
+
+test('sign-in: tagline sits under the mark, "Operator access" heads the form, sr heading kept', () => {
+  const form = html.slice(html.indexOf('<form id="auth-form"'), html.indexOf('</form>'));
+  assert.match(form, /<h2 id="auth-title" class="sr-only">Sign in to PG1<\/h2>/);
+  const head = form.slice(form.indexOf('<div class="gate-head">'), form.indexOf('</div>'));
+  assert.match(head, /<use href="#pg1-lockup"\/><\/svg>\s*<p class="gate-tagline">Sovereign Threat Intelligence<\/p>\s*$/);
+  assert.ok(!head.includes('Operator access'));
+  const title = form.indexOf('<h3 class="gate-form-title">Operator access</h3>');
+  assert.ok(title > form.indexOf('gate-tagline') && title < form.indexOf('id="auth-user"'));
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.match(css, /\.gate-tagline \{[^}]*text-transform: uppercase;[^}]*color: var\(--gold\);/);
+});

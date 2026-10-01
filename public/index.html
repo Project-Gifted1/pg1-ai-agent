@@ -1355,8 +1355,22 @@
       box-shadow: none;
       animation: none;
     }
-    .gate-head { display: flex; flex-direction: column; align-items: center; gap: var(--sp-4); text-align: center; margin-bottom: var(--sp-4); }
-    .gate-head .modal-note { font-size: var(--fs-base); }
+    /* Mark + tagline read as one lockup: the mark is sized so its width
+       matches the tagline's (~222px), and padding-left balances the tracking
+       after the last letter so the line centres optically. */
+    .gate-head { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center; margin-bottom: var(--sp-5); }
+    .gate .lockup { --lockup-h: 84px; }
+    .gate-tagline {
+      padding-left: 0.1em;
+      font-size: var(--fs-2xs);
+      font-weight: 600;
+      line-height: var(--lh-tight);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      color: var(--gold);
+    }
+    .gate-form-title { margin-bottom: calc(var(--sp-2) - var(--sp-5)); font-size: var(--fs-sm); font-weight: 600; line-height: var(--lh-tight); color: var(--text); }
     .field { display: flex; flex-direction: column; gap: var(--sp-2); }
     .field-label { font-size: var(--fs-sm); font-weight: 500; color: var(--text-2); }
     .input-wrap { position: relative; display: flex; }
@@ -1380,6 +1394,21 @@
     .reveal-btn[aria-pressed="true"] .icon-hide { display: block; }
     .gate .matrix-submit { margin-top: var(--sp-2); }
     .gate-foot { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-3); font-size: var(--fs-xs); color: var(--text-3); text-align: center; }
+    /* KEYBOARD UP: the viewport resizes with the keyboard
+       (interactive-widget=resizes-content), so a short viewport tightens the
+       spacing and keeps Sign in above the keys. */
+    @media (max-height: 560px) {
+      .matrix-modal.gate { padding-top: calc(var(--safe-top) + var(--sp-4)); }
+      .matrix-modal.gate .matrix-card { gap: var(--sp-4); }
+      .gate-head { margin-bottom: var(--sp-1); }
+      .gate-form-title { margin-bottom: calc(var(--sp-2) - var(--sp-4)); }
+      .gate .matrix-submit { margin-top: 0; }
+    }
+    @media (max-height: 440px) {
+      .matrix-modal.gate { padding-top: calc(var(--safe-top) + var(--sp-2)); }
+      .matrix-modal.gate .matrix-card { gap: var(--sp-3); }
+      .gate-form-title { margin-bottom: calc(var(--sp-2) - var(--sp-3)); }
+    }
 
     /* ---------- APPEARANCE: System / Light / Dark segmented control ----------
        Native radios (arrow keys work), visually hidden; the label is the segment. */
@@ -1493,8 +1522,9 @@
       <div class="gate-head">
         <h2 id="auth-title" class="sr-only">Sign in to PG1</h2>
         <svg class="lockup is-lg" aria-hidden="true" focusable="false"><use href="#pg1-lockup"/></svg>
-        <p class="modal-note">Operator access</p>
+        <p class="gate-tagline">Sovereign Threat Intelligence</p>
       </div>
+      <h3 class="gate-form-title">Operator access</h3>
       <label class="field">
         <span class="field-label">Operator ID</span>
         <input type="text" id="auth-user" class="matrix-input" value="" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next">
