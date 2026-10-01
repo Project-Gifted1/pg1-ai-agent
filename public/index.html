@@ -6,6 +6,9 @@
   <meta name="theme-color" content="#0a0a0b">
   <meta name="color-scheme" content="dark">
   <title>Project-Gifted1™</title>
+  <link rel="icon" href="/brand/pg1-shield.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/brand/pg1-icon-192.png">
+  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="preload" href="/fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
   <style>
     /* FONTS: self-hosted (public/fonts, latin subset, SIL OFL - licences
@@ -210,22 +213,12 @@
     .icon-btn:focus-visible { border-radius: var(--r-full); }
     .icon-btn[aria-expanded="true"] { color: var(--gold); background: var(--gold-soft); }
 
-    /* PG1 mark: a gold shield with a "1" stroke, sized per context */
-    .pg1-mark {
-      --mark: 28px;
-      width: var(--mark);
-      height: var(--mark);
-      flex-shrink: 0;
-      display: grid;
-      place-items: center;
-      border-radius: calc(var(--mark) * 0.3);
-      background: linear-gradient(150deg, #2b2309 0%, #16130a 100%);
-      border: 1px solid var(--gold-line);
-      color: var(--gold);
-    }
-    .pg1-mark .icon { width: calc(var(--mark) * 0.62); height: calc(var(--mark) * 0.62); }
-    .pg1-mark.is-lg { --mark: 56px; }
-    .pg1-mark.is-md { --mark: 44px; }
+    /* PG1 lockup: letters follow the text colour, shield is --gold, the
+       "1" is --on-gold. Height sets the size; width follows (264:100). */
+    .lockup { display: block; height: var(--lockup-h, 22px); width: calc(var(--lockup-h, 22px) * 2.64); color: var(--text); flex-shrink: 0; overflow: visible; }
+    .lockup.is-lg { --lockup-h: 56px; }
+    .lockup.is-md { --lockup-h: 40px; }
+    .shield-mark { display: block; width: 28px; height: 28px; flex-shrink: 0; }
 
     /* ---------- HEADER: menu · PG1 mark + status dot · ➕ ---------- */
     .app-header {
@@ -241,20 +234,8 @@
       z-index: 20;
       flex-shrink: 0;
     }
-    .brand {
-      justify-self: center;
-      display: inline-flex;
-      align-items: center;
-      gap: var(--sp-2);
-      font-size: var(--fs-md);
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      line-height: 1;
-      color: var(--text);
-      white-space: nowrap;
-    }
-    .brand-name { display: inline-flex; align-items: flex-start; }
-    .tm-symbol { font-family: Arial, Helvetica, sans-serif; font-size: 0.42em; font-weight: 700; margin-left: 1px; color: var(--text-3); }
+    .brand-wrap { justify-self: start; display: inline-flex; align-items: center; gap: 10px; padding-left: var(--sp-1); }
+    .brand { display: block; line-height: 0; }
 
     .status-dot-mini {
       width: 8px;
@@ -389,7 +370,8 @@
       padding: 0 var(--sp-3);
       font-size: var(--fs-base);
     }
-    .drawer-row-label { display: flex; align-items: center; gap: var(--sp-3); }
+    .drawer-row-label { display: flex; align-items: center; gap: var(--sp-3); white-space: nowrap; }
+    .drawer-row .select { min-width: 0; flex-shrink: 1; }
     .drawer-row-label .icon { color: var(--text-2); }
     .drawer-foot { margin-top: auto; padding: 0 var(--sp-3); font-size: var(--fs-xs); color: var(--text-3); }
 
@@ -708,7 +690,8 @@
        back by itself if every message is deleted */
     .message-bubble.welcome:not(:only-child) { display: none; }
     .message-bubble.welcome > .msg-timestamp { display: none; }
-    .welcome .pg1-mark { margin: 0 auto var(--sp-5); }
+    .welcome .lockup { margin: 0 auto var(--sp-6); }
+    .welcome .pg1-mark { display: none; } /* empty state saved by an earlier preview build */
     .welcome-title { font-size: var(--fs-xl); font-weight: 600; letter-spacing: -0.01em; line-height: var(--lh-tight); color: var(--text); }
     .welcome .message-text { margin: var(--sp-2) auto 0; max-width: 26rem; color: var(--text-2); white-space: normal; }
     .welcome-suggestions {
@@ -1276,9 +1259,8 @@
       box-shadow: none;
       animation: none;
     }
-    .gate .pg1-mark { margin: 0 auto; }
-    .gate-head { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center; margin-bottom: var(--sp-2); }
-    .gate-head h2 { font-size: var(--fs-xl); }
+    .gate-head { display: flex; flex-direction: column; align-items: center; gap: var(--sp-4); text-align: center; margin-bottom: var(--sp-4); }
+    .gate-head .modal-note { font-size: var(--fs-base); }
     .field { display: flex; flex-direction: column; gap: var(--sp-2); }
     .field-label { font-size: var(--fs-sm); font-weight: 500; color: var(--text-2); }
     .input-wrap { position: relative; display: flex; }
@@ -1326,7 +1308,10 @@
        set), referenced with <use href="#i-...">. All share one 24px grid,
        one stroke width (--icon-stroke) and one rendered size (--icon). -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
-    <symbol id="i-pg1" viewBox="0 0 24 24"><path d="M12 2.8 4.5 5.6v5.9c0 4.9 3.2 8.2 7.5 9.7 4.3-1.5 7.5-4.8 7.5-9.7V5.6z"/><path d="M10.3 9.6 12.6 8v8"/></symbol>
+    <!-- BRAND: the PG1 lockup ("PG" + gold shield that is the "1") and the
+         shield alone. Same geometry as public/brand/pg1-mark.svg. -->
+    <symbol id="pg1-lockup" viewBox="0 0 264 100"><g stroke="currentColor"><path d="M8.5 0V100M8.5 8.5H38A24.5 24.5 0 0 1 38 57.5H8.5M155.44 24.45A38 41.5 0 1 0 163.5 50H131.5" fill="none" stroke-width="17" stroke-linejoin="miter"/></g><path d="M221.76 0L262.5 15.2V47.3C262.5 73.9 245.1 91.85 221.76 100C198.4 91.85 181 73.9 181 47.3V15.2Z" style="fill: var(--gold)"/><path d="M220 20H233V72H220V37.5L208.5 43.5V31Z" style="fill: var(--on-gold)"/></symbol>
+    <symbol id="pg1-shield" viewBox="169.76 -2 104 104"><path d="M221.76 0L262.5 15.2V47.3C262.5 73.9 245.1 91.85 221.76 100C198.4 91.85 181 73.9 181 47.3V15.2Z" style="fill: var(--gold)"/><path d="M220 20H233V72H220V37.5L208.5 43.5V31Z" style="fill: var(--on-gold)"/></symbol>
     <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></symbol>
     <symbol id="i-threads" viewBox="0 0 24 24"><path d="M4 4h11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-4 3v-3H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M20 8a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-1v3l-3-3h-4"/></symbol>
     <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
@@ -1367,9 +1352,9 @@
          no name attribute, so even a native submit would carry nothing. -->
     <form id="auth-form" class="matrix-card" method="post" autocomplete="on" onsubmit="handleAuthSubmit(event)">
       <div class="gate-head">
-        <div class="pg1-mark is-lg" aria-hidden="true"><svg class="icon"><use href="#i-pg1"/></svg></div>
-        <h2 id="auth-title">Sign in to PG1</h2>
-        <p class="modal-note">Operator access to the Project-Gifted1 agent.</p>
+        <h2 id="auth-title" class="sr-only">Sign in to PG1</h2>
+        <svg class="lockup is-lg" aria-hidden="true" focusable="false"><use href="#pg1-lockup"/></svg>
+        <p class="modal-note">Operator access</p>
       </div>
       <label class="field">
         <span class="field-label">Operator ID</span>
@@ -1435,11 +1420,10 @@
 
   <header class="app-header">
     <button type="button" id="drawer-btn" class="icon-btn" onclick="triggerHaptic(); toggleDrawer()" aria-label="Open menu" aria-expanded="false" aria-controls="app-drawer"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
-    <h1 class="brand" aria-label="Project-Gifted1">
-      <span class="pg1-mark" aria-hidden="true"><svg class="icon"><use href="#i-pg1"/></svg></span>
-      <span class="brand-name" aria-hidden="true">PG1<span class="tm-symbol">™</span></span>
+    <div class="brand-wrap">
+      <h1 class="brand" aria-label="PG1"><svg class="lockup" aria-hidden="true" focusable="false"><use href="#pg1-lockup"/></svg></h1>
       <span id="header-status-dot" class="status-dot-mini" role="img" aria-label="Status: ACTIVE | API LINKED" data-state="green"></span>
-    </h1>
+    </div>
     <div class="header-btn-wrap">
       <button type="button" id="quick-menu-btn" class="icon-btn" onclick="triggerHaptic(); toggleQuickMenu()" title="Quick commands" aria-label="Quick commands" aria-haspopup="true" aria-expanded="false" aria-controls="quick-menu"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
       <span id="error-log-badge" class="error-log-badge" aria-hidden="true"></span>
@@ -1452,7 +1436,7 @@
 
   <aside id="app-drawer" class="drawer" aria-labelledby="drawer-title" inert>
     <div class="drawer-head">
-      <span class="pg1-mark" aria-hidden="true"><svg class="icon"><use href="#i-pg1"/></svg></span>
+      <svg class="shield-mark" aria-hidden="true" focusable="false"><use href="#pg1-shield"/></svg>
       <div class="drawer-title" id="drawer-title">Project-Gifted1™<small>Threat-intelligence agent</small></div>
       <button type="button" class="icon-btn" aria-label="Close menu" onclick="triggerHaptic(); closeDrawer()" data-drawer-close><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>
@@ -1527,7 +1511,7 @@
   <template id="welcome-template">
     <div class="message-bubble welcome" id="welcome-bubble">
       <span class="msg-timestamp" id="welcome-timestamp"></span>
-      <div class="pg1-mark is-lg" aria-hidden="true"><svg class="icon"><use href="#i-pg1"/></svg></div>
+      <svg class="lockup is-md" aria-hidden="true" focusable="false"><use href="#pg1-lockup"/></svg>
       <h2 class="welcome-title" id="welcome-title">Good to see you, operator</h2>
       <div class="message-text">PG1 is online. Ask anything, or pick a starting point.</div>
       <div class="welcome-suggestions" role="group" aria-label="Suggested directives">
