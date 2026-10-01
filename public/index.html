@@ -2,447 +2,1397 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#0a0a0b">
+  <meta name="color-scheme" content="dark">
   <title>Project-Gifted1™</title>
+  <link rel="icon" href="/brand/pg1-shield.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/brand/pg1-icon-192.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="preload" href="/fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
   <style>
+    /* FONTS: self-hosted (public/fonts, latin subset, SIL OFL - licences
+       alongside). Only the weights actually used below are shipped. */
+    @font-face { font-family: "Inter"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/inter-latin-400-normal.woff2") format("woff2"); }
+    @font-face { font-family: "Inter"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/inter-latin-500-normal.woff2") format("woff2"); }
+    @font-face { font-family: "Inter"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/inter-latin-600-normal.woff2") format("woff2"); }
+    @font-face { font-family: "Inter"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/inter-latin-700-normal.woff2") format("woff2"); }
+    @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+    @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/jetbrains-mono-latin-600-normal.woff2") format("woff2"); }
+
+    /* DESIGN TOKENS - every colour, size, radius, shadow and duration used
+       below comes from here. Dark is the only (and default) theme. */
     :root {
-      --bg-color: #000000;
-      --card-bg: rgba(15, 15, 15, 0.6);
-      --text-gold: #f3c623;   
-      --text-main: #e8e8e8;
-      --input-bg: rgba(10, 10, 10, 0.8);
-      --glow-subtle: rgba(243, 198, 35, 0.15);
-      --glow-strong: rgba(243, 198, 35, 0.4);
-      --glass-edge: rgba(255, 255, 255, 0.03);
-      --danger-red: #ff4444;
-      --status-amber: #ffb300;
-      --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", monospace;
+      color-scheme: dark;
+
+      /* palette */
+      --bg: #0a0a0b;
+      --surface-1: #121214;
+      --surface-2: #1a1a1d;
+      --surface-3: #232327;
+      --border: #26262b;
+      --border-strong: #36363c;
+      --text: #ececee;
+      --text-2: #a8a8b0;
+      --text-3: #8a8a93;
+      --gold: #f3c623;
+      --gold-strong: #ffd84d;
+      --gold-soft: rgba(243, 198, 35, 0.12);
+      --gold-line: rgba(243, 198, 35, 0.45);
+      --on-gold: #0a0a0b;
+      --ok: #3ddc84;
+      --warn: #ffb300;
+      --danger: #ff5c5c;
+      --danger-soft: rgba(255, 92, 92, 0.12);
+      --danger-line: rgba(255, 92, 92, 0.45);
+      --info: #7cc4ff;
+      --scrim: rgba(5, 5, 6, 0.72);
+      --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--gold);
+
+      /* type: 16px body on phones, 17px from 768px */
+      --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+      --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", "Liberation Mono", monospace;
+      --fs-2xs: 0.6875rem;
+      --fs-xs: 0.75rem;
+      --fs-sm: 0.875rem;
+      --fs-base: 1rem;
+      --fs-md: 1.125rem;
+      --fs-lg: 1.375rem;
+      --fs-xl: 1.625rem;
+      --lh-tight: 1.25;
+      --lh-body: 1.62;
+
+      /* icons: one size and one stroke everywhere */
+      --icon: 20px;
+      --icon-stroke: 1.75;
+
+      /* spacing (4px grid) */
+      --sp-1: 4px;
+      --sp-2: 8px;
+      --sp-3: 12px;
+      --sp-4: 16px;
+      --sp-5: 20px;
+      --sp-6: 24px;
+      --sp-8: 32px;
+      --sp-10: 40px;
+      --sp-12: 48px;
+      --tap: 44px;
+      --measure: 46rem;
+      --header-h: 56px;
+      --turn-gap: var(--sp-8);
+
+      /* radius */
+      --r-sm: 6px;
+      --r-md: 10px;
+      --r-lg: 16px;
+      --r-xl: 24px;
+      --r-full: 999px;
+
+      /* elevation - borders do most of the work, shadows only on floating layers */
+      --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+      --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.45);
+      --shadow-3: 0 16px 48px rgba(0, 0, 0, 0.6);
+
+      /* motion */
+      --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+      --dur-1: 120ms;
+      --dur-2: 200ms;
+      --dur-3: 320ms;
+
+      /* safe areas (Pixel punch-hole / gesture bar) */
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+
+      /* LEGACY ALIASES - still referenced by inline styles the JavaScript
+         writes, and by chat history saved before this redesign, so they
+         must keep resolving. */
+      --bg-color: var(--bg);
+      --card-bg: var(--surface-1);
+      --text-gold: var(--gold);
+      --text-main: var(--text);
+      --text-muted: var(--text-3);
+      --input-bg: var(--surface-1);
+      --glow-subtle: var(--gold-soft);
+      --glow-strong: var(--gold-line);
+      --glass-edge: var(--border);
+      --danger-red: var(--danger);
+      --status-amber: var(--warn);
     }
-    
-    * { 
-      box-sizing: border-box; 
-      margin: 0; 
-      padding: 0; 
-      font-family: var(--font-mono); 
+
+    @media (min-width: 768px) {
+      :root { --fs-base: 1.0625rem; --header-h: 60px; --turn-gap: var(--sp-10); }
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: var(--fs-base);
+      line-height: var(--lh-body);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
       -webkit-tap-highlight-color: transparent;
-    }
-    
-    body { 
-      background-color: var(--bg-color); 
-      color: var(--text-main); 
-      display: flex; 
-      flex-direction: column; 
-      height: 100dvh; 
-      overflow: hidden; 
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      overflow: hidden;
       position: relative;
     }
 
-    body::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(circle at 50% 50%, var(--glow-subtle), transparent 70%);
-      pointer-events: none;
-      z-index: 0;
-      animation: ambient-breathe 5s ease-in-out infinite alternate;
+    button, input, select, textarea { font: inherit; color: inherit; }
+    button { -webkit-tap-highlight-color: transparent; }
+    [hidden] { display: none !important; }
+
+    /* One focus treatment everywhere: a gold ring for keyboard focus only. */
+    :focus { outline: none; }
+    :focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--r-sm); }
+
+    ::selection { background: var(--gold-soft); color: var(--text); }
+
+    /* no orphan words in short headings and notes */
+    h1, h2, .modal-note, .gate-foot, .drawer-foot, .status-detail, .welcome .message-text, .offline-banner { text-wrap: balance; }
+
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
     }
 
-    @keyframes ambient-breathe {
-      0% { opacity: 0.1; transform: scale(0.95); }
-      100% { opacity: 0.6; transform: scale(1.05); }
-    }
-    
-    header { 
-      display: flex; 
-      justify-content: space-between; 
-      align-items: center; 
-      padding: 12px 14px; 
-      background: rgba(3, 3, 3, 0.85);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-bottom: 1px solid var(--glass-edge);
-      z-index: 10; 
-      box-shadow: 0 4px 30px rgba(0,0,0,0.8);
-    }
-    
-    /* TM FIX: the gradient text effect (background-clip: text) used to sit on
-       the whole <h1>, including the ™. Browsers paint the clipped gradient
-       from the ™'s original position but draw the gold ™ at its moved
-       position, which produced two stacked ™ symbols. The gradient now lives
-       only on .brand-text, and the ™ is a separate plain gold element. */
-    header h1 { 
-      font-size: 15px; 
-      font-weight: 900; 
-      letter-spacing: 1px; 
-      text-transform: uppercase;
-      white-space: nowrap; 
-      display: flex;
-      align-items: flex-start; 
+    .icon {
+      width: var(--icon);
+      height: var(--icon);
+      flex-shrink: 0;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: var(--icon-stroke);
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
 
-    .brand-text {
-      background: linear-gradient(135deg, #b5852a 0%, #f3c623 25%, #fff2cd 50%, #f3c623 75%, #b5852a 100%);
-      background-size: 200% auto;
-      color: transparent;
-      -webkit-background-clip: text;
-      background-clip: text;
-      animation: sovereignShine 5s linear infinite;
-      filter: drop-shadow(0 0 8px rgba(243, 198, 35, 0.2));
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
     }
 
-    @keyframes sovereignShine {
-      to { background-position: 200% center; }
-    }
+    @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes rise-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @keyframes sheet-in { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes pop-in { from { transform: scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }
 
-    .tm-symbol {
-      font-size: 1em;
-      font-family: Arial, Helvetica, sans-serif;
-      line-height: 1;
-      margin-left: 3px;
-      color: #ffffff;
-      font-weight: 900; 
-      letter-spacing: 0;
+    /* ---------- SHARED: icon buttons and the PG1 mark ---------- */
+    .icon-btn {
+      position: relative;
+      width: var(--tap);
+      height: var(--tap);
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: 0;
+      border-radius: var(--r-full);
+      color: var(--text-2);
+      cursor: pointer;
+      transition: background-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
     }
-    
-    .header-controls { display: flex; gap: 6px; }
-    
-    .header-btn { 
-      background: rgba(255, 255, 255, 0.03); 
-      border: 1px solid transparent; 
-      color: var(--text-gold); 
-      width: 32px; 
-      height: 32px; 
-      border-radius: 6px; 
-      font-size: 14px; 
-      cursor: pointer; 
-      display: flex; 
-      align-items: center; 
-      justify-content: center; 
-      transition: all 0.3s ease;
-    }
-    .header-btn:hover {
-      background: rgba(243, 198, 35, 0.08);
-      box-shadow: 0 0 15px var(--glow-strong);
-    }
-    .header-btn:active { transform: scale(0.92); }
+    .icon-btn:hover { background: var(--surface-2); color: var(--text); }
+    .icon-btn:active { transform: scale(0.94); background: var(--surface-3); }
+    .icon-btn:focus-visible { border-radius: var(--r-full); }
+    .icon-btn[aria-expanded="true"] { color: var(--gold); background: var(--gold-soft); }
 
-    .header-btn-wrap { position: relative; display: inline-block; }
+    /* PG1 lockup: letters follow the text colour, shield is --gold, the
+       "1" is --on-gold. Height sets the size; width follows (264:100). */
+    .lockup { display: block; height: var(--lockup-h, 22px); width: calc(var(--lockup-h, 22px) * 2.64); color: var(--text); flex-shrink: 0; overflow: visible; }
+    .lockup.is-lg { --lockup-h: 56px; }
+    .lockup.is-md { --lockup-h: 40px; }
+    .shield-mark { display: block; width: 28px; height: 28px; flex-shrink: 0; }
+
+    /* ---------- HEADER: menu · PG1 mark + status dot · ➕ ---------- */
+    .app-header {
+      display: grid;
+      grid-template-columns: var(--tap) 1fr var(--tap);
+      align-items: center;
+      gap: var(--sp-2);
+      min-height: calc(var(--header-h) + var(--safe-top));
+      padding: var(--safe-top) max(var(--sp-2), var(--safe-right)) 0 max(var(--sp-2), var(--safe-left));
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      position: relative;
+      z-index: 20;
+      flex-shrink: 0;
+    }
+    .brand-wrap { justify-self: start; display: inline-flex; align-items: center; gap: 10px; padding-left: var(--sp-1); }
+    .brand { display: block; line-height: 0; }
+
+    .status-dot-mini {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--ok);
+      color: var(--ok);
+      box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
+      flex-shrink: 0;
+    }
+    .status-dot-mini[data-state="red"] { animation: status-blink 1.6s ease-in-out infinite; }
+    @keyframes status-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+    .header-btn-wrap { position: relative; display: inline-flex; }
     .error-log-badge {
       position: absolute;
-      top: -4px;
-      right: -4px;
-      min-width: 14px;
-      height: 14px;
-      padding: 0 3px;
-      border-radius: 7px;
-      background: var(--danger-red);
-      color: #fff;
-      font-size: 9px;
-      line-height: 14px;
+      top: 4px;
+      right: 0;
+      min-width: 17px;
+      height: 17px;
+      padding: 0 4px;
+      border-radius: var(--r-full);
+      background: var(--danger);
+      color: var(--on-gold);
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 17px;
       text-align: center;
       display: none;
       align-items: center;
       justify-content: center;
+      box-shadow: 0 0 0 2px var(--bg);
       pointer-events: none;
     }
 
-    #chat-container { 
-      flex: 1; 
-      overflow-y: auto; 
-      padding: 16px 20px; 
-      display: flex; 
-      flex-direction: column; 
-      gap: 20px; 
-      z-index: 2;
+    /* ---------- DRAWER (slides in from the left) ---------- */
+    .drawer-scrim {
+      position: fixed;
+      inset: 0;
+      z-index: 70;
+      background: var(--scrim);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--dur-3) var(--ease-out);
     }
-    
-    .message-bubble { 
-      background: var(--card-bg); 
-      border: 1px solid var(--glass-edge); 
-      border-radius: 12px; 
-      padding: 18px 20px; 
-      max-width: 96%; 
-      align-self: flex-start; 
-      box-shadow: 0 8px 24px rgba(0,0,0,0.8), inset 0 0 20px rgba(255,255,255,0.01);
-      backdrop-filter: blur(5px);
-      -webkit-backdrop-filter: blur(5px);
-      animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    .drawer {
+      position: fixed;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      z-index: 80;
+      width: min(86vw, 340px);
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-5);
+      padding: calc(var(--safe-top) + var(--sp-3)) var(--sp-3) calc(var(--safe-bottom) + var(--sp-4)) max(var(--sp-3), var(--safe-left));
+      background: var(--surface-1);
+      border-right: 1px solid var(--border-strong);
+      box-shadow: var(--shadow-3);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      transform: translateX(-102%);
+      visibility: hidden;
+      transition: transform var(--dur-3) var(--ease-out), visibility 0s linear var(--dur-3);
+    }
+    body.drawer-open .drawer { transform: none; visibility: visible; transition: transform var(--dur-3) var(--ease-out), visibility 0s; }
+    body.drawer-open .drawer-scrim { opacity: 1; pointer-events: auto; }
+
+    .drawer-head { display: flex; align-items: center; gap: var(--sp-3); padding-left: var(--sp-2); }
+    .drawer-title { flex: 1; font-size: var(--fs-base); font-weight: 600; line-height: var(--lh-tight); }
+    .drawer-title small { display: block; font-size: var(--fs-xs); font-weight: 400; color: var(--text-3); margin-top: 2px; }
+
+    .status-card {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+      padding: var(--sp-3) var(--sp-4);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+    }
+    .status-card-label { font-size: var(--fs-xs); color: var(--text-3); }
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      color: var(--text);
+    }
+    .status-detail { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
+    .status-dot {
+      display: inline-block;
+      flex-shrink: 0;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--ok);
+      color: var(--ok);
+      box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent) !important;
     }
 
-    @keyframes slide-up {
-      from { opacity: 0; transform: translateY(15px); }
-      to { opacity: 1; transform: translateY(0); }
+    .drawer-section { display: flex; flex-direction: column; gap: 2px; }
+    .drawer-label { padding: 0 var(--sp-3) var(--sp-2); font-size: var(--fs-xs); font-weight: 600; color: var(--text-3); }
+    .drawer-item {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-3);
+      min-height: 48px;
+      padding: 0 var(--sp-3);
+      background: transparent;
+      border: 0;
+      border-radius: var(--r-md);
+      color: var(--text);
+      font-size: var(--fs-base);
+      text-align: left;
+      cursor: pointer;
+      transition: background-color var(--dur-1) var(--ease-out);
     }
-    
-    .message-bubble.user { 
-      align-self: flex-end; 
-      background: rgba(20, 20, 20, 0.7); 
-      border: 1px solid rgba(243, 198, 35, 0.1); 
+    .drawer-item .icon { color: var(--text-2); }
+    .drawer-item:hover { background: var(--surface-2); }
+    .drawer-item:active { background: var(--surface-3); }
+    .drawer-item:focus-visible { border-radius: var(--r-md); }
+    .drawer-item.is-danger, .drawer-item.is-danger .icon { color: var(--danger); }
+    .drawer-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--sp-3);
+      min-height: 52px;
+      padding: 0 var(--sp-3);
+      font-size: var(--fs-base);
+    }
+    .drawer-row-label { display: flex; align-items: center; gap: var(--sp-3); white-space: nowrap; }
+    .drawer-row .select { min-width: 0; flex-shrink: 1; }
+    .drawer-row-label .icon { color: var(--text-2); }
+    .drawer-foot { margin-top: auto; padding: 0 var(--sp-3); font-size: var(--fs-xs); color: var(--text-3); }
+
+    /* switch (Spoken replies) */
+    .switch {
+      position: relative;
+      width: 44px;
+      height: 26px;
+      flex-shrink: 0;
+      border-radius: var(--r-full);
+      background: var(--surface-3);
+      border: 1px solid var(--border-strong);
+      cursor: pointer;
+      transition: background-color var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out);
+    }
+    .switch::before { content: ""; position: absolute; inset: -10px -4px; } /* 44px+ tap area */
+    .switch::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--text-2);
+      transition: transform var(--dur-2) var(--ease-out), background-color var(--dur-2) var(--ease-out);
+    }
+    .switch[aria-checked="true"] { background: var(--gold); border-color: var(--gold); }
+    .switch[aria-checked="true"]::after { transform: translateX(18px); background: var(--on-gold); }
+    .switch:focus-visible { border-radius: var(--r-full); }
+
+    .select {
+      -webkit-appearance: none;
+      appearance: none;
+      min-height: var(--tap);
+      padding: 0 34px 0 var(--sp-3);
+      background-color: var(--surface-2);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a8a8b0' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-md);
+      color: var(--text);
+      font-size: var(--fs-base);
+      cursor: pointer;
+    }
+    .select:focus-visible { border-radius: var(--r-md); }
+    .select option { background: var(--surface-2); color: var(--text); }
+
+    /* ---------- THREAD ---------- */
+    #chat-container {
+      flex: 1;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding-top: var(--sp-6);
+      padding-bottom: var(--sp-8);
+      padding-left: max(var(--sp-4), var(--safe-left), calc((100% - var(--measure)) / 2));
+      padding-right: max(var(--sp-4), var(--safe-right), calc((100% - var(--measure)) / 2));
+      display: flex;
+      flex-direction: column;
+      gap: var(--turn-gap);
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ---------- MESSAGES ----------
+       Agent replies sit straight on the canvas under a small PG1 byline;
+       operator turns are a quiet right-aligned bubble. Everything keys off
+       the class names saved chat history already uses. */
+    .message-bubble {
+      position: relative;
+      align-self: stretch;
+      max-width: 100%;
+      min-width: 0;
+      animation: rise-in var(--dur-3) var(--ease-out) both;
+    }
+    .message-bubble.user {
+      align-self: flex-end;
+      max-width: min(85%, 36rem);
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+    .message-bubble.user > .message-text {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 20px 20px 6px 20px;
+      padding: 10px var(--sp-4);
     }
 
     .msg-timestamp {
-      display: block;
-      font-size: 10px;
-      color: var(--text-gold);
-      opacity: 0.6;
-      margin-bottom: 6px;
-      font-weight: bold;
-      letter-spacing: 1px;
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      min-height: 1em;
+      font-family: var(--font-mono);
+      font-size: var(--fs-2xs);
+      line-height: var(--lh-tight);
+      color: var(--text-3);
+      margin-bottom: var(--sp-2);
     }
-    
-    .message-bubble.user .msg-timestamp {
-      text-align: right;
+    .message-bubble:not(.user) > .msg-timestamp::before {
+      content: "PG1";
+      font-family: var(--font-sans);
+      font-size: var(--fs-xs);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: var(--gold);
     }
-    
-    .message-text { 
-      font-size: 14px; 
-      line-height: 1.7; 
-      letter-spacing: 0.5px; 
-      white-space: pre-wrap; 
-      word-break: break-word; 
-      color: var(--text-main);
-    }
-    
-    .message-actions { 
-      display: flex; 
-      gap: 20px; 
-      margin-top: 16px; 
-      font-size: 11px; 
-      color: var(--text-gold); 
-      text-transform: uppercase; 
-      cursor: pointer; 
-      font-weight: bold; 
-      letter-spacing: 1px;
-    }
-    .message-actions span { transition: all 0.2s ease; display: inline-block; opacity: 0.85; }
-    .message-actions span:hover { text-decoration: underline; text-shadow: 0 0 10px var(--text-gold); opacity: 1; }
-    .message-actions span:active { transform: scale(0.9); }
+    .message-bubble.user > .msg-timestamp { justify-content: flex-end; margin-bottom: var(--sp-1); }
 
-    .approval-actions { display: flex; gap: 12px; margin-top: 16px; }
+    .message-text {
+      font-size: var(--fs-base);
+      line-height: var(--lh-body);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      color: var(--text);
+    }
+    .message-text strong { color: #fff; font-weight: 600; }
+
+    /* markdown blocks (formatMarkdown) */
+    .md-h { display: block; color: var(--text); font-weight: 600; line-height: var(--lh-tight); margin: var(--sp-6) 0 var(--sp-2); }
+    .md-h:first-child { margin-top: 0; }
+    .md-h1 { font-size: var(--fs-lg); }
+    .md-h2 { font-size: var(--fs-md); }
+    .md-h3 { font-size: var(--fs-sm); color: var(--gold); letter-spacing: 0.02em; }
+    .md-list { white-space: normal; margin: var(--sp-2) 0; padding-left: 1.4em; }
+    .md-list li { margin: var(--sp-1) 0; padding-left: var(--sp-1); }
+    .md-list li::marker { color: var(--text-3); }
+    .md-hr { border: 0; height: 1px; background: var(--border); margin: var(--sp-6) 0; }
+    .md-link { color: var(--info); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; overflow-wrap: anywhere; }
+    .md-link:hover { color: #a9d8ff; }
+    .md-code-inline {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      background: var(--surface-3);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 0.1em 0.35em;
+    }
+
+    .md-table-wrap {
+      white-space: normal;
+      overflow-x: auto;
+      margin: var(--sp-4) 0;
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      -webkit-overflow-scrolling: touch;
+    }
+    .md-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+    .md-table th, .md-table td { text-align: left; padding: 10px var(--sp-3); vertical-align: top; }
+    .md-table th { font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); background: var(--surface-1); white-space: nowrap; }
+    .md-table td { border-top: 1px solid var(--border); overflow-wrap: normal; min-width: 6ch; }
+
+    .code-block {
+      white-space: normal;
+      margin: var(--sp-4) 0;
+      background: var(--surface-1);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      overflow: hidden;
+    }
+    .code-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 36px;
+      padding-left: var(--sp-3);
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: var(--fs-2xs);
+      color: var(--text-3);
+    }
+    .code-copy {
+      position: relative;
+      width: 40px;
+      height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: 0;
+      color: var(--text-2);
+      cursor: pointer;
+    }
+    .code-copy::before { content: ""; position: absolute; inset: -4px 0; } /* 44px tap area */
+    .code-copy:hover { color: var(--text); }
+    .code-copy:focus-visible { border-radius: var(--r-sm); }
+    .code-copy .icon-done, .msg-action .icon-done { display: none; }
+    .code-copy.copied .icon-main, .msg-action.is-done .icon-main { display: none; }
+    .code-copy.copied .icon-done, .msg-action.is-done .icon-done { display: block; color: var(--ok); }
+    /* Code blocks saved before the redesign used a "Copy" text label */
+    .code-copy:empty::after { content: "Copy"; font-family: var(--font-mono); font-size: var(--fs-2xs); }
+    /* plain <pre> also covers code blocks saved before this redesign */
+    .message-text pre {
+      margin: var(--sp-2) 0;
+      padding: var(--sp-3) var(--sp-4);
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: var(--fs-sm);
+      line-height: 1.6;
+      tab-size: 2;
+    }
+    .code-block pre { margin: 0; }
+    /* !important only to beat the inline font-family on code saved before the redesign */
+    .message-text pre code { font-family: var(--font-mono) !important; white-space: pre; }
+
+    /* slash-command chips: tap to run */
+    .cmd-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 36px;
+      margin: 4px 2px;
+      padding: 0 var(--sp-3);
+      vertical-align: middle;
+      background: var(--gold-soft);
+      border: 1px solid var(--gold-line);
+      border-radius: var(--r-full);
+      color: var(--gold);
+      font-family: var(--font-mono);
+      font-size: var(--fs-sm);
+      line-height: var(--lh-tight);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+    }
+    .cmd-chip:hover { background: rgba(243, 198, 35, 0.2); }
+    .cmd-chip:active { transform: scale(0.97); }
+    .cmd-chip:focus-visible { border-radius: var(--r-full); }
+
+    /* message actions: icon-only outline buttons, 44px tap area */
+    .message-actions {
+      display: flex;
+      gap: 0;
+      margin: var(--sp-2) 0 0 -4px;
+    }
+    .message-bubble.user .message-actions { justify-content: flex-end; margin: 2px -4px 0 0; }
+    .msg-action {
+      position: relative;
+      width: var(--tap);
+      height: var(--tap);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: 0;
+      color: var(--text-3);
+      cursor: pointer;
+      transition: color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+    }
+    .msg-action::before {
+      content: "";
+      position: absolute;
+      inset: 4px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-full);
+      transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
+    }
+    .msg-action .icon { position: relative; }
+    .msg-action:hover { color: var(--text); }
+    .msg-action:hover::before { background: var(--surface-2); border-color: var(--border-strong); }
+    .msg-action:active { transform: scale(0.94); }
+    .msg-action:focus-visible { box-shadow: none; }
+    .msg-action:focus-visible::before { box-shadow: var(--focus-ring); }
+    .message-actions > span { display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 var(--sp-3); color: var(--text-3); cursor: pointer; }
+    @media (hover: hover) and (pointer: fine) {
+      .message-actions { opacity: 0; transition: opacity var(--dur-2) var(--ease-out); }
+      .message-bubble:hover .message-actions,
+      .message-bubble:focus-within .message-actions,
+      .message-bubble:last-child .message-actions { opacity: 1; }
+    }
+
+    /* two-step approval: always text labels */
+    .approval-actions { display: flex; gap: var(--sp-2); margin-top: var(--sp-5); max-width: 28rem; }
     .approval-btn {
-      flex: 1; padding: 12px; border-radius: 8px; font-size: 12px; font-weight: bold;
-      text-transform: uppercase; letter-spacing: 1px; cursor: pointer; border: 1px solid;
-      transition: all 0.2s ease; background: transparent; font-family: var(--font-mono);
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--sp-2);
+      min-height: 48px;
+      padding: 0 var(--sp-4);
+      border-radius: var(--r-full);
+      border: 1px solid transparent;
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      cursor: pointer;
+      background: transparent;
+      transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
     }
-    .approval-btn.approve { border-color: var(--text-gold); color: var(--text-gold); }
-    .approval-btn.approve:hover { background: rgba(243, 198, 35, 0.12); box-shadow: 0 0 15px var(--glow-subtle); }
-    .approval-btn.decline { border-color: var(--danger-red); color: var(--danger-red); }
-    .approval-btn.decline:hover { background: rgba(255, 68, 68, 0.12); }
-    .approval-btn:active { transform: scale(0.94); }
-    .approval-btn:disabled { opacity: 0.4; cursor: default; transform: none; box-shadow: none; }
+    .approval-btn.approve { background: var(--gold); color: var(--on-gold); }
+    .approval-btn.approve:hover { background: var(--gold-strong); }
+    .approval-btn.decline { border-color: var(--border-strong); color: var(--text); }
+    .approval-btn.decline:hover { background: var(--danger-soft); border-color: var(--danger-line); color: var(--danger); }
+    .approval-btn:active { transform: scale(0.97); }
+    .approval-btn:focus-visible { border-radius: var(--r-full); }
+    .approval-btn:disabled { opacity: 0.5; cursor: progress; transform: none; }
 
-    .media-preview-container { margin-top: 16px; margin-bottom: 16px; width: 100%; }
-    .media-preview-container img, .media-preview-container video { 
-      width: 100%; 
-      border-radius: 8px; 
-      border: 1px solid rgba(243, 198, 35, 0.3); 
-      background: #000; 
-      display: block; 
-      max-height: 450px; 
-      object-fit: contain; 
-      box-shadow: 0 10px 30px rgba(0,0,0,0.9), 0 0 15px var(--glow-subtle);
+    .media-preview-container { margin: var(--sp-4) 0; width: 100%; }
+    .media-preview-container img, .media-preview-container video {
+      width: 100%;
+      max-height: 450px;
+      object-fit: contain;
+      display: block;
+      background: var(--surface-1);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
     }
-    
-    .footer-panel { 
-      padding: 14px 16px; 
-      background: rgba(3, 3, 3, 0.85);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-top: 1px solid var(--glass-edge); 
-      display: flex; 
-      flex-direction: column; 
-      gap: 12px; 
+    .search-entry-point { margin-top: var(--sp-3); width: 100%; overflow-x: auto; }
+
+    /* ---------- EMPTY STATE ---------- */
+    .message-bubble.welcome { text-align: center; padding: var(--sp-4) 0; }
+    .message-bubble.welcome:only-child { margin-block: auto; }
+    /* once a conversation has started the greeting steps aside; it comes
+       back by itself if every message is deleted */
+    .message-bubble.welcome:not(:only-child) { display: none; }
+    .message-bubble.welcome > .msg-timestamp { display: none; }
+    .welcome .lockup { margin: 0 auto var(--sp-6); }
+    .welcome .pg1-mark { display: none; } /* empty state saved by an earlier preview build */
+    .welcome-title { font-size: var(--fs-xl); font-weight: 600; letter-spacing: -0.01em; line-height: var(--lh-tight); color: var(--text); }
+    .welcome .message-text { margin: var(--sp-2) auto 0; max-width: 26rem; color: var(--text-2); white-space: normal; }
+    .welcome-suggestions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--sp-2);
+      margin-top: var(--sp-8);
+      text-align: left;
+    }
+    .suggestion {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--sp-3);
+      min-height: 96px;
+      padding: var(--sp-4);
+      background: var(--surface-1);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+      transition: border-color var(--dur-1) var(--ease-out), background-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+    }
+    .suggestion .icon { color: var(--gold); }
+    .suggestion span { display: flex; flex-direction: column; gap: 2px; min-width: 0; width: 100%; }
+    .suggestion strong { font-size: var(--fs-sm); font-weight: 600; line-height: var(--lh-tight); }
+    .suggestion small { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .suggestion:hover { border-color: var(--gold-line); background: var(--surface-2); }
+    .suggestion:active { transform: scale(0.98); }
+    .suggestion:focus-visible { border-radius: var(--r-lg); }
+    /* chat saved during the first redesign pass laid suggestions out in a row */
+    .suggestion > .icon:first-child + span { margin-top: auto; }
+
+    /* pending: "thinking" indicator while a directive is in flight */
+    .pending-text { color: var(--text-2); display: flex; align-items: center; gap: var(--sp-3); }
+    .thinking { display: inline-flex; gap: 5px; }
+    .thinking i {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--gold);
+      animation: thinking 1.2s var(--ease-out) infinite;
+    }
+    .thinking i:nth-child(2) { animation-delay: 0.15s; }
+    .thinking i:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes thinking {
+      0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+      40% { opacity: 1; transform: translateY(-3px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .thinking i { animation: none; opacity: 0.7; }
+    }
+
+    /* failed directive / interrupted request */
+    .message-bubble.error {
+      padding: var(--sp-3) var(--sp-4);
+      background: var(--danger-soft);
+      border: 1px solid rgba(255, 92, 92, 0.3);
+      border-radius: var(--r-lg);
+    }
+    .message-bubble.error .message-text { color: #ffd0d0; }
+    .message-bubble.error > .msg-timestamp::before { color: var(--danger); }
+    .message-bubble.error.offline { background: rgba(255, 179, 0, 0.07); border-color: rgba(255, 179, 0, 0.3); }
+    .message-bubble.error.offline .message-text { color: #ffe2a3; }
+    .message-bubble.error.offline > .msg-timestamp::before { color: var(--warn); }
+
+    /* ---------- BOTTOM: offline banner, toast and composer ---------- */
+    .footer-panel {
+      position: relative;
       z-index: 10;
-      box-shadow: 0 -5px 30px rgba(0,0,0,0.8);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+      padding: 0 max(var(--sp-3), var(--safe-right)) calc(var(--sp-3) + var(--safe-bottom)) max(var(--sp-3), var(--safe-left));
+      background: linear-gradient(to bottom, transparent, var(--bg) var(--sp-4));
     }
-    
-    .telemetry-row { 
-      display: flex; 
-      justify-content: space-between; 
-      align-items: center; 
-      padding: 0 4px;
-    }
-    
-    .voice-group { display: flex; align-items: center; gap: 12px; }
-    
-    .stealth-select, .stealth-btn {
-      background: transparent; border: none; color: var(--text-gold);
-      font-size: 11px; font-weight: bold; text-transform: uppercase;
-      letter-spacing: 1px; cursor: pointer; outline: none;
-      transition: all 0.2s; opacity: 0.7;
-    }
-    .stealth-select:hover, .stealth-btn:hover { opacity: 1; text-shadow: 0 0 10px var(--text-gold); }
-    .stealth-select option { background: var(--bg-color); color: var(--text-gold); }
-
-    .status-indicator { 
-      font-size: 11px; color: #999; letter-spacing: 1.5px; 
-      text-transform: uppercase; display: flex; align-items: center; gap: 8px;
+    .footer-panel > * {
+      width: 100%;
+      max-width: calc(var(--measure) + var(--sp-4));
+      margin-inline: auto;
     }
 
-    .status-dot { 
-      display: inline-block; width: 6px; height: 6px;
-      background-color: #00ff66; border-radius: 50%;
-      box-shadow: 0 0 10px #00ff66;
-      animation: pulse-dot 1.5s infinite alternate;
+    .offline-banner {
+      display: none;
+      align-items: center;
+      gap: var(--sp-2);
+      padding: var(--sp-2) var(--sp-3);
+      border-radius: var(--r-full);
+      background: rgba(255, 179, 0, 0.08);
+      border: 1px solid rgba(255, 179, 0, 0.3);
+      color: #ffe2a3;
+      font-size: var(--fs-xs);
+      line-height: 1.35;
+      justify-content: center;
+      align-self: center;
+      width: auto;
     }
-    @keyframes pulse-dot {
-      from { opacity: 0.4; box-shadow: 0 0 3px #00ff66; }
-      to { opacity: 1; box-shadow: 0 0 12px #00ff66; }
+    .offline-banner .icon { color: var(--warn); }
+    body:has(#header-status-dot[data-state="red"]) .offline-banner { display: flex; }
+
+    /* toast: error flashes and "tap to play" (written by flashStatus /
+       showTapToPlay). Floats above the composer without moving it. */
+    .toast {
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + var(--sp-1));
+      width: max-content;
+      max-width: calc(100% - var(--sp-8));
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      padding: 10px var(--sp-4);
+      background: var(--surface-3);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-full);
+      box-shadow: var(--shadow-3);
+      color: var(--text);
+      font-size: var(--fs-sm);
+      line-height: 1.35;
+      opacity: 0;
+      transform: translate(-50%, 6px);
+      pointer-events: none;
+      transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out);
     }
-    
-    .command-deck { 
-      display: flex; align-items: flex-end; 
-      background: var(--input-bg); border: 1px solid var(--glass-edge);
-      border-radius: 12px; padding: 6px; gap: 6px;
-      transition: all 0.3s ease; box-shadow: inset 0 0 15px rgba(0,0,0,0.6);
+    .toast.is-visible { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+    .toast.is-error { border-color: var(--danger-line); }
+    .toast.is-error::before {
+      content: "";
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+      background: var(--danger);
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 8v5M12 16.5h.01'/%3E%3C/svg%3E") center / contain no-repeat;
+      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 8v5M12 16.5h.01'/%3E%3C/svg%3E") center / contain no-repeat;
     }
-    .command-deck:focus-within {
-      box-shadow: 0 0 20px var(--glow-strong), inset 0 0 10px var(--glow-subtle);
-      border-color: rgba(243, 198, 35, 0.3);
+    .toast.is-play { padding: 0; border-color: var(--gold-line); }
+    .toast-action {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sp-2);
+      min-height: var(--tap);
+      padding: 0 var(--sp-5) 0 var(--sp-4);
+      background: transparent;
+      border: 0;
+      border-radius: var(--r-full);
+      color: var(--gold);
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      cursor: pointer;
     }
-    
-    .tool-btn { 
-      background: transparent; border: none; color: var(--text-gold); 
-      border-radius: 8px; width: 40px; height: 40px; 
-      display: flex; align-items: center; justify-content: center; 
-      cursor: pointer; font-size: 18px; transition: all 0.2s;
-      flex-shrink: 0; opacity: 0.8;
+    .toast-action:focus-visible { border-radius: var(--r-full); }
+
+    .composer {
+      display: flex;
+      flex-direction: column;
+      background: var(--surface-1);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-xl);
+      box-shadow: var(--shadow-2);
+      transition: border-color var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
     }
-    .tool-btn:hover { background: rgba(243, 198, 35, 0.08); opacity: 1; }
-    .tool-btn:active { transform: scale(0.9); }
+    .composer:focus-within { border-color: var(--gold-line); box-shadow: var(--shadow-2), 0 0 0 3px var(--gold-soft); }
+    body:has(#header-status-dot[data-state="red"]) .composer { border-color: rgba(255, 179, 0, 0.35); }
+
+    .attach-chips {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      padding: var(--sp-3) var(--sp-3) 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .attach-chips::-webkit-scrollbar { display: none; }
+    .attach-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+      max-width: 75%;
+      min-height: 32px;
+      padding: 0 var(--sp-3) 0 var(--sp-2);
+      background: var(--surface-3);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-md);
+      font-size: var(--fs-xs);
+      color: var(--text);
+    }
+    .attach-chip .icon { color: var(--text-2); }
+    .attach-chip.is-live .icon { color: var(--gold); }
+    .attach-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .attach-clear {
+      position: sticky;
+      right: 0;
+      margin-left: auto;
+      flex-shrink: 0;
+      box-shadow: -12px 0 12px var(--surface-1);
+      background: var(--surface-1) !important;
+      width: 32px;
+      height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-full);
+      color: var(--text-2);
+      cursor: pointer;
+    }
+    .attach-clear::before { content: ""; position: absolute; inset: -6px; }
+    .attach-clear:hover { color: var(--text); background: var(--surface-3); }
+    .attach-clear:focus-visible { border-radius: var(--r-full); }
+
+    textarea {
+      display: block;
+      width: 100%;
+      min-height: 52px;
+      max-height: 40dvh;
+      padding: 14px var(--sp-4) 6px;
+      background: transparent;
+      border: 0;
+      outline: none;
+      resize: none;
+      color: var(--text);
+      font-size: 1rem; /* 16px: never smaller, or mobile browsers zoom on focus */
+      line-height: 1.5;
+      overflow-y: auto;
+    }
+    textarea::placeholder { color: var(--text-3); }
+    textarea:focus-visible { box-shadow: none; }
+
+    .composer-row { display: flex; align-items: center; gap: 2px; padding: 0 var(--sp-2) var(--sp-2); }
+    .composer-row .spacer { flex: 1; }
+    .icon-btn:has(input:focus-visible) { box-shadow: var(--focus-ring); }
 
     @keyframes mic-recording {
-      0% { color: #ff4444; text-shadow: 0 0 5px #ff4444; background: rgba(255, 68, 68, 0.1); }
-      100% { color: #ff4444; text-shadow: 0 0 18px #ff4444; background: rgba(255, 68, 68, 0.25); transform: scale(1.05); }
+      0% { box-shadow: 0 0 0 0 rgba(255, 92, 92, 0.45); }
+      100% { box-shadow: 0 0 0 8px rgba(255, 92, 92, 0); }
     }
-    .mic-active { animation: mic-recording 0.6s infinite alternate !important; opacity: 1 !important; }
-    
-    textarea { 
-      flex: 1; background: transparent; border: none; color: #fff; 
-      padding: 11px 8px; font-size: 14px; letter-spacing: 0.5px;
-      resize: none; min-height: 40px; max-height: 120px;
-      outline: none; line-height: 1.5;
+    .mic-active {
+      color: var(--danger) !important;
+      background: var(--danger-soft) !important;
+      animation: mic-recording 1s var(--ease-out) infinite;
     }
-    textarea::placeholder { color: #777; }
-    
-    .execute-btn { 
-      background: var(--text-gold); color: #000; border: none; 
-      font-weight: bold; padding: 0 16px; border-radius: 8px; 
-      height: 40px; font-size: 12px; cursor: pointer; 
-      text-transform: uppercase; letter-spacing: 1.5px;
-      transition: all 0.2s; flex-shrink: 0;
-      box-shadow: 0 0 10px rgba(243, 198, 35, 0.2);
+
+    .execute-btn {
+      width: var(--tap);
+      height: var(--tap);
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--gold);
+      color: var(--on-gold);
+      border: 0;
+      border-radius: var(--r-full);
+      cursor: pointer;
+      transition: background-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
     }
-    .execute-btn:hover { filter: brightness(1.15); box-shadow: 0 0 20px var(--glow-strong); }
+    .execute-btn .icon { stroke-width: 2.25; }
+    .execute-btn:hover { background: var(--gold-strong); }
     .execute-btn:active { transform: scale(0.94); }
-    
-    .quick-row { display: none; }
-    .quick-menu { display: none; position: fixed; top: 58px; right: 12px; z-index: 60; flex-direction: column; gap: 8px; padding: 10px; background: #0a0a0a; border: 1px solid rgba(243, 198, 35, 0.3); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.9); }
-    .quick-menu.open { display: flex; }
-    .quick-menu .quick-chip { text-align: left; padding: 10px 16px; font-size: 11px; }
-    .quick-chip { flex-shrink: 0; background: transparent; border: 1px solid rgba(243, 198, 35, 0.4); color: var(--text-gold); border-radius: 14px; padding: 6px 12px; font-size: 10px; font-weight: bold; letter-spacing: 1px; font-family: var(--font-mono); cursor: pointer; }
-    .quick-chip:active { transform: scale(0.92); }
-    input[type="file"] { display: none; }
+    .execute-btn:focus-visible { border-radius: var(--r-full); }
+    /* nothing to send yet: the button rests quietly (it still works) */
+    .composer:has(textarea:placeholder-shown):not(:has(.attach-chip)) .execute-btn { background: var(--surface-3); color: var(--text-3); }
 
-    .matrix-modal { 
-      position: fixed; inset: 0; background: rgba(0,0,0,0.92);
-      backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
-      z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px;
-    }
-    
-    .matrix-card { 
-      background: rgba(10, 10, 10, 0.8); border: 1px solid var(--glass-edge); 
-      border-radius: 16px; padding: 32px 24px; width: 100%; max-width: 380px; 
-      display: flex; flex-direction: column; gap: 20px; 
-      box-shadow: 0 15px 50px rgba(0,0,0,0.9), inset 0 0 30px rgba(255,255,255,0.02);
-      animation: modal-drop 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    /* the native file input stays focusable (keyboard) but invisible */
+    input[type="file"] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
     }
 
-    @keyframes modal-drop {
-      from { opacity: 0; transform: scale(0.9) translateY(-30px); }
-      to { opacity: 1; transform: scale(1) translateY(0); }
+    /* ---------- ➕ MENU: bottom sheet on phones, popover from 640px ---------- */
+    .quick-menu {
+      display: none;
+      position: fixed;
+      z-index: 60;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      flex-direction: column;
+      gap: 2px;
+      padding: var(--sp-2) max(var(--sp-3), var(--safe-right)) calc(var(--sp-3) + var(--safe-bottom)) max(var(--sp-3), var(--safe-left));
+      background: var(--surface-1);
+      border-top: 1px solid var(--border-strong);
+      border-radius: var(--r-xl) var(--r-xl) 0 0;
+      box-shadow: var(--shadow-3);
+      max-height: 85dvh;
+      overflow-y: auto;
     }
-    
-    .matrix-card h2 { 
-      font-size: 15px; color: var(--text-gold); text-align: center; 
-      letter-spacing: 2px; margin-bottom: 4px; text-shadow: 0 0 15px var(--glow-subtle);
+    .quick-menu::before {
+      content: "";
+      align-self: center;
+      width: 36px;
+      height: 4px;
+      margin: 0 0 var(--sp-2);
+      border-radius: var(--r-full);
+      background: var(--border-strong);
+      flex-shrink: 0;
     }
-    
-    .matrix-input { 
-      background: #000; border: 1px solid var(--glass-edge); border-radius: 8px; 
-      color: #fff; padding: 14px; font-size: 14px; letter-spacing: 0.5px;
-      outline: none; transition: all 0.3s ease; box-shadow: inset 0 0 10px rgba(0,0,0,1);
+    .quick-menu.open { display: flex; animation: sheet-in var(--dur-3) var(--ease-out) both; }
+    .menu-heading { padding: var(--sp-1) var(--sp-3) var(--sp-2); font-size: var(--fs-xs); font-weight: 600; color: var(--text-3); }
+    .menu-divider { height: 1px; background: var(--border); margin: var(--sp-2) var(--sp-3); flex-shrink: 0; }
+    .quick-chip {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-3);
+      min-height: 48px;
+      padding: 0 var(--sp-3);
+      background: transparent;
+      border: 0;
+      border-radius: var(--r-md);
+      color: var(--text);
+      font-size: var(--fs-base);
+      text-align: left;
+      cursor: pointer;
+      transition: background-color var(--dur-1) var(--ease-out);
     }
-    .matrix-input:focus { box-shadow: 0 0 20px var(--glow-strong), inset 0 0 10px rgba(0,0,0,1); border-color: rgba(243, 198, 35, 0.3); }
-    
-    .matrix-submit { 
-      background: var(--text-gold); color: #000; border: none; 
-      font-weight: bold; padding: 14px; border-radius: 8px; font-size: 13px; 
-      cursor: pointer; text-transform: uppercase; letter-spacing: 2px; width: 100%; 
-      transition: all 0.2s; margin-top: 6px;
+    .quick-chip .icon { color: var(--text-2); }
+    .quick-chip .cmd { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
+    .quick-chip:hover, .quick-chip:active { background: var(--surface-2); }
+    .quick-chip:focus-visible { border-radius: var(--r-md); }
+    .menu-count {
+      margin-left: auto;
+      min-width: 22px;
+      height: 22px;
+      padding: 0 7px;
+      border-radius: var(--r-full);
+      background: var(--danger-soft);
+      color: var(--danger);
+      font-size: var(--fs-xs);
+      font-weight: 700;
+      line-height: 22px;
+      text-align: center;
     }
-    .matrix-submit:hover { box-shadow: 0 0 25px var(--glow-strong); filter: brightness(1.15); transform: translateY(-2px); }
-    .matrix-submit:active { transform: translateY(1px); }
+    .menu-scrim {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 55;
+      background: var(--scrim);
+      animation: fade-in var(--dur-2) var(--ease-out) both;
+    }
+    .quick-menu.open + .menu-scrim { display: block; }
 
+    @media (min-width: 640px) {
+      .quick-menu {
+        left: auto;
+        bottom: auto;
+        top: calc(var(--header-h) + var(--safe-top) - var(--sp-1));
+        right: max(var(--sp-3), var(--safe-right));
+        width: 320px;
+        padding: var(--sp-2);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--r-lg);
+        transform-origin: top right;
+      }
+      .quick-menu::before { display: none; }
+      .quick-menu.open { animation-name: pop-in; }
+      .menu-scrim { background: transparent; }
+    }
+
+    /* ---------- MODALS ----------
+       One pattern for every overlay: a dimmed scrim and a card that is a
+       bottom sheet on phones and a centred dialog on wider screens. */
+    .matrix-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: var(--safe-top) 0 0;
+      background: var(--scrim);
+      animation: fade-in var(--dur-2) var(--ease-out) both;
+    }
+    .matrix-card {
+      position: relative;
+      width: 100%;
+      max-width: 460px;
+      max-height: calc(100dvh - var(--safe-top) - var(--sp-6));
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-5);
+      padding: var(--sp-6) max(var(--sp-5), var(--safe-left)) calc(var(--sp-5) + var(--safe-bottom));
+      background: var(--surface-1);
+      border: 1px solid var(--border-strong);
+      border-bottom: 0;
+      border-radius: var(--r-xl) var(--r-xl) 0 0;
+      box-shadow: var(--shadow-3);
+      animation: sheet-in var(--dur-3) var(--ease-out) both;
+    }
+    @media (min-width: 640px) {
+      .matrix-modal { align-items: center; padding: var(--sp-6); }
+      .matrix-card { border-bottom: 1px solid var(--border-strong); border-radius: var(--r-xl); padding-bottom: var(--sp-6); animation-name: pop-in; }
+    }
+
+    .modal-head { display: flex; flex-direction: column; gap: var(--sp-2); padding-right: var(--sp-10); }
+    .matrix-card h2 { font-size: var(--fs-lg); font-weight: 600; color: var(--text); letter-spacing: -0.01em; line-height: var(--lh-tight); }
+    .modal-note { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.5; }
+    .modal-close { position: absolute; top: var(--sp-3); right: var(--sp-3); }
+    .modal-actions { display: flex; gap: var(--sp-2); }
+    .modal-actions > * { flex: 1; }
+    .modal-stack { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+    /* buttons inside overlays */
+    .matrix-submit {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--sp-3);
+      width: 100%;
+      min-height: 52px;
+      padding: 0 var(--sp-5);
+      background: var(--gold);
+      color: var(--on-gold);
+      border: 1px solid transparent;
+      border-radius: var(--r-full);
+      font-size: var(--fs-base);
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+    }
+    .matrix-submit:hover { background: var(--gold-strong); }
+    .matrix-submit:active { transform: scale(0.98); }
+    .matrix-submit:focus-visible { border-radius: var(--r-full); }
+    .matrix-submit.btn-ghost { background: transparent; border-color: var(--border-strong); color: var(--text); }
+    .matrix-submit.btn-ghost:hover { background: var(--surface-2); }
+    .matrix-submit.btn-option { background: var(--surface-2); border-color: var(--border); color: var(--text); justify-content: flex-start; border-radius: var(--r-lg); min-height: 60px; }
+    .matrix-submit.btn-option .icon { color: var(--gold); }
+    .matrix-submit.btn-option:hover { background: var(--surface-3); }
+    .matrix-submit.btn-option small { display: block; font-size: var(--fs-xs); font-weight: 400; color: var(--text-3); }
+    .matrix-submit.btn-option span { text-align: left; line-height: 1.3; }
+    .matrix-submit.btn-quiet-danger { min-height: 48px; color: var(--danger); font-size: var(--fs-sm); }
+    .matrix-submit.btn-danger { background: transparent; border-color: var(--danger-line); color: var(--danger); }
+    .matrix-submit.btn-danger:hover { background: var(--danger-soft); }
+    .matrix-submit.btn-danger.btn-option { justify-content: flex-start; }
+    .matrix-submit.btn-danger.btn-option .icon { color: var(--danger); }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-3);
+      min-height: var(--tap);
+      font-size: var(--fs-sm);
+      color: var(--text-2);
+      cursor: pointer;
+      align-self: flex-start;
+    }
+    .toggle-row input {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+      display: grid;
+      place-items: center;
+      border: 1.5px solid var(--border-strong);
+      border-radius: var(--r-sm);
+      background: var(--surface-2);
+      cursor: pointer;
+      transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
+    }
+    .toggle-row input::after {
+      content: "";
+      width: 14px;
+      height: 14px;
+      background: var(--on-gold);
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 5 5L20 7'/%3E%3C/svg%3E") center / contain no-repeat;
+      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 5 5L20 7'/%3E%3C/svg%3E") center / contain no-repeat;
+      opacity: 0;
+    }
+    .toggle-row input:checked { background: var(--gold); border-color: var(--gold); }
+    .toggle-row input:checked::after { opacity: 1; }
+
+    /* lists inside overlays (threads, error log) */
     .thread-list {
-      display: flex; flex-direction: column; gap: 12px;
-      max-height: 50vh; overflow-y: auto; padding-right: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+      max-height: 50dvh;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      margin: 0 calc(var(--sp-1) * -1);
+      padding: 0 var(--sp-1);
     }
     .thread-item {
-      display: flex; justify-content: space-between; align-items: center;
-      background: rgba(20,20,20,0.6); border: 1px solid var(--glass-edge);
-      padding: 14px 16px; border-radius: 10px; transition: all 0.2s ease;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: var(--sp-3);
+      padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
     }
-    .thread-item:hover { border-color: rgba(243, 198, 35, 0.3); box-shadow: 0 0 15px var(--glow-subtle); }
-    .thread-info { display: flex; flex-direction: column; gap: 4px; }
-    .thread-title { font-size: 13px; font-weight: bold; color: var(--text-main); }
-    .thread-date { font-size: 10px; color: var(--text-muted); }
-    
-    .thread-actions { display: flex; gap: 8px; }
+    .thread-info { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+    .thread-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+    .thread-date { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-3); }
+    .err-cat {
+      padding: 1px var(--sp-2);
+      border-radius: var(--r-full);
+      background: var(--surface-3);
+      color: var(--text-2);
+      font-family: var(--font-mono);
+      font-size: var(--fs-2xs);
+    }
+    .err-route { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-2); overflow-wrap: anywhere; }
+    .err-req { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-3); overflow-wrap: anywhere; }
+    /* FIX / RESOLVE / RESOLVED stay uppercase in the markup (tests match
+       on them) and read in sentence case on screen */
+    .err-resolved, .thread-action-btn { text-transform: lowercase; }
+    .err-resolved::first-letter, .thread-action-btn::first-letter { text-transform: uppercase; }
+    .err-resolved { display: inline-block; font-size: var(--fs-xs); font-weight: 600; color: var(--ok); }
+    .list-empty { padding: var(--sp-8) 0; text-align: center; font-size: var(--fs-sm); color: var(--text-3); }
+
+    .thread-actions { display: flex; flex-shrink: 0; gap: var(--sp-1); }
     .thread-action-btn {
-      background: transparent; border: 1px solid var(--text-gold); color: var(--text-gold);
-      border-radius: 6px; padding: 6px 12px; font-size: 10px; cursor: pointer; font-weight: bold;
+      display: inline-block;
+      min-height: var(--tap);
+      min-width: var(--tap);
+      padding: 0 var(--sp-4);
+      background: transparent;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-full);
+      color: var(--text);
+      font-size: var(--fs-sm);
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
     }
-    .thread-action-btn.danger { border-color: var(--danger-red); color: var(--danger-red); }
-    .thread-action-btn:active { transform: scale(0.9); }
+    .thread-action-btn:hover { background: var(--surface-3); }
+    .thread-action-btn.is-primary { border-color: var(--gold-line); color: var(--gold); }
+    .thread-action-btn.danger { color: var(--danger); }
+    .thread-action-btn.danger:hover { background: var(--danger-soft); border-color: var(--danger-line); }
+    .thread-action-btn:active { transform: scale(0.96); }
+    .thread-action-btn:focus-visible { border-radius: var(--r-full); }
+
+    /* ---------- SIGN IN (Security Gate) ----------
+       Content sits in the top third so the keyboard never covers it.
+       Static background glow only, no animation. */
+    .matrix-modal.gate {
+      align-items: flex-start;
+      padding: max(9dvh, calc(var(--safe-top) + var(--sp-8))) var(--sp-5) var(--sp-5);
+      overflow-y: auto;
+      background:
+        radial-gradient(ellipse 90% 45% at 50% -8%, rgba(243, 198, 35, 0.11), transparent 70%),
+        var(--bg);
+      animation: none;
+    }
+    .matrix-modal.gate .matrix-card {
+      max-width: 360px;
+      max-height: none;
+      overflow: visible;
+      padding: 0;
+      gap: var(--sp-5);
+      background: transparent;
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
+      animation: none;
+    }
+    .gate-head { display: flex; flex-direction: column; align-items: center; gap: var(--sp-4); text-align: center; margin-bottom: var(--sp-4); }
+    .gate-head .modal-note { font-size: var(--fs-base); }
+    .field { display: flex; flex-direction: column; gap: var(--sp-2); }
+    .field-label { font-size: var(--fs-sm); font-weight: 500; color: var(--text-2); }
+    .input-wrap { position: relative; display: flex; }
+    .matrix-input {
+      width: 100%;
+      min-height: 52px;
+      padding: 0 var(--sp-4);
+      background: var(--surface-1);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-md);
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      transition: border-color var(--dur-1) var(--ease-out), box-shadow var(--dur-1) var(--ease-out);
+    }
+    .input-wrap .matrix-input { padding-right: 56px; }
+    .matrix-input:focus { border-color: var(--gold-line); box-shadow: 0 0 0 3px var(--gold-soft); border-radius: var(--r-md); }
+    .reveal-btn { position: absolute; top: 4px; right: 4px; }
+    .reveal-btn .icon-hide { display: none; }
+    .reveal-btn[aria-pressed="true"] .icon-show { display: none; }
+    .reveal-btn[aria-pressed="true"] .icon-hide { display: block; }
+    .gate .matrix-submit { margin-top: var(--sp-2); }
+    .gate-foot { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-3); font-size: var(--fs-xs); color: var(--text-3); text-align: center; }
 
     #vision-pip {
-      position: absolute; top: 60px; right: 16px; width: 110px; height: 160px;
-      background: #000; border: 1px solid var(--text-gold); border-radius: 8px;
-      z-index: 50; display: none; object-fit: cover;
-      box-shadow: 0 0 20px rgba(243, 198, 35, 0.4); pointer-events: none;
+      position: absolute;
+      top: calc(var(--header-h) + var(--safe-top) + var(--sp-3));
+      right: max(var(--sp-4), var(--safe-right));
+      width: 104px;
+      height: 148px;
+      background: var(--bg);
+      border: 1px solid var(--gold-line);
+      border-radius: var(--r-md);
+      z-index: 50;
+      display: none;
+      object-fit: cover;
+      box-shadow: var(--shadow-2);
+      pointer-events: none;
     }
   </style>
 </head>
 <body>
 
+  <!-- ICON SPRITE: PG1's own line icons (drawn for this app, no third-party
+       set), referenced with <use href="#i-...">. All share one 24px grid,
+       one stroke width (--icon-stroke) and one rendered size (--icon). -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <!-- BRAND: the PG1 lockup ("PG" + gold shield that is the "1") and the
+         shield alone. Same geometry as public/brand/pg1-mark.svg. -->
+    <symbol id="pg1-lockup" viewBox="0 0 264 100"><g stroke="currentColor"><path d="M8.5 0V100M8.5 8.5H38A24.5 24.5 0 0 1 38 57.5H8.5M155.44 24.45A38 41.5 0 1 0 163.5 50H131.5" fill="none" stroke-width="17" stroke-linejoin="miter"/></g><path d="M221.76 0L262.5 15.2V47.3C262.5 73.9 245.1 91.85 221.76 100C198.4 91.85 181 73.9 181 47.3V15.2Z" style="fill: var(--gold)"/><path d="M220 20H233V72H220V37.5L208.5 43.5V31Z" style="fill: var(--on-gold)"/></symbol>
+    <symbol id="pg1-shield" viewBox="169.76 -2 104 104"><path d="M221.76 0L262.5 15.2V47.3C262.5 73.9 245.1 91.85 221.76 100C198.4 91.85 181 73.9 181 47.3V15.2Z" style="fill: var(--gold)"/><path d="M220 20H233V72H220V37.5L208.5 43.5V31Z" style="fill: var(--on-gold)"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></symbol>
+    <symbol id="i-threads" viewBox="0 0 24 24"><path d="M4 4h11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-4 3v-3H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M20 8a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-1v3l-3-3h-4"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M10.6 5.1A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.6 3.5M6.6 6.6C3.7 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></symbol>
+    <symbol id="i-export" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4h6v3"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24"><path d="m20 11.5-8 8a5 5 0 0 1-7-7l8.5-8.5a3.5 3.5 0 0 1 5 5L10 17.5a2 2 0 0 1-3-3L14.5 7"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></symbol>
+    <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m10 8.5 5 3.5-5 3.5z"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="i-screen" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><rect x="9" y="9" width="6" height="6" rx="1"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14"/><path d="M12 17.5h.01"/></symbol>
+    <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></symbol>
+    <symbol id="i-radar" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12l6.5-6.5"/></symbol>
+    <symbol id="i-cart" viewBox="0 0 24 24"><path d="M3 4h2l2.5 11h11L21 8H7"/><circle cx="9" cy="19.5" r="1.3"/><circle cx="18" cy="19.5" r="1.3"/></symbol>
+    <symbol id="i-vault" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+    <symbol id="i-sync" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4.5L4 8M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.5 4.5L20 16M20 20v-4h-4"/></symbol>
+    <symbol id="i-wave" viewBox="0 0 24 24"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5 2.5 20h19z"/><path d="M12 10v4M12 17h.01"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></symbol>
+    <symbol id="i-offline" viewBox="0 0 24 24"><path d="M2 8.8a15 15 0 0 1 4.2-2.6M9.6 5.2A15 15 0 0 1 22 8.8M5 12.5a10 10 0 0 1 3.6-2.1M15.2 10.6A10 10 0 0 1 19 12.5M8.5 16a5 5 0 0 1 7 0"/><path d="M12 20h.01"/><path d="M3 3l18 18"/></symbol>
+  </svg>
+
   <video id="vision-pip" autoplay playsinline muted></video>
 
-  <div id="auth-modal" class="matrix-modal">
-    <div class="matrix-card">
-      <h2>SECURITY GATE</h2>
-      <input type="text" id="auth-user" class="matrix-input" placeholder="Operator ID" value="">
-      <input type="password" id="auth-pass" class="matrix-input" placeholder="Secure Matrix Passkey">
-      <button class="matrix-submit" onclick="triggerHaptic(60); verifyAuth()">AUTHENTICATE</button>
-    </div>
+  <div id="auth-modal" class="matrix-modal gate" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <!-- SECURITY GATE: method="post" with no action, and handleAuthSubmit()
+         always calls preventDefault() first, so the page never reloads and
+         the passkey can never end up in a URL. The inputs deliberately have
+         no name attribute, so even a native submit would carry nothing. -->
+    <form id="auth-form" class="matrix-card" method="post" autocomplete="on" onsubmit="handleAuthSubmit(event)">
+      <div class="gate-head">
+        <h2 id="auth-title" class="sr-only">Sign in to PG1</h2>
+        <svg class="lockup is-lg" aria-hidden="true" focusable="false"><use href="#pg1-lockup"/></svg>
+        <p class="modal-note">Operator access</p>
+      </div>
+      <label class="field">
+        <span class="field-label">Operator ID</span>
+        <input type="text" id="auth-user" class="matrix-input" value="" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next">
+      </label>
+      <div class="field">
+        <label class="field-label" for="auth-pass">Passkey</label>
+        <div class="input-wrap">
+          <input type="password" id="auth-pass" class="matrix-input" autocomplete="current-password" enterkeyhint="go">
+          <button type="button" class="icon-btn reveal-btn" aria-label="Show passkey" aria-pressed="false" aria-controls="auth-pass" onclick="togglePasskeyVisibility(this)"><svg class="icon icon-show" aria-hidden="true"><use href="#i-eye"/></svg><svg class="icon icon-hide" aria-hidden="true"><use href="#i-eye-off"/></svg></button>
+        </div>
+      </div>
+      <button type="submit" class="matrix-submit">Sign in</button>
+      <p class="gate-foot">Sessions end when you close this tab.</p>
+    </form>
   </div>
 
-  <div id="vision-modal" class="matrix-modal" style="display: none;">
-    <div class="matrix-card" style="max-width: 380px;">
-      <h2>VISION MATRIX</h2>
-      <p style="font-size:11px; color:#aaa; text-align:center; margin-bottom:10px;">Select optical input source. Stream remains local until EXECUTE is triggered to grab the sync frame.</p>
-      <div style="display:flex; gap:10px; flex-direction:column;">
-        <button class="matrix-submit" onclick="triggerHaptic(); setVisionSource('camera')">📸 DEVICE CAMERA</button>
-        <button class="matrix-submit" onclick="triggerHaptic(); setVisionSource('screen')">💻 SCREEN DISPLAY</button>
-        <button class="matrix-submit" onclick="triggerHaptic(); setVisionSource('off')" style="background: transparent; border: 1px solid var(--danger-red); color: var(--danger-red);">🔴 TERMINATE FEED</button>
-        <button class="matrix-submit" onclick="triggerHaptic(); document.getElementById('vision-modal').style.display='none'" style="background: transparent; border: 1px solid var(--text-gold); color: var(--text-gold); margin-top: 10px;">CLOSE</button>
+  <div id="vision-modal" class="matrix-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="vision-title">
+    <div class="matrix-card">
+      <div class="modal-head">
+        <h2 id="vision-title">Vision matrix</h2>
+        <p class="modal-note">The feed stays on this device. Sending a message captures one frame.</p>
+      </div>
+      <button type="button" class="icon-btn modal-close" aria-label="Close" data-dialog-close onclick="triggerHaptic(); document.getElementById('vision-modal').style.display='none'"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+      <div class="modal-stack">
+        <button type="button" class="matrix-submit btn-option" onclick="triggerHaptic(); setVisionSource('camera')"><svg class="icon" aria-hidden="true"><use href="#i-camera"/></svg><span>Device camera<small>Rear camera on phones</small></span></button>
+        <button type="button" class="matrix-submit btn-option" onclick="triggerHaptic(); setVisionSource('screen')"><svg class="icon" aria-hidden="true"><use href="#i-screen"/></svg><span>Screen<small>Desktop browsers only</small></span></button>
+        <button type="button" class="matrix-submit btn-danger btn-option" onclick="triggerHaptic(); setVisionSource('off')"><svg class="icon" aria-hidden="true"><use href="#i-stop"/></svg><span>Turn off feed</span></button>
       </div>
     </div>
   </div>
 
-  <div id="threads-modal" class="matrix-modal" style="display: none;">
-    <div class="matrix-card" style="max-width: 420px;">
-      <h2>SESSION THREADS</h2>
+  <div id="threads-modal" class="matrix-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="threads-title">
+    <div class="matrix-card">
+      <div class="modal-head">
+        <h2 id="threads-title">Session threads</h2>
+      </div>
+      <button type="button" class="icon-btn modal-close" aria-label="Close" data-dialog-close onclick="triggerHaptic(40); closeThreadsModal()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
       <div class="thread-list" id="thread-list-container">
         <div class="thread-item" id="thread-demo-1">
           <div class="thread-info">
@@ -450,8 +1400,8 @@
             <span class="thread-date">2026-09-06 | 10:45 AM</span>
           </div>
           <div class="thread-actions">
-            <button class="thread-action-btn" onclick="triggerHaptic(30); loadThread('thread-demo-1')">LOAD</button>
-            <button class="thread-action-btn danger" onclick="triggerHaptic([40, 40]); deleteThread('thread-demo-1')">DEL</button>
+            <button type="button" class="thread-action-btn is-primary" onclick="triggerHaptic(30); loadThread('thread-demo-1')">Load</button>
+            <button type="button" class="thread-action-btn danger" onclick="triggerHaptic([40, 40]); deleteThread('thread-demo-1')">Delete</button>
           </div>
         </div>
         <div class="thread-item" id="thread-demo-2">
@@ -460,96 +1410,138 @@
             <span class="thread-date">2026-09-05 | 08:30 PM</span>
           </div>
           <div class="thread-actions">
-            <button class="thread-action-btn" onclick="triggerHaptic(30); loadThread('thread-demo-2')">LOAD</button>
-            <button class="thread-action-btn danger" onclick="triggerHaptic([40, 40]); deleteThread('thread-demo-2')">DEL</button>
+            <button type="button" class="thread-action-btn is-primary" onclick="triggerHaptic(30); loadThread('thread-demo-2')">Load</button>
+            <button type="button" class="thread-action-btn danger" onclick="triggerHaptic([40, 40]); deleteThread('thread-demo-2')">Delete</button>
           </div>
         </div>
       </div>
-      <button class="matrix-submit" onclick="triggerHaptic(40); closeThreadsModal()" style="margin-top: 10px; background: transparent; border: 1px solid var(--text-gold); color: var(--text-gold);">CLOSE VAULT</button>
     </div>
   </div>
 
-  <header>
-    <h1><span class="brand-text">PROJECT-GIFTED1</span><span class="tm-symbol">™</span></h1>
-    <div class="header-controls">
-      <button class="header-btn" onclick="triggerHaptic(); openThreadsModal()" title="Manage Threads">💬</button>
-      <button class="header-btn" onclick="triggerHaptic(); openVisionMatrix()" title="Vision Matrix">👁️</button>
-      <button class="header-btn" onclick="triggerHaptic(); requestVaultExport()" title="Export Transcript">📄</button>
-      <button class="header-btn" onclick="triggerHaptic(); clearChat()" title="Clear Chat">🗑️</button>
-      <div class="header-btn-wrap">
-        <button class="header-btn" onclick="triggerHaptic(); toggleQuickMenu()" title="Quick Commands">➕</button>
-        <span id="error-log-badge" class="error-log-badge"></span>
-      </div>
+  <header class="app-header">
+    <button type="button" id="drawer-btn" class="icon-btn" onclick="triggerHaptic(); toggleDrawer()" aria-label="Open menu" aria-expanded="false" aria-controls="app-drawer"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
+    <div class="brand-wrap">
+      <h1 class="brand" aria-label="PG1"><svg class="lockup" aria-hidden="true" focusable="false"><use href="#pg1-lockup"/></svg></h1>
+      <span id="header-status-dot" class="status-dot-mini" role="img" aria-label="Status: ACTIVE | API LINKED" data-state="green"></span>
+    </div>
+    <div class="header-btn-wrap">
+      <button type="button" id="quick-menu-btn" class="icon-btn" onclick="triggerHaptic(); toggleQuickMenu()" title="Quick commands" aria-label="Quick commands" aria-haspopup="true" aria-expanded="false" aria-controls="quick-menu"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
+      <span id="error-log-badge" class="error-log-badge" aria-hidden="true"></span>
     </div>
   </header>
 
-  <div id="quick-menu" class="quick-menu">
-    <button class="quick-chip" onclick="runQuick('/help')">HELP</button>
-    <button class="quick-chip" onclick="runQuick('/status')">STATUS</button>
-    <button class="quick-chip" onclick="runQuick('/threat-radar')">RADAR</button>
-    <button class="quick-chip" onclick="runQuick('/commerce-status')">COMMERCE</button>
-    <button class="quick-chip" onclick="runQuick('/sync-vault')">VAULT</button>
-    <button class="quick-chip" onclick="toggleQuickMenu(); triggerVaultSync();">VAULT SYNC</button>
-    <button class="quick-chip" onclick="runQuick('/voice')">VOICE</button>
-    <button class="quick-chip" onclick="toggleQuickMenu(); openErrorLog();">ERROR LOG</button>
-  </div>
+  <!-- Screen-reader announcer for the status light (renderIdleStatus). It
+       only changes when the state changes, so polling never re-announces. -->
+  <div id="status-announcer" class="sr-only" role="status" aria-live="polite">ACTIVE | API LINKED</div>
 
-  <div id="error-log-modal" class="matrix-modal" style="display: none;">
-    <div class="matrix-card" style="max-width: 440px;">
-      <h2>ERROR LOG</h2>
-      <p style="font-size:11px; color:#aaa; text-align:center; margin-bottom:-8px;">Server and client-side failures, synced across devices once logged in. Only a short category label is ever sent for a local entry - never its message text - unless you tap FIX.</p>
-      <label style="font-size:11px; color:#aaa; display:flex; align-items:center; gap:6px; margin: 2px 0 -4px;">
-        <input type="checkbox" id="show-resolved-toggle" onchange="triggerHaptic(20); toggleShowResolvedErrors()"> Show resolved
-      </label>
-      <div id="error-log-list" class="thread-list"></div>
-      <div style="display:flex; gap:10px;">
-        <button class="matrix-submit" style="background: transparent; border: 1px solid var(--danger-red); color: var(--danger-red);" onclick="triggerHaptic(); resolveAllErrors()">RESOLVE ALL</button>
-        <button class="matrix-submit" style="background: transparent; border: 1px solid var(--text-gold); color: var(--text-gold);" onclick="triggerHaptic(); closeErrorLog()">CLOSE</button>
-      </div>
+  <aside id="app-drawer" class="drawer" aria-labelledby="drawer-title" inert>
+    <div class="drawer-head">
+      <svg class="shield-mark" aria-hidden="true" focusable="false"><use href="#pg1-shield"/></svg>
+      <div class="drawer-title" id="drawer-title">Project-Gifted1™<small>Threat-intelligence agent</small></div>
+      <button type="button" class="icon-btn" aria-label="Close menu" onclick="triggerHaptic(); closeDrawer()" data-drawer-close><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>
-  </div>
 
-  <div id="chat-container">
-    <div class="message-bubble" id="welcome-bubble">
-      <span class="msg-timestamp" id="welcome-timestamp"></span>
-      <div class="message-text">Greetings. New session initialized. PG1 Sovereign Agent operational. Point the core engine where you need it next—whether that's deploying new endpoints, committing patches, or running real-time database queries! 🛡️ ⚡</div>
-      <div class="message-actions">
-        <span onclick="triggerHaptic(); speakBubble(this)">SPEAK</span>
-        <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
-        <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
-      </div>
+    <div class="status-card">
+      <span class="status-card-label">System status</span>
+      <span id="sys-status" class="status-indicator">
+        <span class="status-dot"></span>ACTIVE | API LINKED
+      </span>
+      <span id="status-detail" class="status-detail">Connected. The agent API is responding.</span>
     </div>
-  </div>
 
-  <div class="footer-panel">
-    <div class="telemetry-row">
-      <div class="voice-group">
-        <button id="voice-btn" class="stealth-btn" onclick="triggerHaptic(); toggleVoice()">VOICE: OFF</button>
-        <select id="voice-profile-select" class="stealth-select" onchange="triggerHaptic(30); localStorage.setItem('pg1_voice_profile', this.value)">
+    <nav class="drawer-section" aria-label="Session">
+      <span class="drawer-label">Session</span>
+      <button type="button" class="drawer-item" onclick="triggerHaptic(); closeDrawer(); openThreadsModal()"><svg class="icon" aria-hidden="true"><use href="#i-threads"/></svg>Session threads</button>
+      <button type="button" class="drawer-item" onclick="triggerHaptic(); closeDrawer(); openVisionMatrix()"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg>Vision matrix</button>
+      <button type="button" class="drawer-item" onclick="triggerHaptic(); closeDrawer(); requestVaultExport()"><svg class="icon" aria-hidden="true"><use href="#i-export"/></svg>Export transcript</button>
+      <button type="button" class="drawer-item is-danger" onclick="triggerHaptic(); closeDrawer(); clearChat()"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Clear chat</button>
+    </nav>
+
+    <div class="drawer-section" role="group" aria-label="Voice">
+      <span class="drawer-label">Voice</span>
+      <div class="drawer-row">
+        <span class="drawer-row-label" id="voice-label"><svg class="icon" aria-hidden="true"><use href="#i-speaker"/></svg>Spoken replies</span>
+        <button type="button" id="voice-btn" class="switch" role="switch" aria-checked="false" aria-labelledby="voice-label" onclick="triggerHaptic(); toggleVoice()"></button>
+      </div>
+      <div class="drawer-row">
+        <label class="drawer-row-label" for="voice-profile-select"><svg class="icon" aria-hidden="true"><use href="#i-wave"/></svg>Voice profile</label>
+        <select id="voice-profile-select" class="select" onchange="triggerHaptic(30); localStorage.setItem('pg1_voice_profile', this.value)">
           <option value="core">PG1 Core</option>
           <option value="classic">PG1 Classic</option>
           <option value="field">PG1 Field</option>
         </select>
       </div>
-      <span id="sys-status" class="status-indicator">
-        <span class="status-dot"></span>ACTIVE | API LINKED
-      </span>
     </div>
-    
-    <div class="quick-row">
-      <button class="quick-chip" onclick="triggerHaptic(30); document.getElementById('prompt-input').value='/status'; submitDirective();">STATUS</button>
-      <button class="quick-chip" onclick="triggerHaptic(30); document.getElementById('prompt-input').value='/threat-radar'; submitDirective();">RADAR</button>
-      <button class="quick-chip" onclick="triggerHaptic(30); document.getElementById('prompt-input').value='/commerce-status'; submitDirective();">COMMERCE</button>
-      <button class="quick-chip" onclick="triggerHaptic(30); document.getElementById('prompt-input').value='/sync-vault'; submitDirective();">VAULT</button>
-    </div>
-    <div class="command-deck">
-      <button id="mic-btn" class="tool-btn" title="Voice Input" onclick="triggerHaptic(); toggleRecording()">🎤</button>
-      <label class="tool-btn" title="Attach Files">
-        📎
-        <input type="file" id="file-input" multiple onchange="triggerHaptic(); handleFileSelect(event)">
+
+    <p class="drawer-foot">Threat intelligence on demand.</p>
+  </aside>
+  <div class="drawer-scrim" onclick="closeDrawer()" aria-hidden="true"></div>
+
+  <div id="quick-menu" class="quick-menu" role="menu" aria-label="Quick commands">
+    <div class="menu-heading" aria-hidden="true">Quick commands</div>
+    <button type="button" role="menuitem" class="quick-chip" onclick="runQuick('/threat-radar')"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg>Threat radar<span class="cmd" aria-hidden="true">/threat-radar</span></button>
+    <button type="button" role="menuitem" class="quick-chip" onclick="runQuick('/status')"><svg class="icon" aria-hidden="true"><use href="#i-pulse"/></svg>System status<span class="cmd" aria-hidden="true">/status</span></button>
+    <button type="button" role="menuitem" class="quick-chip" onclick="runQuick('/commerce-status')"><svg class="icon" aria-hidden="true"><use href="#i-cart"/></svg>Commerce<span class="cmd" aria-hidden="true">/commerce-status</span></button>
+    <button type="button" role="menuitem" class="quick-chip" onclick="runQuick('/sync-vault')"><svg class="icon" aria-hidden="true"><use href="#i-vault"/></svg>Vault<span class="cmd" aria-hidden="true">/sync-vault</span></button>
+    <button type="button" role="menuitem" class="quick-chip" onclick="toggleQuickMenu(); triggerVaultSync();"><svg class="icon" aria-hidden="true"><use href="#i-sync"/></svg>Vault sync</button>
+    <button type="button" role="menuitem" class="quick-chip" onclick="runQuick('/voice')"><svg class="icon" aria-hidden="true"><use href="#i-wave"/></svg>Voice profiles<span class="cmd" aria-hidden="true">/voice</span></button>
+    <button type="button" role="menuitem" class="quick-chip" onclick="runQuick('/help')"><svg class="icon" aria-hidden="true"><use href="#i-help"/></svg>Help<span class="cmd" aria-hidden="true">/help</span></button>
+    <div class="menu-divider" role="separator"></div>
+    <button type="button" role="menuitem" class="quick-chip" onclick="toggleQuickMenu(); openErrorLog();"><svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg>Error log<span id="menu-error-count" class="menu-count" hidden></span></button>
+  </div>
+  <div class="menu-scrim" onclick="toggleQuickMenu()" aria-hidden="true"></div>
+
+  <div id="error-log-modal" class="matrix-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="error-log-title">
+    <div class="matrix-card">
+      <div class="modal-head">
+        <h2 id="error-log-title">Error log</h2>
+        <p class="modal-note">Failures from the server and this browser. Local entries share only their category, never the message, unless you tap Fix.</p>
+      </div>
+      <button type="button" class="icon-btn modal-close" aria-label="Close" data-dialog-close onclick="triggerHaptic(); closeErrorLog()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+      <label class="toggle-row">
+        <input type="checkbox" id="show-resolved-toggle" onchange="triggerHaptic(20); toggleShowResolvedErrors()"> Show resolved
       </label>
-      <textarea id="prompt-input" rows="1" placeholder="Directive..." onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
-      <button class="execute-btn" onclick="triggerHaptic(80); submitDirective()">EXECUTE</button>
+      <div id="error-log-list" class="thread-list" aria-live="polite"></div>
+      <button type="button" class="matrix-submit btn-ghost btn-quiet-danger" onclick="triggerHaptic(); resolveAllErrors()">Resolve all</button>
+    </div>
+  </div>
+
+  <!-- Empty state, cloned into the thread by renderWelcome() on a fresh
+       session and after Clear chat. -->
+  <template id="welcome-template">
+    <div class="message-bubble welcome" id="welcome-bubble">
+      <span class="msg-timestamp" id="welcome-timestamp"></span>
+      <svg class="lockup is-md" aria-hidden="true" focusable="false"><use href="#pg1-lockup"/></svg>
+      <h2 class="welcome-title" id="welcome-title">Good to see you, operator</h2>
+      <div class="message-text">PG1 is online. Ask anything, or pick a starting point.</div>
+      <div class="welcome-suggestions" role="group" aria-label="Suggested directives">
+        <button type="button" class="suggestion" onclick="runQuick('/threat-radar')"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg><span><strong>Run a threat radar</strong><small>/threat-radar</small></span></button>
+        <button type="button" class="suggestion" onclick="runQuick('/status')"><svg class="icon" aria-hidden="true"><use href="#i-pulse"/></svg><span><strong>Check system status</strong><small>/status</small></span></button>
+        <button type="button" class="suggestion" onclick="runQuick('/commerce-status')"><svg class="icon" aria-hidden="true"><use href="#i-cart"/></svg><span><strong>Review commerce</strong><small>/commerce-status</small></span></button>
+        <button type="button" class="suggestion" onclick="runQuick('/help')"><svg class="icon" aria-hidden="true"><use href="#i-help"/></svg><span><strong>See all commands</strong><small>/help</small></span></button>
+      </div>
+    </div>
+  </template>
+
+  <main id="chat-container" role="log" aria-label="Conversation" tabindex="-1"></main>
+
+  <div class="footer-panel">
+    <div id="status-toast" class="toast" role="status" aria-live="polite"></div>
+    <div class="offline-banner" role="note"><svg class="icon" aria-hidden="true"><use href="#i-offline"/></svg>You're offline. Messages won't send until you reconnect.</div>
+    <div class="composer">
+      <div id="attach-chips" class="attach-chips" aria-label="Attachments" hidden></div>
+      <label for="prompt-input" class="sr-only">Directive</label>
+      <textarea id="prompt-input" rows="1" placeholder="Give PG1 a directive…" enterkeyhint="send" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+      <div class="composer-row">
+        <label class="icon-btn" title="Attach files">
+          <svg class="icon" aria-hidden="true"><use href="#i-clip"/></svg>
+          <span class="sr-only">Attach files</span>
+          <input type="file" id="file-input" multiple onchange="triggerHaptic(); handleFileSelect(event)">
+        </label>
+        <button type="button" id="mic-btn" class="icon-btn" title="Voice input" aria-label="Voice input" onclick="triggerHaptic(); toggleRecording()"><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg></button>
+        <span class="spacer"></span>
+        <button type="button" class="execute-btn" onclick="triggerHaptic(80); submitDirective()" aria-label="Execute" title="Execute"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg></button>
+      </div>
     </div>
   </div>
 
@@ -706,18 +1698,18 @@
         const staleBubbles = document.querySelectorAll('.message-bubble.pending');
         staleBubbles.forEach(bubble => {
           bubble.classList.remove('pending');
+          bubble.classList.add('error');
           const textEl = bubble.querySelector('.message-text');
           if (textEl) {
-            textEl.style.color = 'var(--danger-red)';
+            textEl.style.color = '';
+            textEl.classList.remove('pending-text');
             textEl.textContent = 'This request was interrupted before a reply arrived (the page reloaded or the app was switched). Please resend it.';
           }
         });
+        upgradeLegacyMessageActions();
         if (staleBubbles.length > 0) saveState();
       } else {
-        const welcomeTime = document.getElementById('welcome-timestamp');
-        if (welcomeTime) {
-          welcomeTime.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        }
+        renderWelcome();
       }
 
       refreshStatusLight();
@@ -792,11 +1784,59 @@
     }
 
     function toggleQuickMenu() {
-      document.getElementById('quick-menu').classList.toggle('open');
+      const open = document.getElementById('quick-menu').classList.toggle('open');
+      syncQuickMenuButton(open);
+      if (open) {
+        const first = document.querySelector('#quick-menu .quick-chip');
+        if (first) first.focus({ preventScroll: true });
+      }
+    }
+    // DRAWER: session tools, voice settings and the full status readout.
+    function openDrawer() {
+      const drawer = document.getElementById('app-drawer');
+      if (!drawer) return;
+      drawer.inert = false;
+      document.body.classList.add('drawer-open');
+      const btn = document.getElementById('drawer-btn');
+      if (btn) btn.setAttribute('aria-expanded', 'true');
+      const close = drawer.querySelector('[data-drawer-close]');
+      if (close) close.focus({ preventScroll: true });
+    }
+    function closeDrawer() {
+      const drawer = document.getElementById('app-drawer');
+      if (!drawer || !document.body.classList.contains('drawer-open')) return;
+      document.body.classList.remove('drawer-open');
+      drawer.inert = true;
+      const btn = document.getElementById('drawer-btn');
+      if (btn) {
+        btn.setAttribute('aria-expanded', 'false');
+        btn.focus({ preventScroll: true });
+      }
+    }
+    function toggleDrawer() {
+      if (document.body.classList.contains('drawer-open')) closeDrawer();
+      else openDrawer();
+    }
+
+    // Sign-in: show / hide the passkey (type toggles; nothing else changes).
+    function togglePasskeyVisibility(btn) {
+      const input = document.getElementById('auth-pass');
+      if (!input) return;
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.setAttribute('aria-pressed', String(show));
+      btn.setAttribute('aria-label', show ? 'Hide passkey' : 'Show passkey');
+      input.focus({ preventScroll: true });
+    }
+
+    function syncQuickMenuButton(open) {
+      const btn = document.getElementById('quick-menu-btn');
+      if (btn) btn.setAttribute('aria-expanded', String(open));
     }
     function runQuick(cmd) {
       triggerHaptic(30);
       document.getElementById('quick-menu').classList.remove('open');
+      syncQuickMenuButton(false);
       const input = document.getElementById('prompt-input');
       input.value = cmd;
       submitDirective();
@@ -821,11 +1861,7 @@
       userBubble.innerHTML = `
         <span class="msg-timestamp">${time}</span>
         <div class="message-text">${formatMarkdown(userText)}</div>
-        <div class="message-actions">
-          <span onclick="triggerHaptic(40); editBubble(this)">EDIT</span>
-          <span onclick="triggerHaptic(40); copyBubbleText(this)">COPY</span>
-          <span onclick="triggerHaptic(40); deleteBubble(this)">DELETE</span>
-        </div>`;
+        ${messageActionsHtml('user')}`;
       chatContainer.appendChild(userBubble);
 
       const agentBubble = document.createElement('div');
@@ -833,11 +1869,7 @@
       agentBubble.innerHTML = `
         <span class="msg-timestamp">${time}</span>
         <div class="message-text">${formatMarkdown(replyText)}</div>
-        <div class="message-actions">
-          <span onclick="triggerHaptic(); speakBubble(this)">SPEAK</span>
-          <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
-          <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
-        </div>`;
+        ${messageActionsHtml('agent')}`;
       chatContainer.appendChild(agentBubble);
 
       chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -884,6 +1916,7 @@
       if (source === 'off') {
         videoEl.style.display = 'none';
         document.getElementById('vision-modal').style.display = 'none';
+        renderAttachmentChips();
         return;
       }
 
@@ -904,6 +1937,7 @@
         videoEl.srcObject = stream;
         videoEl.style.display = 'block';
         document.getElementById('vision-modal').style.display = 'none';
+        renderAttachmentChips();
 
         stream.getVideoTracks()[0].onended = () => {
           setVisionSource('off');
@@ -923,6 +1957,10 @@
 
     function formatMarkdown(str) {
       if (!str || typeof str !== 'string') return '';
+      // SECURITY: the whole reply is HTML-escaped here, before any markdown
+      // pass runs. Every transform below (code fences, headings, lists,
+      // tables, chips, images, links) only ever sees and emits escaped text,
+      // so a reply can never smuggle in its own tags, attributes or script.
       let escaped = escapeHTML(str);
 
       // Pull fenced code blocks out first (before any other pass can reach
@@ -933,28 +1971,137 @@
       const codeBlocks = [];
       escaped = escaped.replace(/```([\w-]*)\n?([\s\S]*?)```/g, function(match, lang, code) {
         const idx = codeBlocks.length;
-        codeBlocks.push(`<pre style="background: rgba(0,0,0,0.35); border: 1px solid var(--glass-edge); border-radius: 6px; padding: 10px 12px; overflow-x: auto; margin: 8px 0;"><code style="font-family: monospace; white-space: pre;">${code}</code></pre>`);
+        const body = code.replace(/\n$/, '');
+        codeBlocks.push(`<div class="code-block"><div class="code-head"><span>${lang || 'code'}</span><button type="button" class="code-copy" onclick="copyCodeBlock(this)" aria-label="Copy code" title="Copy code"><svg class="icon icon-main" aria-hidden="true"><use href="#i-copy"/></svg><svg class="icon icon-done" aria-hidden="true"><use href="#i-check"/></svg></button></div><pre class="md-pre"><code>${body}</code></pre></div>`);
         return `\u0000CODEBLOCK${idx}\u0000`;
       });
 
       escaped = escaped.replace(/\[\s*((?:[^\]]*?\s)?(\/[a-zA-Z0-9_-]+)(?![\w.\/-])[^\]]*?)\s*\]/g, function(match, fullInner, cmdCode) {
-        return `<span onclick="triggerHaptic(30); document.getElementById('prompt-input').value='${cmdCode}'; autoResize(document.getElementById('prompt-input')); submitDirective();" style="background: rgba(243, 198, 35, 0.2); border: 1px solid var(--text-gold); color: var(--text-gold); padding: 4px 8px; border-radius: 6px; cursor: pointer; display: inline-block; font-weight: bold; margin: 2px;">${fullInner}</span>`;
+        return `<button type="button" class="cmd-chip" onclick="triggerHaptic(30); document.getElementById('prompt-input').value='${cmdCode}'; autoResize(document.getElementById('prompt-input')); submitDirective();">${fullInner}</button>`;
       });
 
-      escaped = escaped.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '</div><div class="media-preview-container"><img src="$2" alt="$1" /></div><div class="message-text">');
-      escaped = escaped.replace(/^### (.*$)/gim, '<strong style="color: var(--text-gold); font-size: 1.1em; display: block; margin-top: 12px; margin-bottom: 4px;">$1</strong>');
-      escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong style="color: #ffffff;">$1</strong>');
-      escaped = escaped.replace(/`([^`]+)`/g, '<span style="background: rgba(243, 198, 35, 0.15); color: #fff; padding: 2px 5px; border-radius: 4px;">$1</span>');
-      escaped = escaped.replace(/^---$/gim, '<div style="height: 1px; background: var(--glass-edge); margin: 16px 0;"></div>');
+      // Images only from http(s) or an inline data:image URL - anything else
+      // (javascript:, vbscript:, ...) stays as the escaped plain text.
+      escaped = escaped.replace(/!\[([^\]]*)\]\(((?:https?:\/\/|data:image\/)[^)\s]+)\)/g, '</div><div class="media-preview-container"><img src="$2" alt="$1" loading="lazy" /></div><div class="message-text">');
+      escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      escaped = escaped.replace(/`([^`]+)`/g, '<span class="md-code-inline">$1</span>');
 
-      escaped = escaped.replace(/(?<!src=")https?:\/\/[^\s<]+?(?=&quot;|&#39;|[.,)]?(?:\s|<|$))/g, function (url) { return '<a href="' + url + '" target="_blank" rel="noopener noreferrer" style="color: #22d3ee; text-decoration: underline; word-break: break-all;">' + url + '</a>'; });
+      escaped = escaped.replace(/(?<!src=")https?:\/\/[^\s<]+?(?=&quot;|&#39;|[.,)]?(?:\s|<|$))/g, function (url) { return '<a class="md-link" href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>'; });
+
+      // Block pass, line by line: headings, rules, lists and tables. Block
+      // elements swallow the newlines around them, because .message-text is
+      // white-space: pre-wrap and would otherwise show them as blank lines.
+      const isTableRow = (l) => /^\s*\|.*\|\s*$/.test(l);
+      const isTableSep = (l) => /^\s*\|?(\s*:?-+:?\s*\|)+(\s*:?-+:?\s*)?\|?\s*$/.test(l);
+      const cells = (l) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+      const lines = escaped.split('\n');
+      const segments = [];
+      let i = 0;
+      while (i < lines.length) {
+        const line = lines[i];
+        let m;
+        if (/^\u0000CODEBLOCK\d+\u0000$/.test(line.trim())) {
+          segments.push({ block: true, html: line.trim() });
+          i++;
+        } else if ((m = line.match(/^(#{1,3}) +(.+)$/))) {
+          const level = m[1].length;
+          segments.push({ block: true, html: `<div class="md-h md-h${level}" role="heading" aria-level="${level + 2}">${m[2]}</div>` });
+          i++;
+        } else if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) {
+          segments.push({ block: true, html: '<hr class="md-hr">' });
+          i++;
+        } else if (/^\s*[-*+] +\S/.test(line)) {
+          const items = [];
+          while (i < lines.length && /^\s*[-*+] +\S/.test(lines[i])) {
+            items.push(`<li>${lines[i].replace(/^\s*[-*+] +/, '')}</li>`);
+            i++;
+          }
+          segments.push({ block: true, html: `<ul class="md-list">${items.join('')}</ul>` });
+        } else if ((m = line.match(/^\s*(\d+)[.)] +\S/))) {
+          const start = Number(m[1]);
+          const items = [];
+          while (i < lines.length && /^\s*\d+[.)] +\S/.test(lines[i])) {
+            items.push(`<li>${lines[i].replace(/^\s*\d+[.)] +/, '')}</li>`);
+            i++;
+          }
+          segments.push({ block: true, html: `<ol class="md-list"${start !== 1 ? ` start="${start}"` : ''}>${items.join('')}</ol>` });
+        } else if (isTableRow(line) && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+          const head = cells(line);
+          const rows = [];
+          i += 2;
+          while (i < lines.length && isTableRow(lines[i])) {
+            rows.push(cells(lines[i]));
+            i++;
+          }
+          const thead = `<tr>${head.map((c) => `<th scope="col">${c}</th>`).join('')}</tr>`;
+          const tbody = rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('');
+          segments.push({ block: true, html: `<div class="md-table-wrap" role="region" aria-label="Table" tabindex="0"><table class="md-table"><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>` });
+        } else {
+          segments.push({ block: false, html: line });
+          i++;
+        }
+      }
+      escaped = segments
+        .filter((seg, idx) => seg.block || seg.html.trim() !== '' || !((segments[idx - 1] && segments[idx - 1].block) || (segments[idx + 1] && segments[idx + 1].block)))
+        .reduce((acc, seg, idx, arr) => acc + (idx > 0 && !seg.block && !arr[idx - 1].block ? '\n' : '') + seg.html, '');
 
       escaped = escaped.replace(/\u0000CODEBLOCK(\d+)\u0000/g, function(match, idx) { return codeBlocks[Number(idx)]; });
       return escaped;
     }
 
+    // Copies one fenced code block (the Copy button formatMarkdown puts in
+    // each block's header). The label lives in CSS (::after), so it never
+    // leaks into COPY / SPEAK on the whole message.
+    function copyCodeBlock(btn) {
+      const block = btn.closest('.code-block');
+      const code = block && block.querySelector('code');
+      if (!code) return;
+      triggerHaptic(30);
+      navigator.clipboard.writeText(code.innerText).then(() => {
+        btn.classList.add('copied');
+        setTimeout(() => btn.classList.remove('copied'), 1500);
+      });
+    }
+
+    // One source for the action row under every message (was copied in five
+    // places). Real <button>s, so they're reachable by keyboard and screen
+    // reader, with an icon and a visible label.
+    function messageActionsHtml(role) {
+      const items = role === 'user'
+        ? [['editBubble', 'Edit message', 'i-edit', 40], ['copyBubbleText', 'Copy message', 'i-copy', 40], ['deleteBubble', 'Delete message', 'i-trash', 40]]
+        : [['speakBubble', 'Read aloud', 'i-speaker', ''], ['copyBubbleText', 'Copy reply', 'i-copy', ''], ['deleteBubble', 'Delete reply', 'i-trash', '']];
+      const button = ([fn, label, icon, ms]) => {
+        const done = fn === 'copyBubbleText' ? '<svg class="icon icon-done" aria-hidden="true"><use href="#i-check"/></svg>' : '';
+        return `<button type="button" class="msg-action" onclick="triggerHaptic(${ms}); ${fn}(this)" aria-label="${label}" title="${label}"><svg class="icon icon-main" aria-hidden="true"><use href="#${icon}"/></svg>${done}</button>`;
+      };
+      return `<div class="message-actions" data-v="2">${items.map(button).join('')}</div>`;
+    }
+
+    // Chat history saved before this redesign has older action rows (bare
+    // <span onclick> links, or text-labelled buttons) and emoji approval
+    // buttons; swap them for the current markup, keeping every handler.
+    function upgradeLegacyMessageActions() {
+      document.querySelectorAll('#chat-container .message-actions').forEach((row) => {
+        if (row.getAttribute('data-v') === '2') return;
+        const bubble = row.closest('.message-bubble');
+        if (!bubble) return;
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = messageActionsHtml(bubble.classList.contains('user') ? 'user' : 'agent');
+        row.replaceWith(wrapper.firstElementChild);
+      });
+      document.querySelectorAll('#chat-container .approval-btn').forEach((btn) => {
+        if (btn.querySelector('.approval-label')) return;
+        const approve = btn.classList.contains('approve');
+        btn.innerHTML = `<svg class="icon" aria-hidden="true"><use href="#${approve ? 'i-check' : 'i-x'}"/></svg><span class="approval-label">${approve ? 'Approve' : 'Decline'}</span>`;
+      });
+    }
+
     let voiceActive = false;
     let attachedFilesPayload = [];
+    // Names shown as chips in the composer; attachGeneration lets a clear
+    // discard files whose FileReader hasn't finished yet.
+    let attachedFileNames = [];
+    let attachGeneration = 0;
     let recognition;
     let isRecording = false;
     // Set true right before submitDirective() runs a Suggest Fix directive
@@ -998,7 +2145,7 @@
       recognition.onstart = function() {
         isRecording = true;
         document.getElementById('mic-btn').classList.add('mic-active');
-        document.getElementById('prompt-input').placeholder = "Listening...";
+        document.getElementById('prompt-input').placeholder = "Listening…";
         triggerHaptic([50, 50, 50]); 
       };
 
@@ -1041,7 +2188,7 @@
       if(isRecording) triggerHaptic(100); 
       isRecording = false;
       document.getElementById('mic-btn').classList.remove('mic-active');
-      document.getElementById('prompt-input').placeholder = "Directive...";
+      document.getElementById('prompt-input').placeholder = "Give PG1 a directive…";
     }
 
     // AUTH FIX: on success, store the credentials in memory (sessionUser /
@@ -1050,6 +2197,15 @@
     // whenever the typed username was "Winner1G" has been removed — a
     // failed verification (including a network error) now always shows
     // Access Denied instead of silently letting the modal close.
+    // SECURITY GATE submit: preventDefault() runs first, before anything that
+    // could throw, so the form can never fall through to a native submit
+    // (no reload, and the passkey never lands in a URL or history entry).
+    function handleAuthSubmit(event) {
+      event.preventDefault();
+      triggerHaptic(60);
+      verifyAuth();
+    }
+
     async function verifyAuth() {
       const user = document.getElementById('auth-user').value.trim();
       const pass = document.getElementById('auth-pass').value.trim();
@@ -1083,9 +2239,7 @@
     function toggleVoice() {
       voiceActive = !voiceActive;
       const btn = document.getElementById('voice-btn');
-      btn.style.color = voiceActive ? '#00ff66' : 'var(--text-gold)';
-      btn.style.textShadow = voiceActive ? '0 0 10px #00ff66' : 'none';
-      btn.textContent = voiceActive ? 'VOICE: ON' : 'VOICE: OFF';
+      btn.setAttribute('aria-checked', String(voiceActive));
       
       if (voiceActive) {
         speakMessage("Audio Synthesiser, Online PG1 Engaged");
@@ -1101,18 +2255,31 @@
     }
 
     function clearChat() {
-      const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      document.getElementById('chat-container').innerHTML = `
-        <div class="message-bubble">
-          <span class="msg-timestamp">${currentTime}</span>
-          <div class="message-text">Matrix session cleared. Ready for new operational directives.</div>
-          <div class="message-actions">
-            <span onclick="triggerHaptic(); speakBubble(this)">SPEAK</span>
-            <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
-            <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
-          </div>
-        </div>`;
+      renderWelcome();
       saveState();
+    }
+
+    // EMPTY STATE: a fresh session and Clear chat both show the greeting
+    // from <template id="welcome-template">, with a time-of-day hello.
+    function renderWelcome() {
+      const container = document.getElementById('chat-container');
+      const template = document.getElementById('welcome-template');
+      if (!container || !template) return;
+      container.innerHTML = '';
+      container.appendChild(template.content.cloneNode(true));
+      const now = new Date();
+      const hour = now.getHours();
+      const title = document.getElementById('welcome-title');
+      if (title) {
+        title.textContent = hour < 5 ? 'Working late, operator?'
+          : hour < 12 ? 'Good morning, operator'
+          : hour < 18 ? 'Good afternoon, operator'
+          : 'Good evening, operator';
+      }
+      const welcomeTime = document.getElementById('welcome-timestamp');
+      if (welcomeTime) {
+        welcomeTime.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
     }
 
     function requestVaultExport() {
@@ -1146,10 +2313,13 @@
       attachedBytes += newBytes;
       
       let processedCount = 0;
+      const generation = attachGeneration;
 
       Array.from(files).forEach(file => {
         const reader = new FileReader();
         reader.onload = function(e) {
+          // Cleared (via the chip row's remove button) while still reading.
+          if (generation !== attachGeneration) return;
           const base64Data = e.target.result.split(',')[1];
           attachedFilesPayload.push({
             inlineData: {
@@ -1160,14 +2330,41 @@
           processedCount++;
           
           if (processedCount === files.length) {
-            const statusEl = document.getElementById('sys-status');
-            const fileText = files.length === 1 ? files[0].name : `${files.length} FILES ATTACHED`;
-            statusEl.innerHTML = `<span class="status-dot" style="background-color: var(--text-gold); box-shadow: 0 0 10px var(--text-gold);"></span>${escapeHTML(fileText)}`;
-            statusEl.style.color = 'var(--text-gold)';
+            attachedFileNames.push(...Array.from(files).map((f) => f.name));
+            renderAttachmentChips();
           }
         };
         reader.readAsDataURL(file);
       });
+    }
+
+    // ATTACHMENT CHIPS: what will go with the next message, shown inside the
+    // composer (files by name, plus a chip while a vision feed is live).
+    function renderAttachmentChips() {
+      const wrap = document.getElementById('attach-chips');
+      if (!wrap) return;
+      const chips = [];
+      if (activeVisionStream) {
+        chips.push('<span class="attach-chip is-live"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg>Vision feed live</span>');
+      }
+      attachedFileNames.forEach((name) => {
+        chips.push(`<span class="attach-chip"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg><span class="attach-name">${escapeHTML(name)}</span></span>`);
+      });
+      if (attachedFileNames.length > 0) {
+        chips.push('<button type="button" class="attach-clear" onclick="triggerHaptic(30); clearAttachments()" aria-label="Remove attachments" title="Remove attachments"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>');
+      }
+      wrap.innerHTML = chips.join('');
+      wrap.hidden = chips.length === 0;
+    }
+
+    function clearAttachments() {
+      attachGeneration++;
+      attachedFilesPayload = [];
+      attachedFileNames = [];
+      attachedBytes = 0;
+      const fileInput = document.getElementById('file-input');
+      if (fileInput) fileInput.value = '';
+      renderAttachmentChips();
     }
 
     function editBubble(el) {
@@ -1197,7 +2394,7 @@
     function healthStateColor(state) {
       if (state === 'red') return 'var(--danger-red)';
       if (state === 'amber') return 'var(--status-amber)';
-      return '#00ff66';
+      return 'var(--ok)';
     }
     function healthStateLabel(state) {
       if (state === 'red') return 'OFFLINE';
@@ -1209,8 +2406,31 @@
       const statusEl = document.getElementById('sys-status');
       if (!statusEl) return;
       const color = healthStateColor(lastHealthState);
-      statusEl.innerHTML = `<span class="status-dot" style="background-color:${color}; box-shadow: 0 0 10px ${color};"></span>${healthStateLabel(lastHealthState)}`;
-      statusEl.style.color = '#999';
+      const label = healthStateLabel(lastHealthState);
+      statusEl.innerHTML = `<span class="status-dot" style="background-color:${color}; color:${color};"></span>${label}`;
+      statusEl.style.color = '';
+      // The header dot, the drawer's plain-language line and the screen-
+      // reader announcer are separate elements on the page. (In the unit-test
+      // sandbox every lookup returns the same fake element, so they're skipped.)
+      const headerDot = document.getElementById('header-status-dot');
+      if (headerDot && headerDot !== statusEl) {
+        headerDot.style.backgroundColor = color;
+        headerDot.style.color = color;
+        headerDot.setAttribute('data-state', lastHealthState);
+        headerDot.setAttribute('aria-label', 'Status: ' + label);
+      }
+      const detailEl = document.getElementById('status-detail');
+      if (detailEl && detailEl !== statusEl) {
+        detailEl.textContent = lastHealthState === 'red'
+          ? "Offline. Messages won't send until you reconnect."
+          : lastHealthState === 'amber'
+            ? 'Reachable, but the agent API is slow or degraded.'
+            : 'Connected. The agent API is responding.';
+      }
+      const announcer = document.getElementById('status-announcer');
+      if (announcer && announcer !== statusEl && announcer.textContent !== label) {
+        announcer.textContent = label;
+      }
     }
 
     async function checkApiHealth() {
@@ -1272,12 +2492,20 @@
       }
     }
 
+    // Shown as a small toast above the composer (it used to overwrite the
+    // status line). The toast stays 4s so it can actually be read; the 2.5s
+    // renderIdleStatus() repaint is kept so the status light is current.
     function flashStatus(message, isError = true, category) {
       if (isError) logError(message, 'status', category);
-      const statusEl = document.getElementById('sys-status');
-      if (!statusEl) return;
-      statusEl.innerHTML = message;
-      statusEl.style.color = isError ? 'var(--danger-red)' : 'var(--text-gold)';
+      const toastEl = document.getElementById('status-toast');
+      if (!toastEl) return;
+      toastEl.textContent = message;
+      toastEl.className = isError ? 'toast is-visible is-error' : 'toast is-visible';
+      clearTimeout(toastEl.hideTimer);
+      toastEl.hideTimer = setTimeout(() => {
+        toastEl.className = 'toast';
+        toastEl.textContent = '';
+      }, 4000);
       setTimeout(renderIdleStatus, 2500);
     }
 
@@ -1297,18 +2525,18 @@
 
     function showTapToPlay(audio) {
       pendingBlockedAudio = audio;
-      const statusEl = document.getElementById('sys-status');
-      if (!statusEl) return;
-      statusEl.innerHTML = '🔊 TAP HERE TO PLAY';
-      statusEl.style.color = 'var(--text-gold)';
-      statusEl.style.cursor = 'pointer';
-      statusEl.onclick = () => {
+      const toastEl = document.getElementById('status-toast');
+      if (!toastEl) return;
+      clearTimeout(toastEl.hideTimer);
+      toastEl.className = 'toast is-visible is-play';
+      toastEl.innerHTML = '<button type="button" class="toast-action"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Tap to play reply</button>';
+      toastEl.querySelector('button').onclick = () => {
         if (pendingBlockedAudio) {
           pendingBlockedAudio.play().catch(e => console.log('Still blocked:', e));
           pendingBlockedAudio = null;
         }
-        statusEl.onclick = null;
-        statusEl.style.cursor = 'default';
+        toastEl.className = 'toast';
+        toastEl.innerHTML = '';
         renderIdleStatus();
       };
     }
@@ -1335,12 +2563,12 @@
           });
         } catch(audioErr) {
           console.error('Audio decode error:', audioErr);
-          flashStatus('AUDIO DECODE ERROR');
+          flashStatus('Audio could not be decoded');
         }
         return true;
       } else if (data.audioStatus && data.audioStatus !== 'SUCCESS') {
         // e.g. Cartesia key missing/misconfigured server-side, or synthesis failed.
-        flashStatus('TTS UNAVAILABLE (' + data.audioStatus + ')');
+        flashStatus('Voice unavailable (' + data.audioStatus + ')');
         return true;
       }
       return false;
@@ -1362,21 +2590,31 @@
           throw new Error(`Server returned non-JSON response (${response.status}): ${responseText.substring(0, 150)}`);
         }
         if (!response.ok) {
-          flashStatus('SPEECH REQUEST FAILED (' + response.status + ')', true, classifyFetchFailure(null, response.status));
+          flashStatus('Speech request failed (' + response.status + ')', true, classifyFetchFailure(null, response.status));
           return;
         }
         playAudioResult(data);
       } catch (err) {
         console.error('Speech synthesis error:', err);
-        flashStatus('SPEECH REQUEST FAILED', true, classifyFetchFailure(err, null));
+        flashStatus('Speech request failed', true, classifyFetchFailure(err, null));
       }
     }
 
     function copyBubbleText(el) {
       const text = el.closest('.message-bubble').querySelector('.message-text').innerText;
       navigator.clipboard.writeText(text).then(() => {
+        if (el.classList.contains('msg-action')) {
+          const label = el.getAttribute('aria-label');
+          el.classList.add('is-done');
+          el.setAttribute('aria-label', 'Copied');
+          setTimeout(() => {
+            el.classList.remove('is-done');
+            el.setAttribute('aria-label', label);
+          }, 1500);
+          return;
+        }
         const originalText = el.textContent;
-        el.textContent = 'COPIED!';
+        el.textContent = 'Copied';
         setTimeout(() => el.textContent = originalText, 1500);
       });
     }
@@ -1393,8 +2631,8 @@
     function renderApprovalActionsHtml(token) {
       return `
             <div class="approval-actions">
-              <button class="approval-btn approve" onclick="resolveApproval('${token}', 'approve', this)">✅ APPROVE</button>
-              <button class="approval-btn decline" onclick="resolveApproval('${token}', 'decline', this)">❌ DECLINE</button>
+              <button type="button" class="approval-btn approve" onclick="resolveApproval('${token}', 'approve', this)"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><span class="approval-label">Approve</span></button>
+              <button type="button" class="approval-btn decline" onclick="resolveApproval('${token}', 'decline', this)"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg><span class="approval-label">Decline</span></button>
             </div>`;
     }
 
@@ -1407,7 +2645,7 @@
       const bubble = btnEl.closest('.message-bubble');
       if (actionsRow) {
         actionsRow.querySelectorAll('button').forEach(b => b.disabled = true);
-        btnEl.textContent = decision === 'approve' ? 'APPROVING...' : 'DECLINING...';
+        (btnEl.querySelector('.approval-label') || btnEl).textContent = decision === 'approve' ? 'Approving…' : 'Declining…';
       }
 
       try {
@@ -1440,11 +2678,11 @@
         saveState();
       } catch (err) {
         triggerHaptic(200);
-        flashStatus('APPROVAL REQUEST FAILED', true, classifyFetchFailure(err, null));
+        flashStatus('Approval request failed', true, classifyFetchFailure(err, null));
         if (actionsRow) {
           actionsRow.querySelectorAll('button').forEach(b => b.disabled = false);
         }
-        btnEl.textContent = decision === 'approve' ? '✅ APPROVE' : '❌ DECLINE';
+        (btnEl.querySelector('.approval-label') || btnEl).textContent = decision === 'approve' ? 'Approve' : 'Decline';
       }
     }
 
@@ -1609,6 +2847,15 @@
       } else {
         badge.style.display = 'none';
       }
+      const menuCount = document.getElementById('menu-error-count');
+      if (menuCount) {
+        menuCount.textContent = badge.textContent;
+        menuCount.hidden = unresolvedCount === 0;
+      }
+      const menuBtn = document.getElementById('quick-menu-btn');
+      if (menuBtn) {
+        menuBtn.setAttribute('aria-label', unresolvedCount > 0 ? `Quick commands, ${unresolvedCount} unresolved errors` : 'Quick commands');
+      }
     }
 
     async function markErrorResolved(id) {
@@ -1680,24 +2927,24 @@
 
       if (entries.length === 0) {
         const emptyLabel = showResolvedErrors ? 'No errors logged.' : 'No unresolved errors.';
-        container.innerHTML = `<div style="font-size:11px; color:#999; text-align:center; padding: 12px 0;">${emptyLabel}</div>`;
+        container.innerHTML = `<div class="list-empty">${emptyLabel}</div>`;
         return;
       }
       container.innerHTML = entries.map((entry, index) => {
         const countLabel = entry.count > 1 ? ` (x${entry.count})` : '';
         const categoryLabel = entry.category
-          ? `<span style="font-size:10px; color:#888; text-transform:uppercase; letter-spacing:0.5px;">${escapeHTML(entry.category)}</span>`
+          ? `<span class="err-cat">${escapeHTML(entry.category)}</span>`
           : '';
         // Connectivity failures (offline/network/timeout) aren't code bugs,
         // so there's nothing for Suggest Fix to patch - no FIX button. A
         // resolved entry never shows FIX or RESOLVE either.
         const isConnectivity = CONNECTIVITY_ERROR_CATEGORIES.has(entry.category);
         const fixBtn = (!entry.resolved && !isConnectivity)
-          ? `<button class="thread-action-btn" onclick="triggerHaptic(30); suggestFixForError(${index})">FIX</button>`
+          ? `<button type="button" class="thread-action-btn" onclick="triggerHaptic(30); suggestFixForError(${index})">FIX</button>`
           : '';
         const resolveBtn = (entry.id && !entry.resolved)
-          ? `<button class="thread-action-btn" onclick="triggerHaptic(30); markErrorResolved('${entry.id}')">RESOLVE</button>`
-          : (entry.resolved ? `<span style="font-size:10px; color:#666;">RESOLVED</span>` : '');
+          ? `<button type="button" class="thread-action-btn" onclick="triggerHaptic(30); markErrorResolved('${entry.id}')">RESOLVE</button>`
+          : (entry.resolved ? `<span class="err-resolved">RESOLVED</span>` : '');
         // issue #215: the second line shows where the failure came from
         // (the route, e.g. /api/mcp:check_wallet_age) instead of repeating
         // the reason already shown in the title above it. request_id (also
@@ -1706,10 +2953,10 @@
         // before the request_id column existed, or for the offline local
         // fallback log, and simply don't render.
         const routeLabel = entry.route
-          ? `<span style="font-size:11px; color:#ccc;">${escapeHTML(entry.route)}</span>`
+          ? `<span class="err-route">${escapeHTML(entry.route)}</span>`
           : '';
         const requestIdLabel = entry.requestId
-          ? `<span style="font-size:10px; color:#777; font-family:monospace;">req: ${escapeHTML(entry.requestId)}</span>`
+          ? `<span class="err-req">req: ${escapeHTML(entry.requestId)}</span>`
           : '';
         return `
         <div class="thread-item">
@@ -1731,7 +2978,7 @@
     async function renderErrorLogList() {
       const container = document.getElementById('error-log-list');
       if (!container) return;
-      container.innerHTML = '<div style="font-size:11px; color:#999; text-align:center; padding: 12px 0;">Loading...</div>';
+      container.innerHTML = '<div class="list-empty">Loading...</div>';
 
       await syncErrorLogToServer();
       const serverEntries = await fetchServerErrorLog();
@@ -1825,11 +3072,7 @@
       userBubble.innerHTML = `
         <span class="msg-timestamp">${currentTime}</span>
         <div class="message-text">${formatMarkdown(text || '[Vision Data Transmitted]')}${statusText}</div>
-        <div class="message-actions">
-          <span onclick="triggerHaptic(40); editBubble(this)">EDIT</span>
-          <span onclick="triggerHaptic(40); copyBubbleText(this)">COPY</span>
-          <span onclick="triggerHaptic(40); deleteBubble(this)">DELETE</span>
-        </div>`;
+        ${messageActionsHtml('user')}`;
       chatContainer.appendChild(userBubble);
       
       input.value = '';
@@ -1841,7 +3084,7 @@
       // STALE BUBBLE FIX: marked "pending" until a reply or error replaces it,
       // so a reload mid-request can detect and clean it up (see window.onload).
       agentBubble.className = 'message-bubble pending';
-      agentBubble.innerHTML = `<span class="msg-timestamp">${currentTime}</span><div class="message-text" style="color: #888;">Executing directive across sovereign core...</div>`;
+      agentBubble.innerHTML = `<span class="msg-timestamp">${currentTime}</span><div class="message-text pending-text" role="status"><span class="thinking" aria-hidden="true"><i></i><i></i><i></i></span>Running directive…</div>`;
       chatContainer.appendChild(agentBubble);
       chatContainer.scrollTop = chatContainer.scrollHeight;
       saveState();
@@ -1878,9 +3121,11 @@
         if (attachedFilesPayload.length > 0) {
           payload.multiFiles = [...attachedFilesPayload];
           attachedFilesPayload = [];
+          attachedFileNames = [];
           attachedBytes = 0;
           document.getElementById('file-input').value = '';
           renderIdleStatus();
+          renderAttachmentChips();
         }
 
         const response = await fetch('/api/chat', {
@@ -1908,7 +3153,7 @@
         let contentHtml = `<span class="msg-timestamp">${finalTime}</span><div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>`;
 
         if (data.searchEntryPoint) {
-          contentHtml += '<div class="search-entry-point" style="margin-top: 12px; width: 100%;">' + data.searchEntryPoint + '</div>';
+          contentHtml += '<div class="search-entry-point">' + data.searchEntryPoint + '</div>';
         }
 
         if (data.image) {
@@ -1931,12 +3176,7 @@
           contentHtml += renderApprovalActionsHtml(data.pendingApproval.token);
         }
 
-        contentHtml += `
-          <div class="message-actions">
-            <span onclick="triggerHaptic(); speakBubble(this)">SPEAK</span>
-            <span onclick="triggerHaptic(); copyBubbleText(this)">COPY</span>
-            <span onclick="triggerHaptic(); deleteBubble(this)">DELETE</span>
-          </div>`;
+        contentHtml += messageActionsHtml('agent');
 
         agentBubble.classList.remove('pending');
         agentBubble.innerHTML = contentHtml;
@@ -1973,7 +3213,9 @@
         const display = buildDirectiveErrorDisplay(err, responseStatus, REQUEST_TIMEOUT_MS / 1000);
         logError(display.text, 'submitDirective', display.category);
         agentBubble.classList.remove('pending');
-        agentBubble.innerHTML = `<span class="msg-timestamp">${errTime}</span><div class="message-text" style="color: #ff4444;">${display.prefixed ? 'Exception: ' : ''}${escapeHTML(display.text)}</div>`;
+        agentBubble.classList.add('error');
+        if (display.category === 'offline' || display.category === 'network') agentBubble.classList.add('offline');
+        agentBubble.innerHTML = `<span class="msg-timestamp">${errTime}</span><div class="message-text">${display.prefixed ? 'Exception: ' : ''}${escapeHTML(display.text)}</div>`;
         saveState();
       } finally {
         clearTimeout(timeoutId);
@@ -1981,6 +3223,82 @@
 
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
+    
+    // DIALOG A11Y: the overlays are still opened and closed by their own
+    // functions (style.display), so this watches for that instead of
+    // changing them: focus moves into a dialog when it opens and back to
+    // whatever opened it when it closes, Tab stays inside the open dialog,
+    // and Escape closes it (via its own CLOSE button) or the ➕ menu. The
+    // Security Gate has no close button, so Escape never dismisses it.
+    (function setUpDialogs() {
+      const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])';
+      const returnFocus = new Map();
+      const isOpen = (el) => el.style.display !== 'none' && getComputedStyle(el).display !== 'none';
+      const openDialogs = () => Array.from(document.querySelectorAll('.matrix-modal')).filter(isOpen);
+      const focusables = (el) => Array.from(el.querySelectorAll(FOCUSABLE)).filter((n) => n.offsetParent !== null);
+
+      const observer = new MutationObserver((records) => {
+        records.forEach(({ target }) => {
+          if (isOpen(target)) {
+            if (returnFocus.has(target)) return;
+            returnFocus.set(target, document.activeElement);
+            const first = focusables(target)[0];
+            if (first) first.focus({ preventScroll: true });
+          } else if (returnFocus.has(target)) {
+            const back = returnFocus.get(target);
+            returnFocus.delete(target);
+            if (back && document.contains(back) && typeof back.focus === 'function') back.focus({ preventScroll: true });
+          }
+        });
+      });
+      document.querySelectorAll('.matrix-modal').forEach((el) => {
+        observer.observe(el, { attributes: true, attributeFilter: ['style'] });
+        if (isOpen(el)) returnFocus.set(el, null);
+      });
+
+      // Open the gate's keyboard straight away only where there is a real
+      // keyboard; on a phone that would cover the card before it's seen.
+      const gate = document.getElementById('auth-modal');
+      if (gate && isOpen(gate) && window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
+        const user = document.getElementById('auth-user');
+        if (user) user.focus();
+      }
+
+      document.addEventListener('keydown', (e) => {
+        const drawer = document.getElementById('app-drawer');
+        const drawerOpen = document.body.classList.contains('drawer-open');
+        const top = openDialogs().pop() || (drawerOpen ? drawer : null);
+        if (e.key === 'Escape') {
+          if (drawerOpen && !openDialogs().length) {
+            closeDrawer();
+            return;
+          }
+          const menu = document.getElementById('quick-menu');
+          if (menu && menu.classList.contains('open')) {
+            toggleQuickMenu();
+            const btn = document.getElementById('quick-menu-btn');
+            if (btn) btn.focus();
+            return;
+          }
+          const closeBtn = top && top.querySelector('[data-dialog-close]');
+          if (closeBtn) closeBtn.click();
+          return;
+        }
+        if (e.key === 'Tab' && top) {
+          const items = focusables(top);
+          if (items.length === 0) return;
+          const first = items[0];
+          const last = items[items.length - 1];
+          if (e.shiftKey && (document.activeElement === first || !top.contains(document.activeElement))) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && (document.activeElement === last || !top.contains(document.activeElement))) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      });
+    })();
     
   </script>
 </body>

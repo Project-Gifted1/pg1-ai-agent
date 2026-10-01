@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 264 100" width="264" height="100" role="img" aria-label="PG1">
+  <title>PG1</title>
+  <!-- PG1 lockup: "PG" + a gold shield whose dark numeral is the "1".
+       Pure vector shapes (no font). Cap height 100, shared baseline. -->
+  <g stroke="#ececee"><path d="M8.5 0V100M8.5 8.5H38A24.5 24.5 0 0 1 38 57.5H8.5M155.44 24.45A38 41.5 0 1 0 163.5 50H131.5" fill="none" stroke-width="17" stroke-linejoin="miter"/></g>
+  <path d="M221.76 0L262.5 15.2V47.3C262.5 73.9 245.1 91.85 221.76 100C198.4 91.85 181 73.9 181 47.3V15.2Z" fill="#f3c623"/>
+  <path d="M220 20H233V72H220V37.5L208.5 43.5V31Z" fill="#0a0a0b"/>
+</svg>
