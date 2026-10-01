@@ -13,7 +13,8 @@
  *          check returns the age result with delegated: null, never false.
  *          is_contract is unchanged (still true for a delegated address).
  *          WALLET_DELEGATED is informational: it never changes status on
- *          its own. Cached answers now count against the 60/hour anonymous
+ *          its own. WALLET_AGE_PARTIAL now makes status "unknown" (a check
+ *          didn't complete), not "flagged". Cached answers now count against the 60/hour anonymous
  *          rate limit (each makes an upstream call); licensed callers stay
  *          exempt. No other tool definition changes.
  * Version: 1.13.0 — ADD (issue #209): new free tool check_wallet_age,

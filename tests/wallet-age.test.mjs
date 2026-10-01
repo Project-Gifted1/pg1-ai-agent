@@ -21,7 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computeStatus } from '../lib/responseMeta.mjs';
-import { INFORMATIONAL_REASON_CODES } from '../lib/reasonCodes.mjs';
+import { INFORMATIONAL_REASON_CODES, INCOMPLETE_REASON_CODES } from '../lib/reasonCodes.mjs';
 import handler, { TOOLS, RESPONSE_META_OUTPUT_PROPERTIES, TEST_FIXTURE_OUTPUT_PROPERTIES, parseWalletDelegation } from '../api/mcp.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1058,11 +1058,40 @@ test('check_wallet_age delegation: delegated true never changes status on its ow
   assert.deepEqual(newDelegated.reasons.map((r) => r.code), ['WALLET_NO_HISTORY', 'WALLET_DELEGATED']);
   assert.deepEqual(newPlain.reasons.map((r) => r.code), ['WALLET_NO_HISTORY']);
 
-  // Internal transfers not checked in time (base): WALLET_AGE_PARTIAL flags, as before.
+  // No history, with the code check failing: still flagged (WALLET_NO_HISTORY is a genuine warning).
+  global.fetch = makeFetchMock({ delegationResponse: { ok: false, status: 500, json: async () => ({}) } });
+  const { parsed: newUnknownDelegation } = await callParsed({ address: ADDRESS, chain: 'arbitrum' });
+  assert.equal(newUnknownDelegation.delegated, null);
+  assert.equal(newUnknownDelegation.status, 'flagged');
+  assert.deepEqual(newUnknownDelegation.reasons.map((r) => r.code), ['WALLET_NO_HISTORY']);
+});
+
+// WALLET_AGE_PARTIAL means a check didn't complete: status "unknown", never
+// "flagged". Reasons are unchanged.
+test('check_wallet_age: a partial (internal transfers not checked in time) old wallet is status "unknown", delegated or not', async (t) => {
+  withAlchemyEnv(t);
+  withoutSupabaseEnv(t);
+  const originalFetch = global.fetch;
+  t.after(() => { global.fetch = originalFetch; });
+
+  global.fetch = makeFetchMock({ inTransfers: OLD_IN_TRANSFER, code: '0x', hangInternal: true });
+  const { parsed: partial } = await callParsed({ address: ADDRESS, chain: 'base' });
+  assert.equal(partial.found, true);
+  assert.equal(partial.status, 'unknown');
+  assert.deepEqual(partial.reasons.map((r) => r.code), ['WALLET_AGE_PARTIAL']);
+
   global.fetch = makeFetchMock({ inTransfers: OLD_IN_TRANSFER, code: DELEGATED_CODE, hangInternal: true });
   const { parsed: partialDelegated } = await callParsed({ address: ADDRESS, chain: 'base' });
-  assert.equal(partialDelegated.status, 'flagged');
+  assert.equal(partialDelegated.delegated, true);
+  assert.equal(partialDelegated.status, 'unknown');
   assert.deepEqual(partialDelegated.reasons.map((r) => r.code), ['WALLET_AGE_PARTIAL', 'WALLET_DELEGATED']);
+
+  // No history plus partial: WALLET_NO_HISTORY is a genuine warning, so flagged.
+  global.fetch = makeFetchMock({ code: DELEGATED_CODE, hangInternal: true });
+  const { parsed: partialNew } = await callParsed({ address: ADDRESS, chain: 'base' });
+  assert.equal(partialNew.found, false);
+  assert.equal(partialNew.status, 'flagged');
+  assert.deepEqual(partialNew.reasons.map((r) => r.code), ['WALLET_NO_HISTORY', 'WALLET_AGE_PARTIAL', 'WALLET_DELEGATED']);
 });
 
 test('computeStatus: informational reason codes never flag on their own', () => {
@@ -1073,6 +1102,11 @@ test('computeStatus: informational reason codes never flag on their own', () => 
   assert.equal(computeStatus([{ code: 'WALLET_DELEGATED' }, { code: 'WALLET_NO_HISTORY' }], ok), 'flagged');
   assert.equal(computeStatus([{ code: 'WALLET_SANCTIONED' }], ok), 'flagged');
   assert.equal(computeStatus([], ok), 'no_flags');
+  assert.deepEqual([...INCOMPLETE_REASON_CODES], ['WALLET_AGE_PARTIAL']);
+  // An incomplete code is "unknown" even if checks were (wrongly) all ok.
+  assert.equal(computeStatus([{ code: 'WALLET_AGE_PARTIAL' }], ok), 'unknown');
+  assert.equal(computeStatus([{ code: 'WALLET_AGE_PARTIAL' }, { code: 'WALLET_DELEGATED' }], ok), 'unknown');
+  assert.equal(computeStatus([{ code: 'WALLET_NO_HISTORY' }, { code: 'WALLET_AGE_PARTIAL' }], ok), 'flagged');
 });
 
 function cachedFoundFetch({ onDelegation } = {}) {
