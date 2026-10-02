@@ -6,7 +6,8 @@
  *  - the live trace view (run for real on tests/helpers/mini-dom.mjs): a
  *    gold dot on the running step, rows joined by a timeline, the fold into
  *    "Writing · N steps" when text starts, the "N steps" header pill with
- *    durations when it is done, and no row for the voice step
+ *    durations (the server's own ms on step_done, not the browser clock)
+ *    when it is done, and no row for the voice step
  *  - readChatStream / consumeDirectiveStream over a chunked body, including
  *    the Stop button aborting mid-stream and a dropped connection
  *  - the fallback path: JSON replies still go through the old code, and a
@@ -44,7 +45,7 @@ function extractFunction(name) {
 
 const FUNCS = [
   'escapeHTML', 'formatMarkdown', 'renderDiffBlock', 'formatStreamingMarkdown', 'parseSseBuffer', 'parseTraceEvent',
-  'readChatStream', 'formatStepDuration', 'traceRowHtml', 'traceRunningRowHtml', 'stepCountText', 'agentTimestampHtml',
+  'readChatStream', 'formatStepDuration', 'stepDurationMs', 'traceRowHtml', 'traceRunningRowHtml', 'stepCountText', 'agentTimestampHtml',
   'toggleTraceDetails', 'createTraceView', 'consumeDirectiveStream', 'syncExecuteButton',
   'onExecuteClick', 'stopDirectives', 'retryButtonHtml', 'retryDirective', 'renderStreamFailure'
 ];
@@ -173,6 +174,17 @@ test('step durations read as <0.1s, 0.4s, 1.2s, 12s', () => {
   assert.equal(formatStepDuration(-5), '');
 });
 
+test('a finished row shows the server\'s own timing (ms on step_done), never the browser clock', () => {
+  const { stepDurationMs } = makeContext();
+  assert.equal(stepDurationMs({ ms: 3400 }, 50), 3400, 'server timing wins');
+  assert.equal(stepDurationMs({ ms: 0 }, 50), 0, 'a zero from the server is still the server\'s answer');
+  assert.equal(stepDurationMs({}, 1200), 1200, 'an older server that sends no ms: how long the row was shown as running');
+  assert.equal(stepDurationMs({ ms: '3400' }, 1200), 1200, 'a non-number is ignored');
+  assert.equal(stepDurationMs({ ms: -1 }, 1200), 1200, 'a negative one is ignored');
+  assert.equal(stepDurationMs({ ms: Infinity }, 1200), 1200);
+  assert.equal(stepDurationMs(null, 1200), 1200);
+});
+
 // The real createTraceView on a tiny DOM, with a controllable clock.
 function makeTraceHarness() {
   const document = createDocument();
@@ -239,6 +251,44 @@ test('writing: the first reply text folds the steps into one live "Writing · N 
   assert.equal(trace.querySelector('.trace-count').textContent, '3 steps', 'count updates while writing');
   view.writing();
   assert.equal(trace.querySelectorAll('.trace-writing').length, 1);
+});
+
+test('rows show the step\'s server-side duration: a step that arrived 50ms apart but took 3.4s on the server reads "took 3.4s"', () => {
+  const { view, trace, tick } = makeTraceHarness();
+  view.step({ id: 'db', label: 'Checking the database connection' });
+  view.step({ id: 'memory', label: 'Loading memory' });
+  tick(50);
+  view.stepDone({ id: 'db', label: 'Checked the database', result: 'connected', ms: 3400 });
+  // An event from an older server without ms: the row was running here for 1.2s.
+  tick(1150);
+  view.stepDone({ id: 'memory', label: 'Loaded memory', result: '2 recent messages' });
+  const durs = trace.querySelectorAll('.trace-dur').map((d) => d.textContent);
+  assert.deepEqual(durs, ['took 3.4s', 'took 1.2s']);
+});
+
+test('consumeDirectiveStream: the finished list carries the server durations', async () => {
+  const document = createDocument();
+  const ctx = makeContext({ document, window: { requestAnimationFrame: (fn) => fn() }, performance: { now: () => 0 } });
+  const chat = document.createElement('div');
+  chat.id = 'chat-container';
+  document.body.appendChild(chat);
+  const bubble = document.createElement('div');
+  bubble.className = 'message-bubble pending';
+  bubble.innerHTML = '<span class="msg-timestamp">06:22 PM</span><div class="message-text pending-text">Running directive…</div>';
+  chat.appendChild(bubble);
+  const stream = [
+    ev({ type: 'step', id: 'db', label: 'Checking the database connection' }),
+    ev({ type: 'step', id: 'model', label: 'Writing the reply' }),
+    ev({ type: 'step_done', id: 'db', label: 'Checked the database', result: 'connected', ms: 412 }),
+    ev({ type: 'text', text: 'Hi' }),
+    ev({ type: 'step_done', id: 'model', label: 'Wrote the reply', result: '1 word', ms: 12400 }),
+    ev({ type: 'done', request_id: 'r1' })
+  ].join('');
+  const out = await ctx.consumeDirectiveStream(chunkedResponse(stream, [1e6]), bubble, new AbortController().signal);
+  assert.equal(out.data.reply, 'Hi');
+  const holder = document.createElement('div');
+  holder.innerHTML = out.traceHtml;
+  assert.deepEqual(holder.querySelectorAll('.trace-dur').map((d) => d.textContent), ['took 0.4s', 'took 12s'], 'the browser clock never moved; these are the server\'s numbers');
 });
 
 test('consumeDirectiveStream folds the trace on the first text chunk and places the reply right under it', async () => {

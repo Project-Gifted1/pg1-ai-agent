@@ -1015,8 +1015,8 @@
        muted tick, its result after a middle dot in a lighter tone. Once
        reply text starts, the rows fold into one live "Writing · N steps"
        line; when the reply is done that becomes the "N steps" pill in the
-       message header, which opens the list (with step durations) below
-       the header. */
+       message header, which opens the list below the header, each row with
+       the time the step took on the server (the `ms` on step_done). */
     .trace { margin: 0 0 var(--sp-3); font-size: var(--fs-sm); line-height: var(--lh-tight); color: var(--text-2); }
     .trace.is-done { margin: 0; }
     .trace.is-done > .trace-steps:not([hidden]) { margin-bottom: var(--sp-3); }
@@ -2664,7 +2664,7 @@
 
     // Copies one fenced code block (the Copy button formatMarkdown puts in
     // each block's header). The label lives in CSS (::after), so it never
-    // leaks into COPY / SPEAK on the whole message.
+    // leaks into Copy / Read aloud on the whole message.
     function copyCodeBlock(btn) {
       const block = btn.closest('.code-block');
       const code = block && block.querySelector('code');
@@ -4362,8 +4362,8 @@
       return sec < 10 ? `${sec.toFixed(1)}s` : `${Math.round(sec)}s`;
     }
 
-    // A finished step. `durationMs` (measured in the browser from the step
-    // starting to it finishing) is shown in the expanded list.
+    // A finished step. `durationMs` (how long the step took on the server,
+    // see stepDurationMs) is shown in the expanded list.
     function traceRowHtml(ev, uid, durationMs) {
       const label = escapeHTML(ev.label || 'Step');
       const result = ev.result ? `<span class="trace-result"> · ${escapeHTML(ev.result)}</span>` : '';
@@ -4388,6 +4388,16 @@
       return `${n} step${n === 1 ? '' : 's'}`;
     }
 
+    // The duration to show for a finished step: the server's own timing
+    // (`ms` on step_done, measured between the step starting and finishing
+    // there). A step_done from a server that doesn't send one (an older
+    // deploy) falls back to how long the row was shown as running here,
+    // which also counts network delay, so it is only ever a stand-in.
+    function stepDurationMs(ev, shownForMs) {
+      if (ev && typeof ev.ms === 'number' && isFinite(ev.ms) && ev.ms >= 0) return ev.ms;
+      return shownForMs;
+    }
+
     // The finished reply's header: "PG1 · 06:22 PM · N steps ›" when it has
     // a trace (the pill opens the list just below the header), else the
     // plain "PG1 06:22 PM" every other reply has.
@@ -4408,7 +4418,7 @@
 
     // Live trace in a pending agent bubble. Steps can run in parallel: each
     // gets a row with a gold dot as it starts, replaced by its finished row
-    // (tick or cross, result, duration) when it ends. writing() folds the
+    // (tick or cross, result, server-side duration) when it ends. writing() folds the
     // rows into one live "Writing · N steps" line as soon as reply text
     // arrives. The "voice" step is not a row: speech shows as the waveform
     // in the message header instead (syncVoiceWave).
@@ -4455,7 +4465,7 @@
           const entry = running.get(ev.id);
           if (!entry) return;
           running.delete(ev.id);
-          entry.row.outerHTML = traceRowHtml(ev, `${uid}-${rows++}`, now() - entry.started);
+          entry.row.outerHTML = traceRowHtml(ev, `${uid}-${rows++}`, stepDurationMs(ev, now() - entry.started));
           showCurrent();
         },
         // Reply text has started: one live line from here on.
@@ -4726,6 +4736,10 @@
         // tap/Enter that sent the message, so the browser lets it play.
         const voicePlayer = (wantStream && voiceActive) ? startVoicePlayer(agentBubble) : null;
         if (voicePlayer) payload.speak = true;
+        // A JSON (non-streamed) reply with the switch on is still read aloud
+        // afterwards (speakMessage below), so the server hears about it
+        // either way and keeps a spoken answer short.
+        else if (voiceActive) payload.speak = true;
 
         if (attachedFilesPayload.length > 0) {
           payload.multiFiles = [...attachedFilesPayload];
