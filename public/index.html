@@ -2821,6 +2821,14 @@
       recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = true;
+      // DICTATION ACCURACY: "Hey PG1" came back as "April". Browsers that
+      // take phrase hints (Chrome 139+ with on-device recognition) get
+      // "PG1" as one; the rest rely on normaliseWakeWord below.
+      try {
+        if (typeof SpeechRecognitionPhrase === 'function' && 'phrases' in recognition) {
+          recognition.phrases = [new SpeechRecognitionPhrase('PG1', 5.0)];
+        }
+      } catch (hintErr) { /* hints unsupported */ }
 
       recognition.onstart = function() {
         isRecording = true;
@@ -2836,6 +2844,9 @@
             finalTranscript += event.results[i][0].transcript;
           }
         }
+        // "April" / "a PG one" / "PG one" at the start of what was said
+        // becomes "PG1"; the rest of the utterance is left as heard.
+        if (finalTranscript && typeof PG1Voice !== 'undefined') finalTranscript = PG1Voice.normaliseWakeWord(finalTranscript);
         if (finalTranscript) {
           const input = document.getElementById('prompt-input');
           input.value = (input.value + ' ' + finalTranscript).trim();
