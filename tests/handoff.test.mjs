@@ -205,13 +205,35 @@ test('only secret-looking names with credential-length values count as env secre
     PUBLIC_DOCS_TOKEN_URL: 'https://example.com/docs/getting-started',
     FEATURE_FLAG_SECRET: 'true',
     RATE_LIMIT_KEY: '1234567890123456789',
-    USER_API_PASS: 'short-pass',
+    USER_API_PASS: 'pw-01',
     SUPABASE_URL: 'https://abc-project-ref.supabase.co',
     VERCEL_GIT_REPO_SLUG: 'pg1-ai-agent-long-name',
     SLACK_WEBHOOK_URL: 'https://hooks.example.invalid/services/pg1-fixture-hook-0001',
     DATABASE_URL: postgresUrl()
   };
   assert.deepEqual(secretEnvValues(env).map((v) => v.name).sort(), ['DATABASE_URL', 'SLACK_WEBHOOK_URL']);
+});
+
+test('PASS, PASSKEY and PASSWORD env values are stripped from 6 chars; other secret names need 16', () => {
+  const passkey = FAKE.passkey.slice(0, 8);
+  const env = {
+    OPERATOR_PASSKEY: passkey,
+    USER_API_PASS: 'pg1pw6',
+    DB_PASSWORD: 'pg1-pw-07',
+    SHORT_PASS: 'pg1pw',
+    SHORT_API_KEY: 'pg1-fixture-key'
+  };
+  const values = secretEnvValues(env);
+  assert.deepEqual(values.map((v) => v.name).sort(), ['DB_PASSWORD', 'OPERATOR_PASSKEY', 'USER_API_PASS']);
+  const d = draftHandoff({ task: `login with ${passkey} fails; also pg1pw6 and pg1-pw-07 and pg1-fixture-key`, envValues: values });
+  assert.ok(!d.prompt.includes(passkey), 'short passkey env value is stripped');
+  assert.ok(!d.prompt.includes('pg1pw6'));
+  assert.ok(!d.prompt.includes('pg1-pw-07'));
+  assert.ok(d.prompt.includes('pg1-fixture-key'), 'a 15-char KEY value is below the 16-char minimum');
+  assert.deepEqual([...d.removed].sort(), ['value of DB_PASSWORD', 'value of OPERATOR_PASSKEY', 'value of USER_API_PASS']);
+  assert.ok(!d.removed.some((l) => l.includes(passkey) || l.includes('pg1pw6') || l.includes('pg1-pw-07')), 'warning names only the variable');
+  // stripSecrets applies the same per-name minimum when given values directly.
+  assert.deepEqual(stripSecrets('use pg1pw', { envValues: [{ name: 'SHORT_PASS', value: 'pg1pw' }] }).removed, []);
 });
 
 test('the repo name and ordinary words are never stripped, even if an env var holds them', () => {
