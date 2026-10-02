@@ -36,14 +36,22 @@
 //
 // Android's recogniser also re-sends the whole phrase heard so far on each
 // update ("what's", "what's in", "what's in my error log", every one of them
-// final), can hand the same final back again after a restart, and delivers
-// results after a turn was sent. Each turn's transcript therefore lives in a
-// buffer (createTranscriptBuffer) that keeps the longest version of each
-// phrase instead of appending, the live guess is a separate preview that is
+// final), revises words it has already delivered ("whats in" becomes "what's
+// in my error log"), can hand the same final back again after a restart, and
+// delivers results after a turn was sent. Each turn's transcript therefore
+// lives in a buffer (createTranscriptBuffer) that compares results word by
+// word (case, punctuation and apostrophes aside): a result whose opening
+// words substantially overlap the latest phrase, or that contains it, is a
+// revision and replaces it; a repeat or a shorter version is dropped; only
+// something new is appended. The live guess is a separate preview that is
 // overwritten on every update, the buffer is emptied whenever a turn starts
 // (after a send, a barge-in, start and stop), and a result that repeats the
 // turn just sent is dropped. Exclusive mode runs the recogniser with
-// continuous off: one utterance per session, restarted after each.
+// continuous off: one utterance per session. A session that ends with the
+// operator's words in it does not end the turn: the recogniser restarts at
+// once and the turn stays open for the end-of-turn window (1.5 s there, 0.8 s
+// with the detector), so a pause mid-sentence joins two sessions into one
+// message. "send" or "over" at the end of a final result sends at once.
 //
 // The wrapper hands the global object to the factory as `root`: the factory
 // is its own function, so it cannot see the wrapper's parameters, and the
@@ -68,7 +76,10 @@
     bargeInSustainMs: 300,      // sustained speech needed to interrupt
     bargeInGapMs: 100,          // a dip shorter than this does not reset it
     minTurnSpeechMs: 150,       // shorter blips are ignored
-    endOfTurnSilenceMs: 800,    // silence that ends the operator's turn
+    endOfTurnSilenceMs: 800,    // silence that ends the operator's turn (shared: the detector's clock)
+    exclusiveEndOfTurnSilenceMs: 1500, // ...and in exclusive mode, timed from the recogniser's results and session ends
+    endOfTurnOverrideMs: null,  // the operator's "End of turn" setting, when set: both modes use it
+    maxAlternatives: 3,         // recogniser alternatives per result; the most confident one is used
     finalGraceMs: 1500,         // wait this long for the recogniser's final text
     autoOffSilenceMs: 120000,   // 2 minutes without speech switches off
     echoThreshold: 0.8,         // transcript this similar to PG1's speech is echo
@@ -292,6 +303,11 @@
       // Ends an open turn without waiting for silence.
       endTurn() { const was = inTurn; inTurn = false; speaking = false; return was; },
       idleMs(now) { return lastActivityAt === null ? 0 : now - lastActivityAt; },
+      // How long the operator has been silent inside an open turn (null when
+      // no turn is open or speech is still coming): the countdown to the send.
+      silenceMs(now) { return inTurn && !speaking && lastSpeechAt !== null ? Math.max(0, now - lastSpeechAt) : null; },
+      // Settings that change while running (the end-of-turn window).
+      configure(partial) { Object.assign(o, partial || {}); },
       reset(now) {
         speaking = false; speechStartedAt = null; lastSpeechAt = null; inTurn = false; turnStartedAt = null;
         bargeStartedAt = bargeLastAt = null;
@@ -379,7 +395,7 @@
   // event with nothing else changed are kept once. The page offers "Copy
   // voice log" and "Send to PG1" over formatVoiceLog().
   const EVENT_LOG_MAX = 200;
-  const EVENT_LOG_FIELDS = ['event', 'state', 'mode', 'recogniser', 'lastError', 'status', 'micOpen', 'raw'];
+  const EVENT_LOG_FIELDS = ['event', 'session', 'state', 'mode', 'recogniser', 'lastError', 'status', 'micOpen', 'raw', 'final', 'resultIndex', 'confidence', 'text', 'turn'];
   function createEventLog(max = EVENT_LOG_MAX, now = () => Date.now()) {
     const entries = [];
     return {
@@ -397,12 +413,18 @@
   }
 
   // One line per entry, oldest first, the last `limit` entries only:
-  //   12:03:45.120 result | listening | shared mic | rec running | err none | heard "what is the"
+  //   12:03:45.120 result | listening | shared mic | rec running | err none | s2 | final #0 0.92 | heard "what is the" | turn "what is the"
   // Times are UTC clock times (HH:MM:SS.mmm) so a log from a phone and a
-  // server trace line up; what was heard is the recogniser's last result,
-  // 40 characters at most, only when there was one.
+  // server trace line up. "s2" is the recogniser session the event belongs
+  // to (sessions restart after each turn, and at a pause mid-sentence). A
+  // result line adds whether it was final, its result index and the
+  // confidence of the alternative used, what was heard (the recogniser's
+  // result as it came) and the turn as it stood after merging it, 40
+  // characters each, so a revision, a split or a stale repeat can be read
+  // off the log.
   function formatVoiceLog(entries, { limit = 30 } = {}) {
     const list = Array.isArray(entries) ? entries.slice(-Math.max(0, limit)) : [];
+    const clip = (v) => String(v).slice(0, 40);
     return list.map((e) => {
       const d = new Date(typeof e.at === 'number' ? e.at : 0);
       const time = isNaN(d.getTime()) ? '--:--:--.---' : d.toISOString().slice(11, 23);
@@ -413,42 +435,170 @@
         'rec ' + (e.recogniser || '-'),
         'err ' + (e.lastError || 'none')
       ];
+      if (typeof e.session === 'number') parts.push('s' + e.session);
+      if (typeof e.final === 'boolean') {
+        let r = e.final ? 'final' : 'interim';
+        if (typeof e.resultIndex === 'number') r += ' #' + e.resultIndex;
+        if (typeof e.confidence === 'number') r += ' ' + e.confidence.toFixed(2);
+        parts.push(r);
+      }
       if (e.status) parts.push('status "' + String(e.status).slice(0, 60) + '"');
-      if (e.raw) parts.push('heard "' + String(e.raw).slice(0, 40) + '"');
+      if (e.raw) parts.push('heard "' + clip(e.raw) + '"');
+      if (e.text && e.text !== e.raw) parts.push('text "' + clip(e.text) + '"');
+      if (e.turn) parts.push('turn "' + clip(e.turn) + '"');
       return parts.join(' | ');
     }).join('\n');
   }
 
   // The turn's transcript. Android Chrome re-sends the whole phrase heard so
   // far on every update, as interims and then as finals ("what's", "what's
-  // in", "what's in my error log"), so appending each result stacked them.
-  // Phrases are compared by their words alone (case, punctuation and
-  // apostrophes aside): a result that extends what is already there replaces
-  // it, one that is a prefix or a repeat of it is dropped, and anything else
-  // is a new phrase.
+  // in", "what's in my error log"), and revises words it has already
+  // delivered ("whats in" becomes "what's in my error log", "check my wallet"
+  // becomes "check my wallet age"), so appending each result stacked them.
+  // Phrases are compared word by word, with case, punctuation and
+  // apostrophes removed ("what's" and "whats" are one word):
+  //
+  //   - a result whose opening words substantially overlap a phrase (at
+  //     least REVISION_OVERLAP of the shorter one's words, in order), that is
+  //     a small edit away from it, or that contains the whole phrase anywhere
+  //     is a revision of it: with as many words or more it replaces the
+  //     phrase; with fewer it is an older guess and is dropped;
+  //   - a repeat, or a part, of what is already there is dropped;
+  //   - anything else is a new phrase.
+  const REVISION_OVERLAP = 0.6;
+
+  // The words of a phrase, lower case, letters and digits only.
+  function phraseWords(text) {
+    return String(text || '').toLowerCase().split(/\s+/).map((w) => w.replace(/[^\p{L}\p{N}]/gu, '')).filter(Boolean);
+  }
   function phraseKey(text) {
-    return String(text || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter(Boolean).join(' ');
+    return phraseWords(text).join(' ');
+  }
+  // True when the words of `needle` appear in `hay`, in order and unbroken.
+  function containsWords(hay, needle) {
+    if (!needle.length || needle.length > hay.length) return false;
+    for (let i = 0; i + needle.length <= hay.length; i++) {
+      let j = 0;
+      while (j < needle.length && hay[i + j] === needle[j]) j++;
+      if (j === needle.length) return true;
+    }
+    return false;
+  }
+  // Longest common subsequence of two word lists (small inputs, O(n*m)).
+  function lcsWords(a, b) {
+    let prevRow = new Uint16Array(b.length + 1);
+    for (let i = 1; i <= a.length; i++) {
+      const row = new Uint16Array(b.length + 1);
+      for (let j = 1; j <= b.length; j++) {
+        row[j] = a[i - 1] === b[j - 1] ? prevRow[j - 1] + 1 : Math.max(prevRow[j], row[j - 1]);
+      }
+      prevRow = row;
+    }
+    return prevRow[b.length];
+  }
+  // Levenshtein distance between two strings, in characters.
+  function editDistance(a, b) {
+    if (a === b) return 0;
+    if (!a.length) return b.length;
+    if (!b.length) return a.length;
+    let prev = new Uint16Array(b.length + 1);
+    for (let j = 0; j <= b.length; j++) prev[j] = j;
+    for (let i = 1; i <= a.length; i++) {
+      const row = new Uint16Array(b.length + 1);
+      row[0] = i;
+      for (let j = 1; j <= b.length; j++) {
+        row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      }
+      prev = row;
+    }
+    return prev[b.length];
   }
   // True when `a` is `b`, or `b` begins with `a` at a word boundary.
   function isPhrasePrefix(a, b) {
-    const ka = phraseKey(a);
-    if (!ka) return false;
-    const kb = phraseKey(b);
-    return kb === ka || kb.startsWith(ka + ' ');
+    const wa = phraseWords(a);
+    if (!wa.length) return false;
+    const wb = phraseWords(b);
+    return wa.length <= wb.length && wa.every((w, i) => w === wb[i]);
+  }
+  // True when `text` is a repeat of `phrase`, or a part of it (its words
+  // appear in the phrase in order and unbroken).
+  function isPhraseContained(text, phrase) {
+    const wt = phraseWords(text);
+    return wt.length > 0 && containsWords(phraseWords(phrase), wt);
+  }
+  // True when one of the two is a revision of the other: the shorter one's
+  // words appear whole somewhere in the longer one, or at least
+  // REVISION_OVERLAP of them are found, in order, among the longer one's
+  // opening words, or the two openings are a small edit apart ("what" and
+  // "what's", "log" and "logs").
+  function isPhraseRevision(a, b) {
+    const wa = phraseWords(a);
+    const wb = phraseWords(b);
+    if (!wa.length || !wb.length) return false;
+    const [shorter, longer] = wa.length <= wb.length ? [wa, wb] : [wb, wa];
+    if (containsWords(longer, shorter)) return true;
+    const head = longer.slice(0, shorter.length);
+    if (lcsWords(shorter, head) / shorter.length >= REVISION_OVERLAP) return true;
+    const sk = shorter.join(' ');
+    return editDistance(sk, head.join(' ')) <= Math.max(2, Math.floor(sk.length * 0.2));
   }
   // The phrases of a turn with `text` merged in (a new array).
   function mergePhrase(phrases, text) {
     const list = Array.isArray(phrases) ? phrases : [];
     const t = String(text || '').replace(/\s+/g, ' ').trim();
-    if (!phraseKey(t)) return list.slice();
+    const wt = phraseWords(t);
+    if (!wt.length) return list.slice();
+    if (!list.length) return [t];
+    const last = list[list.length - 1];
     const whole = list.join(' ');
-    // A repeat, or a shorter version, of what is already there: dropped.
-    if (list.some((p) => isPhrasePrefix(t, p)) || (list.length > 1 && isPhrasePrefix(t, whole))) return list.slice();
-    // The whole turn so far, re-sent with more words: that is the turn now.
-    if (list.length && isPhrasePrefix(whole, t)) return [t];
-    // The last phrase with more words: the longer version wins.
-    if (list.length && isPhrasePrefix(list[list.length - 1], t)) return list.slice(0, -1).concat(t);
+    // A repeat, or a part, of the latest phrase or of the whole turn: dropped.
+    if (isPhraseContained(t, last) || (list.length > 1 && isPhraseContained(t, whole))) return list.slice();
+    // The whole turn so far, re-sent revised or with more words: that is the turn now.
+    if (list.length > 1 && wt.length >= phraseWords(whole).length && isPhraseRevision(whole, t)) return [t];
+    // A revision of the latest phrase: the newer version replaces it, unless
+    // it has fewer words, which makes it an older guess.
+    if (isPhraseRevision(last, t)) return wt.length < phraseWords(last).length ? list.slice() : list.slice(0, -1).concat(t);
     return list.concat(t);
+  }
+
+  // The transcript to take from one SpeechRecognitionResult: of its
+  // alternatives (the recogniser is asked for maxAlternatives), the one with
+  // the highest confidence that has words in it and is not a repeat of a
+  // better-placed alternative. Interim results carry no confidence; the
+  // recogniser's own order decides then. Works on a plain array-like too
+  // (the tests' fakes have no length).
+  function pickAlternative(result) {
+    if (!result) return null;
+    const n = typeof result.length === 'number' ? result.length : (result[0] ? 1 : 0);
+    const alts = [];
+    for (let i = 0; i < n; i++) {
+      const alt = result[i];
+      const text = alt && typeof alt.transcript === 'string' ? alt.transcript.replace(/\s+/g, ' ').trim() : '';
+      if (!phraseKey(text)) continue;
+      const c = alt && typeof alt.confidence === 'number' && Number.isFinite(alt.confidence) ? alt.confidence : 0;
+      alts.push({ text, confidence: c, index: i });
+    }
+    alts.sort((x, y) => y.confidence - x.confidence || x.index - y.index);
+    const seen = new Set();
+    for (const a of alts) {
+      const key = phraseKey(a.text);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      return { text: a.text, confidence: a.confidence, index: a.index, alternatives: alts.length };
+    }
+    return null;
+  }
+
+  // "send" or "over" at the end of what was said sends the turn at once; the
+  // word itself is not part of the message, nor is the comma or full stop
+  // around it. Only the end of a final result counts: an interim "over" may
+  // still be "over there".
+  const SEND_KEYWORD_RE = /(?:^|[\s,;:.!?]+)(?:send|over)[\s.!?]*$/i;
+  function stripSendKeyword(text) {
+    const t = String(text || '').replace(/\s+/g, ' ').trim();
+    const m = t.match(SEND_KEYWORD_RE);
+    if (!m) return { text: t, send: false };
+    return { text: t.slice(0, m.index).trim(), send: true };
   }
 
   // One turn's finals and its live preview. The preview is replaced on every
@@ -462,6 +612,12 @@
       setInterim(texts) {
         interims = [];
         for (const t of [].concat(texts === undefined ? [] : texts)) interims = mergePhrase(interims, t);
+      },
+      // The session is over: whatever the preview still adds beyond the
+      // finals will never be finalised, so it is kept as said.
+      settle() {
+        for (const t of interims) finals = mergePhrase(finals, t);
+        interims = [];
       },
       get finalText() { return finals.join(' '); },
       get interimText() { return interims.join(' '); },
@@ -496,15 +652,21 @@
   //   onDiagnostics(snapshot)    live readout for the operator's diagnostics line
   //                              (raw: the recogniser's last result as it came;
   //                              interim: the cleaned transcript of the turn)
+  //   onCountdown(ms)            the turn will be sent in `ms` unless more speech
+  //                              comes; 0 when that no longer holds (the indicator's
+  //                              countdown)
+  //   language                   BCP 47 tag for the recogniser, or a function
+  //                              returning one; read at every session start
   //
-  // opts: any DEFAULTS key; micMode picks the starting mode.
+  // opts: any DEFAULTS key; micMode picks the starting mode. configure()
+  // changes endOfTurnMs and language while running.
 
   function createConversation(deps, opts = {}) {
     const o = Object.assign({}, DEFAULTS, opts);
     const now = deps.now || (() => Date.now());
     const setT = deps.setTimeout || setTimeout;
     const clearT = deps.clearTimeout || clearTimeout;
-    const tracker = createTurnTracker(o);
+    const tracker = createTurnTracker(Object.assign({}, o, o.endOfTurnOverrideMs > 0 ? { endOfTurnSilenceMs: o.endOfTurnOverrideMs } : {}));
     const spokenLog = deps.spokenLog || createSpokenLog();
     const eventLog = deps.eventLog || createEventLog(EVENT_LOG_MAX, now);
 
@@ -531,6 +693,9 @@
     let tickTimer = null;
     let turnTimer = null;           // exclusive mode: end of turn by result timing
     let watchingPlayback = false;   // exclusive mode: mic open for barge-in
+    let countdownMs = 0;            // what the page was last told about the send countdown
+    let sessionNo = 0;              // recogniser sessions started in this conversation
+    let languageOverride = null;    // configure({ language }) over deps.language
 
     // Recogniser health, for the restart backoff and the status line.
     let sessionStartedAt = null;
@@ -572,10 +737,17 @@
       logEvent(t ? 'status' : 'status:cleared');
     };
 
+    const endOfTurnMs = () => (o.endOfTurnOverrideMs > 0 ? o.endOfTurnOverrideMs : (exclusive() ? o.exclusiveEndOfTurnSilenceMs : o.endOfTurnSilenceMs));
+    const resolveLanguage = () => {
+      const l = languageOverride !== null ? languageOverride : (typeof deps.language === 'function' ? deps.language() : deps.language);
+      return typeof l === 'string' ? l.trim() : '';
+    };
     function snapshot() {
       return {
         mode: micMode,
         state,
+        session: sessionNo,
+        endOfTurnMs: endOfTurnMs(),
         recogniser: recognitionRunning ? 'running' : (restartTimer ? 'restarting' : 'stopped'),
         lastEvent,
         lastError,
@@ -588,15 +760,25 @@
         status: statusText
       };
     }
-    function emitDiag(event) {
+    function emitDiag(event, extra) {
       if (event) lastEvent = event;
       if (deps.onDiagnostics) deps.onDiagnostics(snapshot());
-      if (event) logEvent(event);
+      if (event) logEvent(event, extra);
     }
-    // The voice log keeps the snapshot as it was at the event.
-    function logEvent(event) {
+    // The voice log keeps the snapshot as it was at the event, with the
+    // session number; a result adds final, resultIndex, confidence, text and
+    // the turn after it (see formatVoiceLog).
+    function logEvent(event, extra) {
       const snap = snapshot();
-      eventLog.add({ event, state: snap.state, mode: snap.mode, recogniser: snap.recogniser, lastError: snap.lastError, status: snap.status, micOpen: snap.micOpen, raw: snap.raw });
+      eventLog.add(Object.assign({ event, session: sessionNo, state: snap.state, mode: snap.mode, recogniser: snap.recogniser, lastError: snap.lastError, status: snap.status, micOpen: snap.micOpen, raw: snap.raw }, extra || {}));
+    }
+    // The indicator's countdown: told the window whenever it (re)starts,
+    // and 0 once when it stops.
+    function setCountdown(ms) {
+      const next = ms > 0 ? ms : 0;
+      if (!next && !countdownMs) return;
+      countdownMs = next;
+      if (deps.onCountdown) deps.onCountdown(next);
     }
 
     function syncState() {
@@ -611,29 +793,41 @@
     function clearTranscript() { turn.clear(); lastRaw = ''; if (deps.onTranscript) deps.onTranscript(''); }
     function bufferedText() { return turn.text; }
     // Just after a send, the recogniser (Android, after its restart) can hand
-    // back the turn it already delivered, whole or in part. That is not the
-    // next turn.
+    // back the turn it already delivered, whole or in part, or with a word
+    // respelt. That is not the next turn. A result with more words in it is
+    // the operator talking again and goes through whole.
     function isStaleResult(text) {
-      return sentAt !== null && now() - sentAt < o.staleResultMs && isPhrasePrefix(text, sentText);
+      if (sentAt === null || now() - sentAt >= o.staleResultMs || !sentText) return false;
+      if (isPhraseContained(text, sentText)) return true;
+      const wt = phraseWords(text);
+      const ws = phraseWords(sentText);
+      if (wt.length !== ws.length) return false;
+      const a = wt.join(' ');
+      return editDistance(a, ws.join(' ')) <= Math.max(2, Math.floor(a.length * 0.1));
     }
-    function clearTurnTimer() { if (turnTimer) { clearT(turnTimer); turnTimer = null; } }
+    function clearTurnTimer() { if (turnTimer) { clearT(turnTimer); turnTimer = null; } setCountdown(0); }
 
     function startRecognition() {
       if (!on || !recognition || recognitionRunning) return;
       if (exclusive() && watchingPlayback) return;   // PG1 is talking: the mic is ours
       recognitionWanted = true;
-      // A fresh session starts with an empty transcript.
-      turn.clear(); lastRaw = '';
+      // The transcript is not touched here: a session that restarts inside
+      // a turn (a pause mid-sentence, exclusive mode) keeps what was said.
+      // The paths that mean a fresh turn clear it themselves.
       // Exclusive (Android): one utterance per session, restarted after
       // each, so the recogniser never has a phrase to re-send. Shared: the
       // session runs on and the detector ends the turn.
       recognition.continuous = !exclusive();
+      // The speech language setting, read afresh for every session.
+      const lang = resolveLanguage();
+      if (lang) { try { recognition.lang = lang; } catch (e) { /* read-only on an odd implementation */ } }
       sessionStartedAt = now();
       sessionResults = 0;
       sessionError = null;
       try {
         recognition.start();
         recognitionRunning = true;
+        sessionNo++;
         emitDiag('start');
       } catch (e) {
         // "already started" or a transient failure: try again shortly.
@@ -702,22 +896,30 @@
       restartRecognitionClean();
     }
 
-    // Exclusive mode: the turn ends 800 ms after the recogniser's latest
-    // result (or its speechend) with nothing new.
+    // Exclusive mode: the turn ends one end-of-turn window (1.5 s unless
+    // set otherwise) after the recogniser's latest result, its speechend or
+    // the end of its session, with nothing new. While words are buffered
+    // the page is shown the countdown.
     function armTurnTimer() {
       clearTurnTimer();
+      const ms = endOfTurnMs();
       turnTimer = setT(() => {
         turnTimer = null;
+        setCountdown(0);
         if (!on || !exclusive() || flushing || watchingPlayback) return;
         if (bufferedText()) finishTurn();
         else tracker.endTurn();
-      }, o.endOfTurnSilenceMs);
+      }, ms);
+      if (bufferedText()) setCountdown(ms);
     }
 
     function attachRecognition(r) {
       r.continuous = !exclusive();
       r.interimResults = true;
-      if (deps.language) r.lang = deps.language;
+      // A few alternatives per result; pickAlternative takes the most confident.
+      try { r.maxAlternatives = o.maxAlternatives; } catch (e) { /* fixed on an odd implementation */ }
+      const lang = resolveLanguage();
+      if (lang) { try { r.lang = lang; } catch (e) { /* read-only on an odd implementation */ } }
       // Chrome 139+ accepts phrase hints on the recogniser. Anything older
       // ignores them; normaliseWakeWord covers the gap either way.
       try {
@@ -751,34 +953,52 @@
         const results = (event && event.results) || [];
         const raw = [];
         const interims = [];
+        const picked = [];
         let stale = 0;
-        // Only the results this event is about: from resultIndex onward. A
-        // final goes into the turn (the buffer keeps the longest version of
-        // each phrase); the interims are this update's preview, replacing
-        // the last one.
+        let sendNow = false;
+        // Only the results this event is about: from resultIndex onward,
+        // each reduced to its most confident alternative. A final goes into
+        // the turn (the buffer merges revisions of a phrase into one); the
+        // interims are this update's preview, replacing the last one. A
+        // final ending in "send" or "over" sends the turn at once, without
+        // the keyword.
         for (let i = (event && event.resultIndex) || 0; i < results.length; i++) {
           const res = results[i];
-          const alt = res && res[0];
-          const text = alt && typeof alt.transcript === 'string' ? alt.transcript.trim() : '';
-          if (!text) continue;
-          raw.push(text);
-          if (isStaleResult(text)) { stale++; continue; }
-          if (res.isFinal) turn.addFinal(text);
-          else interims.push(text);
+          const pick = pickAlternative(res);
+          if (!pick) continue;
+          const isFinal = !!(res && res.isFinal);
+          const isStale = isStaleResult(pick.text);
+          raw.push(pick.text);
+          picked.push({ final: isFinal, resultIndex: i, confidence: pick.confidence, text: pick.text, stale: isStale });
+          if (isStale) { stale++; continue; }
+          if (isFinal) {
+            const k = stripSendKeyword(pick.text);
+            if (k.send) sendNow = true;
+            if (k.text) turn.addFinal(k.text);
+          } else interims.push(pick.text);
         }
         lastRaw = raw.join(' ');
         sessionResults++;
         noteHealthy();
-        if (raw.length && stale === raw.length) { emitDiag('result:stale'); return; }
-        turn.setInterim(interims);
-        emitDiag(stale ? 'result:partly-stale' : 'result');
+        const allStale = raw.length > 0 && stale === raw.length;
+        if (!allStale) turn.setInterim(interims);
+        // One voice-log line per result, with the turn as it stands after
+        // the event; the diagnostics line gets the event name.
+        const turnNow = turn.text.slice(0, 40);
+        for (const r of picked) logEvent(r.stale ? 'result:stale' : 'result', { final: r.final, resultIndex: r.resultIndex, confidence: r.confidence, text: r.text.slice(0, 40), turn: turnNow });
+        lastEvent = allStale ? 'result:stale' : (stale ? 'result:partly-stale' : 'result');
+        if (deps.onDiagnostics) deps.onDiagnostics(snapshot());
+        if (allStale) return;
         // Anything heard while PG1 is talking and no barge-in has been
         // confirmed is the speaker, not the operator: it is dropped.
         if (deps.isPlaying && deps.isPlaying() && !tracker.inTurn) { turn.clear(); return; }
         if (deps.onTranscript) deps.onTranscript(bufferedText());
         if (exclusive()) {
-          // Result timing is the only clock: each one restarts the 800 ms.
-          if (bufferedText() && !flushing) { tracker.noteSpeech(now()); armTurnTimer(); }
+          if (!bufferedText() || flushing) return;
+          tracker.noteSpeech(now());
+          // The keyword skips the wait; otherwise each result restarts the window.
+          if (sendNow) finishTurn();
+          else armTurnTimer();
           return;
         }
         if (turn.finalText && !flushing) {
@@ -786,6 +1006,7 @@
           // if the detector missed it.
           tracker.noteSpeech(now());
         }
+        if (sendNow && bufferedText() && !flushing) finishTurn();
       };
       r.onerror = (event) => {
         const code = (event && event.error) || 'unknown';
@@ -826,24 +1047,30 @@
         emitDiag('end');
         if (flushing) { const f = flushing; flushing = null; clearT(f.timer); f.resolve(); return; }
         if (!on || !recognitionWanted) return;
-        if (exclusive() && !watchingPlayback && bufferedText()) {
-          // The session ended on its own with the operator's words in it
-          // (Android ends one after each final result): that is the turn.
-          clearTurnTimer();
-          finishTurn();
-          return;
-        }
-        if (exclusive()) tracker.endTurn();
         const code = sessionError;
         const lasted = sessionStartedAt === null ? 0 : now() - sessionStartedAt;
         const routine = code === null || code === 'no-speech' || code === 'aborted';
         if (sessionResults > 0 || (routine && lasted >= o.healthySessionMs)) {
           failStreak = 0;
-          if (sessionResults > 0) setStatus('');
+          if (sessionResults > 0 && code === null) setStatus('');   // an error in this session keeps its line
         } else {
           failStreak++;
           if (routine && failStreak >= 4) setStatus('Speech recognition keeps stopping. Retrying.');
         }
+        if (exclusive() && !watchingPlayback && bufferedText()) {
+          // The session ended with the operator's words in it: Android ends
+          // one after each final result, and at a pause mid-sentence. The
+          // turn stays open: the end-of-turn window runs from here, the
+          // recogniser restarts at once, and what the next session hears
+          // inside the window joins this turn. The window sends the turn
+          // whatever the restart does.
+          turn.settle();
+          armTurnTimer();
+          scheduleRecognitionRestart(failStreak ? restartDelay() : 0);
+          return;
+        }
+        if (exclusive()) tracker.endTurn();
+        else if (!tracker.inTurn) clearTranscript();   // words with no turn behind them: noise
         scheduleRecognitionRestart(restartDelay());
       };
     }
@@ -866,7 +1093,9 @@
       await flushRecognition();
       if (!on) return;
       tracker.endTurn();
-      const heard = (turn.finalText || turn.interimText || bufferedBefore).trim();
+      // The finals, then whatever the preview still adds beyond them; a
+      // closing "send" or "over" is not part of the message.
+      const heard = stripSendKeyword(turn.text || bufferedBefore).text;
       // The next turn starts empty: nothing heard from here on joins this one.
       turn.clear(); lastRaw = '';
       if (deps.onTranscript) deps.onTranscript('');
@@ -877,7 +1106,7 @@
         emptyTurns = 0;
         sentText = heard;
         sentAt = now();
-        emitDiag('sent');
+        emitDiag('sent', { text: text.slice(0, 40) });
         if (deps.send) deps.send(text);
         setState('thinking', text);
       } else if (!exclusive() && !echoed) {
@@ -925,6 +1154,12 @@
       for (const ev of events) {
         if (ev === 'barge_in') bargeIn();
         else if (ev === 'turn_end') finishTurn();
+      }
+      if (!exclusive() && !flushing) {
+        // Shared: the detector's silence is the countdown to the send.
+        const silence = tracker.silenceMs(t);
+        if (silence === null || !bufferedText()) setCountdown(0);
+        else if (!countdownMs) setCountdown(Math.max(1, endOfTurnMs() - silence));
       }
       if (tracker.idleMs(t) >= o.autoOffSilenceMs) { stop('silence'); return; }
       syncState();
@@ -1049,6 +1284,7 @@
       if (restartTimer) { clearT(restartTimer); restartTimer = null; }
       if (tickTimer) { clearT(tickTimer); tickTimer = null; }
       clearTurnTimer();
+      setCountdown(0);
       if (flushing) { const f = flushing; flushing = null; clearT(f.timer); f.resolve(); }
       if (recognition) {
         try { recognition.abort(); } catch (e) { /* not running */ }
@@ -1080,11 +1316,37 @@
       if (fatalStatus) setStatus(fatalStatus);
     }
 
+    // Settings changed while running. endOfTurnMs: a number of ms, or null
+    // for the defaults (1.5 s exclusive, 0.8 s shared); it applies from the
+    // next silence. language: a BCP 47 tag, applied at the next recogniser
+    // session (in shared mode, between turns, the session is restarted for it).
+    function configure(partial) {
+      const p = partial || {};
+      if ('endOfTurnMs' in p) {
+        const n = Number(p.endOfTurnMs);
+        o.endOfTurnOverrideMs = Number.isFinite(n) && n > 0 ? n : null;
+        tracker.configure({ endOfTurnSilenceMs: o.endOfTurnOverrideMs || o.endOfTurnSilenceMs });
+        emitDiag();
+      }
+      if ('language' in p) {
+        languageOverride = typeof p.language === 'string' && p.language.trim() ? p.language.trim() : null;
+        const lang = resolveLanguage();
+        if (recognition && lang && recognition.lang !== lang) {
+          try { recognition.lang = lang; } catch (e) { /* read-only */ }
+          if (on && recognitionRunning && !exclusive() && !tracker.inTurn && !flushing && !bufferedText()) restartRecognitionClean();
+        }
+      }
+    }
+
     return {
       start,
       stop,
+      configure,
       get on() { return on; },
       get state() { return state; },
+      get session() { return sessionNo; },
+      get endOfTurnMs() { return endOfTurnMs(); },
+      get language() { return resolveLanguage(); },
       get stopReason() { return stopReason; },
       get vadName() { return vad ? vad.name : null; },
       get micMode() { return micMode; },
@@ -1190,8 +1452,13 @@
     createSpokenLog,
     createEventLog,
     formatVoiceLog,
+    phraseWords,
     isPhrasePrefix,
+    isPhraseContained,
+    isPhraseRevision,
     mergePhrase,
+    pickAlternative,
+    stripSendKeyword,
     createTranscriptBuffer,
     createConversation,
     openMicrophone,

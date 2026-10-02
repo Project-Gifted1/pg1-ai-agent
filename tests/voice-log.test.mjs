@@ -263,7 +263,7 @@ test('the page: the two buttons sit under the Voice diagnostics switch, record e
   assert.doesNotMatch(fns, /localStorage|sessionStorage|indexedDB|document\.cookie|fetch\(/, 'the voice log is never stored or sent by the page');
   assert.match(fns, /conversation\.eventLog\) \? conversation\.eventLog\.entries : \[\]/, 'the log is the module\'s in-memory one');
   // The module records whether or not the diagnostics line is switched on.
-  assert.match(moduleSrc, /function emitDiag\(event\) \{\s*if \(event\) lastEvent = event;\s*if \(deps\.onDiagnostics\) deps\.onDiagnostics\(snapshot\(\)\);\s*if \(event\) logEvent\(event\);/);
+  assert.match(moduleSrc, /function emitDiag\(event, extra\) \{\s*if \(event\) lastEvent = event;\s*if \(deps\.onDiagnostics\) deps\.onDiagnostics\(snapshot\(\)\);\s*if \(event\) logEvent\(event, extra\);/);
   assert.doesNotMatch(moduleSrc.slice(moduleSrc.indexOf('function createEventLog'), moduleSrc.indexOf('function formatVoiceLog')), /localStorage|sessionStorage|indexedDB/);
   // PG1 knows about it.
   const chat = readFileSync(join(ROOT, 'api/chat.mjs'), 'utf-8');

@@ -34,7 +34,13 @@
  * then cumulative finals), the session ends after the final, and the next
  * session hands the same final back again. Exactly one clean message must
  * come of it, in conversation mode and through the plain mic (dictation)
- * button, where the composer is checked instead of the request.
+ * button, where the composer is checked instead of the request. It then
+ * ends a session mid-sentence (a pause: two sessions, one message, with the
+ * countdown bar showing on the indicator between them), changes the Speech
+ * language setting (the next session has it), and says "over" (sent at once,
+ * without the word). Every final carries two alternatives with the real
+ * phrase second and more confident, so the alternative picking is on the
+ * line in every scenario.
  *
  * The operator-only diagnostics line and the hands-off composer are
  * checked along the way.
@@ -151,11 +157,11 @@ function writeSilentWav(dir, seconds = 2) {
 // With `contention` set, the recogniser fails with audio-capture whenever a
 // page mic stream is live, as on Android.
 const PAGE_HOOKS = (contention) => `(() => {
-  const T = window.__pg1Test = { instances: [], events: [], streams: [], contention: ${contention ? 'true' : 'false'} };
+  const T = window.__pg1Test = { instances: [], events: [], streams: [], langs: [], contention: ${contention ? 'true' : 'false'} };
   const micIsTaken = () => T.streams.some((s) => s.getAudioTracks().some((tr) => tr.readyState === 'live'));
   class FakeSpeechRecognition {
     constructor() {
-      this.continuous = false; this.interimResults = false; this.lang = '';
+      this.continuous = false; this.interimResults = false; this.lang = ''; this.maxAlternatives = 1;
       this.onresult = null; this.onend = null; this.onerror = null; this.onstart = null;
       this.onspeechstart = null; this.onspeechend = null;
       this.running = false;
@@ -163,7 +169,7 @@ const PAGE_HOOKS = (contention) => `(() => {
     }
     start() {
       if (this.running) throw new DOMException('recognition has already started', 'InvalidStateError');
-      this.running = true; T.events.push('start');
+      this.running = true; T.events.push('start'); T.langs.push(this.lang);
       if (this.onstart) this.onstart();
       if (T.contention && micIsTaken()) {
         setTimeout(() => {
@@ -189,8 +195,12 @@ const PAGE_HOOKS = (contention) => `(() => {
     }
   }
   const current = () => T.instances.filter((x) => x.running).pop();
+  // A final carries two alternatives, a worse guess first: the page has
+  // to take the more confident one. Interims carry no confidence.
   const deliver = (r, text, isFinal) => {
-    const alternatives = [{ transcript: text, confidence: 0.92 }];
+    const alternatives = isFinal
+      ? [{ transcript: text.replace(/(^| )the( |$)/, '$1a$2'), confidence: 0.41 }, { transcript: text, confidence: 0.92 }]
+      : [{ transcript: text, confidence: 0 }];
     alternatives.isFinal = !!isFinal;
     r.onresult({ resultIndex: 0, results: [alternatives] });
   };
@@ -219,6 +229,15 @@ const PAGE_HOOKS = (contention) => `(() => {
     setTimeout(() => { if (r.onend) r.onend(); }, 0);
     return true;
   };
+  // A pause mid-sentence: the first half as one Android session, which
+  // ends; after pauseMs the second half in whatever session is running
+  // by then (the page is expected to have restarted the recogniser).
+  T.speakAndroidSplit = (first, second, pauseMs) => new Promise((resolve) => {
+    if (!T.speakAndroid(first)) { resolve(false); return; }
+    setTimeout(() => resolve(T.speakAndroid(second)), pauseMs);
+  });
+  T.lang = () => { const r = current(); return r ? r.lang : null; };
+  T.maxAlternatives = () => { const r = current(); return r ? r.maxAlternatives : null; };
   // The running session ends on its own.
   T.endSession = () => {
     const r = current();
@@ -369,6 +388,11 @@ async function runScenario(t, scenario) {
     }
   }
   assert.equal(started.note, true, 'one failure is retried quietly: no status line');
+  // The Speech language setting: English (Ireland) unless changed; three alternatives asked for.
+  assert.equal(await page.evaluate(() => window.__pg1Test.lang()), 'en-IE', 'the recogniser runs in the default speech language');
+  assert.equal(await page.evaluate(() => window.__pg1Test.maxAlternatives()), 3);
+  assert.equal(await page.evaluate(() => document.getElementById('speech-lang-select').value), 'en-IE', 'the drawer shows it');
+  assert.match(await page.evaluate(() => document.getElementById('end-of-turn-select').selectedOptions[0].textContent), scenario.android ? /^Auto \(1\.5 s\)$/ : /^Auto \(0\.8 s\)$/, 'and what Auto means here');
   // The real Silero model on the real onnxruntime-web, from /voice/.
   assert.equal(started.vad, 'silero', `Silero loaded from public/voice (warnings: ${JSON.stringify(consoleWarnings)})`);
   assert.ok(log.requests.some((r) => r.path === '/voice/ort.wasm.min.js'), 'the runtime was fetched');
@@ -386,7 +410,8 @@ async function runScenario(t, scenario) {
   const diag = await page.locator('#converse-diag').textContent();
   const expectErr = scenario.contention && !scenario.android ? 'audio-capture' : 'none';
   const expectMic = scenario.expectMode === 'shared' ? 'open' : 'closed';
-  assert.match(diag, new RegExp(`^${scenario.expectMode} mic \\| rec running \\| last \\S+ \\| err ${expectErr} \\| heard "" \\| turn "" \\| vad (-|\\d\\.\\d\\d) \\| mic ${expectMic}$`), `diagnostics line: "${diag}"`);
+  const expectWindow = scenario.expectMode === 'shared' ? '0.8' : '1.5';
+  assert.match(diag, new RegExp(`^${scenario.expectMode} mic \\| rec running \\| last \\S+ \\| err ${expectErr} \\| heard "" \\| turn "" \\| vad (-|\\d\\.\\d\\d) \\| mic ${expectMic} \\| session \\d+ \\| end ${expectWindow}s$`), `diagnostics line: "${diag}"`);
   // Exclusive: one utterance per recogniser session. Shared: it runs on.
   assert.equal(await page.evaluate(() => window.__pg1Test.continuous()), scenario.expectMode === 'shared', `continuous recognition is for shared mode only (${scenario.expectMode})`);
   assert.deepEqual(await page.evaluate(() => Object.keys(localStorage).sort()), storedBefore, 'nothing was stored');
@@ -440,6 +465,45 @@ async function runScenario(t, scenario) {
   assert.equal(await page.evaluate(() => window.__pg1Test.liveTracks()), scenario.expectMode === 'shared' ? 1 : 0, 'the mic stream is as it should be for the mode');
   assert.equal(await page.locator('#converse-note').isHidden(), true, 'no persistent error was reported');
 
+  if (scenario.android) {
+    // A pause mid-sentence: the recogniser ends its session after "check my
+    // wallet"; the page keeps the turn open, restarts it, shows the
+    // countdown, and "age please" 600 ms later joins the same message.
+    const split = page.evaluate(() => window.__pg1Test.speakAndroidSplit('check my wallet', 'age please', 600));
+    await page.waitForFunction(() => document.querySelector('#converse-status .converse-countdown').classList.contains('is-active'), null, { timeout: 2000 });
+    assert.match(await page.locator('#converse-status .converse-live').textContent(), /^check my wallet/, 'the first half stays on the indicator');
+    assert.ok(await split, 'both halves reached the recogniser');
+    const deadline2 = Date.now() + 15000;
+    while (directives().length < 2 && Date.now() < deadline2) await new Promise((r) => setTimeout(r, 100));
+    assert.equal(directives().length, 2, 'the split sentence was sent');
+    assert.equal(directives()[1].body.prompt, 'check my wallet age please', 'as one message');
+    await page.waitForFunction(() => !document.querySelector('#converse-status .converse-countdown').classList.contains('is-active'));
+    assert.equal(await page.evaluate(() => window.__pg1Test.events.filter((e) => e === 'start').length >= 4), true, 'the recogniser restarted between the halves');
+
+    // The Speech language setting, changed in the drawer: the next session has it.
+    await page.evaluate(() => openDrawer());
+    await page.selectOption('#speech-lang-select', 'en-GB');
+    await page.evaluate(() => closeDrawer());
+    assert.equal(await page.evaluate(() => localStorage.getItem('pg1_speech_lang')), 'en-GB', 'remembered on this device');
+
+    // "over" at the end: sent at once, without the word, long before the window would close.
+    await page.waitForFunction(() => window.__pg1Test.running() === 1 && document.querySelector('#converse-status .converse-label').textContent === 'Listening', null, { timeout: 10000 });
+    const t0 = Date.now();
+    assert.ok(await page.evaluate(() => window.__pg1Test.speakAndroid('read the error log, over')));
+    const deadline3 = Date.now() + 5000;
+    while (directives().length < 3 && Date.now() < deadline3) await new Promise((r) => setTimeout(r, 25));
+    const tookMs = Date.now() - t0;
+    assert.equal(directives().length, 3, '"over" sent the turn');
+    assert.ok(tookMs < 1000, `sent at once, not after the 1.5 s window (${tookMs} ms)`);
+    assert.equal(directives()[2].body.prompt, 'read the error log', 'without the keyword or the comma');
+    await page.waitForFunction(() => window.__pg1Test.running() === 1, null, { timeout: 5000 });
+    assert.equal(await page.evaluate(() => window.__pg1Test.lang()), 'en-GB', 'the session after the change runs in the new language');
+    await new Promise((r) => setTimeout(r, 2000));
+    assert.equal(directives().length, 3, 'nothing was sent twice');
+    assert.deepEqual(await page.evaluate(() => Array.from(document.querySelectorAll('#chat-container .message-bubble.user .message-text')).map((b) => b.textContent.trim())), [TRANSCRIPT, 'check my wallet age please', 'read the error log'], 'three clean messages');
+  }
+  const sentSoFar = directives().length;
+
   // Off: the switch, the indicator, the microphone and the recogniser.
   await toggle.tap();
   await page.waitForFunction(() => document.getElementById('converse-btn').getAttribute('aria-checked') === 'false');
@@ -465,6 +529,8 @@ async function runScenario(t, scenario) {
   await mic.tap();
   await page.waitForFunction(() => document.getElementById('mic-btn').classList.contains('mic-active'));
   assert.equal(await page.evaluate(() => window.__pg1Test.running()), 1, 'dictation started its recogniser');
+  assert.equal(await page.evaluate(() => window.__pg1Test.lang()), scenario.android ? 'en-GB' : 'en-IE', 'dictation runs in the Speech language setting');
+  assert.equal(await page.evaluate(() => window.__pg1Test.maxAlternatives()), 3);
   assert.ok(await page.evaluate(() => window.__pg1Test.speakAndroid('open the vault')), 'the Android-pattern results reached dictation');
   await page.waitForFunction(() => !document.getElementById('mic-btn').classList.contains('mic-active'));
   assert.equal(await page.inputValue('#prompt-input'), 'open the vault', 'dictated once, not stacked');
@@ -473,7 +539,7 @@ async function runScenario(t, scenario) {
   assert.ok(await page.evaluate(() => window.__pg1Test.speakAndroid('and the error log')));
   await page.waitForFunction(() => !document.getElementById('mic-btn').classList.contains('mic-active'));
   assert.equal(await page.inputValue('#prompt-input'), 'open the vault and the error log', 'a second press adds to what the composer held');
-  assert.equal(directives().length, 1, 'dictation sends nothing by itself');
+  assert.equal(directives().length, sentSoFar, 'dictation sends nothing by itself');
 
   // VOICE LOG: the conversation above left events in memory. Send to PG1
   // (drawer, under Voice diagnostics) puts them in the composer under
@@ -488,14 +554,23 @@ async function runScenario(t, scenario) {
   const logLines = composer.slice(composer.indexOf('```text\n') + 8, -4).split('\n');
   assert.ok(logLines.length >= 5 && logLines.length <= 30, `between a few and 30 events (${logLines.length})`);
   for (const line of logLines) assert.match(line, /^\d\d:\d\d:\d\d\.\d\d\d \S+ \| \S+ \| (shared|exclusive) mic \| rec \S+ \| err \S+/, `a log line: ${line}`);
-  assert.ok(logLines.some((l) => / state:listening\/started \| /.test(l)), 'the start of the conversation is in it');
+  if (scenario.android) {
+    // Three turns: the last 30 events start inside the conversation.
+    assert.ok(logLines.some((l) => / sent \| \S+ \| exclusive mic \| .* \| text "read the error log"$/.test(l)), 'the "over" turn is in it, sent without the word\n' + logLines.join('\n'));
+    assert.ok(logLines.some((l) => /heard "read the error log, over"/.test(l)), 'as the recogniser heard it');
+  } else {
+    assert.ok(logLines.some((l) => / state:listening\/started \| /.test(l)), 'the start of the conversation is in it');
+    assert.ok(logLines.some((l) => /heard "what is the threat level today"/.test(l)), 'what the recogniser heard');
+  }
   assert.ok(logLines.some((l) => / state:off\/tap \| /.test(l)), 'and the tap that stopped it');
-  assert.ok(logLines.some((l) => /heard "what is the threat level today"/.test(l)), 'what the recogniser heard');
-  assert.equal(directives().length, 1, 'Send to PG1 sent nothing');
+  assert.ok(logLines.some((l) => / \| s\d+ \| final #0 0\.92 \| heard "/.test(l)), 'a result line carries the session, final, result index and confidence');
+  assert.ok(logLines.some((l) => / \| turn "/.test(l)), 'and the turn as it stood');
+  assert.equal(directives().length, sentSoFar, 'Send to PG1 sent nothing');
   assert.equal(await page.evaluate(() => document.activeElement && document.activeElement.id), 'prompt-input', 'the composer has focus for review');
   assert.equal(await page.locator('#status-toast').textContent(), 'Voice log added to your message. Look it over, then send.');
   assert.equal(await page.evaluate(() => getConversation().eventLog.size > 0), true);
   assert.deepEqual(await page.evaluate(() => Object.keys(localStorage).filter((k) => /voice|log/i.test(k) && k !== 'pg1_voice_profile' && !/error/i.test(k))), [], 'the voice log is not stored');
+  assert.deepEqual(await page.evaluate(() => Object.keys(localStorage).filter((k) => /speech|turn/i.test(k)).sort()), scenario.android ? ['pg1_speech_lang'] : [], 'only the changed setting is stored');
   await page.fill('#prompt-input', '');
 
   // Nothing broke along the way, and nothing was logged as an error.

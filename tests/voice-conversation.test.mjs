@@ -14,6 +14,10 @@
  *  - Android's recogniser re-sends the whole phrase on every update, repeats
  *    a final after a restart and delivers results after a send: one clean
  *    message per turn, in conversation mode and in dictation
+ *  - exclusive mode: a session that ends with words in it keeps the turn
+ *    open for the end-of-turn window (1.5 s there) and restarts at once
+ *    (tests/voice-listener-accuracy.test.mjs covers revisions, pauses that
+ *    split a sentence, the "send" keyword, the language setting and the log)
  *  - auto-off after two minutes of silence, and when the page is hidden
  *  - the server strips OPERATOR:/AGENT: transcript labels from a reply
  *  - the page: switch markup, announcer, reduced motion, no emoji
@@ -637,7 +641,7 @@ test('the page: switch beside the mic, status line with announcer, the module se
   assert.match(html, /<script src="\/voice\/conversation\.js"><\/script>/);
   assert.doesNotMatch(html, /https?:\/\/[^"']*(?:cdn|unpkg|jsdelivr|googleapis\.com\/js)/i, 'no third-party script host');
   assert.match(html, /<button type="button" id="converse-btn" class="icon-btn" role="switch" aria-checked="false" title="Conversation mode" aria-label="Conversation mode" aria-describedby="converse-hint"/);
-  assert.match(html, /<div id="converse-status" class="converse-status" hidden><span class="converse-dot" aria-hidden="true"><\/span><span class="converse-label">Listening<\/span><span class="converse-live" aria-hidden="true"><\/span><\/div>/);
+  assert.match(html, /<div id="converse-status" class="converse-status" hidden><span class="converse-dot" aria-hidden="true"><\/span><span class="converse-label">Listening<\/span><span class="converse-live" aria-hidden="true"><\/span><span class="converse-countdown" aria-hidden="true"><\/span><\/div>/);
   assert.match(html, /<div id="converse-announcer" class="sr-only" role="status" aria-live="polite"><\/div>/);
   // Mic constraints and the self-hosted files.
   assert.match(moduleSrc, /echoCancellation: true, noiseSuppression: true, autoGainControl: true/);
@@ -672,7 +676,7 @@ test('deployment: the Silero files are served from /voice/ with explicit content
 
 test('the page: hidden page and dictation stop the conversation; Spoken replies off stops it; barge-in aborts with "Interrupted"', () => {
   assert.match(html, /if \(document\.visibilityState === 'hidden'\) \{[\s\S]{0,400}stopConversation\('hidden'\)/);
-  assert.match(html, /stopConversation\('dictation'\);\s*recognition\.start\(\);/);
+  assert.match(html, /stopConversation\('dictation'\);\s*recognition\.lang = speechLanguage\(\);\s*recognition\.start\(\);/);
   assert.match(html, /stopVoicePlayback\(\);\s*\/\/ Conversation mode needs spoken replies; off means off\.\s*stopConversation\('tap'\);/);
   assert.match(html, /function interruptDirectives\(\) \{\s*stopVoicePlayback\(\);\s*inFlightDirectives\.forEach\(\(stop\) => stop\('interrupted'\)\);/);
   assert.match(html, /note = streamed\.text \? 'Interrupted\. The reply above is incomplete\.' : 'Interrupted before a reply arrived\.';/);
@@ -704,10 +708,11 @@ test('the page: calm style, both themes, reduced motion, screen-reader announcem
 // mic and the platform gives it to one of them. In exclusive mode no stream
 // is held while recognising; the recogniser's own events drive the turn.
 
-test('exclusive mode: no mic stream while recognising; the turn ends 800 ms after the last result and is sent once', async () => {
+test('exclusive mode: no mic stream while recognising; the turn ends 1.5 s after the last result and is sent once', async () => {
   const f = makeFakes({ micMode: 'exclusive' });
   assert.ok(await f.conv.start());
   assert.equal(f.conv.micMode, 'exclusive');
+  assert.equal(f.conv.endOfTurnMs, 1500, 'the recogniser-timed window is 1.5 s');
   assert.equal(f.log.micOpens, 0, 'no getUserMedia stream was opened');
   assert.equal(f.conv.micOpen, false);
   assert.ok(f.rec.running, 'the recogniser has the microphone to itself');
@@ -715,18 +720,18 @@ test('exclusive mode: no mic stream while recognising; the turn ends 800 ms afte
   assert.ok(f.rec.interimResults);
   assert.equal(f.conv.state, 'listening');
 
-  // Interim results keep the turn open: each one restarts the 800 ms.
+  // Interim results keep the turn open: each one restarts the 1.5 s.
   f.rec.onspeechstart();
   f.rec.hear('what is');
-  await f.clock.advance(600);
+  await f.clock.advance(1200);
   f.rec.hear('what is the threat');
-  await f.clock.advance(600);
-  assert.deepEqual(f.log.sent, [], '600 ms after the latest result: not yet');
+  await f.clock.advance(1200);
+  assert.deepEqual(f.log.sent, [], '1200 ms after the latest result: not yet');
   assert.equal(f.log.transcripts.at(-1), 'what is the threat', 'the live guess goes to the indicator');
   f.rec.hear('what is the threat level', { final: true });
   f.rec.onspeechend();
-  await f.clock.advance(790);
-  assert.deepEqual(f.log.sent, [], '790 ms: not yet');
+  await f.clock.advance(1490);
+  assert.deepEqual(f.log.sent, [], '1490 ms: not yet');
   await f.clock.advance(20);
   // The recogniser is stopped to flush, ends, and the turn is sent.
   assert.ok(f.rec.calls.includes('stop'));
@@ -741,13 +746,21 @@ test('exclusive mode: no mic stream while recognising; the turn ends 800 ms afte
   assert.equal(f.log.micOpens, 0, 'still no stream of our own');
 });
 
-test('exclusive mode: a session that ends on its own with a final result is the turn (Android ends one after each final)', async () => {
+test('exclusive mode: a session that ends on its own with a final result keeps the turn open for the window, restarts at once, then sends (Android ends one after each final)', async () => {
   const f = makeFakes({ micMode: 'exclusive' });
   await f.conv.start();
   f.rec.hear('read the error log', { final: true });
   f.rec.end();
   await settle(); await settle();
-  assert.deepEqual(f.log.sent, ['read the error log'], 'sent without waiting for a silence the recogniser already observed');
+  assert.deepEqual(f.log.sent, [], 'the end of the session is not the end of the turn');
+  await f.clock.advance(0);
+  assert.ok(f.rec.running, 'the recogniser restarted at once');
+  assert.equal(f.log.transcripts.at(-1), 'read the error log', 'the words stay on the indicator');
+  await f.clock.advance(1490);
+  assert.deepEqual(f.log.sent, [], 'inside the window: more could follow');
+  await f.clock.advance(20);
+  await settle(); await settle();
+  assert.deepEqual(f.log.sent, ['read the error log'], 'sent once the window closes with nothing more');
   await f.clock.advance(100);
   assert.ok(f.rec.running, 'restarted');
   // A session that ends with nothing in it just restarts.
@@ -815,6 +828,7 @@ test('exclusive mode, Android pattern: cumulative interims and cumulative finals
   assert.equal(d.interim, "what's in my error log", 'and the cleaned turn');
   f.rec.onspeechend();
   f.rec.end();                                     // Android ends the session after the final
+  await f.clock.advance(1500);                     // ...and the window closes with nothing more
   await settle(); await settle();
   assert.deepEqual(f.log.sent, ["what's in my error log"], 'exactly one clean message');
   assert.ok(f.log.transcripts.every((t) => !/what's.+what's/.test(t)), 'no stacked text was ever shown');
@@ -831,6 +845,7 @@ test('exclusive mode, Android pattern: cumulative interims and cumulative finals
   g.rec.onresult({ resultIndex: 1, results: [{ isFinal: true, 0: { transcript: 'stale from before' } }, { isFinal: true, 0: { transcript: "what's" } }, { isFinal: true, 0: { transcript: "what's in my error log" } }] });
   assert.equal(g.conv.diagnostics.interim, "what's in my error log");
   g.rec.end();
+  await g.clock.advance(1500);
   await settle(); await settle();
   assert.deepEqual(g.log.sent, ["what's in my error log"]);
 });
@@ -840,6 +855,7 @@ test('exclusive mode: the same final handed back after the restart, or a result 
   await f.conv.start();
   f.rec.hear("what's in my error log", { final: true });
   f.rec.end();
+  await f.clock.advance(1500);
   await settle(); await settle();
   assert.deepEqual(f.log.sent, ["what's in my error log"]);
   await f.clock.advance(100);
@@ -862,12 +878,14 @@ test('exclusive mode: the same final handed back after the restart, or a result 
   // The operator's next, different turn goes through, and it alone.
   f.rec.hear("what's in the vault", { final: true });
   f.rec.end();
+  await f.clock.advance(1500);
   await settle(); await settle();
   assert.deepEqual(f.log.sent, ["what's in my error log", "what's in the vault"]);
   // Well after a send, the same words again are the operator repeating them.
   await f.clock.advance(DEFAULTS.staleResultMs + 100);
   f.rec.hear("what's in the vault", { final: true });
   f.rec.end();
+  await f.clock.advance(1500);
   await settle(); await settle();
   assert.deepEqual(f.log.sent, ["what's in my error log", "what's in the vault", "what's in the vault"]);
 });
@@ -890,6 +908,7 @@ test('exclusive mode: the buffer is emptied when PG1 starts talking and at the b
   assert.ok(f.rec.running);
   f.rec.hear('no, the vault', { final: true });
   f.rec.end();
+  await f.clock.advance(1500);
   await settle(); await settle();
   assert.deepEqual(f.log.sent, ['no, the vault']);
 });
@@ -948,7 +967,7 @@ test('exclusive mode: while PG1 talks the recogniser is off and our stream is op
   assert.ok(f.rec.running, 'the recogniser is back');
   // The operator's new turn is captured from the recogniser.
   f.rec.hear('no, show me the vault', { final: true });
-  await f.clock.advance(800);
+  await f.clock.advance(1500);
   await settle(); await settle();
   assert.deepEqual(f.log.sent, ['no, show me the vault']);
 });
@@ -993,8 +1012,9 @@ test('shared mode switches to exclusive on an audio-capture error: the stream cl
   await f.clock.advance(100);
   assert.ok(f.rec.running, 'the recogniser was restarted with the mic to itself');
   assert.deepEqual(f.log.statuses, [], 'one switch is silent: nothing is wrong yet');
+  assert.equal(f.conv.endOfTurnMs, 1500, 'the window follows the mode: recogniser-timed turns get 1.5 s');
   f.rec.hear('what is the threat level', { final: true });
-  await f.clock.advance(800);
+  await f.clock.advance(1500);
   await settle(); await settle();
   assert.deepEqual(f.log.sent, ['what is the threat level']);
   assert.ok(f.log.diags.some((d) => d.lastEvent === 'mic_contention:audio-capture'));
@@ -1098,7 +1118,8 @@ test('persistent recogniser errors reach the status line: audio-capture, network
   assert.ok(f.rec.running, 'still retrying');
   f.rec.hear('back', { final: true });
   assert.equal(f.log.statuses.at(-1), '', 'cleared by a result');
-  await f.clock.advance(900); await settle(); await settle();
+  await f.clock.advance(1600); await settle(); await settle();
+  assert.deepEqual(f.log.sent, ['back']);
 
   f.rec.error('network');
   await settle(); await settle();
@@ -1112,7 +1133,7 @@ test('persistent recogniser errors reach the status line: audio-capture, network
   assert.ok(f.rec.running);
   f.rec.hear('ok', { final: true });
   assert.equal(f.log.statuses.at(-1), '', 'cleared by a result');
-  await f.clock.advance(900); await settle(); await settle();
+  await f.clock.advance(1600); await settle(); await settle();
 
   for (let i = 0; i < 2; i++) { await f.clock.advance(6000); f.rec.error('no-speech'); await settle(); await settle(); }
   assert.equal(f.log.statuses.at(-1), '', 'two quiet sessions are normal');
@@ -1142,8 +1163,10 @@ test('diagnostics: a live snapshot with recogniser state, last event, last error
   const f = makeFakes();
   await f.conv.start();
   let d = f.conv.diagnostics;
-  assert.deepEqual(Object.keys(d).sort(), ['failStreak', 'interim', 'lastError', 'lastEvent', 'micOpen', 'mode', 'raw', 'recogniser', 'state', 'status', 'vadLevel', 'watchingPlayback'].sort());
+  assert.deepEqual(Object.keys(d).sort(), ['endOfTurnMs', 'failStreak', 'interim', 'lastError', 'lastEvent', 'micOpen', 'mode', 'raw', 'recogniser', 'session', 'state', 'status', 'vadLevel', 'watchingPlayback'].sort());
   assert.equal(d.mode, 'shared');
+  assert.equal(d.session, 1, 'the first recogniser session');
+  assert.equal(d.endOfTurnMs, 800, 'the detector-timed window');
   assert.equal(d.recogniser, 'running');
   assert.equal(d.lastEvent, 'start');
   assert.equal(d.lastError, '');
@@ -1177,7 +1200,7 @@ test('the page: Android starts exclusive, the status line and diagnostics are wi
   // Mode by platform.
   assert.match(glue, /function isAndroidBrowser\(\)/);
   assert.match(glue, /\/\\bAndroid\\b\/i\.test\(navigator\.userAgent/);
-  assert.match(glue, /\}, \{ micMode: isAndroidBrowser\(\) \? 'exclusive' : 'shared' \}\);/);
+  assert.match(glue, /\}, \{ micMode: isAndroidBrowser\(\) \? 'exclusive' : 'shared', endOfTurnOverrideMs: endOfTurnSetting\(\) \}\);/);
   // Status line and diagnostics callbacks.
   assert.match(glue, /onStatus: renderConversationNote,/);
   assert.match(glue, /onDiagnostics: \(snap\) => \{ if \(voiceDiagnosticsOn\) renderConversationDiagnostics\(snap\); \}/);

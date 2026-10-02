@@ -1377,15 +1377,36 @@
     #converse-btn[aria-checked="true"] { color: var(--gold); background: var(--gold-soft); }
     #converse-btn[aria-busy="true"] { opacity: 0.6; cursor: progress; }
     .converse-status {
+      position: relative;
       display: flex;
       align-items: center;
       gap: var(--sp-2);
       min-height: 24px;
       margin: 0 var(--sp-3);
-      padding: var(--sp-1) 0 0;
+      padding: var(--sp-1) 0 2px;
       font-size: var(--fs-sm);
       line-height: var(--lh-tight);
       color: var(--text-2);
+    }
+    /* The countdown to the send: a hairline under the indicator that runs
+       down over the end-of-turn window once the operator goes quiet, and
+       is gone while they talk. Reduced motion gets a still half-bar instead. */
+    .converse-countdown {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 2px;
+      border-radius: 1px;
+      background: var(--ok);
+      opacity: 0;
+      transform: scaleX(0);
+      transform-origin: left center;
+      pointer-events: none;
+    }
+    .converse-countdown.is-active { opacity: 0.55; }
+    @media (prefers-reduced-motion: reduce) {
+      .converse-countdown.is-active { transition: none !important; transform: scaleX(0.5) !important; }
     }
     .converse-status[hidden] { display: none; }
     .converse-label { font-weight: 500; white-space: nowrap; }
@@ -2104,6 +2125,29 @@
           <option value="field">PG1 Field</option>
         </select>
       </div>
+      <!-- SPEECH SETTINGS: the recogniser's language (the mic button and
+           conversation mode) and the silence that ends a spoken turn. Both
+           are remembered on this device. -->
+      <div class="drawer-row">
+        <label class="drawer-row-label" for="speech-lang-select"><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg>Speech language</label>
+        <select id="speech-lang-select" class="select" onchange="triggerHaptic(30); setSpeechLanguage(this.value)">
+          <option value="en-IE">English (Ireland)</option>
+          <option value="en-GB">English (UK)</option>
+          <option value="en-US">English (US)</option>
+          <option value="en-NG">English (Nigeria)</option>
+        </select>
+      </div>
+      <div class="drawer-row">
+        <label class="drawer-row-label" for="end-of-turn-select"><svg class="icon" aria-hidden="true"><use href="#i-converse"/></svg>End of turn</label>
+        <select id="end-of-turn-select" class="select" onchange="triggerHaptic(30); setEndOfTurnSetting(this.value)">
+          <option value="">Auto</option>
+          <option value="800">0.8 s</option>
+          <option value="1000">1 s</option>
+          <option value="1500">1.5 s</option>
+          <option value="2000">2 s</option>
+          <option value="3000">3 s</option>
+        </select>
+      </div>
     </div>
 
     <div class="drawer-section" role="group" aria-labelledby="appearance-label">
@@ -2175,7 +2219,7 @@
       <!-- Conversation mode indicator: Listening / Thinking / Speaking. The
            live text is the recogniser's running guess and is never saved.
            The separate announcer speaks state changes to screen readers. -->
-      <div id="converse-status" class="converse-status" hidden><span class="converse-dot" aria-hidden="true"></span><span class="converse-label">Listening</span><span class="converse-live" aria-hidden="true"></span></div>
+      <div id="converse-status" class="converse-status" hidden><span class="converse-dot" aria-hidden="true"></span><span class="converse-label">Listening</span><span class="converse-live" aria-hidden="true"></span><span class="converse-countdown" aria-hidden="true"></span></div>
       <div id="converse-announcer" class="sr-only" role="status" aria-live="polite"></div>
       <div id="converse-note" class="converse-note" role="status" aria-live="polite" hidden></div>
       <div id="converse-diag" class="converse-diag" aria-hidden="true" hidden></div>
@@ -2340,6 +2384,7 @@
     }
 
     window.onload = () => {
+      initSpeechSettings();
       const savedVoiceProfile = localStorage.getItem('pg1_voice_profile');
       if (savedVoiceProfile) {
         const voiceSelect = document.getElementById('voice-profile-select');
@@ -2869,6 +2914,10 @@
       recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = true;
+      // A few alternatives per result; the most confident one is used
+      // (PG1Voice.pickAlternative). The language is set at each start from
+      // the Speech language setting.
+      recognition.maxAlternatives = 3;
       // DICTATION ACCURACY: "Hey PG1" came back as "April". Browsers that
       // take phrase hints (Chrome 139+ with on-device recognition) get
       // "PG1" as one; the rest rely on normaliseWakeWord below.
@@ -2900,7 +2949,8 @@
         const interims = [];
         for (let i = event.resultIndex || 0; i < results.length; ++i) {
           const res = results[i];
-          const text = res && res[0] && typeof res[0].transcript === 'string' ? res[0].transcript.trim() : '';
+          const pick = (typeof PG1Voice !== 'undefined' && PG1Voice.pickAlternative) ? PG1Voice.pickAlternative(res) : null;
+          const text = pick ? pick.text : (res && res[0] && typeof res[0].transcript === 'string' ? res[0].transcript.trim() : '');
           if (!text) continue;
           if (res.isFinal) dictation.addFinal(text);
           else interims.push(text);
@@ -2951,6 +3001,7 @@
         // and the conversation's composer is emptied before it does.
         if (conversation && conversation.on) clearComposer();
         stopConversation('dictation');
+        recognition.lang = speechLanguage();
         recognition.start();
       }
     }
@@ -2961,6 +3012,59 @@
       dictation = null;
       document.getElementById('mic-btn').classList.remove('mic-active');
       document.getElementById('prompt-input').placeholder = "Give PG1 a directive…";
+    }
+
+    // SPEECH SETTINGS (drawer, under Voice), remembered on this device:
+    //  - Speech language: the recogniser's language for the mic button and
+    //    conversation mode. English (Ireland) unless changed. Applied at the
+    //    next recogniser session, so a change lands within a turn or two.
+    //  - End of turn: the silence after which a spoken turn is sent. Auto is
+    //    1.5 s on Android (the recogniser's own timing) and 0.8 s elsewhere.
+    const SPEECH_LANG_KEY = 'pg1_speech_lang';
+    const END_OF_TURN_KEY = 'pg1_end_of_turn_ms';
+    const SPEECH_LANGUAGES = ['en-IE', 'en-GB', 'en-US', 'en-NG'];
+    const DEFAULT_SPEECH_LANGUAGE = 'en-IE';
+    const END_OF_TURN_CHOICES = [800, 1000, 1500, 2000, 3000];
+
+    function speechLanguage() {
+      let v = '';
+      try { v = localStorage.getItem(SPEECH_LANG_KEY) || ''; } catch (e) {}
+      return SPEECH_LANGUAGES.includes(v) ? v : DEFAULT_SPEECH_LANGUAGE;
+    }
+    function setSpeechLanguage(value) {
+      const v = SPEECH_LANGUAGES.includes(value) ? value : DEFAULT_SPEECH_LANGUAGE;
+      try { localStorage.setItem(SPEECH_LANG_KEY, v); } catch (e) {}
+      const select = document.getElementById('speech-lang-select');
+      if (select && select.value !== v) select.value = v;
+      // Conversation mode reads the setting at every session start; a
+      // running shared-mode session is restarted for it between turns.
+      if (conversation) conversation.configure({ language: v });
+    }
+    // The End of turn setting in ms, or null for Auto.
+    function endOfTurnSetting() {
+      let v = null;
+      try { v = Number(localStorage.getItem(END_OF_TURN_KEY)); } catch (e) {}
+      return END_OF_TURN_CHOICES.includes(v) ? v : null;
+    }
+    function setEndOfTurnSetting(value) {
+      const n = Number(value);
+      const v = END_OF_TURN_CHOICES.includes(n) ? n : null;
+      try { if (v) localStorage.setItem(END_OF_TURN_KEY, String(v)); else localStorage.removeItem(END_OF_TURN_KEY); } catch (e) {}
+      const select = document.getElementById('end-of-turn-select');
+      if (select) select.value = v ? String(v) : '';
+      if (conversation) conversation.configure({ endOfTurnMs: v });
+    }
+    // The drawer controls show the saved values; Auto says what it means here.
+    function initSpeechSettings() {
+      const lang = document.getElementById('speech-lang-select');
+      if (lang) lang.value = speechLanguage();
+      const eot = document.getElementById('end-of-turn-select');
+      if (eot) {
+        const v = endOfTurnSetting();
+        eot.value = v ? String(v) : '';
+        const auto = eot.querySelector('option[value=""]');
+        if (auto) auto.textContent = 'Auto (' + (isAndroidBrowser() ? '1.5' : '0.8') + ' s)';
+      }
     }
 
     // CONVERSATION MODE (PG1 voice, phase 2): hands-free. Started by a tap
@@ -3004,7 +3108,7 @@
         if (label) label.textContent = CONVERSATION_LABELS[state] || '';
         if (!isOn) { const live = status.querySelector('.converse-live'); if (live) live.textContent = ''; }
       }
-      if (!isOn) renderConversationNote('');
+      if (!isOn) { renderConversationNote(''); renderConversationCountdown(0); }
       // Every turn starts with an empty composer: when the mode starts,
       // after a barge-in, and when it stops (dictation, which stops it to
       // take over, keeps what it dictates).
@@ -3035,6 +3139,26 @@
       if (live) live.textContent = text || '';
     }
 
+    // The countdown to the send on the Listening indicator: the module says
+    // how long the end-of-turn window is each time it (re)starts, and 0 when
+    // speech resumed or the turn went. The bar is reset to full and left to
+    // run down over that time; nothing is polled.
+    function renderConversationCountdown(ms) {
+      const bar = document.querySelector('#converse-status .converse-countdown');
+      if (!bar) return;
+      bar.style.transition = 'none';
+      if (!ms) {
+        bar.classList.remove('is-active');
+        bar.style.transform = 'scaleX(0)';
+        return;
+      }
+      bar.style.transform = 'scaleX(1)';
+      bar.classList.add('is-active');
+      void bar.offsetWidth;   // commit the full bar before the run-down starts
+      bar.style.transition = 'transform ' + Math.round(ms) + 'ms linear';
+      bar.style.transform = 'scaleX(0)';
+    }
+
     // A persistent recogniser problem, from the module; '' clears it.
     function renderConversationNote(text) {
       const note = document.getElementById('converse-note');
@@ -3060,7 +3184,9 @@
         'heard "' + (snap.raw || '') + '"',
         'turn "' + (snap.interim || '') + '"',
         'vad ' + (snap.micOpen ? snap.vadLevel.toFixed(2) : '-'),
-        'mic ' + (snap.micOpen ? 'open' : 'closed')
+        'mic ' + (snap.micOpen ? 'open' : 'closed'),
+        'session ' + (snap.session || 0),
+        'end ' + (snap.endOfTurnMs / 1000) + 's'
       ];
       el.textContent = parts.join(' | ');
       el.hidden = false;
@@ -3105,10 +3231,10 @@
         createRecognition() {
           const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
           if (!Ctor) return null;
-          const r = new Ctor();
-          r.lang = navigator.language || 'en-GB';
-          return r;
+          return new Ctor();
         },
+        // The Speech language setting, read at every recogniser session.
+        language: () => speechLanguage(),
         openMic: () => PG1Voice.openMicrophone(),
         loadVad: () => PG1Voice.loadVad({
           loadRuntime: () => PG1Voice.loadOnnxRuntime(),
@@ -3132,10 +3258,11 @@
         spokenLog: conversationSpokenLog,
         onState: renderConversationState,
         onTranscript: renderConversationTranscript,
+        onCountdown: renderConversationCountdown,
         onStatus: renderConversationNote,
         onDiagnostics: (snap) => { if (voiceDiagnosticsOn) renderConversationDiagnostics(snap); },
         onError: (message) => flashStatus(message, true, 'js_error')
-      }, { micMode: isAndroidBrowser() ? 'exclusive' : 'shared' });
+      }, { micMode: isAndroidBrowser() ? 'exclusive' : 'shared', endOfTurnOverrideMs: endOfTurnSetting() });
       return conversation;
     }
 
