@@ -42,11 +42,14 @@ function makeRes() {
   };
 }
 
-function installFetch(calls, { rows = [], pulls = {}, insertOk = true, ghOk = true } = {}) {
+function installFetch(calls, { rows = [], pulls = {}, insertOk = true, ghOk = true, tree = null } = {}) {
   globalThis.fetch = async (url, opts = {}) => {
     const u = String(url);
     const method = opts.method || 'GET';
     calls.push({ url: u, method, headers: opts.headers || {}, body: opts.body ? JSON.parse(opts.body) : null });
+    if (u.startsWith('https://api.github.com/repos/') && u.includes('/git/trees/')) {
+      return { ok: ghOk && !!tree, json: async () => ({ tree: (tree || []).map((path) => ({ path, type: 'blob' })) }) };
+    }
     if (u.startsWith('https://api.github.com/repos/')) {
       const repo = u.slice('https://api.github.com/repos/'.length).split('/pulls')[0];
       return { ok: ghOk, json: async () => pulls[repo] || [] };
@@ -113,7 +116,28 @@ test('draft strips the deployment\'s own secrets (e.g. the operator passkey) fro
   installFetch([]);
   const res = await call({ op: 'draft', ...AUTH, task: 'login with test-secret-pass fails' });
   assert.doesNotMatch(res.body.prompt, /test-secret-pass/);
-  assert.ok(res.body.removed.includes('environment value'));
+  assert.deepEqual(res.body.removed, ['value of USER_API_PASS']);
+});
+
+test('draft keeps the repo name even when an env var holds it, and resolves files from the repo tree', async () => {
+  process.env.GITHUB_REPO_TOKEN_SCOPE = 'Project-Gifted1/pg1-ai-agent';
+  process.env.APP_ORIGIN_KEY = 'https://pg1-ai-agent.vercel.app';
+  const calls = [];
+  installFetch(calls, { tree: ['public/index.html', 'public/llms.txt', 'api/chat.mjs'] });
+  try {
+    const res = await call({ op: 'draft', ...AUTH, task: 'add a footer link to llms.txt' });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.body.removed, []);
+    assert.match(res.body.prompt, /^Repository\nProject-Gifted1\/pg1-ai-agent$/m);
+    assert.doesNotMatch(res.body.prompt, /\[removed\]/);
+    assert.deepEqual(res.body.files, ['public/llms.txt']);
+    const treeCall = calls.find((c) => c.url.includes('/git/trees/'));
+    assert.equal(treeCall.url, 'https://api.github.com/repos/Project-Gifted1/pg1-ai-agent/git/trees/HEAD?recursive=1');
+    assert.equal(treeCall.headers.Authorization, `Bearer ${process.env.GITHUB_TOKEN}`);
+  } finally {
+    delete process.env.GITHUB_REPO_TOKEN_SCOPE;
+    delete process.env.APP_ORIGIN_KEY;
+  }
 });
 
 test('draft still works when storage is down, and says so', async () => {
