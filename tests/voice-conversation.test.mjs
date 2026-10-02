@@ -257,8 +257,8 @@ test('echo guard: a spoken placeholder for a secret is matched too, and the spok
 
 // --- the controller, with fakes ---------------------------------------------------------
 
-function makeFakes({ vadName = 'fake', recognitionAvailable = true, micFails = false, spokenLog = null } = {}) {
-  const log = { sent: [], states: [], errors: [], stops: 0, aborts: 0, transcripts: [] };
+function makeFakes({ vadName = 'fake', recognitionAvailable = true, micFails = false, spokenLog = null, micMode = undefined } = {}) {
+  const log = { sent: [], states: [], errors: [], stops: 0, aborts: 0, transcripts: [], statuses: [], diags: [], micOpens: 0 };
   let now = 100000;
   const timers = [];
   const clock = {
@@ -281,7 +281,7 @@ function makeFakes({ vadName = 'fake', recognitionAvailable = true, micFails = f
     }
   };
   let frameCb = null;
-  const mic = { closed: false, onFrame(cb) { frameCb = cb; }, async close() { mic.closed = true; } };
+  const mic = { closed: false, onFrame(cb) { frameCb = cb; }, async close() { mic.closed = true; frameCb = null; } };
   const rec = {
     calls: [], running: false, onresult: null, onend: null, onerror: null, phrases: null,
     start() { rec.calls.push('start'); if (rec.running) throw new Error('already started'); rec.running = true; },
@@ -293,14 +293,21 @@ function makeFakes({ vadName = 'fake', recognitionAvailable = true, micFails = f
     hear(text, { final = false, index = 0 } = {}) {
       const results = []; results[index] = { isFinal: final, 0: { transcript: text } };
       if (rec.onresult) rec.onresult({ resultIndex: index, results });
-    }
+    },
+    // Chrome reports an error, then ends the session.
+    error(code) {
+      if (rec.onerror) rec.onerror({ error: code });
+      setImmediate(() => { if (!rec.running) return; rec.running = false; if (rec.onend) rec.onend(); });
+    },
+    // The session ends on its own (Android does this after each final).
+    end() { if (!rec.running) return; rec.running = false; if (rec.onend) rec.onend(); }
   };
   let playing = false;
   let busy = false;
   const deps = {
     now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
     createRecognition: () => (recognitionAvailable ? rec : null),
-    openMic: async () => { if (micFails) throw new Error('Microphone is not available.'); return mic; },
+    openMic: async () => { if (micFails) throw new Error('Microphone is not available.'); log.micOpens++; mic.closed = false; return mic; },
     loadVad: async () => ({ name: vadName, process: async (frame) => frame[0] }),
     isPlaying: () => playing,
     isBusy: () => busy,
@@ -310,14 +317,16 @@ function makeFakes({ vadName = 'fake', recognitionAvailable = true, micFails = f
     spokenLog: spokenLog || undefined,
     onState: (s, d) => log.states.push(d ? `${s}:${d}` : s),
     onTranscript: (t) => log.transcripts.push(t),
+    onStatus: (t) => log.statuses.push(t),
+    onDiagnostics: (d) => log.diags.push(d),
     onError: (m) => log.errors.push(m)
   };
-  const conv = V.createConversation(deps);
+  const conv = V.createConversation(deps, micMode ? { micMode } : {});
   // Feeds `count` frames of probability p, 32 ms apart.
   async function frames(p, count) {
     for (let i = 0; i < count; i++) {
       await clock.advance(32);
-      frameCb(Float32Array.of(p));
+      if (frameCb) frameCb(Float32Array.of(p));   // a closed mic delivers nothing
       await settle();
       await settle();
     }
@@ -683,4 +692,333 @@ test('the page: calm style, both themes, reduced motion, screen-reader announcem
   const newText = glue + css + moduleStrings + html.slice(html.indexOf('id="converse-btn"'), html.indexOf('id="converse-btn"') + 600);
   assert.doesNotMatch(newText, /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u, 'no emoji');
   assert.doesNotMatch(newText, /\b(?:Google|Gemini|Anthropic|Claude|OpenAI|Microsoft|Silero|ONNX|Cartesia)\b/, 'no third-party branding in UI text or strings');
+});
+
+// --- Android: the recogniser and our mic stream cannot share the microphone -------------
+//
+// Pixel 9a, Chrome: the switch showed "Listening" and speaking did nothing.
+// The system speech service and the page's getUserMedia stream both want the
+// mic and the platform gives it to one of them. In exclusive mode no stream
+// is held while recognising; the recogniser's own events drive the turn.
+
+test('exclusive mode: no mic stream while recognising; the turn ends 800 ms after the last result and is sent once', async () => {
+  const f = makeFakes({ micMode: 'exclusive' });
+  assert.ok(await f.conv.start());
+  assert.equal(f.conv.micMode, 'exclusive');
+  assert.equal(f.log.micOpens, 0, 'no getUserMedia stream was opened');
+  assert.equal(f.conv.micOpen, false);
+  assert.ok(f.rec.running, 'the recogniser has the microphone to itself');
+  assert.equal(f.conv.state, 'listening');
+
+  // Interim results keep the turn open: each one restarts the 800 ms.
+  f.rec.onspeechstart();
+  f.rec.hear('what is');
+  await f.clock.advance(600);
+  f.rec.hear('what is the threat');
+  await f.clock.advance(600);
+  assert.deepEqual(f.log.sent, [], '600 ms after the latest result: not yet');
+  assert.equal(f.log.transcripts.at(-1), 'what is the threat', 'the live guess goes to the indicator');
+  f.rec.hear('what is the threat level', { final: true });
+  f.rec.onspeechend();
+  await f.clock.advance(790);
+  assert.deepEqual(f.log.sent, [], '790 ms: not yet');
+  await f.clock.advance(20);
+  // The recogniser is stopped to flush, ends, and the turn is sent.
+  assert.ok(f.rec.calls.includes('stop'));
+  await settle(); await settle();
+  assert.deepEqual(f.log.sent, ['what is the threat level']);
+  assert.equal(f.conv.state, 'thinking');
+  assert.equal(f.log.transcripts.at(-1), '');
+  await f.clock.advance(100);
+  assert.ok(f.rec.running, 'listening again for the next turn');
+  await f.clock.advance(3000);
+  assert.deepEqual(f.log.sent, ['what is the threat level'], 'sent exactly once');
+  assert.equal(f.log.micOpens, 0, 'still no stream of our own');
+});
+
+test('exclusive mode: a session that ends on its own with a final result is the turn (Android ends one after each final)', async () => {
+  const f = makeFakes({ micMode: 'exclusive' });
+  await f.conv.start();
+  f.rec.hear('read the error log', { final: true });
+  f.rec.end();
+  await settle(); await settle();
+  assert.deepEqual(f.log.sent, ['read the error log'], 'sent without waiting for a silence the recogniser already observed');
+  await f.clock.advance(100);
+  assert.ok(f.rec.running, 'restarted');
+  // A session that ends with nothing in it just restarts.
+  f.rec.end();
+  await f.clock.advance(150);
+  assert.ok(f.rec.running);
+  assert.deepEqual(f.log.sent, ['read the error log']);
+});
+
+test('exclusive mode: while PG1 talks the recogniser is off and our stream is open for barge-in; speaking over PG1 interrupts', async () => {
+  const f = makeFakes({ micMode: 'exclusive' });
+  await f.conv.start();
+  f.setBusy(true);
+  f.setPlaying(true);
+  await f.clock.advance(120);                   // one poll
+  assert.equal(f.conv.state, 'speaking');
+  assert.ok(!f.rec.running, 'the recogniser would only hear the speaker: stopped');
+  assert.equal(f.log.micOpens, 1, 'our own stream is open for the detector');
+  assert.ok(f.conv.micOpen);
+  // Ordinary levels and a short burst do nothing.
+  await f.frames(0.7, 20);
+  await f.frames(0.95, 8);
+  await f.frames(0.1, 5);
+  assert.equal(f.log.stops, 0);
+  await f.frames(0.95, 11);
+  assert.equal(f.log.stops, 1, 'playback stopped');
+  assert.equal(f.log.aborts, 1, 'the reply was abandoned');
+  assert.ok(f.mic.closed, 'the stream is released so the recogniser can have the mic');
+  assert.equal(f.log.states.at(-1), 'listening:interrupted');
+  await f.clock.advance(100);
+  assert.ok(f.rec.running, 'the recogniser is back');
+  // The operator's new turn is captured from the recogniser.
+  f.rec.hear('no, show me the vault', { final: true });
+  await f.clock.advance(800);
+  await settle(); await settle();
+  assert.deepEqual(f.log.sent, ['no, show me the vault']);
+});
+
+test('exclusive mode: when PG1 finishes uninterrupted the stream closes and the recogniser restarts; an unopenable stream only costs barge-in', async () => {
+  const f = makeFakes({ micMode: 'exclusive' });
+  await f.conv.start();
+  f.setPlaying(true);
+  await f.clock.advance(120);
+  assert.equal(f.log.micOpens, 1);
+  await f.frames(0.1, 3);
+  f.setPlaying(false);
+  await f.clock.advance(120);
+  assert.ok(f.mic.closed, 'stream closed');
+  await f.clock.advance(100);
+  assert.ok(f.rec.running, 'recogniser restarted');
+  assert.equal(f.conv.state, 'listening');
+  await f.conv.stop('tap');
+
+  const g = makeFakes({ micMode: 'exclusive', micFails: true });
+  assert.ok(await g.conv.start(), 'starts without a stream of its own');
+  g.setPlaying(true);
+  await g.clock.advance(120);
+  await settle();
+  assert.equal(g.conv.state, 'speaking');
+  assert.match(g.conv.diagnostics.lastError, /Microphone is not available/);
+  g.setPlaying(false);
+  await g.clock.advance(220);
+  assert.ok(g.rec.running, 'still listening after playback');
+  assert.deepEqual(g.log.errors, [], 'no toast: only barge-in was lost');
+});
+
+test('shared mode switches to exclusive on an audio-capture error: the stream closes and the next turn comes from the recogniser alone', async () => {
+  const f = makeFakes();
+  await f.conv.start();
+  assert.equal(f.conv.micMode, 'shared');
+  assert.equal(f.log.micOpens, 1);
+  f.rec.error('audio-capture');
+  await settle(); await settle();
+  assert.equal(f.conv.micMode, 'exclusive');
+  assert.ok(f.mic.closed, 'our stream was released');
+  await f.clock.advance(100);
+  assert.ok(f.rec.running, 'the recogniser was restarted with the mic to itself');
+  assert.deepEqual(f.log.statuses, [], 'one switch is silent: nothing is wrong yet');
+  f.rec.hear('what is the threat level', { final: true });
+  await f.clock.advance(800);
+  await settle(); await settle();
+  assert.deepEqual(f.log.sent, ['what is the threat level']);
+  assert.ok(f.log.diags.some((d) => d.lastEvent === 'mic_contention:audio-capture'));
+});
+
+test('shared mode switches to exclusive on no-speech moments after a start, or on two detector turns the recogniser transcribed as nothing', async () => {
+  const f = makeFakes();
+  await f.conv.start();
+  await f.clock.advance(2000);
+  f.rec.error('no-speech');                      // 2 s in: desktop takes ~8 s
+  await settle(); await settle();
+  assert.equal(f.conv.micMode, 'exclusive');
+  await f.conv.stop('tap');
+
+  const g = makeFakes();
+  await g.conv.start();
+  await g.clock.advance(9000);
+  g.rec.error('no-speech');                      // a quiet room: routine
+  await settle(); await settle();
+  assert.equal(g.conv.micMode, 'shared');
+  await g.clock.advance(200);
+  // The detector hears a turn, the recogniser says nothing. Twice.
+  await g.frames(0.9, 8);
+  await g.frames(0.05, 27);
+  await settle(); await settle();
+  assert.equal(g.conv.micMode, 'shared', 'once could be a cough');
+  await g.clock.advance(200);
+  await g.frames(0.9, 8);
+  await g.frames(0.05, 27);
+  await settle(); await settle();
+  assert.equal(g.conv.micMode, 'exclusive');
+  assert.ok(g.mic.closed);
+  assert.deepEqual(g.log.sent, []);
+  await g.clock.advance(100);
+  assert.ok(g.rec.running);
+});
+
+test('a result in shared mode is what keeps it shared: an empty turn after a real one does not count twice', async () => {
+  const f = makeFakes();
+  await f.conv.start();
+  await f.frames(0.9, 8);
+  await f.frames(0.05, 27);
+  await settle(); await settle();
+  await f.clock.advance(200);
+  await f.frames(0.9, 8);
+  f.rec.hear('status please', { final: true });
+  await f.frames(0.05, 27);
+  await settle(); await settle();
+  assert.deepEqual(f.log.sent, ['status please']);
+  await f.clock.advance(200);
+  await f.frames(0.9, 8);
+  await f.frames(0.05, 27);
+  await settle(); await settle();
+  assert.equal(f.conv.micMode, 'shared');
+});
+
+test('the recogniser is restarted after every end with backoff (100, 200, 400 ... 5000 ms), reset by a result', async () => {
+  const f = makeFakes();
+  await f.conv.start();
+  const gaps = [];
+  for (let i = 0; i < 8; i++) {
+    const endedAt = f.clock.now();
+    f.rec.end();                                  // dies at once, no results
+    let waited = 0;
+    while (!f.rec.running && waited < 10000) { await f.clock.advance(10); waited += 10; }
+    gaps.push(f.clock.now() - endedAt);
+  }
+  assert.deepEqual(gaps, [100, 200, 400, 800, 1600, 3200, 5000, 5000]);
+  assert.ok(f.conv.on, 'still on, still retrying');
+  assert.equal(f.log.statuses.at(-1), 'Speech recognition keeps stopping. Retrying.', 'the status line says so instead of a silent Listening');
+  // A result clears the streak and the status line.
+  f.rec.hear('hello');
+  assert.equal(f.log.statuses.at(-1), '');
+  f.rec.end();
+  const endedAt = f.clock.now();
+  await f.clock.advance(100);
+  assert.ok(f.rec.running);
+  assert.equal(f.clock.now() - endedAt, 100);
+  // A long quiet session (no-speech after 8 s) is healthy too.
+  await f.clock.advance(9000);
+  f.rec.error('no-speech');
+  await settle(); await settle();
+  await f.clock.advance(100);
+  assert.ok(f.rec.running);
+  assert.equal(f.conv.diagnostics.failStreak, 0);
+});
+
+test('persistent recogniser errors reach the status line: audio-capture, network, no-speech; not-allowed stops the conversation', async () => {
+  const f = makeFakes({ micMode: 'exclusive' });
+  await f.conv.start();
+  f.rec.error('audio-capture');
+  await settle(); await settle();
+  assert.deepEqual(f.log.statuses, [], 'one failure is retried quietly');
+  await f.clock.advance(200);
+  assert.ok(f.rec.running);
+  f.rec.error('audio-capture');
+  await settle(); await settle();
+  assert.equal(f.log.statuses.at(-1), 'Speech recognition cannot reach the microphone. Retrying.');
+  assert.ok(f.conv.on);
+  await f.clock.advance(5000);
+  assert.ok(f.rec.running, 'still retrying');
+  f.rec.hear('back', { final: true });
+  assert.equal(f.log.statuses.at(-1), '', 'cleared by a result');
+  await f.clock.advance(900); await settle(); await settle();
+
+  f.rec.error('network');
+  await settle(); await settle();
+  assert.equal(f.log.statuses.at(-1), 'Speech recognition needs a network connection. Retrying.');
+  assert.deepEqual(f.log.errors, ['Speech recognition needs a network connection.'], 'toasted once');
+  await f.clock.advance(5000);
+  f.rec.error('network');
+  await settle(); await settle();
+  assert.equal(f.log.errors.length, 1, 'not toasted again');
+  await f.clock.advance(300);                    // past the 200 ms backoff
+  assert.ok(f.rec.running);
+  f.rec.hear('ok', { final: true });
+  assert.equal(f.log.statuses.at(-1), '', 'cleared by a result');
+  await f.clock.advance(900); await settle(); await settle();
+
+  for (let i = 0; i < 2; i++) { await f.clock.advance(6000); f.rec.error('no-speech'); await settle(); await settle(); }
+  assert.equal(f.log.statuses.at(-1), '', 'two quiet sessions are normal');
+  await f.clock.advance(6000); f.rec.error('no-speech'); await settle(); await settle();
+  assert.equal(f.log.statuses.at(-1), 'No speech heard. Check the microphone.');
+  await f.clock.advance(5000);
+  assert.ok(f.rec.running);
+
+  f.rec.error('language-not-supported');
+  await settle(); await settle();
+  await f.clock.advance(5000);
+  f.rec.error('language-not-supported');
+  await settle(); await settle();
+  assert.equal(f.log.statuses.at(-1), 'Speech recognition error: language-not-supported. Retrying.');
+
+  f.rec.error('not-allowed');
+  await settle(); await settle();
+  assert.ok(!f.conv.on);
+  assert.equal(f.conv.stopReason, 'error');
+  assert.equal(f.log.errors.at(-1), 'Microphone access was refused.');
+  assert.equal(f.log.statuses.at(-1), 'Microphone access was refused. Allow the microphone for this site and switch conversation mode on again.', 'the line outlives the indicator and says why');
+  assert.ok(await f.conv.start());
+  assert.equal(f.log.statuses.at(-1), '', 'cleared by the next start');
+});
+
+test('diagnostics: a live snapshot with recogniser state, last event, last error, interim text (40 chars), detector level and mic state', async () => {
+  const f = makeFakes();
+  await f.conv.start();
+  let d = f.conv.diagnostics;
+  assert.deepEqual(Object.keys(d).sort(), ['failStreak', 'interim', 'lastError', 'lastEvent', 'micOpen', 'mode', 'recogniser', 'state', 'status', 'vadLevel', 'watchingPlayback'].sort());
+  assert.equal(d.mode, 'shared');
+  assert.equal(d.recogniser, 'running');
+  assert.equal(d.lastEvent, 'start');
+  assert.equal(d.lastError, '');
+  assert.equal(d.micOpen, true);
+  await f.frames(0.37, 1);
+  f.rec.onspeechstart();
+  f.rec.hear('a transcript that runs on well past the forty character mark');
+  d = f.conv.diagnostics;
+  assert.equal(d.vadLevel, 0.37);
+  assert.equal(d.lastEvent, 'result');
+  assert.equal(d.interim, 'a transcript that runs on well past the ');
+  assert.equal(d.interim.length, 40);
+  f.rec.error('network');
+  await settle(); await settle();
+  d = f.conv.diagnostics;
+  assert.equal(d.lastError, 'network');
+  assert.equal(d.lastEvent, 'end');
+  assert.equal(d.recogniser, 'restarting');
+  assert.ok(f.log.diags.length > 0, 'the page is told on every change');
+  await f.conv.stop('tap');
+  assert.equal(f.conv.diagnostics.micOpen, false);
+});
+
+test('the page: Android starts exclusive, the status line and diagnostics are wired, the composer is blurred and never focused, nothing is stored', () => {
+  const glue = html.slice(html.indexOf('// CONVERSATION MODE (PG1 voice, phase 2)'), html.indexOf('function setVoiceActive('));
+  // Mode by platform.
+  assert.match(glue, /function isAndroidBrowser\(\)/);
+  assert.match(glue, /\/\\bAndroid\\b\/i\.test\(navigator\.userAgent/);
+  assert.match(glue, /\}, \{ micMode: isAndroidBrowser\(\) \? 'exclusive' : 'shared' \}\);/);
+  // Status line and diagnostics callbacks.
+  assert.match(glue, /onStatus: renderConversationNote,/);
+  assert.match(glue, /onDiagnostics: \(snap\) => \{ if \(voiceDiagnosticsOn\) renderConversationDiagnostics\(snap\); \}/);
+  assert.match(html, /<div id="converse-note" class="converse-note" role="status" aria-live="polite" hidden><\/div>/);
+  assert.match(html, /<div id="converse-diag" class="converse-diag" aria-hidden="true" hidden><\/div>/);
+  // The drawer switch: off by default, in memory only.
+  assert.match(html, /<span class="drawer-row-label" id="voice-diag-label">[\s\S]*?Voice diagnostics<\/span>\s*<button type="button" id="voice-diag-btn" class="switch" role="switch" aria-checked="false" aria-labelledby="voice-diag-label" onclick="triggerHaptic\(\); toggleVoiceDiagnostics\(\)"><\/button>/);
+  assert.match(glue, /let voiceDiagnosticsOn = false;/);
+  assert.doesNotMatch(glue, /localStorage|sessionStorage|document\.cookie|indexedDB/, 'diagnostics and the mode are never stored');
+  assert.match(glue, /if \(!voiceDiagnosticsOn \|\| !snap \|\| snap\.state === 'off'\) \{ el\.hidden = true; el\.textContent = ''; return; \}/);
+  for (const field of ["snap.mode + ' mic'", "'rec ' + snap.recogniser", "'last ' + (snap.lastEvent || '-')", "'err ' + (snap.lastError || 'none')", "'vad ' + (snap.micOpen ? snap.vadLevel.toFixed(2) : '-')", "'mic ' + (snap.micOpen ? 'open' : 'closed')"]) {
+    assert.ok(glue.includes(field), `diagnostics line shows ${field}`);
+  }
+  // Hands off the composer.
+  assert.match(glue, /function blurComposer\(\) \{\s*const input = document\.getElementById\('prompt-input'\);\s*if \(input && document\.activeElement === input\) input\.blur\(\);/);
+  assert.match(glue, /if \(isRecording && recognition\) recognition\.stop\(\);\s*blurComposer\(\);/, 'blurred when the mode starts');
+  assert.match(glue, /submitDirective\(\);\s*blurComposer\(\);/, 'and after a send');
+  assert.doesNotMatch(glue, /\.focus\(\)/, 'conversation mode never focuses anything');
+  const submit = html.slice(html.indexOf('async function submitDirective('), html.indexOf('async function submitDirective(') + 20000);
+  assert.doesNotMatch(submit.slice(0, submit.indexOf('\n    }\n\n')), /prompt-input'\)\.focus\(\)|input\.focus\(\)/, 'submitDirective does not focus the composer');
 });

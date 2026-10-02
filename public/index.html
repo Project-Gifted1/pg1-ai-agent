@@ -1410,6 +1410,23 @@
     .converse-status.is-thinking .converse-dot::after { animation: converse-pulse 1.2s var(--ease-out) infinite; }
     .converse-status.is-speaking .converse-dot { background: var(--gold); }
     .converse-status.is-starting .converse-dot { background: var(--text-3); }
+    /* A persistent recogniser problem (no network, no microphone) sits under
+       the indicator in the same quiet colour; the operator-only diagnostics
+       readout below it is monospace and off unless switched on in the drawer. */
+    .converse-note { margin: 0 var(--sp-3); padding: 2px 0 0; font-size: var(--fs-xs); line-height: var(--lh-tight); color: var(--text-2); }
+    .converse-note[hidden], .converse-note:empty { display: none; }
+    .converse-diag {
+      margin: 0 var(--sp-3);
+      padding: 2px 0 0;
+      font-family: var(--font-mono);
+      font-size: var(--fs-xs);
+      line-height: var(--lh-tight);
+      color: var(--text-3);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .converse-diag[hidden] { display: none; }
     @keyframes converse-pulse {
       0% { transform: scale(1); opacity: 0.5; }
       100% { transform: scale(2.4); opacity: 0; }
@@ -2063,6 +2080,10 @@
         <button type="button" id="voice-btn" class="switch" role="switch" aria-checked="false" aria-labelledby="voice-label" onclick="triggerHaptic(); toggleVoice()"></button>
       </div>
       <div class="drawer-row">
+        <span class="drawer-row-label" id="voice-diag-label"><svg class="icon" aria-hidden="true"><use href="#i-wave"/></svg>Voice diagnostics</span>
+        <button type="button" id="voice-diag-btn" class="switch" role="switch" aria-checked="false" aria-labelledby="voice-diag-label" onclick="triggerHaptic(); toggleVoiceDiagnostics()"></button>
+      </div>
+      <div class="drawer-row">
         <label class="drawer-row-label" for="voice-profile-select"><svg class="icon" aria-hidden="true"><use href="#i-wave"/></svg>Voice profile</label>
         <select id="voice-profile-select" class="select" onchange="triggerHaptic(30); localStorage.setItem('pg1_voice_profile', this.value)">
           <option value="core">PG1 Core</option>
@@ -2143,6 +2164,8 @@
            The separate announcer speaks state changes to screen readers. -->
       <div id="converse-status" class="converse-status" hidden><span class="converse-dot" aria-hidden="true"></span><span class="converse-label">Listening</span><span class="converse-live" aria-hidden="true"></span></div>
       <div id="converse-announcer" class="sr-only" role="status" aria-live="polite"></div>
+      <div id="converse-note" class="converse-note" role="status" aria-live="polite" hidden></div>
+      <div id="converse-diag" class="converse-diag" aria-hidden="true" hidden></div>
       <label for="prompt-input" class="sr-only">Directive</label>
       <textarea id="prompt-input" rows="1" placeholder="Give PG1 a directive…" enterkeyhint="send" onkeydown="handleKey(event)" oninput="autoResize(this); syncExecuteButton()"></textarea>
       <div class="composer-row">
@@ -2893,7 +2916,15 @@
     // switches itself off after two minutes of silence, when the page is
     // hidden, or when Spoken replies is switched off. No audio is recorded
     // or stored anywhere; only the final transcript is sent.
+    //
+    // Android: the recogniser (the system speech service) and our own mic
+    // stream cannot both have the microphone, so there the module runs in
+    // its exclusive mode (no stream while recognising, see the header of
+    // conversation.js); elsewhere it starts shared and switches on evidence.
     let conversation = null;
+    // Operator-only diagnostics line under the indicator. Off by default,
+    // never stored: the drawer switch sets it for this page load only.
+    let voiceDiagnosticsOn = false;
     // What PG1 said out loud most recently, for the echo guard: a transcript
     // that matches it is the speaker, not the operator, and is dropped.
     const conversationSpokenLog = (typeof PG1Voice !== 'undefined') ? PG1Voice.createSpokenLog() : { add() {}, texts: [], clear() {} };
@@ -2917,6 +2948,8 @@
         if (label) label.textContent = CONVERSATION_LABELS[state] || '';
         if (!isOn) { const live = status.querySelector('.converse-live'); if (live) live.textContent = ''; }
       }
+      if (!isOn) renderConversationNote('');
+      renderConversationDiagnostics(isOn && conversation ? conversation.diagnostics : null);
       if (state === 'off' && voiceWasOffBeforeConversation) {
         // Spoken replies were switched on for the conversation only.
         voiceWasOffBeforeConversation = false;
@@ -2942,6 +2975,56 @@
       if (live) live.textContent = text || '';
     }
 
+    // A persistent recogniser problem, from the module; '' clears it.
+    function renderConversationNote(text) {
+      const note = document.getElementById('converse-note');
+      if (!note) return;
+      note.textContent = text || '';
+      note.hidden = !text;
+    }
+
+    // One line: recogniser state, last event, last error, the interim text
+    // (first 40 characters), the detector level and whether our mic stream
+    // is open. Rendered only while the drawer switch is on.
+    function renderConversationDiagnostics(snap) {
+      const el = document.getElementById('converse-diag');
+      if (!el) return;
+      if (!voiceDiagnosticsOn || !snap || snap.state === 'off') { el.hidden = true; el.textContent = ''; return; }
+      const parts = [
+        snap.mode + ' mic',
+        'rec ' + snap.recogniser,
+        'last ' + (snap.lastEvent || '-'),
+        'err ' + (snap.lastError || 'none'),
+        '"' + (snap.interim || '') + '"',
+        'vad ' + (snap.micOpen ? snap.vadLevel.toFixed(2) : '-'),
+        'mic ' + (snap.micOpen ? 'open' : 'closed')
+      ];
+      el.textContent = parts.join(' | ');
+      el.hidden = false;
+    }
+
+    function toggleVoiceDiagnostics() {
+      voiceDiagnosticsOn = !voiceDiagnosticsOn;
+      const btn = document.getElementById('voice-diag-btn');
+      if (btn) btn.setAttribute('aria-checked', String(voiceDiagnosticsOn));
+      renderConversationDiagnostics(conversation && conversation.on ? conversation.diagnostics : null);
+    }
+
+    // Android Chrome runs recognition in the system speech service, which
+    // cannot share the microphone with a page's own stream.
+    function isAndroidBrowser() {
+      try {
+        if (/\bAndroid\b/i.test(navigator.userAgent || '')) return true;
+        return !!(navigator.userAgentData && /android/i.test(navigator.userAgentData.platform || ''));
+      } catch (e) { return false; }
+    }
+
+    // Hands-free means hands off the composer: no focus, no keyboard.
+    function blurComposer() {
+      const input = document.getElementById('prompt-input');
+      if (input && document.activeElement === input) input.blur();
+    }
+
     function getConversation() {
       if (conversation) return conversation;
       if (typeof PG1Voice === 'undefined') return null;
@@ -2964,16 +3047,21 @@
         stopPlayback: () => stopVoicePlayback(),
         abortRequests: () => interruptDirectives(),
         send(text) {
+          // The composer carries the text to submitDirective() but is never
+          // focused: the keyboard stays down while the conversation is on.
           const input = document.getElementById('prompt-input');
           input.value = text;
           autoResize(input);
           submitDirective();
+          blurComposer();
         },
         spokenLog: conversationSpokenLog,
         onState: renderConversationState,
         onTranscript: renderConversationTranscript,
+        onStatus: renderConversationNote,
+        onDiagnostics: (snap) => { if (voiceDiagnosticsOn) renderConversationDiagnostics(snap); },
         onError: (message) => flashStatus(message, true, 'js_error')
-      });
+      }, { micMode: isAndroidBrowser() ? 'exclusive' : 'shared' });
       return conversation;
     }
 
@@ -2982,6 +3070,7 @@
       if (!c) { flashStatus('Conversation mode is not supported in this browser.', false); return; }
       if (c.on) { await c.stop('tap'); return; }
       if (isRecording && recognition) recognition.stop();
+      blurComposer();
       // Conversation means spoken replies; the audio context is created
       // here, inside the tap, so later streamed speech is allowed to play.
       voiceWasOffBeforeConversation = !voiceActive;
