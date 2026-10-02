@@ -373,6 +373,52 @@
     };
   }
 
+  // VOICE LOG: the last `max` conversation-mode events, in memory only (never
+  // stored, gone with the page). Each entry is a diagnostics snapshot with
+  // the event name and a clock reading. Consecutive repeats of the same
+  // event with nothing else changed are kept once. The page offers "Copy
+  // voice log" and "Send to PG1" over formatVoiceLog().
+  const EVENT_LOG_MAX = 200;
+  const EVENT_LOG_FIELDS = ['event', 'state', 'mode', 'recogniser', 'lastError', 'status', 'micOpen', 'raw'];
+  function createEventLog(max = EVENT_LOG_MAX, now = () => Date.now()) {
+    const entries = [];
+    return {
+      add(entry) {
+        if (!entry || typeof entry !== 'object' || !entry.event) return;
+        const last = entries[entries.length - 1];
+        if (last && EVENT_LOG_FIELDS.every((k) => last[k] === entry[k])) return;
+        entries.push(Object.assign({ at: now() }, entry));
+        while (entries.length > max) entries.shift();
+      },
+      get entries() { return entries.slice(); },
+      get size() { return entries.length; },
+      clear() { entries.length = 0; }
+    };
+  }
+
+  // One line per entry, oldest first, the last `limit` entries only:
+  //   12:03:45.120 result | listening | shared mic | rec running | err none | heard "what is the"
+  // Times are UTC clock times (HH:MM:SS.mmm) so a log from a phone and a
+  // server trace line up; what was heard is the recogniser's last result,
+  // 40 characters at most, only when there was one.
+  function formatVoiceLog(entries, { limit = 30 } = {}) {
+    const list = Array.isArray(entries) ? entries.slice(-Math.max(0, limit)) : [];
+    return list.map((e) => {
+      const d = new Date(typeof e.at === 'number' ? e.at : 0);
+      const time = isNaN(d.getTime()) ? '--:--:--.---' : d.toISOString().slice(11, 23);
+      const parts = [
+        time + ' ' + String(e.event || '-'),
+        String(e.state || '-'),
+        (e.mode || '-') + ' mic',
+        'rec ' + (e.recogniser || '-'),
+        'err ' + (e.lastError || 'none')
+      ];
+      if (e.status) parts.push('status "' + String(e.status).slice(0, 60) + '"');
+      if (e.raw) parts.push('heard "' + String(e.raw).slice(0, 40) + '"');
+      return parts.join(' | ');
+    }).join('\n');
+  }
+
   // The turn's transcript. Android Chrome re-sends the whole phrase heard so
   // far on every update, as interims and then as finals ("what's", "what's
   // in", "what's in my error log"), so appending each result stacked them.
@@ -460,6 +506,7 @@
     const clearT = deps.clearTimeout || clearTimeout;
     const tracker = createTurnTracker(o);
     const spokenLog = deps.spokenLog || createSpokenLog();
+    const eventLog = deps.eventLog || createEventLog(EVENT_LOG_MAX, now);
 
     let on = false;
     let starting = false;
@@ -509,6 +556,9 @@
       state = next;
       if (deps.onState) deps.onState(next, detail || '');
       emitDiag();
+      // Only a short detail word goes in the log ("started", "tap"); the
+      // text of a turn is never an event name.
+      logEvent('state:' + next + (detail && /^[\w-]{1,24}$/.test(detail) ? '/' + detail : ''));
     };
     const fail = (msg) => { if (deps.onError) deps.onError(msg); };
     // A toast once per conversation per subject; the status line carries it on.
@@ -519,6 +569,7 @@
       statusText = t;
       if (deps.onStatus) deps.onStatus(t);
       emitDiag();
+      logEvent(t ? 'status' : 'status:cleared');
     };
 
     function snapshot() {
@@ -540,6 +591,12 @@
     function emitDiag(event) {
       if (event) lastEvent = event;
       if (deps.onDiagnostics) deps.onDiagnostics(snapshot());
+      if (event) logEvent(event);
+    }
+    // The voice log keeps the snapshot as it was at the event.
+    function logEvent(event) {
+      const snap = snapshot();
+      eventLog.add({ event, state: snap.state, mode: snap.mode, recogniser: snap.recogniser, lastError: snap.lastError, status: snap.status, micOpen: snap.micOpen, raw: snap.raw });
     }
 
     function syncState() {
@@ -1034,6 +1091,9 @@
       get micOpen() { return !!mic; },
       get tracker() { return tracker; },
       get diagnostics() { return snapshot(); },
+      // The in-memory voice log (createEventLog), for the page's Copy voice
+      // log and Send to PG1.
+      get eventLog() { return eventLog; },
       // For tests and the page: push a frame straight into the detector.
       feedFrame: onFrame
     };
@@ -1128,6 +1188,8 @@
     echoSimilarity,
     isEchoOfSpoken,
     createSpokenLog,
+    createEventLog,
+    formatVoiceLog,
     isPhrasePrefix,
     mergePhrase,
     createTranscriptBuffer,
