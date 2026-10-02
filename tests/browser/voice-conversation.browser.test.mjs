@@ -19,7 +19,18 @@
  *
  * It asserts: no page errors, no console errors, the Listening indicator
  * appears, a transcript followed by silence is auto-sent exactly once, and
- * switching off ends the microphone tracks.
+ * switching off ends the microphone tracks. Three ways round:
+ *
+ *  - desktop-like: the mic stream and the recogniser share the microphone;
+ *  - Android-like: an Android user agent, and a recogniser that fails with
+ *    audio-capture whenever a page mic stream is live (Pixel 9a, Chrome:
+ *    the system speech service and getUserMedia cannot both have the mic).
+ *    The page must not hold a stream while recognising;
+ *  - the same contention without the platform hint: the module has to
+ *    notice the audio-capture error, let go of the stream and carry on.
+ *
+ * The operator-only diagnostics line and the hands-off composer are
+ * checked along the way.
  *
  * Skipped (not failed) when Playwright or its Chromium is not installed.
  * Run with: npm run test:browser   (or: node --test tests/browser/)
@@ -130,12 +141,16 @@ function writeSilentWav(dir, seconds = 2) {
 
 // Installed before any page script: a SpeechRecognition the test can speak
 // through, and a getUserMedia wrapper that keeps the streams it hands out.
-const PAGE_HOOKS = `(() => {
-  const T = window.__pg1Test = { instances: [], events: [], streams: [] };
+// With `contention` set, the recogniser fails with audio-capture whenever a
+// page mic stream is live, as on Android.
+const PAGE_HOOKS = (contention) => `(() => {
+  const T = window.__pg1Test = { instances: [], events: [], streams: [], contention: ${contention ? 'true' : 'false'} };
+  const micIsTaken = () => T.streams.some((s) => s.getAudioTracks().some((tr) => tr.readyState === 'live'));
   class FakeSpeechRecognition {
     constructor() {
       this.continuous = false; this.interimResults = false; this.lang = '';
       this.onresult = null; this.onend = null; this.onerror = null; this.onstart = null;
+      this.onspeechstart = null; this.onspeechend = null;
       this.running = false;
       T.instances.push(this);
     }
@@ -143,6 +158,15 @@ const PAGE_HOOKS = `(() => {
       if (this.running) throw new DOMException('recognition has already started', 'InvalidStateError');
       this.running = true; T.events.push('start');
       if (this.onstart) this.onstart();
+      if (T.contention && micIsTaken()) {
+        setTimeout(() => {
+          if (!this.running) return;
+          T.events.push('error:audio-capture');
+          if (this.onerror) this.onerror({ error: 'audio-capture', message: 'Audio capture failed.' });
+          this.running = false;
+          if (this.onend) this.onend();
+        }, 30);
+      }
     }
     stop() {
       T.events.push('stop');
@@ -161,12 +185,15 @@ const PAGE_HOOKS = `(() => {
   T.hear = (text, isFinal) => {
     const r = T.instances.filter((x) => x.running).pop();
     if (!r || !r.onresult) return false;
+    if (r.onspeechstart) r.onspeechstart();
     const alternatives = [{ transcript: text, confidence: 0.92 }];
     alternatives.isFinal = !!isFinal;
     r.onresult({ resultIndex: 0, results: [alternatives] });
+    if (isFinal && r.onspeechend) r.onspeechend();
     return true;
   };
   T.running = () => T.instances.filter((x) => x.running).length;
+  T.liveTracks = () => T.streams.flatMap((s) => s.getAudioTracks().filter((tr) => tr.readyState === 'live')).length;
   window.SpeechRecognition = FakeSpeechRecognition;
   window.webkitSpeechRecognition = FakeSpeechRecognition;
   const md = navigator.mediaDevices;
@@ -179,8 +206,21 @@ const PAGE_HOOKS = `(() => {
 })();`;
 
 const TRANSCRIPT = 'what is the threat level today';
+const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 15; Pixel 9a) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
 
-test('conversation mode in Chromium: the switch starts listening, a transcript then silence is sent once, off ends the mic', { skip, timeout: 180000 }, async (t) => {
+const SCENARIOS = [
+  { name: 'desktop-like: the mic stream and the recogniser share the microphone', contention: false, android: false, expectMode: 'shared' },
+  { name: 'Android-like: an Android user agent and a recogniser that cannot share the mic', contention: true, android: true, expectMode: 'exclusive' },
+  { name: 'contention without the platform hint: the recogniser fails with audio-capture while our stream is open', contention: true, android: false, expectMode: 'exclusive' }
+];
+
+for (const scenario of SCENARIOS) {
+  test(`conversation mode in Chromium, ${scenario.name}: a transcript then silence is sent once, off ends the mic`, { skip, timeout: 180000 }, async (t) => {
+    await runScenario(t, scenario);
+  });
+}
+
+async function runScenario(t, scenario) {
   const { server, log, origin } = await startStubServer();
   const tmp = mkdtempSync(join(tmpdir(), 'pg1-voice-'));
   const wav = writeSilentWav(tmp);
@@ -204,9 +244,10 @@ test('conversation mode in Chromium: the switch starts listening, a transcript t
     deviceScaleFactor: 2.625,
     isMobile: true,
     hasTouch: true,
-    permissions: ['microphone']
+    permissions: ['microphone'],
+    ...(scenario.android ? { userAgent: ANDROID_UA } : {})
   });
-  await context.addInitScript(PAGE_HOOKS);
+  await context.addInitScript(PAGE_HOOKS(scenario.contention));
   const page = await context.newPage();
 
   const pageErrors = [];
@@ -221,12 +262,17 @@ test('conversation mode in Chromium: the switch starts listening, a transcript t
 
   await page.goto(origin + '/', { waitUntil: 'load' });
   assert.equal(await page.evaluate(() => typeof PG1Voice), 'object', 'public/voice/conversation.js loaded as a plain script');
+  if (scenario.android) assert.ok(await page.evaluate(() => /Android/.test(navigator.userAgent)), 'the page sees an Android user agent');
 
   // Through the operator gate (the stub accepts anyone).
   await page.fill('#auth-user', 'operator');
   await page.fill('#auth-pass', 'passkey');
   await page.press('#auth-pass', 'Enter');
   await page.waitForSelector('#auth-modal', { state: 'hidden' });
+
+  // The composer has the keyboard; conversation mode must take it away.
+  await page.focus('#prompt-input');
+  assert.equal(await page.evaluate(() => document.activeElement && document.activeElement.id), 'prompt-input');
 
   // Tap the conversation switch.
   const toggle = page.locator('#converse-btn');
@@ -250,46 +296,84 @@ test('conversation mode in Chromium: the switch starts listening, a transcript t
   assert.equal(await toggle.getAttribute('aria-checked'), 'true', 'the switch is on');
   assert.equal(await page.locator('#converse-announcer').textContent(), 'Conversation on. Listening.');
   assert.ok(await page.locator('#converse-status').isVisible(), 'the Listening indicator is shown');
+  assert.notEqual(await page.evaluate(() => document.activeElement && document.activeElement.id), 'prompt-input', 'the composer was blurred: no keyboard over a hands-free conversation');
   assert.deepEqual(pageErrors, [], 'no page errors while starting');
   assert.deepEqual(consoleErrors, [], 'no console errors while starting');
   const toastText = await page.locator('#status-toast').textContent();
   assert.doesNotMatch(toastText || '', /not defined|could not start|not available/i, `no error toast (got "${toastText}")`);
 
+  // Under contention the module has to let go of its stream and restart the
+  // recogniser; with the platform hint it never opens one.
+  await page.waitForFunction((mode) => getConversation().micMode === mode && window.__pg1Test.running() === 1, scenario.expectMode, { timeout: 15000 });
   const started = await page.evaluate(() => ({
     vad: getConversation().vadName,
     state: getConversation().state,
+    mode: getConversation().micMode,
     streams: window.__pg1Test.streams.length,
-    live: window.__pg1Test.streams.flatMap((s) => s.getAudioTracks().map((tr) => tr.readyState)),
-    recognisers: window.__pg1Test.running()
+    live: window.__pg1Test.liveTracks(),
+    recognisers: window.__pg1Test.running(),
+    events: window.__pg1Test.events.slice(),
+    note: document.getElementById('converse-note').hidden
   }));
   assert.equal(started.state, 'listening');
-  assert.equal(started.streams, 1, 'one microphone stream was opened');
-  assert.deepEqual(started.live, ['live'], 'its audio track is live');
+  assert.equal(started.mode, scenario.expectMode);
   assert.equal(started.recognisers, 1, 'the recogniser is running');
+  if (scenario.expectMode === 'shared') {
+    assert.equal(started.streams, 1, 'one microphone stream was opened');
+    assert.equal(started.live, 1, 'its audio track is live beside the recogniser');
+    assert.ok(!started.events.includes('error:audio-capture'));
+  } else {
+    assert.equal(started.live, 0, 'no page mic stream is live while the recogniser has the microphone');
+    if (scenario.android) {
+      assert.equal(started.streams, 0, 'Android: no stream of our own was ever opened while listening');
+      assert.ok(!started.events.includes('error:audio-capture'), 'so the recogniser never failed');
+    } else {
+      assert.equal(started.streams, 1, 'the shared attempt opened one stream');
+      assert.ok(started.events.includes('error:audio-capture'), 'which the recogniser could not live with');
+    }
+  }
+  assert.equal(started.note, true, 'one failure is retried quietly: no status line');
   // The real Silero model on the real onnxruntime-web, from /voice/.
   assert.equal(started.vad, 'silero', `Silero loaded from public/voice (warnings: ${JSON.stringify(consoleWarnings)})`);
   assert.ok(log.requests.some((r) => r.path === '/voice/ort.wasm.min.js'), 'the runtime was fetched');
   assert.ok(log.requests.some((r) => r.path === '/voice/ort-wasm-simd-threaded.wasm'), 'the wasm binary was fetched');
   assert.ok(log.requests.some((r) => r.path === '/voice/silero_vad_v5.onnx'), 'the model was fetched');
 
-  // The operator says something, the recogniser finalises it, then the
-  // (silent) microphone gives 800 ms of silence: the turn is sent.
+  // Voice diagnostics: off by default, on from the drawer, nothing stored.
+  assert.equal(await page.locator('#converse-diag').isHidden(), true, 'the diagnostics line is off by default');
+  const storedBefore = await page.evaluate(() => Object.keys(localStorage).sort());
+  await page.evaluate(() => openDrawer());
+  await page.locator('#voice-diag-btn').tap();
+  await page.evaluate(() => closeDrawer());
+  assert.equal(await page.getAttribute('#voice-diag-btn', 'aria-checked'), 'true');
+  await page.waitForFunction(() => !document.getElementById('converse-diag').hidden);
+  const diag = await page.locator('#converse-diag').textContent();
+  const expectErr = scenario.contention && !scenario.android ? 'audio-capture' : 'none';
+  const expectMic = scenario.expectMode === 'shared' ? 'open' : 'closed';
+  assert.match(diag, new RegExp(`^${scenario.expectMode} mic \\| rec running \\| last \\S+ \\| err ${expectErr} \\| "" \\| vad (-|\\d\\.\\d\\d) \\| mic ${expectMic}$`), `diagnostics line: "${diag}"`);
+  assert.deepEqual(await page.evaluate(() => Object.keys(localStorage).sort()), storedBefore, 'nothing was stored');
+
+  // The operator says something, the recogniser finalises it, then silence
+  // (the silent microphone, or no further result): the turn is sent.
   const directives = () => log.requests.filter((r) => r.path === '/api/chat' && r.body && !r.body.action && r.body.prompt !== 'AUTH_VERIFY');
   assert.equal(directives().length, 0, 'nothing has been sent yet');
-  assert.ok(await page.evaluate((text) => window.__pg1Test.hear(text, true), TRANSCRIPT), 'the transcript reached the recogniser');
+  assert.ok(await page.evaluate((text) => window.__pg1Test.hear(text.slice(0, 11), false), TRANSCRIPT), 'an interim result reached the recogniser');
+  assert.match(await page.locator('#converse-diag').textContent(), /\| "what is the" \|/, 'the interim text shows in the diagnostics line');
+  assert.ok(await page.evaluate((text) => window.__pg1Test.hear(text, true), TRANSCRIPT), 'the final transcript reached the recogniser');
   const deadline = Date.now() + 15000;
   while (directives().length === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
   assert.equal(directives().length, 1, 'the transcript was auto-sent');
   assert.equal(directives()[0].body.prompt, TRANSCRIPT);
   const sentAt = Date.now();
 
-  // It shows as the operator's message, the composer is empty again, and
-  // the conversation is back to listening once the reply is in.
+  // It shows as the operator's message, the composer is empty again and
+  // unfocused, and the conversation is back to listening once the reply is in.
   await page.waitForFunction((text) => {
     const bubbles = Array.from(document.querySelectorAll('#chat-container .message-bubble.user .message-text'));
     return bubbles.some((b) => b.textContent.includes(text));
   }, TRANSCRIPT);
   assert.equal(await page.inputValue('#prompt-input'), '', 'the composer was cleared by the send');
+  assert.notEqual(await page.evaluate(() => document.activeElement && document.activeElement.id), 'prompt-input', 'the send did not focus the composer');
   await page.waitForFunction(() => {
     const label = document.querySelector('#converse-status .converse-label');
     return label && label.textContent === 'Listening' && !document.querySelector('#chat-container .message-bubble.pending');
@@ -298,12 +382,16 @@ test('conversation mode in Chromium: the switch starts listening, a transcript t
   // restart, not from the reply being read out.
   await new Promise((r) => setTimeout(r, Math.max(0, 2500 - (Date.now() - sentAt))));
   assert.equal(directives().length, 1, 'sent exactly once');
+  assert.equal(await page.evaluate(() => window.__pg1Test.running()), 1, 'listening again for the next turn');
+  assert.equal(await page.evaluate(() => window.__pg1Test.liveTracks()), scenario.expectMode === 'shared' ? 1 : 0, 'the mic stream is as it should be for the mode');
+  assert.equal(await page.locator('#converse-note').isHidden(), true, 'no persistent error was reported');
 
   // Off: the switch, the indicator, the microphone and the recogniser.
   await toggle.tap();
   await page.waitForFunction(() => document.getElementById('converse-btn').getAttribute('aria-checked') === 'false');
   const stopped = await page.evaluate(() => ({
     hidden: document.getElementById('converse-status').hidden,
+    diagHidden: document.getElementById('converse-diag').hidden,
     announcer: document.getElementById('converse-announcer').textContent,
     tracks: window.__pg1Test.streams.flatMap((s) => s.getTracks().map((tr) => tr.readyState)),
     recognisers: window.__pg1Test.running(),
@@ -311,8 +399,10 @@ test('conversation mode in Chromium: the switch starts listening, a transcript t
   }));
   assert.equal(stopped.on, false);
   assert.equal(stopped.hidden, true, 'the indicator is hidden');
+  assert.equal(stopped.diagHidden, true, 'and so is the diagnostics line');
   assert.equal(stopped.announcer, 'Conversation off.');
-  assert.ok(stopped.tracks.length > 0 && stopped.tracks.every((s) => s === 'ended'), `every microphone track ended (${stopped.tracks})`);
+  assert.ok(stopped.tracks.every((s) => s === 'ended'), `every microphone track ended (${stopped.tracks})`);
+  if (scenario.expectMode === 'shared' || !scenario.android) assert.ok(stopped.tracks.length > 0, 'a stream was opened in this scenario');
   assert.equal(stopped.recognisers, 0, 'the recogniser was stopped');
 
   // Nothing broke along the way, and nothing was logged as an error.
@@ -321,4 +411,4 @@ test('conversation mode in Chromium: the switch starts listening, a transcript t
   assert.deepEqual(log.missing, [], 'every URL the page asked for exists');
   const errorLog = await page.evaluate(() => getErrorLog().map((e) => e.message));
   assert.deepEqual(errorLog, [], 'the page recorded no errors');
-});
+}

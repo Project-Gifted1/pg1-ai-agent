@@ -14,6 +14,26 @@
 // the only thing that leaves this module, as the message sent to PG1. No
 // audio is kept anywhere: frames are scored and dropped.
 //
+// Two ways of sharing the microphone (micMode):
+//
+//   'shared'     the mic stream above stays open while the recogniser runs,
+//                and the detector decides when a turn ends. Desktop Chrome.
+//   'exclusive'  the recogniser and our stream cannot both have the mic.
+//                Android Chrome hands recognition to the system speech
+//                service, a separate process, and the platform gives the
+//                microphone to one of them: our stream got the audio and the
+//                recogniser heard silence ("Listening", but nothing was ever
+//                sent). In this mode no stream is held while recognising:
+//                the recogniser's own events (speechstart, results, speechend,
+//                end) drive the turn, with the end-of-turn rule applied to
+//                the timing of its results. Our own stream is opened only for
+//                barge-in while PG1 is speaking, when the recogniser is off.
+//
+// The page picks 'exclusive' on Android. Everywhere else it starts 'shared'
+// and switches to 'exclusive' on evidence of contention: an audio-capture
+// error, no-speech moments after a start, or a turn the detector heard that
+// the recogniser transcribed as nothing, twice.
+//
 // The wrapper hands the global object to the factory as `root`: the factory
 // is its own function, so it cannot see the wrapper's parameters, and the
 // browser helpers below (openMicrophone, loadOnnxRuntime, the phrase hints)
@@ -40,7 +60,14 @@
     endOfTurnSilenceMs: 800,    // silence that ends the operator's turn
     finalGraceMs: 1500,         // wait this long for the recogniser's final text
     autoOffSilenceMs: 120000,   // 2 minutes without speech switches off
-    echoThreshold: 0.8          // transcript this similar to PG1's speech is echo
+    echoThreshold: 0.8,         // transcript this similar to PG1's speech is echo
+    micMode: 'shared',          // 'shared' | 'exclusive', see the header
+    pollMs: 100,                // how often playback and idleness are checked
+    restartMinMs: 100,          // recogniser restart after a healthy session
+    restartMaxMs: 5000,         // ...and the cap after repeated failures
+    healthySessionMs: 3000,     // a session this long without results is fine
+    contentionWindowMs: 4000,   // no-speech sooner than this after start: contention
+    emptyTurnsForContention: 2  // detector turns with no transcript before switching
   });
 
   // ---------------------------------------------------------------------------
@@ -351,7 +378,11 @@
   //   spokenLog                  createSpokenLog() shared with the page
   //   onState(state, detail)     'listening' | 'thinking' | 'speaking' | 'off'
   //   onTranscript(text)         live (interim) text for the indicator
-  //   onError(message)
+  //   onError(message)           something went wrong (a toast)
+  //   onStatus(text)             a persistent problem, '' when it clears (a status line)
+  //   onDiagnostics(snapshot)    live readout for the operator's diagnostics line
+  //
+  // opts: any DEFAULTS key; micMode picks the starting mode.
 
   function createConversation(deps, opts = {}) {
     const o = Object.assign({}, DEFAULTS, opts);
@@ -364,7 +395,9 @@
     let on = false;
     let starting = false;
     let state = 'off';
+    let micMode = o.micMode === 'exclusive' ? 'exclusive' : 'shared';
     let mic = null;
+    let micOpening = null;          // the openMic() promise while one is in flight
     let vad = null;
     let recognition = null;
     let recognitionWanted = false;  // restart it when it ends on its own
@@ -377,13 +410,65 @@
     let stopReason = null;
     let wasPlaying = false;
     let restartTimer = null;
+    let tickTimer = null;
+    let turnTimer = null;           // exclusive mode: end of turn by result timing
+    let watchingPlayback = false;   // exclusive mode: mic open for barge-in
 
+    // Recogniser health, for the restart backoff and the status line.
+    let sessionStartedAt = null;
+    let sessionResults = 0;         // results in the current session
+    let sessionError = null;        // error code of the current session
+    let failStreak = 0;             // sessions in a row that ended badly
+    let noSpeechStreak = 0;
+    let audioCaptureStreak = 0;
+    let emptyTurns = 0;             // detector turns the recogniser heard nothing of
+    let statusText = '';
+    let fatalStatus = '';           // why the mode stopped, kept on the line after it
+    let toasted = Object.create(null);
+
+    // Diagnostics.
+    let lastEvent = '';
+    let lastError = '';
+    let vadLevel = 0;
+    let lastDiagAt = 0;
+
+    const exclusive = () => micMode === 'exclusive';
     const setState = (next, detail) => {
       if (next === state && !detail) return;
       state = next;
       if (deps.onState) deps.onState(next, detail || '');
+      emitDiag();
     };
     const fail = (msg) => { if (deps.onError) deps.onError(msg); };
+    // A toast once per conversation per subject; the status line carries it on.
+    const failOnce = (key, msg) => { if (toasted[key]) return; toasted[key] = true; fail(msg); };
+    const setStatus = (text) => {
+      const t = text || '';
+      if (t === statusText) return;
+      statusText = t;
+      if (deps.onStatus) deps.onStatus(t);
+      emitDiag();
+    };
+
+    function snapshot() {
+      return {
+        mode: micMode,
+        state,
+        recogniser: recognitionRunning ? 'running' : (restartTimer ? 'restarting' : 'stopped'),
+        lastEvent,
+        lastError,
+        interim: (finalText + ' ' + interimText).trim().slice(0, 40),
+        vadLevel: Math.round(vadLevel * 100) / 100,
+        micOpen: !!mic,
+        watchingPlayback,
+        failStreak,
+        status: statusText
+      };
+    }
+    function emitDiag(event) {
+      if (event) lastEvent = event;
+      if (deps.onDiagnostics) deps.onDiagnostics(snapshot());
+    }
 
     function syncState() {
       if (!on) return;
@@ -395,30 +480,48 @@
     // --- recogniser -------------------------------------------------------
 
     function clearTranscript() { finalText = ''; interimText = ''; if (deps.onTranscript) deps.onTranscript(''); }
+    function bufferedText() { return (finalText + ' ' + interimText).trim(); }
+    function clearTurnTimer() { if (turnTimer) { clearT(turnTimer); turnTimer = null; } }
 
     function startRecognition() {
       if (!on || !recognition || recognitionRunning) return;
+      if (exclusive() && watchingPlayback) return;   // PG1 is talking: the mic is ours
       recognitionWanted = true;
       // A fresh session starts with an empty transcript.
       finalText = ''; interimText = '';
+      sessionStartedAt = now();
+      sessionResults = 0;
+      sessionError = null;
       try {
         recognition.start();
         recognitionRunning = true;
+        emitDiag('start');
       } catch (e) {
         // "already started" or a transient failure: try again shortly.
         recognitionRunning = false;
-        scheduleRecognitionRestart(300);
+        lastError = 'start: ' + ((e && e.message) || 'failed');
+        failStreak++;
+        scheduleRecognitionRestart(restartDelay());
       }
+    }
+
+    // 100 ms after a healthy session or a first failure, then doubling to
+    // the cap: 100, 100, 200, 400, ... 5000.
+    function restartDelay() {
+      if (failStreak <= 1) return o.restartMinMs;
+      return Math.min(o.restartMaxMs, o.restartMinMs * Math.pow(2, failStreak - 1));
     }
 
     function scheduleRecognitionRestart(ms) {
       if (restartTimer) clearT(restartTimer);
       restartTimer = setT(() => { restartTimer = null; if (on && recognitionWanted && !recognitionRunning) startRecognition(); }, ms);
+      emitDiag();
     }
 
     // Drop whatever the recogniser has heard so far and listen afresh.
     function restartRecognitionClean() {
       clearTranscript();
+      clearTurnTimer();
       if (!recognition) return;
       recognitionWanted = on;
       if (recognitionRunning) {
@@ -426,6 +529,50 @@
         recognitionRunning = false;
       }
       if (on) scheduleRecognitionRestart(50);
+    }
+
+    // Stop the recogniser without restarting it (PG1 is about to talk).
+    function pauseRecognition() {
+      recognitionWanted = false;
+      if (restartTimer) { clearT(restartTimer); restartTimer = null; }
+      clearTurnTimer();
+      clearTranscript();
+      if (recognition && recognitionRunning) {
+        try { recognition.abort(); } catch (e) { /* not running */ }
+        recognitionRunning = false;
+      }
+      emitDiag('paused');
+    }
+
+    // The recogniser produced something: it is healthy, whatever came before.
+    function noteHealthy() {
+      failStreak = 0; noSpeechStreak = 0; audioCaptureStreak = 0; emptyTurns = 0;
+      setStatus('');
+    }
+
+    // Evidence that the recogniser and our stream cannot share the mic.
+    function switchToExclusive(reason) {
+      if (exclusive()) return;
+      micMode = 'exclusive';
+      failStreak = 0;
+      emptyTurns = 0;
+      emitDiag('mic_contention:' + reason);
+      closeMic();
+      tracker.endTurn();
+      clearTurnTimer();
+      restartRecognitionClean();
+    }
+
+    // Exclusive mode: the turn ends 800 ms after the recogniser's latest
+    // result (or its speechend) with nothing new.
+    function armTurnTimer() {
+      clearTurnTimer();
+      turnTimer = setT(() => {
+        turnTimer = null;
+        if (!on || !exclusive() || flushing || watchingPlayback) return;
+        if (bufferedText()) finishTurn();
+        else tracker.endTurn();
+      }, o.endOfTurnSilenceMs);
     }
 
     function attachRecognition(r) {
@@ -439,6 +586,26 @@
           r.phrases = [new root.SpeechRecognitionPhrase('PG1', 5.0)];
         }
       } catch (e) { /* hints unsupported */ }
+      r.onstart = () => emitDiag('started');
+      r.onaudiostart = () => emitDiag('audiostart');
+      r.onaudioend = () => emitDiag('audioend');
+      r.onsoundstart = () => emitDiag('soundstart');
+      r.onsoundend = () => emitDiag('soundend');
+      r.onnomatch = () => emitDiag('nomatch');
+      r.onspeechstart = () => {
+        emitDiag('speechstart');
+        if (!on || !recognitionRunning) return;
+        if (exclusive() && !watchingPlayback) {
+          // The operator is talking: hold the turn open until results stop.
+          clearTurnTimer();
+          tracker.noteSpeech(now());
+        }
+      };
+      r.onspeechend = () => {
+        emitDiag('speechend');
+        if (!on || !recognitionRunning) return;
+        if (exclusive() && !watchingPlayback && tracker.inTurn && !turnTimer) armTurnTimer();
+      };
       r.onresult = (event) => {
         // Results after stop() (or from a session already abandoned) are stale.
         if (!on || !recognitionRunning) return;
@@ -452,10 +619,18 @@
           else interim += text;
         }
         interimText = interim.trim();
+        sessionResults++;
+        noteHealthy();
+        emitDiag('result');
         // Anything heard while PG1 is talking and no barge-in has been
         // confirmed is the speaker, not the operator: it is dropped.
         if (deps.isPlaying && deps.isPlaying() && !tracker.inTurn) { finalText = ''; interimText = ''; return; }
-        if (deps.onTranscript) deps.onTranscript((finalText + ' ' + interimText).trim());
+        if (deps.onTranscript) deps.onTranscript(bufferedText());
+        if (exclusive()) {
+          // Result timing is the only clock: each one restarts the 800 ms.
+          if (bufferedText() && !flushing) { tracker.noteSpeech(now()); armTurnTimer(); }
+          return;
+        }
         if (finalText && !flushing) {
           // The recogniser finalised something: that is speech too, even
           // if the detector missed it.
@@ -463,19 +638,63 @@
         }
       };
       r.onerror = (event) => {
-        const code = event && event.error;
+        const code = (event && event.error) || 'unknown';
+        sessionError = code;
+        lastError = code;
+        emitDiag('error:' + code);
+        if (!on) return;
         if (code === 'not-allowed' || code === 'service-not-allowed') {
+          fatalStatus = 'Microphone access was refused. Allow the microphone for this site and switch conversation mode on again.';
           fail('Microphone access was refused.');
           stop('error');
           return;
         }
-        if (code === 'network') fail('Speech recognition needs a network connection.');
-        // 'no-speech' and 'aborted' are routine; onend restarts it.
+        if (code === 'aborted') return;   // ours, or the page's; onend follows
+        if (code === 'audio-capture') {
+          audioCaptureStreak++;
+          if (!exclusive() && mic) { switchToExclusive('audio-capture'); return; }
+          if (audioCaptureStreak >= 2) setStatus('Speech recognition cannot reach the microphone. Retrying.');
+          return;
+        }
+        if (code === 'no-speech') {
+          noSpeechStreak++;
+          const soon = sessionStartedAt !== null && now() - sessionStartedAt < o.contentionWindowMs;
+          if (!exclusive() && mic && soon && sessionResults === 0) { switchToExclusive('no-speech'); return; }
+          if (noSpeechStreak >= 3) setStatus('No speech heard. Check the microphone.');
+          return;
+        }
+        if (code === 'network') {
+          failOnce('network', 'Speech recognition needs a network connection.');
+          setStatus('Speech recognition needs a network connection. Retrying.');
+          return;
+        }
+        // language-not-supported, bad-grammar, phrases-not-supported, ...
+        if (++failStreak >= 2) setStatus('Speech recognition error: ' + code + '. Retrying.');
       };
       r.onend = () => {
         recognitionRunning = false;
+        emitDiag('end');
         if (flushing) { const f = flushing; flushing = null; clearT(f.timer); f.resolve(); return; }
-        if (on && recognitionWanted) scheduleRecognitionRestart(100);
+        if (!on || !recognitionWanted) return;
+        if (exclusive() && !watchingPlayback && bufferedText()) {
+          // The session ended on its own with the operator's words in it
+          // (Android ends one after each final result): that is the turn.
+          clearTurnTimer();
+          finishTurn();
+          return;
+        }
+        if (exclusive()) tracker.endTurn();
+        const code = sessionError;
+        const lasted = sessionStartedAt === null ? 0 : now() - sessionStartedAt;
+        const routine = code === null || code === 'no-speech' || code === 'aborted';
+        if (sessionResults > 0 || (routine && lasted >= o.healthySessionMs)) {
+          failStreak = 0;
+          if (sessionResults > 0) setStatus('');
+        } else {
+          failStreak++;
+          if (routine && failStreak >= 4) setStatus('Speech recognition keeps stopping. Retrying.');
+        }
+        scheduleRecognitionRestart(restartDelay());
       };
     }
 
@@ -492,9 +711,11 @@
     // --- turn handling ----------------------------------------------------
 
     async function finishTurn() {
-      const bufferedBefore = (finalText + ' ' + interimText).trim();
+      clearTurnTimer();
+      const bufferedBefore = bufferedText();
       await flushRecognition();
       if (!on) return;
+      tracker.endTurn();
       let text = (finalText || interimText || bufferedBefore).trim();
       finalText = ''; interimText = '';
       if (deps.onTranscript) deps.onTranscript('');
@@ -502,8 +723,14 @@
       const echoed = text && isEchoOfSpoken(text, spokenLog.texts, { threshold: o.echoThreshold });
       if (echoed) text = '';
       if (text) {
+        emptyTurns = 0;
+        emitDiag('sent');
         if (deps.send) deps.send(text);
         setState('thinking', text);
+      } else if (!exclusive() && !echoed) {
+        // The detector heard a turn; the recogniser transcribed nothing.
+        // Twice in a row, it is not getting the microphone.
+        if (++emptyTurns >= o.emptyTurnsForContention) { switchToExclusive('empty-turn'); syncState(); return; }
       }
       syncState();
       scheduleRecognitionRestart(50);
@@ -512,12 +739,15 @@
     function bargeIn() {
       if (deps.stopPlayback) deps.stopPlayback();
       if (deps.abortRequests) deps.abortRequests();
-      restartRecognitionClean();
+      emitDiag('barge_in');
+      if (exclusive()) leavePlaybackWatch();
+      else restartRecognitionClean();
       setState('listening', 'interrupted');
     }
 
     async function scoreFrame(frame) {
       if (!on || !vad) return;
+      if (exclusive() && !watchingPlayback) return;   // a frame left over from a closed stream
       let prob = 0;
       try {
         prob = await vad.process(frame);
@@ -528,9 +758,11 @@
         return;
       }
       if (!on) return;
+      vadLevel = prob;
       const t = now();
+      if (t - lastDiagAt >= 250) { lastDiagAt = t; emitDiag(); }
       const playing = !!(deps.isPlaying && deps.isPlaying());
-      if (wasPlaying && !playing && !tracker.inTurn) {
+      if (!exclusive() && wasPlaying && !playing && !tracker.inTurn) {
         // PG1 just finished talking without being interrupted: forget
         // anything the recogniser picked up from the speaker.
         restartRecognitionClean();
@@ -555,6 +787,68 @@
       });
     }
 
+    // --- the microphone stream --------------------------------------------
+
+    async function openMic() {
+      if (mic || micOpening) return micOpening || mic;
+      micOpening = Promise.resolve().then(() => deps.openMic()).then((m) => {
+        micOpening = null;
+        if (!m) throw new Error('Microphone is not available.');
+        if (!on || (exclusive() && !watchingPlayback)) { try { m.close(); } catch (e) { /* ignore */ } return null; }
+        mic = m;
+        mic.onFrame(onFrame);
+        emitDiag('mic_open');
+        return m;
+      }, (err) => { micOpening = null; throw err; });
+      return micOpening;
+    }
+
+    function closeMic() {
+      queuedFrame = null;
+      vadLevel = 0;
+      if (!mic) return;
+      const m = mic;
+      mic = null;
+      try { const p = m.close(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* already closed */ }
+      emitDiag('mic_closed');
+    }
+
+    // Exclusive mode: PG1 started talking. The recogniser stops (it would
+    // only hear the speaker) and our stream opens so the detector can hear
+    // the operator talk over it.
+    function enterPlaybackWatch() {
+      watchingPlayback = true;
+      pauseRecognition();
+      tracker.endTurn();
+      wasPlaying = true;
+      openMic().catch((err) => { lastError = 'mic: ' + ((err && err.message) || 'failed'); emitDiag('mic_failed'); });
+    }
+
+    // PG1 stopped (or was interrupted): back to the recogniser.
+    function leavePlaybackWatch() {
+      watchingPlayback = false;
+      wasPlaying = false;
+      closeMic();
+      tracker.endTurn();
+      restartRecognitionClean();
+    }
+
+    // --- the clock --------------------------------------------------------
+
+    function tick() {
+      tickTimer = null;
+      if (!on) return;
+      const t = now();
+      const playing = !!(deps.isPlaying && deps.isPlaying());
+      if (exclusive()) {
+        if (playing && !watchingPlayback) enterPlaybackWatch();
+        else if (!playing && watchingPlayback) leavePlaybackWatch();
+      }
+      if (tracker.idleMs(t) >= o.autoOffSilenceMs) { stop('silence'); return; }
+      syncState();
+      tickTimer = setT(tick, o.pollMs);
+    }
+
     // --- lifecycle --------------------------------------------------------
 
     async function start() {
@@ -566,14 +860,23 @@
         if (!recognition) throw new Error('Speech recognition is not available in this browser.');
         attachRecognition(recognition);
         vad = await deps.loadVad();
-        mic = await deps.openMic();
-        if (!mic) throw new Error('Microphone is not available.');
         on = true;
+        toasted = Object.create(null);
+        failStreak = noSpeechStreak = audioCaptureStreak = emptyTurns = 0;
+        fatalStatus = '';
+        setStatus('');
+        lastEvent = ''; lastError = ''; vadLevel = 0;
+        watchingPlayback = false;
         tracker.reset(now());
         wasPlaying = false;
         clearTranscript();
-        mic.onFrame(onFrame);
+        if (!exclusive()) {
+          // Shared: the stream stays open beside the recogniser.
+          const m = await openMic();
+          if (!m) throw new Error('Microphone is not available.');
+        }
         startRecognition();
+        tickTimer = setT(tick, o.pollMs);
         setState('listening', 'started');
         return true;
       } catch (err) {
@@ -589,19 +892,26 @@
 
     async function teardown() {
       recognitionWanted = false;
+      watchingPlayback = false;
       if (restartTimer) { clearT(restartTimer); restartTimer = null; }
+      if (tickTimer) { clearT(tickTimer); tickTimer = null; }
+      clearTurnTimer();
       if (flushing) { const f = flushing; flushing = null; clearT(f.timer); f.resolve(); }
       if (recognition) {
         try { recognition.abort(); } catch (e) { /* not running */ }
         recognition.onresult = recognition.onend = recognition.onerror = null;
+        recognition.onstart = recognition.onspeechstart = recognition.onspeechend = null;
+        recognition.onaudiostart = recognition.onaudioend = recognition.onsoundstart = recognition.onsoundend = recognition.onnomatch = null;
         recognition = null;
         recognitionRunning = false;
       }
-      if (mic) { try { await mic.close(); } catch (e) { /* already closed */ } mic = null; }
+      if (micOpening) { try { await micOpening; } catch (e) { /* never opened */ } }
+      if (mic) { const m = mic; mic = null; try { await m.close(); } catch (e) { /* already closed */ } }
       if (vad && vad.release) { try { await vad.release(); } catch (e) { /* ignore */ } }
       vad = null;
       queuedFrame = null;
       finalText = ''; interimText = '';
+      setStatus('');
     }
 
     // reason: 'tap' | 'silence' | 'hidden' | 'error' | 'dictation'
@@ -612,6 +922,8 @@
       await teardown();
       if (deps.onTranscript) deps.onTranscript('');
       setState('off', stopReason);
+      // The line outlives the indicator so the operator learns why it stopped.
+      if (fatalStatus) setStatus(fatalStatus);
     }
 
     return {
@@ -621,7 +933,10 @@
       get state() { return state; },
       get stopReason() { return stopReason; },
       get vadName() { return vad ? vad.name : null; },
+      get micMode() { return micMode; },
+      get micOpen() { return !!mic; },
       get tracker() { return tracker; },
+      get diagnostics() { return snapshot(); },
       // For tests and the page: push a frame straight into the detector.
       feedFrame: onFrame
     };
