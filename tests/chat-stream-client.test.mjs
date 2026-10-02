@@ -3,6 +3,10 @@
  *  - streamed reply text stays inert at every partial length (no XSS
  *    mid-stream), and an unclosed code fence renders as code
  *  - trace rows: escaped, keyboard-operable expanders, failed marks, no emoji
+ *  - the live trace view (run for real on tests/helpers/mini-dom.mjs): a
+ *    gold dot on the running step, rows joined by a timeline, the fold into
+ *    "Writing · N steps" when text starts, the "N steps" header pill with
+ *    durations when it is done, and no row for the voice step
  *  - readChatStream / consumeDirectiveStream over a chunked body, including
  *    the Stop button aborting mid-stream and a dropped connection
  *  - the fallback path: JSON replies still go through the old code, and a
@@ -20,6 +24,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
+import { createDocument } from './helpers/mini-dom.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(__dirname, '../public/index.html'), 'utf-8');
@@ -39,7 +44,8 @@ function extractFunction(name) {
 
 const FUNCS = [
   'escapeHTML', 'formatMarkdown', 'renderDiffBlock', 'formatStreamingMarkdown', 'parseSseBuffer', 'parseTraceEvent',
-  'readChatStream', 'traceRowHtml', 'toggleTraceDetails', 'consumeDirectiveStream', 'syncExecuteButton',
+  'readChatStream', 'formatStepDuration', 'traceRowHtml', 'traceRunningRowHtml', 'stepCountText', 'agentTimestampHtml',
+  'toggleTraceDetails', 'createTraceView', 'consumeDirectiveStream', 'syncExecuteButton',
   'onExecuteClick', 'stopDirectives', 'retryButtonHtml', 'retryDirective', 'renderStreamFailure'
 ];
 const SOURCE = [
@@ -66,6 +72,7 @@ function makeContext(overrides = {}) {
     submitDirective: (opts) => log.submits.push(opts || {}),
     isVoicePlaying: () => false,
     stopVoicePlayback: () => { log.voiceStops = (log.voiceStops || 0) + 1; },
+    syncVoiceWave: () => {},
     ...overrides
   };
   vm.createContext(ctx);
@@ -121,7 +128,10 @@ test('an unclosed code fence mid-stream renders as an escaped code block', () =>
 test('a finished step is a compact row; details make it a keyboard button with aria-expanded', () => {
   const { traceRowHtml } = makeContext();
   const plain = traceRowHtml({ id: 'memory', label: 'Loaded memory', result: '3 recent messages' }, 'u1');
-  assert.match(plain, /<li class="trace-row"><div class="trace-line"><svg class="icon trace-mark" aria-hidden="true"><use href="#i-check"\/><\/svg><span class="trace-label">Loaded memory · 3 recent messages<\/span><\/div><\/li>/);
+  assert.match(plain, /<li class="trace-row"><div class="trace-line"><svg class="icon trace-mark" aria-hidden="true"><use href="#i-check"\/><\/svg><span class="trace-label">Loaded memory<span class="trace-result"> · 3 recent messages<\/span><\/span><\/div><\/li>/);
+  assert.doesNotMatch(plain, /trace-dur/, 'no duration when none was measured');
+  const timed = traceRowHtml({ id: 'memory', label: 'Loaded memory' }, 'u1', 1234);
+  assert.match(timed, /<span class="trace-dur"><span class="sr-only">took <\/span>1\.2s<\/span><\/div>/);
   assert.doesNotMatch(plain, /<button/);
 
   const withDetails = traceRowHtml({ id: 'errors', label: 'Checked error log', result: '3 new', details: ['CHAT 500 <b>boom</b>', 42, ''] }, 'u2');
@@ -152,16 +162,187 @@ test('toggleTraceDetails flips aria-expanded and the hidden state of its target'
   assert.equal(target.hidden, true);
 });
 
-test('the trace markup: polite status line, rows kept out of the live log, collapse into "N steps"', () => {
-  const src = extractFunction('createTraceView');
-  assert.match(src, /class="trace-status" role="status" aria-live="polite"/);
-  assert.match(src, /class="trace-steps"[^>]*aria-live="off"/);
-  assert.match(src, /\$\{rows\} step\$\{rows === 1 \? '' : 's'\}/);
-  assert.match(src, /class="trace-line trace-summary" aria-expanded="false" aria-controls="\$\{list\.id\}" onclick="toggleTraceDetails\(this\)"/);
+test('step durations read as <0.1s, 0.4s, 1.2s, 12s', () => {
+  const { formatStepDuration } = makeContext();
+  assert.equal(formatStepDuration(30), '<0.1s');
+  assert.equal(formatStepDuration(400), '0.4s');
+  assert.equal(formatStepDuration(1234), '1.2s');
+  assert.equal(formatStepDuration(9960), '10.0s');
+  assert.equal(formatStepDuration(12400), '12s');
+  assert.equal(formatStepDuration(undefined), '');
+  assert.equal(formatStepDuration(-5), '');
+});
+
+// The real createTraceView on a tiny DOM, with a controllable clock.
+function makeTraceHarness() {
+  const document = createDocument();
+  let clock = 1000;
+  const ctx = makeContext({ document, performance: { now: () => clock } });
+  const bubble = document.createElement('div');
+  bubble.className = 'message-bubble pending';
+  bubble.innerHTML = '<span class="msg-timestamp">06:22 PM</span><div class="message-text pending-text">Running directive…</div>';
+  document.body.appendChild(bubble);
+  const view = ctx.createTraceView(bubble);
+  const trace = bubble.querySelector('.trace');
+  return { ctx, document, bubble, view, trace, tick: (ms) => { clock += ms; } };
+}
+
+test('working: each step is a row as it starts, the running one with a gold dot, then a muted tick and result', () => {
+  const { view, trace, tick } = makeTraceHarness();
+  const status = trace.querySelector('.trace-status');
+  assert.equal(status.getAttribute('role'), 'status');
+  assert.equal(status.getAttribute('aria-live'), 'polite');
+  assert.ok(status.classList.contains('sr-only'), 'the status line is for screen readers only');
+  assert.equal(trace.querySelector('.trace-steps').getAttribute('aria-live'), 'off', 'rows are kept out of the live log');
+
+  view.step({ id: 'db', label: 'Checking the database connection' });
+  view.step({ id: 'memory', label: 'Loading memory' });
+  let rows = trace.querySelectorAll('.trace-row');
+  assert.equal(rows.length, 2);
+  assert.ok(rows.every((r) => r.classList.contains('is-running') && r.querySelector('.trace-dot')), 'running rows have the gold dot');
+  assert.equal(status.textContent, 'Loading memory');
+
+  tick(1234);
+  view.stepDone({ id: 'db', label: 'Checked the database', result: 'connected' });
+  rows = trace.querySelectorAll('.trace-row');
+  assert.equal(rows.length, 2, 'the row is replaced in place, not appended');
+  assert.ok(!rows[0].classList.contains('is-running'));
+  assert.ok(rows[0].querySelector('.trace-mark'), 'finished row has a tick');
+  assert.equal(rows[0].querySelector('.trace-result').textContent, ' · connected');
+  assert.equal(rows[0].querySelector('.trace-dur').textContent, 'took 1.2s');
+  assert.ok(rows[1].classList.contains('is-running'), 'order is kept: memory still running below');
+  view.stepDone({ id: 'memory', label: 'Loaded memory', result: 'unavailable', failed: true });
+  assert.ok(trace.querySelectorAll('.trace-row')[1].classList.contains('is-failed'));
+  assert.equal(status.textContent, 'Working');
+  // A step_done for something never started changes nothing.
+  view.stepDone({ id: 'nope', label: 'x' });
+  assert.equal(trace.querySelectorAll('.trace-row').length, 2);
+});
+
+test('writing: the first reply text folds the steps into one live "Writing · N steps" line that keeps counting', () => {
+  const { view, trace } = makeTraceHarness();
+  view.step({ id: 'db', label: 'Checking the database connection' });
+  view.stepDone({ id: 'db', label: 'Checked the database', result: 'connected' });
+  view.step({ id: 'model', label: 'Writing the reply' });
+  const line = trace.querySelector('.trace-writing');
+  assert.ok(line.hidden, 'no live line before text');
+  view.writing();
+  assert.ok(!line.hidden);
+  assert.ok(trace.querySelector('.trace-steps').hidden, 'rows folded away');
+  assert.ok(trace.classList.contains('is-writing'));
+  assert.equal(line.textContent.replace(/\s+/g, ' ').trim(), 'Writing · 2 steps');
+  assert.ok(line.querySelector('.trace-dot'), 'gold dot on the live line');
+  assert.equal(line.tagName, 'button');
+  assert.equal(line.getAttribute('aria-expanded'), 'false');
+  assert.equal(line.getAttribute('aria-controls'), trace.querySelector('.trace-steps').id);
+  view.step({ id: 'search', label: 'Searching the web' });
+  assert.equal(trace.querySelector('.trace-count').textContent, '3 steps', 'count updates while writing');
+  view.writing();
+  assert.equal(trace.querySelectorAll('.trace-writing').length, 1);
+});
+
+test('consumeDirectiveStream folds the trace on the first text chunk and places the reply right under it', async () => {
+  const document = createDocument();
+  const ctx = makeContext({ document, window: { requestAnimationFrame: (fn) => fn() } });
+  const chat = document.createElement('div');
+  chat.id = 'chat-container';
+  document.body.appendChild(chat);
+  const bubble = document.createElement('div');
+  bubble.className = 'message-bubble pending';
+  bubble.innerHTML = '<span class="msg-timestamp">06:22 PM</span><div class="message-text pending-text">Running directive…</div>';
+  chat.appendChild(bubble);
+  let foldedAtText = null;
+  const stream = [
+    ev({ type: 'step', id: 'memory', label: 'Loading memory' }),
+    ev({ type: 'step_done', id: 'memory', label: 'Loaded memory', result: '2 recent messages' }),
+    ev({ type: 'step', id: 'model', label: 'Writing the reply' }),
+    ev({ type: 'text', text: 'Hello' }),
+    ev({ type: 'step', id: 'voice', label: 'Speaking the reply' }),
+    ev({ type: 'step_done', id: 'voice', label: 'Spoke the reply', result: '1 sentence' }),
+    ev({ type: 'step_done', id: 'model', label: 'Wrote the reply', result: '1 word' }),
+    ev({ type: 'done', request_id: 'r1' })
+  ].join('');
+  const res = chunkedResponse(stream, [1e6]);
+  const origRead = res.body.getReader;
+  res.body.getReader = () => {
+    const r = origRead();
+    return { read: async () => { const out = await r.read(); return out; } };
+  };
+  const realFold = ctx.createTraceView;
+  ctx.createTraceView = (b) => {
+    const view = realFold(b);
+    const writing = view.writing;
+    view.writing = () => { writing(); foldedAtText = b.innerHTML; };
+    return view;
+  };
+  const out = await ctx.consumeDirectiveStream(res, bubble, new AbortController().signal);
+  assert.ok(foldedAtText, 'folded when text arrived');
+  const order = bubble.children.map((c) => c.className.split(' ')[0]);
+  assert.deepEqual(order, ['msg-timestamp', 'trace', 'message-text'], 'reply text sits directly under the trace');
+  assert.equal(out.data.reply, 'Hello');
+  assert.match(out.tracePill, /^<button type="button" class="trace-pill" aria-expanded="false" aria-controls="trace-s-[^"]+" onclick="toggleTraceDetails\(this\)">2 steps<svg class="icon" aria-hidden="true"><use href="#i-chevron"\/><\/svg><\/button>$/);
+  assert.doesNotMatch(out.traceHtml, /Speaking the reply|Spoke the reply/, 'no voice row: speech shows as the header waveform');
+  assert.doesNotMatch(out.traceHtml, /trace-writing|trace-status|trace-dot/, 'live-only parts are gone when finished');
+  assert.match(out.traceHtml, /^<div class="trace is-done"><ol class="trace-steps" id="trace-s-[^"]+" aria-label="Steps" hidden>/);
+});
+
+test('finished: the header reads "PG1 · time · N steps ›" and the pill opens the list (with durations) under it', () => {
+  const { ctx, document, bubble, view, tick } = makeTraceHarness();
+  view.step({ id: 'db', label: 'Checking the database connection' });
+  tick(400);
+  view.stepDone({ id: 'db', label: 'Checked the database', result: 'connected' });
+  view.step({ id: 'model', label: 'Writing the reply' });
+  tick(2600);
+  view.stepDone({ id: 'model', label: 'Wrote the reply', result: '40 words' });
+  const { html, pill } = view.finish();
+  bubble.innerHTML = `${ctx.agentTimestampHtml('06:22 PM', pill)}${html}<div class="message-text">Hi</div>`;
+  const header = bubble.querySelector('.msg-timestamp');
+  assert.ok(header.classList.contains('has-trace'));
+  assert.equal(header.textContent, '·06:22 PM·2 steps', 'PG1 (CSS) · time · N steps');
+  assert.deepEqual(header.querySelectorAll('.ts-sep').map((n) => n.getAttribute('aria-hidden')), ['true', 'true']);
+  const btn = header.querySelector('.trace-pill');
+  const list = document.getElementById(btn.getAttribute('aria-controls'));
+  assert.ok(list && list.hidden, 'list starts closed');
+  assert.equal(list.closest('.trace').parentNode, bubble);
+  ctx.toggleTraceDetails(btn);
+  assert.equal(btn.getAttribute('aria-expanded'), 'true');
+  assert.ok(!list.hidden);
+  assert.deepEqual(list.querySelectorAll('.trace-dur').map((d) => d.textContent), ['took 0.4s', 'took 2.6s']);
+  ctx.toggleTraceDetails(btn);
+  assert.ok(list.hidden);
+  // A reply with no steps keeps the plain header.
+  assert.equal(ctx.agentTimestampHtml('06:22 PM', ''), '<span class="msg-timestamp">06:22 PM</span>');
+});
+
+test('finish: a step cut off mid-way is marked as not finished, and no steps means no trace at all', () => {
+  const a = makeTraceHarness();
+  a.view.step({ id: 'db', label: 'Checking the database connection' });
+  const { html } = a.view.finish();
+  assert.match(html, /class="trace-row is-failed"/);
+  assert.match(html, /Checking the database connection<span class="trace-result"> · did not finish/);
+  assert.doesNotMatch(html, /is-running/);
+  const b = makeTraceHarness();
+  assert.deepEqual(JSON.parse(JSON.stringify(b.view.finish())), { html: '', pill: '' });
+  assert.equal(b.bubble.querySelector('.trace'), null);
+});
+
+test('trace styling: 14px muted rows ~28px high, muted ticks, gold pulsing dot, timeline, red failures, reduced motion', () => {
+  const css = html.slice(html.indexOf('/* live trace:'), html.indexOf('.stream-note {'));
+  assert.match(css, /\.trace \{ margin: 0 0 var\(--sp-3\); font-size: var\(--fs-sm\);[^}]*color: var\(--text-2\); \}/);
+  assert.match(html, /--fs-sm: 0\.875rem;/, '14px');
+  assert.match(css, /\.trace-line \{[^}]*min-height: 28px;/);
+  assert.match(css, /\.trace-mark \{ color: var\(--text-3\); \}/, 'ticks muted, not green');
+  assert.doesNotMatch(css, /var\(--ok\)/, 'no green anywhere in the trace');
+  assert.match(css, /\.trace-result, \.trace-meta \{ color: var\(--text-3\); \}/);
+  assert.match(css, /\.trace-row\.is-failed, \.trace-row\.is-failed \.trace-mark, \.trace-row\.is-failed \.trace-result \{ color: var\(--danger\); \}/);
+  assert.match(css, /\.trace-row:not\(:last-child\)::before \{[^}]*width: 1px;[^}]*background: var\(--border-strong\);/);
+  assert.match(css, /\.trace-dot::before, \.trace-dot::after \{[^}]*background: var\(--gold\);/);
+  assert.match(css, /\.trace-dot::after \{ animation: trace-pulse/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.trace-dot::after \{ animation: none; opacity: 0; \}\s*\.wave-bars \{ display: none; \}\s*\.voice-wave \.icon \{ display: block; \}/);
+  assert.match(css, /\.trace\.is-live \.trace-dur \{ display: none; \}/, 'durations only in the finished list');
+  assert.doesNotMatch(css + extractFunction('createTraceView') + extractFunction('traceRowHtml'), /\p{Extended_Pictographic}/u, 'no emoji');
   // Reply chunks are kept out of the log region until the final render.
   assert.match(extractFunction('consumeDirectiveStream'), /textEl\.setAttribute\('aria-live', 'off'\)/);
-  // Reduced motion: the animated label becomes plain text.
-  assert.match(html, /@media \(prefers-reduced-motion: reduce\) \{\s*\.trace-live \{ animation: none; background: none; -webkit-text-fill-color: currentColor; \}/);
 });
 
 // --- reading a stream ---------------------------------------------------------------
@@ -233,7 +414,8 @@ function makeStreamHarness(overrides = {}) {
   ctx.createTraceView = () => ({
     step: (e) => trace.steps.push(e.id),
     stepDone: (e) => trace.dones.push(e.id),
-    finish: () => { trace.finished++; return '<div class="trace">2 steps</div>'; }
+    writing: () => { trace.writes = (trace.writes || 0) + 1; },
+    finish: () => { trace.finished++; return { html: '<div class="trace">2 steps</div>', pill: '<button class="trace-pill">2 steps</button>' }; }
   });
   return { ctx, trace, textEl, bubble };
 }
@@ -248,6 +430,8 @@ test('consumeDirectiveStream renders text as it arrives and returns the finished
   assert.deepEqual(trace.dones, ['memory', 'model']);
   assert.equal(trace.finished, 1, 'trace collapsed once');
   assert.equal(out.traceHtml, '<div class="trace">2 steps</div>');
+  assert.equal(out.tracePill, '<button class="trace-pill">2 steps</button>');
+  assert.equal(trace.writes, 2, 'writing() on each text chunk (it is idempotent)');
   assert.equal(textEl.attrs['aria-live'], 'off');
   assert.match(textEl.innerHTML, /world &lt;b&gt;x&lt;\/b&gt;/, 'streamed text escaped');
 });

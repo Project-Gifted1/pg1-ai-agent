@@ -27,6 +27,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
+import { createDocument } from './helpers/mini-dom.mjs';
 import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
 import { createSseParser, createChatStream } from '../lib/chatStream.mjs';
 import {
@@ -553,10 +554,11 @@ function extractFunction(name) {
 
 const CLIENT_SOURCE = [
   html.match(/const VOICE_LEAD_SECONDS = [^\n]*;/)[0].replace(/^const /, 'var '),
-  'var voiceAudioCtx = null; var activeVoicePlayer = null; var fallbackVoiceAudio = null; var voiceGeneration = 0;',
+  'var voiceAudioCtx = null; var activeVoicePlayer = null; var fallbackVoiceAudio = null; var voiceGeneration = 0; var voiceBubble = null;',
+  html.match(/const VOICE_WAVE_HTML = [^\n]*;/)[0].replace(/^const /, 'var '),
   'var inFlightDirectives = new Set();',
   ...['getVoiceAudioContext', 'base64ToBytes', 'pcm16ToFloat32', 'createVoicePlayer', 'trackFallbackAudio', 'isVoicePlaying',
-    'stopVoicePlayback', 'startVoicePlayer', 'stopDirectives', 'syncExecuteButton', 'speakMessage'].map(extractFunction)
+    'syncVoiceWave', 'syncVoiceUi', 'stopVoicePlayback', 'startVoicePlayer', 'stopDirectives', 'syncExecuteButton', 'speakMessage'].map(extractFunction)
 ].join('\n');
 
 function makeAudioContext() {
@@ -586,12 +588,18 @@ function makeAudioContext() {
 function makeClient(overrides = {}) {
   const audioCtx = makeAudioContext();
   const log = { speak: [], played: [], syncs: 0 };
+  const document = createDocument();
+  const select = document.createElement('select');
+  select.id = 'voice-profile-select';
+  select.value = 'core';
+  document.body.appendChild(select);
   const ctx = {
     log,
     audioCtx,
     atob: (s) => Buffer.from(s, 'base64').toString('binary'),
     window: { AudioContext: function () { return audioCtx; } },
-    document: { querySelector: () => null, getElementById: () => ({ value: 'core' }) },
+    document,
+    triggerHaptic: () => {},
     fetch: async () => new Response(JSON.stringify({ audio: 'aGVsbG8=', audioStatus: 'SUCCESS' })),
     playAudioResult: (data) => log.played.push(data),
     flashStatus: () => {},
@@ -677,10 +685,11 @@ test('client: a new message stops speech first, and the reply falls back to spea
   const src = extractFunction('submitDirective');
   const stopAt = src.indexOf('stopVoicePlayback();');
   assert.ok(stopAt !== -1 && stopAt < src.indexOf("await fetch('/api/chat'"), 'a new message stops audio before it is sent');
-  assert.match(src, /const voicePlayer = \(wantStream && voiceActive\) \? startVoicePlayer\(\) : null;\s*if \(voicePlayer\) payload\.speak = true;/);
+  assert.match(src, /const voicePlayer = \(wantStream && voiceActive\) \? startVoicePlayer\(agentBubble\) : null;\s*if \(voicePlayer\) payload\.speak = true;/);
   assert.match(src, /consumeDirectiveStream\(response, agentBubble, controller\.signal, voicePlayer\)/);
   assert.match(src, /const spokeFromStream = !!\(voicePlayer && voicePlayer\.scheduledChunks > 0\);/);
-  assert.match(src, /if \(!spokeDirectly && voiceActive && data\.reply && !spokeFromStream && voiceGenerationAtSend === voiceGeneration\) \{\s*speakMessage\(data\.reply\);/);
+  assert.match(src, /if \(!spokeDirectly && voiceActive && data\.reply && !spokeFromStream && voiceGenerationAtSend === voiceGeneration\) \{\s*speakMessage\(data\.reply, agentBubble\);/);
+  assert.match(src, /if \(voicePlayer && !voicePlayer\.endInfo\) voicePlayer\.end\(\{ ok: false \}\);/, 'a stream that ends without audio_end closes the player');
   // The toggle still works: off stops audio, on warms the audio context in the tap.
   const toggle = extractFunction('toggleVoice');
   assert.match(toggle, /getVoiceAudioContext\(\);[\s\S]*speakMessage\(/);
@@ -693,7 +702,7 @@ test('client: the Stop button stays available while streamed speech is still pla
     classList: { contains: (k) => classes.has(k), toggle: (k, on) => (on ? classes.add(k) : classes.delete(k)) },
     setAttribute() {}, querySelector: () => ({ setAttribute() {} })
   };
-  const c = makeClient({ document: { querySelector: () => btn, getElementById: () => ({ value: '' }) } });
+  const c = makeClient({ document: { querySelector: () => btn, querySelectorAll: () => [], getElementById: () => ({ value: '' }) } });
   const player = c.startVoicePlayer();
   player.push(audioEv(0, [1, 1]));
   c.syncExecuteButton();
@@ -727,4 +736,89 @@ test('scripts/count-tts-files.mjs pages through pg1-vault, counts only tts_*.mp3
   assert.deepEqual(out, { count: 1001, bytes: 10005, oldest: '2026-01-01', newest: '2026-01-28' });
   assert.deepEqual(calls.map((c) => c.body.offset), [0, 1000]);
   assert.ok(calls.every((c) => c.url.endsWith('/storage/v1/object/list/pg1-vault') && c.method === 'POST'), 'list calls only');
+});
+
+// --- waveform beside the PG1 name ------------------------------------------------------
+
+function makeBubble(c) {
+  const bubble = c.document.createElement('div');
+  bubble.className = 'message-bubble';
+  bubble.innerHTML = '<span class="msg-timestamp">06:22 PM</span><div class="message-text">Hi</div>';
+  c.document.body.appendChild(bubble);
+  return bubble;
+}
+
+test('waveform: shows in the reply header while it is spoken, labelled "Stop speaking", and goes when speech ends', () => {
+  const c = makeClient();
+  const bubble = makeBubble(c);
+  const other = makeBubble(c);
+  const player = c.startVoicePlayer(bubble);
+  assert.equal(c.document.querySelectorAll('.voice-wave').length, 0, 'nothing before audio is scheduled');
+  player.push(audioEv(0, [1, 1]));
+  const header = bubble.querySelector('.msg-timestamp');
+  const wave = header.querySelector('.voice-wave');
+  assert.ok(wave, 'waveform in the header of the reply being spoken');
+  assert.equal(header.firstElementChild, wave, 'right after the PG1 name');
+  assert.equal(other.querySelector('.voice-wave'), null);
+  assert.equal(wave.tagName, 'button');
+  assert.equal(wave.getAttribute('type'), 'button');
+  assert.equal(wave.getAttribute('aria-label'), 'Stop speaking');
+  assert.equal(wave.querySelectorAll('.wave-bars i').length, 4);
+  assert.equal(wave.querySelector('.wave-bars').getAttribute('aria-hidden'), 'true');
+  assert.equal(wave.querySelector('use').getAttribute('href'), '#i-wave', 'static line icon for reduced motion');
+  assert.match(wave.getAttribute('onclick'), /stopVoicePlayback\(\)/);
+
+  // A gap between sentences (all scheduled audio played, more to come) keeps it.
+  c.audioCtx.sources[0].onended();
+  assert.ok(bubble.querySelector('.voice-wave'), 'no flicker between sentences');
+  // The reply re-renders its header: the waveform comes back.
+  player.push(audioEv(1, [1, 1]));
+  bubble.innerHTML = '<span class="msg-timestamp has-trace">06:22 PM</span><div class="message-text">Hi</div>';
+  c.syncVoiceWave();
+  assert.ok(bubble.querySelector('.msg-timestamp .voice-wave'));
+  // Speech finishes.
+  player.end({ ok: true });
+  c.audioCtx.sources[1].onended();
+  assert.equal(c.document.querySelectorAll('.voice-wave').length, 0);
+  assert.equal(c.isVoicePlaying(), false);
+});
+
+test('waveform: tapping it stops speech at once', () => {
+  const c = makeClient();
+  const bubble = makeBubble(c);
+  const player = c.startVoicePlayer(bubble);
+  player.push(audioEv(0, [1, 1]));
+  player.push(audioEv(1, [1, 1]));
+  // What its onclick does.
+  vm.runInContext('stopVoicePlayback()', c);
+  assert.ok(c.audioCtx.sources.every((s) => s.stopped), 'audio stopped');
+  assert.equal(bubble.querySelector('.voice-wave'), null, 'waveform removed');
+  assert.equal(c.voiceBubble, null);
+});
+
+test('waveform: one-shot speech (Read aloud, or the fallback) shows it on that reply too', () => {
+  const c = makeClient();
+  const bubble = makeBubble(c);
+  const listeners = {};
+  const audio = { paused: false, ended: false, pause() { this.paused = true; }, addEventListener(k, fn) { listeners[k] = fn; } };
+  // What speakMessage(text, bubble) sets before playing.
+  c.voiceBubble = bubble;
+  c.trackFallbackAudio(audio);
+  listeners.playing();
+  assert.ok(bubble.querySelector('.voice-wave'));
+  audio.ended = true;
+  listeners.ended();
+  assert.equal(bubble.querySelector('.voice-wave'), null);
+  assert.match(extractFunction('speakBubble'), /speakMessage\(text, el\.closest\('\.message-bubble'\)\)/);
+  assert.match(extractFunction('speakMessage'), /voiceBubble = bubble \|\| null;\s*playAudioResult\(data\);/);
+});
+
+test('waveform: never restored from saved history, and re-synced after the final render', () => {
+  assert.match(html, /document\.querySelectorAll\('#chat-container \.voice-wave'\)\.forEach\(\(n\) => n\.remove\(\)\);/);
+  const src = extractFunction('submitDirective');
+  assert.match(src, /agentBubble\.innerHTML = contentHtml;\s*saveState\(\);[\s\S]{0,200}syncVoiceWave\(\);/);
+  assert.match(extractFunction('renderStreamFailure'), /saveState\(\);\s*syncVoiceWave\(\);/);
+  const css = html.slice(html.indexOf('/* live trace:'), html.indexOf('.stream-note {'));
+  assert.match(css, /\.wave-bars i \{[^}]*animation: voice-wave/);
+  assert.match(css, /\.voice-wave \{[^}]*color: var\(--gold\);/);
 });
