@@ -530,10 +530,10 @@ test('the Stop button: execute becomes Stop while a directive is in flight and t
 
 test('submitDirective wires Stop and the timeout to the same controller, and always clears it', () => {
   const src = extractFunction('submitDirective');
-  assert.match(src, /const stopThis = \(\) => abortWith\('stopped'\);\s*inFlightDirectives\.add\(stopThis\);/);
+  assert.match(src, /const stopThis = \(reason\) => abortWith\(reason === 'interrupted' \? 'interrupted' : 'stopped'\);\s*inFlightDirectives\.add\(stopThis\);/);
   assert.match(src, /setTimeout\(\(\) => abortWith\('timeout'\), REQUEST_TIMEOUT_MS\)/);
   assert.match(src, /finally \{[\s\S]*inFlightDirectives\.delete\(stopThis\);\s*syncExecuteButton\(\);/);
-  assert.match(src, /if \(abortReason === 'stopped'\) \{\s*renderStreamFailure/);
+  assert.match(src, /if \(abortReason === 'stopped' \|\| abortReason === 'interrupted'\) \{\s*renderStreamFailure/);
 });
 
 // --- failure and fallback ----------------------------------------------------------

@@ -30,6 +30,9 @@
   <link rel="icon" href="/brand/pg1-shield.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/brand/pg1-icon-192.png">
   <link rel="manifest" href="/manifest.webmanifest">
+  <!-- Conversation mode (hands-free voice): turn tracking, echo guard and
+       wake-word clean-up. The speech detector's runtime loads on demand. -->
+  <script src="/voice/conversation.js"></script>
   <link rel="preload" href="/fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
   <style>
     /* FONTS: self-hosted (public/fonts, latin subset, SIL OFL - licences
@@ -1364,6 +1367,60 @@
       animation: mic-recording 1s var(--ease-out) infinite;
     }
 
+    /* Conversation mode: the switch beside the mic, and a quiet status line
+       above the composer while it is on. Text stays --text-2 (AA on both
+       themes); only the dot carries the state colour. */
+    #converse-btn[aria-checked="true"] { color: var(--gold); background: var(--gold-soft); }
+    #converse-btn[aria-busy="true"] { opacity: 0.6; cursor: progress; }
+    .converse-status {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      min-height: 24px;
+      margin: 0 var(--sp-3);
+      padding: var(--sp-1) 0 0;
+      font-size: var(--fs-sm);
+      line-height: var(--lh-tight);
+      color: var(--text-2);
+    }
+    .converse-status[hidden] { display: none; }
+    .converse-label { font-weight: 500; white-space: nowrap; }
+    .converse-live { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); }
+    .converse-live:empty { display: none; }
+    .converse-dot {
+      position: relative;
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      flex: none;
+      border-radius: 50%;
+      background: var(--ok);
+    }
+    .converse-dot::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: inherit;
+      opacity: 0;
+    }
+    .converse-status.is-listening .converse-dot { background: var(--ok); }
+    .converse-status.is-listening .converse-dot::after { animation: converse-pulse 1.6s var(--ease-out) infinite; }
+    .converse-status.is-thinking .converse-dot { background: var(--gold); }
+    .converse-status.is-thinking .converse-dot::after { animation: converse-pulse 1.2s var(--ease-out) infinite; }
+    .converse-status.is-speaking .converse-dot { background: var(--gold); }
+    .converse-status.is-starting .converse-dot { background: var(--text-3); }
+    @keyframes converse-pulse {
+      0% { transform: scale(1); opacity: 0.5; }
+      100% { transform: scale(2.4); opacity: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .converse-dot::after { animation: none !important; opacity: 0; }
+    }
+    @media (forced-colors: active) {
+      .converse-dot { background: CanvasText !important; }
+    }
+
     .execute-btn {
       width: var(--tap);
       height: var(--tap);
@@ -1849,6 +1906,7 @@
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4h6v3"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+    <symbol id="i-converse" viewBox="0 0 24 24"><rect x="8" y="4" width="6" height="10" rx="3"/><path d="M5 11a6 6 0 0 0 12 0M11 17v3M19 6.5a5 5 0 0 1 0 7"/></symbol>
     <symbol id="i-clip" viewBox="0 0 24 24"><path d="m20 11.5-8 8a5 5 0 0 1-7-7l8.5-8.5a3.5 3.5 0 0 1 5 5L10 17.5a2 2 0 0 1-3-3L14.5 7"/></symbol>
     <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></symbol>
     <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></symbol>
@@ -2080,6 +2138,11 @@
     <div class="offline-banner" role="note"><svg class="icon" aria-hidden="true"><use href="#i-offline"/></svg>You're offline. Messages won't send until you reconnect.</div>
     <div class="composer">
       <div id="attach-chips" class="attach-chips" aria-label="Attachments" hidden></div>
+      <!-- Conversation mode indicator: Listening / Thinking / Speaking. The
+           live text is the recogniser's running guess and is never saved.
+           The separate announcer speaks state changes to screen readers. -->
+      <div id="converse-status" class="converse-status" hidden><span class="converse-dot" aria-hidden="true"></span><span class="converse-label">Listening</span><span class="converse-live" aria-hidden="true"></span></div>
+      <div id="converse-announcer" class="sr-only" role="status" aria-live="polite"></div>
       <label for="prompt-input" class="sr-only">Directive</label>
       <textarea id="prompt-input" rows="1" placeholder="Give PG1 a directive…" enterkeyhint="send" onkeydown="handleKey(event)" oninput="autoResize(this); syncExecuteButton()"></textarea>
       <div class="composer-row">
@@ -2089,6 +2152,8 @@
           <input type="file" id="file-input" multiple onchange="triggerHaptic(); handleFileSelect(event)">
         </label>
         <button type="button" id="mic-btn" class="icon-btn" title="Voice input" aria-label="Voice input" onclick="triggerHaptic(); toggleRecording()"><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg></button>
+        <button type="button" id="converse-btn" class="icon-btn" role="switch" aria-checked="false" title="Conversation mode" aria-label="Conversation mode" aria-describedby="converse-hint" onclick="triggerHaptic(); toggleConversation()"><svg class="icon" aria-hidden="true"><use href="#i-converse"/></svg></button>
+        <span id="converse-hint" class="sr-only">Hands-free: PG1 listens, replies aloud and listens again. Off by default; switches off after two minutes of silence.</span>
         <span class="spacer"></span>
         <button type="button" class="execute-btn" onclick="triggerHaptic(80); onExecuteClick()" aria-label="Execute" title="Execute"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg></button>
       </div>
@@ -2298,6 +2363,8 @@
       if (document.visibilityState === 'hidden') {
         stopStatusPolling();
         stopRedRecheck();
+        // The mic never stays open on a page the operator cannot see.
+        if (typeof stopConversation === 'function') stopConversation('hidden');
       } else {
         refreshStatusLight();
         startStatusPolling();
@@ -2754,6 +2821,14 @@
       recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = true;
+      // DICTATION ACCURACY: "Hey PG1" came back as "April". Browsers that
+      // take phrase hints (Chrome 139+ with on-device recognition) get
+      // "PG1" as one; the rest rely on normaliseWakeWord below.
+      try {
+        if (typeof SpeechRecognitionPhrase === 'function' && 'phrases' in recognition) {
+          recognition.phrases = [new SpeechRecognitionPhrase('PG1', 5.0)];
+        }
+      } catch (hintErr) { /* hints unsupported */ }
 
       recognition.onstart = function() {
         isRecording = true;
@@ -2769,6 +2844,9 @@
             finalTranscript += event.results[i][0].transcript;
           }
         }
+        // "April" / "a PG one" / "PG one" at the start of what was said
+        // becomes "PG1"; the rest of the utterance is left as heard.
+        if (finalTranscript && typeof PG1Voice !== 'undefined') finalTranscript = PG1Voice.normaliseWakeWord(finalTranscript);
         if (finalTranscript) {
           const input = document.getElementById('prompt-input');
           input.value = (input.value + ' ' + finalTranscript).trim();
@@ -2793,15 +2871,137 @@
       if (isRecording) {
         recognition.stop();
       } else {
+        // One listener at a time: dictation takes over from conversation.
+        stopConversation('dictation');
         recognition.start();
       }
     }
 
     function stopRecording() {
-      if(isRecording) triggerHaptic(100); 
+      if(isRecording) triggerHaptic(100);
       isRecording = false;
       document.getElementById('mic-btn').classList.remove('mic-active');
       document.getElementById('prompt-input').placeholder = "Give PG1 a directive…";
+    }
+
+    // CONVERSATION MODE (PG1 voice, phase 2): hands-free. Started by a tap
+    // on the switch beside the mic (the browser only opens the mic and the
+    // speaker inside a tap). While on, the mic stays open with echo
+    // cancellation, noise suppression and automatic gain; the detector in
+    // public/voice/conversation.js decides when a turn has ended (about
+    // 800 ms of silence) and the transcript is sent as the message. It
+    // switches itself off after two minutes of silence, when the page is
+    // hidden, or when Spoken replies is switched off. No audio is recorded
+    // or stored anywhere; only the final transcript is sent.
+    let conversation = null;
+    // What PG1 said out loud most recently, for the echo guard: a transcript
+    // that matches it is the speaker, not the operator, and is dropped.
+    const conversationSpokenLog = (typeof PG1Voice !== 'undefined') ? PG1Voice.createSpokenLog() : { add() {}, texts: [], clear() {} };
+    let voiceWasOffBeforeConversation = false;
+
+    const CONVERSATION_LABELS = { listening: 'Listening', thinking: 'Thinking', speaking: 'Speaking', starting: 'Starting', off: '' };
+
+    function renderConversationState(state, detail) {
+      const btn = document.getElementById('converse-btn');
+      const status = document.getElementById('converse-status');
+      const announcer = document.getElementById('converse-announcer');
+      const isOn = state !== 'off';
+      if (btn) {
+        btn.setAttribute('aria-checked', String(isOn));
+        if (state === 'starting') btn.setAttribute('aria-busy', 'true'); else btn.removeAttribute('aria-busy');
+      }
+      if (status) {
+        status.hidden = !isOn;
+        status.className = 'converse-status' + (isOn ? ' is-' + state : '');
+        const label = status.querySelector('.converse-label');
+        if (label) label.textContent = CONVERSATION_LABELS[state] || '';
+        if (!isOn) { const live = status.querySelector('.converse-live'); if (live) live.textContent = ''; }
+      }
+      if (state === 'off' && voiceWasOffBeforeConversation) {
+        // Spoken replies were switched on for the conversation only.
+        voiceWasOffBeforeConversation = false;
+        setVoiceActive(false);
+      }
+      if (announcer) {
+        let line = CONVERSATION_LABELS[state] || '';
+        if (state === 'off') {
+          line = detail === 'silence' ? 'Conversation off after two minutes of silence.'
+            : detail === 'hidden' ? 'Conversation off.'
+            : detail === 'error' ? 'Conversation could not start.'
+            : 'Conversation off.';
+        } else if (state === 'listening' && detail === 'started') {
+          line = 'Conversation on. Listening.';
+        }
+        if (line && announcer.textContent !== line) announcer.textContent = line;
+      }
+      syncExecuteButton();
+    }
+
+    function renderConversationTranscript(text) {
+      const live = document.querySelector('#converse-status .converse-live');
+      if (live) live.textContent = text || '';
+    }
+
+    function getConversation() {
+      if (conversation) return conversation;
+      if (typeof PG1Voice === 'undefined') return null;
+      conversation = PG1Voice.createConversation({
+        createRecognition() {
+          const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+          if (!Ctor) return null;
+          const r = new Ctor();
+          r.lang = navigator.language || 'en-GB';
+          return r;
+        },
+        openMic: () => PG1Voice.openMicrophone(),
+        loadVad: () => PG1Voice.loadVad({
+          loadRuntime: () => PG1Voice.loadOnnxRuntime(),
+          modelUrl: '/voice/silero_vad_v5.onnx',
+          onFallback: (err) => { console.warn('Speech detector unavailable, using the energy detector:', err && err.message); }
+        }),
+        isPlaying: () => isVoicePlaying(),
+        isBusy: () => inFlightDirectives.size > 0,
+        stopPlayback: () => stopVoicePlayback(),
+        abortRequests: () => interruptDirectives(),
+        send(text) {
+          const input = document.getElementById('prompt-input');
+          input.value = text;
+          autoResize(input);
+          submitDirective();
+        },
+        spokenLog: conversationSpokenLog,
+        onState: renderConversationState,
+        onTranscript: renderConversationTranscript,
+        onError: (message) => flashStatus(message, true, 'js_error')
+      });
+      return conversation;
+    }
+
+    async function toggleConversation() {
+      const c = getConversation();
+      if (!c) { flashStatus('Conversation mode is not supported in this browser.', false); return; }
+      if (c.on) { await c.stop('tap'); return; }
+      if (isRecording && recognition) recognition.stop();
+      // Conversation means spoken replies; the audio context is created
+      // here, inside the tap, so later streamed speech is allowed to play.
+      voiceWasOffBeforeConversation = !voiceActive;
+      if (!voiceActive) setVoiceActive(true);
+      getVoiceAudioContext();
+      renderConversationState('starting');
+      const started = await c.start();
+      if (!started) renderConversationState('off', 'error');
+    }
+
+    function stopConversation(reason) {
+      if (conversation && conversation.on) conversation.stop(reason);
+    }
+
+    // Spoken replies on or off without the spoken confirmation line.
+    function setVoiceActive(on) {
+      voiceActive = !!on;
+      const btn = document.getElementById('voice-btn');
+      if (btn) btn.setAttribute('aria-checked', String(voiceActive));
+      if (!voiceActive) stopVoicePlayback();
     }
 
     // AUTH FIX: on success, store the credentials in memory (sessionUser /
@@ -2860,6 +3060,8 @@
         speakMessage("Audio Synthesiser, Online PG1 Engaged");
       } else {
         stopVoicePlayback();
+        // Conversation mode needs spoken replies; off means off.
+        stopConversation('tap');
       }
     }
 
@@ -3328,6 +3530,8 @@
         if (generation !== voiceGeneration) return;
         voiceBubble = bubble || null;
         playAudioResult(data);
+        // Echo guard (conversation mode): what just went to the speaker.
+        if (data.audio && typeof conversationSpokenLog !== 'undefined') conversationSpokenLog.add(text);
       } catch (err) {
         console.error('Speech synthesis error:', err);
         flashStatus('Speech request failed', true, classifyFetchFailure(err, null));
@@ -4581,6 +4785,14 @@
       stopVoicePlayback();
     }
 
+    // Barge-in (conversation mode): the operator started talking while PG1
+    // was. Speech stops at once and the reply being fetched is abandoned
+    // with an "Interrupted" note instead of the Stop button's wording.
+    function interruptDirectives() {
+      stopVoicePlayback();
+      inFlightDirectives.forEach((stop) => stop('interrupted'));
+    }
+
     function retryButtonHtml(prompt, fallback) {
       return `<button type="button" class="retry-btn" data-prompt="${escapeHTML(prompt)}"${fallback ? ' data-fallback="1"' : ''} onclick="triggerHaptic(40); retryDirective(this)"><svg class="icon" aria-hidden="true"><use href="#i-sync"/></svg>Retry</button>`;
     }
@@ -4698,7 +4910,9 @@
       let abortReason = null;
       const abortWith = (reason) => { if (!abortReason) abortReason = reason; controller.abort(); };
       const timeoutId = setTimeout(() => abortWith('timeout'), REQUEST_TIMEOUT_MS);
-      const stopThis = () => abortWith('stopped');
+      // 'interrupted' is a barge-in: the operator spoke over PG1 in
+      // conversation mode (see interruptDirectives).
+      const stopThis = (reason) => abortWith(reason === 'interrupted' ? 'interrupted' : 'stopped');
       inFlightDirectives.add(stopThis);
       syncExecuteButton();
 
@@ -4845,6 +5059,10 @@
         if (!spokeDirectly && voiceActive && data.reply && !spokeFromStream && voiceGenerationAtSend === voiceGeneration) {
           speakMessage(data.reply, agentBubble);
         }
+        // Echo guard (conversation mode): remember what was read out from
+        // the stream, so a transcript of it is never sent back as a message.
+        // speakMessage() records the one-shot path itself.
+        if (spokeFromStream && data.reply && typeof conversationSpokenLog !== 'undefined') conversationSpokenLog.add(data.reply);
 
         // SUGGEST FIX (issue #201 Phase 2): this reply was asked, on behalf
         // of an error-log entry, to propose an exact patch. If the model
@@ -4861,7 +5079,7 @@
         }
 
       } catch (err) {
-        if (abortReason === 'stopped') {
+        if (abortReason === 'stopped' || abortReason === 'interrupted') {
           renderStreamFailure(agentBubble, { failed: 'aborted', text: '', traceHtml: '' }, text, abortReason);
           return;
         }
@@ -4887,10 +5105,12 @@
     // quiet note instead of an error).
     function renderStreamFailure(bubble, streamed, prompt, abortReason) {
       const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const stopped = streamed.failed === 'aborted' && abortReason === 'stopped';
+      const stopped = streamed.failed === 'aborted' && (abortReason === 'stopped' || abortReason === 'interrupted');
       let note;
       let category = null;
-      if (stopped) {
+      if (stopped && abortReason === 'interrupted') {
+        note = streamed.text ? 'Interrupted. The reply above is incomplete.' : 'Interrupted before a reply arrived.';
+      } else if (stopped) {
         note = streamed.text ? 'Stopped. The reply above is incomplete.' : 'Stopped before a reply arrived.';
       } else if (streamed.failed === 'aborted') {
         note = `No complete reply after ${REQUEST_TIMEOUT_MS / 1000}s, so the request was stopped.`;
@@ -4915,6 +5135,8 @@
       bubble.innerHTML = `${agentTimestampHtml(time, streamed.tracePill)}${streamed.traceHtml || ''}${textHtml}<div class="stream-note" role="status"><span class="stream-note-text">${escapeHTML(note)}</span>${retry}</div>${streamed.text ? messageActionsHtml('agent') : ''}`;
       saveState();
       syncVoiceWave();
+      // Echo guard: part of this text may already have been spoken.
+      if (streamed.text && typeof voiceActive !== 'undefined' && voiceActive && typeof conversationSpokenLog !== 'undefined') conversationSpokenLog.add(streamed.text);
     }
     
     // DIALOG A11Y: the overlays are still opened and closed by their own
