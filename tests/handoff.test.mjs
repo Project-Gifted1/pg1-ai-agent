@@ -98,14 +98,37 @@ test('repo: default, repo: prefix, full slug; bare names in prose do not switch 
 
 // --- secret stripping -------------------------------------------------------
 
+// Fake fixtures, built at runtime so the source never holds a literal
+// token. Each has the exact shape of the real thing, so the stripping
+// patterns are exercised just as hard: a three-part HS256 JWT with a
+// service_role claim for a made-up project ref and an obviously fake
+// signature, and a 39-character "AIzaSy..." key whose body is generated.
+const b64url = (value) => Buffer.from(typeof value === 'string' ? value : JSON.stringify(value)).toString('base64url');
+const FAKE_SUPABASE_JWT = [
+  b64url({ alg: 'HS256', typ: 'JWT' }),
+  b64url({ iss: 'supabase', ref: 'pg1-test-fixture', role: 'service_role' }),
+  b64url('not-a-real-signature-pg1-test-fixture')
+].join('.');
+const FAKE_GOOGLE_KEY = ['AI', 'za', 'Sy', 'PG1TESTFIXTURE'.padEnd(33, 'x')].join('');
+
+test('the fake JWT and Google key fixtures have the real shapes', () => {
+  const [header, payload, signature] = FAKE_SUPABASE_JWT.split('.');
+  assert.deepEqual(JSON.parse(Buffer.from(header, 'base64url')), { alg: 'HS256', typ: 'JWT' });
+  assert.deepEqual(JSON.parse(Buffer.from(payload, 'base64url')), { iss: 'supabase', ref: 'pg1-test-fixture', role: 'service_role' });
+  assert.equal(Buffer.from(signature, 'base64url').toString(), 'not-a-real-signature-pg1-test-fixture');
+  assert.match(FAKE_SUPABASE_JWT, /^eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+  assert.equal(FAKE_GOOGLE_KEY.length, 39);
+  assert.match(FAKE_GOOGLE_KEY, /^AIzaSy[0-9A-Za-z_-]{33}$/);
+});
+
 const SECRET_CASES = [
-  ['Supabase service key (JWT)', 'use eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.dGhpc2lzYXNpZ25hdHVyZQ to query', 'JWT or Supabase key'],
+  ['Supabase service key (JWT)', `use ${FAKE_SUPABASE_JWT} to query`, 'JWT or Supabase key'],
   ['Supabase new-style key', 'key sb_secret_AbCdEf0123456789xyz', 'Supabase key'],
   ['Anthropic-style key', 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123', 'API key'],
   ['OpenAI-style key', 'sk-proj-ABCDEFGHIJKLMNOPQRST1234', 'API key'],
   ['GitHub PAT', 'token ghp_abcdefghijklmnopqrstuvwxyz0123456789', 'GitHub token'],
   ['fine-grained PAT', 'github_pat_11ABCDEFG0123456789_abcdefghijklmnop', 'GitHub token'],
-  ['Google key', 'AIzaSyA1234567890abcdefghijklmnopqrstuv', 'API key'],
+  ['Google key', FAKE_GOOGLE_KEY, 'API key'],
   ['AWS key', 'AKIAIOSFODNN7EXAMPLE', 'AWS key'],
   ['bearer header', 'Authorization: Bearer abcdefghijklmnop0123456789', 'bearer token'],
   ['postgres URL', 'postgres://admin:hunter2pw@db.example.com:5432/x', 'credentials in a URL'],
