@@ -2951,7 +2951,7 @@
         isPlaying: () => isVoicePlaying(),
         isBusy: () => inFlightDirectives.size > 0,
         stopPlayback: () => stopVoicePlayback(),
-        abortRequests: () => inFlightDirectives.forEach((stop) => stop()),
+        abortRequests: () => interruptDirectives(),
         send(text) {
           const input = document.getElementById('prompt-input');
           input.value = text;
@@ -4772,6 +4772,14 @@
       stopVoicePlayback();
     }
 
+    // Barge-in (conversation mode): the operator started talking while PG1
+    // was. Speech stops at once and the reply being fetched is abandoned
+    // with an "Interrupted" note instead of the Stop button's wording.
+    function interruptDirectives() {
+      stopVoicePlayback();
+      inFlightDirectives.forEach((stop) => stop('interrupted'));
+    }
+
     function retryButtonHtml(prompt, fallback) {
       return `<button type="button" class="retry-btn" data-prompt="${escapeHTML(prompt)}"${fallback ? ' data-fallback="1"' : ''} onclick="triggerHaptic(40); retryDirective(this)"><svg class="icon" aria-hidden="true"><use href="#i-sync"/></svg>Retry</button>`;
     }
@@ -4889,7 +4897,9 @@
       let abortReason = null;
       const abortWith = (reason) => { if (!abortReason) abortReason = reason; controller.abort(); };
       const timeoutId = setTimeout(() => abortWith('timeout'), REQUEST_TIMEOUT_MS);
-      const stopThis = () => abortWith('stopped');
+      // 'interrupted' is a barge-in: the operator spoke over PG1 in
+      // conversation mode (see interruptDirectives).
+      const stopThis = (reason) => abortWith(reason === 'interrupted' ? 'interrupted' : 'stopped');
       inFlightDirectives.add(stopThis);
       syncExecuteButton();
 
@@ -5052,7 +5062,7 @@
         }
 
       } catch (err) {
-        if (abortReason === 'stopped') {
+        if (abortReason === 'stopped' || abortReason === 'interrupted') {
           renderStreamFailure(agentBubble, { failed: 'aborted', text: '', traceHtml: '' }, text, abortReason);
           return;
         }
@@ -5078,10 +5088,12 @@
     // quiet note instead of an error).
     function renderStreamFailure(bubble, streamed, prompt, abortReason) {
       const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const stopped = streamed.failed === 'aborted' && abortReason === 'stopped';
+      const stopped = streamed.failed === 'aborted' && (abortReason === 'stopped' || abortReason === 'interrupted');
       let note;
       let category = null;
-      if (stopped) {
+      if (stopped && abortReason === 'interrupted') {
+        note = streamed.text ? 'Interrupted. The reply above is incomplete.' : 'Interrupted before a reply arrived.';
+      } else if (stopped) {
         note = streamed.text ? 'Stopped. The reply above is incomplete.' : 'Stopped before a reply arrived.';
       } else if (streamed.failed === 'aborted') {
         note = `No complete reply after ${REQUEST_TIMEOUT_MS / 1000}s, so the request was stopped.`;
