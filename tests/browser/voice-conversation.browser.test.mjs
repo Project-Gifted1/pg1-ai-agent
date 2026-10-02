@@ -475,6 +475,29 @@ async function runScenario(t, scenario) {
   assert.equal(await page.inputValue('#prompt-input'), 'open the vault and the error log', 'a second press adds to what the composer held');
   assert.equal(directives().length, 1, 'dictation sends nothing by itself');
 
+  // VOICE LOG: the conversation above left events in memory. Send to PG1
+  // (drawer, under Voice diagnostics) puts them in the composer under
+  // "Diagnose this voice log" as a text fence, after what the composer held,
+  // and sends nothing; Copy puts the same text on the clipboard.
+  await page.evaluate(() => openDrawer());
+  await page.locator('#voice-log-send').tap();
+  await page.waitForFunction(() => !document.body.classList.contains('drawer-open'));
+  const composer = await page.inputValue('#prompt-input');
+  assert.ok(composer.startsWith('open the vault and the error log\n\nDiagnose this voice log\n\n```text\n'), `the log follows the dictated text: ${JSON.stringify(composer.slice(0, 80))}`);
+  assert.ok(composer.endsWith('\n```'), 'the fence is closed');
+  const logLines = composer.slice(composer.indexOf('```text\n') + 8, -4).split('\n');
+  assert.ok(logLines.length >= 5 && logLines.length <= 30, `between a few and 30 events (${logLines.length})`);
+  for (const line of logLines) assert.match(line, /^\d\d:\d\d:\d\d\.\d\d\d \S+ \| \S+ \| (shared|exclusive) mic \| rec \S+ \| err \S+/, `a log line: ${line}`);
+  assert.ok(logLines.some((l) => / state:listening\/started \| /.test(l)), 'the start of the conversation is in it');
+  assert.ok(logLines.some((l) => / state:off\/tap \| /.test(l)), 'and the tap that stopped it');
+  assert.ok(logLines.some((l) => /heard "what is the threat level today"/.test(l)), 'what the recogniser heard');
+  assert.equal(directives().length, 1, 'Send to PG1 sent nothing');
+  assert.equal(await page.evaluate(() => document.activeElement && document.activeElement.id), 'prompt-input', 'the composer has focus for review');
+  assert.equal(await page.locator('#status-toast').textContent(), 'Voice log added to your message. Look it over, then send.');
+  assert.equal(await page.evaluate(() => getConversation().eventLog.size > 0), true);
+  assert.deepEqual(await page.evaluate(() => Object.keys(localStorage).filter((k) => /voice|log/i.test(k) && k !== 'pg1_voice_profile' && !/error/i.test(k))), [], 'the voice log is not stored');
+  await page.fill('#prompt-input', '');
+
   // Nothing broke along the way, and nothing was logged as an error.
   assert.deepEqual(pageErrors, [], 'no page errors');
   assert.deepEqual(consoleErrors, [], 'no console errors');

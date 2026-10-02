@@ -477,6 +477,10 @@
       font-size: var(--fs-base);
     }
     .drawer-row-label { display: flex; align-items: center; gap: var(--sp-3); white-space: nowrap; }
+    /* Voice log: two small buttons under the Voice diagnostics switch. */
+    .drawer-row-actions { justify-content: flex-start; flex-wrap: wrap; min-height: 0; padding-top: 0; padding-bottom: var(--sp-3); }
+    .drawer-row-actions .handoff-btn { min-height: 40px; padding: 0 var(--sp-3); font-size: var(--fs-xs); }
+    .drawer-row-actions .handoff-btn.is-primary { flex: 0 0 auto; }
     .drawer-row .select { min-width: 0; flex-shrink: 1; }
     .drawer-row-label .icon { color: var(--text-2); }
     .drawer-foot { margin-top: auto; padding: 0 var(--sp-3); font-size: var(--fs-xs); color: var(--text-3); }
@@ -1312,7 +1316,7 @@
       color: var(--text);
     }
     .attach-chip .icon { color: var(--text-2); }
-    .attach-chip.is-live .icon { color: var(--gold); }
+    .attach-chip.is-live .icon, .attach-chip.is-image .icon { color: var(--gold); }
     .attach-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .attach-clear {
       position: sticky;
@@ -1946,6 +1950,7 @@
     <symbol id="i-wave" viewBox="0 0 24 24"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5 2.5 20h19z"/><path d="M12 10v4M12 17h.01"/></symbol>
     <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.75"/><path d="m21 16-5-5-9 9"/></symbol>
     <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5"/><path d="m16 7 5 5-5 5"/><path d="m13.5 4-3 16"/></symbol>
     <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></symbol>
     <symbol id="i-offline" viewBox="0 0 24 24"><path d="M2 8.8a15 15 0 0 1 4.2-2.6M9.6 5.2A15 15 0 0 1 22 8.8M5 12.5a10 10 0 0 1 3.6-2.1M15.2 10.6A10 10 0 0 1 19 12.5M8.5 16a5 5 0 0 1 7 0"/><path d="M12 20h.01"/><path d="M3 3l18 18"/></symbol>
@@ -2083,6 +2088,14 @@
         <span class="drawer-row-label" id="voice-diag-label"><svg class="icon" aria-hidden="true"><use href="#i-wave"/></svg>Voice diagnostics</span>
         <button type="button" id="voice-diag-btn" class="switch" role="switch" aria-checked="false" aria-labelledby="voice-diag-label" onclick="triggerHaptic(); toggleVoiceDiagnostics()"></button>
       </div>
+      <!-- VOICE LOG: the last conversation-mode events, in memory only. Copy
+           puts them on the clipboard; Send to PG1 puts them in the prompt box
+           under "Diagnose this voice log" for the operator to review and
+           send. Neither sends anything by itself. -->
+      <div class="drawer-row drawer-row-actions" role="group" aria-label="Voice log">
+        <button type="button" id="voice-log-copy" class="handoff-btn" onclick="triggerHaptic(); copyVoiceLog()"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg>Copy voice log</button>
+        <button type="button" id="voice-log-send" class="handoff-btn is-primary" onclick="triggerHaptic(); sendVoiceLogToPG1()"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg>Send to PG1</button>
+      </div>
       <div class="drawer-row">
         <label class="drawer-row-label" for="voice-profile-select"><svg class="icon" aria-hidden="true"><use href="#i-wave"/></svg>Voice profile</label>
         <select id="voice-profile-select" class="select" onchange="triggerHaptic(30); localStorage.setItem('pg1_voice_profile', this.value)">
@@ -2191,6 +2204,18 @@
     // 3 MB of raw files is the safe ceiling that still fits under 4.5 MB.
     const MAX_ATTACH_BYTES = 3 * 1024 * 1024;
     let attachedBytes = 0;
+
+    // VISION: images the model is shown (lib/visionInput.mjs keeps the same
+    // numbers on the server). PNG, JPEG or WebP; at most 4 per message, the
+    // live Vision frame included; resized here to 1600 px on the long edge
+    // before anything is read into the payload; under 4 MB each after that.
+    // The 3 MB total above still applies (the server's upload limit).
+    const VISION_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+    const MAX_IMAGES_PER_MESSAGE = 4;
+    const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+    const MAX_IMAGE_EDGE_PX = 1600;
+    // Images in attachedFilesPayload right now (the live frame is added at send).
+    let attachedImages = 0;
 
     // TIMEOUT FIX: the server stops every request at 60s (maxDuration), so
     // if nothing has come back after 75s the request is dead. Without this,
@@ -3203,6 +3228,52 @@
       }
     }
 
+    // VOICE LOG: the conversation module keeps the last conversation-mode
+    // events in memory (conversation.eventLog, never stored). "Copy voice
+    // log" copies the last VOICE_LOG_SEND_LIMIT as text; "Send to PG1" puts
+    // the same text in the prompt box as a fenced block under a fixed first
+    // line, for the operator to look over and send. Nothing is sent here.
+    const VOICE_LOG_SEND_LIMIT = 30;
+    const VOICE_LOG_PROMPT = 'Diagnose this voice log';
+
+    function voiceLogEntries() {
+      return (conversation && conversation.eventLog) ? conversation.eventLog.entries : [];
+    }
+    function voiceLogText(limit = VOICE_LOG_SEND_LIMIT) {
+      if (typeof PG1Voice === 'undefined' || !PG1Voice.formatVoiceLog) return '';
+      return PG1Voice.formatVoiceLog(voiceLogEntries(), { limit });
+    }
+    // The message as it goes into the prompt box: the fixed line, a blank
+    // line, then the log in a text fence.
+    function voiceLogMessage(text) {
+      return `${VOICE_LOG_PROMPT}\n\n\`\`\`text\n${text}\n\`\`\``;
+    }
+    async function copyVoiceLog() {
+      const text = voiceLogText();
+      if (!text) { flashStatus('No voice events yet. Switch Conversation mode on first.', false); return; }
+      try {
+        await navigator.clipboard.writeText(text);
+        flashStatus('Voice log copied.', false);
+      } catch (e) {
+        flashStatus('Could not copy the voice log. Use Send to PG1 instead.', false);
+      }
+    }
+    function sendVoiceLogToPG1() {
+      const text = voiceLogText();
+      if (!text) { flashStatus('No voice events yet. Switch Conversation mode on first.', false); return; }
+      const input = document.getElementById('prompt-input');
+      if (!input) return;
+      const existing = input.value.trim();
+      input.value = existing ? `${existing}\n\n${voiceLogMessage(text)}` : voiceLogMessage(text);
+      autoResize(input);
+      syncExecuteButton();
+      closeDrawer();
+      // The operator reviews it before it goes anywhere.
+      input.focus();
+      try { input.setSelectionRange(0, 0); input.scrollTop = 0; } catch (e) {}
+      flashStatus('Voice log added to your message. Look it over, then send.', false);
+    }
+
     function handleKey(e) {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -3363,46 +3434,145 @@
       submitDirective();
     }
 
-    function handleFileSelect(event) {
-      const files = event.target.files;
-      if (!files || files.length === 0) return;
-
-      // ATTACHMENT FIX: check the size before reading anything. A file over
-      // the limit is refused here with a clear reason, instead of being sent
-      // and silently failing or hanging on the server.
-      const newBytes = Array.from(files).reduce((sum, f) => sum + f.size, 0);
-      if (attachedBytes + newBytes > MAX_ATTACH_BYTES) {
-        triggerHaptic(200);
-        alert(`Attachment too large: ${formatBytes(attachedBytes + newBytes)} selected. The limit is ${formatBytes(MAX_ATTACH_BYTES)} in total per message (server upload limit). For video, trim it or send a screenshot instead.`);
-        event.target.value = '';
-        return;
-      }
-      attachedBytes += newBytes;
-      
-      let processedCount = 0;
-      const generation = attachGeneration;
-
-      Array.from(files).forEach(file => {
+    function normalizeImageType(type) {
+      const t = String(type || '').toLowerCase().split(';')[0].trim();
+      return (t === 'image/jpg' || t === 'image/pjpeg') ? 'image/jpeg' : t;
+    }
+    function isVisionImage(file) {
+      return !!file && VISION_IMAGE_TYPES.includes(normalizeImageType(file.type));
+    }
+    // The size an image is sent at: within `max` on its long edge, aspect kept.
+    function fitWithin(width, height, max) {
+      const w = Math.max(1, Math.round(width || 1));
+      const h = Math.max(1, Math.round(height || 1));
+      if (w <= max && h <= max) return { width: w, height: h, scaled: false };
+      const scale = max / Math.max(w, h);
+      return { width: Math.max(1, Math.round(w * scale)), height: Math.max(1, Math.round(h * scale)), scaled: true };
+    }
+    // How many more images this message can take: the live Vision frame
+    // (added at send) counts as one.
+    function imageSlotsLeft() {
+      return Math.max(0, MAX_IMAGES_PER_MESSAGE - attachedImages - (activeVisionStream ? 1 : 0));
+    }
+    function readFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = function(e) {
-          // Cleared (via the chip row's remove button) while still reading.
-          if (generation !== attachGeneration) return;
-          const base64Data = e.target.result.split(',')[1];
-          attachedFilesPayload.push({
-            inlineData: {
-              mimeType: file.type || 'application/octet-stream',
-              data: base64Data
-            }
-          });
-          processedCount++;
-          
-          if (processedCount === files.length) {
-            attachedFileNames.push(...Array.from(files).map((f) => f.name));
-            renderAttachmentChips();
-          }
-        };
+        reader.onload = (e) => resolve(String(e.target.result || ''));
+        reader.onerror = () => reject(reader.error || new Error('Could not read the file.'));
         reader.readAsDataURL(file);
       });
+    }
+    function loadImageElement(file) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not decode the image.')); };
+        img.src = url;
+      });
+    }
+    // Decodes an image, scales it to MAX_IMAGE_EDGE_PX when it is larger
+    // (same type out as in; PNG stays lossless) and returns the payload part
+    // plus its final size. An image that already fits is sent as it is.
+    async function prepareImageAttachment(file) {
+      const mimeType = normalizeImageType(file.type);
+      let source = null;
+      let width = 0;
+      let height = 0;
+      try {
+        if (typeof createImageBitmap === 'function') {
+          source = await createImageBitmap(file);
+          width = source.width; height = source.height;
+        }
+      } catch (e) { source = null; }
+      if (!source) {
+        source = await loadImageElement(file);
+        width = source.naturalWidth || source.width; height = source.naturalHeight || source.height;
+      }
+      const fit = fitWithin(width, height, MAX_IMAGE_EDGE_PX);
+      let dataUrl;
+      if (fit.scaled) {
+        const canvas = document.createElement('canvas');
+        canvas.width = fit.width;
+        canvas.height = fit.height;
+        canvas.getContext('2d').drawImage(source, 0, 0, fit.width, fit.height);
+        dataUrl = canvas.toDataURL(mimeType, mimeType === 'image/png' ? undefined : 0.85);
+      } else {
+        dataUrl = await readFileAsDataUrl(file);
+      }
+      if (source && typeof source.close === 'function') source.close();
+      const comma = dataUrl.indexOf(',');
+      const outType = (dataUrl.slice(5, comma).split(';')[0]) || mimeType;
+      const data = dataUrl.slice(comma + 1);
+      const bytes = Math.floor(data.length * 3 / 4) - (data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0);
+      return { inlineData: { mimeType: outType, data }, width: fit.width, height: fit.height, scaled: fit.scaled, bytes };
+    }
+
+    async function handleFileSelect(event) {
+      const input = event.target;
+      const files = Array.from(input.files || []);
+      if (files.length === 0) return;
+
+      // Images are resized before they are counted; other files are checked
+      // against the total up front, as before, so an oversize file is
+      // refused with a clear reason instead of failing on the server.
+      const images = files.filter(isVisionImage);
+      const others = files.filter((f) => !isVisionImage(f));
+      const otherBytes = others.reduce((sum, f) => sum + f.size, 0);
+      if (attachedBytes + otherBytes > MAX_ATTACH_BYTES) {
+        triggerHaptic(200);
+        alert(`Attachment too large: ${formatBytes(attachedBytes + otherBytes)} selected. The limit is ${formatBytes(MAX_ATTACH_BYTES)} in total per message (server upload limit). For video, trim it or send a screenshot instead.`);
+        input.value = '';
+        return;
+      }
+      const slots = imageSlotsLeft();
+      if (images.length > slots) {
+        triggerHaptic(200);
+        alert(`Up to ${MAX_IMAGES_PER_MESSAGE} images per message${activeVisionStream ? ' (the live Vision frame counts as one)' : ''}. ${slots === 0 ? 'None of these were' : `Only the first ${slots} ${slots === 1 ? 'was' : 'were'}`} attached.`);
+      }
+      const chosenImages = images.slice(0, slots);
+      attachedBytes += otherBytes;
+      const generation = attachGeneration;
+
+      // Other files, as before.
+      others.forEach((file) => {
+        readFileAsDataUrl(file).then((dataUrl) => {
+          // Cleared (via the chip row's remove button) while still reading.
+          if (generation !== attachGeneration) return;
+          attachedFilesPayload.push({ inlineData: { mimeType: file.type || 'application/octet-stream', data: dataUrl.split(',')[1] || '' } });
+          attachedFileNames.push({ name: file.name, kind: 'file' });
+          renderAttachmentChips();
+        }).catch((e) => { logError('Attachment read failed: ' + e.message, 'attach'); });
+      });
+
+      // Images: decoded, resized, then counted.
+      for (const file of chosenImages) {
+        try {
+          const prepared = await prepareImageAttachment(file);
+          if (generation !== attachGeneration) return;
+          if (prepared.bytes > MAX_IMAGE_BYTES) {
+            triggerHaptic(200);
+            alert(`${file.name} is ${formatBytes(prepared.bytes)} after resizing; the limit is ${formatBytes(MAX_IMAGE_BYTES)} per image. It was not attached.`);
+            continue;
+          }
+          if (attachedBytes + prepared.bytes > MAX_ATTACH_BYTES) {
+            triggerHaptic(200);
+            alert(`Attachment too large: ${formatBytes(attachedBytes + prepared.bytes)} with ${file.name}. The limit is ${formatBytes(MAX_ATTACH_BYTES)} in total per message (server upload limit). It was not attached.`);
+            continue;
+          }
+          attachedBytes += prepared.bytes;
+          attachedImages++;
+          attachedFilesPayload.push({ inlineData: prepared.inlineData });
+          attachedFileNames.push({ name: file.name, kind: 'image', width: prepared.width, height: prepared.height });
+          renderAttachmentChips();
+        } catch (e) {
+          if (generation !== attachGeneration) return;
+          logError('Image attachment failed: ' + e.message, 'attach');
+          alert(`${file.name} could not be read as an image and was not attached.`);
+        }
+      }
+      // The same file can be picked again later.
+      input.value = '';
     }
 
     // ATTACHMENT CHIPS: what will go with the next message, shown inside the
@@ -3414,8 +3584,11 @@
       if (activeVisionStream) {
         chips.push('<span class="attach-chip is-live"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg>Vision feed live</span>');
       }
-      attachedFileNames.forEach((name) => {
-        chips.push(`<span class="attach-chip"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg><span class="attach-name">${escapeHTML(name)}</span></span>`);
+      attachedFileNames.forEach((entry) => {
+        const isImage = entry && entry.kind === 'image';
+        const name = typeof entry === 'string' ? entry : (entry && entry.name) || '';
+        const size = isImage && entry.width ? `<span class="sr-only"> image, ${entry.width} by ${entry.height} pixels</span>` : '';
+        chips.push(`<span class="attach-chip${isImage ? ' is-image' : ''}"${isImage ? ` title="Image, ${entry.width}×${entry.height}, PG1 will look at it"` : ''}><svg class="icon" aria-hidden="true"><use href="#${isImage ? 'i-image' : 'i-file'}"/></svg><span class="attach-name">${escapeHTML(name)}</span>${size}</span>`);
       });
       if (attachedFileNames.length > 0) {
         chips.push('<button type="button" class="attach-clear" onclick="triggerHaptic(30); clearAttachments()" aria-label="Remove attachments" title="Remove attachments"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>');
@@ -3429,6 +3602,7 @@
       attachedFilesPayload = [];
       attachedFileNames = [];
       attachedBytes = 0;
+      attachedImages = 0;
       const fileInput = document.getElementById('file-input');
       if (fileInput) fileInput.value = '';
       renderAttachmentChips();
@@ -3439,7 +3613,7 @@
       const textEl = bubble.querySelector('.message-text');
       const input = document.getElementById('prompt-input');
       
-      let originalText = textEl.innerText.replace(/ \[\d+ File\(s\) Attached\]$/, '').replace(/ \[File Payload Only\]$/, '').replace(/ \[Live Vision Frame Captured\]$/, '');
+      let originalText = textEl.innerText.replace(/ \[\d+ File\(s\) Attached\]$/, '').replace(/ \[\d+ image\(s\) attached\]$/, '').replace(/ \[File Payload Only\]$/, '').replace(/ \[Live Vision Frame Captured\]$/, '');
       input.value = originalText;
       autoResize(input);
       
@@ -4969,21 +5143,17 @@
           const videoEl = document.getElementById('vision-pip');
           const canvas = document.createElement('canvas');
           
-          let w = videoEl.videoWidth || 640;
-          let h = videoEl.videoHeight || 480;
-          const maxW = 640;
-          
-          if (w > maxW) {
-            h = Math.floor(h * (maxW / w));
-            w = maxW;
-          }
-          
+          // The same size rule as an attached image: 1600 px on the long edge.
+          const fit = fitWithin(videoEl.videoWidth || 640, videoEl.videoHeight || 480, MAX_IMAGE_EDGE_PX);
+          const w = fit.width;
+          const h = fit.height;
+
           canvas.width = w;
           canvas.height = h;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(videoEl, 0, 0, w, h);
-          
-          const base64Data = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+
+          const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
           
           if (base64Data) {
             attachedFilesPayload.unshift({
@@ -5010,10 +5180,10 @@
       
       let statusText = '';
       if (visionFrameCaptured) statusText += ' [Live Vision Frame Captured]';
-      if (attachedFilesPayload.length > (visionFrameCaptured ? 1 : 0)) {
-        const fileCount = attachedFilesPayload.length - (visionFrameCaptured ? 1 : 0);
-        statusText += ` [${fileCount} File(s) Attached]`;
-      }
+      const imageCount = attachedImages;
+      const fileCount = attachedFilesPayload.length - imageCount - (visionFrameCaptured ? 1 : 0);
+      if (imageCount > 0) statusText += ` [${imageCount} image(s) attached]`;
+      if (fileCount > 0) statusText += ` [${fileCount} File(s) Attached]`;
 
       const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -5098,6 +5268,7 @@
           attachedFilesPayload = [];
           attachedFileNames = [];
           attachedBytes = 0;
+          attachedImages = 0;
           document.getElementById('file-input').value = '';
           renderIdleStatus();
           renderAttachmentChips();

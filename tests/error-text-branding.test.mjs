@@ -304,8 +304,10 @@ test('json: a successful reply is unchanged', async () => {
 
 test('an exception inside the handler is a neutral reply with the request ID, on both paths; the message is logged', async () => {
   useSupabase();
-  // a null attachment makes the vault-upload loop throw (f.inlineData on null)
-  const poison = { prompt: 'hello', multiFiles: [null] };
+  // A malformed attachment is skipped quietly now (lib/visionInput.mjs), so
+  // the poison is a client environment whose property read throws while
+  // the context is being built, after the stream has opened.
+  const poison = { prompt: 'hello', clientEnv: { get timezone() { throw new TypeError("Cannot read properties of null (reading 'timezone')"); } } };
 
   let calls = installFetch(supabaseRoutes());
   let res = makeRes();

@@ -131,6 +131,9 @@ const STEP_EVIDENCE = {
   threats: (c) => c.url.includes('/rest/v1/threat_indicators'),
   errors: (c) => c.url.includes('/rest/v1/pg1_errors'),
   'vault-upload': (c) => c.url.includes('/storage/v1/object/pg1-vault/') && c.method === 'POST',
+  // "Looking at N images": the model call that carried the images (an
+  // inlineData part for Gemini, an image block for Anthropic).
+  vision: (c) => (c.url.includes('streamGenerateContent') && /"inlineData"/.test(String(c.body))) || (c.url.includes('api.anthropic.com') && /"type":"image"/.test(String(c.body))),
   model: (c) => c.url.includes('streamGenerateContent') || c.url.includes('api.anthropic.com'),
   'model-fallback': (c) => c.url.includes('streamGenerateContent'),
   search: (c) => c.url.includes('streamGenerateContent'),
