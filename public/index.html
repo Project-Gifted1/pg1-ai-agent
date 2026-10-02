@@ -2957,7 +2957,7 @@
         loadVad: () => PG1Voice.loadVad({
           loadRuntime: () => PG1Voice.loadOnnxRuntime(),
           modelUrl: '/voice/silero_vad_v5.onnx',
-          onFallback: (err) => { console.warn('Silero VAD unavailable, using the energy detector:', err && err.message); }
+          onFallback: (err) => { console.warn('Speech detector unavailable, using the energy detector:', err && err.message); }
         }),
         isPlaying: () => isVoicePlaying(),
         isBusy: () => inFlightDirectives.size > 0,

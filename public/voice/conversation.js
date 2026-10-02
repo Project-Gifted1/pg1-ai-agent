@@ -232,11 +232,15 @@
     return {
       update,
       // Evidence of speech from outside (the recogniser produced text).
+      // It opens a turn the detector missed; it never extends one that is
+      // open, so the recogniser's own lag does not push the 800 ms out.
       noteSpeech(now) {
         lastActivityAt = now;
+        if (inTurn) return [];
         lastSpeechAt = now;
-        if (!inTurn) { inTurn = true; turnStartedAt = now; return ['turn_start']; }
-        return [];
+        inTurn = true;
+        turnStartedAt = now;
+        return ['turn_start'];
       },
       // Ends an open turn without waiting for silence.
       endTurn() { const was = inTurn; inTurn = false; speaking = false; return was; },
@@ -387,6 +391,8 @@
     function startRecognition() {
       if (!on || !recognition || recognitionRunning) return;
       recognitionWanted = true;
+      // A fresh session starts with an empty transcript.
+      finalText = ''; interimText = '';
       try {
         recognition.start();
         recognitionRunning = true;
@@ -426,7 +432,8 @@
         }
       } catch (e) { /* hints unsupported */ }
       r.onresult = (event) => {
-        if (!on) return;
+        // Results after stop() (or from a session already abandoned) are stale.
+        if (!on || !recognitionRunning) return;
         let interim = '';
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const res = event.results[i];
