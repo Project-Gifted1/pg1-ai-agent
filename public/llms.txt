@@ -17,6 +17,7 @@
 - [REST](https://pg1-ai-agent.vercel.app/api/ioc): Simple GET endpoint returning a STIX 2.1 threat indicator feed.
 - [Health](https://pg1-ai-agent.vercel.app/api/health): Uptime/health check.
 - [OpenAPI spec](https://pg1-ai-agent.vercel.app/openapi.json): Machine-readable schema for the REST endpoint.
+- [About](https://pg1-ai-agent.vercel.app/about): Human-readable overview of PG1, its free tools, endpoints and listings.
 
 ## Quick start
 

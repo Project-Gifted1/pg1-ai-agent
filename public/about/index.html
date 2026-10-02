@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0b">
+  <meta name="color-scheme" content="dark">
+  <title>About PG1 Threat Intelligence</title>
+  <meta name="description" content="PG1 is a threat-intelligence service for AI agents: free wallet, domain and hostname checks over MCP, A2A and REST, plus a STIX 2.1 indicator feed paid per call with x402 on Base.">
+  <link rel="canonical" href="https://pg1-ai-agent.vercel.app/about">
+  <link rel="icon" href="/brand/pg1-shield.svg" type="image/svg+xml">
+  <style>
+    /* Static, self-contained page: no scripts, no external fonts or images.
+       Colours follow the dark tokens in public/index.html. */
+    :root {
+      color-scheme: dark;
+      --bg: #0a0a0b;
+      --surface-1: #121214;
+      --border: #26262b;
+      --text: #ececee;
+      --text-2: #a8a8b0;
+      --text-strong: #fff;
+      --gold: #f3c623;
+      --gold-strong: #ffd84d;
+      --gold-soft: rgba(243, 198, 35, 0.12);
+      --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+      --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", "Liberation Mono", monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+    main {
+      max-width: 44rem;
+      margin: 0 auto;
+      padding: max(1.5rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 3rem max(1rem, env(safe-area-inset-left));
+    }
+    header { display: flex; align-items: center; gap: 0.875rem; margin: 0.5rem 0 1.5rem; }
+    header svg { flex: none; width: 3.25rem; height: 3.25rem; }
+    h1 { margin: 0; font-size: 1.5rem; line-height: 1.25; color: var(--text-strong); }
+    .sub { margin: 0.125rem 0 0; color: var(--text-2); font-size: 0.9375rem; }
+    h2 {
+      margin: 2.25rem 0 0.75rem;
+      font-size: 1.1875rem;
+      color: var(--gold);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.375rem;
+    }
+    p { margin: 0 0 1rem; }
+    ul { margin: 0 0 1rem; padding: 0; list-style: none; }
+    li {
+      margin: 0 0 0.625rem;
+      padding: 0.75rem 0.875rem;
+      background: var(--surface-1);
+      border: 1px solid var(--border);
+      border-radius: 0.625rem;
+    }
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      color: var(--gold-strong);
+      background: var(--gold-soft);
+      padding: 0.0625rem 0.3125rem;
+      border-radius: 0.25rem;
+      overflow-wrap: anywhere;
+    }
+    li > code:first-child { display: inline-block; margin-bottom: 0.25rem; }
+    a { color: var(--gold-strong); text-underline-offset: 0.15em; overflow-wrap: anywhere; }
+    a:hover { color: var(--text-strong); }
+    a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 2px; }
+    .note { color: var(--text-2); font-size: 0.9375rem; }
+    footer {
+      margin-top: 2.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      color: var(--text-2);
+      font-size: 0.875rem;
+    }
+    @media (min-width: 768px) {
+      body { font-size: 1.0625rem; }
+      h1 { font-size: 1.75rem; }
+      header svg { width: 4rem; height: 4rem; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="169.76 -2 104 104" width="104" height="104" role="img" aria-label="PG1">
+      <title>PG1</title>
+      <path d="M221.76 0L262.5 15.2V47.3C262.5 73.9 245.1 91.85 221.76 100C198.4 91.85 181 73.9 181 47.3V15.2Z" fill="#f3c623"/>
+      <path d="M220 20H233V72H220V37.5L208.5 43.5V31Z" fill="#0a0a0b"/>
+    </svg>
+    <div>
+      <h1>PG1 Threat Intelligence</h1>
+      <p class="sub">by Project-Gifted1</p>
+    </div>
+  </header>
+
+  <section aria-labelledby="what">
+    <h2 id="what">What PG1 is</h2>
+    <p>PG1 is a threat-intelligence service built for AI agents. An agent can ask it about a wallet address, a domain or a hostname before acting on it, and get back a structured, machine-readable answer.</p>
+    <p>The same checks are served over the Model Context Protocol (MCP), Agent2Agent (A2A) and a REST API. Results report facts and flags, never a &ldquo;safe&rdquo; or &ldquo;clean&rdquo; verdict, and a check that could not complete is reported as <code>unknown</code> rather than guessed.</p>
+  </section>
+
+  <section aria-labelledby="free">
+    <h2 id="free">Free tools</h2>
+    <p>These MCP tools need no key and no payment. They are also available as A2A skills.</p>
+    <ul>
+      <li><code>check_wallet_sanctions</code><br>Checks a cryptocurrency wallet address against a sanctions list synced daily. A &ldquo;not listed&rdquo; result is informational only, not compliance advice.</li>
+      <li><code>check_domain_age</code><br>Looks up a domain&rsquo;s registration date and age via RDAP. A domain registered less than 30 days ago is reported as a common phishing signal, not as proof of malicious intent.</li>
+      <li><code>check_hostname_reputation</code><br>Checks one hostname against a phishing blocklist and allowlist, synced daily, plus a lookalike (typosquat) detector. Returns <code>allowlisted</code>, <code>listed</code>, <code>lookalike</code> or <code>not_listed</code>.</li>
+      <li><code>check_wallet_age</code><br>Reports when an EVM wallet address first appeared on a chain, from its earliest on-chain transfer, and whether it is a contract or has an EIP-7702 delegation. Age and history only, never a safety verdict.</li>
+      <li><code>get_usage_status</code><br>Returns your remaining free-tier calls for today and your licence status.</li>
+    </ul>
+    <p class="note">Anonymous callers are rate-limited. Fixed test inputs that always return the same answer are listed in <a href="/llms.txt">/llms.txt</a>.</p>
+  </section>
+
+  <section aria-labelledby="ioc">
+    <h2 id="ioc">Indicator feed: /api/ioc</h2>
+    <p><code>GET /api/ioc</code> returns a STIX 2.1 bundle (<code>application/stix+json</code>) of threat indicators, filterable by <code>since</code>, <code>type</code>, <code>min_score</code> and <code>limit</code>.</p>
+    <p>It is paid per call with x402: a request without payment gets HTTP 402 and an x402 v2 payment challenge for $0.01 in USDC on Base (<code>eip155:8453</code>). A licence key is also accepted. The MCP server lists further tools (bulk indicator feeds, CVE enrichment, threat-actor profiles) on the same terms.</p>
+  </section>
+
+  <section aria-labelledby="connect">
+    <h2 id="connect">How to connect</h2>
+    <ul>
+      <li><a href="/api/mcp"><code>/api/mcp</code></a><br>MCP server (Streamable HTTP, JSON-RPC).</li>
+      <li><a href="/.well-known/agent-card.json"><code>/.well-known/agent-card.json</code></a><br>A2A agent card; the A2A endpoint is <code>/api/a2a</code>.</li>
+      <li><a href="/openapi.json"><code>/openapi.json</code></a><br>OpenAPI description of the REST endpoints.</li>
+      <li><a href="/.well-known/x402"><code>/.well-known/x402</code></a><br>x402 discovery document: paid resources, price, network and asset.</li>
+      <li><a href="/llms.txt"><code>/llms.txt</code></a><br>Plain-text summary for language models, with example calls.</li>
+    </ul>
+    <p class="note">All paths are on <code>https://pg1-ai-agent.vercel.app</code>.</p>
+  </section>
+
+  <section aria-labelledby="listings">
+    <h2 id="listings">Listings</h2>
+    <ul>
+      <li>MCP Registry: <code>io.github.Project-Gifted1/pg1-threat-intel</code></li>
+      <li>Glama: <a href="https://glama.ai/mcp/connectors/io.github.Project-Gifted1/pg1-threat-intel">glama.ai/mcp/connectors/io.github.Project-Gifted1/pg1-threat-intel</a></li>
+      <li>Smithery: <a href="https://smithery.ai/server/@gikewun/pg1-threat-intel">smithery.ai/server/@gikewun/pg1-threat-intel</a></li>
+      <li>x402scan: origin <code>pg1-ai-agent.vercel.app</code></li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="contact">
+    <h2 id="contact">Status and contact</h2>
+    <p>Service status: <a href="https://stats.uptimerobot.com/Du0BQ84Hg3">stats.uptimerobot.com/Du0BQ84Hg3</a></p>
+    <p>Contact: <a href="mailto:gikewun@gmail.com">gikewun@gmail.com</a></p>
+  </section>
+
+  <footer>Project-Gifted1&trade; &middot; PG1 Threat Intelligence</footer>
+</main>
+</body>
+</html>
