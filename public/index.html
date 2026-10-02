@@ -1009,6 +1009,90 @@
       .thinking i { animation: none; opacity: 0.7; }
     }
 
+    /* live trace: what PG1 is doing while a streamed reply comes in. Rows
+       are the steps the server reported (lib/chatStream.mjs); the status
+       line names the step still running. Collapsed to one "N steps" row
+       once the reply is done. */
+    .trace { margin: 0 0 var(--sp-3); font-size: var(--fs-sm); line-height: var(--lh-tight); color: var(--text-2); }
+    .trace-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+    .trace-steps[hidden] { display: none; }
+    .trace-line {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      width: 100%;
+      min-height: 32px;
+      padding: 2px 0;
+      background: none;
+      border: 0;
+      font: inherit;
+      color: inherit;
+      text-align: left;
+    }
+    button.trace-line { cursor: pointer; border-radius: var(--r-sm); }
+    button.trace-line:hover { color: var(--text); }
+    .trace-line .icon { width: 16px; height: 16px; }
+    .trace-mark { color: var(--ok); }
+    .trace-row.is-failed .trace-mark { color: var(--danger); }
+    .trace-label { min-width: 0; overflow-wrap: anywhere; }
+    .trace-chevron { margin-left: auto; color: var(--text-2); transition: transform var(--dur-2) var(--ease-out); }
+    [aria-expanded="true"] > .trace-chevron { transform: rotate(180deg); }
+    .trace-details {
+      list-style: none;
+      margin: 0 0 var(--sp-1);
+      padding: 0 0 0 calc(16px + var(--sp-2));
+      font-family: var(--font-mono);
+      font-size: var(--fs-xs);
+      line-height: var(--lh-body);
+      color: var(--text-2);
+      overflow-wrap: anywhere;
+    }
+    .trace-details[hidden] { display: none; }
+    .trace-summary { width: auto; }
+    .trace-summary .icon:first-child { color: var(--text-2); }
+    .trace-status { display: flex; align-items: center; gap: var(--sp-2); min-height: 32px; }
+    .trace-status .icon { width: 16px; height: 16px; color: var(--gold); }
+    /* The animated label only ever brightens towards --text, so it never
+       drops below --text-2's contrast. Plain text with reduced motion. */
+    .trace-live {
+      color: var(--text-2);
+      background: linear-gradient(90deg, var(--text-2) 0%, var(--text-2) 35%, var(--text) 50%, var(--text-2) 65%, var(--text-2) 100%);
+      background-size: 250% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: trace-shimmer 1.8s linear infinite;
+    }
+    @keyframes trace-shimmer {
+      from { background-position: 100% 0; }
+      to { background-position: 0 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .trace-live { animation: none; background: none; -webkit-text-fill-color: currentColor; }
+    }
+    @media (forced-colors: active) {
+      .trace-live { background: none; -webkit-text-fill-color: currentColor; }
+    }
+    .stream-note { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); margin-top: var(--sp-3); font-size: var(--fs-sm); color: var(--text-2); }
+    .message-bubble.error .stream-note { color: var(--danger-text); }
+    .message-bubble.error.offline .stream-note { color: var(--warn-text); }
+    .retry-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sp-2);
+      min-height: 36px;
+      padding: 0 var(--sp-3);
+      background: var(--surface-2);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-full);
+      font: inherit;
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .retry-btn:hover { background: var(--surface-3); }
+    .retry-btn .icon { width: 16px; height: 16px; }
+
     /* failed directive / interrupted request */
     .message-bubble.error {
       padding: var(--sp-3) var(--sp-4);
@@ -1220,6 +1304,8 @@
     .execute-btn:focus-visible { border-radius: var(--r-full); }
     /* nothing to send yet: the button rests quietly (it still works) */
     .composer:has(textarea:placeholder-shown):not(:has(.attach-chip)) .execute-btn { background: var(--surface-3); color: var(--text-3); }
+    /* while a reply is coming in and the box is empty it is the Stop button */
+    body .composer .composer-row .execute-btn.is-stop { background: var(--surface-3); color: var(--text); box-shadow: inset 0 0 0 1px var(--border-strong); }
 
     /* the native file input stays focusable (keyboard) but invisible */
     input[type="file"] {
@@ -1694,6 +1780,8 @@
     <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></symbol>
     <symbol id="i-screen" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
     <symbol id="i-stop" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><rect x="9" y="9" width="6" height="6" rx="1"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/></symbol>
     <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14"/><path d="M12 17.5h.01"/></symbol>
     <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></symbol>
     <symbol id="i-radar" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12l6.5-6.5"/></symbol>
@@ -1913,7 +2001,7 @@
     <div class="composer">
       <div id="attach-chips" class="attach-chips" aria-label="Attachments" hidden></div>
       <label for="prompt-input" class="sr-only">Directive</label>
-      <textarea id="prompt-input" rows="1" placeholder="Give PG1 a directive…" enterkeyhint="send" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+      <textarea id="prompt-input" rows="1" placeholder="Give PG1 a directive…" enterkeyhint="send" onkeydown="handleKey(event)" oninput="autoResize(this); syncExecuteButton()"></textarea>
       <div class="composer-row">
         <label class="icon-btn" title="Attach files">
           <svg class="icon" aria-hidden="true"><use href="#i-clip"/></svg>
@@ -1922,7 +2010,7 @@
         </label>
         <button type="button" id="mic-btn" class="icon-btn" title="Voice input" aria-label="Voice input" onclick="triggerHaptic(); toggleRecording()"><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg></button>
         <span class="spacer"></span>
-        <button type="button" class="execute-btn" onclick="triggerHaptic(80); submitDirective()" aria-label="Execute" title="Execute"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg></button>
+        <button type="button" class="execute-btn" onclick="triggerHaptic(80); onExecuteClick()" aria-label="Execute" title="Execute"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg></button>
       </div>
     </div>
   </div>
@@ -2081,6 +2169,7 @@
         staleBubbles.forEach(bubble => {
           bubble.classList.remove('pending');
           bubble.classList.add('error');
+          bubble.querySelectorAll('.trace-status').forEach((n) => n.remove());
           const textEl = bubble.querySelector('.message-text');
           if (textEl) {
             textEl.style.color = '';
@@ -3895,9 +3984,245 @@
       if (ta) markHandoffSent(card, stripSecretsClient(ta.value).text);
     }
 
-    async function submitDirective() {
+    // LIVE TRACE: an authenticated chat directive asks /api/chat for a
+    // stream (`stream: true`). The server answers with Server-Sent Events
+    // (lib/chatStream.mjs): "step" when it starts a real action, "step_done"
+    // when that action finishes, "text" for reply chunks, then "done" or
+    // "error". Any other response is the ordinary JSON reply, handled by the
+    // same code as before, so a server or proxy that can't stream still
+    // works.
+    const TRACE_EVENT_TYPES = ['step', 'step_done', 'text', 'done', 'error'];
+
+    // Twin of createSseParser in lib/chatStream.mjs (tests run both over the
+    // same input). Returns the complete events in `buffer` and the
+    // unfinished tail to carry into the next read.
+    function parseSseBuffer(buffer) {
+      const blocks = String(buffer).replace(/\r\n?/g, '\n').split('\n\n');
+      const rest = blocks.pop();
+      const events = [];
+      for (const block of blocks) {
+        let event = 'message';
+        const data = [];
+        for (const line of block.split('\n')) {
+          if (!line || line.startsWith(':')) continue;
+          const idx = line.indexOf(':');
+          const field = idx === -1 ? line : line.slice(0, idx);
+          let value = idx === -1 ? '' : line.slice(idx + 1);
+          if (value.startsWith(' ')) value = value.slice(1);
+          if (field === 'event') event = value;
+          else if (field === 'data') data.push(value);
+        }
+        if (data.length) events.push({ event, data: data.join('\n') });
+      }
+      return { events, rest };
+    }
+
+    // One SSE event -> a trace event object, or null for anything malformed
+    // or of a type this page doesn't know.
+    function parseTraceEvent(raw) {
+      let ev;
+      try { ev = JSON.parse(raw.data); } catch (e) { return null; }
+      if (!ev || typeof ev !== 'object' || TRACE_EVENT_TYPES.indexOf(ev.type) === -1) return null;
+      if (raw.event !== 'message' && raw.event !== ev.type) return null;
+      return ev;
+    }
+
+    async function readChatStream(response, onEvent) {
+      const emit = (raws) => raws.forEach((raw) => { const ev = parseTraceEvent(raw); if (ev) onEvent(ev); });
+      if (!response.body || typeof response.body.getReader !== 'function') {
+        emit(parseSseBuffer((await response.text()) + '\n\n').events);
+        return;
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const parsed = parseSseBuffer(buffer + decoder.decode(value, { stream: true }));
+        buffer = parsed.rest;
+        emit(parsed.events);
+      }
+      emit(parseSseBuffer(buffer + decoder.decode() + '\n\n').events);
+    }
+
+    // Reply text while it is still arriving. formatMarkdown escapes the
+    // whole string before any markdown pass, so a cut-off tag or link is
+    // only ever shown as text; an unclosed code fence is closed for display
+    // so the half-written block doesn't read as prose. The finished reply
+    // is rendered again in full with formatMarkdown.
+    function formatStreamingMarkdown(str) {
+      if (!str || typeof str !== 'string') return '';
+      const fences = (str.match(/```/g) || []).length;
+      return formatMarkdown(fences % 2 ? str + '\n```' : str);
+    }
+
+    let traceSeq = 0;
+
+    function traceRowHtml(ev, uid) {
+      const label = escapeHTML(ev.label || 'Step');
+      const result = ev.result ? ` · ${escapeHTML(ev.result)}` : '';
+      const failed = ev.failed === true;
+      const mark = `<svg class="icon trace-mark" aria-hidden="true"><use href="#${failed ? 'i-x' : 'i-check'}"/></svg>`;
+      const text = `<span class="trace-label">${label}${result}${failed ? '<span class="sr-only"> (failed)</span>' : ''}</span>`;
+      const details = Array.isArray(ev.details) ? ev.details.filter((d) => typeof d === 'string' && d) : [];
+      const cls = `trace-row${failed ? ' is-failed' : ''}`;
+      if (!details.length) return `<li class="${cls}"><div class="trace-line">${mark}${text}</div></li>`;
+      const id = `trace-d-${uid}`;
+      return `<li class="${cls}"><button type="button" class="trace-line trace-toggle" aria-expanded="false" aria-controls="${id}" onclick="toggleTraceDetails(this)">${mark}${text}<svg class="icon trace-chevron" aria-hidden="true"><use href="#i-chevron"/></svg></button><ul class="trace-details" id="${id}" hidden>${details.map((d) => `<li>${escapeHTML(d)}</li>`).join('')}</ul></li>`;
+    }
+
+    // Shared by every row chevron and the collapsed "N steps" row, including
+    // ones restored from saved chat history.
+    function toggleTraceDetails(btn) {
+      const target = document.getElementById(btn.getAttribute('aria-controls'));
+      if (!target) return;
+      const open = btn.getAttribute('aria-expanded') !== 'true';
+      btn.setAttribute('aria-expanded', String(open));
+      target.hidden = !open;
+    }
+
+    // Live trace in a pending agent bubble. Steps can run in parallel; the
+    // status line names the newest one still running.
+    function createTraceView(bubble) {
+      const uid = `${Date.now().toString(36)}-${(traceSeq++).toString(36)}`;
+      const trace = document.createElement('div');
+      trace.className = 'trace';
+      // The conversation is a role="log" live region; the rows and reply
+      // chunks stay out of it while streaming, and only the status line
+      // speaks (politely, once per step change).
+      trace.innerHTML = `<ol class="trace-steps" id="trace-s-${uid}" aria-label="Steps" aria-live="off"></ol><div class="trace-status" role="status" aria-live="polite"><svg class="icon" aria-hidden="true"><use href="#i-pulse"/></svg><span class="trace-live">Working</span></div>`;
+      const anchor = bubble.querySelector('.msg-timestamp');
+      if (anchor) anchor.after(trace); else bubble.prepend(trace);
+      const list = trace.querySelector('.trace-steps');
+      const live = trace.querySelector('.trace-live');
+      const running = new Map();
+      let rows = 0;
+      const showCurrent = () => {
+        const labels = Array.from(running.values());
+        const next = labels.length ? labels[labels.length - 1] : 'Working';
+        if (live.textContent !== next) live.textContent = next;
+      };
+      return {
+        step(ev) {
+          if (typeof ev.id !== 'string') return;
+          running.set(ev.id, String(ev.label || 'Working'));
+          showCurrent();
+        },
+        stepDone(ev) {
+          if (!running.has(ev.id)) return;
+          running.delete(ev.id);
+          list.insertAdjacentHTML('beforeend', traceRowHtml(ev, `${uid}-${rows++}`));
+          showCurrent();
+        },
+        get count() { return rows; },
+        // Collapses into one "N steps" row and returns its HTML ('' when no
+        // step ever finished) for the final render of the bubble.
+        finish() {
+          const status = trace.querySelector('.trace-status');
+          if (status) status.remove();
+          if (!rows) { trace.remove(); return ''; }
+          list.removeAttribute('aria-live');
+          list.hidden = true;
+          trace.insertAdjacentHTML('afterbegin', `<button type="button" class="trace-line trace-summary" aria-expanded="false" aria-controls="${list.id}" onclick="toggleTraceDetails(this)"><svg class="icon" aria-hidden="true"><use href="#i-pulse"/></svg><span>${rows} step${rows === 1 ? '' : 's'}</span><svg class="icon trace-chevron" aria-hidden="true"><use href="#i-chevron"/></svg></button>`);
+          return trace.outerHTML;
+        }
+      };
+    }
+
+    // Reads a streamed reply into `bubble`. Resolves with
+    //   { data }                       the reply finished ("done")
+    //   { failed: 'error', message }   the server reported an error
+    //   { failed: 'dropped' }          the stream ended or broke without
+    //                                  "done"/"error" (connection lost)
+    //   { failed: 'aborted' }          Stop or the client timeout
+    // plus { text, traceHtml } in every case, so the caller can keep what
+    // arrived.
+    async function consumeDirectiveStream(response, bubble, signal) {
+      const trace = createTraceView(bubble);
+      const textEl = document.createElement('div');
+      textEl.className = 'message-text stream-text';
+      textEl.setAttribute('aria-live', 'off');
+      bubble.querySelector('.pending-text')?.remove();
+      bubble.querySelector('.trace').after(textEl);
+      const chat = document.getElementById('chat-container');
+      let text = '';
+      let outcome = null;
+      let renderQueued = false;
+      const render = () => {
+        renderQueued = false;
+        const nearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 80;
+        textEl.innerHTML = formatStreamingMarkdown(text);
+        if (nearBottom) chat.scrollTop = chat.scrollHeight;
+      };
+      const queueRender = () => {
+        if (renderQueued) return;
+        renderQueued = true;
+        (window.requestAnimationFrame || setTimeout)(render);
+      };
+      try {
+        await readChatStream(response, (ev) => {
+          if (outcome) return;
+          if (ev.type === 'step') trace.step(ev);
+          else if (ev.type === 'step_done') trace.stepDone(ev);
+          else if (ev.type === 'text' && typeof ev.text === 'string') { text += ev.text; queueRender(); }
+          else if (ev.type === 'done') outcome = { data: Object.assign({}, ev.result || {}, { reply: text, searchEntryPoint: ev.searchEntryPoint || (ev.result && ev.result.searchEntryPoint) || null, traceId: ev.request_id }) };
+          else if (ev.type === 'error') outcome = { failed: 'error', message: String(ev.message || 'The request failed.'), status: ev.status };
+        });
+      } catch (err) {
+        if (!outcome) outcome = { failed: signal && signal.aborted ? 'aborted' : 'dropped' };
+      }
+      if (!outcome) outcome = { failed: signal && signal.aborted ? 'aborted' : 'dropped' };
+      outcome.text = text;
+      outcome.traceHtml = trace.finish();
+      return outcome;
+    }
+
+    // Directives still waiting on /api/chat, each with its abort function.
+    const inFlightDirectives = new Set();
+
+    function syncExecuteButton() {
+      const btn = document.querySelector('.execute-btn');
+      if (!btn) return;
       const input = document.getElementById('prompt-input');
-      const text = input.value.trim();
+      const stopMode = inFlightDirectives.size > 0 && !(input && input.value.trim());
+      if (btn.classList.contains('is-stop') === stopMode) return;
+      btn.classList.toggle('is-stop', stopMode);
+      const label = stopMode ? 'Stop' : 'Execute';
+      btn.setAttribute('aria-label', label);
+      btn.title = label;
+      const use = btn.querySelector('use');
+      if (use) use.setAttribute('href', stopMode ? '#i-stop' : '#i-send');
+    }
+
+    function onExecuteClick() {
+      const btn = document.querySelector('.execute-btn');
+      if (btn && btn.classList.contains('is-stop')) stopDirectives();
+      else submitDirective();
+    }
+
+    function stopDirectives() {
+      inFlightDirectives.forEach((stop) => stop());
+    }
+
+    function retryButtonHtml(prompt, fallback) {
+      return `<button type="button" class="retry-btn" data-prompt="${escapeHTML(prompt)}"${fallback ? ' data-fallback="1"' : ''} onclick="triggerHaptic(40); retryDirective(this)"><svg class="icon" aria-hidden="true"><use href="#i-sync"/></svg>Retry</button>`;
+    }
+
+    // Sends the same directive again. After a dropped stream the retry asks
+    // for the plain JSON reply instead, in case streaming is what failed.
+    // Attachments from the first try are not resent.
+    function retryDirective(btn) {
+      const prompt = btn.getAttribute('data-prompt') || '';
+      if (!prompt) return;
+      btn.disabled = true;
+      submitDirective({ retryText: prompt, noStream: btn.getAttribute('data-fallback') === '1' });
+    }
+
+    async function submitDirective(options = {}) {
+      const input = document.getElementById('prompt-input');
+      const isRetry = typeof options.retryText === 'string';
+      const text = isRetry ? options.retryText.trim() : input.value.trim();
 
       const voiceCmdMatch = text.toLowerCase().match(/^\/voice(?:[- ]([a-z0-9-]+))?$/);
       if (voiceCmdMatch) {
@@ -3970,8 +4295,10 @@
         ${messageActionsHtml('user')}`;
       chatContainer.appendChild(userBubble);
       
-      input.value = '';
-      input.style.height = 'auto';
+      if (!isRetry) {
+        input.value = '';
+        input.style.height = 'auto';
+      }
       chatContainer.scrollTop = chatContainer.scrollHeight;
       saveState();
 
@@ -3985,7 +4312,15 @@
       saveState();
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      // Why this request was aborted: 'stopped' (the Stop button) or
+      // 'timeout'. Kept here rather than as the abort reason, so fetch()
+      // still rejects with a plain AbortError either way.
+      let abortReason = null;
+      const abortWith = (reason) => { if (!abortReason) abortReason = reason; controller.abort(); };
+      const timeoutId = setTimeout(() => abortWith('timeout'), REQUEST_TIMEOUT_MS);
+      const stopThis = () => abortWith('stopped');
+      inFlightDirectives.add(stopThis);
+      syncExecuteButton();
 
       // Read once and reset immediately so a second, unrelated directive
       // submitted while this one is still in flight is never mistaken for
@@ -4012,6 +4347,10 @@
           pass: sessionPass,
           clientEnv: getClientEnvironment()
         };
+        // LIVE TRACE: ask for a streamed reply with steps (operator only;
+        // the server ignores it otherwise and replies with JSON as before).
+        const wantStream = !options.noStream && !!(sessionUser && sessionPass);
+        if (wantStream) payload.stream = true;
 
         if (attachedFilesPayload.length > 0) {
           payload.multiFiles = [...attachedFilesPayload];
@@ -4025,27 +4364,39 @@
 
         const response = await fetch('/api/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: wantStream ? { 'Content-Type': 'application/json', 'Accept': 'text/event-stream, application/json' } : { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
           signal: controller.signal
         });
         responseStatus = response.status;
 
-        const responseText = await response.text();
         let data;
-        try {
-          data = JSON.parse(responseText);
-        } catch (parseErr) {
-          if (response.status === 413) {
-            throw new Error('Attachment too large for the server (over the 4.5 MB upload limit). Send a smaller file or a screenshot instead.');
+        let traceHtml = '';
+        const isEventStream = /^text\/event-stream/i.test(response.headers.get('Content-Type') || '');
+        if (isEventStream) {
+          const streamed = await consumeDirectiveStream(response, agentBubble, controller.signal);
+          if (streamed.failed) {
+            renderStreamFailure(agentBubble, streamed, text, abortReason);
+            return;
           }
-          throw new Error(`Server returned non-JSON response (${response.status}): ${responseText.substring(0, 150)}`);
+          data = streamed.data;
+          traceHtml = streamed.traceHtml;
+        } else {
+          const responseText = await response.text();
+          try {
+            data = JSON.parse(responseText);
+          } catch (parseErr) {
+            if (response.status === 413) {
+              throw new Error('Attachment too large for the server (over the 4.5 MB upload limit). Send a smaller file or a screenshot instead.');
+            }
+            throw new Error(`Server returned non-JSON response (${response.status}): ${responseText.substring(0, 150)}`);
+          }
         }
         
         triggerHaptic([30, 50, 30]); 
         const finalTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
-        let contentHtml = `<span class="msg-timestamp">${finalTime}</span><div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>`;
+        let contentHtml = `<span class="msg-timestamp">${finalTime}</span>${traceHtml}<div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>`;
 
         if (data.searchEntryPoint) {
           contentHtml += '<div class="search-entry-point">' + data.searchEntryPoint + '</div>';
@@ -4109,6 +4460,10 @@
         }
 
       } catch (err) {
+        if (abortReason === 'stopped') {
+          renderStreamFailure(agentBubble, { failed: 'aborted', text: '', traceHtml: '' }, text, abortReason);
+          return;
+        }
         triggerHaptic(200);
         const errTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const display = buildDirectiveErrorDisplay(err, responseStatus, REQUEST_TIMEOUT_MS / 1000);
@@ -4120,9 +4475,44 @@
         saveState();
       } finally {
         clearTimeout(timeoutId);
+        inFlightDirectives.delete(stopThis);
+        syncExecuteButton();
+        chatContainer.scrollTop = chatContainer.scrollHeight;
       }
+    }
 
-      chatContainer.scrollTop = chatContainer.scrollHeight;
+    // A streamed reply that didn't finish: keep the steps and whatever text
+    // arrived, say plainly what happened, and offer a retry (Stop gets a
+    // quiet note instead of an error).
+    function renderStreamFailure(bubble, streamed, prompt, abortReason) {
+      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const stopped = streamed.failed === 'aborted' && abortReason === 'stopped';
+      let note;
+      let category = null;
+      if (stopped) {
+        note = streamed.text ? 'Stopped. The reply above is incomplete.' : 'Stopped before a reply arrived.';
+      } else if (streamed.failed === 'aborted') {
+        note = `No complete reply after ${REQUEST_TIMEOUT_MS / 1000}s, so the request was stopped.`;
+        category = 'timeout';
+      } else if (streamed.failed === 'error') {
+        note = streamed.message;
+        // Server-side failures (a model error has no HTTP status of its own).
+        category = streamed.status >= 400 && streamed.status < 500 ? 'http_4xx' : 'http_5xx';
+      } else {
+        note = 'The connection dropped before the reply finished.';
+        category = (typeof navigator !== 'undefined' && navigator.onLine === false) ? 'offline' : 'network';
+      }
+      if (category) {
+        triggerHaptic(200);
+        logError(streamed.failed === 'error' ? note : `Streamed reply ${streamed.failed}: ${note}`, 'submitDirective', category);
+      }
+      bubble.classList.remove('pending');
+      if (category && !streamed.text) bubble.classList.add('error');
+      if (category === 'offline' || category === 'network') bubble.classList.add('offline');
+      const textHtml = streamed.text ? `<div class="message-text">${formatMarkdown(streamed.text)}</div>` : '';
+      const retry = prompt ? retryButtonHtml(prompt, streamed.failed === 'dropped') : '';
+      bubble.innerHTML = `<span class="msg-timestamp">${time}</span>${streamed.traceHtml || ''}${textHtml}<div class="stream-note" role="status"><span class="stream-note-text">${escapeHTML(note)}</span>${retry}</div>${streamed.text ? messageActionsHtml('agent') : ''}`;
+      saveState();
     }
     
     // DIALOG A11Y: the overlays are still opened and closed by their own
