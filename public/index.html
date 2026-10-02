@@ -805,6 +805,135 @@
     .approval-btn:focus-visible { border-radius: var(--r-full); }
     .approval-btn:disabled { opacity: 0.5; cursor: progress; transform: none; }
 
+    /* SEND TO CODE: the hand-off card under a /code reply, the offer row
+       under a reply that looks like a code change, and the drawer list. */
+    .handoff-card {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-3);
+      max-width: 100%;
+      margin-top: var(--sp-4);
+      padding: var(--sp-4);
+      background: var(--surface-1);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+    }
+    .handoff-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
+    .handoff-head .icon { color: var(--gold); }
+    .handoff-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text-strong); }
+    .handoff-id {
+      margin-left: auto;
+      padding: 2px var(--sp-2);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-full);
+      font-family: var(--font-mono);
+      font-size: var(--fs-xs);
+      color: var(--text-2);
+    }
+    .handoff-note { font-size: var(--fs-sm); line-height: 1.45; color: var(--text-2); }
+    .handoff-warn {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--sp-2);
+      padding: var(--sp-2) var(--sp-3);
+      background: var(--warn-banner);
+      border: 1px solid var(--warn-line);
+      border-radius: var(--r-md);
+      font-size: var(--fs-sm);
+      line-height: 1.45;
+      color: var(--warn-text);
+    }
+    .handoff-warn .icon { width: 18px; height: 18px; margin-top: 1px; }
+    .handoff-prompt {
+      width: 100%;
+      min-height: 15rem;
+      padding: var(--sp-3);
+      resize: vertical;
+      background: var(--bg);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-md);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: var(--fs-xs);
+      line-height: 1.55;
+    }
+    .handoff-prompt:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+    .handoff-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+    .handoff-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--sp-2);
+      min-height: 48px;
+      padding: 0 var(--sp-4);
+      background: transparent;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-full);
+      color: var(--text);
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+    }
+    .handoff-btn:hover { background: var(--surface-2); }
+    .handoff-btn.is-primary { flex: 1 1 auto; background: var(--gold-fill); border-color: transparent; color: var(--on-gold); }
+    .handoff-btn.is-primary:hover { background: var(--gold-strong); }
+    .handoff-btn:active { transform: scale(0.97); }
+    .handoff-btn:focus-visible { border-radius: var(--r-full); }
+    .handoff-btn:disabled { opacity: 0.5; cursor: progress; transform: none; }
+    .handoff-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); font-size: var(--fs-sm); line-height: 1.45; color: var(--text-2); }
+    .handoff-status:empty { display: none; }
+    .handoff-status[data-tone="ok"] { color: var(--ok); }
+    .handoff-status[data-tone="warn"] { color: var(--warn-text); }
+    .handoff-status .md-link { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: var(--tap); }
+    .handoff-status .md-link .icon { width: 16px; height: 16px; }
+    .handoff-offer {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: var(--sp-2) var(--sp-3);
+      margin-top: var(--sp-4);
+      padding: var(--sp-3);
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--r-md);
+      font-size: var(--fs-sm);
+      color: var(--text-2);
+    }
+    .handoff-offer > .icon { color: var(--gold); }
+    .handoff-offer-text { flex: 1 1 12rem; }
+    .handoff-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+    .handoff-empty { padding: 0 var(--sp-3); font-size: var(--fs-sm); color: var(--text-2); }
+    .handoff-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 2px var(--sp-2);
+      padding: var(--sp-2) var(--sp-3);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+    }
+    .handoff-row-id { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-2); }
+    .handoff-row-task { grid-column: 1 / -1; overflow: hidden; font-size: var(--fs-sm); color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+    .handoff-pill {
+      justify-self: end;
+      padding: 1px var(--sp-2);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-full);
+      font-size: var(--fs-2xs);
+      font-weight: 600;
+      color: var(--text-2);
+      white-space: nowrap;
+    }
+    .handoff-pill[data-status="sent"] { color: var(--info); border-color: currentColor; }
+    .handoff-pill[data-status="pr_open"] { color: var(--gold); background: var(--gold-soft); border-color: var(--gold-line); }
+    .handoff-pill[data-status="merged"] { color: var(--ok); background: var(--ok-soft); border-color: currentColor; }
+    .handoff-pill[data-status="closed"] { color: var(--text-3); }
+    .handoff-pr-link { grid-column: 1 / -1; display: inline-flex; align-items: center; gap: var(--sp-1); justify-self: start; min-height: var(--tap); color: var(--info); font-size: var(--fs-sm); text-underline-offset: 3px; }
+    .handoff-pr-link:hover { color: var(--info-hover); }
+    .handoff-pr-link .icon { width: 16px; height: 16px; }
+
     .media-preview-container { margin: var(--sp-4) 0; width: 100%; }
     .media-preview-container img, .media-preview-container video {
       width: 100%;
@@ -1574,6 +1703,8 @@
     <symbol id="i-wave" viewBox="0 0 24 24"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5 2.5 20h19z"/><path d="M12 10v4M12 17h.01"/></symbol>
     <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5"/><path d="m16 7 5 5-5 5"/><path d="m13.5 4-3 16"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></symbol>
     <symbol id="i-offline" viewBox="0 0 24 24"><path d="M2 8.8a15 15 0 0 1 4.2-2.6M9.6 5.2A15 15 0 0 1 22 8.8M5 12.5a10 10 0 0 1 3.6-2.1M15.2 10.6A10 10 0 0 1 19 12.5M8.5 16a5 5 0 0 1 7 0"/><path d="M12 20h.01"/><path d="M3 3l18 18"/></symbol>
   </svg>
 
@@ -1691,6 +1822,13 @@
       <button type="button" class="drawer-item" onclick="triggerHaptic(); closeDrawer(); requestVaultExport()"><svg class="icon" aria-hidden="true"><use href="#i-export"/></svg>Export transcript</button>
       <button type="button" class="drawer-item is-danger" onclick="triggerHaptic(); closeDrawer(); clearChat()"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Clear chat</button>
     </nav>
+
+    <!-- SEND TO CODE: hand-offs drafted with /code, newest first, with the
+         status PG1 last read from GitHub. Filled by refreshHandoffList(). -->
+    <div class="drawer-section" role="group" aria-labelledby="handoffs-label">
+      <span class="drawer-label" id="handoffs-label">Hand-offs</span>
+      <div id="handoff-list" class="handoff-list" aria-live="polite"><p class="handoff-empty">Sign in to see hand-offs.</p></div>
+    </div>
 
     <div class="drawer-section" role="group" aria-label="Voice">
       <span class="drawer-label">Voice</span>
@@ -2047,6 +2185,7 @@
       if (btn) btn.setAttribute('aria-expanded', 'true');
       const close = drawer.querySelector('[data-drawer-close]');
       if (close) close.focus({ preventScroll: true });
+      refreshHandoffList();
     }
     function closeDrawer() {
       const drawer = document.getElementById('app-drawer');
@@ -3421,6 +3560,341 @@
       applyErrorLogFilter();
     }
 
+    // SEND TO CODE: "/code <task>" (or the offer under a reply that looks
+    // like a code change) asks /api/handoffs to draft a task prompt for the
+    // operator's coding agent, shown as an editable card. PG1 makes no model
+    // call for this and never touches the operator's Code credentials: the
+    // card only copies the prompt and opens claude.ai/code, whose documented
+    // ?prompt= and ?repositories= parameters pre-fill a new session. Hand-off
+    // PRs are tracked from GitHub in the drawer, never through Approve.
+    const CODE_URL = 'https://claude.ai/code';
+    // Past this the pre-filled URL gets unwieldy; the prompt is still on the
+    // clipboard, so Code just opens with the repository selected.
+    const CODE_URL_MAX = 7000;
+    const HANDOFF_STATUS_LABELS = { drafted: 'Drafted', sent: 'Sent', pr_open: 'PR open', merged: 'Merged', closed: 'Closed' };
+
+    function parseCodeCommand(text) {
+      const m = String(text || '').match(/^\/code(?:\s+([\s\S]*))?$/i);
+      return m ? (m[1] || '').trim() : null;
+    }
+
+    // Narrow on purpose: an imperative change verb plus something that is
+    // clearly code (or a file path), and not a question.
+    function isLikelyCodeChangeRequest(text) {
+      const t = String(text || '').trim();
+      // Slash commands and JSON payloads (\x7b is an opening brace) are never offered.
+      if (!t || /^[/\x7b]/.test(t) || t.length > 2000) return false;
+      if (/^(what|why|how|when|where|who|which|is|are|does|do|did|explain|tell me)\b/i.test(t)) return false;
+      const verb = /\b(fix|add|implement|refactor|change|update|rename|remove|delete|write|create|build|migrate|patch|wire up|hook up|make)\b/i.test(t);
+      const codey = /\b(bug|function|endpoint|route|api|tests?|component|button|css|style|page|feature|code|repo|pr|pull request|drawer|modal|handler|migration|schema|regex|ui|card)\b/i.test(t)
+        || /\b[\w-]+\.(?:mjs|cjs|js|ts|tsx|jsx|html|css|json|sql|py)\b/i.test(t);
+      return verb && codey;
+    }
+
+    // Twin of lib/handoff.mjs stripSecrets() (minus the server-only env
+    // values). Runs over the operator's edits before every copy;
+    // tests/handoff.test.mjs checks both give the same result.
+    function stripSecretsClient(input) {
+      const REMOVED = '[removed]';
+      const patterns = [
+        { label: 'private key', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g },
+        { label: 'JWT or Supabase key', re: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g },
+        { label: 'Supabase key', re: /\bsb_(?:secret|publishable)_[A-Za-z0-9_-]{10,}/g },
+        { label: 'API key', re: /\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{16,}/g },
+        { label: 'GitHub token', re: /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/g },
+        { label: 'API key', re: /\bAIza[0-9A-Za-z_-]{30,}/g },
+        { label: 'AWS key', re: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g },
+        { label: 'Slack token', re: /\bxox[abprs]-[A-Za-z0-9-]{10,}/g },
+        { label: 'bearer token', re: /\b(Bearer\s+)[A-Za-z0-9._~+/-]{16,}=*/gi, keep: 1 },
+        { label: 'credentials in a URL', re: /\b([a-z][a-z0-9+.-]*:\/\/)[^\s:@/]+:[^\s@/]+@/gi, keep: 1, suffix: '@' },
+        { label: 'env value', re: /\b([A-Z][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSS?|PASSWORD|PASSKEY|PAT|PRIVATE|CREDENTIALS?)\s*[=:]\s*)(["']?)[^\s"']{4,}\2/g, keep: 1 },
+        { label: 'password or passkey', re: /\b((?:pass(?:word|key|phrase)?|api[ _-]?key|secret|access[ _-]?token)\s*[=:]\s*)(?=\S*[0-9!@#$%^&*_+=~-]|\S{16,})[^\s"'`]{6,}/gi, keep: 1 },
+        { label: 'long token', re: /(?<![A-Za-z0-9+_])(?=[A-Za-z0-9+_]*[A-Z])(?=[A-Za-z0-9+_]*[a-z])(?=(?:[A-Za-z+_]*[0-9]){2})[A-Za-z0-9+_]{32,}={0,2}(?![A-Za-z0-9+_])/g }
+      ];
+      let text = typeof input === 'string' ? input : '';
+      const removed = [];
+      patterns.forEach(({ label, re, keep, suffix }) => {
+        text = text.replace(re, (...m) => {
+          if (m[0] === REMOVED || m[0].endsWith(REMOVED)) return m[0];
+          if (!removed.includes(label)) removed.push(label);
+          return (keep ? m[keep] : '') + REMOVED + (suffix || '');
+        });
+      });
+      return { text, removed };
+    }
+
+    function buildCodeUrl(prompt, repo) {
+      const repoPart = repo ? '&repositories=' + encodeURIComponent(repo) : '';
+      const full = CODE_URL + '?prompt=' + encodeURIComponent(prompt || '') + repoPart;
+      if (full.length <= CODE_URL_MAX) return full;
+      return repo ? CODE_URL + '?repositories=' + encodeURIComponent(repo) : CODE_URL;
+    }
+
+    function renderHandoffCardHtml(draft) {
+      const id = escapeHTML(draft.taskId);
+      const removed = Array.isArray(draft.removed) ? draft.removed : [];
+      const warn = removed.length
+        ? `<p class="handoff-warn" role="note"><svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg><span>Removed before drafting: ${escapeHTML(removed.join(', '))}. Secrets, env values, passkeys and Supabase keys never go into a hand-off. Check the prompt still says what you need.</span></p>`
+        : '';
+      return `
+            <div class="handoff-card" data-task-id="${id}" data-repo="${escapeHTML(draft.repo)}">
+              <div class="handoff-head"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg><span class="handoff-title">Send to Code</span><span class="handoff-id">${id}</span></div>
+              <p class="handoff-note">Edit the prompt if you need to. It runs in Code on your own subscription; PG1 only copies it and opens Code.</p>
+              ${warn}
+              <label class="sr-only" for="handoff-prompt-${id}">Task prompt for ${id}</label>
+              <textarea class="handoff-prompt" id="handoff-prompt-${id}" spellcheck="false" oncopy="handoffManualCopy(this, event)">${escapeHTML(draft.prompt)}</textarea>
+              <div class="handoff-actions">
+                <button type="button" class="handoff-btn is-primary" onclick="copyHandoffPrompt(this, true)"><svg class="icon" aria-hidden="true"><use href="#i-external"/></svg>Copy and open Code</button>
+                <button type="button" class="handoff-btn" onclick="copyHandoffPrompt(this, false)"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg>Copy only</button>
+              </div>
+              <div class="handoff-status" role="status" aria-live="polite"></div>
+            </div>`;
+    }
+
+    function renderHandoffOfferHtml(task) {
+      return `
+            <div class="handoff-offer" data-task="${escapeHTML(task)}">
+              <svg class="icon" aria-hidden="true"><use href="#i-code"/></svg>
+              <span class="handoff-offer-text">This looks like a code change. Send to Code can draft a task prompt for your coding agent.</span>
+              <button type="button" class="handoff-btn" onclick="proposeHandoff(this)">Draft hand-off</button>
+            </div>`;
+    }
+
+    function renderHandoffListHtml(rows) {
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return '<p class="handoff-empty">No hand-offs yet. Type /code and a task in chat.</p>';
+      }
+      return rows.map((r) => {
+        const status = HANDOFF_STATUS_LABELS[r.status] ? r.status : 'drafted';
+        const prUrl = typeof r.pr_url === 'string' && /^https:\/\/github\.com\/[A-Za-z0-9-]+\/[A-Za-z0-9._-]+\/pull\/\d+$/.test(r.pr_url) ? r.pr_url : '';
+        const link = prUrl
+          ? `<a class="handoff-pr-link" href="${escapeHTML(prUrl)}" target="_blank" rel="noopener noreferrer">View PR on GitHub<svg class="icon" aria-hidden="true"><use href="#i-external"/></svg></a>`
+          : '';
+        return `<div class="handoff-row"><span class="handoff-row-id">${escapeHTML(r.task_id)}</span><span class="handoff-pill" data-status="${status}">${HANDOFF_STATUS_LABELS[status]}</span><span class="handoff-row-task" title="${escapeHTML(r.task)}">${escapeHTML(r.task)}</span>${link}</div>`;
+      }).join('');
+    }
+
+    async function refreshHandoffList() {
+      const list = document.getElementById('handoff-list');
+      if (!list) return;
+      if (!sessionUser || !sessionPass) {
+        list.innerHTML = '<p class="handoff-empty">Sign in to see hand-offs.</p>';
+        return;
+      }
+      try {
+        const res = await fetch('/api/handoffs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ op: 'list', user: sessionUser, pass: sessionPass })
+        });
+        const data = await res.json();
+        if (!res.ok || !Array.isArray(data.handoffs)) throw new Error(data.error || 'unavailable');
+        list.innerHTML = renderHandoffListHtml(data.handoffs)
+          + (data.syncError ? `<p class="handoff-empty">${escapeHTML(data.syncError)} Showing the last known status.</p>` : '');
+      } catch (e) {
+        list.innerHTML = '<p class="handoff-empty">Hand-off history is unavailable right now.</p>';
+      }
+    }
+
+    function appendHandoffBubble(userText) {
+      const chatContainer = document.getElementById('chat-container');
+      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      if (userText) {
+        const userBubble = document.createElement('div');
+        userBubble.className = 'message-bubble user';
+        userBubble.innerHTML = `
+        <span class="msg-timestamp">${time}</span>
+        <div class="message-text">${formatMarkdown(userText)}</div>
+        ${messageActionsHtml('user')}`;
+        chatContainer.appendChild(userBubble);
+      }
+      const agentBubble = document.createElement('div');
+      agentBubble.className = 'message-bubble pending';
+      agentBubble.innerHTML = `<span class="msg-timestamp">${time}</span><div class="message-text pending-text" role="status"><span class="thinking" aria-hidden="true"><i></i><i></i><i></i></span>Drafting hand-off…</div>`;
+      chatContainer.appendChild(agentBubble);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+      return agentBubble;
+    }
+
+    async function startHandoffDraft(task, userText) {
+      const agentBubble = appendHandoffBubble(userText);
+      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      let reply;
+      let card = '';
+      try {
+        const res = await fetch('/api/handoffs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ op: 'draft', task, user: sessionUser, pass: sessionPass })
+        });
+        const data = await res.json();
+        if (res.status === 401) {
+          reply = '[AGENT] Send to Code is for the signed-in operator only.';
+        } else if (!res.ok || !data.prompt) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        } else {
+          reply = `Drafted hand-off **${data.taskId}** for ${data.repo}. Check the prompt, then send it to Code.`;
+          if (!data.stored) reply += '\n\nIt was not saved to Hand-offs (storage unavailable), so its PR will not be tracked.';
+          card = renderHandoffCardHtml(data);
+        }
+      } catch (err) {
+        logError('Hand-off draft failed: ' + err.message, 'handoff', classifyFetchFailure(err, null));
+        reply = '[AGENT] Could not draft the hand-off. Try again in a moment.';
+      }
+      agentBubble.classList.remove('pending');
+      agentBubble.innerHTML = `<span class="msg-timestamp">${time}</span><div class="message-text">${formatMarkdown(reply)}</div>${card}${messageActionsHtml('agent')}`;
+      saveState();
+      refreshHandoffList();
+    }
+
+    function handleCodeCommand(rawText, task) {
+      const input = document.getElementById('prompt-input');
+      input.value = '';
+      input.style.height = 'auto';
+      if (!sessionUser || !sessionPass) {
+        appendLocalExchange(rawText, '[AGENT] Send to Code is for the signed-in operator. Sign in first.');
+        return;
+      }
+      if (!task) {
+        appendLocalExchange(rawText, 'Usage: **/code** plus a task, for example `/code add a dark-mode toggle to the drawer`. Start with `repo:<name>` to pick another Project-Gifted1 repo.');
+        return;
+      }
+      triggerHaptic(30);
+      startHandoffDraft(task, rawText);
+    }
+
+    function proposeHandoff(btn) {
+      const offer = btn.closest('.handoff-offer');
+      const task = offer ? offer.getAttribute('data-task') : '';
+      if (!task) return;
+      if (!sessionUser || !sessionPass) {
+        flashStatus('Sign in to use Send to Code', true);
+        return;
+      }
+      triggerHaptic(30);
+      offer.remove();
+      saveState();
+      startHandoffDraft(task, '');
+    }
+
+    async function writeClipboard(text, textarea) {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+      } catch (e) {
+        // Blocked (permissions policy, insecure context, no user gesture):
+        // try the legacy path next.
+      }
+      try {
+        if (!textarea || typeof document.execCommand !== 'function') return false;
+        textarea.dataset.programmaticCopy = '1';
+        textarea.focus();
+        textarea.select();
+        return document.execCommand('copy') === true;
+      } catch (e) {
+        return false;
+      } finally {
+        if (textarea) delete textarea.dataset.programmaticCopy;
+      }
+    }
+
+    function setHandoffStatus(card, tone, html) {
+      const el = card.querySelector('.handoff-status');
+      if (!el) return;
+      el.setAttribute('data-tone', tone);
+      el.innerHTML = html;
+    }
+
+    function codeLinkHtml(url, label) {
+      return `<a class="md-link" href="${escapeHTML(url)}" target="_blank" rel="noopener noreferrer" onclick="handoffLinkOpened(this)">${label}<svg class="icon" aria-hidden="true"><use href="#i-external"/></svg></a>`;
+    }
+
+    // Clipboard blocked: select the whole prompt so the operator can copy
+    // it by hand, and give them the Code link to tap afterwards.
+    function showClipboardFallback(card, url) {
+      const ta = card.querySelector('.handoff-prompt');
+      if (ta) {
+        ta.focus();
+        ta.select();
+      }
+      setHandoffStatus(card, 'warn', `<span>Clipboard access is blocked here. The whole prompt is selected: copy it with your keyboard or the system menu.</span>${url ? codeLinkHtml(url, 'Then open Code') : ''}`);
+    }
+
+    function markHandoffSent(card, prompt) {
+      if (!card || !sessionUser || !sessionPass) return;
+      fetch('/api/handoffs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'sent', taskId: card.getAttribute('data-task-id'), prompt, user: sessionUser, pass: sessionPass })
+      }).then(refreshHandoffList).catch(() => {});
+    }
+
+    async function copyHandoffPrompt(btn, openCode) {
+      const card = btn.closest('.handoff-card');
+      if (!card) return;
+      triggerHaptic(40);
+      const ta = card.querySelector('.handoff-prompt');
+      const taskId = card.getAttribute('data-task-id');
+      const repo = card.getAttribute('data-repo');
+      const cleaned = stripSecretsClient(ta.value);
+      const notes = [];
+      if (cleaned.removed.length) {
+        ta.value = cleaned.text;
+        notes.push(`Removed before copying: ${escapeHTML(cleaned.removed.join(', '))}.`);
+      }
+      if (taskId && !cleaned.text.includes(taskId)) {
+        notes.push(`The task ID ${escapeHTML(taskId)} is no longer in the prompt, so its PR will not be tracked.`);
+      }
+      const url = buildCodeUrl(cleaned.text, repo);
+      const copied = await writeClipboard(cleaned.text, ta);
+      if (!copied) {
+        showClipboardFallback(card, openCode ? url : '');
+        return;
+      }
+      let message = 'Copied to clipboard.';
+      let extra = '';
+      if (openCode) {
+        const win = window.open(url, '_blank');
+        if (win) {
+          try { win.opener = null; } catch (e) {}
+          message = 'Copied, and Code opened in a new tab with the prompt filled in.';
+        } else {
+          message = 'Copied. Your browser blocked the new tab:';
+          extra = codeLinkHtml(url, 'Open Code');
+        }
+      }
+      triggerHaptic([30, 50, 30]);
+      setHandoffStatus(card, notes.length ? 'warn' : 'ok', `<span>${message} ${notes.join(' ')}</span>${extra}`);
+      markHandoffSent(card, cleaned.text);
+    }
+
+    // The operator copied by hand (after the fallback selected the text).
+    // The copied selection is stripped the same way before it reaches the
+    // clipboard.
+    function handoffManualCopy(textarea, event) {
+      if (textarea.dataset.programmaticCopy) return;
+      const card = textarea.closest('.handoff-card');
+      if (!card) return;
+      const selected = textarea.value.slice(textarea.selectionStart, textarea.selectionEnd) || textarea.value;
+      const cleaned = stripSecretsClient(selected);
+      let note = '';
+      if (cleaned.removed.length && event && event.clipboardData) {
+        event.preventDefault();
+        event.clipboardData.setData('text/plain', cleaned.text);
+        note = ` Removed before copying: ${escapeHTML(cleaned.removed.join(', '))}.`;
+      }
+      setHandoffStatus(card, note ? 'warn' : 'ok', `<span>Copied.${note}</span>` + codeLinkHtml(buildCodeUrl(cleaned.text, card.getAttribute('data-repo')), 'Open Code'));
+      markHandoffSent(card, stripSecretsClient(textarea.value).text);
+    }
+
+    function handoffLinkOpened(link) {
+      const card = link.closest('.handoff-card');
+      const ta = card && card.querySelector('.handoff-prompt');
+      if (ta) markHandoffSent(card, stripSecretsClient(ta.value).text);
+    }
+
     async function submitDirective() {
       const input = document.getElementById('prompt-input');
       const text = input.value.trim();
@@ -3428,6 +3902,12 @@
       const voiceCmdMatch = text.toLowerCase().match(/^\/voice(?:[- ]([a-z0-9-]+))?$/);
       if (voiceCmdMatch) {
         handleVoiceCommand(text, voiceCmdMatch[1]);
+        return;
+      }
+
+      const codeTask = parseCodeCommand(text);
+      if (codeTask !== null) {
+        handleCodeCommand(text, codeTask);
         return;
       }
 
@@ -3589,6 +4069,12 @@
 
         if (data.pendingApproval && data.pendingApproval.token) {
           contentHtml += renderApprovalActionsHtml(data.pendingApproval.token);
+        }
+
+        // SEND TO CODE: offer a hand-off under a reply to what looks like a
+        // code-change request (operator only, never alongside an approval).
+        if (!data.pendingApproval && !isSuggestFixRequest && sessionUser && sessionPass && isLikelyCodeChangeRequest(text)) {
+          contentHtml += renderHandoffOfferHtml(text);
         }
 
         contentHtml += messageActionsHtml('agent');
