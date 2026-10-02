@@ -3,8 +3,9 @@
 // api/errors.mjs.
 //
 //   { op: 'draft', user, pass, task, repo? }
-//     Builds the task prompt (no model call), strips anything that looks
-//     like a secret, stores a 'drafted' row in pg1_handoffs and returns the
+//     Builds the task prompt (no model call), resolves relevant file names
+//     against the repo tree (read with PG1's existing GITHUB_TOKEN), strips
+//     anything that looks like a secret, stores a 'drafted' row in pg1_handoffs and returns the
 //     prompt for the chat card. Storage failing never blocks the draft.
 //   { op: 'sent', user, pass, taskId, prompt }
 //     The operator copied the (possibly edited) prompt: re-strip it, store
@@ -21,7 +22,7 @@ import { safeCompare } from './chat.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import {
   draftHandoff, stripSecrets, secretEnvValues, computeHandoffUpdates,
-  isSafePrUrl, TASK_ID_RE, MAX_PROMPT_LEN, KNOWN_HANDOFF_REPOS
+  isSafePrUrl, resolveHandoffRepo, TASK_ID_RE, MAX_PROMPT_LEN, MAX_TASK_LEN, KNOWN_HANDOFF_REPOS
 } from '../lib/handoff.mjs';
 
 export const config = { maxDuration: 15 };
@@ -94,6 +95,34 @@ async function fetchPullsByRepo(repos, githubToken) {
   return { pullsByRepo, failed };
 }
 
+const TREE_TIMEOUT_MS = 5000;
+
+// The repo's file and directory paths from the default branch, or null when
+// GitHub can't be reached (the draft then keeps file names unresolved).
+async function fetchRepoTree(repo, githubToken) {
+  if (!githubToken || !KNOWN_HANDOFF_REPOS.includes(repo)) return null;
+  try {
+    var r = await fetch(`https://api.github.com/repos/${repo}/git/trees/HEAD?recursive=1`, {
+      headers: {
+        'Authorization': `Bearer ${githubToken}`,
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'Sovereign-Agent'
+      },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(TREE_TIMEOUT_MS)
+    });
+    if (!r.ok) return null;
+    var data = await r.json();
+    if (!data || !Array.isArray(data.tree)) return null;
+    var paths = data.tree
+      .filter((item) => item && typeof item.path === 'string')
+      .map((item) => item.type === 'tree' ? item.path + '/' : item.path);
+    return paths.length ? paths : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function patchRow(db, taskId, patch, extraFilter) {
   return fetch(`${db.url}/rest/v1/${TABLE}?task_id=eq.${encodeURIComponent(taskId)}${extraFilter || ''}`, {
     method: 'PATCH',
@@ -134,7 +163,9 @@ export default async function handler(req, res) {
   if (op === 'draft') {
     var task = typeof body.task === 'string' ? body.task.trim() : '';
     if (!task) return res.status(400).json({ error: 'Missing task' });
-    var draft = draftHandoff({ task: task, repo: body.repo, envValues: envValues });
+    var draftRepo = resolveHandoffRepo(task.slice(0, MAX_TASK_LEN), body.repo).repo;
+    var tree = await fetchRepoTree(draftRepo, (process.env.GITHUB_TOKEN || '').replace(/\s+/g, ''));
+    var draft = draftHandoff({ task: task, repo: body.repo, envValues: envValues, tree: tree });
     var stored = false;
     if (db) {
       try {

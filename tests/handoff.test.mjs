@@ -187,17 +187,90 @@ test('a full built prompt survives stripping unchanged', () => {
   assert.equal(stripSecrets(d.prompt).text, d.prompt);
 });
 
-test('the deployment\'s own secret env values are stripped wherever they appear', () => {
-  const env = { USER_API_PASS: 'plainwordpass', SUPABASE_URL: 'https://abc.supabase.co', GITHUB_TOKEN: FAKE.envSecretValue, NODE_ENV: 'production', SHORT_KEY: 'abc' };
+test('the deployment\'s own secret env values are stripped wherever they appear, named by variable', () => {
+  const env = { SUPABASE_SERVICE_ROLE_KEY: FAKE.envSecretValue.padEnd(24, 'x'), GITHUB_TOKEN: 'plainword-passphrase', NODE_ENV: 'production', SHORT_KEY: 'abc' };
   const values = secretEnvValues(env);
-  assert.ok(values.includes('plainwordpass'));
-  assert.ok(values.includes('https://abc.supabase.co'));
-  assert.ok(values.includes(FAKE.envSecretValue));
-  assert.ok(!values.includes('production'), 'non-secret names are not stripped');
-  assert.ok(!values.includes('abc'), 'too short to strip safely');
-  const d = draftHandoff({ task: 'login fails with plainwordpass against https://abc.supabase.co', envValues: values });
-  assert.doesNotMatch(d.prompt, /plainwordpass|abc\.supabase\.co/);
-  assert.ok(d.removed.includes('environment value'));
+  assert.deepEqual(values.map((v) => v.name).sort(), ['GITHUB_TOKEN', 'SUPABASE_SERVICE_ROLE_KEY']);
+  const d = draftHandoff({ task: `login fails with plainword-passphrase and ${env.SUPABASE_SERVICE_ROLE_KEY}`, envValues: values });
+  assert.ok(!d.prompt.includes('plainword-passphrase'));
+  assert.ok(!d.prompt.includes(env.SUPABASE_SERVICE_ROLE_KEY));
+  assert.deepEqual(d.removed, ['value of SUPABASE_SERVICE_ROLE_KEY', 'value of GITHUB_TOKEN']);
+});
+
+test('only secret-looking names with credential-length values count as env secrets', () => {
+  const env = {
+    GITHUB_REPO_TOKEN_SCOPE: 'Project-Gifted1/pg1-ai-agent',
+    REPO_KEY: 'https://github.com/Project-Gifted1/pg1-ai-agent',
+    APP_ORIGIN_KEY: 'https://pg1-ai-agent.vercel.app',
+    PUBLIC_DOCS_TOKEN_URL: 'https://example.com/docs/getting-started',
+    FEATURE_FLAG_SECRET: 'true',
+    RATE_LIMIT_KEY: '1234567890123456789',
+    USER_API_PASS: 'pw-01',
+    SUPABASE_URL: 'https://abc-project-ref.supabase.co',
+    VERCEL_GIT_REPO_SLUG: 'pg1-ai-agent-long-name',
+    SLACK_WEBHOOK_URL: 'https://hooks.example.invalid/services/pg1-fixture-hook-0001',
+    DATABASE_URL: postgresUrl()
+  };
+  assert.deepEqual(secretEnvValues(env).map((v) => v.name).sort(), ['DATABASE_URL', 'SLACK_WEBHOOK_URL']);
+});
+
+test('PASS, PASSKEY and PASSWORD env values are stripped from 6 chars; other secret names need 16', () => {
+  const passkey = FAKE.passkey.slice(0, 8);
+  const env = {
+    OPERATOR_PASSKEY: passkey,
+    USER_API_PASS: 'pg1pw6',
+    DB_PASSWORD: 'pg1-pw-07',
+    SHORT_PASS: 'pg1pw',
+    SHORT_API_KEY: 'pg1-fixture-key'
+  };
+  const values = secretEnvValues(env);
+  assert.deepEqual(values.map((v) => v.name).sort(), ['DB_PASSWORD', 'OPERATOR_PASSKEY', 'USER_API_PASS']);
+  const d = draftHandoff({ task: `login with ${passkey} fails; also pg1pw6 and pg1-pw-07 and pg1-fixture-key`, envValues: values });
+  assert.ok(!d.prompt.includes(passkey), 'short passkey env value is stripped');
+  assert.ok(!d.prompt.includes('pg1pw6'));
+  assert.ok(!d.prompt.includes('pg1-pw-07'));
+  assert.ok(d.prompt.includes('pg1-fixture-key'), 'a 15-char KEY value is below the 16-char minimum');
+  assert.deepEqual([...d.removed].sort(), ['value of DB_PASSWORD', 'value of OPERATOR_PASSKEY', 'value of USER_API_PASS']);
+  assert.ok(!d.removed.some((l) => l.includes(passkey) || l.includes('pg1pw6') || l.includes('pg1-pw-07')), 'warning names only the variable');
+  // stripSecrets applies the same per-name minimum when given values directly.
+  assert.deepEqual(stripSecrets('use pg1pw', { envValues: [{ name: 'SHORT_PASS', value: 'pg1pw' }] }).removed, []);
+});
+
+test('the repo name and ordinary words are never stripped, even if an env var holds them', () => {
+  const tricky = [
+    { name: 'GITHUB_REPO_TOKEN_SCOPE', value: 'Project-Gifted1/pg1-ai-agent' },
+    { name: 'DEFAULT_KEY_PAGE', value: 'add a footer link' },
+    { name: 'SECRET_WORD', value: 'llms' }
+  ];
+  // Even if such values reached stripSecrets directly, the Repository line
+  // is filled in after stripping, and short values are ignored.
+  const d = draftHandoff({ task: 'add a footer link to llms.txt in Project-Gifted1/pg1-ai-agent', envValues: tricky, taskId: 'PG1-TASK-ALVSCG' });
+  assert.match(d.prompt, /^Repository\nProject-Gifted1\/pg1-ai-agent$/m);
+  assert.match(d.prompt, /llms\.txt/);
+  const real = draftHandoff({ task: 'add a footer link to llms.txt', envValues: secretEnvValues({ GITHUB_REPO_TOKEN_SCOPE: 'Project-Gifted1/pg1-ai-agent' }) });
+  assert.deepEqual(real.removed, []);
+  assert.match(real.prompt, /^Repository\nProject-Gifted1\/pg1-ai-agent$/m);
+  assert.doesNotMatch(real.prompt, /\[removed\]/);
+});
+
+test('the warning names only the variable, never the value', () => {
+  const env = { SUPABASE_SERVICE_ROLE_KEY: FAKE.supabaseSecretKey };
+  const d = draftHandoff({ task: `debug with ${FAKE.supabaseSecretKey}`, envValues: secretEnvValues(env) });
+  assert.deepEqual(d.removed, ['value of SUPABASE_SERVICE_ROLE_KEY']);
+  assert.ok(!JSON.stringify(d.removed).includes(FAKE.supabaseSecretKey));
+  assert.ok(!d.prompt.includes(FAKE.supabaseSecretKey));
+});
+
+test('relevant files resolve to real repo paths; names that match nothing are dropped', () => {
+  const tree = ['public/', 'public/index.html', 'public/llms.txt', 'api/', 'api/chat.mjs', 'lib/handoff.mjs', 'supabase/', 'supabase/migrations/', 'supabase/migrations/x.sql', 'node_modules/foo/llms.txt'];
+  assert.deepEqual(findRelevantFiles('add a footer link to llms.txt', DEFAULT_HANDOFF_REPO, 8, tree), ['public/llms.txt']);
+  assert.deepEqual(findRelevantFiles('update handoff.mjs and missing.mjs', DEFAULT_HANDOFF_REPO, 8, tree), ['lib/handoff.mjs']);
+  assert.deepEqual(findRelevantFiles('fix the drawer button', DEFAULT_HANDOFF_REPO, 8, tree), ['public/index.html']);
+  assert.ok(findRelevantFiles('add a supabase table', DEFAULT_HANDOFF_REPO, 8, tree).includes('supabase/migrations/'));
+  assert.deepEqual(findRelevantFiles('add a supabase table', DEFAULT_HANDOFF_REPO, 8, ['public/index.html']), [], 'hint dropped when the repo lacks it');
+  const d = draftHandoff({ task: 'add a footer link to llms.txt', tree });
+  assert.match(d.prompt, /^- public\/llms\.txt$/m);
+  assert.doesNotMatch(d.prompt, /^- llms\.txt$/m);
 });
 
 test('a secret in the task never reaches the prompt and is reported', () => {
