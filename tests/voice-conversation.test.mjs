@@ -491,6 +491,58 @@ test('a hidden page, dictation, or a tap stops it; a second start works; nothing
   assert.equal(f.log.states.at(-1), 'off:tap');
 });
 
+// --- the module as a plain browser script (regression: "root is not defined") ------------
+
+test('the browser helpers read the page globals through the wrapper\'s root, as a plain script with nothing else defined', async () => {
+  // Chrome on a Pixel 9a: the factory took no argument, so every helper that
+  // touched `root` threw "root is not defined" and the toast showed it.
+  // A bare context: no navigator, no document, no Node globals.
+  const bare = loadModule();
+  await assert.rejects(bare.openMicrophone(), { message: 'Microphone is not available.' });
+  await assert.rejects(bare.loadOnnxRuntime(), { message: 'no document' });
+
+  // The wrapper's parameter is the only `root`: the factory names it too.
+  assert.match(moduleSrc, /\(function \(root, factory\) \{\s*const api = factory\(root\);/);
+  assert.match(moduleSrc, /\}\)\(typeof globalThis !== 'undefined' \? globalThis : [^,]+, function \(root\) \{/);
+  // No Node-only or harness-only identifiers are needed to run it.
+  assert.doesNotMatch(moduleSrc, /(?<![.\w])(?:require\s*\(|process\s*\.|Buffer\s*[.(]|__dirname|__filename|setImmediate)/, 'nothing Node-only');
+  assert.match(moduleSrc, /if \(typeof module === 'object' && module\.exports\)/, 'module is only touched behind typeof');
+
+  // With the page's globals in place the helpers use them: a fake
+  // getUserMedia that is refused reaches the mic path, not a ReferenceError.
+  const refused = new Error('Permission denied');
+  const withNav = loadModule({ navigator: { mediaDevices: { getUserMedia: async () => { throw refused; } } } });
+  await assert.rejects(withNav.openMicrophone(), refused);
+  const withDoc = loadModule({
+    WebAssembly: {},
+    document: { createElement: () => ({}), head: { appendChild(s) { setTimeout(() => s.onerror(), 0); } } }
+  });
+  await assert.rejects(withDoc.loadOnnxRuntime(), { message: 'onnxruntime-web failed to load' });
+});
+
+test('phrase hints: with SpeechRecognitionPhrase on the page the recogniser gets "PG1" as a hint; without it, nothing breaks', async () => {
+  class SpeechRecognitionPhrase { constructor(phrase, boost) { this.phrase = phrase; this.boost = boost; } }
+  const W = loadModule({ SpeechRecognitionPhrase });
+  const rec = { phrases: null, start() { rec.running = true; }, stop() {}, abort() {} };
+  const conv = W.createConversation({
+    createRecognition: () => rec,
+    openMic: async () => ({ onFrame() {}, async close() {} }),
+    loadVad: async () => ({ name: 'fake', process: async () => 0 }),
+    onError: (m) => { throw new Error(m); }
+  });
+  assert.ok(await conv.start());
+  assert.ok(Array.isArray(rec.phrases) && rec.phrases.length === 1);
+  assert.equal(rec.phrases[0].phrase, 'PG1');
+  assert.ok(rec.phrases[0] instanceof SpeechRecognitionPhrase);
+  await conv.stop('tap');
+
+  const rec2 = { start() {}, stop() {}, abort() {} };   // no `phrases` property: hints unsupported
+  const conv2 = V.createConversation({ createRecognition: () => rec2, openMic: async () => ({ onFrame() {}, async close() {} }), loadVad: async () => ({ name: 'fake', process: async () => 0 }) });
+  assert.ok(await conv2.start());
+  assert.equal(rec2.phrases, undefined);
+  await conv2.stop('tap');
+});
+
 test('start fails cleanly without a recogniser or a mic, and reports it', async () => {
   const f = makeFakes({ recognitionAvailable: false });
   assert.equal(await f.conv.start(), false);
@@ -583,6 +635,27 @@ test('the page: switch beside the mic, status line with announcer, the module se
   for (const file of ['ort.wasm.min.js', 'ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.wasm', 'silero_vad_v5.onnx', 'vad-worklet.js', 'LICENSE-onnxruntime.txt', 'LICENSE-silero-vad.txt']) {
     assert.ok(readFileSync(join(ROOT, 'public/voice', file)).length > 0, `public/voice/${file} is shipped`);
   }
+});
+
+test('deployment: the Silero files are served from /voice/ with explicit content types, and no CSP blocks wasm', () => {
+  const vercel = JSON.parse(readFileSync(join(ROOT, 'vercel.json'), 'utf-8'));
+  const byKey = (rule) => Object.fromEntries(rule.headers.map((h) => [h.key, h.value]));
+  const rule = (source) => vercel.headers.find((h) => h.source === source);
+  // The runtime asks for `${wasmPaths}ort-wasm-simd-threaded.{mjs,wasm}` with wasmPaths '/voice/'.
+  assert.match(moduleSrc, /wasmPath = '\/voice\/'/);
+  assert.match(moduleSrc, /ort\.env\.wasm\.wasmPaths = wasmPath/);
+  assert.equal(byKey(rule('/voice/ort-wasm-simd-threaded.wasm'))['Content-Type'], 'application/wasm', 'streaming wasm compilation needs application/wasm');
+  assert.match(byKey(rule('/voice/ort-wasm-simd-threaded.mjs'))['Content-Type'], /^(text|application)\/javascript/, 'the runtime import()s this module');
+  assert.equal(byKey(rule('/voice/silero_vad_v5.onnx'))['Content-Type'], 'application/octet-stream');
+  // No rewrite sends /voice/ anywhere else.
+  assert.ok(!(vercel.rewrites || []).some((r) => /voice/.test(r.source)), 'no rewrite touches /voice/');
+  // A Content-Security-Policy, if one is ever added, must let the wasm run.
+  for (const h of vercel.headers) {
+    const csp = byKey(h)['Content-Security-Policy'];
+    if (csp) assert.match(csp, /'wasm-unsafe-eval'|'unsafe-eval'/, `${h.source}: CSP must allow wasm`);
+  }
+  const metaCsp = html.match(/<meta[^>]+http-equiv="Content-Security-Policy"[^>]*>/i);
+  if (metaCsp) assert.match(metaCsp[0], /'wasm-unsafe-eval'|'unsafe-eval'/, 'page CSP must allow wasm');
 });
 
 test('the page: hidden page and dictation stop the conversation; Spoken replies off stops it; barge-in aborts with "Interrupted"', () => {
