@@ -43,6 +43,24 @@
       ]
     },
     {
+      "source": "/voice/ort-wasm-simd-threaded.wasm",
+      "headers": [
+        { "key": "Content-Type", "value": "application/wasm" }
+      ]
+    },
+    {
+      "source": "/voice/ort-wasm-simd-threaded.mjs",
+      "headers": [
+        { "key": "Content-Type", "value": "text/javascript; charset=utf-8" }
+      ]
+    },
+    {
+      "source": "/voice/silero_vad_v5.onnx",
+      "headers": [
+        { "key": "Content-Type", "value": "application/octet-stream" }
+      ]
+    },
+    {
       "source": "/api/chat",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "https://pg1-ai-agent.vercel.app" },

@@ -13,11 +13,19 @@
 // Speech-to-text stays with the browser's own recogniser: its transcript is
 // the only thing that leaves this module, as the message sent to PG1. No
 // audio is kept anywhere: frames are scored and dropped.
+//
+// The wrapper hands the global object to the factory as `root`: the factory
+// is its own function, so it cannot see the wrapper's parameters, and the
+// browser helpers below (openMicrophone, loadOnnxRuntime, the phrase hints)
+// read navigator, document, AudioContext and friends from `root`. Chrome
+// surfaced this as the toast "root is not defined" when the factory took no
+// argument (PR #236). The tests load this file in a vm context whose global
+// object is the context itself, so the same `root` works there.
 (function (root, factory) {
-  const api = factory();
+  const api = factory(root);
   root.PG1Voice = api;
   if (typeof module === 'object' && module.exports) module.exports = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+})(typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : this), function (root) {
   'use strict';
 
   const DEFAULTS = Object.freeze({
