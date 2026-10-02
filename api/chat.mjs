@@ -6,6 +6,8 @@ import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome } from '../lib/freeTier.mjs';
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
 import { logApiError } from '../lib/errorLog.mjs';
+import { secretEnvValues } from '../lib/handoff.mjs';
+import { createChatStream, createReplyScrubber, readSseResponse, scrubIdentity, wantsChatStream } from '../lib/chatStream.mjs';
 
 // ---------------------------------------------------------------------
 // AUTH: timing-safe secret comparison + in-memory per-IP failure lockout
@@ -262,6 +264,13 @@ function arrayBufferToBase64(buffer) {
 // request path: '*' for /api/ioc (unchanged behavior), or the restricted
 // app origin for the plain /api/chat route.
 function sendJSON(res, status, data) {
+  // Once a chat request has switched to a live trace (lib/chatStream.mjs)
+  // the headers are already sent, so the same reply goes out as stream
+  // events instead.
+  if (res && res.__pg1Stream && res.__pg1Stream.started) {
+    if (!res.__pg1Stream.ended) res.__pg1Stream.finishWithJson(status, data);
+    return;
+  }
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', (res && res.__pg1CorsOrigin) || '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -300,10 +309,12 @@ function escapeStixValue(value) {
   return String(value == null ? '' : value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
-async function resolveGithubPathCandidates(target, repoUrl, headers) {
+// fetchImpl: the handler passes its own fetch so a live trace counts this
+// GitHub call too (see the LIVE TRACE note at the top of handler()).
+async function resolveGithubPathCandidates(target, repoUrl, headers, fetchImpl) {
   var cleanTarget = target.replace(/^\.\//, '').replace(/^\//, '');
   try {
-    var treeRes = await fetch(`${repoUrl}/git/trees/main?recursive=1`, { headers: headers, cache: 'no-store' });
+    var treeRes = await (fetchImpl || fetch)(`${repoUrl}/git/trees/main?recursive=1`, { headers: headers, cache: 'no-store' });
     if (treeRes.ok) {
       var treeData = await treeRes.json();
       var exactMatches = treeData.tree.filter(item => item.type === 'blob' && item.path === cleanTarget);
@@ -556,8 +567,11 @@ function runPreFlightCheck(codeString, fileTarget) {
   }
 }
 
+var GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.6-flash'];
+var ANTHROPIC_MODELS = ['claude-sonnet-5', 'claude-haiku-4-5-20251001'];
+
 async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys, deadlineTs) {
-  var models = ['gemini-3.8-flash', 'gemini-3.6-flash'];
+  var models = GEMINI_MODELS;
   var lastError = '';
 
   var RETRY_RESERVE_MS = 12000;
@@ -683,7 +697,7 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
     return { text: null, error: 'No Anthropic API key configured.' };
   }
 
-  var models = ['claude-sonnet-5', 'claude-haiku-4-5-20251001'];
+  var models = ANTHROPIC_MODELS;
   var lastError = '';
 
   var CROSS_PROVIDER_RESERVE_MS = 10000;
@@ -749,7 +763,235 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
   return { text: null, error: lastError };
 }
 
+// LIVE TRACE: streaming twins of fetchGeminiCore / fetchAnthropicCore, used
+// only when the client asked for a stream (lib/chatStream.mjs). Same models,
+// keys and time budget. A failed attempt moves on to the next model or key
+// only while nothing has been sent to the client yet; once reply text has
+// gone out, a failure ends the reply there and returns what arrived
+// (partial: true), because retrying would repeat or contradict it.
+// Thinking content is never forwarded: Gemini parts marked `thought` and
+// Anthropic thinking deltas are skipped.
+async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKeys, deadlineTs, hooks) {
+  var lastError = '';
+  var RETRY_RESERVE_MS = 12000;
+  var ERROR_RETRY_CAP_MS = 20000;
+  var attemptCount = 0;
+
+  for (var i = 0; i < geminiKeys.length; i++) {
+    for (var j = 0; j < GEMINI_MODELS.length; j++) {
+      if (hooks.signal && hooks.signal.aborted) return { text: '', error: 'Stopped by the client.', aborted: true };
+      var remainingMs = deadlineTs - Date.now();
+      if (remainingMs <= 1000) return { text: '', error: lastError || 'Aborted: model fetch time budget exhausted.' };
+      var firstByteTimeout = attemptCount === 0
+        ? Math.max(remainingMs - RETRY_RESERVE_MS, Math.min(remainingMs, ERROR_RETRY_CAP_MS))
+        : Math.min(ERROR_RETRY_CAP_MS, remainingMs);
+      attemptCount++;
+      var model = GEMINI_MODELS[j];
+      var controller = new AbortController();
+      var timedOut = false;
+      var onClientAbort = function () { controller.abort(); };
+      if (hooks.signal) hooks.signal.addEventListener('abort', onClientAbort);
+      var timeoutId = setTimeout(function () { timedOut = true; controller.abort(); }, firstByteTimeout);
+      var text = '';
+      var searchEntryPoint = null;
+      var webSearchQueries = null;
+      var finishReason = '';
+
+      try {
+        var res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${geminiKeys[i]}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: sysInstruction }] },
+            contents: [{ role: 'user', parts: [...mediaParts, { text: promptText }] }],
+            tools: [{ google_search: {} }],
+            generationConfig: { maxOutputTokens: 4096, temperature: 0.7 }
+          }),
+          cache: 'no-store',
+          signal: controller.signal
+        });
+        if (!res.ok) {
+          var errText = await res.text();
+          lastError = `[${model}] ${res.status}: ${errText.substring(0, 150)}`;
+          continue;
+        }
+        // Connected: the rest of the budget now covers the whole reply.
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(function () { timedOut = true; controller.abort(); }, Math.max(1000, deadlineTs - Date.now()));
+        await readSseResponse(res, function (evt) {
+          var chunk;
+          try { chunk = JSON.parse(evt.data); } catch (e) { return; }
+          var cand = chunk && chunk.candidates && chunk.candidates[0];
+          if (!cand) {
+            if (chunk && chunk.promptFeedback && chunk.promptFeedback.blockReason) finishReason = chunk.promptFeedback.blockReason;
+            return;
+          }
+          var parts = (cand.content && cand.content.parts) || [];
+          for (var p = 0; p < parts.length; p++) {
+            if (parts[p] && !parts[p].thought && typeof parts[p].text === 'string' && parts[p].text) {
+              text += parts[p].text;
+              hooks.onText(parts[p].text);
+            }
+          }
+          var gm = cand.groundingMetadata;
+          if (gm) {
+            if (gm.searchEntryPoint && gm.searchEntryPoint.renderedContent) searchEntryPoint = gm.searchEntryPoint.renderedContent;
+            if (Array.isArray(gm.webSearchQueries) && gm.webSearchQueries.length && !webSearchQueries) {
+              webSearchQueries = gm.webSearchQueries.slice();
+              if (hooks.onWebSearch) hooks.onWebSearch(webSearchQueries);
+            }
+          }
+          if (cand.finishReason) finishReason = cand.finishReason;
+        });
+        if (text) return { text: text, error: null, searchEntryPoint: searchEntryPoint };
+        lastError = `[${model}] 200 with no usable text (${finishReason || 'no candidates'})`;
+      } catch (e) {
+        if (hooks.signal && hooks.signal.aborted) return { text: text, error: 'Stopped by the client.', aborted: true, partial: !!text };
+        var why = timedOut ? `[${model}] Gemini call exceeded its time budget.` : `[${model}] ${e.message}`;
+        if (text) return { text: text, error: why, partial: true, searchEntryPoint: searchEntryPoint };
+        lastError = why;
+        if (timedOut) return { text: '', error: lastError };
+      } finally {
+        clearTimeout(timeoutId);
+        if (hooks.signal) hooks.signal.removeEventListener('abort', onClientAbort);
+      }
+    }
+  }
+  return { text: '', error: lastError };
+}
+
+async function streamAnthropicCore(promptText, sysInstruction, mediaParts, anthropicKey, deadlineTs, hooks) {
+  if (!anthropicKey) return { text: '', error: 'No Anthropic API key configured.' };
+  var lastError = '';
+  var CROSS_PROVIDER_RESERVE_MS = 10000;
+  var ERROR_RETRY_CAP_MS = 20000;
+  var content = buildAnthropicContentBlocks(promptText, mediaParts);
+
+  for (var i = 0; i < ANTHROPIC_MODELS.length; i++) {
+    if (hooks.signal && hooks.signal.aborted) return { text: '', error: 'Stopped by the client.', aborted: true };
+    var remainingMs = deadlineTs - Date.now();
+    if (remainingMs <= 1000) return { text: '', error: lastError || 'Aborted: model fetch time budget exhausted before Anthropic call.' };
+    var firstByteTimeout = i === 0
+      ? Math.max(remainingMs - CROSS_PROVIDER_RESERVE_MS, Math.min(remainingMs, ERROR_RETRY_CAP_MS))
+      : Math.min(ERROR_RETRY_CAP_MS, remainingMs);
+    var model = ANTHROPIC_MODELS[i];
+    var controller = new AbortController();
+    var timedOut = false;
+    var onClientAbort = function () { controller.abort(); };
+    if (hooks.signal) hooks.signal.addEventListener('abort', onClientAbort);
+    var timeoutId = setTimeout(function () { timedOut = true; controller.abort(); }, firstByteTimeout);
+    var text = '';
+    var streamError = '';
+
+    try {
+      var res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: model, max_tokens: 4096, system: sysInstruction, messages: [{ role: 'user', content: content }], stream: true }),
+        cache: 'no-store',
+        signal: controller.signal
+      });
+      if (!res.ok) {
+        var errText = await res.text();
+        lastError = `[${model}] Anthropic API ${res.status}: ${errText.substring(0, 150)}`;
+        continue;
+      }
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(function () { timedOut = true; controller.abort(); }, Math.max(1000, deadlineTs - Date.now()));
+      await readSseResponse(res, function (evt) {
+        var msg;
+        try { msg = JSON.parse(evt.data); } catch (e) { return; }
+        if (msg && msg.type === 'content_block_delta' && msg.delta && msg.delta.type === 'text_delta' && msg.delta.text) {
+          text += msg.delta.text;
+          hooks.onText(msg.delta.text);
+        } else if (msg && msg.type === 'error') {
+          streamError = (msg.error && msg.error.message) || 'stream error';
+        }
+      });
+      if (streamError) {
+        if (text) return { text: text, error: `[${model}] ${streamError}`, partial: true };
+        lastError = `[${model}] ${streamError}`;
+        continue;
+      }
+      if (text) return { text: text, error: null };
+      lastError = `[${model}] Unexpected response shape from Anthropic API.`;
+    } catch (e) {
+      if (hooks.signal && hooks.signal.aborted) return { text: text, error: 'Stopped by the client.', aborted: true, partial: !!text };
+      var why = timedOut ? `[${model}] Anthropic call exceeded its time budget.` : `[${model}] Anthropic fetch exception: ${e.message}`;
+      if (text) return { text: text, error: why, partial: true };
+      lastError = why;
+      if (timedOut) break;
+    } finally {
+      clearTimeout(timeoutId);
+      if (hooks.signal) hooks.signal.removeEventListener('abort', onClientAbort);
+    }
+  }
+  return { text: '', error: lastError };
+}
+
+// LIVE TRACE: the streamed version of the model call at the end of the
+// handler. Same provider order as the JSON path (reasoning core first for
+// CLAUDE_CHAT, falling back to the main core only if it sent nothing), same
+// identity guard (applied as the text streams), and the exchange is saved to
+// memory only when the reply finished.
+async function streamChatReply(stream, opts) {
+  var replyScrubber = createReplyScrubber(function (chunk) { stream.text(chunk); });
+  var hooks = {
+    signal: stream.signal,
+    onText: function (chunk) { replyScrubber.push(chunk); },
+    onWebSearch: function (queries) {
+      stream.step('search', 'Searching the web');
+      stream.stepDone('search', { label: 'Searched the web', result: `${queries.length} quer${queries.length === 1 ? 'y' : 'ies'}`, details: queries });
+    }
+  };
+
+  var result;
+  if (opts.activeAction === 'CLAUDE_CHAT') {
+    stream.step('model', 'Writing the reply on the reasoning core');
+    result = await streamAnthropicCore(opts.promptText, opts.sysInstruction, opts.mediaParts, opts.anthropicKey, opts.deadlineTs, hooks);
+    if (!result.text && !result.aborted && opts.geminiKeys.length > 0 && Date.now() < opts.deadlineTs - 1000) {
+      var anthropicError = result.error;
+      stream.stepDone('model', { label: 'Reasoning core unavailable', result: 'switching to the main core', failed: true });
+      stream.step('model-fallback', 'Writing the reply on the main core');
+      result = await streamGeminiCore(opts.promptText, opts.sysInstruction, opts.mediaParts, opts.geminiKeys, opts.deadlineTs, hooks);
+      if (!result.text) result.error = `Anthropic failed (${anthropicError}); Gemini fallback also failed (${result.error})`;
+    }
+  } else {
+    stream.step('model', 'Writing the reply');
+    result = await streamGeminiCore(opts.promptText, opts.sysInstruction, opts.mediaParts, opts.geminiKeys, opts.deadlineTs, hooks);
+  }
+  replyScrubber.flush();
+  var modelStep = stream.isOpen('model-fallback') ? 'model-fallback' : 'model';
+
+  if (result.aborted || stream.clientGone) {
+    stream.end();
+    return;
+  }
+  if (!result.text) {
+    stream.stepDone(modelStep, { label: 'Reply failed', result: 'model error', failed: true });
+    stream.error(`Execution failed. Model Err: ${result.error}`);
+    return;
+  }
+  var words = replyScrubber.text.trim().split(/\s+/).filter(Boolean).length;
+  if (result.partial) {
+    stream.stepDone(modelStep, { label: 'Reply cut off', result: `${words} words arrived`, failed: true });
+    stream.error('The connection to the model dropped before the reply finished. What arrived is shown above.', { partial: true });
+    return;
+  }
+  stream.stepDone(modelStep, { label: 'Wrote the reply', result: `${words} word${words === 1 ? '' : 's'}` });
+  if (opts.saveExchange) opts.saveExchange(replyScrubber.text);
+  stream.done({
+    searchEntryPoint: result.searchEntryPoint || null,
+    telemetry: { supabaseStatus: opts.supabaseStatus, executionTimeMs: Date.now() - opts.startTime }
+  });
+}
+
 export default async function handler(req, res) {
+  // LIVE TRACE: every fetch() in this handler goes through this binding.
+  // It is the global fetch until a chat stream opens, then a wrapper that
+  // opens a "Calling GitHub" step on the first real GitHub API request
+  // (createChatStream().wrapFetch in lib/chatStream.mjs).
+  var fetch = globalThis.fetch;
   var startTime = Date.now();
   var requestTraceId = Math.random().toString(36).substring(2, 10);
 
@@ -1199,6 +1441,21 @@ export default async function handler(req, res) {
       }
     }
 
+    // LIVE TRACE: from here on an authenticated chat request that asked for
+    // a stream gets one (lib/chatStream.mjs). sendJSON() turns every reply
+    // below into stream events once it is open, so no branch changes shape.
+    var chatStream = null;
+    if (isAuthed && wantsChatStream(reqBody)) {
+      chatStream = createChatStream(res, {
+        requestId: requestTraceId,
+        envValues: secretEnvValues(process.env),
+        corsOrigin: res.__pg1CorsOrigin || '*'
+      });
+      chatStream.start();
+      res.__pg1Stream = chatStream;
+      fetch = chatStream.wrapFetch(globalThis.fetch);
+    }
+
     var geminiKeys = [
       (process.env.GEMINI_API_KEY1 || '').replace(/\s+/g, ''),
       (process.env.GEMINI_API_KEY2 || '').replace(/\s+/g, ''),
@@ -1233,6 +1490,8 @@ export default async function handler(req, res) {
     var mediaParts = [];
 
     if (isAuthed && payloadFiles.length > 0 && supabaseUrl && supabaseKey) {
+      var vaultSavedCount = 0;
+      if (chatStream) chatStream.step('vault-upload', 'Saving attachments to the vault');
       for (var i = 0; i < payloadFiles.length; i++) {
         var f = payloadFiles[i];
         if (f.inlineData && f.inlineData.data) {
@@ -1251,12 +1510,14 @@ export default async function handler(req, res) {
                 body: fileBuffer
               });
               if (uploadRes.ok) {
+                vaultSavedCount++;
                 vaultUploadLog += `\n[VAULT SYNC]: Vision matrix snapshot secured to pg1-vault/${fileName}.`;
               }
             }
           } catch (uploadErr) {}
         }
       }
+      if (chatStream) chatStream.stepDone('vault-upload', { label: 'Saved attachments to the vault', result: `${vaultSavedCount} of ${payloadFiles.length} saved`, failed: vaultSavedCount < payloadFiles.length });
     }
 
     promptText += vaultUploadLog;
@@ -1292,6 +1553,14 @@ export default async function handler(req, res) {
         { headers: dbHeaders }
       );
 
+      if (chatStream) {
+        chatStream.step('db', 'Checking the database connection');
+        chatStream.step('memory', 'Loading memory');
+        chatStream.step('vault', 'Listing vault files');
+        if (isThreatQuery) chatStream.step('threats', 'Reading threat telemetry');
+        chatStream.step('errors', 'Reading the error log');
+      }
+
       var results = await Promise.all([pingReq, msgReq, storageReq, threatReq, errorsReq]);
       var pingRes = results[0];
       var msgRes = results[1];
@@ -1304,31 +1573,57 @@ export default async function handler(req, res) {
       } else {
         supabaseStatus = 'UNREACHABLE';
       }
+      if (chatStream) chatStream.stepDone('db', { label: 'Checked the database', result: pingRes && pingRes.ok ? 'connected' : 'unreachable', failed: !(pingRes && pingRes.ok) });
 
+      var recentCount = null;
       if (msgRes && msgRes.ok) {
         var recent = await msgRes.json();
+        recentCount = Array.isArray(recent) ? recent.length : 0;
         if (Array.isArray(recent) && recent.length > 0) {
           formattedArchive = recent.reverse().map(m => `${m.role === 'model' ? 'AGENT' : 'OPERATOR'}: ${m.content}`).join('\n');
         }
       }
+      // Counts only: memory contents never go into a step.
+      if (chatStream) chatStream.stepDone('memory', { label: 'Loaded memory', failed: recentCount === null, result: recentCount === null ? 'unavailable' : recentCount === 0 ? 'no recent messages' : `${recentCount} recent message${recentCount === 1 ? '' : 's'}` });
 
+      var vaultFileNames = null;
       if (storageRes && storageRes.ok) {
         var files = await storageRes.json();
+        vaultFileNames = Array.isArray(files) ? files.map(f => String((f && f.name) || '')) : [];
         if (Array.isArray(files) && files.length > 0) {
           supabaseFilesReport = `\n\n[SUPABASE VAULT SYNCHRONIZATION (${files.length} Files Found)]:\n` + files.map(f => `• [FILE] ${f.name} (${(f.metadata && f.metadata.size) || 0} bytes)`).join('\n');
         }
       }
+      if (chatStream) {
+        chatStream.stepDone('vault', vaultFileNames === null
+          ? { label: 'Listed vault files', result: 'unavailable', failed: true }
+          : { label: 'Listed vault files', result: vaultFileNames.length === 0 ? 'none' : `${vaultFileNames.length} latest`, details: vaultFileNames.slice(0, 5) });
+      }
 
+      var threatCount = null;
       if (threatRes && threatRes.ok) {
         var threats = await threatRes.json();
+        threatCount = Array.isArray(threats) ? threats.length : 0;
         if (Array.isArray(threats) && threats.length > 0) {
           targetedHistoricalData = `\n\n[LIVE THREAT TELEMETRY (${threats.length} Records)]:\n` + threats.map(t => `• [${t.indicator_type}] ${t.value} (Conf: ${t.confidence_score}%)`).join('\n');
         }
       }
+      if (chatStream && isThreatQuery) chatStream.stepDone('threats', { label: 'Read threat telemetry', failed: threatCount === null, result: threatCount === null ? 'unavailable' : `${threatCount} record${threatCount === 1 ? '' : 's'}` });
 
+      var unresolvedRows = null;
       if (errorsRes && errorsRes.ok) {
-        var unresolvedRows = await errorsRes.json();
+        unresolvedRows = await errorsRes.json();
         unresolvedErrorsReport = formatUnresolvedErrors(unresolvedRows);
+      }
+      if (chatStream) {
+        var errorRows = Array.isArray(unresolvedRows) ? unresolvedRows.slice(0, 5) : null;
+        chatStream.stepDone('errors', errorRows === null
+          ? { label: 'Checked error log', result: 'unavailable', failed: true }
+          : {
+            label: 'Checked error log',
+            result: errorRows.length === 0 ? 'none unresolved' : `${errorRows.length} unresolved`,
+            details: errorRows.map(r => [r.route, r.status, r.reason].filter(Boolean).join(' ').slice(0, 80))
+          });
       }
     }
 
@@ -1468,7 +1763,7 @@ export default async function handler(req, res) {
         var patchRepoBaseUrl = `https://api.github.com/repos/${patchRepoPath}`;
         var patchBranchName = `surgical-patch-${Date.now()}`;
 
-        var pathResolution = await resolveGithubPathCandidates(targetPathFile, patchRepoBaseUrl, ghApiHeaders);
+        var pathResolution = await resolveGithubPathCandidates(targetPathFile, patchRepoBaseUrl, ghApiHeaders, fetch);
         if (pathResolution.ambiguous) {
           return sendJSON(res, 200, { reply: `[AGENT] Patch Aborted: '${targetPathFile}' matches multiple files in the repo, refusing to guess which one you meant:\n${pathResolution.candidates.map(c => '• ' + c).join('\n')}\nRe-send with the exact full path.` });
         }
@@ -1675,6 +1970,7 @@ export default async function handler(req, res) {
       var imageUrl = '';
       var engineUsed = '';
       var apiErrors = [];
+      if (chatStream) chatStream.step('image', 'Generating the image');
 
       var IMAGE_GEN_BUDGET_MS = 45000;
       var imageDeadlineTs = Date.now() + IMAGE_GEN_BUDGET_MS;
@@ -1828,6 +2124,12 @@ export default async function handler(req, res) {
         engineUsed = `Basic Fallback`;
       }
 
+      if (chatStream) {
+        chatStream.stepDone('image', engineUsed === 'Basic Fallback'
+          ? { label: 'Image engines unavailable', result: 'using the link fallback', failed: true, details: apiErrors }
+          : { label: 'Generated the image', result: engineUsed, details: apiErrors });
+      }
+
       var imageReply = `[SYSTEM] Image Rendered using **${engineUsed}**.\nPrompt: "${cleanPrompt}"`;
       if (engineUsed !== 'Google (Imagen 4 - Key 1)' && apiErrors.length > 0) {
         imageReply += `\n[DIAGNOSTIC] Prior engine attempts failed:\n${apiErrors.map(e => `• ${e}`).join('\n')}`;
@@ -1882,7 +2184,7 @@ export default async function handler(req, res) {
         var authRepoBaseUrl = `https://api.github.com/repos/${authRepoPath}`;
         var authBranchName = `agent-patch-${Date.now()}`;
 
-        var authPathResolution = await resolveGithubPathCandidates(targetFile, authRepoBaseUrl, authGhApiHeaders);
+        var authPathResolution = await resolveGithubPathCandidates(targetFile, authRepoBaseUrl, authGhApiHeaders, fetch);
         if (authPathResolution.ambiguous) {
           return sendJSON(res, 200, { reply: `[AGENT] Commit Aborted: '${targetFile}' matches multiple files in the repo, refusing to guess which one you meant:\n${authPathResolution.candidates.map(c => '• ' + c).join('\n')}\nRe-send with the exact full path.`, traceId: requestTraceId });
         }
@@ -2401,6 +2703,30 @@ export default async function handler(req, res) {
       });
     }
 
+    if (chatStream) {
+      return await streamChatReply(chatStream, {
+        activeAction: activeAction,
+        promptText: promptText,
+        sysInstruction: sysInstruction,
+        mediaParts: mediaParts,
+        geminiKeys: geminiKeys,
+        anthropicKey: anthropicKey,
+        deadlineTs: deadlineTs,
+        startTime: startTime,
+        supabaseStatus: supabaseStatus,
+        saveExchange: (supabaseUrl && supabaseKey && !isPdfExport)
+          ? function (replyText) {
+            fetch(`${supabaseUrl}/rest/v1/messages`, {
+              method: 'POST',
+              headers: { ...dbHeaders, 'Content-Type': 'application/json' },
+              body: JSON.stringify([{ role: 'user', content: promptText }, { role: 'model', content: replyText }]),
+              cache: 'no-store'
+            }).catch(() => {});
+          }
+          : null
+      });
+    }
+
     var modelFetchResult = (activeAction === 'CLAUDE_CHAT')
       ? await fetchAnthropicCore(promptText, sysInstruction, mediaParts, '', anthropicKey, deadlineTs)
       : await fetchGeminiCore(promptText, sysInstruction, mediaParts, '', geminiKeys, deadlineTs);
@@ -2417,7 +2743,7 @@ export default async function handler(req, res) {
 
     var replyText = modelFetchResult.text || `Execution failed. Model Err: ${modelFetchResult.error}`;
     if (modelFetchResult.text) {
-      replyText = replyText.replace(/\b(I am|I'm|I’m|powered by|built on|running on)\s+(Google Gemini|Gemini|ChatGPT|Claude|Anthropic|Google|OpenAI)\b/gi, function (m, lead) { return lead + ' PG1 Sovereign Core'; });
+      replyText = scrubIdentity(replyText);
     }
 
     if (supabaseUrl && supabaseKey && !replyText.startsWith('Execution failed') && !isPdfExport) {
@@ -2443,6 +2769,10 @@ export default async function handler(req, res) {
     });
 
   } catch (err) {
+    if (res.__pg1Stream && res.__pg1Stream.started) {
+      if (!res.__pg1Stream.ended) res.__pg1Stream.error(`Exception: ${err.message}`);
+      return;
+    }
     return sendJSON(res, 200, { reply: `Exception: ${err.message}`, traceId: requestTraceId });
   }
 }
