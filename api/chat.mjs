@@ -7,7 +7,7 @@ import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettl
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
 import { logApiError } from '../lib/errorLog.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
-import { createChatStream, createReplyScrubber, readSseResponse, scrubIdentity, wantsChatStream } from '../lib/chatStream.mjs';
+import { createChatStream, createReplyScrubber, readSseResponse, scrubIdentity, stripTranscriptLabels, wantsChatStream } from '../lib/chatStream.mjs';
 import { identityDirective, spokenReplyDirective } from '../lib/identity.mjs';
 import { createSseSynth, createVoiceStream, speechTextFor } from '../lib/voiceStream.mjs';
 import { reportUpstreamFailure, userFacingFailure, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
@@ -2764,7 +2764,7 @@ ${identityDirective()}
 - check_wallet_age reports age per chain: first_seen and age_days describe the address's history on the requested chain only, so the same address can be old on one chain and new on another. Since 1.14.0 it also reports EIP-7702 delegation in two optional fields, checked live on every call and never cached (cached age answers included): delegated is true when the address's code on that chain is exactly 0xef0100 followed by a 20-byte delegate address, which is then given, lowercased, in delegate_address; false for any other code; null when the code check did not complete (never read null as false; the age is still returned). A delegated address carries reason code WALLET_DELEGATED, which states the fact only, not a judgement, and never changes status on its own (an old delegated wallet is status "no_flags"). is_contract is unchanged and is still true for a delegated address.
 - Integration test fixtures: fixed made-up inputs (e.g. hostname pg1-test-flagged.invalid, CVE-0000-0001, 0x7067312d… wallets, all listed in lib/fixtures.mjs and the README's "Test your integration" table) always return the same FLAGGED, CLEAN or UNKNOWN answer (plus a DELEGATED one for check_wallet_age) on /api/mcp (and the 4 free check_* skills on /api/a2a), free for any caller, marked test_fixture: true — never on the REST /api/ioc endpoints, and never real threat data.
 
-${spokenDirective}[CONTEXT]:\n${formattedArchive}${targetedHistoricalData}${supabaseFilesReport}${formatClientEnvironment(clientEnv)}${formatDeploymentContext()}${unresolvedErrorsReport}`;
+${spokenDirective}[CONTEXT]: The OPERATOR: and AGENT: lines below are the recent conversation, for background only. Never quote, repeat or continue them, and never begin a reply or a line with OPERATOR: or AGENT:; answer the operator's new message directly.\n${formattedArchive}${targetedHistoricalData}${supabaseFilesReport}${formatClientEnvironment(clientEnv)}${formatDeploymentContext()}${unresolvedErrorsReport}`;
 
     if (Date.now() >= deadlineTs - 1000) {
       return sendJSON(res, 200, {
@@ -2828,7 +2828,7 @@ ${spokenDirective}[CONTEXT]:\n${formattedArchive}${targetedHistoricalData}${supa
     // requestTraceId and the operator sees a neutral sentence plus the ID.
     var modelFailed = !modelFetchResult.text;
     if (modelFailed) reportFailure('model_failed', modelFetchResult.error);
-    var replyText = modelFailed ? userFacingFailure(requestTraceId, 'reply') : scrubIdentity(modelFetchResult.text);
+    var replyText = modelFailed ? userFacingFailure(requestTraceId, 'reply') : stripTranscriptLabels(scrubIdentity(modelFetchResult.text));
 
     if (supabaseUrl && supabaseKey && !modelFailed && !isPdfExport) {
       fetch(`${supabaseUrl}/rest/v1/messages`, {

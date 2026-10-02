@@ -3519,6 +3519,8 @@
         if (generation !== voiceGeneration) return;
         voiceBubble = bubble || null;
         playAudioResult(data);
+        // Echo guard (conversation mode): what just went to the speaker.
+        if (data.audio && typeof conversationSpokenLog !== 'undefined') conversationSpokenLog.add(text);
       } catch (err) {
         console.error('Speech synthesis error:', err);
         flashStatus('Speech request failed', true, classifyFetchFailure(err, null));
@@ -5046,6 +5048,10 @@
         if (!spokeDirectly && voiceActive && data.reply && !spokeFromStream && voiceGenerationAtSend === voiceGeneration) {
           speakMessage(data.reply, agentBubble);
         }
+        // Echo guard (conversation mode): remember what was read out from
+        // the stream, so a transcript of it is never sent back as a message.
+        // speakMessage() records the one-shot path itself.
+        if (spokeFromStream && data.reply && typeof conversationSpokenLog !== 'undefined') conversationSpokenLog.add(data.reply);
 
         // SUGGEST FIX (issue #201 Phase 2): this reply was asked, on behalf
         // of an error-log entry, to propose an exact patch. If the model
@@ -5118,6 +5124,8 @@
       bubble.innerHTML = `${agentTimestampHtml(time, streamed.tracePill)}${streamed.traceHtml || ''}${textHtml}<div class="stream-note" role="status"><span class="stream-note-text">${escapeHTML(note)}</span>${retry}</div>${streamed.text ? messageActionsHtml('agent') : ''}`;
       saveState();
       syncVoiceWave();
+      // Echo guard: part of this text may already have been spoken.
+      if (streamed.text && typeof voiceActive !== 'undefined' && voiceActive && typeof conversationSpokenLog !== 'undefined') conversationSpokenLog.add(streamed.text);
     }
     
     // DIALOG A11Y: the overlays are still opened and closed by their own
