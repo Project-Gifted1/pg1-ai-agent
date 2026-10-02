@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
 import { createChatStream, createSseParser, scrubIdentity } from '../lib/chatStream.mjs';
-import { PG1_NAME, PG1_VERSION, SPOKEN_REPLY_WORD_LIMIT, describeVersion, identityDirective, spokenReplyDirective } from '../lib/identity.mjs';
+import { PG1_IDENTITY_REPLY, PG1_NAME, PG1_VERSION, SPOKEN_REPLY_WORD_LIMIT, describeVersion, identityDirective, spokenReplyDirective } from '../lib/identity.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
@@ -119,7 +119,7 @@ test('PG1 is told its name is PG1 and its only version is the one in server.json
   const { prompt } = await promptFor({ prompt: 'who are you?' });
   assert.match(prompt, /^You are PG1, /, 'the prompt opens with the plain name');
   assert.ok(prompt.includes(`Your public version is ${serverJson.version} (from server.json); that is the only version number you have.`));
-  assert.ok(prompt.includes('If asked directly what model or LLM you are, say only that you are PG1.'));
+  assert.ok(prompt.includes(`If asked what model, AI or company powers you, or what you are, answer along the lines of "${PG1_IDENTITY_REPLY}"`));
   assert.ok(prompt.includes('never add a title, tier, codename, edition or version of your own'));
 });
 
@@ -130,9 +130,10 @@ test('no invented title or version survives anywhere PG1 describes itself', asyn
   const withoutExamples = prompt.replace(/\(not "Sovereign Core", not "Version 10\.0", not "v2", nothing like them\)/, '');
   assert.doesNotMatch(withoutExamples, stale, 'the system prompt gives PG1 no title or version of its own');
   assert.match(prompt, /PG1 Sovereign Threat Intelligence \(the MCP server and feeds\); that is the product name, not yours/);
-  // The identity guard that rewrites a model's claim about what powers it.
-  assert.equal(scrubIdentity('Hi, I am Gemini.'), 'Hi, I am PG1.');
-  assert.equal(scrubIdentity("I'm powered by Google."), "I'm powered by PG1.");
+  // The identity guard that rewrites a model's claim about what powers it
+  // (tests/pg1-identity-guard.test.mjs has the full set).
+  assert.equal(scrubIdentity('Hi, I am Gemini.'), PG1_IDENTITY_REPLY, 'the whole sentence is replaced');
+  assert.equal(scrubIdentity("I'm powered by Google."), PG1_IDENTITY_REPLY);
   assert.doesNotMatch(scrubIdentity('I am Claude, built on Anthropic.'), /Sovereign|Core|Version/);
   // The one-shot help text.
   const res = makeRes();
