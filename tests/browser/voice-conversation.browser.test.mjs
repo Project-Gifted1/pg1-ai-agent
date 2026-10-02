@@ -29,6 +29,13 @@
  *  - the same contention without the platform hint: the module has to
  *    notice the audio-capture error, let go of the stream and carry on.
  *
+ * The Android scenario speaks the way Android Chrome's recogniser does:
+ * every update carries the whole phrase heard so far (cumulative interims,
+ * then cumulative finals), the session ends after the final, and the next
+ * session hands the same final back again. Exactly one clean message must
+ * come of it, in conversation mode and through the plain mic (dictation)
+ * button, where the composer is checked instead of the request.
+ *
  * The operator-only diagnostics line and the hands-off composer are
  * checked along the way.
  *
@@ -181,17 +188,46 @@ const PAGE_HOOKS = (contention) => `(() => {
       setTimeout(() => { if (this.onend) this.onend(); }, 0);
     }
   }
-  // Delivers a result to whichever recogniser is running.
-  T.hear = (text, isFinal) => {
-    const r = T.instances.filter((x) => x.running).pop();
-    if (!r || !r.onresult) return false;
-    if (r.onspeechstart) r.onspeechstart();
+  const current = () => T.instances.filter((x) => x.running).pop();
+  const deliver = (r, text, isFinal) => {
     const alternatives = [{ transcript: text, confidence: 0.92 }];
     alternatives.isFinal = !!isFinal;
     r.onresult({ resultIndex: 0, results: [alternatives] });
+  };
+  // Delivers a result to whichever recogniser is running.
+  T.hear = (text, isFinal) => {
+    const r = current();
+    if (!r || !r.onresult) return false;
+    if (r.onspeechstart) r.onspeechstart();
+    deliver(r, text, isFinal);
     if (isFinal && r.onspeechend) r.onspeechend();
     return true;
   };
+  // Speaks a phrase the way Android Chrome's recogniser delivers one: the
+  // whole phrase heard so far on every update, word by word as interims,
+  // then again as finals ("what's", "what's in", "what's in my error log"),
+  // after which the session ends on its own.
+  T.speakAndroid = (text) => {
+    const r = current();
+    if (!r || !r.onresult) return false;
+    const words = text.split(' ');
+    if (r.onspeechstart) r.onspeechstart();
+    for (let i = 1; i <= words.length; i++) deliver(r, words.slice(0, i).join(' '), false);
+    for (const cut of [1, Math.ceil(words.length / 2), words.length]) deliver(r, words.slice(0, cut).join(' '), true);
+    if (r.onspeechend) r.onspeechend();
+    r.running = false; T.events.push('end');
+    setTimeout(() => { if (r.onend) r.onend(); }, 0);
+    return true;
+  };
+  // The running session ends on its own.
+  T.endSession = () => {
+    const r = current();
+    if (!r) return false;
+    r.running = false; T.events.push('end');
+    setTimeout(() => { if (r.onend) r.onend(); }, 0);
+    return true;
+  };
+  T.continuous = () => { const r = current(); return r ? r.continuous : null; };
   T.running = () => T.instances.filter((x) => x.running).length;
   T.liveTracks = () => T.streams.flatMap((s) => s.getAudioTracks().filter((tr) => tr.readyState === 'live')).length;
   window.SpeechRecognition = FakeSpeechRecognition;
@@ -350,7 +386,9 @@ async function runScenario(t, scenario) {
   const diag = await page.locator('#converse-diag').textContent();
   const expectErr = scenario.contention && !scenario.android ? 'audio-capture' : 'none';
   const expectMic = scenario.expectMode === 'shared' ? 'open' : 'closed';
-  assert.match(diag, new RegExp(`^${scenario.expectMode} mic \\| rec running \\| last \\S+ \\| err ${expectErr} \\| "" \\| vad (-|\\d\\.\\d\\d) \\| mic ${expectMic}$`), `diagnostics line: "${diag}"`);
+  assert.match(diag, new RegExp(`^${scenario.expectMode} mic \\| rec running \\| last \\S+ \\| err ${expectErr} \\| heard "" \\| turn "" \\| vad (-|\\d\\.\\d\\d) \\| mic ${expectMic}$`), `diagnostics line: "${diag}"`);
+  // Exclusive: one utterance per recogniser session. Shared: it runs on.
+  assert.equal(await page.evaluate(() => window.__pg1Test.continuous()), scenario.expectMode === 'shared', `continuous recognition is for shared mode only (${scenario.expectMode})`);
   assert.deepEqual(await page.evaluate(() => Object.keys(localStorage).sort()), storedBefore, 'nothing was stored');
 
   // The operator says something, the recogniser finalises it, then silence
@@ -358,20 +396,35 @@ async function runScenario(t, scenario) {
   const directives = () => log.requests.filter((r) => r.path === '/api/chat' && r.body && !r.body.action && r.body.prompt !== 'AUTH_VERIFY');
   assert.equal(directives().length, 0, 'nothing has been sent yet');
   assert.ok(await page.evaluate((text) => window.__pg1Test.hear(text.slice(0, 11), false), TRANSCRIPT), 'an interim result reached the recogniser');
-  assert.match(await page.locator('#converse-diag').textContent(), /\| "what is the" \|/, 'the interim text shows in the diagnostics line');
-  assert.ok(await page.evaluate((text) => window.__pg1Test.hear(text, true), TRANSCRIPT), 'the final transcript reached the recogniser');
+  assert.match(await page.locator('#converse-diag').textContent(), /\| heard "what is the" \| turn "what is the" \|/, 'the interim text shows in the diagnostics line, as heard and as the turn');
+  if (scenario.android) {
+    // Android: the whole phrase on every update, as interims then finals.
+    assert.ok(await page.evaluate((text) => window.__pg1Test.speakAndroid(text), TRANSCRIPT), 'the Android-pattern results reached the recogniser');
+  } else {
+    assert.ok(await page.evaluate((text) => window.__pg1Test.hear(text, true), TRANSCRIPT), 'the final transcript reached the recogniser');
+  }
   const deadline = Date.now() + 15000;
   while (directives().length === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
   assert.equal(directives().length, 1, 'the transcript was auto-sent');
-  assert.equal(directives()[0].body.prompt, TRANSCRIPT);
+  assert.equal(directives()[0].body.prompt, TRANSCRIPT, 'as one clean phrase, not stacked');
   const sentAt = Date.now();
+  if (scenario.android) {
+    // The next session hands the same final back, then a late interim:
+    // neither is the next turn.
+    await page.waitForFunction(() => window.__pg1Test.running() === 1, null, { timeout: 5000 });
+    assert.ok(await page.evaluate((text) => window.__pg1Test.hear(text, true) && window.__pg1Test.hear(text.slice(0, 7), false) && window.__pg1Test.endSession(), TRANSCRIPT), 'the repeated final reached the restarted recogniser');
+    assert.ok(Date.now() - sentAt < 2500, 'the repeat arrived soon after the send, as it does on the phone');
+  }
 
-  // It shows as the operator's message, the composer is empty again and
-  // unfocused, and the conversation is back to listening once the reply is in.
+  // It shows as the operator's message, once and whole, the composer is
+  // empty again and unfocused, and the conversation is back to listening
+  // once the reply is in.
   await page.waitForFunction((text) => {
     const bubbles = Array.from(document.querySelectorAll('#chat-container .message-bubble.user .message-text'));
     return bubbles.some((b) => b.textContent.includes(text));
   }, TRANSCRIPT);
+  const userMessages = await page.evaluate(() => Array.from(document.querySelectorAll('#chat-container .message-bubble.user .message-text')).map((b) => b.textContent.trim()));
+  assert.deepEqual(userMessages, [TRANSCRIPT], 'one message, with the phrase once');
   assert.equal(await page.inputValue('#prompt-input'), '', 'the composer was cleared by the send');
   assert.notEqual(await page.evaluate(() => document.activeElement && document.activeElement.id), 'prompt-input', 'the send did not focus the composer');
   await page.waitForFunction(() => {
@@ -382,6 +435,7 @@ async function runScenario(t, scenario) {
   // restart, not from the reply being read out.
   await new Promise((r) => setTimeout(r, Math.max(0, 2500 - (Date.now() - sentAt))));
   assert.equal(directives().length, 1, 'sent exactly once');
+  assert.deepEqual(await page.evaluate(() => Array.from(document.querySelectorAll('#chat-container .message-bubble.user .message-text')).map((b) => b.textContent.trim())), [TRANSCRIPT], 'still one message');
   assert.equal(await page.evaluate(() => window.__pg1Test.running()), 1, 'listening again for the next turn');
   assert.equal(await page.evaluate(() => window.__pg1Test.liveTracks()), scenario.expectMode === 'shared' ? 1 : 0, 'the mic stream is as it should be for the mode');
   assert.equal(await page.locator('#converse-note').isHidden(), true, 'no persistent error was reported');
@@ -404,6 +458,22 @@ async function runScenario(t, scenario) {
   assert.ok(stopped.tracks.every((s) => s === 'ended'), `every microphone track ended (${stopped.tracks})`);
   if (scenario.expectMode === 'shared' || !scenario.android) assert.ok(stopped.tracks.length > 0, 'a stream was opened in this scenario');
   assert.equal(stopped.recognisers, 0, 'the recogniser was stopped');
+
+  // The plain mic button (dictation) hears the same Android pattern: the
+  // composer ends up with the phrase once, after whatever it already held.
+  const mic = page.locator('#mic-btn');
+  await mic.tap();
+  await page.waitForFunction(() => document.getElementById('mic-btn').classList.contains('mic-active'));
+  assert.equal(await page.evaluate(() => window.__pg1Test.running()), 1, 'dictation started its recogniser');
+  assert.ok(await page.evaluate(() => window.__pg1Test.speakAndroid('open the vault')), 'the Android-pattern results reached dictation');
+  await page.waitForFunction(() => !document.getElementById('mic-btn').classList.contains('mic-active'));
+  assert.equal(await page.inputValue('#prompt-input'), 'open the vault', 'dictated once, not stacked');
+  await mic.tap();
+  await page.waitForFunction(() => document.getElementById('mic-btn').classList.contains('mic-active'));
+  assert.ok(await page.evaluate(() => window.__pg1Test.speakAndroid('and the error log')));
+  await page.waitForFunction(() => !document.getElementById('mic-btn').classList.contains('mic-active'));
+  assert.equal(await page.inputValue('#prompt-input'), 'open the vault and the error log', 'a second press adds to what the composer held');
+  assert.equal(directives().length, 1, 'dictation sends nothing by itself');
 
   // Nothing broke along the way, and nothing was logged as an error.
   assert.deepEqual(pageErrors, [], 'no page errors');

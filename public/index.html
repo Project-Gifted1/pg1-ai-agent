@@ -2855,26 +2855,33 @@
 
       recognition.onstart = function() {
         isRecording = true;
+        // One press of the mic is one transcript: what the composer held
+        // before it stays as the base, and everything heard is rendered
+        // after it from the buffer, never appended to the composer.
+        dictationBase = document.getElementById('prompt-input').value.trim();
+        dictation = createDictationBuffer();
         document.getElementById('mic-btn').classList.add('mic-active');
         document.getElementById('prompt-input').placeholder = "Listening…";
         triggerHaptic([50, 50, 50]); 
       };
 
+      // Android Chrome re-sends the whole phrase heard so far on every
+      // update, so each result replaces the buffer's view of the phrase
+      // (see createTranscriptBuffer in conversation.js); only the results
+      // from resultIndex onward are this update's.
       recognition.onresult = function(event) {
-        let finalTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          }
+        if (!dictation) return;
+        const results = event.results || [];
+        const interims = [];
+        for (let i = event.resultIndex || 0; i < results.length; ++i) {
+          const res = results[i];
+          const text = res && res[0] && typeof res[0].transcript === 'string' ? res[0].transcript.trim() : '';
+          if (!text) continue;
+          if (res.isFinal) dictation.addFinal(text);
+          else interims.push(text);
         }
-        // "April" / "a PG one" / "PG one" at the start of what was said
-        // becomes "PG1"; the rest of the utterance is left as heard.
-        if (finalTranscript && typeof PG1Voice !== 'undefined') finalTranscript = PG1Voice.normaliseWakeWord(finalTranscript);
-        if (finalTranscript) {
-          const input = document.getElementById('prompt-input');
-          input.value = (input.value + ' ' + finalTranscript).trim();
-          autoResize(input);
-        }
+        dictation.setInterim(interims);
+        renderDictation();
       };
 
       recognition.onerror = function(event) {
@@ -2886,6 +2893,27 @@
       };
     }
 
+    // Dictation's transcript for the current press of the mic.
+    let dictationBase = '';
+    let dictation = null;
+    function createDictationBuffer() {
+      if (typeof PG1Voice !== 'undefined' && PG1Voice.createTranscriptBuffer) return PG1Voice.createTranscriptBuffer();
+      // Without the module: the latest final is the phrase.
+      let final = '';
+      return { addFinal(t) { final = t; }, setInterim() {}, get text() { return final; }, clear() { final = ''; } };
+    }
+    // The composer is rewritten from the base and the buffer on every
+    // update: finals, then the live guess beyond them. "April" / "a PG
+    // one" / "PG one" at the start becomes "PG1"; the rest is left as heard.
+    function renderDictation() {
+      const input = document.getElementById('prompt-input');
+      let text = dictation ? dictation.text : '';
+      if (text && typeof PG1Voice !== 'undefined') text = PG1Voice.normaliseWakeWord(text);
+      input.value = [dictationBase, text].filter(Boolean).join(' ');
+      autoResize(input);
+      syncExecuteButton();
+    }
+
     function toggleRecording() {
       if (!recognition) {
         alert("Voice input is not supported in this browser environment.");
@@ -2894,7 +2922,9 @@
       if (isRecording) {
         recognition.stop();
       } else {
-        // One listener at a time: dictation takes over from conversation.
+        // One listener at a time: dictation takes over from conversation,
+        // and the conversation's composer is emptied before it does.
+        if (conversation && conversation.on) clearComposer();
         stopConversation('dictation');
         recognition.start();
       }
@@ -2903,6 +2933,7 @@
     function stopRecording() {
       if(isRecording) triggerHaptic(100);
       isRecording = false;
+      dictation = null;
       document.getElementById('mic-btn').classList.remove('mic-active');
       document.getElementById('prompt-input').placeholder = "Give PG1 a directive…";
     }
@@ -2949,6 +2980,10 @@
         if (!isOn) { const live = status.querySelector('.converse-live'); if (live) live.textContent = ''; }
       }
       if (!isOn) renderConversationNote('');
+      // Every turn starts with an empty composer: when the mode starts,
+      // after a barge-in, and when it stops (dictation, which stops it to
+      // take over, keeps what it dictates).
+      if (detail === 'started' || detail === 'interrupted' || (!isOn && detail !== 'dictation')) clearComposer();
       renderConversationDiagnostics(isOn && conversation ? conversation.diagnostics : null);
       if (state === 'off' && voiceWasOffBeforeConversation) {
         // Spoken replies were switched on for the conversation only.
@@ -2983,9 +3018,11 @@
       note.hidden = !text;
     }
 
-    // One line: recogniser state, last event, last error, the interim text
-    // (first 40 characters), the detector level and whether our mic stream
-    // is open. Rendered only while the drawer switch is on.
+    // One line: recogniser state, last event, last error, what the recogniser
+    // last delivered ("heard", as it came) beside the cleaned transcript of
+    // the turn ("turn", first 40 characters of each), the detector level and
+    // whether our mic stream is open. Rendered only while the drawer switch
+    // is on.
     function renderConversationDiagnostics(snap) {
       const el = document.getElementById('converse-diag');
       if (!el) return;
@@ -2995,7 +3032,8 @@
         'rec ' + snap.recogniser,
         'last ' + (snap.lastEvent || '-'),
         'err ' + (snap.lastError || 'none'),
-        '"' + (snap.interim || '') + '"',
+        'heard "' + (snap.raw || '') + '"',
+        'turn "' + (snap.interim || '') + '"',
         'vad ' + (snap.micOpen ? snap.vadLevel.toFixed(2) : '-'),
         'mic ' + (snap.micOpen ? 'open' : 'closed')
       ];
@@ -3023,6 +3061,16 @@
     function blurComposer() {
       const input = document.getElementById('prompt-input');
       if (input && document.activeElement === input) input.blur();
+    }
+
+    // The composer carries one turn at a time: emptied after every send
+    // and at every turn boundary, so nothing heard earlier rides along.
+    function clearComposer() {
+      const input = document.getElementById('prompt-input');
+      if (!input) return;
+      input.value = '';
+      input.style.height = 'auto';
+      syncExecuteButton();
     }
 
     function getConversation() {
@@ -3053,6 +3101,7 @@
           input.value = text;
           autoResize(input);
           submitDirective();
+          clearComposer();
           blurComposer();
         },
         spokenLog: conversationSpokenLog,
