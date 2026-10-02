@@ -34,6 +34,17 @@
 // error, no-speech moments after a start, or a turn the detector heard that
 // the recogniser transcribed as nothing, twice.
 //
+// Android's recogniser also re-sends the whole phrase heard so far on each
+// update ("what's", "what's in", "what's in my error log", every one of them
+// final), can hand the same final back again after a restart, and delivers
+// results after a turn was sent. Each turn's transcript therefore lives in a
+// buffer (createTranscriptBuffer) that keeps the longest version of each
+// phrase instead of appending, the live guess is a separate preview that is
+// overwritten on every update, the buffer is emptied whenever a turn starts
+// (after a send, a barge-in, start and stop), and a result that repeats the
+// turn just sent is dropped. Exclusive mode runs the recogniser with
+// continuous off: one utterance per session, restarted after each.
+//
 // The wrapper hands the global object to the factory as `root`: the factory
 // is its own function, so it cannot see the wrapper's parameters, and the
 // browser helpers below (openMicrophone, loadOnnxRuntime, the phrase hints)
@@ -67,7 +78,8 @@
     restartMaxMs: 5000,         // ...and the cap after repeated failures
     healthySessionMs: 3000,     // a session this long without results is fine
     contentionWindowMs: 4000,   // no-speech sooner than this after start: contention
-    emptyTurnsForContention: 2  // detector turns with no transcript before switching
+    emptyTurnsForContention: 2, // detector turns with no transcript before switching
+    staleResultMs: 3000         // a result this soon after a send that repeats it is the recogniser
   });
 
   // ---------------------------------------------------------------------------
@@ -361,6 +373,61 @@
     };
   }
 
+  // The turn's transcript. Android Chrome re-sends the whole phrase heard so
+  // far on every update, as interims and then as finals ("what's", "what's
+  // in", "what's in my error log"), so appending each result stacked them.
+  // Phrases are compared by their words alone (case, punctuation and
+  // apostrophes aside): a result that extends what is already there replaces
+  // it, one that is a prefix or a repeat of it is dropped, and anything else
+  // is a new phrase.
+  function phraseKey(text) {
+    return String(text || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter(Boolean).join(' ');
+  }
+  // True when `a` is `b`, or `b` begins with `a` at a word boundary.
+  function isPhrasePrefix(a, b) {
+    const ka = phraseKey(a);
+    if (!ka) return false;
+    const kb = phraseKey(b);
+    return kb === ka || kb.startsWith(ka + ' ');
+  }
+  // The phrases of a turn with `text` merged in (a new array).
+  function mergePhrase(phrases, text) {
+    const list = Array.isArray(phrases) ? phrases : [];
+    const t = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!phraseKey(t)) return list.slice();
+    const whole = list.join(' ');
+    // A repeat, or a shorter version, of what is already there: dropped.
+    if (list.some((p) => isPhrasePrefix(t, p)) || (list.length > 1 && isPhrasePrefix(t, whole))) return list.slice();
+    // The whole turn so far, re-sent with more words: that is the turn now.
+    if (list.length && isPhrasePrefix(whole, t)) return [t];
+    // The last phrase with more words: the longer version wins.
+    if (list.length && isPhrasePrefix(list[list.length - 1], t)) return list.slice(0, -1).concat(t);
+    return list.concat(t);
+  }
+
+  // One turn's finals and its live preview. The preview is replaced on every
+  // update and never joins the finals; `text` is what the operator has said
+  // so far (finals, then whatever the preview adds beyond them).
+  function createTranscriptBuffer() {
+    let finals = [];
+    let interims = [];
+    return {
+      addFinal(text) { finals = mergePhrase(finals, text); },
+      setInterim(texts) {
+        interims = [];
+        for (const t of [].concat(texts === undefined ? [] : texts)) interims = mergePhrase(interims, t);
+      },
+      get finalText() { return finals.join(' '); },
+      get interimText() { return interims.join(' '); },
+      get text() {
+        let all = finals;
+        for (const t of interims) all = mergePhrase(all, t);
+        return all.join(' ');
+      },
+      clear() { finals = []; interims = []; }
+    };
+  }
+
   // ---------------------------------------------------------------------------
   // The conversation itself: ties mic, VAD, recogniser and chat together.
   //
@@ -381,6 +448,8 @@
   //   onError(message)           something went wrong (a toast)
   //   onStatus(text)             a persistent problem, '' when it clears (a status line)
   //   onDiagnostics(snapshot)    live readout for the operator's diagnostics line
+  //                              (raw: the recogniser's last result as it came;
+  //                              interim: the cleaned transcript of the turn)
   //
   // opts: any DEFAULTS key; micMode picks the starting mode.
 
@@ -402,8 +471,10 @@
     let recognition = null;
     let recognitionWanted = false;  // restart it when it ends on its own
     let recognitionRunning = false;
-    let finalText = '';
-    let interimText = '';
+    const turn = createTranscriptBuffer();   // this turn's finals and live preview
+    let lastRaw = '';               // the recogniser's last result, as delivered
+    let sentText = '';              // the turn last sent, as the recogniser gave it
+    let sentAt = null;              // ...and when, for the stale-result guard
     let flushing = null;            // { timer, resolve } while a turn is finalised
     let processing = false;         // a VAD frame is being scored
     let queuedFrame = null;
@@ -457,7 +528,8 @@
         recogniser: recognitionRunning ? 'running' : (restartTimer ? 'restarting' : 'stopped'),
         lastEvent,
         lastError,
-        interim: (finalText + ' ' + interimText).trim().slice(0, 40),
+        raw: lastRaw.slice(0, 40),
+        interim: turn.text.slice(0, 40),
         vadLevel: Math.round(vadLevel * 100) / 100,
         micOpen: !!mic,
         watchingPlayback,
@@ -479,8 +551,14 @@
 
     // --- recogniser -------------------------------------------------------
 
-    function clearTranscript() { finalText = ''; interimText = ''; if (deps.onTranscript) deps.onTranscript(''); }
-    function bufferedText() { return (finalText + ' ' + interimText).trim(); }
+    function clearTranscript() { turn.clear(); lastRaw = ''; if (deps.onTranscript) deps.onTranscript(''); }
+    function bufferedText() { return turn.text; }
+    // Just after a send, the recogniser (Android, after its restart) can hand
+    // back the turn it already delivered, whole or in part. That is not the
+    // next turn.
+    function isStaleResult(text) {
+      return sentAt !== null && now() - sentAt < o.staleResultMs && isPhrasePrefix(text, sentText);
+    }
     function clearTurnTimer() { if (turnTimer) { clearT(turnTimer); turnTimer = null; } }
 
     function startRecognition() {
@@ -488,7 +566,11 @@
       if (exclusive() && watchingPlayback) return;   // PG1 is talking: the mic is ours
       recognitionWanted = true;
       // A fresh session starts with an empty transcript.
-      finalText = ''; interimText = '';
+      turn.clear(); lastRaw = '';
+      // Exclusive (Android): one utterance per session, restarted after
+      // each, so the recogniser never has a phrase to re-send. Shared: the
+      // session runs on and the detector ends the turn.
+      recognition.continuous = !exclusive();
       sessionStartedAt = now();
       sessionResults = 0;
       sessionError = null;
@@ -576,7 +658,7 @@
     }
 
     function attachRecognition(r) {
-      r.continuous = true;
+      r.continuous = !exclusive();
       r.interimResults = true;
       if (deps.language) r.lang = deps.language;
       // Chrome 139+ accepts phrase hints on the recogniser. Anything older
@@ -609,29 +691,40 @@
       r.onresult = (event) => {
         // Results after stop() (or from a session already abandoned) are stale.
         if (!on || !recognitionRunning) return;
-        let interim = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const res = event.results[i];
+        const results = (event && event.results) || [];
+        const raw = [];
+        const interims = [];
+        let stale = 0;
+        // Only the results this event is about: from resultIndex onward. A
+        // final goes into the turn (the buffer keeps the longest version of
+        // each phrase); the interims are this update's preview, replacing
+        // the last one.
+        for (let i = (event && event.resultIndex) || 0; i < results.length; i++) {
+          const res = results[i];
           const alt = res && res[0];
-          const text = alt && typeof alt.transcript === 'string' ? alt.transcript : '';
+          const text = alt && typeof alt.transcript === 'string' ? alt.transcript.trim() : '';
           if (!text) continue;
-          if (res.isFinal) finalText = (finalText + ' ' + text).trim();
-          else interim += text;
+          raw.push(text);
+          if (isStaleResult(text)) { stale++; continue; }
+          if (res.isFinal) turn.addFinal(text);
+          else interims.push(text);
         }
-        interimText = interim.trim();
+        lastRaw = raw.join(' ');
         sessionResults++;
         noteHealthy();
-        emitDiag('result');
+        if (raw.length && stale === raw.length) { emitDiag('result:stale'); return; }
+        turn.setInterim(interims);
+        emitDiag(stale ? 'result:partly-stale' : 'result');
         // Anything heard while PG1 is talking and no barge-in has been
         // confirmed is the speaker, not the operator: it is dropped.
-        if (deps.isPlaying && deps.isPlaying() && !tracker.inTurn) { finalText = ''; interimText = ''; return; }
+        if (deps.isPlaying && deps.isPlaying() && !tracker.inTurn) { turn.clear(); return; }
         if (deps.onTranscript) deps.onTranscript(bufferedText());
         if (exclusive()) {
           // Result timing is the only clock: each one restarts the 800 ms.
           if (bufferedText() && !flushing) { tracker.noteSpeech(now()); armTurnTimer(); }
           return;
         }
-        if (finalText && !flushing) {
+        if (turn.finalText && !flushing) {
           // The recogniser finalised something: that is speech too, even
           // if the detector missed it.
           tracker.noteSpeech(now());
@@ -716,14 +809,17 @@
       await flushRecognition();
       if (!on) return;
       tracker.endTurn();
-      let text = (finalText || interimText || bufferedBefore).trim();
-      finalText = ''; interimText = '';
+      const heard = (turn.finalText || turn.interimText || bufferedBefore).trim();
+      // The next turn starts empty: nothing heard from here on joins this one.
+      turn.clear(); lastRaw = '';
       if (deps.onTranscript) deps.onTranscript('');
-      text = normaliseWakeWord(text).trim();
+      let text = normaliseWakeWord(heard).trim();
       const echoed = text && isEchoOfSpoken(text, spokenLog.texts, { threshold: o.echoThreshold });
       if (echoed) text = '';
       if (text) {
         emptyTurns = 0;
+        sentText = heard;
+        sentAt = now();
         emitDiag('sent');
         if (deps.send) deps.send(text);
         setState('thinking', text);
@@ -910,7 +1006,8 @@
       if (vad && vad.release) { try { await vad.release(); } catch (e) { /* ignore */ } }
       vad = null;
       queuedFrame = null;
-      finalText = ''; interimText = '';
+      turn.clear(); lastRaw = '';
+      sentText = ''; sentAt = null;
       setStatus('');
     }
 
@@ -1031,6 +1128,9 @@
     echoSimilarity,
     isEchoOfSpoken,
     createSpokenLog,
+    isPhrasePrefix,
+    mergePhrase,
+    createTranscriptBuffer,
     createConversation,
     openMicrophone,
     loadOnnxRuntime

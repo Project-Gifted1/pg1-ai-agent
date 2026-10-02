@@ -11,6 +11,9 @@
  *    recogniser so nothing heard from the speaker is kept
  *  - echo guard: a transcript of what PG1 just said is never sent
  *  - "April" / "a PG one" / "PG one" -> "PG1" at the start of an utterance
+ *  - Android's recogniser re-sends the whole phrase on every update, repeats
+ *    a final after a restart and delivers results after a send: one clean
+ *    message per turn, in conversation mode and in dictation
  *  - auto-off after two minutes of silence, and when the page is hidden
  *  - the server strips OPERATOR:/AGENT: transcript labels from a reply
  *  - the page: switch markup, announcer, reduced motion, no emoji
@@ -340,7 +343,7 @@ test('start opens the mic and the recogniser; a turn is sent 800 ms after the op
   assert.ok(f.conv.on);
   assert.equal(f.conv.state, 'listening');
   assert.equal(f.log.states[0], 'listening:started');
-  assert.ok(f.rec.continuous && f.rec.interimResults, 'continuous recognition with interim results');
+  assert.ok(f.rec.continuous && f.rec.interimResults, 'shared: continuous recognition with interim results');
   assert.deepEqual(f.rec.calls, ['start']);
 
   await f.frames(0.9, 10);
@@ -708,6 +711,8 @@ test('exclusive mode: no mic stream while recognising; the turn ends 800 ms afte
   assert.equal(f.log.micOpens, 0, 'no getUserMedia stream was opened');
   assert.equal(f.conv.micOpen, false);
   assert.ok(f.rec.running, 'the recogniser has the microphone to itself');
+  assert.equal(f.rec.continuous, false, 'one utterance per session, restarted after each');
+  assert.ok(f.rec.interimResults);
   assert.equal(f.conv.state, 'listening');
 
   // Interim results keep the turn open: each one restarts the 800 ms.
@@ -750,6 +755,173 @@ test('exclusive mode: a session that ends on its own with a final result is the 
   await f.clock.advance(150);
   assert.ok(f.rec.running);
   assert.deepEqual(f.log.sent, ['read the error log']);
+});
+
+// --- Android's result pattern: the whole phrase re-sent on every update ------------------
+
+test('transcript buffer: a re-sent phrase replaces the shorter one, a prefix or repeat is dropped, a new phrase is added', () => {
+  const m = (phrases, text) => plain(V.mergePhrase(phrases, text));
+  assert.deepEqual(m([], "what's"), ["what's"]);
+  assert.deepEqual(m(["what's"], "what's in"), ["what's in"]);
+  assert.deepEqual(m(["what's in"], "what's in my error log"), ["what's in my error log"]);
+  assert.deepEqual(m(["what's in my error log"], "what's in"), ["what's in my error log"], 'a shorter version is dropped');
+  assert.deepEqual(m(["what's in my error log"], "What's in my error log."), ["what's in my error log"], 'a repeat is dropped, whatever its case and punctuation');
+  assert.deepEqual(m(['whats in'], "what's in my log"), ["what's in my log"], 'apostrophes do not tell phrases apart');
+  assert.deepEqual(m(["what's in my error log"], 'and the vault'), ["what's in my error log", 'and the vault'], 'a new phrase is added');
+  assert.deepEqual(m(["what's in my error log", 'and the'], 'and the vault'), ["what's in my error log", 'and the vault'], 'the last phrase grows');
+  assert.deepEqual(m(['hello there', 'what is'], 'hello there what is in the log'), ['hello there what is in the log'], 'the whole turn re-sent with more words is the turn');
+  assert.deepEqual(m(['hello there', 'what is in the log'], 'hello there what'), ['hello there', 'what is in the log'], 'a prefix of the whole turn is dropped');
+  assert.deepEqual(m(['a'], '  '), ['a']);
+  assert.deepEqual(m(['a'], '...'), ['a'], 'punctuation alone is nothing');
+  assert.ok(V.isPhrasePrefix("what's", 'Whats in'));
+  assert.ok(!V.isPhrasePrefix('what', "what's in"), 'a prefix ends at a word boundary');
+  assert.ok(!V.isPhrasePrefix('', 'anything'));
+
+  const b = V.createTranscriptBuffer();
+  b.setInterim(["what's"]);
+  b.setInterim(["what's in"]);
+  assert.equal(b.text, "what's in", 'the preview is overwritten on each update');
+  assert.equal(b.finalText, '');
+  b.setInterim(["what's", "what's in my"]);          // cumulative interims in one event
+  assert.equal(b.interimText, "what's in my");
+  b.addFinal("what's");
+  b.addFinal("what's in");
+  b.addFinal("what's in my error log");
+  b.setInterim([]);
+  assert.equal(b.finalText, "what's in my error log", 'cumulative finals: the longest version, once');
+  assert.equal(b.text, "what's in my error log");
+  b.setInterim(["what's in my error log and"]);
+  assert.equal(b.text, "what's in my error log and", 'the preview adds what lies beyond the finals');
+  assert.equal(b.finalText, "what's in my error log", 'without joining them');
+  b.setInterim(["what's in my error log"]);
+  assert.equal(b.text, "what's in my error log", 'a preview that repeats the finals adds nothing');
+  b.clear();
+  assert.equal(b.text, '');
+  assert.equal(b.interimText, '');
+});
+
+test('exclusive mode, Android pattern: cumulative interims and cumulative finals in one session are one clean message', async () => {
+  const f = makeFakes({ micMode: 'exclusive' });
+  await f.conv.start();
+  assert.equal(f.rec.continuous, false);
+  f.rec.onspeechstart();
+  for (const t of ["what's", "what's in", "what's in my", "what's in my error"]) { f.rec.hear(t); await f.clock.advance(150); }
+  assert.equal(f.log.transcripts.at(-1), "what's in my error", 'the live guess is overwritten, never appended');
+  assert.equal(f.conv.diagnostics.interim, "what's in my error");
+  for (const t of ["what's", "what's in", "what's in my error log"]) { f.rec.hear(t, { final: true }); await f.clock.advance(50); }
+  assert.equal(f.log.transcripts.at(-1), "what's in my error log", 'each final replaces the shorter one');
+  let d = f.conv.diagnostics;
+  assert.equal(d.raw, "what's in my error log", 'what the recogniser last delivered');
+  assert.equal(d.interim, "what's in my error log", 'and the cleaned turn');
+  f.rec.onspeechend();
+  f.rec.end();                                     // Android ends the session after the final
+  await settle(); await settle();
+  assert.deepEqual(f.log.sent, ["what's in my error log"], 'exactly one clean message');
+  assert.ok(f.log.transcripts.every((t) => !/what's.+what's/.test(t)), 'no stacked text was ever shown');
+  d = f.conv.diagnostics;
+  assert.equal(d.interim, '', 'the buffer is empty once sent');
+  assert.equal(d.raw, '');
+  await f.clock.advance(3500);
+  assert.deepEqual(f.log.sent, ["what's in my error log"], 'and nothing more came of it');
+
+  // Cumulative finals that arrive as separate results of one event, from
+  // resultIndex onward: the earlier results of the event are not re-read.
+  const g = makeFakes({ micMode: 'exclusive' });
+  await g.conv.start();
+  g.rec.onresult({ resultIndex: 1, results: [{ isFinal: true, 0: { transcript: 'stale from before' } }, { isFinal: true, 0: { transcript: "what's" } }, { isFinal: true, 0: { transcript: "what's in my error log" } }] });
+  assert.equal(g.conv.diagnostics.interim, "what's in my error log");
+  g.rec.end();
+  await settle(); await settle();
+  assert.deepEqual(g.log.sent, ["what's in my error log"]);
+});
+
+test('exclusive mode: the same final handed back after the restart, or a result arriving after the send, never becomes a second message', async () => {
+  const f = makeFakes({ micMode: 'exclusive' });
+  await f.conv.start();
+  f.rec.hear("what's in my error log", { final: true });
+  f.rec.end();
+  await settle(); await settle();
+  assert.deepEqual(f.log.sent, ["what's in my error log"]);
+  await f.clock.advance(100);
+  assert.ok(f.rec.running, 'restarted for the next turn');
+  // Android: the new session opens with the previous turn again.
+  f.rec.hear("what's in my error log");
+  assert.equal(f.log.transcripts.at(-1), '', 'not previewed');
+  f.rec.hear("what's in my error log", { final: true });
+  assert.equal(f.conv.diagnostics.lastEvent, 'result:stale');
+  assert.equal(f.conv.diagnostics.raw, "what's in my error log", 'shown as heard in the diagnostics');
+  assert.equal(f.conv.diagnostics.interim, '', 'but not in the turn');
+  f.rec.end();
+  await f.clock.advance(1000);
+  assert.ok(f.rec.running);
+  assert.deepEqual(f.log.sent, ["what's in my error log"], 'not sent again');
+  // Part of it, late, is the same thing.
+  f.rec.hear("what's in", { final: true });
+  await f.clock.advance(900);
+  assert.deepEqual(f.log.sent, ["what's in my error log"]);
+  // The operator's next, different turn goes through, and it alone.
+  f.rec.hear("what's in the vault", { final: true });
+  f.rec.end();
+  await settle(); await settle();
+  assert.deepEqual(f.log.sent, ["what's in my error log", "what's in the vault"]);
+  // Well after a send, the same words again are the operator repeating them.
+  await f.clock.advance(DEFAULTS.staleResultMs + 100);
+  f.rec.hear("what's in the vault", { final: true });
+  f.rec.end();
+  await settle(); await settle();
+  assert.deepEqual(f.log.sent, ["what's in my error log", "what's in the vault", "what's in the vault"]);
+});
+
+test('exclusive mode: the buffer is emptied when PG1 starts talking and at the barge-in, so the next turn is only the new words', async () => {
+  const f = makeFakes({ micMode: 'exclusive' });
+  await f.conv.start();
+  f.rec.hear('what is');
+  assert.equal(f.conv.diagnostics.interim, 'what is');
+  f.setBusy(true);
+  f.setPlaying(true);
+  await f.clock.advance(120);
+  assert.equal(f.conv.state, 'speaking');
+  assert.equal(f.conv.diagnostics.interim, '', 'emptied when the recogniser was paused for playback');
+  assert.equal(f.log.transcripts.at(-1), '');
+  await f.frames(0.95, 12);
+  assert.equal(f.log.states.at(-1), 'listening:interrupted');
+  assert.equal(f.conv.diagnostics.interim, '', 'and empty after the barge-in');
+  await f.clock.advance(100);
+  assert.ok(f.rec.running);
+  f.rec.hear('no, the vault', { final: true });
+  f.rec.end();
+  await settle(); await settle();
+  assert.deepEqual(f.log.sent, ['no, the vault']);
+});
+
+test('shared mode: cumulative finals are one message, and a late result after the send does not join the next turn', async () => {
+  const f = makeFakes();
+  await f.conv.start();
+  await f.frames(0.9, 10);
+  f.rec.hear("what's");
+  f.rec.hear("what's in my");
+  f.rec.hear("what's", { final: true });
+  f.rec.hear("what's in", { final: true });
+  assert.equal(f.log.transcripts.at(-1), "what's in");
+  f.rec.finalOnStop = "what's in my error log";
+  await f.frames(0.05, 26);
+  await settle(); await settle();
+  assert.deepEqual(f.log.sent, ["what's in my error log"]);
+  await f.clock.advance(100);
+  assert.ok(f.rec.running);
+  // The recogniser delivers the turn again, late, into the new session.
+  f.rec.hear("what's in my error log", { final: true });
+  assert.equal(f.conv.diagnostics.interim, '', 'not the next turn');
+  assert.ok(!f.conv.tracker.inTurn, 'and not speech');
+  // The next turn is only what the operator says next.
+  await f.frames(0.9, 10);
+  f.rec.hear('and the vault');
+  f.rec.finalOnStop = 'and the vault';
+  await f.frames(0.05, 26);
+  await settle(); await settle();
+  assert.deepEqual(f.log.sent, ["what's in my error log", 'and the vault']);
+  await f.clock.advance(3500);
+  assert.deepEqual(f.log.sent, ["what's in my error log", 'and the vault'], 'one message per turn');
 });
 
 test('exclusive mode: while PG1 talks the recogniser is off and our stream is open for barge-in; speaking over PG1 interrupts', async () => {
@@ -970,7 +1142,7 @@ test('diagnostics: a live snapshot with recogniser state, last event, last error
   const f = makeFakes();
   await f.conv.start();
   let d = f.conv.diagnostics;
-  assert.deepEqual(Object.keys(d).sort(), ['failStreak', 'interim', 'lastError', 'lastEvent', 'micOpen', 'mode', 'recogniser', 'state', 'status', 'vadLevel', 'watchingPlayback'].sort());
+  assert.deepEqual(Object.keys(d).sort(), ['failStreak', 'interim', 'lastError', 'lastEvent', 'micOpen', 'mode', 'raw', 'recogniser', 'state', 'status', 'vadLevel', 'watchingPlayback'].sort());
   assert.equal(d.mode, 'shared');
   assert.equal(d.recogniser, 'running');
   assert.equal(d.lastEvent, 'start');
@@ -984,6 +1156,11 @@ test('diagnostics: a live snapshot with recogniser state, last event, last error
   assert.equal(d.lastEvent, 'result');
   assert.equal(d.interim, 'a transcript that runs on well past the ');
   assert.equal(d.interim.length, 40);
+  assert.equal(d.raw, 'a transcript that runs on well past the ', 'what the recogniser delivered, as it came');
+  f.rec.hear('a transcript', { final: true });
+  d = f.conv.diagnostics;
+  assert.equal(d.raw, 'a transcript');
+  assert.equal(d.interim, 'a transcript', 'a final replaces the live guess; the turn is what was finalised');
   f.rec.error('network');
   await settle(); await settle();
   d = f.conv.diagnostics;
@@ -1011,14 +1188,32 @@ test('the page: Android starts exclusive, the status line and diagnostics are wi
   assert.match(glue, /let voiceDiagnosticsOn = false;/);
   assert.doesNotMatch(glue, /localStorage|sessionStorage|document\.cookie|indexedDB/, 'diagnostics and the mode are never stored');
   assert.match(glue, /if \(!voiceDiagnosticsOn \|\| !snap \|\| snap\.state === 'off'\) \{ el\.hidden = true; el\.textContent = ''; return; \}/);
-  for (const field of ["snap.mode + ' mic'", "'rec ' + snap.recogniser", "'last ' + (snap.lastEvent || '-')", "'err ' + (snap.lastError || 'none')", "'vad ' + (snap.micOpen ? snap.vadLevel.toFixed(2) : '-')", "'mic ' + (snap.micOpen ? 'open' : 'closed')"]) {
+  for (const field of ["snap.mode + ' mic'", "'rec ' + snap.recogniser", "'last ' + (snap.lastEvent || '-')", "'err ' + (snap.lastError || 'none')", "'heard \"' + (snap.raw || '') + '\"'", "'turn \"' + (snap.interim || '') + '\"'", "'vad ' + (snap.micOpen ? snap.vadLevel.toFixed(2) : '-')", "'mic ' + (snap.micOpen ? 'open' : 'closed')"]) {
     assert.ok(glue.includes(field), `diagnostics line shows ${field}`);
   }
   // Hands off the composer.
   assert.match(glue, /function blurComposer\(\) \{\s*const input = document\.getElementById\('prompt-input'\);\s*if \(input && document\.activeElement === input\) input\.blur\(\);/);
   assert.match(glue, /if \(isRecording && recognition\) recognition\.stop\(\);\s*blurComposer\(\);/, 'blurred when the mode starts');
-  assert.match(glue, /submitDirective\(\);\s*blurComposer\(\);/, 'and after a send');
+  assert.match(glue, /submitDirective\(\);\s*clearComposer\(\);\s*blurComposer\(\);/, 'and after a send');
   assert.doesNotMatch(glue, /\.focus\(\)/, 'conversation mode never focuses anything');
   const submit = html.slice(html.indexOf('async function submitDirective('), html.indexOf('async function submitDirective(') + 20000);
   assert.doesNotMatch(submit.slice(0, submit.indexOf('\n    }\n\n')), /prompt-input'\)\.focus\(\)|input\.focus\(\)/, 'submitDirective does not focus the composer');
+});
+
+test('the page: dictation and conversation turns never append to the composer; it is emptied at every turn boundary', () => {
+  const dictation = html.slice(html.indexOf("if ('webkitSpeechRecognition' in window"), html.indexOf('function stopRecording('));
+  assert.doesNotMatch(dictation, /input\.value \+ ' '|finalTranscript|\+= event\.results/, 'nothing is appended to the composer or across results');
+  assert.match(dictation, /for \(let i = event\.resultIndex \|\| 0; i < results\.length; \+\+i\)/, "only this update's results");
+  assert.match(dictation, /if \(res\.isFinal\) dictation\.addFinal\(text\);\s*else interims\.push\(text\);/);
+  assert.match(dictation, /dictation\.setInterim\(interims\);\s*renderDictation\(\);/, 'the preview is overwritten on each update');
+  assert.match(dictation, /dictationBase = document\.getElementById\('prompt-input'\)\.value\.trim\(\);\s*dictation = createDictationBuffer\(\);/, 'one buffer per press of the mic');
+  assert.match(dictation, /if \(typeof PG1Voice !== 'undefined' && PG1Voice\.createTranscriptBuffer\) return PG1Voice\.createTranscriptBuffer\(\);/, 'the same buffer as conversation mode');
+  assert.match(dictation, /input\.value = \[dictationBase, text\]\.filter\(Boolean\)\.join\(' '\);/, 'the composer is rewritten from the base and the buffer');
+  assert.match(dictation, /if \(conversation && conversation\.on\) clearComposer\(\);\s*stopConversation\('dictation'\);/, "the conversation's composer is emptied before dictation takes over");
+  assert.match(html, /isRecording = false;\s*dictation = null;/, 'the buffer is dropped when dictation ends');
+  const glue = html.slice(html.indexOf('// CONVERSATION MODE (PG1 voice, phase 2)'), html.indexOf('function setVoiceActive('));
+  assert.match(glue, /function clearComposer\(\) \{\s*const input = document\.getElementById\('prompt-input'\);\s*if \(!input\) return;\s*input\.value = '';/);
+  assert.match(glue, /submitDirective\(\);\s*clearComposer\(\);\s*blurComposer\(\);/, 'emptied right after a send');
+  assert.match(glue, /if \(detail === 'started' \|\| detail === 'interrupted' \|\| \(!isOn && detail !== 'dictation'\)\) clearComposer\(\);/, 'and when the mode starts, at a barge-in, and when it stops');
+  assert.match(glue, /'heard "' \+ \(snap\.raw \|\| ''\) \+ '"',\s*'turn "' \+ \(snap\.interim \|\| ''\) \+ '"'/, 'the diagnostics line shows what was heard beside the cleaned turn');
 });
