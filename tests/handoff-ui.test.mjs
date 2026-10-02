@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
+import { FAKE, bearerHeader } from './fixtures/fake-secrets.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(__dirname, '../public/index.html'), 'utf-8');
@@ -227,10 +228,11 @@ test('a blocked new tab still leaves an Open Code link', async () => {
 
 test('secrets typed into the card are stripped before copying, and the operator is told', async () => {
   const ctx = makeContext();
-  const { btn, status, ta } = makeCard({ prompt: PROMPT + '\nkey: sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123' });
+  const { btn, status, ta } = makeCard({ prompt: `${PROMPT}\nkey: ${FAKE.anthropicKey}` });
   await ctx.copyHandoffPrompt(btn, false);
   assert.doesNotMatch(ctx.log.clipboard, /sk-ant/);
   assert.doesNotMatch(ta.value, /sk-ant/);
+  assert.ok(!ctx.log.clipboard.includes(FAKE.anthropicKey));
   assert.equal(status.attrs['data-tone'], 'warn');
   assert.match(status.innerHTML, /Removed before copying: API key\./);
 });
@@ -244,7 +246,7 @@ test('removing the task ID line warns that the PR cannot be tracked', async () =
 
 test('a manual copy after the fallback is stripped too, and marks the hand-off sent', () => {
   const ctx = makeContext();
-  const { ta, status } = makeCard({ prompt: PROMPT + '\nAuthorization: Bearer abcdefghijklmnop0123456789' });
+  const { ta, status } = makeCard({ prompt: `${PROMPT}\n${bearerHeader()}` });
   ta.selectionStart = 0; ta.selectionEnd = ta.value.length;
   let prevented = false; let data = null;
   ctx.handoffManualCopy(ta, { preventDefault() { prevented = true; }, clipboardData: { setData(_t, v) { data = v; } } });
@@ -252,7 +254,8 @@ test('a manual copy after the fallback is stripped too, and marks the hand-off s
   assert.match(data, /Bearer \[removed\]/);
   assert.match(status.innerHTML, /Removed before copying: bearer token/);
   assert.equal(ctx.log.fetches.length, 1);
-  assert.doesNotMatch(ctx.log.fetches[0].body.prompt, /abcdefghijklmnop0123456789/);
+  assert.ok(!data.includes(FAKE.bearerToken));
+  assert.ok(!ctx.log.fetches[0].body.prompt.includes(FAKE.bearerToken));
 });
 
 // --- drawer list --------------------------------------------------------------------

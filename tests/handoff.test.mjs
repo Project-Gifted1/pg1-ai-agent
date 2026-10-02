@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
+import { FAKE, bearerHeader, postgresUrl } from './fixtures/fake-secrets.mjs';
 import {
   generateTaskId, buildHandoffPrompt, draftHandoff, stripSecrets, secretEnvValues,
   findRelevantFiles, resolveHandoffRepo, titleHasTaskId, matchPullRequest,
@@ -98,45 +99,53 @@ test('repo: default, repo: prefix, full slug; bare names in prose do not switch 
 
 // --- secret stripping -------------------------------------------------------
 
-// Fake fixtures, built at runtime so the source never holds a literal
-// token. Each has the exact shape of the real thing, so the stripping
-// patterns are exercised just as hard: a three-part HS256 JWT with a
-// service_role claim for a made-up project ref and an obviously fake
-// signature, and a 39-character "AIzaSy..." key whose body is generated.
-const b64url = (value) => Buffer.from(typeof value === 'string' ? value : JSON.stringify(value)).toString('base64url');
-const FAKE_SUPABASE_JWT = [
-  b64url({ alg: 'HS256', typ: 'JWT' }),
-  b64url({ iss: 'supabase', ref: 'pg1-test-fixture', role: 'service_role' }),
-  b64url('not-a-real-signature-pg1-test-fixture')
-].join('.');
-const FAKE_GOOGLE_KEY = ['AI', 'za', 'Sy', 'PG1TESTFIXTURE'.padEnd(33, 'x')].join('');
-
-test('the fake JWT and Google key fixtures have the real shapes', () => {
-  const [header, payload, signature] = FAKE_SUPABASE_JWT.split('.');
+test('every fake credential fixture has the real format and a PG1 test marker', () => {
+  const [header, payload, signature] = FAKE.supabaseJwt.split('.');
   assert.deepEqual(JSON.parse(Buffer.from(header, 'base64url')), { alg: 'HS256', typ: 'JWT' });
   assert.deepEqual(JSON.parse(Buffer.from(payload, 'base64url')), { iss: 'supabase', ref: 'pg1-test-fixture', role: 'service_role' });
   assert.equal(Buffer.from(signature, 'base64url').toString(), 'not-a-real-signature-pg1-test-fixture');
-  assert.match(FAKE_SUPABASE_JWT, /^eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
-  assert.equal(FAKE_GOOGLE_KEY.length, 39);
-  assert.match(FAKE_GOOGLE_KEY, /^AIzaSy[0-9A-Za-z_-]{33}$/);
+  assert.match(FAKE.supabaseJwt, /^eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+  assert.equal(FAKE.googleKey.length, 39);
+  assert.match(FAKE.googleKey, /^AIzaSy[0-9A-Za-z_-]{33}$/);
+  assert.match(FAKE.supabaseSecretKey, /^sb_secret_[A-Za-z0-9]{32}$/);
+  assert.match(FAKE.anthropicKey, /^sk-ant-api03-[A-Za-z0-9_-]{40}$/);
+  assert.match(FAKE.openaiKey, /^sk-proj-[A-Za-z0-9]{24}$/);
+  assert.match(FAKE.githubPat, /^ghp_[A-Za-z0-9]{36}$/);
+  assert.match(FAKE.githubFineGrainedPat, /^github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}$/);
+  assert.match(FAKE.awsAccessKeyId, /^AKIA[0-9A-Z]{16}$/);
+  assert.match(FAKE.bearerToken, /^[A-Za-z0-9._~+/-]{16,}$/);
+  assert.match(bearerHeader(), /^Authorization: Bearer [A-Za-z0-9._~+/-]{16,}$/);
+  const pemLine = (kind) => ['-----', kind, ' RSA PRIVATE', ' KEY-----'].join('');
+  assert.match(FAKE.privateKeyBlock, new RegExp(`^${pemLine('BEGIN')}\\n[\\s\\S]+\\n${pemLine('END')}$`));
+  const url = new URL(postgresUrl());
+  assert.equal(url.protocol, 'postgres:');
+  assert.equal(url.username, FAKE.dbUser);
+  assert.equal(url.password, FAKE.dbPassword);
+  for (const pw of [FAKE.passkey, FAKE.dbPassword, FAKE.envSecretValue]) assert.match(pw, /\d/);
+  assert.match(FAKE.passkey, /[!@#$%^&*_+=~-]/);
+  assert.match(FAKE.longToken, /^(?=.*[A-Z])(?=.*[a-z])(?=(?:.*\d){2})[A-Za-z0-9]{32,}$/);
+  for (const [name, value] of Object.entries(FAKE)) {
+    const text = name === 'supabaseJwt' ? Buffer.from(value.split('.')[1], 'base64url').toString() : value;
+    assert.match(text, /pg1/i, `${name} carries the PG1 test-fixture marker`);
+  }
 });
 
 const SECRET_CASES = [
-  ['Supabase service key (JWT)', `use ${FAKE_SUPABASE_JWT} to query`, 'JWT or Supabase key'],
-  ['Supabase new-style key', 'key sb_secret_AbCdEf0123456789xyz', 'Supabase key'],
-  ['Anthropic-style key', 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123', 'API key'],
-  ['OpenAI-style key', 'sk-proj-ABCDEFGHIJKLMNOPQRST1234', 'API key'],
-  ['GitHub PAT', 'token ghp_abcdefghijklmnopqrstuvwxyz0123456789', 'GitHub token'],
-  ['fine-grained PAT', 'github_pat_11ABCDEFG0123456789_abcdefghijklmnop', 'GitHub token'],
-  ['Google key', FAKE_GOOGLE_KEY, 'API key'],
-  ['AWS key', 'AKIAIOSFODNN7EXAMPLE', 'AWS key'],
-  ['bearer header', 'Authorization: Bearer abcdefghijklmnop0123456789', 'bearer token'],
-  ['postgres URL', 'postgres://admin:hunter2pw@db.example.com:5432/x', 'credentials in a URL'],
-  ['env assignment', 'set SUPABASE_SERVICE_ROLE_KEY=whatever-value-here then', 'env value'],
-  ['passkey in prose', 'my passkey: Tr0ub4dor&3 is not working', 'password or passkey'],
-  ['USER_API_PASS', 'USER_API_PASS="op-pass-77"', 'env value'],
-  ['private key', '-----BEGIN RSA PRIVATE KEY-----\nMIIabc\n-----END RSA PRIVATE KEY-----', 'private key'],
-  ['random blob', 'value Q2xhdWRlQ29kZVRlc3RUb2tlbjEyMzQ1Njc4OTA here', 'long token']
+  ['Supabase service key (JWT)', `use ${FAKE.supabaseJwt} to query`, 'JWT or Supabase key'],
+  ['Supabase new-style key', `key ${FAKE.supabaseSecretKey}`, 'Supabase key'],
+  ['Anthropic-style key', FAKE.anthropicKey, 'API key'],
+  ['OpenAI-style key', FAKE.openaiKey, 'API key'],
+  ['GitHub PAT', `token ${FAKE.githubPat}`, 'GitHub token'],
+  ['fine-grained PAT', FAKE.githubFineGrainedPat, 'GitHub token'],
+  ['Google key', FAKE.googleKey, 'API key'],
+  ['AWS key', FAKE.awsAccessKeyId, 'AWS key'],
+  ['bearer header', bearerHeader(), 'bearer token'],
+  ['postgres URL', postgresUrl(), 'credentials in a URL'],
+  ['env assignment', `set SUPABASE_SERVICE_ROLE_KEY=${FAKE.envSecretValue} then`, 'env value'],
+  ['passkey in prose', `my passkey: ${FAKE.passkey} is not working`, 'password or passkey'],
+  ['USER_API_PASS', `USER_API_PASS="${FAKE.envSecretValue}"`, 'env value'],
+  ['private key', FAKE.privateKeyBlock, 'private key'],
+  ['random blob', `value ${FAKE.longToken} here`, 'long token']
 ];
 
 for (const [name, input, label] of SECRET_CASES) {
@@ -151,8 +160,8 @@ for (const [name, input, label] of SECRET_CASES) {
 }
 
 test('strip keeps the variable name / scheme so the prompt still reads', () => {
-  assert.equal(stripSecrets('SUPABASE_SERVICE_ROLE_KEY=abcd1234xyz').text, 'SUPABASE_SERVICE_ROLE_KEY=[removed]');
-  assert.equal(stripSecrets('postgres://u:p4ss@host/db').text, 'postgres://[removed]@host/db');
+  assert.equal(stripSecrets(`SUPABASE_SERVICE_ROLE_KEY=${FAKE.envSecretValue}`).text, 'SUPABASE_SERVICE_ROLE_KEY=[removed]');
+  assert.equal(stripSecrets(postgresUrl()).text, 'postgres://[removed]@db.example.invalid:5432/pg1');
 });
 
 const SAFE_TEXT = [
@@ -179,10 +188,11 @@ test('a full built prompt survives stripping unchanged', () => {
 });
 
 test('the deployment\'s own secret env values are stripped wherever they appear', () => {
-  const env = { USER_API_PASS: 'plainwordpass', SUPABASE_URL: 'https://abc.supabase.co', GITHUB_TOKEN: 'tok-value-123', NODE_ENV: 'production', SHORT_KEY: 'abc' };
+  const env = { USER_API_PASS: 'plainwordpass', SUPABASE_URL: 'https://abc.supabase.co', GITHUB_TOKEN: FAKE.envSecretValue, NODE_ENV: 'production', SHORT_KEY: 'abc' };
   const values = secretEnvValues(env);
   assert.ok(values.includes('plainwordpass'));
   assert.ok(values.includes('https://abc.supabase.co'));
+  assert.ok(values.includes(FAKE.envSecretValue));
   assert.ok(!values.includes('production'), 'non-secret names are not stripped');
   assert.ok(!values.includes('abc'), 'too short to strip safely');
   const d = draftHandoff({ task: 'login fails with plainwordpass against https://abc.supabase.co', envValues: values });
@@ -191,7 +201,8 @@ test('the deployment\'s own secret env values are stripped wherever they appear'
 });
 
 test('a secret in the task never reaches the prompt and is reported', () => {
-  const d = draftHandoff({ task: 'fix auth; the key is sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123' });
+  const d = draftHandoff({ task: `fix auth; the key is ${FAKE.anthropicKey}` });
+  assert.ok(!d.prompt.includes(FAKE.anthropicKey));
   assert.doesNotMatch(d.prompt, /sk-ant-api03/);
   assert.match(d.prompt, /\[removed\]/);
   assert.deepEqual(d.removed, ['API key']);

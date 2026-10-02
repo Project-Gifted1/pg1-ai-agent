@@ -9,6 +9,7 @@
 import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import handler, { __clearHandoffsRateLimitState } from '../api/handoffs.mjs';
+import { FAKE } from './fixtures/fake-secrets.mjs';
 
 const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -90,21 +91,21 @@ test('GET and other methods are refused', async () => {
 test('draft returns the prompt and stores a drafted row with the stripped prompt', async () => {
   const calls = [];
   installFetch(calls);
-  const res = await call({ op: 'draft', ...AUTH, task: 'Add a toggle to the drawer. Password: Hunter2!x' });
+  const res = await call({ op: 'draft', ...AUTH, task: `Add a toggle to the drawer. Password: ${FAKE.passkey}` });
   assert.equal(res.statusCode, 200);
   const d = res.body;
   assert.match(d.taskId, /^PG1-TASK-[A-Z0-9]{6}$/);
   assert.ok(d.prompt.includes(`Put the task ID ${d.taskId} in the pull request title`));
   assert.equal(d.stored, true);
   assert.deepEqual(d.removed, ['password or passkey']);
-  assert.doesNotMatch(d.prompt, /Hunter2/);
+  assert.ok(!d.prompt.includes(FAKE.passkey));
   const insert = calls.find((c) => c.method === 'POST');
   assert.equal(insert.url, 'https://example.supabase.co/rest/v1/pg1_handoffs');
   assert.equal(insert.headers.apikey, 'test-service-role-key');
   assert.equal(insert.body.task_id, d.taskId);
   assert.equal(insert.body.status, 'drafted');
   assert.equal(insert.body.prompt, d.prompt);
-  assert.doesNotMatch(JSON.stringify(insert.body), /Hunter2/);
+  assert.ok(!JSON.stringify(insert.body).includes(FAKE.passkey));
   assert.ok(!calls.some((c) => c.url.includes('anthropic') || c.url.includes('claude.ai')), 'no model or Code call');
 });
 
@@ -131,7 +132,7 @@ test('draft without a task is a 400', async () => {
 test('sent re-strips the edited prompt and only moves drafted/sent rows to sent', async () => {
   const calls = [];
   installFetch(calls);
-  const res = await call({ op: 'sent', ...AUTH, taskId: 'PG1-TASK-ABCDEF', prompt: 'Task ID: PG1-TASK-ABCDEF\nuse ghp_abcdefghijklmnopqrstuvwxyz0123456789' });
+  const res = await call({ op: 'sent', ...AUTH, taskId: 'PG1-TASK-ABCDEF', prompt: `Task ID: PG1-TASK-ABCDEF\nuse ${FAKE.githubPat}` });
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body.removed, ['GitHub token']);
   const patches = calls.filter((c) => c.method === 'PATCH');
@@ -140,7 +141,10 @@ test('sent re-strips the edited prompt and only moves drafted/sent rows to sent'
   assert.equal(patches[0].body.status, 'sent');
   assert.match(patches[1].url, /status=not\.in\.\(drafted,sent\)$/);
   assert.equal(patches[1].body.status, undefined, 'a PR-tracked row keeps its status');
-  for (const p of patches) assert.doesNotMatch(p.body.prompt, /ghp_/);
+  for (const p of patches) {
+    assert.doesNotMatch(p.body.prompt, /ghp_/);
+    assert.ok(!p.body.prompt.includes(FAKE.githubPat));
+  }
 });
 
 test('sent rejects anything that is not a task ID', async () => {
@@ -171,7 +175,7 @@ test('list syncs status from PR titles with the existing GITHUB_TOKEN and links 
 
   const gh = calls.filter((c) => c.url.startsWith('https://api.github.com/'));
   assert.equal(gh.length, 1, 'one PR listing per repo');
-  assert.equal(gh[0].headers.Authorization, 'Bearer gh-test-token-value');
+  assert.equal(gh[0].headers.Authorization, `Bearer ${process.env.GITHUB_TOKEN}`);
   const patches = calls.filter((c) => c.method === 'PATCH');
   assert.deepEqual(patches.map((p) => [p.url.split('task_id=eq.')[1], p.body.status]),
     [['PG1-TASK-AAAAAA', 'pr_open'], ['PG1-TASK-BBBBBB', 'merged']]);
