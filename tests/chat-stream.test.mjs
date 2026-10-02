@@ -218,7 +218,7 @@ test('server and browser SSE parsers agree on every split of the same stream', (
   }
 });
 
-test('parseTraceEvent keeps the five known types and drops anything malformed or mislabelled', () => {
+test('parseTraceEvent keeps the known types and drops anything malformed or mislabelled', () => {
   const p = (event, data) => clientCtx.parseTraceEvent({ event, data });
   for (const type of STREAM_EVENT_TYPES) assert.equal(p(type, JSON.stringify({ type })).type, type);
   assert.deepEqual([...vm.runInContext('TRACE_EVENT_TYPES', clientCtx)], STREAM_EVENT_TYPES, 'client and server agree on event types');

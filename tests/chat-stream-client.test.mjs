@@ -64,6 +64,8 @@ function makeContext(overrides = {}) {
     saveState: () => { log.saves++; },
     messageActionsHtml: () => '<div class="message-actions"></div>',
     submitDirective: (opts) => log.submits.push(opts || {}),
+    isVoicePlaying: () => false,
+    stopVoicePlayback: () => { log.voiceStops = (log.voiceStops || 0) + 1; },
     ...overrides
   };
   vm.createContext(ctx);

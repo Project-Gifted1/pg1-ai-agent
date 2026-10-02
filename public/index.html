@@ -2772,7 +2772,11 @@
       btn.setAttribute('aria-checked', String(voiceActive));
       
       if (voiceActive) {
+        // Created inside this tap so later streamed speech is allowed to play.
+        getVoiceAudioContext();
         speakMessage("Audio Synthesiser, Online PG1 Engaged");
+      } else {
+        stopVoicePlayback();
       }
     }
 
@@ -3195,6 +3199,7 @@
             audioSrc = `data:${data.audioMimeType || 'audio/mp3'};base64,${data.audio.replace(/\s+/g, '')}`;
           }
           const audio = new Audio(audioSrc);
+          trackFallbackAudio(audio);
           audio.play().catch(e => {
             // Audio generated fine — the browser just wouldn't auto-play it.
             // Keep it ready and let one more real tap release it, instead of
@@ -3216,6 +3221,8 @@
     }
 
     async function speakMessage(text) {
+      // Stop, or a newer message, while this request is out cancels it.
+      const generation = voiceGeneration;
       try {
         const voiceProfile = document.getElementById('voice-profile-select').value;
         const response = await fetch('/api/chat', {
@@ -3234,11 +3241,177 @@
           flashStatus('Speech request failed (' + response.status + ')', true, classifyFetchFailure(null, response.status));
           return;
         }
+        if (generation !== voiceGeneration) return;
         playAudioResult(data);
       } catch (err) {
         console.error('Speech synthesis error:', err);
         flashStatus('Speech request failed', true, classifyFetchFailure(err, null));
       }
+    }
+
+    // PG1 VOICE (streamed speech): with voice on, a streamed reply carries
+    // "audio" events — base64 16-bit PCM, numbered by `seq` — alongside its
+    // text (lib/voiceStream.mjs). They are scheduled back to back on one Web
+    // Audio clock as they arrive, so speech starts with the first sentence
+    // instead of after the whole reply. If no streamed audio plays, the
+    // reply falls back to speakMessage() as before.
+    const VOICE_LEAD_SECONDS = 0.08;
+    let voiceAudioCtx = null;
+    let activeVoicePlayer = null;
+    // The HTMLAudio element of the one-shot SPEAK path, so Stop reaches it too.
+    let fallbackVoiceAudio = null;
+    // Bumped by every stop; anything started before it must not play.
+    let voiceGeneration = 0;
+
+    function getVoiceAudioContext() {
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      if (!Ctor) return null;
+      try {
+        if (!voiceAudioCtx || voiceAudioCtx.state === 'closed') voiceAudioCtx = new Ctor();
+        if (voiceAudioCtx.state === 'suspended' && voiceAudioCtx.resume) voiceAudioCtx.resume().catch(() => {});
+      } catch (e) {
+        return null;
+      }
+      return voiceAudioCtx;
+    }
+
+    function base64ToBytes(b64) {
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return bytes;
+    }
+
+    // Little-endian signed 16-bit PCM -> float samples. An odd trailing byte
+    // is returned as `carry` and prepended to the next chunk.
+    function pcm16ToFloat32(bytes, carry) {
+      let data = bytes;
+      if (carry && carry.length) {
+        data = new Uint8Array(carry.length + bytes.length);
+        data.set(carry, 0);
+        data.set(bytes, carry.length);
+      }
+      const n = data.length >> 1;
+      const samples = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        let v = data[2 * i] | (data[2 * i + 1] << 8);
+        if (v >= 0x8000) v -= 0x10000;
+        samples[i] = v / 32768;
+      }
+      return { samples, carry: data.length % 2 ? data.slice(data.length - 1) : null };
+    }
+
+    // One reply's speech. push() takes "audio" events in any order and
+    // plays them strictly by seq; stop() silences everything at once and
+    // ignores whatever arrives afterwards.
+    function createVoicePlayer(ctx, onIdle) {
+      const pending = new Map();
+      const sources = new Set();
+      let nextSeq = 0;
+      let playhead = 0;
+      let carry = null;
+      let scheduled = 0;
+      let stopped = false;
+      let endInfo = null;
+      const idle = () => { if (onIdle) onIdle(player); };
+      const schedule = (ev) => {
+        let decoded;
+        try {
+          decoded = pcm16ToFloat32(base64ToBytes(ev.data), carry);
+        } catch (e) {
+          return;
+        }
+        carry = decoded.carry;
+        if (!decoded.samples.length) return;
+        const rate = Number(ev.sample_rate) || 24000;
+        const buffer = ctx.createBuffer(1, decoded.samples.length, rate);
+        buffer.getChannelData(0).set(decoded.samples);
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        src.connect(ctx.destination);
+        const startAt = Math.max(playhead, ctx.currentTime + VOICE_LEAD_SECONDS);
+        src.onended = () => { sources.delete(src); if (!sources.size) idle(); };
+        sources.add(src);
+        src.start(startAt);
+        playhead = startAt + buffer.duration;
+        scheduled++;
+      };
+      const player = {
+        push(ev) {
+          if (stopped || !ev || !Number.isInteger(ev.seq) || ev.seq < nextSeq || typeof ev.data !== 'string') return;
+          pending.set(ev.seq, ev);
+          while (pending.has(nextSeq)) {
+            const next = pending.get(nextSeq);
+            pending.delete(nextSeq);
+            nextSeq++;
+            schedule(next);
+          }
+          if (scheduled && ctx.state === 'suspended' && ctx.resume) ctx.resume().catch(() => {});
+        },
+        end(ev) {
+          endInfo = ev && typeof ev === 'object' ? ev : { ok: false };
+          if (!sources.size) idle();
+        },
+        stop() {
+          if (stopped) return;
+          stopped = true;
+          pending.clear();
+          sources.forEach((src) => {
+            src.onended = null;
+            try { src.stop(); } catch (e) { /* already stopped */ }
+            try { src.disconnect(); } catch (e) { /* already disconnected */ }
+          });
+          sources.clear();
+          idle();
+        },
+        get stopped() { return stopped; },
+        get playing() { return !stopped && sources.size > 0; },
+        // Chunks handed to the audio clock: anything above 0 means the
+        // reply was (at least partly) spoken from the stream, so the
+        // one-shot fallback must not repeat it.
+        get scheduledChunks() { return scheduled; },
+        get endInfo() { return endInfo; }
+      };
+      return player;
+    }
+
+    // The one-shot SPEAK audio (playAudioResult) is tracked so Stop and a
+    // new message silence it too.
+    function trackFallbackAudio(audio) {
+      fallbackVoiceAudio = audio;
+      audio.addEventListener('playing', syncExecuteButton);
+      audio.addEventListener('ended', () => { if (fallbackVoiceAudio === audio) fallbackVoiceAudio = null; syncExecuteButton(); });
+    }
+
+    function isVoicePlaying() {
+      return !!((activeVoicePlayer && activeVoicePlayer.playing) || (fallbackVoiceAudio && !fallbackVoiceAudio.paused && !fallbackVoiceAudio.ended));
+    }
+
+    function stopVoicePlayback() {
+      voiceGeneration++;
+      if (activeVoicePlayer) {
+        const player = activeVoicePlayer;
+        activeVoicePlayer = null;
+        player.stop();
+      }
+      if (fallbackVoiceAudio) {
+        try { fallbackVoiceAudio.pause(); } catch (e) { /* not playing */ }
+        fallbackVoiceAudio = null;
+      }
+      syncExecuteButton();
+    }
+
+    // A fresh player for the reply about to be requested, or null when this
+    // browser has no Web Audio (the reply then uses speakMessage()).
+    function startVoicePlayer() {
+      const ctx = getVoiceAudioContext();
+      if (!ctx) return null;
+      const player = createVoicePlayer(ctx, (p) => {
+        if (activeVoicePlayer === p && !p.playing && p.endInfo) activeVoicePlayer = null;
+        syncExecuteButton();
+      });
+      activeVoicePlayer = player;
+      return player;
     }
 
     function copyBubbleText(el) {
@@ -3991,7 +4164,7 @@
     // "error". Any other response is the ordinary JSON reply, handled by the
     // same code as before, so a server or proxy that can't stream still
     // works.
-    const TRACE_EVENT_TYPES = ['step', 'step_done', 'text', 'done', 'error'];
+    const TRACE_EVENT_TYPES = ['step', 'step_done', 'text', 'audio', 'audio_end', 'done', 'error'];
 
     // Twin of createSseParser in lib/chatStream.mjs (tests run both over the
     // same input). Returns the complete events in `buffer` and the
@@ -4137,8 +4310,9 @@
     //                                  "done"/"error" (connection lost)
     //   { failed: 'aborted' }          Stop or the client timeout
     // plus { text, traceHtml } in every case, so the caller can keep what
-    // arrived.
-    async function consumeDirectiveStream(response, bubble, signal) {
+    // arrived. "audio" / "audio_end" events go to `voice` (a voice player),
+    // when there is one.
+    async function consumeDirectiveStream(response, bubble, signal, voice) {
       const trace = createTraceView(bubble);
       const textEl = document.createElement('div');
       textEl.className = 'message-text stream-text';
@@ -4166,6 +4340,8 @@
           if (ev.type === 'step') trace.step(ev);
           else if (ev.type === 'step_done') trace.stepDone(ev);
           else if (ev.type === 'text' && typeof ev.text === 'string') { text += ev.text; queueRender(); }
+          else if (ev.type === 'audio') { if (voice) voice.push(ev); }
+          else if (ev.type === 'audio_end') { if (voice) voice.end(ev); }
           else if (ev.type === 'done') outcome = { data: Object.assign({}, ev.result || {}, { reply: text, searchEntryPoint: ev.searchEntryPoint || (ev.result && ev.result.searchEntryPoint) || null, traceId: ev.request_id }) };
           else if (ev.type === 'error') outcome = { failed: 'error', message: String(ev.message || 'The request failed.'), status: ev.status };
         });
@@ -4185,7 +4361,7 @@
       const btn = document.querySelector('.execute-btn');
       if (!btn) return;
       const input = document.getElementById('prompt-input');
-      const stopMode = inFlightDirectives.size > 0 && !(input && input.value.trim());
+      const stopMode = (inFlightDirectives.size > 0 || isVoicePlaying()) && !(input && input.value.trim());
       if (btn.classList.contains('is-stop') === stopMode) return;
       btn.classList.toggle('is-stop', stopMode);
       const label = stopMode ? 'Stop' : 'Execute';
@@ -4203,6 +4379,7 @@
 
     function stopDirectives() {
       inFlightDirectives.forEach((stop) => stop());
+      stopVoicePlayback();
     }
 
     function retryButtonHtml(prompt, fallback) {
@@ -4275,6 +4452,10 @@
       }
 
       if (!text && attachedFilesPayload.length === 0) return;
+
+      // A new message silences whatever is still being spoken.
+      stopVoicePlayback();
+      const voiceGenerationAtSend = voiceGeneration;
 
       const chatContainer = document.getElementById('chat-container');
       
@@ -4351,6 +4532,11 @@
         // the server ignores it otherwise and replies with JSON as before).
         const wantStream = !options.noStream && !!(sessionUser && sessionPass);
         if (wantStream) payload.stream = true;
+        // PG1 VOICE: ask for the reply to be spoken as it streams. The
+        // player (and its AudioContext) is set up here, still inside the
+        // tap/Enter that sent the message, so the browser lets it play.
+        const voicePlayer = (wantStream && voiceActive) ? startVoicePlayer() : null;
+        if (voicePlayer) payload.speak = true;
 
         if (attachedFilesPayload.length > 0) {
           payload.multiFiles = [...attachedFilesPayload];
@@ -4374,7 +4560,7 @@
         let traceHtml = '';
         const isEventStream = /^text\/event-stream/i.test(response.headers.get('Content-Type') || '');
         if (isEventStream) {
-          const streamed = await consumeDirectiveStream(response, agentBubble, controller.signal);
+          const streamed = await consumeDirectiveStream(response, agentBubble, controller.signal, voicePlayer);
           if (streamed.failed) {
             renderStreamFailure(agentBubble, streamed, text, abortReason);
             return;
@@ -4441,7 +4627,13 @@
         // heard (or was offered a tap-to-play for), not just synthesized.
         const spokeDirectly = playAudioResult(data);
 
-        if (!spokeDirectly && voiceActive && data.reply) {
+        // Fallback: the reply was not spoken from the stream (JSON reply,
+        // a branch with no streamed audio, or streamed speech that failed
+        // before any of it played) — speak it the old way. Not after Stop
+        // or a newer message.
+        const spokeFromStream = !!(voicePlayer && voicePlayer.scheduledChunks > 0);
+        if (voicePlayer && !spokeFromStream) voicePlayer.end(voicePlayer.endInfo || { ok: false });
+        if (!spokeDirectly && voiceActive && data.reply && !spokeFromStream && voiceGenerationAtSend === voiceGeneration) {
           speakMessage(data.reply);
         }
 

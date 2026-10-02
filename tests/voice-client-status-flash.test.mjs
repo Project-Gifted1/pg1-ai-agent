@@ -51,14 +51,17 @@ function loadPlayAudioResult({ onFlashStatus, onShowTapToPlay, playImpl } = {}) 
     this.play = playImpl || (() => Promise.resolve());
   };
   const factory = new Function(
-    'Audio', 'console', 'showTapToPlay', 'flashStatus',
+    'Audio', 'console', 'showTapToPlay', 'flashStatus', 'trackFallbackAudio',
     `${playAudioResultSource}\nreturn playAudioResult;`
   );
   return factory(
     AudioStub,
     console,
     onShowTapToPlay || (() => {}),
-    onFlashStatus || (() => {})
+    onFlashStatus || (() => {}),
+    // Stop/new-message tracking of the playing element (PG1 voice); not
+    // what these tests are about.
+    () => {}
   );
 }
 
