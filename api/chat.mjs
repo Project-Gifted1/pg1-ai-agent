@@ -10,6 +10,7 @@ import { secretEnvValues } from '../lib/handoff.mjs';
 import { createChatStream, createReplyScrubber, readSseResponse, scrubIdentity, wantsChatStream } from '../lib/chatStream.mjs';
 import { identityDirective, spokenReplyDirective } from '../lib/identity.mjs';
 import { createSseSynth, createVoiceStream, speechTextFor } from '../lib/voiceStream.mjs';
+import { reportUpstreamFailure, userFacingFailure, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 
 // ---------------------------------------------------------------------
 // AUTH: timing-safe secret comparison + in-memory per-IP failure lockout
@@ -1005,7 +1006,11 @@ async function streamChatReply(stream, opts) {
   if (!result.text) {
     stream.stepDone(modelStep, { label: 'Reply failed', result: 'model error', failed: true });
     await finishVoice(true);
-    stream.error(`Execution failed. Model Err: ${result.error}`);
+    // ERROR TEXT BRANDING: the provider, model and upstream error text go
+    // to the error log under this request ID; the operator sees one
+    // neutral sentence and the ID (lib/upstreamFailure.mjs).
+    if (opts.reportFailure) opts.reportFailure('model_failed', result.error);
+    stream.error(userFacingFailure(stream.requestId, 'reply'));
     return;
   }
   var words = replyScrubber.text.trim().split(/\s+/).filter(Boolean).length;
@@ -1088,6 +1093,17 @@ export default async function handler(req, res) {
 
   var supUrl = (process.env.SUPABASE_URL || '').replace(/\s+/g, '');
   var supKey = (process.env.SUPABASEAPI_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLEKEY || '').replace(/\s+/g, '');
+
+  // ERROR TEXT BRANDING: where the real reason for a failed reply goes. The
+  // chat shows a neutral sentence plus requestTraceId; this keeps the
+  // upstream detail (provider, model, status, response text, exception
+  // message) in the console and the pg1_errors row for that same ID.
+  var reportFailure = function (reason, detail) {
+    reportUpstreamFailure({
+      supUrl: supUrl, supKey: supKey, route: 'CHAT', reason: reason, detail: detail,
+      requestId: requestTraceId, envValues: secretEnvValues(process.env)
+    });
+  };
 
   async function buildAndServeStixBundle(accessIdentifier) {
     try {
@@ -1985,15 +2001,20 @@ export default async function handler(req, res) {
             }
             audioStatus = 'SUCCESS';
           } else {
+            // ERROR TEXT BRANDING: the client flashes audioStatus verbatim,
+            // so it carries a fixed token; the provider's status and
+            // response text go to the error log under this request ID.
             var ttsErrText = await ttsRes.text();
-            audioStatus = `CARTESIA_ERROR_${ttsRes.status}: ${ttsErrText.substring(0, 150)}`;
+            reportFailure('voice_synthesis_failed', `TTS HTTP ${ttsRes.status}: ${ttsErrText.substring(0, 150)}`);
+            audioStatus = VOICE_FAILURE_STATUS;
           }
         } catch (e) {
-          audioStatus = 'EXCEPTION_' + e.message;
+          reportFailure('voice_synthesis_failed', `TTS exception: ${e.message}`);
+          audioStatus = VOICE_FAILURE_STATUS;
         }
       }
       return sendJSON(res, 200, {
-        reply: `[DIAGNOSTIC] Voice pipeline test executed.\nStatus: ${audioStatus}`,
+        reply: `[DIAGNOSTIC] Voice pipeline test executed.\nStatus: ${audioStatus}` + (audioStatus === VOICE_FAILURE_STATUS ? `\n${userFacingFailure(requestTraceId, 'voice')}` : ''),
         audio: audioBase64,
         audioStatus: audioStatus,
         audioMimeType: 'audio/mp3',
@@ -2763,6 +2784,7 @@ ${spokenDirective}[CONTEXT]:\n${formattedArchive}${targetedHistoricalData}${supa
         deadlineTs: deadlineTs,
         startTime: startTime,
         supabaseStatus: supabaseStatus,
+        reportFailure: reportFailure,
         // PG1 VOICE: speak the reply as it streams. Needs the voice toggle
         // on (speak: true), a TTS key and a configured voice; otherwise the
         // client falls back to the one-shot SPEAK request as before.
@@ -2801,12 +2823,14 @@ ${spokenDirective}[CONTEXT]:\n${formattedArchive}${targetedHistoricalData}${supa
       }
     }
 
-    var replyText = modelFetchResult.text || `Execution failed. Model Err: ${modelFetchResult.error}`;
-    if (modelFetchResult.text) {
-      replyText = scrubIdentity(replyText);
-    }
+    // ERROR TEXT BRANDING: a failed reply names no provider, model or
+    // upstream error text; that detail goes to the error log under
+    // requestTraceId and the operator sees a neutral sentence plus the ID.
+    var modelFailed = !modelFetchResult.text;
+    if (modelFailed) reportFailure('model_failed', modelFetchResult.error);
+    var replyText = modelFailed ? userFacingFailure(requestTraceId, 'reply') : scrubIdentity(modelFetchResult.text);
 
-    if (supabaseUrl && supabaseKey && !replyText.startsWith('Execution failed') && !isPdfExport) {
+    if (supabaseUrl && supabaseKey && !modelFailed && !isPdfExport) {
       fetch(`${supabaseUrl}/rest/v1/messages`, {
         method: 'POST',
         headers: { ...dbHeaders, 'Content-Type': 'application/json' },
@@ -2829,10 +2853,14 @@ ${spokenDirective}[CONTEXT]:\n${formattedArchive}${targetedHistoricalData}${supa
     });
 
   } catch (err) {
+    // ERROR TEXT BRANDING: the exception text is logged under the request
+    // ID, never shown (it can carry an upstream service's own words).
+    reportFailure('chat_exception', err && (err.stack || err.message) || String(err));
+    var failureReply = userFacingFailure(requestTraceId, 'request');
     if (res.__pg1Stream && res.__pg1Stream.started) {
-      if (!res.__pg1Stream.ended) res.__pg1Stream.error(`Exception: ${err.message}`);
+      if (!res.__pg1Stream.ended) res.__pg1Stream.error(failureReply);
       return;
     }
-    return sendJSON(res, 200, { reply: `Exception: ${err.message}`, traceId: requestTraceId });
+    return sendJSON(res, 200, { reply: failureReply, traceId: requestTraceId });
   }
 }
