@@ -8,6 +8,7 @@ import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
 import { logApiError } from '../lib/errorLog.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { createChatStream, createReplyScrubber, readSseResponse, scrubIdentity, wantsChatStream } from '../lib/chatStream.mjs';
+import { createSseSynth, createVoiceStream, speechTextFor } from '../lib/voiceStream.mjs';
 
 // ---------------------------------------------------------------------
 // AUTH: timing-safe secret comparison + in-memory per-IP failure lockout
@@ -934,8 +935,40 @@ async function streamAnthropicCore(promptText, sysInstruction, mediaParts, anthr
 // CLAUDE_CHAT, falling back to the main core only if it sent nothing), same
 // identity guard (applied as the text streams), and the exchange is saved to
 // memory only when the reply finished.
+//
+// PG1 VOICE: with opts.voice set (voice toggle on, TTS configured), the
+// scrubbed reply text is also split into sentences and spoken as it arrives
+// (lib/voiceStream.mjs): "audio" events go out on this same stream, then one
+// "audio_end" before "done". The audio is never written to storage.
 async function streamChatReply(stream, opts) {
-  var replyScrubber = createReplyScrubber(function (chunk) { stream.text(chunk); });
+  var voice = null;
+  if (opts.voice) {
+    voice = createVoiceStream({
+      emit: function (type, payload) {
+        if (type === 'audio') stream.audio(payload);
+        else if (type === 'audio_end') stream.audioEnd(payload);
+      },
+      synth: opts.voice.synth,
+      signal: stream.signal,
+      deadlineTs: opts.voice.deadlineTs,
+      envValues: opts.voice.envValues,
+      knownIds: [stream.requestId],
+      onStart: function () { stream.step('voice', 'Speaking the reply'); }
+    });
+  }
+  var finishVoice = async function (abort) {
+    if (!voice) return;
+    var summary = await voice.finish({ abort: !!abort });
+    if (stream.isOpen('voice')) {
+      stream.stepDone('voice', summary.ok
+        ? { label: 'Spoke the reply', result: `${summary.sentences} sentence${summary.sentences === 1 ? '' : 's'}` }
+        : { label: 'Speech stopped', result: summary.sentences ? `${summary.sentences} of ${summary.queued} sentences` : 'no audio', failed: true });
+    }
+  };
+  var replyScrubber = createReplyScrubber(function (chunk) {
+    stream.text(chunk);
+    if (voice) voice.push(chunk);
+  });
   var hooks = {
     signal: stream.signal,
     onText: function (chunk) { replyScrubber.push(chunk); },
@@ -964,22 +997,30 @@ async function streamChatReply(stream, opts) {
   var modelStep = stream.isOpen('model-fallback') ? 'model-fallback' : 'model';
 
   if (result.aborted || stream.clientGone) {
+    if (voice) voice.abort();
     stream.end();
     return;
   }
   if (!result.text) {
     stream.stepDone(modelStep, { label: 'Reply failed', result: 'model error', failed: true });
+    await finishVoice(true);
     stream.error(`Execution failed. Model Err: ${result.error}`);
     return;
   }
   var words = replyScrubber.text.trim().split(/\s+/).filter(Boolean).length;
   if (result.partial) {
     stream.stepDone(modelStep, { label: 'Reply cut off', result: `${words} words arrived`, failed: true });
+    await finishVoice(true);
     stream.error('The connection to the model dropped before the reply finished. What arrived is shown above.', { partial: true });
     return;
   }
   stream.stepDone(modelStep, { label: 'Wrote the reply', result: `${words} word${words === 1 ? '' : 's'}` });
   if (opts.saveExchange) opts.saveExchange(replyScrubber.text);
+  await finishVoice(false);
+  if (stream.clientGone) {
+    stream.end();
+    return;
+  }
   stream.done({
     searchEntryPoint: result.searchEntryPoint || null,
     telemetry: { supabaseStatus: opts.supabaseStatus, executionTimeMs: Date.now() - opts.startTime }
@@ -1911,7 +1952,7 @@ export default async function handler(req, res) {
       var audioStatus = cartesiaKey ? 'UNKNOWN' : 'SKIPPED_NO_KEY';
       if (cartesiaKey) {
         try {
-          var cleanText = promptText.replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 3000).trim();
+          var cleanText = speechTextFor(promptText, { envValues: secretEnvValues(process.env), knownIds: [requestTraceId] }).replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 3000).trim();
           var ttsRes = await fetchWithTimeout('https://api.cartesia.ai/tts/bytes', {
             method: 'POST',
             headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
@@ -2681,7 +2722,7 @@ export default async function handler(req, res) {
 - Live web search is available on the main core for current facts. Say when an answer comes from search and that figures should be checked. The advanced reasoning core (/claude, long or heavy prompts) has no web search.
 - Slash commands and what they really do (describe them exactly like this, never as more): /status shows the London runtime, a live Supabase connection check and the fleet target; /threat-radar is a static text summary of which feeds are stored and which are queried live, not a live feed display — there is no on-screen live threat-feed view anywhere in the UI; /commerce-status shows Gumroad paused and the x402 route; /sync-vault shows a static vault summary with no integrity check; /export and /vault show the recent chat archive; /test-validator is a static placeholder that runs nothing; /image generates an image; /speak reads text aloud; /voice (client-side, no network call) shows or switches between the PG1 Core, PG1 Classic and PG1 Field voice profiles used for SPEAK, remembered on that device only; /claude sends a question to the advanced reasoning core; /code (client-side, no model call) drafts a Send to Code task prompt with a PG1-TASK id for the operator to copy into their own coding agent, and the menu's Hand-offs list tracks the resulting GitHub PR; /approve and /decline resolve a proposal; /help lists the commands. The Vault Sync option in the plus menu asks you to list the latest vault files. Suggest the right command instead of imitating its output.
 - Code changes arrive as JSON actions. APPLY_SURGICAL_PATCH makes one exact search-and-replace: the search text must match exactly once, replace must not be empty, and vercel.json, package files and workflows need confirmProtectedPath: true. REORGANIZE_FILES creates, updates, deletes or moves up to 30 text files in one commit. Every change needs login and isAuthorizedAction, shows a diff preview with Approve and Decline, and opens a pull request on a new branch. Nothing is ever committed straight to main, and you cannot merge. Env files, credentials, keys and .git are blocked. The default repo is sovereign-threat-pipeline unless targetRepo says pg1-ai-agent.
-- Voice: the VOICE toggle in the header auto-speaks every new reply; every message bubble also has its own SPEAK button (alongside COPY and DELETE) that reads just that bubble aloud; the mic button dictates speech into the prompt box. All of these, and /speak, use the same server-side text-to-speech call — none of it is continuous or "live" audio, each is a single request/response per utterance. /voice shows or switches the voice profile between PG1 Core, PG1 Classic and PG1 Field (remembered per device).
+- Voice: the VOICE toggle in the header auto-speaks every new reply; every message bubble also has its own SPEAK button (alongside COPY and DELETE) that reads just that bubble aloud; the mic button dictates speech into the prompt box. With the VOICE toggle on, a streamed reply is spoken sentence by sentence while it is still being written (server-side text-to-speech streamed back on the same reply, not stored anywhere), and the Stop button or sending a new message stops it; code blocks, full links, secrets and IDs are never read aloud, a short placeholder is spoken instead. SPEAK and /speak still make one request per utterance. None of it is a live two-way voice conversation. /voice shows or switches the voice profile between PG1 Core, PG1 Classic and PG1 Field (remembered per device).
 - Attachments: images and files up to 3 MB total per message. The 👁️ Vision Matrix (header icon) offers Device Camera or Screen Display; whichever is chosen captures ONE still frame that is attached to your NEXT message only — it is a single snapshot per message, never a continuous/live video feed into this chat. Screen Display uses getDisplayMedia and only works on desktop browsers; Android Chrome does not support screen capture and shows a message saying so instead of a picker. Uploads are stored in the Supabase vault bucket pg1-vault.
 - Public services PG1 runs (you describe them; you cannot call them from this chat): the MCP server at https://pg1-ai-agent.vercel.app/api/mcp with 14 tools. Always free: check_wallet_sanctions, check_domain_age, check_hostname_reputation, check_wallet_age, get_usage_status. Paid at one cent (0.01 USD) via x402 on Base or a licence key: get_threat_indicators, get_cve_details, get_cve_batch, get_cve_by_product, get_threat_actor_profile, plus get_ioc_context and get_ioc_batch when a record is found. Licence only: subscribe_alerts, submit_indicator. The A2A endpoint /api/a2a exposes the five free tools (versions 1.0 and 0.3). The REST STIX 2.1 feed /api/ioc sits behind a 402 paywall (licence key, x402, or an opt-in free tier of 5 calls a day). Also /api/health, /llms.txt, /openapi.json and the agent card at /.well-known/agent-card.json. Listed on the Official MCP Registry, Smithery and Glama.
 - Business state: paid feeds are on hold pending data licences (abuse.ch, LevelBlue/OTX, ScamSniffer), and the Gumroad product is unpublished. There are no paid calls yet.
@@ -2714,6 +2755,17 @@ export default async function handler(req, res) {
         deadlineTs: deadlineTs,
         startTime: startTime,
         supabaseStatus: supabaseStatus,
+        // PG1 VOICE: speak the reply as it streams. Needs the voice toggle
+        // on (speak: true), a TTS key and a configured voice; otherwise the
+        // client falls back to the one-shot SPEAK request as before.
+        voice: (reqBody && reqBody.speak === true && cartesiaKey && targetVoiceId)
+          ? {
+            synth: createSseSynth({ apiKey: cartesiaKey, modelId: cartesiaModelId, voiceId: targetVoiceId, fetchImpl: fetch }),
+            // Leave room under Vercel's 60s maxDuration for "done".
+            deadlineTs: startTime + 57000,
+            envValues: secretEnvValues(process.env)
+          }
+          : null,
         saveExchange: (supabaseUrl && supabaseKey && !isPdfExport)
           ? function (replyText) {
             fetch(`${supabaseUrl}/rest/v1/messages`, {
