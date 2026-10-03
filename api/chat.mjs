@@ -7,9 +7,10 @@ import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettl
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
 import { logApiError } from '../lib/errorLog.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
-import { collectImageInputs, imageInputDirective, imageCountLabel, describeSkipped, fileExtensionFor, redactLeakedSecrets, SECRET_WARNING, MAX_IMAGES_PER_MESSAGE, MAX_IMAGE_BYTES, MAX_IMAGE_EDGE_PX } from '../lib/visionInput.mjs';
+import { collectImageInputs, imageInputDirective, imageCountLabel, describeSkipped, fileExtensionFor, redactLeakedSecrets, SECRET_PLACEHOLDER, SECRET_WARNING, MAX_IMAGES_PER_MESSAGE, MAX_IMAGE_BYTES, MAX_IMAGE_EDGE_PX } from '../lib/visionInput.mjs';
 import { createChatStream, createReplyScrubber, readSseResponse, scrubIdentity, stripTranscriptLabels, wantsChatStream } from '../lib/chatStream.mjs';
 import { identityDirective, identityReplyDirective, identityReplyForHistory, spokenReplyDirective } from '../lib/identity.mjs';
+import { classifyKeyQuestion, createReplySecretGuard, isErrorSummaryQuestion, licenceKeyDirective, neutralErrorRow, stripModelContext, SECRET_REFUSAL, SECRET_WITHHELD, SECRET_WITHHELD_NOTE } from '../lib/secretGuard.mjs';
 import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } from '../lib/voiceStream.mjs';
 import { reportUpstreamFailure, userFacingFailure, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 import { generateImage } from '../lib/imageEngines.mjs';
@@ -476,11 +477,15 @@ function formatDeploymentContext() {
 // reason only, capped at 5 rows and ~60 chars each, well under the ~300
 // token budget - and never includes free-text client message content (that
 // is never stored server-side for client-sourced rows in the first place,
-// see lib/errorLog.mjs / api/errors.mjs).
+// see lib/errorLog.mjs / api/errors.mjs). Brand-neutral: every row goes
+// through neutralErrorRow (lib/secretGuard.mjs) first, so the engines'
+// failures read "PG1 Vision Primary failed", "PG1 chat engine failed" and so
+// on, and no provider, model or key slot reaches the model; that detail
+// stays in the ERROR LOG screen.
 function formatUnresolvedErrors(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return '';
-  var lines = rows.slice(0, 5).map(function (r) {
-    var label = r.source === 'client' ? 'client' : 'server';
+  var lines = rows.slice(0, 5).map(neutralErrorRow).map(function (r) {
+    var label = r.source;
     // Category (offline/network/timeout/http_4xx/http_5xx/js_error) is only
     // appended when present, so older rows written before this column
     // existed still render exactly as before.
@@ -1072,6 +1077,13 @@ function roundStepLabels(round, allowed) {
 // that ran checks speaks a short summary of the results instead of the
 // reply text: status and the main reason per check, never an address, a
 // hash or JSON.
+// The note under a reply the secret guard changed: the image warning when a
+// key from an attached image was replaced, the plain "withheld" note
+// otherwise. Engine-name swaps on an error summary add no label, so no note.
+function redactionWarning(labels) {
+  return (labels || []).some(function (l) { return /^image: /.test(l); }) ? SECRET_WARNING : SECRET_WITHHELD_NOTE;
+}
+
 async function streamChatReply(stream, opts) {
   var voice = null;
   if (opts.voice) {
@@ -1198,7 +1210,7 @@ async function streamChatReply(stream, opts) {
   if (note && result.text && !result.aborted && !stream.clientGone) replyScrubber.push('\n\n' + note);
   replyScrubber.flush();
   if (result.text && replyScrubber.redacted.length) {
-    var warning = '\n\n' + SECRET_WARNING;
+    var warning = '\n\n' + redactionWarning(replyScrubber.redacted);
     stream.text(warning);
     if (voice && !toolOutcomes.length) voice.push(warning);
   }
@@ -1232,7 +1244,7 @@ async function streamChatReply(stream, opts) {
     var spoken = spokenSummary(toolOutcomes);
     if (spoken) voice.push(spoken + ' The full result is on screen.');
   }
-  if (opts.saveExchange) opts.saveExchange(replyScrubber.text + (replyScrubber.redacted.length ? '\n\n' + SECRET_WARNING : ''));
+  if (opts.saveExchange) opts.saveExchange(replyScrubber.text + (replyScrubber.redacted.length ? '\n\n' + redactionWarning(replyScrubber.redacted) : ''));
   await finishVoice(false);
   if (stream.clientGone) {
     stream.end();
@@ -1802,12 +1814,33 @@ export default async function handler(req, res) {
 
     promptText += vaultUploadLog;
 
-    // A reply to a message with images gets the secret backstop: a key the
-    // model repeats from a screenshot becomes "a key" (lib/visionInput.mjs).
+    // REPLY SECRET GUARD (lib/secretGuard.mjs), on every chat reply: a
+    // secret-shaped string, a deployment env value (also encoded, reversed
+    // or partly shown) and any env var name from this server's env list is
+    // withheld; on a "what's broken?" turn, provider, model and key-slot
+    // details become the neutral engine names. A reply to a message with
+    // images also gets the wider image backstop first: a key the model
+    // repeats from a screenshot becomes "a key" (lib/visionInput.mjs).
     var imageCount = imageInput.images.length;
-    var redactReply = imageCount > 0
-      ? function (text) { return redactLeakedSecrets(text, secretEnvValues(process.env)); }
-      : null;
+    var envSecrets = secretEnvValues(process.env);
+    var replySecretGuard = createReplySecretGuard({
+      envValues: envSecrets,
+      env: process.env,
+      placeholder: imageCount > 0 ? SECRET_PLACEHOLDER : SECRET_WITHHELD,
+      errorSummary: isErrorSummaryQuestion(promptText)
+    });
+    var redactReply = function (text) {
+      var removed = [];
+      var out = text;
+      if (imageCount > 0) {
+        var fromImage = redactLeakedSecrets(out, envSecrets);
+        out = fromImage.text;
+        fromImage.removed.forEach(function (l) { removed.push('image: ' + l); });
+      }
+      var guarded = replySecretGuard(out);
+      guarded.removed.forEach(function (l) { if (removed.indexOf(l) === -1) removed.push(l); });
+      return { text: guarded.text, removed: removed, redacted: removed.length > 0 };
+    };
 
     if (supabaseUrl && supabaseKey) {
       const createTimedFetch = (url, options = {}, timeoutMs = 3000) => {
@@ -1909,7 +1942,7 @@ export default async function handler(req, res) {
           : {
             label: 'Checked error log',
             result: errorRows.length === 0 ? 'none unresolved' : `${errorRows.length} unresolved`,
-            details: errorRows.map(r => [r.route, r.status, r.reason].filter(Boolean).join(' ').slice(0, 80))
+            details: errorRows.map(neutralErrorRow).map(r => [r.route, r.status, r.reason].filter(Boolean).join(' ').slice(0, 80))
           });
       }
     }
@@ -2886,8 +2919,13 @@ export default async function handler(req, res) {
     // PG1_CHAT_TOOL_TIMEOUT_MS overrides the per-call timeout (operations
     // knob; the tests use it to make a hung upstream time out quickly).
     var chatToolTimeoutMs = Number(process.env.PG1_CHAT_TOOL_TIMEOUT_MS) > 0 ? Number(process.env.PG1_CHAT_TOOL_TIMEOUT_MS) : (chatToolPolicyForRole ? chatToolPolicyForRole.timeoutMs : CHAT_TOOL_TIMEOUT_MS);
-    var executeChatTool = chatTools.length
+    var runChatTool = chatTools.length
       ? createToolExecutor({ role: chatToolRole, identifier: clientIp, timeoutMs: chatToolTimeoutMs })
+      : null;
+    // Tool results go back to the model, so they get the same backstop as
+    // the prompt: no deployment secret value in them.
+    var executeChatTool = runChatTool
+      ? function (call, o) { return Promise.resolve(runChatTool(call, o)).then(function (outcome) { return stripModelContext(outcome, envSecrets); }); }
       : null;
     // IDENTITY: the reply to "what powers you?" is chosen here, in code,
     // from the current conversation the client sent (reqBody.history): the
@@ -2896,6 +2934,21 @@ export default async function handler(req, res) {
     // escalated reply (lib/identity.mjs). A new or cleared thread sends no
     // history, so it starts at the first reply again.
     var identityChoice = identityReplyForHistory(reqBody && reqBody.history);
+    // API KEYS (lib/secretGuard.mjs): a request to show a secret is refused
+    // and a question about the keys PG1 itself runs on gets the identity
+    // reply above (so it counts towards IDENTITY_PRESS_THRESHOLD), both
+    // chosen here with no model call, the same for every user. A question
+    // about PG1's own licence keys goes to the model with a required
+    // directive built from [CAPABILITIES]. A FIX request quoting an error
+    // log entry is not a key question, whatever the entry says.
+    var keyQuestion = (typeof promptText === 'string' && promptText.indexOf('<error_data>') === -1) ? classifyKeyQuestion(promptText) : null;
+    if (keyQuestion === 'reveal') {
+      return sendJSON(res, 200, { reply: SECRET_REFUSAL, traceId: requestTraceId });
+    }
+    if (keyQuestion === 'internal') {
+      return sendJSON(res, 200, { reply: identityChoice.reply, traceId: requestTraceId });
+    }
+    var keyDirectiveText = keyQuestion === 'licence' ? licenceKeyDirective() + '\n' : '';
     var sysInstruction = `You are PG1, the chat assistant of Project-Gifted1's threat-intelligence app, running on Vercel.
 [STRICT DIRECTIVE - GROUNDING & HONESTY]: Be absolutely honest at all times about the actual factual content of your answers. Never lie or fabricate results. Never state system health, uptime, integrity, file counts, pipeline status or runtime details unless that exact value appears in [CONTEXT]; if asked about status, say you cannot verify it here and point the operator to the /status command. The vault file list in [CONTEXT] is capped at 20 entries, so never present its length as a total. Stay completely grounded in the factual reality of the project. We operate an automated cybersecurity architecture deploying GitHub workflows and Supabase vault integration.
 ${identityDirective()}
@@ -2923,8 +2976,11 @@ ${identityReplyDirective(identityChoice)}
 - check_wallet_age reports age per chain: first_seen and age_days describe the address's history on the requested chain only, so the same address can be old on one chain and new on another. Since 1.14.0 it also reports EIP-7702 delegation in two optional fields, checked live on every call and never cached (cached age answers included): delegated is true when the address's code on that chain is exactly 0xef0100 followed by a 20-byte delegate address, which is then given, lowercased, in delegate_address; false for any other code; null when the code check did not complete (never read null as false; the age is still returned). A delegated address carries reason code WALLET_DELEGATED, which states the fact only, not a judgement, and never changes status on its own (an old delegated wallet is status "no_flags"). is_contract is unchanged and is still true for a delegated address.
 - Integration test fixtures: fixed made-up inputs (e.g. hostname pg1-test-flagged.invalid, CVE-0000-0001, 0x7067312d… wallets, all listed in lib/fixtures.mjs and the README's "Test your integration" table) always return the same FLAGGED, CLEAN or UNKNOWN answer (plus a DELEGATED one for check_wallet_age) on /api/mcp (and the 4 free check_* skills on /api/a2a), free for any caller, marked test_fixture: true — never on the REST /api/ioc endpoints, and never real threat data. The same fixtures work when you run a check from this chat (the card says "fixture"), so the operator can demo a check without any upstream call.
 
-${toolDirectiveText}${spokenDirective}${imageInputDirective(imageCount, imageInput.skipped)}
+${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(imageCount, imageInput.skipped)}
 [CONTEXT]: The OPERATOR: and AGENT: lines below are the recent conversation, for background only. Never quote, repeat or continue them, and never begin a reply or a line with OPERATOR: or AGENT:; answer the operator's new message directly.\n${formattedArchive}${targetedHistoricalData}${supabaseFilesReport}${formatClientEnvironment(clientEnv)}${formatDeploymentContext()}${unresolvedErrorsReport}`;
+    // Backstop: no deployment secret value ever reaches a model, whichever
+    // block of the prompt or [CONTEXT] it might have come in through.
+    sysInstruction = stripModelContext(sysInstruction, envSecrets);
 
     if (Date.now() >= deadlineTs - 1000) {
       return sendJSON(res, 200, {
@@ -3000,8 +3056,10 @@ ${toolDirectiveText}${spokenDirective}${imageInputDirective(imageCount, imageInp
     if (modelFailed) reportFailure('model_failed', modelFetchResult.error);
     var replyText = modelFailed ? userFacingFailure(requestTraceId, 'reply') : stripTranscriptLabels(scrubIdentity(modelFetchResult.text, { replacement: identityChoice.reply }));
     if (!modelFailed && redactReply) {
+      // The text always comes from the guard (an error summary's engine
+      // names are swapped without a label); the note only when it withheld.
       var redactedReply = redactReply(replyText);
-      if (redactedReply.redacted) replyText = redactedReply.text + '\n\n' + SECRET_WARNING;
+      replyText = redactedReply.text + (redactedReply.redacted ? '\n\n' + redactionWarning(redactedReply.removed) : '');
     }
     // The honesty note comes from the outcomes, not the model.
     var unverified = jsonToolOutcomes.length ? unverifiedNote(jsonToolOutcomes) : '';
