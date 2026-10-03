@@ -18,6 +18,7 @@
  */
 
 import { test, beforeEach, after } from 'node:test';
+import { readdirSync, readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
 import { createSseParser } from '../lib/chatStream.mjs';
@@ -371,11 +372,25 @@ test('a reply naming an env var from the server\'s env list, or carrying a secre
 
 test('the guard leaves ordinary text, wallet addresses and generic names alone', () => {
   const guard = createReplySecretGuard({ envValues: secretEnvValues(SECRETS), env: { ...SECRETS, NODE_ENV: 'production', PATH: '/usr/bin' } });
-  const plain = 'Wallet 7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV is clean. NODE_ENV is a Node setting. Run APPLY_SURGICAL_PATCH.';
+  // PG1's own status and reason codes are public, even when they end in KEY.
+  const plain = 'Wallet 7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV is clean. NODE_ENV is a Node setting. Run APPLY_SURGICAL_PATCH. Audio: SKIPPED_NO_KEY. Reason: WALLET_DELEGATED.';
   assert.deepEqual(guard(plain), { text: plain, removed: [] });
-  const leaky = guard(`Use GEMINI_API_KEY2 or STRIPE_SECRET_KEY, or ${SECRETS.GEMINI_API_KEY}.`);
-  assert.ok(!/GEMINI_API_KEY2|STRIPE_SECRET_KEY/.test(leaky.text), leaky.text);
+  const leaky = guard(`Use GEMINI_API_KEY2 or ALCHEMY_API_KEY, or ${SECRETS.GEMINI_API_KEY}.`);
+  assert.ok(!/GEMINI_API_KEY2|ALCHEMY_API_KEY/.test(leaky.text), leaky.text);
   assert.ok(!leaky.text.includes(SECRETS.GEMINI_API_KEY));
+});
+
+test('INTERNAL_ENV_NAMES lists every env var name api/ and lib/ read (VERCEL_* system names aside)', () => {
+  const read = new Set();
+  for (const dir of ['api', 'lib']) {
+    for (const f of readdirSync(new URL(`../${dir}/`, import.meta.url), { recursive: true })) {
+      if (!/\.(mjs|js)$/.test(f)) continue;
+      const src = readFileSync(new URL(`../${dir}/${f}`, import.meta.url), 'utf8');
+      for (const m of src.matchAll(/process\.env\.([A-Z][A-Z0-9_]*_[A-Z0-9_]+)/g)) read.add(m[1]);
+    }
+  }
+  const missing = [...read].filter((n) => !n.startsWith('VERCEL_') && !INTERNAL_ENV_NAMES.includes(n));
+  assert.deepEqual(missing, [], 'add these to INTERNAL_ENV_NAMES in lib/secretGuard.mjs');
 });
 
 test('envNamesToGuard covers the internal names and the real env list, not generic runtime names', () => {
