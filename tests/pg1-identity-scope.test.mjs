@@ -18,6 +18,7 @@ import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
 import { PG1_IDENTITY_REPLY, identityDirective } from '../lib/identity.mjs';
+import { scrubIdentity, createReplyScrubber } from '../lib/chatStream.mjs';
 
 const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -115,6 +116,52 @@ test('a factual answer naming a model is not rewritten by the reply guard just b
   const { reply } = await ask('Do you know Claude', "Claude is a family of large language models made by Anthropic, known for long context windows and careful instruction following.");
   assert.match(reply, /Anthropic/, 'the factual answer survives whole');
   assert.doesNotMatch(reply, /\/claude|\/core|reasoning core|main core/i, 'no PG1 internals leak into a factual answer about a model');
+});
+
+// A correct factual answer that calls the third-party model proprietary or
+// in-house ("It is a proprietary model developed by Google.") is about that
+// model, not a yes to "is that your own model?": the guard leaves it whole.
+const PROPRIETARY_FACTS = [
+  'Gemini is Google DeepMind\'s family of large language models. It is a proprietary model developed by Google.',
+  "Gemini is Google's AI. It's a proprietary large language model that competes with GPT-5.",
+  "Gemini is Google's model. That's a proprietary model, so its weights aren't public.",
+  'Yes! Gemini was trained by Google DeepMind. It is an in-house model at Google.'
+];
+
+test('the reply guard leaves a factual answer calling a third-party model proprietary untouched, JSON and streamed', () => {
+  for (const fact of PROPRIETARY_FACTS) {
+    assert.equal(scrubIdentity(fact), fact, `rewritten: ${JSON.stringify(fact)}`);
+    let streamed = '';
+    const s = createReplyScrubber((t) => { streamed += t; });
+    for (let i = 0; i < fact.length; i += 5) s.push(fact.slice(i, i + 5));
+    s.flush();
+    assert.equal(streamed, fact, `rewritten when streamed: ${JSON.stringify(fact)}`);
+  }
+  // the model was named in text already released before the claim's chunk
+  const long = 'Gemini is the family of large language models that Google DeepMind announced in December 2023 and has updated many times since. It is a proprietary model developed by Google.';
+  let streamed = '';
+  const s = createReplyScrubber((t) => { streamed += t; });
+  for (let i = 0; i < long.length; i += 7) s.push(long.slice(i, i + 7));
+  s.flush();
+  assert.equal(streamed, long);
+});
+
+test('the reply guard still rewrites PG1 claiming a model of its own, even next to a third-party name', () => {
+  for (const claim of ["Yes, it's our own model.", 'Yes. That is a proprietary model.', 'Unlike ChatGPT, it is a proprietary model.',
+    "I'm not ChatGPT or Gemini. It's a proprietary model.", 'Gemini is great. Yes, it is our own proprietary model.',
+    'Gemini is great. PG1 Sovereign Core is a proprietary LLM.']) {
+    const out = scrubIdentity(claim);
+    assert.ok(out.includes(PG1_IDENTITY_REPLY), `not rewritten: ${JSON.stringify(claim)}`);
+    assert.doesNotMatch(out, /proprietary|own model|\byes\b/i, `claim survives: ${JSON.stringify(claim)} -> ${out}`);
+  }
+});
+
+test('through /api/chat: "Do you know Gemini" answered "It is a proprietary model developed by Google" is not replaced by the identity reply', async () => {
+  for (const fact of PROPRIETARY_FACTS) {
+    const { reply } = await ask('Do you know Gemini', fact);
+    assert.equal(reply, fact);
+    assert.doesNotMatch(reply, /I'm PG1, powered by/);
+  }
 });
 
 // --- 3. only a real identity reply counts towards the escalation threshold --------------
