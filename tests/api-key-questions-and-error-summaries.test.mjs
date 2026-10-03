@@ -221,6 +221,31 @@ test('licence directive and business state: sales still paused, no invented URL,
   }
 });
 
+// No data source is named publicly (same rule as server.json, llms.txt and
+// /about), and no usage figure that would go stale silently.
+const DATA_SOURCE_NAMES_RE = /abuse\.ch|LevelBlue|\bOTX\b|AlienVault|ScamSniffer|ThreatFox|URLhaus/i;
+const NO_PAID_CALLS_RE = /no paid calls/i;
+
+test('licence directive and [CAPABILITIES]: pause reason names no data source, no "no paid calls" sentence', async () => {
+  for (const text of [licenceKeyDirective(), businessStateText()]) {
+    assert.match(text, /pending data licences/);
+    assert.ok(!DATA_SOURCE_NAMES_RE.test(text), 'names a data source: ' + text);
+    assert.ok(!NO_PAID_CALLS_RE.test(text), 'states paid-call usage: ' + text);
+  }
+  await ask('how do I get a PG1 API key?');
+  const sys = systemPromptOf(modelCalls[0]);
+  const capStart = sys.indexOf('[CAPABILITIES — what you can and cannot do]');
+  assert.ok(capStart !== -1, 'system prompt has [CAPABILITIES]');
+  const capEnd = sys.indexOf('\n[', capStart + 1);
+  const capabilities = sys.slice(capStart, capEnd === -1 ? undefined : capEnd);
+  assert.match(capabilities, /Business state:/);
+  const keyQuestion = sys.slice(sys.indexOf('[KEY QUESTION'), sys.indexOf('\n', sys.indexOf('[KEY QUESTION')));
+  for (const [where, text] of [['[CAPABILITIES]', capabilities], ['[KEY QUESTION]', keyQuestion]]) {
+    assert.ok(!DATA_SOURCE_NAMES_RE.test(text), `${where} names a data source: ${(text.match(DATA_SOURCE_NAMES_RE) || [])[0]}`);
+    assert.ok(!NO_PAID_CALLS_RE.test(text), `${where} states paid-call usage`);
+  }
+});
+
 test('[CAPABILITIES] carries the corrected business state', async () => {
   await ask('how do I get a PG1 API key?');
   const sys = systemPromptOf(modelCalls[0]);
