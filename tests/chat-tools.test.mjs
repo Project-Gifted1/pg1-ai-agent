@@ -24,7 +24,7 @@
 
 import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
-import chatHandler, { __clearAuthRateLimitState, __resetGeminiToolMemoForTests } from '../api/chat.mjs';
+import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
 import { TOOLS } from '../api/mcp.mjs';
 import { createSseParser, STREAM_EVENT_TYPES } from '../lib/chatStream.mjs';
 import {
@@ -51,7 +51,6 @@ function resetEnv() {
 beforeEach(() => {
   resetEnv();
   __clearAuthRateLimitState();
-  __resetGeminiToolMemoForTests();
 });
 
 after(() => {
@@ -193,7 +192,8 @@ test('streamed: a function call runs the MCP handler path, the result is fed bac
   assert.equal(gem.length, 2, 'one round to choose the check, one to answer');
   const decls = gem[0].body.tools.find((t) => t.functionDeclarations).functionDeclarations;
   assert.deepEqual(decls.map((d) => d.name), [...READ_ONLY_CHAT_TOOLS], 'the model was offered the read-only MCP tools');
-  assert.ok(gem[0].body.tools.some((t) => t.google_search), 'search stays on');
+  assert.ok(!gem[0].body.tools.some((t) => t.google_search), 'a tools-route request never carries search');
+  assert.equal(gem[0].body.tools.length, 1);
   assert.equal(gem[0].body.toolConfig.functionCallingConfig.mode, 'AUTO');
   assert.match(gem[0].body.systemInstruction.parts[0].text, /\[TOOLS - checks you can run yourself\]/);
 
@@ -288,7 +288,7 @@ test('parallel calls run together: every row opens before any closes, one card e
     calls: [['check_wallet_age', { address: WALLET.CLEAN }], ['check_wallet_sanctions', { address: WALLET.FLAGGED }], ['check_domain_age', { domain: DOMAIN.CLEAN }]],
     finalText: 'Three checks done.'
   }));
-  const events = eventsOf(await run(authed({ prompt: 'check all of these' })));
+  const events = eventsOf(await run(authed({ prompt: `check all of these: ${WALLET.CLEAN}, ${WALLET.FLAGGED}, ${DOMAIN.CLEAN}` })));
   const steps = toolSteps(events);
   assert.deepEqual(steps.slice(0, 3).map((s) => s.type), ['step', 'step', 'step'], 'all three open first');
   assert.deepEqual(steps.slice(3).map((s) => s.type), ['step_done', 'step_done', 'step_done']);
@@ -320,7 +320,7 @@ test('runToolLoop executes a round\'s calls concurrently', async () => {
 test('at most 5 calls per message: extra calls are refused and reported, the answer round has tools switched off', async () => {
   const seven = [WALLET.CLEAN, WALLET.FLAGGED, WALLET.DELEGATED, WALLET.CLEAN, WALLET.FLAGGED, WALLET.DELEGATED, WALLET.CLEAN].map((a) => ['check_wallet_age', { address: a }]);
   const calls = installFetch(geminiToolRoutes({ calls: seven, finalText: 'Five ran.' }));
-  const events = eventsOf(await run(authed({ prompt: 'check seven wallets' })));
+  const events = eventsOf(await run(authed({ prompt: `check seven wallets: ${seven.map(([, a]) => a.address).join(' ')}` })));
   assert.equal(events[events.length - 1].type, 'done');
   const cards = events.filter((e) => e.type === 'tool_result');
   assert.equal(cards.length, 7, 'every requested call gets a card');
@@ -613,28 +613,6 @@ test('Anthropic tool_choice none once the budget is spent; the accumulator survi
   assert.equal(gem.length, 1);
   assert.match(gem[0].parts[0].text, /Result of x: \{"a":1\}/);
   assert.deepEqual(parseGeminiParts([{ thought: true, text: 'hidden' }, { text: 'shown' }, { functionCall: { name: 'f', args: { a: 1 } } }]).text, 'shown');
-});
-
-test('Gemini: if search and function declarations cannot share a request, the request is retried without search and remembered', async () => {
-  let attempts = 0;
-  const calls = installFetch([
-    ['streamGenerateContent', (u, o, body) => {
-      attempts++;
-      const hasSearch = body.tools.some((t) => t.google_search);
-      const hasFns = body.tools.some((t) => t.functionDeclarations);
-      if (hasSearch && hasFns) return new Response(JSON.stringify({ error: { message: 'Multiple tools are supported only when they are all search tools.' } }), { status: 400 });
-      return new Response(sseBody([geminiText('Fine without search.')]));
-    }]
-  ]);
-  const events = eventsOf(await run(authed({ prompt: 'hello' })));
-  assert.equal(events.filter((e) => e.type === 'text').map((e) => e.text).join(''), 'Fine without search.');
-  assert.equal(attempts, 2);
-  assert.ok(geminiRequests(calls)[0].body.tools.some((t) => t.google_search));
-  assert.ok(!geminiRequests(calls)[1].body.tools.some((t) => t.google_search));
-  // Remembered for the next request in this process.
-  const events2 = eventsOf(await run(authed({ prompt: 'again' })));
-  assert.equal(events2.filter((e) => e.type === 'text').map((e) => e.text).join(''), 'Fine without search.');
-  assert.equal(attempts, 3);
 });
 
 // --- voice --------------------------------------------------------------------------
