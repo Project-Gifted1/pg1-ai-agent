@@ -666,10 +666,10 @@ test('deployment: the Silero files are served from /voice/ with explicit content
   // No rewrite sends /voice/ anywhere else.
   assert.ok(!(vercel.rewrites || []).some((r) => /voice/.test(r.source)), 'no rewrite touches /voice/');
   // A Content-Security-Policy, if one is ever added, must let the wasm run.
-  // The /playground page has its own strict CSP and never loads the voice
-  // files, so its rules are not in scope here.
+  // The /playground and /docs pages have their own strict CSP and never
+  // load the voice files, so their rules are not in scope here.
   for (const h of vercel.headers) {
-    if (h.source.startsWith('/playground')) continue;
+    if (h.source.startsWith('/playground') || h.source.startsWith('/docs/')) continue;
     const csp = byKey(h)['Content-Security-Policy'];
     if (csp) assert.match(csp, /'wasm-unsafe-eval'|'unsafe-eval'/, `${h.source}: CSP must allow wasm`);
   }
