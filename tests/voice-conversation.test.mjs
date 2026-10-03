@@ -631,7 +631,7 @@ test('the streaming scrubber strips labels even when a chunk boundary splits the
 test('the chat prompt tells the model the transcript lines are background only', () => {
   const chat = readFileSync(join(ROOT, 'api/chat.mjs'), 'utf-8');
   assert.match(chat, /\[CONTEXT\]: The OPERATOR: and AGENT: lines below are the recent conversation, for background only\. Never quote, repeat or continue them/);
-  assert.match(chat, /stripTranscriptLabels\(scrubIdentity\(modelFetchResult\.text\)\)/);
+  assert.match(chat, /stripTranscriptLabels\(scrubIdentity\(modelFetchResult\.text, \{ replacement: identityChoice\.reply \}\)\)/);
   assert.match(chat, /Conversation mode is the switch beside the mic/);
 });
 

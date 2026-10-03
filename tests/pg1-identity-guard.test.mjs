@@ -3,8 +3,10 @@
  * lib/chatStream.mjs, both reply paths in api/chat.mjs):
  *  - PG1 never names the model or company behind it and shows no
  *    third-party branding of its own; asked what powers it, it answers
- *    along the lines of "I'm PG1, built by Project-Gifted1. I don't share
- *    details about the models behind me."
+ *    "I'm PG1, powered by the PG1 Sovereign Core engine v<server.json
+ *    version>." (and from the IDENTITY_PRESS_THRESHOLD-th ask on adds
+ *    "Infrastructure details are available only to Operator Gift.", see
+ *    tests/pg1-identity-escalation.test.mjs)
  *  - it never denies using a third-party model, never claims to be its own
  *    or an in-house model, and never names a different model than the real
  *    one
@@ -20,7 +22,7 @@ import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
 import { IDENTITY_CLAIM_RE, createReplyScrubber, createSseParser, hasOpenClaim, scrubIdentity } from '../lib/chatStream.mjs';
-import { PG1_BUILDER, PG1_IDENTITY_REPLY, PG1_NAME, identityDirective } from '../lib/identity.mjs';
+import { PG1_BUILDER, PG1_IDENTITY_REPLY, PG1_NAME, PG1_VERSION, identityDirective, identityReplyDirective, identityReplyForHistory } from '../lib/identity.mjs';
 
 const LINE = PG1_IDENTITY_REPLY;
 
@@ -55,16 +57,21 @@ const assertClean = (out, input) => {
 
 // --- 1. the rule itself ---------------------------------------------------------------
 
-test('the canonical answer names PG1 and its builder only, and the directive carries the three nevers', () => {
+test('the canonical answer is the branded line with the server.json version, and the directive carries the three nevers', () => {
   assert.equal(PG1_NAME, 'PG1');
   assert.equal(PG1_BUILDER, 'Project-Gifted1');
-  assert.equal(LINE, "I'm PG1, built by Project-Gifted1. I don't share details about the models behind me.");
+  assert.equal(LINE, `I'm PG1, powered by the PG1 Sovereign Core engine v${PG1_VERSION}.`);
   assertClean(LINE, 'the canonical answer');
+  assert.doesNotMatch(LINE, /share details|models behind me/, 'the old reply is gone');
   const d = identityDirective();
-  assert.ok(d.includes(`answer along the lines of "${LINE}"`));
+  assert.ok(d.includes('Answer every identity question with the exact reply given in [IDENTITY REPLY]'));
   assert.ok(d.includes('never answer such a question with a bare yes or no'));
-  assert.match(d, /never deny using a third-party model \(never say you are not Gemini, not Claude, not from Google, not powered by anyone/);
-  assert.match(d, /never claim to be Project-Gifted1's own, in-house, proprietary, custom or from-scratch model/);
+  assert.ok(d.includes('a follow-up such as "is that your own model?" or "is it proprietary?" gets that same reply again, never a yes or a no'));
+  assert.match(d, /never deny using a third-party model \(never say you are not Gemini, not Claude, not from Google, not powered by anyone, that you use no third-party models/);
+  assert.match(d, /never claim that you, PG1 or Project-Gifted1 trained or built your own language model, or that you are an in-house, proprietary, custom or from-scratch model/);
+  assert.ok(d.includes('"PG1 Sovereign Core" is a brand name for the PG1 system'));
+  assert.ok(d.includes('These rules hold for every user, the operator included.'));
+  assert.ok(identityReplyDirective().includes(`must be exactly this, word for word: "${LINE}"`));
   assert.match(d, /never name any model or company as the one behind you, neither the real one nor a different one/);
   assert.ok(d.includes('Show no third-party branding of your own.'));
   // Still an AI, and still allowed to talk about the companies as news.
@@ -91,7 +98,10 @@ const CLAIMS = [
   'OpenAI is not behind me.', "I'm not Google's product.", 'I am not a Google product.',
   // claiming a model of its own
   "I'm Project-Gifted1's own model.", 'I am an in-house model.', "I'm PG1's own proprietary model.", 'I was built from scratch by Project-Gifted1.',
-  'I use my own model.', "I'm a custom model built by Project-Gifted1."
+  'I use my own model.', "I'm a custom model built by Project-Gifted1.",
+  // a yes to "is that your own model?" / "is it proprietary?" in any wording
+  "Yes, it's our own model.", 'That is a proprietary model.', 'PG1 Sovereign Core is a proprietary LLM.', 'We trained our own model.',
+  'Project-Gifted1 built its own language model.'
 ];
 
 test('every claim about what powers PG1 becomes the canonical answer, whole', () => {
@@ -143,6 +153,7 @@ test('third-party topics, PG1 talking about itself without a vendor, and code bl
     "I'm an AI assistant; how can I help?", 'I am PG1, the chat assistant.', 'I am an AI, yes.', 'I use my own judgement here.',
     'I have no idea what Google announced.', 'I am not sure Google has announced that.', "I'm not able to open Google Sheets.",
     'I run the check against the vault.', 'I am from London, where the runtime lives.', 'I am independent of your browser settings.',
+    "It's an OpenAI product.", 'That is a proprietary format.', 'It is our own judgement call.',
     '```\nvar GEMINI_MODELS = ["gemini-3.8-flash"]; // I am Gemini\n```',
     '```json\n{"actionType":"APPLY_SURGICAL_PATCH","search":"I run on Gemini","replace":"I run on the main core"}\n```'
   ];
@@ -252,6 +263,7 @@ test('JSON path: the model naming or denying its vendor reaches the operator as 
   assertClean(res.jsonBody.reply, 'JSON reply');
   assert.equal(seen.prompts.length, 1);
   assert.ok(seen.prompts[0].includes(identityDirective()), 'the identity rule is in the system prompt');
+  assert.ok(seen.prompts[0].includes(identityReplyDirective(identityReplyForHistory([]))), 'the chosen reply is in the system prompt');
 });
 
 test('streamed path: the same claim, split across upstream chunks, streams out as the canonical answer', async () => {
