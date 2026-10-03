@@ -1,0 +1,175 @@
+/* PG1 integration guides (/docs/*). Colours follow the dark tokens in
+   public/index.html, public/about and public/playground. Loaded as a file
+   because the page's Content-Security-Policy allows no inline styles. */
+:root {
+  color-scheme: dark;
+  --bg: #0a0a0b;
+  --surface-1: #121214;
+  --surface-2: #1a1a1e;
+  --border: #26262b;
+  --border-strong: #3a3a42;
+  --text: #ececee;
+  --text-2: #a8a8b0;
+  --text-3: #8a8a94;
+  --text-strong: #fff;
+  --gold: #f3c623;
+  --gold-strong: #ffd84d;
+  --gold-soft: rgba(243, 198, 35, 0.12);
+  --gold-line: rgba(243, 198, 35, 0.45);
+  --ok: #4ade80;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", "Liberation Mono", monospace;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-padding-top: 1rem; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+[hidden] { display: none !important; }
+main {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: max(1.25rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 3rem max(1rem, env(safe-area-inset-left));
+}
+
+.doc-header { display: flex; align-items: center; gap: 0.875rem; margin: 0.25rem 0 1.25rem; }
+.doc-header svg { flex: none; width: 3rem; height: 3rem; }
+.kicker { margin: 0 0 0.125rem; color: var(--gold); font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+h1 { margin: 0; font-size: 1.375rem; line-height: 1.25; color: var(--text-strong); }
+
+.toc {
+  margin: 0 0 1.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+.toc-title { margin: 0 0 0.25rem; color: var(--gold); font-weight: 600; font-size: 0.9375rem; }
+.toc ul { margin: 0; padding: 0; list-style: none; }
+.toc li { margin: 0; padding: 0.25rem 0; font-size: 0.9375rem; }
+.toc a { text-decoration: none; }
+.toc a:hover { text-decoration: underline; }
+
+.doc { min-width: 0; }
+.doc h2 {
+  margin: 2.25rem 0 0.75rem;
+  font-size: 1.1875rem;
+  line-height: 1.3;
+  color: var(--gold);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.375rem;
+}
+.doc h3 { margin: 1.75rem 0 0.5rem; font-size: 1.0625rem; line-height: 1.3; color: var(--text-strong); }
+.doc p { margin: 0 0 1rem; }
+.doc ul { margin: 0 0 1rem; padding-left: 1.25rem; }
+.doc li { margin: 0 0 0.5rem; }
+.doc li > .code { margin-top: 0.5rem; }
+.doc hr { display: none; }
+.doc strong { color: var(--text-strong); }
+.doc em { color: var(--text-strong); }
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  color: var(--gold-strong);
+  background: var(--gold-soft);
+  padding: 0.0625rem 0.3125rem;
+  border-radius: 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+/* Code blocks: scroll sideways inside the block, never the page. */
+.code {
+  margin: 0 0 1.25rem;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+.code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0 0.375rem 0 0.875rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.code-lang { color: var(--text-3); font-family: var(--font-mono); font-size: 0.75rem; text-transform: lowercase; }
+.copy {
+  min-width: 4.5rem;
+  min-height: 2.25rem;
+  padding: 0 0.75rem;
+  background: transparent;
+  border: 1px solid var(--gold-line);
+  border-radius: 0.5rem;
+  color: var(--gold-strong);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.copy:hover { background: var(--gold-soft); }
+.copy:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.copy-buffer { position: fixed; top: -1000px; left: 0; opacity: 0; }
+.copy.is-done { color: var(--ok); border-color: var(--ok); }
+.code pre {
+  margin: 0;
+  padding: 0.875rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  tab-size: 2;
+}
+.code pre:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+.code pre code {
+  display: block;
+  padding: 0;
+  background: none;
+  color: var(--text);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+/* Tables: scroll sideways inside their own box on narrow screens. */
+.table-wrap {
+  margin: 0 0 1.25rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+.table-wrap:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.875rem; line-height: 1.45; }
+th, td { padding: 0.5rem 0.75rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+th { background: var(--surface-2); color: var(--gold); font-weight: 600; white-space: nowrap; }
+tbody tr:last-child td { border-bottom: 0; }
+td { min-width: 8rem; }
+td code { overflow-wrap: normal; word-break: normal; white-space: nowrap; }
+
+a { color: var(--gold-strong); text-underline-offset: 0.15em; overflow-wrap: anywhere; }
+a:hover { color: var(--text-strong); }
+a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 2px; }
+
+footer {
+  margin-top: 2.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 0.875rem;
+}
+footer p { margin: 0 0 0.5rem; }
+
+@media (min-width: 768px) {
+  body { font-size: 1.0625rem; }
+  h1 { font-size: 1.75rem; }
+  .doc-header svg { width: 3.75rem; height: 3.75rem; }
+  .doc h2 { font-size: 1.3125rem; }
+}

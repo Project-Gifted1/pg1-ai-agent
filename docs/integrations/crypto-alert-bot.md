@@ -1,11 +1,11 @@
-# Screening DEX signal wallets before a Telegram alert
+# Example: a Telegram alert bot that screens wallets with PG1
 
-This guide is for a Telegram alert bot written in Node with axios. When a DEX signal names a wallet, the bot runs two of PG1's free checks on it before posting:
+This is a worked example for developers. It shows a Telegram alert bot, written in Node with axios, that screens the wallet named in each DEX signal with two of PG1's free checks before it posts an alert:
 
 - `check_wallet_sanctions`: is the address on the sanctions list?
 - `check_wallet_age`: when did the address first show up on a given chain?
 
-Every endpoint, field, status value, reason code and limit below comes from this repository's code. `tests/crypto-alert-bot-guide.test.mjs` fails if any of them stops existing.
+The same pattern fits any bot or agent that acts on a wallet address. Every endpoint, field, status value, reason code and limit below is taken from PG1's code, and PG1's test suite fails if any of them stops existing.
 
 **Base URL:** `https://pg1-ai-agent.vercel.app`
 
