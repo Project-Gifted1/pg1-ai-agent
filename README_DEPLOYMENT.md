@@ -67,6 +67,13 @@ git push origin main
 # Add these:
 GEMINI_API_KEY1=your_gemini_api_key_here
 GITHUB_TOKEN=your_github_token_here
+
+# Optional: /image engine model IDs (lib/imageEngines.mjs). Defaults shown.
+# The primary/secondary engines need a paid-tier key: image-output models
+# have no free-tier quota and answer 429.
+PG1_IMAGE_MODEL_PRIMARY=gemini-3.1-flash-image
+PG1_IMAGE_MODEL_SECONDARY=gemini-3-pro-image
+PG1_IMAGE_MODEL_TERTIARY=black-forest-labs/flux-schnell
 ```
 
 ### 3. Test the API
