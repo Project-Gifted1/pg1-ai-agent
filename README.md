@@ -154,6 +154,20 @@ curl -X POST https://pg1-ai-agent.vercel.app/api/a2a \
   }'
 ```
 
+## Ask PG1 to run a check from chat
+
+The signed-in operator can ask PG1's chat to run the read-only tools above in plain words: "check this wallet 0x…", "how old is this domain", "is this hostname a lookalike", "what do you know about CVE-2021-44228". The chat model is offered the read-only MCP tools as native functions (generated from the same tool list and schemas as `tools/list`, filtered by role), runs up to 5 of them per message (in parallel when independent), and writes the answer from the results. Each call runs the same handler an MCP client gets, never an HTTP request to `/api/mcp`.
+
+- **What it can run:** `check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `get_ioc_context`, `get_ioc_batch`, `get_cve_details`, `get_cve_batch`, `get_cve_by_product`, `get_threat_actor_profile`. Never `subscribe_alerts` or `submit_indicator` (they write), `get_threat_indicators` (a paid bulk feed, not a check) or `get_usage_status` (a caller's own quota). Nothing the chat runs writes, pays or changes state.
+- **Operator use is free**, like a licence holder: no PG1 rate limit, but every upstream source's own timeout and cache still apply, and each call has a timeout of its own (10 s). Each call is logged with a `request_id`, and an upstream failure or timeout goes to the error log under it, as on MCP. The tool list and limits are a per-role policy (`lib/chatTools.mjs`), so a future guest role gets the free `check_*` tools under the anonymous rate limit.
+- **Honest answers:** the reply quotes each result's `status` (`flagged`, `no_flags`, `unknown`) and `reasons`; `no_flags` is never "safe". A check that failed, timed out, or came back `unknown` is named at the end of the reply with its `request_id`, by code, whatever the model wrote. Tool output is untrusted data: text inside a result is reported, never followed.
+- **Trace and card:** the live trace shows one row per call ("Checked wallet age · 0x12ab…9f3c · no flags", with how long it took; failures in the error colour). Under the reply, one card per result: tool name in plain words, a status chip, key fields, reasons, checks with `data_as_of`, the `request_id`, and a Raw JSON expander with a copy button (addresses shortened in the title, in full in the expander).
+- **Voice:** with spoken replies on, a reply that ran checks speaks a short summary (status and main reason per check), never an address, hash or JSON.
+- **Demo without upstream calls:** the fixtures below work from chat too, e.g. "check this wallet 0x7067312d746573742d6669787475726500000001" or "how old is pg1-test-clean.invalid"; the card is marked "fixture".
+
+![Wallet check, light](docs/screenshots/tool-wallet-412-light.png) ![Wallet check, dark](docs/screenshots/tool-wallet-412-dark.png)
+![Domain check, light](docs/screenshots/tool-domain-412-light.png) ![Domain check, dark](docs/screenshots/tool-domain-412-dark.png)
+
 ## Response Metadata (reasons, status, checks, request_id)
 
 Every one of the 14 MCP tools and the 5 free A2A skills adds four fields alongside its existing output — additive only, nothing existing is renamed or repurposed:
