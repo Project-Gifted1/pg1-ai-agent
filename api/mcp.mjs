@@ -81,6 +81,7 @@ import { encodePaymentRequiredHeader, encodePaymentResponseHeader, decodePayment
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT } from '../lib/freeTier.mjs';
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
+import { X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX } from '../lib/x402Config.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { detectIndicatorType, lookupIocContext } from '../lib/iocContext.mjs';
 import { normalizeWalletAddress, isRecognizedWalletAddress } from '../lib/walletAddress.mjs';
@@ -1291,8 +1292,8 @@ function setCachedDomainResult(registrable, result) {
 // public RDAP servers through PG1. Callers with a valid Gumroad license key
 // are exempt (see handleCheckDomainAge) — the limit only protects against
 // anonymous abuse, not legitimate licensed usage.
-const DOMAIN_AGE_RATE_LIMIT_MAX = 60;
-const DOMAIN_AGE_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+// DOMAIN_AGE_RATE_LIMIT_MAX lives in lib/x402Config.mjs (the chat quotes it).
+const DOMAIN_AGE_RATE_LIMIT_WINDOW_MS = RATE_LIMIT_WINDOW_MS;
 const domainAgeRateLimitState = new Map();
 
 class RateLimitedError extends Error {
@@ -1651,8 +1652,8 @@ function setCachedHostnameResult(hostname, result) {
 
 // Per-IP fixed-window rate limit, identical shape to check_domain_age's.
 // Callers with a valid Gumroad license key are exempt.
-const HOSTNAME_REPUTATION_RATE_LIMIT_MAX = 60;
-const HOSTNAME_REPUTATION_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+// HOSTNAME_REPUTATION_RATE_LIMIT_MAX lives in lib/x402Config.mjs (the chat quotes it).
+const HOSTNAME_REPUTATION_RATE_LIMIT_WINDOW_MS = RATE_LIMIT_WINDOW_MS;
 const hostnameReputationRateLimitState = new Map();
 
 function enforceHostnameReputationRateLimit(identifier) {
@@ -1889,8 +1890,8 @@ class WalletAgeUpstreamError extends Error {
 
 // Per-IP fixed-window rate limit, identical shape to check_domain_age's.
 // Callers with a valid Gumroad license key are exempt.
-const WALLET_AGE_RATE_LIMIT_MAX = 60;
-const WALLET_AGE_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+// WALLET_AGE_RATE_LIMIT_MAX lives in lib/x402Config.mjs (the chat quotes it).
+const WALLET_AGE_RATE_LIMIT_WINDOW_MS = RATE_LIMIT_WINDOW_MS;
 const walletAgeRateLimitState = new Map();
 
 function enforceWalletAgeRateLimit(identifier) {
@@ -2560,9 +2561,7 @@ function sendMcpFixtureResponse(res, toolName, outcome, requestId, pg1RequestId)
 // checks, 10min success cache, 2s timeout with cache fallback).
 
 const X402_PAY_TO = (process.env.X402_PAY_TO_ADDRESS || '').trim();
-const X402_NETWORK = 'eip155:8453';
-const X402_SCHEME = 'exact';
-const X402_PRICE = '$0.01';
+// X402_NETWORK, X402_SCHEME and X402_PRICE live in lib/x402Config.mjs.
 const X402_RESOURCE_DESCRIPTION = 'PG1 Threat Intelligence: STIX 2.1 threat indicator feed (IPs, domains, URLs, file hashes, CVEs) aggregated from open threat intelligence sources including AlienVault OTX.';
 const X402_RESOURCE_MIME_TYPE = 'application/json';
 
@@ -2654,7 +2653,7 @@ function buildX402ResourceInfo(req) {
 // PaymentRequired shape (x402Version, resource, accepts, error) that a
 // caller gets from a real facilitator, just with an empty accepts list.
 function buildFallbackPaymentRequired(resourceInfo, error) {
-  return { x402Version: 2, error, resource: resourceInfo, accepts: [] };
+  return { x402Version: X402_VERSION, error, resource: resourceInfo, accepts: [] };
 }
 
 // Drives the x402 v2 payment flow directly against x402ResourceServer:
