@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
+import { __resetImageBreaker } from '../lib/imageEngines.mjs';
 import { FAKE } from './fixtures/fake-secrets.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -25,6 +26,7 @@ const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_FETCH = globalThis.fetch;
 
 beforeEach(() => {
+  __resetImageBreaker();
   process.env.USER_API_KEY = 'test-operator';
   process.env.USER_API_PASS = 'test-secret-pass';
   process.env.GEMINI_API_KEY = 'stub-gemini-key';
@@ -133,35 +135,33 @@ test('the error log FIX button composes a /core prompt, not /claude', () => {
 
 // --- 3. image generation never names the real provider behind an engine ----------------
 
+const IMAGE_PART = JSON.stringify({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: 'ZmFrZQ==' } }] } }] });
+
 test('GENERATE_IMAGE: the primary engine label never names Google or Gemini', async () => {
   globalThis.fetch = async (url) => {
     const u = String(url);
-    if (u.includes(':predict')) {
-      return new Response(JSON.stringify({ predictions: [{ mimeType: 'image/png', bytesBase64Encoded: 'ZmFrZQ==' }] }));
-    }
+    if (u.includes('/models/gemini-3.1-flash-image:generateContent')) return new Response(IMAGE_PART);
     throw new Error('Unexpected network call in test: ' + u);
   };
   const res = makeRes();
   await chatHandler(makeReq(authed({ prompt: '/image a lighthouse' })), res);
   assert.equal(res.statusCode, 200);
-  assert.match(res.jsonBody.reply, /Image Rendered using \*\*PG1 Vision Primary/);
+  assert.equal(res.jsonBody.reply, 'Image ready.');
+  assert.match(res.jsonBody.image, /^data:image\/png;base64,/);
   assert.doesNotMatch(res.jsonBody.reply, /Google|Gemini/);
 });
 
 test('GENERATE_IMAGE: the secondary engine label never names Google or Gemini either, once the primary engine fails', async () => {
   globalThis.fetch = async (url) => {
     const u = String(url);
-    if (u.includes(':predict')) return new Response(JSON.stringify({ error: 'quota' }), { status: 429 });
-    if (u.includes(':generateContent')) {
-      return new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: 'ZmFrZQ==' } }] } }]
-      }));
-    }
+    if (u.includes('/models/gemini-3.1-flash-image:')) return new Response(JSON.stringify({ error: 'quota' }), { status: 429 });
+    if (u.includes('/models/gemini-3-pro-image:generateContent')) return new Response(IMAGE_PART);
     throw new Error('Unexpected network call in test: ' + u);
   };
   const res = makeRes();
   await chatHandler(makeReq(authed({ prompt: '/image a lighthouse' })), res);
   assert.equal(res.statusCode, 200);
-  assert.match(res.jsonBody.reply, /Image Rendered using \*\*PG1 Vision Secondary/);
-  assert.doesNotMatch(res.jsonBody.reply, /Google|Gemini/);
+  assert.equal(res.jsonBody.reply, 'Image ready.');
+  assert.equal(res.jsonBody.imageStatus, 'SUCCESS');
+  assert.doesNotMatch(res.jsonBody.reply, /Google|Gemini|quota|429/);
 });
