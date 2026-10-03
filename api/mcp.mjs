@@ -611,7 +611,7 @@ async function fetchNvdCveDetails(cveId) {
   };
 }
 
-async function handleCveDetails(args) {
+export async function handleCveDetails(args) {
   const cveId = args?.cve_id;
   if (!cveId || !/^CVE-\d{4}-\d{4,}$/i.test(String(cveId))) {
     const err = invalidInput({
@@ -666,7 +666,7 @@ async function handleCveDetails(args) {
   }, { reasons, checks });
 }
 
-async function handleCveBatch(args) {
+export async function handleCveBatch(args) {
   const cveIds = args?.cve_ids;
   if (!Array.isArray(cveIds) || cveIds.length === 0) {
     throw invalidInput({
@@ -739,7 +739,7 @@ async function handleCveBatch(args) {
   }, { reasons, checks });
 }
 
-async function handleCveByProduct(args) {
+export async function handleCveByProduct(args) {
   const vendor = args?.vendor;
   const product = args?.product;
   const version = args?.version;
@@ -827,7 +827,7 @@ const IOC_VALUE_FIX_IT = {
   example: '198.51.100.1'
 };
 
-async function handleIocContext(args) {
+export async function handleIocContext(args) {
   const value = args?.value?.trim();
   if (!value) {
     throw invalidInput(IOC_VALUE_FIX_IT);
@@ -849,7 +849,7 @@ function withIocResponseMeta(lookupResult) {
   return withResponseMeta(lookupResult, { reasons, checks });
 }
 
-async function handleIocBatch(args) {
+export async function handleIocBatch(args) {
   const values = args?.values;
   if (!Array.isArray(values) || values.length === 0) {
     throw invalidInput({
@@ -910,7 +910,7 @@ async function getAttackBundle() {
   return attackCache;
 }
 
-async function handleThreatActorProfile(args) {
+export async function handleThreatActorProfile(args) {
   const actorName = args?.actor_name?.trim();
   if (!actorName) {
     throw invalidInput({
@@ -1371,7 +1371,7 @@ function domainNotFound(domain, reasonText, reasonCode) {
   return withResponseMeta({ found: false, available: false, domain, reason: reasonText, reason_code: reasonCode }, { reasons: [], checks });
 }
 
-export async function handleCheckDomainAge(args, identifier, licenseKey) {
+export async function handleCheckDomainAge(args, identifier, licenseKey, { licensed: callerLicensed = false } = {}) {
   const raw = args?.domain;
   if (!raw || typeof raw !== 'string') {
     throw invalidInput({
@@ -1389,8 +1389,8 @@ export async function handleCheckDomainAge(args, identifier, licenseKey) {
   const cached = getCachedDomainResult(registrable);
   if (cached) return cached;
 
-  let licensed = false;
-  if (licenseKey) {
+  let licensed = callerLicensed === true;
+  if (!licensed && licenseKey) {
     const check = await verifyGumroadLicense(licenseKey).catch(() => ({ valid: false }));
     licensed = !!check.valid;
   }
@@ -1749,14 +1749,14 @@ function buildHostnameResult(hostname, verdict, sources, lookalikeOf, listSynced
   }, { reasons, checks });
 }
 
-export async function handleCheckHostnameReputation(args, identifier, licenseKey) {
+export async function handleCheckHostnameReputation(args, identifier, licenseKey, { licensed: callerLicensed = false } = {}) {
   const hostname = normalizeHostname(args?.hostname);
 
   const cached = getCachedHostnameResult(hostname);
   if (cached) return cached;
 
-  let licensed = false;
-  if (licenseKey) {
+  let licensed = callerLicensed === true;
+  if (!licensed && licenseKey) {
     const check = await verifyGumroadLicense(licenseKey).catch(() => ({ valid: false }));
     licensed = !!check.valid;
   }
@@ -2164,7 +2164,7 @@ function runWalletAgeUpstreamCalls(url, address, categories, signal) {
   ]);
 }
 
-export async function handleCheckWalletAge(args, identifier, licenseKey) {
+export async function handleCheckWalletAge(args, identifier, licenseKey, { licensed: callerLicensed = false } = {}) {
   const address = normalizeWalletAgeAddress(args?.address);
   const chain = normalizeWalletAgeChain(args?.chain);
 
@@ -2172,8 +2172,8 @@ export async function handleCheckWalletAge(args, identifier, licenseKey) {
   // still gets a live delegation check, below), so the rate limit applies
   // before the cache read: cached calls count too. Licensed callers stay
   // exempt.
-  let licensed = false;
-  if (licenseKey) {
+  let licensed = callerLicensed === true;
+  if (!licensed && licenseKey) {
     const check = await verifyGumroadLicense(licenseKey).catch(() => ({ valid: false }));
     licensed = !!check.valid;
   }
@@ -2847,13 +2847,42 @@ const STANDARD_TOOL_HANDLERS = {
 
 const FREE_TOOLS = new Set(['get_usage_status', 'check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age']);
 
+// One entry point per read-only tool, used by tools/call for the free tools
+// below and by the chat's tool loop (lib/chatTools.mjs) for every read-only
+// tool, so a check asked for in chat runs the exact handler an MCP client
+// gets - never an HTTP round trip to this endpoint. `ctx.licensed` is the
+// operator's standing (lib/chatTools.mjs): it exempts the 60/hour anonymous
+// rate limit the same way a valid Gumroad key does; upstream timeouts and
+// caches inside each handler apply to everyone. The two write tools
+// (subscribe_alerts, submit_indicator) and the paid feed are deliberately
+// not here: nothing the chat can reach writes, pays or changes state.
+export const READ_ONLY_TOOL_RUNNERS = Object.freeze({
+  get_usage_status: (args, ctx) => handleUsageStatus(args, ctx.identifier),
+  check_wallet_sanctions: (args) => handleCheckWalletSanctions(args),
+  check_domain_age: (args, ctx) => handleCheckDomainAge(args, ctx.identifier, ctx.licenseKey, { licensed: ctx.licensed }),
+  check_hostname_reputation: (args, ctx) => handleCheckHostnameReputation(args, ctx.identifier, ctx.licenseKey, { licensed: ctx.licensed }),
+  check_wallet_age: (args, ctx) => handleCheckWalletAge(args, ctx.identifier, ctx.licenseKey, { licensed: ctx.licensed }),
+  get_ioc_context: (args) => handleIocContext(args),
+  get_ioc_batch: (args) => handleIocBatch(args),
+  get_cve_details: (args) => handleCveDetails(args),
+  get_cve_batch: (args) => handleCveBatch(args),
+  get_cve_by_product: (args) => handleCveByProduct(args),
+  get_threat_actor_profile: (args) => handleThreatActorProfile(args)
+});
+
+export async function runReadOnlyTool(toolName, args, ctx = {}) {
+  const runner = READ_ONLY_TOOL_RUNNERS[toolName];
+  if (!runner) throw new Error(`${toolName} is not a read-only tool`);
+  return runner(args || {}, { identifier: ctx.identifier || 'unknown', licenseKey: ctx.licenseKey, licensed: ctx.licensed === true });
+}
+
 const LICENSE_ONLY_TOOLS = new Set(['subscribe_alerts', 'submit_indicator']);
 
 // Generic (never vendor-named) `checks[].source` labels used when a tool
 // call fails before producing a result (issue #215) - keyed by tool name so
 // the single shared catch blocks below can build the right checks entry
 // without duplicating per-tool logic.
-const TOOL_SOURCE_LABELS = {
+export const TOOL_SOURCE_LABELS = {
   get_threat_indicators: 'threat indicator feed',
   get_cve_details: 'vulnerability database',
   get_cve_batch: 'vulnerability database',
@@ -2951,17 +2980,7 @@ export default async function handler(req, res) {
       if (FREE_TOOLS.has(toolName)) {
         let toolResult;
         try {
-          if (toolName === 'get_usage_status') {
-            toolResult = await handleUsageStatus(toolArgs, mcpRequestIdentifier);
-          } else if (toolName === 'check_wallet_sanctions') {
-            toolResult = await handleCheckWalletSanctions(toolArgs);
-          } else if (toolName === 'check_domain_age') {
-            toolResult = await handleCheckDomainAge(toolArgs, mcpRequestIdentifier, licenseKey);
-          } else if (toolName === 'check_wallet_age') {
-            toolResult = await handleCheckWalletAge(toolArgs, mcpRequestIdentifier, licenseKey);
-          } else {
-            toolResult = await handleCheckHostnameReputation(toolArgs, mcpRequestIdentifier, licenseKey);
-          }
+          toolResult = await runReadOnlyTool(toolName, toolArgs, { identifier: mcpRequestIdentifier, licenseKey });
         } catch (toolErr) {
           if (toolErr.serviceUnavailable) {
             recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_upstream_unavailable`, 'upstream', pg1RequestId);

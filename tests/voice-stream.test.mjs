@@ -688,7 +688,7 @@ test('client: a new message stops speech first, and the reply falls back to spea
   assert.match(src, /const voicePlayer = \(wantStream && voiceActive\) \? startVoicePlayer\(agentBubble\) : null;\s*if \(voicePlayer\) payload\.speak = true;/);
   assert.match(src, /consumeDirectiveStream\(response, agentBubble, controller\.signal, voicePlayer\)/);
   assert.match(src, /const spokeFromStream = !!\(voicePlayer && voicePlayer\.scheduledChunks > 0\);/);
-  assert.match(src, /if \(!spokeDirectly && voiceActive && data\.reply && !spokeFromStream && voiceGenerationAtSend === voiceGeneration\) \{\s*speakMessage\(data\.reply, agentBubble\);/);
+  assert.match(src, /if \(!spokeDirectly && voiceActive && data\.reply && !spokeFromStream && voiceGenerationAtSend === voiceGeneration\) \{\s*(?:\/\/[^\n]*\n\s*)?speakMessage\(data\.spokenSummary \|\| data\.reply, agentBubble\);/);
   assert.match(src, /if \(voicePlayer && !voicePlayer\.endInfo\) voicePlayer\.end\(\{ ok: false \}\);/, 'a stream that ends without audio_end closes the player');
   // The toggle still works: off stops audio, on warms the audio context in the tap.
   const toggle = extractFunction('toggleVoice');

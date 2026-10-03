@@ -47,10 +47,13 @@ const FUNCS = [
   'escapeHTML', 'formatMarkdown', 'renderDiffBlock', 'formatStreamingMarkdown', 'parseSseBuffer', 'parseTraceEvent',
   'readChatStream', 'formatStepDuration', 'stepDurationMs', 'traceRowHtml', 'traceRunningRowHtml', 'stepCountText', 'agentTimestampHtml',
   'toggleTraceDetails', 'createTraceView', 'consumeDirectiveStream', 'syncExecuteButton',
-  'onExecuteClick', 'stopDirectives', 'retryButtonHtml', 'retryDirective', 'renderStreamFailure'
+  'onExecuteClick', 'stopDirectives', 'retryButtonHtml', 'retryDirective', 'renderStreamFailure',
+  'toolStatusLabel', 'toolDateText', 'toolCardHtml', 'toolCardsHtml'
 ];
 const SOURCE = [
   html.match(/const TRACE_EVENT_TYPES = [^\n]*;/)[0],
+  html.match(/const TOOL_STATUS_CLASS = [^\n]*;/)[0].replace(/^const/, 'var'),
+  'var toolCardSeq = 0;',
   'var traceSeq = 0;',
   'var inFlightDirectives = new Set();',
   'var REQUEST_TIMEOUT_MS = 75000;',

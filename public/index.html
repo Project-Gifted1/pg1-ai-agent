@@ -1163,6 +1163,113 @@
     .stream-note { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); margin-top: var(--sp-3); font-size: var(--fs-sm); color: var(--text-2); }
     .message-bubble.error .stream-note { color: var(--danger-text); }
     .message-bubble.error.offline .stream-note { color: var(--warn-text); }
+    /* CHAT TOOLS: one compact result card per check under the reply. Same
+       calm surfaces as the hand-off card; the status chip is the only
+       colour, and it never relies on colour alone (the word is always
+       there). */
+    .tool-cards { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-4); }
+    .tool-card {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+      max-width: 100%;
+      padding: var(--sp-3) var(--sp-4);
+      background: var(--surface-1);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      font-size: var(--fs-sm);
+      line-height: 1.45;
+      color: var(--text-2);
+    }
+    .tool-card-head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+    .tool-card-title { flex: 1 1 auto; min-width: 0; font-weight: 600; color: var(--text-strong); overflow-wrap: anywhere; }
+    .tool-card-sep { color: var(--text-3); font-weight: 400; }
+    .tool-card-subject { font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: 400; color: var(--text-2); }
+    .tool-chip {
+      flex: none;
+      padding: 2px var(--sp-2);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-full);
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      line-height: 1.4;
+      white-space: nowrap;
+      color: var(--text);
+      background: var(--surface-2);
+    }
+    .tool-chip.is-flagged, .tool-chip.is-failed { color: var(--danger-text); background: var(--danger-soft); border-color: var(--danger-line); }
+    .tool-chip.is-clear { color: var(--ok); background: var(--ok-soft); border-color: var(--ok); }
+    .tool-chip.is-unknown { color: var(--warn-text); background: var(--warn-soft); border-color: var(--warn-line); }
+    .tool-fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px var(--sp-3); margin: 0; }
+    .tool-field { display: contents; }
+    .tool-fields dt { color: var(--text-3); white-space: nowrap; }
+    .tool-fields dd { margin: 0; min-width: 0; color: var(--text); overflow-wrap: anywhere; }
+    .tool-error { color: var(--danger-text); }
+    .tool-note { color: var(--text-3); }
+    .tool-reasons, .tool-checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+    .tool-reasons li { color: var(--text); overflow-wrap: anywhere; }
+    .tool-reasons code, .tool-meta code, .tool-raw-full { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text); overflow-wrap: anywhere; }
+    .tool-checks li { display: flex; flex-wrap: wrap; gap: 0 var(--sp-2); color: var(--text-3); font-size: var(--fs-xs); }
+    .tool-checks li.is-incomplete .tool-check-result { color: var(--warn-text); }
+    .tool-check-source { color: var(--text-2); }
+    .tool-check-result::before { content: "·"; margin-right: var(--sp-2); }
+    .tool-check-asof::before { content: "·"; margin-right: var(--sp-2); }
+    .tool-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--sp-2); font-size: var(--fs-xs); color: var(--text-3); overflow-wrap: anywhere; }
+    .tool-meta-sep { color: var(--text-3); }
+    .tool-fixture { padding: 0 var(--sp-2); border: 1px solid var(--border-strong); border-radius: var(--r-full); color: var(--text-2); }
+    .tool-raw-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sp-1);
+      align-self: flex-start;
+      min-height: 32px;
+      padding: 0 var(--sp-1);
+      background: none;
+      border: 0;
+      border-radius: var(--r-sm);
+      color: var(--text-2);
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .tool-raw-toggle:hover { color: var(--text); }
+    .tool-raw-toggle .icon { width: 16px; height: 16px; margin-left: 0; }
+    .tool-raw { display: flex; flex-direction: column; gap: var(--sp-2); }
+    .tool-raw[hidden] { display: none; }
+    .tool-raw-line { display: flex; flex-wrap: wrap; gap: 0 var(--sp-2); font-size: var(--fs-xs); }
+    .tool-raw-key { color: var(--text-3); font-size: var(--fs-xs); }
+    .tool-raw-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+    .tool-copy {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sp-1);
+      min-height: 32px;
+      padding: 0 var(--sp-3);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-full);
+      color: var(--text);
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .tool-copy:hover { border-color: var(--border-strong); }
+    .tool-copy .icon { width: 16px; height: 16px; }
+    .tool-raw-json {
+      margin: 0;
+      padding: var(--sp-3);
+      max-height: 18rem;
+      overflow: auto;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      font-family: var(--font-mono);
+      font-size: var(--fs-xs);
+      line-height: 1.5;
+      color: var(--text);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
     .retry-btn {
       display: inline-flex;
       align-items: center;
@@ -4929,7 +5036,7 @@
     // "error". Any other response is the ordinary JSON reply, handled by the
     // same code as before, so a server or proxy that can't stream still
     // works.
-    const TRACE_EVENT_TYPES = ['step', 'step_done', 'text', 'audio', 'audio_end', 'done', 'error'];
+    const TRACE_EVENT_TYPES = ['step', 'step_done', 'text', 'audio', 'audio_end', 'tool_result', 'done', 'error'];
 
     // Twin of createSseParser in lib/chatStream.mjs (tests run both over the
     // same input). Returns the complete events in `buffer` and the
@@ -5029,6 +5136,95 @@
 
     function stepCountText(n) {
       return `${n} step${n === 1 ? '' : 's'}`;
+    }
+
+    // CHAT TOOLS: the result card under a reply, one per check PG1 ran
+    // (a "tool_result" stream event, or `toolResults` on a JSON reply; both
+    // carry lib/chatTools.mjs's summarizeOutcome shape). Everything shown is
+    // escaped text from that payload: the tool name in plain words, the
+    // subject (addresses shortened to first 6 and last 4, full in the
+    // expander), a status chip, the key fields, reasons, checks with their
+    // data_as_of, the request_id and a Raw JSON expander with a copy button.
+    const TOOL_STATUS_CLASS = { flagged: 'is-flagged', no_flags: 'is-clear', unknown: 'is-unknown', failed: 'is-failed' };
+    let toolCardSeq = 0;
+
+    function toolStatusLabel(status) {
+      return { flagged: 'Flagged', no_flags: 'No flags', unknown: 'Unknown', failed: 'Failed' }[status] || 'Unknown';
+    }
+
+    function toolDateText(iso) {
+      if (!iso || typeof iso !== 'string') return '';
+      const d = new Date(iso);
+      return Number.isNaN(d.getTime()) ? iso : d.toISOString().slice(0, 10);
+    }
+
+    function toolCardHtml(card) {
+      if (!card || typeof card !== 'object' || !card.tool) return '';
+      const uid = `tool-raw-${Date.now().toString(36)}-${(toolCardSeq++).toString(36)}`;
+      const status = TOOL_STATUS_CLASS[card.status] ? card.status : 'unknown';
+      const title = escapeHTML(card.title || String(card.tool).replace(/_/g, ' '));
+      const subjectShort = card.subject_short || card.subject || '';
+      const subject = subjectShort ? `<span class="tool-card-subject" title="${escapeHTML(card.subject || subjectShort)}">${escapeHTML(subjectShort)}</span>` : '';
+      const chip = `<span class="tool-chip ${TOOL_STATUS_CLASS[status]}">${toolStatusLabel(status)}</span>`;
+      const fields = Array.isArray(card.fields) ? card.fields.filter((f) => f && f.label && f.value !== undefined && f.value !== null && f.value !== '') : [];
+      const fieldsHtml = fields.length
+        ? `<dl class="tool-fields">${fields.map((f) => `<div class="tool-field"><dt>${escapeHTML(f.label)}</dt><dd>${escapeHTML(String(f.value))}</dd></div>`).join('')}</dl>`
+        : '';
+      const errorHtml = card.error && card.error.message
+        ? `<p class="tool-error">${escapeHTML(card.error.message)}</p>`
+        : '';
+      const reasons = Array.isArray(card.reasons) ? card.reasons.filter((r) => r && r.code) : [];
+      const reasonsHtml = reasons.length
+        ? `<ul class="tool-reasons" aria-label="Reasons">${reasons.map((r) => `<li><code>${escapeHTML(r.code)}</code> ${escapeHTML(r.message || '')}</li>`).join('')}</ul>`
+        : (status === 'no_flags' ? '<p class="tool-note">No reasons: nothing was flagged in the sources checked. That is not a safety verdict.</p>' : '');
+      const checks = Array.isArray(card.checks) ? card.checks.filter((c) => c && c.source) : [];
+      const checksHtml = checks.length
+        ? `<ul class="tool-checks" aria-label="Checks">${checks.map((c) => {
+          const asOf = toolDateText(c.data_as_of);
+          return `<li class="${c.result === 'ok' ? '' : 'is-incomplete'}"><span class="tool-check-source">${escapeHTML(c.source)}</span><span class="tool-check-result">${escapeHTML(c.result || '')}</span>${asOf ? `<span class="tool-check-asof">data as of ${escapeHTML(asOf)}</span>` : ''}</li>`;
+        }).join('')}</ul>`
+        : '';
+      const metaBits = [];
+      if (card.request_id) metaBits.push(`<span class="tool-meta-item">request_id <code>${escapeHTML(card.request_id)}</code></span>`);
+      const dur = formatStepDuration(card.ms);
+      if (dur) metaBits.push(`<span class="tool-meta-item">${dur}</span>`);
+      if (card.test_fixture) metaBits.push('<span class="tool-meta-item tool-fixture">fixture</span>');
+      const metaHtml = metaBits.length ? `<div class="tool-meta">${metaBits.join('<span class="tool-meta-sep" aria-hidden="true">·</span>')}</div>` : '';
+      const raw = typeof card.raw === 'string' ? card.raw : JSON.stringify(card.raw || {}, null, 2);
+      const input = card.input && typeof card.input === 'object' ? JSON.stringify(card.input) : '';
+      const rawHtml = `<button type="button" class="tool-raw-toggle" aria-expanded="false" aria-controls="${uid}" onclick="toggleTraceDetails(this)">Raw JSON<svg class="icon trace-chevron" aria-hidden="true"><use href="#i-chevron"/></svg></button>`
+        + `<div class="tool-raw" id="${uid}" hidden>`
+        + (card.subject ? `<div class="tool-raw-line"><span class="tool-raw-key">Input</span><code class="tool-raw-full">${escapeHTML(card.subject)}</code></div>` : '')
+        + (input ? `<div class="tool-raw-line"><span class="tool-raw-key">Arguments</span><code class="tool-raw-full">${escapeHTML(input)}</code></div>` : '')
+        + `<div class="tool-raw-bar"><span class="tool-raw-key">Result</span><button type="button" class="tool-copy" onclick="copyToolRaw(this)" aria-label="Copy raw JSON"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg><span class="tool-copy-text">Copy</span></button></div>`
+        + `<pre class="tool-raw-json"><code>${escapeHTML(raw)}</code></pre></div>`;
+      return `<section class="tool-card ${TOOL_STATUS_CLASS[status]}" aria-label="${title} result">`
+        + `<div class="tool-card-head"><span class="tool-card-title">${title}${subject ? '<span class="tool-card-sep" aria-hidden="true"> · </span>' + subject : ''}</span>${chip}</div>`
+        + errorHtml + fieldsHtml + reasonsHtml + checksHtml + metaHtml + rawHtml
+        + '</section>';
+    }
+
+    function toolCardsHtml(results) {
+      if (!Array.isArray(results) || !results.length) return '';
+      const cards = results.map(toolCardHtml).filter(Boolean);
+      return cards.length ? `<div class="tool-cards">${cards.join('')}</div>` : '';
+    }
+
+    function copyToolRaw(btn) {
+      const raw = btn.closest('.tool-raw');
+      const pre = raw && raw.querySelector('.tool-raw-json');
+      if (!pre) return;
+      const label = btn.querySelector('.tool-copy-text');
+      const done = (ok) => {
+        if (!label) return;
+        label.textContent = ok ? 'Copied' : 'Copy failed';
+        setTimeout(() => { label.textContent = 'Copy'; }, 1500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(pre.textContent).then(() => done(true), () => done(false));
+      } else {
+        done(false);
+      }
     }
 
     // The duration to show for a finished step: the server's own timing
@@ -5161,6 +5357,8 @@
       bubble.querySelector('.trace').after(textEl);
       const chat = document.getElementById('chat-container');
       let text = '';
+      // CHAT TOOLS: one card per finished check (lib/chatTools.mjs).
+      const toolResults = [];
       let outcome = null;
       let renderQueued = false;
       const render = () => {
@@ -5182,7 +5380,8 @@
           else if (ev.type === 'text' && typeof ev.text === 'string') { if (ev.text) trace.writing(); text += ev.text; queueRender(); }
           else if (ev.type === 'audio') { if (voice) voice.push(ev); }
           else if (ev.type === 'audio_end') { if (voice) voice.end(ev); }
-          else if (ev.type === 'done') outcome = { data: Object.assign({}, ev.result || {}, { reply: text, searchEntryPoint: ev.searchEntryPoint || (ev.result && ev.result.searchEntryPoint) || null, traceId: ev.request_id }) };
+          else if (ev.type === 'tool_result') { if (ev.tool) toolResults.push(ev); }
+          else if (ev.type === 'done') outcome = { data: Object.assign({}, ev.result || {}, { reply: text, searchEntryPoint: ev.searchEntryPoint || (ev.result && ev.result.searchEntryPoint) || null, spokenSummary: ev.spokenSummary || null, toolResults: toolResults.slice(), traceId: ev.request_id }) };
           else if (ev.type === 'error') outcome = { failed: 'error', message: String(ev.message || 'The request failed.'), status: ev.status };
         });
       } catch (err) {
@@ -5190,6 +5389,7 @@
       }
       if (!outcome) outcome = { failed: signal && signal.aborted ? 'aborted' : 'dropped' };
       outcome.text = text;
+      outcome.toolResults = toolResults.slice();
       const finished = trace.finish();
       outcome.traceHtml = finished.html;
       outcome.tracePill = finished.pill;
@@ -5439,7 +5639,7 @@
         triggerHaptic([30, 50, 30]); 
         const finalTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
-        let contentHtml = `${agentTimestampHtml(finalTime, tracePill)}${traceHtml}<div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>`;
+        let contentHtml = `${agentTimestampHtml(finalTime, tracePill)}${traceHtml}<div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>${toolCardsHtml(data.toolResults)}`;
 
         if (data.searchEntryPoint) {
           contentHtml += '<div class="search-entry-point">' + data.searchEntryPoint + '</div>';
@@ -5493,12 +5693,13 @@
         // or a newer message.
         const spokeFromStream = !!(voicePlayer && voicePlayer.scheduledChunks > 0);
         if (!spokeDirectly && voiceActive && data.reply && !spokeFromStream && voiceGenerationAtSend === voiceGeneration) {
-          speakMessage(data.reply, agentBubble);
+          // CHAT TOOLS: a reply that ran checks speaks their summary only.
+          speakMessage(data.spokenSummary || data.reply, agentBubble);
         }
         // Echo guard (conversation mode): remember what was read out from
         // the stream, so a transcript of it is never sent back as a message.
         // speakMessage() records the one-shot path itself.
-        if (spokeFromStream && data.reply && typeof conversationSpokenLog !== 'undefined') conversationSpokenLog.add(data.reply);
+        if (spokeFromStream && data.reply && typeof conversationSpokenLog !== 'undefined') conversationSpokenLog.add(data.spokenSummary || data.reply);
 
         // SUGGEST FIX (issue #201 Phase 2): this reply was asked, on behalf
         // of an error-log entry, to propose an exact patch. If the model
@@ -5568,7 +5769,7 @@
       if (category === 'offline' || category === 'network') bubble.classList.add('offline');
       const textHtml = streamed.text ? `<div class="message-text">${formatMarkdown(streamed.text)}</div>` : '';
       const retry = prompt ? retryButtonHtml(prompt, streamed.failed === 'dropped') : '';
-      bubble.innerHTML = `${agentTimestampHtml(time, streamed.tracePill)}${streamed.traceHtml || ''}${textHtml}<div class="stream-note" role="status"><span class="stream-note-text">${escapeHTML(note)}</span>${retry}</div>${streamed.text ? messageActionsHtml('agent') : ''}`;
+      bubble.innerHTML = `${agentTimestampHtml(time, streamed.tracePill)}${streamed.traceHtml || ''}${textHtml}${toolCardsHtml(streamed.toolResults)}<div class="stream-note" role="status"><span class="stream-note-text">${escapeHTML(note)}</span>${retry}</div>${streamed.text ? messageActionsHtml('agent') : ''}`;
       saveState();
       syncVoiceWave();
       // Echo guard: part of this text may already have been spoken.
