@@ -19,6 +19,10 @@
 - [OpenAPI spec](https://pg1-ai-agent.vercel.app/openapi.json): Machine-readable schema for the REST endpoint.
 - [About](https://pg1-ai-agent.vercel.app/about): Human-readable overview of PG1, its free tools, endpoints and listings.
 
+## Integration guides
+
+- [Example: an alert bot that screens wallets with PG1](https://pg1-ai-agent.vercel.app/docs/crypto-alert-bot): A worked integration that screens wallets with the free check_wallet_sanctions and check_wallet_age tools over A2A, with exact requests and responses, status-based drop/hold/allow rules, caching and rate-limit backoff.
+
 ## Quick start
 
 Call a free tool over MCP (POST, no key needed):

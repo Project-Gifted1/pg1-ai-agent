@@ -22,7 +22,7 @@ test('agent card has the required top-level identity fields', () => {
   assert.equal(card.name, 'PG1 Sovereign Threat Intelligence');
   assert.equal(card.version, '1.14.0');
   assert.equal(card.protocolVersion, '0.3.0');
-  assert.equal(card.documentationUrl, 'https://github.com/Project-Gifted1/pg1-ai-agent#readme');
+  assert.equal(card.documentationUrl, 'https://pg1-ai-agent.vercel.app/docs/crypto-alert-bot');
   assert.equal(card.url, 'https://pg1-ai-agent.vercel.app/api/a2a');
   assert.equal(card.preferredTransport, 'JSONRPC');
 });
