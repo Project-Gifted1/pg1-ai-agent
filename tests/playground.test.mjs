@@ -24,7 +24,7 @@ import {
   createPlaygroundLimiter, validatePlaygroundRequest, PLAYGROUND_TOOLS, PLAYGROUND_DAILY_CAP, PLAYGROUND_TOOL_LIMITS,
   PLAYGROUND_CHAINS, PLAYGROUND_WINDOW_MS, MESSAGES, NOTES
 } from '../lib/playground.mjs';
-import { keccak256, namehash, isEnsName, resolveEnsName, ENS_REGISTRY } from '../lib/ens.mjs';
+import { namehash, normalizeEnsName, resolveEnsName, ENS_REGISTRY } from '../lib/ens.mjs';
 import { FIXTURE_VALUES } from '../lib/fixtures.mjs';
 import { RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX } from '../lib/x402Config.mjs';
 
@@ -406,16 +406,73 @@ test('result fields that name a data source (attribution, source, messages) are 
 // ---------------------------------------------------------------------------
 // ENS
 
-test('ENS: keccak256 and namehash match the published vectors', () => {
-  const hex = (b) => Buffer.from(b).toString('hex');
-  assert.equal(hex(keccak256('')), 'c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470');
-  assert.equal(hex(keccak256('abc')), '4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45');
-  assert.equal(namehash(''), '0x' + '0'.repeat(64));
+// vitalik.eth and its published address, for the look-alike tests.
+const VITALIK = '0xd8da6bf26964af9d7eed9e03e53415d37aa96045';
+const ZWSP = '\u200B';
+const ZWJ = '\u200D';
+const CYRILLIC_I = '\u0456'; // "і", looks like Latin "i"
+
+test('ENS: names are ENSIP-15 normalised by viem; namehash is viem\'s', () => {
   assert.equal(namehash('eth'), '0x93cdeb708b7545dc668eb9280176169d1c33cfd8ed6f04690a0bcc88a93fc4ae');
   assert.equal(namehash('foo.eth'), '0xde9b09fd7c5f901e23a3f19fecc54828e9c848539801e86591bd9801b019f84f');
-  assert.equal(isEnsName('vitalik.eth'), true);
-  assert.equal(isEnsName('Vitalik.eth'), false, 'already lowercased by the validator');
-  assert.equal(isEnsName('vitalik.com'), false);
+  assert.equal(normalizeEnsName('vitalik.eth'), 'vitalik.eth');
+  assert.equal(normalizeEnsName('  VitaLik.ETH '), 'vitalik.eth', 'mixed case normalises');
+  assert.equal(normalizeEnsName('\u{1F4A9}.eth'), '\u{1F4A9}.eth', 'valid Unicode names are kept');
+  // A zero-width character: ZWJ fails ENSIP-15; ZWSP is something ENSIP-15
+  // would silently drop, and is refused here instead.
+  assert.equal(normalizeEnsName(`vit${ZWJ}alik.eth`), null);
+  assert.equal(normalizeEnsName(`vit${ZWSP}alik.eth`), null);
+  assert.equal(normalizeEnsName(`v${CYRILLIC_I}talik.eth`), null, 'Latin + Cyrillic mixture fails normalisation');
+  for (const bad of ['bad_name.eth', '.eth', 'a..eth', 'vitalik\uFF0Eeth', 'vitalik.com', '0x' + 'ab'.repeat(20), '', null]) {
+    assert.equal(normalizeEnsName(bad), null, JSON.stringify(bad));
+  }
+});
+
+test('ENS through the endpoint: mixed case resolves; zero-width, look-alike and invalid names get the neutral message and never reach a lookup', async () => {
+  const looked = [];
+  // A resolver that only knows the real vitalik.eth.
+  const resolveEns = async (name) => { looked.push(name); return name === 'vitalik.eth' ? VITALIK : null; };
+  const { call, runs } = makeHandler({ resolveEns, run: async (name, args) => ({ address: args.address, chain: args.chain, found: true, first_seen: '2015-08-01T00:00:00Z', status: 'no_flags', reasons: [], checks: [{ source: 'on-chain transfer history', result: 'ok' }] }) });
+
+  const mixed = await call({ tool: 'check_wallet_age', input: 'VitaLik.ETH' });
+  assert.equal(mixed.body.card.subject, VITALIK);
+  assert.deepEqual(mixed.body.card.fields[0], { label: 'ENS name', value: 'vitalik.eth' });
+  assert.deepEqual(looked, ['vitalik.eth']);
+
+  for (const input of [`vit${ZWSP}alik.eth`, `vit${ZWJ}alik.eth`, `v${CYRILLIC_I}talik.eth`, 'bad_name.eth', '.eth']) {
+    const res = await call({ tool: 'check_wallet_sanctions', input });
+    assert.equal(res.statusCode, 400, JSON.stringify(input));
+    assert.equal(res.body.error.message, MESSAGES.wallet);
+    assert.doesNotMatch(JSON.stringify(res.body), new RegExp(VITALIK, 'i'), 'never vitalik\'s address');
+  }
+  assert.deepEqual(looked, ['vitalik.eth'], 'no lookup ran for any rejected name');
+  assert.equal(runs.length, 1);
+});
+
+test('ENS: a Unicode look-alike of vitalik.eth never resolves to vitalik\'s address, even at the resolver', async () => {
+  const realNode = namehash('vitalik.eth').slice(2);
+  const resolver = '0x' + '12'.repeat(20);
+  const word = (addr) => '0x' + '0'.repeat(24) + addr.slice(2);
+  const origFetch = globalThis.fetch;
+  const asked = [];
+  // An RPC that answers only for vitalik.eth's real node.
+  globalThis.fetch = async (url, opts) => {
+    const { to, data } = JSON.parse(opts.body).params[0];
+    asked.push(data);
+    const forReal = data.endsWith(realNode);
+    return { ok: true, json: async () => ({ result: forReal ? word(to === ENS_REGISTRY ? resolver : VITALIK) : '0x' + '0'.repeat(64) }) };
+  };
+  try {
+    const rpc = { rpcUrl: 'https://rpc.example.invalid' };
+    assert.equal(await resolveEnsName('vitalik.eth', rpc), VITALIK);
+    for (const lookalike of [`v${CYRILLIC_I}talik.eth`, `vit${ZWSP}alik.eth`, 'VITALIK.ETH']) {
+      asked.length = 0;
+      assert.equal(await resolveEnsName(lookalike, rpc), null, JSON.stringify(lookalike));
+      assert.equal(asked.length, 0, 'not normalised: no lookup is made at all');
+    }
+  } finally {
+    globalThis.fetch = origFetch;
+  }
 });
 
 test('ENS: resolver then addr() on mainnet; no resolver is "not resolved"; a failed lookup is unavailable', async () => {

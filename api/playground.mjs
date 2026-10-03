@@ -18,7 +18,6 @@
 import crypto from 'node:crypto';
 import { recordToolError } from './mcp.mjs';
 import { createToolExecutor } from '../lib/chatTools.mjs';
-import { buildCheck } from '../lib/responseMeta.mjs';
 import { getRequestIdentifier } from '../lib/freeTier.mjs';
 import { resolveEnsName } from '../lib/ens.mjs';
 import {
@@ -28,7 +27,6 @@ import {
 export const config = { maxDuration: 30 };
 
 const ROUTE = '/api/playground';
-const NAME_SERVICE_SOURCE = 'name service';
 
 function send(res, status, payload, requestId) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -49,14 +47,13 @@ function parseBody(req) {
   return null;
 }
 
-// createPlaygroundHandler({ limiter, resolveEns, executorOptions, record, now })
+// createPlaygroundHandler({ limiter, resolveEns, executorOptions, record })
 // Everything injectable is for tests; the default export uses the real ones.
 export function createPlaygroundHandler({
   limiter = createPlaygroundLimiter(),
   resolveEns = resolveEnsName,
   executorOptions = {},
-  record = recordToolError,
-  now = Date.now
+  record = recordToolError
 } = {}) {
   return async function handler(req, res) {
     if (req.method === 'OPTIONS') {
@@ -86,29 +83,12 @@ export function createPlaygroundHandler({
     }
 
     try {
-      let address = valid.kind === 'address' ? valid.value : null;
-      if (valid.kind === 'ens') {
-        const started = now();
-        const requestId = crypto.randomUUID();
-        const failed = (code, checkResult) => playgroundCard({
-          id: null, name: valid.tool, args: { address: valid.value }, ok: false, code, message: '', status: 'unknown',
-          checks: [buildCheck(NAME_SERVICE_SOURCE, checkResult)], request_id: requestId, ms: Math.max(0, now() - started)
-        });
-        try {
-          address = await resolveEns(valid.value);
-        } catch (err) {
-          const timedOut = !!(err && err.timeout);
-          record(`${ROUTE}:ens`, null, timedOut ? 'ens_timeout' : 'ens_unavailable', timedOut ? 'timeout' : 'upstream', requestId);
-          return send(res, 200, { ok: true, card: failed('unavailable', timedOut ? 'timeout' : 'error') }, requestId);
-        }
-        if (!address) return send(res, 200, { ok: true, card: failed('not_resolved', 'ok') }, requestId);
-      }
-
       // The visitor key, never the raw IP, is what the tool's own limiter
-      // and log see.
-      const execute = createToolExecutor({ role: 'guest', identifier: `playground:${limiter.visitorKey(ip)}`, route: ROUTE, record, ...executorOptions });
-      const outcome = await execute({ id: null, name: valid.tool, args: toolArgs(valid.tool, address, valid) });
-      const card = playgroundCard(outcome, { ensName: valid.kind === 'ens' ? valid.value : null });
+      // and log see. An ENS name is resolved inside the executor, with the
+      // same lookup the chat uses (lib/ens.mjs).
+      const execute = createToolExecutor({ role: 'guest', identifier: `playground:${limiter.visitorKey(ip)}`, route: ROUTE, record, resolveEns, ...executorOptions });
+      const outcome = await execute({ id: null, name: valid.tool, args: toolArgs(valid) });
+      const card = playgroundCard(outcome);
       return send(res, 200, { ok: true, card }, card.request_id);
     } catch (err) {
       const requestId = crypto.randomUUID();

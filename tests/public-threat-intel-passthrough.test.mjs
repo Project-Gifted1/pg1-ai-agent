@@ -256,7 +256,10 @@ test('streamed: the vitalik.eth wallet-age card, its raw JSON, the trace and the
 test('JSON path: the same card in toolResults and the same reply, untouched', async () => {
   installFetch({ calls: [['check_wallet_age', { address: VITALIK }]], finalText: CARD_FINAL, alchemy: vitalikAlchemy });
   const res = makeRes();
-  await chatHandler(makeReq(authed({ prompt: 'how old is vitalik.eth?' })), res);
+  // The operator gives the address with the name, as in the streamed test:
+  // an address the model supplied for a name on its own is refused (see
+  // tests/chat-tools.test.mjs, ENS).
+  await chatHandler(makeReq(authed({ prompt: 'how old is vitalik.eth, 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045?' })), res);
   assert.equal(res.body.reply, CARD_FINAL);
   assert.equal(res.body.toolResults.length, 1);
   const cardJson = JSON.stringify(res.body.toolResults[0]);

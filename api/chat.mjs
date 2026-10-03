@@ -2920,8 +2920,11 @@ export default async function handler(req, res) {
     // PG1_CHAT_TOOL_TIMEOUT_MS overrides the per-call timeout (operations
     // knob; the tests use it to make a hung upstream time out quickly).
     var chatToolTimeoutMs = Number(process.env.PG1_CHAT_TOOL_TIMEOUT_MS) > 0 ? Number(process.env.PG1_CHAT_TOOL_TIMEOUT_MS) : (chatToolPolicyForRole ? chatToolPolicyForRole.timeoutMs : CHAT_TOOL_TIMEOUT_MS);
+    // operatorText: the operator's own message, so an ENS name in it means a
+    // wallet check only runs on an address from a real ENS lookup (or one
+    // the operator wrote), never one the model supplied (lib/chatTools.mjs).
     var runChatTool = chatTools.length
-      ? createToolExecutor({ role: chatToolRole, identifier: clientIp, timeoutMs: chatToolTimeoutMs })
+      ? createToolExecutor({ role: chatToolRole, identifier: clientIp, timeoutMs: chatToolTimeoutMs, operatorText: typeof promptText === 'string' ? promptText : '' })
       : null;
     // Tool results go back to the model, so they get the same backstop as
     // the prompt: no deployment secret value in them.

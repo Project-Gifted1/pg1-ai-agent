@@ -35,6 +35,7 @@ import {
 } from '../lib/chatTools.mjs';
 import { FIXTURE_VALUES, FIXTURE_DELEGATE_ADDRESS } from '../lib/fixtures.mjs';
 import { FAKE } from './fixtures/fake-secrets.mjs';
+import { namehash } from '../lib/ens.mjs';
 
 const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -706,4 +707,104 @@ test('shortenAddress keeps short values and shortens long hex to first 6 and las
   assert.equal(shortenAddress('example.com'), 'example.com');
   assert.equal(shortenAddress('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'), 'e3b0c4…b855');
   assert.equal(shortenAddress(''), '');
+});
+
+// --- ENS: an address for a name only ever comes from a real lookup ----------------------
+
+const VITALIK_ADDR = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
+
+// A mainnet RPC stub that knows one name: `name` -> `address`.
+function ensRoute(name, address) {
+  const node = namehash(name).slice(2);
+  const resolver = '0x' + '12'.repeat(20);
+  const word = (a) => '0x' + '0'.repeat(24) + a.slice(2).toLowerCase();
+  return ['eth-mainnet.g.alchemy.com', (u, o, body) => {
+    const { to, data } = body.params[0];
+    const known = data.endsWith(node);
+    const result = !known ? '0x' + '0'.repeat(64) : to === '0x00000000000c2e074ec69a0dfb2997ba6c7d2e1e' ? word(resolver) : word(address);
+    return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result }));
+  }];
+}
+
+// The main core in rounds: round N (N function responses so far) answers
+// with rounds[N] - a list of calls, or a string for the final text.
+function geminiRounds(rounds) {
+  const answer = (body) => {
+    const n = (body.contents || []).reduce((k, c) => k + (c.parts || []).filter((p) => p.functionResponse).length, 0);
+    const r = rounds[Math.min(n, rounds.length - 1)];
+    return typeof r === 'string' ? geminiText(r) : geminiCalls(r);
+  };
+  return [
+    ['streamGenerateContent', (u, o, body) => new Response(sseBody([answer(body)]))],
+    ['generateContent', (u, o, body) => new Response(JSON.stringify(answer(body)), { headers: { 'Content-Type': 'application/json' } })]
+  ];
+}
+
+test('"check wallet age for vitalik.eth on Base": an address the model supplies from memory is refused; the name is resolved by a real ENS lookup', async () => {
+  process.env.ALCHEMY_API_KEY = 'stub-alchemy-key';
+  // The real lookup is stubbed to answer with a fixture wallet, so the check
+  // itself is a fixture and no chain is queried.
+  const calls = installFetch([
+    ensRoute('vitalik.eth', WALLET.CLEAN),
+    ...geminiRounds([
+      [['check_wallet_age', { address: VITALIK_ADDR, chain: 'base' }]], // from the model's memory
+      [['check_wallet_age', { address: 'vitalik.eth', chain: 'base' }]], // the name, as told
+      'vitalik.eth resolved to the address on the card; first seen in 2023.'
+    ])
+  ]);
+  const res = await run(authed({ prompt: 'check wallet age for vitalik.eth on Base' }));
+  const events = eventsOf(res);
+  assert.equal(events[events.length - 1].type, 'done');
+
+  // Round 1: refused before any lookup, and the model is told why.
+  const gem = geminiRequests(calls);
+  assert.match(gem[0].body.systemInstruction.parts[0].text, /pass the name itself, exactly as written, as the address/);
+  const refused = gem[1].body.contents[2].parts[0].functionResponse.response;
+  assert.equal(refused.error, true);
+  assert.equal(refused.code, 'unverified_address');
+  assert.match(refused.message, /vitalik\.eth/);
+  assert.ok(!calls.filter((c) => !c.url.includes('generativelanguage')).some((c) => JSON.stringify(c.body || {}).toLowerCase().includes(VITALIK_ADDR.slice(2).toLowerCase())), 'the remembered address never reaches any data upstream');
+  assert.ok(!calls.some((c) => c.url.includes('base-mainnet')), 'no chain was queried for it');
+
+  // Round 2: the name went through the ENS registry and its resolver.
+  const ens = calls.filter((c) => c.url.includes('eth-mainnet.g.alchemy.com'));
+  assert.deepEqual(ens.map((c) => c.body.params[0].data.slice(0, 10)), ['0x0178b8bf', '0x3b3b57de']);
+  assert.ok(ens.every((c) => c.body.params[0].data.endsWith(namehash('vitalik.eth').slice(2))));
+
+  // The cards: the refused call failed; the real one shows the name and the looked-up address.
+  const cards = events.filter((e) => e.type === 'tool_result');
+  assert.equal(cards.length, 2);
+  assert.equal(cards[0].status, 'failed');
+  assert.equal(cards[0].error.code, 'unverified_address');
+  assert.equal(cards[1].status, 'no_flags');
+  assert.equal(cards[1].subject, WALLET.CLEAN, 'the address the lookup returned, not the remembered one');
+  assert.deepEqual(cards[1].fields[0], { label: 'ENS name', value: 'vitalik.eth' });
+});
+
+test('an address the operator wrote next to a name is checked as written; no name, no restriction', async () => {
+  const both = createToolExecutor({ role: 'operator', log: () => {}, operatorText: `is ${WALLET.CLEAN} the same as alice.eth?`, resolveEns: async () => { throw new Error('no lookup expected'); } });
+  const o1 = await both({ id: 'a', name: 'check_wallet_sanctions', args: { address: WALLET.CLEAN.toUpperCase().replace('0X', '0x') } });
+  assert.equal(o1.ok, true);
+  const other = await both({ id: 'b', name: 'check_wallet_sanctions', args: { address: WALLET.FLAGGED } });
+  assert.equal(other.code, 'unverified_address', 'a different address, while a name is in play, is refused');
+
+  const plain = createToolExecutor({ role: 'operator', log: () => {}, operatorText: `check ${WALLET.FLAGGED}` });
+  assert.equal((await plain({ id: 'c', name: 'check_wallet_sanctions', args: { address: WALLET.FLAGGED } })).status, 'flagged');
+});
+
+test('chat ENS: invalid, look-alike and unresolved names are reported, never replaced by an address', async () => {
+  const looked = [];
+  const execute = createToolExecutor({ role: 'operator', log: () => {}, operatorText: 'check vіtalik.eth', resolveEns: async (n) => { looked.push(n); return null; } });
+  const lookalike = await execute({ id: 'x', name: 'check_wallet_age', args: { address: 'v\u0456talik.eth' } });
+  assert.equal(lookalike.code, 'invalid_ens_name');
+  const zw = await execute({ id: 'y', name: 'check_wallet_age', args: { address: 'vit\u200Balik.eth' } });
+  assert.equal(zw.code, 'invalid_ens_name');
+  assert.deepEqual(looked, [], 'no lookup for a name that fails normalisation');
+  // The look-alike in the operator's message still counts as a name: the
+  // model cannot swap in vitalik's address for it.
+  assert.equal((await execute({ id: 'z', name: 'check_wallet_age', args: { address: VITALIK_ADDR } })).code, 'unverified_address');
+  const missing = await execute({ id: 'w', name: 'check_wallet_age', args: { address: 'Nobody.eth' } });
+  assert.equal(missing.code, 'not_resolved');
+  assert.deepEqual(looked, ['nobody.eth']);
+  assert.equal(summarizeOutcome(missing).subject, 'Nobody.eth');
 });
