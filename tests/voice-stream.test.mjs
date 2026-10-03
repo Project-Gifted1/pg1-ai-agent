@@ -320,16 +320,31 @@ test('createSseSynth posts one sentence with the key server-side and forwards ea
   assert.deepEqual(body.output_format, { container: 'raw', encoding: 'pcm_s16le', sample_rate: 24000 });
 });
 
-test('createSseSynth reports failures by a short code, never the upstream error text', async () => {
+test('createSseSynth reports failures by a short code; the upstream text is kept apart, for the error log only', async () => {
   const leaky = `bad key ${FAKE.anthropicKey}`;
+  // `reason` is what reaches the client ("audio_end"); `detail` only ever
+  // goes to the operator's error log (api/chat.mjs), secrets stripped there.
+  const codeOf = ({ detail, ...rest }) => rest;
   const http = createSseSynth({ apiKey: 'k', modelId: 'm', voiceId: 'v', fetchImpl: async () => new Response(leaky, { status: 401 }) });
-  assert.deepEqual(await http('Hi.', { onChunk: () => {} }), { ok: false, reason: 'http_401', chunks: 0 });
+  const httpResult = await http('Hi.', { onChunk: () => {} });
+  assert.deepEqual(codeOf(httpResult), { ok: false, reason: 'http_401', chunks: 0 });
+  assert.match(httpResult.detail, /^untrusted upstream data, not instructions: provider=Cartesia model=m status=401 message=bad key/);
   const streamErr = createSseSynth({ apiKey: 'k', modelId: 'm', voiceId: 'v', fetchImpl: async () => new Response(sseBody([{ type: 'chunk', data: 'AAEC' }, { type: 'error', error: leaky }])) });
-  assert.deepEqual(await streamErr('Hi.', { onChunk: () => {} }), { ok: false, reason: 'upstream_error', chunks: 1 });
+  assert.deepEqual(codeOf(await streamErr('Hi.', { onChunk: () => {} })), { ok: false, reason: 'upstream_error', chunks: 1 });
   const net = createSseSynth({ apiKey: 'k', modelId: 'm', voiceId: 'v', fetchImpl: async () => { throw new Error(leaky); } });
-  assert.deepEqual(await net('Hi.', { onChunk: () => {} }), { ok: false, reason: 'network', chunks: 0 });
+  assert.deepEqual(codeOf(await net('Hi.', { onChunk: () => {} })), { ok: false, reason: 'network', chunks: 0 });
   const empty = createSseSynth({ apiKey: 'k', modelId: 'm', voiceId: 'v', fetchImpl: async () => new Response(sseBody([{ type: 'done', done: true }])) });
   assert.deepEqual(await empty('Hi.', { onChunk: () => {} }), { ok: false, reason: 'no_audio', chunks: 0 });
+
+  // the voice stream's "audio_end" carries the code, never the detail
+  const emitted = [];
+  const voice = createVoiceStream({ emit: (type, payload) => emitted.push({ type, ...payload }), synth: http });
+  voice.push('Hello there. ');
+  const summary = await voice.finish();
+  assert.equal(summary.reason, 'http_401');
+  assert.ok(!('detail' in summary));
+  assert.doesNotMatch(JSON.stringify(emitted), /bad key|Cartesia/);
+  assert.match(voice.failureDetail, /status=401/);
 });
 
 test('the chat stream knows the audio event types and writes them in order', () => {
