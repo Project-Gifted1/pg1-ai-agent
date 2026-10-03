@@ -199,6 +199,8 @@ Source of truth: `lib/reasonCodes.mjs`.
 
 ## Test your integration
 
+<!-- This section is published as the public page /docs/testing (public/docs/testing/index.html): after editing it, run npm run docs:build. Keep it free of repo-relative links and provider names. The fixture values, the reasoning behind each, and the table rows below come from lib/fixtures.mjs. -->
+
 Every MCP tool that can flag something has three fixed, made-up fixture inputs that always return the same answer: one **FLAGGED**, one **CLEAN** and one **UNKNOWN**. `check_wallet_age` also has a fourth, **DELEGATED**. Use them to test your integration's happy path, its "flagged" path and its skip/retry path without spending anything or depending on live data.
 
 - **Always free**, for every caller: no licence key, no `x-free-tier` header, no x402 payment, no rate-limit usage. This applies to the paid tools too.
@@ -206,8 +208,10 @@ Every MCP tool that can flag something has three fixed, made-up fixture inputs t
 - **UNKNOWN is exactly what a real upstream failure returns for that tool**, so you can test your skip path. For `check_wallet_age` that is the `upstream_unavailable` isError result, never `found: false`.
 - **For `check_domain_age`, always check `status` before `found`: `found: false` with `status: "unknown"` means the lookup did not complete, not that the domain is new.**
 - **Exact values only.** The only normalisation is what the tool already does itself: lowercasing a `0x` address or hostname, uppercasing a CVE id, reducing a domain/URL to its registrable domain. Anything else is treated as a real input, even one character off, so `www.pg1-test-flagged.invalid` is a real hostname lookup.
-- **Every value is reserved or synthetic**, so none can belong to a real target: `.invalid` domains (RFC 2606/6761), documentation IP ranges (RFC 5737 `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`; RFC 3849 `2001:db8::/32`), `CVE-0000-*` ids (the CVE programme started in 1999) and `0x` addresses that spell `pg1-test-fixture` in hex. The reasoning for each is in [`lib/fixtures.mjs`](lib/fixtures.mjs), which is also the single source for this table and the tests.
+- **Every value is reserved or synthetic**, so none can belong to a real target: `.invalid` domains (RFC 2606/6761), documentation IP ranges (RFC 5737 `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`; RFC 3849 `2001:db8::/32`), `CVE-0000-*` ids (the CVE programme started in 1999) and `0x` addresses that spell `pg1-test-fixture` in hex.
 - `check_wallet_age` has no age threshold. Its FLAGGED fixture is a wallet with no history (`found: false`, `WALLET_NO_HISTORY`) and its CLEAN fixture is an old wallet with a fixed `first_seen`. Its DELEGATED fixture is an old wallet with an EIP-7702 delegation: `delegated: true`, a synthetic `delegate_address` (also spelling `pg1-test-fixture` in hex) and reason `WALLET_DELEGATED` with `status: "no_flags"`, because that code is informational. Like a real answer, it has two `checks` entries (transfer history, then the delegation check), both `source: "fixture"` and `result: "ok"`. The other fixtures report `delegated: false`. `chain` is optional and is echoed back; an unsupported chain is still an `invalid_chain` error.
+
+### Fixture table
 
 | Tool | Fixture | Arguments | Expected result |
 |---|---|---|---|
@@ -216,7 +220,7 @@ Every MCP tool that can flag something has three fixed, made-up fixture inputs t
 | `check_wallet_sanctions` | UNKNOWN | `{"address":"0x7067312d746573742d6669787475726500000003"}` | HTTP 503, JSON-RPC error -32003 "Sanctions data temporarily unavailable, please retry." |
 | `check_domain_age` | FLAGGED | `{"domain":"pg1-test-flagged.invalid"}` | found: true, age_days 3, newly_registered: true, status "flagged", reason DOMAIN_NEWLY_REGISTERED_30D |
 | `check_domain_age` | CLEAN | `{"domain":"pg1-test-clean.invalid"}` | found: true, registration_date 2000-01-01, status "no_flags" |
-| `check_domain_age` | UNKNOWN | `{"domain":"pg1-test-unknown.invalid"}` | found: false, reason_code "timeout", status "unknown" (what a real RDAP timeout returns) |
+| `check_domain_age` | UNKNOWN | `{"domain":"pg1-test-unknown.invalid"}` | found: false, reason_code "timeout", status "unknown" (what a real registration-lookup timeout returns) |
 | `check_hostname_reputation` | FLAGGED | `{"hostname":"pg1-test-flagged.invalid"}` | verdict "listed" (match_type "exact"), status "flagged", reason HOSTNAME_PHISHING_LISTED |
 | `check_hostname_reputation` | CLEAN | `{"hostname":"pg1-test-clean.invalid"}` | verdict "not_listed", status "no_flags" |
 | `check_hostname_reputation` | UNKNOWN | `{"hostname":"pg1-test-unknown.invalid"}` | HTTP 503, JSON-RPC error -32003 "Phishing domain list temporarily unavailable, please retry." |
@@ -232,7 +236,7 @@ Every MCP tool that can flag something has three fixed, made-up fixture inputs t
 | `get_ioc_batch` | UNKNOWN | `{"values":["2001:db8::3"]}` | HTTP 503, JSON-RPC error -32003 "Threat data temporarily unavailable, please retry." |
 | `get_cve_details` | FLAGGED | `{"cve_id":"CVE-0000-0001"}` | cisa_kev.is_known_exploited: true, status "flagged", reason CVE_KNOWN_EXPLOITED_KEV (free, no payment) |
 | `get_cve_details` | CLEAN | `{"cve_id":"CVE-0000-0002"}` | cisa_kev.is_known_exploited: false, status "no_flags" |
-| `get_cve_details` | UNKNOWN | `{"cve_id":"CVE-0000-0003"}` | exploit-score and KEV checks "error", epss null, status "unknown" |
+| `get_cve_details` | UNKNOWN | `{"cve_id":"CVE-0000-0003"}` | exploit-score and KEV checks "error", exploit score null, status "unknown" |
 | `get_cve_batch` | FLAGGED | `{"cve_ids":["CVE-0000-0001"]}` | one KEV-listed result, status "flagged", reason CVE_KNOWN_EXPLOITED_KEV (free, no payment) |
 | `get_cve_batch` | CLEAN | `{"cve_ids":["CVE-0000-0002"]}` | one non-KEV result, status "no_flags" |
 | `get_cve_batch` | UNKNOWN | `{"cve_ids":["CVE-0000-0003"]}` | exploit-score and KEV checks "error", status "unknown" |
@@ -245,6 +249,8 @@ No fixtures exist for `get_threat_indicators` (a bulk feed with no target input)
 **A2A:** the four fixture-bearing free skills (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`) accept the same fixtures on `/api/a2a`. A result comes back as a completed Task. An isError-style UNKNOWN comes back as JSON-RPC error `-32000` with the details in `error.data`. A 503-style UNKNOWN comes back as HTTP 503 with JSON-RPC error `-32010`. These are the same shapes a real failure produces on that endpoint.
 
 **Out of scope:** the REST endpoints (`/api/ioc` and `/api/ioc/context`) have no fixtures. Fixture values sent there are looked up like any other value.
+
+### Examples
 
 FLAGGED, over MCP, with no key:
 
