@@ -16,6 +16,7 @@ import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } 
 import { reportUpstreamFailure, userFacingFailure, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 import { generateImage } from '../lib/imageEngines.mjs';
 import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
+import { CHAT_ROUTES, chooseChatRoute, searchAfterTools, wantsCurrentInfo } from '../lib/chatRoute.mjs';
 
 // ---------------------------------------------------------------------
 // AUTH: timing-safe secret comparison + in-memory per-IP failure lockout
@@ -585,25 +586,28 @@ var GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.6-flash'];
 var ANTHROPIC_MODELS = ['claude-sonnet-5', 'claude-haiku-4-5-20251001'];
 
 // CHAT TOOLS (lib/chatTools.mjs): every model call below takes an optional
-// `toolOpts` = { tools, turns, toolsEnabled }: the MCP tool definitions to
-// offer as functions, the loop's turns so far, and whether the model may
-// call one this round (false on the round that has to answer). Each call
-// returns { text, calls, ... }: `calls` are the function calls the model
-// asked for ([{ id, name, args, provider }]), run by the loop in
-// runToolLoop(). Google Search stays on for the main core; if the Gemini
-// API refuses search and function declarations in one request, the request
-// is retried once without search and that answer is remembered.
-var geminiSearchWithFunctions = true;
-
-export function __resetGeminiToolMemoForTests() {
-  geminiSearchWithFunctions = true;
+// `toolOpts` = { tools, turns, toolsEnabled, onSearchFailure }: the MCP tool
+// definitions to offer as functions, the loop's turns so far, and whether
+// the model may call one this round (false on the round that has to answer).
+// Each call returns { text, calls, ... }: `calls` are the function calls the
+// model asked for ([{ id, name, args, provider }]), run by the loop in
+// runToolLoop().
+//
+// SEARCH OR TOOLS (lib/chatRoute.mjs): a Gemini request carries Google
+// Search or PG1's function declarations, never both (the API refuses the
+// pair with a 400). A request with tools in toolOpts is a tools-route
+// request: declarations only. Any other request is a search-route request:
+// Google Search only. If Gemini rejects search on a request, the failure
+// goes to the error log under this message's request ID
+// (toolOpts.onSearchFailure) and that one request is retried without search;
+// nothing is remembered, so the next message asks for search again.
+function geminiDeclarations(toolOpts) {
+  return (toolOpts && toolOpts.tools && toolOpts.tools.length) ? toGeminiFunctionDeclarations(toolOpts.tools) : null;
 }
 
-function geminiTools(declarations) {
-  var tools = [];
-  if (!declarations || geminiSearchWithFunctions) tools.push({ google_search: {} });
-  if (declarations) tools.push({ functionDeclarations: declarations });
-  return tools;
+function geminiTools(declarations, withSearch) {
+  if (declarations) return [{ functionDeclarations: declarations }];
+  return withSearch ? [{ google_search: {} }] : undefined;
 }
 
 function geminiToolConfig(declarations, toolsEnabled) {
@@ -611,8 +615,16 @@ function geminiToolConfig(declarations, toolsEnabled) {
   return { functionCallingConfig: { mode: toolsEnabled === false ? 'NONE' : 'AUTO' } };
 }
 
-function isGeminiToolComboError(status, declarations, errText) {
-  return status === 400 && !!declarations && geminiSearchWithFunctions && /tool/i.test(String(errText || ''));
+// A 400/403 on a search request that names the search tool or grounding:
+// search itself was refused, not the model call.
+function isGeminiSearchRejection(status, withSearch, errText) {
+  return !!withSearch && (status === 400 || status === 403) && /search|grounding|tool/i.test(String(errText || ''));
+}
+
+function reportSearchFailure(toolOpts, model, status, errText) {
+  if (toolOpts && typeof toolOpts.onSearchFailure === 'function') {
+    try { toolOpts.onSearchFailure(`[${model}] ${status}: ${String(errText || '').substring(0, 150)}`); } catch (e) {}
+  }
 }
 
 function anthropicToolFields(toolOpts) {
@@ -632,7 +644,8 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
 
   var attemptCount = 0;
   var watchdogFired = false;
-  var declarations = (toolOpts && toolOpts.tools && toolOpts.tools.length) ? toGeminiFunctionDeclarations(toolOpts.tools) : null;
+  var declarations = geminiDeclarations(toolOpts);
+  var withSearch = !declarations;
   var contents = geminiContents(promptText + contextData, mediaParts, (toolOpts && toolOpts.turns) || []);
 
   for (var i = 0; i < geminiKeys.length && !watchdogFired; i++) {
@@ -663,7 +676,7 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: sysInstruction }] },
             contents: contents,
-            tools: geminiTools(declarations),
+            tools: geminiTools(declarations, withSearch),
             toolConfig: geminiToolConfig(declarations, toolOpts && toolOpts.toolsEnabled),
             generationConfig: { maxOutputTokens: 4096, temperature: 0.7 }
           }),
@@ -685,8 +698,9 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
         } else {
           var errText = await res.text();
           lastError = `[${model} on ${apiVersion}] ${res.status}: ${errText.substring(0, 150)}`;
-          if (isGeminiToolComboError(res.status, declarations, errText)) {
-            geminiSearchWithFunctions = false;
+          if (isGeminiSearchRejection(res.status, withSearch, errText)) {
+            reportSearchFailure(toolOpts, model, res.status, errText);
+            withSearch = false;
             j--;
           }
         }
@@ -834,7 +848,8 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
   var RETRY_RESERVE_MS = 12000;
   var ERROR_RETRY_CAP_MS = 20000;
   var attemptCount = 0;
-  var declarations = (toolOpts && toolOpts.tools && toolOpts.tools.length) ? toGeminiFunctionDeclarations(toolOpts.tools) : null;
+  var declarations = geminiDeclarations(toolOpts);
+  var withSearch = !declarations;
   var contents = geminiContents(promptText, mediaParts, (toolOpts && toolOpts.turns) || []);
 
   for (var i = 0; i < geminiKeys.length; i++) {
@@ -865,7 +880,7 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: sysInstruction }] },
             contents: contents,
-            tools: geminiTools(declarations),
+            tools: geminiTools(declarations, withSearch),
             toolConfig: geminiToolConfig(declarations, toolOpts && toolOpts.toolsEnabled),
             generationConfig: { maxOutputTokens: 4096, temperature: 0.7 }
           }),
@@ -875,8 +890,10 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
         if (!res.ok) {
           var errText = await res.text();
           lastError = `[${model}] ${res.status}: ${errText.substring(0, 150)}`;
-          if (isGeminiToolComboError(res.status, declarations, errText)) {
-            geminiSearchWithFunctions = false;
+          if (isGeminiSearchRejection(res.status, withSearch, errText)) {
+            reportSearchFailure(toolOpts, model, res.status, errText);
+            if (hooks.onSearchFailure) hooks.onSearchFailure();
+            withSearch = false;
             j--;
           }
           continue;
@@ -1028,6 +1045,12 @@ function toolCallBudget(deadlineTs, roleTimeoutMs) {
   return Math.max(1000, Math.min(roleTimeoutMs, deadlineTs - Date.now() - FINAL_ROUND_RESERVE_MS));
 }
 
+// SEARCH OR TOOLS: the one search call after a tools round that ran no
+// check goes to the main core; /core on its own has no web search.
+function searchFallbackPossible(opts) {
+  return opts.activeAction !== 'CLAUDE_CHAT' && opts.geminiKeys.length > 0;
+}
+
 // The step rows for one round's tool calls (streamed path): open a row per
 // call as it starts, close it with the status (or the failure, in the error
 // colour) as it finishes, and send the result card.
@@ -1135,22 +1158,45 @@ async function streamChatReply(stream, opts) {
       : { label: `Could not look at ${imagesLabel}`, result: 'reply failed', failed: true });
   };
   var streamedText = '';
+  var emitText = function (chunk) {
+    closeVision(true);
+    // A later round's text starts a new paragraph after a first round's
+    // lead-in ("Let me check that wallet.").
+    if (streamedText && !/\s$/.test(streamedText) && hooks.newRound) replyScrubber.push('\n\n');
+    hooks.newRound = false;
+    streamedText += chunk;
+    replyScrubber.push(chunk);
+  };
   var hooks = {
     signal: stream.signal,
     onText: function (chunk) {
-      closeVision(true);
-      // A later round's text starts a new paragraph after a first round's
-      // lead-in ("Let me check that wallet.").
-      if (streamedText && !/\s$/.test(streamedText) && hooks.newRound) replyScrubber.push('\n\n');
-      hooks.newRound = false;
-      streamedText += chunk;
-      replyScrubber.push(chunk);
+      // SEARCH OR TOOLS: while `hold` is a list, the first tools-route
+      // round's text waits here; it goes out once that round asks for a
+      // check, and is dropped if the message moves to the search call.
+      if (hooks.hold) {
+        hooks.hold.push(chunk);
+        return;
+      }
+      emitText(chunk);
     },
     onWebSearch: function (queries) {
       stream.step('search', 'Searching the web');
       stream.stepDone('search', { label: 'Searched the web', result: `${queries.length} quer${queries.length === 1 ? 'y' : 'ies'}`, details: queries });
     },
+    // Fixed words only; the upstream detail is in the error log under this
+    // request ID (opts.onSearchFailure).
+    onSearchFailure: function () {
+      if (stream.isOpen('search-failed')) return;
+      stream.step('search-failed', 'Searching the web');
+      stream.stepDone('search-failed', { label: 'Web search unavailable', result: 'answering without it', failed: true });
+    },
+    hold: null,
     newRound: false
+  };
+  var releaseHeld = function () {
+    var held = hooks.hold;
+    hooks.hold = null;
+    (held || []).forEach(emitText);
   };
 
   var modelStep = 'model';
@@ -1160,9 +1206,12 @@ async function streamChatReply(stream, opts) {
   // the trace has always had ("model", "model-fallback"); later rounds are
   // "model-2", "model-2-fallback" and so on.
   var callModel = async function (turns, info) {
-    var suffix = info.round > 1 ? `-${info.round}` : '';
-    var label = info.round > 1 ? 'Writing the reply from the results' : 'Writing the reply';
-    var toolOpts = opts.tools && opts.tools.length ? { tools: opts.tools, turns: turns, toolsEnabled: info.toolsEnabled } : null;
+    var suffix = info.stepSuffix || (info.round > 1 ? `-${info.round}` : '');
+    var label = info.round > 1 ? 'Writing the reply from the results' : info.stepSuffix ? 'Writing the reply with web search' : 'Writing the reply';
+    // SEARCH OR TOOLS: the checks on a tools-route round, search otherwise.
+    var toolOpts = (!info.search && opts.tools && opts.tools.length)
+      ? { tools: opts.tools, turns: turns, toolsEnabled: info.toolsEnabled, onSearchFailure: opts.onSearchFailure }
+      : { onSearchFailure: opts.onSearchFailure };
     hooks.newRound = info.round > 1;
     var result;
     if (opts.activeAction === 'CLAUDE_CHAT') {
@@ -1184,6 +1233,7 @@ async function streamChatReply(stream, opts) {
       result = await streamGeminiCore(opts.promptText, opts.sysInstruction, opts.mediaParts, opts.geminiKeys, opts.deadlineTs, hooks, toolOpts);
     }
     var calls = info.toolsEnabled && Array.isArray(result.calls) ? result.calls : [];
+    if (calls.length) releaseHeld();
     if (calls.length && !result.aborted) {
       stream.stepDone(modelStep, roundStepLabels(info.round, calls));
     }
@@ -1191,7 +1241,11 @@ async function streamChatReply(stream, opts) {
   };
 
   var result;
-  if (opts.tools && opts.tools.length && opts.executeTool) {
+  if (opts.route === CHAT_ROUTES.TOOLS && opts.tools && opts.tools.length && opts.executeTool) {
+    // A message that may still move to the search call holds its first
+    // round's text until that round shows whether it runs a check.
+    var mayUseSearch = searchFallbackPossible(opts);
+    hooks.hold = mayUseSearch && wantsCurrentInfo(opts.promptText) ? [] : null;
     result = await runToolLoop({
       callModel: callModel,
       executeTool: function (call) { return opts.executeTool(call, { timeoutMs: toolCallBudget(opts.deadlineTs, opts.toolTimeoutMs || CHAT_TOOL_TIMEOUT_MS) }); },
@@ -1200,11 +1254,20 @@ async function streamChatReply(stream, opts) {
       onOutcome: toolTrace.onOutcome,
       isAborted: function () { return stream.clientGone || stream.signal.aborted; }
     });
-    // The loop's own text is the concatenation of every round; the client
-    // already has it chunk by chunk.
-    result.text = streamedText || result.text;
+    if (mayUseSearch && !stream.clientGone && searchAfterTools(opts.promptText, result) && Date.now() < opts.deadlineTs - 1000) {
+      // No check ran: this message gets its one search call. What the
+      // tools round wrote (held, never shown) is dropped.
+      hooks.hold = null;
+      stream.stepDone(modelStep, { label: 'No check needed', result: 'searching the web instead' });
+      result = await callModel([], { round: 1, toolsEnabled: false, search: true, stepSuffix: '-search' });
+    } else {
+      releaseHeld();
+      // The loop's own text is the concatenation of every round; the client
+      // already has it chunk by chunk.
+      result.text = streamedText || result.text;
+    }
   } else {
-    result = await callModel([], { round: 1, toolsEnabled: false });
+    result = await callModel([], { round: 1, toolsEnabled: false, search: true });
   }
   // The honesty note comes from the outcomes, not the model.
   var note = toolOutcomes.length ? unverifiedNote(toolOutcomes) : '';
@@ -2931,6 +2994,14 @@ export default async function handler(req, res) {
     var executeChatTool = runChatTool
       ? function (call, o) { return Promise.resolve(runChatTool(call, o)).then(function (outcome) { return stripModelContext(outcome, envSecrets); }); }
       : null;
+    // SEARCH OR TOOLS (lib/chatRoute.mjs): this message's Gemini requests
+    // carry either PG1's checks or Google Search, never both. The reason is
+    // a fixed word, never text from the message.
+    var chatRoute = chooseChatRoute(typeof promptText === 'string' ? promptText : '', { hasTools: !!executeChatTool });
+    console.log(`[chat] route=${chatRoute.route} reason=${chatRoute.reason} request_id=${requestTraceId}`);
+    // A refused search is logged under this request ID every time it
+    // happens; the next message asks for search again.
+    var onSearchFailure = function (detail) { reportFailure('search_failed', detail); };
     // IDENTITY: the reply to "what powers you?" is chosen here, in code,
     // from the current conversation the client sent (reqBody.history): the
     // earlier assistant messages that already carry the branded line are
@@ -3011,6 +3082,8 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
         reportFailure: reportFailure,
         tools: chatTools,
         executeTool: executeChatTool,
+        route: chatRoute.route,
+        onSearchFailure: onSearchFailure,
         maxToolCalls: chatToolPolicyForRole ? chatToolPolicyForRole.maxCalls : CHAT_TOOL_MAX_CALLS,
         toolTimeoutMs: chatToolTimeoutMs,
         // PG1 VOICE: speak the reply as it streams. Needs the voice toggle
@@ -3038,19 +3111,25 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
     }
 
     var roundOpts = { activeAction: activeAction, promptText: promptText, sysInstruction: sysInstruction, mediaParts: mediaParts, anthropicKey: anthropicKey, geminiKeys: geminiKeys, deadlineTs: deadlineTs };
+    var searchOpts = { onSearchFailure: onSearchFailure };
     var jsonToolOutcomes = [];
     var modelFetchResult;
-    if (chatTools.length && executeChatTool) {
+    if (chatRoute.route === CHAT_ROUTES.TOOLS && chatTools.length && executeChatTool) {
       // CHAT TOOLS on the JSON path: the same loop as the streamed reply,
       // without a trace; the cards go out in `toolResults` on the reply.
       modelFetchResult = await runToolLoop({
-        callModel: function (turns, info) { return fetchModelRound(roundOpts, { tools: chatTools, turns: turns, toolsEnabled: info.toolsEnabled }); },
+        callModel: function (turns, info) { return fetchModelRound(roundOpts, { tools: chatTools, turns: turns, toolsEnabled: info.toolsEnabled, onSearchFailure: onSearchFailure }); },
         executeTool: function (call) { return executeChatTool(call, { timeoutMs: toolCallBudget(deadlineTs, chatToolTimeoutMs) }); },
         maxCalls: chatToolPolicyForRole.maxCalls,
         onOutcome: function (outcome) { jsonToolOutcomes.push(outcome); }
       });
+      // No check ran: the one search call for this message.
+      if (searchFallbackPossible(roundOpts) && searchAfterTools(promptText, modelFetchResult) && Date.now() < deadlineTs - 1000) {
+        var searched = await fetchModelRound(roundOpts, searchOpts);
+        if (searched.text || !modelFetchResult.text) modelFetchResult = searched;
+      }
     } else {
-      modelFetchResult = await fetchModelRound(roundOpts, null);
+      modelFetchResult = await fetchModelRound(roundOpts, searchOpts);
     }
 
     // ERROR TEXT BRANDING: a failed reply names no provider, model or
