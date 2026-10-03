@@ -1,11 +1,14 @@
 /**
- * Builds the public integration-guide pages from their Markdown sources.
+ * Builds the public /docs pages from their sources.
  *
  *   docs/integrations/crypto-alert-bot.md -> public/docs/crypto-alert-bot/index.html
+ *   lib/reasonCodes.mjs                   -> public/docs/reason-codes/index.html
+ *   README.md "## Test your integration"  -> public/docs/testing/index.html
  *
- * The Markdown file is the single source of truth; the HTML is generated
- * and committed. tests/docs-pages.test.mjs fails if the committed page and
- * the Markdown drift apart, so after editing a guide run:
+ * The source is the single source of truth; the HTML is generated and
+ * committed. tests/docs-pages.test.mjs and tests/public-reference-pages.test.mjs
+ * fail if a committed page and its source drift apart, so after editing a
+ * guide, the reason codes or that README section run:
  *
  *   npm run docs:build
  *
@@ -22,6 +25,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { REASON_CODES, INFORMATIONAL_REASON_CODES, INCOMPLETE_REASON_CODES } from '../lib/reasonCodes.mjs';
+import { TEST_FIXTURES } from '../lib/fixtures.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BASE_URL = 'https://pg1-ai-agent.vercel.app';
@@ -32,8 +37,87 @@ export const DOC_PAGES = [
     output: 'public/docs/crypto-alert-bot/index.html',
     route: '/docs/crypto-alert-bot',
     description: 'Integration guide: a Telegram alert bot in Node that screens wallets with PG1\'s free wallet sanctions and wallet age checks over A2A before it posts an alert.'
+  },
+  {
+    source: 'lib/reasonCodes.mjs',
+    output: 'public/docs/reason-codes/index.html',
+    route: '/docs/reason-codes',
+    kicker: 'PG1 reference',
+    editHint: 'edit lib/reasonCodes.mjs',
+    description: 'Reference: every machine-readable reason code PG1 tool responses can carry, what each means, and how each affects the response status.',
+    markdown: reasonCodesMarkdown
+  },
+  {
+    source: 'README.md',
+    section: 'Test your integration',
+    output: 'public/docs/testing/index.html',
+    route: '/docs/testing',
+    kicker: 'PG1 reference',
+    editHint: 'edit the "Test your integration" section of README.md',
+    description: 'Reference: fixed test inputs for every PG1 tool that can flag something, free for every caller, with the exact result each returns over MCP and A2A.'
   }
 ];
+
+// The reason-code list as Markdown, straight from lib/reasonCodes.mjs: one
+// table row per code, in the file's order, with its kind and meaning.
+export function reasonCodeKind(code) {
+  if (INFORMATIONAL_REASON_CODES.includes(code)) return 'Informational';
+  if (INCOMPLETE_REASON_CODES.includes(code)) return 'Incomplete';
+  return 'Warning';
+}
+
+export function reasonCodesMarkdown() {
+  const withFixture = new Set(TEST_FIXTURES.flatMap((f) => f.expected.reason_codes));
+  const codeList = (codes, conj) => codes.map((c) => `\`${c}\``).join(', ').replace(/, (?=[^,]*$)/, ` ${conj} `);
+  const covered = Object.keys(REASON_CODES).filter((c) => withFixture.has(c));
+  const uncovered = Object.keys(REASON_CODES).filter((c) => !withFixture.has(c));
+  const rows = Object.entries(REASON_CODES).map(([code, meaning]) => `| \`${code}\` | ${reasonCodeKind(code)} | ${meaning} |`);
+  return [
+    '# Reason codes',
+    '',
+    'Every free tool response, and every paid MCP and A2A response, carries `reasons: [{ code, message }]`: zero or more machine-readable codes from the list below. It is empty when nothing is flagged.',
+    '',
+    '## Codes',
+    '',
+    '| Code | Kind | Meaning |',
+    '|---|---|---|',
+    ...rows,
+    '',
+    '## How codes affect status',
+    '',
+    '- **Warning** codes make `status` `"flagged"`.',
+    '- **Informational** codes report a fact and never change `status` on their own.',
+    '- **Incomplete** codes mean a check did not complete: they make `status` `"unknown"`, never `"flagged"`. A warning code alongside one still flags.',
+    '- With no warning or incomplete code, `status` is `"unknown"` if any source needed for the answer timed out, errored or was skipped, and `"no_flags"` otherwise. A check that did not complete is never reported as `"no_flags"`.',
+    '',
+    '## Stability',
+    '',
+    '- Codes are permanent: once shipped, a code is never removed or renamed. New codes are only added.',
+    '- A response\'s `message` can be more specific than the meaning above (for example, it may include a count). Match on `code`, never on `message`.',
+    '',
+    '## Test inputs',
+    '',
+    `Fixed test inputs, free for every caller, are listed on [Test your integration](/docs/testing). They return ${codeList(covered, 'and')} without a live lookup.` +
+      (uncovered.length ? ` No test input returns ${codeList(uncovered, 'or')}.` : ''),
+    ''
+  ].join('\n');
+}
+
+// One "## " section of a Markdown file, as a page of its own: the section
+// heading becomes the title, every heading under it moves up one level, and
+// HTML comments (notes for the people editing the file) are left out.
+export function markdownSection(md, heading) {
+  const lines = md.replace(/\r\n/g, '\n').split('\n');
+  const start = lines.indexOf(`## ${heading}`);
+  if (start === -1) throw new Error(`No "## ${heading}" section`);
+  let end = lines.findIndex((l, i) => i > start && /^## /.test(l));
+  if (end === -1) end = lines.length;
+  let fenced = false;
+  return lines.slice(start, end).map((l) => {
+    if (/^```/.test(l)) fenced = !fenced;
+    return !fenced && /^#{2,4} /.test(l) ? l.slice(1) : l;
+  }).join('\n').replace(/^<!--[\s\S]*?-->\n?/gm, '');
+}
 
 export function escapeHtml(s) {
   return String(s)
@@ -178,7 +262,7 @@ export function renderPage(md, page) {
   const toc = headings.filter((h) => h.level === 2)
     .map((h) => `      <li><a href="#${h.id}">${h.html}</a></li>`).join('\n');
   return `<!DOCTYPE html>
-<!-- Generated by scripts/build-docs.mjs from ${page.source}. Do not edit by hand: edit the Markdown and run npm run docs:build. -->
+<!-- Generated by scripts/build-docs.mjs from ${page.source}. Do not edit by hand: ${page.editHint || 'edit the Markdown'} and run npm run docs:build. -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -199,7 +283,7 @@ export function renderPage(md, page) {
   <header class="doc-header">
     ${SHIELD}
     <div>
-      <p class="kicker">PG1 integration guide</p>
+      <p class="kicker">${escapeHtml(page.kicker || 'PG1 integration guide')}</p>
       <h1>${escapeHtml(title)}</h1>
     </div>
   </header>
@@ -225,8 +309,14 @@ ${html}
 `;
 }
 
+export function pageMarkdown(page, root = ROOT) {
+  if (page.markdown) return page.markdown();
+  const md = fs.readFileSync(path.join(root, page.source), 'utf8');
+  return page.section ? markdownSection(md, page.section) : md;
+}
+
 export function buildPage(page, root = ROOT) {
-  return renderPage(fs.readFileSync(path.join(root, page.source), 'utf8'), page);
+  return renderPage(pageMarkdown(page, root), page);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
