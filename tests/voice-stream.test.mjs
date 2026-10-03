@@ -35,6 +35,7 @@ import {
   SPEECH_PLACEHOLDERS, VOICE_AUDIO_FORMAT, CARTESIA_SSE_URL
 } from '../lib/voiceStream.mjs';
 import { FAKE, bearerHeader, postgresUrl } from './fixtures/fake-secrets.mjs';
+import { SECRET_WITHHELD, SECRET_WITHHELD_NOTE } from '../lib/secretGuard.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(__dirname, '../public/index.html'), 'utf-8');
@@ -463,12 +464,15 @@ test('voice on: audio streams in order before done, the TTS key never leaves the
 
   const ttsCalls = calls.filter((c) => c.url.includes('api.cartesia.ai'));
   const transcripts = ttsCalls.map((c) => JSON.parse(c.body).transcript);
+  // The reply secret guard (lib/secretGuard.mjs) withholds the token before
+  // the voice ever sees the text, and the note under the reply is spoken too.
   assert.deepEqual(transcripts, [
     'Sure, here is the status.',
-    `The PR is at a link to github.com and your token ${SPEECH_PLACEHOLDERS.secret} is set.`,
+    'The PR is at a link to github.com and your token withheld is set.',
     SPEECH_PLACEHOLDERS.code,
     SPEECH_PLACEHOLDERS.requestId,
-    'All done!'
+    'All done!',
+    SECRET_WITHHELD_NOTE
   ]);
   assertNoSecrets(transcripts, 'TTS transcripts');
   assert.ok(ttsCalls.every((c) => c.headers['X-API-Key'] === FAKE.longToken), 'key sent to the TTS provider only');
@@ -476,8 +480,10 @@ test('voice on: audio streams in order before done, the TTS key never leaves the
 
   assert.ok(!calls.some((c) => /\/storage\/v1\/object\/pg1-vault\//.test(c.url) && c.method === 'POST'), 'no audio uploaded to pg1-vault');
   assert.ok(!calls.some((c) => c.url.includes('tts_')), 'no tts_ file written anywhere');
-  // The reply text itself is unchanged by speech filtering.
-  assert.equal(events.filter((e) => e.type === 'text').map((e) => e.text).join(''), REPLY_WITH_EVERYTHING.join(''));
+  // The reply text is unchanged by speech filtering; only the secret guard
+  // touched it (the token and the key in the code block are withheld).
+  const expectedText = REPLY_WITH_EVERYTHING.join('').replace(FAKE.githubPat, SECRET_WITHHELD).replace(FAKE.anthropicKey, SECRET_WITHHELD) + '\n\n' + SECRET_WITHHELD_NOTE;
+  assert.equal(events.filter((e) => e.type === 'text').map((e) => e.text).join(''), expectedText);
 });
 
 test('voice off (no speak flag): no TTS calls and no audio events, exactly as before', async () => {

@@ -38,6 +38,7 @@ import {
   base64ByteLength, collectImageInputs, describeSkipped, fileExtensionFor, imageInputDirective, isImageMime, redactLeakedSecrets
 } from '../lib/visionInput.mjs';
 import { FAKE } from './fixtures/fake-secrets.mjs';
+import { SECRET_WITHHELD, SECRET_WITHHELD_NOTE } from '../lib/secretGuard.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -419,10 +420,11 @@ test('the same on the JSON path; a clean reply gets no warning; without images t
   const clean = await send(authed({ prompt: 'what is on screen?', multiFiles: [jpeg()] }), { reply: 'A login form with two fields.' });
   assert.equal(clean.res.jsonBody.reply, 'A login form with two fields.');
   __clearAuthRateLimitState();
-  // No image attached: the reply is the model's own words (the operator may
-  // have pasted a token to ask about it), as before this change.
+  // No image attached: the image backstop does not run, but the reply
+  // secret guard on every reply (lib/secretGuard.mjs) still withholds a
+  // secret-shaped string, with its own note rather than the image warning.
   const noImage = await send(authed({ prompt: 'is this a valid token format?' }), { reply: `Yes, ${FAKE.githubPat} has the GitHub token shape.` });
-  assert.equal(noImage.res.jsonBody.reply, `Yes, ${FAKE.githubPat} has the GitHub token shape.`);
+  assert.equal(noImage.res.jsonBody.reply, `Yes, ${SECRET_WITHHELD} has the GitHub token shape.\n\n${SECRET_WITHHELD_NOTE}`);
 });
 
 test('the memory save keeps the redacted reply, never the key', async () => {
