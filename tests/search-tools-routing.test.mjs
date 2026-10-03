@@ -403,3 +403,74 @@ test('a failed reply on either route is one neutral sentence with the request ID
     assert.match(res.jsonBody.reply, /^Execution failed\. The reply could not be generated right now\. Please try again\. Request ID: \w+$/, prompt);
   }
 });
+
+// --- voice on both routes -------------------------------------------------------------
+
+function cartesiaRoute(spoken) {
+  return ['api.cartesia.ai/tts/sse', (u, o, body) => {
+    spoken.push(body.transcript);
+    return new Response(sseBody([{ type: 'chunk', data: Buffer.from('pcm').toString('base64') }, { type: 'done', done: true }]));
+  }];
+}
+
+test('voice, search route: the searched answer is spoken, then audio_end before done; the chip is never read out', async () => {
+  process.env.CARTESIA_API_KEY = FAKE.longToken;
+  const spoken = [];
+  installFetch([cartesiaRoute(spoken), ...geminiStub({ search: () => grounded('EIP-7702 shipped with Pectra.'), tools: () => assert.fail('no tools') })]);
+  const events = eventsOf(await run(authed({ prompt: 'latest news on EIP-7702', speak: true })));
+  const types = events.map((e) => e.type);
+  assert.equal(types[types.length - 1], 'done');
+  assert.ok(types.includes('audio'));
+  assert.ok(types.indexOf('audio_end') < types.lastIndexOf('done'));
+  assert.equal(events[events.length - 1].searchEntryPoint, CHIP);
+  const said = spoken.join(' ');
+  assert.match(said, /EIP-7702 shipped with Pectra\./);
+  assert.ok(!/Search Suggestions|<style|google\.com/i.test(said), 'the chip is not spoken');
+  assert.equal(events.find((e) => e.type === 'step_done' && e.id === 'voice').label, 'Spoke the reply');
+});
+
+test('voice, mixed message with no check: only the search answer is spoken, never the dropped tools round', async () => {
+  process.env.CARTESIA_API_KEY = FAKE.longToken;
+  const spoken = [];
+  installFetch([cartesiaRoute(spoken), ...geminiStub({
+    search: () => grounded('vitalik.eth was in the news this week.'),
+    tools: () => plain('I cannot look up news with my checks.')
+  })]);
+  const events = eventsOf(await run(authed({ prompt: 'what is the latest news about vitalik.eth?', speak: true })));
+  assert.equal(events[events.length - 1].type, 'done');
+  const said = spoken.join(' ');
+  assert.match(said, /vitalik\.eth was in the news this week\./);
+  assert.ok(!/cannot look up news/.test(said), 'the held tools-round text is never spoken');
+});
+
+test('voice, tools route: the spoken summary of the check, not the reply or the domain', async () => {
+  process.env.CARTESIA_API_KEY = FAKE.longToken;
+  const spoken = [];
+  installFetch([cartesiaRoute(spoken), ...geminiStub({
+    search: () => assert.fail('no search'),
+    tools: (body) => (hasResponses(body) ? plain(`${DOMAIN.FLAGGED} is flagged.`) : callsOf([['check_domain_age', { domain: DOMAIN.FLAGGED }]]))
+  })]);
+  const events = eventsOf(await run(authed({ prompt: `how old is ${DOMAIN.FLAGGED}?`, speak: true })));
+  const done = events[events.length - 1];
+  assert.equal(done.type, 'done');
+  const said = spoken.join(' ');
+  assert.match(said, /Domain age .*flagged/i);
+  assert.match(said, /The full result is on screen\./);
+  assert.equal(events.find((e) => e.type === 'step_done' && e.id === 'voice').label, 'Spoke the summary');
+  assert.ok(done.spokenSummary);
+});
+
+test('voice, refused search: the answer without search is still spoken and nothing spoken names the provider', async () => {
+  process.env.CARTESIA_API_KEY = FAKE.longToken;
+  const spoken = [];
+  installFetch([cartesiaRoute(spoken), ...geminiStub({
+    search: (body) => (hasSearch(body) ? new Response('{"error":{"message":"Search Grounding is not supported for gemini-3.8-flash"}}', { status: 400 }) : plain('From what I know, EIP-7702 adds delegation.')),
+    tools: () => assert.fail('no tools')
+  })]);
+  const events = eventsOf(await run(authed({ prompt: 'latest news on EIP-7702', speak: true })));
+  assert.equal(events[events.length - 1].type, 'done');
+  const said = spoken.join(' ');
+  assert.match(said, /EIP-7702 adds delegation/);
+  assert.ok(!/gemini|google|grounding|search/i.test(said));
+  assert.ok(events.some((e) => e.type === 'audio_end'));
+});
