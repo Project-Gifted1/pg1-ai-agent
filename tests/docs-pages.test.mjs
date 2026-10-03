@@ -151,10 +151,10 @@ test('/about has an "Integration guides" line and the /playground footer links t
   assert.match(footerPage, /href="\/about"/);
 });
 
-test('server.json, llms.txt and the agent card do not link the page', () => {
-  for (const rel of ['server.json', 'public/llms.txt', 'public/.well-known/agent-card.json']) {
-    assert.doesNotMatch(read(rel), /docs\/crypto-alert-bot|Integration guides/, rel);
-  }
+// llms.txt, the agent card and openapi.json link the page (see
+// tests/integration-guide-discovery.test.mjs); server.json never does.
+test('server.json does not link the page', () => {
+  assert.doesNotMatch(read('server.json'), /docs\/crypto-alert-bot|Integration guides/);
 });
 
 test('no provider, data-vendor or model names on the page, its CSS or its script', () => {
