@@ -9,7 +9,7 @@ import { logApiError } from '../lib/errorLog.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { collectImageInputs, imageInputDirective, imageCountLabel, describeSkipped, fileExtensionFor, redactLeakedSecrets, SECRET_WARNING, MAX_IMAGES_PER_MESSAGE, MAX_IMAGE_BYTES, MAX_IMAGE_EDGE_PX } from '../lib/visionInput.mjs';
 import { createChatStream, createReplyScrubber, readSseResponse, scrubIdentity, stripTranscriptLabels, wantsChatStream } from '../lib/chatStream.mjs';
-import { identityDirective, spokenReplyDirective } from '../lib/identity.mjs';
+import { identityDirective, identityReplyDirective, identityReplyForHistory, spokenReplyDirective } from '../lib/identity.mjs';
 import { createSseSynth, createVoiceStream, speechTextFor } from '../lib/voiceStream.mjs';
 import { reportUpstreamFailure, userFacingFailure, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
@@ -1100,7 +1100,7 @@ async function streamChatReply(stream, opts) {
   var replyScrubber = createReplyScrubber(function (chunk) {
     stream.text(chunk);
     if (voice && !toolOutcomes.length) voice.push(chunk);
-  }, { redact: opts.redactReply || null });
+  }, { redact: opts.redactReply || null, replacement: opts.identityReply || undefined });
   // VISION: "Looking at N images" opens with the model call that carries
   // them and ticks when the reply starts arriving (the model has read them).
   var imageCount = opts.imageCount || 0;
@@ -2973,9 +2973,17 @@ export default async function handler(req, res) {
     var executeChatTool = chatTools.length
       ? createToolExecutor({ role: chatToolRole, identifier: clientIp, timeoutMs: chatToolTimeoutMs })
       : null;
+    // IDENTITY: the reply to "what powers you?" is chosen here, in code,
+    // from the current conversation the client sent (reqBody.history): the
+    // earlier assistant messages that already carry the branded line are
+    // counted, and the IDENTITY_PRESS_THRESHOLD-th ask onward gets the
+    // escalated reply (lib/identity.mjs). A new or cleared thread sends no
+    // history, so it starts at the first reply again.
+    var identityChoice = identityReplyForHistory(reqBody && reqBody.history);
     var sysInstruction = `You are PG1, the chat assistant of Project-Gifted1's threat-intelligence app, running on Vercel.
 [STRICT DIRECTIVE - GROUNDING & HONESTY]: Be absolutely honest at all times about the actual factual content of your answers. Never lie or fabricate results. Never state system health, uptime, integrity, file counts, pipeline status or runtime details unless that exact value appears in [CONTEXT]; if asked about status, say you cannot verify it here and point the operator to the /status command. The vault file list in [CONTEXT] is capped at 20 entries, so never present its length as a total. Stay completely grounded in the factual reality of the project. We operate an automated cybersecurity architecture deploying GitHub workflows and Supabase vault integration.
 ${identityDirective()}
+${identityReplyDirective(identityChoice)}
 [CAPABILITIES — what you can and cannot do]:
 - You are the operator command centre for Project-Gifted1 (PG1 Sovereign Threat Intelligence). The operator is Gift.
 - Live web search is available on the main core for current facts. Say when an answer comes from search and that figures should be checked. The advanced reasoning core (/claude, long or heavy prompts) has no web search.
@@ -3018,6 +3026,7 @@ ${toolDirectiveText}${spokenDirective}${imageInputDirective(imageCount, imageInp
         imageCount: imageCount,
         imageSkipped: imageInput.skipped,
         redactReply: redactReply,
+        identityReply: identityChoice.reply,
         geminiKeys: geminiKeys,
         anthropicKey: anthropicKey,
         deadlineTs: deadlineTs,
@@ -3073,7 +3082,7 @@ ${toolDirectiveText}${spokenDirective}${imageInputDirective(imageCount, imageInp
     // requestTraceId and the operator sees a neutral sentence plus the ID.
     var modelFailed = !modelFetchResult.text;
     if (modelFailed) reportFailure('model_failed', modelFetchResult.error);
-    var replyText = modelFailed ? userFacingFailure(requestTraceId, 'reply') : stripTranscriptLabels(scrubIdentity(modelFetchResult.text));
+    var replyText = modelFailed ? userFacingFailure(requestTraceId, 'reply') : stripTranscriptLabels(scrubIdentity(modelFetchResult.text, { replacement: identityChoice.reply }));
     if (!modelFailed && redactReply) {
       var redactedReply = redactReply(replyText);
       if (redactedReply.redacted) replyText = redactedReply.text + '\n\n' + SECRET_WARNING;

@@ -3516,6 +3516,24 @@
       }
     }
 
+    // IDENTITY: the messages of the thread on screen, oldest first, sent with
+    // each chat directive so the server can count, in code, how many earlier
+    // replies already gave the branded identity answer (lib/identity.mjs).
+    // The welcome card and the reply still being written are left out;
+    // clearing the chat empties it, so a new thread starts the count at 0.
+    const THREAD_HISTORY_MAX_MESSAGES = 60;
+    const THREAD_HISTORY_MAX_CHARS = 2000;
+    function threadHistory(exclude) {
+      const out = [];
+      document.querySelectorAll('#chat-container .message-bubble').forEach((el) => {
+        if (el === exclude || el.classList.contains('welcome') || el.classList.contains('pending')) return;
+        const text = Array.from(el.querySelectorAll('.message-text')).map((t) => t.textContent || '').join('\n').trim();
+        if (!text) return;
+        out.push({ role: el.classList.contains('user') ? 'user' : 'model', text: text.slice(0, THREAD_HISTORY_MAX_CHARS) });
+      });
+      return out.slice(-THREAD_HISTORY_MAX_MESSAGES);
+    }
+
     function clearChat() {
       renderWelcome();
       saveState();
@@ -5574,7 +5592,8 @@
           voice: voiceProfile,
           user: sessionUser,
           pass: sessionPass,
-          clientEnv: getClientEnvironment()
+          clientEnv: getClientEnvironment(),
+          history: threadHistory(agentBubble)
         };
         // LIVE TRACE: ask for a streamed reply with steps (operator only;
         // the server ignores it otherwise and replies with JSON as before).
