@@ -2,7 +2,8 @@
  * API-key questions, secrets and error-log summaries (lib/secretGuard.mjs).
  *
  *  - PG1's own licence keys get an honest answer from [CAPABILITIES], never
- *    the identity reply.
+ *    the identity reply: sales paused, x402 pay-per-call live at the price,
+ *    asset and network from lib/x402Config.mjs, the free tools' real limits.
  *  - The keys PG1 itself runs on are an identity question: the identity
  *    reply, chosen in code with no model call, counted towards
  *    IDENTITY_PRESS_THRESHOLD.
@@ -25,9 +26,14 @@ import { createSseParser } from '../lib/chatStream.mjs';
 import { brandedIdentityLine, countIdentityReplies, escalatedIdentityLine, IDENTITY_PRESS_THRESHOLD } from '../lib/identity.mjs';
 import { UPSTREAM_BRAND_RE } from '../lib/upstreamFailure.mjs';
 import {
-  classifyKeyQuestion, createReplySecretGuard, envNamesToGuard, INTERNAL_ENV_NAMES, isErrorSummaryQuestion,
-  neutralErrorReason, neutralErrorRow, SECRET_REFUSAL, SECRET_WITHHELD, SECRET_WITHHELD_NOTE, stripModelContext
+  businessStateText, classifyKeyQuestion, createReplySecretGuard, envNamesToGuard, freeToolLimitsText, INTERNAL_ENV_NAMES, isErrorSummaryQuestion,
+  licenceKeyDirective, neutralErrorReason, neutralErrorRow, SECRET_REFUSAL, SECRET_WITHHELD, SECRET_WITHHELD_NOTE, stripModelContext, x402OfferText
 } from '../lib/secretGuard.mjs';
+import { FREE_TIER_DAILY_LIMIT } from '../lib/freeTier.mjs';
+import {
+  HOSTNAME_REPUTATION_RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS, WALLET_AGE_RATE_LIMIT_MAX,
+  X402_ASSET_SYMBOL, X402_NETWORK, X402_NETWORK_NAME, X402_PRICE, X402_VERSION
+} from '../lib/x402Config.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { FAKE } from './fixtures/fake-secrets.mjs';
 
@@ -166,7 +172,7 @@ const KEY_SLOT_RE = /\bkey[\s_-]*(?:slot[\s_=:-]*)?#?\d+\b|\bkey[\s_-]*slot\b|(?
 // Rule 1: PG1's own licence keys.
 
 test('"how do I get a PG1 API key?" gets an honest licence answer, never the identity reply', async () => {
-  modelReply = 'PG1 licence keys exist, but licence sales are paused right now. The always-free tools need no key at all, and /api/ioc has a free trial tier of 5 calls a day.';
+  modelReply = `PG1 licence keys exist, but licence sales are paused right now and the Gumroad product is unpublished. Pay-per-call is live: /api/ioc accepts x402 payments of ${x402OfferText()}, with no account or key. The always-free tools need no key, but without one ${freeToolLimitsText()}, and /api/ioc has an opt-in free tier of ${FREE_TIER_DAILY_LIMIT} calls/day.`;
   const res = await ask('how do I get a PG1 API key?');
   assert.equal(res.statusCode, 200);
   assert.equal(modelCalls.length, 1, 'a licence question is answered by the model');
@@ -174,11 +180,54 @@ test('"how do I get a PG1 API key?" gets an honest licence answer, never the ide
   assert.match(sys, /\[KEY QUESTION — required\]/);
   assert.match(sys, /licence sales are currently paused/);
   assert.match(sys, /need no key/);
-  assert.match(sys, /free trial tier of 5 calls a day/);
-  assert.match(sys, /Give no price, link/);
+  assert.match(sys, /opt-in free tier of 5 calls\/day/);
+  assert.match(sys, /Give no price other than the x402 price/);
   assert.equal(res.body.reply, modelReply);
   assert.ok(!res.body.reply.includes(brandedIdentityLine()), 'no identity reply');
   assert.equal(countIdentityReplies([{ role: 'model', text: res.body.reply }]), 0, 'does not count towards the threshold');
+});
+
+// The licence answer's facts come from the config the handlers enforce.
+test('licence directive: x402 is live at the price, asset and network the /api/ioc handler uses', () => {
+  const d = licenceKeyDirective();
+  const priceText = X402_PRICE.replace(/^\$/, '') + ' USD';
+  assert.equal(priceText, '0.01 USD');
+  assert.ok(d.includes(`/api/ioc accepts x402 payments of ${priceText} per call in ${X402_ASSET_SYMBOL} on ${X402_NETWORK_NAME} (x402 v${X402_VERSION})`), d);
+  assert.equal(X402_NETWORK, 'eip155:8453');
+  assert.equal(X402_NETWORK_NAME, 'Base');
+  assert.equal(X402_ASSET_SYMBOL, 'USDC');
+  assert.equal(X402_VERSION, 2);
+  assert.match(d, /pay-per-call access is live now/);
+  assert.match(d, /no account or key needed/);
+});
+
+test('licence directive: names the anonymous rate limits from config and the /api/ioc free tier', () => {
+  const d = licenceKeyDirective();
+  assert.equal(HOSTNAME_REPUTATION_RATE_LIMIT_MAX, 60);
+  assert.equal(WALLET_AGE_RATE_LIMIT_MAX, 60);
+  assert.equal(RATE_LIMIT_WINDOW_MS, 60 * 60 * 1000);
+  assert.ok(d.includes(`check_hostname_reputation and check_wallet_age are limited to ${HOSTNAME_REPUTATION_RATE_LIMIT_MAX} calls/hour each`), d);
+  assert.ok(d.includes(`opt-in free tier of ${FREE_TIER_DAILY_LIMIT} calls/day`), d);
+});
+
+test('licence directive and business state: sales still paused, no invented URL, no "$" before a digit', () => {
+  for (const text of [licenceKeyDirective(), businessStateText()]) {
+    assert.match(text, /licence (?:key )?sales are (?:currently )?paused/);
+    assert.match(text, /Gumroad product is unpublished/);
+    assert.ok(!/https?:\/\/|www\.|\b[a-z0-9-]+\.(?:com|io|net|org|app|dev|co)\b/i.test(text), 'no URL: ' + text);
+    assert.ok(!/\$\s*\d/.test(text), 'no "$" before a digit: ' + text);
+    assert.ok(text.includes(x402OfferText()));
+    assert.ok(text.includes(freeToolLimitsText()));
+  }
+});
+
+test('[CAPABILITIES] carries the corrected business state', async () => {
+  await ask('how do I get a PG1 API key?');
+  const sys = systemPromptOf(modelCalls[0]);
+  assert.ok(sys.includes('- ' + businessStateText()), 'business state line');
+  assert.match(sys, /Pay-per-call access is LIVE/);
+  assert.ok(!/paid feeds are on hold/.test(sys));
+  assert.ok(!/\$\s*\d/.test(sys), 'no "$" before a digit in the system prompt');
 });
 
 test('licence-key wordings classify as licence', () => {
