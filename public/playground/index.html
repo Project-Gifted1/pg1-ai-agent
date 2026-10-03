@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#0a0a0b">
+  <meta name="color-scheme" content="dark">
+  <title>PG1 Tools Playground</title>
+  <meta name="description" content="Run PG1's free threat-intelligence checks in the browser: domain age, hostname reputation, wallet sanctions and wallet age. No sign-in.">
+  <link rel="canonical" href="https://pg1-ai-agent.vercel.app/playground">
+  <link rel="icon" href="/brand/pg1-shield.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/playground/playground.css">
+  <script src="/playground/playground.js" defer></script>
+</head>
+<body>
+<main>
+  <header class="pg-header">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="169.76 -2 104 104" width="104" height="104" role="img" aria-label="PG1">
+      <title>PG1</title>
+      <path d="M221.76 0L262.5 15.2V47.3C262.5 73.9 245.1 91.85 221.76 100C198.4 91.85 181 73.9 181 47.3V15.2Z" fill="#f3c623"/>
+      <path d="M220 20H233V72H220V37.5L208.5 43.5V31Z" fill="#0a0a0b"/>
+    </svg>
+    <div>
+      <h1>Tools Playground</h1>
+      <p class="sub">Run one of PG1's free checks. No sign-in, no cookies.</p>
+    </div>
+  </header>
+
+  <form id="pg-form" class="pg-form" action="/api/playground" method="post" novalidate>
+    <fieldset class="pg-tools">
+      <legend>Check</legend>
+      <label class="pg-tool"><input type="radio" name="tool" value="check_domain_age" checked><span class="pg-tool-name">Domain age</span><span class="pg-tool-desc">When a domain was registered</span></label>
+      <label class="pg-tool"><input type="radio" name="tool" value="check_hostname_reputation"><span class="pg-tool-name">Hostname reputation</span><span class="pg-tool-desc">Phishing list and lookalike check</span></label>
+      <label class="pg-tool"><input type="radio" name="tool" value="check_wallet_sanctions"><span class="pg-tool-name">Wallet sanctions</span><span class="pg-tool-desc">Sanctions list screening</span></label>
+      <label class="pg-tool"><input type="radio" name="tool" value="check_wallet_age"><span class="pg-tool-name">Wallet age</span><span class="pg-tool-desc">First on-chain activity</span></label>
+    </fieldset>
+
+    <div class="pg-field">
+      <label for="pg-input" id="pg-input-label">Domain</label>
+      <input id="pg-input" name="input" type="text" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="255" placeholder="example.com" aria-describedby="pg-input-hint" required>
+      <p class="pg-hint" id="pg-input-hint">A domain name, like example.com.</p>
+    </div>
+
+    <div class="pg-field" id="pg-chain-field" hidden>
+      <label for="pg-chain">Chain</label>
+      <select id="pg-chain" name="chain">
+        <option value="base" selected>Base</option>
+        <option value="ethereum">Ethereum</option>
+        <option value="arbitrum">Arbitrum</option>
+        <option value="optimism">Optimism</option>
+        <option value="polygon">Polygon</option>
+        <option value="bsc">BNB Smart Chain</option>
+      </select>
+    </div>
+
+    <button type="submit" class="pg-run" id="pg-run">Run</button>
+  </form>
+
+  <section class="pg-result" id="pg-result" aria-live="polite" aria-label="Result"></section>
+
+  <footer>Developers: the same checks are available to your agents over MCP and A2A. <a href="/about">See how to connect</a>.</footer>
+</main>
+</body>
+</html>
