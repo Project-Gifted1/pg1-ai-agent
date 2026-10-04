@@ -10,6 +10,8 @@
  * directly from api/mcp.mjs (no duplicated logic) — names, descriptions,
  * schemas, and rate limits (check_hostname_reputation and check_wallet_age:
  * 60/hour without a license key) are unchanged from the MCP server.
+ * check_wallet_sanctions has a limit here that the MCP tool doesn't: 120/hour
+ * per IP without a license key (WALLET_SANCTIONS_RATE_LIMIT_MAX).
  *
  * Paid tools are deliberately NOT exposed here; they wait for the A2A
  * licensing/payment story to be worked out.
@@ -49,6 +51,7 @@ import {
   TOOLS,
   handleUsageStatus,
   handleCheckWalletSanctions,
+  enforceWalletSanctionsRateLimit,
   handleCheckDomainAge,
   handleCheckHostnameReputation,
   handleCheckWalletAge,
@@ -114,6 +117,7 @@ async function runSkill(skill, args, identifier, licenseKey) {
     case 'get_usage_status':
       return handleUsageStatus(args, identifier);
     case 'check_wallet_sanctions':
+      await enforceWalletSanctionsRateLimit(identifier, licenseKey);
       return handleCheckWalletSanctions(args);
     case 'check_domain_age':
       return handleCheckDomainAge(args, identifier, licenseKey);

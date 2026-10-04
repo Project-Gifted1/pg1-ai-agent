@@ -81,7 +81,7 @@ import { encodePaymentRequiredHeader, encodePaymentResponseHeader, decodePayment
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT } from '../lib/freeTier.mjs';
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
-import { X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX } from '../lib/x402Config.mjs';
+import { X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX } from '../lib/x402Config.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { detectIndicatorType, lookupIocContext } from '../lib/iocContext.mjs';
 import { normalizeWalletAddress, isRecognizedWalletAddress } from '../lib/walletAddress.mjs';
@@ -1906,6 +1906,35 @@ function enforceWalletAgeRateLimit(identifier) {
     const retryAfterMin = Math.ceil((WALLET_AGE_RATE_LIMIT_WINDOW_MS - (now - state.windowStart)) / 60000);
     throw new RateLimitedError(
       `check_wallet_age is limited to ${WALLET_AGE_RATE_LIMIT_MAX} calls/hour per caller. Retry in about ${retryAfterMin} minute(s), or use a Gumroad license key (X-API-KEY) to bypass this limit.`
+    );
+  }
+  state.count += 1;
+}
+
+// check_wallet_sanctions over /api/a2a: per-IP fixed-window rate limit,
+// same shape and same rate_limited error as check_wallet_age's. Only
+// api/a2a.mjs calls this; the MCP tool itself stays unlimited. Callers with
+// a valid Gumroad license key are exempt.
+// WALLET_SANCTIONS_RATE_LIMIT_MAX lives in lib/x402Config.mjs.
+const WALLET_SANCTIONS_RATE_LIMIT_WINDOW_MS = RATE_LIMIT_WINDOW_MS;
+const walletSanctionsRateLimitState = new Map();
+
+export async function enforceWalletSanctionsRateLimit(identifier, licenseKey) {
+  if (licenseKey) {
+    const check = await verifyGumroadLicense(licenseKey).catch(() => ({ valid: false }));
+    if (check.valid) return;
+  }
+  const now = Date.now();
+  const key = identifier || 'unknown';
+  const state = walletSanctionsRateLimitState.get(key);
+  if (!state || (now - state.windowStart) >= WALLET_SANCTIONS_RATE_LIMIT_WINDOW_MS) {
+    walletSanctionsRateLimitState.set(key, { count: 1, windowStart: now });
+    return;
+  }
+  if (state.count >= WALLET_SANCTIONS_RATE_LIMIT_MAX) {
+    const retryAfterMin = Math.ceil((WALLET_SANCTIONS_RATE_LIMIT_WINDOW_MS - (now - state.windowStart)) / 60000);
+    throw new RateLimitedError(
+      `check_wallet_sanctions is limited to ${WALLET_SANCTIONS_RATE_LIMIT_MAX} calls/hour per caller. Retry in about ${retryAfterMin} minute(s), or use a Gumroad license key (X-API-KEY) to bypass this limit.`
     );
   }
   state.count += 1;

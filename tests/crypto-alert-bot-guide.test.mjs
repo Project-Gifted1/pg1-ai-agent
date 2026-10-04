@@ -33,7 +33,7 @@ const { createPlaygroundHandler } = await import('../api/playground.mjs');
 const { createPlaygroundLimiter, PLAYGROUND_TOOLS, PLAYGROUND_DAILY_CAP, PLAYGROUND_TOOL_LIMITS, NOTES, PROVIDER_NAME_RE } = await import('../lib/playground.mjs');
 const { REASON_CODES, INFORMATIONAL_REASON_CODES, INCOMPLETE_REASON_CODES } = await import('../lib/reasonCodes.mjs');
 const { FIXTURE_VALUES } = await import('../lib/fixtures.mjs');
-const { WALLET_AGE_RATE_LIMIT_MAX } = await import('../lib/x402Config.mjs');
+const { WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX } = await import('../lib/x402Config.mjs');
 const { pageAsMarkdown } = await import('./helpers/doc-page.mjs');
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -131,6 +131,11 @@ before(async () => {
   for (let i = 0; i <= WALLET_AGE_RATE_LIMIT_MAX; i++) last = await a2a(sendBody('check_wallet_age', { address: '0x' + 'ab'.repeat(20) }), ip);
   collectRes(last);
   REAL.rateLimited = last;
+  // The same for check_wallet_sanctions, which has its own /api/a2a limit.
+  const sanctionsIp = '198.51.100.205';
+  for (let i = 0; i <= WALLET_SANCTIONS_RATE_LIMIT_MAX; i++) last = await a2a(sendBody('check_wallet_sanctions', { address: '0x' + 'ab'.repeat(20) }), sanctionsIp);
+  collectRes(last);
+  REAL.sanctionsRateLimited = last;
 
   // Real playground responses, including a 429.
   const pg = createPlaygroundHandler({ record: () => {}, executorOptions: { log: () => {} } });
@@ -164,6 +169,7 @@ before(async () => {
 
 nodeTest('real responses used as the reference look as expected', () => {
   assert.equal(REAL.rateLimited.body.error.data.code, 'rate_limited');
+  assert.equal(REAL.sanctionsRateLimited.body.error.data.code, 'rate_limited');
   assert.equal(REAL.playground429.statusCode, 429);
   assert.ok(REAL.playground429.headers['Retry-After']);
   assert.equal(resultData(REAL['check_wallet_sanctions:CLEAN']).status, 'no_flags');
@@ -273,7 +279,15 @@ for (const doc of DOCS) {
     assert.equal(PLAYGROUND_TOOL_LIMITS.check_wallet_age, 60);
     assert.equal(PLAYGROUND_TOOL_LIMITS.check_wallet_sanctions, 60);
     assert.ok(GUIDE.includes(`${PLAYGROUND_DAILY_CAP} calls/day`));
-    // check_wallet_sanctions has no rate limiter of its own.
+    // check_wallet_sanctions is limited on /api/a2a only (per IP); the MCP
+    // tool's own handler has no limiter, and the guide states the real limit.
+    assert.equal(WALLET_SANCTIONS_RATE_LIMIT_MAX, 120);
+    assert.match(SRC.a2a, /enforceWalletSanctionsRateLimit\(identifier, licenseKey\)/);
+    assert.match(GUIDE, new RegExp(`\\| \`/api/a2a\`\\s*\\| \`check_wallet_sanctions\`\\s*\\| \\*\\*${WALLET_SANCTIONS_RATE_LIMIT_MAX} calls/hour per caller\\*\\* \\(per IP, fixed one-hour window\\)\\.`));
+    assert.doesNotMatch(GUIDE, /no per-caller limit|unlimited|no (rate )?limit/i);
+    const sanctionsLimitMessage = REAL.sanctionsRateLimited.body.error.message;
+    assert.match(sanctionsLimitMessage, /Retry in about \d+ minute/);
+    assert.ok(GUIDE.includes(sanctionsLimitMessage.split(' Retry in about')[0]), 'guide should quote the real sanctions limit message');
     assert.doesNotMatch(SRC.mcp.slice(SRC.mcp.indexOf('export async function handleCheckWalletSanctions'), SRC.mcp.indexOf('// check_domain_age — free')), /RateLimit/);
     // The 10-minute found:false cache.
     assert.match(SRC.mcp, /WALLET_AGE_NOT_FOUND_CACHE_TTL_MS = 10 \* 60 \* 1000/);

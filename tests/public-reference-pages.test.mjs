@@ -129,6 +129,14 @@ test('/docs/testing leaves out the README notes for editors and links nothing in
   assert.doesNotMatch(README_SECTION, /\]\((?!https:\/\/|\/|#)[^)]+\)/, 'no repo-relative links in the section');
 });
 
+test('/docs/testing never says or implies sanctions checks are unlimited', () => {
+  // check_wallet_sanctions is limited on /api/a2a (WALLET_SANCTIONS_RATE_LIMIT_MAX
+  // per hour per IP). The page only promises that fixture inputs use none of it.
+  const text = pageText(read(TESTING.output));
+  assert.doesNotMatch(text, /unlimited|no (per-caller )?(rate )?limit\b/i);
+  assert.match(text, /no rate-limit usage/);
+});
+
 test('a strict Content-Security-Policy, same as /playground, and no inline scripts, styles or handlers', () => {
   const pgCsp = VERCEL.headers.find((h) => h.source === '/playground').headers.find((h) => h.key === 'Content-Security-Policy').value;
   for (const page of [REASONS, TESTING]) {

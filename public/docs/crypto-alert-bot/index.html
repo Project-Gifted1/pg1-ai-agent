@@ -272,7 +272,7 @@ checkWalletAge(&#39;0x7067312d746573742d6669787475726500000002&#39;, &#39;ethere
 <thead><tr><th scope="col">Situation</th><th scope="col">HTTP</th><th scope="col"><code>error.code</code></th><th scope="col"><code>error.data.code</code></th><th scope="col"><code>error.data.status</code></th></tr></thead>
 <tbody>
 <tr><td>Wallet-age lookup failed or timed out (2.5 s budget)</td><td>200</td><td><code>-32000</code></td><td><code>upstream_unavailable</code></td><td><code>&quot;unknown&quot;</code></td></tr>
-<tr><td>Wallet-age rate limit reached</td><td>200</td><td><code>-32000</code></td><td><code>rate_limited</code></td><td><code>&quot;unknown&quot;</code></td></tr>
+<tr><td>Wallet-age or sanctions rate limit reached</td><td>200</td><td><code>-32000</code></td><td><code>rate_limited</code></td><td><code>&quot;unknown&quot;</code></td></tr>
 <tr><td>Bad address or chain</td><td>200</td><td><code>-32000</code></td><td><code>invalid_address</code> / <code>invalid_chain</code></td><td><code>&quot;unknown&quot;</code></td></tr>
 <tr><td>Sanctions list unreachable</td><td>503</td><td><code>-32010</code></td><td>(none)</td><td>(none)</td></tr>
 <tr><td>Malformed request</td><td>400</td><td><code>-32602</code></td><td>(none)</td><td>(none)</td></tr>
@@ -303,15 +303,15 @@ checkWalletAge(&#39;0x7067312d746573742d6669787475726500000002&#39;, &#39;ethere
 <thead><tr><th scope="col">Endpoint</th><th scope="col">Check</th><th scope="col">Limit without a key</th></tr></thead>
 <tbody>
 <tr><td><code>/api/a2a</code></td><td><code>check_wallet_age</code></td><td><strong>60 calls/hour per caller</strong> (per IP, fixed one-hour window). Calls that PG1 answers from its cache count too.</td></tr>
-<tr><td><code>/api/a2a</code></td><td><code>check_wallet_sanctions</code></td><td>No per-caller limit.</td></tr>
+<tr><td><code>/api/a2a</code></td><td><code>check_wallet_sanctions</code></td><td><strong>120 calls/hour per caller</strong> (per IP, fixed one-hour window).</td></tr>
 <tr><td><code>/api/playground</code></td><td>each check</td><td>60 calls/hour per check per visitor, plus a shared cap of 2000 calls/day across all visitors.</td></tr>
 </tbody>
 </table></div>
-<p>The counters are kept in memory on each server instance. Plan around 60/hour as your budget, but don&#39;t assume you&#39;ll be cut off at exactly 60. A valid PG1 license key sent in the <code>X-API-KEY</code> header removes the <code>check_wallet_age</code> limit. The bot doesn&#39;t need one.</p>
-<p>Each new wallet costs one <code>check_wallet_age</code> call. With the bot&#39;s cache, that is up to about 60 new wallets an hour.</p>
+<p>The counters are kept in memory on each server instance. Plan around 60/hour for wallet age and 120/hour for sanctions as your budget, but don&#39;t assume you&#39;ll be cut off at exactly those numbers. A valid PG1 license key sent in the <code>X-API-KEY</code> header removes both <code>/api/a2a</code> limits. The bot doesn&#39;t need one.</p>
+<p>Each new wallet costs one <code>check_wallet_age</code> call and one <code>check_wallet_sanctions</code> call. With the bot&#39;s cache, that is up to about 60 new wallets an hour; the wallet age limit runs out first.</p>
 <h3 id="how-each-endpoint-reports-a-rate-limit">How each endpoint reports a rate limit</h3>
 <ul>
-<li><strong><code>/api/a2a</code></strong> reports the limit inside the response: HTTP 200, <code>error.code</code> <code>-32000</code>, <code>error.data.code</code> <code>&quot;rate_limited&quot;</code>. The message reads <code>&quot;check_wallet_age is limited to 60 calls/hour per caller. Retry in about N minute(s), …&quot;</code>. There is no <code>Retry-After</code> header on this path. The bot reads N from the message, and waits 60 minutes if it can&#39;t.</li>
+<li><strong><code>/api/a2a</code></strong> reports the limit inside the response: HTTP 200, <code>error.code</code> <code>-32000</code>, <code>error.data.code</code> <code>&quot;rate_limited&quot;</code>. The message reads <code>&quot;check_wallet_age is limited to 60 calls/hour per caller. Retry in about N minute(s), …&quot;</code> (or <code>&quot;check_wallet_sanctions is limited to 120 calls/hour per caller. Retry in about N minute(s), …&quot;</code>). There is no <code>Retry-After</code> header on this path. The bot reads N from the message, and waits 60 minutes if it can&#39;t.</li>
 <li><strong><code>/api/playground</code><strong> returns a real </strong>HTTP 429</strong> with a <code>Retry-After</code> header in seconds and <code>error.retry_after_seconds</code> in the body.</li>
 </ul>
 <p>The bot handles both cases. Any HTTP 429 pauses that check until <code>Retry-After</code> has passed, and an A2A <code>rate_limited</code> error does the same. While a check is paused, wallets that arrive count as <strong>not verified</strong>. The bot never treats a skipped call as a pass.</p>
@@ -531,7 +531,7 @@ playgroundCheck(&#39;check_wallet_age&#39;, &#39;0x7067312d746573742d66697874757
 </code></pre></div>
 <hr>
 <h2 id="9-testing-without-touching-live-data">9. Testing without touching live data</h2>
-<p>PG1 answers fixed test addresses with fixed responses. They cost nothing, don&#39;t count against the rate limit, and look like real responses plus <code>test_fixture: true</code>. Each fixture&#39;s <code>checks[].source</code> is <code>&quot;fixture&quot;</code>. Every path in section 4 can be tested with them:</p>
+<p>PG1 answers fixed test addresses with fixed responses. They cost nothing, don&#39;t count against either rate limit, and look like real responses plus <code>test_fixture: true</code>. Each fixture&#39;s <code>checks[].source</code> is <code>&quot;fixture&quot;</code>. Every path in section 4 can be tested with them:</p>
 <div class="table-wrap" tabindex="0"><table>
 <thead><tr><th scope="col">Address</th><th scope="col"><code>check_wallet_sanctions</code></th><th scope="col"><code>check_wallet_age</code></th><th scope="col">Bot action</th></tr></thead>
 <tbody>

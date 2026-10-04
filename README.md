@@ -134,7 +134,7 @@ Call `"method": "tools/list"` against `/api/mcp` for full schemas. Summary:
 
 ## A2A (Agent2Agent Protocol)
 
-`/api/a2a` exposes the five always-free tools (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `get_usage_status`) over [A2A](https://a2a-protocol.org/latest/specification/), JSON-RPC 2.0. Paid tools are not available via A2A yet. The agent card is published at [`/.well-known/agent-card.json`](https://pg1-ai-agent.vercel.app/.well-known/agent-card.json). `message/send` (the v0.3 method name) is accepted as an alias of `SendMessage`. The `A2A-Version` header (or query param) selects the response shape — `1.0` or `0.3` (the default when omitted). Send the skill and its arguments as a `DataPart`:
+`/api/a2a` exposes the five always-free tools (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `get_usage_status`) over [A2A](https://a2a-protocol.org/latest/specification/), JSON-RPC 2.0. Paid tools are not available via A2A yet. The agent card is published at [`/.well-known/agent-card.json`](https://pg1-ai-agent.vercel.app/.well-known/agent-card.json). `message/send` (the v0.3 method name) is accepted as an alias of `SendMessage`. The `A2A-Version` header (or query param) selects the response shape — `1.0` or `0.3` (the default when omitted). Rate limits match the MCP tools', plus one MCP doesn't have: without a licence key, `check_wallet_sanctions` on `/api/a2a` is limited to 120 calls/hour per caller (per IP), and the 121st call in the hour gets the same `rate_limited` error as `check_wallet_age`. Send the skill and its arguments as a `DataPart`:
 
 ```bash
 curl -X POST https://pg1-ai-agent.vercel.app/api/a2a \
