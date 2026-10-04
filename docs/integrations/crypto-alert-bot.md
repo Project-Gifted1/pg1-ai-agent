@@ -308,7 +308,7 @@ Each new wallet costs one `check_wallet_age` call and one `check_wallet_sanction
 
 ### How each endpoint reports a rate limit
 
-- **`/api/a2a`** reports the limit inside the response: HTTP 200, `error.code` `-32000`, `error.data.code` `"rate_limited"`. The message reads `"check_wallet_age is limited to 60 calls/hour per caller. Retry in about N minute(s), …"` (or `"check_wallet_sanctions is limited to 120 calls/hour per caller. Retry in about N minute(s), …"`). There is no `Retry-After` header on this path. The bot reads N from the message, and waits 60 minutes if it can't.
+- **`/api/a2a`** reports the limit inside the response: HTTP 200, `error.code` `-32000`, `error.data.code` `"rate_limited"`. The message reads `"check_wallet_age is limited to 60 calls/hour per caller. Retry in about N minute(s)."` (or `"check_wallet_sanctions is limited to 120 calls/hour per caller. Retry in about N minute(s)."`). There is no `Retry-After` header on this path. The bot reads N from the message, and waits 60 minutes if it can't.
 - **`/api/playground`** returns a real **HTTP 429** with a `Retry-After` header in seconds and `error.retry_after_seconds` in the body.
 
 The bot handles both cases. Any HTTP 429 pauses that check until `Retry-After` has passed, and an A2A `rate_limited` error does the same. While a check is paused, wallets that arrive count as **not verified**. The bot never treats a skipped call as a pass.

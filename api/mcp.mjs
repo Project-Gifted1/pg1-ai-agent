@@ -1905,16 +1905,19 @@ function enforceWalletAgeRateLimit(identifier) {
   if (state.count >= WALLET_AGE_RATE_LIMIT_MAX) {
     const retryAfterMin = Math.ceil((WALLET_AGE_RATE_LIMIT_WINDOW_MS - (now - state.windowStart)) / 60000);
     throw new RateLimitedError(
-      `check_wallet_age is limited to ${WALLET_AGE_RATE_LIMIT_MAX} calls/hour per caller. Retry in about ${retryAfterMin} minute(s), or use a Gumroad license key (X-API-KEY) to bypass this limit.`
+      `check_wallet_age is limited to ${WALLET_AGE_RATE_LIMIT_MAX} calls/hour per caller. Retry in about ${retryAfterMin} minute(s).`
     );
   }
   state.count += 1;
 }
 
-// check_wallet_sanctions over /api/a2a: per-IP fixed-window rate limit,
-// same shape and same rate_limited error as check_wallet_age's. Only
-// api/a2a.mjs calls this; the MCP tool itself stays unlimited. Callers with
-// a valid Gumroad license key are exempt.
+// check_wallet_sanctions over /api/a2a and /api/mcp tools/call: per-IP
+// fixed-window rate limit, same shape and same rate_limited error as
+// check_wallet_age's, and one counter per IP across both endpoints (as
+// check_wallet_age's is). Fixture inputs are answered before it is reached.
+// Callers with a valid Gumroad license key are exempt. The chat and the
+// playground don't go through it (the playground has its own limits).
+// While licence sales are paused, the message gives the retry time only.
 // WALLET_SANCTIONS_RATE_LIMIT_MAX lives in lib/x402Config.mjs.
 const WALLET_SANCTIONS_RATE_LIMIT_WINDOW_MS = RATE_LIMIT_WINDOW_MS;
 const walletSanctionsRateLimitState = new Map();
@@ -1934,7 +1937,7 @@ export async function enforceWalletSanctionsRateLimit(identifier, licenseKey) {
   if (state.count >= WALLET_SANCTIONS_RATE_LIMIT_MAX) {
     const retryAfterMin = Math.ceil((WALLET_SANCTIONS_RATE_LIMIT_WINDOW_MS - (now - state.windowStart)) / 60000);
     throw new RateLimitedError(
-      `check_wallet_sanctions is limited to ${WALLET_SANCTIONS_RATE_LIMIT_MAX} calls/hour per caller. Retry in about ${retryAfterMin} minute(s), or use a Gumroad license key (X-API-KEY) to bypass this limit.`
+      `check_wallet_sanctions is limited to ${WALLET_SANCTIONS_RATE_LIMIT_MAX} calls/hour per caller. Retry in about ${retryAfterMin} minute(s).`
     );
   }
   state.count += 1;
@@ -3008,6 +3011,7 @@ export default async function handler(req, res) {
       if (FREE_TOOLS.has(toolName)) {
         let toolResult;
         try {
+          if (toolName === 'check_wallet_sanctions') await enforceWalletSanctionsRateLimit(mcpRequestIdentifier, licenseKey);
           toolResult = await runReadOnlyTool(toolName, toolArgs, { identifier: mcpRequestIdentifier, licenseKey });
         } catch (toolErr) {
           if (toolErr.serviceUnavailable) {

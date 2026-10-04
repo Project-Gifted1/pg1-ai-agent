@@ -10,8 +10,8 @@
  * directly from api/mcp.mjs (no duplicated logic) — names, descriptions,
  * schemas, and rate limits (check_hostname_reputation and check_wallet_age:
  * 60/hour without a license key) are unchanged from the MCP server.
- * check_wallet_sanctions has a limit here that the MCP tool doesn't: 120/hour
- * per IP without a license key (WALLET_SANCTIONS_RATE_LIMIT_MAX).
+ * check_wallet_sanctions: 120/hour per IP without a license key
+ * (WALLET_SANCTIONS_RATE_LIMIT_MAX), one counter shared with /api/mcp.
  *
  * Paid tools are deliberately NOT exposed here; they wait for the A2A
  * licensing/payment story to be worked out.

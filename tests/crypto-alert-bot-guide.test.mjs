@@ -279,8 +279,9 @@ for (const doc of DOCS) {
     assert.equal(PLAYGROUND_TOOL_LIMITS.check_wallet_age, 60);
     assert.equal(PLAYGROUND_TOOL_LIMITS.check_wallet_sanctions, 60);
     assert.ok(GUIDE.includes(`${PLAYGROUND_DAILY_CAP} calls/day`));
-    // check_wallet_sanctions is limited on /api/a2a only (per IP); the MCP
-    // tool's own handler has no limiter, and the guide states the real limit.
+    // check_wallet_sanctions is limited per IP at the endpoints (/api/a2a and
+    // /api/mcp tools/call), not in the shared handler, and the guide states
+    // the real limit. Quoted limit messages give the retry time only.
     assert.equal(WALLET_SANCTIONS_RATE_LIMIT_MAX, 120);
     assert.match(SRC.a2a, /enforceWalletSanctionsRateLimit\(identifier, licenseKey\)/);
     assert.match(GUIDE, new RegExp(`\\| \`/api/a2a\`\\s*\\| \`check_wallet_sanctions\`\\s*\\| \\*\\*${WALLET_SANCTIONS_RATE_LIMIT_MAX} calls/hour per caller\\*\\* \\(per IP, fixed one-hour window\\)\\.`));
@@ -288,6 +289,9 @@ for (const doc of DOCS) {
     const sanctionsLimitMessage = REAL.sanctionsRateLimited.body.error.message;
     assert.match(sanctionsLimitMessage, /Retry in about \d+ minute/);
     assert.ok(GUIDE.includes(sanctionsLimitMessage.split(' Retry in about')[0]), 'guide should quote the real sanctions limit message');
+    for (const message of [REAL.rateLimited.body.error.message, sanctionsLimitMessage]) assert.doesNotMatch(message, /licen[cs]e|gumroad|bypass/i);
+    assert.ok(GUIDE.includes('Retry in about N minute(s)."`'));
+    assert.doesNotMatch(GUIDE, /minute\(s\), …/);
     assert.doesNotMatch(SRC.mcp.slice(SRC.mcp.indexOf('export async function handleCheckWalletSanctions'), SRC.mcp.indexOf('// check_domain_age — free')), /RateLimit/);
     // The 10-minute found:false cache.
     assert.match(SRC.mcp, /WALLET_AGE_NOT_FOUND_CACHE_TTL_MS = 10 \* 60 \* 1000/);
