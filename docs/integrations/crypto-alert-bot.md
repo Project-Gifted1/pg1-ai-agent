@@ -263,7 +263,7 @@ Failures from `/api/a2a` come back as a JSON-RPC `error`, not a `result`:
 | Situation | HTTP | `error.code` | `error.data.code` | `error.data.status` |
 |---|---|---|---|---|
 | Wallet-age lookup failed or timed out (2.5 s budget) | 200 | `-32000` | `upstream_unavailable` | `"unknown"` |
-| Wallet-age rate limit reached | 200 | `-32000` | `rate_limited` | `"unknown"` |
+| Wallet-age or sanctions rate limit reached | 200 | `-32000` | `rate_limited` | `"unknown"` |
 | Bad address or chain | 200 | `-32000` | `invalid_address` / `invalid_chain` | `"unknown"` |
 | Sanctions list unreachable | 503 | `-32010` | (none) | (none) |
 | Malformed request | 400 | `-32602` | (none) | (none) |
@@ -299,16 +299,16 @@ A wallet-age outage is always an `error`, never `found: false`. So an outage can
 | Endpoint | Check | Limit without a key |
 |---|---|---|
 | `/api/a2a` | `check_wallet_age` | **60 calls/hour per caller** (per IP, fixed one-hour window). Calls that PG1 answers from its cache count too. |
-| `/api/a2a` | `check_wallet_sanctions` | No per-caller limit. |
+| `/api/a2a` | `check_wallet_sanctions` | **120 calls/hour per caller** (per IP, fixed one-hour window). |
 | `/api/playground` | each check | 60 calls/hour per check per visitor, plus a shared cap of 2000 calls/day across all visitors. |
 
-The counters are kept in memory on each server instance. Plan around 60/hour as your budget, but don't assume you'll be cut off at exactly 60. A valid PG1 license key sent in the `X-API-KEY` header removes the `check_wallet_age` limit. The bot doesn't need one.
+The counters are kept in memory on each server instance. Plan around 60/hour for wallet age and 120/hour for sanctions as your budget, but don't assume you'll be cut off at exactly those numbers. A valid PG1 license key sent in the `X-API-KEY` header removes both `/api/a2a` limits. The bot doesn't need one.
 
-Each new wallet costs one `check_wallet_age` call. With the bot's cache, that is up to about 60 new wallets an hour.
+Each new wallet costs one `check_wallet_age` call and one `check_wallet_sanctions` call. With the bot's cache, that is up to about 60 new wallets an hour; the wallet age limit runs out first.
 
 ### How each endpoint reports a rate limit
 
-- **`/api/a2a`** reports the limit inside the response: HTTP 200, `error.code` `-32000`, `error.data.code` `"rate_limited"`. The message reads `"check_wallet_age is limited to 60 calls/hour per caller. Retry in about N minute(s), …"`. There is no `Retry-After` header on this path. The bot reads N from the message, and waits 60 minutes if it can't.
+- **`/api/a2a`** reports the limit inside the response: HTTP 200, `error.code` `-32000`, `error.data.code` `"rate_limited"`. The message reads `"check_wallet_age is limited to 60 calls/hour per caller. Retry in about N minute(s)."` (or `"check_wallet_sanctions is limited to 120 calls/hour per caller. Retry in about N minute(s)."`). There is no `Retry-After` header on this path. The bot reads N from the message, and waits 60 minutes if it can't.
 - **`/api/playground`** returns a real **HTTP 429** with a `Retry-After` header in seconds and `error.retry_after_seconds` in the body.
 
 The bot handles both cases. Any HTTP 429 pauses that check until `Retry-After` has passed, and an A2A `rate_limited` error does the same. While a check is paused, wallets that arrive count as **not verified**. The bot never treats a skipped call as a pass.
@@ -554,7 +554,7 @@ playgroundCheck('check_wallet_age', '0x7067312d746573742d6669787475726500000002'
 
 ## 9. Testing without touching live data
 
-PG1 answers fixed test addresses with fixed responses. They cost nothing, don't count against the rate limit, and look like real responses plus `test_fixture: true`. Each fixture's `checks[].source` is `"fixture"`. Every path in section 4 can be tested with them:
+PG1 answers fixed test addresses with fixed responses. They cost nothing, don't count against either rate limit, and look like real responses plus `test_fixture: true`. Each fixture's `checks[].source` is `"fixture"`. Every path in section 4 can be tested with them:
 
 | Address | `check_wallet_sanctions` | `check_wallet_age` | Bot action |
 |---|---|---|---|
