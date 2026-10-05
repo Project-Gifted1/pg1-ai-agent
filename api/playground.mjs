@@ -14,11 +14,17 @@
 // Messages are fixed, neutral sentences: never the input, a provider or
 // model name, or an upstream error. Failures are written to pg1_errors
 // under the request_id only.
+//
+// Usage telemetry (lib/telemetry.mjs): one agent_telemetry row per check
+// that got past validation - the tool name, how it ended (ok, tool_error,
+// rate_limited, server_error), whether it was a fixture, and a salted hash
+// of the caller IP. Never the input.
 
 import crypto from 'node:crypto';
 import { recordToolError } from './mcp.mjs';
 import { createToolExecutor } from '../lib/chatTools.mjs';
 import { getRequestIdentifier } from '../lib/freeTier.mjs';
+import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
 import { resolveEnsName } from '../lib/ens.mjs';
 import {
   validatePlaygroundRequest, toolArgs, createPlaygroundLimiter, limitMessage, playgroundCard, MESSAGES
@@ -47,14 +53,23 @@ function parseBody(req) {
   return null;
 }
 
-// createPlaygroundHandler({ limiter, resolveEns, executorOptions, record })
+// createPlaygroundHandler({ limiter, resolveEns, executorOptions, record, telemetry })
 // Everything injectable is for tests; the default export uses the real ones.
 export function createPlaygroundHandler({
   limiter = createPlaygroundLimiter(),
   resolveEns = resolveEnsName,
   executorOptions = {},
-  record = recordToolError
+  record = recordToolError,
+  telemetry = recordTelemetry
 } = {}) {
+  function track(tool, ip, startedAt, status, isFixture) {
+    try {
+      telemetry({ eventType: 'tool_call', endpoint: ROUTE, toolName: tool, paymentType: 'free', status, latencyMs: Date.now() - startedAt, callerHash: callerHash(ip), isFixture: isFixture === true });
+    } catch {
+      // Best-effort - telemetry never affects the response.
+    }
+  }
+
   return async function handler(req, res) {
     if (req.method === 'OPTIONS') {
       res.setHeader('Allow', 'POST, OPTIONS');
@@ -74,8 +89,10 @@ export function createPlaygroundHandler({
     }
 
     const ip = getRequestIdentifier(req);
+    const startedAt = Date.now();
     const allowed = limiter.take(valid.tool, ip);
     if (!allowed.ok) {
+      track(valid.tool, ip, startedAt, 'rate_limited', false);
       const requestId = crypto.randomUUID();
       const retry = Math.max(1, Math.ceil(allowed.retryMs / 1000));
       res.setHeader('Retry-After', String(retry));
@@ -89,9 +106,11 @@ export function createPlaygroundHandler({
       const execute = createToolExecutor({ role: 'guest', identifier: `playground:${limiter.visitorKey(ip)}`, route: ROUTE, record, resolveEns, ...executorOptions });
       const outcome = await execute({ id: null, name: valid.tool, args: toolArgs(valid) });
       const card = playgroundCard(outcome);
+      track(valid.tool, ip, startedAt, outcome.ok ? 'ok' : outcome.code === 'rate_limited' ? 'rate_limited' : 'tool_error', outcome.test_fixture === true);
       return send(res, 200, { ok: true, card }, card.request_id);
     } catch (err) {
       const requestId = crypto.randomUUID();
+      track(valid.tool, ip, startedAt, 'server_error', false);
       record(ROUTE, 500, 'playground_unhandled_error', 'js_error', requestId);
       return send(res, 500, { ok: false, error: { code: 'unavailable', message: 'The check could not be completed right now.' }, request_id: requestId }, requestId);
     }

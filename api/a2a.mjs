@@ -56,9 +56,11 @@ import {
   handleCheckHostnameReputation,
   handleCheckWalletAge,
   recordToolError,
-  resolveTestFixture
+  resolveTestFixture,
+  requestCallerHash
 } from './mcp.mjs';
 import { getRequestIdentifier } from '../lib/freeTier.mjs';
+import { recordTelemetry } from '../lib/telemetry.mjs';
 import { buildCheck, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
 import { formatFixIt, invalidInputMessage } from '../lib/invalidInput.mjs';
 
@@ -218,6 +220,34 @@ function taskResult(skill, args, result, version, inboundMessage) {
   return task;
 }
 
+// Telemetry for one skill call (lib/telemetry.mjs): the skill name (always
+// one of A2A_SKILL_NAMES), how it ended, and a salted hash of the caller IP.
+// Every skill here is free. Never the arguments or the result.
+function statusFromHttp(statusCode) {
+  if (statusCode >= 200 && statusCode < 300) return 'ok';
+  if (statusCode === 429) return 'rate_limited';
+  if (statusCode >= 400 && statusCode < 500) return 'client_error';
+  if (statusCode >= 500) return 'server_error';
+  return 'unknown';
+}
+
+function recordSkillTelemetry(skillTelemetry, res) {
+  try {
+    recordTelemetry({
+      eventType: 'tool_call',
+      endpoint: '/api/a2a',
+      toolName: skillTelemetry.skill,
+      paymentType: 'free',
+      status: skillTelemetry.status || statusFromHttp(res.statusCode),
+      latencyMs: Date.now() - skillTelemetry.startedAt,
+      callerHash: requestCallerHash(skillTelemetry.req),
+      isFixture: skillTelemetry.isFixture === true
+    });
+  } catch {
+    // Best-effort - telemetry never affects the response.
+  }
+}
+
 export default async function handler(req, res) {
   // A UUID unique to this request (issue #215), distinct from the JSON-RPC
   // `requestId` below (the caller's own `id` field, echoed back as-is).
@@ -255,6 +285,8 @@ export default async function handler(req, res) {
 
   const { id, method, params } = body;
   const requestId = (id !== undefined && id !== null) ? id : '1';
+  // Set once a call names a known skill; recorded in the finally below.
+  let skillTelemetry = null;
 
   try {
     const { version, requested } = resolveVersion(req);
@@ -327,11 +359,15 @@ export default async function handler(req, res) {
       }, pg1RequestId), requestId, undefined, pg1RequestId);
     }
 
+    skillTelemetry = { skill, req, status: null, startedAt: Date.now() };
+
     // Integration test fixtures (issue #215 part B): answered before any
     // licence check, rate limit, cache, upstream call or error logging, in
     // exactly the shape a real result/failure takes on this endpoint.
     const fixtureOutcome = resolveTestFixture(skill, args);
     if (fixtureOutcome) {
+      skillTelemetry.isFixture = true;
+      if (fixtureOutcome.type === 'tool_error') skillTelemetry.status = 'tool_error';
       if (fixtureOutcome.type === 'service_unavailable') {
         return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, fixtureOutcome.message, requestId, { test_fixture: true }, pg1RequestId);
       }
@@ -363,6 +399,7 @@ export default async function handler(req, res) {
           const isTimeout = /timed out/i.test(err.message);
           recordToolError(`/api/a2a:${skill}`, null, `${skill}_${isTimeout ? 'timeout' : 'upstream_unavailable'}`, isTimeout ? 'timeout' : 'upstream', pg1RequestId);
         }
+        skillTelemetry.status = err.code === 'rate_limited' ? 'rate_limited' : 'tool_error';
         const errorChecks = [buildCheck(SKILL_SOURCE_LABELS[skill] || skill, classifyToolErrorCheckResult(err))];
         const errorData = { code: err.code, ...errorResponseMeta(errorChecks, pg1RequestId) };
         return jsonRpcError(res, 200, -32000, invalidInputMessage(err, pg1RequestId), requestId, errorData, pg1RequestId);
@@ -380,5 +417,7 @@ export default async function handler(req, res) {
     console.error('[A2A] unhandled exception:', err.message);
     recordToolError('/api/a2a', 500, 'unhandled_exception', 'js_error', pg1RequestId);
     return jsonRpcError(res, 500, -32603, 'Internal server error', requestId, undefined, pg1RequestId);
+  } finally {
+    if (skillTelemetry) recordSkillTelemetry(skillTelemetry, res);
   }
 }

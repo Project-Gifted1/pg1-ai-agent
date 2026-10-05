@@ -114,7 +114,8 @@ async function paymentFor(toolName, args) {
 }
 
 function assertRowShape(row) {
-  assert.deepEqual(Object.keys(row).sort(), ['endpoint', 'event_type', 'latency_ms', 'payment_type', 'status', 'tool_name']);
+  assert.deepEqual(Object.keys(row).sort(), ['caller_hash', 'client_name', 'client_version', 'endpoint', 'event_type', 'is_fixture', 'latency_ms', 'payment_type', 'status', 'tool_name']);
+  assert.equal(row.is_fixture, false);
   assert.equal(row.endpoint, '/api/mcp');
   assert.ok(Number.isInteger(row.latency_ms) && row.latency_ms >= 0);
 }
@@ -124,11 +125,11 @@ function assertRowShape(row) {
 test('buildTelemetryRow keeps the known fields and normalises unknown enums', () => {
   assert.deepEqual(
     buildTelemetryRow({ eventType: 'settlement', endpoint: '/api/mcp', toolName: 'get_cve_details', paymentType: 'x402', status: 'settled', latencyMs: 12.6 }),
-    { event_type: 'settlement', endpoint: '/api/mcp', tool_name: 'get_cve_details', payment_type: 'x402', status: 'settled', latency_ms: 13 }
+    { event_type: 'settlement', endpoint: '/api/mcp', tool_name: 'get_cve_details', payment_type: 'x402', status: 'settled', latency_ms: 13, client_name: null, client_version: null, caller_hash: null, is_fixture: false }
   );
   assert.deepEqual(
     buildTelemetryRow({ eventType: 'bogus', paymentType: 'bitcoin', latencyMs: -5 }),
-    { event_type: 'tool_call', endpoint: 'unknown', tool_name: null, payment_type: 'none', status: 'unknown', latency_ms: null }
+    { event_type: 'tool_call', endpoint: 'unknown', tool_name: null, payment_type: 'none', status: 'unknown', latency_ms: null, client_name: null, client_version: null, caller_hash: null, is_fixture: false }
   );
   assert.equal(buildTelemetryRow({ toolName: 'x'.repeat(500) }).tool_name.length, 80);
 });
@@ -151,7 +152,7 @@ test('recordTelemetry posts one row to agent_telemetry with the service-role key
   assert.equal(captured.opts.method, 'POST');
   assert.equal(captured.opts.headers.apikey, 'service-role-test');
   assert.equal(captured.opts.headers.Prefer, 'return=minimal');
-  assert.deepEqual(JSON.parse(captured.opts.body), { event_type: 'tool_call', endpoint: '/api/mcp', tool_name: 'get_usage_status', payment_type: 'free', status: 'ok', latency_ms: 4 });
+  assert.deepEqual(JSON.parse(captured.opts.body), { event_type: 'tool_call', endpoint: '/api/mcp', tool_name: 'get_usage_status', payment_type: 'free', status: 'ok', latency_ms: 4, client_name: null, client_version: null, caller_hash: null, is_fixture: false });
 });
 
 test('recordTelemetry fails silently: unconfigured, rejecting fetch, throwing fetch, non-2xx', async (t) => {
@@ -222,7 +223,7 @@ test('paid x402 call records a settlement row and an x402 tool_call row', async 
   rows.forEach(assertRowShape);
   const settlement = rows.find((r) => r.event_type === 'settlement');
   const call = rows.find((r) => r.event_type === 'tool_call');
-  assert.deepEqual({ ...settlement, latency_ms: 0 }, { event_type: 'settlement', endpoint: '/api/mcp', tool_name: 'get_threat_actor_profile', payment_type: 'x402', status: 'settled', latency_ms: 0 });
+  assert.deepEqual({ ...settlement, latency_ms: 0 }, { event_type: 'settlement', endpoint: '/api/mcp', tool_name: 'get_threat_actor_profile', payment_type: 'x402', status: 'settled', latency_ms: 0, client_name: null, client_version: null, caller_hash: null, is_fixture: false });
   assert.equal(call.payment_type, 'x402');
   assert.equal(call.status, 'ok');
 });

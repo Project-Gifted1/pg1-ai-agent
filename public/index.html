@@ -5163,11 +5163,13 @@
     // subject (addresses shortened to first 6 and last 4, full in the
     // expander), a status chip, the key fields, reasons, checks with their
     // data_as_of, the request_id and a Raw JSON expander with a copy button.
-    const TOOL_STATUS_CLASS = { flagged: 'is-flagged', no_flags: 'is-clear', unknown: 'is-unknown', failed: 'is-failed' };
+    // 'report' is the operator's usage stats card (/usage, get_usage_stats):
+    // aggregates, not a verdict, so it keeps the neutral chip.
+    const TOOL_STATUS_CLASS = { flagged: 'is-flagged', no_flags: 'is-clear', unknown: 'is-unknown', failed: 'is-failed', report: 'is-report' };
     let toolCardSeq = 0;
 
     function toolStatusLabel(status) {
-      return { flagged: 'Flagged', no_flags: 'No flags', unknown: 'Unknown', failed: 'Failed' }[status] || 'Unknown';
+      return { flagged: 'Flagged', no_flags: 'No flags', unknown: 'Unknown', failed: 'Failed', report: 'Report' }[status] || 'Unknown';
     }
 
     function toolDateText(iso) {
