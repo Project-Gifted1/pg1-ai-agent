@@ -2849,7 +2849,8 @@ function sendPaymentRequiredResult(res, requestId, paymentRequired, pg1RequestId
 //
 // Each settle attempt also records a 'settlement' telemetry row (latency is
 // the facilitator settle call only) and marks the surrounding tool call's
-// telemetry as settlement_failed on failure - both fire-and-forget.
+// telemetry as settlement_failed on failure - both fire-and-forget (the
+// write is kept alive past the response by waitUntil in lib/telemetry.mjs).
 async function settleAndRespondOnFailure(res, requestId, gate, pg1RequestId, callTelemetry) {
   let settleResult;
   const settleStartedAt = Date.now();
@@ -2925,6 +2926,9 @@ const LICENSE_ONLY_TOOLS = new Set(['subscribe_alerts', 'submit_indicator']);
 // explicit override set along the way (payment_required, tool_error,
 // settlement_failed, unknown_tool) or else from the HTTP status already
 // sent. An unrecognised tool name is caller input, so it's never stored.
+// Called from the handler's finally, after the response is written; the
+// unawaited insert is registered with Vercel's waitUntil inside
+// recordTelemetry, so it still completes before the function is frozen.
 const KNOWN_TOOL_NAMES = new Set(TOOLS.map((t) => t.name));
 
 function paymentTypeForGate(gate) {

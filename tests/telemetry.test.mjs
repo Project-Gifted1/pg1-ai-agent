@@ -306,3 +306,65 @@ test('telemetry write is not awaited: a hanging Supabase insert does not block t
   assert.equal(res.statusCode, 200);
   assert.ok(res.body.result);
 });
+
+// --- Vercel waitUntil -----------------------------------------------------
+
+// @vercel/functions' waitUntil looks up the per-request context Vercel
+// installs at globalThis[Symbol.for('@vercel/request-context')]; tests
+// install a fake one to see what gets registered.
+const VERCEL_REQUEST_CONTEXT = Symbol.for('@vercel/request-context');
+
+function installVercelContext(t, waitUntilImpl) {
+  const prev = globalThis[VERCEL_REQUEST_CONTEXT];
+  globalThis[VERCEL_REQUEST_CONTEXT] = { get: () => ({ waitUntil: waitUntilImpl }) };
+  t.after(() => {
+    if (prev === undefined) delete globalThis[VERCEL_REQUEST_CONTEXT]; else globalThis[VERCEL_REQUEST_CONTEXT] = prev;
+  });
+}
+
+test('recordTelemetry registers the in-flight write with Vercel waitUntil', async (t) => {
+  setup(t);
+  const registered = [];
+  installVercelContext(t, (p) => { registered.push(p); });
+
+  const returned = recordTelemetry({ endpoint: '/api/mcp', status: 'ok' });
+
+  assert.equal(registered.length, 1);
+  assert.equal(registered[0], returned, 'the same never-rejecting promise is kept alive');
+  await assert.doesNotReject(registered[0]);
+});
+
+test('waitUntil gets a promise that resolves even when the Supabase insert fails', async (t) => {
+  setup(t, { telemetryBehaviour: 'reject' });
+  const registered = [];
+  installVercelContext(t, (p) => { registered.push(p); });
+
+  recordTelemetry({ endpoint: '/api/mcp', status: 'ok' });
+
+  assert.equal(registered.length, 1);
+  await assert.doesNotReject(registered[0]);
+});
+
+test('a throwing waitUntil never breaks recordTelemetry', async (t) => {
+  const rows = setup(t);
+  installVercelContext(t, () => { throw new Error('no context'); });
+
+  assert.doesNotThrow(() => recordTelemetry({ endpoint: '/api/mcp', status: 'ok' }));
+  await new Promise((r) => setImmediate(r));
+  assert.equal(rows.length, 1, 'the write still went out');
+});
+
+test('paid x402 call registers both the settlement and tool_call writes with waitUntil', async (t) => {
+  const rows = setup(t, { otherFetch: attackBundleFetch });
+  const payment = await paymentFor('get_threat_actor_profile', { actor_name: 'APT29' });
+  rows.length = 0;
+  const registered = [];
+  installVercelContext(t, (p) => { registered.push(p); });
+
+  const res = await callTool('get_threat_actor_profile', { actor_name: 'APT29' }, { meta: { 'x402/payment': payment } });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(rows.length, 2);
+  assert.equal(registered.length, 2, 'one waitUntil per telemetry write');
+  await Promise.all(registered);
+});
