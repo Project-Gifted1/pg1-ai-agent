@@ -15,7 +15,7 @@ import { businessStateText, classifyKeyQuestion, createReplySecretGuard, isError
 import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } from '../lib/voiceStream.mjs';
 import { reportUpstreamFailure, userFacingFailure, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 import { generateImage } from '../lib/imageEngines.mjs';
-import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, usageReport, USAGE_STATS_TOOL, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
+import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, usageReport, USAGE_STATS_TOOL, LEAST_PRIVILEGED_ROLE, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
 import { CHAT_ROUTES, chooseChatRoute, searchAfterTools, wantsCurrentInfo } from '../lib/chatRoute.mjs';
 import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
 
@@ -332,6 +332,18 @@ function recordServerError(supUrl, supKey, route, status, reason, message) {
 
 // One short, greppable line per 401 this route ever returns — route name +
 // reason only, never the credentials/prompt/body that triggered it.
+// Slash commands anyone may run: /help (lists commands) and /auth (says
+// whether the given credentials are valid). Every other slash command, and
+// the bare "status" keyword, is an operator command.
+const PUBLIC_COMMANDS = new Set(['/help', '/auth']);
+
+export function isOperatorCommand(lowerPrompt) {
+  var text = String(lowerPrompt || '').trim().toLowerCase();
+  if (text === 'status') return true;
+  if (!text.startsWith('/')) return false;
+  return !PUBLIC_COMMANDS.has(text.split(/\s+/)[0]);
+}
+
 function log401(route, reason, supUrl, supKey) {
   console.warn(`[chat] 401 route=${route} reason=${reason}`);
   if (supUrl && supKey) recordServerError(supUrl, supKey, route, 401, reason);
@@ -1785,6 +1797,13 @@ export default async function handler(req, res) {
     var isAuthed = !!(
       expectedUser && expectedPass && safeCompare(user, expectedUser) && safeCompare(pass, expectedPass)
     );
+    // ROLE: the one place a chat request's role is decided. 'operator' only
+    // ever comes from the authenticated session above; everything else -
+    // no credentials, wrong credentials, anything a request body says about
+    // itself - is the least-privileged role. Operator tools, operator
+    // commands and the operator's stored context all key off this.
+    var sessionRole = isAuthed ? 'operator' : LEAST_PRIVILEGED_ROLE;
+    var isOperator = sessionRole === 'operator';
 
     if (isAuthRateLimited(clientIp)) {
       recordServerError(supUrl, supKey, 'AUTH', 429, 'rate_limited');
@@ -1951,7 +1970,9 @@ export default async function handler(req, res) {
       return { text: guarded.text, removed: removed, redacted: removed.length > 0 };
     };
 
-    if (supabaseUrl && supabaseKey) {
+    // The operator's stored context (recent messages, vault files, error
+    // log, threat rows) is only ever loaded for the operator's session.
+    if (isOperator && supabaseUrl && supabaseKey) {
       const createTimedFetch = (url, options = {}, timeoutMs = 3000) => {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -2059,6 +2080,13 @@ export default async function handler(req, res) {
     var activeAction = rawActionType;
     if (activeAction === 'CHAT' && typeof promptText === 'string') {
       var lower = promptText.toLowerCase().trim();
+      // OPERATOR COMMANDS: every slash command (and the bare "status"
+      // keyword) is operator-only, except /help and /auth. A request
+      // without the operator's session gets a 401 before any command runs.
+      if (isOperatorCommand(lower) && !isOperator) {
+        log401('COMMAND', 'unauthenticated', supUrl, supKey);
+        return sendJSON(res, 401, { reply: `[AGENT] Command Aborted: Authentication required.`, traceId: requestTraceId });
+      }
       var isHeavyTask = lower.length > 300 || /analyze|architect|compile|comprehensive|strategy|trillion|revenue strike|report|complex|debug/i.test(lower);
 
       if (lower === '/status' || lower === '/status update' || lower === 'status') {
@@ -2070,11 +2098,11 @@ export default async function handler(req, res) {
         // USAGE (signed-in operator only): the same aggregates and card as
         // the operator's get_usage_stats chat tool, through the same
         // executor. Optional period: /usage today | 7d | 30d (default 7d).
-        if (!isAuthed) {
+        if (!isOperator) {
           log401('USAGE', 'unauthenticated', supUrl, supKey);
           return sendJSON(res, 401, { reply: `[AGENT] Usage Aborted: Authentication required.`, traceId: requestTraceId });
         }
-        var usageOutcome = await createToolExecutor({ role: 'operator', identifier: clientIp })({ id: 'usage', name: USAGE_STATS_TOOL, args: { period: lower.slice('/usage'.length).trim() } });
+        var usageOutcome = await createToolExecutor({ role: sessionRole, identifier: clientIp })({ id: 'usage', name: USAGE_STATS_TOOL, args: { period: lower.slice('/usage'.length).trim() } });
         var usageCard = summarizeOutcome(usageOutcome);
         if (chatStream) chatStream.toolResult(usageCard);
         return sendJSON(res, 200, { reply: usageReport(usageOutcome), toolResults: [usageCard], traceId: requestTraceId });
@@ -3033,7 +3061,7 @@ export default async function handler(req, res) {
     // CHAT TOOLS (lib/chatTools.mjs): the signed-in operator's role gets
     // PG1's read-only MCP tools as functions on an ordinary chat reply.
     // Nothing here is offered on the SPEAK, image or patch branches above.
-    var chatToolRole = (activeAction === 'CHAT' || activeAction === 'CLAUDE_CHAT') ? 'operator' : null;
+    var chatToolRole = (activeAction === 'CHAT' || activeAction === 'CLAUDE_CHAT') ? sessionRole : null;
     var chatTools = chatToolRole ? chatToolsForRole(chatToolRole) : [];
     var chatToolPolicyForRole = chatToolRole ? chatToolPolicy(chatToolRole) : null;
     var toolDirectiveText = chatTools.length ? toolDirective(chatTools, { maxCalls: chatToolPolicyForRole.maxCalls }) + '\n' : '';

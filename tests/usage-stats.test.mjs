@@ -347,8 +347,9 @@ test('/api/ioc records one ioc_feed row with how it ended, never the query or th
 test('get_usage_stats is offered to the operator role only, and is not an MCP tool', () => {
   assert.ok(chatToolsForRole('operator').some((t) => t.name === USAGE_STATS_TOOL));
   assert.ok(!chatToolsForRole('guest').some((t) => t.name === USAGE_STATS_TOOL));
-  assert.deepEqual(chatToolsForRole('public'), []);
-  assert.deepEqual(chatToolsForRole(undefined), []);
+  for (const role of ['public', undefined, null, '', 'constructor', 'OPERATOR']) {
+    assert.ok(!chatToolsForRole(role).some((t) => t.name === USAGE_STATS_TOOL), String(role));
+  }
   assert.ok(!CHAT_TOOL_ROLES.guest.tools.some((n) => OPERATOR_ONLY_CHAT_TOOLS.includes(n)));
   assert.ok(!TOOLS.some((t) => t.name === USAGE_STATS_TOOL), 'the MCP tool list is unchanged');
 });
