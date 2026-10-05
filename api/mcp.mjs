@@ -88,6 +88,7 @@ import { normalizeWalletAddress, isRecognizedWalletAddress } from '../lib/wallet
 import { extractRegistrableDomain } from '../lib/domainExtraction.mjs';
 import { domainToASCII, domainToUnicode } from 'node:url';
 import { logApiError } from '../lib/errorLog.mjs';
+import { recordTelemetry } from '../lib/telemetry.mjs';
 import { reason } from '../lib/reasonCodes.mjs';
 import { buildCheck, withResponseMeta, withActionResponseMeta, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
 import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES, FIXTURE_DELEGATE_ADDRESS, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, FIXTURE_DOMAIN_CLEAN_REGISTERED, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
@@ -2845,15 +2846,26 @@ function sendPaymentRequiredResult(res, requestId, paymentRequired, pg1RequestId
 // result._meta["x402/payment-response"]. On failure, writes the same
 // payment-required tool result as an unpaid call and returns null so the
 // caller does not also send its own response.
-async function settleAndRespondOnFailure(res, requestId, gate, pg1RequestId) {
+//
+// Each settle attempt also records a 'settlement' telemetry row (latency is
+// the facilitator settle call only) and marks the surrounding tool call's
+// telemetry as settlement_failed on failure - both fire-and-forget.
+async function settleAndRespondOnFailure(res, requestId, gate, pg1RequestId, callTelemetry) {
   let settleResult;
+  const settleStartedAt = Date.now();
+  const recordSettlement = (status) => {
+    if (callTelemetry && status !== 'settled') callTelemetry.status = 'settlement_failed';
+    recordTelemetry({ eventType: 'settlement', endpoint: '/api/mcp', toolName: callTelemetry?.toolName, paymentType: 'x402', status, latencyMs: Date.now() - settleStartedAt });
+  };
   try {
     settleResult = await gate.settle();
   } catch (e) {
+    recordSettlement('error');
     const paymentRequired = await gate.settlementFailurePaymentRequired('Settlement failed: ' + e.message);
     sendPaymentRequiredResult(res, requestId, paymentRequired, pg1RequestId);
     return null;
   }
+  recordSettlement(settleResult.success ? 'settled' : 'failed');
   if (!settleResult.success) {
     const paymentRequired = await gate.settlementFailurePaymentRequired(settleResult.errorMessage || settleResult.errorReason || 'Settlement failed');
     sendPaymentRequiredResult(res, requestId, paymentRequired, pg1RequestId);
@@ -2908,6 +2920,48 @@ export async function runReadOnlyTool(toolName, args, ctx = {}) {
 }
 
 const LICENSE_ONLY_TOOLS = new Set(['subscribe_alerts', 'submit_indicator']);
+
+// Telemetry for one tools/call (lib/telemetry.mjs). Status comes from an
+// explicit override set along the way (payment_required, tool_error,
+// settlement_failed, unknown_tool) or else from the HTTP status already
+// sent. An unrecognised tool name is caller input, so it's never stored.
+const KNOWN_TOOL_NAMES = new Set(TOOLS.map((t) => t.name));
+
+function paymentTypeForGate(gate) {
+  if (!gate.authorized) return 'none';
+  if (gate.settle) return 'x402';
+  if (gate.consumeFreeTier) return 'free_tier';
+  return 'license';
+}
+
+function noteGateTelemetry(callTelemetry, gate) {
+  callTelemetry.paymentType = paymentTypeForGate(gate);
+  if (!gate.authorized && !gate.handled) callTelemetry.status = 'payment_required';
+}
+
+function statusFromHttp(statusCode) {
+  if (statusCode >= 200 && statusCode < 300) return 'ok';
+  if (statusCode === 402) return 'payment_required';
+  if (statusCode >= 400 && statusCode < 500) return 'client_error';
+  if (statusCode >= 500) return 'server_error';
+  return 'unknown';
+}
+
+function recordToolCallTelemetry(callTelemetry, res) {
+  try {
+    const known = KNOWN_TOOL_NAMES.has(callTelemetry.toolName);
+    recordTelemetry({
+      eventType: 'tool_call',
+      endpoint: '/api/mcp',
+      toolName: known ? callTelemetry.toolName : null,
+      paymentType: callTelemetry.paymentType,
+      status: known ? (callTelemetry.status || statusFromHttp(res.statusCode)) : 'unknown_tool',
+      latencyMs: Date.now() - callTelemetry.startedAt
+    });
+  } catch {
+    // Best-effort - telemetry never affects the response.
+  }
+}
 
 // Generic (never vendor-named) `checks[].source` labels used when a tool
 // call fails before producing a result (issue #215) - keyed by tool name so
@@ -2976,6 +3030,9 @@ export default async function handler(req, res) {
 
   const { id, method, params } = body;
   const requestId = (id !== undefined && id !== null) ? id : '1';
+  // Set once a tools/call gets past the fixture check; recorded in the
+  // finally below, after the response has been written.
+  let callTelemetry = null;
 
   try {
     if (method === 'initialize') {
@@ -3005,10 +3062,13 @@ export default async function handler(req, res) {
       const fixtureOutcome = resolveTestFixture(toolName, toolArgs);
       if (fixtureOutcome) return sendMcpFixtureResponse(res, toolName, fixtureOutcome, requestId, pg1RequestId);
 
+      callTelemetry = { toolName, paymentType: 'none', status: null, startedAt: Date.now() };
+
       const licenseKey = req.headers['x-api-key'];
       const mcpRequestIdentifier = getRequestIdentifier(req);
 
       if (FREE_TOOLS.has(toolName)) {
+        callTelemetry.paymentType = 'free';
         let toolResult;
         try {
           if (toolName === 'check_wallet_sanctions') await enforceWalletSanctionsRateLimit(mcpRequestIdentifier, licenseKey);
@@ -3027,6 +3087,7 @@ export default async function handler(req, res) {
               const isTimeout = /timed out/i.test(toolErr.message);
               recordToolError(`/api/mcp:${toolName}`, null, `${toolName}_${isTimeout ? 'timeout' : 'upstream_unavailable'}`, isTimeout ? 'timeout' : 'upstream', pg1RequestId);
             }
+            callTelemetry.status = 'tool_error';
             const errorChecks = [buildCheck(TOOL_SOURCE_LABELS[toolName] || toolName, classifyToolErrorCheckResult(toolErr))];
             return res.status(200).json({
               jsonrpc: '2.0',
@@ -3064,6 +3125,7 @@ export default async function handler(req, res) {
         if (!check.valid) {
           return res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error, data: { request_id: pg1RequestId } }, id: requestId });
         }
+        callTelemetry.paymentType = 'license';
         let toolResult;
         try {
           toolResult = toolName === 'subscribe_alerts'
@@ -3098,6 +3160,7 @@ export default async function handler(req, res) {
         lookupResult.request_id = pg1RequestId;
 
         if (!lookupResult.found) {
+          callTelemetry.paymentType = 'free';
           return res.status(200).json({
             jsonrpc: '2.0',
             result: { content: [{ type: 'text', text: JSON.stringify(lookupResult, null, 2) }] },
@@ -3106,12 +3169,13 @@ export default async function handler(req, res) {
         }
 
         const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, 'get_ioc_context', pg1RequestId);
+        noteGateTelemetry(callTelemetry, gate);
         if (gate.handled) return;
         if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired, pg1RequestId);
 
         const result = { content: [{ type: 'text', text: JSON.stringify(lookupResult, null, 2) }] };
         if (gate.settle) {
-          const settlement = await settleAndRespondOnFailure(res, requestId, gate, pg1RequestId);
+          const settlement = await settleAndRespondOnFailure(res, requestId, gate, pg1RequestId, callTelemetry);
           if (!settlement) return;
           result._meta = { 'x402/payment-response': settlement };
         }
@@ -3135,6 +3199,7 @@ export default async function handler(req, res) {
         batchResult.request_id = pg1RequestId;
 
         if (batchResult.total_found === 0) {
+          callTelemetry.paymentType = 'free';
           return res.status(200).json({
             jsonrpc: '2.0',
             result: { content: [{ type: 'text', text: JSON.stringify(batchResult, null, 2) }] },
@@ -3143,12 +3208,13 @@ export default async function handler(req, res) {
         }
 
         const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, 'get_ioc_batch', pg1RequestId);
+        noteGateTelemetry(callTelemetry, gate);
         if (gate.handled) return;
         if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired, pg1RequestId);
 
         const result = { content: [{ type: 'text', text: JSON.stringify(batchResult, null, 2) }] };
         if (gate.settle) {
-          const settlement = await settleAndRespondOnFailure(res, requestId, gate, pg1RequestId);
+          const settlement = await settleAndRespondOnFailure(res, requestId, gate, pg1RequestId, callTelemetry);
           if (!settlement) return;
           result._meta = { 'x402/payment-response': settlement };
         }
@@ -3163,6 +3229,7 @@ export default async function handler(req, res) {
       }
 
       const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName, pg1RequestId);
+      noteGateTelemetry(callTelemetry, gate);
       if (gate.handled) return;
       if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired, pg1RequestId);
 
@@ -3181,7 +3248,7 @@ export default async function handler(req, res) {
 
       const result = { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] };
       if (gate.settle) {
-        const settlement = await settleAndRespondOnFailure(res, requestId, gate, pg1RequestId);
+        const settlement = await settleAndRespondOnFailure(res, requestId, gate, pg1RequestId, callTelemetry);
         if (!settlement) return;
         result._meta = { 'x402/payment-response': settlement };
       }
@@ -3199,5 +3266,7 @@ export default async function handler(req, res) {
     console.error('[MCP] unhandled tools/call exception:', err.message);
     recordToolError('/api/mcp', 500, 'unhandled_exception', 'js_error', pg1RequestId);
     return res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal server error', data: { request_id: pg1RequestId } }, id: requestId });
+  } finally {
+    if (callTelemetry) recordToolCallTelemetry(callTelemetry, res);
   }
 }
