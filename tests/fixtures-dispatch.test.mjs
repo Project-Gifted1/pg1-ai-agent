@@ -65,10 +65,21 @@ async function callA2a(skill, args, headers) {
 // Records every fetch (upstream sources, Supabase caches/tables, the Gumroad
 // licence check, free-tier accounting and the error log all go through
 // global fetch) and fails it, so any call is both counted and harmless.
+// The one write a fixture call does make is its usage telemetry row
+// (lib/telemetry.mjs, flagged is_fixture so the usage stats leave it out);
+// those go to `calls.telemetry`, not `calls`, and every one must carry
+// is_fixture: true.
 function spyFetch(t) {
   const calls = [];
+  Object.defineProperty(calls, 'telemetry', { value: [], enumerable: false });
   const original = global.fetch;
-  global.fetch = async (url) => {
+  global.fetch = async (url, opts) => {
+    if (String(url).endsWith('/rest/v1/agent_telemetry') && opts && opts.method === 'POST') {
+      const row = JSON.parse(opts.body);
+      assert.equal(row.is_fixture, true, 'a fixture call is recorded as a fixture');
+      calls.telemetry.push(row);
+      return { ok: true, status: 201 };
+    }
     calls.push(String(url));
     throw new Error('fetch spy: network touched');
   };
@@ -154,6 +165,8 @@ test('MCP: every fixture returns its expected result, with no key and no network
   }
 
   assert.deepEqual(calls, [], 'fixture calls must never call fetch (upstream, cache, licence, free tier, error log)');
+  assert.equal(calls.telemetry.length, TEST_FIXTURES.length, 'one usage telemetry row per fixture call, flagged is_fixture');
+  assert.ok(calls.telemetry.every((r) => r.endpoint === '/api/mcp' && r.event_type === 'tool_call'));
   assert.equal(facilitatorCalls, 0, 'fixture calls must never reach the x402 payment gate');
 });
 
@@ -347,6 +360,8 @@ test('A2A: the 4 fixture skills return their expected result with no network act
     }
   }
   assert.deepEqual(calls, []);
+  assert.equal(calls.telemetry.length, TEST_FIXTURES.filter((f) => A2A_FIXTURE_SKILLS.includes(f.tool)).length);
+  assert.ok(calls.telemetry.every((r) => r.endpoint === '/api/a2a' && r.is_fixture === true));
 });
 
 // Fixture dates must stay valid forever: with the clock frozen 60 days from

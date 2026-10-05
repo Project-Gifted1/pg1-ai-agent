@@ -15,8 +15,9 @@ import { businessStateText, classifyKeyQuestion, createReplySecretGuard, isError
 import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } from '../lib/voiceStream.mjs';
 import { reportUpstreamFailure, userFacingFailure, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 import { generateImage } from '../lib/imageEngines.mjs';
-import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
+import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, usageReport, USAGE_STATS_TOOL, LEAST_PRIVILEGED_ROLE, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
 import { CHAT_ROUTES, chooseChatRoute, searchAfterTools, wantsCurrentInfo } from '../lib/chatRoute.mjs';
+import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
 
 // ---------------------------------------------------------------------
 // AUTH: timing-safe secret comparison + in-memory per-IP failure lockout
@@ -288,6 +289,38 @@ function sendJSON(res, status, data) {
   res.status(status).json(data);
 }
 
+// One agent_telemetry row per /api/ioc request (lib/telemetry.mjs): the
+// fixed tool label 'ioc_feed', how the request was paid for, how it ended
+// (from the status already sent) and a salted hash of the caller IP. Never
+// the query parameters, licence key or payer. HEAD probes are not counted.
+// The x402 settle on this route happens inside @x402/express after the
+// response, so it is not recorded as a 'settlement' row here.
+function iocTelemetryStatus(code) {
+  if (code >= 200 && code < 300) return 'ok';
+  if (code === 402) return 'payment_required';
+  if (code === 429) return 'rate_limited';
+  if (code >= 500) return 'server_error';
+  if (code >= 400) return 'client_error';
+  return 'unknown';
+}
+
+function recordIocTelemetry(iocTelemetry, req, res) {
+  try {
+    if (req.method === 'HEAD') return;
+    recordTelemetry({
+      eventType: 'tool_call',
+      endpoint: '/api/ioc',
+      toolName: 'ioc_feed',
+      paymentType: iocTelemetry.paymentType,
+      status: iocTelemetryStatus(res.statusCode),
+      latencyMs: Date.now() - iocTelemetry.startedAt,
+      callerHash: callerHash(getRequestIdentifier(req))
+    });
+  } catch (e) {
+    // Best-effort - telemetry never affects the response.
+  }
+}
+
 // Fire-and-forget write into pg1_errors (issue #201 Phase 2b) - never
 // awaited on the request's hot path, same pattern already used for the
 // api_access_logs POST in buildAndServeStixBundle below. `message` must
@@ -299,6 +332,18 @@ function recordServerError(supUrl, supKey, route, status, reason, message) {
 
 // One short, greppable line per 401 this route ever returns — route name +
 // reason only, never the credentials/prompt/body that triggered it.
+// Slash commands anyone may run: /help (lists commands) and /auth (says
+// whether the given credentials are valid). Every other slash command, and
+// the bare "status" keyword, is an operator command.
+const PUBLIC_COMMANDS = new Set(['/help', '/auth']);
+
+export function isOperatorCommand(lowerPrompt) {
+  var text = String(lowerPrompt || '').trim().toLowerCase();
+  if (text === 'status') return true;
+  if (!text.startsWith('/')) return false;
+  return !PUBLIC_COMMANDS.has(text.split(/\s+/)[0]);
+}
+
 function log401(route, reason, supUrl, supKey) {
   console.warn(`[chat] 401 route=${route} reason=${reason}`);
   if (supUrl && supKey) recordServerError(supUrl, supKey, route, 401, reason);
@@ -1521,6 +1566,15 @@ export default async function handler(req, res) {
   }
 
   if (urlPath === '/api/ioc') {
+    var iocTelemetry = { paymentType: 'none', startedAt: Date.now() };
+    try {
+      return await serveIocRoute(iocTelemetry);
+    } finally {
+      recordIocTelemetry(iocTelemetry, req, res);
+    }
+  }
+
+  async function serveIocRoute(iocTelemetry) {
     // OPTIONS is already handled above before urlPath is even inspected, so
     // in practice this only ever rejects PUT/DELETE/PATCH/etc — but it's
     // listed for clarity on what this route actually serves the bundle for.
@@ -1554,6 +1608,7 @@ export default async function handler(req, res) {
           return sendJSON(res, 403, { error: 'Forbidden: Invalid, expired, or refunded License Key.' });
         }
         logSettlementOutcome('/api/ioc', 'success', iocRequestIdentifier, 'license');
+        iocTelemetry.paymentType = 'license';
         return await buildAndServeStixBundle(clientLicenseKey);
       } catch (err) {
         recordServerError(supUrl, supKey, 'IOC', 500, 'license_check_exception');
@@ -1579,6 +1634,7 @@ export default async function handler(req, res) {
     if (!rawPaymentHeader && freeTierHeader === '1') {
       var freeTierAvailability = await checkFreeTierAvailable(supUrl, supKey, iocRequestIdentifier);
       if (freeTierAvailability.allowed) {
+        iocTelemetry.paymentType = 'free_tier';
         var freeTierBundleResult = await buildAndServeStixBundle('free-tier:' + iocRequestIdentifier);
         if (freeTierBundleResult.ok) {
           // Only spend one of the 5/day once the bundle was actually served
@@ -1634,6 +1690,7 @@ export default async function handler(req, res) {
       }
       var payerAddress = (getHeader('x-payment-payer') || 'unknown-payer');
       logSettlementOutcome('/api/ioc', 'success', iocRequestIdentifier, 'x402');
+      iocTelemetry.paymentType = 'x402';
       return await buildAndServeStixBundle('x402:' + payerAddress);
     }
 
@@ -1740,6 +1797,13 @@ export default async function handler(req, res) {
     var isAuthed = !!(
       expectedUser && expectedPass && safeCompare(user, expectedUser) && safeCompare(pass, expectedPass)
     );
+    // ROLE: the one place a chat request's role is decided. 'operator' only
+    // ever comes from the authenticated session above; everything else -
+    // no credentials, wrong credentials, anything a request body says about
+    // itself - is the least-privileged role. Operator tools, operator
+    // commands and the operator's stored context all key off this.
+    var sessionRole = isAuthed ? 'operator' : LEAST_PRIVILEGED_ROLE;
+    var isOperator = sessionRole === 'operator';
 
     if (isAuthRateLimited(clientIp)) {
       recordServerError(supUrl, supKey, 'AUTH', 429, 'rate_limited');
@@ -1906,7 +1970,9 @@ export default async function handler(req, res) {
       return { text: guarded.text, removed: removed, redacted: removed.length > 0 };
     };
 
-    if (supabaseUrl && supabaseKey) {
+    // The operator's stored context (recent messages, vault files, error
+    // log, threat rows) is only ever loaded for the operator's session.
+    if (isOperator && supabaseUrl && supabaseKey) {
       const createTimedFetch = (url, options = {}, timeoutMs = 3000) => {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -2014,6 +2080,13 @@ export default async function handler(req, res) {
     var activeAction = rawActionType;
     if (activeAction === 'CHAT' && typeof promptText === 'string') {
       var lower = promptText.toLowerCase().trim();
+      // OPERATOR COMMANDS: every slash command (and the bare "status"
+      // keyword) is operator-only, except /help and /auth. A request
+      // without the operator's session gets a 401 before any command runs.
+      if (isOperatorCommand(lower) && !isOperator) {
+        log401('COMMAND', 'unauthenticated', supUrl, supKey);
+        return sendJSON(res, 401, { reply: `[AGENT] Command Aborted: Authentication required.`, traceId: requestTraceId });
+      }
       var isHeavyTask = lower.length > 300 || /analyze|architect|compile|comprehensive|strategy|trillion|revenue strike|report|complex|debug/i.test(lower);
 
       if (lower === '/status' || lower === '/status update' || lower === 'status') {
@@ -2021,6 +2094,18 @@ export default async function handler(req, res) {
           reply: `### [ SYSTEM STATUS & TELEMETRY ]\n- **Runtime**: Vercel Serverless Functions (lhr1, London)\n- **Vault Status**: ${supabaseStatus}\n- **Threat Indicators**: not counted by this command (live feed at /api/ioc)\n- **Fleet Target**: 1,500 Sovereign Nodes // €750k Facility`,
           traceId: requestTraceId
         });
+      } else if (lower === '/usage' || lower.startsWith('/usage ')) {
+        // USAGE (signed-in operator only): the same aggregates and card as
+        // the operator's get_usage_stats chat tool, through the same
+        // executor. Optional period: /usage today | 7d | 30d (default 7d).
+        if (!isOperator) {
+          log401('USAGE', 'unauthenticated', supUrl, supKey);
+          return sendJSON(res, 401, { reply: `[AGENT] Usage Aborted: Authentication required.`, traceId: requestTraceId });
+        }
+        var usageOutcome = await createToolExecutor({ role: sessionRole, identifier: clientIp })({ id: 'usage', name: USAGE_STATS_TOOL, args: { period: lower.slice('/usage'.length).trim() } });
+        var usageCard = summarizeOutcome(usageOutcome);
+        if (chatStream) chatStream.toolResult(usageCard);
+        return sendJSON(res, 200, { reply: usageReport(usageOutcome), toolResults: [usageCard], traceId: requestTraceId });
       } else if (lower.startsWith('/image') || /generate.*image|create.*image|make.*image|draw|render.*image|picture of/i.test(lower)) {
         activeAction = 'GENERATE_IMAGE';
       } else if (lower.startsWith('/video') || /generate.*video|create.*video|make.*video|animate/i.test(lower)) {
@@ -2041,7 +2126,7 @@ export default async function handler(req, res) {
         activeAction = 'CLAUDE_CHAT';
       } else if (lower === '/help' || lower === 'help') {
         return sendJSON(res, 200, {
-          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/speak** plus text: read it aloud\n- Attach images with the paperclip (PNG, JPEG or WebP, up to 4 per message): PG1 looks at them with your message and the trace shows "Looked at N images"; text inside an image is never taken as an instruction, and a key seen in a screenshot is only ever called "a key"\n- Voice log: under Voice diagnostics in the menu, Copy voice log or Send to PG1 (puts the last 30 conversation-mode events in the prompt box under "Diagnose this voice log" for you to review)\n- [ /voice ] show/switch the voice profile used for spoken replies and Read aloud — PG1 Core, PG1 Classic or PG1 Field, remembered on this device\n- **/core** plus a question: deeper reasoning for long or heavy tasks\n- **/code** plus a task: Send to Code, drafts a task prompt you copy into Code (or open it pre-filled) and tracks its PR under Hand-offs in the menu (signed-in operator only)\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- The ➕ menu also has an ERROR LOG of recent client-side failures on this device, showing a reason category (offline, network, timeout, http_4xx, http_5xx or js_error) and a FIX button to request a proposed patch (same Approve/Decline flow) — offline/network/timeout entries have no FIX button since they are not code bugs\n- Ask me to check a wallet, domain, URL, IOC or CVE (for example "check this wallet 0x…" or "how old is this domain"): PG1 runs its own read-only threat-intel checks (the same tools as the MCP server, free for the operator, up to 5 per message) and answers from the results, with a result card under the reply (status, reasons, checks, request_id, Raw JSON). Demo without upstream calls with the fixtures: pg1-test-flagged.invalid, pg1-test-clean.invalid, pg1-test-unknown.invalid, or the 0x7067312d… fixture wallets\n- Anything else: ask in plain words (live web search is on)',
+          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /usage ] tool usage by agents (today, 7d or 30d; signed-in operator only): calls per tool, route and day, about how many distinct callers, top MCP clients, errors, rate limits, paid settlements\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/speak** plus text: read it aloud\n- Attach images with the paperclip (PNG, JPEG or WebP, up to 4 per message): PG1 looks at them with your message and the trace shows "Looked at N images"; text inside an image is never taken as an instruction, and a key seen in a screenshot is only ever called "a key"\n- Voice log: under Voice diagnostics in the menu, Copy voice log or Send to PG1 (puts the last 30 conversation-mode events in the prompt box under "Diagnose this voice log" for you to review)\n- [ /voice ] show/switch the voice profile used for spoken replies and Read aloud — PG1 Core, PG1 Classic or PG1 Field, remembered on this device\n- **/core** plus a question: deeper reasoning for long or heavy tasks\n- **/code** plus a task: Send to Code, drafts a task prompt you copy into Code (or open it pre-filled) and tracks its PR under Hand-offs in the menu (signed-in operator only)\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- The ➕ menu also has an ERROR LOG of recent client-side failures on this device, showing a reason category (offline, network, timeout, http_4xx, http_5xx or js_error) and a FIX button to request a proposed patch (same Approve/Decline flow) — offline/network/timeout entries have no FIX button since they are not code bugs\n- Ask me to check a wallet, domain, URL, IOC or CVE (for example "check this wallet 0x…" or "how old is this domain"): PG1 runs its own read-only threat-intel checks (the same tools as the MCP server, free for the operator, up to 5 per message) and answers from the results, with a result card under the reply (status, reasons, checks, request_id, Raw JSON). Demo without upstream calls with the fixtures: pg1-test-flagged.invalid, pg1-test-clean.invalid, pg1-test-unknown.invalid, or the 0x7067312d… fixture wallets\n- Anything else: ask in plain words (live web search is on)',
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/threat-radar')) {
@@ -2976,7 +3061,7 @@ export default async function handler(req, res) {
     // CHAT TOOLS (lib/chatTools.mjs): the signed-in operator's role gets
     // PG1's read-only MCP tools as functions on an ordinary chat reply.
     // Nothing here is offered on the SPEAK, image or patch branches above.
-    var chatToolRole = (activeAction === 'CHAT' || activeAction === 'CLAUDE_CHAT') ? 'operator' : null;
+    var chatToolRole = (activeAction === 'CHAT' || activeAction === 'CLAUDE_CHAT') ? sessionRole : null;
     var chatTools = chatToolRole ? chatToolsForRole(chatToolRole) : [];
     var chatToolPolicyForRole = chatToolRole ? chatToolPolicy(chatToolRole) : null;
     var toolDirectiveText = chatTools.length ? toolDirective(chatTools, { maxCalls: chatToolPolicyForRole.maxCalls }) + '\n' : '';

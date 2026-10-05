@@ -31,7 +31,8 @@ import {
   CHAT_TOOL_ROLES, READ_ONLY_CHAT_TOOLS, WRITE_TOOLS, EXCLUDED_CHAT_TOOLS, chatToolsForRole, chatToolPolicy,
   toGeminiFunctionDeclarations, toAnthropicTools, toGeminiSchema, toolDirective, createToolExecutor, runToolLoop,
   summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, shortenAddress, geminiContents, anthropicMessages,
-  parseGeminiParts, createAnthropicToolAccumulator, CHAT_TOOL_MAX_CALLS
+  parseGeminiParts, createAnthropicToolAccumulator, CHAT_TOOL_MAX_CALLS,
+  OPERATOR_ONLY_CHAT_TOOLS
 } from '../lib/chatTools.mjs';
 import { FIXTURE_VALUES, FIXTURE_DELEGATE_ADDRESS } from '../lib/fixtures.mjs';
 import { FAKE } from './fixtures/fake-secrets.mjs';
@@ -140,10 +141,11 @@ async function run(body) {
 test('the chat tool list is the MCP tool list filtered by role, and no role gets a write tool', () => {
   const byName = new Map(TOOLS.map((t) => [t.name, t]));
   const operator = chatToolsForRole('operator');
-  assert.deepEqual(operator.map((t) => t.name), [...READ_ONLY_CHAT_TOOLS]);
-  for (const t of operator) assert.equal(t, byName.get(t.name), `${t.name} is the MCP definition object itself`);
+  assert.deepEqual(operator.map((t) => t.name), [...READ_ONLY_CHAT_TOOLS, ...OPERATOR_ONLY_CHAT_TOOLS]);
+  for (const t of operator.filter((t) => !OPERATOR_ONLY_CHAT_TOOLS.includes(t.name))) assert.equal(t, byName.get(t.name), `${t.name} is the MCP definition object itself`);
+  for (const name of OPERATOR_ONLY_CHAT_TOOLS) assert.ok(!byName.has(name), `${name} is not an MCP tool`);
   assert.deepEqual(chatToolsForRole('guest').map((t) => t.name), ['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age']);
-  assert.deepEqual(chatToolsForRole('nobody'), []);
+  assert.deepEqual(chatToolsForRole('nobody'), chatToolsForRole('guest'), 'an unknown role is the least-privileged role');
   for (const role of Object.keys(CHAT_TOOL_ROLES)) {
     for (const name of chatToolsForRole(role).map((t) => t.name)) assert.ok(!WRITE_TOOLS.includes(name), `${role} never gets ${name}`);
   }
@@ -191,7 +193,7 @@ test('streamed: a function call runs the MCP handler path, the result is fed bac
   const gem = geminiRequests(calls);
   assert.equal(gem.length, 2, 'one round to choose the check, one to answer');
   const decls = gem[0].body.tools.find((t) => t.functionDeclarations).functionDeclarations;
-  assert.deepEqual(decls.map((d) => d.name), [...READ_ONLY_CHAT_TOOLS], 'the model was offered the read-only MCP tools');
+  assert.deepEqual(decls.map((d) => d.name), [...READ_ONLY_CHAT_TOOLS, ...OPERATOR_ONLY_CHAT_TOOLS], 'the model was offered the read-only MCP tools and the operator-only usage stats');
   assert.ok(!gem[0].body.tools.some((t) => t.google_search), 'a tools-route request never carries search');
   assert.equal(gem[0].body.tools.length, 1);
   assert.equal(gem[0].body.toolConfig.functionCallingConfig.mode, 'AUTO');
@@ -526,7 +528,7 @@ test('JSON path: the same loop runs, the reply carries toolResults and a spoken 
   const gem = geminiRequests(calls);
   assert.equal(gem.length, 2);
   assert.ok(gem.every((g) => g.url.includes(':generateContent?')), 'the JSON path uses the non-streaming endpoint');
-  assert.equal(gem[0].body.tools.find((t) => t.functionDeclarations).functionDeclarations.length, READ_ONLY_CHAT_TOOLS.length);
+  assert.equal(gem[0].body.tools.find((t) => t.functionDeclarations).functionDeclarations.length, READ_ONLY_CHAT_TOOLS.length + OPERATOR_ONLY_CHAT_TOOLS.length);
   assert.equal(body.audio, undefined, 'still no audio on a JSON reply');
 });
 
@@ -571,7 +573,7 @@ test('reasoning core: tool_use blocks are accumulated from the stream, tool_resu
   assert.equal(events[events.length - 1].type, 'done');
   const anth = calls.filter((c) => c.url.includes('api.anthropic.com'));
   assert.equal(anth.length, 2);
-  assert.deepEqual(anth[0].body.tools.map((t) => t.name), [...READ_ONLY_CHAT_TOOLS]);
+  assert.deepEqual(anth[0].body.tools.map((t) => t.name), [...READ_ONLY_CHAT_TOOLS, ...OPERATOR_ONLY_CHAT_TOOLS]);
   assert.equal(anth[0].body.tool_choice, undefined);
   const assistant = anth[1].body.messages[1];
   assert.equal(assistant.role, 'assistant');

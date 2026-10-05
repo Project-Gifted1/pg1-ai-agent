@@ -88,7 +88,7 @@ import { normalizeWalletAddress, isRecognizedWalletAddress } from '../lib/wallet
 import { extractRegistrableDomain } from '../lib/domainExtraction.mjs';
 import { domainToASCII, domainToUnicode } from 'node:url';
 import { logApiError } from '../lib/errorLog.mjs';
-import { recordTelemetry } from '../lib/telemetry.mjs';
+import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
 import { reason } from '../lib/reasonCodes.mjs';
 import { buildCheck, withResponseMeta, withActionResponseMeta, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
 import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES, FIXTURE_DELEGATE_ADDRESS, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, FIXTURE_DOMAIN_CLEAN_REGISTERED, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
@@ -2856,7 +2856,7 @@ async function settleAndRespondOnFailure(res, requestId, gate, pg1RequestId, cal
   const settleStartedAt = Date.now();
   const recordSettlement = (status) => {
     if (callTelemetry && status !== 'settled') callTelemetry.status = 'settlement_failed';
-    recordTelemetry({ eventType: 'settlement', endpoint: '/api/mcp', toolName: callTelemetry?.toolName, paymentType: 'x402', status, latencyMs: Date.now() - settleStartedAt });
+    recordTelemetry({ eventType: 'settlement', endpoint: '/api/mcp', toolName: callTelemetry?.toolName, paymentType: 'x402', status, latencyMs: Date.now() - settleStartedAt, callerHash: callTelemetry?.callerHash });
   };
   try {
     settleResult = await gate.settle();
@@ -2924,8 +2924,9 @@ const LICENSE_ONLY_TOOLS = new Set(['subscribe_alerts', 'submit_indicator']);
 
 // Telemetry for one tools/call (lib/telemetry.mjs). Status comes from an
 // explicit override set along the way (payment_required, tool_error,
-// settlement_failed, unknown_tool) or else from the HTTP status already
-// sent. An unrecognised tool name is caller input, so it's never stored.
+// rate_limited, settlement_failed, unknown_tool) or else from the HTTP
+// status already sent. An unrecognised tool name is caller input, so it's
+// never stored; the caller IP is only ever passed on as a salted hash.
 // Called from the handler's finally, after the response is written; the
 // unawaited insert is registered with Vercel's waitUntil inside
 // recordTelemetry, so it still completes before the function is frozen.
@@ -2943,9 +2944,20 @@ function noteGateTelemetry(callTelemetry, gate) {
   if (!gate.authorized && !gate.handled) callTelemetry.status = 'payment_required';
 }
 
+// Salted hash of the caller IP for telemetry; null when there is none.
+// Never throws (a request without headers still gets its response).
+export function requestCallerHash(req) {
+  try {
+    return callerHash(getRequestIdentifier(req));
+  } catch {
+    return null;
+  }
+}
+
 function statusFromHttp(statusCode) {
   if (statusCode >= 200 && statusCode < 300) return 'ok';
   if (statusCode === 402) return 'payment_required';
+  if (statusCode === 429) return 'rate_limited';
   if (statusCode >= 400 && statusCode < 500) return 'client_error';
   if (statusCode >= 500) return 'server_error';
   return 'unknown';
@@ -2960,7 +2972,9 @@ function recordToolCallTelemetry(callTelemetry, res) {
       toolName: known ? callTelemetry.toolName : null,
       paymentType: callTelemetry.paymentType,
       status: known ? (callTelemetry.status || statusFromHttp(res.statusCode)) : 'unknown_tool',
-      latencyMs: Date.now() - callTelemetry.startedAt
+      latencyMs: Date.now() - callTelemetry.startedAt,
+      callerHash: callTelemetry.callerHash,
+      isFixture: callTelemetry.isFixture === true
     });
   } catch {
     // Best-effort - telemetry never affects the response.
@@ -3034,12 +3048,17 @@ export default async function handler(req, res) {
 
   const { id, method, params } = body;
   const requestId = (id !== undefined && id !== null) ? id : '1';
-  // Set once a tools/call gets past the fixture check; recorded in the
-  // finally below, after the response has been written.
+  // Set for every tools/call (fixtures included); recorded in the finally
+  // below, after the response has been written.
   let callTelemetry = null;
 
   try {
     if (method === 'initialize') {
+      // One 'initialize' telemetry row: the client's self-reported name and
+      // version (sanitised and cut short in lib/telemetry.mjs) and a salted
+      // hash of the caller IP - nothing else from the request.
+      const clientInfo = params && typeof params.clientInfo === 'object' && params.clientInfo ? params.clientInfo : {};
+      recordTelemetry({ eventType: 'initialize', endpoint: '/api/mcp', status: 'ok', clientName: clientInfo.name, clientVersion: clientInfo.version, callerHash: requestCallerHash(req) });
       return res.status(200).json({
         jsonrpc: '2.0',
         result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.13.0' } },
@@ -3063,10 +3082,16 @@ export default async function handler(req, res) {
       // input is answered here, before any licence check, payment gate,
       // rate limit, cache, upstream call or error logging below - always
       // free, for every caller, key or no key.
+      // Fixture calls are recorded too, flagged is_fixture, so the usage
+      // stats can leave them out.
+      callTelemetry = { toolName, paymentType: 'none', status: null, startedAt: Date.now(), callerHash: requestCallerHash(req) };
       const fixtureOutcome = resolveTestFixture(toolName, toolArgs);
-      if (fixtureOutcome) return sendMcpFixtureResponse(res, toolName, fixtureOutcome, requestId, pg1RequestId);
-
-      callTelemetry = { toolName, paymentType: 'none', status: null, startedAt: Date.now() };
+      if (fixtureOutcome) {
+        callTelemetry.isFixture = true;
+        callTelemetry.paymentType = 'free';
+        if (fixtureOutcome.type === 'tool_error') callTelemetry.status = 'tool_error';
+        return sendMcpFixtureResponse(res, toolName, fixtureOutcome, requestId, pg1RequestId);
+      }
 
       const licenseKey = req.headers['x-api-key'];
       const mcpRequestIdentifier = getRequestIdentifier(req);
@@ -3091,7 +3116,7 @@ export default async function handler(req, res) {
               const isTimeout = /timed out/i.test(toolErr.message);
               recordToolError(`/api/mcp:${toolName}`, null, `${toolName}_${isTimeout ? 'timeout' : 'upstream_unavailable'}`, isTimeout ? 'timeout' : 'upstream', pg1RequestId);
             }
-            callTelemetry.status = 'tool_error';
+            callTelemetry.status = toolErr.code === 'rate_limited' ? 'rate_limited' : 'tool_error';
             const errorChecks = [buildCheck(TOOL_SOURCE_LABELS[toolName] || toolName, classifyToolErrorCheckResult(toolErr))];
             return res.status(200).json({
               jsonrpc: '2.0',
