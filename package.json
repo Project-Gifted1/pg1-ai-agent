@@ -19,6 +19,7 @@
     "ai": "7.0.107",
     "zod": "3.25.76",
     "@supabase/supabase-js": "2.116.0",
+    "@vercel/functions": "3.9.11",
     "cheerio": "1.2.0",
     "web-push": "^3.6.7",
     "@coinbase/cdp-sdk": "1.56.0",
