@@ -94,6 +94,10 @@ function installFetchMock(t, otherRoutes) {
       if (method === 'GET') return { ok: true, json: async () => [] };
       return { ok: true, json: async () => ({}) };
     }
+    // Usage telemetry inserts (lib/telemetry.mjs) succeed here; a failed
+    // one would add its own pg1_errors row (route telemetry:agent_telemetry)
+    // that these tests are not about. tests/telemetry-schema.test.mjs covers it.
+    if (urlStr.endsWith('/rest/v1/agent_telemetry') && method === 'POST') return { ok: true, status: 201 };
     for (const [substr, responder] of otherRoutes) {
       if (urlStr.includes(substr)) return responder(urlStr, options);
     }
