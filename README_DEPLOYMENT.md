@@ -74,6 +74,15 @@ GITHUB_TOKEN=your_github_token_here
 PG1_IMAGE_MODEL_PRIMARY=gemini-3.1-flash-image
 PG1_IMAGE_MODEL_SECONDARY=gemini-3-pro-image
 PG1_IMAGE_MODEL_TERTIARY=black-forest-labs/flux-schnell
+
+# Optional: /video, PG1 Motion clips (lib/videoJobs.mjs). Off unless
+# PG1_VIDEO_ENABLED=1. Needs the pg1_video_jobs migration
+# (supabase/migrations/20261008120000_pg1_video_jobs.sql), SUPABASE_URL and
+# the service-role key, and a paid-tier Gemini key. About 1.00 USD per
+# clip (counted as 10 s at 720p); a failed clip still uses its daily slot.
+PG1_VIDEO_ENABLED=1
+PG1_VIDEO_DAILY_CAP=3
+PG1_VIDEO_MODEL=gemini-omni-1.1-flash
 ```
 
 ### 3. Test the API

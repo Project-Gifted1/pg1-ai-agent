@@ -190,9 +190,10 @@ test('streamed speech failure: fixed words in the trace and audio_end; the detai
 
 // --- 3. what the model may say ----------------------------------------------------
 
-test('the identity rules cover what powers PG1\'s voice and images', () => {
+test('the identity rules cover what powers PG1\'s voice, images and videos', () => {
   const d = identityDirective();
-  assert.match(d, /The same rules cover PG1's voice and its images/);
+  assert.match(d, /The same rules cover PG1's voice, its images and its videos/);
+  assert.match(d, /PG1 Vision and PG1 Motion/);
   assert.match(d, /Cartesia, Sonic/);
   assert.match(d, /is an identity question and gets the reply in \[IDENTITY REPLY\]/);
 });
