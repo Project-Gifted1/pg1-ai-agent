@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { filterServableRows } from '../../lib/sourcePolicy.mjs';
 
 export const config = {
   maxDuration: 60,
@@ -16,6 +17,12 @@ const ALLOWED_TABLES = [
   'system_events',
   'api_usage'
 ];
+
+// Tables that may hold threat indicators. Their rows are returned only when
+// lib/sourcePolicy.mjs says their source may be served; a row with no
+// verification_source counts as unattributed and is withheld by default.
+const INDICATOR_TABLES = new Set(['threat_indicators', 'threat_logs', 'telemetry_stream']);
+const servableRows = (table, rows) => (INDICATOR_TABLES.has(table) ? filterServableRows(rows || []) : (rows || []));
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -142,8 +149,8 @@ export default async function handler(req, res) {
         mode: 'LIVE_RECORDS',
         table,
         totalRowCount: count ?? 0,
-        returnedCount: data ? data.length : 0,
-        records: data || [],
+        returnedCount: servableRows(table, data).length,
+        records: servableRows(table, data),
         executionDurationMs: Date.now() - startTime
       });
     }
@@ -168,7 +175,7 @@ export default async function handler(req, res) {
       mode: 'TABLE_SUMMARY',
       table,
       totalRowCount: countResult.count ?? 0,
-      sampleRecords: sampleResult.data || [],
+      sampleRecords: servableRows(table, sampleResult.data),
       executionDurationMs: Date.now() - startTime
     });
 

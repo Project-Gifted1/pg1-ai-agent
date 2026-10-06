@@ -286,6 +286,8 @@ test('tool definitions are hash-identical to before the limit (name, description
   // deliberate tool change moves these, update them with that change.
   const sha = (v) => crypto.createHash('sha256').update(JSON.stringify(v)).digest('hex');
   assert.equal(sha(TOOLS.find((t) => t.name === 'check_wallet_sanctions')), 'ea52c85a8e61a2718a5eceb0f61fd73320d1b57f77110c89bc8ec372edfbd0c7');
-  assert.equal(sha(TOOLS), '47dde1cff3ff1f64f1020b8d06813321f51c8db2142390bad0096616c8767acc');
+  // Moved by the 1.15.0 licensing release (three description edits, see
+  // tests/source-policy.test.mjs).
+  assert.equal(sha(TOOLS), 'a177e3276b64a976e1b3a8412e77418e7846bf532379c8c9129882aff3488f06');
   assert.equal(sha(A2A_SKILL_TOOLS), '188ab4f12daf429bd01e91689d29d682307afb6e27aae596a0e7324dbb6a2c3d');
 });

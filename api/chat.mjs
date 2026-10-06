@@ -18,6 +18,7 @@ import { generateImage } from '../lib/imageEngines.mjs';
 import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, usageReport, USAGE_STATS_TOOL, LEAST_PRIVILEGED_ROLE, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
 import { CHAT_ROUTES, chooseChatRoute, searchAfterTools, wantsCurrentInfo } from '../lib/chatRoute.mjs';
 import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
+import { fetchThreatTelemetry } from '../lib/sourcePolicy.mjs';
 
 // ---------------------------------------------------------------------
 // AUTH: timing-safe secret comparison + in-memory per-IP failure lockout
@@ -1472,9 +1473,11 @@ export default async function handler(req, res) {
         // x402 payment's own maxTimeoutSeconds — this fetch runs AFTER a
         // payment has already been verified/settled, so it must fail fast
         // rather than let a payer sit on a hung request.
-        threatRes = await fetchWithTimeout(`${supUrl}/rest/v1/threat_ioc_telemetry?${queryFilters.join('&')}`, {
-          headers: { 'apikey': supKey, 'Authorization': `Bearer ${supKey}` }
-        }, 10000);
+        // Switched-off sources (lib/sourcePolicy.mjs) are dropped inside
+        // fetchThreatTelemetry, for paid, licensed and free-tier callers alike.
+        threatRes = await fetchThreatTelemetry(supUrl, supKey, queryFilters, {
+          fetchImpl: (url, options) => fetchWithTimeout(url, options, 10000)
+        });
       } catch (netErr) {
         recordServerError(supUrl, supKey, 'IOC', 503, 'threat_data_fetch_failed');
         sendJSON(res, 503, { error: 'Threat data temporarily unavailable, please retry.' });
@@ -1485,7 +1488,7 @@ export default async function handler(req, res) {
         sendJSON(res, 503, { error: 'Threat data temporarily unavailable, please retry.' });
         return { ok: false };
       }
-      var rawTelemetry = await threatRes.json();
+      var rawTelemetry = threatRes.rows;
 
       var stixObjects = rawTelemetry.map(record => {
         if (record.indicator_type === 'CVE') {
@@ -2131,7 +2134,7 @@ export default async function handler(req, res) {
         });
       } else if (lower.startsWith('/threat-radar')) {
         return sendJSON(res, 200, {
-          reply: `### [ THREAT RADAR TELEMETRY ]\n- **Ingested Feeds**: AlienVault OTX (stored telemetry); ThreatFox, URLhaus and NVD queried live per lookup\n- **Indicator Count**: not counted by this command\n- **Pipeline State**: Automated Temporal Cron Synchronized`,
+          reply: `### [ THREAT RADAR TELEMETRY ]\n- **Ingested Feeds**: AlienVault OTX and NVD (stored telemetry)\n- **Indicator Count**: not counted by this command\n- **Pipeline State**: Automated Temporal Cron Synchronized`,
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/test-validator')) {
