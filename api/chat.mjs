@@ -3079,7 +3079,8 @@ export default async function handler(req, res) {
       ? createToolExecutor({
         role: chatToolRole, identifier: clientIp, timeoutMs: chatToolTimeoutMs, operatorText: typeof promptText === 'string' ? promptText : '',
         // search_history (operator only): every snippet goes through the
-        // reply secret guard before the model sees it (lib/historySearch.mjs).
+        // reply secret guard before the model sees it (lib/historySearch.mjs);
+        // histArgs carries the query, range and onFallbackFailure.
         searchHistory: function (histArgs) {
           return searchHistory({ ...histArgs, guard: createReplySecretGuard({ envValues: envSecrets, env: process.env }) });
         }
