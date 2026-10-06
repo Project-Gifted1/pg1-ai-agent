@@ -251,3 +251,93 @@ for (const stream of [false, true]) {
     assert.ok(!calls.some((c) => c.url.includes('content_tsv=')), 'no history read');
   });
 }
+
+// --- the reasoning core (/core): Anthropic first, Gemini as its fallback --------
+//
+// The only cross-provider fallback is /core's: Anthropic first, then the
+// main core (Gemini) when Anthropic returns nothing. Both requests of a
+// recall question's first round require search_history, and neither path
+// ever reaches a web search.
+
+const anthropicForced = (body) => !!body && body.tool_choice && body.tool_choice.type === 'tool' && body.tool_choice.name === SEARCH_HISTORY_TOOL;
+const anthropicHasResults = (body) => JSON.stringify(body.messages || []).includes('"tool_result"');
+function anthropicReply(body, { skip = false } = {}) {
+  // Like the live model: skips the tool on auto, calls it when required.
+  const tool = !skip && anthropicForced(body) && !anthropicHasResults(body);
+  const text = anthropicHasResults(body) ? "I found a close match: 'Blanko Ekama is sending the contract on Monday.' - is that who you mean?" : '';
+  if (!body.stream) {
+    return Response.json({ content: tool ? [{ type: 'tool_use', id: 'toolu_1', name: SEARCH_HISTORY_TOOL, input: { query: 'Blanco Ekama' } }] : [{ type: 'text', text }] });
+  }
+  const events = tool
+    ? [{ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_1', name: SEARCH_HISTORY_TOOL } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"query":"Blanco Ekama"}' } },
+      { type: 'content_block_stop', index: 0 }]
+    : [{ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } }];
+  return new Response(events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join(''));
+}
+function withAnthropic(calls, handler) {
+  const inner = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    const u = String(url);
+    if (u.includes('api.anthropic.com')) {
+      const body = JSON.parse(options.body);
+      calls.push({ url: u, method: 'POST', body });
+      return handler(body);
+    }
+    return inner(url, options);
+  };
+}
+const anthropicRequests = (calls) => calls.filter((c) => c.url.includes('api.anthropic.com'));
+const replyOf = (res, stream) => (stream ? eventsOf(res).filter((e) => e.type === 'text').map((e) => e.text).join('') : res.jsonBody.reply);
+
+for (const stream of [false, true]) {
+  const path = stream ? 'streamed' : 'JSON';
+
+  test(`${path} /core: the Anthropic request requires search_history (tool_choice) and the answer comes from the history`, async () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-stub-recall-test-key-000000000000';
+    const calls = installFetch();
+    withAnthropic(calls, (body) => anthropicReply(body));
+    const res = await chat({ prompt: '/core ' + RECALL, ...OPERATOR, ...(stream ? { stream: true } : {}) });
+    assert.equal(res.statusCode, 200);
+    const ant = anthropicRequests(calls);
+    assert.ok(ant.length >= 2, 'a tools round and the answer round on the reasoning core');
+    assert.deepEqual(ant[0].body.tool_choice, { type: 'tool', name: SEARCH_HISTORY_TOOL }, 'round 1 must call search_history');
+    assert.ok(ant[0].body.tools.some((t) => t.name === SEARCH_HISTORY_TOOL));
+    assert.ok(ant.slice(1).every((c) => !anthropicForced(c.body)), 'only the first round is forced');
+    assert.match(ant[0].body.system, /\[HISTORY SEARCH\]/);
+    assert.ok(calls.some((c) => c.url.includes('content_tsv=')), 'the history was searched');
+    assert.ok(geminiRequests(calls).every((c) => !hasSearch(c.body)), 'no web search');
+    assert.match(replyOf(res, stream), /Blanko Ekama is sending the contract/);
+    assert.doesNotMatch(replyOf(res, stream), /isn't available|musical artist/i);
+  });
+
+  test(`${path} /core: when Anthropic fails, the Gemini fallback also requires search_history and never searches the web`, async () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-stub-recall-test-key-000000000000';
+    const calls = installFetch();
+    withAnthropic(calls, () => new Response('{"error":"overloaded"}', { status: 529 }));
+    const res = await chat({ prompt: '/core ' + RECALL, ...OPERATOR, ...(stream ? { stream: true } : {}) });
+    assert.equal(res.statusCode, 200);
+    const ant = anthropicRequests(calls);
+    // Round 1 (no results yet in the messages) is forced on every attempt;
+    // round 2 carries the Gemini-run results as text and is not.
+    const round1 = ant.filter((c) => !anthropicHasResults(c.body) && !JSON.stringify(c.body.messages).includes('CHECKS ALREADY RUN'));
+    assert.ok(round1.length >= 1 && round1.every((c) => anthropicForced(c.body)), 'every first-round Anthropic attempt was forced');
+    const gem = geminiRequests(calls);
+    assert.ok(gem.length >= 1, 'the main core took over');
+    assert.ok(forced(gem[0].body), 'the Gemini fallback of round 1 requires search_history');
+    assert.ok(gem.every((c) => !hasSearch(c.body)), 'no web search on the fallback either');
+    assert.ok(calls.some((c) => c.url.includes('content_tsv=')), 'the history was searched');
+    assert.match(replyOf(res, stream), /Blanko Ekama is sending the contract/);
+    assert.doesNotMatch(replyOf(res, stream), /isn't available|musical artist/i);
+  });
+
+  test(`${path} /core: a reasoning core that skips even the required call gets no web search`, async () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-stub-recall-test-key-000000000000';
+    const calls = installFetch();
+    withAnthropic(calls, (body) => anthropicReply(body, { skip: true }));
+    const res = await chat({ prompt: '/core ' + RECALL, ...OPERATOR, ...(stream ? { stream: true } : {}) });
+    assert.equal(res.statusCode, 200);
+    assert.ok(geminiRequests(calls).every((c) => !hasSearch(c.body)), 'no web search');
+    assert.doesNotMatch(replyOf(res, stream), /isn't available|musical artist/i);
+  });
+}
