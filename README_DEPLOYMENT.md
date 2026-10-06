@@ -76,20 +76,23 @@ PG1_IMAGE_MODEL_SECONDARY=gemini-3-pro-image
 PG1_IMAGE_MODEL_TERTIARY=black-forest-labs/flux-schnell
 
 # Optional: /video, PG1 Motion clips (lib/videoJobs.mjs). Off unless
-# PG1_VIDEO_ENABLED=1. Needs the pg1_video_jobs migration
-# (supabase/migrations/20261008120000_pg1_video_jobs.sql), SUPABASE_URL and
-# the service-role key, and a paid-tier Gemini key. About 1.00 USD per
-# clip (counted as 10 s at 720p); a failed clip still uses its daily slot.
+# PG1_VIDEO_ENABLED=1. Run supabase/migrations/20261008120000_pg1_video_jobs.sql
+# and 20261009120000_pg1_video_budget.sql first. Needs SUPABASE_URL, the
+# service-role key and a paid-tier Gemini key. Tiers: /video draft (360p),
+# /video (720p), /video pro (1080p); short 5 s (default) or long 10 s. Each
+# clip's estimated cost (lib/videoText.mjs VIDEO_PRICES) is reserved
+# against the daily budget before any provider is called; a failed clip
+# keeps its reservation.
 PG1_VIDEO_ENABLED=1
-PG1_VIDEO_DAILY_CAP=3
+PG1_VIDEO_DAILY_BUDGET_USD=5.00
+PG1_VIDEO_DAILY_CAP=10
 PG1_VIDEO_MODEL=gemini-omni-1.1-flash
-# Optional Replicate fallback after every Gemini key fails on a provider
-# error (5xx, 429, timeout, auth/billing). Never after a content-safety
-# refusal. Uses the same REPLICATE_API_TOKEN as /image. No default model:
-# unset means no fallback. The image model is for clips with a start frame
-# (defaults to the first).
-PG1_VIDEO_MODEL_REPLICATE=owner/model
-PG1_VIDEO_MODEL_REPLICATE_IMAGE=owner/model
+# Replicate fallback after every Gemini key fails on a provider error (5xx,
+# 429, timeout, auth/billing). Never after a content-safety refusal. Uses
+# the same REPLICATE_API_TOKEN as /image. Clips with a starting frame go to
+# kwaivgi/kling-v2.1 by default; text-only clips have no Replicate model
+# unless PG1_VIDEO_MODEL_REPLICATE is set (Kling v2.1 needs a start image).
+PG1_VIDEO_MODEL_REPLICATE_IMAGE=kwaivgi/kling-v2.1
 ```
 
 ### 3. Test the API

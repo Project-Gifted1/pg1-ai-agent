@@ -37,10 +37,12 @@ import { chooseChatRoute } from '../lib/chatRoute.mjs';
 import {
   buildVideoRequestBody, cleanVideoPrompt, isVideoRequest, startVideoJob, videoDailyCap, videoEnabled, videoModel,
   videoFromInteraction, DEFAULT_VIDEO_MODEL, DEFAULT_VIDEO_DAILY_CAP, INTERACTION_BODY_KEYS, VIDEO_DISABLED_TEXT,
-  VIDEO_ENGINE_LABEL, VIDEO_JOB_TIMEOUT_MS, VIDEO_SIGNED_URL_SECONDS, VIDEO_REFUSED_TEXT, classifyVideoFailure, replicateVideoInput
+  VIDEO_ENGINE_LABEL, VIDEO_JOB_TIMEOUT_MS, VIDEO_SIGNED_URL_SECONDS, VIDEO_REFUSED_TEXT, classifyVideoFailure, replicateVideoInput,
+  videoDailyBudget, parseVideoOptions, VIDEO_PRICES, videoClipEstimate, replicateVideoModel
 } from '../lib/videoJobs.mjs';
 
-const MIGRATION = readFileSync(new URL('../supabase/migrations/20261008120000_pg1_video_jobs.sql', import.meta.url), 'utf8');
+const MIGRATIONS = ['20261008120000_pg1_video_jobs.sql', '20261009120000_pg1_video_budget.sql']
+  .map((f) => readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), 'utf8'));
 const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_CONSOLE_ERROR = console.error;
@@ -67,7 +69,7 @@ function resetEnv() {
   process.env.PG1_VIDEO_ENABLED = '1';
   for (const k of ['USER_API_USER', 'USER_API_PASSS', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'ANTROPIC_API_KEY', 'SUPABASEAPI_KEY',
     'CARTESIA_API_KEY', 'REPLICATE_API_TOKEN', 'REPLICATE_KEY', 'GITHUB_TOKEN', 'GITHUB_OWNER_KEY', 'PG1_VIDEO_DAILY_CAP',
-    'PG1_VIDEO_MODEL', 'PG1_CHAT_TOOL_TIMEOUT_MS', 'PG1_VIDEO_MODEL_REPLICATE', 'PG1_VIDEO_MODEL_REPLICATE_IMAGE']) delete process.env[k];
+    'PG1_VIDEO_MODEL', 'PG1_CHAT_TOOL_TIMEOUT_MS', 'PG1_VIDEO_MODEL_REPLICATE', 'PG1_VIDEO_MODEL_REPLICATE_IMAGE', 'PG1_VIDEO_DAILY_BUDGET_USD']) delete process.env[k];
 }
 
 let consoleLines = [];
@@ -124,8 +126,8 @@ const json = (v, status = 200) => new Response(JSON.stringify(v), { status, head
 async function makeDb() {
   const db = new PGlite();
   await db.exec('create role anon; create role authenticated; create role service_role;');
-  await db.exec(MIGRATION);
-  await db.exec(MIGRATION); // re-runnable
+  for (const m of MIGRATIONS) await db.exec(m);
+  for (const m of MIGRATIONS) await db.exec(m); // re-runnable
   return db;
 }
 
@@ -146,7 +148,9 @@ function filters(url) {
 function dbRoutes(db) {
   return [
     ['/rest/v1/rpc/pg1_reserve_video_slot', async (u, o, body) => {
-      const r = await db.query('select * from public.pg1_reserve_video_slot($1, $2, $3, $4)', [body.p_prompt, body.p_cap, body.p_request_id, body.p_has_start_frame]);
+      const keys = ['p_prompt', 'p_est_cost_usd', 'p_budget_usd', 'p_max_clips', 'p_request_id', 'p_has_start_frame', 'p_tier', 'p_duration_s'];
+      assert.deepEqual(Object.keys(body).sort(), keys.slice().sort(), 'the RPC is called with exactly the new signature');
+      const r = await db.query('select * from public.pg1_reserve_video_slot($1, $2, $3, $4, $5, $6, $7, $8)', keys.map((k) => body[k]));
       return json(r.rows);
     }],
     ['/rest/v1/pg1_video_jobs', async (u, o, body) => {
@@ -235,7 +239,8 @@ test('generate_video is the operator\'s alone, only when switched on, and a gues
   assert.ok(!OPERATOR_ONLY_CHAT_TOOLS.includes(VIDEO_CHAT_TOOL), 'not part of the always-on operator tools');
 
   let started = 0;
-  const startVideo = async () => { started++; return { ok: true, jobId: 'x', remaining: 2, cap: 3 }; };
+  const asked = [];
+  const startVideo = async (a) => { started++; asked.push(a); return { ok: true, jobId: 'x', tier: a.tier, durationS: a.durationS, estCost: 1.5, spent: 1.5, remaining: 3.5, budget: 5 }; };
   const guest = createToolExecutor({ role: 'guest', startVideo, log: () => {} });
   const refused = await guest({ id: 'c1', name: VIDEO_CHAT_TOOL, args: { prompt: 'a cat' } });
   assert.equal(refused.ok, false);
@@ -247,17 +252,20 @@ test('generate_video is the operator\'s alone, only when switched on, and a gues
   // The operator: one clip per message, whatever the model asks for.
   const operator = createToolExecutor({ role: 'operator', startVideo, log: () => {} });
   const [a, b] = await Promise.all([
-    operator({ id: 'v1', name: VIDEO_CHAT_TOOL, args: { prompt: 'a cat' } }),
-    operator({ id: 'v2', name: VIDEO_CHAT_TOOL, args: { prompt: 'a dog' } })
+    operator({ id: 'v1', name: VIDEO_CHAT_TOOL, args: { prompt: 'a cat', tier: 'pro', length: 'long' } }),
+    operator({ id: 'v2', name: VIDEO_CHAT_TOOL, args: { prompt: 'a dog', tier: 'pro', length: 'long' } })
   ]);
   assert.equal(started, 1);
   assert.equal([a, b].filter((o) => o.ok).length, 1);
   assert.equal([a, b].find((o) => !o.ok).code, 'one_per_message');
   const ok = [a, b].find((o) => o.ok);
-  assert.deepEqual({ status: ok.result.status, job: ok.result.job_id, left: ok.result.remaining_today, cap: ok.result.daily_cap }, { status: 'rendering', job: 'x', left: 2, cap: 3 });
+  assert.deepEqual(asked[0], { prompt: asked[0].prompt, tier: 'pro', durationS: 10 }, 'the tool passes the tier and length');
+  assert.equal(ok.result.status, 'rendering');
+  assert.equal(ok.result.job_id, 'x');
+  assert.equal(ok.result.cost_line, 'PG1 Motion · Pro · 10 s · about 1.50 USD · 3.50 USD left today');
   const card = summarizeOutcome(ok);
   assert.deepEqual(card.video_job, { id: 'x', status: 'rendering' });
-  assert.equal(traceLabels({ name: VIDEO_CHAT_TOOL, args: {} }, ok).result, 'PG1 Motion · 2 left today');
+  assert.equal(traceLabels({ name: VIDEO_CHAT_TOOL, args: {} }, ok).result, 'PG1 Motion · Pro · 10 s');
 });
 
 // --- 2. the switch ----------------------------------------------------------------
@@ -289,20 +297,24 @@ test('configuration: model, cap and switch come from env with the documented def
   assert.equal(videoModel({}), 'gemini-omni-1.1-flash');
   assert.equal(videoModel({ PG1_VIDEO_MODEL: '  another-video-model ' }), 'another-video-model');
   assert.doesNotMatch(videoModel({}), /veo/i, 'never Veo: its previews shut down on 2026-10-22');
-  assert.equal(DEFAULT_VIDEO_DAILY_CAP, 3);
-  assert.equal(videoDailyCap({}), 3);
+  assert.equal(DEFAULT_VIDEO_DAILY_CAP, 10, 'the clip count is now only a hard limit');
+  assert.equal(videoDailyCap({}), 10);
   assert.equal(videoDailyCap({ PG1_VIDEO_DAILY_CAP: '5' }), 5);
   assert.equal(videoDailyCap({ PG1_VIDEO_DAILY_CAP: '0' }), 0);
-  for (const bad of ['-1', 'three', '2.5', '']) assert.equal(videoDailyCap({ PG1_VIDEO_DAILY_CAP: bad }), 3, bad);
+  for (const bad of ['-1', 'three', '2.5', '']) assert.equal(videoDailyCap({ PG1_VIDEO_DAILY_CAP: bad }), 10, bad);
+  assert.equal(videoDailyBudget({}), 5);
+  assert.equal(videoDailyBudget({ PG1_VIDEO_DAILY_BUDGET_USD: '12.50' }), 12.5);
+  assert.equal(videoDailyBudget({ PG1_VIDEO_DAILY_BUDGET_USD: '0' }), 0);
+  for (const bad of ['-1', 'five', '1.234', '']) assert.equal(videoDailyBudget({ PG1_VIDEO_DAILY_BUDGET_USD: bad }), 5, bad);
   assert.equal(videoEnabled({ PG1_VIDEO_ENABLED: '1' }), true);
   assert.equal(VIDEO_SIGNED_URL_SECONDS, 7 * 24 * 3600);
   assert.equal(VIDEO_JOB_TIMEOUT_MS, 15 * 60 * 1000);
 });
 
-// --- 3. the cap -------------------------------------------------------------------
+// --- 3. the budget -------------------------------------------------------------------
 
-test('the cap holds under two simultaneous requests: one clip starts, the other is told the limit is reached', async () => {
-  process.env.PG1_VIDEO_DAILY_CAP = '1';
+test('the budget holds under two simultaneous requests: one clip is reserved, the other is told it would go over and offered a cheaper choice', async () => {
+  process.env.PG1_VIDEO_DAILY_BUDGET_USD = '0.75';
   const db = await makeDb();
   let release;
   const gate = new Promise((r) => { release = r; });
@@ -315,35 +327,48 @@ test('the cap holds under two simultaneous requests: one clip starts, the other 
   const [r1, r2] = await both;
   const replies = [r1.jsonBody, r2.jsonBody];
   const started = replies.filter((b) => b.videoJob);
-  const capped = replies.filter((b) => !b.videoJob);
-  assert.equal(started.length, 1, 'exactly one clip started');
-  assert.equal(capped.length, 1);
-  assert.match(started[0].reply, /^Rendering video… /);
-  assert.match(started[0].reply, /0 of 1 video left today\./);
-  assert.equal(started[0].videoJob.status, 'rendering');
-  assert.match(capped[0].reply, /Today's video limit is reached \(1 of 1 used\)/);
-  assert.equal(capped[0].videosLeftToday, 0);
+  const refused = replies.filter((b) => !b.videoJob);
+  assert.equal(started.length, 1, 'exactly one clip reserved');
+  assert.equal(refused.length, 1);
+  assert.equal(started[0].reply, 'Rendering video… It appears here when it is ready, usually within a few minutes.\nPG1 Motion · Standard · 5 s · about 0.50 USD · 0.25 USD left today');
+  assert.equal(refused[0].reply, "That clip (Standard · 5 s, about 0.50 USD) would go over today's video budget: 0.25 USD left of 0.75 USD. Try Draft · 5 s, about 0.15 USD (/video draft …).");
   assert.equal(startCalls(calls).length, 1, 'the engine was called once');
-  const rows = (await db.query('select status, interaction_id, key_slot from public.pg1_video_jobs')).rows;
-  assert.equal(rows.length, 1, 'one slot in the database');
-  assert.deepEqual(rows[0], { status: 'rendering', interaction_id: 'int-123', key_slot: 1 });
+  const rows = (await db.query('select status, tier, duration_s, est_cost_usd from public.pg1_video_jobs')).rows;
+  assert.deepEqual(rows, [{ status: 'rendering', tier: 'standard', duration_s: 5, est_cost_usd: '0.50' }]);
 
-  // The slot is reserved before the engine is called.
+  // The estimate is reserved before the engine is called.
   const reserveAt = calls.findIndex((c) => c.url.includes('pg1_reserve_video_slot'));
   const startAt = calls.findIndex((c) => c.url === INTERACTIONS && c.method === 'POST');
   assert.ok(reserveAt >= 0 && reserveAt < startAt);
+  assert.equal(calls[reserveAt].body.p_est_cost_usd, 0.5);
+
+  // Nothing fits: no suggestion, just when it resets.
+  process.env.PG1_VIDEO_DAILY_BUDGET_USD = '0.60';
+  const none = await run(authed({ prompt: '/video pro long a storm' }));
+  assert.equal(none.jsonBody.reply, "That clip (Pro · 10 s, about 1.50 USD) would go over today's video budget: 0.10 USD left of 0.60 USD. Nothing fits in what is left today; the budget resets at midnight UTC.");
 });
 
-test('a clip that fails still uses its slot; the reply is one neutral sentence, the request ID and what is left; Gemini\'s real error goes to pg1_errors', async () => {
-  process.env.PG1_VIDEO_DAILY_CAP = '2';
+test('PG1_VIDEO_DAILY_CAP stays a hard clip limit, also under two simultaneous requests', async () => {
+  process.env.PG1_VIDEO_DAILY_CAP = '1';
+  const db = await makeDb();
+  const calls = installFetch([...engineRoutes(), ...dbRoutes(db), ...supabaseRoutes()]);
+  const [r1, r2] = await Promise.all([run(authed({ prompt: '/video draft a fox' })), run(authed({ prompt: '/video draft a whale' }))]);
+  const replies = [r1.jsonBody, r2.jsonBody];
+  assert.equal(replies.filter((b) => b.videoJob).length, 1);
+  assert.equal(replies.find((b) => !b.videoJob).reply, "Today's clip limit is reached (1 of 1). It resets at midnight UTC.");
+  assert.equal(startCalls(calls).length, 1);
+});
+
+test('a clip that fails keeps its reservation; the reply is one neutral sentence, the request ID and the cost line; Gemini\'s real error goes to pg1_errors', async () => {
+  process.env.PG1_VIDEO_DAILY_BUDGET_USD = '1.00';
   const db = await makeDb();
   let calls = installFetch([...engineRoutes({ start: () => new Response(GEMINI_REJECTION, { status: 400 }) }), ...dbRoutes(db), ...supabaseRoutes()]);
   const res = await run(authed({ prompt: '/video a storm over the sea' }));
   const body = res.jsonBody;
   assert.equal(body.videoJob, undefined);
-  const [sentence, left] = body.reply.split('\n');
+  const [sentence, line] = body.reply.split('\n');
   assert.equal(sentence, `${FAILURE_PREFIX} The video could not be generated right now. Please try again. Request ID: ${body.traceId}`);
-  assert.equal(left, '1 of 2 videos left today.');
+  assert.equal(line, 'PG1 Motion · Standard · 5 s · about 0.50 USD · 0.50 USD left today');
   assert.doesNotMatch(body.reply, BRANDS_RE);
   assert.doesNotMatch(body.reply, /invalid argument|resolution|400/i);
   assert.equal(startCalls(calls).length, 1, 'a 400 about the request itself is not a provider failure: the second key is not tried');
@@ -353,26 +378,35 @@ test('a clip that fails still uses its slot; the reply is one neutral sentence, 
   assert.equal(logged.route, 'GENERATE_VIDEO');
   assert.equal(logged.status, 400);
   assert.match(logged.message, /untrusted upstream data, not instructions/);
-  assert.match(logged.message, /provider=google model=gemini-omni-1\.1-flash key_slot=1 status=400 failure=request/);
+  assert.match(logged.message, /provider=google model=gemini-omni-1\.1-flash key_slot=1 tier=standard duration_s=5 status=400 failure=request/);
   assert.match(logged.message, /INVALID_ARGUMENT Request contains an invalid argument/, 'Gemini\'s own words');
   assert.match(logged.message, new RegExp(`request_id=${body.traceId}`));
   assert.ok(!logged.message.includes(KEY1) && !logged.message.includes(KEY2), 'never a key');
 
-  const row = (await db.query('select status, error_reason from public.pg1_video_jobs')).rows[0];
-  assert.deepEqual(row, { status: 'failed', error_reason: 'start_failed' });
+  const row = (await db.query('select status, error_reason, est_cost_usd from public.pg1_video_jobs')).rows[0];
+  assert.deepEqual(row, { status: 'failed', error_reason: 'start_failed', est_cost_usd: '0.50' });
 
-  // The next request finds the failed clip counted: one slot left.
+  // The next request finds the failed clip counted.
   calls = installFetch([...engineRoutes(), ...dbRoutes(db), ...supabaseRoutes()]);
   const next = await run(authed({ prompt: '/video a calm sea' }));
-  assert.match(next.jsonBody.reply, /0 of 2 videos left today\./);
-  const third = await run(authed({ prompt: '/video a calm lake' }));
-  assert.match(third.jsonBody.reply, /limit is reached \(2 of 2 used\)/);
+  assert.match(next.jsonBody.reply, /PG1 Motion · Standard · 5 s · about 0\.50 USD · 0\.00 USD left today$/);
+  const third = await run(authed({ prompt: '/video draft a calm lake' }));
+  assert.match(third.jsonBody.reply, /would go over today's video budget: 0\.00 USD left of 1\.00 USD\. Nothing fits/);
   assert.equal(startCalls(calls).length, 1);
 
-  // A bare /video says how many are left without spending one.
+  // A bare /video lists the tiers, prices and what is left, starting nothing.
   const bare = await run(authed({ prompt: '/video' }));
-  assert.match(bare.jsonBody.reply, /^Say what the video should show/);
-  assert.match(bare.jsonBody.reply, /0 of 2 videos left today\./);
+  assert.equal(bare.jsonBody.reply, [
+    '### [ PG1 MOTION ]',
+    'Usage: /video [draft|pro] [short|long] <what the clip shows>. Standard and short (5 s) are the defaults; long is 10 s. 4K is not offered.',
+    '- **Draft** · 360p: about 0.15 USD for 5 s, 0.30 USD for 10 s',
+    '- **Standard** (default) · 720p: about 0.50 USD for 5 s, 1.00 USD for 10 s',
+    '- **Pro** · 1080p (upscaled): about 0.75 USD for 5 s, 1.50 USD for 10 s',
+    'Costs are estimates; a clip that fails still counts against the day.',
+    '0.00 USD left today of 1.00 USD.'
+  ].join('\n'));
+  assert.equal(startCalls(calls).length, 1, 'the bare command started nothing');
+  assert.equal((await db.query('select count(*)::int as n from public.pg1_video_jobs')).rows[0].n, 2);
 });
 
 test('a key-specific refusal (429) moves to the next key; the job remembers which key started it', async () => {
@@ -471,9 +505,14 @@ test('poll timeout: a job older than 15 minutes is marked failed, without asking
 test('the next reservation also fails a job nobody polled for 15 minutes, and it keeps its slot', async () => {
   const db = await makeDb();
   await db.query(`insert into public.pg1_video_jobs (prompt, status, created_at) values ('old', 'rendering', now() - interval '20 minutes')`);
-  const r = (await db.query('select * from public.pg1_reserve_video_slot($1, $2, $3, $4)', ['new', 3, 'req', false])).rows[0];
+  const r = (await db.query('select * from public.pg1_reserve_video_slot($1, $2, $3, $4, $5, $6, $7, $8)', ['new', 0.5, 5, 10, 'req', false, 'standard', 5])).rows[0];
   assert.equal(r.reserved, true);
-  assert.equal(r.used, 2, 'the timed-out job still counts');
+  assert.equal(r.clips_used, 2, 'the timed-out job still counts');
+  // Only the new overload exists, and only the service role may run it.
+  const fns = (await db.query(`select pg_get_function_identity_arguments(p.oid) as a from pg_proc p where proname = 'pg1_reserve_video_slot'`)).rows.map((x) => x.a);
+  assert.deepEqual(fns, ['p_prompt text, p_est_cost_usd numeric, p_budget_usd numeric, p_max_clips integer, p_request_id text, p_has_start_frame boolean, p_tier text, p_duration_s integer']);
+  const fnGrants = (await db.query(`select grantee from information_schema.routine_privileges where routine_name = 'pg1_reserve_video_slot' and privilege_type = 'EXECUTE' and grantee <> 'postgres'`)).rows.map((x) => x.grantee);
+  assert.deepEqual(fnGrants, ['service_role']);
   const old = (await db.query(`select status, error_reason from public.pg1_video_jobs where prompt = 'old'`)).rows[0];
   assert.deepEqual(old, { status: 'failed', error_reason: 'timeout' });
   // anon and authenticated cannot touch the table or the function
@@ -507,7 +546,7 @@ test('identity: only "PG1 Motion" is shown on the video path, and error summarie
   const events = eventsOf(res);
   const step = events.find((e) => e.type === 'step_done' && e.id === 'video');
   assert.equal(step.label, 'Started the video');
-  assert.equal(step.result, 'PG1 Motion · 2 left today');
+  assert.equal(step.result, 'PG1 Motion · Standard · 5 s');
   const done = events.find((e) => e.type === 'done');
   assert.equal(done.result.videoJob.engine, 'PG1 Motion');
   for (const e of events) {
@@ -567,11 +606,11 @@ test('the final video request body carries only keys the Interactions API accept
   assert.deepEqual(walkInteractionBody(withFrame.body), []);
   assert.deepEqual(textOnly.body, {
     model: 'gemini-omni-1.1-flash',
-    input: '6 second clip: a hummingbird in slow motion',
+    input: 'a hummingbird in slow motion\n\nClip length: 5 seconds.',
     response_format: { type: 'video', resolution: '720p', aspect_ratio: '16:9', delivery: 'uri' },
     background: true
   });
-  assert.deepEqual(withFrame.body.input, [{ type: 'text', text: 'animate the scene' }, { type: 'image', data: PNG_1X1, mime_type: 'image/png' }]);
+  assert.deepEqual(withFrame.body.input, [{ type: 'text', text: 'animate the scene\n\nClip length: 5 seconds.' }, { type: 'image', data: PNG_1X1, mime_type: 'image/png' }]);
   for (const c of [textOnly, withFrame]) {
     assert.equal(c.url, INTERACTIONS, 'no key or query string in the URL');
     assert.equal(c.headers['x-goog-api-key'], KEY1);
@@ -609,7 +648,7 @@ test('the chat request that offers generate_video carries no schema key Gemini r
 
   // The tool started a real job and the card carries it.
   assert.equal(startCalls(calls).length, 1);
-  assert.equal(startCalls(calls)[0].body.input, 'waves rolling onto a beach at sunset');
+  assert.equal(startCalls(calls)[0].body.input, 'waves rolling onto a beach at sunset\n\nClip length: 5 seconds.');
   const card = eventsOf(res).find((e) => e.type === 'tool_result' && e.tool === 'generate_video');
   assert.equal(card.video_job.status, 'rendering');
   assert.match(card.video_job.id, /^[0-9a-f-]{36}$/);
@@ -645,7 +684,7 @@ test('the request match is narrow: "animate" alone and talk about videos are not
   ]) assert.equal(isVideoRequest(no), false, no);
   assert.equal(cleanVideoPrompt('/video a gold shield turning'), 'a gold shield turning');
   assert.equal(cleanVideoPrompt('Please make a video of a fox in the snow.'), 'a fox in the snow');
-  assert.equal(cleanVideoPrompt('make me a short 8 second clip showing waves'), '8 second clip: waves');
+  assert.equal(cleanVideoPrompt('make me a short 8 second clip showing waves'), 'waves', 'length and tier words become settings, not prompt text');
   assert.equal(cleanVideoPrompt('animate this photo'), '');
   // A message that only mentions a clip goes the tools way when the tool is on offer.
   assert.equal(chooseChatRoute('could you show me a little clip of waves?', { videoTool: true }).reason, 'video');
@@ -659,57 +698,118 @@ test('reading the finished interaction: steps[] model_output video, inline or by
   assert.equal(videoFromInteraction(null), null);
 });
 
-// --- 8. the Replicate fallback ---------------------------------------------------------------
+// --- 8. tiers and length ------------------------------------------------------------------
 
-const REP_MODEL = 'bytedance/seedance-1-pro';
+test('each tier sends its resolution to Google, and the length goes into the prompt', async () => {
+  const db = await makeDb();
+  process.env.PG1_VIDEO_DAILY_BUDGET_USD = '50';
+  process.env.PG1_VIDEO_DAILY_CAP = '50';
+  const calls = installFetch([...engineRoutes(), ...dbRoutes(db), ...supabaseRoutes()]);
+  const cases = [
+    ['/video draft a fox', '360p', 5, 'Draft', '0.15'],
+    ['/video a fox', '720p', 5, 'Standard', '0.50'],
+    ['/video pro a fox', '1080p', 5, 'Pro', '0.75'],
+    ['/video pro long a fox', '1080p', 10, 'Pro', '1.50'],
+    ['/video long draft a fox', '360p', 10, 'Draft', '0.30'],
+    ['/video short a fox', '720p', 5, 'Standard', '0.50'],
+    ['make a quick video of a fox', '360p', 5, 'Draft', '0.15'],
+    ['make a cheap video of a fox', '360p', 5, 'Draft', '0.15'],
+    ['make a high quality video of a fox', '1080p', 5, 'Pro', '0.75'],
+    ['make an HD video of a fox', '1080p', 5, 'Pro', '0.75'],
+    ['make a 1080p video of a fox', '1080p', 5, 'Pro', '0.75'],
+    ['make a pro video of a fox', '1080p', 5, 'Pro', '0.75'],
+    ['make a long video of a fox', '720p', 10, 'Standard', '1.00'],
+    ['make a 10 second video of a fox', '720p', 10, 'Standard', '1.00'],
+    ['make a video of a pro skateboarder', '720p', 5, 'Standard', '0.50']
+  ];
+  for (const [prompt, resolution, seconds, label, cost] of cases) {
+    const before = startCalls(calls).length;
+    const res = await run(authed({ prompt }));
+    const start = startCalls(calls)[before];
+    assert.ok(start, `${prompt}: started`);
+    assert.equal(start.body.response_format.resolution, resolution, prompt);
+    assert.ok(start.body.input.endsWith(`\n\nClip length: ${seconds} seconds.`), `${prompt}: ${start.body.input}`);
+    assert.deepEqual(walkInteractionBody(start.body), []);
+    assert.match(res.jsonBody.reply, new RegExp(`\\nPG1 Motion · ${label} · ${seconds} s · about ${cost.replace('.', '\\.')} USD · \\d+\\.\\d\\d USD left today$`), prompt);
+  }
+  // No 4K: read as Pro (1080p), and said so.
+  const fourK = await run(authed({ prompt: 'make a 4k video of a fox' }));
+  assert.equal(startCalls(calls).at(-1).body.response_format.resolution, '1080p');
+  assert.match(fourK.jsonBody.reply, /4K is not offered; this is the Pro tier \(1080p\)\./);
+  for (const c of startCalls(calls)) assert.ok(!['2160p', '4k', '4K'].includes(c.body.response_format.resolution));
+});
+
+test('the price table is the one source: tiers, Kling estimates and what a clip reserves', () => {
+  assert.deepEqual(VIDEO_PRICES.google.perSecondUsd, { '360p': 0.03, '720p': 0.10, '1080p': 0.15 });
+  assert.equal(VIDEO_PRICES.kling.estimated, true, 'Kling prices are marked as estimates');
+  assert.deepEqual(JSON.parse(JSON.stringify(VIDEO_PRICES.kling.perClipUsd)), { standard: { 5: 0.3, 10: 0.6 }, pro: { 5: 0.5, 10: 1 } });
+  // A frame clip that could fall back to Kling reserves the dearer estimate.
+  assert.equal(videoClipEstimate('draft', 5, { kling: true }), 0.30);
+  assert.equal(videoClipEstimate('draft', 5), 0.15);
+  assert.equal(videoClipEstimate('pro', 10, { kling: true }), 1.50);
+  assert.deepEqual(parseVideoOptions('pro long a lighthouse', { command: true }), { tier: 'pro', durationS: 10, fourK: false, rest: 'a lighthouse' });
+});
+
+// --- 9. the Replicate fallback (kwaivgi/kling-v2.1) ---------------------------------------------
+
+const KLING = 'kwaivgi/kling-v2.1';
 const REP_TOKEN = 'stub-replicate-token-0123456789';
-const REP_CREATE = `https://api.replicate.com/v1/models/${REP_MODEL}/predictions`;
+const KLING_CREATE = `https://api.replicate.com/v1/models/${KLING}/predictions`;
 const REP_OUT = 'https://replicate.delivery/xezq/out/clip.mp4';
-
-function useReplicate() {
-  process.env.REPLICATE_API_TOKEN = REP_TOKEN;
-  process.env.PG1_VIDEO_MODEL_REPLICATE = REP_MODEL;
-}
+const FRAME = [{ inlineData: { mimeType: 'image/png', data: PNG_1X1 } }];
 
 function replicateRoutes({ create = () => json({ id: 'rep-pred-1', status: 'starting', urls: { get: 'https://api.replicate.com/v1/predictions/rep-pred-1' } }, 201), poll = () => json({ id: 'rep-pred-1', status: 'processing' }) } = {}) {
   return [
     [REP_OUT, () => new Response(Buffer.from('replicate mp4 bytes'), { status: 200 })],
-    [REP_CREATE, (u, o, body) => create(body, o)],
+    ['https://api.replicate.com/v1/models/', (u, o, body) => create(body, o, u)],
     ['https://api.replicate.com/v1/predictions/', (u, o) => poll(u, o)]
   ];
 }
 
-const replicateCreates = (calls) => calls.filter((c) => c.url === REP_CREATE);
+const replicateCreates = (calls) => calls.filter((c) => c.url.startsWith('https://api.replicate.com/v1/models/'));
 const geminiFails = (byKey) => (body, o) => {
   const r = byKey[o.headers['x-goog-api-key']];
   return r ? r() : json({ id: 'int-123', status: 'in_progress' });
 };
+const allGeminiDown = () => new Response(JSON.stringify({ error: { code: 503, status: 'UNAVAILABLE', message: 'The model is overloaded.' } }), { status: 503 });
+
+test('Kling is the default frame model, never a text-only one; its input is exactly the schema fields', () => {
+  assert.equal(replicateVideoModel({}, { withImage: true }), KLING);
+  assert.equal(replicateVideoModel({}), '', 'no text-only default');
+  assert.equal(replicateVideoModel({ PG1_VIDEO_MODEL_REPLICATE: KLING }), '', 'Kling v2.1 cannot make a text-only clip');
+  assert.equal(replicateVideoModel({ PG1_VIDEO_MODEL_REPLICATE_IMAGE: 'acme/other-i2v' }, { withImage: true }), 'acme/other-i2v');
+  for (const [tier, s, mode] of [['draft', 5, 'standard'], ['standard', 10, 'standard'], ['pro', 5, 'pro'], ['pro', 10, 'pro']]) {
+    const input = replicateVideoInput(KLING, { prompt: 'p', startImageUrl: 'https://x.test/f.png?token=t', tier, durationS: s });
+    assert.deepEqual(input, { prompt: 'p', start_image: 'https://x.test/f.png?token=t', mode, duration: s }, `${tier} ${s}`);
+    assert.ok(!('end_image' in input), 'never end_image');
+    assert.equal(typeof input.duration, 'number', 'duration is an integer');
+  }
+});
 
 test('fallback: Gemini key 1 fails (503), key 2 starts the clip; pg1_errors names the provider, key and why', async () => {
-  useReplicate();
+  process.env.REPLICATE_API_TOKEN = REP_TOKEN;
   const db = await makeDb();
   const calls = installFetch([
     ...replicateRoutes(),
-    ...engineRoutes({ start: geminiFails({ [KEY1]: () => new Response(JSON.stringify({ error: { code: 503, status: 'UNAVAILABLE', message: 'The model is overloaded.' } }), { status: 503 }) }) }),
+    ...engineRoutes({ start: geminiFails({ [KEY1]: allGeminiDown }) }),
     ...dbRoutes(db), ...supabaseRoutes()
   ]);
   const res = await run(authed({ prompt: '/video a kite over a beach' }));
   assert.ok(res.jsonBody.videoJob, 'started');
-  assert.match(res.jsonBody.reply, /2 of 3 videos left today/);
+  assert.match(res.jsonBody.reply, /PG1 Motion · Standard · 5 s · about 0\.50 USD · 4\.50 USD left today$/);
   assert.deepEqual(startCalls(calls).map((c) => c.headers['x-goog-api-key']), [KEY1, KEY2]);
   assert.equal(replicateCreates(calls).length, 0, 'Replicate is not needed');
   assert.deepEqual((await db.query('select provider, model, key_slot, status from public.pg1_video_jobs')).rows, [{ provider: 'google', model: 'gemini-omni-1.1-flash', key_slot: 2, status: 'rendering' }]);
   const rows = await errorRows(calls);
   const k1 = rows.find((r) => r.reason === 'video_google_key1_failed');
-  assert.ok(k1);
   assert.equal(k1.status, 503);
-  assert.match(k1.message, /provider=google model=gemini-omni-1\.1-flash key_slot=1 status=503 failure=provider/);
+  assert.match(k1.message, /provider=google model=gemini-omni-1\.1-flash key_slot=1 tier=standard duration_s=5 status=503 failure=provider/);
   assert.match(k1.message, /UNAVAILABLE The model is overloaded/);
   assert.equal(rows.filter((r) => /^video_/.test(r.reason)).length, 1, 'only the failed attempt is logged');
 });
 
-test('fallback: both Gemini keys fail (quota, then timeout-class 500), Replicate renders the clip, collected by the same poll', async () => {
-  useReplicate();
+test('fallback: a pro frame clip whose Gemini keys both fail goes to Kling pro with the exact schema fields and a 1-hour signed frame URL', async () => {
+  process.env.REPLICATE_API_TOKEN = REP_TOKEN;
   const db = await makeDb();
   let calls = installFetch([
     ...replicateRoutes(),
@@ -719,127 +819,145 @@ test('fallback: both Gemini keys fail (quota, then timeout-class 500), Replicate
     }) }),
     ...dbRoutes(db), ...supabaseRoutes()
   ]);
-  const res = await run(authed({ prompt: '/video a 6 second clip of a paper boat on a pond', stream: true }));
-  const done = eventsOf(res).find((e) => e.type === 'done');
-  const id = done.result.videoJob.id;
+  const res = await run(authed({ prompt: '/video pro long the lighthouse comes alive at dusk', multiFiles: FRAME, stream: true }));
+  const events = eventsOf(res);
+  const id = events.find((e) => e.type === 'done').result.videoJob.id;
   assert.equal(startCalls(calls).length, 2);
   const create = replicateCreates(calls);
   assert.equal(create.length, 1);
+  assert.equal(create[0].url, KLING_CREATE);
   assert.equal(create[0].headers.Authorization, `Bearer ${REP_TOKEN}`, 'the /image token, as a Bearer token');
-  assert.deepEqual(create[0].body.input, { prompt: 'a 6 second clip of a paper boat on a pond', duration: 5, resolution: '720p', aspect_ratio: '16:9' });
-  assert.deepEqual((await db.query('select provider, model, interaction_id, key_slot from public.pg1_video_jobs')).rows, [{ provider: 'replicate', model: REP_MODEL, interaction_id: 'rep-pred-1', key_slot: null }]);
+  const frameUrl = `${SUP_URL}/storage/v1/object/sign/pg1-vault/videos/frames/${id}.png?token=signed-token`;
+  assert.deepEqual(create[0].body, { input: { prompt: 'the lighthouse comes alive at dusk', start_image: frameUrl, mode: 'pro', duration: 10 } });
+  assert.doesNotMatch(JSON.stringify(create[0].body), /base64|data:image|end_image|negative_prompt/, 'a URL, never base64; no end_image');
+
+  // The frame went to the vault and was signed for one hour.
+  const upload = calls.find((c) => c.url === `${SUP_URL}/storage/v1/object/pg1-vault/videos/frames/${id}.png`);
+  assert.ok(upload, 'frame uploaded to pg1-vault');
+  assert.equal(upload.headers['Content-Type'], 'image/png');
+  assert.equal(Buffer.from(upload.body).toString('base64'), PNG_1X1);
+  const signFrame = calls.find((c) => c.url === `${SUP_URL}/storage/v1/object/sign/pg1-vault/videos/frames/${id}.png`);
+  assert.deepEqual(signFrame.body, { expiresIn: 3600 });
+
+  // One reservation: Gemini pro 10 s (1.50) is dearer than Kling pro 10 s (1.00).
+  assert.deepEqual((await db.query('select provider, model, interaction_id, key_slot, tier, duration_s, est_cost_usd from public.pg1_video_jobs')).rows,
+    [{ provider: 'replicate', model: KLING, interaction_id: 'rep-pred-1', key_slot: null, tier: 'pro', duration_s: 10, est_cost_usd: '1.50' }]);
+  assert.equal(calls.filter((c) => c.url.includes('pg1_reserve_video_slot')).length, 1, 'reserved once');
   const rows = await errorRows(calls, 2);
   assert.deepEqual(rows.filter((r) => /^video_/.test(r.reason)).map((r) => [r.reason, r.status]), [['video_google_key1_failed', 429], ['video_google_key2_failed', 500]]);
+  for (const e of events) for (const v of [e.label, typeof e.result === 'string' ? e.result : '', e.text]) if (typeof v === 'string') assert.doesNotMatch(v, /replicate|kling|kwaivgi/i, v);
 
-  // The user-facing side never names Replicate or the model.
-  for (const e of eventsOf(res)) for (const v of [e.label, typeof e.result === 'string' ? e.result : '', e.text]) if (typeof v === 'string') assert.doesNotMatch(v, /replicate|seedance|bytedance/i, v);
-
-  // The poll asks Replicate, fetches its output without a token, stores it.
+  // The poll asks Replicate, fetches the output without a token, stores it.
   calls = installFetch([
     ...replicateRoutes({ poll: () => json({ id: 'rep-pred-1', status: 'succeeded', output: REP_OUT }) }),
     ...engineRoutes(), ...dbRoutes(db), ...supabaseRoutes()
   ]);
   const poll = await run(authed({ action: 'VIDEO_STATUS', jobId: id }));
   assert.equal(poll.jsonBody.videoJob.status, 'done');
-  assert.equal(poll.jsonBody.videoJob.engine, 'PG1 Motion');
-  assert.doesNotMatch(JSON.stringify(poll.jsonBody), /replicate|seedance/i);
-  const get = calls.find((c) => c.url === 'https://api.replicate.com/v1/predictions/rep-pred-1');
-  assert.equal(get.headers.Authorization, `Bearer ${REP_TOKEN}`);
+  assert.doesNotMatch(JSON.stringify(poll.jsonBody), /replicate|kling/i);
+  assert.equal(calls.find((c) => c.url === 'https://api.replicate.com/v1/predictions/rep-pred-1').headers.Authorization, `Bearer ${REP_TOKEN}`);
   assert.equal(calls.find((c) => c.url === REP_OUT).headers.Authorization, undefined, 'no token to the output link');
   assert.equal(engineCalls(calls).length, 0, 'Gemini is not asked about a Replicate job');
-  const upload = calls.find((c) => c.url === `${SUP_URL}/storage/v1/object/pg1-vault/videos/${id}.mp4`);
-  assert.equal(Buffer.from(upload.body).toString(), 'replicate mp4 bytes');
+  assert.equal(Buffer.from(calls.find((c) => c.url === `${SUP_URL}/storage/v1/object/pg1-vault/videos/${id}.mp4`).body).toString(), 'replicate mp4 bytes');
 });
 
-test('fallback: a content-safety refusal is never retried on key 2 or Replicate; the answer is a plain no', async () => {
-  useReplicate();
+test('fallback: a draft frame clip reserves the Kling estimate and sends Kling mode "standard", duration 5', async () => {
+  process.env.REPLICATE_API_TOKEN = REP_TOKEN;
+  const db = await makeDb();
+  const calls = installFetch([...replicateRoutes(), ...engineRoutes({ start: allGeminiDown }), ...dbRoutes(db), ...supabaseRoutes()]);
+  const res = await run(authed({ prompt: '/video draft animate this', multiFiles: FRAME }));
+  assert.match(res.jsonBody.reply, /PG1 Motion · Draft · 5 s · about 0\.30 USD · 4\.70 USD left today$/, 'the dearer of 0.15 (Google) and 0.30 (Kling)');
+  const input = replicateCreates(calls)[0].body.input;
+  assert.equal(input.mode, 'standard');
+  assert.equal(input.duration, 5);
+});
+
+test('fallback: a text-only clip never calls Replicate, and pg1_errors says no text-only model is configured', async () => {
+  process.env.REPLICATE_API_TOKEN = REP_TOKEN;
+  const db = await makeDb();
+  const calls = installFetch([...replicateRoutes(), ...engineRoutes({ start: allGeminiDown }), ...dbRoutes(db), ...supabaseRoutes()]);
+  const res = await run(authed({ prompt: '/video pro a cat on a skateboard' }));
+  assert.match(res.jsonBody.reply, /^Execution failed\. The video could not be generated right now/);
+  assert.equal(startCalls(calls).length, 2, 'both Gemini keys tried');
+  assert.equal(calls.filter((c) => c.url.includes('replicate.com')).length, 0, 'Replicate never called');
+  const rows = await errorRows(calls, 3);
+  const note = rows.find((r) => r.reason === 'video_replicate_not_configured');
+  assert.ok(note, 'a pg1_errors row says why there was no fallback');
+  assert.match(note.message, /no Replicate text-only model is configured/);
+
+  // Even with Kling named as the text-only model, nothing is sent to it.
+  process.env.PG1_VIDEO_MODEL_REPLICATE = KLING;
+  const calls2 = installFetch([...replicateRoutes(), ...engineRoutes({ start: allGeminiDown }), ...dbRoutes(db), ...supabaseRoutes()]);
+  await run(authed({ prompt: '/video draft a dog' }));
+  assert.equal(calls2.filter((c) => c.url.includes('replicate.com')).length, 0);
+});
+
+test('fallback: a content-safety refusal is never retried on key 2 or Kling; the answer is a plain no', async () => {
+  process.env.REPLICATE_API_TOKEN = REP_TOKEN;
   const db = await makeDb();
   const calls = installFetch([
     ...replicateRoutes(),
     ...engineRoutes({ start: () => new Response(GEMINI_SAFETY, { status: 400 }) }),
     ...dbRoutes(db), ...supabaseRoutes()
   ]);
-  const res = await run(authed({ prompt: '/video something the filter refuses' }));
+  const res = await run(authed({ prompt: '/video something the filter refuses', multiFiles: FRAME }));
   assert.equal(res.jsonBody.videoJob, undefined);
-  assert.equal(res.jsonBody.reply, `${VIDEO_REFUSED_TEXT}\n2 of 3 videos left today.`);
+  assert.equal(res.jsonBody.reply, `${VIDEO_REFUSED_TEXT}\nPG1 Motion · Standard · 5 s · about 0.50 USD · 4.50 USD left today`);
   assert.match(VIDEO_REFUSED_TEXT, /won't make that video/);
   assert.doesNotMatch(res.jsonBody.reply, BRANDS_RE);
   assert.equal(startCalls(calls).length, 1, 'key 2 not tried');
-  assert.equal(replicateCreates(calls).length, 0, 'Replicate not tried');
+  assert.equal(calls.filter((c) => c.url.includes('replicate.com')).length, 0, 'Replicate not tried');
+  assert.equal(calls.filter((c) => c.url.includes('/videos/frames/')).length, 0, 'the frame was not even uploaded');
   assert.deepEqual((await db.query('select status, error_reason from public.pg1_video_jobs')).rows, [{ status: 'failed', error_reason: 'safety_refused' }]);
-  const logged = (await errorRows(calls)).find((r) => r.reason === 'video_google_key1_failed');
-  assert.match(logged.message, /failure=safety/);
+  assert.match((await errorRows(calls)).find((r) => r.reason === 'video_google_key1_failed').message, /failure=safety/);
 
-  // A job refused while rendering: a plain no from the poll too, and still no fallback.
+  // Refused while rendering: a plain no from the poll too, and still no fallback.
   const db2 = await makeDb();
   const started = await startOne(db2);
   const refused = { id: 'int-123', status: 'failed', errors: [{ code: 'SAFETY', message: 'Output blocked by a safety filter.' }] };
   const pollCalls = installFetch([...replicateRoutes(), ...engineRoutes({ poll: () => json(refused) }), ...dbRoutes(db2), ...supabaseRoutes()]);
   const poll = await run(authed({ action: 'VIDEO_STATUS', jobId: started.videoJob.id }));
   assert.deepEqual({ status: poll.jsonBody.videoJob.status, message: poll.jsonBody.videoJob.message }, { status: 'failed', message: VIDEO_REFUSED_TEXT });
-  assert.equal(replicateCreates(pollCalls).length, 0);
+  assert.equal(pollCalls.filter((c) => c.url.includes('replicate.com')).length, 0);
 
   // The chat tool says it plainly as well.
-  const tool = createToolExecutor({ role: 'operator', startVideo: async () => ({ ok: false, code: 'refused', remaining: 2, cap: 3 }), log: () => {} });
+  const tool = createToolExecutor({ role: 'operator', startVideo: async () => ({ ok: false, code: 'refused', tier: 'standard', durationS: 5, estCost: 0.5, remaining: 4.5, budget: 5 }), log: () => {} });
   const outcome = await tool({ id: 't', name: VIDEO_CHAT_TOOL, args: { prompt: 'x' } });
   assert.equal(outcome.code, 'content_refused');
   assert.match(outcome.message, /won't make it/);
 });
 
-test('fallback: a 400 about the request itself, or no Replicate model chosen, does not fall back', async () => {
-  // No Replicate model: both keys fail on quota, the clip fails neutrally.
+test('fallback: one clip is one reservation, whichever provider makes it, also when every provider fails', async () => {
   process.env.REPLICATE_API_TOKEN = REP_TOKEN;
+  process.env.PG1_VIDEO_DAILY_BUDGET_USD = '1.00';
   const db = await makeDb();
-  let calls = installFetch([
-    ...replicateRoutes(),
-    ...engineRoutes({ start: () => new Response(JSON.stringify({ error: { code: 429, message: 'quota' } }), { status: 429 }) }),
-    ...dbRoutes(db), ...supabaseRoutes()
-  ]);
-  let res = await run(authed({ prompt: '/video a cat' }));
-  assert.match(res.jsonBody.reply, /^Execution failed\. The video could not be generated right now/);
-  assert.equal(startCalls(calls).length, 2);
-  assert.equal(replicateCreates(calls).length, 0, 'no model chosen: no Replicate call');
-
-  useReplicate();
-  calls = installFetch([...replicateRoutes(), ...engineRoutes({ start: () => new Response(GEMINI_REJECTION, { status: 400 }) }), ...dbRoutes(db), ...supabaseRoutes()]);
-  res = await run(authed({ prompt: '/video a dog' }));
-  assert.match(res.jsonBody.reply, /^Execution failed\./);
-  assert.equal(startCalls(calls).length, 1);
-  assert.equal(replicateCreates(calls).length, 0);
-});
-
-test('fallback: one clip is one slot, whichever provider makes it', async () => {
-  useReplicate();
-  process.env.PG1_VIDEO_DAILY_CAP = '2';
-  const db = await makeDb();
-  const allGeminiDown = () => new Response(JSON.stringify({ error: { code: 503, message: 'down' } }), { status: 503 });
   const calls = installFetch([...replicateRoutes(), ...engineRoutes({ start: allGeminiDown }), ...dbRoutes(db), ...supabaseRoutes()]);
-  const first = await run(authed({ prompt: '/video a red balloon' }));
+  const first = await run(authed({ prompt: '/video a red balloon', multiFiles: FRAME }));
   assert.ok(first.jsonBody.videoJob);
-  assert.match(first.jsonBody.reply, /1 of 2 videos left today/, 'three attempts, one slot');
+  assert.match(first.jsonBody.reply, /about 0\.50 USD · 0\.50 USD left today$/, 'three attempts, one reservation');
   assert.equal(calls.filter((c) => c.url.includes('pg1_reserve_video_slot')).length, 1, 'reserved once');
-  assert.equal((await db.query('select count(*)::int as n from public.pg1_video_jobs')).rows[0].n, 1);
 
-  // Replicate also fails: still the one slot, and it is used.
+  // Kling also fails (no credit): still the one reservation, and it is kept.
   installFetch([...replicateRoutes({ create: () => json({ detail: 'Insufficient credit' }, 402) }), ...engineRoutes({ start: allGeminiDown }), ...dbRoutes(db), ...supabaseRoutes()]);
-  const second = await run(authed({ prompt: '/video a blue balloon' }));
-  assert.match(second.jsonBody.reply, /0 of 2 videos left today/);
-  const third = await run(authed({ prompt: '/video a green balloon' }));
-  assert.match(third.jsonBody.reply, /limit is reached \(2 of 2 used\)/);
-  assert.equal((await db.query('select count(*)::int as n from public.pg1_video_jobs')).rows[0].n, 2);
+  const second = await run(authed({ prompt: '/video a blue balloon', multiFiles: FRAME }));
+  assert.match(second.jsonBody.reply, /^Execution failed\.[\s\S]*0\.00 USD left today$/);
+  const third = await run(authed({ prompt: '/video draft a green balloon' }));
+  assert.match(third.jsonBody.reply, /would go over today's video budget: 0\.00 USD left of 1\.00 USD/);
+  assert.deepEqual((await db.query('select count(*)::int as n, sum(est_cost_usd)::text as s from public.pg1_video_jobs')).rows[0], { n: 2, s: '1.00' });
 });
 
 test('the Replicate models join the engine-name swaps; the operator only ever sees PG1 Motion', () => {
   const guard = createReplySecretGuard({ env: { PG1_VIDEO_MODEL_REPLICATE: 'acme/clipper-9', PG1_VIDEO_MODEL_REPLICATE_IMAGE: 'acme/clipper-9-i2v' }, errorSummary: true });
   assert.equal(guard('acme/clipper-9 returned 500').text, 'PG1 Motion returned 500');
   assert.equal(guard('acme/clipper-9-i2v timed out').text, 'PG1 Motion timed out');
-  assert.equal(guard('bytedance/seedance-1-pro failed').text, 'PG1 Motion failed');
-  assert.equal(guard('Kling 2.1 is down').text, 'PG1 Motion is down');
-  assert.equal(guard('wan-video/wan-2.2-t2v-fast failed').text, 'PG1 Motion failed');
-  assert.equal(guard('the WAN link is down').text, 'the WAN link is down', 'ordinary words are left alone');
+  const def = createReplySecretGuard({ env: {}, errorSummary: true });
+  assert.equal(def('kwaivgi/kling-v2.1 returned 402').text, 'PG1 Motion returned 402', 'the default frame model');
+  assert.equal(def('Kling 2.1 is down').text, 'PG1 Motion is down');
+  assert.equal(def('bytedance/seedance-1-pro failed').text, 'PG1 Motion failed');
+  assert.equal(def('the WAN link is down').text, 'the WAN link is down', 'ordinary words are left alone');
   assert.equal(neutralErrorReason('video_google_key2_failed'), 'PG1 Motion failed');
   assert.equal(neutralErrorReason('video_replicate_failed'), 'PG1 Motion failed');
-  assert.deepEqual(replicateVideoInput('minimax/hailuo-02', { prompt: 'p', image: { mimeType: 'image/png', data: 'AAA' } }), { prompt: 'p', duration: 6, first_frame_image: 'data:image/png;base64,AAA' });
+  assert.equal(neutralErrorReason('video_replicate_not_configured'), 'PG1 Motion failed');
   assert.equal(classifyVideoFailure(400, { error: { message: 'API key not valid. Please pass a valid API key.' } }, ''), 'provider');
   assert.equal(classifyVideoFailure(403, { error: { message: 'Billing account disabled' } }, ''), 'provider');
   assert.equal(classifyVideoFailure(null, null, 'timed out starting the job'), 'provider');
