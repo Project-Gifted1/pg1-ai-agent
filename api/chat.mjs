@@ -14,9 +14,9 @@ import { identityDirective, identityReplyDirective, identityReplyForHistory, spo
 import { businessStateText, classifyKeyQuestion, createReplySecretGuard, isErrorSummaryQuestion, licenceKeyDirective, neutralErrorRow, stripModelContext, SECRET_REFUSAL, SECRET_WITHHELD, SECRET_WITHHELD_NOTE } from '../lib/secretGuard.mjs';
 import { searchHistory } from '../lib/historySearch.mjs';
 import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } from '../lib/voiceStream.mjs';
-import { reportUpstreamFailure, userFacingFailure, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
+import { reportUpstreamFailure, userFacingFailure, providerErrorText, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 import { generateImage } from '../lib/imageEngines.mjs';
-import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, usageReport, USAGE_STATS_TOOL, SEARCH_HISTORY_TOOL, LEAST_PRIVILEGED_ROLE, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
+import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, usageReport, USAGE_STATS_TOOL, SEARCH_HISTORY_TOOL, RECALL_RETRY_INSTRUCTION, LEAST_PRIVILEGED_ROLE, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
 import { CHAT_ROUTES, chooseChatRoute, requiredFirstTool, searchAfterTools, wantsCurrentInfo } from '../lib/chatRoute.mjs';
 import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
 import { fetchThreatTelemetry } from '../lib/sourcePolicy.mjs';
@@ -633,7 +633,7 @@ var GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.6-flash'];
 var ANTHROPIC_MODELS = ['claude-sonnet-5', 'claude-haiku-4-5-20251001'];
 
 // CHAT TOOLS (lib/chatTools.mjs): every model call below takes an optional
-// `toolOpts` = { tools, turns, toolsEnabled, onSearchFailure }: the MCP tool
+// `toolOpts` = { tools, turns, toolsEnabled, forceTool, onSearchFailure, onForceRejected }: the MCP tool
 // definitions to offer as functions, the loop's turns so far, and whether
 // the model may call one this round (false on the round that has to answer).
 // Each call returns { text, calls, ... }: `calls` are the function calls the
@@ -675,8 +675,31 @@ function isGeminiSearchRejection(status, withSearch, errText) {
 
 function reportSearchFailure(toolOpts, model, status, errText) {
   if (toolOpts && typeof toolOpts.onSearchFailure === 'function') {
-    try { toolOpts.onSearchFailure(`[${model}] ${status}: ${String(errText || '').substring(0, 150)}`); } catch (e) {}
+    try { toolOpts.onSearchFailure(`[${model}] ${providerErrorText(status, errText)}`); } catch (e) {}
   }
+}
+
+// A recall question's first round requires search_history (forceTool). If
+// Gemini rejects that request (400), the same model is retried once with
+// search_history offered but not forced and RECALL_RETRY_INSTRUCTION added
+// to the system prompt, instead of failing the reply. The retry carries the
+// same functions and still no web search. The rejection goes to the error
+// log (toolOpts.onForceRejected) even when the retry answers.
+function isForcedCallRejection(forceTool, status) {
+  return !!forceTool && status === 400;
+}
+
+function reportForceRejection(toolOpts, detail) {
+  if (toolOpts && typeof toolOpts.onForceRejected === 'function') {
+    try { toolOpts.onForceRejected(detail); } catch (e) {}
+  }
+}
+
+// The error a failed Gemini round returns: the rejected forced call first
+// (the cause), then how the unforced retry ended.
+function geminiFailure(lastError, forceRejection) {
+  if (!forceRejection || forceRejection === lastError) return lastError;
+  return `required ${SEARCH_HISTORY_TOOL} call rejected: ${forceRejection}; unforced retry: ${lastError || 'not attempted'}`;
 }
 
 function anthropicToolFields(toolOpts) {
@@ -707,6 +730,8 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
   var watchdogFired = false;
   var declarations = geminiDeclarations(toolOpts);
   var withSearch = !declarations;
+  var forceTool = (toolOpts && toolOpts.forceTool) || null;
+  var forceRejection = '';
   var contents = geminiContents(promptText + contextData, mediaParts, (toolOpts && toolOpts.turns) || []);
 
   for (var i = 0; i < geminiKeys.length && !watchdogFired; i++) {
@@ -717,7 +742,7 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
 
       var remainingMs = deadlineTs ? (deadlineTs - Date.now()) : NO_DEADLINE_CAP_MS;
       if (remainingMs <= 1000) {
-        return { text: null, error: lastError || 'Aborted: model fetch time budget exhausted.' };
+        return { text: null, error: geminiFailure(lastError, forceRejection) || 'Aborted: model fetch time budget exhausted.' };
       }
       var perAttemptTimeout = isFirstAttempt
         ? Math.max(remainingMs - RETRY_RESERVE_MS, Math.min(remainingMs, ERROR_RETRY_CAP_MS))
@@ -738,7 +763,7 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
             systemInstruction: { parts: [{ text: sysInstruction }] },
             contents: contents,
             tools: geminiTools(declarations, withSearch),
-            toolConfig: geminiToolConfig(declarations, toolOpts && toolOpts.toolsEnabled, toolOpts && toolOpts.forceTool),
+            toolConfig: geminiToolConfig(declarations, toolOpts && toolOpts.toolsEnabled, forceTool),
             generationConfig: { maxOutputTokens: 4096, temperature: 0.7 }
           }),
           cache: 'no-store',
@@ -758,8 +783,14 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
           lastError = `[${model} on ${apiVersion}] 200 with no usable text (${reason})`;
         } else {
           var errText = await res.text();
-          lastError = `[${model} on ${apiVersion}] ${res.status}: ${errText.substring(0, 150)}`;
-          if (isGeminiSearchRejection(res.status, withSearch, errText)) {
+          lastError = `[${model} on ${apiVersion}] ${providerErrorText(res.status, errText)}`;
+          if (isForcedCallRejection(forceTool, res.status)) {
+            forceRejection = lastError;
+            reportForceRejection(toolOpts, lastError);
+            forceTool = null;
+            sysInstruction = sysInstruction + '\n\n' + RECALL_RETRY_INSTRUCTION;
+            j--;
+          } else if (isGeminiSearchRejection(res.status, withSearch, errText)) {
             reportSearchFailure(toolOpts, model, res.status, errText);
             withSearch = false;
             j--;
@@ -777,7 +808,7 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
       }
     }
   }
-  return { text: null, error: lastError };
+  return { text: null, error: geminiFailure(lastError, forceRejection) };
 }
 
 var ANTHROPIC_SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -879,7 +910,7 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
         lastError = `[${model}] Unexpected response shape from Anthropic API.`;
       } else {
         var errText = await res.text();
-        lastError = `[${model}] Anthropic API ${res.status}: ${errText.substring(0, 150)}`;
+        lastError = `[${model}] Anthropic API ${providerErrorText(res.status, errText)}`;
       }
     } catch (e) {
       if (timedOut) {
@@ -911,13 +942,15 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
   var attemptCount = 0;
   var declarations = geminiDeclarations(toolOpts);
   var withSearch = !declarations;
+  var forceTool = (toolOpts && toolOpts.forceTool) || null;
+  var forceRejection = '';
   var contents = geminiContents(promptText, mediaParts, (toolOpts && toolOpts.turns) || []);
 
   for (var i = 0; i < geminiKeys.length; i++) {
     for (var j = 0; j < GEMINI_MODELS.length; j++) {
       if (hooks.signal && hooks.signal.aborted) return { text: '', error: 'Stopped by the client.', aborted: true };
       var remainingMs = deadlineTs - Date.now();
-      if (remainingMs <= 1000) return { text: '', error: lastError || 'Aborted: model fetch time budget exhausted.' };
+      if (remainingMs <= 1000) return { text: '', error: geminiFailure(lastError, forceRejection) || 'Aborted: model fetch time budget exhausted.' };
       var firstByteTimeout = attemptCount === 0
         ? Math.max(remainingMs - RETRY_RESERVE_MS, Math.min(remainingMs, ERROR_RETRY_CAP_MS))
         : Math.min(ERROR_RETRY_CAP_MS, remainingMs);
@@ -942,7 +975,7 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
             systemInstruction: { parts: [{ text: sysInstruction }] },
             contents: contents,
             tools: geminiTools(declarations, withSearch),
-            toolConfig: geminiToolConfig(declarations, toolOpts && toolOpts.toolsEnabled, toolOpts && toolOpts.forceTool),
+            toolConfig: geminiToolConfig(declarations, toolOpts && toolOpts.toolsEnabled, forceTool),
             generationConfig: { maxOutputTokens: 4096, temperature: 0.7 }
           }),
           cache: 'no-store',
@@ -950,8 +983,14 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
         });
         if (!res.ok) {
           var errText = await res.text();
-          lastError = `[${model}] ${res.status}: ${errText.substring(0, 150)}`;
-          if (isGeminiSearchRejection(res.status, withSearch, errText)) {
+          lastError = `[${model}] ${providerErrorText(res.status, errText)}`;
+          if (isForcedCallRejection(forceTool, res.status)) {
+            forceRejection = lastError;
+            reportForceRejection(toolOpts, lastError);
+            forceTool = null;
+            sysInstruction = sysInstruction + '\n\n' + RECALL_RETRY_INSTRUCTION;
+            j--;
+          } else if (isGeminiSearchRejection(res.status, withSearch, errText)) {
             reportSearchFailure(toolOpts, model, res.status, errText);
             if (hooks.onSearchFailure) hooks.onSearchFailure();
             withSearch = false;
@@ -993,14 +1032,14 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
         var why = timedOut ? `[${model}] Gemini call exceeded its time budget.` : `[${model}] ${e.message}`;
         if (text) return { text: text, calls: [], error: why, partial: true, searchEntryPoint: searchEntryPoint };
         lastError = why;
-        if (timedOut) return { text: '', error: lastError };
+        if (timedOut) return { text: '', error: geminiFailure(lastError, forceRejection) };
       } finally {
         clearTimeout(timeoutId);
         if (hooks.signal) hooks.signal.removeEventListener('abort', onClientAbort);
       }
     }
   }
-  return { text: '', error: lastError };
+  return { text: '', error: geminiFailure(lastError, forceRejection) };
 }
 
 async function streamAnthropicCore(promptText, sysInstruction, mediaParts, anthropicKey, deadlineTs, hooks, toolOpts) {
@@ -1039,7 +1078,7 @@ async function streamAnthropicCore(promptText, sysInstruction, mediaParts, anthr
       });
       if (!res.ok) {
         var errText = await res.text();
-        lastError = `[${model}] Anthropic API ${res.status}: ${errText.substring(0, 150)}`;
+        lastError = `[${model}] Anthropic API ${providerErrorText(res.status, errText)}`;
         continue;
       }
       clearTimeout(timeoutId);
@@ -1272,7 +1311,7 @@ async function streamChatReply(stream, opts) {
     var label = info.round > 1 ? 'Writing the reply from the results' : info.stepSuffix ? 'Writing the reply with web search' : 'Writing the reply';
     // SEARCH OR TOOLS: the checks on a tools-route round, search otherwise.
     var toolOpts = (!info.search && opts.tools && opts.tools.length)
-      ? { tools: opts.tools, turns: turns, toolsEnabled: info.toolsEnabled, forceTool: info.round === 1 ? opts.forceTool : null, onSearchFailure: opts.onSearchFailure }
+      ? { tools: opts.tools, turns: turns, toolsEnabled: info.toolsEnabled, forceTool: info.round === 1 ? opts.forceTool : null, onSearchFailure: opts.onSearchFailure, onForceRejected: opts.onForceRejected }
       : { onSearchFailure: opts.onSearchFailure };
     var sysInstruction = systemFor(opts, toolOpts);
     hooks.newRound = info.round > 1;
@@ -3117,6 +3156,7 @@ export default async function handler(req, res) {
     // A refused search is logged under this request ID every time it
     // happens; the next message asks for search again.
     var onSearchFailure = function (detail) { reportFailure('search_failed', detail); };
+    var onForceRejected = function (detail) { reportFailure('forced_tool_rejected', detail); };
     // IDENTITY: the reply to "what powers you?" is chosen here, in code,
     // from the current conversation the client sent (reqBody.history): the
     // earlier assistant messages that already carry the branded line are
@@ -3205,6 +3245,7 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
         routeInfo: chatRoute,
         forceTool: requiredFirstTool(chatRoute),
         onSearchFailure: onSearchFailure,
+        onForceRejected: onForceRejected,
         maxToolCalls: chatToolPolicyForRole ? chatToolPolicyForRole.maxCalls : CHAT_TOOL_MAX_CALLS,
         toolTimeoutMs: chatToolTimeoutMs,
         // PG1 VOICE: speak the reply as it streams. Needs the voice toggle
@@ -3239,7 +3280,7 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
       // CHAT TOOLS on the JSON path: the same loop as the streamed reply,
       // without a trace; the cards go out in `toolResults` on the reply.
       modelFetchResult = await runToolLoop({
-        callModel: function (turns, info) { return fetchModelRound(roundOpts, { tools: chatTools, turns: turns, toolsEnabled: info.toolsEnabled, forceTool: info.round === 1 ? requiredFirstTool(chatRoute) : null, onSearchFailure: onSearchFailure }); },
+        callModel: function (turns, info) { return fetchModelRound(roundOpts, { tools: chatTools, turns: turns, toolsEnabled: info.toolsEnabled, forceTool: info.round === 1 ? requiredFirstTool(chatRoute) : null, onSearchFailure: onSearchFailure, onForceRejected: onForceRejected }); },
         executeTool: function (call) { return executeChatTool(call, { timeoutMs: toolCallBudget(deadlineTs, chatToolTimeoutMs) }); },
         maxCalls: chatToolPolicyForRole.maxCalls,
         onOutcome: function (outcome) { jsonToolOutcomes.push(outcome); }
