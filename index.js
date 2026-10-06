@@ -19,10 +19,11 @@ export default {
       const { command } = await request.json();
       if (!command) throw new Error("No command provided.");
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${apiKey}`;
+      // The key goes in the x-goog-api-key header, never the URL.
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent`;
       const aiResponse = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
         body: JSON.stringify({ contents: [{ parts: [{ text: command }] }] })
       });
 
