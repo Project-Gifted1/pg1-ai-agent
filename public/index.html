@@ -5177,6 +5177,9 @@
 
     function videoJobCardHtml(job) {
       if (!job || typeof job.id !== 'string' || !VIDEO_JOB_ID_RE.test(job.id)) return '';
+      // A finished clip (a /video recheck that found it): the player, and
+      // the earlier card for the same job gets it too (deliverRecheckedVideo).
+      if (job.status === 'done') return '';
       return `<div class="video-job is-rendering" data-video-job="${escapeHTML(job.id)}" role="status" aria-live="polite">`
         + '<span class="video-job-spinner" aria-hidden="true"></span>'
         + '<span class="video-job-text">Rendering video… <span class="video-job-engine">PG1 Motion</span></span></div>';
@@ -5225,7 +5228,9 @@
           if (job.status === 'done' && typeof job.url === 'string' && /^https:\/\//i.test(job.url)) {
             settleVideoCard(card, videoPlayerHtml(job.url));
           } else if (job.status === 'failed' || job.status === 'not_found') {
-            settleVideoCard(card, `<p class="video-job-failed">${escapeHTML(job.message || 'The video could not be generated.')}</p>`);
+            // The job id stays on the failed card, so a later /video recheck
+            // can put the clip here.
+            settleVideoCard(card, `<p class="video-job-failed" data-video-job-failed="${escapeHTML(id)}">${escapeHTML(job.message || 'The video could not be generated.')}</p>`);
           }
         } catch (e) {
           // Offline or the request failed: the next round asks again.
@@ -5235,6 +5240,24 @@
     }
 
     document.addEventListener('visibilitychange', () => { if (!document.hidden) pollVideoJobsSoon(1000); });
+
+    // /video recheck found a clip: the earlier card for that job (failed or
+    // still rendering) becomes the player. A failed card saved before it
+    // carried the job id is found by the request ID in its sentence.
+    function deliverRecheckedVideo(job) {
+      if (!job || job.status !== 'done' || typeof job.url !== 'string' || !/^https:\/\//i.test(job.url)) return false;
+      if (typeof job.id !== 'string' || !VIDEO_JOB_ID_RE.test(job.id)) return false;
+      const cards = Array.from(document.querySelectorAll('#chat-container [data-video-job], #chat-container [data-video-job-failed]'))
+        .filter((el) => el.getAttribute('data-video-job') === job.id || el.getAttribute('data-video-job-failed') === job.id);
+      if (!cards.length && typeof job.requestId === 'string' && /^[a-z0-9]{6,16}$/i.test(job.requestId)) {
+        const needle = `Request ID: ${job.requestId}`;
+        document.querySelectorAll('#chat-container .video-job-failed:not([data-video-job-failed])').forEach((el) => {
+          if ((el.textContent || '').includes(needle)) cards.push(el);
+        });
+      }
+      cards.forEach((card) => settleVideoCard(card, videoPlayerHtml(job.url)));
+      return cards.length > 0;
+    }
 
     function stepCountText(n) {
       return `${n} step${n === 1 ? '' : 's'}`;
@@ -5770,6 +5793,10 @@
         // or the generate_video tool's card) gets the rendering card; the
         // poll below swaps it for the player when the clip is ready.
         contentHtml += videoJobCardHtml(data.videoJob);
+        // /video recheck found the clip: the player goes to the earlier
+        // card, or into this reply when that card is not on screen.
+        if (data.videoJob && data.videoJob.status === 'done' && !deliverRecheckedVideo(data.videoJob)
+          && typeof data.videoJob.url === 'string' && /^https:\/\//i.test(data.videoJob.url)) contentHtml += videoPlayerHtml(data.videoJob.url);
         if (Array.isArray(data.toolResults)) data.toolResults.forEach((c) => { if (c && c.video_job) contentHtml += videoJobCardHtml(c.video_job); });
 
         if (data.pendingApproval && data.pendingApproval.token) {

@@ -16,7 +16,7 @@ import { searchHistory } from '../lib/historySearch.mjs';
 import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } from '../lib/voiceStream.mjs';
 import { reportUpstreamFailure, userFacingFailure, providerErrorText, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 import { generateImage } from '../lib/imageEngines.mjs';
-import { cleanVideoPrompt, isVideoCommand, isVideoRequest, parseVideoOptions, pollVideoJob, startVideoJob, videoDailyBudget, videoDailyCap, videoEnabled, videoCostLine, videoFrameFallbackOn, videoNotStartedText, videoRenderingText, videoSpendToday, videoTiersText, usd, DEFAULT_START_FRAME_PROMPT, FOUR_K_NOTE, VIDEO_DISABLED_TEXT, VIDEO_ENGINE_LABEL, VIDEO_REFUSED_TEXT, VIDEO_TIER_LABELS } from '../lib/videoJobs.mjs';
+import { cleanVideoPrompt, isVideoCommand, isVideoRequest, parseVideoOptions, pollVideoJob, recheckVideoJob, startVideoJob, videoDailyBudget, videoDailyCap, videoEnabled, videoCostLine, videoFrameFallbackOn, videoNotStartedText, videoRenderingText, videoSpendToday, videoTiersText, usd, DEFAULT_START_FRAME_PROMPT, FOUR_K_NOTE, VIDEO_DISABLED_TEXT, VIDEO_ENGINE_LABEL, VIDEO_REFUSED_TEXT, VIDEO_TIER_LABELS } from '../lib/videoJobs.mjs';
 import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, usageReport, USAGE_STATS_TOOL, SEARCH_HISTORY_TOOL, RECALL_RETRY_INSTRUCTION, LEAST_PRIVILEGED_ROLE, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
 import { CHAT_ROUTES, chooseChatRoute, requiredFirstTool, searchAfterTools, wantsCurrentInfo } from '../lib/chatRoute.mjs';
 import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
@@ -2659,6 +2659,42 @@ export default async function handler(req, res) {
       // video of ...", "an HD video of ...").
       var videoFrame = imageInput.images.length ? imageInput.images[0].inlineData : null;
       var videoAsked = vaultUploadLog ? promptText.replace(vaultUploadLog, '') : promptText;
+      // /video recheck <request id>: one more look at a clip whose status
+      // poll failed (lib/videoJobs.mjs recheckVideoJob). The engine may have
+      // rendered it anyway; if so it is stored and goes to its card.
+      var videoRecheckMatch = /^\/video\s+recheck\s+(\S+)\s*$/i.exec(String(videoAsked || '').trim());
+      if (videoRecheckMatch) {
+        var recheckId = videoRecheckMatch[1].toLowerCase();
+        if (chatStream) chatStream.step('video', 'Checking the video again');
+        var rechecked = await recheckVideoJob({
+          env: process.env, requestId: recheckId, geminiKeys: geminiKeys,
+          supUrl: supabaseUrl, supKey: supabaseKey, fetchImpl: (u, o) => fetch(u, o),
+          onFailure: function (f) {
+            reportUpstreamFailure({
+              supUrl: supUrl, supKey: supKey, route: 'GENERATE_VIDEO', reason: f.reason,
+              status: f.status === 402 ? null : f.status,
+              detail: `recheck by ${requestTraceId}: ${f.detail}`,
+              requestId: f.requestId || recheckId, envValues: secretEnvValues(process.env)
+            });
+          }
+        });
+        if (chatStream) chatStream.stepDone('video', { label: 'Checked the video again', result: rechecked.status === 'done' ? 'ready' : 'not ready', failed: rechecked.status !== 'done' });
+        if (rechecked.status === 'done') {
+          return sendJSON(res, 200, {
+            reply: `${VIDEO_ENGINE_LABEL} found the clip for request ID ${recheckId}: it had finished rendering and is now in the vault.`,
+            videoJob: { id: rechecked.jobId, status: 'done', url: rechecked.url, engine: VIDEO_ENGINE_LABEL, requestId: recheckId },
+            traceId: requestTraceId
+          });
+        }
+        var recheckReply = rechecked.status === 'rendering'
+          ? `The clip for request ID ${recheckId} is not ready yet. Try /video recheck ${recheckId} again in a few minutes.`
+          : rechecked.status === 'not_found'
+            ? `No video has request ID ${recheckId}.`
+            : rechecked.status === 'not_recoverable'
+              ? `The clip for request ID ${recheckId} cannot be checked again: it was refused, or never started rendering.`
+              : `${VIDEO_ENGINE_LABEL} has no clip for request ID ${recheckId}: it did not finish rendering. Nothing new was reserved.`;
+        return sendJSON(res, 200, { reply: recheckReply, traceId: requestTraceId });
+      }
       var videoIsCommand = isVideoCommand(videoAsked);
       var videoOpts = videoIsCommand
         ? parseVideoOptions(videoAsked.trim().replace(/^\/video\b[:\s]*/i, ''), { command: true })
