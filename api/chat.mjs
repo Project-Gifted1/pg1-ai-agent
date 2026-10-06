@@ -17,7 +17,7 @@ import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } 
 import { reportUpstreamFailure, userFacingFailure, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 import { generateImage } from '../lib/imageEngines.mjs';
 import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, usageReport, USAGE_STATS_TOOL, SEARCH_HISTORY_TOOL, LEAST_PRIVILEGED_ROLE, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
-import { CHAT_ROUTES, chooseChatRoute, searchAfterTools, wantsCurrentInfo } from '../lib/chatRoute.mjs';
+import { CHAT_ROUTES, chooseChatRoute, requiredFirstTool, searchAfterTools, wantsCurrentInfo } from '../lib/chatRoute.mjs';
 import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
 import { fetchThreatTelemetry } from '../lib/sourcePolicy.mjs';
 
@@ -657,8 +657,13 @@ function geminiTools(declarations, withSearch) {
   return withSearch ? [{ google_search: {} }] : undefined;
 }
 
-function geminiToolConfig(declarations, toolsEnabled) {
+// toolOpts.forceTool (a recall question's first round, lib/chatRoute.mjs
+// requiredFirstTool): that one function must be called.
+function geminiToolConfig(declarations, toolsEnabled, forceTool) {
   if (!declarations) return undefined;
+  if (toolsEnabled !== false && forceTool && declarations.some(function (d) { return d.name === forceTool; })) {
+    return { functionCallingConfig: { mode: 'ANY', allowedFunctionNames: [forceTool] } };
+  }
   return { functionCallingConfig: { mode: toolsEnabled === false ? 'NONE' : 'AUTO' } };
 }
 
@@ -678,7 +683,16 @@ function anthropicToolFields(toolOpts) {
   if (!toolOpts || !toolOpts.tools || !toolOpts.tools.length) return {};
   var fields = { tools: toAnthropicTools(toolOpts.tools) };
   if (toolOpts.toolsEnabled === false) fields.tool_choice = { type: 'none' };
+  else if (toolOpts.forceTool && toolOpts.tools.some(function (t) { return t.name === toolOpts.forceTool; })) fields.tool_choice = { type: 'tool', name: toolOpts.forceTool };
   return fields;
+}
+
+// The system prompt for one request: the full one (with the [TOOLS]
+// directive) only when the request carries the functions; a search request
+// gets opts.searchSysInstruction, which describes no function, so the model
+// never tells the operator a tool it was never handed "isn't available".
+function systemFor(opts, toolOpts) {
+  return (toolOpts && toolOpts.tools && toolOpts.tools.length) ? opts.sysInstruction : (opts.searchSysInstruction || opts.sysInstruction);
 }
 
 async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys, deadlineTs, toolOpts) {
@@ -724,7 +738,7 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
             systemInstruction: { parts: [{ text: sysInstruction }] },
             contents: contents,
             tools: geminiTools(declarations, withSearch),
-            toolConfig: geminiToolConfig(declarations, toolOpts && toolOpts.toolsEnabled),
+            toolConfig: geminiToolConfig(declarations, toolOpts && toolOpts.toolsEnabled, toolOpts && toolOpts.forceTool),
             generationConfig: { maxOutputTokens: 4096, temperature: 0.7 }
           }),
           cache: 'no-store',
@@ -928,7 +942,7 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
             systemInstruction: { parts: [{ text: sysInstruction }] },
             contents: contents,
             tools: geminiTools(declarations, withSearch),
-            toolConfig: geminiToolConfig(declarations, toolOpts && toolOpts.toolsEnabled),
+            toolConfig: geminiToolConfig(declarations, toolOpts && toolOpts.toolsEnabled, toolOpts && toolOpts.forceTool),
             generationConfig: { maxOutputTokens: 4096, temperature: 0.7 }
           }),
           cache: 'no-store',
@@ -1069,6 +1083,7 @@ async function streamAnthropicCore(promptText, sysInstruction, mediaParts, anthr
 // the reasoning core returned nothing. Returns the provider result with
 // `calls` for the tool loop.
 async function fetchModelRound(opts, toolOpts) {
+  opts = { ...opts, sysInstruction: systemFor(opts, toolOpts) };
   var result = (opts.activeAction === 'CLAUDE_CHAT')
     ? await fetchAnthropicCore(opts.promptText, opts.sysInstruction, opts.mediaParts, '', opts.anthropicKey, opts.deadlineTs, toolOpts)
     : await fetchGeminiCore(opts.promptText, opts.sysInstruction, opts.mediaParts, '', opts.geminiKeys, opts.deadlineTs, toolOpts);
@@ -1257,27 +1272,28 @@ async function streamChatReply(stream, opts) {
     var label = info.round > 1 ? 'Writing the reply from the results' : info.stepSuffix ? 'Writing the reply with web search' : 'Writing the reply';
     // SEARCH OR TOOLS: the checks on a tools-route round, search otherwise.
     var toolOpts = (!info.search && opts.tools && opts.tools.length)
-      ? { tools: opts.tools, turns: turns, toolsEnabled: info.toolsEnabled, onSearchFailure: opts.onSearchFailure }
+      ? { tools: opts.tools, turns: turns, toolsEnabled: info.toolsEnabled, forceTool: info.round === 1 ? opts.forceTool : null, onSearchFailure: opts.onSearchFailure }
       : { onSearchFailure: opts.onSearchFailure };
+    var sysInstruction = systemFor(opts, toolOpts);
     hooks.newRound = info.round > 1;
     var result;
     if (opts.activeAction === 'CLAUDE_CHAT') {
       modelStep = `model${suffix}`;
       stream.step(modelStep, `${label} on the reasoning core`);
-      result = await streamAnthropicCore(opts.promptText, opts.sysInstruction, opts.mediaParts, opts.anthropicKey, opts.deadlineTs, hooks, toolOpts);
+      result = await streamAnthropicCore(opts.promptText, sysInstruction, opts.mediaParts, opts.anthropicKey, opts.deadlineTs, hooks, toolOpts);
       var empty = !result.text && !(result.calls && result.calls.length);
       if (empty && !result.aborted && opts.geminiKeys.length > 0 && Date.now() < opts.deadlineTs - 1000) {
         var anthropicError = result.error;
         stream.stepDone(modelStep, { label: 'Reasoning core unavailable', result: 'switching to the main core', failed: true });
         modelStep = `model${suffix}-fallback`;
         stream.step(modelStep, `${label} on the main core`);
-        result = await streamGeminiCore(opts.promptText, opts.sysInstruction, opts.mediaParts, opts.geminiKeys, opts.deadlineTs, hooks, toolOpts);
+        result = await streamGeminiCore(opts.promptText, sysInstruction, opts.mediaParts, opts.geminiKeys, opts.deadlineTs, hooks, toolOpts);
         if (!result.text && !(result.calls && result.calls.length)) result.error = `Anthropic failed (${anthropicError}); Gemini fallback also failed (${result.error})`;
       }
     } else {
       modelStep = `model${suffix}`;
       stream.step(modelStep, label);
-      result = await streamGeminiCore(opts.promptText, opts.sysInstruction, opts.mediaParts, opts.geminiKeys, opts.deadlineTs, hooks, toolOpts);
+      result = await streamGeminiCore(opts.promptText, sysInstruction, opts.mediaParts, opts.geminiKeys, opts.deadlineTs, hooks, toolOpts);
     }
     var calls = info.toolsEnabled && Array.isArray(result.calls) ? result.calls : [];
     if (calls.length) releaseHeld();
@@ -1292,7 +1308,7 @@ async function streamChatReply(stream, opts) {
     // A message that may still move to the search call holds its first
     // round's text until that round shows whether it runs a check.
     var mayUseSearch = searchFallbackPossible(opts);
-    hooks.hold = mayUseSearch && wantsCurrentInfo(opts.promptText) ? [] : null;
+    hooks.hold = mayUseSearch && !opts.forceTool && wantsCurrentInfo(opts.promptText) ? [] : null;
     result = await runToolLoop({
       callModel: callModel,
       executeTool: function (call) { return opts.executeTool(call, { timeoutMs: toolCallBudget(opts.deadlineTs, opts.toolTimeoutMs || CHAT_TOOL_TIMEOUT_MS) }); },
@@ -1301,7 +1317,7 @@ async function streamChatReply(stream, opts) {
       onOutcome: toolTrace.onOutcome,
       isAborted: function () { return stream.clientGone || stream.signal.aborted; }
     });
-    if (mayUseSearch && !stream.clientGone && searchAfterTools(opts.promptText, result) && Date.now() < opts.deadlineTs - 1000) {
+    if (mayUseSearch && !stream.clientGone && searchAfterTools(opts.promptText, result, opts.routeInfo) && Date.now() < opts.deadlineTs - 1000) {
       // No check ran: this message gets its one search call. What the
       // tools round wrote (held, never shown) is dropped.
       hooks.hold = null;
@@ -3155,6 +3171,9 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
     // Backstop: no deployment secret value ever reaches a model, whichever
     // block of the prompt or [CONTEXT] it might have come in through.
     sysInstruction = stripModelContext(sysInstruction, envSecrets);
+    // A search request carries no functions, so its prompt describes none
+    // (systemFor): the same prompt without the [TOOLS] directive.
+    var searchSysInstruction = toolDirectiveText ? sysInstruction.replace(stripModelContext(toolDirectiveText, envSecrets), '') : sysInstruction;
 
     if (Date.now() >= deadlineTs - 1000) {
       return sendJSON(res, 200, {
@@ -3168,6 +3187,7 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
         activeAction: activeAction,
         promptText: promptText,
         sysInstruction: sysInstruction,
+        searchSysInstruction: searchSysInstruction,
         mediaParts: mediaParts,
         imageCount: imageCount,
         imageSkipped: imageInput.skipped,
@@ -3182,6 +3202,8 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
         tools: chatTools,
         executeTool: executeChatTool,
         route: chatRoute.route,
+        routeInfo: chatRoute,
+        forceTool: requiredFirstTool(chatRoute),
         onSearchFailure: onSearchFailure,
         maxToolCalls: chatToolPolicyForRole ? chatToolPolicyForRole.maxCalls : CHAT_TOOL_MAX_CALLS,
         toolTimeoutMs: chatToolTimeoutMs,
@@ -3209,7 +3231,7 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
       });
     }
 
-    var roundOpts = { activeAction: activeAction, promptText: promptText, sysInstruction: sysInstruction, mediaParts: mediaParts, anthropicKey: anthropicKey, geminiKeys: geminiKeys, deadlineTs: deadlineTs };
+    var roundOpts = { activeAction: activeAction, promptText: promptText, sysInstruction: sysInstruction, searchSysInstruction: searchSysInstruction, mediaParts: mediaParts, anthropicKey: anthropicKey, geminiKeys: geminiKeys, deadlineTs: deadlineTs };
     var searchOpts = { onSearchFailure: onSearchFailure };
     var jsonToolOutcomes = [];
     var modelFetchResult;
@@ -3217,13 +3239,13 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
       // CHAT TOOLS on the JSON path: the same loop as the streamed reply,
       // without a trace; the cards go out in `toolResults` on the reply.
       modelFetchResult = await runToolLoop({
-        callModel: function (turns, info) { return fetchModelRound(roundOpts, { tools: chatTools, turns: turns, toolsEnabled: info.toolsEnabled, onSearchFailure: onSearchFailure }); },
+        callModel: function (turns, info) { return fetchModelRound(roundOpts, { tools: chatTools, turns: turns, toolsEnabled: info.toolsEnabled, forceTool: info.round === 1 ? requiredFirstTool(chatRoute) : null, onSearchFailure: onSearchFailure }); },
         executeTool: function (call) { return executeChatTool(call, { timeoutMs: toolCallBudget(deadlineTs, chatToolTimeoutMs) }); },
         maxCalls: chatToolPolicyForRole.maxCalls,
         onOutcome: function (outcome) { jsonToolOutcomes.push(outcome); }
       });
       // No check ran: the one search call for this message.
-      if (searchFallbackPossible(roundOpts) && searchAfterTools(promptText, modelFetchResult) && Date.now() < deadlineTs - 1000) {
+      if (searchFallbackPossible(roundOpts) && searchAfterTools(promptText, modelFetchResult, chatRoute) && Date.now() < deadlineTs - 1000) {
         var searched = await fetchModelRound(roundOpts, searchOpts);
         if (searched.text || !modelFetchResult.text) modelFetchResult = searched;
       }
