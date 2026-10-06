@@ -953,6 +953,14 @@
     }
     .search-entry-point { margin-top: var(--sp-3); width: 100%; overflow-x: auto; }
 
+    /* PG1 MOTION: the "Rendering video…" card until the clip is ready */
+    .video-job { display: flex; align-items: center; gap: var(--sp-3); margin: var(--sp-4) 0; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-1); color: var(--text-2); font-size: var(--fs-sm); }
+    .video-job-spinner { width: 14px; height: 14px; flex: none; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--gold); animation: video-job-spin 0.9s linear infinite; }
+    .video-job-engine { color: var(--gold); }
+    .video-job-failed { margin: var(--sp-4) 0; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--danger-edge); border-radius: var(--r-md); background: var(--danger-soft); color: var(--danger-text); font-size: var(--fs-sm); }
+    @keyframes video-job-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .video-job-spinner { animation: none; } }
+
     /* ---------- EMPTY STATE ---------- */
     .message-bubble.welcome { text-align: center; padding: var(--sp-4) 0; }
     .message-bubble.welcome:only-child { margin-block: auto; }
@@ -3437,6 +3445,8 @@
           sessionUser = user;
           sessionPass = pass;
           document.getElementById('auth-modal').style.display = 'none';
+          // A clip still rendering from before a reload picks up again.
+          pollVideoJobsSoon(1000);
           syncErrorLogToServer().then(updateErrorLogBadge);
         } else {
           alert('Access Denied: Invalid Credentials.');
@@ -5152,6 +5162,80 @@
       return `<li class="trace-row is-running"><div class="trace-line"><span class="trace-dot" aria-hidden="true"></span><span class="trace-label">${escapeHTML(ev.label || 'Working')}</span></div></li>`;
     }
 
+    // PG1 MOTION (lib/videoJobs.mjs): a clip renders in the background. Its
+    // reply carries a "Rendering video…" card with the job id; this polls
+    // /api/chat's VIDEO_STATUS action for every card still rendering (the
+    // signed-in operator's session, paused while the tab is hidden) and
+    // swaps the card for the video player when the clip is ready (a signed
+    // link that works for 7 days), or for the neutral failure sentence and
+    // request ID. The server marks a job failed after 15 minutes, so no card
+    // spins for ever. Cards saved in the chat history resume after a reload,
+    // once the operator has signed in again.
+    const VIDEO_POLL_MS = 8000;
+    const VIDEO_JOB_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    let videoPollTimer = null;
+
+    function videoJobCardHtml(job) {
+      if (!job || typeof job.id !== 'string' || !VIDEO_JOB_ID_RE.test(job.id)) return '';
+      return `<div class="video-job is-rendering" data-video-job="${escapeHTML(job.id)}" role="status" aria-live="polite">`
+        + '<span class="video-job-spinner" aria-hidden="true"></span>'
+        + '<span class="video-job-text">Rendering video… <span class="video-job-engine">PG1 Motion</span></span></div>';
+    }
+
+    // The same player a reply's `video` field gets.
+    function videoPlayerHtml(url) {
+      return `<div class="media-preview-container"><video controls preload="metadata" playsinline width="100%" src="${escapeHTML(url)}">Your browser does not support video playback.</video></div>`;
+    }
+
+    function renderingVideoCards() {
+      return Array.from(document.querySelectorAll('#chat-container .video-job.is-rendering[data-video-job]'));
+    }
+
+    function pollVideoJobsSoon(delay = VIDEO_POLL_MS) {
+      if (videoPollTimer !== null || !renderingVideoCards().length) return;
+      videoPollTimer = setTimeout(pollVideoJobs, delay);
+    }
+
+    function settleVideoCard(card, html) {
+      const holder = document.createElement('div');
+      holder.innerHTML = html;
+      card.replaceWith(...Array.from(holder.childNodes));
+      saveState();
+    }
+
+    async function pollVideoJobs() {
+      videoPollTimer = null;
+      const cards = renderingVideoCards();
+      if (!cards.length) return;
+      // Signed out (a reload) or in the background: wait for sign-in or for
+      // the tab to come back (both call pollVideoJobsSoon).
+      if (!sessionUser || !sessionPass || document.hidden) return;
+      for (const card of cards) {
+        const id = card.getAttribute('data-video-job');
+        try {
+          const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'VIDEO_STATUS', jobId: id, user: sessionUser, pass: sessionPass })
+          });
+          if (res.status === 401) return;
+          const data = await res.json().catch(() => null);
+          const job = data && data.videoJob;
+          if (!job) continue;
+          if (job.status === 'done' && typeof job.url === 'string' && /^https:\/\//i.test(job.url)) {
+            settleVideoCard(card, videoPlayerHtml(job.url));
+          } else if (job.status === 'failed' || job.status === 'not_found') {
+            settleVideoCard(card, `<p class="video-job-failed">${escapeHTML(job.message || 'The video could not be generated.')}</p>`);
+          }
+        } catch (e) {
+          // Offline or the request failed: the next round asks again.
+        }
+      }
+      pollVideoJobsSoon();
+    }
+
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) pollVideoJobsSoon(1000); });
+
     function stepCountText(n) {
       return `${n} step${n === 1 ? '' : 's'}`;
     }
@@ -5682,6 +5766,12 @@
             </div>`;
         }
 
+        // PG1 MOTION: a clip that is rendering (/video, "make a video of…",
+        // or the generate_video tool's card) gets the rendering card; the
+        // poll below swaps it for the player when the clip is ready.
+        contentHtml += videoJobCardHtml(data.videoJob);
+        if (Array.isArray(data.toolResults)) data.toolResults.forEach((c) => { if (c && c.video_job) contentHtml += videoJobCardHtml(c.video_job); });
+
         if (data.pendingApproval && data.pendingApproval.token) {
           contentHtml += renderApprovalActionsHtml(data.pendingApproval.token);
         }
@@ -5697,6 +5787,7 @@
         agentBubble.classList.remove('pending');
         agentBubble.innerHTML = contentHtml;
         saveState();
+        pollVideoJobsSoon();
         // The header was just re-rendered: put the waveform back if this
         // reply is still being spoken.
         syncVoiceWave();
