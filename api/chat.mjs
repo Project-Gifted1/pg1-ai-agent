@@ -12,10 +12,11 @@ import { collectImageInputs, imageInputDirective, imageCountLabel, describeSkipp
 import { createChatStream, createReplyScrubber, readSseResponse, scrubIdentity, stripTranscriptLabels, wantsChatStream } from '../lib/chatStream.mjs';
 import { identityDirective, identityReplyDirective, identityReplyForHistory, spokenReplyDirective } from '../lib/identity.mjs';
 import { businessStateText, classifyKeyQuestion, createReplySecretGuard, isErrorSummaryQuestion, licenceKeyDirective, neutralErrorRow, stripModelContext, SECRET_REFUSAL, SECRET_WITHHELD, SECRET_WITHHELD_NOTE } from '../lib/secretGuard.mjs';
+import { searchHistory } from '../lib/historySearch.mjs';
 import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } from '../lib/voiceStream.mjs';
 import { reportUpstreamFailure, userFacingFailure, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 import { generateImage } from '../lib/imageEngines.mjs';
-import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, usageReport, USAGE_STATS_TOOL, LEAST_PRIVILEGED_ROLE, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
+import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, usageReport, USAGE_STATS_TOOL, SEARCH_HISTORY_TOOL, LEAST_PRIVILEGED_ROLE, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
 import { CHAT_ROUTES, chooseChatRoute, searchAfterTools, wantsCurrentInfo } from '../lib/chatRoute.mjs';
 import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
 import { fetchThreatTelemetry } from '../lib/sourcePolicy.mjs';
@@ -3075,7 +3076,15 @@ export default async function handler(req, res) {
     // wallet check only runs on an address from a real ENS lookup (or one
     // the operator wrote), never one the model supplied (lib/chatTools.mjs).
     var runChatTool = chatTools.length
-      ? createToolExecutor({ role: chatToolRole, identifier: clientIp, timeoutMs: chatToolTimeoutMs, operatorText: typeof promptText === 'string' ? promptText : '' })
+      ? createToolExecutor({
+        role: chatToolRole, identifier: clientIp, timeoutMs: chatToolTimeoutMs, operatorText: typeof promptText === 'string' ? promptText : '',
+        // search_history (operator only): every snippet goes through the
+        // reply secret guard before the model sees it (lib/historySearch.mjs);
+        // histArgs carries the query, range and onFallbackFailure.
+        searchHistory: function (histArgs) {
+          return searchHistory({ ...histArgs, guard: createReplySecretGuard({ envValues: envSecrets, env: process.env }) });
+        }
+      })
       : null;
     // Tool results go back to the model, so they get the same backstop as
     // the prompt: no deployment secret value in them.
@@ -3085,7 +3094,9 @@ export default async function handler(req, res) {
     // SEARCH OR TOOLS (lib/chatRoute.mjs): this message's Gemini requests
     // carry either PG1's checks or Google Search, never both. The reason is
     // a fixed word, never text from the message.
-    var chatRoute = chooseChatRoute(typeof promptText === 'string' ? promptText : '', { hasTools: !!executeChatTool });
+    // A question about an earlier conversation also goes the tools way, but
+    // only for a role that has search_history (the operator).
+    var chatRoute = chooseChatRoute(typeof promptText === 'string' ? promptText : '', { hasTools: !!executeChatTool, historySearch: chatTools.some(function (t) { return t.name === SEARCH_HISTORY_TOOL; }) });
     console.log(`[chat] route=${chatRoute.route} reason=${chatRoute.reason} request_id=${requestTraceId}`);
     // A refused search is logged under this request ID every time it
     // happens; the next message asks for search again.
