@@ -756,9 +756,11 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
       var timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, perAttemptTimeout);
 
       try {
-        var res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${currentKey}`, {
+        // The key goes in the x-goog-api-key header, never the URL: a URL
+        // can show up in Vercel's External APIs logs and in error text.
+        var res = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': currentKey },
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: sysInstruction }] },
             contents: contents,
@@ -968,9 +970,10 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
       var finishReason = '';
 
       try {
-        var res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${geminiKeys[i]}`, {
+        // Key in the header, never the URL (see the non-streamed call).
+        var res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKeys[i] },
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: sysInstruction }] },
             contents: contents,

@@ -30,7 +30,8 @@ class GeminiClient {
    * Send request to specific model
    */
   async sendToModel(model, prompt, systemInstruction, tools = [], options = {}) {
-    const url = `${this.baseUrl}/${model}:generateContent?key=${this.apiKey}`;
+    // Key in the x-goog-api-key header, never the URL.
+    const url = `${this.baseUrl}/${model}:generateContent`;
     
     const payload = {
       systemInstruction: {
@@ -47,7 +48,7 @@ class GeminiClient {
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
       body: JSON.stringify(payload)
     });
 
@@ -72,7 +73,8 @@ class GeminiClient {
     options = {}
   ) {
     const model = options.model || this.models[0];
-    const url = `${this.baseUrl}/${model}:generateContent?key=${this.apiKey}`;
+    // Key in the x-goog-api-key header, never the URL.
+    const url = `${this.baseUrl}/${model}:generateContent`;
 
     const contents = [
       { parts: [{ text: originalPrompt }] },
@@ -93,7 +95,7 @@ class GeminiClient {
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
       body: JSON.stringify(payload)
     });
 

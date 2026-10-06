@@ -527,7 +527,7 @@ test('JSON path: the same loop runs, the reply carries toolResults and a spoken 
   assert.ok(!body.spokenSummary.includes('0x'), 'no address spoken');
   const gem = geminiRequests(calls);
   assert.equal(gem.length, 2);
-  assert.ok(gem.every((g) => g.url.includes(':generateContent?')), 'the JSON path uses the non-streaming endpoint');
+  assert.ok(gem.every((g) => /:generateContent$/.test(g.url)), 'the JSON path uses the non-streaming endpoint');
   assert.equal(gem[0].body.tools.find((t) => t.functionDeclarations).functionDeclarations.length, READ_ONLY_CHAT_TOOLS.length + OPERATOR_ONLY_CHAT_TOOLS.length);
   assert.equal(body.audio, undefined, 'still no audio on a JSON reply');
 });
