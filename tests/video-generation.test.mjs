@@ -39,7 +39,7 @@ import {
   videoFromInteraction, DEFAULT_VIDEO_MODEL, DEFAULT_VIDEO_DAILY_CAP, INTERACTION_BODY_KEYS, VIDEO_DISABLED_TEXT,
   VIDEO_ENGINE_LABEL, VIDEO_JOB_TIMEOUT_MS, VIDEO_SIGNED_URL_SECONDS, VIDEO_REFUSED_TEXT, classifyVideoFailure, replicateVideoInput,
   videoDailyBudget, parseVideoOptions, VIDEO_PRICES, videoClipEstimate, replicateVideoModel, googleRequestParts, stripUrlKey,
-  VIDEO_POLL_ERROR_LIMIT
+  VIDEO_POLL_ERROR_LIMIT, pollDebugText
 } from '../lib/videoJobs.mjs';
 
 const MIGRATIONS = ['20261008120000_pg1_video_jobs.sql', '20261009120000_pg1_video_budget.sql']
@@ -1093,7 +1093,15 @@ test('poll: a request error (the live 400) does not discard the job; the poll is
   const last = await run(authed({ action: 'VIDEO_STATUS', jobId: id }));
   assert.equal(last.jsonBody.videoJob.status, 'failed');
   assert.deepEqual((await db.query('select status, error_reason from public.pg1_video_jobs')).rows[0], { status: 'failed', error_reason: 'engine_error' });
-  const rows = await errorRows(calls, VIDEO_POLL_ERROR_LIMIT);
+  // Each failing poll logs the poll_error / failed row and the temporary debug row.
+  const rows = await errorRows(calls, 2 * VIDEO_POLL_ERROR_LIMIT);
+  const debug = rows.filter((r) => r.reason === 'video_google_key1_poll_debug');
+  assert.equal(debug.length, VIDEO_POLL_ERROR_LIMIT, 'one debug row per failing poll');
+  for (const r of debug) {
+    assert.equal(r.status, 400);
+    assert.match(r.message, /hop1: GET generativelanguage\.googleapis\.com\/v1beta\/interactions\/int-123 header_names=\[x-goog-api-key\] url_has_key=no/);
+    assert.ok(!r.message.includes(KEY1), 'header names only, never the key');
+  }
   const retries = rows.filter((r) => r.reason === 'video_google_key1_poll_error');
   assert.equal(retries.length, VIDEO_POLL_ERROR_LIMIT - 1);
   for (const [i, r] of retries.entries()) {
@@ -1168,4 +1176,134 @@ test('/video recheck: still not ready, unknown, refused, and a guest', async () 
 
   const guest = await run({ prompt: `/video recheck ${started.traceId}` });
   assert.equal(guest.statusCode, 401);
+});
+
+// --- 10. the live status poll, on the wire -----------------------------------------------
+//
+// The tests above replace globalThis.fetch, so they see the options object
+// PG1 hands to fetch, not the request Node actually sends. Here the client's
+// status action (VIDEO_STATUS on /api/chat, exactly as the browser calls it)
+// runs with Node's real fetch for every Google request; only the connection
+// is replaced, by a dispatcher that records each request as fetch put it on
+// the wire and answers with Google's rule: more than one credential is a 400.
+
+const DISPATCHER = Symbol.for('undici.globalDispatcher.1');
+
+// Every credential on a wire request: a credential-bearing header, ?key=
+// (any case) or another credential parameter in the URL.
+const WIRE_CREDENTIAL_HEADERS = ['x-goog-api-key', 'authorization', 'proxy-authorization', 'x-goog-iam-authorization-token', 'cookie'];
+function wireCredentials(req) {
+  const where = [];
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (WIRE_CREDENTIAL_HEADERS.includes(name.toLowerCase()) && value) where.push(`header ${name.toLowerCase()}`);
+  }
+  for (const name of new URL(req.url).searchParams.keys()) {
+    if (URL_CREDENTIALS.includes(name.toLowerCase())) where.push(`url ?${name.toLowerCase()}`);
+  }
+  return where;
+}
+
+// Google, behind Node's real fetch. answer(req) -> { status, body }.
+function installGoogleWire(answer) {
+  const wire = [];
+  const previous = globalThis[DISPATCHER];
+  globalThis[DISPATCHER] = {
+    dispatch(opts, handler) {
+      const headers = {};
+      const raw = opts.headers || {};
+      if (Array.isArray(raw)) for (let i = 0; i < raw.length; i += 2) headers[String(raw[i]).toLowerCase()] = String(raw[i + 1]);
+      else for (const [k, v] of Object.entries(raw)) headers[k.toLowerCase()] = String(v);
+      const req = { method: opts.method, url: `${String(opts.origin).replace(/\/$/, '')}${opts.path}`, headers };
+      wire.push(req);
+      const { status, body } = wireCredentials(req).length > 1
+        ? { status: 400, body: MULTIPLE_CREDENTIALS }
+        : answer(req);
+      queueMicrotask(() => {
+        handler.onConnect(() => {});
+        handler.onHeaders(status, [Buffer.from('content-type'), Buffer.from('application/json')], () => {}, String(status));
+        handler.onData(Buffer.from(body));
+        handler.onComplete([]);
+      });
+      return true;
+    },
+    close() {}, destroy() {}
+  };
+  return { wire, restore: () => { globalThis[DISPATCHER] = previous; } };
+}
+
+// The route list for installFetch, with every Google request going to
+// Node's real fetch (and so to the wire dispatcher). wrap lets a test put a
+// fetch wrapper in front, as a runtime or a library could.
+function realFetchForGoogle(routes, wrap = (f) => f) {
+  const calls = installFetch(routes);
+  const stubbed = globalThis.fetch;
+  const real = wrap(ORIGINAL_FETCH);
+  globalThis.fetch = (url, options = {}) => (new URL(String(url)).hostname.endsWith('googleapis.com') ? real(url, options) : stubbed(url, options));
+  return calls;
+}
+
+test('the live status poll (VIDEO_STATUS on /api/chat, Node\'s real fetch, on the wire): the GET carries exactly one credential, the x-goog-api-key header', async () => {
+  const db = await makeDb();
+  const { videoJob: { id } } = await startOne(db);
+  let polls = 0;
+  const { wire, restore } = installGoogleWire((req) => ({
+    status: 200,
+    body: JSON.stringify(++polls === 1
+      ? { id: 'int-123', status: 'in_progress' }
+      : { id: 'int-123', status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'video', data: MP4_BASE64, mime_type: 'video/mp4' }] }] })
+  }));
+  try {
+    const calls = realFetchForGoogle([...dbRoutes(db), ...supabaseRoutes()]);
+    assert.equal((await run(authed({ action: 'VIDEO_STATUS', jobId: id }))).jsonBody.videoJob.status, 'rendering');
+    assert.equal((await run(authed({ action: 'VIDEO_STATUS', jobId: id }))).jsonBody.videoJob.status, 'done');
+    assert.equal(wire.length, 2, 'two polls reached Google');
+    for (const req of wire) {
+      assert.equal(req.method, 'GET');
+      assert.equal(req.url, `${INTERACTIONS}/int-123`);
+      assert.ok(!/key=/i.test(req.url), `the poll URL has no key=: ${req.url}`);
+      assert.deepEqual(wireCredentials(req), ['header x-goog-api-key'], `exactly one credential on the wire: ${JSON.stringify(Object.keys(req.headers))}`);
+      assert.equal(req.headers['x-goog-api-key'], KEY1);
+    }
+    assert.equal(calls.filter((c) => c.url.includes('/rest/v1/pg1_errors')).length, 0, 'a working poll logs nothing');
+  } finally {
+    restore();
+  }
+});
+
+test('the live status poll fails the check when anything in front of fetch adds a second credential (an Authorization header or ?key=)', async () => {
+  const adders = {
+    'Authorization header': (f) => (url, o = {}) => f(url, { ...o, headers: { ...o.headers, Authorization: 'Bearer oidc-token' } }),
+    '?key= in the URL': (f) => (url, o) => f(`${url}${String(url).includes('?') ? '&' : '?'}key=${KEY1}`, o)
+  };
+  for (const [what, wrap] of Object.entries(adders)) {
+    const db = await makeDb();
+    const { videoJob: { id } } = await startOne(db);
+    const { wire, restore } = installGoogleWire(() => ({ status: 200, body: JSON.stringify({ id: 'int-123', status: 'in_progress' }) }));
+    try {
+      const calls = realFetchForGoogle([...dbRoutes(db), ...supabaseRoutes()], wrap);
+      const poll = await run(authed({ action: 'VIDEO_STATUS', jobId: id }));
+      assert.equal(poll.jsonBody.videoJob.status, 'rendering', `${what}: the first request error is asked again`);
+      assert.equal(wire.length, 1);
+      assert.equal(wireCredentials(wire[0]).length, 2, `${what}: two credentials reached the wire`);
+      assert.throws(() => assert.deepEqual(wireCredentials(wire[0]), ['header x-goog-api-key']), assert.AssertionError, `${what}: the one-credential check fails`);
+      const rows = await errorRows(calls, 2);
+      assert.match(rows.find((r) => r.reason === 'video_google_key1_poll_error').message, /Multiple authentication credentials received/);
+    } finally {
+      restore();
+    }
+  }
+});
+
+test('pollDebugText: header names and whether the URL has key=, never a value; the key only as its format', () => {
+  const sent = [
+    { method: 'GET', url: `${INTERACTIONS}/int-1?key=${KEY1}`, headers: { 'x-goog-api-key': KEY1, Authorization: 'Bearer t' } },
+    { method: 'GET', url: `${INTERACTIONS}/int-1`, headers: { 'x-goog-api-key': KEY1 } }
+  ];
+  const text = pollDebugText(sent, 'AQ.secret-part-of-the-key');
+  assert.match(text, /key_format=AQ\. hops=2 /);
+  assert.match(text, /hop1: GET generativelanguage\.googleapis\.com\/v1beta\/interactions\/int-1 header_names=\[authorization,x-goog-api-key\] url_has_key=yes/);
+  assert.match(text, /hop2: GET .* header_names=\[x-goog-api-key\] url_has_key=no/);
+  for (const secret of [KEY1, 'Bearer t', 'secret-part-of-the-key']) assert.ok(!text.includes(secret), secret);
+  assert.match(pollDebugText([], 'AIzaSyX'), /key_format=AIza hops=0 none/);
+  assert.match(pollDebugText([], KEY1), /key_format=other/);
 });
