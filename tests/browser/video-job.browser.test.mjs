@@ -42,6 +42,9 @@ const JOB_OK = '11111111-2222-4333-8444-555555555555';
 const JOB_FAIL = '66666666-7777-4888-9999-000000000000';
 const CLIP_URL = 'https://vault.example.test/storage/v1/object/sign/pg1-vault/videos/clip.mp4?token=t';
 const FAIL_TEXT = 'Execution failed. The video could not be generated right now. Please try again. Request ID: abc12345';
+const RECHECK_URL = 'https://vault.example.test/storage/v1/object/sign/pg1-vault/videos/recheck.mp4?token=t';
+const OLD_JOB = '12121212-3434-4565-8787-909090909090';
+const OLD_FAIL_TEXT = 'Execution failed. The video could not be generated right now. Please try again. Request ID: ehxj2xby';
 
 function startStubServer() {
   const log = { polls: [] };
@@ -70,6 +73,16 @@ function startStubServer() {
           if (parsed.jobId === JOB_FAIL) return json(res, 200, { videoJob: { id: JOB_FAIL, status: 'failed', engine: 'PG1 Motion', message: FAIL_TEXT } });
           if (n === 1) return json(res, 200, { videoJob: { id: JOB_OK, status: 'rendering', engine: 'PG1 Motion' } });
           return json(res, 200, { videoJob: { id: JOB_OK, status: 'done', engine: 'PG1 Motion', url: CLIP_URL } });
+        }
+        const recheck = /^\/video recheck (\w+)$/.exec((parsed && parsed.prompt) || '');
+        if (recheck) {
+          const [jobId, url] = recheck[1] === 'abc12345' ? [JOB_FAIL, RECHECK_URL] : [OLD_JOB, RECHECK_URL + '&old=1'];
+          res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache' });
+          for (const ev of [
+            { type: 'text', text: `PG1 Motion found the clip for request ID ${recheck[1]}: it had finished rendering and is now in the vault.` },
+            { type: 'done', request_id: 'rck00001', result: { videoJob: { id: jobId, status: 'done', url, engine: 'PG1 Motion', requestId: recheck[1] } } }
+          ]) res.write(`event: ${ev.type}\ndata: ${JSON.stringify(ev)}\n\n`);
+          return res.end();
         }
         const id = /storm/.test(parsed && parsed.prompt) ? JOB_FAIL : JOB_OK;
         const reply = `Rendering video… It appears here when it is ready, usually within a few minutes. ${id === JOB_OK ? 2 : 1} of 3 videos left today.`;
@@ -152,5 +165,44 @@ test('a video reply shows "Rendering video…", polls with the session, then sho
   await page.waitForTimeout(1500);
   assert.equal(await page.locator('#chat-container .media-preview-container video').count(), 1);
   assert.equal(log.polls.length, before);
+  assert.deepEqual(pageErrors, []);
+});
+
+test('/video recheck: a clip found later replaces its failed card, found by job id or, on an older card, by its request ID', { skip, timeout: 120000 }, async (t) => {
+  const { server, log, origin } = await startStubServer();
+  const browser = await chromium.launch();
+  t.after(async () => {
+    await browser.close();
+    await new Promise((r) => server.close(r));
+  });
+  const context = await browser.newContext({ viewport: { width: 412, height: 915 }, isMobile: true, hasTouch: true });
+  await context.route('https://vault.example.test/**', (route) => route.fulfill({ status: 200, contentType: 'video/mp4', body: '' }));
+  const page = await context.newPage();
+  const pageErrors = [];
+  page.on('pageerror', (err) => pageErrors.push(String(err && err.message || err)));
+  await page.goto(origin + '/', { waitUntil: 'load' });
+  await signIn(page);
+
+  await page.fill('#prompt-input', '/video a storm over the sea');
+  await page.click('.execute-btn');
+  await page.waitForSelector('#chat-container .video-job-failed', { timeout: 20000 });
+  assert.equal(await page.locator('#chat-container .video-job-failed').getAttribute('data-video-job-failed'), JOB_FAIL, 'the failed card keeps its job id');
+
+  // A failed card saved before it carried the job id (the #263 failure).
+  await page.evaluate((text) => {
+    const p = document.createElement('p');
+    p.className = 'video-job-failed';
+    p.textContent = text;
+    document.querySelector('#chat-container').appendChild(p);
+  }, OLD_FAIL_TEXT);
+
+  for (const [rid, url] of [['abc12345', RECHECK_URL], ['ehxj2xby', RECHECK_URL + '&old=1']]) {
+    await page.fill('#prompt-input', `/video recheck ${rid}`);
+    await page.click('.execute-btn');
+    await page.waitForFunction((u) => Array.from(document.querySelectorAll('#chat-container video')).some((v) => v.getAttribute('src') === u), url, { timeout: 15000 });
+    assert.equal(await page.locator(`#chat-container video[src="${url}"]`).count(), 1, `${rid}: one player, in the old card's place`);
+  }
+  assert.equal(await page.locator('#chat-container .video-job-failed').count(), 0, 'no failed card left');
+  assert.ok(log.polls.length >= 1);
   assert.deepEqual(pageErrors, []);
 });

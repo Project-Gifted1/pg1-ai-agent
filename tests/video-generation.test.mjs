@@ -38,7 +38,8 @@ import {
   buildVideoRequestBody, cleanVideoPrompt, isVideoRequest, startVideoJob, videoDailyCap, videoEnabled, videoModel,
   videoFromInteraction, DEFAULT_VIDEO_MODEL, DEFAULT_VIDEO_DAILY_CAP, INTERACTION_BODY_KEYS, VIDEO_DISABLED_TEXT,
   VIDEO_ENGINE_LABEL, VIDEO_JOB_TIMEOUT_MS, VIDEO_SIGNED_URL_SECONDS, VIDEO_REFUSED_TEXT, classifyVideoFailure, replicateVideoInput,
-  videoDailyBudget, parseVideoOptions, VIDEO_PRICES, videoClipEstimate, replicateVideoModel
+  videoDailyBudget, parseVideoOptions, VIDEO_PRICES, videoClipEstimate, replicateVideoModel, googleRequestParts, stripUrlKey,
+  VIDEO_POLL_ERROR_LIMIT
 } from '../lib/videoJobs.mjs';
 
 const MIGRATIONS = ['20261008120000_pg1_video_jobs.sql', '20261009120000_pg1_video_budget.sql']
@@ -963,4 +964,208 @@ test('the Replicate models join the engine-name swaps; the operator only ever se
   assert.equal(classifyVideoFailure(null, null, 'timed out starting the job'), 'provider');
   assert.equal(classifyVideoFailure(400, { error: { message: 'The prompt was blocked due to safety reasons.' } }, ''), 'safety');
   assert.equal(classifyVideoFailure(200, { status: 'failed', errors: [{ code: 'PROHIBITED_CONTENT', message: 'x' }] }, ''), 'safety');
+});
+
+// --- 8. one credential per Google request ----------------------------------------------
+//
+// Google answers a request carrying more than one credential with
+// "400 invalid_request Multiple authentication credentials received"
+// (#263's live failure, on the status poll). Every outgoing Google request
+// in the video flow - start, poll, the download of a clip delivered by
+// link, and every redirect hop - is inspected here.
+
+const MULTIPLE_CREDENTIALS = JSON.stringify({ error: { code: 'invalid_request', message: 'Multiple authentication credentials received. Please pass only one.' } });
+const URL_CREDENTIALS = ['key', 'api_key', 'access_token'];
+// A signed link's parameters are together one credential.
+const URL_SIGNATURE = ['x-goog-signature', 'x-goog-credential', 'googleaccessid', 'signature'];
+
+// Every place a request carries a credential: headers and URL parameters.
+function credentialsIn(call) {
+  const where = [];
+  for (const [name, value] of Object.entries(call.headers || {})) {
+    const lower = name.toLowerCase();
+    if ((lower === 'x-goog-api-key' || lower === 'authorization') && value) where.push(`header ${lower}`);
+  }
+  const names = Array.from(new URL(call.url).searchParams.keys()).map((n) => n.toLowerCase());
+  for (const name of names) if (URL_CREDENTIALS.includes(name)) where.push(`url ?${name}`);
+  if (names.some((n) => URL_SIGNATURE.includes(n))) where.push('url signature');
+  return where;
+}
+
+function assertOneCredentialEach(calls) {
+  const google = calls.filter((c) => /(^|\.)googleapis\.com$/.test(new URL(c.url).hostname));
+  assert.ok(google.length, 'the flow made Google requests');
+  for (const c of google) {
+    const where = credentialsIn(c);
+    assert.ok(where.length <= 1, `${c.method} ${c.url} carries credentials in ${where.length} places: ${where.join(', ')}`);
+    if (new URL(c.url).hostname === 'generativelanguage.googleapis.com') {
+      assert.deepEqual(where, ['header x-goog-api-key'], `${c.method} ${c.url}: the key, once, in the header`);
+    }
+    assert.ok(!c.url.includes(KEY1) && !c.url.includes(KEY2), `${c.url}: the key is never in a URL`);
+    assert.equal(c.redirect, 'manual', `${c.url}: redirects are followed by hand, never by fetch re-sending the header`);
+  }
+  return google;
+}
+
+// installFetch, also recording the redirect mode.
+function installFetchWithRedirect(routes) {
+  const calls = installFetch(routes);
+  const inner = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    const r = inner(url, options);
+    calls[calls.length - 1].redirect = options.redirect;
+    return r;
+  };
+  return calls;
+}
+
+test('every Google request in the video flow carries the key exactly once: start, poll, a delivery link with ?key= and its redirect', async () => {
+  const db = await makeDb();
+  const DELIVERY = 'https://generativelanguage.googleapis.com/v1beta/files/clip-1:download?alt=media&key=SOME-OTHER-KEY';
+  const SIGNED = 'https://storage.googleapis.com/gen-bucket/clip-1.mp4?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=svc%2F20261006&X-Goog-Signature=abc123';
+  const done = { id: 'int-123', status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'video', uri: DELIVERY, mime_type: 'video/mp4' }] }] };
+  let polls = 0;
+  const calls = installFetchWithRedirect([
+    ['https://storage.googleapis.com/', () => new Response(Buffer.from('signed clip'), { status: 200 })],
+    ['/v1beta/files/clip-1:download', () => new Response(null, { status: 302, headers: { Location: SIGNED } })],
+    ...engineRoutes({
+      // Google's own rule, enforced by the stand-in.
+      start: (b, o) => (credentialsIn({ url: INTERACTIONS, headers: o.headers }).length > 1 ? new Response(MULTIPLE_CREDENTIALS, { status: 400 }) : json({ id: 'int-123', status: 'in_progress' })),
+      poll: (u, o) => (credentialsIn({ url: u, headers: o.headers }).length > 1 ? new Response(MULTIPLE_CREDENTIALS, { status: 400 }) : json(++polls === 1 ? { id: 'int-123', status: 'in_progress' } : done))
+    }),
+    ...dbRoutes(db), ...supabaseRoutes()
+  ]);
+  const started = await run(authed({ prompt: '/video draft a cyan shield glowing on a navy background, single continuous shot, no dialogue' }));
+  const id = started.jsonBody.videoJob.id;
+  assert.equal((await run(authed({ action: 'VIDEO_STATUS', jobId: id }))).jsonBody.videoJob.status, 'rendering');
+  const poll = await run(authed({ action: 'VIDEO_STATUS', jobId: id }));
+  assert.equal(poll.jsonBody.videoJob.status, 'done');
+
+  const google = assertOneCredentialEach(calls);
+  const kinds = google.map((c) => `${c.method} ${new URL(c.url).hostname}${new URL(c.url).pathname}`);
+  assert.deepEqual(kinds, [
+    'POST generativelanguage.googleapis.com/v1beta/interactions',
+    'GET generativelanguage.googleapis.com/v1beta/interactions/int-123',
+    'GET generativelanguage.googleapis.com/v1beta/interactions/int-123',
+    'GET generativelanguage.googleapis.com/v1beta/files/clip-1:download',
+    'GET storage.googleapis.com/gen-bucket/clip-1.mp4'
+  ]);
+  const download = google[3];
+  assert.ok(!new URL(download.url).searchParams.has('key'), 'the ?key= Google put in the delivery link is taken out');
+  assert.equal(new URL(download.url).searchParams.get('alt'), 'media', 'the rest of the link is kept');
+  assert.deepEqual(credentialsIn(google[4]), ['url signature'], 'a signed link carries only its own signature: no key, no Authorization header');
+  const upload = calls.find((c) => c.url === `${SUP_URL}/storage/v1/object/pg1-vault/videos/${id}.mp4`);
+  assert.equal(Buffer.from(upload.body).toString(), 'signed clip');
+});
+
+test('the credential checker itself: two credentials on one Google request fail the check', () => {
+  const twice = [
+    { url: `${INTERACTIONS}/int-1?key=${KEY1}`, method: 'GET', headers: { 'x-goog-api-key': KEY1 }, redirect: 'manual' },
+    { url: `${INTERACTIONS}/int-1`, method: 'GET', headers: { 'x-goog-api-key': KEY1, Authorization: 'Bearer ya29.token' }, redirect: 'manual' },
+    { url: `${INTERACTIONS}/int-1`, method: 'GET', headers: { 'x-goog-api-key': KEY1 } }
+  ];
+  for (const c of twice) assert.throws(() => assertOneCredentialEach([c]), assert.AssertionError, c.url);
+  assert.doesNotThrow(() => assertOneCredentialEach([{ url: `${INTERACTIONS}/int-1`, method: 'GET', headers: { 'x-goog-api-key': KEY1 }, redirect: 'manual' }]));
+});
+
+test('googleRequestParts: ?key= is removed, a passed Authorization or second key header is dropped, the key goes only to Google\'s API host', () => {
+  const p = googleRequestParts(`${INTERACTIONS}/int-1?key=abc&Key=def&alt=sse`, KEY1, { Authorization: 'Bearer x', 'X-Goog-Api-Key': KEY2, Accept: 'application/json' });
+  assert.equal(p.url, `${INTERACTIONS}/int-1?alt=sse`);
+  assert.deepEqual(p.headers, { Accept: 'application/json', 'x-goog-api-key': KEY1 });
+  assert.equal(stripUrlKey('https://example.test/a?key=1&b=2'), 'https://example.test/a?b=2');
+  assert.deepEqual(googleRequestParts('https://storage.example.test/clip.mp4?key=1', KEY1).headers, {}, 'another host: no key');
+  assert.deepEqual(googleRequestParts('http://generativelanguage.googleapis.com/x', KEY1).headers, {}, 'never over plain http');
+  assert.deepEqual(googleRequestParts(`${INTERACTIONS}/x?access_token=t`, KEY1).headers, {}, 'a link with its own credential: no key');
+});
+
+// --- 9. a poll that gets a request error -------------------------------------------------
+
+test('poll: a request error (the live 400) does not discard the job; the poll is asked again, logging Google\'s text each time, and fails after the limit', async () => {
+  const db = await makeDb();
+  const started = await startOne(db);
+  const id = started.videoJob.id;
+  const calls = installFetch([...engineRoutes({ poll: () => new Response(MULTIPLE_CREDENTIALS, { status: 400 }) }), ...dbRoutes(db), ...supabaseRoutes()]);
+  for (let n = 1; n < VIDEO_POLL_ERROR_LIMIT; n++) {
+    const poll = await run(authed({ action: 'VIDEO_STATUS', jobId: id }));
+    assert.equal(poll.jsonBody.videoJob.status, 'rendering', `poll ${n}: still rendering`);
+    assert.deepEqual((await db.query('select status, error_reason from public.pg1_video_jobs')).rows[0], { status: 'rendering', error_reason: `poll_error_${n}` });
+  }
+  const last = await run(authed({ action: 'VIDEO_STATUS', jobId: id }));
+  assert.equal(last.jsonBody.videoJob.status, 'failed');
+  assert.deepEqual((await db.query('select status, error_reason from public.pg1_video_jobs')).rows[0], { status: 'failed', error_reason: 'engine_error' });
+  const rows = await errorRows(calls, VIDEO_POLL_ERROR_LIMIT);
+  const retries = rows.filter((r) => r.reason === 'video_google_key1_poll_error');
+  assert.equal(retries.length, VIDEO_POLL_ERROR_LIMIT - 1);
+  for (const [i, r] of retries.entries()) {
+    assert.match(r.message, /Multiple authentication credentials received\. Please pass only one\./);
+    assert.match(r.message, new RegExp(`attempt=${i + 1}/${VIDEO_POLL_ERROR_LIMIT}, asking again`));
+  }
+  const final = rows.find((r) => r.reason === 'video_google_key1_failed');
+  assert.match(final.message, /status=400 failure=request .*Multiple authentication credentials received.*attempt=3\/3/);
+});
+
+test('poll: a good answer after a request error starts the count again; a safety refusal is still final at once', async () => {
+  const db = await makeDb();
+  const { videoJob: { id } } = await startOne(db);
+  installFetch([...engineRoutes({ poll: () => new Response(MULTIPLE_CREDENTIALS, { status: 400 }) }), ...dbRoutes(db), ...supabaseRoutes()]);
+  await run(authed({ action: 'VIDEO_STATUS', jobId: id }));
+  installFetch([...engineRoutes(), ...dbRoutes(db), ...supabaseRoutes()]);
+  assert.equal((await run(authed({ action: 'VIDEO_STATUS', jobId: id }))).jsonBody.videoJob.status, 'rendering');
+  assert.equal((await db.query('select error_reason from public.pg1_video_jobs')).rows[0].error_reason, null);
+
+  const db2 = await makeDb();
+  const { videoJob: { id: id2 } } = await startOne(db2);
+  installFetch([...engineRoutes({ poll: () => new Response(GEMINI_SAFETY, { status: 400 }) }), ...dbRoutes(db2), ...supabaseRoutes()]);
+  const refused = await run(authed({ action: 'VIDEO_STATUS', jobId: id2 }));
+  assert.equal(refused.jsonBody.videoJob.status, 'failed');
+  assert.equal(refused.jsonBody.videoJob.message, VIDEO_REFUSED_TEXT);
+  assert.equal((await db2.query('select error_reason from public.pg1_video_jobs')).rows[0].error_reason, 'safety_refused');
+});
+
+// --- 10. /video recheck <request id> ------------------------------------------------------
+
+async function failedJob(db) {
+  const started = await startOne(db);
+  await db.query(`update public.pg1_video_jobs set status = 'failed', error_reason = 'engine_error', created_at = now() - interval '2 hours'`);
+  return started;
+}
+
+test('/video recheck: a job whose poll failed is asked once more; a clip Google finished is stored and goes to its card', async () => {
+  const db = await makeDb();
+  const started = await failedJob(db);
+  const requestId = started.traceId;
+  const finished = { id: 'int-123', status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'video', data: MP4_BASE64, mime_type: 'video/mp4' }] }] };
+  const calls = installFetchWithRedirect([...engineRoutes({ poll: () => json(finished) }), ...dbRoutes(db), ...supabaseRoutes()]);
+  const res = await run(authed({ prompt: `/video recheck ${requestId}` }));
+  assert.equal(res.jsonBody.reply, `PG1 Motion found the clip for request ID ${requestId}: it had finished rendering and is now in the vault.`);
+  const id = started.videoJob.id;
+  assert.deepEqual(res.jsonBody.videoJob, { id, status: 'done', url: `${SUP_URL}/storage/v1/object/sign/pg1-vault/videos/${id}.mp4?token=signed-token`, engine: VIDEO_ENGINE_LABEL, requestId });
+  assert.deepEqual((await db.query('select status, storage_path, error_reason from public.pg1_video_jobs')).rows[0], { status: 'done', storage_path: `videos/${id}.mp4`, error_reason: null });
+  assertOneCredentialEach(calls);
+  assert.equal(calls.filter((c) => c.url.includes('pg1_reserve_video_slot')).length, 0, 'a recheck reserves nothing');
+  assert.doesNotMatch(JSON.stringify(res.jsonBody), BRANDS_RE);
+});
+
+test('/video recheck: still not ready, unknown, refused, and a guest', async () => {
+  const db = await makeDb();
+  const started = await failedJob(db);
+  installFetch([...engineRoutes(), ...dbRoutes(db), ...supabaseRoutes()]);
+  const notYet = await run(authed({ prompt: `/video recheck ${started.traceId}` }));
+  assert.equal(notYet.jsonBody.reply, `The clip for request ID ${started.traceId} is not ready yet. Try /video recheck ${started.traceId} again in a few minutes.`);
+  assert.deepEqual((await db.query('select status, error_reason from public.pg1_video_jobs')).rows[0], { status: 'failed', error_reason: 'engine_error' }, 'back to failed, its reason kept');
+
+  installFetch([...engineRoutes({ poll: () => new Response(MULTIPLE_CREDENTIALS, { status: 400 }) }), ...dbRoutes(db), ...supabaseRoutes()]);
+  const stillBad = await run(authed({ prompt: `/video recheck ${started.traceId}` }));
+  assert.match(stillBad.jsonBody.reply, /^PG1 Motion has no clip for request ID \w+: it did not finish rendering\. Nothing new was reserved\.$/);
+  assert.equal((await db.query('select status from public.pg1_video_jobs')).rows[0].status, 'failed');
+
+  installFetch([...engineRoutes(), ...dbRoutes(db), ...supabaseRoutes()]);
+  assert.equal((await run(authed({ prompt: '/video recheck zz999999' }))).jsonBody.reply, 'No video has request ID zz999999.');
+  await db.query(`update public.pg1_video_jobs set error_reason = 'safety_refused'`);
+  const calls = installFetch([...engineRoutes(), ...dbRoutes(db), ...supabaseRoutes()]);
+  assert.match((await run(authed({ prompt: `/video recheck ${started.traceId}` }))).jsonBody.reply, /cannot be checked again/);
+  assert.equal(engineCalls(calls).length, 0, 'a refused clip is never asked about again');
+
+  const guest = await run({ prompt: `/video recheck ${started.traceId}` });
+  assert.equal(guest.statusCode, 401);
 });
