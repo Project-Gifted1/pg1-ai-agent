@@ -5,13 +5,17 @@
 -- video engine, and every row counts towards that UTC day's cap whatever
 -- happens to the clip afterwards - a clip that fails still used its slot.
 --
--- status: reserved (slot taken, engine not called yet) -> rendering (the
--- engine accepted the job; interaction_id is set) -> done (the clip is in
+-- status: reserved (slot taken, engine not called yet) -> rendering (a
+-- provider accepted the job; provider, model and interaction_id say which
+-- one and its job id) -> done (the clip is in
 -- the vault at storage_path) or failed (error_reason says why, a short
 -- fixed word; the engine's own error text is in pg1_errors under
 -- request_id). A job still reserved or rendering 15 minutes after it was
 -- created is marked failed (timeout), by the status poll or by the next
 -- reservation, whichever comes first.
+--
+-- One row, one slot, whichever provider renders the clip: falling back from
+-- Gemini key 1 to key 2 to Replicate updates the same row.
 create table if not exists public.pg1_video_jobs (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
@@ -22,11 +26,17 @@ create table if not exists public.pg1_video_jobs (
   prompt text not null,
   has_start_frame boolean not null default false,
   request_id text,
+  provider text check (provider in ('google', 'replicate')),
+  model text,
   interaction_id text,
   key_slot integer,
   storage_path text,
   error_reason text
 );
+
+-- Re-runnable on a table created before the Replicate fallback.
+alter table public.pg1_video_jobs add column if not exists provider text check (provider in ('google', 'replicate'));
+alter table public.pg1_video_jobs add column if not exists model text;
 
 -- The cap count (one UTC day) and the timeout sweep.
 create index if not exists pg1_video_jobs_day_idx on public.pg1_video_jobs (day);

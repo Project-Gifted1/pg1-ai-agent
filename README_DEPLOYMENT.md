@@ -83,6 +83,13 @@ PG1_IMAGE_MODEL_TERTIARY=black-forest-labs/flux-schnell
 PG1_VIDEO_ENABLED=1
 PG1_VIDEO_DAILY_CAP=3
 PG1_VIDEO_MODEL=gemini-omni-1.1-flash
+# Optional Replicate fallback after every Gemini key fails on a provider
+# error (5xx, 429, timeout, auth/billing). Never after a content-safety
+# refusal. Uses the same REPLICATE_API_TOKEN as /image. No default model:
+# unset means no fallback. The image model is for clips with a start frame
+# (defaults to the first).
+PG1_VIDEO_MODEL_REPLICATE=owner/model
+PG1_VIDEO_MODEL_REPLICATE_IMAGE=owner/model
 ```
 
 ### 3. Test the API

@@ -37,7 +37,7 @@ import { chooseChatRoute } from '../lib/chatRoute.mjs';
 import {
   buildVideoRequestBody, cleanVideoPrompt, isVideoRequest, startVideoJob, videoDailyCap, videoEnabled, videoModel,
   videoFromInteraction, DEFAULT_VIDEO_MODEL, DEFAULT_VIDEO_DAILY_CAP, INTERACTION_BODY_KEYS, VIDEO_DISABLED_TEXT,
-  VIDEO_ENGINE_LABEL, VIDEO_JOB_TIMEOUT_MS, VIDEO_SIGNED_URL_SECONDS
+  VIDEO_ENGINE_LABEL, VIDEO_JOB_TIMEOUT_MS, VIDEO_SIGNED_URL_SECONDS, VIDEO_REFUSED_TEXT, classifyVideoFailure, replicateVideoInput
 } from '../lib/videoJobs.mjs';
 
 const MIGRATION = readFileSync(new URL('../supabase/migrations/20261008120000_pg1_video_jobs.sql', import.meta.url), 'utf8');
@@ -51,7 +51,8 @@ const KEY2 = 'stub-video-key-two-0123456789';
 const INTERACTIONS = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 const MP4_BASE64 = Buffer.from('fake mp4 bytes for the test').toString('base64');
 const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
-const GEMINI_REJECTION = JSON.stringify({ error: { code: 400, status: 'INVALID_ARGUMENT', message: 'Request contains an invalid argument: gemini-omni-1.1-flash rejected the prompt (safety).' } });
+const GEMINI_REJECTION = JSON.stringify({ error: { code: 400, status: 'INVALID_ARGUMENT', message: 'Request contains an invalid argument: gemini-omni-1.1-flash cannot use response_format.resolution "720p" here.' } });
+const GEMINI_SAFETY = JSON.stringify({ error: { code: 400, status: 'INVALID_ARGUMENT', message: 'The prompt was blocked due to safety reasons (PROHIBITED_CONTENT).' } });
 
 // Names no system-generated string on the video path may carry.
 const BRANDS_RE = /Gemini|Google|Veo|Omni|Anthropic|Claude|OpenAI|googleapis|interactions/i;
@@ -66,7 +67,7 @@ function resetEnv() {
   process.env.PG1_VIDEO_ENABLED = '1';
   for (const k of ['USER_API_USER', 'USER_API_PASSS', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'ANTROPIC_API_KEY', 'SUPABASEAPI_KEY',
     'CARTESIA_API_KEY', 'REPLICATE_API_TOKEN', 'REPLICATE_KEY', 'GITHUB_TOKEN', 'GITHUB_OWNER_KEY', 'PG1_VIDEO_DAILY_CAP',
-    'PG1_VIDEO_MODEL', 'PG1_CHAT_TOOL_TIMEOUT_MS']) delete process.env[k];
+    'PG1_VIDEO_MODEL', 'PG1_CHAT_TOOL_TIMEOUT_MS', 'PG1_VIDEO_MODEL_REPLICATE', 'PG1_VIDEO_MODEL_REPLICATE_IMAGE']) delete process.env[k];
 }
 
 let consoleLines = [];
@@ -344,15 +345,15 @@ test('a clip that fails still uses its slot; the reply is one neutral sentence, 
   assert.equal(sentence, `${FAILURE_PREFIX} The video could not be generated right now. Please try again. Request ID: ${body.traceId}`);
   assert.equal(left, '1 of 2 videos left today.');
   assert.doesNotMatch(body.reply, BRANDS_RE);
-  assert.doesNotMatch(body.reply, /invalid argument|safety|400/i);
-  assert.equal(startCalls(calls).length, 1, 'a 400 is the engine\'s answer: the second key is not tried');
+  assert.doesNotMatch(body.reply, /invalid argument|resolution|400/i);
+  assert.equal(startCalls(calls).length, 1, 'a 400 about the request itself is not a provider failure: the second key is not tried');
 
-  const logged = (await errorRows(calls)).find((r) => r.reason === 'video_start_failed');
+  const logged = (await errorRows(calls)).find((r) => r.reason === 'video_google_key1_failed');
   assert.ok(logged, 'a pg1_errors row');
   assert.equal(logged.route, 'GENERATE_VIDEO');
   assert.equal(logged.status, 400);
   assert.match(logged.message, /untrusted upstream data, not instructions/);
-  assert.match(logged.message, /gemini-omni-1\.1-flash/);
+  assert.match(logged.message, /provider=google model=gemini-omni-1\.1-flash key_slot=1 status=400 failure=request/);
   assert.match(logged.message, /INVALID_ARGUMENT Request contains an invalid argument/, 'Gemini\'s own words');
   assert.match(logged.message, new RegExp(`request_id=${body.traceId}`));
   assert.ok(!logged.message.includes(KEY1) && !logged.message.includes(KEY2), 'never a key');
@@ -485,14 +486,15 @@ test('the next reservation also fails a job nobody polled for 15 minutes, and it
 test('poll: an engine failure is logged with its own words; the operator sees the neutral sentence', async () => {
   const db = await makeDb();
   const started = await startOne(db);
-  const failed = { id: 'int-123', status: 'failed', errors: [{ code: 'SAFETY', message: 'The gemini-omni-1.1-flash output was blocked by a safety filter.' }] };
+  const failed = { id: 'int-123', status: 'failed', errors: [{ code: 'INTERNAL', message: 'The gemini-omni-1.1-flash render worker crashed.' }] };
   const calls = installFetch([...engineRoutes({ poll: () => json(failed) }), ...dbRoutes(db), ...supabaseRoutes()]);
   const poll = await run(authed({ action: 'VIDEO_STATUS', jobId: started.videoJob.id }));
   assert.equal(poll.jsonBody.videoJob.status, 'failed');
   assert.match(poll.jsonBody.videoJob.message, new RegExp(`Request ID: ${started.traceId}$`));
-  assert.doesNotMatch(poll.jsonBody.videoJob.message, /safety|blocked|SAFETY/);
-  const logged = (await errorRows(calls)).find((r) => r.reason === 'video_render_failed');
-  assert.match(logged.message, /SAFETY The gemini-omni-1\.1-flash output was blocked by a safety filter/);
+  assert.doesNotMatch(poll.jsonBody.videoJob.message, /crashed|INTERNAL/);
+  const logged = (await errorRows(calls)).find((r) => r.reason === 'video_google_key1_failed');
+  assert.match(logged.message, /provider=google model=gemini-omni-1\.1-flash key_slot=1 job=failed failure=provider/);
+  assert.match(logged.message, /INTERNAL The gemini-omni-1\.1-flash render worker crashed/);
 });
 
 // --- 5. identity ------------------------------------------------------------------------
@@ -655,4 +657,192 @@ test('reading the finished interaction: steps[] model_output video, inline or by
   assert.deepEqual(videoFromInteraction({ steps: [{ type: 'model_output', content: [{ type: 'video', uri: 'https://x.test/v' }] }] }), { data: null, uri: 'https://x.test/v', mimeType: 'video/mp4' });
   assert.equal(videoFromInteraction({ steps: [{ type: 'model_output', content: [{ type: 'text', text: 'no video' }] }] }), null);
   assert.equal(videoFromInteraction(null), null);
+});
+
+// --- 8. the Replicate fallback ---------------------------------------------------------------
+
+const REP_MODEL = 'bytedance/seedance-1-pro';
+const REP_TOKEN = 'stub-replicate-token-0123456789';
+const REP_CREATE = `https://api.replicate.com/v1/models/${REP_MODEL}/predictions`;
+const REP_OUT = 'https://replicate.delivery/xezq/out/clip.mp4';
+
+function useReplicate() {
+  process.env.REPLICATE_API_TOKEN = REP_TOKEN;
+  process.env.PG1_VIDEO_MODEL_REPLICATE = REP_MODEL;
+}
+
+function replicateRoutes({ create = () => json({ id: 'rep-pred-1', status: 'starting', urls: { get: 'https://api.replicate.com/v1/predictions/rep-pred-1' } }, 201), poll = () => json({ id: 'rep-pred-1', status: 'processing' }) } = {}) {
+  return [
+    [REP_OUT, () => new Response(Buffer.from('replicate mp4 bytes'), { status: 200 })],
+    [REP_CREATE, (u, o, body) => create(body, o)],
+    ['https://api.replicate.com/v1/predictions/', (u, o) => poll(u, o)]
+  ];
+}
+
+const replicateCreates = (calls) => calls.filter((c) => c.url === REP_CREATE);
+const geminiFails = (byKey) => (body, o) => {
+  const r = byKey[o.headers['x-goog-api-key']];
+  return r ? r() : json({ id: 'int-123', status: 'in_progress' });
+};
+
+test('fallback: Gemini key 1 fails (503), key 2 starts the clip; pg1_errors names the provider, key and why', async () => {
+  useReplicate();
+  const db = await makeDb();
+  const calls = installFetch([
+    ...replicateRoutes(),
+    ...engineRoutes({ start: geminiFails({ [KEY1]: () => new Response(JSON.stringify({ error: { code: 503, status: 'UNAVAILABLE', message: 'The model is overloaded.' } }), { status: 503 }) }) }),
+    ...dbRoutes(db), ...supabaseRoutes()
+  ]);
+  const res = await run(authed({ prompt: '/video a kite over a beach' }));
+  assert.ok(res.jsonBody.videoJob, 'started');
+  assert.match(res.jsonBody.reply, /2 of 3 videos left today/);
+  assert.deepEqual(startCalls(calls).map((c) => c.headers['x-goog-api-key']), [KEY1, KEY2]);
+  assert.equal(replicateCreates(calls).length, 0, 'Replicate is not needed');
+  assert.deepEqual((await db.query('select provider, model, key_slot, status from public.pg1_video_jobs')).rows, [{ provider: 'google', model: 'gemini-omni-1.1-flash', key_slot: 2, status: 'rendering' }]);
+  const rows = await errorRows(calls);
+  const k1 = rows.find((r) => r.reason === 'video_google_key1_failed');
+  assert.ok(k1);
+  assert.equal(k1.status, 503);
+  assert.match(k1.message, /provider=google model=gemini-omni-1\.1-flash key_slot=1 status=503 failure=provider/);
+  assert.match(k1.message, /UNAVAILABLE The model is overloaded/);
+  assert.equal(rows.filter((r) => /^video_/.test(r.reason)).length, 1, 'only the failed attempt is logged');
+});
+
+test('fallback: both Gemini keys fail (quota, then timeout-class 500), Replicate renders the clip, collected by the same poll', async () => {
+  useReplicate();
+  const db = await makeDb();
+  let calls = installFetch([
+    ...replicateRoutes(),
+    ...engineRoutes({ start: geminiFails({
+      [KEY1]: () => new Response(JSON.stringify({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'Quota exceeded.' } }), { status: 429 }),
+      [KEY2]: () => new Response(JSON.stringify({ error: { code: 500, status: 'INTERNAL', message: 'Internal error.' } }), { status: 500 })
+    }) }),
+    ...dbRoutes(db), ...supabaseRoutes()
+  ]);
+  const res = await run(authed({ prompt: '/video a 6 second clip of a paper boat on a pond', stream: true }));
+  const done = eventsOf(res).find((e) => e.type === 'done');
+  const id = done.result.videoJob.id;
+  assert.equal(startCalls(calls).length, 2);
+  const create = replicateCreates(calls);
+  assert.equal(create.length, 1);
+  assert.equal(create[0].headers.Authorization, `Bearer ${REP_TOKEN}`, 'the /image token, as a Bearer token');
+  assert.deepEqual(create[0].body.input, { prompt: 'a 6 second clip of a paper boat on a pond', duration: 5, resolution: '720p', aspect_ratio: '16:9' });
+  assert.deepEqual((await db.query('select provider, model, interaction_id, key_slot from public.pg1_video_jobs')).rows, [{ provider: 'replicate', model: REP_MODEL, interaction_id: 'rep-pred-1', key_slot: null }]);
+  const rows = await errorRows(calls, 2);
+  assert.deepEqual(rows.filter((r) => /^video_/.test(r.reason)).map((r) => [r.reason, r.status]), [['video_google_key1_failed', 429], ['video_google_key2_failed', 500]]);
+
+  // The user-facing side never names Replicate or the model.
+  for (const e of eventsOf(res)) for (const v of [e.label, typeof e.result === 'string' ? e.result : '', e.text]) if (typeof v === 'string') assert.doesNotMatch(v, /replicate|seedance|bytedance/i, v);
+
+  // The poll asks Replicate, fetches its output without a token, stores it.
+  calls = installFetch([
+    ...replicateRoutes({ poll: () => json({ id: 'rep-pred-1', status: 'succeeded', output: REP_OUT }) }),
+    ...engineRoutes(), ...dbRoutes(db), ...supabaseRoutes()
+  ]);
+  const poll = await run(authed({ action: 'VIDEO_STATUS', jobId: id }));
+  assert.equal(poll.jsonBody.videoJob.status, 'done');
+  assert.equal(poll.jsonBody.videoJob.engine, 'PG1 Motion');
+  assert.doesNotMatch(JSON.stringify(poll.jsonBody), /replicate|seedance/i);
+  const get = calls.find((c) => c.url === 'https://api.replicate.com/v1/predictions/rep-pred-1');
+  assert.equal(get.headers.Authorization, `Bearer ${REP_TOKEN}`);
+  assert.equal(calls.find((c) => c.url === REP_OUT).headers.Authorization, undefined, 'no token to the output link');
+  assert.equal(engineCalls(calls).length, 0, 'Gemini is not asked about a Replicate job');
+  const upload = calls.find((c) => c.url === `${SUP_URL}/storage/v1/object/pg1-vault/videos/${id}.mp4`);
+  assert.equal(Buffer.from(upload.body).toString(), 'replicate mp4 bytes');
+});
+
+test('fallback: a content-safety refusal is never retried on key 2 or Replicate; the answer is a plain no', async () => {
+  useReplicate();
+  const db = await makeDb();
+  const calls = installFetch([
+    ...replicateRoutes(),
+    ...engineRoutes({ start: () => new Response(GEMINI_SAFETY, { status: 400 }) }),
+    ...dbRoutes(db), ...supabaseRoutes()
+  ]);
+  const res = await run(authed({ prompt: '/video something the filter refuses' }));
+  assert.equal(res.jsonBody.videoJob, undefined);
+  assert.equal(res.jsonBody.reply, `${VIDEO_REFUSED_TEXT}\n2 of 3 videos left today.`);
+  assert.match(VIDEO_REFUSED_TEXT, /won't make that video/);
+  assert.doesNotMatch(res.jsonBody.reply, BRANDS_RE);
+  assert.equal(startCalls(calls).length, 1, 'key 2 not tried');
+  assert.equal(replicateCreates(calls).length, 0, 'Replicate not tried');
+  assert.deepEqual((await db.query('select status, error_reason from public.pg1_video_jobs')).rows, [{ status: 'failed', error_reason: 'safety_refused' }]);
+  const logged = (await errorRows(calls)).find((r) => r.reason === 'video_google_key1_failed');
+  assert.match(logged.message, /failure=safety/);
+
+  // A job refused while rendering: a plain no from the poll too, and still no fallback.
+  const db2 = await makeDb();
+  const started = await startOne(db2);
+  const refused = { id: 'int-123', status: 'failed', errors: [{ code: 'SAFETY', message: 'Output blocked by a safety filter.' }] };
+  const pollCalls = installFetch([...replicateRoutes(), ...engineRoutes({ poll: () => json(refused) }), ...dbRoutes(db2), ...supabaseRoutes()]);
+  const poll = await run(authed({ action: 'VIDEO_STATUS', jobId: started.videoJob.id }));
+  assert.deepEqual({ status: poll.jsonBody.videoJob.status, message: poll.jsonBody.videoJob.message }, { status: 'failed', message: VIDEO_REFUSED_TEXT });
+  assert.equal(replicateCreates(pollCalls).length, 0);
+
+  // The chat tool says it plainly as well.
+  const tool = createToolExecutor({ role: 'operator', startVideo: async () => ({ ok: false, code: 'refused', remaining: 2, cap: 3 }), log: () => {} });
+  const outcome = await tool({ id: 't', name: VIDEO_CHAT_TOOL, args: { prompt: 'x' } });
+  assert.equal(outcome.code, 'content_refused');
+  assert.match(outcome.message, /won't make it/);
+});
+
+test('fallback: a 400 about the request itself, or no Replicate model chosen, does not fall back', async () => {
+  // No Replicate model: both keys fail on quota, the clip fails neutrally.
+  process.env.REPLICATE_API_TOKEN = REP_TOKEN;
+  const db = await makeDb();
+  let calls = installFetch([
+    ...replicateRoutes(),
+    ...engineRoutes({ start: () => new Response(JSON.stringify({ error: { code: 429, message: 'quota' } }), { status: 429 }) }),
+    ...dbRoutes(db), ...supabaseRoutes()
+  ]);
+  let res = await run(authed({ prompt: '/video a cat' }));
+  assert.match(res.jsonBody.reply, /^Execution failed\. The video could not be generated right now/);
+  assert.equal(startCalls(calls).length, 2);
+  assert.equal(replicateCreates(calls).length, 0, 'no model chosen: no Replicate call');
+
+  useReplicate();
+  calls = installFetch([...replicateRoutes(), ...engineRoutes({ start: () => new Response(GEMINI_REJECTION, { status: 400 }) }), ...dbRoutes(db), ...supabaseRoutes()]);
+  res = await run(authed({ prompt: '/video a dog' }));
+  assert.match(res.jsonBody.reply, /^Execution failed\./);
+  assert.equal(startCalls(calls).length, 1);
+  assert.equal(replicateCreates(calls).length, 0);
+});
+
+test('fallback: one clip is one slot, whichever provider makes it', async () => {
+  useReplicate();
+  process.env.PG1_VIDEO_DAILY_CAP = '2';
+  const db = await makeDb();
+  const allGeminiDown = () => new Response(JSON.stringify({ error: { code: 503, message: 'down' } }), { status: 503 });
+  const calls = installFetch([...replicateRoutes(), ...engineRoutes({ start: allGeminiDown }), ...dbRoutes(db), ...supabaseRoutes()]);
+  const first = await run(authed({ prompt: '/video a red balloon' }));
+  assert.ok(first.jsonBody.videoJob);
+  assert.match(first.jsonBody.reply, /1 of 2 videos left today/, 'three attempts, one slot');
+  assert.equal(calls.filter((c) => c.url.includes('pg1_reserve_video_slot')).length, 1, 'reserved once');
+  assert.equal((await db.query('select count(*)::int as n from public.pg1_video_jobs')).rows[0].n, 1);
+
+  // Replicate also fails: still the one slot, and it is used.
+  installFetch([...replicateRoutes({ create: () => json({ detail: 'Insufficient credit' }, 402) }), ...engineRoutes({ start: allGeminiDown }), ...dbRoutes(db), ...supabaseRoutes()]);
+  const second = await run(authed({ prompt: '/video a blue balloon' }));
+  assert.match(second.jsonBody.reply, /0 of 2 videos left today/);
+  const third = await run(authed({ prompt: '/video a green balloon' }));
+  assert.match(third.jsonBody.reply, /limit is reached \(2 of 2 used\)/);
+  assert.equal((await db.query('select count(*)::int as n from public.pg1_video_jobs')).rows[0].n, 2);
+});
+
+test('the Replicate models join the engine-name swaps; the operator only ever sees PG1 Motion', () => {
+  const guard = createReplySecretGuard({ env: { PG1_VIDEO_MODEL_REPLICATE: 'acme/clipper-9', PG1_VIDEO_MODEL_REPLICATE_IMAGE: 'acme/clipper-9-i2v' }, errorSummary: true });
+  assert.equal(guard('acme/clipper-9 returned 500').text, 'PG1 Motion returned 500');
+  assert.equal(guard('acme/clipper-9-i2v timed out').text, 'PG1 Motion timed out');
+  assert.equal(guard('bytedance/seedance-1-pro failed').text, 'PG1 Motion failed');
+  assert.equal(guard('Kling 2.1 is down').text, 'PG1 Motion is down');
+  assert.equal(guard('wan-video/wan-2.2-t2v-fast failed').text, 'PG1 Motion failed');
+  assert.equal(guard('the WAN link is down').text, 'the WAN link is down', 'ordinary words are left alone');
+  assert.equal(neutralErrorReason('video_google_key2_failed'), 'PG1 Motion failed');
+  assert.equal(neutralErrorReason('video_replicate_failed'), 'PG1 Motion failed');
+  assert.deepEqual(replicateVideoInput('minimax/hailuo-02', { prompt: 'p', image: { mimeType: 'image/png', data: 'AAA' } }), { prompt: 'p', duration: 6, first_frame_image: 'data:image/png;base64,AAA' });
+  assert.equal(classifyVideoFailure(400, { error: { message: 'API key not valid. Please pass a valid API key.' } }, ''), 'provider');
+  assert.equal(classifyVideoFailure(403, { error: { message: 'Billing account disabled' } }, ''), 'provider');
+  assert.equal(classifyVideoFailure(null, null, 'timed out starting the job'), 'provider');
+  assert.equal(classifyVideoFailure(400, { error: { message: 'The prompt was blocked due to safety reasons.' } }, ''), 'safety');
+  assert.equal(classifyVideoFailure(200, { status: 'failed', errors: [{ code: 'PROHIBITED_CONTENT', message: 'x' }] }, ''), 'safety');
 });

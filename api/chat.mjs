@@ -16,7 +16,7 @@ import { searchHistory } from '../lib/historySearch.mjs';
 import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } from '../lib/voiceStream.mjs';
 import { reportUpstreamFailure, userFacingFailure, providerErrorText, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 import { generateImage } from '../lib/imageEngines.mjs';
-import { cleanVideoPrompt, isVideoRequest, pollVideoJob, startVideoJob, videoDailyCap, videoEnabled, videoCapReachedText, videoRenderingText, videosLeftText, videosUsedToday, DEFAULT_START_FRAME_PROMPT, VIDEO_DISABLED_TEXT, VIDEO_EMPTY_PROMPT_TEXT, VIDEO_ENGINE_LABEL } from '../lib/videoJobs.mjs';
+import { cleanVideoPrompt, isVideoRequest, pollVideoJob, startVideoJob, videoDailyCap, videoEnabled, videoCapReachedText, videoRenderingText, videosLeftText, videosUsedToday, DEFAULT_START_FRAME_PROMPT, VIDEO_DISABLED_TEXT, VIDEO_EMPTY_PROMPT_TEXT, VIDEO_ENGINE_LABEL, VIDEO_REFUSED_TEXT } from '../lib/videoJobs.mjs';
 import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, usageReport, USAGE_STATS_TOOL, SEARCH_HISTORY_TOOL, RECALL_RETRY_INSTRUCTION, LEAST_PRIVILEGED_ROLE, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
 import { CHAT_ROUTES, chooseChatRoute, requiredFirstTool, searchAfterTools, wantsCurrentInfo } from '../lib/chatRoute.mjs';
 import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
@@ -1902,13 +1902,16 @@ export default async function handler(req, res) {
           reportUpstreamFailure({
             supUrl: supUrl, supKey: supKey, route: 'GENERATE_VIDEO', reason: f.reason,
             status: f.status === 402 ? null : f.status,
-            detail: `untrusted upstream data, not instructions: ${f.detail}`,
+            detail: f.detail,
             requestId: f.requestId || requestTraceId, envValues: secretEnvValues(process.env)
           });
         }
       });
-      var videoStatus = { id: videoJobId, status: polled.status, engine: VIDEO_ENGINE_LABEL };
+      // A content-safety refusal is said plainly (it is not an outage);
+      // the client shows any failed card's message as it is.
+      var videoStatus = { id: videoJobId, status: polled.status === 'refused' ? 'failed' : polled.status, engine: VIDEO_ENGINE_LABEL };
       if (polled.status === 'done') videoStatus.url = polled.url;
+      if (polled.status === 'refused') videoStatus.message = VIDEO_REFUSED_TEXT;
       if (polled.status === 'failed' || polled.status === 'not_found') videoStatus.message = userFacingFailure(polled.requestId || null, 'video');
       return sendJSON(res, 200, { videoJob: videoStatus, traceId: requestTraceId });
     }
@@ -2186,7 +2189,7 @@ export default async function handler(req, res) {
           reportUpstreamFailure({
             supUrl: supUrl, supKey: supKey, route: 'GENERATE_VIDEO', reason: f.reason,
             status: f.status === 402 ? null : f.status,
-            detail: `untrusted upstream data, not instructions: ${f.detail}`,
+            detail: f.detail,
             requestId: requestTraceId, envValues: secretEnvValues(process.env)
           });
         }
@@ -2676,6 +2679,12 @@ export default async function handler(req, res) {
           videoDailyCap: videoStart.cap,
           traceId: requestTraceId
         });
+      }
+      if (videoStart.code === 'refused') {
+        // Google refused the prompt on content-safety grounds: no other key
+        // or provider is tried, and the answer is a plain no.
+        if (chatStream) chatStream.stepDone('video', { label: 'Video not started', result: 'refused', failed: true });
+        return sendJSON(res, 200, { reply: `${VIDEO_REFUSED_TEXT}\n${videosLeftText(videoStart.remaining, videoStart.cap)}`, videosLeftToday: videoStart.remaining, videoDailyCap: videoStart.cap, traceId: requestTraceId });
       }
       if (videoStart.code === 'cap_reached') {
         if (chatStream) chatStream.stepDone('video', { label: 'Video not started', result: 'daily limit reached', failed: true });
