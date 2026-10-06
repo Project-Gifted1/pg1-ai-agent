@@ -107,9 +107,9 @@ Call `"method": "tools/list"` against `/api/mcp` for full schemas. Summary:
 
 | Tool | Purpose | Source(s) | Free tier applies? |
 |---|---|---|---|
-| `get_threat_indicators` | Bulk STIX 2.1 indicator feed | ThreatFox, URLhaus, OTX, NVD | Yes (needs `x-free-tier: 1`) |
-| `get_ioc_context` | Single-indicator safety check | ThreatFox, URLhaus, OTX | Always free if not found |
-| `get_ioc_batch` | Up to 20 indicators per call | ThreatFox, URLhaus, OTX | Always free if none found |
+| `get_threat_indicators` | Bulk STIX 2.1 indicator feed | OTX, NVD | Yes (needs `x-free-tier: 1`) |
+| `get_ioc_context` | Single-indicator safety check | OTX | Always free if not found |
+| `get_ioc_batch` | Up to 20 indicators per call | OTX | Always free if none found |
 | `get_cve_details` | CVE lookup enriched with NVD, EPSS, CISA KEV | NVD, FIRST.org EPSS, CISA KEV | Yes (needs `x-free-tier: 1`) |
 | `get_cve_batch` | Up to 20 CVE IDs per call | NVD, FIRST.org EPSS, CISA KEV | Yes (needs `x-free-tier: 1`) |
 | `get_cve_by_product` | Discover CVEs by vendor/product | NVD | Yes (needs `x-free-tier: 1`) |
@@ -131,6 +131,18 @@ Call `"method": "tools/list"` against `/api/mcp` for full schemas. Summary:
 - **`check_wallet_age`**: reports when an EVM address (`0x` + 40 hex, case-insensitive) first appeared on a given chain (`base` by default, or `ethereum`/`arbitrum`/`optimism`/`polygon`/`bsc`), based on the earliest of its on-chain transfers in or out, plus whether it's a contract (`is_contract`). **Age is per chain**: `first_seen`/`age_days` describe this address's history on the requested `chain` only, so the same address can be old on one chain and brand-new (or `found: false`) on another — check each chain you care about. A `found: false` result (all other fields `null` except `is_contract`) means the address has no transfer history on that chain — a normal, common result, **not an error**, and **not evidence the address is safe or unsafe either way**; this tool reports age and history only. An upstream failure or timeout returns an MCP tool error (`isError: true`, `code: "upstream_unavailable"`) rather than ever falling back to `found: false`, since a data-source outage must never be read as "brand-new wallet". Malformed `address`/`chain` input returns an MCP tool error (`code: "invalid_address"` / `"invalid_chain"`). A found result is cached permanently; a `found: false` result is cached for 10 minutes only. It is free and, without a Gumroad license key, limited to 60 calls/hour per caller, same as `check_domain_age` / `check_hostname_reputation`. Since 1.14.0, cached answers count against that limit too, because each one still makes a live delegation check; a licence key still exempts the caller.
   - **EIP-7702 delegation (`delegated`, `delegate_address`)**, added in 1.14.0 as optional fields: `delegated: true` when the address's code on the requested chain is exactly 23 bytes, `0xef0100` followed by a 20-byte delegate address (an [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702) delegation), with that address, lowercased, in `delegate_address`. `delegated: false` (and `delegate_address: null`) when the code is anything else: empty, an ordinary contract, or something that only looks like the prefix at the wrong length. `delegated: null` means the code check did not complete (timeout or upstream error). It is never guessed as `false`; the age result is still returned, and `status` is `"unknown"`. The delegation check always has its own `checks` entry, `source: "on-chain code"`, with `result` `"ok"`, `"error"` or `"timeout"`, so you can see whether it completed. Delegation is **never cached**: the owner can add or remove it at any time, so it is checked live on every call, cached age answers included, while `first_seen` stays cached as before. A delegated address gets reason code `WALLET_DELEGATED`, which states the fact only, not a judgement. It is informational and **never changes `status` on its own**: an old delegated wallet is `status: "no_flags"` with `reasons: [WALLET_DELEGATED]`, the same status as an old non-delegated wallet (`"no_flags"`, `reasons: []`). `status` is only ever what it would have been without the delegation, or `"unknown"` when the code check didn't complete. Examples: an old wallet with a partial lookup (`WALLET_AGE_PARTIAL`) is `"unknown"`, delegated or not, and a no-history wallet is `"flagged"` whatever its delegation state. `is_contract` has not changed and is still `true` for a delegated address, so existing integrations behave as before. Delegation is per chain too: a delegation on one chain says nothing about another.
 - **`check_wallet_sanctions` / `check_domain_age` / `check_hostname_reputation` / `check_wallet_age`** all declare an `outputSchema` and return a matching `structuredContent` object alongside the existing `content` text block, per the MCP spec — clients that support structured tool output can read fields directly instead of parsing the text block.
+
+### Data source switches
+
+Threat indicator data (`get_threat_indicators`, `get_ioc_context`, `get_ioc_batch`, `/api/ioc`, `/api/ioc/context`, and the chat and playground checks built on them) is filtered by upstream source in one place, `lib/sourcePolicy.mjs`, on every query. Each source has an environment switch:
+
+| Variable | Default | Covers |
+|---|---|---|
+| `SOURCE_ABUSECH_ENABLED` | **off** | abuse.ch ThreatFox / URLhaus. Not served while there is no commercial agreement with abuse.ch. |
+| `SOURCE_UNATTRIBUTED_ENABLED` | **off** | Rows with no source label, and rows from the old pipeline labelled `Sovereign-Engine-v3.2-*`, which can't be told apart by source. |
+| `SOURCE_OTX_ENABLED`, `SOURCE_NVD_ENABLED`, `SOURCE_BLOCKLIST_DE_ENABLED`, `SOURCE_ABUSEIPDB_ENABLED`, `SOURCE_PG1_SWARM_ENABLED`, `SOURCE_SCAMSNIFFER_ENABLED`, `SOURCE_OTHER_ENABLED` | on | Set to `false` to stop serving that source. |
+
+A switched-off source's rows never appear in any response, paid or free; an indicator known only to such a source is reported as `found: false`.
 
 ## A2A (Agent2Agent Protocol)
 

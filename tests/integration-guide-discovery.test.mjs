@@ -4,7 +4,9 @@
  * public/llms.txt, documentationUrl in the A2A agent card, and externalDocs
  * in public/openapi.json. No release goes with this: server.json and the
  * MCP tool definitions stay byte-identical to the 1.14.0 release (pinned
- * below by hash), and no version moves.
+ * below by hash), and no version moves. The 1.15.0 licensing release has
+ * since moved the versions and hashes pinned here (see
+ * tests/source-policy.test.mjs for exactly what changed).
  *
  * Run with: node --test tests/integration-guide-discovery.test.mjs
  */
@@ -65,7 +67,7 @@ test('llms.txt has a short "Integration guides" section linking the guide', () =
 
 test('agent card documentationUrl points to the guide; nothing else in the card changes', () => {
   assert.equal(CARD.documentationUrl, GUIDE_URL);
-  assert.equal(CARD.version, '1.14.0');
+  assert.equal(CARD.version, '1.15.0');
   assert.doesNotMatch(CARD.description, /docs\/crypto-alert-bot/, 'the spec field carries the link; the description stays as is');
 });
 
@@ -73,19 +75,19 @@ test('openapi.json externalDocs points to the guide', () => {
   assert.equal(OPENAPI.externalDocs.url, GUIDE_URL);
   assert.equal(typeof OPENAPI.externalDocs.description, 'string');
   noVendorNames('openapi.json externalDocs', OPENAPI.externalDocs.description);
-  assert.equal(OPENAPI.info.version, '1.14.0');
+  assert.equal(OPENAPI.info.version, '1.15.0');
 });
 
-test('no release: package and server versions are unchanged', () => {
+test('package version is unchanged; server version is the 1.15.0 release', () => {
   assert.equal(JSON.parse(read('package.json')).version, '1.0.3');
-  assert.equal(JSON.parse(read('server.json')).version, '1.14.0');
+  assert.equal(JSON.parse(read('server.json')).version, '1.15.0');
 });
 
-test('server.json is byte-identical to the 1.14.0 release', () => {
-  assert.equal(sha256(fs.readFileSync(path.join(ROOT, 'server.json'))), 'b9c729c883c698008387b919733b3354821ffa25d9626bfaa8daf4c39db62599');
+test('server.json is byte-identical to the 1.15.0 release', () => {
+  assert.equal(sha256(fs.readFileSync(path.join(ROOT, 'server.json'))), 'f0888cac3c000b2a8e6beded4cdfdbf8426c044ba787f48f2f57245df42d4137');
 });
 
-test('MCP tool names, descriptions and schemas are identical to the 1.14.0 release', () => {
+test('MCP tool names, descriptions and schemas are identical to the 1.15.0 release', () => {
   assert.equal(TOOLS.length, 14);
-  assert.equal(sha256(JSON.stringify(TOOLS)), '47dde1cff3ff1f64f1020b8d06813321f51c8db2142390bad0096616c8767acc');
+  assert.equal(sha256(JSON.stringify(TOOLS)), 'a177e3276b64a976e1b3a8412e77418e7846bf532379c8c9129882aff3488f06');
 });
