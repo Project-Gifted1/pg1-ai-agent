@@ -1115,8 +1115,10 @@ test('check_wallet_age: a partial (internal transfers not checked in time) old w
 });
 
 test('computeStatus: informational reason codes never flag on their own', () => {
-  assert.deepEqual([...INFORMATIONAL_REASON_CODES], ['WALLET_DELEGATED', 'IP_TOR_EXIT_NODE']);
+  assert.deepEqual([...INFORMATIONAL_REASON_CODES], ['WALLET_DELEGATED', 'IP_TOR_EXIT_NODE', 'IP_WHITELISTED', 'IP_REPORTS_SCORED_ZERO']);
   const ok = [{ result: 'ok' }];
+  assert.equal(computeStatus([{ code: 'IP_WHITELISTED' }], ok), 'no_flags');
+  assert.equal(computeStatus([{ code: 'IP_REPORTS_SCORED_ZERO' }], ok), 'no_flags');
   assert.equal(computeStatus([{ code: 'IP_TOR_EXIT_NODE' }], ok), 'no_flags');
   assert.equal(computeStatus([{ code: 'IP_TOR_EXIT_NODE' }, { code: 'IP_ABUSE_REPORTED' }], ok), 'flagged');
   assert.equal(computeStatus([{ code: 'WALLET_DELEGATED' }], ok), 'no_flags');

@@ -54,8 +54,10 @@
 <tr><td><code>CVE_KNOWN_EXPLOITED_KEV</code></td><td>Warning</td><td>CVE is on the known exploited vulnerabilities catalog.</td></tr>
 <tr><td><code>IOC_FOUND_IN_THREAT_FEED</code></td><td>Warning</td><td>Indicator has at least one matching record in the threat indicator feed.</td></tr>
 <tr><td><code>WALLET_DELEGATED</code></td><td>Informational</td><td>Address currently has an EIP-7702 delegation on this chain: its code points to a delegate contract.</td></tr>
-<tr><td><code>IP_ABUSE_REPORTED</code></td><td>Warning</td><td>IP address has at least one abuse report in the reporting window checked.</td></tr>
+<tr><td><code>IP_ABUSE_REPORTED</code></td><td>Warning</td><td>IP address has an abuse confidence score above 0 from reports in the reporting window checked.</td></tr>
 <tr><td><code>IP_TOR_EXIT_NODE</code></td><td>Informational</td><td>IP address is a Tor exit node.</td></tr>
+<tr><td><code>IP_WHITELISTED</code></td><td>Informational</td><td>IP address is whitelisted by the abuse-report source, which does not count its reports against it.</td></tr>
+<tr><td><code>IP_REPORTS_SCORED_ZERO</code></td><td>Informational</td><td>IP address has abuse reports in the reporting window checked, but its abuse confidence score is 0.</td></tr>
 </tbody>
 </table></div>
 <h2 id="how-codes-affect-status">How codes affect status</h2>
@@ -71,7 +73,7 @@
 <li>A response&#39;s <code>message</code> can be more specific than the meaning above (for example, it may include a count). Match on <code>code</code>, never on <code>message</code>.</li>
 </ul>
 <h2 id="test-inputs">Test inputs</h2>
-<p>Fixed test inputs, free for every caller, are listed on <a href="/docs/testing">Test your integration</a>. They return <code>WALLET_SANCTIONED</code>, <code>DOMAIN_NEWLY_REGISTERED_30D</code>, <code>HOSTNAME_PHISHING_LISTED</code>, <code>WALLET_NO_HISTORY</code>, <code>CVE_KNOWN_EXPLOITED_KEV</code>, <code>IOC_FOUND_IN_THREAT_FEED</code>, <code>WALLET_DELEGATED</code> and <code>IP_ABUSE_REPORTED</code> without a live lookup. No test input returns <code>HOSTNAME_LOOKALIKE</code>, <code>WALLET_AGE_PARTIAL</code> or <code>IP_TOR_EXIT_NODE</code>.</p>
+<p>Fixed test inputs, free for every caller, are listed on <a href="/docs/testing">Test your integration</a>. They return <code>WALLET_SANCTIONED</code>, <code>DOMAIN_NEWLY_REGISTERED_30D</code>, <code>HOSTNAME_PHISHING_LISTED</code>, <code>WALLET_NO_HISTORY</code>, <code>CVE_KNOWN_EXPLOITED_KEV</code>, <code>IOC_FOUND_IN_THREAT_FEED</code>, <code>WALLET_DELEGATED</code> and <code>IP_ABUSE_REPORTED</code> without a live lookup. No test input returns <code>HOSTNAME_LOOKALIKE</code>, <code>WALLET_AGE_PARTIAL</code>, <code>IP_TOR_EXIT_NODE</code>, <code>IP_WHITELISTED</code> or <code>IP_REPORTS_SCORED_ZERO</code>.</p>
   </article>
 
   <footer>

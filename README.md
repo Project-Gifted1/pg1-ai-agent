@@ -199,7 +199,17 @@ curl -X POST "https://pg1-ai-agent.vercel.app/api/a2a?A2A-Version=1.0" \
 
 **Arguments:** `ip` (required, exactly one public IPv4 or IPv6 address; private, reserved, documentation and malformed input is rejected as `invalid_ip` without calling AbuseIPDB) and `max_age_in_days` (optional, 1 to 365, default 90).
 
-**Result** (also as `structuredContent`; the tool declares an `outputSchema`): `ip`, `ip_version`, `max_age_in_days`, `abuse_confidence_score` (0-100), `total_reports`, `distinct_reporters`, `last_reported_at`, `country_code`, `usage_type`, `isp`, `domain`, `is_tor`, `is_whitelisted`, `cached`, `note`, `attribution`, plus the usual `reasons`, `status`, `checks` and `request_id`. `status` is `"flagged"` when `total_reports` is above zero (reason `IP_ABUSE_REPORTED`; no score threshold is applied, so choose your own on `abuse_confidence_score`), `"no_flags"` when there are no reports in the window, and `"unknown"` when the answer is incomplete. A low score means few or no reports, never that an address is harmless; PG1 never calls a result "safe" or "clean". `IP_TOR_EXIT_NODE` is informational.
+**Result** (also as `structuredContent`; the tool declares an `outputSchema`): `ip`, `ip_version`, `max_age_in_days`, `abuse_confidence_score` (0-100), `total_reports`, `distinct_reporters`, `last_reported_at`, `country_code`, `usage_type`, `isp`, `domain`, `is_tor`, `is_whitelisted`, `cached`, `note`, `attribution`, plus the usual `reasons`, `status`, `checks` and `request_id`. `status` follows AbuseIPDB's own judgement of the reports, with no PG1 score threshold on top (choose your own on `abuse_confidence_score`):
+
+| Upstream answer | `status` | Reason |
+|---|---|---|
+| `is_whitelisted` true (whatever the score or report count) | `"no_flags"` | `IP_WHITELISTED` (informational): AbuseIPDB marks the address as whitelisted and does not count its reports against it |
+| Not whitelisted, `abuse_confidence_score` above 0 | `"flagged"` | `IP_ABUSE_REPORTED`, with the score, report and reporter counts |
+| Not whitelisted, score 0, reports in the window | `"no_flags"` | `IP_REPORTS_SCORED_ZERO` (informational): the reports exist, but AbuseIPDB scores them 0 |
+| No reports in the window | `"no_flags"` | none |
+| Score or report count missing | `"unknown"` | none |
+
+`IP_TOR_EXIT_NODE` is informational and can appear alongside any of these. `abuse_confidence_score` is AbuseIPDB's 0-100 confidence that the address is abusive; a score of 0 is not proof the address is harmless, and PG1 never calls a result "safe" or "clean". `checks[0].data_as_of` is `last_reported_at` when there is a report in the window.
 
 **Errors** (MCP `isError: true` with `code`; A2A JSON-RPC error `-32000` with `error.data.code`):
 
@@ -234,7 +244,7 @@ The signed-in operator can ask PG1's chat to run the read-only tools above in pl
 Every one of the 14 MCP tools and the 5 free A2A skills adds four fields alongside its existing output — additive only, nothing existing is renamed or repurposed:
 
 - **`reasons`**: `[{ code, message }]`. Zero or more machine-readable codes from the permanent list below. Empty when nothing is flagged. Codes are only ever added, never removed or renamed.
-- **`status`**: `"flagged"` when `reasons` contains a genuine warning code; otherwise `"unknown"` when `reasons` contains an incomplete code or any source needed for the answer timed out, errored, or was skipped (never reported as a false-clean `"no_flags"`); otherwise `"no_flags"`. Two kinds of code are listed in `reasons` but are not warnings. **Informational** codes (`WALLET_DELEGATED`, `IP_TOR_EXIT_NODE`) report a fact and never affect `status`. **Incomplete** codes (currently only `WALLET_AGE_PARTIAL`) mean a check didn't complete, so they make `status` `"unknown"`, not `"flagged"`. For `check_wallet_age`, that means: `"flagged"` only with `WALLET_NO_HISTORY`; otherwise `"unknown"` if anything didn't complete (`WALLET_AGE_PARTIAL`, or `delegated: null`); otherwise `"no_flags"`. (`subscribe_alerts` and `submit_indicator` keep their own pre-existing `status` field, which means a submission lifecycle state, not this honest-status value — they gain `reasons`/`checks`/`request_id` only.)
+- **`status`**: `"flagged"` when `reasons` contains a genuine warning code; otherwise `"unknown"` when `reasons` contains an incomplete code or any source needed for the answer timed out, errored, or was skipped (never reported as a false-clean `"no_flags"`); otherwise `"no_flags"`. Two kinds of code are listed in `reasons` but are not warnings. **Informational** codes (`WALLET_DELEGATED`, `IP_TOR_EXIT_NODE`, `IP_WHITELISTED`, `IP_REPORTS_SCORED_ZERO`) report a fact and never affect `status`. **Incomplete** codes (currently only `WALLET_AGE_PARTIAL`) mean a check didn't complete, so they make `status` `"unknown"`, not `"flagged"`. For `check_wallet_age`, that means: `"flagged"` only with `WALLET_NO_HISTORY`; otherwise `"unknown"` if anything didn't complete (`WALLET_AGE_PARTIAL`, or `delegated: null`); otherwise `"no_flags"`. (`subscribe_alerts` and `submit_indicator` keep their own pre-existing `status` field, which means a submission lifecycle state, not this honest-status value — they gain `reasons`/`checks`/`request_id` only.)
 - **`checks`**: `[{ source, result, checked_at, data_as_of }]` — one entry per data source consulted for this call. `result` is one of `"ok" | "timeout" | "error" | "skipped"`. `source` is always a generic label (e.g. `"sanctions list"`, `"domain registration records"`, `"on-chain transfer history"`) — never a vendor/provider name. `checked_at` is when this request ran the check; `data_as_of` is how current the underlying data is, or `null` when not applicable. For `check_wallet_age`, a cached answer's `"on-chain transfer history"` entry has `data_as_of` set to when that age was originally looked up (a fresh lookup has `null`), and the `"on-chain code"` entry is the live delegation check.
 - **`request_id`**: a UUID identifying this exact call, also sent as the `X-Request-Id` response header on `/api/mcp` and `/api/a2a`. It is inside the tool result (and `structuredContent`) or, for a JSON-RPC error, inside `error.data` — never at the top level of the JSON-RPC envelope, which holds only `jsonrpc`, `id` and `result`/`error`. If the call fails and gets written to the server error log, the same `request_id` is attached to that log entry.
 
@@ -253,8 +263,10 @@ Every one of the 14 MCP tools and the 5 free A2A skills adds four fields alongsi
 | `CVE_KNOWN_EXPLOITED_KEV` | CVE is on the known exploited vulnerabilities catalog. |
 | `IOC_FOUND_IN_THREAT_FEED` | Indicator has at least one matching record in the threat indicator feed. |
 | `WALLET_DELEGATED` | Address currently has an EIP-7702 delegation on this chain: its code points to a delegate contract. *(Informational: never changes `status` on its own.)* |
-| `IP_ABUSE_REPORTED` | IP address has at least one abuse report in the reporting window checked. |
+| `IP_ABUSE_REPORTED` | IP address has an abuse confidence score above 0 from reports in the reporting window checked. |
 | `IP_TOR_EXIT_NODE` | IP address is a Tor exit node. *(Informational: never changes `status` on its own.)* |
+| `IP_WHITELISTED` | IP address is whitelisted by the abuse-report source, which does not count its reports against it. *(Informational: never changes `status` on its own.)* |
+| `IP_REPORTS_SCORED_ZERO` | IP address has abuse reports in the reporting window checked, but its abuse confidence score is 0. *(Informational: never changes `status` on its own.)* |
 
 Source of truth: `lib/reasonCodes.mjs`.
 
@@ -307,8 +319,8 @@ Every MCP tool that can flag something has three fixed, made-up fixture inputs t
 | `get_cve_by_product` | FLAGGED | `{"vendor":"pg1-test.invalid","product":"flagged"}` | one KEV-listed CVE, status "flagged", reason CVE_KNOWN_EXPLOITED_KEV (free, no payment) |
 | `get_cve_by_product` | CLEAN | `{"vendor":"pg1-test.invalid","product":"clean"}` | total_found 0, status "no_flags" |
 | `get_cve_by_product` | UNKNOWN | `{"vendor":"pg1-test.invalid","product":"unknown"}` | exploit-score and KEV checks "error", status "unknown" |
-| `check_ip_abuse` | FLAGGED | `{"ip":"192.0.2.1"}` | abuse_confidence_score 100, total_reports 42, status "flagged", reason IP_ABUSE_REPORTED (synthetic data; no key header needed, no upstream call) |
-| `check_ip_abuse` | CLEAN | `{"ip":"198.51.100.1"}` | abuse_confidence_score 0, total_reports 0, status "no_flags" (no reports, which is not a verdict on the address) |
+| `check_ip_abuse` | FLAGGED | `{"ip":"192.0.2.1"}` | abuse_confidence_score 100, total_reports 42, not whitelisted, status "flagged", reason IP_ABUSE_REPORTED (synthetic data; no key header needed, no upstream call) |
+| `check_ip_abuse` | CLEAN | `{"ip":"198.51.100.1"}` | abuse_confidence_score 0, total_reports 0, status "no_flags" (no reports; a score of 0 is not proof the address is harmless) |
 | `check_ip_abuse` | UNKNOWN | `{"ip":"203.0.113.1"}` | isError: true, code "upstream_unavailable", status "unknown" (what a real lookup timeout returns) |
 
 No fixtures exist for `get_threat_indicators` (a bulk feed with no target input), `get_threat_actor_profile` and `get_usage_status` (they have no reason code to flag with), or `subscribe_alerts` and `submit_indicator` (write actions whose `status` is a lifecycle state, not a verdict).

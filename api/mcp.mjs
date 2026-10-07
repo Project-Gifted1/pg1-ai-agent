@@ -478,7 +478,7 @@ export const TOOLS = [
   },
   {
     name: 'check_ip_abuse',
-    description: 'PG1 Sovereign Threat Intelligence: looks up one public IPv4 or IPv6 address in AbuseIPDB using YOUR OWN AbuseIPDB API key (free or paid), and returns its abuse confidence score and report counts with attribution to AbuseIPDB. BRING YOUR OWN KEY: send the key in the X-AbuseIPDB-Key HTTP request header on /api/mcp or /api/a2a - never as a tool argument. PG1 has no AbuseIPDB key of its own; without the header the call returns an MCP tool error (isError: true, code abuseipdb_key_required) and AbuseIPDB is not contacted. No PG1 payment required - lookups count against your own AbuseIPDB quota. SIBLING DIFFERENTIATION: Use for a live AbuseIPDB report lookup on a single IP only. Do NOT use for PG1\'s own threat-feed lookups (use get_ioc_context), hostnames (use check_hostname_reputation) or domains (use check_domain_age). BEHAVIOR: Returns { ip, abuse_confidence_score, total_reports, distinct_reporters, last_reported_at, country_code, usage_type, isp, domain, is_tor, is_whitelisted, attribution }. A low abuse_confidence_score means few or no reports were received in the window, not that the address is harmless - this tool never returns "safe" or "clean". Results are returned only to the caller whose key was used, are never stored or shared, and are cached in memory for 15 minutes per key. ERRORS (isError: true): abuseipdb_key_required, invalid_abuseipdb_key (AbuseIPDB rejected the key), abuseipdb_rate_limited (your AbuseIPDB quota; retry_after passed through when AbuseIPDB sends it), upstream_unavailable (AbuseIPDB error or timeout), invalid_ip (not exactly one public address: private, reserved or malformed input is rejected without calling AbuseIPDB), invalid_max_age. Rate-limited to 60 calls/hour per caller when unauthenticated; a valid Gumroad license key (X-API-KEY header) exempts the limit.',
+    description: 'PG1 Sovereign Threat Intelligence: looks up one public IPv4 or IPv6 address in AbuseIPDB using YOUR OWN AbuseIPDB API key (free or paid), and returns its abuse confidence score and report counts with attribution to AbuseIPDB. BRING YOUR OWN KEY: send the key in the X-AbuseIPDB-Key HTTP request header on /api/mcp or /api/a2a - never as a tool argument. PG1 has no AbuseIPDB key of its own; without the header the call returns an MCP tool error (isError: true, code abuseipdb_key_required) and AbuseIPDB is not contacted. No PG1 payment required - lookups count against your own AbuseIPDB quota. SIBLING DIFFERENTIATION: Use for a live AbuseIPDB report lookup on a single IP only. Do NOT use for PG1\'s own threat-feed lookups (use get_ioc_context), hostnames (use check_hostname_reputation) or domains (use check_domain_age). BEHAVIOR: Returns { ip, abuse_confidence_score, total_reports, distinct_reporters, last_reported_at, country_code, usage_type, isp, domain, is_tor, is_whitelisted, attribution }. STATUS: "no_flags" when AbuseIPDB marks the address whitelisted (informational reason IP_WHITELISTED: AbuseIPDB does not count its reports against it); otherwise "flagged" when abuse_confidence_score > 0 (reason IP_ABUSE_REPORTED, with the score, report and reporter counts); otherwise "no_flags" (with informational reason IP_REPORTS_SCORED_ZERO when reports exist but AbuseIPDB scores them 0); "unknown" when the score or report count is missing. IP_TOR_EXIT_NODE is informational. abuse_confidence_score is AbuseIPDB\'s 0-100 confidence that the address is abusive; a score of 0 is not proof the address is harmless - this tool never returns "safe" or "clean". Results are returned only to the caller whose key was used, are never stored or shared, and are cached in memory for 15 minutes per key. ERRORS (isError: true): abuseipdb_key_required, invalid_abuseipdb_key (AbuseIPDB rejected the key), abuseipdb_rate_limited (your AbuseIPDB quota; retry_after passed through when AbuseIPDB sends it), upstream_unavailable (AbuseIPDB error or timeout), invalid_ip (not exactly one public address: private, reserved or malformed input is rejected without calling AbuseIPDB), invalid_max_age. Rate-limited to 60 calls/hour per caller when unauthenticated; a valid Gumroad license key (X-API-KEY header) exempts the limit.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -493,7 +493,7 @@ export const TOOLS = [
         ip: { type: 'string', description: 'The address checked (IPv6 in canonical compressed lowercase form).' },
         ip_version: { type: 'integer', enum: [4, 6] },
         max_age_in_days: { type: 'integer', minimum: 1, maximum: 365, description: 'The reporting window used.' },
-        abuse_confidence_score: { type: ['integer', 'null'], minimum: 0, maximum: 100, description: 'AbuseIPDB abuse confidence score, 0-100. A low score means few or no reports, not that the address is harmless.' },
+        abuse_confidence_score: { type: ['integer', 'null'], minimum: 0, maximum: 100, description: 'AbuseIPDB\'s 0-100 confidence that the address is abusive. A score of 0 is not proof the address is harmless.' },
         total_reports: { type: ['integer', 'null'], description: 'Abuse reports received in the window.' },
         distinct_reporters: { type: ['integer', 'null'], description: 'Distinct users who reported the address in the window.' },
         last_reported_at: { type: ['string', 'null'], description: 'ISO timestamp of the most recent report, or null when there is none.' },
@@ -2422,19 +2422,29 @@ function enforceIpAbuseRateLimit(identifier) {
 }
 
 // `fields` are the renamed upstream fields (lib/abuseIpdb.mjs pickFields).
-// IP_ABUSE_REPORTED is the fact that the report count is above zero - no
-// score threshold is invented here. A response missing the score or the
-// report count is "unknown", never "no_flags".
+// No score threshold is invented here; status follows AbuseIPDB's own
+// judgement of its reports:
+//   - whitelisted by AbuseIPDB: "no_flags", with informational
+//     IP_WHITELISTED (AbuseIPDB does not count its reports against it);
+//   - otherwise abuse_confidence_score > 0: "flagged", IP_ABUSE_REPORTED;
+//   - score 0 with reports: "no_flags", informational IP_REPORTS_SCORED_ZERO;
+//   - no reports: "no_flags".
+// A response missing the score or the report count is "unknown", never
+// "no_flags". checks[0].data_as_of is the most recent report when there is
+// one.
 function buildIpAbuseResult(ip, version, maxAgeDays, fields, { cached = false, fetchedAt = null, attributionText = ABUSEIPDB_ATTRIBUTION_TEXT } = {}) {
   const complete = fields.abuse_confidence_score !== null && fields.total_reports !== null;
   const reasons = [];
-  if (fields.total_reports > 0) {
-    reasons.push(reason('IP_ABUSE_REPORTED', `IP address has ${fields.total_reports} abuse report(s) from ${fields.distinct_reporters ?? 'an unknown number of'} distinct reporter(s) in the last ${maxAgeDays} day(s).`));
+  const reporters = fields.distinct_reporters ?? 'an unknown number of';
+  if (fields.is_whitelisted === true) {
+    reasons.push(reason('IP_WHITELISTED', `AbuseIPDB marks this address as whitelisted; it has ${fields.total_reports ?? 'an unknown number of'} report(s) in the last ${maxAgeDays} day(s), which AbuseIPDB does not count against it.`));
+  } else if (fields.abuse_confidence_score > 0) {
+    reasons.push(reason('IP_ABUSE_REPORTED', `IP address has an abuse confidence score of ${fields.abuse_confidence_score}, from ${fields.total_reports ?? 'an unknown number of'} abuse report(s) by ${reporters} distinct reporter(s) in the last ${maxAgeDays} day(s).`));
+  } else if (fields.abuse_confidence_score === 0 && fields.total_reports > 0) {
+    reasons.push(reason('IP_REPORTS_SCORED_ZERO', `IP address has ${fields.total_reports} abuse report(s) from ${reporters} distinct reporter(s) in the last ${maxAgeDays} day(s), but AbuseIPDB scores them 0, so it is not flagged.`));
   }
   if (fields.is_tor === true) reasons.push(reason('IP_TOR_EXIT_NODE'));
-  const note = fields.total_reports === 0
-    ? `No abuse reports for this address in the last ${maxAgeDays} day(s). That means no one reported it in that window, not that the address is harmless.`
-    : 'abuse_confidence_score is AbuseIPDB\'s 0-100 confidence that the address is abusive, based on reports in the window. A low score means few or no reports, not that the address is harmless.';
+  const note = 'abuse_confidence_score is AbuseIPDB\'s 0-100 confidence that the address is abusive. A score of 0 is not proof the address is harmless.';
   return withResponseMeta({
     ip,
     ip_version: version,
@@ -2445,7 +2455,7 @@ function buildIpAbuseResult(ip, version, maxAgeDays, fields, { cached = false, f
     attribution: { text: attributionText, url: abuseIpdbCheckUrlFor(ip) }
   }, {
     reasons,
-    checks: [buildCheck(IP_ABUSE_SOURCE, complete ? 'ok' : 'error', { dataAsOf: fetchedAt })]
+    checks: [buildCheck(IP_ABUSE_SOURCE, complete ? 'ok' : 'error', { dataAsOf: fields.last_reported_at || fetchedAt })]
   });
 }
 
