@@ -3,6 +3,7 @@
   "rewrites": [
     { "source": "/favicon.ico", "destination": "/favicon.svg" },
     { "source": "/playground", "destination": "/playground/index.html" },
+    { "source": "/about", "destination": "/about/index.html" },
     { "source": "/docs/crypto-alert-bot", "destination": "/docs/crypto-alert-bot/index.html" },
     { "source": "/docs/reason-codes", "destination": "/docs/reason-codes/index.html" },
     { "source": "/docs/testing", "destination": "/docs/testing/index.html" }
@@ -91,6 +92,12 @@
       "headers": [
         { "key": "Content-Type", "value": "text/plain; charset=utf-8" },
         { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
+    },
+    {
+      "source": "/sitemap.xml",
+      "headers": [
+        { "key": "Content-Type", "value": "application/xml" }
       ]
     },
     {
