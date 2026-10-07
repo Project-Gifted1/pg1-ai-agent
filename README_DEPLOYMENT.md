@@ -76,8 +76,9 @@ PG1_IMAGE_MODEL_SECONDARY=gemini-3-pro-image
 PG1_IMAGE_MODEL_TERTIARY=black-forest-labs/flux-schnell
 
 # Optional: /video, PG1 Motion clips (lib/videoJobs.mjs). Off unless
-# PG1_VIDEO_ENABLED=1. Run supabase/migrations/20261008120000_pg1_video_jobs.sql
-# and 20261009120000_pg1_video_budget.sql first. Needs SUPABASE_URL, the
+# PG1_VIDEO_ENABLED=1. Run supabase/migrations/20261008120000_pg1_video_jobs.sql,
+# 20261009120000_pg1_video_budget.sql and 20261010120000_pg1_video_sync_render.sql
+# first. Needs SUPABASE_URL, the
 # service-role key and a paid-tier Gemini key. Tiers: /video draft (360p),
 # /video (720p), /video pro (1080p); short 5 s (default) or long 10 s. Each
 # clip's estimated cost (lib/videoText.mjs VIDEO_PRICES) is reserved
@@ -87,6 +88,13 @@ PG1_VIDEO_ENABLED=1
 PG1_VIDEO_DAILY_BUDGET_USD=5.00
 PG1_VIDEO_DAILY_CAP=10
 PG1_VIDEO_MODEL=gemini-omni-1.1-flash
+# The clip renders synchronously in api/video-render.mjs (maxDuration 800 s,
+# which needs Fluid compute on the Pro plan), triggered by the chat with an
+# HMAC token signed with this secret (16+ characters; falls back to
+# CRON_SECRET). With Deployment Protection on previews, enable Protection
+# Bypass for Automation so VERCEL_AUTOMATION_BYPASS_SECRET is sent along.
+# PG1_VIDEO_GOOGLE_ASYNC=1 restores the background job + GET poll.
+PG1_VIDEO_RENDER_SECRET=<random 32+ characters>
 # Replicate fallback after every Gemini key fails on a provider error (5xx,
 # 429, timeout, auth/billing). Never after a content-safety refusal. Uses
 # the same REPLICATE_API_TOKEN as /image. Clips with a starting frame go to

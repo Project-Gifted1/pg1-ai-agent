@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { waitUntil } from '@vercel/functions';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { paymentMiddleware, x402ResourceServer } from '@x402/express';
 import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
@@ -16,7 +17,7 @@ import { searchHistory } from '../lib/historySearch.mjs';
 import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } from '../lib/voiceStream.mjs';
 import { reportUpstreamFailure, userFacingFailure, providerErrorText, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 import { generateImage } from '../lib/imageEngines.mjs';
-import { cleanVideoPrompt, isVideoCommand, isVideoRequest, parseVideoOptions, pollVideoJob, recheckVideoJob, startVideoJob, videoDailyBudget, videoDailyCap, videoEnabled, videoCostLine, videoFrameFallbackOn, videoNotStartedText, videoRenderingText, videoSpendToday, videoTiersText, usd, DEFAULT_START_FRAME_PROMPT, FOUR_K_NOTE, VIDEO_DISABLED_TEXT, VIDEO_ENGINE_LABEL, VIDEO_REFUSED_TEXT, VIDEO_TIER_LABELS } from '../lib/videoJobs.mjs';
+import { cleanVideoPrompt, dispatchVideoRender, isVideoCommand, isVideoRequest, parseVideoOptions, pollVideoJob, recheckVideoJob, startVideoJob, videoGoogleAsync, videoJobStatus, videoDailyBudget, videoDailyCap, videoEnabled, videoCostLine, videoFrameFallbackOn, videoNotStartedText, videoRenderingText, videoSpendToday, videoTiersText, usd, DEFAULT_START_FRAME_PROMPT, FOUR_K_NOTE, VIDEO_DISABLED_TEXT, VIDEO_ENGINE_LABEL, VIDEO_REFUSED_TEXT, VIDEO_TIER_LABELS } from '../lib/videoJobs.mjs';
 import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, usageReport, USAGE_STATS_TOOL, SEARCH_HISTORY_TOOL, RECALL_RETRY_INSTRUCTION, LEAST_PRIVILEGED_ROLE, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
 import { CHAT_ROUTES, chooseChatRoute, requiredFirstTool, searchAfterTools, wantsCurrentInfo } from '../lib/chatRoute.mjs';
 import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
@@ -1885,31 +1886,38 @@ export default async function handler(req, res) {
 
     // PG1 MOTION STATUS (lib/videoJobs.mjs): the client's poll for a clip
     // that is rendering. Signed-in operator only; answered before any of the
-    // chat's context is loaded, so a poll stays short. When the engine has
-    // finished, the clip is copied into the vault and a signed link (7 days)
-    // comes back; a job older than 15 minutes is marked failed. A failure
-    // is one neutral sentence plus the request ID of the message that asked
-    // for the clip; the engine's own error text is in pg1_errors under it.
+    // chat's context is loaded, so a poll stays short. By default the clip
+    // is rendered synchronously by api/video-render.mjs and this reads only
+    // the pg1_video_jobs row (videoJobStatus), never the engine; a job
+    // rendering longer than the render's maxDuration plus a margin is marked
+    // failed. With PG1_VIDEO_GOOGLE_ASYNC=1 it polls the engine as before
+    // (pollVideoJob). Either way, a finished clip comes back as a signed
+    // link (7 days), and a failure is one neutral sentence plus the request
+    // ID of the message that asked for the clip; the engine's own error
+    // text is in pg1_errors under it.
     if (rawActionType === 'VIDEO_STATUS') {
       if (!isOperator) {
         log401('VIDEO_STATUS', 'unauthenticated', supUrl, supKey);
         return sendJSON(res, 401, { reply: `[AGENT] Video Status Aborted: Authentication required.`, traceId: requestTraceId });
       }
       var videoJobId = typeof reqBody.jobId === 'string' ? reqBody.jobId.trim().slice(0, 64) : '';
-      var polled = await pollVideoJob({
-        env: process.env,
-        jobId: videoJobId,
-        geminiKeys: [process.env.GEMINI_API_KEY1, process.env.GEMINI_API_KEY2, process.env.GEMINI_API_KEY].map((k) => String(k || '').replace(/\s+/g, '')).filter(Boolean),
-        supUrl: supUrl, supKey: supKey,
-        onFailure: function (f) {
-          reportUpstreamFailure({
-            supUrl: supUrl, supKey: supKey, route: 'GENERATE_VIDEO', reason: f.reason,
-            status: f.status === 402 ? null : f.status,
-            detail: f.detail,
-            requestId: f.requestId || requestTraceId, envValues: secretEnvValues(process.env)
-          });
-        }
-      });
+      var videoStatusFailure = function (f) {
+        reportUpstreamFailure({
+          supUrl: supUrl, supKey: supKey, route: 'GENERATE_VIDEO', reason: f.reason,
+          status: f.status === 402 ? null : f.status,
+          detail: f.detail,
+          requestId: f.requestId || requestTraceId, envValues: secretEnvValues(process.env)
+        });
+      };
+      var polled = videoGoogleAsync(process.env)
+        ? await pollVideoJob({
+          env: process.env,
+          jobId: videoJobId,
+          geminiKeys: [process.env.GEMINI_API_KEY1, process.env.GEMINI_API_KEY2, process.env.GEMINI_API_KEY].map((k) => String(k || '').replace(/\s+/g, '')).filter(Boolean),
+          supUrl: supUrl, supKey: supKey,
+          onFailure: videoStatusFailure
+        })
+        : await videoJobStatus({ jobId: videoJobId, supUrl: supUrl, supKey: supKey, onFailure: videoStatusFailure });
       // A content-safety refusal is said plainly (it is not an outage);
       // the client shows any failed card's message as it is.
       var videoStatus = { id: videoJobId, status: polled.status === 'refused' ? 'failed' : polled.status, engine: VIDEO_ENGINE_LABEL };
@@ -2183,20 +2191,34 @@ export default async function handler(req, res) {
     // operator's generate_video chat tool. The reply only ever says PG1
     // Motion; the model, key slot and the engine's own error text go to
     // pg1_errors under this request ID.
-    var startVideoForRequest = function (prompt, frame, tier, durationS) {
-      return startVideoJob({
+    //
+    // By default (PG1_VIDEO_GOOGLE_ASYNC unset) startVideoJob only queues the
+    // job; the render runs in its own invocation of api/video-render.mjs,
+    // triggered here by a signed server-to-server POST kept alive with
+    // waitUntil, so the reply (the "Rendering video…" card) is not held up.
+    var videoFailureReporter = function (f) {
+      reportUpstreamFailure({
+        supUrl: supUrl, supKey: supKey, route: 'GENERATE_VIDEO', reason: f.reason,
+        status: f.status === 402 ? null : f.status,
+        detail: f.detail,
+        requestId: requestTraceId, envValues: secretEnvValues(process.env)
+      });
+    };
+    var startVideoForRequest = async function (prompt, frame, tier, durationS) {
+      var started = await startVideoJob({
         env: process.env, prompt: prompt, image: frame || null, geminiKeys: geminiKeys, tier: tier, durationS: durationS,
         supUrl: supabaseUrl, supKey: supabaseKey, requestId: requestTraceId,
         fetchImpl: (u, o) => fetch(u, o),
-        onFailure: function (f) {
-          reportUpstreamFailure({
-            supUrl: supUrl, supKey: supKey, route: 'GENERATE_VIDEO', reason: f.reason,
-            status: f.status === 402 ? null : f.status,
-            detail: f.detail,
-            requestId: requestTraceId, envValues: secretEnvValues(process.env)
-          });
-        }
+        onFailure: videoFailureReporter
       });
+      if (started.ok && started.queued) {
+        var dispatched = dispatchVideoRender({
+          env: process.env, jobId: started.jobId, supUrl: supabaseUrl, supKey: supabaseKey, requestId: requestTraceId,
+          fetchImpl: (u, o) => fetch(u, o), onFailure: videoFailureReporter
+        }).catch(function () { return { ok: false }; });
+        try { waitUntil(dispatched); } catch (e) { /* outside Vercel: the promise still runs */ }
+      }
+      return started;
     };
     if (activeAction === 'CHAT' && typeof promptText === 'string') {
       var lower = promptText.toLowerCase().trim();

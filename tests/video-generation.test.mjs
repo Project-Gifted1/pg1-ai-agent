@@ -42,7 +42,7 @@ import {
   VIDEO_POLL_ERROR_LIMIT, pollDebugText
 } from '../lib/videoJobs.mjs';
 
-const MIGRATIONS = ['20261008120000_pg1_video_jobs.sql', '20261009120000_pg1_video_budget.sql']
+const MIGRATIONS = ['20261008120000_pg1_video_jobs.sql', '20261009120000_pg1_video_budget.sql', '20261010120000_pg1_video_sync_render.sql']
   .map((f) => readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), 'utf8'));
 const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -68,6 +68,10 @@ function resetEnv() {
   process.env.SUPABASE_URL = SUP_URL;
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key-0123456789';
   process.env.PG1_VIDEO_ENABLED = '1';
+  // These tests cover the background job and its GET poll, which stay
+  // behind PG1_VIDEO_GOOGLE_ASYNC=1; the synchronous render (the default)
+  // is in video-sync-render.test.mjs.
+  process.env.PG1_VIDEO_GOOGLE_ASYNC = '1';
   for (const k of ['USER_API_USER', 'USER_API_PASSS', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'ANTROPIC_API_KEY', 'SUPABASEAPI_KEY',
     'CARTESIA_API_KEY', 'REPLICATE_API_TOKEN', 'REPLICATE_KEY', 'GITHUB_TOKEN', 'GITHUB_OWNER_KEY', 'PG1_VIDEO_DAILY_CAP',
     'PG1_VIDEO_MODEL', 'PG1_CHAT_TOOL_TIMEOUT_MS', 'PG1_VIDEO_MODEL_REPLICATE', 'PG1_VIDEO_MODEL_REPLICATE_IMAGE', 'PG1_VIDEO_DAILY_BUDGET_USD']) delete process.env[k];
@@ -1109,7 +1113,9 @@ test('poll: a request error (the live 400) does not discard the job; the poll is
     assert.match(r.message, new RegExp(`attempt=${i + 1}/${VIDEO_POLL_ERROR_LIMIT}, asking again`));
   }
   const final = rows.find((r) => r.reason === 'video_google_key1_failed');
-  assert.match(final.message, /status=400 failure=request .*Multiple authentication credentials received.*attempt=3\/3/);
+  // Classed as a provider failure (Google's fault since 2026-10-03), so a
+  // start would move on to the next key; a poll still retries, then fails.
+  assert.match(final.message, /status=400 failure=provider .*Multiple authentication credentials received.*attempt=3\/3/);
 });
 
 test('poll: a good answer after a request error starts the count again; a safety refusal is still final at once', async () => {

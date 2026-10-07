@@ -149,7 +149,7 @@
       ]
     },
     {
-      "source": "/api/:path((?!chat$|errors$|errors/cleanup$|handoffs$|playground$).*)",
+      "source": "/api/:path((?!chat$|errors$|errors/cleanup$|handoffs$|playground$|video-render$).*)",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
