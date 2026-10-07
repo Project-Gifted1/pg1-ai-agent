@@ -121,6 +121,7 @@ Call `"method": "tools/list"` against `/api/mcp` for full schemas. Summary:
 | `check_domain_age` | Domain registration age via RDAP | RDAP (per-TLD server, resolved via the IANA bootstrap registry) | Always free |
 | `check_hostname_reputation` | Screen a hostname for phishing/lookalike domains | MetaMask eth-phishing-detect, synced daily | Always free (60 calls/hour without a licence key) |
 | `check_wallet_age` | When an EVM address first appeared on a chain, via on-chain transfer history | On-chain transfer history (per-chain) | Always free (60 calls/hour without a licence key) |
+| `check_ip_abuse` | Abuse confidence score and report counts for one public IP, with **your own** AbuseIPDB key | AbuseIPDB, live, with the key you send in `X-AbuseIPDB-Key` | No PG1 charge; uses your own AbuseIPDB quota (60 calls/hour without a licence key). See [Bring your own AbuseIPDB key](#bring-your-own-abuseipdb-key) |
 
 ### Important wording caveats
 
@@ -140,13 +141,14 @@ Threat indicator data (`get_threat_indicators`, `get_ioc_context`, `get_ioc_batc
 |---|---|---|
 | `SOURCE_ABUSECH_ENABLED` | **off** | abuse.ch ThreatFox / URLhaus. Not served while there is no commercial agreement with abuse.ch. |
 | `SOURCE_UNATTRIBUTED_ENABLED` | **off** | Rows with no source label, and rows from the old pipeline labelled `Sovereign-Engine-v3.2-*`, which can't be told apart by source. |
-| `SOURCE_OTX_ENABLED`, `SOURCE_NVD_ENABLED`, `SOURCE_BLOCKLIST_DE_ENABLED`, `SOURCE_ABUSEIPDB_ENABLED`, `SOURCE_PG1_SWARM_ENABLED`, `SOURCE_SCAMSNIFFER_ENABLED`, `SOURCE_OTHER_ENABLED` | on | Set to `false` to stop serving that source. |
+| `SOURCE_ABUSEIPDB_ENABLED` | **always off** (locked; the variable is ignored) | AbuseIPDB-labelled rows. Under PG1's agreement with AbuseIPDB, AbuseIPDB results only ever go to the customer whose own key fetched them (`check_ip_abuse`), never into a shared feed. |
+| `SOURCE_OTX_ENABLED`, `SOURCE_NVD_ENABLED`, `SOURCE_BLOCKLIST_DE_ENABLED`, `SOURCE_PG1_SWARM_ENABLED`, `SOURCE_SCAMSNIFFER_ENABLED`, `SOURCE_OTHER_ENABLED` | on | Set to `false` to stop serving that source. |
 
 A switched-off source's rows never appear in any response, paid or free; an indicator known only to such a source is reported as `found: false`.
 
 ## A2A (Agent2Agent Protocol)
 
-`/api/a2a` exposes the five always-free tools (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `get_usage_status`) over [A2A](https://a2a-protocol.org/latest/specification/), JSON-RPC 2.0. Paid tools are not available via A2A yet. The agent card is published at [`/.well-known/agent-card.json`](https://pg1-ai-agent.vercel.app/.well-known/agent-card.json). `message/send` (the v0.3 method name) is accepted as an alias of `SendMessage`. The `A2A-Version` header (or query param) selects the response shape — `1.0` or `0.3` (the default when omitted). Rate limits are the MCP tools' own, with the same counters: for example, without a licence key `check_wallet_sanctions` is limited to 120 calls/hour per caller (per IP), and the 121st call in the hour gets the same `rate_limited` error as `check_wallet_age`. Send the skill and its arguments as a `DataPart`:
+`/api/a2a` exposes the six always-free tools (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `get_usage_status`, and `check_ip_abuse`, which needs your own key in the `X-AbuseIPDB-Key` header exactly as on `/api/mcp`) over [A2A](https://a2a-protocol.org/latest/specification/), JSON-RPC 2.0. Paid tools are not available via A2A yet. The agent card is published at [`/.well-known/agent-card.json`](https://pg1-ai-agent.vercel.app/.well-known/agent-card.json). `message/send` (the v0.3 method name) is accepted as an alias of `SendMessage`. The `A2A-Version` header (or query param) selects the response shape — `1.0` or `0.3` (the default when omitted). Rate limits are the MCP tools' own, with the same counters: for example, without a licence key `check_wallet_sanctions` is limited to 120 calls/hour per caller (per IP), and the 121st call in the hour gets the same `rate_limited` error as `check_wallet_age`. Send the skill and its arguments as a `DataPart`:
 
 ```bash
 curl -X POST https://pg1-ai-agent.vercel.app/api/a2a \
@@ -166,11 +168,58 @@ curl -X POST https://pg1-ai-agent.vercel.app/api/a2a \
   }'
 ```
 
+## Bring your own AbuseIPDB key
+
+`check_ip_abuse` (MCP tool and A2A skill, since 1.16.0) looks up one public IPv4 or IPv6 address in [AbuseIPDB](https://www.abuseipdb.com) using **your own** AbuseIPDB API key, free or paid. It runs under an agreement with AbuseIPDB, on these terms:
+
+- **Your key only.** Send it in the `X-AbuseIPDB-Key` HTTP request header on `/api/mcp` or `/api/a2a`. It is never a tool argument (arguments end up in model context and logs). PG1 has no AbuseIPDB key of its own and never falls back to one: no header, no AbuseIPDB call, and the tool returns `isError: true` with code `abuseipdb_key_required`.
+- **Your results only**, always with attribution: every result carries `attribution: { "text": "Data from AbuseIPDB", "url": "https://www.abuseipdb.com/check/<ip>" }`.
+- **Cached per key only**: in memory for 15 minutes, keyed by `sha256(your key) + ip + max_age_in_days`. Never stored in a database, never served to anyone else. Raw keys are never stored, logged or returned.
+- **Never shared**: results never go into the threat indicator feed, `get_ioc_context`, `get_threat_indicators` or the pipeline.
+- **No PG1 charge** (no x402 payment); lookups count against your own AbuseIPDB quota. PG1's usual limit applies on top: 60 calls/hour per caller without a Gumroad licence key.
+
+Get a key from your AbuseIPDB account: <https://www.abuseipdb.com/account/api>.
+
+```bash
+curl -X POST https://pg1-ai-agent.vercel.app/api/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "X-AbuseIPDB-Key: $ABUSEIPDB_KEY" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"check_ip_abuse","arguments":{"ip":"8.8.8.8","max_age_in_days":90}}}'
+```
+
+The same call over A2A:
+
+```bash
+curl -X POST "https://pg1-ai-agent.vercel.app/api/a2a?A2A-Version=1.0" \
+  -H "Content-Type: application/json" \
+  -H "X-AbuseIPDB-Key: $ABUSEIPDB_KEY" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"messageId":"abuse-1","role":"ROLE_USER","parts":[{"data":{"skill":"check_ip_abuse","arguments":{"ip":"8.8.8.8"}}}]}}}'
+```
+
+**Arguments:** `ip` (required, exactly one public IPv4 or IPv6 address; private, reserved, documentation and malformed input is rejected as `invalid_ip` without calling AbuseIPDB) and `max_age_in_days` (optional, 1 to 365, default 90).
+
+**Result** (also as `structuredContent`; the tool declares an `outputSchema`): `ip`, `ip_version`, `max_age_in_days`, `abuse_confidence_score` (0-100), `total_reports`, `distinct_reporters`, `last_reported_at`, `country_code`, `usage_type`, `isp`, `domain`, `is_tor`, `is_whitelisted`, `cached`, `note`, `attribution`, plus the usual `reasons`, `status`, `checks` and `request_id`. `status` is `"flagged"` when `total_reports` is above zero (reason `IP_ABUSE_REPORTED`; no score threshold is applied, so choose your own on `abuse_confidence_score`), `"no_flags"` when there are no reports in the window, and `"unknown"` when the answer is incomplete. A low score means few or no reports, never that an address is harmless; PG1 never calls a result "safe" or "clean". `IP_TOR_EXIT_NODE` is informational.
+
+**Errors** (MCP `isError: true` with `code`; A2A JSON-RPC error `-32000` with `error.data.code`):
+
+| Code | When | AbuseIPDB called? |
+|---|---|---|
+| `abuseipdb_key_required` | No `X-AbuseIPDB-Key` header | No |
+| `invalid_abuseipdb_key` | AbuseIPDB answered 401/403, or the header can't be a key (spaces, control characters, over 256 characters) | Only in the first case |
+| `abuseipdb_rate_limited` | AbuseIPDB answered 429 (your AbuseIPDB quota). `retry_after` (seconds) and the `Retry-After` response header are passed through when AbuseIPDB sends them | Yes |
+| `upstream_unavailable` | AbuseIPDB 5xx, an unreadable answer, or no answer within 5 seconds | Yes |
+| `invalid_ip` | Not exactly one public IPv4/IPv6 address | No |
+| `invalid_max_age` | `max_age_in_days` not a whole number from 1 to 365 | No |
+| `rate_limited` | PG1's 60 calls/hour per caller without a licence key | No |
+
+Browsers: `X-AbuseIPDB-Key` is in the CORS `Access-Control-Allow-Headers` of `/api/mcp` and `/api/a2a` only. The chat and the playground never offer this tool.
+
 ## Ask PG1 to run a check from chat
 
 The signed-in operator can ask PG1's chat to run the read-only tools above in plain words: "check this wallet 0x…", "how old is this domain", "is this hostname a lookalike", "what do you know about CVE-2021-44228". The chat model is offered the read-only MCP tools as native functions (generated from the same tool list and schemas as `tools/list`, filtered by role), runs up to 5 of them per message (in parallel when independent), and writes the answer from the results. Each call runs the same handler an MCP client gets, never an HTTP request to `/api/mcp`.
 
-- **What it can run:** `check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `get_ioc_context`, `get_ioc_batch`, `get_cve_details`, `get_cve_batch`, `get_cve_by_product`, `get_threat_actor_profile`. Never `subscribe_alerts` or `submit_indicator` (they write), `get_threat_indicators` (a paid bulk feed, not a check) or `get_usage_status` (a caller's own quota). Nothing the chat runs writes, pays or changes state.
+- **What it can run:** `check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `get_ioc_context`, `get_ioc_batch`, `get_cve_details`, `get_cve_batch`, `get_cve_by_product`, `get_threat_actor_profile`. Never `subscribe_alerts` or `submit_indicator` (they write), `get_threat_indicators` (a paid bulk feed, not a check), `get_usage_status` (a caller's own quota) or `check_ip_abuse` (it runs only with the caller's own AbuseIPDB key from a request header; the chat has none, and PG1 has no AbuseIPDB key of its own). Nothing the chat runs writes, pays or changes state.
 - **Operator use is free**, like a licence holder: no PG1 rate limit, but every upstream source's own timeout and cache still apply, and each call has a timeout of its own (10 s). Each call is logged with a `request_id`, and an upstream failure or timeout goes to the error log under it, as on MCP. The tool list and limits are a per-role policy (`lib/chatTools.mjs`), so a future guest role gets the free `check_*` tools under the anonymous rate limit.
 - **Honest answers:** the reply quotes each result's `status` (`flagged`, `no_flags`, `unknown`) and `reasons`; `no_flags` is never "safe". A check that failed, timed out, or came back `unknown` is named at the end of the reply with its `request_id`, by code, whatever the model wrote. Tool output is untrusted data: text inside a result is reported, never followed.
 - **Trace and card:** the live trace shows one row per call ("Checked wallet age · 0x12ab…9f3c · no flags", with how long it took; failures in the error colour). Under the reply, one card per result: tool name in plain words, a status chip, key fields, reasons, checks with `data_as_of`, the `request_id`, and a Raw JSON expander with a copy button (addresses shortened in the title, in full in the expander).
@@ -185,7 +234,7 @@ The signed-in operator can ask PG1's chat to run the read-only tools above in pl
 Every one of the 14 MCP tools and the 5 free A2A skills adds four fields alongside its existing output — additive only, nothing existing is renamed or repurposed:
 
 - **`reasons`**: `[{ code, message }]`. Zero or more machine-readable codes from the permanent list below. Empty when nothing is flagged. Codes are only ever added, never removed or renamed.
-- **`status`**: `"flagged"` when `reasons` contains a genuine warning code; otherwise `"unknown"` when `reasons` contains an incomplete code or any source needed for the answer timed out, errored, or was skipped (never reported as a false-clean `"no_flags"`); otherwise `"no_flags"`. Two kinds of code are listed in `reasons` but are not warnings. **Informational** codes (currently only `WALLET_DELEGATED`) report a fact and never affect `status`. **Incomplete** codes (currently only `WALLET_AGE_PARTIAL`) mean a check didn't complete, so they make `status` `"unknown"`, not `"flagged"`. For `check_wallet_age`, that means: `"flagged"` only with `WALLET_NO_HISTORY`; otherwise `"unknown"` if anything didn't complete (`WALLET_AGE_PARTIAL`, or `delegated: null`); otherwise `"no_flags"`. (`subscribe_alerts` and `submit_indicator` keep their own pre-existing `status` field, which means a submission lifecycle state, not this honest-status value — they gain `reasons`/`checks`/`request_id` only.)
+- **`status`**: `"flagged"` when `reasons` contains a genuine warning code; otherwise `"unknown"` when `reasons` contains an incomplete code or any source needed for the answer timed out, errored, or was skipped (never reported as a false-clean `"no_flags"`); otherwise `"no_flags"`. Two kinds of code are listed in `reasons` but are not warnings. **Informational** codes (`WALLET_DELEGATED`, `IP_TOR_EXIT_NODE`) report a fact and never affect `status`. **Incomplete** codes (currently only `WALLET_AGE_PARTIAL`) mean a check didn't complete, so they make `status` `"unknown"`, not `"flagged"`. For `check_wallet_age`, that means: `"flagged"` only with `WALLET_NO_HISTORY`; otherwise `"unknown"` if anything didn't complete (`WALLET_AGE_PARTIAL`, or `delegated: null`); otherwise `"no_flags"`. (`subscribe_alerts` and `submit_indicator` keep their own pre-existing `status` field, which means a submission lifecycle state, not this honest-status value — they gain `reasons`/`checks`/`request_id` only.)
 - **`checks`**: `[{ source, result, checked_at, data_as_of }]` — one entry per data source consulted for this call. `result` is one of `"ok" | "timeout" | "error" | "skipped"`. `source` is always a generic label (e.g. `"sanctions list"`, `"domain registration records"`, `"on-chain transfer history"`) — never a vendor/provider name. `checked_at` is when this request ran the check; `data_as_of` is how current the underlying data is, or `null` when not applicable. For `check_wallet_age`, a cached answer's `"on-chain transfer history"` entry has `data_as_of` set to when that age was originally looked up (a fresh lookup has `null`), and the `"on-chain code"` entry is the live delegation check.
 - **`request_id`**: a UUID identifying this exact call, also sent as the `X-Request-Id` response header on `/api/mcp` and `/api/a2a`. It is inside the tool result (and `structuredContent`) or, for a JSON-RPC error, inside `error.data` — never at the top level of the JSON-RPC envelope, which holds only `jsonrpc`, `id` and `result`/`error`. If the call fails and gets written to the server error log, the same `request_id` is attached to that log entry.
 
@@ -204,6 +253,8 @@ Every one of the 14 MCP tools and the 5 free A2A skills adds four fields alongsi
 | `CVE_KNOWN_EXPLOITED_KEV` | CVE is on the known exploited vulnerabilities catalog. |
 | `IOC_FOUND_IN_THREAT_FEED` | Indicator has at least one matching record in the threat indicator feed. |
 | `WALLET_DELEGATED` | Address currently has an EIP-7702 delegation on this chain: its code points to a delegate contract. *(Informational: never changes `status` on its own.)* |
+| `IP_ABUSE_REPORTED` | IP address has at least one abuse report in the reporting window checked. |
+| `IP_TOR_EXIT_NODE` | IP address is a Tor exit node. *(Informational: never changes `status` on its own.)* |
 
 Source of truth: `lib/reasonCodes.mjs`.
 
@@ -223,6 +274,7 @@ Every MCP tool that can flag something has three fixed, made-up fixture inputs t
 - **Every value is reserved or synthetic**, so none can belong to a real target: `.invalid` domains (RFC 2606/6761), documentation IP ranges (RFC 5737 `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`; RFC 3849 `2001:db8::/32`), `CVE-0000-*` ids (the CVE programme started in 1999) and `0x` addresses that spell `pg1-test-fixture` in hex.
 - `check_wallet_age` has no age threshold. Its FLAGGED fixture is a wallet with no history (`found: false`, `WALLET_NO_HISTORY`) and its CLEAN fixture is an old wallet with a fixed `first_seen`. Its DELEGATED fixture is an old wallet with an EIP-7702 delegation: `delegated: true`, a synthetic `delegate_address` (also spelling `pg1-test-fixture` in hex) and reason `WALLET_DELEGATED` with `status: "no_flags"`, because that code is informational. Like a real answer, it has two `checks` entries (transfer history, then the delegation check), both `source: "fixture"` and `result: "ok"`. The other fixtures report `delegated: false`. `chain` is optional and is echoed back; an unsupported chain is still an `invalid_chain` error.
 
+- `check_ip_abuse` uses the documentation IPv4 addresses, which its live path rejects as `invalid_ip` (they are reserved, never public), so a fixture can never become a real lookup. Fixtures are answered before the key check: they need no `X-AbuseIPDB-Key` header and make no upstream call. Their data is synthetic and their `attribution.text` says so. `max_age_in_days` is optional and echoed back.
 ### Fixture table
 
 | Tool | Fixture | Arguments | Expected result |
@@ -255,10 +307,13 @@ Every MCP tool that can flag something has three fixed, made-up fixture inputs t
 | `get_cve_by_product` | FLAGGED | `{"vendor":"pg1-test.invalid","product":"flagged"}` | one KEV-listed CVE, status "flagged", reason CVE_KNOWN_EXPLOITED_KEV (free, no payment) |
 | `get_cve_by_product` | CLEAN | `{"vendor":"pg1-test.invalid","product":"clean"}` | total_found 0, status "no_flags" |
 | `get_cve_by_product` | UNKNOWN | `{"vendor":"pg1-test.invalid","product":"unknown"}` | exploit-score and KEV checks "error", status "unknown" |
+| `check_ip_abuse` | FLAGGED | `{"ip":"192.0.2.1"}` | abuse_confidence_score 100, total_reports 42, status "flagged", reason IP_ABUSE_REPORTED (synthetic data; no key header needed, no upstream call) |
+| `check_ip_abuse` | CLEAN | `{"ip":"198.51.100.1"}` | abuse_confidence_score 0, total_reports 0, status "no_flags" (no reports, which is not a verdict on the address) |
+| `check_ip_abuse` | UNKNOWN | `{"ip":"203.0.113.1"}` | isError: true, code "upstream_unavailable", status "unknown" (what a real lookup timeout returns) |
 
 No fixtures exist for `get_threat_indicators` (a bulk feed with no target input), `get_threat_actor_profile` and `get_usage_status` (they have no reason code to flag with), or `subscribe_alerts` and `submit_indicator` (write actions whose `status` is a lifecycle state, not a verdict).
 
-**A2A:** the four fixture-bearing free skills (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`) accept the same fixtures on `/api/a2a`. A result comes back as a completed Task. An isError-style UNKNOWN comes back as JSON-RPC error `-32000` with the details in `error.data`. A 503-style UNKNOWN comes back as HTTP 503 with JSON-RPC error `-32010`. These are the same shapes a real failure produces on that endpoint.
+**A2A:** the five fixture-bearing free skills (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `check_ip_abuse`) accept the same fixtures on `/api/a2a`. A result comes back as a completed Task. An isError-style UNKNOWN comes back as JSON-RPC error `-32000` with the details in `error.data`. A 503-style UNKNOWN comes back as HTTP 503 with JSON-RPC error `-32010`. These are the same shapes a real failure produces on that endpoint.
 
 **Out of scope:** the REST endpoints (`/api/ioc` and `/api/ioc/context`) have no fixtures. Fixture values sent there are looked up like any other value.
 

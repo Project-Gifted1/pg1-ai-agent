@@ -156,7 +156,23 @@
       ]
     },
     {
-      "source": "/api/:path((?!chat$|errors$|errors/cleanup$|handoffs$|playground$|video-render$).*)",
+      "source": "/api/mcp",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
+        { "key": "Access-Control-Allow-Headers", "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier, X-AbuseIPDB-Key" }
+      ]
+    },
+    {
+      "source": "/api/a2a",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
+        { "key": "Access-Control-Allow-Headers", "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, x-api-key, A2A-Version, X-AbuseIPDB-Key" }
+      ]
+    },
+    {
+      "source": "/api/:path((?!chat$|errors$|errors/cleanup$|handoffs$|playground$|video-render$|mcp$|a2a$).*)",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },

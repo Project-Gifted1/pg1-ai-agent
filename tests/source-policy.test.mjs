@@ -81,14 +81,17 @@ const OTHER_SOURCE_ROWS = [
   row('NVD', 'CVE-2026-0001', 'CVE'),
   row('NVD-CVE-v2.0-Gateway', 'CVE-2026-0002', 'CVE'),
   row('Blocklist.de', '198.51.100.2', 'IPv4'),
-  row('AbuseIPDB', '198.51.100.3', 'IPv4'),
   row('PG1-Swarm-w1-tee', 'swarm.example', 'domain'),
   row('ScamSniffer', 'drainer.example', 'domain'),
   row('test-source', 'other.example', 'domain')
 ];
-const ALL_ROWS = [...ABUSECH_ROWS, ...UNATTRIBUTED_ROWS, ...OTHER_SOURCE_ROWS];
+// AbuseIPDB rows are never served (1.16.0): the source is locked off,
+// because AbuseIPDB results may only go to the customer whose own key fetched
+// them (check_ip_abuse), never into a shared feed.
+const ABUSEIPDB_ROWS = [row('AbuseIPDB', '198.51.100.3', 'IPv4')];
+const ALL_ROWS = [...ABUSECH_ROWS, ...UNATTRIBUTED_ROWS, ...ABUSEIPDB_ROWS, ...OTHER_SOURCE_ROWS];
 const ABUSECH_ONLY_VALUES = ABUSECH_ROWS.map((r) => r.value).filter((v) => v !== MIXED);
-const HIDDEN_VALUES = [...ABUSECH_ONLY_VALUES, ...UNATTRIBUTED_ROWS.map((r) => r.value)];
+const HIDDEN_VALUES = [...ABUSECH_ONLY_VALUES, ...UNATTRIBUTED_ROWS.map((r) => r.value), ...ABUSEIPDB_ROWS.map((r) => r.value)];
 // Strings that only a served abuse.ch row could put in a response.
 const ABUSECH_MARKERS = [...ABUSECH_ONLY_VALUES, ...ABUSECH_ROWS.flatMap((r) => [r.malware_family, r.tags[0]]), 'ThreatFox', 'URLhaus', 'abuse.ch'];
 const UNIQUE_OTHER_VALUES = OTHER_SOURCE_ROWS.map((r) => r.value).filter((v) => v !== MIXED);
@@ -383,8 +386,31 @@ test('switch values: defaults, explicit on/off, unknown values keep the default'
   for (const keep of ['', 'maybe', 'enabled']) assert.equal(policy.isSourceEnabled('abusech', { SOURCE_ABUSECH_ENABLED: keep }), false, keep);
   for (const off of ['false', '0', 'no', 'off']) assert.equal(policy.isSourceEnabled('otx', { SOURCE_OTX_ENABLED: off }), false, off);
   assert.equal(policy.isSourceEnabled('no-such-source', {}), false);
-  assert.deepEqual(policy.disabledSourceQueryParams(Object.fromEntries(
-    [...policy.THREAT_SOURCES, policy.OTHER_SOURCE].map((s) => [s.env, 'true']))), []);
+  // Every switch on: only the locked AbuseIPDB source is still filtered out.
+  const [param] = policy.disabledSourceQueryParams(Object.fromEntries(
+    [...policy.THREAT_SOURCES, policy.OTHER_SOURCE].map((s) => [s.env, 'true'])));
+  assert.equal(decodeURIComponent(param), 'or=(verification_source.is.null,and(verification_source.not.ilike.*abuseipdb*))');
+});
+
+test('AbuseIPDB rows are never served: the source is locked off and SOURCE_ABUSEIPDB_ENABLED cannot turn it on', async () => {
+  for (const on of [undefined, 'true', '1', 'yes', 'on']) {
+    const env = on === undefined ? {} : { SOURCE_ABUSEIPDB_ENABLED: on };
+    assert.equal(policy.isSourceEnabled('abuseipdb', env), false, String(on));
+  }
+  process.env.SOURCE_ABUSEIPDB_ENABLED = 'true';
+  try {
+    for (const honorSourceFilter of [false, true]) {
+      installFetch({ honorSourceFilter });
+      const bundle = await callMcp('get_threat_indicators', { limit: 1000 });
+      assert.doesNotMatch(JSON.stringify(bundle), /198\.51\.100\.3\b|AbuseIPDB/i);
+      const ctx = await callMcp('get_ioc_context', { value: '198.51.100.3' });
+      assert.equal(ctx.found, false);
+      const res = await getIocBundle({ 'x-api-key': 'valid-license' });
+      assert.ok(!res.rawBody.includes('198.51.100.3'));
+    }
+  } finally {
+    delete process.env.SOURCE_ABUSEIPDB_ENABLED;
+  }
 });
 
 test('with unattributed rows switched on, NULL labels pass the query filter but abuse.ch still does not', () => {
@@ -415,7 +441,8 @@ const DESCRIPTION_EDITS = [
 ];
 
 test('tool definitions differ from 1.14.0 only by the three listed description edits', () => {
-  const reverted = TOOLS.map((tool) => {
+  // check_ip_abuse is the 1.16.0 addition; the 14 tools before it are pinned.
+  const reverted = TOOLS.filter((tool) => tool.name !== 'check_ip_abuse').map((tool) => {
     const edit = DESCRIPTION_EDITS.find(([name]) => name === tool.name);
     if (!edit) return tool;
     assert.ok(tool.description.includes(edit[2]), tool.name);
@@ -449,15 +476,15 @@ test('no public surface claims abuse.ch / ThreatFox / URLhaus data any more', ()
   assert.doesNotMatch(chat, NAMES);
 });
 
-test('one version bump: 1.15.0 everywhere the server version is published', async () => {
+test('one version bump: 1.16.0 everywhere the server version is published', async () => {
   const read = (rel) => JSON.parse(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
-  assert.equal(read('server.json').version, '1.15.0');
-  assert.equal(read('public/.well-known/agent-card.json').version, '1.15.0');
-  assert.equal(read('public/openapi.json').info.version, '1.15.0');
+  assert.equal(read('server.json').version, '1.16.0');
+  assert.equal(read('public/.well-known/agent-card.json').version, '1.16.0');
+  assert.equal(read('public/openapi.json').info.version, '1.16.0');
   const res = makeRes();
   await mcpHandler({ method: 'POST', headers: {}, body: { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} } }, res);
-  assert.equal(res.body.result.serverInfo.version, '1.15.0');
+  assert.equal(res.body.result.serverInfo.version, '1.16.0');
   const get = makeRes();
   await mcpHandler({ method: 'GET', headers: {} }, get);
-  assert.equal(get.body.version, '1.15.0');
+  assert.equal(get.body.version, '1.16.0');
 });

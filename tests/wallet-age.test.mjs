@@ -708,7 +708,9 @@ const WALLET_AGE_DELEGATION_OUTPUT_PROPERTIES = {
 const SCHEMA_TOOLS_WITH_NEW_META = new Set(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age']);
 
 test('check_wallet_age: is the 14th tool, and the 13 pre-existing tool definitions are unchanged except the agreed optional outputSchema additions', () => {
-  assert.equal(TOOLS.length, 14);
+  // 15 since 1.16.0 (check_ip_abuse); check_wallet_age is still the 14th.
+  assert.equal(TOOLS.length, 15);
+  assert.equal(TOOLS[13].name, 'check_wallet_age');
   const snapshotPath = path.join(__dirname, 'fixtures', 'existing-13-tools-snapshot.json');
   const snapshot = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
   assert.equal(snapshot.length, 13);
@@ -1113,8 +1115,10 @@ test('check_wallet_age: a partial (internal transfers not checked in time) old w
 });
 
 test('computeStatus: informational reason codes never flag on their own', () => {
-  assert.deepEqual([...INFORMATIONAL_REASON_CODES], ['WALLET_DELEGATED']);
+  assert.deepEqual([...INFORMATIONAL_REASON_CODES], ['WALLET_DELEGATED', 'IP_TOR_EXIT_NODE']);
   const ok = [{ result: 'ok' }];
+  assert.equal(computeStatus([{ code: 'IP_TOR_EXIT_NODE' }], ok), 'no_flags');
+  assert.equal(computeStatus([{ code: 'IP_TOR_EXIT_NODE' }, { code: 'IP_ABUSE_REPORTED' }], ok), 'flagged');
   assert.equal(computeStatus([{ code: 'WALLET_DELEGATED' }], ok), 'no_flags');
   assert.equal(computeStatus([{ code: 'WALLET_DELEGATED' }], [...ok, { result: 'timeout' }]), 'unknown');
   assert.equal(computeStatus([{ code: 'WALLET_DELEGATED' }, { code: 'WALLET_NO_HISTORY' }], ok), 'flagged');

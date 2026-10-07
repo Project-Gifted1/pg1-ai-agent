@@ -65,7 +65,11 @@ test('the open "/api/*" wildcard rule no longer matches /api/errors or /api/erro
 
   // Sanity check: other unrelated API routes must still fall through to the
   // open wildcard rule (this fix must not accidentally lock down everything).
-  assert.equal(innerPattern.test('mcp'), true);
+  // /api/mcp and /api/a2a have their own open rules (1.16.0), which add
+  // X-AbuseIPDB-Key to the allowed headers; the wildcard no longer covers them.
+  assert.equal(innerPattern.test('mcp'), false);
+  assert.equal(innerPattern.test('a2a'), false);
+  assert.equal(innerPattern.test('ioc'), true);
   assert.equal(innerPattern.test('heartbeat/pulse'), true);
 });
 

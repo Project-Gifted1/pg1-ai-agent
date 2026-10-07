@@ -1,8 +1,8 @@
 {
   "protocolVersion": "0.3.0",
   "name": "PG1 Sovereign Threat Intelligence",
-  "description": "Threat intelligence agent for AI agents and security tooling: wallet sanctions screening, domain age lookups, hostname/phishing reputation checks, wallet age/history checks, and free-tier usage status. Paid tools (bulk indicator feeds, CVE enrichment, threat actor dossiers) are available via the companion MCP server at /api/mcp, not via A2A yet.",
-  "version": "1.15.0",
+  "description": "Threat intelligence agent for AI agents and security tooling: wallet sanctions screening, domain age lookups, hostname/phishing reputation checks, wallet age/history checks, free-tier usage status, and bring-your-own-key AbuseIPDB IP lookups (your own AbuseIPDB key in the X-AbuseIPDB-Key header). Paid tools (bulk indicator feeds, CVE enrichment, threat actor dossiers) are available via the companion MCP server at /api/mcp, not via A2A yet.",
+  "version": "1.16.0",
   "documentationUrl": "https://pg1-ai-agent.vercel.app/docs/crypto-alert-bot",
   "url": "https://pg1-ai-agent.vercel.app/api/a2a",
   "preferredTransport": "JSONRPC",
@@ -22,6 +22,14 @@
     "streaming": false,
     "pushNotifications": false,
     "extendedAgentCard": false
+  },
+  "securitySchemes": {
+    "abuseipdbKey": {
+      "type": "apiKey",
+      "in": "header",
+      "name": "X-AbuseIPDB-Key",
+      "description": "Your own AbuseIPDB API key (free or paid), used only by the check_ip_abuse skill and only for your own request. PG1 has no AbuseIPDB key of its own. Never send it as a skill argument."
+    }
   },
   "defaultInputModes": ["application/json"],
   "defaultOutputModes": ["application/json"],
@@ -61,6 +69,16 @@
       "examples": ["When did wallet 0x1234...abcd first appear on Base?"],
       "inputModes": ["application/json"],
       "outputModes": ["application/json"]
+    },
+    {
+      "id": "check_ip_abuse",
+      "name": "check_ip_abuse",
+      "description": "Bring your own AbuseIPDB key: looks up one public IPv4 or IPv6 address in AbuseIPDB with YOUR OWN AbuseIPDB API key, sent in the X-AbuseIPDB-Key request header (never as a skill argument). Returns abuse_confidence_score, total_reports, distinct_reporters, last_reported_at, country_code, usage_type, isp, domain, is_tor and is_whitelisted, with attribution (Data from AbuseIPDB, https://www.abuseipdb.com/check/<ip>). No PG1 charge: it uses your own AbuseIPDB quota; 60 calls/hour per caller without a Gumroad license key. Without the header it returns abuseipdb_key_required and AbuseIPDB is not contacted. A low score means few or no reports, never a claim that an address is harmless.",
+      "tags": ["threat-intelligence", "ip", "abuse-reports", "bring-your-own-key"],
+      "examples": ["How many abuse reports does 8.8.8.8 have in AbuseIPDB (with my own key)?"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"],
+      "security": [{ "abuseipdbKey": [] }]
     },
     {
       "id": "get_usage_status",

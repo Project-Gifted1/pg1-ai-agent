@@ -30,7 +30,7 @@ __setX402FacilitatorForTests(() => {
   throw new Error('facilitator spy: payment gate reached');
 });
 
-const STRUCTURED_CONTENT_TOOLS = new Set(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age']);
+const STRUCTURED_CONTENT_TOOLS = new Set(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_ip_abuse']);
 const SERVICE_UNAVAILABLE_MCP_CODES = { check_wallet_sanctions: -32003, check_hostname_reputation: -32003, get_ioc_context: -32603, get_ioc_batch: -32003 };
 
 function makeRes() {

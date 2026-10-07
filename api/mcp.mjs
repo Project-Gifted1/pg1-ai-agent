@@ -3,6 +3,18 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
+ * Version: 1.16.0 — ADD: new free tool check_ip_abuse (also an A2A skill),
+ *          a bring-your-own-key AbuseIPDB lookup (lib/abuseIpdb.mjs). It
+ *          runs only with the caller's own AbuseIPDB key, sent in the
+ *          X-AbuseIPDB-Key request header (never a tool argument); PG1 has
+ *          no AbuseIPDB key and never falls back to one. Results go only to
+ *          that caller, with attribution, cached in memory per key
+ *          (sha256(key) + ip + max_age_in_days, 15 minutes), and are never
+ *          written anywhere. No x402 charge; the usual 60/hour anonymous
+ *          limit. The 14 pre-existing tools' names, descriptions and
+ *          schemas are unchanged (tests/fixtures/existing-14-tools-snapshot.json).
+ *          SOURCE_ABUSEIPDB_ENABLED (lib/sourcePolicy.mjs) now defaults off,
+ *          so no AbuseIPDB-labelled telemetry row is served to anyone.
  * Version: 1.15.0 — LICENSING: abuse.ch ThreatFox / URLhaus data is no
  *          longer served. Every threat_ioc_telemetry read goes through
  *          lib/sourcePolicy.mjs, which drops rows from switched-off sources
@@ -90,7 +102,7 @@ import { encodePaymentRequiredHeader, encodePaymentResponseHeader, decodePayment
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT } from '../lib/freeTier.mjs';
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
-import { X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX } from '../lib/x402Config.mjs';
+import { X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX, IP_ABUSE_RATE_LIMIT_MAX } from '../lib/x402Config.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { detectIndicatorType, lookupIocContext } from '../lib/iocContext.mjs';
 import { fetchThreatTelemetry } from '../lib/sourcePolicy.mjs';
@@ -103,6 +115,7 @@ import { reason } from '../lib/reasonCodes.mjs';
 import { buildCheck, withResponseMeta, withActionResponseMeta, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
 import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES, FIXTURE_DELEGATE_ADDRESS, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, FIXTURE_DOMAIN_CLEAN_REGISTERED, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
 import { invalidInput, invalidInputMessage, withFixIt, formatFixIt } from '../lib/invalidInput.mjs';
+import { ABUSEIPDB_KEY_HEADER, ABUSEIPDB_ATTRIBUTION_TEXT, ABUSEIPDB_TIMEOUT_MS, MAX_AGE_DAYS_DEFAULT, abuseIpdbCheckUrlFor, keyRequiredError, readCustomerKey, normalizePublicIp, normalizeMaxAgeDays, getCachedLookup, setCachedLookup, fetchAbuseIpdbCheck } from '../lib/abuseIpdb.mjs';
 
 export const config = { maxDuration: 30 };
 
@@ -461,6 +474,50 @@ export const TOOLS = [
         ...TEST_FIXTURE_OUTPUT_PROPERTIES
       },
       required: ['address', 'chain', 'found', 'first_seen', 'age_days', 'first_seen_block', 'first_direction', 'is_contract', 'source', 'cached']
+    }
+  },
+  {
+    name: 'check_ip_abuse',
+    description: 'PG1 Sovereign Threat Intelligence: looks up one public IPv4 or IPv6 address in AbuseIPDB using YOUR OWN AbuseIPDB API key (free or paid), and returns its abuse confidence score and report counts with attribution to AbuseIPDB. BRING YOUR OWN KEY: send the key in the X-AbuseIPDB-Key HTTP request header on /api/mcp or /api/a2a - never as a tool argument. PG1 has no AbuseIPDB key of its own; without the header the call returns an MCP tool error (isError: true, code abuseipdb_key_required) and AbuseIPDB is not contacted. No PG1 payment required - lookups count against your own AbuseIPDB quota. SIBLING DIFFERENTIATION: Use for a live AbuseIPDB report lookup on a single IP only. Do NOT use for PG1\'s own threat-feed lookups (use get_ioc_context), hostnames (use check_hostname_reputation) or domains (use check_domain_age). BEHAVIOR: Returns { ip, abuse_confidence_score, total_reports, distinct_reporters, last_reported_at, country_code, usage_type, isp, domain, is_tor, is_whitelisted, attribution }. A low abuse_confidence_score means few or no reports were received in the window, not that the address is harmless - this tool never returns "safe" or "clean". Results are returned only to the caller whose key was used, are never stored or shared, and are cached in memory for 15 minutes per key. ERRORS (isError: true): abuseipdb_key_required, invalid_abuseipdb_key (AbuseIPDB rejected the key), abuseipdb_rate_limited (your AbuseIPDB quota; retry_after passed through when AbuseIPDB sends it), upstream_unavailable (AbuseIPDB error or timeout), invalid_ip (not exactly one public address: private, reserved or malformed input is rejected without calling AbuseIPDB), invalid_max_age. Rate-limited to 60 calls/hour per caller when unauthenticated; a valid Gumroad license key (X-API-KEY header) exempts the limit.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ip: { type: 'string', description: "Mandatory single public IPv4 or IPv6 address, e.g. '8.8.8.8' or '2001:4860:4860::8888'. No port, CIDR range, brackets or zone id." },
+        max_age_in_days: { type: ['integer', 'null'], minimum: 1, maximum: 365, description: 'Optional reporting window in days, 1 to 365. Only reports from this many days back are counted. Defaults to 90.' }
+      },
+      required: ['ip']
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        ip: { type: 'string', description: 'The address checked (IPv6 in canonical compressed lowercase form).' },
+        ip_version: { type: 'integer', enum: [4, 6] },
+        max_age_in_days: { type: 'integer', minimum: 1, maximum: 365, description: 'The reporting window used.' },
+        abuse_confidence_score: { type: ['integer', 'null'], minimum: 0, maximum: 100, description: 'AbuseIPDB abuse confidence score, 0-100. A low score means few or no reports, not that the address is harmless.' },
+        total_reports: { type: ['integer', 'null'], description: 'Abuse reports received in the window.' },
+        distinct_reporters: { type: ['integer', 'null'], description: 'Distinct users who reported the address in the window.' },
+        last_reported_at: { type: ['string', 'null'], description: 'ISO timestamp of the most recent report, or null when there is none.' },
+        country_code: { type: ['string', 'null'] },
+        usage_type: { type: ['string', 'null'] },
+        isp: { type: ['string', 'null'] },
+        domain: { type: ['string', 'null'] },
+        is_tor: { type: ['boolean', 'null'] },
+        is_whitelisted: { type: ['boolean', 'null'] },
+        cached: { type: 'boolean', description: 'true when served from the 15-minute in-memory cache for your own key.' },
+        note: { type: 'string' },
+        attribution: {
+          type: 'object',
+          description: 'Always present: the data source and a link to its page for this address.',
+          properties: {
+            text: { type: 'string' },
+            url: { type: 'string' }
+          },
+          required: ['text', 'url']
+        },
+        ...RESPONSE_META_OUTPUT_PROPERTIES,
+        ...TEST_FIXTURE_OUTPUT_PROPERTIES
+      },
+      required: ['ip', 'ip_version', 'max_age_in_days', 'abuse_confidence_score', 'total_reports', 'distinct_reporters', 'last_reported_at', 'country_code', 'usage_type', 'isp', 'domain', 'is_tor', 'is_whitelisted', 'cached', 'attribution']
     }
   }
 ];
@@ -2335,6 +2392,86 @@ export async function handleCheckWalletAge(args, identifier, licenseKey, { licen
 }
 
 // ---------------------------------------------------------------------
+// check_ip_abuse — free, bring-your-own AbuseIPDB key (lib/abuseIpdb.mjs)
+// ---------------------------------------------------------------------
+// The key comes only from the caller's X-AbuseIPDB-Key header (the
+// dispatchers read it and pass it in as `abuseIpdbKey`); there is no
+// environment key and no fallback. This tool is deliberately not in
+// READ_ONLY_TOOL_RUNNERS: the chat and the playground have no customer key
+// to send, so they never reach it.
+
+const IP_ABUSE_SOURCE = 'IP abuse reports';
+const IP_ABUSE_RATE_LIMIT_WINDOW_MS = RATE_LIMIT_WINDOW_MS;
+const ipAbuseRateLimitState = new Map();
+
+function enforceIpAbuseRateLimit(identifier) {
+  const now = Date.now();
+  const key = identifier || 'unknown';
+  const state = ipAbuseRateLimitState.get(key);
+  if (!state || (now - state.windowStart) >= IP_ABUSE_RATE_LIMIT_WINDOW_MS) {
+    ipAbuseRateLimitState.set(key, { count: 1, windowStart: now });
+    return;
+  }
+  if (state.count >= IP_ABUSE_RATE_LIMIT_MAX) {
+    const retryAfterMin = Math.ceil((IP_ABUSE_RATE_LIMIT_WINDOW_MS - (now - state.windowStart)) / 60000);
+    throw new RateLimitedError(
+      `check_ip_abuse is limited to ${IP_ABUSE_RATE_LIMIT_MAX} calls/hour per caller. Retry in about ${retryAfterMin} minute(s).`
+    );
+  }
+  state.count += 1;
+}
+
+// `fields` are the renamed upstream fields (lib/abuseIpdb.mjs pickFields).
+// IP_ABUSE_REPORTED is the fact that the report count is above zero - no
+// score threshold is invented here. A response missing the score or the
+// report count is "unknown", never "no_flags".
+function buildIpAbuseResult(ip, version, maxAgeDays, fields, { cached = false, fetchedAt = null, attributionText = ABUSEIPDB_ATTRIBUTION_TEXT } = {}) {
+  const complete = fields.abuse_confidence_score !== null && fields.total_reports !== null;
+  const reasons = [];
+  if (fields.total_reports > 0) {
+    reasons.push(reason('IP_ABUSE_REPORTED', `IP address has ${fields.total_reports} abuse report(s) from ${fields.distinct_reporters ?? 'an unknown number of'} distinct reporter(s) in the last ${maxAgeDays} day(s).`));
+  }
+  if (fields.is_tor === true) reasons.push(reason('IP_TOR_EXIT_NODE'));
+  const note = fields.total_reports === 0
+    ? `No abuse reports for this address in the last ${maxAgeDays} day(s). That means no one reported it in that window, not that the address is harmless.`
+    : 'abuse_confidence_score is AbuseIPDB\'s 0-100 confidence that the address is abusive, based on reports in the window. A low score means few or no reports, not that the address is harmless.';
+  return withResponseMeta({
+    ip,
+    ip_version: version,
+    max_age_in_days: maxAgeDays,
+    ...fields,
+    cached,
+    note,
+    attribution: { text: attributionText, url: abuseIpdbCheckUrlFor(ip) }
+  }, {
+    reasons,
+    checks: [buildCheck(IP_ABUSE_SOURCE, complete ? 'ok' : 'error', { dataAsOf: fetchedAt })]
+  });
+}
+
+export async function handleCheckIpAbuse(args, { identifier, licenseKey, licensed: callerLicensed = false, abuseIpdbKey } = {}) {
+  if (!abuseIpdbKey) throw keyRequiredError();
+  const { ip, version } = normalizePublicIp(args?.ip);
+  const maxAgeDays = normalizeMaxAgeDays(args?.max_age_in_days);
+
+  let licensed = callerLicensed === true;
+  if (!licensed && licenseKey) {
+    const check = await verifyGumroadLicense(licenseKey).catch(() => ({ valid: false }));
+    licensed = !!check.valid;
+  }
+  if (!licensed) {
+    enforceIpAbuseRateLimit(identifier);
+  }
+
+  const cached = getCachedLookup(abuseIpdbKey, ip, maxAgeDays);
+  if (cached) return buildIpAbuseResult(ip, version, maxAgeDays, cached.fields, { cached: true, fetchedAt: cached.fetchedAt });
+
+  const fields = await fetchAbuseIpdbCheck(abuseIpdbKey, ip, maxAgeDays);
+  setCachedLookup(abuseIpdbKey, ip, maxAgeDays, { fields, fetchedAt: new Date().toISOString() });
+  return buildIpAbuseResult(ip, version, maxAgeDays, fields);
+}
+
+// ---------------------------------------------------------------------
 // Integration test fixtures (issue #215 part B) — see lib/fixtures.mjs
 // ---------------------------------------------------------------------
 // resolveTestFixture is called by the MCP and A2A dispatchers straight after
@@ -2469,6 +2606,19 @@ function buildFixtureOutcome(fixture, callerArgs) {
       return result(r);
     }
 
+    case 'check_ip_abuse': {
+      // Synthetic data only: no key needed, AbuseIPDB never contacted, and
+      // the attribution says the data is not AbuseIPDB's.
+      if (kind === 'UNKNOWN') {
+        return { type: 'tool_error', code: 'upstream_unavailable', message: `AbuseIPDB lookup timed out after ${ABUSEIPDB_TIMEOUT_MS}ms.`, checks: [fixtureCheck('timeout')] };
+      }
+      const days = callerArgs.max_age_in_days ?? MAX_AGE_DAYS_DEFAULT;
+      const fields = kind === 'FLAGGED'
+        ? { abuse_confidence_score: 100, total_reports: 42, distinct_reporters: 17, last_reported_at: FIXTURE_DATA_AS_OF, country_code: 'ZZ', usage_type: 'PG1 test fixture', isp: 'PG1 Test Fixture ISP', domain: 'pg1-test.invalid', is_tor: false, is_whitelisted: false }
+        : { abuse_confidence_score: 0, total_reports: 0, distinct_reporters: 0, last_reported_at: null, country_code: 'ZZ', usage_type: 'PG1 test fixture', isp: 'PG1 Test Fixture ISP', domain: 'pg1-test.invalid', is_tor: false, is_whitelisted: false };
+      return result(buildIpAbuseResult(args.ip, 4, days, fields, { attributionText: 'PG1 test fixture: synthetic data, not from AbuseIPDB' }));
+    }
+
     case 'get_ioc_context':
     case 'get_ioc_batch': {
       const values = tool === 'get_ioc_context' ? [args.value.trim()] : args.values.map((v) => v.trim());
@@ -2572,7 +2722,7 @@ export function resolveTestFixture(toolName, args) {
   return outcome;
 }
 
-const STRUCTURED_CONTENT_TOOLS = new Set(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age']);
+const STRUCTURED_CONTENT_TOOLS = new Set(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_ip_abuse']);
 
 function sendMcpFixtureResponse(res, toolName, outcome, requestId, pg1RequestId) {
   if (outcome.type === 'service_unavailable') {
@@ -2899,7 +3049,7 @@ const STANDARD_TOOL_HANDLERS = {
 // lookup result — not applied uniformly before the tool runs, like every
 // other STANDARD_TOOL_HANDLERS entry.
 
-const FREE_TOOLS = new Set(['get_usage_status', 'check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age']);
+const FREE_TOOLS = new Set(['get_usage_status', 'check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_ip_abuse']);
 
 // One entry point per read-only tool, used by tools/call for the free tools
 // below and by the chat's tool loop (lib/chatTools.mjs) for every read-only
@@ -3007,7 +3157,8 @@ export const TOOL_SOURCE_LABELS = {
   check_wallet_sanctions: 'sanctions list',
   check_domain_age: 'domain registration records',
   check_hostname_reputation: 'phishing domain list',
-  check_wallet_age: 'on-chain transfer history'
+  check_wallet_age: 'on-chain transfer history',
+  check_ip_abuse: IP_ABUSE_SOURCE
 };
 
 // ---------------------------------------------------------------------
@@ -3024,8 +3175,8 @@ export default async function handler(req, res) {
   res.setHeader('X-Request-Id', pg1RequestId);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier');
-  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Request-Id');
+  res.setHeader('Access-Control-Allow-Headers', `Content-Type, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier, ${ABUSEIPDB_KEY_HEADER}`);
+  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Request-Id, Retry-After');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
@@ -3036,7 +3187,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.15.0',
+      version: '1.16.0',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp',
@@ -3071,7 +3222,7 @@ export default async function handler(req, res) {
       recordTelemetry({ eventType: 'initialize', endpoint: '/api/mcp', status: 'ok', clientName: clientInfo.name, clientVersion: clientInfo.version, callerHash: requestCallerHash(req) });
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.15.0' } },
+        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.16.0' } },
         id: requestId
       });
     }
@@ -3111,7 +3262,9 @@ export default async function handler(req, res) {
         let toolResult;
         try {
           if (toolName === 'check_wallet_sanctions') await enforceWalletSanctionsRateLimit(mcpRequestIdentifier, licenseKey);
-          toolResult = await runReadOnlyTool(toolName, toolArgs, { identifier: mcpRequestIdentifier, licenseKey });
+          toolResult = toolName === 'check_ip_abuse'
+            ? await handleCheckIpAbuse(toolArgs, { identifier: mcpRequestIdentifier, licenseKey, abuseIpdbKey: readCustomerKey(req.headers) })
+            : await runReadOnlyTool(toolName, toolArgs, { identifier: mcpRequestIdentifier, licenseKey });
         } catch (toolErr) {
           if (toolErr.serviceUnavailable) {
             recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_upstream_unavailable`, 'upstream', pg1RequestId);
@@ -3122,16 +3275,25 @@ export default async function handler(req, res) {
             // timeout, e.g. check_wallet_age) is logged here - caller
             // mistakes (invalid_address/invalid_chain/invalid_hostname) and
             // rate_limited are normal, expected isError results, not bugs.
-            if (toolErr.code === 'upstream_unavailable') {
+            // check_ip_abuse's upstream failures carry their own fixed
+            // logReason (lib/abuseIpdb.mjs) - never the key or the body.
+            if (toolErr.logReason) {
+              recordToolError(`/api/mcp:${toolName}`, toolErr.logStatus ?? null, toolErr.logReason, toolErr.logCategory || 'upstream', pg1RequestId);
+            } else if (toolErr.code === 'upstream_unavailable') {
               const isTimeout = /timed out/i.test(toolErr.message);
               recordToolError(`/api/mcp:${toolName}`, null, `${toolName}_${isTimeout ? 'timeout' : 'upstream_unavailable'}`, isTimeout ? 'timeout' : 'upstream', pg1RequestId);
             }
             callTelemetry.status = toolErr.code === 'rate_limited' ? 'rate_limited' : 'tool_error';
             const errorChecks = [buildCheck(TOOL_SOURCE_LABELS[toolName] || toolName, classifyToolErrorCheckResult(toolErr))];
+            const errorBody = { error: true, code: toolErr.code, message: invalidInputMessage(toolErr, pg1RequestId), ...errorResponseMeta(errorChecks, pg1RequestId) };
+            if (toolErr.retryAfter) {
+              errorBody.retry_after = toolErr.retryAfter;
+              res.setHeader('Retry-After', String(toolErr.retryAfter));
+            }
             return res.status(200).json({
               jsonrpc: '2.0',
               result: {
-                content: [{ type: 'text', text: JSON.stringify({ error: true, code: toolErr.code, message: invalidInputMessage(toolErr, pg1RequestId), ...errorResponseMeta(errorChecks, pg1RequestId) }, null, 2) }],
+                content: [{ type: 'text', text: JSON.stringify(errorBody, null, 2) }],
                 isError: true
               },
               id: requestId
@@ -3141,7 +3303,7 @@ export default async function handler(req, res) {
         }
         toolResult.request_id = pg1RequestId;
         const result = { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] };
-        if (toolName === 'check_wallet_sanctions' || toolName === 'check_domain_age' || toolName === 'check_hostname_reputation' || toolName === 'check_wallet_age') {
+        if (STRUCTURED_CONTENT_TOOLS.has(toolName)) {
           result.structuredContent = toolResult;
         }
         return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });

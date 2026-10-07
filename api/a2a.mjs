@@ -4,9 +4,12 @@
  * Protocol: Agent2Agent (A2A) JSON-RPC 2.0 transport
  *           (https://a2a-protocol.org/latest/specification/)
  *
- * Exposes ONLY the five always-free MCP tools as A2A skills:
+ * Exposes ONLY the six always-free MCP tools as A2A skills:
  * check_wallet_sanctions, check_domain_age, check_hostname_reputation,
- * check_wallet_age, get_usage_status. Every tool implementation is imported
+ * check_wallet_age, get_usage_status, and (1.16.0) check_ip_abuse, the
+ * bring-your-own-key AbuseIPDB lookup: the caller's own key comes from the
+ * X-AbuseIPDB-Key request header only, exactly as on /api/mcp, and the
+ * skill has the same 60/hour anonymous limit. Every tool implementation is imported
  * directly from api/mcp.mjs (no duplicated logic) — names, descriptions,
  * schemas, and rate limits (check_hostname_reputation and check_wallet_age:
  * 60/hour without a license key) are unchanged from the MCP server.
@@ -55,6 +58,7 @@ import {
   handleCheckDomainAge,
   handleCheckHostnameReputation,
   handleCheckWalletAge,
+  handleCheckIpAbuse,
   recordToolError,
   resolveTestFixture,
   requestCallerHash
@@ -63,8 +67,9 @@ import { getRequestIdentifier } from '../lib/freeTier.mjs';
 import { recordTelemetry } from '../lib/telemetry.mjs';
 import { buildCheck, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
 import { formatFixIt, invalidInputMessage } from '../lib/invalidInput.mjs';
+import { ABUSEIPDB_KEY_HEADER, readCustomerKey } from '../lib/abuseIpdb.mjs';
 
-// Generic (never vendor-named) `checks[].source` labels for the 5 skills
+// Generic (never vendor-named) `checks[].source` labels for the 6 skills
 // exposed here, keyed by skill name - same idea as api/mcp.mjs's
 // TOOL_SOURCE_LABELS, used only when a skill call fails before producing a
 // result (issue #215).
@@ -73,12 +78,13 @@ const SKILL_SOURCE_LABELS = {
   check_wallet_sanctions: 'sanctions list',
   check_domain_age: 'domain registration records',
   check_hostname_reputation: 'phishing domain list',
-  check_wallet_age: 'on-chain transfer history'
+  check_wallet_age: 'on-chain transfer history',
+  check_ip_abuse: 'IP abuse reports'
 };
 
 export const config = { maxDuration: 30 };
 
-const A2A_SKILL_NAMES = ['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'get_usage_status'];
+const A2A_SKILL_NAMES = ['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'get_usage_status', 'check_ip_abuse'];
 
 // Reused verbatim from api/mcp.mjs's TOOLS array — same descriptions/schemas.
 export const A2A_SKILL_TOOLS = TOOLS.filter((tool) => A2A_SKILL_NAMES.includes(tool.name));
@@ -114,7 +120,7 @@ const METHODS = {
   ]
 };
 
-async function runSkill(skill, args, identifier, licenseKey) {
+async function runSkill(skill, args, identifier, licenseKey, req) {
   switch (skill) {
     case 'get_usage_status':
       return handleUsageStatus(args, identifier);
@@ -127,6 +133,8 @@ async function runSkill(skill, args, identifier, licenseKey) {
       return handleCheckHostnameReputation(args, identifier, licenseKey);
     case 'check_wallet_age':
       return handleCheckWalletAge(args, identifier, licenseKey);
+    case 'check_ip_abuse':
+      return handleCheckIpAbuse(args, { identifier, licenseKey, abuseIpdbKey: readCustomerKey(req.headers) });
     default:
       return undefined;
   }
@@ -255,15 +263,15 @@ export default async function handler(req, res) {
   res.setHeader('X-Request-Id', pg1RequestId);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, A2A-Version');
-  res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id');
+  res.setHeader('Access-Control-Allow-Headers', `Content-Type, Authorization, x-api-key, A2A-Version, ${ABUSEIPDB_KEY_HEADER}`);
+  res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id, Retry-After');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-a2a',
-      version: '1.13.0',
+      version: '1.16.0',
       protocol: 'Agent2Agent (A2A) over JSON-RPC 2.0',
       supportedVersions: ['1.0', '0.3'],
       agentCard: 'https://pg1-ai-agent.vercel.app/.well-known/agent-card.json',
@@ -385,7 +393,7 @@ export default async function handler(req, res) {
 
     let toolResult;
     try {
-      toolResult = await runSkill(skill, args, identifier, licenseKey);
+      toolResult = await runSkill(skill, args, identifier, licenseKey, req);
     } catch (err) {
       if (err.serviceUnavailable) {
         recordToolError(`/api/a2a:${skill}`, 503, `${skill}_upstream_unavailable`, 'upstream', pg1RequestId);
@@ -395,13 +403,21 @@ export default async function handler(req, res) {
         // Same distinction as api/mcp.mjs: only a genuine upstream outage or
         // timeout is a logged failure - invalid_address/invalid_chain/
         // invalid_hostname/rate_limited are normal, expected results.
-        if (err.code === 'upstream_unavailable') {
+        // check_ip_abuse's upstream failures carry their own fixed logReason
+        // (lib/abuseIpdb.mjs) - never the key or the body.
+        if (err.logReason) {
+          recordToolError(`/api/a2a:${skill}`, err.logStatus ?? null, err.logReason, err.logCategory || 'upstream', pg1RequestId);
+        } else if (err.code === 'upstream_unavailable') {
           const isTimeout = /timed out/i.test(err.message);
           recordToolError(`/api/a2a:${skill}`, null, `${skill}_${isTimeout ? 'timeout' : 'upstream_unavailable'}`, isTimeout ? 'timeout' : 'upstream', pg1RequestId);
         }
         skillTelemetry.status = err.code === 'rate_limited' ? 'rate_limited' : 'tool_error';
         const errorChecks = [buildCheck(SKILL_SOURCE_LABELS[skill] || skill, classifyToolErrorCheckResult(err))];
         const errorData = { code: err.code, ...errorResponseMeta(errorChecks, pg1RequestId) };
+        if (err.retryAfter) {
+          errorData.retry_after = err.retryAfter;
+          res.setHeader('Retry-After', String(err.retryAfter));
+        }
         return jsonRpcError(res, 200, -32000, invalidInputMessage(err, pg1RequestId), requestId, errorData, pg1RequestId);
       }
       return jsonRpcError(res, 400, -32602, invalidInputMessage(err, pg1RequestId), requestId, undefined, pg1RequestId);

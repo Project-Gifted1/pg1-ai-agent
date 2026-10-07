@@ -288,6 +288,8 @@ test('tool definitions are hash-identical to before the limit (name, description
   assert.equal(sha(TOOLS.find((t) => t.name === 'check_wallet_sanctions')), 'ea52c85a8e61a2718a5eceb0f61fd73320d1b57f77110c89bc8ec372edfbd0c7');
   // Moved by the 1.15.0 licensing release (three description edits, see
   // tests/source-policy.test.mjs).
-  assert.equal(sha(TOOLS), 'a177e3276b64a976e1b3a8412e77418e7846bf532379c8c9129882aff3488f06');
-  assert.equal(sha(A2A_SKILL_TOOLS), '188ab4f12daf429bd01e91689d29d682307afb6e27aae596a0e7324dbb6a2c3d');
+  // 1.16.0 added check_ip_abuse at the end of both lists; everything before
+  // it is still pinned to the same hashes.
+  assert.equal(sha(TOOLS.filter((t) => t.name !== 'check_ip_abuse')), 'a177e3276b64a976e1b3a8412e77418e7846bf532379c8c9129882aff3488f06');
+  assert.equal(sha(A2A_SKILL_TOOLS.filter((t) => t.name !== 'check_ip_abuse')), '188ab4f12daf429bd01e91689d29d682307afb6e27aae596a0e7324dbb6a2c3d');
 });
