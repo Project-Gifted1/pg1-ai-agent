@@ -723,6 +723,23 @@ function reportResultsRejection(toolOpts, detail) {
   }
 }
 
+// A round that offers no tools (toolsEnabled false: the call budget or the
+// history search cap is spent, or a search already found matches) must
+// answer in text. Gemini can still return a functionCall under mode NONE
+// (request 0blvr268); such a call is never run, so on that round it counts
+// as no usable text and the plain retry above applies.
+function toolsOff(toolOpts) {
+  return !!toolOpts && toolOpts.toolsEnabled === false;
+}
+
+function usableCalls(toolOpts, calls) {
+  return toolsOff(toolOpts) ? [] : (calls || []);
+}
+
+function emptyReason(toolOpts, calls, reason) {
+  return toolsOff(toolOpts) && calls && calls.length ? `function call ${calls.map(function (c) { return c.name; }).join(', ')} on a round with tools off` : reason;
+}
+
 function geminiRequestBody(sysInstruction, contents, declarations, withSearch, toolOpts, forceTool, plain) {
   return JSON.stringify({
     systemInstruction: { parts: [{ text: sysInstruction }] },
@@ -808,12 +825,13 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
           var data = await res.json();
           var parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
           var parsed = parseGeminiParts(parts);
-          if (parsed.text || parsed.calls.length) {
-            return { text: parsed.text, calls: parsed.calls, provider: 'gemini', error: null, searchEntryPoint: (data && data.candidates && data.candidates[0] && data.candidates[0].groundingMetadata && data.candidates[0].groundingMetadata.searchEntryPoint && data.candidates[0].groundingMetadata.searchEntryPoint.renderedContent) || null };
+          var calls = usableCalls(toolOpts, parsed.calls);
+          if (parsed.text || calls.length) {
+            return { text: parsed.text, calls: calls, provider: 'gemini', error: null, searchEntryPoint: (data && data.candidates && data.candidates[0] && data.candidates[0].groundingMetadata && data.candidates[0].groundingMetadata.searchEntryPoint && data.candidates[0].groundingMetadata.searchEntryPoint.renderedContent) || null };
           }
-          var reason = (data && data.candidates && data.candidates[0] && data.candidates[0].finishReason)
+          var reason = emptyReason(toolOpts, parsed.calls, (data && data.candidates && data.candidates[0] && data.candidates[0].finishReason)
             || (data && data.promptFeedback && data.promptFeedback.blockReason)
-            || 'no candidates';
+            || 'no candidates');
           lastError = `[${model} on ${apiVersion}] 200 with no usable text (${reason})`;
           if (canRetryResultsPlain(toolOpts, plain)) { goPlain(); j--; }
         } else {
@@ -942,10 +960,11 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
       if (res.ok) {
         var data = await res.json();
         var parsed = parseAnthropicContent(data && data.content);
-        if (parsed.text || parsed.calls.length) {
-          return { text: parsed.text, calls: parsed.calls, provider: 'anthropic', error: null };
+        var anthropicCalls = usableCalls(toolOpts, parsed.calls);
+        if (parsed.text || anthropicCalls.length) {
+          return { text: parsed.text, calls: anthropicCalls, provider: 'anthropic', error: null };
         }
-        lastError = `[${model}] Unexpected response shape from Anthropic API.`;
+        lastError = `[${model}] ${emptyReason(toolOpts, parsed.calls, 'Unexpected response shape from Anthropic API.')}`;
       } else {
         var errText = await res.text();
         lastError = `[${model}] Anthropic API ${providerErrorText(res.status, errText)}`;
@@ -1068,8 +1087,9 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
           }
           if (cand.finishReason) finishReason = cand.finishReason;
         });
-        if (text || calls.length) return { text: text, calls: calls, provider: 'gemini', error: null, searchEntryPoint: searchEntryPoint };
-        lastError = `[${model}] 200 with no usable text (${finishReason || 'no candidates'})`;
+        var streamCalls = usableCalls(toolOpts, calls);
+        if (text || streamCalls.length) return { text: text, calls: streamCalls, provider: 'gemini', error: null, searchEntryPoint: searchEntryPoint };
+        lastError = `[${model}] 200 with no usable text (${emptyReason(toolOpts, calls, finishReason || 'no candidates')})`;
         if (canRetryResultsPlain(toolOpts, plain)) { goPlain(); j--; }
       } catch (e) {
         if (hooks.signal && hooks.signal.aborted) return { text: text, error: 'Stopped by the client.', aborted: true, partial: !!text };
@@ -1139,14 +1159,14 @@ async function streamAnthropicCore(promptText, sysInstruction, mediaParts, anthr
           toolBlocks.push(msg);
         }
       });
-      var calls = toolBlocks.calls;
+      var calls = usableCalls(toolOpts, toolBlocks.calls);
       if (streamError) {
         if (text) return { text: text, calls: [], error: `[${model}] ${streamError}`, partial: true };
         lastError = `[${model}] ${streamError}`;
         continue;
       }
       if (text || calls.length) return { text: text, calls: calls, provider: 'anthropic', error: null };
-      lastError = `[${model}] Unexpected response shape from Anthropic API.`;
+      lastError = `[${model}] ${emptyReason(toolOpts, toolBlocks.calls, 'Unexpected response shape from Anthropic API.')}`;
     } catch (e) {
       if (hooks.signal && hooks.signal.aborted) return { text: text, error: 'Stopped by the client.', aborted: true, partial: !!text };
       var why = timedOut ? `[${model}] Anthropic call exceeded its time budget.` : `[${model}] Anthropic fetch exception: ${e.message}`;
@@ -1355,7 +1375,7 @@ async function streamChatReply(stream, opts) {
     var label = info.round > 1 ? 'Writing the reply from the results' : info.stepSuffix ? 'Writing the reply with web search' : 'Writing the reply';
     // SEARCH OR TOOLS: the checks on a tools-route round, search otherwise.
     var toolOpts = (!info.search && opts.tools && opts.tools.length)
-      ? { tools: opts.tools, turns: turns, toolsEnabled: info.toolsEnabled, forceTool: info.round === 1 ? opts.forceTool : null, onSearchFailure: opts.onSearchFailure, onForceRejected: opts.onForceRejected, onResultsRejected: opts.onResultsRejected }
+      ? { tools: opts.tools, turns: turns, toolsEnabled: info.toolsEnabled, forceTool: info.force ? opts.forceTool : null, onSearchFailure: opts.onSearchFailure, onForceRejected: opts.onForceRejected, onResultsRejected: opts.onResultsRejected }
       : { onSearchFailure: opts.onSearchFailure };
     var sysInstruction = systemFor(opts, toolOpts);
     hooks.newRound = info.round > 1;
@@ -1398,6 +1418,7 @@ async function streamChatReply(stream, opts) {
       maxCalls: opts.maxToolCalls || CHAT_TOOL_MAX_CALLS,
       onCalls: toolTrace.onCalls,
       onOutcome: toolTrace.onOutcome,
+      onLimit: opts.onToolLimit,
       isAborted: function () { return stream.clientGone || stream.signal.aborted; }
     });
     if (mayUseSearch && !stream.clientGone && searchAfterTools(opts.promptText, result, opts.routeInfo) && Date.now() < opts.deadlineTs - 1000) {
@@ -1409,7 +1430,9 @@ async function streamChatReply(stream, opts) {
     } else {
       releaseHeld();
       // The loop's own text is the concatenation of every round; the client
-      // already has it chunk by chunk.
+      // already has it chunk by chunk. A reply built from the results
+      // (runToolLoop's fallback) was never streamed: it goes out now.
+      if (result.fallback && !streamedText && result.text) emitText(result.text);
       result.text = streamedText || result.text;
     }
   } else {
@@ -3391,6 +3414,10 @@ export default async function handler(req, res) {
     var onSearchFailure = function (detail) { reportFailure('search_failed', detail); };
     var onForceRejected = function (detail) { reportFailure('forced_tool_rejected', detail); };
     var onResultsRejected = function (detail) { reportFailure('tool_results_rejected', detail); };
+    // HISTORY SEARCH CAP (lib/chatTools.mjs runToolLoop): the loop cut the
+    // model off (calls refused or dropped, the round limit) or answered
+    // from the results; the round count and why go to pg1_errors.
+    var onToolLimit = function (info) { reportFailure(info.reason, info.detail); };
     // IDENTITY: the reply to "what powers you?" is chosen here, in code,
     // from the current conversation the client sent (reqBody.history): the
     // earlier assistant messages that already carry the branded line are
@@ -3483,6 +3510,7 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
         onSearchFailure: onSearchFailure,
         onForceRejected: onForceRejected,
         onResultsRejected: onResultsRejected,
+        onToolLimit: onToolLimit,
         maxToolCalls: chatToolPolicyForRole ? chatToolPolicyForRole.maxCalls : CHAT_TOOL_MAX_CALLS,
         toolTimeoutMs: chatToolTimeoutMs,
         // PG1 VOICE: speak the reply as it streams. Needs the voice toggle
@@ -3517,10 +3545,11 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
       // CHAT TOOLS on the JSON path: the same loop as the streamed reply,
       // without a trace; the cards go out in `toolResults` on the reply.
       modelFetchResult = await runToolLoop({
-        callModel: function (turns, info) { return fetchModelRound(roundOpts, { tools: chatTools, turns: turns, toolsEnabled: info.toolsEnabled, forceTool: info.round === 1 ? requiredFirstTool(chatRoute) : null, onSearchFailure: onSearchFailure, onForceRejected: onForceRejected, onResultsRejected: onResultsRejected }); },
+        callModel: function (turns, info) { return fetchModelRound(roundOpts, { tools: chatTools, turns: turns, toolsEnabled: info.toolsEnabled, forceTool: info.force ? requiredFirstTool(chatRoute) : null, onSearchFailure: onSearchFailure, onForceRejected: onForceRejected, onResultsRejected: onResultsRejected }); },
         executeTool: function (call) { return executeChatTool(call, { timeoutMs: toolCallBudget(deadlineTs, chatToolTimeoutMs) }); },
         maxCalls: chatToolPolicyForRole.maxCalls,
-        onOutcome: function (outcome) { jsonToolOutcomes.push(outcome); }
+        onOutcome: function (outcome) { jsonToolOutcomes.push(outcome); },
+        onLimit: onToolLimit
       });
       // No check ran: the one search call for this message.
       if (searchFallbackPossible(roundOpts) && searchAfterTools(promptText, modelFetchResult, chatRoute) && Date.now() < deadlineTs - 1000) {
