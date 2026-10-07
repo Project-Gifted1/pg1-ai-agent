@@ -20,7 +20,7 @@ const vercelConfig = JSON.parse(fs.readFileSync(path.join(repoRoot, 'vercel.json
 
 test('agent card has the required top-level identity fields', () => {
   assert.equal(card.name, 'PG1 Sovereign Threat Intelligence');
-  assert.equal(card.version, '1.15.0');
+  assert.equal(card.version, '1.16.0');
   assert.equal(card.protocolVersion, '0.3.0');
   assert.equal(card.documentationUrl, 'https://pg1-ai-agent.vercel.app/docs/crypto-alert-bot');
   assert.equal(card.url, 'https://pg1-ai-agent.vercel.app/api/a2a');
@@ -43,16 +43,23 @@ test('agent card declares streaming, push notifications, and extended agent card
   assert.equal(card.capabilities.extendedAgentCard, false);
 });
 
-test('agent card has no security schemes (all five skills are free)', () => {
-  assert.equal(card.securitySchemes, undefined);
+test('agent card: no card-wide security requirement; only check_ip_abuse declares the customer\'s own AbuseIPDB key header', () => {
   assert.equal(card.security, undefined);
+  assert.deepEqual(Object.keys(card.securitySchemes), ['abuseipdbKey']);
+  assert.equal(card.securitySchemes.abuseipdbKey.type, 'apiKey');
+  assert.equal(card.securitySchemes.abuseipdbKey.in, 'header');
+  assert.equal(card.securitySchemes.abuseipdbKey.name, 'X-AbuseIPDB-Key');
+  for (const skill of card.skills) {
+    if (skill.id === 'check_ip_abuse') assert.deepEqual(skill.security, [{ abuseipdbKey: [] }]);
+    else assert.equal(skill.security, undefined, skill.id);
+  }
 });
 
 test('agent card has exactly one skill per always-free tool, matching api/a2a.mjs', () => {
   const cardSkillIds = card.skills.map((s) => s.id).sort();
   const exposedSkillIds = A2A_SKILL_TOOLS.map((t) => t.name).sort();
   assert.deepEqual(cardSkillIds, exposedSkillIds);
-  assert.deepEqual(cardSkillIds, ['check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_wallet_sanctions', 'get_usage_status']);
+  assert.deepEqual(cardSkillIds, ['check_domain_age', 'check_hostname_reputation', 'check_ip_abuse', 'check_wallet_age', 'check_wallet_sanctions', 'get_usage_status']);
 });
 
 test('every skill declares input/output modes', () => {

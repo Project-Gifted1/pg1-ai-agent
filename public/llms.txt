@@ -8,16 +8,25 @@
 - [check_domain_age](https://pg1-ai-agent.vercel.app/api/mcp): Looks up a domain's registration age via RDAP; a newly registered domain is reported as a phishing signal, not proof of malicious intent.
 - [check_hostname_reputation](https://pg1-ai-agent.vercel.app/api/mcp): Screens a hostname against a phishing/lookalike blocklist; returns allowlisted, listed, lookalike, or not_listed — never "safe" or "clean".
 - [check_wallet_age](https://pg1-ai-agent.vercel.app/api/mcp): Reports when an EVM wallet address first appeared on a chain, based on its earliest on-chain transfer history; reports age and history only, never a safety verdict. Age is per chain: the same address can be old on one chain and new on another. Also reports EIP-7702 delegation, checked live on every call and never cached: `delegated` is true when the address's code on that chain is exactly 0xef0100 plus a 20-byte delegate address (given in `delegate_address`), false otherwise, and null when the code check did not complete (never guessed false; the age is still returned). A delegated address gets reason code WALLET_DELEGATED, which states the fact only and never changes `status` on its own (an old delegated wallet is `status: "no_flags"`). check_wallet_age status rule: "flagged" only with WALLET_NO_HISTORY; otherwise "unknown" if anything didn't complete (WALLET_AGE_PARTIAL, which is listed in reasons but never flags, or `delegated: null`); otherwise "no_flags". Cached answers count against the 60/hour anonymous rate limit. `is_contract` is unchanged and is still true for a delegated address.
+- [check_ip_abuse](https://pg1-ai-agent.vercel.app/api/mcp): Bring your own AbuseIPDB key (since 1.16.0): looks up one public IPv4/IPv6 address in AbuseIPDB with your own key, sent in the `X-AbuseIPDB-Key` header (never as an argument). Returns abuse_confidence_score, report counts, country, usage type, ISP, domain, Tor and whitelist flags, always with attribution (Data from AbuseIPDB, https://www.abuseipdb.com/check/<ip>). A low score means few or no reports, never "safe" or "clean". No PG1 charge; uses your own AbuseIPDB quota. See "Bring your own AbuseIPDB key" below.
 - [get_usage_status](https://pg1-ai-agent.vercel.app/api/mcp): Returns your remaining free-tier calls for today and current license status.
 
 ## Endpoints
 
 - [MCP](https://pg1-ai-agent.vercel.app/api/mcp): Model Context Protocol server (Streamable HTTP, JSON-RPC).
-- [A2A](https://pg1-ai-agent.vercel.app/api/a2a): Agent2Agent JSON-RPC endpoint exposing the five free tools; agent card at https://pg1-ai-agent.vercel.app/.well-known/agent-card.json.
+- [A2A](https://pg1-ai-agent.vercel.app/api/a2a): Agent2Agent JSON-RPC endpoint exposing the six free tools; agent card at https://pg1-ai-agent.vercel.app/.well-known/agent-card.json.
 - [REST](https://pg1-ai-agent.vercel.app/api/ioc): Simple GET endpoint returning a STIX 2.1 threat indicator feed.
 - [Health](https://pg1-ai-agent.vercel.app/api/health): Uptime/health check.
 - [OpenAPI spec](https://pg1-ai-agent.vercel.app/openapi.json): Machine-readable schema for the REST endpoint.
 - [About](https://pg1-ai-agent.vercel.app/about): Human-readable overview of PG1, its free tools, endpoints and listings.
+
+## Bring your own AbuseIPDB key
+
+check_ip_abuse (MCP tool and A2A skill, version 1.16.0) runs only with your own AbuseIPDB API key (free or paid) in the `X-AbuseIPDB-Key` request header on /api/mcp or /api/a2a. PG1 has no AbuseIPDB key of its own: with no header it returns isError code `abuseipdb_key_required` and AbuseIPDB is not contacted. Results go only to you, with attribution, cached in memory for 15 minutes per key (never stored, never shared, never added to PG1's feeds). Arguments: `ip` (one public IPv4/IPv6; private/reserved/malformed is `invalid_ip`), `max_age_in_days` (1-365, default 90). Errors: `invalid_abuseipdb_key` (AbuseIPDB 401/403), `abuseipdb_rate_limited` (AbuseIPDB 429, `retry_after` passed through), `upstream_unavailable` (5xx or timeout). No PG1 charge; 60 calls/hour per caller without a licence key.
+
+```
+curl -X POST https://pg1-ai-agent.vercel.app/api/mcp -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -H "X-AbuseIPDB-Key: YOUR_ABUSEIPDB_KEY" -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"check_ip_abuse","arguments":{"ip":"8.8.8.8","max_age_in_days":90}}}'
+```
 
 ## Integration guides
 
@@ -43,11 +52,12 @@ Every free tool response (and every paid MCP/A2A response) adds `reasons: [{code
 
 ## Test your integration
 
-Fixed fixture inputs always return the same answer, free for every caller (no key, no payment, no rate-limit use), with the real response shape plus `test_fixture: true` and `checks[].source: "fixture"`. Exact values only; anything else, even one character off, is a real lookup. UNKNOWN reproduces that tool's real upstream-failure response (for check_wallet_age: the `upstream_unavailable` isError result, never `found: false`). For `check_domain_age`, always check `status` before `found`: `found: false` with `status: "unknown"` means the lookup did not complete, not that the domain is new. MCP covers every tool with a reason code to flag with; A2A covers its 4 free check_* skills. The REST endpoints (/api/ioc) have no fixtures. Full table: https://pg1-ai-agent.vercel.app/docs/testing
+Fixed fixture inputs always return the same answer, free for every caller (no key, no payment, no rate-limit use), with the real response shape plus `test_fixture: true` and `checks[].source: "fixture"`. Exact values only; anything else, even one character off, is a real lookup. UNKNOWN reproduces that tool's real upstream-failure response (for check_wallet_age: the `upstream_unavailable` isError result, never `found: false`). For `check_domain_age`, always check `status` before `found`: `found: false` with `status: "unknown"` means the lookup did not complete, not that the domain is new. MCP covers every tool with a reason code to flag with; A2A covers its 5 free check_* skills. The REST endpoints (/api/ioc) have no fixtures. Full table: https://pg1-ai-agent.vercel.app/docs/testing
 
 - Wallets (check_wallet_sanctions, check_wallet_age): FLAGGED `0x7067312d746573742d6669787475726500000001`, CLEAN `...00000002`, UNKNOWN `...00000003`; check_wallet_age only: DELEGATED `0x7067312d746573742d6669787475726500000004` (delegated: true, reason WALLET_DELEGATED, status "no_flags")
 - Domains/hostnames (check_domain_age, check_hostname_reputation): `pg1-test-flagged.invalid`, `pg1-test-clean.invalid`, `pg1-test-unknown.invalid`
 - get_ioc_context: `192.0.2.1`, `198.51.100.1`, `203.0.113.1`; get_ioc_batch: `["2001:db8::1"]`, `["2001:db8::2"]`, `["2001:db8::3"]`
+- check_ip_abuse (no key header needed for fixtures; synthetic data, no upstream call): `{"ip":"192.0.2.1"}` FLAGGED, `{"ip":"198.51.100.1"}` CLEAN, `{"ip":"203.0.113.1"}` UNKNOWN
 - get_cve_details / get_cve_batch: `CVE-0000-0001`, `CVE-0000-0002`, `CVE-0000-0003`; get_cve_by_product: vendor `pg1-test.invalid`, product `flagged` / `clean` / `unknown`
 
 ```

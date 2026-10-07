@@ -1,0 +1,926 @@
+[
+  {
+    "name": "get_threat_indicators",
+    "description": "PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of verified threat indicators (IPs, domains, URLs, file hashes) sourced from OTX and NVD. Payment required: $0.01 via x402, sent in params._meta[\"x402/payment\"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for bulk feed synchronizations. Do NOT use for single-item lookups (use get_ioc_context) or CVE analysis (use get_cve_details). USAGE EXCLUSIONS: Does not provide historical query archival beyond the active ingestion window. BEHAVIOR: Pagination is handled via the limit parameter (max 1000). If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta[\"x402/payment-response\"].",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "since": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ISO timestamp constraint (e.g., 2026-09-20T00:00:00Z); strictly filters and returns only indicators last seen after this exact timestamp."
+        },
+        "type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Indicator category filter. Allowed enum-style values: 'IPv4', 'domain', 'URL', 'FileHash-MD5', 'FileHash-SHA1', or 'FileHash-SHA256'."
+        },
+        "min_score": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Confidence score threshold integer ranging inclusively from 0 to 100 to filter low-confidence noise."
+        },
+        "limit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Pagination boundary constraint defining the maximum number of indicators to return in a single payload (integer between 1 and 1000, defaulting to 500).",
+          "default": 500
+        }
+      }
+    }
+  },
+  {
+    "name": "get_cve_details",
+    "description": "PG1 Sovereign Threat Intelligence: enriched CVE lookup combining NVD (description, CVSS score/vector), FIRST.org EPSS (exploit-probability score and percentile), and the CISA Known Exploited Vulnerabilities catalog (active wild exploitation status). Payment required: $0.01 via x402, sent in params._meta[\"x402/payment\"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for specific CVE lookups. Do NOT use for IP/domain/hash enrichment (use get_ioc_context) or bulk feed ingestion (use get_threat_indicators). USAGE EXCLUSIONS: Does not support wildcard search or threat-actor dossier profiling. BEHAVIOR: If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta[\"x402/payment-response\"]. Returns 404 if CVE is not found.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "cve_id": {
+          "type": "string",
+          "description": "Mandatory official CVE identifier string strictly formatted as 'CVE-YYYY-NNNN' (e.g., 'CVE-2021-44228')."
+        }
+      },
+      "required": [
+        "cve_id"
+      ]
+    }
+  },
+  {
+    "name": "get_ioc_context",
+    "description": "PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) — the recommended pre-action safety check for AI agents before visiting, downloading, or connecting to something. Returns aggregated provenance from OTX — reporting sources, observation count, aggregated confidence score, known malware families, tags, and first/last seen timestamps. SIBLING DIFFERENTIATION: Use ONLY for point-lookup enrichment of a single indicator. Do NOT use for bulk intelligence downloads (use get_threat_indicators), multiple indicators at once (use get_ioc_batch), or software vulnerability analysis (use get_cve_details). BEHAVIOR: Returns a normal result shaped { found: true, indicator_type, provenance } or { found: false } — never an error for 'not found'. A found:false result means nothing bad is recorded in PG1's sources; it does NOT mean the indicator is safe, only that it isn't in this dataset. Lookups that return found:false are FREE — no payment or free-tier quota is consumed. Payment (x402 via params._meta['x402/payment'], with the PAYMENT-SIGNATURE header also accepted, or a Gumroad X-API-KEY license) is only required when a real record is found. If payment is required but missing or fails, the result has isError: true with the x402 v2 PaymentRequired object in structuredContent.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "description": "Mandatory exact indicator string value to look up, such as an IPv4 address (198.51.100.1), fully qualified domain, complete URL, or SHA-256 hash string."
+        }
+      },
+      "required": [
+        "value"
+      ]
+    }
+  },
+  {
+    "name": "get_cve_batch",
+    "description": "PG1 Sovereign Threat Intelligence: looks up multiple CVE identifiers in a single call, each enriched with NVD description/CVSS, FIRST.org EPSS score, and CISA KEV status — same enrichment as get_cve_details, batched. Payment required: $0.01 via x402, sent in params._meta['x402/payment'] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for looking up several known CVE ids at once (e.g. from an SBOM or scan report). Do NOT use for a single CVE (use get_cve_details, lower overhead) or for discovering CVEs by vendor/product (use get_cve_by_product). BEHAVIOR: Accepts up to 20 ids per call; malformed or not-found ids are reported per-entry rather than failing the whole batch.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "cve_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Array of CVE identifiers, each formatted 'CVE-YYYY-NNNN'. Max 20 per call."
+        }
+      },
+      "required": [
+        "cve_ids"
+      ]
+    }
+  },
+  {
+    "name": "get_ioc_batch",
+    "description": "PG1 Sovereign Threat Intelligence: looks up multiple indicators (IPs, domains, URLs, hashes) in a single call — a batched pre-action safety check for AI agents. Each returns the same aggregated provenance as get_ioc_context from OTX. SIBLING DIFFERENTIATION: Use for checking several indicators at once (e.g. all URLs an agent is about to visit). Do NOT use for a single indicator (use get_ioc_context, lower overhead) or bulk feed synchronization (use get_threat_indicators). BEHAVIOR: Accepts up to 20 indicators per call. A found:false result for any indicator means nothing bad is recorded in PG1's sources — NOT that it's safe. If NONE of the submitted indicators are found, the whole batch is FREE — no payment or free-tier quota consumed. If at least one indicator is found, the normal payment gate (x402 via params._meta['x402/payment'], with the PAYMENT-SIGNATURE header also accepted, or a Gumroad X-API-KEY license) applies to the full batch result.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Array of indicator values (IPv4 addresses, domains, URLs, or hashes) to look up. Max 20 per call."
+        }
+      },
+      "required": [
+        "values"
+      ]
+    }
+  },
+  {
+    "name": "get_threat_actor_profile",
+    "description": "PG1 Sovereign Threat Intelligence: returns a dossier for a known threat actor / APT group — aliases, description, associated MITRE ATT&CK techniques, and associated malware/tooling. Sourced from MITRE ATT&CK Enterprise. Payment required: $0.01 via x402, sent in params._meta['x402/payment'] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for actor/group-level profiling. Do NOT use for single-indicator lookups (use get_ioc_context) or vulnerability data (use get_cve_details / get_cve_batch). USAGE EXCLUSIONS: Coverage is limited to groups tracked in MITRE ATT&CK — not all threat actors have an entry. BEHAVIOR: Returns 404 if no matching group or alias is found.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "actor_name": {
+          "type": "string",
+          "description": "Group name or known alias, e.g. 'APT29' or 'Cozy Bear'. Matching is case-insensitive against both the group's primary name and its known aliases."
+        }
+      },
+      "required": [
+        "actor_name"
+      ]
+    }
+  },
+  {
+    "name": "get_cve_by_product",
+    "description": "PG1 Sovereign Threat Intelligence: returns CVEs affecting a given vendor/product (optionally a specific version), enriched with CVSS, EPSS, and CISA KEV status, sorted by exploitation risk. Sourced from NVD keyword search. Payment required: $0.01 via x402, sent in params._meta[\"x402/payment\"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for discovering CVEs by vendor/product when you do not already have an exact CVE id. Do NOT use for a known CVE id (use get_cve_details / get_cve_batch). USAGE EXCLUSIONS: Uses NVD keyword search, not strict CPE matching — results may include near-matches. BEHAVIOR: Returns up to 50 results per call.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "vendor": {
+          "type": "string",
+          "description": "Vendor name, e.g. 'apache'."
+        },
+        "product": {
+          "type": "string",
+          "description": "Product name, e.g. 'log4j'."
+        },
+        "version": {
+          "type": "string",
+          "description": "Optional specific version, e.g. '2.14.1'."
+        },
+        "only_kev": {
+          "type": "boolean",
+          "description": "If true, only return CVEs on the CISA KEV list."
+        }
+      },
+      "required": [
+        "vendor",
+        "product"
+      ]
+    }
+  },
+  {
+    "name": "get_usage_status",
+    "description": "PG1 Sovereign Threat Intelligence: returns your remaining free-tier calls for today and current Gumroad license status. No payment required — this tool is always free.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "identifier": {
+          "type": "string",
+          "description": "Optional — the X-API-KEY or identifier to check usage for; defaults to the calling identifier if omitted."
+        },
+        "license_key": {
+          "type": "string",
+          "description": "Optional — check Gumroad license status alongside free-tier usage."
+        }
+      }
+    }
+  },
+  {
+    "name": "subscribe_alerts",
+    "description": "PG1 Sovereign Threat Intelligence: registers a standing filter (indicator type, min EPSS, or KEV-only). Matching new indicators are POSTed to the given webhook URL as they're ingested. Requires a valid Gumroad license key (X-API-KEY header) — this tool is NOT available via per-query x402, since it establishes a recurring subscription rather than a single paid call.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "webhook_url": {
+          "type": "string",
+          "description": "HTTPS URL to receive POSTed alert payloads."
+        },
+        "filter": {
+          "type": "object",
+          "description": "Optional filter object: { indicator_type, min_epss, kev_only }",
+          "properties": {
+            "indicator_type": {
+              "type": "string"
+            },
+            "min_epss": {
+              "type": "number"
+            },
+            "kev_only": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "required": [
+        "webhook_url"
+      ]
+    }
+  },
+  {
+    "name": "submit_indicator",
+    "description": "PG1 Sovereign Threat Intelligence: submit an observed indicator for validation and possible inclusion in future query results. Requires a valid Gumroad license key (X-API-KEY header) — this tool is NOT available via per-query x402. Submissions are staged for review, not immediately added to the live feed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "indicator": {
+          "type": "string"
+        },
+        "indicator_type": {
+          "type": "string"
+        },
+        "malware_family": {
+          "type": "string",
+          "description": "Optional."
+        },
+        "confidence": {
+          "type": "integer",
+          "description": "Submitter's own confidence, 0-100."
+        },
+        "source_note": {
+          "type": "string",
+          "description": "Optional free-text on how this was observed."
+        }
+      },
+      "required": [
+        "indicator",
+        "indicator_type"
+      ]
+    }
+  },
+  {
+    "name": "check_wallet_sanctions",
+    "description": "PG1 Sovereign Threat Intelligence: checks a cryptocurrency wallet address against the OFAC SDN (Specially Designated Nationals) sanctions list, synced daily from US Treasury data. No payment required — this tool is always free. SIBLING DIFFERENTIATION: Use for wallet/address sanctions screening only. Do NOT use for IP/domain/hash/URL threat lookups (use get_ioc_context) or CVE data (use get_cve_details). BEHAVIOR: Returns { listed: true|false, matches, source, list_last_synced }. A listed:false result means the address is not on the OFAC SDN list as of the reported sync time — it is informational only, not legal or sanctions-compliance advice, and is never phrased as \"safe\" or \"clean\". Fails loudly (returns an error) if the sanctions data is empty or unreachable, rather than ever reporting listed:false on a data failure. VALIDATION: if the address does not match a recognised format for any supported currency (EVM, BTC/LTC/BCH/DOGE/DASH/ZEC base58 or bech32/cashaddr, TRON, Monero, Solana), returns an MCP tool error (isError: true, code invalid_address) instead of a result — it never reports listed:false for malformed input.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "Mandatory wallet address to screen, e.g. an EVM 0x address, a bech32 (bc1/tb1/ltc1...) address, or a base58 address."
+        },
+        "currency": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Optional currency/chain filter to narrow the match, e.g. 'BTC', 'ETH', 'XMR'."
+        }
+      },
+      "required": [
+        "address"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "The address exactly as submitted."
+        },
+        "address_normalized": {
+          "type": "string",
+          "description": "The address after normalization, used to match against sanctioned_wallets."
+        },
+        "listed": {
+          "type": "boolean"
+        },
+        "matches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "sdn_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "currency": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "programs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "sdn_uid": {
+                "type": [
+                  "string",
+                  "number",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "source": {
+          "type": "string"
+        },
+        "list_last_synced": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "disclaimer": {
+          "type": "string"
+        },
+        "reasons": {
+          "type": "array",
+          "description": "Machine-readable reason codes for anything flagged in this result. Empty when nothing was flagged.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "flagged",
+            "no_flags",
+            "unknown"
+          ],
+          "description": "\"unknown\" whenever a source needed for this answer timed out, errored, or was skipped - never \"no_flags\" in that case."
+        },
+        "checks": {
+          "type": "array",
+          "description": "Which underlying sources were checked for this result and whether each one completed.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "Generic label for the data source checked, never a vendor name."
+              },
+              "result": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "timeout",
+                  "error",
+                  "skipped"
+                ]
+              },
+              "checked_at": {
+                "type": "string"
+              },
+              "data_as_of": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "source",
+              "result",
+              "checked_at",
+              "data_as_of"
+            ]
+          }
+        },
+        "request_id": {
+          "type": "string",
+          "description": "UUID for this request, also sent as the X-Request-Id response header."
+        },
+        "test_fixture": {
+          "type": "boolean",
+          "description": "true only when the input was a documented integration test fixture and this response is canned; absent on real results."
+        }
+      },
+      "required": [
+        "address",
+        "address_normalized",
+        "listed",
+        "matches",
+        "source",
+        "list_last_synced"
+      ]
+    }
+  },
+  {
+    "name": "check_domain_age",
+    "description": "PG1 Sovereign Threat Intelligence: looks up a domain's registration age via RDAP (the IANA-standardized WHOIS successor), resolved through the IANA bootstrap registry for the correct per-TLD RDAP server. No payment required — this tool is always free. SIBLING DIFFERENTIATION: Use for domain registration/age checks only. Do NOT use for reputation/threat-feed lookups (use get_ioc_context) or sanctions screening (use check_wallet_sanctions). BEHAVIOR: Returns { found: true, available: true, registration_date, age_days, expiration_date, registrar, newly_registered, source } when available, or { found: false, available: false, reason, reason_code } when the lookup does not resolve — this tool never estimates or guesses an age. \"available\" is a deprecated alias of \"found\", kept for backward compatibility. reason_code is \"unsupported_tld\" when the TLD has no RDAP server in the IANA bootstrap registry, or \"timeout\" / \"lookup_failed\" for other lookup failures. A newly registered domain (age_days < 30) is reported as a common phishing signal, not as proof of malicious intent.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "description": "Mandatory domain name or URL to check, e.g. 'example.com' or 'https://example.com/path'. The registrable domain is extracted automatically."
+        }
+      },
+      "required": [
+        "domain"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean",
+          "description": "Whether a registration record was found. Same meaning as the deprecated \"available\" field."
+        },
+        "available": {
+          "type": "boolean",
+          "description": "Deprecated — use \"found\" instead. Kept for backward compatibility."
+        },
+        "domain": {
+          "type": "string"
+        },
+        "registration_date": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "age_days": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "expiration_date": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "registrar": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "newly_registered": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason_code": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "invalid_domain",
+            "bootstrap_unavailable",
+            "unsupported_tld",
+            "timeout",
+            "lookup_failed",
+            null
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "description": "Machine-readable reason codes for anything flagged in this result. Empty when nothing was flagged.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "flagged",
+            "no_flags",
+            "unknown"
+          ],
+          "description": "\"unknown\" whenever a source needed for this answer timed out, errored, or was skipped - never \"no_flags\" in that case."
+        },
+        "checks": {
+          "type": "array",
+          "description": "Which underlying sources were checked for this result and whether each one completed.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "Generic label for the data source checked, never a vendor name."
+              },
+              "result": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "timeout",
+                  "error",
+                  "skipped"
+                ]
+              },
+              "checked_at": {
+                "type": "string"
+              },
+              "data_as_of": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "source",
+              "result",
+              "checked_at",
+              "data_as_of"
+            ]
+          }
+        },
+        "request_id": {
+          "type": "string",
+          "description": "UUID for this request, also sent as the X-Request-Id response header."
+        },
+        "test_fixture": {
+          "type": "boolean",
+          "description": "true only when the input was a documented integration test fixture and this response is canned; absent on real results."
+        }
+      },
+      "required": [
+        "found",
+        "available",
+        "domain"
+      ]
+    }
+  },
+  {
+    "name": "check_hostname_reputation",
+    "description": "PG1 Sovereign Threat Intelligence: checks a single hostname against the MetaMask eth-phishing-detect blocklist/allowlist and a lookalike/typosquat detector, synced daily by the sovereign-threat-pipeline. No payment required — this tool is always free. SIBLING DIFFERENTIATION: Use for phishing/lookalike-domain screening of a hostname only. Do NOT use for domain registration age (use check_domain_age), general threat-feed indicator lookups (use get_ioc_context), or wallet sanctions screening (use check_wallet_sanctions). BEHAVIOR: Returns { hostname, verdict, sources, lookalike_of, list_synced_at, checked_at, attribution }. verdict is one of \"allowlisted\", \"listed\", \"lookalike\", or \"not_listed\" — this tool never returns \"safe\" or \"clean\", and a not_listed result means the hostname is not on the eth-phishing-detect lists, not that it is safe. \"listed\" results include match_type \"exact\" or \"parent_domain\" in sources. \"lookalike\" flags a probable typosquat/homoglyph of a known brand — via confusable-character skeleton matching within the stored tolerance, or a brand keyword embedded with extra words (e.g. metamask-login.com) — even when the hostname itself is not directly listed, and sets lookalike_of to the matched brand domain. A brand's own real domain or a subdomain of it is never flagged as its own lookalike. VALIDATION: accepts exactly one bare hostname per call (no bulk input); a value containing a URL scheme, path, port, spaces, or a wildcard returns an MCP tool error (isError: true, code invalid_hostname) instead of a verdict. Fails loudly (returns an error) if the phishing list data is unreachable or times out, rather than ever reporting not_listed on a data failure. Rate-limited to 60 calls/hour per caller when unauthenticated; a valid Gumroad license key (X-API-KEY header) exempts the limit, same as check_domain_age. List contents are never exposed beyond the single matched entry.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "description": "Mandatory bare hostname to screen, e.g. 'example.com'. Not a URL — no scheme, path, port, spaces, or wildcards. One hostname per call."
+        }
+      },
+      "required": [
+        "hostname"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "description": "The hostname after normalization (trimmed, lowercased, trailing dot stripped, IDN converted to punycode)."
+        },
+        "verdict": {
+          "type": "string",
+          "enum": [
+            "allowlisted",
+            "listed",
+            "lookalike",
+            "not_listed"
+          ],
+          "description": "Never \"safe\" or \"clean\"."
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "match_type": {
+                "type": "string",
+                "enum": [
+                  "allowlist",
+                  "exact",
+                  "parent_domain",
+                  "confusable",
+                  "keyword"
+                ]
+              }
+            }
+          }
+        },
+        "lookalike_of": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The matched brand/fuzzylist domain for a \"lookalike\" verdict, otherwise null."
+        },
+        "list_synced_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "checked_at": {
+          "type": "string"
+        },
+        "attribution": {
+          "type": "string"
+        },
+        "reasons": {
+          "type": "array",
+          "description": "Machine-readable reason codes for anything flagged in this result. Empty when nothing was flagged.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "flagged",
+            "no_flags",
+            "unknown"
+          ],
+          "description": "\"unknown\" whenever a source needed for this answer timed out, errored, or was skipped - never \"no_flags\" in that case."
+        },
+        "checks": {
+          "type": "array",
+          "description": "Which underlying sources were checked for this result and whether each one completed.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "Generic label for the data source checked, never a vendor name."
+              },
+              "result": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "timeout",
+                  "error",
+                  "skipped"
+                ]
+              },
+              "checked_at": {
+                "type": "string"
+              },
+              "data_as_of": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "source",
+              "result",
+              "checked_at",
+              "data_as_of"
+            ]
+          }
+        },
+        "request_id": {
+          "type": "string",
+          "description": "UUID for this request, also sent as the X-Request-Id response header."
+        },
+        "test_fixture": {
+          "type": "boolean",
+          "description": "true only when the input was a documented integration test fixture and this response is canned; absent on real results."
+        }
+      },
+      "required": [
+        "hostname",
+        "verdict",
+        "sources",
+        "lookalike_of",
+        "list_synced_at",
+        "checked_at",
+        "attribution"
+      ]
+    }
+  },
+  {
+    "name": "check_wallet_age",
+    "description": "PG1 Sovereign Threat Intelligence: reports when an EVM wallet address first appeared on a given chain, based on its earliest on-chain transfer history (in or out), plus whether the address is a contract. No payment required — this tool is always free. SIBLING DIFFERENTIATION: Use for wallet age/history only. Do NOT use for sanctions screening (use check_wallet_sanctions), domain age (use check_domain_age), or hostname/phishing reputation (use check_hostname_reputation). BEHAVIOR: Returns { address, chain, found, first_seen, age_days, first_seen_block, first_direction, is_contract, note, source: \"on-chain transfer history\", cached }. A found:false result (with all other fields null except is_contract) means the address has no transfer history on that chain — a normal, common result for a brand-new or never-used address, not an error, and not evidence of legitimacy either way; this tool reports age and history only. Upstream lookup failures or timeouts return an MCP tool error (isError: true) instead of found:false, since a data-source outage must never be read as \"brand-new wallet\". VALIDATION: address must be a 0x-prefixed 40-hex-character EVM address (case-insensitive); chain, if given, must be one of the supported enum values. Malformed input returns an MCP tool error (isError: true, code invalid_address or invalid_chain) instead of a result. Rate-limited to 60 calls/hour per caller when unauthenticated; a valid Gumroad license key (X-API-KEY header) exempts the limit, same as check_domain_age. A found result is cached permanently (it never changes); a found:false result is cached for 10 minutes only, since a wallet can become active at any time.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "Mandatory EVM wallet address to check, formatted '0x' followed by 40 hex characters (case-insensitive)."
+        },
+        "chain": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "base",
+            "ethereum",
+            "arbitrum",
+            "optimism",
+            "polygon",
+            "bsc",
+            null
+          ],
+          "description": "Optional chain to check: 'base', 'ethereum', 'arbitrum', 'optimism', 'polygon', or 'bsc'. Defaults to 'base'.",
+          "default": "base"
+        }
+      },
+      "required": [
+        "address"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "The address, lowercased."
+        },
+        "chain": {
+          "type": "string"
+        },
+        "found": {
+          "type": "boolean"
+        },
+        "first_seen": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ISO timestamp of the earliest observed transfer in or out, or null if none found."
+        },
+        "age_days": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "first_seen_block": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "first_direction": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "in",
+            "out",
+            null
+          ]
+        },
+        "is_contract": {
+          "type": "boolean"
+        },
+        "delegated": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "true when the address currently has an EIP-7702 delegation on this chain (its code is exactly 0xef0100 followed by a 20-byte delegate address), false when it does not, null when the code check did not complete. Checked live on every call, never cached. is_contract is unchanged and is still true for a delegated address."
+        },
+        "delegate_address": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The lowercased delegate contract address when delegated is true, otherwise null."
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "cached": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "type": "array",
+          "description": "Machine-readable reason codes for anything flagged in this result. Empty when nothing was flagged.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "flagged",
+            "no_flags",
+            "unknown"
+          ],
+          "description": "\"unknown\" whenever a source needed for this answer timed out, errored, or was skipped - never \"no_flags\" in that case."
+        },
+        "checks": {
+          "type": "array",
+          "description": "Which underlying sources were checked for this result and whether each one completed.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "Generic label for the data source checked, never a vendor name."
+              },
+              "result": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "timeout",
+                  "error",
+                  "skipped"
+                ]
+              },
+              "checked_at": {
+                "type": "string"
+              },
+              "data_as_of": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "source",
+              "result",
+              "checked_at",
+              "data_as_of"
+            ]
+          }
+        },
+        "request_id": {
+          "type": "string",
+          "description": "UUID for this request, also sent as the X-Request-Id response header."
+        },
+        "test_fixture": {
+          "type": "boolean",
+          "description": "true only when the input was a documented integration test fixture and this response is canned; absent on real results."
+        }
+      },
+      "required": [
+        "address",
+        "chain",
+        "found",
+        "first_seen",
+        "age_days",
+        "first_seen_block",
+        "first_direction",
+        "is_contract",
+        "source",
+        "cached"
+      ]
+    }
+  }
+]
