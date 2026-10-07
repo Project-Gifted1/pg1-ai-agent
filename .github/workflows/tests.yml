@@ -1,0 +1,3 @@
+name: Tests
+on: workflow_dispatch
+jobs: {}
