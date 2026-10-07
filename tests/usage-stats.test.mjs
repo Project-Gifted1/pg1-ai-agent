@@ -49,10 +49,15 @@ function resetEnv() {
   for (const k of ['USER_API_USER', 'USER_API_PASSS', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'ANTROPIC_API_KEY', 'CRON_SECRET', 'GITHUB_TOKEN', 'CARTESIA_API_KEY']) delete process.env[k];
 }
 
+// Between tests fetch refuses rather than going live: a fire-and-forget
+// write started by one test (logApiError on a 401) can still be running
+// after the next test's beforeEach, and must not reach the network.
+const offlineFetch = async (url) => { throw new Error('Unexpected network call in test: ' + url); };
+
 beforeEach(() => {
   resetEnv();
   __clearAuthRateLimitState();
-  globalThis.fetch = ORIGINAL_FETCH;
+  globalThis.fetch = offlineFetch;
 });
 
 after(() => {
