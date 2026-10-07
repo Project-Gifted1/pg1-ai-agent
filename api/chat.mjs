@@ -22,6 +22,7 @@ import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthr
 import { CHAT_ROUTES, chooseChatRoute, requiredFirstTool, searchAfterTools, wantsCurrentInfo } from '../lib/chatRoute.mjs';
 import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
 import { fetchThreatTelemetry } from '../lib/sourcePolicy.mjs';
+import { resolveWriteRepo, checkWritePath, checkWritePaths, agentBranchName, createAgentBranch } from '../lib/githubWriteGuard.mjs';
 
 // ---------------------------------------------------------------------
 // AUTH: timing-safe secret comparison + in-memory per-IP failure lockout
@@ -2057,7 +2058,6 @@ export default async function handler(req, res) {
     var openaiKey = (process.env.OPENAI_API_KEY || '').replace(/\s+/g, '');
     var anthropicKey = (process.env.ANTHROPIC_API_KEY || process.env.ANTROPIC_API_KEY || '').replace(/\s+/g, '');
     var githubToken = (process.env.GITHUB_TOKEN || '').replace(/\s+/g, '');
-    var githubRepo = (process.env.GITHUB_OWNER_KEY || '').trim();
 
     var supabaseStatus = 'DISCONNECTED';
     var formattedArchive = 'No prior matrix context.';
@@ -2399,7 +2399,7 @@ export default async function handler(req, res) {
     }
 
     if (activeAction === 'APPLY_SURGICAL_PATCH') {
-      if (!isAuthed) {
+      if (!isOperator) {
         log401('APPLY_SURGICAL_PATCH', 'unauthenticated', supUrl, supKey);
         return sendJSON(res, 401, { reply: `[AGENT] Patch Aborted: Authentication required.`, traceId: requestTraceId });
       }
@@ -2437,19 +2437,26 @@ export default async function handler(req, res) {
           'Cache-Control': 'no-cache'
         };
 
-        var orgOwner = 'Project-Gifted1';
-        if (githubRepo && githubRepo.includes('/')) {
-          orgOwner = githubRepo.split('/')[0];
+        var patchRepoPath = resolveWriteRepo(targetRepo);
+        if (!patchRepoPath) {
+          return sendJSON(res, 200, { reply: `[AGENT] Patch Refused: repository '${targetRepo}' is not on the write allow-list.`, traceId: requestTraceId });
         }
-        var patchRepoPath = `${orgOwner}/${targetRepo || 'sovereign-threat-pipeline'}`;
+        var patchPathCheck = checkWritePath(patchRepoPath, String(targetPathFile || '').replace(/^\.\//, ''));
+        if (!patchPathCheck.ok) {
+          return sendJSON(res, 200, { reply: `[AGENT] Patch Refused: '${targetPathFile}': ${patchPathCheck.reason}.`, traceId: requestTraceId });
+        }
         var patchRepoBaseUrl = `https://api.github.com/repos/${patchRepoPath}`;
-        var patchBranchName = `surgical-patch-${Date.now()}`;
+        var patchBranchName = agentBranchName('surgical-patch-');
 
         var pathResolution = await resolveGithubPathCandidates(targetPathFile, patchRepoBaseUrl, ghApiHeaders, fetch);
         if (pathResolution.ambiguous) {
           return sendJSON(res, 200, { reply: `[AGENT] Patch Aborted: '${targetPathFile}' matches multiple files in the repo, refusing to guess which one you meant:\n${pathResolution.candidates.map(c => '• ' + c).join('\n')}\nRe-send with the exact full path.` });
         }
         var actualFilePath = pathResolution.path;
+        var patchResolvedCheck = checkWritePath(patchRepoPath, actualFilePath);
+        if (!patchResolvedCheck.ok) {
+          return sendJSON(res, 200, { reply: `[AGENT] Patch Refused: '${actualFilePath}': ${patchResolvedCheck.reason}.`, traceId: requestTraceId });
+        }
 
         var refRes = await fetch(`${patchRepoBaseUrl}/git/ref/heads/main`, { headers: ghApiHeaders, cache: 'no-store' });
         if (!refRes.ok) {
@@ -2508,12 +2515,10 @@ export default async function handler(req, res) {
           });
         }
 
-        await fetch(`${patchRepoBaseUrl}/git/refs`, {
-          method: 'POST',
-          headers: { ...ghApiHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ref: `refs/heads/${patchBranchName}`, sha: mainSha }),
-          cache: 'no-store'
-        });
+        var patchBranch = await createAgentBranch(fetch, patchRepoBaseUrl, ghApiHeaders, patchBranchName, mainSha);
+        if (!patchBranch.ok) {
+          return sendJSON(res, 200, { reply: `[AGENT] Patch Failed: could not create branch ${patchBranchName} (${patchBranch.status}). Nothing was committed.`, traceId: requestTraceId });
+        }
 
         var encodedContent = encodeBase64(updatedContent);
 
@@ -2834,7 +2839,7 @@ export default async function handler(req, res) {
     }
 
     if (activeAction === 'ACCEPT_AUTHORIZATION') {
-      if (!isAuthed) {
+      if (!isOperator) {
         log401('ACCEPT_AUTHORIZATION', 'unauthenticated', supUrl, supKey);
         return sendJSON(res, 401, { reply: `[AGENT] Commit Aborted: Authentication required.`, traceId: requestTraceId });
       }
@@ -2866,19 +2871,26 @@ export default async function handler(req, res) {
           'Cache-Control': 'no-cache'
         };
 
-        var authOrgOwner = 'Project-Gifted1';
-        if (githubRepo && githubRepo.includes('/')) {
-          authOrgOwner = githubRepo.split('/')[0];
+        var authRepoPath = resolveWriteRepo(targetRepo);
+        if (!authRepoPath) {
+          return sendJSON(res, 200, { reply: `[AGENT] Commit Refused: repository '${targetRepo}' is not on the write allow-list.`, traceId: requestTraceId });
         }
-        var authRepoPath = targetRepo ? `${authOrgOwner}/${targetRepo}` : githubRepo;
+        var authPathCheck = checkWritePath(authRepoPath, String(targetFile || '').replace(/^\.\//, ''));
+        if (!authPathCheck.ok) {
+          return sendJSON(res, 200, { reply: `[AGENT] Commit Refused: '${targetFile}': ${authPathCheck.reason}.`, traceId: requestTraceId });
+        }
         var authRepoBaseUrl = `https://api.github.com/repos/${authRepoPath}`;
-        var authBranchName = `agent-patch-${Date.now()}`;
+        var authBranchName = agentBranchName('agent-patch-');
 
         var authPathResolution = await resolveGithubPathCandidates(targetFile, authRepoBaseUrl, authGhApiHeaders, fetch);
         if (authPathResolution.ambiguous) {
           return sendJSON(res, 200, { reply: `[AGENT] Commit Aborted: '${targetFile}' matches multiple files in the repo, refusing to guess which one you meant:\n${authPathResolution.candidates.map(c => '• ' + c).join('\n')}\nRe-send with the exact full path.`, traceId: requestTraceId });
         }
         var authActualFilePath = authPathResolution.path;
+        var authResolvedCheck = checkWritePath(authRepoPath, authActualFilePath);
+        if (!authResolvedCheck.ok) {
+          return sendJSON(res, 200, { reply: `[AGENT] Commit Refused: '${authActualFilePath}': ${authResolvedCheck.reason}.`, traceId: requestTraceId });
+        }
 
         var authRefRes = await fetch(`${authRepoBaseUrl}/git/ref/heads/main`, { headers: authGhApiHeaders, cache: 'no-store' });
         if (!authRefRes.ok) return sendJSON(res, 200, { reply: `[AGENT] PR Failed: Could not resolve main branch reference.`, traceId: requestTraceId });
@@ -2924,12 +2936,10 @@ export default async function handler(req, res) {
           });
         }
 
-        await fetch(`${authRepoBaseUrl}/git/refs`, {
-          method: 'POST',
-          headers: { ...authGhApiHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ref: `refs/heads/${authBranchName}`, sha: authMainSha }),
-          cache: 'no-store'
-        });
+        var authBranch = await createAgentBranch(fetch, authRepoBaseUrl, authGhApiHeaders, authBranchName, authMainSha);
+        if (!authBranch.ok) {
+          return sendJSON(res, 200, { reply: `[AGENT] PR Failed: could not create branch ${authBranchName} (${authBranch.status}). Nothing was committed.`, traceId: requestTraceId });
+        }
 
         var authFileUrl = `${authRepoBaseUrl}/contents/${authActualFilePath}`;
 
@@ -2973,7 +2983,7 @@ export default async function handler(req, res) {
     }
 
     if (activeAction === 'REORGANIZE_FILES') {
-      if (!isAuthed) {
+      if (!isOperator) {
         log401('REORGANIZE_FILES', 'unauthenticated', supUrl, supKey);
         return sendJSON(res, 401, { reply: `[AGENT] Reorganize Aborted: Authentication required.`, traceId: requestTraceId });
       }
@@ -3015,6 +3025,14 @@ export default async function handler(req, res) {
         allTouchedPaths.push(o.path);
         if (o.newPath) allTouchedPaths.push(o.newPath);
       });
+      var reorgRepoPath = resolveWriteRepo(targetRepo);
+      if (!reorgRepoPath) {
+        return sendJSON(res, 200, { reply: `[AGENT] Reorganize Refused: repository '${targetRepo}' is not on the write allow-list. Nothing was touched.`, traceId: requestTraceId });
+      }
+      var reorgPathsCheck = checkWritePaths(reorgRepoPath, allTouchedPaths.map(function (p) { return String(p).replace(/^\.\//, ''); }));
+      if (!reorgPathsCheck.ok) {
+        return sendJSON(res, 200, { reply: `[AGENT] Reorganize Refused: '${reorgPathsCheck.path}': ${reorgPathsCheck.reason}. Entire batch aborted — nothing was touched.`, traceId: requestTraceId });
+      }
       var blockedHit = allTouchedPaths.find(function (p) { return isHardBlockedPath(p); });
       if (blockedHit) {
         return sendJSON(res, 200, { reply: `[AGENT] Reorganize Refused: '${blockedHit}' matches a hard-blocked path pattern. Entire batch aborted — nothing was touched.`, traceId: requestTraceId });
@@ -3032,13 +3050,8 @@ export default async function handler(req, res) {
           'Cache-Control': 'no-cache'
         };
 
-        var reorgOrgOwner = 'Project-Gifted1';
-        if (githubRepo && githubRepo.includes('/')) {
-          reorgOrgOwner = githubRepo.split('/')[0];
-        }
-        var reorgRepoPath = `${reorgOrgOwner}/${targetRepo || 'sovereign-threat-pipeline'}`;
         var reorgBaseUrl = `https://api.github.com/repos/${reorgRepoPath}`;
-        var reorgBranchName = `reorganize-${Date.now()}`;
+        var reorgBranchName = agentBranchName('reorganize-');
 
         var reorgRefRes = await fetch(`${reorgBaseUrl}/git/ref/heads/main`, { headers: reorgHeaders, cache: 'no-store' });
         if (!reorgRefRes.ok) {
@@ -3179,10 +3192,7 @@ export default async function handler(req, res) {
           return sendJSON(res, 200, { reply: `[AGENT] Reorganize Failed: Could not create commit. Nothing was pushed.`, traceId: requestTraceId });
         }
 
-        var newRefRes = await fetch(`${reorgBaseUrl}/git/refs`, {
-          method: 'POST', headers: { ...reorgHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ref: `refs/heads/${reorgBranchName}`, sha: newCommitData.sha }), cache: 'no-store'
-        });
+        var newRefRes = await createAgentBranch(fetch, reorgBaseUrl, reorgHeaders, reorgBranchName, newCommitData.sha);
         if (!newRefRes.ok) {
           return sendJSON(res, 200, { reply: `[AGENT] Reorganize Failed: Commit created (${newCommitData.sha}) but branch creation failed — nothing merged, ask a human to check the dangling commit.`, traceId: requestTraceId });
         }
@@ -3208,7 +3218,7 @@ export default async function handler(req, res) {
     }
 
     if (activeAction === 'CONFIRM_PENDING_ACTION') {
-      if (!isAuthed) {
+      if (!isOperator) {
         log401('CONFIRM_PENDING_ACTION', 'unauthenticated', supUrl, supKey);
         return sendJSON(res, 401, { reply: `[AGENT] Confirmation Aborted: Authentication required.`, traceId: requestTraceId });
       }
@@ -3245,8 +3255,19 @@ export default async function handler(req, res) {
         'User-Agent': 'Sovereign-Agent',
         'Cache-Control': 'no-cache'
       };
-      var repoBaseUrl = `https://api.github.com/repos/${plan.repoPath}`;
-      var newBranchName = `approved-${Date.now()}`;
+      // A stored proposal is re-checked against the allow-list: it may
+      // predate the allow-list, and the row itself lives outside this code.
+      var planRepoPath = resolveWriteRepo(plan && plan.repoPath);
+      var planPaths = !plan ? [] : pendingRow.action_type === 'REORGANIZE_FILES'
+        ? (Array.isArray(plan.treeEntries) ? plan.treeEntries.map(function (e) { return e && e.path; }) : [])
+        : [plan.actualFilePath];
+      var planPathsCheck = planRepoPath ? checkWritePaths(planRepoPath, planPaths) : { ok: false, path: plan && plan.repoPath, reason: 'repository is not on the write allow-list' };
+      if (!planRepoPath || !planPaths.length || !planPathsCheck.ok) {
+        await resolvePendingActionStatus(supabaseUrl, supabaseKey, pendingActionToken, 'declined');
+        return sendJSON(res, 200, { reply: `[AGENT] Confirmation Refused: '${planPathsCheck.path || ''}': ${planPathsCheck.reason || 'nothing to write'}. The proposal was discarded and nothing was written to GitHub.`, traceId: requestTraceId });
+      }
+      var repoBaseUrl = `https://api.github.com/repos/${planRepoPath}`;
+      var newBranchName = agentBranchName('approved-');
 
       try {
         if (pendingRow.action_type === 'APPLY_SURGICAL_PATCH' || pendingRow.action_type === 'ACCEPT_AUTHORIZATION') {
@@ -3262,10 +3283,10 @@ export default async function handler(req, res) {
           if (!mainRefRes.ok) return sendJSON(res, 200, { reply: `[AGENT] Confirmation Failed: Could not resolve main branch reference.`, traceId: requestTraceId });
           var mainRefData = await mainRefRes.json();
 
-          await fetch(`${repoBaseUrl}/git/refs`, {
-            method: 'POST', headers: { ...ghHeaders, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ref: `refs/heads/${newBranchName}`, sha: mainRefData.object.sha }), cache: 'no-store'
-          });
+          var approvedBranch = await createAgentBranch(fetch, repoBaseUrl, ghHeaders, newBranchName, mainRefData.object.sha);
+          if (!approvedBranch.ok) {
+            return sendJSON(res, 200, { reply: `[AGENT] Confirmation Failed: could not create branch ${newBranchName} (${approvedBranch.status}). Nothing was committed.`, traceId: requestTraceId });
+          }
 
           var finalContent = pendingRow.action_type === 'APPLY_SURGICAL_PATCH' ? plan.updatedContent : plan.pendingCode;
           var commitRes = await fetch(`${repoBaseUrl}/contents/${plan.actualFilePath}`, {
@@ -3325,10 +3346,10 @@ export default async function handler(req, res) {
             return sendJSON(res, 200, { reply: `[AGENT] Confirmation Failed: Could not create commit. Nothing was pushed.`, traceId: requestTraceId });
           }
 
-          await fetch(`${repoBaseUrl}/git/refs`, {
-            method: 'POST', headers: { ...ghHeaders, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ref: `refs/heads/${newBranchName}`, sha: confirmCommitData.sha }), cache: 'no-store'
-          });
+          var approvedReorgBranch = await createAgentBranch(fetch, repoBaseUrl, ghHeaders, newBranchName, confirmCommitData.sha);
+          if (!approvedReorgBranch.ok) {
+            return sendJSON(res, 200, { reply: `[AGENT] Confirmation Failed: commit ${confirmCommitData.sha} was created but branch ${newBranchName} could not be (${approvedReorgBranch.status}); nothing reached any branch.`, traceId: requestTraceId });
+          }
 
           var confirmPrRes = await fetch(`${repoBaseUrl}/pulls`, {
             method: 'POST', headers: { ...ghHeaders, 'Content-Type': 'application/json' },
