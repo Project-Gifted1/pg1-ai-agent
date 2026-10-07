@@ -313,7 +313,11 @@ test('diagnostics endpoint withholds indicator-table rows from abuse.ch or with 
     return plain(url, options);
   };
   const res = makeRes();
-  await diagnosticsHandler({ method: 'GET', query: { table: 'threat_indicators', metric: 'records', limit: '100' } }, res);
+  // The endpoint is operator-only (tests/diagnostics-auth.test.mjs).
+  process.env.USER_API_KEY = 'policy-operator';
+  process.env.USER_API_PASS = 'policy-pass';
+  const authorization = 'Basic ' + Buffer.from('policy-operator:policy-pass').toString('base64');
+  await diagnosticsHandler({ method: 'GET', headers: { authorization }, query: { table: 'threat_indicators', metric: 'records', limit: '100' } }, res);
   assert.equal(res.statusCode, 200, JSON.stringify(res.body));
   assertNoAbusech('diagnostics records', res.body.records);
   assertOtherSourcesPresent('diagnostics records', res.body.records);
