@@ -1,3 +1,99 @@
 name: Tests
-on: workflow_dispatch
-jobs: {}
+
+# Runs the test suite on every pull request and every push to main.
+# No secrets: the tests run on mocks and fixtures only. tests/ci/no-network.mjs
+# is loaded into every test process and fails the run if any test (Node or
+# Chromium) tries to reach a host other than this machine.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NPM_CONFIG_UPDATE_NOTIFIER: 'false'
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  unit:
+    name: npm test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # Chromium is not installed in this job, so tests/browser/ skip here
+      # and run in the browser job below.
+      - name: npm test (network blocked)
+        env:
+          NODE_OPTIONS: --import=./tests/ci/no-network.mjs
+          PG1_NET_GUARD_LOG: ${{ runner.temp }}/network-violations.jsonl
+        run: npm test
+      - name: Fail on any attempted network access
+        if: always()
+        env:
+          PG1_NET_GUARD_LOG: ${{ runner.temp }}/network-violations.jsonl
+        run: |
+          if [ -s "$PG1_NET_GUARD_LOG" ]; then
+            echo "::error::Tests tried to reach hosts outside the runner:"
+            cat "$PG1_NET_GUARD_LOG"
+            exit 1
+          fi
+
+  browser:
+    name: browser tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium (version pinned by package-lock.json)
+        run: npx playwright install --with-deps chromium
+      - name: npm run test:browser (network blocked)
+        env:
+          NODE_OPTIONS: --import=./tests/ci/no-network.mjs
+          PG1_NET_GUARD_LOG: ${{ runner.temp }}/network-violations.jsonl
+        run: |
+          set -o pipefail
+          npm run test:browser | tee "$RUNNER_TEMP/browser.tap"
+          # The browser tests skip themselves when Chromium is missing;
+          # here that would be a silent pass, so treat it as a failure.
+          grep -qx '# skipped 0' "$RUNNER_TEMP/browser.tap" || { echo "::error::Browser tests were skipped"; exit 1; }
+      - name: Fail on any attempted network access
+        if: always()
+        env:
+          PG1_NET_GUARD_LOG: ${{ runner.temp }}/network-violations.jsonl
+        run: |
+          if [ -s "$PG1_NET_GUARD_LOG" ]; then
+            echo "::error::Tests tried to reach hosts outside the runner:"
+            cat "$PG1_NET_GUARD_LOG"
+            exit 1
+          fi
+      # Screenshots the browser tests regenerate, for looking at; never committed.
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-screenshots
+          path: docs/screenshots/*.png
+          if-no-files-found: ignore
+          retention-days: 7
