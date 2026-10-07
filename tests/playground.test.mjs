@@ -371,11 +371,14 @@ test('upstream failures: neutral message, request_id, detail only in pg1_errors 
   const card = res.body.card;
   assert.equal(card.status, 'failed');
   assert.deepEqual(card.error, { code: 'unavailable', message: 'The check could not be completed right now.' });
-  assert.doesNotMatch(JSON.stringify(res.body), /503|gateway|eth-mainnet/);
+  // The request_id is a random UUID, so it can itself contain "503" or
+  // "cdcdcd"; it is checked by value below and left out of the text scans.
+  const withoutId = (v) => JSON.stringify(v).split(card.request_id).join('<request_id>');
+  assert.doesNotMatch(withoutId(res.body), /503|gateway|eth-mainnet/);
   assert.equal(records.length, 1);
   assert.equal(records[0][0], '/api/playground:check_wallet_age');
   assert.equal(records[0][4], card.request_id, 'logged under the request_id the visitor sees');
-  assert.doesNotMatch(JSON.stringify(records[0]), /cdcdcd/, 'the input is not logged');
+  assert.doesNotMatch(withoutId(records[0]), /cdcdcd/, 'the input is not logged');
 });
 
 test('the tool\'s own rate-limit or invalid-input text never reaches the visitor', async () => {
