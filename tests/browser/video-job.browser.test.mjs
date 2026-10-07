@@ -85,7 +85,7 @@ function startStubServer() {
           return res.end();
         }
         const id = /storm/.test(parsed && parsed.prompt) ? JOB_FAIL : JOB_OK;
-        const reply = `Rendering video… It appears here when it is ready, usually within a few minutes. ${id === JOB_OK ? 2 : 1} of 3 videos left today.`;
+        const reply = `Rendering video… It appears here when it is ready, usually within a few minutes.\nPG1 Motion · Draft · 5 s · about 0.10 USD · ${id === JOB_OK ? '2.40' : '2.30'} USD left today`;
         res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache' });
         res.write(': pg1 trace\n\n');
         for (const ev of [
@@ -155,6 +155,11 @@ test('a video reply shows "Rendering video…", polls with the session, then sho
   await page.waitForSelector('#chat-container .media-preview-container video', { timeout: 20000 });
   assert.equal(await page.locator('#chat-container .media-preview-container video').getAttribute('src'), CLIP_URL);
   assert.equal(await page.locator('#chat-container .video-job').count(), 0, 'no card left spinning');
+  // The reply text above the player says the clip is ready, not rendering;
+  // the failed clip's reply is left as it was.
+  const okBubble = page.locator('#chat-container .message-bubble', { has: page.locator('.media-preview-container video') });
+  assert.equal((await okBubble.locator('.message-text').textContent()).trim(), 'PG1 Motion · Draft · 5 s · ready');
+  assert.equal(await page.locator('#chat-container .message-text', { hasText: 'Rendering video' }).count(), 1, 'only the failed clip still has the rendering text');
   assert.ok(log.polls.length >= 3);
   for (const p of log.polls) assert.deepEqual([p.user, p.pass], ['operator', 'passkey'], 'every poll carries the session');
 
@@ -164,7 +169,36 @@ test('a video reply shows "Rendering video…", polls with the session, then sho
   await signIn(page);
   await page.waitForTimeout(1500);
   assert.equal(await page.locator('#chat-container .media-preview-container video').count(), 1);
+  assert.equal((await okBubble.locator('.message-text').textContent()).trim(), 'PG1 Motion · Draft · 5 s · ready', 'the finished label survives a reload');
   assert.equal(log.polls.length, before);
+  assert.deepEqual(pageErrors, []);
+});
+
+test('a finished clip saved by an older build with the rendering text above it shows the finished label after a reload', { skip, timeout: 120000 }, async (t) => {
+  const { server, origin } = await startStubServer();
+  const browser = await chromium.launch();
+  t.after(async () => {
+    await browser.close();
+    await new Promise((r) => server.close(r));
+  });
+  const context = await browser.newContext({ viewport: { width: 412, height: 915 } });
+  await context.route('https://vault.example.test/**', (route) => route.fulfill({ status: 200, contentType: 'video/mp4', body: '' }));
+  const page = await context.newPage();
+  const pageErrors = [];
+  page.on('pageerror', (err) => pageErrors.push(String(err && err.message || err)));
+  await page.goto(origin + '/', { waitUntil: 'load' });
+  await page.evaluate((url) => {
+    const saved = '<div class="message-bubble"><div class="message-text">Rendering video… It appears here when it is ready, usually within a few minutes.<br>PG1 Motion · Pro · 10 s · about 1.20 USD · 3.80 USD left today</div>'
+      + `<div class="media-preview-container"><video controls src="${url}"></video></div></div>`
+      + '<div class="message-bubble"><div class="message-text">Rendering video… It appears here when it is ready, usually within a few minutes.</div>'
+      + '<div class="video-job is-rendering" data-video-job="11111111-2222-4333-8444-555555555555" role="status"><span class="video-job-text">Rendering video… <span class="video-job-engine">PG1 Motion</span></span></div></div>';
+    localStorage.setItem('pg1_matrix_state', saved);
+  }, CLIP_URL);
+  await page.reload({ waitUntil: 'load' });
+  const texts = await page.locator('#chat-container .message-bubble .message-text').allTextContents();
+  assert.equal(texts[0].trim(), 'PG1 Motion · Pro · 10 s · ready');
+  assert.match(texts[1], /^Rendering video…/, 'a clip still rendering keeps its rendering text');
+  assert.match(await page.evaluate(() => localStorage.getItem('pg1_matrix_state')), /PG1 Motion · Pro · 10 s · ready/, 'saved again');
   assert.deepEqual(pageErrors, []);
 });
 

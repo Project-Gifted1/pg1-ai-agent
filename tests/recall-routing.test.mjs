@@ -28,7 +28,7 @@ import { createSseParser } from '../lib/chatStream.mjs';
 
 const { default: chatHandler, __clearAuthRateLimitState } = await import('../api/chat.mjs');
 const { CHAT_ROUTES, chooseChatRoute, requiredFirstTool, searchAfterTools, asksAboutHistory, HISTORY_ROUTE_REASON } = await import('../lib/chatRoute.mjs');
-const { chatToolsForRole, toolDirective, SEARCH_HISTORY_TOOL, SEARCH_HISTORY_DIRECTIVE } = await import('../lib/chatTools.mjs');
+const { chatToolsForRole, toolDirective, SEARCH_HISTORY_TOOL, SEARCH_HISTORY_DIRECTIVE, HISTORY_CAPABILITY_TEXT, HISTORY_CAPABILITY_SEARCH_TEXT } = await import('../lib/chatTools.mjs');
 
 const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -112,6 +112,89 @@ test('operator: ordinary news and people questions still go to web search', () =
   assert.equal(wallet.route, CHAT_ROUTES.TOOLS);
   assert.notEqual(wallet.reason, HISTORY_ROUTE_REASON);
   assert.equal(searchAfterTools('the latest news', { text: 'x', outcomes: [] }, wallet), true);
+});
+
+// 2026-10-06: "the HTML snippet I pasted yesterday" went to web search and
+// PG1 said "I cannot query past chat rows… not in my active conversation
+// context" and suggested /vault or /export.
+test('operator: references to something pasted, sent, shared or said earlier route to search_history', () => {
+  const refs = [
+    'the HTML snippet I pasted yesterday', 'Can you fix the HTML snippet I pasted yesterday?',
+    'what was the link I sent you last week?', 'the link I sent you', 'the file I gave you',
+    'the config we shared with you', 'I sent you a screenshot earlier, what did it show?',
+    'I told you before which wallet it was', 'I mentioned a CVE a few days ago', 'I shared the logs on Monday',
+    'you said it would be ready', 'you told me the domain was clean', 'we discussed this',
+    'we went over the pricing', 'from our last chat', 'in our previous conversation you had a plan',
+    'what did I paste earlier about the meta tag?'
+  ];
+  for (const q of refs) {
+    assert.ok(asksAboutHistory(q), q);
+    const route = routeFor(q, operatorTools());
+    assert.deepEqual(route, { route: CHAT_ROUTES.TOOLS, reason: HISTORY_ROUTE_REASON }, q);
+    assert.equal(requiredFirstTool(route), SEARCH_HISTORY_TOOL, q);
+  }
+  // Not about an earlier chat: still web search (or no history route).
+  for (const q of ['latest news on Bitcoin', 'latest news on X', 'what is the latest news about Blanco Ekama?', 'fix the code I pasted below', 'I sent a request today and got a 500', 'write me a snippet of HTML']) {
+    assert.ok(!asksAboutHistory(q), q);
+    assert.notEqual(routeFor(q, operatorTools()).reason, HISTORY_ROUTE_REASON, q);
+  }
+  assert.deepEqual(routeFor('latest news on X', operatorTools()), { route: CHAT_ROUTES.SEARCH, reason: 'default' });
+  // A guest still never gets the history route.
+  assert.equal(routeFor('the HTML snippet I pasted yesterday', guestTools()).route, CHAT_ROUTES.SEARCH);
+});
+
+test('the tool description and directive ask for the distinctive words, not a generic one', () => {
+  const desc = operatorTools().find((t) => t.name === SEARCH_HISTORY_TOOL).description;
+  for (const text of [desc, SEARCH_HISTORY_DIRECTIVE]) {
+    assert.match(text, /distinctive words/);
+    assert.match(text, /verification OR "meta tag" OR html/);
+    assert.match(text, /the HTML snippet I pasted yesterday/);
+    assert.match(text, /the link I sent you last week/);
+  }
+});
+
+test('the [CAPABILITIES] line: PG1 can search the full history, never says it cannot see past chats, never sends the operator to /export for it', () => {
+  assert.match(HISTORY_CAPABILITY_TEXT, /you CAN search the operator's full stored chat history/);
+  assert.match(HISTORY_CAPABILITY_TEXT, /last 12 messages/);
+  assert.match(HISTORY_CAPABILITY_TEXT, /Never say you cannot access, see, query or remember past conversations/);
+  assert.match(HISTORY_CAPABILITY_TEXT, /only exception is a search_history call in this reply that actually failed or was refused/);
+  assert.match(HISTORY_CAPABILITY_TEXT, /Never suggest \/export or \/vault for finding an older message/);
+  // The web-search variant says the same without naming a function it lacks,
+  // and asks for wording that does route to the history.
+  assert.ok(!HISTORY_CAPABILITY_SEARCH_TEXT.includes(SEARCH_HISTORY_TOOL));
+  assert.match(HISTORY_CAPABILITY_SEARCH_TEXT, /PG1 CAN search the operator's full stored chat history/);
+  assert.match(HISTORY_CAPABILITY_SEARCH_TEXT, /never say you cannot access, see, query or remember past conversations/);
+  assert.match(HISTORY_CAPABILITY_SEARCH_TEXT, /Never suggest \/export or \/vault/);
+  assert.ok(asksAboutHistory('search our chat history for the meta tag snippet'), 'the phrasing it asks for routes to search_history');
+});
+
+for (const stream of [false, true]) {
+  test(`${stream ? 'streamed' : 'JSON'}: every operator prompt, tools or search, carries the history capability and nothing saying past chats are out of reach`, async () => {
+    const calls = installFetch();
+    await chat({ prompt: 'what is the latest news about Bitcoin today?', ...OPERATOR, ...(stream ? { stream: true } : {}) });
+    await chat({ prompt: 'the HTML snippet I pasted yesterday', ...OPERATOR, ...(stream ? { stream: true } : {}) });
+    const gem = geminiRequests(calls);
+    assert.ok(gem.some((c) => hasSearch(c.body)), 'a search request');
+    assert.ok(gem.some((c) => forced(c.body)), 'a forced search_history request for the reference');
+    for (const c of gem) {
+      const sys = systemOf(c.body);
+      assert.ok(sys.includes(hasSearch(c.body) ? HISTORY_CAPABILITY_SEARCH_TEXT : HISTORY_CAPABILITY_TEXT), 'the capability line for this kind of request');
+      assert.doesNotMatch(sys, /(?:cannot|can't|unable to) (?:see|access|query|read) (?:past|earlier|previous) (?:chats|conversations|chat rows)/i);
+      // /export exists (a real command), and is described as the recent archive only.
+      assert.match(sys, /\/export and \/vault show the recent chat archive, the same last few messages already in \[CONTEXT\] and nothing older/);
+    }
+  });
+}
+
+test('/export is a real command: it returns the recent chat archive', async () => {
+  installFetch();
+  const res = await chat({ prompt: '/export', ...OPERATOR });
+  assert.equal(res.statusCode, 200);
+  assert.match(res.jsonBody.reply, /^### \[ VAULT CONTEXT EXPORT \]/);
+});
+
+test('guest prompts carry no history capability line', () => {
+  assert.ok(!guestTools().some((t) => t.name === SEARCH_HISTORY_TOOL));
 });
 
 test('the directive: never claim the history tool is unavailable unless a call failed; a web search is only offered, never mixed in', () => {

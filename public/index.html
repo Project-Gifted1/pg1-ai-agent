@@ -2535,7 +2535,10 @@
           }
         });
         upgradeLegacyMessageActions();
-        if (staleBubbles.length > 0) saveState();
+        // A clip that finished before its reply text was swapped (saved by
+        // an older build) gets the finished label now.
+        const readyVideos = markFinishedVideoReplies();
+        if (staleBubbles.length > 0 || readyVideos > 0) saveState();
         // A saved empty state gets a fresh greeting and a live subtitle.
         if (!document.querySelector('#chat-container .message-bubble:not(.welcome)')) renderWelcome();
       } else {
@@ -5200,10 +5203,42 @@
       videoPollTimer = setTimeout(pollVideoJobs, delay);
     }
 
-    function settleVideoCard(card, html) {
+    // The reply text above a clip, once it is ready: "Rendering video… It
+    // appears here when it is ready…" and its cost line become one finished
+    // label, "PG1 Motion · Draft · 5 s · ready" (tier and length from the
+    // cost line). Only a reply that is the rendering text is changed; a
+    // model-written reply around a generate_video card keeps its words.
+    const VIDEO_RENDERING_TEXT_RE = /^\s*Rendering video…/;
+
+    function videoReadyLabel(text) {
+      const m = /PG1 Motion · ([^·\n]+?) · (\d+) s\b/.exec(text || '');
+      return m ? `PG1 Motion · ${m[1].trim()} · ${m[2]} s · ready` : 'PG1 Motion · ready';
+    }
+
+    function markVideoReplyReady(bubble) {
+      const textEl = bubble && bubble.querySelector('.message-text');
+      if (!textEl || !VIDEO_RENDERING_TEXT_RE.test(textEl.textContent || '')) return false;
+      textEl.innerHTML = `<p class="video-ready-label">${escapeHTML(videoReadyLabel(textEl.textContent))}</p>`;
+      return true;
+    }
+
+    // Every saved reply whose clip is already playing and none still
+    // rendering. Returns how many changed.
+    function markFinishedVideoReplies() {
+      let n = 0;
+      document.querySelectorAll('#chat-container .message-bubble').forEach((bubble) => {
+        if (!bubble.querySelector('.media-preview-container video') || bubble.querySelector('.video-job.is-rendering')) return;
+        if (markVideoReplyReady(bubble)) n++;
+      });
+      return n;
+    }
+
+    function settleVideoCard(card, html, { ready = false } = {}) {
+      const bubble = card.closest('.message-bubble');
       const holder = document.createElement('div');
       holder.innerHTML = html;
       card.replaceWith(...Array.from(holder.childNodes));
+      if (ready && bubble && !bubble.querySelector('.video-job.is-rendering')) markVideoReplyReady(bubble);
       saveState();
     }
 
@@ -5227,7 +5262,7 @@
           const job = data && data.videoJob;
           if (!job) continue;
           if (job.status === 'done' && typeof job.url === 'string' && /^https:\/\//i.test(job.url)) {
-            settleVideoCard(card, videoPlayerHtml(job.url));
+            settleVideoCard(card, videoPlayerHtml(job.url), { ready: true });
           } else if (job.status === 'failed' || job.status === 'not_found') {
             // The job id stays on the failed card, so a later /video recheck
             // can put the clip here.
@@ -5256,7 +5291,7 @@
           if ((el.textContent || '').includes(needle)) cards.push(el);
         });
       }
-      cards.forEach((card) => settleVideoCard(card, videoPlayerHtml(job.url)));
+      cards.forEach((card) => settleVideoCard(card, videoPlayerHtml(job.url), { ready: true }));
       return cards.length > 0;
     }
 
