@@ -740,13 +740,18 @@ function emptyReason(toolOpts, calls, reason) {
   return toolsOff(toolOpts) && calls && calls.length ? `function call ${calls.map(function (c) { return c.name; }).join(', ')} on a round with tools off` : reason;
 }
 
+// No temperature, topP, topK or thinkingConfig: Gemini ignores sampling
+// parameters since 3.6 Flash, and Google's later models reject them (and
+// thinkingBudget) with 400 INVALID_ARGUMENT. The model's default thinking
+// level applies. tests/gemini-no-sampling-params.test.mjs walks every
+// outgoing Gemini body for them.
 function geminiRequestBody(sysInstruction, contents, declarations, withSearch, toolOpts, forceTool, plain) {
   return JSON.stringify({
     systemInstruction: { parts: [{ text: sysInstruction }] },
     contents: contents,
     tools: plain ? undefined : geminiTools(declarations, withSearch),
     toolConfig: plain ? undefined : geminiToolConfig(declarations, toolOpts && toolOpts.toolsEnabled, forceTool),
-    generationConfig: { maxOutputTokens: 4096, temperature: 0.7 }
+    generationConfig: { maxOutputTokens: 4096 }
   });
 }
 
