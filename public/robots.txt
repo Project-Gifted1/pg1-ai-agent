@@ -1,2 +1,4 @@
 User-agent: *
 Allow: /
+
+Sitemap: https://pg1-ai-agent.vercel.app/sitemap.xml
