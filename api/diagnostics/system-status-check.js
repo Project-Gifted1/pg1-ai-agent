@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { filterServableRows } from '../../lib/sourcePolicy.mjs';
+import { resolveOperatorSession } from '../../lib/operatorSession.mjs';
 
 export const config = {
   maxDuration: 60,
@@ -24,13 +25,35 @@ const ALLOWED_TABLES = [
 const INDICATOR_TABLES = new Set(['threat_indicators', 'threat_logs', 'telemetry_stream']);
 const servableRows = (table, rows) => (INDICATOR_TABLES.has(table) ? filterServableRows(rows || []) : (rows || []));
 
+// Operator only: the same session check as the operator chat commands
+// (lib/operatorSession.mjs). Send the credentials as `Authorization: Basic`
+// on GET, or as { user, pass, table, metric, limit } on POST. Anyone else
+// gets a 401 before any table is read, with no payload beyond the error, and
+// nothing is logged.
+function requestBody(req) {
+  let body = req.body;
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body); } catch (e) { body = null; }
+  }
+  return body && typeof body === 'object' ? body : {};
+}
+
 export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', ['GET']);
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    res.setHeader('Allow', ['GET', 'POST']);
     return res.status(405).json({
       error: 'Method Not Allowed',
       message: `HTTP ${req.method} is not supported on this endpoint.`
     });
+  }
+
+  const session = resolveOperatorSession(req);
+  if (session.rateLimited) {
+    return res.status(429).json({ error: 'Too many failed authentication attempts. Try again in 15 minutes.' });
+  }
+  if (!session.isOperator) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="pg1-operator"');
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   const startTime = Date.now();
@@ -47,7 +70,8 @@ export default async function handler(req, res) {
     const hasAbuseIpDbApi = Boolean(process.env.ABUSEIPDB_API);
     const hasNvdApi = Boolean(process.env.NVD_API);
 
-    const { table, metric = 'summary', limit = '10' } = req.query;
+    const params = req.method === 'POST' ? requestBody(req) : (req.query || {});
+    const { table, metric = 'summary', limit = '10' } = params;
 
     const diagnosticPayload = {
       system: 'PG1-AGENT-SOVEREIGN-CORE',
