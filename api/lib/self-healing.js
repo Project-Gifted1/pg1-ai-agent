@@ -150,11 +150,11 @@ class SelfHealingEngine {
           `${originalPrompt}\n\nPrevious attempt failed. Please try a different approach.`,
           systemInstruction,
           tools,
-          { temperature: 0.9, topP: 1.0 }
+          {}
         );
 
         const text = this.geminiClient.extractText(result);
-        if (text) return { text, strategy: 'adaptive_temperature', attempt };
+        if (text) return { text, strategy: 'retry_with_hint', attempt };
       } catch (err) {
         console.error('Recovery attempt 1 failed:', err.message);
       }
@@ -167,7 +167,7 @@ class SelfHealingEngine {
           simplified,
           systemInstruction,
           tools,
-          { temperature: 0.5 }
+          {}
         );
 
         const text = this.geminiClient.extractText(result);
@@ -183,7 +183,7 @@ class SelfHealingEngine {
           originalPrompt,
           systemInstruction,
           tools,
-          { temperature: 0.7, model: 'gemini-2.5-flash' }
+          { model: 'gemini-2.5-flash' }
         );
 
         const text = this.geminiClient.extractText(result);

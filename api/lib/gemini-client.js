@@ -12,7 +12,9 @@ class GeminiClient {
   }
 
   /**
-   * Send request to Gemini API with automatic model fallback
+   * Send request to Gemini API with automatic model fallback.
+   * No temperature/topP/topK or thinking budget is ever sent: newer Gemini
+   * models reject them with 400 INVALID_ARGUMENT.
    */
   async sendRequest(prompt, systemInstruction, tools = [], options = {}) {
     for (const model of this.models) {
@@ -40,8 +42,6 @@ class GeminiClient {
       contents: [{ parts: [{ text: prompt }] }],
       tools,
       generationConfig: {
-        temperature: options.temperature || 0.7,
-        topP: options.topP || 0.95,
         maxOutputTokens: options.maxOutputTokens || 4096
       }
     };
@@ -87,8 +87,6 @@ class GeminiClient {
       contents,
       tools,
       generationConfig: {
-        temperature: options.temperature || 0.7,
-        topP: options.topP || 0.95,
         maxOutputTokens: options.maxOutputTokens || 4096
       }
     };
