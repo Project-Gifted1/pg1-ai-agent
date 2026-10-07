@@ -371,16 +371,63 @@ test('result: agreed fields, attribution with link, structuredContent, flagged o
   assert.doesNotMatch(JSON.stringify(p), /\bsafe\b|\bclean\b/i);
 });
 
-test('no reports: status no_flags with a note that it is not a verdict; a Tor exit is informational', async (t) => {
+const SCORE_NOTE = "abuse_confidence_score is AbuseIPDB's 0-100 confidence that the address is abusive. A score of 0 is not proof the address is harmless.";
+
+test('no reports: status no_flags with the score note; a Tor exit is informational', async (t) => {
   withSupabase(t);
   spyFetch(t, () => ({ status: 200, body: upstreamBody({ abuseConfidenceScore: 0, totalReports: 0, numDistinctUsers: 0, lastReportedAt: null, isTor: true }) }));
   const p = mcpPayload(await callMcp({ ip: PUBLIC_IP }, { key: KEY_A }));
   assert.equal(p.status, 'no_flags');
   assert.deepEqual(p.reasons.map((r) => r.code), ['IP_TOR_EXIT_NODE']);
   assert.equal(p.last_reported_at, null);
-  assert.match(p.note, /not that the address is harmless/);
+  assert.equal(p.note, SCORE_NOTE);
   assert.doesNotMatch(JSON.stringify(p), /\bsafe\b|\bclean\b/i);
   assert.equal(p.attribution.text, 'Data from AbuseIPDB');
+});
+
+test('8.8.8.8 as AbuseIPDB returns it (score 0, 226 reports, whitelisted): no_flags with IP_WHITELISTED, never flagged', async (t) => {
+  withSupabase(t);
+  spyFetch(t, () => ({ status: 200, body: upstreamBody({ abuseConfidenceScore: 0, totalReports: 226, numDistinctUsers: 61, isWhitelisted: true, lastReportedAt: '2026-10-06T21:14:03+00:00' }) }));
+  const p = mcpPayload(await callMcp({ ip: PUBLIC_IP }, { key: KEY_A }));
+  assert.equal(p.abuse_confidence_score, 0);
+  assert.equal(p.total_reports, 226);
+  assert.equal(p.is_whitelisted, true);
+  assert.equal(p.status, 'no_flags');
+  assert.deepEqual(p.reasons.map((r) => r.code), ['IP_WHITELISTED']);
+  assert.equal(p.reasons[0].message, 'AbuseIPDB marks this address as whitelisted; it has 226 report(s) in the last 90 day(s), which AbuseIPDB does not count against it.');
+  assert.equal(p.note, SCORE_NOTE);
+  assert.equal(p.checks[0].result, 'ok');
+  assert.equal(p.checks[0].data_as_of, '2026-10-06T21:14:03.000Z');
+  assert.doesNotMatch(JSON.stringify(p), /\bsafe\b|\bclean\b/i);
+});
+
+test('whitelisted wins over a score above 0: still no_flags with IP_WHITELISTED', async (t) => {
+  withSupabase(t);
+  spyFetch(t, () => ({ status: 200, body: upstreamBody({ abuseConfidenceScore: 40, isWhitelisted: true, isTor: true }) }));
+  const p = mcpPayload(await callMcp({ ip: PUBLIC_IP }, { key: KEY_A }));
+  assert.equal(p.status, 'no_flags');
+  assert.deepEqual(p.reasons.map((r) => r.code), ['IP_WHITELISTED', 'IP_TOR_EXIT_NODE']);
+});
+
+test('score 75, not whitelisted: flagged, IP_ABUSE_REPORTED with score, report and reporter counts', async (t) => {
+  withSupabase(t);
+  spyFetch(t, () => ({ status: 200, body: upstreamBody({ abuseConfidenceScore: 75, totalReports: 30, numDistinctUsers: 9 }) }));
+  const p = mcpPayload(await callMcp({ ip: PUBLIC_IP }, { key: KEY_A }));
+  assert.equal(p.status, 'flagged');
+  assert.deepEqual(p.reasons.map((r) => r.code), ['IP_ABUSE_REPORTED']);
+  assert.equal(p.reasons[0].message, 'IP address has an abuse confidence score of 75, from 30 abuse report(s) by 9 distinct reporter(s) in the last 90 day(s).');
+  assert.equal(p.note, SCORE_NOTE);
+  assert.equal(p.checks[0].data_as_of, '2026-10-01T12:00:00.000Z');
+});
+
+test('score 0 with reports, not whitelisted: no_flags with informational IP_REPORTS_SCORED_ZERO', async (t) => {
+  withSupabase(t);
+  spyFetch(t, () => ({ status: 200, body: upstreamBody({ abuseConfidenceScore: 0, totalReports: 3, numDistinctUsers: 2 }) }));
+  const p = mcpPayload(await callMcp({ ip: PUBLIC_IP }, { key: KEY_A }));
+  assert.equal(p.status, 'no_flags');
+  assert.deepEqual(p.reasons.map((r) => r.code), ['IP_REPORTS_SCORED_ZERO']);
+  assert.equal(p.reasons[0].message, 'IP address has 3 abuse report(s) from 2 distinct reporter(s) in the last 90 day(s), but AbuseIPDB scores them 0, so it is not flagged.');
+  assert.equal(p.note, SCORE_NOTE);
 });
 
 test('an answer missing the score or report count is status unknown, never no_flags', async (t) => {

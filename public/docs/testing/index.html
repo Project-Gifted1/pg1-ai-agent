@@ -84,8 +84,8 @@
 <tr><td><code>get_cve_by_product</code></td><td>FLAGGED</td><td><code>{&quot;vendor&quot;:&quot;pg1-test.invalid&quot;,&quot;product&quot;:&quot;flagged&quot;}</code></td><td>one KEV-listed CVE, status &quot;flagged&quot;, reason CVE_KNOWN_EXPLOITED_KEV (free, no payment)</td></tr>
 <tr><td><code>get_cve_by_product</code></td><td>CLEAN</td><td><code>{&quot;vendor&quot;:&quot;pg1-test.invalid&quot;,&quot;product&quot;:&quot;clean&quot;}</code></td><td>total_found 0, status &quot;no_flags&quot;</td></tr>
 <tr><td><code>get_cve_by_product</code></td><td>UNKNOWN</td><td><code>{&quot;vendor&quot;:&quot;pg1-test.invalid&quot;,&quot;product&quot;:&quot;unknown&quot;}</code></td><td>exploit-score and KEV checks &quot;error&quot;, status &quot;unknown&quot;</td></tr>
-<tr><td><code>check_ip_abuse</code></td><td>FLAGGED</td><td><code>{&quot;ip&quot;:&quot;192.0.2.1&quot;}</code></td><td>abuse_confidence_score 100, total_reports 42, status &quot;flagged&quot;, reason IP_ABUSE_REPORTED (synthetic data; no key header needed, no upstream call)</td></tr>
-<tr><td><code>check_ip_abuse</code></td><td>CLEAN</td><td><code>{&quot;ip&quot;:&quot;198.51.100.1&quot;}</code></td><td>abuse_confidence_score 0, total_reports 0, status &quot;no_flags&quot; (no reports, which is not a verdict on the address)</td></tr>
+<tr><td><code>check_ip_abuse</code></td><td>FLAGGED</td><td><code>{&quot;ip&quot;:&quot;192.0.2.1&quot;}</code></td><td>abuse_confidence_score 100, total_reports 42, not whitelisted, status &quot;flagged&quot;, reason IP_ABUSE_REPORTED (synthetic data; no key header needed, no upstream call)</td></tr>
+<tr><td><code>check_ip_abuse</code></td><td>CLEAN</td><td><code>{&quot;ip&quot;:&quot;198.51.100.1&quot;}</code></td><td>abuse_confidence_score 0, total_reports 0, status &quot;no_flags&quot; (no reports; a score of 0 is not proof the address is harmless)</td></tr>
 <tr><td><code>check_ip_abuse</code></td><td>UNKNOWN</td><td><code>{&quot;ip&quot;:&quot;203.0.113.1&quot;}</code></td><td>isError: true, code &quot;upstream_unavailable&quot;, status &quot;unknown&quot; (what a real lookup timeout returns)</td></tr>
 </tbody>
 </table></div>
