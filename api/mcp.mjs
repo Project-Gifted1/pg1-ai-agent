@@ -124,7 +124,7 @@ export const config = { maxDuration: 30 };
 // api/chat.mjs's recordServerError, never awaited on the request's hot path
 // so a logging failure (or a missing Supabase config) can never slow down or
 // change a tool's response, and in particular never eats into
-// check_wallet_age's 2.5s upstream budget. `route` carries the tool/skill
+// check_wallet_age's upstream time budget. `route` carries the tool/skill
 // name (e.g. "/api/mcp:check_wallet_age") instead of a new schema column, per
 // the existing (source, route, status, reason) grouping. `reason` must only
 // ever be a short, fixed, PG1-written string - never caller input (address/
@@ -1910,7 +1910,45 @@ export async function handleCheckHostnameReputation(args, identifier, licenseKey
 const WALLET_AGE_SOURCE = 'on-chain transfer history';
 // checks[] source label for the live EIP-7702 delegation (code) check.
 const WALLET_DELEGATION_SOURCE = 'on-chain code';
-const WALLET_AGE_TIMEOUT_MS = 2500;
+// Per-attempt upstream timeout for the Alchemy calls: the transfer-history
+// lookups (with their is_contract getCode) and, on a timer of the same
+// length, the EIP-7702 delegation getCode. Default 5000ms: normal calls take ~1.0-1.1s,
+// and 2500ms was too tight for the slow tail. Overridable with the
+// WALLET_AGE_UPSTREAM_TIMEOUT_MS env var, clamped to 100-10000ms.
+const WALLET_AGE_TIMEOUT_MS_DEFAULT = 5000;
+const WALLET_AGE_TIMEOUT_MS_MIN = 100;
+const WALLET_AGE_TIMEOUT_MS_MAX = 10000;
+// Total wall-clock budget for one check_wallet_age call, measured from the
+// start of handleCheckWalletAge (license check and cache read included).
+// The single transfer-history retry (see handleCheckWalletAge) only runs
+// inside what is left of it, and its own timeout is cut to fit, so upstream
+// time never exceeds this. Default 12000ms, well under api/mcp.mjs's and
+// api/a2a.mjs's 30s maxDuration; overridable with WALLET_AGE_TOTAL_BUDGET_MS,
+// clamped to at most 20000ms so a misconfiguration still leaves 10s margin.
+const WALLET_AGE_TOTAL_BUDGET_MS_DEFAULT = 12000;
+const WALLET_AGE_TOTAL_BUDGET_MS_MAX = 20000;
+// The retry is skipped unless at least this much budget is left (or the
+// whole per-attempt timeout, if that is smaller) - a retry with only a
+// sliver of time would just time out again.
+const WALLET_AGE_MIN_RETRY_MS = 1000;
+
+function readWalletAgeMsEnv(name, fallback, min, max) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(n)));
+}
+
+// Read on every call (not at module load) so a changed env var takes effect
+// without a code change, and so tests can shrink the timings.
+function walletAgeTimeoutMs() {
+  return readWalletAgeMsEnv('WALLET_AGE_UPSTREAM_TIMEOUT_MS', WALLET_AGE_TIMEOUT_MS_DEFAULT, WALLET_AGE_TIMEOUT_MS_MIN, WALLET_AGE_TIMEOUT_MS_MAX);
+}
+
+function walletAgeTotalBudgetMs() {
+  return readWalletAgeMsEnv('WALLET_AGE_TOTAL_BUDGET_MS', WALLET_AGE_TOTAL_BUDGET_MS_DEFAULT, WALLET_AGE_TIMEOUT_MS_MIN, WALLET_AGE_TOTAL_BUDGET_MS_MAX);
+}
 const WALLET_AGE_NOT_FOUND_CACHE_TTL_MS = 10 * 60 * 1000;
 const WALLET_AGE_ADDRESS_RE = /^0x[0-9a-f]{40}$/i;
 
@@ -1930,7 +1968,7 @@ const WALLET_AGE_CHAIN_SLUGS = {
 // 30 Sep 2026 — re-check before adding a chain here rather than assuming
 // every chain supports it. The 'internal' category is also the slow part of
 // the upstream lookup on high-volume addresses (observed timing out the
-// whole 2.5s budget on Base), so on these chains handleCheckWalletAge below
+// whole upstream timeout on Base), so on these chains handleCheckWalletAge below
 // runs the lookup with and without 'internal' in parallel rather than
 // sequentially — a slow or rejected 'internal' query (docs drift, a chain
 // losing support, or just latency) never costs the non-internal lookup its
@@ -2225,7 +2263,7 @@ export function parseWalletDelegation(code) {
 
 // The live delegation check: its own eth_getCode on the requested chain (a
 // distinct JSON-RPC id from the age lookups' eth_getCode, id 3), sharing
-// the caller's AbortController so it stays inside the same 2.5s budget.
+// the caller's AbortController so it stays inside the same upstream timeout.
 // Never throws - any failure becomes delegated: null with a checks result
 // of 'timeout' or 'error', so a failed code check can never fail, or change,
 // the age answer it's attached to. Never cached (see handleCheckWalletAge).
@@ -2240,12 +2278,12 @@ async function checkWalletDelegation(url, address, signal) {
 }
 
 // Same, for the cached-answer path, which has no upstream budget of its
-// own running: a fresh 2.5s timer for just this one call.
+// own running: a fresh upstream-timeout timer for just this one call.
 async function checkWalletDelegationStandalone(chain, address) {
   const apiKey = process.env.ALCHEMY_API_KEY;
   if (!apiKey) return { delegated: null, delegate_address: null, checkResult: 'error' };
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), WALLET_AGE_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), walletAgeTimeoutMs());
   try {
     return await checkWalletDelegation(walletAgeUpstreamUrl(chain, apiKey), address, controller.signal);
   } finally {
@@ -2265,7 +2303,37 @@ function runWalletAgeUpstreamCalls(url, address, categories, signal) {
   ]);
 }
 
+// One attempt at the transfer-history lookups (plain, plus internal-inclusive
+// on chains that support it), all on one AbortController that fires after
+// timeoutMs. Never rejects: returns the two allSettled results.
+async function runWalletAgeHistoryAttempt(url, address, plainCategories, supportsInternal, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const attempts = [runWalletAgeUpstreamCalls(url, address, plainCategories, controller.signal)];
+    if (supportsInternal) {
+      attempts.push(runWalletAgeUpstreamCalls(url, address, [...plainCategories, 'internal'], controller.signal));
+    }
+    const [plainSettled, internalSettled] = await Promise.allSettled(attempts);
+    return { plainSettled, internalSettled };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function walletAgeHistoryFailed({ plainSettled, internalSettled }, supportsInternal) {
+  return plainSettled.status !== 'fulfilled' && !(supportsInternal && internalSettled.status === 'fulfilled');
+}
+
+function walletAgeHistoryTimedOut({ plainSettled, internalSettled }, supportsInternal) {
+  const reasons = supportsInternal ? [plainSettled.reason, internalSettled.reason] : [plainSettled.reason];
+  return reasons.some((r) => r && r.name === 'AbortError');
+}
+
 export async function handleCheckWalletAge(args, identifier, licenseKey, { licensed: callerLicensed = false } = {}) {
+  const startedAt = Date.now();
+  const timeoutMs = walletAgeTimeoutMs();
+  const deadline = startedAt + walletAgeTotalBudgetMs();
   const address = normalizeWalletAgeAddress(args?.address);
   const chain = normalizeWalletAgeChain(args?.chain);
 
@@ -2309,31 +2377,43 @@ export async function handleCheckWalletAge(args, identifier, licenseKey, { licen
   // On chains where 'internal' is supported, the plain (non-internal) and
   // internal-inclusive lookups run in parallel rather than sequentially, so
   // the slow/rejected 'internal' query never eats into the non-internal
-  // query's share of the 2.5s budget (see WALLET_AGE_INTERNAL_SUPPORTED_CHAINS
-  // above). The live delegation check runs alongside both, on the same
-  // AbortController, and never rejects (see checkWalletDelegation).
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), WALLET_AGE_TIMEOUT_MS);
-  let plainSettled, internalSettled, delegation;
+  // query's share of the upstream timeout (see
+  // WALLET_AGE_INTERNAL_SUPPORTED_CHAINS above). The live delegation check
+  // runs alongside both, on its own timer of the same length, and never
+  // rejects (see checkWalletDelegation). Each attempt's timeout is capped at
+  // what is left of the total budget.
+  const firstTimeoutMs = Math.max(0, Math.min(timeoutMs, deadline - Date.now()));
+  const delegationController = new AbortController();
+  const delegationTimeout = setTimeout(() => delegationController.abort(), firstTimeoutMs);
+  let history, delegation;
   try {
-    const attempts = [runWalletAgeUpstreamCalls(url, address, plainCategories, controller.signal)];
-    if (supportsInternal) {
-      attempts.push(runWalletAgeUpstreamCalls(url, address, [...plainCategories, 'internal'], controller.signal));
-    }
-    const delegationCheck = checkWalletDelegation(url, address, controller.signal);
-    [[plainSettled, internalSettled], delegation] = await Promise.all([Promise.allSettled(attempts), delegationCheck]);
+    [history, delegation] = await Promise.all([
+      runWalletAgeHistoryAttempt(url, address, plainCategories, supportsInternal, firstTimeoutMs),
+      checkWalletDelegation(url, address, delegationController.signal)
+    ]);
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(delegationTimeout);
   }
 
+  // ONE quick retry, only when the transfer-history lookup failed outright
+  // because it timed out (never on an upstream error, never on a partial
+  // internal-only timeout, never for the delegation check), and only when
+  // enough of the total budget is left; the retry's timeout is cut to the
+  // remaining budget so it can never run past it.
+  if (walletAgeHistoryFailed(history, supportsInternal) && walletAgeHistoryTimedOut(history, supportsInternal)) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs >= Math.min(timeoutMs, WALLET_AGE_MIN_RETRY_MS)) {
+      history = await runWalletAgeHistoryAttempt(url, address, plainCategories, supportsInternal, Math.min(timeoutMs, remainingMs));
+    }
+  }
+
+  const { plainSettled, internalSettled } = history;
   const plainOk = plainSettled.status === 'fulfilled';
   const internalOk = supportsInternal && internalSettled.status === 'fulfilled';
 
   if (!plainOk && !internalOk) {
-    const reasons = supportsInternal ? [plainSettled.reason, internalSettled.reason] : [plainSettled.reason];
-    const isTimeout = reasons.some((r) => r && r.name === 'AbortError');
-    const message = isTimeout
-      ? `Wallet age lookup timed out after ${WALLET_AGE_TIMEOUT_MS}ms.`
+    const message = walletAgeHistoryTimedOut(history, supportsInternal)
+      ? `Wallet age lookup timed out after ${timeoutMs}ms.`
       : 'Wallet age lookup failed: upstream on-chain data source unavailable.';
     throw new WalletAgeUpstreamError(message);
   }
@@ -2599,7 +2679,7 @@ function buildFixtureOutcome(fixture, callerArgs) {
 
     case 'check_wallet_age': {
       if (kind === 'UNKNOWN') {
-        return { type: 'tool_error', code: 'upstream_unavailable', message: `Wallet age lookup timed out after ${WALLET_AGE_TIMEOUT_MS}ms.`, checks: [fixtureCheck('timeout')] };
+        return { type: 'tool_error', code: 'upstream_unavailable', message: `Wallet age lookup timed out after ${walletAgeTimeoutMs()}ms.`, checks: [fixtureCheck('timeout')] };
       }
       const address = args.address.trim().toLowerCase();
       const chain = normalizeWalletAgeChain(callerArgs.chain);

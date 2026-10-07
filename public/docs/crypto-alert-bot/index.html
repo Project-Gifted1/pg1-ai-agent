@@ -271,7 +271,7 @@ checkWalletAge(&#39;0x7067312d746573742d6669787475726500000002&#39;, &#39;ethere
 <div class="table-wrap" tabindex="0"><table>
 <thead><tr><th scope="col">Situation</th><th scope="col">HTTP</th><th scope="col"><code>error.code</code></th><th scope="col"><code>error.data.code</code></th><th scope="col"><code>error.data.status</code></th></tr></thead>
 <tbody>
-<tr><td>Wallet-age lookup failed or timed out (2.5 s budget)</td><td>200</td><td><code>-32000</code></td><td><code>upstream_unavailable</code></td><td><code>&quot;unknown&quot;</code></td></tr>
+<tr><td>Wallet-age lookup failed or timed out (5 s upstream timeout, one retry within a 12 s budget)</td><td>200</td><td><code>-32000</code></td><td><code>upstream_unavailable</code></td><td><code>&quot;unknown&quot;</code></td></tr>
 <tr><td>Wallet-age or sanctions rate limit reached</td><td>200</td><td><code>-32000</code></td><td><code>rate_limited</code></td><td><code>&quot;unknown&quot;</code></td></tr>
 <tr><td>Bad address or chain</td><td>200</td><td><code>-32000</code></td><td><code>invalid_address</code> / <code>invalid_chain</code></td><td><code>&quot;unknown&quot;</code></td></tr>
 <tr><td>Sanctions list unreachable</td><td>503</td><td><code>-32010</code></td><td>(none)</td><td>(none)</td></tr>
@@ -283,7 +283,7 @@ checkWalletAge(&#39;0x7067312d746573742d6669787475726500000002&#39;, &#39;ethere
   &quot;jsonrpc&quot;: &quot;2.0&quot;,
   &quot;error&quot;: {
     &quot;code&quot;: -32000,
-    &quot;message&quot;: &quot;Wallet age lookup timed out after 2500ms.&quot;,
+    &quot;message&quot;: &quot;Wallet age lookup timed out after 5000ms.&quot;,
     &quot;data&quot;: {
       &quot;code&quot;: &quot;upstream_unavailable&quot;,
       &quot;reasons&quot;: [],

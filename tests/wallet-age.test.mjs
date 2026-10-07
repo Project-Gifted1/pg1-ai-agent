@@ -787,7 +787,7 @@ test('check_wallet_age: is the 14th tool, and the 13 pre-existing tool definitio
 // WALLET_DELEGATED). A delegated EOA's code is exactly 23 bytes: 0xef0100
 // followed by the 20-byte delegate address. The check is a live
 // eth_getCode on the requested chain, in parallel with the age lookups and
-// inside the same 2.5s budget, on every call (cached answers included), and
+// inside the same upstream timeout, on every call (cached answers included), and
 // never cached. A failed code check is delegated: null, never false, and
 // never fails or changes the age answer.
 // ---------------------------------------------------------------------
@@ -902,8 +902,11 @@ test('check_wallet_age delegation: a getCode failure returns the age result with
   }
 });
 
-test('check_wallet_age delegation: a hung getCode times out inside the same 2.5s budget, with the age still returned', async (t) => {
+test('check_wallet_age delegation: a hung getCode times out inside the same upstream timeout, with the age still returned', async (t) => {
   withAlchemyEnv(t);
+  const prevTimeout = process.env.WALLET_AGE_UPSTREAM_TIMEOUT_MS;
+  delete process.env.WALLET_AGE_UPSTREAM_TIMEOUT_MS;
+  t.after(() => { if (prevTimeout !== undefined) process.env.WALLET_AGE_UPSTREAM_TIMEOUT_MS = prevTimeout; });
   withoutSupabaseEnv(t);
   const originalFetch = global.fetch;
   global.fetch = makeFetchMock({ inTransfers: OLD_IN_TRANSFER, code: '0x', hangDelegation: true });
@@ -912,7 +915,7 @@ test('check_wallet_age delegation: a hung getCode times out inside the same 2.5s
   const started = Date.now();
   const { parsed } = await callParsed({ address: ADDRESS, chain: 'arbitrum' });
   const elapsed = Date.now() - started;
-  assert.ok(elapsed < 3500, `must finish within the shared 2.5s budget (took ${elapsed}ms)`);
+  assert.ok(elapsed < 6000, `must finish within the shared 5000ms upstream timeout (took ${elapsed}ms)`);
   assert.equal(parsed.found, true);
   assert.equal(parsed.delegated, null);
   assert.equal(parsed.checks.find((c) => c.source === 'on-chain code')?.result, 'timeout');
@@ -975,7 +978,7 @@ test('check_wallet_age delegation: runs on the requested chain, in parallel with
   assert.equal(delegationUrls.length, 1);
   assert.ok(delegationUrls[0].startsWith('https://eth-mainnet.g.alchemy.com/v2/'), delegationUrls[0]);
   assert.ok(ageCallsBeforeDelegation > 0, 'the delegation call is issued while the age lookups are in flight');
-  assert.equal(signalAbortedAtDelegationCall, false, 'the delegation call is issued before the shared 2.5s budget fires, not after the age lookups');
+  assert.equal(signalAbortedAtDelegationCall, false, 'the delegation call is issued before the shared upstream timeout fires, not after the age lookups');
   // ethereum supports internal transfers, so the internal arm (not hung)
   // carries the age answer, and the delegation check completed.
   const parsed = JSON.parse(res.body.result.content[0].text);
