@@ -229,7 +229,7 @@ Browsers: `X-AbuseIPDB-Key` is in the CORS `Access-Control-Allow-Headers` of `/a
 
 ## Check a package before you install it
 
-`check_package` (MCP tool, A2A skill, chat tool and playground check, since 1.16.0) is a pre-install check for one npm or PyPI package, built for AI agents that are about to install or recommend one. It is free (60 calls/hour per caller without a licence key) and no AI model is involved.
+`check_package` (MCP tool, A2A skill, chat tool and playground check, since 1.17.0) is a pre-install check for one npm or PyPI package, built for AI agents that are about to install or recommend one. It is free (60 calls/hour per caller without a licence key) and no AI model is involved.
 
 Arguments: `ecosystem` (`"npm"` or `"pypi"`), `name` (one package; npm names may be scoped, `@scope/name`), and optionally `version` (one exact version; without it the latest version is checked).
 

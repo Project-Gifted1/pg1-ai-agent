@@ -9,7 +9,7 @@
  * check_wallet_age, get_usage_status, and (1.16.0) check_ip_abuse, the
  * bring-your-own-key AbuseIPDB lookup: the caller's own key comes from the
  * X-AbuseIPDB-Key request header only, exactly as on /api/mcp, and the
- * skill has the same 60/hour anonymous limit; and (1.16.0) check_package,
+ * skill has the same 60/hour anonymous limit; and (1.17.0) check_package,
  * the pre-install npm/PyPI package check, 60/hour anonymous like the other
  * free checks. Every tool implementation is imported
  * directly from api/mcp.mjs (no duplicated logic) — names, descriptions,
@@ -278,7 +278,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-a2a',
-      version: '1.16.0',
+      version: '1.17.0',
       protocol: 'Agent2Agent (A2A) over JSON-RPC 2.0',
       supportedVersions: ['1.0', '0.3'],
       agentCard: 'https://pg1-ai-agent.vercel.app/.well-known/agent-card.json',

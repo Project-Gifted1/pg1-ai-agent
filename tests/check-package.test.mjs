@@ -1,5 +1,5 @@
 /**
- * check_package (1.16.0): the free pre-install check of one npm or PyPI
+ * check_package (1.17.0): the free pre-install check of one npm or PyPI
  * package, over MCP, A2A, the chat tools and the playground.
  *
  * Every registry and OSV answer here is synthetic and mocked through
@@ -201,7 +201,7 @@ test('registered everywhere a free check is: A2A skill, agent card, chat (operat
   assert.ok(skill);
   assert.equal(skill.security, undefined, 'no key needed');
   assert.ok(skill.description.includes(ATTRIBUTIONS_URL));
-  assert.equal(card.version, '1.16.0');
+  assert.equal(card.version, '1.17.0');
   assert.ok(chatToolsForRole('operator').some((t) => t === tool));
   assert.ok(chatToolsForRole('guest').some((t) => t === tool), 'guest set too');
   assert.ok(PLAYGROUND_TOOLS.includes('check_package'));
@@ -281,7 +281,7 @@ test('npm: exists, first and latest publish dates, version checked defaults to l
   assert.deepEqual(r.reasons, []);
   const [regCall] = spy.upstream();
   assert.equal(regCall.url, 'https://registry.npmjs.org/@pg1-synthetic%2Fthing');
-  assert.match(regCall.opts.headers['User-Agent'], /^pg1-threat-intel\/1\.16\.0 .*docs\/attributions/);
+  assert.match(regCall.opts.headers['User-Agent'], /^pg1-threat-intel\/1\.17\.0 .*docs\/attributions/);
   assert.deepEqual(spy.osv(), [{ package: { name: '@pg1-synthetic/thing', ecosystem: 'npm' }, version: '2.0.0' }], 'OSV is asked about the latest version');
   assert.deepEqual(r.checks.map((c) => [c.source, c.result]), [['package registry', 'ok'], ['malicious package reports', 'ok'], ['vulnerability database', 'ok'], ['popular package names', 'ok']]);
   assert.doesNotMatch(JSON.stringify(r), /upstream-only-marker/, 'nothing from the readme is passed on');
@@ -506,6 +506,37 @@ test('a flag still flags when another lookup failed (PG1 status rules)', async (
   const r = await handleCheckPackage({ ecosystem: 'npm', name: 'pg1-synthetic', version: '1.0.0' }, 'tester', null, { licensed: true });
   assert.equal(check(r, 'package registry').result, 'error');
   assert.equal(r.status, 'flagged');
+});
+
+test('status precedence: any flag wins over a failed lookup; unknown only when nothing flagged and a lookup did not complete', async (t) => {
+  const osvDown = () => ({ status: 503, body: {} });
+  const cases = [
+    // [label, routes, args, expected status, expected codes]
+    ['reported malicious + registry down', { npm: () => ({ status: 500 }), osv: () => ({ status: 200, body: { vulns: [osvVuln('MAL-2026-0042')] } }) }, { ecosystem: 'npm', name: 'pg1-synthetic', version: '1.0.0' }, 'flagged', ['PACKAGE_REPORTED_MALICIOUS']],
+    ['missing package + OSV down', { npm: () => ({ status: 404 }), osv: osvDown }, { ecosystem: 'npm', name: 'pg1-synthetic' }, 'flagged', ['PACKAGE_NOT_FOUND']],
+    ['missing version + OSV down', { npm: (name) => ({ status: 200, body: npmDoc({ name }) }), osv: osvDown }, { ecosystem: 'npm', name: 'pg1-synthetic', version: '9.9.9' }, 'flagged', ['PACKAGE_VERSION_NOT_FOUND']],
+    ['new + look-alike + OSV down', { npm: (name) => ({ status: 200, body: npmDoc({ name, created: daysAgo(4) }) }), osv: osvDown }, { ecosystem: 'npm', name: 'expresss' }, 'flagged', ['PACKAGE_NEW_LOOKALIKE']],
+    ['informational only + OSV down', { npm: (name) => ({ status: 200, body: npmDoc({ name }) }), osv: osvDown }, { ecosystem: 'npm', name: 'expresss' }, 'unknown', ['PACKAGE_LOOKALIKE']],
+    ['nothing at all + registry down', { npm: () => ({ throw: new Error('ECONNRESET') }), osv: () => ({ status: 200, body: {} }) }, { ecosystem: 'npm', name: 'pg1-synthetic' }, 'unknown', []]
+  ];
+  for (const [label, routes, args, status, expectedCodes] of cases) {
+    pkg.__clearPackageCachesForTests();
+    spyFetch(t, routes);
+    const r = await handleCheckPackage(args, 'tester', null, { licensed: true });
+    assert.ok(r.checks.some((c) => c.result !== 'ok'), `${label}: a lookup did not complete`);
+    assert.equal(r.status, status, label);
+    assert.deepEqual(codes(r), expectedCodes, label);
+  }
+});
+
+test('a missing version of a real package has its own code, distinct from a package that does not exist', async (t) => {
+  spyFetch(t, { npm: (name) => ({ status: name === 'pg1-synthetic' ? 200 : 404, body: npmDoc({ name }) }), osv: () => ({ status: 200, body: {} }) });
+  const wrongVersion = await handleCheckPackage({ ecosystem: 'npm', name: 'pg1-synthetic', version: '9.9.9' }, 'tester', null, { licensed: true });
+  const noPackage = await handleCheckPackage({ ecosystem: 'npm', name: 'pg1-invented-name', version: '9.9.9' }, 'tester', null, { licensed: true });
+  assert.deepEqual([wrongVersion.exists, wrongVersion.version_exists, codes(wrongVersion)], [true, false, ['PACKAGE_VERSION_NOT_FOUND']]);
+  assert.deepEqual([noPackage.exists, noPackage.version_exists, codes(noPackage)], [false, false, ['PACKAGE_NOT_FOUND']]);
+  assert.notEqual(REASON_CODES.PACKAGE_VERSION_NOT_FOUND, REASON_CODES.PACKAGE_NOT_FOUND);
+  assert.doesNotMatch(REASON_CODES.PACKAGE_VERSION_NOT_FOUND, /invented|attacker/i, 'not worded like a fake package');
 });
 
 test('OSV pagination is followed up to the page cap; past it the answer is incomplete', async (t) => {

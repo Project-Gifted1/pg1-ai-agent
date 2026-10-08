@@ -708,7 +708,7 @@ const WALLET_AGE_DELEGATION_OUTPUT_PROPERTIES = {
 const SCHEMA_TOOLS_WITH_NEW_META = new Set(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age']);
 
 test('check_wallet_age: is the 14th tool, and the 13 pre-existing tool definitions are unchanged except the agreed optional outputSchema additions', () => {
-  // 16 since 1.16.0 (check_ip_abuse, check_package); check_wallet_age is
+  // 16 since check_ip_abuse (1.16.0) and check_package (1.17.0); it is
   // still the 14th.
   assert.equal(TOOLS.length, 16);
   assert.equal(TOOLS[13].name, 'check_wallet_age');
@@ -1121,7 +1121,7 @@ test('check_wallet_age: a partial (internal transfers not checked in time) old w
 test('computeStatus: informational reason codes never flag on their own', () => {
   assert.deepEqual([...INFORMATIONAL_REASON_CODES], [
     'WALLET_DELEGATED', 'IP_TOR_EXIT_NODE', 'IP_WHITELISTED', 'IP_REPORTS_SCORED_ZERO',
-    // check_package (1.16.0): facts that never flag on their own.
+    // check_package (1.17.0): facts that never flag on their own.
     'PACKAGE_LOOKALIKE', 'PACKAGE_NEWLY_PUBLISHED', 'PACKAGE_KNOWN_VULNERABILITIES', 'PACKAGE_DEPRECATED', 'PACKAGE_INSTALL_SCRIPTS'
   ]);
   const ok = [{ result: 'ok' }];

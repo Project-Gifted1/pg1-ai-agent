@@ -3,7 +3,7 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.16.0 — ADD: new free tool check_package (also an A2A skill, a
+ * Version: 1.17.0 — ADD: new free tool check_package (also an A2A skill, a
  *          chat tool for every role and a playground check), a pre-install
  *          check of one npm or PyPI package (lib/packageCheck.mjs): does it
  *          exist, first/latest publish dates, OSV malicious-package reports
@@ -2634,7 +2634,7 @@ export async function handleCheckIpAbuse(args, { identifier, licenseKey, license
 }
 
 // ---------------------------------------------------------------------
-// check_package (1.16.0) — see lib/packageCheck.mjs
+// check_package (1.17.0) — see lib/packageCheck.mjs
 // ---------------------------------------------------------------------
 // Free, the usual 60/hour anonymous limit (a licence key or the operator's
 // standing exempts it), counted on every call, cached answers included,
@@ -3430,7 +3430,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.16.0',
+      version: '1.17.0',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp',
@@ -3465,7 +3465,7 @@ export default async function handler(req, res) {
       recordTelemetry({ eventType: 'initialize', endpoint: '/api/mcp', status: 'ok', clientName: clientInfo.name, clientVersion: clientInfo.version, callerHash: requestCallerHash(req) });
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.16.0' } },
+        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.17.0' } },
         id: requestId
       });
     }

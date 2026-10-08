@@ -67,7 +67,7 @@ test('llms.txt has a short "Integration guides" section linking the guide', () =
 
 test('agent card documentationUrl points to the guide; nothing else in the card changes', () => {
   assert.equal(CARD.documentationUrl, GUIDE_URL);
-  assert.equal(CARD.version, '1.16.0');
+  assert.equal(CARD.version, '1.17.0');
   assert.doesNotMatch(CARD.description, /docs\/crypto-alert-bot/, 'the spec field carries the link; the description stays as is');
 });
 
@@ -75,17 +75,32 @@ test('openapi.json externalDocs points to the guide', () => {
   assert.equal(OPENAPI.externalDocs.url, GUIDE_URL);
   assert.equal(typeof OPENAPI.externalDocs.description, 'string');
   noVendorNames('openapi.json externalDocs', OPENAPI.externalDocs.description);
-  assert.equal(OPENAPI.info.version, '1.16.0');
+  assert.equal(OPENAPI.info.version, '1.17.0');
 });
 
-test('package version is unchanged; server version is the 1.16.0 release', () => {
+test('package version is unchanged; server version is the 1.17.0 release', () => {
   assert.equal(JSON.parse(read('package.json')).version, '1.0.3');
-  assert.equal(JSON.parse(read('server.json')).version, '1.16.0');
+  assert.equal(JSON.parse(read('server.json')).version, '1.17.0');
 });
 
-test('server.json is byte-identical to the 1.15.0 release except the version (1.16.0)', () => {
-  const reverted = fs.readFileSync(path.join(ROOT, 'server.json'), 'utf8').replace('"version": "1.16.0"', '"version": "1.15.0"');
+// 1.17.0 (check_package) changes server.json's version and description;
+// everything else is byte-identical to the 1.15.0 release.
+const SERVER_DESCRIPTION_1_15 = 'Threat intel for AI agents: IOCs, CVEs (EPSS/KEV), wallet sanctions and age, domain and URL checks.';
+const SERVER_DESCRIPTION_1_17 = 'Threat intel for AI agents: IOCs, CVEs, wallet sanctions/age, domain, IP abuse and package checks.';
+
+test('server.json is byte-identical to the 1.15.0 release except the version (1.17.0) and description', () => {
+  const raw = fs.readFileSync(path.join(ROOT, 'server.json'), 'utf8');
+  assert.equal(JSON.parse(raw).description, SERVER_DESCRIPTION_1_17);
+  const reverted = raw.replace('"version": "1.17.0"', '"version": "1.15.0"').replace(SERVER_DESCRIPTION_1_17, SERVER_DESCRIPTION_1_15);
   assert.equal(sha256(reverted), 'f0888cac3c000b2a8e6beded4cdfdbf8426c044ba787f48f2f57245df42d4137');
+});
+
+test('server.json description: within the Registry\'s 100-character limit, names package and IP abuse checks, no feed or vendor names', () => {
+  const { description } = JSON.parse(read('server.json'));
+  assert.ok(description.length <= 100, `${description.length} characters`);
+  assert.match(description, /package checks/);
+  assert.match(description, /IP abuse/);
+  assert.doesNotMatch(description, /EPSS|KEV|NVD|OTX|OFAC|AbuseIPDB|OSV|MetaMask|RDAP|npm|PyPI|feed/i);
 });
 
 test('MCP tool names, descriptions and schemas are identical to the 1.15.0 release (plus check_ip_abuse and check_package, 1.16.0)', () => {
