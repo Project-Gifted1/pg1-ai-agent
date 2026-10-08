@@ -163,8 +163,9 @@ before(async () => {
     if (tool.inputSchema.properties.chain) tool.inputSchema.properties.chain.enum.filter(Boolean).forEach((c) => KNOWN.add(c));
   }
   // The playground's request keys, exactly as its validator allows them.
-  assert.match(SRC.playground, /\['tool', 'input', 'chain'\]\.includes\(k\)/);
-  ['tool', 'input', 'chain'].forEach((k) => KNOWN.add(k));
+  // (ecosystem and version since 1.17.0, for check_package.)
+  assert.match(SRC.playground, /\['tool', 'input', 'chain', 'ecosystem', 'version'\]\.includes\(k\)/);
+  ['tool', 'input', 'chain', 'ecosystem', 'version'].forEach((k) => KNOWN.add(k));
 });
 
 nodeTest('real responses used as the reference look as expected', () => {

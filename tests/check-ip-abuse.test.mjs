@@ -192,8 +192,10 @@ test('the 14 pre-existing MCP tools are byte-identical to the 1.15.0 snapshot (n
   const snapshot = JSON.parse(fs.readFileSync(path.join(ROOT, 'tests/fixtures/existing-14-tools-snapshot.json'), 'utf8'));
   assert.equal(snapshot.length, 14);
   assert.deepEqual(TOOLS.slice(0, 14), snapshot);
-  assert.equal(TOOLS.length, 15);
+  // 16 since check_package (1.17.0), after check_ip_abuse.
+  assert.equal(TOOLS.length, 16);
   assert.equal(TOOLS[14].name, 'check_ip_abuse');
+  assert.equal(TOOLS[15].name, 'check_package');
   assert.equal(new Set(TOOLS.map((t) => t.name)).size, TOOLS.length, 'no name clash');
   const sha = crypto.createHash('sha256').update(JSON.stringify(TOOLS.slice(0, 14))).digest('hex');
   assert.equal(sha, 'a177e3276b64a976e1b3a8412e77418e7846bf532379c8c9129882aff3488f06');
@@ -201,7 +203,7 @@ test('the 14 pre-existing MCP tools are byte-identical to the 1.15.0 snapshot (n
 
 test('the 5 pre-existing A2A skills are unchanged; check_ip_abuse is added as the 6th, with the MCP definition', () => {
   const names = A2A_SKILL_TOOLS.map((t) => t.name);
-  assert.deepEqual(names.filter((n) => n !== 'check_ip_abuse').sort(), ['check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_wallet_sanctions', 'get_usage_status']);
+  assert.deepEqual(names.filter((n) => n !== 'check_ip_abuse' && n !== 'check_package').sort(), ['check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_wallet_sanctions', 'get_usage_status']);
   assert.ok(names.includes('check_ip_abuse'));
   assert.equal(A2A_SKILL_TOOLS.find((t) => t.name === 'check_ip_abuse'), tool);
 });
@@ -834,20 +836,20 @@ test('CORS: X-AbuseIPDB-Key is allowed on /api/mcp and /api/a2a only', async () 
   assert.doesNotMatch(chat, /X-AbuseIPDB-Key/i);
 });
 
-test('version 1.16.0 on /api/mcp (GET + serverInfo), /api/a2a GET, server.json, agent card, openapi', async () => {
+test('version 1.17.0 (check_package, after check_ip_abuse shipped in 1.16.0) on /api/mcp (GET + serverInfo), /api/a2a GET, server.json, agent card, openapi', async () => {
   const get = makeRes();
   await mcpHandler({ method: 'GET', headers: {} }, get);
-  assert.equal(get.body.version, '1.16.0');
+  assert.equal(get.body.version, '1.17.0');
   const init = makeRes();
   await mcpHandler({ method: 'POST', headers: {}, body: { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} } }, init);
-  assert.equal(init.body.result.serverInfo.version, '1.16.0');
+  assert.equal(init.body.result.serverInfo.version, '1.17.0');
   const a2aGet = makeRes();
   await a2aHandler({ method: 'GET', headers: {}, query: {} }, a2aGet);
-  assert.equal(a2aGet.body.version, '1.16.0');
+  assert.equal(a2aGet.body.version, '1.17.0');
   const read = (rel) => JSON.parse(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
-  assert.equal(read('server.json').version, '1.16.0');
-  assert.equal(read('public/.well-known/agent-card.json').version, '1.16.0');
-  assert.equal(read('public/openapi.json').info.version, '1.16.0');
+  assert.equal(read('server.json').version, '1.17.0');
+  assert.equal(read('public/.well-known/agent-card.json').version, '1.17.0');
+  assert.equal(read('public/openapi.json').info.version, '1.17.0');
 });
 
 test('docs: agent card skill, llms.txt and README carry the bring-your-own-key section with a header curl example', () => {

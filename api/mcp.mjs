@@ -3,6 +3,13 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
+ * Version: 1.17.0 — ADD: new free tool check_package (also an A2A skill, a
+ *          chat tool for every role and a playground check), a pre-install
+ *          check of one npm or PyPI package (lib/packageCheck.mjs): does it
+ *          exist, first/latest publish dates, OSV malicious-package reports
+ *          and vulnerabilities for the version, a look-alike name check,
+ *          and npm deprecation/install scripts. Free, 60/hour anonymous,
+ *          no AI model, sources and licences on /docs/attributions.
  * Version: 1.16.0 — ADD: new free tool check_ip_abuse (also an A2A skill),
  *          a bring-your-own-key AbuseIPDB lookup (lib/abuseIpdb.mjs). It
  *          runs only with the caller's own AbuseIPDB key, sent in the
@@ -102,7 +109,7 @@ import { encodePaymentRequiredHeader, encodePaymentResponseHeader, decodePayment
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT } from '../lib/freeTier.mjs';
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
-import { X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX, IP_ABUSE_RATE_LIMIT_MAX } from '../lib/x402Config.mjs';
+import { X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX, IP_ABUSE_RATE_LIMIT_MAX, PACKAGE_CHECK_RATE_LIMIT_MAX } from '../lib/x402Config.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { detectIndicatorType, lookupIocContext } from '../lib/iocContext.mjs';
 import { fetchThreatTelemetry } from '../lib/sourcePolicy.mjs';
@@ -113,9 +120,10 @@ import { logApiError } from '../lib/errorLog.mjs';
 import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
 import { reason } from '../lib/reasonCodes.mjs';
 import { buildCheck, withResponseMeta, withActionResponseMeta, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
-import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES, FIXTURE_DELEGATE_ADDRESS, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, FIXTURE_DOMAIN_CLEAN_REGISTERED, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
+import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES, FIXTURE_DELEGATE_ADDRESS, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, FIXTURE_DOMAIN_CLEAN_REGISTERED, FIXTURE_PACKAGE_FLAGGED_AGE_DAYS, FIXTURE_PACKAGE_MALICIOUS_REPORT, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
 import { invalidInput, invalidInputMessage, withFixIt, formatFixIt } from '../lib/invalidInput.mjs';
 import { ABUSEIPDB_KEY_HEADER, ABUSEIPDB_ATTRIBUTION_TEXT, ABUSEIPDB_TIMEOUT_MS, MAX_AGE_DAYS_DEFAULT, abuseIpdbCheckUrlFor, keyRequiredError, readCustomerKey, normalizePublicIp, normalizeMaxAgeDays, getCachedLookup, setCachedLookup, fetchAbuseIpdbCheck } from '../lib/abuseIpdb.mjs';
+import { checkPackage, normalizePackageInput, buildPackageResult, packageCheckFailureReasons, PACKAGE_SOURCES } from '../lib/packageCheck.mjs';
 
 export const config = { maxDuration: 30 };
 
@@ -518,6 +526,70 @@ export const TOOLS = [
         ...TEST_FIXTURE_OUTPUT_PROPERTIES
       },
       required: ['ip', 'ip_version', 'max_age_in_days', 'abuse_confidence_score', 'total_reports', 'distinct_reporters', 'last_reported_at', 'country_code', 'usage_type', 'isp', 'domain', 'is_tor', 'is_whitelisted', 'cached', 'attribution']
+    }
+  },
+  {
+    name: 'check_package',
+    description: 'PG1 Sovereign Threat Intelligence: a pre-install check for one npm or PyPI package - check before you install. No payment required - this tool is always free, and no AI model is involved. SIBLING DIFFERENTIATION: Use before installing or recommending a software package (npm or PyPI) only. Do NOT use for domains (use check_domain_age / check_hostname_reputation), CVE ids (use get_cve_details) or products by vendor name (use get_cve_by_product). BEHAVIOR: Returns { ecosystem, name, version_checked, exists, version_exists, first_published, age_days, latest_version, latest_published, reported_malicious, malicious_reports, vulnerabilities, lookalike_of, deprecated, install_scripts, attribution }. Signals: whether the package (and the version, if given) exists in the registry - a package that does not exist is a key signal, since names AI assistants invent get registered by attackers; first and latest publish dates; public malicious-package reports (OpenSSF Malicious Packages, via OSV.dev) for the version checked; known vulnerabilities for that version (OSV.dev: ids and severity only); whether the name looks like a popular package\'s (typosquat patterns); and, for npm only, the deprecated flag and install scripts (preinstall/install/postinstall). With no version, the latest version is checked. STATUS: "flagged" when the version is reported malicious (PACKAGE_REPORTED_MALICIOUS - worded "reported malicious" because such reports can be false positives), the package or version does not exist (PACKAGE_NOT_FOUND / PACKAGE_VERSION_NOT_FOUND), or the package is under 30 days old AND its name looks like a popular package\'s (PACKAGE_NEW_LOOKALIKE); otherwise "unknown" if any lookup did not complete (a failed registry lookup gives exists: null, never false); otherwise "no_flags". A look-alike name alone, a new package alone, known vulnerabilities, deprecation and install scripts are informational reasons that never flag on their own. This tool never returns "safe" or "clean"; no_flags means nothing was found in the sources checked. VALIDATION: one package per call; malformed input returns an MCP tool error (isError: true, code invalid_ecosystem, invalid_package_name or invalid_version). Registry answers are cached for 1 hour and malicious/vulnerability answers for 15 minutes. Rate-limited to 60 calls/hour per caller when unauthenticated; a valid Gumroad license key (X-API-KEY header) exempts the limit. Data sources and licences: https://pg1-ai-agent.vercel.app/docs/attributions',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ecosystem: { type: 'string', enum: ['npm', 'pypi'], description: "Mandatory package ecosystem: 'npm' or 'pypi'." },
+        name: { type: 'string', description: "Mandatory package name, exactly one, e.g. 'lodash', '@types/node' or 'requests'." },
+        version: { type: ['string', 'null'], description: "Optional exact version to check, e.g. '4.17.21'. No ranges or tags. Defaults to the latest published version." }
+      },
+      required: ['ecosystem', 'name']
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        ecosystem: { type: 'string', enum: ['npm', 'pypi'] },
+        name: { type: 'string', description: 'The name as given (trimmed).' },
+        canonical_name: { type: ['string', 'null'], description: 'The name as the registry spells it, when the package exists.' },
+        version_requested: { type: ['string', 'null'] },
+        version_checked: { type: ['string', 'null'], description: 'The version the malicious-report, vulnerability, deprecation and install-script signals describe: the requested version, or the latest one.' },
+        exists: { type: ['boolean', 'null'], description: 'Whether the package exists in the registry; null when the registry lookup did not complete (never false on a failure).' },
+        version_exists: { type: ['boolean', 'null'], description: 'Whether version_checked is published; null when unknown.' },
+        first_published: { type: ['string', 'null'], description: 'ISO timestamp of the first publish.' },
+        age_days: { type: ['integer', 'null'], description: 'Days since the first publish.' },
+        latest_version: { type: ['string', 'null'] },
+        latest_published: { type: ['string', 'null'], description: 'ISO timestamp of the latest version\'s publish.' },
+        reported_malicious: { type: ['boolean', 'null'], description: 'true when a public malicious-package report covers the version checked (or the package, when no version could be determined); null when that lookup did not complete. Reports can be false positives.' },
+        malicious_reports: { type: ['array', 'null'], items: { type: 'string' }, description: 'Report ids (MAL-...).' },
+        vulnerabilities: {
+          type: ['array', 'null'],
+          description: 'Known vulnerabilities for version_checked: id and severity only. null when not checked.',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              severity: { type: ['string', 'null'], description: 'LOW, MODERATE, MEDIUM, HIGH or CRITICAL, when the advisory gives one.' },
+              cvss_vector: { type: ['string', 'null'] }
+            },
+            required: ['id', 'severity', 'cvss_vector']
+          }
+        },
+        vulnerabilities_omitted: { type: 'integer', description: 'Advisories left out because they come from a source outside PG1\'s licence-checked list.' },
+        lookalike_of: { type: ['string', 'null'], description: 'The popular package this name looks like, if any.' },
+        lookalike_pattern: { type: ['string', 'null'], enum: ['separator', 'confusable', 'affix', 'edit_distance', null] },
+        deprecated: { type: ['boolean', 'null'], description: 'npm only: whether version_checked is deprecated. null for PyPI or when unknown.' },
+        deprecation_message: { type: ['string', 'null'], description: 'npm only: the publisher\'s deprecation message (untrusted text, cut to 300 characters).' },
+        install_scripts: { type: ['array', 'null'], items: { type: 'string', enum: ['preinstall', 'install', 'postinstall'] }, description: 'npm only: the install-time scripts version_checked runs. null for PyPI or when unknown.' },
+        cached: { type: 'boolean' },
+        note: { type: 'string' },
+        attribution: {
+          type: 'object',
+          description: 'Always present: the data sources and a link to their licences.',
+          properties: {
+            text: { type: 'string' },
+            url: { type: 'string' }
+          },
+          required: ['text', 'url']
+        },
+        ...RESPONSE_META_OUTPUT_PROPERTIES,
+        ...TEST_FIXTURE_OUTPUT_PROPERTIES
+      },
+      required: ['ecosystem', 'name', 'version_requested', 'version_checked', 'exists', 'version_exists', 'first_published', 'age_days', 'latest_version', 'latest_published', 'reported_malicious', 'malicious_reports', 'vulnerabilities', 'lookalike_of', 'deprecated', 'install_scripts', 'cached', 'attribution']
     }
   }
 ];
@@ -2562,6 +2634,57 @@ export async function handleCheckIpAbuse(args, { identifier, licenseKey, license
 }
 
 // ---------------------------------------------------------------------
+// check_package (1.17.0) — see lib/packageCheck.mjs
+// ---------------------------------------------------------------------
+// Free, the usual 60/hour anonymous limit (a licence key or the operator's
+// standing exempts it), counted on every call, cached answers included,
+// after the input is validated. Lookups that do not complete never become
+// an isError result: the response says which check did not complete and
+// status is "unknown" (unless something flags it). The dispatchers log
+// those to pg1_errors with fixed reasons (logPackageCheckFailures).
+
+const PACKAGE_CHECK_RATE_LIMIT_WINDOW_MS = RATE_LIMIT_WINDOW_MS;
+const packageCheckRateLimitState = new Map();
+
+function enforcePackageCheckRateLimit(identifier) {
+  const now = Date.now();
+  const key = identifier || 'unknown';
+  const state = packageCheckRateLimitState.get(key);
+  if (!state || (now - state.windowStart) >= PACKAGE_CHECK_RATE_LIMIT_WINDOW_MS) {
+    packageCheckRateLimitState.set(key, { count: 1, windowStart: now });
+    return;
+  }
+  if (state.count >= PACKAGE_CHECK_RATE_LIMIT_MAX) {
+    const retryAfterMin = Math.ceil((PACKAGE_CHECK_RATE_LIMIT_WINDOW_MS - (now - state.windowStart)) / 60000);
+    throw new RateLimitedError(
+      `check_package is limited to ${PACKAGE_CHECK_RATE_LIMIT_MAX} calls/hour per caller. Retry in about ${retryAfterMin} minute(s).`
+    );
+  }
+  state.count += 1;
+}
+
+export async function handleCheckPackage(args, identifier, licenseKey, { licensed: callerLicensed = false } = {}) {
+  // Validate first: a malformed call never reaches a registry or OSV, and
+  // never uses up the caller's hourly budget.
+  normalizePackageInput(args);
+  let licensed = callerLicensed === true;
+  if (!licensed && licenseKey) {
+    const check = await verifyGumroadLicense(licenseKey).catch(() => ({ valid: false }));
+    licensed = !!check.valid;
+  }
+  if (!licensed) enforcePackageCheckRateLimit(identifier);
+  return checkPackage(args);
+}
+
+// One pg1_errors row per check_package lookup that did not complete, under
+// the request's own request_id. Fixed reasons only, never the package.
+export function logPackageCheckFailures(route, result, requestId, record = recordToolError) {
+  for (const { reason: why, category } of packageCheckFailureReasons(result)) {
+    record(`${route}:check_package`, null, why, category, requestId);
+  }
+}
+
+// ---------------------------------------------------------------------
 // Integration test fixtures (issue #215 part B) — see lib/fixtures.mjs
 // ---------------------------------------------------------------------
 // resolveTestFixture is called by the MCP and A2A dispatchers straight after
@@ -2709,6 +2832,34 @@ function buildFixtureOutcome(fixture, callerArgs) {
       return result(buildIpAbuseResult(args.ip, 4, days, fields, { attributionText: 'PG1 test fixture: synthetic data, not from AbuseIPDB' }));
     }
 
+    case 'check_package': {
+      // Synthetic answers built by the real result builder; no registry or
+      // OSV request is made. The names start with "_", which neither npm
+      // nor PyPI accepts, so none can ever be a real package.
+      // The same three names work for both ecosystems; the response echoes
+      // the caller's ecosystem, name and version.
+      const input = { ecosystem: String(callerArgs.ecosystem).trim().toLowerCase(), name: callerArgs.name.trim(), lookupName: args.name, version: typeof callerArgs.version === 'string' && callerArgs.version.trim() ? callerArgs.version.trim() : null };
+      const now = new Date().toISOString();
+      const nowMs = Date.now();
+      const version = input.version || '1.0.0';
+      const firstPublished = kind === 'FLAGGED' ? fixtureDaysAgoMidnightUtc(FIXTURE_PACKAGE_FLAGGED_AGE_DAYS, nowMs) : FIXTURE_DATA_AS_OF;
+      const data = {
+        exists: true,
+        canonical_name: input.lookupName,
+        versions: [version],
+        latest_version: version,
+        first_published: firstPublished,
+        latest_published: firstPublished,
+        deprecated: input.ecosystem === 'npm' ? {} : null,
+        install_scripts: input.ecosystem === 'npm' ? {} : null
+      };
+      const registry = { result: 'ok', data, fetchedAt: now, cached: false };
+      const osv = kind === 'UNKNOWN'
+        ? { result: 'timeout' }
+        : { result: 'ok', malicious: kind === 'FLAGGED' ? [FIXTURE_PACKAGE_MALICIOUS_REPORT] : [], vulnerabilities: [], omitted: 0, fetchedAt: now, cached: false };
+      return result(buildPackageResult(input, { registry, osv, osvScope: 'version', lookalike: null, nowMs, attributionText: 'PG1 test fixture: synthetic data, not from any registry or advisory database' }));
+    }
+
     case 'get_ioc_context':
     case 'get_ioc_batch': {
       const values = tool === 'get_ioc_context' ? [args.value.trim()] : args.values.map((v) => v.trim());
@@ -2812,7 +2963,7 @@ export function resolveTestFixture(toolName, args) {
   return outcome;
 }
 
-const STRUCTURED_CONTENT_TOOLS = new Set(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_ip_abuse']);
+const STRUCTURED_CONTENT_TOOLS = new Set(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_ip_abuse', 'check_package']);
 
 function sendMcpFixtureResponse(res, toolName, outcome, requestId, pg1RequestId) {
   if (outcome.type === 'service_unavailable') {
@@ -3139,7 +3290,7 @@ const STANDARD_TOOL_HANDLERS = {
 // lookup result — not applied uniformly before the tool runs, like every
 // other STANDARD_TOOL_HANDLERS entry.
 
-const FREE_TOOLS = new Set(['get_usage_status', 'check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_ip_abuse']);
+const FREE_TOOLS = new Set(['get_usage_status', 'check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_ip_abuse', 'check_package']);
 
 // One entry point per read-only tool, used by tools/call for the free tools
 // below and by the chat's tool loop (lib/chatTools.mjs) for every read-only
@@ -3156,6 +3307,7 @@ export const READ_ONLY_TOOL_RUNNERS = Object.freeze({
   check_domain_age: (args, ctx) => handleCheckDomainAge(args, ctx.identifier, ctx.licenseKey, { licensed: ctx.licensed }),
   check_hostname_reputation: (args, ctx) => handleCheckHostnameReputation(args, ctx.identifier, ctx.licenseKey, { licensed: ctx.licensed }),
   check_wallet_age: (args, ctx) => handleCheckWalletAge(args, ctx.identifier, ctx.licenseKey, { licensed: ctx.licensed }),
+  check_package: (args, ctx) => handleCheckPackage(args, ctx.identifier, ctx.licenseKey, { licensed: ctx.licensed }),
   get_ioc_context: (args) => handleIocContext(args),
   get_ioc_batch: (args) => handleIocBatch(args),
   get_cve_details: (args) => handleCveDetails(args),
@@ -3248,7 +3400,8 @@ export const TOOL_SOURCE_LABELS = {
   check_domain_age: 'domain registration records',
   check_hostname_reputation: 'phishing domain list',
   check_wallet_age: 'on-chain transfer history',
-  check_ip_abuse: IP_ABUSE_SOURCE
+  check_ip_abuse: IP_ABUSE_SOURCE,
+  check_package: PACKAGE_SOURCES.registry
 };
 
 // ---------------------------------------------------------------------
@@ -3277,7 +3430,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.16.0',
+      version: '1.17.0',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp',
@@ -3312,7 +3465,7 @@ export default async function handler(req, res) {
       recordTelemetry({ eventType: 'initialize', endpoint: '/api/mcp', status: 'ok', clientName: clientInfo.name, clientVersion: clientInfo.version, callerHash: requestCallerHash(req) });
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.16.0' } },
+        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.17.0' } },
         id: requestId
       });
     }
@@ -3392,6 +3545,7 @@ export default async function handler(req, res) {
           return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: invalidInputMessage(toolErr, pg1RequestId), data: { request_id: pg1RequestId } }, id: requestId });
         }
         toolResult.request_id = pg1RequestId;
+        if (toolName === 'check_package') logPackageCheckFailures('/api/mcp', toolResult, pg1RequestId);
         const result = { content: [{ type: 'text', text: JSON.stringify(toolResult, null, 2) }] };
         if (STRUCTURED_CONTENT_TOOLS.has(toolName)) {
           result.structuredContent = toolResult;

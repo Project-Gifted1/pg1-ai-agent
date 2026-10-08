@@ -266,6 +266,7 @@ const WALLET_AGE_TOOL_SHA256 = '16fafc99e96925c027cd660b9564e8fe5edffb5a512d504b
 
 test('wallet age timeout: MCP tool definitions are hash-identical to before', async () => {
   const sha = (o) => crypto.createHash('sha256').update(JSON.stringify(o)).digest('hex');
-  assert.equal(sha(TOOLS), TOOLS_SHA256);
+  // check_package (1.17.0) was added after this pin, at the end of the list.
+  assert.equal(sha(TOOLS.filter((t) => t.name !== 'check_package')), TOOLS_SHA256);
   assert.equal(sha(TOOLS.find((t) => t.name === 'check_wallet_age')), WALLET_AGE_TOOL_SHA256);
 });

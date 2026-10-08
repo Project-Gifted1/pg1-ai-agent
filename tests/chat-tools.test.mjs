@@ -144,7 +144,7 @@ test('the chat tool list is the MCP tool list filtered by role, and no role gets
   assert.deepEqual(operator.map((t) => t.name), [...READ_ONLY_CHAT_TOOLS, ...OPERATOR_ONLY_CHAT_TOOLS]);
   for (const t of operator.filter((t) => !OPERATOR_ONLY_CHAT_TOOLS.includes(t.name))) assert.equal(t, byName.get(t.name), `${t.name} is the MCP definition object itself`);
   for (const name of OPERATOR_ONLY_CHAT_TOOLS) assert.ok(!byName.has(name), `${name} is not an MCP tool`);
-  assert.deepEqual(chatToolsForRole('guest').map((t) => t.name), ['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age']);
+  assert.deepEqual(chatToolsForRole('guest').map((t) => t.name), ['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_package']);
   assert.deepEqual(chatToolsForRole('nobody'), chatToolsForRole('guest'), 'an unknown role is the least-privileged role');
   for (const role of Object.keys(CHAT_TOOL_ROLES)) {
     for (const name of chatToolsForRole(role).map((t) => t.name)) assert.ok(!WRITE_TOOLS.includes(name), `${role} never gets ${name}`);

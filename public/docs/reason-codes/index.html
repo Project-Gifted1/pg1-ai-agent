@@ -58,6 +58,15 @@
 <tr><td><code>IP_TOR_EXIT_NODE</code></td><td>Informational</td><td>IP address is a Tor exit node.</td></tr>
 <tr><td><code>IP_WHITELISTED</code></td><td>Informational</td><td>IP address is whitelisted by the abuse-report source, which does not count its reports against it.</td></tr>
 <tr><td><code>IP_REPORTS_SCORED_ZERO</code></td><td>Informational</td><td>IP address has abuse reports in the reporting window checked, but its abuse confidence score is 0.</td></tr>
+<tr><td><code>PACKAGE_REPORTED_MALICIOUS</code></td><td>Warning</td><td>Package version is reported malicious in a public malicious-package report. Such reports can be false positives.</td></tr>
+<tr><td><code>PACKAGE_NOT_FOUND</code></td><td>Warning</td><td>Package does not exist in the registry. Names that do not exist yet are often invented by AI assistants and can later be registered by attackers.</td></tr>
+<tr><td><code>PACKAGE_VERSION_NOT_FOUND</code></td><td>Warning</td><td>The package exists in the registry, but the requested version is not published.</td></tr>
+<tr><td><code>PACKAGE_NEW_LOOKALIKE</code></td><td>Warning</td><td>Package was first published fewer than 30 days ago and its name looks like a popular package&#39;s name.</td></tr>
+<tr><td><code>PACKAGE_LOOKALIKE</code></td><td>Informational</td><td>Package name looks like a popular package&#39;s name (a possible typosquat).</td></tr>
+<tr><td><code>PACKAGE_NEWLY_PUBLISHED</code></td><td>Informational</td><td>Package was first published fewer than 30 days ago.</td></tr>
+<tr><td><code>PACKAGE_KNOWN_VULNERABILITIES</code></td><td>Informational</td><td>The version checked has known vulnerabilities in the advisory databases checked.</td></tr>
+<tr><td><code>PACKAGE_DEPRECATED</code></td><td>Informational</td><td>The version checked is marked deprecated by its publisher.</td></tr>
+<tr><td><code>PACKAGE_INSTALL_SCRIPTS</code></td><td>Informational</td><td>The version checked runs scripts when it is installed (preinstall, install or postinstall).</td></tr>
 </tbody>
 </table></div>
 <h2 id="how-codes-affect-status">How codes affect status</h2>
@@ -73,7 +82,7 @@
 <li>A response&#39;s <code>message</code> can be more specific than the meaning above (for example, it may include a count). Match on <code>code</code>, never on <code>message</code>.</li>
 </ul>
 <h2 id="test-inputs">Test inputs</h2>
-<p>Fixed test inputs, free for every caller, are listed on <a href="/docs/testing">Test your integration</a>. They return <code>WALLET_SANCTIONED</code>, <code>DOMAIN_NEWLY_REGISTERED_30D</code>, <code>HOSTNAME_PHISHING_LISTED</code>, <code>WALLET_NO_HISTORY</code>, <code>CVE_KNOWN_EXPLOITED_KEV</code>, <code>IOC_FOUND_IN_THREAT_FEED</code>, <code>WALLET_DELEGATED</code> and <code>IP_ABUSE_REPORTED</code> without a live lookup. No test input returns <code>HOSTNAME_LOOKALIKE</code>, <code>WALLET_AGE_PARTIAL</code>, <code>IP_TOR_EXIT_NODE</code>, <code>IP_WHITELISTED</code> or <code>IP_REPORTS_SCORED_ZERO</code>.</p>
+<p>Fixed test inputs, free for every caller, are listed on <a href="/docs/testing">Test your integration</a>. They return <code>WALLET_SANCTIONED</code>, <code>DOMAIN_NEWLY_REGISTERED_30D</code>, <code>HOSTNAME_PHISHING_LISTED</code>, <code>WALLET_NO_HISTORY</code>, <code>CVE_KNOWN_EXPLOITED_KEV</code>, <code>IOC_FOUND_IN_THREAT_FEED</code>, <code>WALLET_DELEGATED</code>, <code>IP_ABUSE_REPORTED</code>, <code>PACKAGE_REPORTED_MALICIOUS</code> and <code>PACKAGE_NEWLY_PUBLISHED</code> without a live lookup. No test input returns <code>HOSTNAME_LOOKALIKE</code>, <code>WALLET_AGE_PARTIAL</code>, <code>IP_TOR_EXIT_NODE</code>, <code>IP_WHITELISTED</code>, <code>IP_REPORTS_SCORED_ZERO</code>, <code>PACKAGE_NOT_FOUND</code>, <code>PACKAGE_VERSION_NOT_FOUND</code>, <code>PACKAGE_NEW_LOOKALIKE</code>, <code>PACKAGE_LOOKALIKE</code>, <code>PACKAGE_KNOWN_VULNERABILITIES</code>, <code>PACKAGE_DEPRECATED</code> or <code>PACKAGE_INSTALL_SCRIPTS</code>.</p>
   </article>
 
   <footer>

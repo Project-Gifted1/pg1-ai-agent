@@ -206,7 +206,7 @@ test('licence directive: names the anonymous rate limits from config and the /ap
   assert.equal(HOSTNAME_REPUTATION_RATE_LIMIT_MAX, 60);
   assert.equal(WALLET_AGE_RATE_LIMIT_MAX, 60);
   assert.equal(RATE_LIMIT_WINDOW_MS, 60 * 60 * 1000);
-  assert.ok(d.includes(`check_hostname_reputation and check_wallet_age are limited to ${HOSTNAME_REPUTATION_RATE_LIMIT_MAX} calls/hour each`), d);
+  assert.ok(d.includes(`check_hostname_reputation, check_wallet_age and check_package are limited to ${HOSTNAME_REPUTATION_RATE_LIMIT_MAX} calls/hour each`), d);
   assert.ok(d.includes(`opt-in free tier of ${FREE_TIER_DAILY_LIMIT} calls/day`), d);
 });
 

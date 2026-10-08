@@ -23,7 +23,7 @@ const BASE_URL = 'https://pg1-ai-agent.vercel.app';
 const VERCEL = JSON.parse(read('vercel.json'));
 const TAG = '<meta name="google-site-verification" content="uGL_2UHMj5e5ZTkPFZfQ4QqRIzZSEO2UtchPRE1nfPA" />';
 
-const PAGES = ['/', '/playground', '/about', '/docs/crypto-alert-bot', '/docs/reason-codes', '/docs/testing'];
+const PAGES = ['/', '/playground', '/about', '/docs/crypto-alert-bot', '/docs/reason-codes', '/docs/testing', '/docs/attributions'];
 
 // The public/ file a route is served from: a rewrite's destination, or the
 // route itself as a directory index.

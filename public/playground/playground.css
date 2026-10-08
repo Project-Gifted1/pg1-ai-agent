@@ -69,6 +69,8 @@ h1 { margin: 0; font-size: 1.5rem; line-height: 1.25; color: var(--text-strong);
 .pg-tool-desc { color: var(--text-2); font-size: 0.8125rem; }
 .pg-tool:has(input:checked) { border-color: var(--gold); background: var(--gold-soft); }
 .pg-tool:has(input:focus-visible) { outline: 2px solid var(--gold); outline-offset: 2px; }
+/* Five checks: the last one (Package) takes a full row in both layouts. */
+.pg-tools > .pg-tool:last-of-type { grid-column: 1 / -1; }
 
 .pg-field { display: flex; flex-direction: column; gap: 0.375rem; }
 .pg-field label { color: var(--gold); font-weight: 600; font-size: 0.9375rem; }
@@ -87,6 +89,7 @@ h1 { margin: 0; font-size: 1.5rem; line-height: 1.25; color: var(--text-strong);
 .pg-field select { font-family: var(--font-sans); }
 .pg-field input:focus-visible, .pg-field select:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; border-color: var(--gold-line); }
 .pg-hint { margin: 0; color: var(--text-3); font-size: 0.8125rem; }
+.pg-optional { color: var(--text-3); font-weight: 400; }
 
 .pg-run {
   min-height: 3rem;

@@ -1,8 +1,8 @@
 {
   "protocolVersion": "0.3.0",
   "name": "PG1 Sovereign Threat Intelligence",
-  "description": "Threat intelligence agent for AI agents and security tooling: wallet sanctions screening, domain age lookups, hostname/phishing reputation checks, wallet age/history checks, free-tier usage status, and bring-your-own-key AbuseIPDB IP lookups (your own AbuseIPDB key in the X-AbuseIPDB-Key header). Paid tools (bulk indicator feeds, CVE enrichment, threat actor dossiers) are available via the companion MCP server at /api/mcp, not via A2A yet.",
-  "version": "1.16.0",
+  "description": "Threat intelligence agent for AI agents and security tooling: wallet sanctions screening, domain age lookups, hostname/phishing reputation checks, wallet age/history checks, free-tier usage status, bring-your-own-key AbuseIPDB IP lookups (your own AbuseIPDB key in the X-AbuseIPDB-Key header), and pre-install npm/PyPI package checks. Paid tools (bulk indicator feeds, CVE enrichment, threat actor dossiers) are available via the companion MCP server at /api/mcp, not via A2A yet.",
+  "version": "1.17.0",
   "documentationUrl": "https://pg1-ai-agent.vercel.app/docs/crypto-alert-bot",
   "url": "https://pg1-ai-agent.vercel.app/api/a2a",
   "preferredTransport": "JSONRPC",
@@ -79,6 +79,15 @@
       "inputModes": ["application/json"],
       "outputModes": ["application/json"],
       "security": [{ "abuseipdbKey": [] }]
+    },
+    {
+      "id": "check_package",
+      "name": "check_package",
+      "description": "Check before you install: a pre-install check of one npm or PyPI package. Always free, no AI model; rate-limited to 60 calls/hour per caller without a Gumroad license key (X-API-KEY exempts the limit). Reports whether the package (and version) exists, first and latest publish dates, public malicious-package reports and known vulnerabilities (ids and severity) for the version checked, whether the name looks like a popular package's, and for npm the deprecated flag and install scripts. Flagged when the version is reported malicious (such reports can be false positives), the package or version does not exist, or the package is under 30 days old with a look-alike name; unknown when a lookup did not complete; never \"safe\" or \"clean\". Data sources and licences: https://pg1-ai-agent.vercel.app/docs/attributions",
+      "tags": ["supply-chain", "packages", "npm", "pypi", "typosquatting"],
+      "examples": ["Does the npm package 'expresss' exist, and does its name imitate a popular package?", "Check the PyPI package requests version 2.31.0 before I install it."],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
     },
     {
       "id": "get_usage_status",

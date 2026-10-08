@@ -4,6 +4,7 @@
  *   docs/integrations/crypto-alert-bot.md -> public/docs/crypto-alert-bot/index.html
  *   lib/reasonCodes.mjs                   -> public/docs/reason-codes/index.html
  *   README.md "## Test your integration"  -> public/docs/testing/index.html
+ *   lib/attributions.mjs                  -> public/docs/attributions/index.html
  *
  * The source is the single source of truth; the HTML is generated and
  * committed. tests/docs-pages.test.mjs and tests/public-reference-pages.test.mjs
@@ -27,6 +28,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { REASON_CODES, INFORMATIONAL_REASON_CODES, INCOMPLETE_REASON_CODES } from '../lib/reasonCodes.mjs';
 import { TEST_FIXTURES } from '../lib/fixtures.mjs';
+import { attributionsMarkdown } from '../lib/attributions.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BASE_URL = 'https://pg1-ai-agent.vercel.app';
@@ -55,6 +57,15 @@ export const DOC_PAGES = [
     kicker: 'PG1 reference',
     editHint: 'edit the "Test your integration" section of README.md',
     description: 'Reference: fixed test inputs for every PG1 tool that can flag something, free for every caller, with the exact result each returns over MCP and A2A.'
+  },
+  {
+    source: 'lib/attributions.mjs',
+    output: 'public/docs/attributions/index.html',
+    route: '/docs/attributions',
+    kicker: 'PG1 reference',
+    editHint: 'edit lib/attributions.mjs',
+    description: 'Reference: the third-party data sources behind PG1\'s check_package tool, and the licence or terms each is used under.',
+    markdown: attributionsMarkdown
   }
 ];
 
