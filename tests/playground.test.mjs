@@ -118,7 +118,8 @@ test('check_wallet_age defaults to base and passes the picked chain to the tool'
   assert.deepEqual(PLAYGROUND_CHAINS, ['base', 'ethereum', 'arbitrum', 'optimism', 'polygon', 'bsc'], 'chain allow-list is the MCP tool enum');
   const html = read('public/playground/index.html');
   for (const c of PLAYGROUND_CHAINS) assert.match(html, new RegExp(`<option value="${c}"`), `chain picker offers ${c}`);
-  assert.equal((html.match(/<option /g) || []).length, PLAYGROUND_CHAINS.length, 'chain picker offers nothing else');
+  const chainSelect = html.match(/<select id="pg-chain"[\s\S]*?<\/select>/)[0];
+  assert.equal((chainSelect.match(/<option /g) || []).length, PLAYGROUND_CHAINS.length, 'chain picker offers nothing else');
 });
 
 test('the real (non-fixture) path runs the shared tool handler as a guest, keyed by a hash, never the raw IP', async () => {
@@ -194,7 +195,7 @@ test('valid inputs: bare domains and hostnames (lowercased), punycode, EVM addre
 test('paid, write and other non-playground tools are rejected and never run', async () => {
   let ran = 0;
   const { call } = makeHandler({ run: async () => { ran++; return {}; }, fixtures: () => { ran++; return null; } });
-  assert.deepEqual([...PLAYGROUND_TOOLS].sort(), ['check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_wallet_sanctions']);
+  assert.deepEqual([...PLAYGROUND_TOOLS].sort(), ['check_domain_age', 'check_hostname_reputation', 'check_package', 'check_wallet_age', 'check_wallet_sanctions']);
   for (const tool of ['get_threat_indicators', 'get_ioc_context', 'get_ioc_batch', 'get_cve_details', 'get_cve_batch', 'get_cve_by_product', 'get_threat_actor_profile', 'subscribe_alerts', 'submit_indicator', 'get_usage_status', 'tools/call', '', 'CHECK_DOMAIN_AGE']) {
     const res = await call({ tool, input: 'example.com' });
     assert.equal(res.statusCode, 400, tool);

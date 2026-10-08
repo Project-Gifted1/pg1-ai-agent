@@ -88,8 +88,9 @@ test('server.json is byte-identical to the 1.15.0 release except the version (1.
   assert.equal(sha256(reverted), 'f0888cac3c000b2a8e6beded4cdfdbf8426c044ba787f48f2f57245df42d4137');
 });
 
-test('MCP tool names, descriptions and schemas are identical to the 1.15.0 release (plus check_ip_abuse, 1.16.0)', () => {
-  assert.equal(TOOLS.length, 15);
+test('MCP tool names, descriptions and schemas are identical to the 1.15.0 release (plus check_ip_abuse and check_package, 1.16.0)', () => {
+  assert.equal(TOOLS.length, 16);
   assert.equal(TOOLS[14].name, 'check_ip_abuse');
+  assert.equal(TOOLS[15].name, 'check_package');
   assert.equal(sha256(JSON.stringify(TOOLS.slice(0, 14))), 'a177e3276b64a976e1b3a8412e77418e7846bf532379c8c9129882aff3488f06');
 });

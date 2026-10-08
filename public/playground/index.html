@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#0a0a0b">
   <meta name="color-scheme" content="dark">
   <title>PG1 Tools Playground</title>
-  <meta name="description" content="Run PG1's free threat-intelligence checks in the browser: domain age, hostname reputation, wallet sanctions and wallet age. No sign-in.">
+  <meta name="description" content="Run PG1's free threat-intelligence checks in the browser: domain age, hostname reputation, wallet sanctions, wallet age and a pre-install package check. No sign-in.">
   <meta name="google-site-verification" content="uGL_2UHMj5e5ZTkPFZfQ4QqRIzZSEO2UtchPRE1nfPA" />
   <link rel="canonical" href="https://pg1-ai-agent.vercel.app/playground">
   <link rel="icon" href="/brand/pg1-shield.svg" type="image/svg+xml">
@@ -36,12 +36,27 @@
       <label class="pg-tool"><input type="radio" name="tool" value="check_hostname_reputation"><span class="pg-tool-name">Hostname reputation</span><span class="pg-tool-desc">Phishing list and lookalike check</span></label>
       <label class="pg-tool"><input type="radio" name="tool" value="check_wallet_sanctions"><span class="pg-tool-name">Wallet sanctions</span><span class="pg-tool-desc">Sanctions list screening</span></label>
       <label class="pg-tool"><input type="radio" name="tool" value="check_wallet_age"><span class="pg-tool-name">Wallet age</span><span class="pg-tool-desc">First on-chain activity</span></label>
+      <label class="pg-tool"><input type="radio" name="tool" value="check_package"><span class="pg-tool-name">Package</span><span class="pg-tool-desc">Check an npm or PyPI package before you install it</span></label>
     </fieldset>
+
+    <div class="pg-field" id="pg-ecosystem-field" hidden>
+      <label for="pg-ecosystem">Ecosystem</label>
+      <select id="pg-ecosystem" name="ecosystem">
+        <option value="npm" selected>npm</option>
+        <option value="pypi">PyPI</option>
+      </select>
+    </div>
 
     <div class="pg-field">
       <label for="pg-input" id="pg-input-label">Domain</label>
       <input id="pg-input" name="input" type="text" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="255" placeholder="example.com" aria-describedby="pg-input-hint" required>
       <p class="pg-hint" id="pg-input-hint">A domain name, like example.com.</p>
+    </div>
+
+    <div class="pg-field" id="pg-version-field" hidden>
+      <label for="pg-version">Version <span class="pg-optional">(optional)</span></label>
+      <input id="pg-version" name="version" type="text" inputmode="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="64" placeholder="latest" aria-describedby="pg-version-hint">
+      <p class="pg-hint" id="pg-version-hint">One exact version, like 4.17.21. Leave it empty to check the latest.</p>
     </div>
 
     <div class="pg-field" id="pg-chain-field" hidden>
@@ -61,7 +76,7 @@
 
   <section class="pg-result" id="pg-result" aria-live="polite" aria-label="Result"></section>
 
-  <footer>Developers: the same checks are available to your agents over MCP and A2A. <a href="/about">See how to connect</a>, or read the <a href="/docs/crypto-alert-bot">integration guide</a>.</footer>
+  <footer>Developers: the same checks are available to your agents over MCP and A2A. <a href="/about">See how to connect</a>, or read the <a href="/docs/crypto-alert-bot">integration guide</a>. <a href="/docs/attributions">Data sources and licences</a>.</footer>
 </main>
 </body>
 </html>

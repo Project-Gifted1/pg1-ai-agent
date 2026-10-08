@@ -445,8 +445,9 @@ const DESCRIPTION_EDITS = [
 ];
 
 test('tool definitions differ from 1.14.0 only by the three listed description edits', () => {
-  // check_ip_abuse is the 1.16.0 addition; the 14 tools before it are pinned.
-  const reverted = TOOLS.filter((tool) => tool.name !== 'check_ip_abuse').map((tool) => {
+  // check_ip_abuse and check_package are the 1.16.0 additions; the 14 tools
+  // before them are pinned.
+  const reverted = TOOLS.filter((tool) => tool.name !== 'check_ip_abuse' && tool.name !== 'check_package').map((tool) => {
     const edit = DESCRIPTION_EDITS.find(([name]) => name === tool.name);
     if (!edit) return tool;
     assert.ok(tool.description.includes(edit[2]), tool.name);

@@ -192,8 +192,10 @@ test('the 14 pre-existing MCP tools are byte-identical to the 1.15.0 snapshot (n
   const snapshot = JSON.parse(fs.readFileSync(path.join(ROOT, 'tests/fixtures/existing-14-tools-snapshot.json'), 'utf8'));
   assert.equal(snapshot.length, 14);
   assert.deepEqual(TOOLS.slice(0, 14), snapshot);
-  assert.equal(TOOLS.length, 15);
+  // 16 since check_package joined 1.16.0, after check_ip_abuse.
+  assert.equal(TOOLS.length, 16);
   assert.equal(TOOLS[14].name, 'check_ip_abuse');
+  assert.equal(TOOLS[15].name, 'check_package');
   assert.equal(new Set(TOOLS.map((t) => t.name)).size, TOOLS.length, 'no name clash');
   const sha = crypto.createHash('sha256').update(JSON.stringify(TOOLS.slice(0, 14))).digest('hex');
   assert.equal(sha, 'a177e3276b64a976e1b3a8412e77418e7846bf532379c8c9129882aff3488f06');
@@ -201,7 +203,7 @@ test('the 14 pre-existing MCP tools are byte-identical to the 1.15.0 snapshot (n
 
 test('the 5 pre-existing A2A skills are unchanged; check_ip_abuse is added as the 6th, with the MCP definition', () => {
   const names = A2A_SKILL_TOOLS.map((t) => t.name);
-  assert.deepEqual(names.filter((n) => n !== 'check_ip_abuse').sort(), ['check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_wallet_sanctions', 'get_usage_status']);
+  assert.deepEqual(names.filter((n) => n !== 'check_ip_abuse' && n !== 'check_package').sort(), ['check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_wallet_sanctions', 'get_usage_status']);
   assert.ok(names.includes('check_ip_abuse'));
   assert.equal(A2A_SKILL_TOOLS.find((t) => t.name === 'check_ip_abuse'), tool);
 });

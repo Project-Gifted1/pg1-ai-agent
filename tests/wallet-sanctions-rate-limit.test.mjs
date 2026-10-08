@@ -290,6 +290,8 @@ test('tool definitions are hash-identical to before the limit (name, description
   // tests/source-policy.test.mjs).
   // 1.16.0 added check_ip_abuse at the end of both lists; everything before
   // it is still pinned to the same hashes.
-  assert.equal(sha(TOOLS.filter((t) => t.name !== 'check_ip_abuse')), 'a177e3276b64a976e1b3a8412e77418e7846bf532379c8c9129882aff3488f06');
-  assert.equal(sha(A2A_SKILL_TOOLS.filter((t) => t.name !== 'check_ip_abuse')), '188ab4f12daf429bd01e91689d29d682307afb6e27aae596a0e7324dbb6a2c3d');
+  // check_package (also 1.16.0) is left out the same way.
+  const added = new Set(['check_ip_abuse', 'check_package']);
+  assert.equal(sha(TOOLS.filter((t) => !added.has(t.name))), 'a177e3276b64a976e1b3a8412e77418e7846bf532379c8c9129882aff3488f06');
+  assert.equal(sha(A2A_SKILL_TOOLS.filter((t) => !added.has(t.name))), '188ab4f12daf429bd01e91689d29d682307afb6e27aae596a0e7324dbb6a2c3d');
 });

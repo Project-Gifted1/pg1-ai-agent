@@ -59,7 +59,7 @@ test('agent card has exactly one skill per always-free tool, matching api/a2a.mj
   const cardSkillIds = card.skills.map((s) => s.id).sort();
   const exposedSkillIds = A2A_SKILL_TOOLS.map((t) => t.name).sort();
   assert.deepEqual(cardSkillIds, exposedSkillIds);
-  assert.deepEqual(cardSkillIds, ['check_domain_age', 'check_hostname_reputation', 'check_ip_abuse', 'check_wallet_age', 'check_wallet_sanctions', 'get_usage_status']);
+  assert.deepEqual(cardSkillIds, ['check_domain_age', 'check_hostname_reputation', 'check_ip_abuse', 'check_package', 'check_wallet_age', 'check_wallet_sanctions', 'get_usage_status']);
 });
 
 test('every skill declares input/output modes', () => {

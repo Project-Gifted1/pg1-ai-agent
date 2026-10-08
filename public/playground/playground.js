@@ -24,7 +24,8 @@
     check_domain_age: { label: 'Domain', placeholder: 'example.com', hint: 'A domain name, like example.com.', mode: 'url', chain: false },
     check_hostname_reputation: { label: 'Hostname', placeholder: 'app.example.com', hint: 'One hostname, like app.example.com. No https:// or path.', mode: 'url', chain: false },
     check_wallet_sanctions: { label: 'Wallet', placeholder: '0x… or name.eth', hint: 'An EVM address (0x followed by 40 hex characters) or an ENS name ending in .eth.', mode: 'text', chain: false },
-    check_wallet_age: { label: 'Wallet', placeholder: '0x… or name.eth', hint: 'An EVM address (0x followed by 40 hex characters) or an ENS name ending in .eth.', mode: 'text', chain: true }
+    check_wallet_age: { label: 'Wallet', placeholder: '0x… or name.eth', hint: 'An EVM address (0x followed by 40 hex characters) or an ENS name ending in .eth.', mode: 'text', chain: true },
+    check_package: { label: 'Package', placeholder: 'lodash', hint: 'One package name, like lodash or requests.', mode: 'text', chain: false, pkg: true }
   };
 
   function escapeHTML(value) {
@@ -111,6 +112,10 @@
     var hint = document.getElementById('pg-input-hint');
     var chainField = document.getElementById('pg-chain-field');
     var chain = document.getElementById('pg-chain');
+    var ecosystemField = document.getElementById('pg-ecosystem-field');
+    var ecosystem = document.getElementById('pg-ecosystem');
+    var versionField = document.getElementById('pg-version-field');
+    var version = document.getElementById('pg-version');
     var run = document.getElementById('pg-run');
     var result = document.getElementById('pg-result');
     if (!form || !input || !result) return;
@@ -127,6 +132,8 @@
       input.setAttribute('inputmode', conf.mode);
       hint.textContent = conf.hint;
       chainField.hidden = !conf.chain;
+      if (ecosystemField) ecosystemField.hidden = !conf.pkg;
+      if (versionField) versionField.hidden = !conf.pkg;
     }
 
     form.addEventListener('change', function (e) {
@@ -145,6 +152,11 @@
       }
       var payload = { tool: tool, input: value };
       if (TOOL_INPUTS[tool].chain) payload.chain = chain.value;
+      if (TOOL_INPUTS[tool].pkg) {
+        payload.ecosystem = ecosystem ? ecosystem.value : 'npm';
+        var v = version ? version.value.trim() : '';
+        if (v) payload.version = v;
+      }
       run.disabled = true;
       run.textContent = 'Running…';
       result.innerHTML = messageHtml('Running the check…', null, false);

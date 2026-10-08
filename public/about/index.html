@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0a0a0b">
   <meta name="color-scheme" content="dark">
   <title>About PG1 Threat Intelligence</title>
-  <meta name="description" content="PG1 is a threat-intelligence service for AI agents: free wallet, domain and hostname checks over MCP, A2A and REST, plus a STIX 2.1 indicator feed paid per call with x402 on Base.">
+  <meta name="description" content="PG1 is a threat-intelligence service for AI agents: free wallet, domain, hostname and package checks over MCP, A2A and REST, plus a STIX 2.1 indicator feed paid per call with x402 on Base.">
   <link rel="canonical" href="https://pg1-ai-agent.vercel.app/about">
   <link rel="icon" href="/brand/pg1-shield.svg" type="image/svg+xml">
   <style>
@@ -105,7 +105,7 @@
 
   <section aria-labelledby="what">
     <h2 id="what">What PG1 is</h2>
-    <p>PG1 is a threat-intelligence service built for AI agents. An agent can ask it about a wallet address, a domain or a hostname before acting on it, and get back a structured, machine-readable answer.</p>
+    <p>PG1 is a threat-intelligence service built for AI agents. An agent can ask it about a wallet address, a domain, a hostname or a software package before acting on it, and get back a structured, machine-readable answer.</p>
     <p>The same checks are served over the Model Context Protocol (MCP), Agent2Agent (A2A) and a REST API. Results report facts and flags, never a &ldquo;safe&rdquo; or &ldquo;clean&rdquo; verdict, and a check that could not complete is reported as <code>unknown</code> rather than guessed.</p>
   </section>
 
@@ -117,9 +117,10 @@
       <li><code>check_domain_age</code><br>Looks up a domain&rsquo;s registration date and age via RDAP. A domain registered less than 30 days ago is reported as a common phishing signal, not as proof of malicious intent.</li>
       <li><code>check_hostname_reputation</code><br>Checks one hostname against a phishing blocklist and allowlist, synced daily, plus a lookalike (typosquat) detector. Returns <code>allowlisted</code>, <code>listed</code>, <code>lookalike</code> or <code>not_listed</code>.</li>
       <li><code>check_wallet_age</code><br>Reports when an EVM wallet address first appeared on a chain, from its earliest on-chain transfer, and whether it is a contract or has an EIP-7702 delegation. Age and history only, never a safety verdict.</li>
+      <li><code>check_package</code><br>Check before you install: one npm or PyPI package. Reports whether it exists, how new it is, public malicious-package reports and known vulnerabilities for the version, whether its name looks like a popular package&rsquo;s, and for npm its deprecation and install scripts. A report is always worded &ldquo;reported malicious&rdquo;: such reports can be false positives.</li>
       <li><code>get_usage_status</code><br>Returns your remaining free-tier calls for today and your licence status.</li>
     </ul>
-    <p class="note">Anonymous callers are rate-limited. Fixed test inputs that always return the same answer are listed in <a href="/llms.txt">/llms.txt</a>.</p>
+    <p class="note">Anonymous callers are rate-limited. Fixed test inputs that always return the same answer are listed in <a href="/llms.txt">/llms.txt</a>. Data sources and their licences: <a href="/docs/attributions">Data sources and licences</a>.</p>
   </section>
 
   <section aria-labelledby="ioc">

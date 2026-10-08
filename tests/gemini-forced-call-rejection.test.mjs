@@ -94,8 +94,10 @@ test('the operator declarations sent to Gemini carry only schema keywords it acc
   const raw = tools.map((t) => ({ name: t.name, parameters: t.inputSchema }));
   assert.deepEqual(unknownSchemaFields(raw), [
     'default at tools[0].function_declarations[3].parameters.properties.chain',
-    'additionalProperties at tools[0].function_declarations[10].parameters',
-    'additionalProperties at tools[0].function_declarations[11].parameters'
+    // check_package (1.16.0) is the 5th read-only tool, so the two
+    // operator-only tools moved up one place.
+    'additionalProperties at tools[0].function_declarations[11].parameters',
+    'additionalProperties at tools[0].function_declarations[12].parameters'
   ]);
 });
 
