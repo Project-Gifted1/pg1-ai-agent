@@ -103,7 +103,7 @@ test('server.json description: within the Registry\'s 100-character limit, names
   assert.doesNotMatch(description, /EPSS|KEV|NVD|OTX|OFAC|AbuseIPDB|OSV|MetaMask|RDAP|npm|PyPI|feed/i);
 });
 
-test('MCP tool names, descriptions and schemas are identical to the 1.15.0 release (plus check_ip_abuse and check_package, 1.16.0)', () => {
+test('MCP tool names, descriptions and schemas are identical to the 1.15.0 release (plus check_ip_abuse, 1.16.0, and check_package, 1.17.0)', () => {
   assert.equal(TOOLS.length, 16);
   assert.equal(TOOLS[14].name, 'check_ip_abuse');
   assert.equal(TOOLS[15].name, 'check_package');
