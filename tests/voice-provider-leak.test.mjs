@@ -17,6 +17,7 @@ import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
 import { createSseParser, scrubIdentity } from '../lib/chatStream.mjs';
 import { identityDirective } from '../lib/identity.mjs';
 import { stripAudioMetadata } from '../lib/voiceStream.mjs';
+import { __resetRouterState } from '../lib/aiRouter.mjs';
 
 const VOICE_BRANDS_RE = /Cartesia|Sonic/i;
 
@@ -26,6 +27,8 @@ const ORIGINAL_CONSOLE_ERROR = console.error;
 const VOICE_KEY = 'stub-voice-key-0123456789';
 
 beforeEach(() => {
+  // Each test starts with an empty TTS cache and no open breakers.
+  __resetRouterState();
   process.env.USER_API_KEY = 'test-operator';
   process.env.USER_API_PASS = 'test-secret-pass';
   process.env.GEMINI_API_KEY = 'stub-gemini-key-0123456789';

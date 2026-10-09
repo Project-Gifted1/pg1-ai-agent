@@ -29,6 +29,7 @@ import { Agent, fetch as undiciFetch } from 'undici';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { reportUpstreamFailure } from '../lib/upstreamFailure.mjs';
+import { mediaGeminiKeys } from '../lib/aiRouter.mjs';
 import {
   claimVideoJob, renderVideoJob, verifyRenderToken, videoEnabled, videoRenderSecret,
   VIDEO_RENDER_MAX_DURATION_S, VIDEO_RENDER_TOKEN_HEADER
@@ -62,8 +63,11 @@ function keepAlive(promise) {
   return promise;
 }
 
+// Media gets the paid Gemini key only (lib/aiRouter.mjs): GEMINI_API_KEY_PAID,
+// else the old GEMINI_API_KEY1, GEMINI_API_KEY2, GEMINI_API_KEY; Replicate
+// stays the fallback when it is refused or runs out.
 export function geminiKeysFrom(env) {
-  return [env.GEMINI_API_KEY1, env.GEMINI_API_KEY2, env.GEMINI_API_KEY].map((k) => String(k || '').replace(/\s+/g, '')).filter(Boolean);
+  return mediaGeminiKeys(env);
 }
 
 export function createVideoRenderHandler({ fetchImpl = longFetch, now = () => Date.now(), sleep, log = console.log } = {}) {
