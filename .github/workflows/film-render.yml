@@ -1,0 +1,75 @@
+name: PG1 Studio render
+
+# One stage of one PG1 Studio film (storyboard, preview or full render),
+# dispatched by api/chat.mjs after the operator approves it
+# (lib/film/dispatch.mjs). Long renders run here, never in a Vercel
+# function. The worker (scripts/film-render.mjs) refuses a run whose token
+# does not verify against PG1_VIDEO_RENDER_SECRET, and only claims a film
+# that is queued for this stage, so a stray or repeated run spends nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_id:
+        description: Film id
+        required: true
+        type: string
+      stage:
+        description: storyboard, preview or full
+        required: true
+        type: choice
+        options: [storyboard, preview, full]
+      token:
+        description: Signed render token (set by PG1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: film-${{ inputs.project_id }}
+  cancel-in-progress: false
+
+jobs:
+  render:
+    name: render ${{ inputs.stage }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Mask the render token
+        env:
+          FILM_TOKEN: ${{ inputs.token }}
+        run: echo "::add-mask::$FILM_TOKEN"
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install ffmpeg and fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+          ffmpeg -hide_banner -filters | grep -E ' (subtitles|xfade|loudnorm|sidechaincompress|zoompan) '
+      - run: npm ci --omit=dev --ignore-scripts
+      - name: Render
+        env:
+          FILM_PROJECT_ID: ${{ inputs.project_id }}
+          FILM_STAGE: ${{ inputs.stage }}
+          FILM_TOKEN: ${{ inputs.token }}
+          PG1_VIDEO_RENDER_SECRET: ${{ secrets.PG1_VIDEO_RENDER_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
+          CARTESIA_VOICE_ID: ${{ vars.CARTESIA_VOICE_ID }}
+          CARTESIA_MODEL_ID: ${{ vars.CARTESIA_MODEL_ID }}
+          PG1_VIDEO_MODEL_REPLICATE_IMAGE: ${{ vars.PG1_VIDEO_MODEL_REPLICATE_IMAGE }}
+          PG1_FILM_STILL_MODEL: ${{ vars.PG1_FILM_STILL_MODEL }}
+          PG1_FILM_MUSIC_MODEL: ${{ vars.PG1_FILM_MUSIC_MODEL }}
+          PG1_FILM_CLAUDE_MODEL: ${{ vars.PG1_FILM_CLAUDE_MODEL }}
+          PG1_FILM_CONCURRENCY: ${{ vars.PG1_FILM_CONCURRENCY }}
+        run: node scripts/film-render.mjs
