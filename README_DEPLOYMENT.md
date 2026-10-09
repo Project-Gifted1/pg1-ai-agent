@@ -108,18 +108,20 @@ PG1_VIDEO_MODEL_REPLICATE_IMAGE=kwaivgi/kling-v2.1
 #         Gemini key -> Claude Haiku 5.5 -> AI gateway / OpenRouter / OpenAI
 #   heavy (/core, threat analysis, code, security decisions)  Claude Opus 5.5
 #         -> Sonnet 5.5 -> paid Gemini -> free Gemini -> the backups
-#   tts   free Gemini key -> Cartesia
+#   tts   Cartesia (PG1's voice). Free Gemini key first only with
+#         PG1_TTS_FREE_FIRST=1 and PG1_TTS_GEMINI_VOICE set (default off)
 #   media (image, video, music)  paid Gemini key -> Replicate
 # Next in the list on 429, quota/billing errors, 5xx, timeouts. Never after a
 # content-safety refusal.
-# PRIVACY: the free key only ever receives operator content. Anything with
-# customer or guest data (a usage-stats result, an email address or phone
+# PRIVACY: the free key only ever receives operator content. Every request
+# from a guest or customer session goes to paid providers only, whatever it
+# says. In the operator's session, anything with customer or guest data (a usage-stats result, an email address or phone
 # number in the message or the loaded history) goes to paid providers only.
-GEMINI_API_KEY_FREE=<free-tier key>    # light chat and TTS, operator content only
+GEMINI_API_KEY_FREE=<free-tier key>    # light chat (and opt-in TTS), operator content only
 GEMINI_API_KEY_PAID=<Tier 1 prepaid>   # everything paid; media
 # Old names stay as fallbacks: GEMINI_API_KEY1, GEMINI_API_KEY2 and
 # GEMINI_API_KEY serve the paid role while GEMINI_API_KEY_PAID is unset (they
-# are never assumed to be free). TTS uses GEMINI_API_KEY_FREE only.
+# are never assumed to be free). Opt-in TTS uses GEMINI_API_KEY_FREE only.
 # Duplicate names, first one wins: OPENROUTER_API_KEY / OPEN_ROUTER_KEY,
 # REPLICATE_API_TOKEN / REPLICATE_KEY, VERCEL_AI_API_KEY / AI_GATEWAY_API_KEY,
 # ANTHROPIC_API_KEY / ANTROPIC_API_KEY.
@@ -137,9 +139,12 @@ PG1_DAILY_BUDGET_REPLICATE_USD=3
 # PG1_HEAVY_ANTHROPIC_MODELS=claude-opus-5-5,claude-sonnet-5-5
 # PG1_LIGHT_ANTHROPIC_MODELS=claude-haiku-5-5
 # PG1_TTS_GEMINI_MODEL=gemini-3.1-flash-tts-preview
-# PG1_TTS_GEMINI_VOICE=Kore
+# PG1_TTS_FREE_FIRST=1           # opt in: free Gemini speech before Cartesia
+# PG1_TTS_GEMINI_VOICE=<voice>   # required with it; there is no default voice
 # PG1_PRICE_<MODEL_ID>=in,out    # override an estimated price per 1M tokens
 # PG1_AI_CACHE=0                 # turn off the text and TTS cache
+# Cache keys carry the caller (the operator, or a guest by client address),
+# so a cached reply is never served to a different user.
 # Spend: /spend (today) or /spend yesterday in the chat, operator only; the
 # first heartbeat after 00:00 UTC logs yesterday's summary as
 # [PG1-AGENT:SPEND]. Each call logs one [pg1-ai-usage] line: provider,

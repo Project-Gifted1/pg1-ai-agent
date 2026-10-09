@@ -263,7 +263,7 @@ test('/image sends only responseModalities and imageConfig in generationConfig',
 test('PG1 voice on the free Gemini key (lib/ttsRouter.mjs) sends only responseModalities and speechConfig', async () => {
   const pcm = Buffer.alloc(4800).toString('base64');
   const stub = geminiStub(() => Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: pcm } }] } }] }));
-  const spoken = await synthesizeSpeech({ env: { GEMINI_API_KEY_FREE: KEY1 }, text: 'hello there', dataClass: 'operator', fetchImpl: stub.fetch, log: () => {} });
+  const spoken = await synthesizeSpeech({ env: { GEMINI_API_KEY_FREE: KEY1, PG1_TTS_FREE_FIRST: '1', PG1_TTS_GEMINI_VOICE: 'Puck' }, text: 'hello there', dataClass: 'operator', fetchImpl: stub.fetch, log: () => {} });
   assert.equal(spoken.ok, true);
   assert.equal(spoken.mimeType, 'audio/wav');
   for (const r of stub.requests) assert.deepEqual(Object.keys(r.body.generationConfig).sort(), ['responseModalities', 'speechConfig']);

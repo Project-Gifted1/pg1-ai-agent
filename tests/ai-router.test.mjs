@@ -4,9 +4,10 @@
  *   1. routing: which provider, key and model each task gets, in order;
  *   2. keys by role, and the old env var names kept as fallbacks;
  *   3. fallbacks on 429, quota, billing and 5xx, and none on a refusal;
- *   4. the privacy rule: the free Gemini key only ever gets operator content;
+ *   4. the privacy rule: the free Gemini key only ever gets operator content,
+ *      and a guest or customer session is paid-only whatever it says;
  *   5. daily budgets per provider and the usage log (never content or keys);
- *   6. caching identical text and TTS requests;
+ *   6. caching identical text and TTS requests, scoped to one user;
  *   7. the chat end to end: free key first, paid only for customer data,
  *      /core on the reasoning core, the /spend summary in PG1 labels.
  *
@@ -17,11 +18,11 @@ import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   TASKS, DATA, ENGINE_LABELS, resolveKeys, mediaGeminiKeys, classifyTask, dataClassFor, containsCustomerData, planRoute, runRoute,
-  isFallbackFailure, tripBreaker, isTripped, recordUsage, dailyBudgetUsd, budgetAllows, estimateCost, createLruCache, cacheKey,
-  textCache, spendSummary, memoryLedger, utcDay, routeModels, __resetRouterState, RATE_LIMIT_WINDOW_MS, BREAKER_WINDOW_MS
+  isFallbackFailure, tripBreaker, isTripped, recordUsage, dailyBudgetUsd, budgetAllows, estimateCost, createLruCache, cacheKey, cacheIdentity,
+  textCache, ttsCache, spendSummary, memoryLedger, utcDay, routeModels, __resetRouterState, RATE_LIMIT_WINDOW_MS, BREAKER_WINDOW_MS
 } from '../lib/aiRouter.mjs';
-import { synthesizeSpeech, createRoutedSynth } from '../lib/ttsRouter.mjs';
-import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
+import { synthesizeSpeech, createRoutedSynth, geminiVoiceName } from '../lib/ttsRouter.mjs';
+import chatHandler, { __clearAuthRateLimitState, __chatRoundPlan } from '../api/chat.mjs';
 
 const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -35,7 +36,7 @@ const quiet = () => {};
 const ROUTER_ENV = ['GEMINI_API_KEY_FREE', 'GEMINI_API_KEY_PAID', 'GEMINI_API_KEY', 'GEMINI_API_KEY1', 'GEMINI_API_KEY2', 'ANTHROPIC_API_KEY',
   'ANTROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'OPEN_ROUTER_KEY', 'VERCEL_AI_API_KEY', 'AI_GATEWAY_API_KEY', 'REPLICATE_API_TOKEN',
   'REPLICATE_KEY', 'CARTESIA_API_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASEAPI_KEY', 'GITHUB_TOKEN', 'GITHUB_OWNER_KEY',
-  'USER_API_USER', 'USER_API_PASSS'];
+  'USER_API_USER', 'USER_API_PASSS', 'PG1_TTS_FREE_FIRST', 'PG1_TTS_GEMINI_VOICE'];
 
 beforeEach(() => {
   __resetRouterState();
@@ -54,6 +55,10 @@ after(() => {
 });
 
 const ids = (plan) => plan.map((c) => `${c.provider}:${c.key}`);
+// Opt-in Gemini speech (PG1_TTS_FREE_FIRST=1 plus a named voice).
+const TTS_FREE = { PG1_TTS_FREE_FIRST: '1', PG1_TTS_GEMINI_VOICE: 'Puck' };
+const OP_ID = cacheIdentity({ isOperator: true, operatorId: 'test-operator' });
+const GUEST_ID = cacheIdentity({ isOperator: false, clientId: '203.0.113.7' });
 
 // --- 1. routing ------------------------------------------------------------------------
 
@@ -78,14 +83,31 @@ test('a round with functions leaves out the OpenAI-compatible backups (they are 
   assert.deepEqual(planRoute(TASKS.LIGHT, { env, dataClass: DATA.OPERATOR, withTools: true }).map((c) => c.provider), ['gemini_paid']);
 });
 
-test('tts: the free Gemini key first for operator content, then Cartesia; Cartesia only for customer content', () => {
+test('tts: Cartesia only by default, even for operator content with the free key set', () => {
   const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, CARTESIA_API_KEY: 'cart' };
+  assert.deepEqual(planRoute(TASKS.TTS, { env, dataClass: DATA.OPERATOR }).map((c) => c.family), ['cartesia']);
+  assert.deepEqual(planRoute(TASKS.TTS, { env, dataClass: DATA.CUSTOMER }).map((c) => c.family), ['cartesia']);
+  assert.equal(resolveKeys(env).ttsGemini, '');
+});
+
+test('tts: PG1_TTS_FREE_FIRST=1 with a named voice puts the free key first for operator content only', () => {
+  const env = { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', ...TTS_FREE };
   assert.deepEqual(planRoute(TASKS.TTS, { env, dataClass: DATA.OPERATOR }).map((c) => c.family), ['gemini_tts', 'cartesia']);
   assert.deepEqual(planRoute(TASKS.TTS, { env, dataClass: DATA.CUSTOMER }).map((c) => c.family), ['cartesia']);
+  for (const v of ['0', 'true', 'yes', '']) {
+    assert.deepEqual(planRoute(TASKS.TTS, { env: { ...env, PG1_TTS_FREE_FIRST: v }, dataClass: DATA.OPERATOR }).map((c) => c.family), ['cartesia'], `PG1_TTS_FREE_FIRST=${v}`);
+  }
+});
+
+test('tts: no default Gemini voice (Kore is gone): the flag without PG1_TTS_GEMINI_VOICE stays on Cartesia', () => {
+  const env = { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', PG1_TTS_FREE_FIRST: '1' };
+  assert.equal(geminiVoiceName(env), '');
+  assert.equal(geminiVoiceName({ PG1_TTS_GEMINI_VOICE: 'Puck' }), 'Puck');
+  assert.deepEqual(planRoute(TASKS.TTS, { env, dataClass: DATA.OPERATOR }).map((c) => c.family), ['cartesia']);
 });
 
 test('tts never uses an old Gemini name: without GEMINI_API_KEY_FREE the voice stays on Cartesia as before', () => {
-  const env = { GEMINI_API_KEY1: OLD1, CARTESIA_API_KEY: 'cart' };
+  const env = { GEMINI_API_KEY1: OLD1, CARTESIA_API_KEY: 'cart', ...TTS_FREE };
   assert.deepEqual(planRoute(TASKS.TTS, { env, dataClass: DATA.OPERATOR }).map((c) => c.family), ['cartesia']);
 });
 
@@ -210,6 +232,20 @@ test('dataClassFor: operator content only when the operator is signed in and not
   assert.equal(containsCustomerData('0x7067312d00000000000000000000000000000000'), false, 'a wallet address is not customer data');
 });
 
+test('a guest or customer session is customer data regardless of content; only isOperator === true counts', () => {
+  for (const text of ['hello', 'good morning', 'what is a honeypot?', 'check this wallet 0x7067312d00000000000000000000000000000000', '']) {
+    assert.equal(dataClassFor({ isOperator: false, texts: [text] }), DATA.CUSTOMER, `guest: ${text}`);
+  }
+  for (const flag of [undefined, null, 1, 'true', 'operator', {}]) {
+    assert.equal(dataClassFor({ isOperator: flag, texts: ['hello'] }), DATA.CUSTOMER, `isOperator=${JSON.stringify(flag)}`);
+  }
+  const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC, CARTESIA_API_KEY: 'cart', ...TTS_FREE };
+  for (const task of Object.values(TASKS)) {
+    const plan = planRoute(task, { env, dataClass: dataClassFor({ isOperator: false, texts: ['hello'] }) });
+    assert.ok(plan.every((c) => c.key !== FREE && c.provider !== 'gemini_free'), `${task}: paid only for a guest`);
+  }
+});
+
 test('customer data never gets the free key, in any task', () => {
   const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, GEMINI_API_KEY1: OLD1, ANTHROPIC_API_KEY: ANTHROPIC, CARTESIA_API_KEY: 'cart', REPLICATE_API_TOKEN: 'r8' };
   for (const task of Object.values(TASKS)) {
@@ -295,7 +331,7 @@ test('runRoute answers an identical request from the cache, without calling a pr
   const cache = createLruCache();
   let calls = 0;
   const lines = [];
-  const go = () => runRoute({ task: TASKS.LIGHT, env: { ...env, PG1_AI_CACHE: '1' }, cache, key: cacheKey('t', 'same prompt'), log: (l) => lines.push(l), attempt: async (c) => { calls++; return { ok: true, value: 'v', model: c.models[0] }; } });
+  const go = () => runRoute({ task: TASKS.LIGHT, env: { ...env, PG1_AI_CACHE: '1' }, cache, key: cacheKey(OP_ID, 't', 'same prompt'), log: (l) => lines.push(l), attempt: async (c) => { calls++; return { ok: true, value: 'v', model: c.models[0] }; } });
   assert.equal((await go()).cached, false);
   const second = await go();
   assert.equal(second.cached, true);
@@ -304,8 +340,24 @@ test('runRoute answers an identical request from the cache, without calling a pr
   assert.match(lines[1], /"cached":true.*/);
   assert.match(lines[1], /"cost_usd":0/);
   // PG1_AI_CACHE=0 switches it off.
-  await runRoute({ task: TASKS.LIGHT, env: { ...env, PG1_AI_CACHE: '0' }, cache, key: cacheKey('t', 'same prompt'), log: quiet, attempt: async () => { calls++; return { ok: true, value: 'v' }; } });
+  await runRoute({ task: TASKS.LIGHT, env: { ...env, PG1_AI_CACHE: '0' }, cache, key: cacheKey(OP_ID, 't', 'same prompt'), log: quiet, attempt: async () => { calls++; return { ok: true, value: 'v' }; } });
   assert.equal(calls, 2);
+});
+
+test('cache keys are scoped to one user: different identities never share a key, and no identity means no cache', async () => {
+  assert.ok(OP_ID && GUEST_ID);
+  assert.notEqual(cacheKey(OP_ID, 'chat', 'same prompt'), cacheKey(GUEST_ID, 'chat', 'same prompt'));
+  assert.notEqual(cacheKey(GUEST_ID, 'x'), cacheKey(cacheIdentity({ clientId: '203.0.113.8' }), 'x'), 'two guests differ');
+  assert.equal(cacheKey('', 'chat', 'same prompt'), null);
+  assert.equal(cacheKey(null, 'chat', 'same prompt'), null);
+  assert.equal(cacheIdentity({ isOperator: false, clientId: 'unknown' }), '', 'no usable identity');
+  assert.equal(cacheIdentity({ isOperator: 'true', operatorId: 'x', clientId: '' }), '', 'only isOperator === true is the operator');
+  // runRoute with no key (no identity) calls the provider every time.
+  let calls = 0;
+  const cache = createLruCache();
+  for (let i = 0; i < 2; i++) await runRoute({ task: TASKS.LIGHT, env: { GEMINI_API_KEY_PAID: PAID, PG1_AI_CACHE: '1' }, cache, key: cacheKey('', 'p'), log: quiet, attempt: async (c) => { calls++; return { ok: true, value: 'v', model: c.models[0] }; } });
+  assert.equal(calls, 2);
+  assert.equal(cache.size, 0);
 });
 
 test('the LRU cache expires entries and keeps within its byte cap', () => {
@@ -321,18 +373,29 @@ test('the LRU cache expires entries and keeps within its byte cap', () => {
 
 const pcmAnswer = (bytes = 9600) => Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: Buffer.alloc(bytes, 1).toString('base64') } }] } }], usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 100 } });
 
-test('TTS: /speak uses the free key, then answers the same text from the cache', async () => {
+test('TTS: /speak is Cartesia by default, even for the operator with the free key set', async () => {
   const seen = [];
-  const fetchImpl = async (u, o) => { seen.push({ u, key: o.headers['x-goog-api-key'] }); return pcmAnswer(); };
-  const env = { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', PG1_AI_CACHE: '1' };
-  const a = await synthesizeSpeech({ env, text: 'Vault is green.', dataClass: DATA.OPERATOR, cartesia: { voiceId: 'v' }, fetchImpl, log: quiet });
+  const fetchImpl = async (u) => { seen.push(new URL(u).hostname); return new Response(new Uint8Array([0xff, 0xfb, 1, 2])); };
+  const env = { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart' };
+  const a = await synthesizeSpeech({ env, text: 'Vault is green.', dataClass: DATA.OPERATOR, identity: OP_ID, cartesia: { voiceId: 'v' }, fetchImpl, log: quiet });
+  assert.equal(a.ok, true);
+  assert.equal(a.mimeType, 'audio/mp3');
+  assert.deepEqual(seen, ['api.cartesia.ai']);
+});
+
+test('TTS: with PG1_TTS_FREE_FIRST=1 /speak uses the free key and the named voice, then answers the same text from the cache', async () => {
+  const seen = [];
+  const fetchImpl = async (u, o) => { seen.push({ u, key: o.headers['x-goog-api-key'], voice: JSON.parse(o.body).generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName }); return pcmAnswer(); };
+  const env = { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', PG1_AI_CACHE: '1', ...TTS_FREE };
+  const a = await synthesizeSpeech({ env, text: 'Vault is green.', dataClass: DATA.OPERATOR, identity: OP_ID, cartesia: { voiceId: 'v' }, fetchImpl, log: quiet });
   assert.equal(a.ok, true);
   assert.equal(a.mimeType, 'audio/wav');
   assert.equal(Buffer.from(a.bytes.subarray(0, 4)).toString(), 'RIFF');
   assert.equal(seen.length, 1);
   assert.equal(seen[0].key, FREE);
+  assert.equal(seen[0].voice, 'Puck');
   assert.ok(!seen[0].u.includes('key='), 'the key is never in the URL');
-  const b = await synthesizeSpeech({ env, text: 'Vault is green.', dataClass: DATA.OPERATOR, cartesia: { voiceId: 'v' }, fetchImpl, log: quiet });
+  const b = await synthesizeSpeech({ env, text: 'Vault is green.', dataClass: DATA.OPERATOR, identity: OP_ID, cartesia: { voiceId: 'v' }, fetchImpl, log: quiet });
   assert.equal(b.cached, true);
   assert.equal(seen.length, 1, 'no second call');
 });
@@ -344,7 +407,7 @@ test('TTS: when the free key is out of quota, Cartesia speaks; customer content 
     if (u.includes('generativelanguage')) return new Response('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}', { status: 429 });
     return new Response(new Uint8Array([0xff, 0xfb, 1, 2]));
   };
-  const env = { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart' };
+  const env = { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', ...TTS_FREE };
   const a = await synthesizeSpeech({ env, text: 'Quota test.', dataClass: DATA.OPERATOR, cartesia: { voiceId: 'v' }, fetchImpl, log: quiet });
   assert.equal(a.ok, true);
   assert.equal(a.mimeType, 'audio/mp3');
@@ -361,7 +424,7 @@ test('TTS streamed: sentences on the free key, cached repeats, a customer senten
     if (u.includes('generativelanguage')) return pcmAnswer(70000);
     return new Response(`data: ${JSON.stringify({ type: 'chunk', data: 'AAAA' })}\n\ndata: ${JSON.stringify({ type: 'done' })}\n\n`);
   };
-  const synth = createRoutedSynth({ env: { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', PG1_AI_CACHE: '1' }, voiceId: 'v', modelId: 'sonic-3.6', dataClass: DATA.OPERATOR, fetchImpl, log: quiet });
+  const synth = createRoutedSynth({ env: { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', PG1_AI_CACHE: '1', ...TTS_FREE }, voiceId: 'v', modelId: 'sonic-3.6', dataClass: DATA.OPERATOR, identity: OP_ID, fetchImpl, log: quiet });
   const chunks = [];
   const r1 = await synth('First sentence.', { onChunk: (c) => chunks.push(c) });
   assert.equal(r1.ok, true);
@@ -372,6 +435,30 @@ test('TTS streamed: sentences on the free key, cached repeats, a customer senten
   await synth('Mail jane.doe@example.com today.', { onChunk: () => {} });
   await synth('Back to plain words.', { onChunk: () => {} });
   assert.deepEqual(seen.slice(1), ['api.cartesia.ai', 'api.cartesia.ai'], 'sticky: one reply, one voice');
+});
+
+test('TTS cache: the operator and a guest never share an entry, whole clips or streamed sentences', async () => {
+  const seen = [];
+  const fetchImpl = async (u) => { seen.push(new URL(u).hostname); return u.includes('/tts/bytes') ? new Response(new Uint8Array([0xff, 0xfb, 1, 2])) : new Response(`data: ${JSON.stringify({ type: 'chunk', data: 'AAAA' })}\n\ndata: ${JSON.stringify({ type: 'done' })}\n\n`); };
+  const env = { CARTESIA_API_KEY: 'cart', PG1_AI_CACHE: '1' };
+  const speak = (identity, dataClass) => synthesizeSpeech({ env, text: 'Same words.', dataClass, identity, cartesia: { voiceId: 'v' }, fetchImpl, log: quiet });
+  assert.equal((await speak(OP_ID, DATA.OPERATOR)).cached, false);
+  assert.equal((await speak(GUEST_ID, DATA.CUSTOMER)).cached, false, 'the guest does not get the operator\'s clip');
+  assert.equal((await speak(OP_ID, DATA.OPERATOR)).cached, true);
+  assert.equal((await speak(GUEST_ID, DATA.CUSTOMER)).cached, true);
+  assert.equal((await speak('', DATA.CUSTOMER)).cached, false, 'no identity, no cache');
+  assert.equal((await speak('', DATA.CUSTOMER)).cached, false);
+  assert.equal(seen.length, 4);
+
+  seen.length = 0;
+  ttsCache.clear();
+  const op = createRoutedSynth({ env, voiceId: 'v', modelId: 'sonic-3.6', dataClass: DATA.OPERATOR, identity: OP_ID, fetchImpl, log: quiet });
+  const guest = createRoutedSynth({ env, voiceId: 'v', modelId: 'sonic-3.6', dataClass: DATA.CUSTOMER, identity: GUEST_ID, fetchImpl, log: quiet });
+  assert.notEqual((await op('One sentence.')).cached, true);
+  assert.notEqual((await guest('One sentence.')).cached, true, 'the guest does not get the operator\'s audio');
+  assert.equal((await op('One sentence.')).cached, true);
+  assert.equal((await guest('One sentence.')).cached, true);
+  assert.equal(seen.length, 2);
 });
 
 // --- 7. the chat end to end ---------------------------------------------------------------------------------
@@ -389,6 +476,13 @@ function makeRes() {
 async function chat(body) {
   const res = makeRes();
   await chatHandler(makeReq({ user: 'test-operator', pass: 'test-secret-pass', ...body }), res);
+  return res;
+}
+// A guest (no credentials) from a fixed address, so its cache identity holds
+// across requests.
+async function guestChat(body, ip = '203.0.113.7') {
+  const res = makeRes();
+  await chatHandler({ method: 'POST', url: '/api/chat', headers: {}, socket: { remoteAddress: ip }, body }, res);
   return res;
 }
 
@@ -463,6 +557,38 @@ test('chat privacy: with only the free key configured, customer data gets no Gem
   assert.match(res.jsonBody.reply, /could not be generated|Request ID/i, 'a neutral failure, no provider named');
 });
 
+test('chat privacy: a guest session never reaches a model on /api/chat (JSON and streamed), so never the free key', async () => {
+  process.env.GEMINI_API_KEY_FREE = FREE;
+  process.env.GEMINI_API_KEY_PAID = PAID;
+  for (const body of [{ prompt: 'good morning' }, { prompt: 'good morning', stream: true }, { prompt: 'good morning', user: 'test-operator', pass: 'wrong-pass' }]) {
+    __clearAuthRateLimitState();
+    const calls = installProviders();
+    const res = await guestChat(body);
+    assert.equal(res.statusCode, 401, JSON.stringify(body));
+    assert.equal(calls.length, 0, `${JSON.stringify(body)}: no provider call`);
+  }
+});
+
+test('chat privacy: a guest round is planned on paid providers only, whatever it says, with or without tools', () => {
+  const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC, OPENAI_API_KEY: 'sk-stub' };
+  const prompts = ['good morning', 'what is a honeypot?', 'summarize this', 'check this wallet 0x7067312d00000000000000000000000000000000'];
+  for (const isOperator of [false, undefined, 'true', 1]) {
+    for (const activeAction of ['CHAT', 'CLAUDE_CHAT']) {
+      for (const promptText of prompts) {
+        for (const toolOpts of [null, { tools: [{ name: 'check_wallet' }] }]) {
+          const route = __chatRoundPlan({ env, isOperator, activeAction, promptText, sysInstruction: 'sys', contextText: '' }, toolOpts);
+          assert.equal(route.dataClass, DATA.CUSTOMER, `isOperator=${JSON.stringify(isOperator)} "${promptText}"`);
+          assert.ok(route.plan.length > 0);
+          assert.ok(route.plan.every((c) => c.key !== FREE && c.provider !== 'gemini_free'), `isOperator=${JSON.stringify(isOperator)} ${activeAction} "${promptText}": paid only`);
+        }
+      }
+    }
+  }
+  // The same plain message from the operator does get the free key first.
+  const op = __chatRoundPlan({ env, isOperator: true, activeAction: 'CHAT', promptText: 'good morning', sysInstruction: 'sys', contextText: '' }, null);
+  assert.equal(op.plan[0].key, FREE);
+});
+
 test('chat: /core goes to the strongest reasoning model; a heavy security question too; a summary stays light', async () => {
   process.env.GEMINI_API_KEY_PAID = PAID;
   process.env.ANTHROPIC_API_KEY = ANTHROPIC;
@@ -504,6 +630,39 @@ test('chat: an identical request inside the TTL is answered from the text cache'
   const second = await chat({ prompt: 'what is a honeypot?' });
   assert.equal(second.jsonBody.reply, first.jsonBody.reply);
   assert.equal(calls.length, 0, 'served from the cache');
+});
+
+test('chat cache: the operator and a guest sending the identical message never share a cache entry', async () => {
+  process.env.GEMINI_API_KEY_PAID = PAID;
+  const env = { ...process.env, PG1_AI_CACHE: '1' };
+  const base = { env, activeAction: 'CHAT', promptText: 'what is a honeypot?', sysInstruction: 'sys', contextText: '' };
+  const opRoute = __chatRoundPlan({ ...base, isOperator: true, cacheIdentity: OP_ID }, null);
+  const guestRoute = __chatRoundPlan({ ...base, isOperator: false, cacheIdentity: GUEST_ID }, null);
+  const otherGuest = __chatRoundPlan({ ...base, isOperator: false, cacheIdentity: cacheIdentity({ clientId: '203.0.113.99' }) }, null);
+  assert.ok(opRoute.cacheKey && guestRoute.cacheKey && otherGuest.cacheKey);
+  assert.equal(new Set([opRoute.cacheKey, guestRoute.cacheKey, otherGuest.cacheKey]).size, 3, 'one entry per user');
+  assert.equal(__chatRoundPlan({ ...base, isOperator: false }, null).cacheKey, null, 'no identity: not cached');
+
+  // End to end: the operator's reply is cached under the operator's key
+  // only; the guest's key for the identical message finds nothing.
+  textCache.clear();
+  let calls = installProviders({ gemini: () => 'Operator answer.' });
+  const first = await chat({ prompt: 'what is a honeypot?' });
+  assert.match(first.jsonBody.reply, /Operator answer/);
+  assert.equal(textCache.size, 1);
+  const n = calls.length;
+  calls = installProviders();
+  const second = await chat({ prompt: 'what is a honeypot?' });
+  assert.equal(second.jsonBody.reply, first.jsonBody.reply);
+  assert.equal(calls.length, 0, 'the operator is served the operator\'s entry');
+  assert.ok(n > 0);
+  // The identical request (same system prompt, same message) stored under
+  // the operator's key is never found under a guest's.
+  textCache.clear();
+  textCache.set(opRoute.cacheKey, { text: 'Operator only.', provider: 'gemini_paid', family: 'gemini', model: 'm' });
+  assert.equal(textCache.get(opRoute.cacheKey).text, 'Operator only.');
+  assert.equal(textCache.get(guestRoute.cacheKey), undefined);
+  assert.equal(textCache.get(otherGuest.cacheKey), undefined);
 });
 
 test('chat: a provider over its daily budget is skipped', async () => {

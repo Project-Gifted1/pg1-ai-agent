@@ -17,7 +17,7 @@ import { searchHistory } from '../lib/historySearch.mjs';
 import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } from '../lib/voiceStream.mjs';
 import { reportUpstreamFailure, userFacingFailure, providerErrorText, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 import { generateImage, imageModels } from '../lib/imageEngines.mjs';
-import { TASKS, budgetAllows, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
+import { TASKS, budgetAllows, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
 import { synthesizeSpeech, createRoutedSynth } from '../lib/ttsRouter.mjs';
 import { cleanVideoPrompt, dispatchVideoRender, isVideoCommand, isVideoRequest, parseVideoOptions, pollVideoJob, recheckVideoJob, startVideoJob, videoGoogleAsync, videoJobStatus, videoDailyBudget, videoDailyCap, videoEnabled, videoCostLine, videoFrameFallbackOn, videoNotStartedText, videoRenderingText, videoSpendToday, videoTiersText, usd, DEFAULT_START_FRAME_PROMPT, FOUR_K_NOTE, VIDEO_DISABLED_TEXT, VIDEO_ENGINE_LABEL, VIDEO_REFUSED_TEXT, VIDEO_TIER_LABELS } from '../lib/videoJobs.mjs';
 import { isFilmCommand, isFilmAction } from '../lib/film/text.mjs';
@@ -1232,8 +1232,10 @@ async function streamAnthropicCore(promptText, sysInstruction, mediaParts, anthr
 // AI ROUTER (lib/aiRouter.mjs): the plan for one chat round. /core and
 // heavy messages (CLAUDE_CHAT) are the heavy task, everything else light.
 // The round is customer data, and never planned on the free key, when the
-// session is not the operator's or the round carries customer or guest
-// data (a usage-stats result, an email address or phone number).
+// session is not the operator's (always, whatever the message says) or the
+// round carries customer or guest data (a usage-stats result, an email
+// address or phone number). isOperator must be exactly true: a caller that
+// does not say is a guest.
 function chatRoundPlan(opts, toolOpts) {
   var env = opts.env || process.env;
   var task = opts.activeAction === 'CLAUDE_CHAT' ? TASKS.HEAVY : TASKS.LIGHT;
@@ -1241,16 +1243,24 @@ function chatRoundPlan(opts, toolOpts) {
   // Scanned: the message and the stored context this request loaded (chat
   // history, history search hits, vault file list, error rows) plus the
   // round's turns; not the fixed prompt text, which describes the tools.
-  var dataClass = dataClassFor({ isOperator: opts.isOperator !== false, texts: [opts.promptText, opts.contextText || ''], turns: turns });
+  var dataClass = dataClassFor({ isOperator: opts.isOperator === true, texts: [opts.promptText, opts.contextText || ''], turns: turns });
   var withTools = !!((toolOpts && toolOpts.tools && toolOpts.tools.length) || turns.length);
   var plan = planRoute(task, { env: env, dataClass: dataClass, withTools: withTools || !!(opts.mediaParts && opts.mediaParts.length), ledger: opts.ledger || null });
   // A round with no functions, no images and no turns is answered from the
-  // text cache when the identical request was answered in the TTL.
-  var cacheable = !withTools && !(opts.mediaParts && opts.mediaParts.length) && cacheEnabled(env);
+  // text cache when the same user sent the identical request in the TTL.
+  // The key carries the caller's identity (opts.cacheIdentity), so the
+  // operator's and a guest's replies never share an entry; no identity, no
+  // cache.
+  var cacheable = !!opts.cacheIdentity && !withTools && !(opts.mediaParts && opts.mediaParts.length) && cacheEnabled(env);
   // The key rounds the [DEPLOYMENT] server time to the minute (the prompt
   // itself keeps the exact time), so a repeat in the same minute can hit.
   var keyedSystem = cacheable ? String(opts.sysInstruction || '').replace(/(Server UTC time: \d{4}-\d\d-\d\dT\d\d:\d\d)[^\s"]*/g, '$1') : '';
-  return { env: env, task: task, dataClass: dataClass, plan: plan, cacheKey: cacheable ? cacheKey('chat', task, keyedSystem, opts.promptText) : null };
+  return { env: env, task: task, dataClass: dataClass, plan: plan, cacheKey: cacheable ? cacheKey(opts.cacheIdentity, 'chat', task, keyedSystem, opts.promptText) : null };
+}
+
+// Test hook: the planner as the chat calls it (tests/ai-router.test.mjs).
+export function __chatRoundPlan(opts, toolOpts) {
+  return chatRoundPlan(opts, toolOpts);
 }
 
 // The error-log text for a round where every candidate failed (operator
@@ -2224,10 +2234,15 @@ export default async function handler(req, res) {
     // AI ROUTER (lib/aiRouter.mjs): keys by role. Media (image, video) gets
     // the paid Gemini key only; chat rounds and voice are planned per round
     // by the router from the same env. chatGeminiKeys only says whether the
-    // main core has any key at all (the search call needs one).
+    // main core has any key this session may use (the search call needs
+    // one): a guest or customer session never counts the free key.
     var routerKeys = resolveKeys(process.env);
     var geminiKeys = mediaGeminiKeys(process.env);
-    var chatGeminiKeys = routerKeys.geminiFree.concat(routerKeys.geminiPaid);
+    var chatGeminiKeys = (isOperator ? routerKeys.geminiFree : []).concat(routerKeys.geminiPaid);
+    // AI ROUTER cache: every text and TTS cache key is scoped to this caller
+    // (the operator, or a guest by client address), so a cached reply is
+    // never served to a different user.
+    var aiCacheIdentity = cacheIdentity({ isOperator: isOperator, operatorId: isOperator ? user : '', clientId: clientIp });
     var aiLedger = sharedLedger({ supUrl: supUrl, supKey: supKey, fetchImpl: function (u, o) { return globalThis.fetch(u, o); } });
 
     var cartesiaKey = routerKeys.cartesia;
@@ -2805,9 +2820,10 @@ export default async function handler(req, res) {
       if (!targetVoiceId) {
         return sendJSON(res, 200, { reply: `[AGENT] PG1 Field voice is not configured server-side yet.`, traceId: requestTraceId });
       }
-      // AI ROUTER (lib/ttsRouter.mjs): the free Gemini key first when the
-      // text is operator content, then the voice engine (Cartesia) as
-      // before; an identical request is answered from the TTS cache.
+      // AI ROUTER (lib/ttsRouter.mjs): the voice engine (Cartesia), PG1's
+      // voice; the free Gemini key first only with PG1_TTS_FREE_FIRST=1 and
+      // operator content. The same user's identical request is answered
+      // from the TTS cache.
       var audioBase64 = null;
       var audioMimeType = 'audio/mp3';
       var speakText = speechTextFor(promptText, { envValues: secretEnvValues(process.env), knownIds: [requestTraceId] }).replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 3000).trim();
@@ -2818,7 +2834,7 @@ export default async function handler(req, res) {
         try {
           var spoken = await synthesizeSpeech({
             env: process.env, text: speakText, voiceProfile: resolvedVoiceProfile, cartesia: { voiceId: targetVoiceId, modelId: cartesiaModelId },
-            dataClass: speakDataClass, fetchImpl: function (u, o) { return fetch(u, o); }, ledger: aiLedger, requestId: requestTraceId,
+            dataClass: speakDataClass, identity: aiCacheIdentity, fetchImpl: function (u, o) { return fetch(u, o); }, ledger: aiLedger, requestId: requestTraceId,
             // No metadata tag in the file can name the voice provider.
             stripMetadata: stripAudioMetadata
           });
@@ -2947,7 +2963,7 @@ export default async function handler(req, res) {
       if (chatStream) chatStream.stepDone('image', { label: 'Generated the image', result: imageResult.label });
       recordUsage({
         provider: imageResult.slot === 'tertiary' ? 'replicate' : 'gemini_paid', model: imageModels(process.env)[imageResult.slot] || '', task: TASKS.MEDIA,
-        dataClass: 'operator', unit: imageResult.slot === 'tertiary' ? 'image_replicate' : 'image_gemini', requestId: requestTraceId
+        dataClass: isOperator ? 'operator' : 'customer', unit: imageResult.slot === 'tertiary' ? 'image_replicate' : 'image_gemini', requestId: requestTraceId
       }, { env: process.env, ledger: aiLedger });
 
       return sendJSON(res, 200, {
@@ -3768,6 +3784,7 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
         anthropicKey: anthropicKey,
         env: process.env,
         isOperator: isOperator,
+        cacheIdentity: aiCacheIdentity,
         contextText: routerContextText,
         ledger: aiLedger,
         requestId: requestTraceId,
@@ -3789,13 +3806,15 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
         // PG1 VOICE: speak the reply as it streams. Needs the voice toggle
         // on (speak: true), a TTS key and a configured voice; otherwise the
         // client falls back to the one-shot SPEAK request as before.
-        // AI ROUTER (lib/ttsRouter.mjs): the free Gemini key first for
-        // operator content, then the voice engine, sentence by sentence.
+        // AI ROUTER (lib/ttsRouter.mjs): the voice engine (Cartesia),
+        // sentence by sentence; the free Gemini key first only with
+        // PG1_TTS_FREE_FIRST=1 and operator content.
         voice: (reqBody && reqBody.speak === true && targetVoiceId && (cartesiaKey || routerKeys.ttsGemini))
           ? {
             synth: createRoutedSynth({
               env: process.env, voiceId: targetVoiceId, modelId: cartesiaModelId, voiceProfile: resolvedVoiceProfile,
               dataClass: dataClassFor({ isOperator: isOperator, texts: [promptText, routerContextText] }),
+              identity: aiCacheIdentity,
               fetchImpl: fetch, ledger: aiLedger, requestId: requestTraceId
             }),
             // Leave room under Vercel's 60s maxDuration for "done".
@@ -3816,7 +3835,7 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
       });
     }
 
-    var roundOpts = { activeAction: activeAction, promptText: promptText, sysInstruction: sysInstruction, searchSysInstruction: searchSysInstruction, mediaParts: mediaParts, anthropicKey: anthropicKey, geminiKeys: chatGeminiKeys, env: process.env, isOperator: isOperator, contextText: routerContextText, ledger: aiLedger, requestId: requestTraceId, deadlineTs: deadlineTs };
+    var roundOpts = { activeAction: activeAction, promptText: promptText, sysInstruction: sysInstruction, searchSysInstruction: searchSysInstruction, mediaParts: mediaParts, anthropicKey: anthropicKey, geminiKeys: chatGeminiKeys, env: process.env, isOperator: isOperator, cacheIdentity: aiCacheIdentity, contextText: routerContextText, ledger: aiLedger, requestId: requestTraceId, deadlineTs: deadlineTs };
     var searchOpts = { onSearchFailure: onSearchFailure };
     var jsonToolOutcomes = [];
     var modelFetchResult;
