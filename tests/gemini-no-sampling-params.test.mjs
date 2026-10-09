@@ -18,6 +18,7 @@
  *     (#262), the results round and its plain-text retry (#269);
  *   - /core falling back to the main core when Anthropic is down;
  *   - /image (generateContent with responseModalities);
+ *   - PG1 voice on the free Gemini key (lib/ttsRouter.mjs);
  *   - video: the Interactions API start (async) and the sync render;
  *   - the legacy GeminiClient (both methods) and SelfHealingEngine's
  *     recovery attempts, which used to pass temperature/topP;
@@ -39,6 +40,7 @@ import { createSseParser } from '../lib/chatStream.mjs';
 import { SEARCH_HISTORY_TOOL, RECALL_RETRY_INSTRUCTION, RESULTS_RETRY_INSTRUCTION } from '../lib/chatTools.mjs';
 import { __resetImageBreaker } from '../lib/imageEngines.mjs';
 import { startVideoJob, renderVideoJob } from '../lib/videoJobs.mjs';
+import { synthesizeSpeech } from '../lib/ttsRouter.mjs';
 import worker from '../index.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -243,7 +245,9 @@ test('/core falling back to the main core when Anthropic is down sends no sampli
   const res = await chat({ prompt: '/core explain this' });
   assert.match(res.jsonBody.reply, /Hello from the main core/);
   assert.ok(anthropic.length > 0, 'Anthropic was tried first');
-  assert.ok(anthropic.every((b) => b.max_tokens === 4096 && !('temperature' in b)), 'the Anthropic request is as it was');
+  // Models whose thinking is always on (Opus 5.5, the router's first heavy
+  // model) share max_tokens with it, so they get 16000; older ones 4096.
+  assert.ok(anthropic.every((b) => b.max_tokens === (/^claude-(?:opus-5|sonnet-5-5|haiku-5-5)/.test(b.model) ? 16000 : 4096) && !('temperature' in b)), 'the Anthropic request carries no sampling parameters');
   assertClean(stub, '/core fallback');
 });
 
@@ -254,6 +258,16 @@ test('/image sends only responseModalities and imageConfig in generationConfig',
   assert.equal(res.jsonBody.imageStatus, 'SUCCESS');
   for (const r of stub.requests) assert.deepEqual(Object.keys(r.body.generationConfig).sort(), ['imageConfig', 'responseModalities']);
   assertClean(stub, '/image');
+});
+
+test('PG1 voice on the free Gemini key (lib/ttsRouter.mjs) sends only responseModalities and speechConfig', async () => {
+  const pcm = Buffer.alloc(4800).toString('base64');
+  const stub = geminiStub(() => Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: pcm } }] } }] }));
+  const spoken = await synthesizeSpeech({ env: { GEMINI_API_KEY_FREE: KEY1, PG1_TTS_FREE_FIRST: '1', PG1_TTS_GEMINI_VOICE: 'Puck' }, text: 'hello there', dataClass: 'operator', fetchImpl: stub.fetch, log: () => {} });
+  assert.equal(spoken.ok, true);
+  assert.equal(spoken.mimeType, 'audio/wav');
+  for (const r of stub.requests) assert.deepEqual(Object.keys(r.body.generationConfig).sort(), ['responseModalities', 'speechConfig']);
+  assertClean(stub, 'voice');
 });
 
 // --- video (Interactions API) ---------------------------------------------------------
@@ -339,6 +353,6 @@ test('every source file that calls Gemini is one these tests drive', () => {
     .filter((f) => readFileSync(f, 'utf8').includes(GEMINI_HOST))
     .map((f) => f.slice(ROOT.length + 1))
     .sort();
-  assert.deepEqual(callers, ['api/chat.mjs', 'api/lib/gemini-client.js', 'index.js', 'lib/imageEngines.mjs', 'lib/videoJobs.mjs'],
+  assert.deepEqual(callers, ['api/chat.mjs', 'api/lib/gemini-client.js', 'index.js', 'lib/imageEngines.mjs', 'lib/ttsRouter.mjs', 'lib/videoJobs.mjs'],
     'a new Gemini call site: drive it through geminiStub above');
 });

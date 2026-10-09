@@ -16,7 +16,9 @@ import { businessStateText, classifyKeyQuestion, createReplySecretGuard, isError
 import { searchHistory } from '../lib/historySearch.mjs';
 import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } from '../lib/voiceStream.mjs';
 import { reportUpstreamFailure, userFacingFailure, providerErrorText, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
-import { generateImage } from '../lib/imageEngines.mjs';
+import { generateImage, imageModels } from '../lib/imageEngines.mjs';
+import { TASKS, budgetAllows, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
+import { synthesizeSpeech, createRoutedSynth } from '../lib/ttsRouter.mjs';
 import { cleanVideoPrompt, dispatchVideoRender, isVideoCommand, isVideoRequest, parseVideoOptions, pollVideoJob, recheckVideoJob, startVideoJob, videoGoogleAsync, videoJobStatus, videoDailyBudget, videoDailyCap, videoEnabled, videoCostLine, videoFrameFallbackOn, videoNotStartedText, videoRenderingText, videoSpendToday, videoTiersText, usd, DEFAULT_START_FRAME_PROMPT, FOUR_K_NOTE, VIDEO_DISABLED_TEXT, VIDEO_ENGINE_LABEL, VIDEO_REFUSED_TEXT, VIDEO_TIER_LABELS } from '../lib/videoJobs.mjs';
 import { isFilmCommand, isFilmAction } from '../lib/film/text.mjs';
 import { handleFilmCommand, handleFilmApproval, filmStatusAction } from '../lib/film/chat.mjs';
@@ -758,12 +760,37 @@ function geminiRequestBody(sysInstruction, contents, declarations, withSearch, t
   });
 }
 
-function anthropicToolFields(toolOpts) {
+// Models that answer a forced tool_choice ("tool" or "any") with a 400:
+// they get tool_choice auto and an instruction naming the tool instead.
+var NO_FORCED_TOOL_RE = /^claude-(?:opus-5-5|sonnet-5-5|fable-5-1|mythos-5-1)\b/;
+// Models whose thinking is always on: the reply shares max_tokens with it.
+var ALWAYS_THINKING_RE = /^claude-(?:opus-5|sonnet-5-5|haiku-5-5|fable-5|mythos-5)/;
+
+function anthropicToolFields(toolOpts, model) {
   if (!toolOpts || !toolOpts.tools || !toolOpts.tools.length) return {};
   var fields = { tools: toAnthropicTools(toolOpts.tools) };
   if (toolOpts.toolsEnabled === false) fields.tool_choice = { type: 'none' };
-  else if (toolOpts.forceTool && toolOpts.tools.some(function (t) { return t.name === toolOpts.forceTool; })) fields.tool_choice = { type: 'tool', name: toolOpts.forceTool };
+  else if (toolOpts.forceTool && !NO_FORCED_TOOL_RE.test(String(model || '')) && toolOpts.tools.some(function (t) { return t.name === toolOpts.forceTool; })) fields.tool_choice = { type: 'tool', name: toolOpts.forceTool };
   return fields;
+}
+
+// The system prompt for an Anthropic model that cannot be forced to call
+// the round's required tool: the requirement is said in words instead.
+function anthropicSystemFor(sysInstruction, toolOpts, model) {
+  var forced = toolOpts && toolOpts.forceTool && toolOpts.toolsEnabled !== false && NO_FORCED_TOOL_RE.test(String(model || ''));
+  return forced ? sysInstruction + '\n\n[REQUIRED FIRST STEP]: Call ' + toolOpts.forceTool + ' before writing anything else.' : sysInstruction;
+}
+
+function anthropicMaxTokens(model) {
+  return ALWAYS_THINKING_RE.test(String(model || '')) ? 16000 : 4096;
+}
+
+// Token usage as the ledger counts it (lib/aiRouter.mjs).
+function geminiUsage(meta) {
+  return meta ? { inputTokens: meta.promptTokenCount || 0, outputTokens: (meta.candidatesTokenCount || 0) + (meta.thoughtsTokenCount || 0) } : null;
+}
+function anthropicUsage(u) {
+  return u ? { inputTokens: (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0), outputTokens: u.output_tokens || 0 } : null;
 }
 
 // The system prompt for one request: the full one (with the [TOOLS]
@@ -774,9 +801,10 @@ function systemFor(opts, toolOpts) {
   return (toolOpts && toolOpts.tools && toolOpts.tools.length) ? opts.sysInstruction : (opts.searchSysInstruction || opts.sysInstruction);
 }
 
-async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys, deadlineTs, toolOpts) {
-  var models = GEMINI_MODELS;
+async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextData, geminiKeys, deadlineTs, toolOpts, modelList) {
+  var models = (Array.isArray(modelList) && modelList.length) ? modelList : GEMINI_MODELS;
   var lastError = '';
+  var lastStatus = null;
 
   var RETRY_RESERVE_MS = 12000;
   var ERROR_RETRY_CAP_MS = 20000;
@@ -805,7 +833,7 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
 
       var remainingMs = deadlineTs ? (deadlineTs - Date.now()) : NO_DEADLINE_CAP_MS;
       if (remainingMs <= 1000) {
-        return { text: null, error: geminiFailure(lastError, forceRejection) || 'Aborted: model fetch time budget exhausted.' };
+        return { text: null, status: lastStatus, error: geminiFailure(lastError, forceRejection) || 'Aborted: model fetch time budget exhausted.' };
       }
       var perAttemptTimeout = isFirstAttempt
         ? Math.max(remainingMs - RETRY_RESERVE_MS, Math.min(remainingMs, ERROR_RETRY_CAP_MS))
@@ -835,7 +863,7 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
           var parsed = parseGeminiParts(parts);
           var calls = usableCalls(toolOpts, parsed.calls);
           if (parsed.text || calls.length) {
-            return { text: parsed.text, calls: calls, provider: 'gemini', error: null, searchEntryPoint: (data && data.candidates && data.candidates[0] && data.candidates[0].groundingMetadata && data.candidates[0].groundingMetadata.searchEntryPoint && data.candidates[0].groundingMetadata.searchEntryPoint.renderedContent) || null };
+            return { text: parsed.text, calls: calls, provider: 'gemini', model: model, usage: geminiUsage(data && data.usageMetadata), error: null, searchEntryPoint: (data && data.candidates && data.candidates[0] && data.candidates[0].groundingMetadata && data.candidates[0].groundingMetadata.searchEntryPoint && data.candidates[0].groundingMetadata.searchEntryPoint.renderedContent) || null };
           }
           var reason = emptyReason(toolOpts, parsed.calls, (data && data.candidates && data.candidates[0] && data.candidates[0].finishReason)
             || (data && data.promptFeedback && data.promptFeedback.blockReason)
@@ -844,6 +872,7 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
           if (canRetryResultsPlain(toolOpts, plain)) { goPlain(); j--; }
         } else {
           var errText = await res.text();
+          lastStatus = res.status;
           lastError = `[${model} on ${apiVersion}] ${providerErrorText(res.status, errText)}`;
           if (isForcedCallRejection(forceTool, res.status)) {
             forceRejection = lastError;
@@ -872,7 +901,7 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
       }
     }
   }
-  return { text: null, error: geminiFailure(lastError, forceRejection) };
+  return { text: null, status: lastStatus, error: geminiFailure(lastError, forceRejection) };
 }
 
 var ANTHROPIC_SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -915,13 +944,14 @@ function buildAnthropicContentBlocks(promptText, mediaParts) {
   return blocks;
 }
 
-async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contextData, anthropicKey, deadlineTs, toolOpts) {
+async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contextData, anthropicKey, deadlineTs, toolOpts, modelList) {
   if (!anthropicKey) {
     return { text: null, error: 'No Anthropic API key configured.' };
   }
 
-  var models = ANTHROPIC_MODELS;
+  var models = (Array.isArray(modelList) && modelList.length) ? modelList : ANTHROPIC_MODELS;
   var lastError = '';
+  var lastStatus = null;
 
   var CROSS_PROVIDER_RESERVE_MS = 10000;
   var ERROR_RETRY_CAP_MS = 20000;
@@ -929,13 +959,12 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
 
   var content = buildAnthropicContentBlocks(promptText + contextData, mediaParts);
   var messages = anthropicMessages(content, (toolOpts && toolOpts.turns) || []);
-  var toolFields = anthropicToolFields(toolOpts);
 
   for (var i = 0; i < models.length; i++) {
     var isPrimary = (i === 0);
     var remainingMs = deadlineTs ? (deadlineTs - Date.now()) : NO_DEADLINE_CAP_MS;
     if (remainingMs <= 1000) {
-      return { text: null, error: lastError || 'Aborted: model fetch time budget exhausted before Anthropic call.' };
+      return { text: null, status: lastStatus, error: lastError || 'Aborted: model fetch time budget exhausted before Anthropic call.' };
     }
     var timeoutMs = isPrimary
       ? Math.max(remainingMs - CROSS_PROVIDER_RESERVE_MS, Math.min(remainingMs, ERROR_RETRY_CAP_MS))
@@ -956,10 +985,10 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
         },
         body: JSON.stringify({
           model: model,
-          max_tokens: 4096,
-          system: sysInstruction,
+          max_tokens: anthropicMaxTokens(model),
+          system: anthropicSystemFor(sysInstruction, toolOpts, model),
           messages: messages,
-          ...toolFields
+          ...anthropicToolFields(toolOpts, model)
         }),
         cache: 'no-store',
         signal: controller.signal
@@ -970,11 +999,12 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
         var parsed = parseAnthropicContent(data && data.content);
         var anthropicCalls = usableCalls(toolOpts, parsed.calls);
         if (parsed.text || anthropicCalls.length) {
-          return { text: parsed.text, calls: anthropicCalls, provider: 'anthropic', error: null };
+          return { text: parsed.text, calls: anthropicCalls, provider: 'anthropic', model: model, usage: anthropicUsage(data && data.usage), error: null };
         }
         lastError = `[${model}] ${emptyReason(toolOpts, parsed.calls, 'Unexpected response shape from Anthropic API.')}`;
       } else {
         var errText = await res.text();
+        lastStatus = res.status;
         lastError = `[${model}] Anthropic API ${providerErrorText(res.status, errText)}`;
       }
     } catch (e) {
@@ -988,7 +1018,7 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
     }
   }
 
-  return { text: null, error: lastError };
+  return { text: null, status: lastStatus, error: lastError };
 }
 
 // LIVE TRACE: streaming twins of fetchGeminiCore / fetchAnthropicCore, used
@@ -1000,8 +1030,10 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
 // Thinking content is never forwarded: Gemini parts marked `thought` and
 // Anthropic thinking deltas are skipped. Function calls are collected and
 // returned in `calls`, never shown as text.
-async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKeys, deadlineTs, hooks, toolOpts) {
+async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKeys, deadlineTs, hooks, toolOpts, modelList) {
+  var models = (Array.isArray(modelList) && modelList.length) ? modelList : GEMINI_MODELS;
   var lastError = '';
+  var lastStatus = null;
   var RETRY_RESERVE_MS = 12000;
   var ERROR_RETRY_CAP_MS = 20000;
   var attemptCount = 0;
@@ -1019,15 +1051,15 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
   };
 
   for (var i = 0; i < geminiKeys.length; i++) {
-    for (var j = 0; j < GEMINI_MODELS.length; j++) {
+    for (var j = 0; j < models.length; j++) {
       if (hooks.signal && hooks.signal.aborted) return { text: '', error: 'Stopped by the client.', aborted: true };
       var remainingMs = deadlineTs - Date.now();
-      if (remainingMs <= 1000) return { text: '', error: geminiFailure(lastError, forceRejection) || 'Aborted: model fetch time budget exhausted.' };
+      if (remainingMs <= 1000) return { text: '', status: lastStatus, error: geminiFailure(lastError, forceRejection) || 'Aborted: model fetch time budget exhausted.' };
       var firstByteTimeout = attemptCount === 0
         ? Math.max(remainingMs - RETRY_RESERVE_MS, Math.min(remainingMs, ERROR_RETRY_CAP_MS))
         : Math.min(ERROR_RETRY_CAP_MS, remainingMs);
       attemptCount++;
-      var model = GEMINI_MODELS[j];
+      var model = models[j];
       var controller = new AbortController();
       var timedOut = false;
       var onClientAbort = function () { controller.abort(); };
@@ -1038,6 +1070,7 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
       var searchEntryPoint = null;
       var webSearchQueries = null;
       var finishReason = '';
+      var streamUsage = null;
 
       try {
         // Key in the header, never the URL (see the non-streamed call).
@@ -1050,6 +1083,7 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
         });
         if (!res.ok) {
           var errText = await res.text();
+          lastStatus = res.status;
           lastError = `[${model}] ${providerErrorText(res.status, errText)}`;
           if (isForcedCallRejection(forceTool, res.status)) {
             forceRejection = lastError;
@@ -1074,6 +1108,7 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
         await readSseResponse(res, function (evt) {
           var chunk;
           try { chunk = JSON.parse(evt.data); } catch (e) { return; }
+          if (chunk && chunk.usageMetadata) streamUsage = geminiUsage(chunk.usageMetadata);
           var cand = chunk && chunk.candidates && chunk.candidates[0];
           if (!cand) {
             if (chunk && chunk.promptFeedback && chunk.promptFeedback.blockReason) finishReason = chunk.promptFeedback.blockReason;
@@ -1096,41 +1131,42 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
           if (cand.finishReason) finishReason = cand.finishReason;
         });
         var streamCalls = usableCalls(toolOpts, calls);
-        if (text || streamCalls.length) return { text: text, calls: streamCalls, provider: 'gemini', error: null, searchEntryPoint: searchEntryPoint };
+        if (text || streamCalls.length) return { text: text, calls: streamCalls, provider: 'gemini', model: model, usage: streamUsage, error: null, searchEntryPoint: searchEntryPoint };
         lastError = `[${model}] 200 with no usable text (${emptyReason(toolOpts, calls, finishReason || 'no candidates')})`;
         if (canRetryResultsPlain(toolOpts, plain)) { goPlain(); j--; }
       } catch (e) {
         if (hooks.signal && hooks.signal.aborted) return { text: text, error: 'Stopped by the client.', aborted: true, partial: !!text };
         var why = timedOut ? `[${model}] Gemini call exceeded its time budget.` : `[${model}] ${e.message}`;
-        if (text) return { text: text, calls: [], error: why, partial: true, searchEntryPoint: searchEntryPoint };
+        if (text) return { text: text, calls: [], model: model, usage: streamUsage, error: why, partial: true, searchEntryPoint: searchEntryPoint };
         lastError = why;
-        if (timedOut) return { text: '', error: geminiFailure(lastError, forceRejection) };
+        if (timedOut) return { text: '', status: null, error: geminiFailure(lastError, forceRejection) };
       } finally {
         clearTimeout(timeoutId);
         if (hooks.signal) hooks.signal.removeEventListener('abort', onClientAbort);
       }
     }
   }
-  return { text: '', error: geminiFailure(lastError, forceRejection) };
+  return { text: '', status: lastStatus, error: geminiFailure(lastError, forceRejection) };
 }
 
-async function streamAnthropicCore(promptText, sysInstruction, mediaParts, anthropicKey, deadlineTs, hooks, toolOpts) {
+async function streamAnthropicCore(promptText, sysInstruction, mediaParts, anthropicKey, deadlineTs, hooks, toolOpts, modelList) {
   if (!anthropicKey) return { text: '', error: 'No Anthropic API key configured.' };
+  var models = (Array.isArray(modelList) && modelList.length) ? modelList : ANTHROPIC_MODELS;
   var lastError = '';
+  var lastStatus = null;
   var CROSS_PROVIDER_RESERVE_MS = 10000;
   var ERROR_RETRY_CAP_MS = 20000;
   var content = buildAnthropicContentBlocks(promptText, mediaParts);
   var messages = anthropicMessages(content, (toolOpts && toolOpts.turns) || []);
-  var toolFields = anthropicToolFields(toolOpts);
 
-  for (var i = 0; i < ANTHROPIC_MODELS.length; i++) {
+  for (var i = 0; i < models.length; i++) {
     if (hooks.signal && hooks.signal.aborted) return { text: '', error: 'Stopped by the client.', aborted: true };
     var remainingMs = deadlineTs - Date.now();
     if (remainingMs <= 1000) return { text: '', error: lastError || 'Aborted: model fetch time budget exhausted before Anthropic call.' };
     var firstByteTimeout = i === 0
       ? Math.max(remainingMs - CROSS_PROVIDER_RESERVE_MS, Math.min(remainingMs, ERROR_RETRY_CAP_MS))
       : Math.min(ERROR_RETRY_CAP_MS, remainingMs);
-    var model = ANTHROPIC_MODELS[i];
+    var model = models[i];
     var controller = new AbortController();
     var timedOut = false;
     var onClientAbort = function () { controller.abort(); };
@@ -1138,18 +1174,20 @@ async function streamAnthropicCore(promptText, sysInstruction, mediaParts, anthr
     var timeoutId = setTimeout(function () { timedOut = true; controller.abort(); }, firstByteTimeout);
     var text = '';
     var streamError = '';
+    var streamUsage = { input_tokens: 0, output_tokens: 0 };
     var toolBlocks = createAnthropicToolAccumulator();
 
     try {
       var res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: model, max_tokens: 4096, system: sysInstruction, messages: messages, stream: true, ...toolFields }),
+        body: JSON.stringify({ model: model, max_tokens: anthropicMaxTokens(model), system: anthropicSystemFor(sysInstruction, toolOpts, model), messages: messages, stream: true, ...anthropicToolFields(toolOpts, model) }),
         cache: 'no-store',
         signal: controller.signal
       });
       if (!res.ok) {
         var errText = await res.text();
+        lastStatus = res.status;
         lastError = `[${model}] Anthropic API ${providerErrorText(res.status, errText)}`;
         continue;
       }
@@ -1158,6 +1196,8 @@ async function streamAnthropicCore(promptText, sysInstruction, mediaParts, anthr
       await readSseResponse(res, function (evt) {
         var msg;
         try { msg = JSON.parse(evt.data); } catch (e) { return; }
+        if (msg && msg.type === 'message_start' && msg.message && msg.message.usage) streamUsage = { ...streamUsage, ...msg.message.usage };
+        if (msg && msg.type === 'message_delta' && msg.usage && msg.usage.output_tokens) streamUsage.output_tokens = msg.usage.output_tokens;
         if (msg && msg.type === 'content_block_delta' && msg.delta && msg.delta.type === 'text_delta' && msg.delta.text) {
           text += msg.delta.text;
           hooks.onText(msg.delta.text);
@@ -1169,16 +1209,16 @@ async function streamAnthropicCore(promptText, sysInstruction, mediaParts, anthr
       });
       var calls = usableCalls(toolOpts, toolBlocks.calls);
       if (streamError) {
-        if (text) return { text: text, calls: [], error: `[${model}] ${streamError}`, partial: true };
+        if (text) return { text: text, calls: [], model: model, usage: anthropicUsage(streamUsage), error: `[${model}] ${streamError}`, partial: true };
         lastError = `[${model}] ${streamError}`;
         continue;
       }
-      if (text || calls.length) return { text: text, calls: calls, provider: 'anthropic', error: null };
+      if (text || calls.length) return { text: text, calls: calls, provider: 'anthropic', model: model, usage: anthropicUsage(streamUsage), error: null };
       lastError = `[${model}] ${emptyReason(toolOpts, toolBlocks.calls, 'Unexpected response shape from Anthropic API.')}`;
     } catch (e) {
       if (hooks.signal && hooks.signal.aborted) return { text: text, error: 'Stopped by the client.', aborted: true, partial: !!text };
       var why = timedOut ? `[${model}] Anthropic call exceeded its time budget.` : `[${model}] Anthropic fetch exception: ${e.message}`;
-      if (text) return { text: text, calls: [], error: why, partial: true };
+      if (text) return { text: text, calls: [], model: model, usage: anthropicUsage(streamUsage), error: why, partial: true };
       lastError = why;
       if (timedOut) break;
     } finally {
@@ -1186,29 +1226,121 @@ async function streamAnthropicCore(promptText, sysInstruction, mediaParts, anthr
       if (hooks.signal) hooks.signal.removeEventListener('abort', onClientAbort);
     }
   }
-  return { text: '', error: lastError };
+  return { text: '', status: lastStatus, error: lastError };
 }
 
-// One model round on the JSON path: the reasoning core first for
-// CLAUDE_CHAT, the main core otherwise, falling back to the main core when
-// the reasoning core returned nothing. Returns the provider result with
-// `calls` for the tool loop.
+// AI ROUTER (lib/aiRouter.mjs): the plan for one chat round. /core and
+// heavy messages (CLAUDE_CHAT) are the heavy task, everything else light.
+// The round is customer data, and never planned on the free key, when the
+// session is not the operator's (always, whatever the message says) or the
+// round carries customer or guest data (a usage-stats result, an email
+// address or phone number). isOperator must be exactly true: a caller that
+// does not say is a guest.
+function chatRoundPlan(opts, toolOpts) {
+  var env = opts.env || process.env;
+  var task = opts.activeAction === 'CLAUDE_CHAT' ? TASKS.HEAVY : TASKS.LIGHT;
+  var turns = (toolOpts && toolOpts.turns) || [];
+  // Scanned: the message and the stored context this request loaded (chat
+  // history, history search hits, vault file list, error rows) plus the
+  // round's turns; not the fixed prompt text, which describes the tools.
+  var dataClass = dataClassFor({ isOperator: opts.isOperator === true, texts: [opts.promptText, opts.contextText || ''], turns: turns });
+  var withTools = !!((toolOpts && toolOpts.tools && toolOpts.tools.length) || turns.length);
+  var plan = planRoute(task, { env: env, dataClass: dataClass, withTools: withTools || !!(opts.mediaParts && opts.mediaParts.length), ledger: opts.ledger || null });
+  // A round with no functions, no images and no turns is answered from the
+  // text cache when the operator sent the identical request in the TTL.
+  // Only the operator's rounds are cached (opts.cacheIdentity, scoped into
+  // the key); a guest or customer session is never cached.
+  var cacheable = opts.isOperator === true && !!opts.cacheIdentity && !withTools && !(opts.mediaParts && opts.mediaParts.length) && cacheEnabled(env);
+  // The key rounds the [DEPLOYMENT] server time to the minute (the prompt
+  // itself keeps the exact time), so a repeat in the same minute can hit.
+  var keyedSystem = cacheable ? String(opts.sysInstruction || '').replace(/(Server UTC time: \d{4}-\d\d-\d\dT\d\d:\d\d)[^\s"]*/g, '$1') : '';
+  return { env: env, task: task, dataClass: dataClass, plan: plan, cacheKey: cacheable ? cacheKey(opts.cacheIdentity, 'chat', task, keyedSystem, opts.promptText) : null };
+}
+
+// Test hook: the planner as the chat calls it (tests/ai-router.test.mjs).
+export function __chatRoundPlan(opts, toolOpts) {
+  return chatRoundPlan(opts, toolOpts);
+}
+
+// The error-log text for a round where every candidate failed (operator
+// only; never shown in a reply): "Anthropic failed (...); Gemini fallback
+// also failed (...)".
+var PROVIDER_LOG_NAMES = { gemini_free: 'Gemini', gemini_paid: 'Gemini', anthropic: 'Anthropic', gateway: 'AI gateway', openrouter: 'OpenRouter', openai: 'OpenAI' };
+function roundFailureText(failures) {
+  if (!failures.length) return 'No AI engine is configured or within its daily budget.';
+  if (failures.length === 1) return failures[0].error;
+  return failures.map(function (f, i) {
+    var name = PROVIDER_LOG_NAMES[f.provider] || f.provider;
+    return i === 0 ? `${name} failed (${f.error})` : `${name} fallback also failed (${f.error})`;
+  }).join('; ');
+}
+
+function roundUsage(route, opts, candidate, result, fallbackIndex) {
+  var u = result.usage || {};
+  recordUsage({
+    provider: candidate ? candidate.provider : 'unknown', model: result.model || (candidate && candidate.models[0]) || '', task: route.task, dataClass: route.dataClass,
+    inputTokens: u.inputTokens != null ? u.inputTokens : estimateTokens(opts.sysInstruction + opts.promptText),
+    outputTokens: u.outputTokens != null ? u.outputTokens : estimateTokens(result.text),
+    ok: !!(result.text || (result.calls && result.calls.length)), status: Number.isInteger(result.status) ? result.status : null,
+    fallback: fallbackIndex, requestId: opts.requestId || null
+  }, { env: route.env, ledger: opts.ledger || null });
+}
+
+function cachedRound(route, opts) {
+  if (!route.cacheKey) return null;
+  var hit = textCache.get(route.cacheKey);
+  if (!hit) return null;
+  recordUsage({ provider: hit.provider, model: hit.model, task: route.task, dataClass: route.dataClass, cached: true, requestId: opts.requestId || null }, { env: route.env, ledger: opts.ledger || null });
+  return { text: hit.text, calls: [], provider: hit.family, model: hit.model, error: null, searchEntryPoint: hit.searchEntryPoint || null, cached: true };
+}
+
+function rememberRound(route, candidate, result) {
+  if (route.cacheKey && result.text && !(result.calls && result.calls.length) && !result.partial) {
+    textCache.set(route.cacheKey, { text: result.text, provider: candidate.provider, family: result.provider, model: result.model || candidate.models[0], searchEntryPoint: result.searchEntryPoint || null });
+  }
+}
+
+// One OpenAI-compatible backup (AI gateway, OpenRouter, OpenAI): plain
+// text, no functions, each of the candidate's models in turn.
+async function fetchCompatCore(candidate, opts) {
+  var last = { text: null, status: null, error: 'no model configured' };
+  for (var i = 0; i < candidate.models.length; i++) {
+    var remainingMs = opts.deadlineTs - Date.now();
+    if (remainingMs <= 1000) break;
+    var r = await callOpenAiCompat({ candidate: candidate, model: candidate.models[i], system: opts.sysInstruction, prompt: opts.promptText, fetchImpl: function (u, o) { return fetch(u, o); }, timeoutMs: Math.min(20000, remainingMs) });
+    if (r.ok) return { text: r.text, calls: [], provider: candidate.provider, model: r.model, usage: r.usage, error: null };
+    last = { text: null, status: r.status, error: `[${candidate.models[i]}] ${providerErrorText(r.status, r.detail || '')}` };
+  }
+  return last;
+}
+
+// One model round on the JSON path: the round's plan in order, moving on
+// while a candidate returns nothing (any failure, as the chat always has).
+// Returns the provider result with `calls` for the tool loop.
 async function fetchModelRound(opts, toolOpts) {
   opts = { ...opts, sysInstruction: systemFor(opts, toolOpts) };
-  var result = (opts.activeAction === 'CLAUDE_CHAT')
-    ? await fetchAnthropicCore(opts.promptText, opts.sysInstruction, opts.mediaParts, '', opts.anthropicKey, opts.deadlineTs, toolOpts)
-    : await fetchGeminiCore(opts.promptText, opts.sysInstruction, opts.mediaParts, '', opts.geminiKeys, opts.deadlineTs, toolOpts);
-  var empty = !result.text && !(result.calls && result.calls.length);
-  if (opts.activeAction === 'CLAUDE_CHAT' && empty && opts.geminiKeys.length > 0 && Date.now() < opts.deadlineTs - 1000) {
-    var anthropicError = result.error;
-    result = await fetchGeminiCore(opts.promptText, opts.sysInstruction, opts.mediaParts, '', opts.geminiKeys, opts.deadlineTs, toolOpts);
+  var route = chatRoundPlan(opts, toolOpts);
+  var hit = cachedRound(route, opts);
+  if (hit) return hit;
+  var errors = [];
+  for (var i = 0; i < route.plan.length; i++) {
+    if (i > 0 && Date.now() >= opts.deadlineTs - 1000) break;
+    var c = route.plan[i];
+    var result = c.family === 'gemini'
+      ? await fetchGeminiCore(opts.promptText, opts.sysInstruction, opts.mediaParts, '', [c.key], opts.deadlineTs, toolOpts, c.models)
+      : c.family === 'anthropic'
+        ? await fetchAnthropicCore(opts.promptText, opts.sysInstruction, opts.mediaParts, '', c.key, opts.deadlineTs, toolOpts, c.models)
+        : await fetchCompatCore(c, opts);
+    roundUsage(route, opts, c, result, i);
     if (result.text || (result.calls && result.calls.length)) {
       result.error = null;
-    } else {
-      result.error = `Anthropic failed (${anthropicError}); Gemini fallback also failed (${result.error})`;
+      rememberRound(route, c, result);
+      return result;
     }
+    tripBreaker(c.keyId, result.status, result.error);
+    errors.push({ provider: c.provider, error: result.error });
   }
-  return result;
+  return { text: null, error: roundFailureText(errors) };
 }
 
 // CHAT TOOLS: the per-call timeout is the role's, capped so the final model
@@ -1221,7 +1353,7 @@ function toolCallBudget(deadlineTs, roleTimeoutMs) {
 // SEARCH OR TOOLS: the one search call after a tools round that ran no
 // check goes to the main core; /core on its own has no web search.
 function searchFallbackPossible(opts) {
-  return opts.activeAction !== 'CLAUDE_CHAT' && opts.geminiKeys.length > 0;
+  return opts.activeAction !== 'CLAUDE_CHAT' && (opts.geminiKeys || []).length > 0;
 }
 
 // The step rows for one round's tool calls (streamed path): open a row per
@@ -1279,6 +1411,11 @@ function roundStepLabels(round, allowed) {
 // otherwise. Engine-name swaps on an error summary add no label, so no note.
 function redactionWarning(labels) {
   return (labels || []).some(function (l) { return /^image: /.test(l); }) ? SECRET_WARNING : SECRET_WITHHELD_NOTE;
+}
+
+// The trace's name for a candidate's engine (PG1 labels, never a provider).
+function coreName(candidate) {
+  return candidate.family === 'anthropic' ? 'reasoning core' : candidate.family === 'gemini' ? 'main core' : 'backup core';
 }
 
 async function streamChatReply(stream, opts) {
@@ -1387,24 +1524,55 @@ async function streamChatReply(stream, opts) {
       : { onSearchFailure: opts.onSearchFailure };
     var sysInstruction = systemFor(opts, toolOpts);
     hooks.newRound = info.round > 1;
-    var result;
-    if (opts.activeAction === 'CLAUDE_CHAT') {
-      modelStep = `model${suffix}`;
-      stream.step(modelStep, `${label} on the reasoning core`);
-      result = await streamAnthropicCore(opts.promptText, sysInstruction, opts.mediaParts, opts.anthropicKey, opts.deadlineTs, hooks, toolOpts);
-      var empty = !result.text && !(result.calls && result.calls.length);
-      if (empty && !result.aborted && opts.geminiKeys.length > 0 && Date.now() < opts.deadlineTs - 1000) {
-        var anthropicError = result.error;
-        stream.stepDone(modelStep, { label: 'Reasoning core unavailable', result: 'switching to the main core', failed: true });
-        modelStep = `model${suffix}-fallback`;
-        stream.step(modelStep, `${label} on the main core`);
-        result = await streamGeminiCore(opts.promptText, sysInstruction, opts.mediaParts, opts.geminiKeys, opts.deadlineTs, hooks, toolOpts);
-        if (!result.text && !(result.calls && result.calls.length)) result.error = `Anthropic failed (${anthropicError}); Gemini fallback also failed (${result.error})`;
-      }
-    } else {
+    // AI ROUTER: the round's plan in order. The trace names the core, never
+    // the provider; a fallback to a candidate with the same core name
+    // stays under the same step, a different core opens "-fallback" rows.
+    var route = chatRoundPlan({ ...opts, sysInstruction: sysInstruction }, toolOpts);
+    var roundOpts = { ...opts, sysInstruction: sysInstruction };
+    var result = cachedRound(route, roundOpts);
+    if (result) {
       modelStep = `model${suffix}`;
       stream.step(modelStep, label);
-      result = await streamGeminiCore(opts.promptText, sysInstruction, opts.mediaParts, opts.geminiKeys, opts.deadlineTs, hooks, toolOpts);
+      hooks.onText(result.text);
+    } else {
+      var errors = [];
+      var core = '';
+      var fallbacks = 0;
+      for (var ci = 0; ci < route.plan.length; ci++) {
+        var c = route.plan[ci];
+        var name = coreName(c);
+        if (ci > 0 && (Date.now() >= opts.deadlineTs - 1000 || (stream.signal && stream.signal.aborted))) break;
+        if (ci === 0) {
+          modelStep = `model${suffix}`;
+          stream.step(modelStep, opts.activeAction === 'CLAUDE_CHAT' || name !== 'main core' ? `${label} on the ${name}` : label);
+        } else if (name !== core) {
+          stream.stepDone(modelStep, { label: `${core.charAt(0).toUpperCase()}${core.slice(1)} unavailable`, result: `switching to the ${name}`, failed: true });
+          modelStep = `model${suffix}-fallback${fallbacks ? `-${fallbacks + 1}` : ''}`;
+          fallbacks++;
+          stream.step(modelStep, `${label} on the ${name}`);
+        }
+        core = name;
+        result = c.family === 'gemini'
+          ? await streamGeminiCore(opts.promptText, sysInstruction, opts.mediaParts, [c.key], opts.deadlineTs, hooks, toolOpts, c.models)
+          : c.family === 'anthropic'
+            ? await streamAnthropicCore(opts.promptText, sysInstruction, opts.mediaParts, c.key, opts.deadlineTs, hooks, toolOpts, c.models)
+            : await fetchCompatCore(c, roundOpts);
+        if (c.family === 'openai_compat' && result.text) hooks.onText(result.text);
+        roundUsage(route, roundOpts, c, result, ci);
+        if (result.text || (result.calls && result.calls.length) || result.aborted || result.partial) break;
+        tripBreaker(c.keyId, result.status, result.error);
+        errors.push({ provider: c.provider, error: result.error });
+      }
+      if (!result) {
+        modelStep = `model${suffix}`;
+        stream.step(modelStep, label);
+        result = { text: '', error: 'No AI engine is configured or within its daily budget.' };
+      } else if (!result.text && !(result.calls && result.calls.length) && !result.aborted) {
+        result.error = errors.length ? roundFailureText(errors) : result.error;
+      } else if (!result.partial && !result.aborted) {
+        result.error = null;
+        rememberRound(route, route.plan[ci], result);
+      }
     }
     var calls = info.toolsEnabled && Array.isArray(result.calls) ? result.calls : [];
     if (calls.length) releaseHeld();
@@ -2001,7 +2169,7 @@ export default async function handler(req, res) {
         ? await pollVideoJob({
           env: process.env,
           jobId: videoJobId,
-          geminiKeys: [process.env.GEMINI_API_KEY1, process.env.GEMINI_API_KEY2, process.env.GEMINI_API_KEY].map((k) => String(k || '').replace(/\s+/g, '')).filter(Boolean),
+          geminiKeys: mediaGeminiKeys(process.env),
           supUrl: supUrl, supKey: supKey,
           onFailure: videoStatusFailure
         })
@@ -2062,21 +2230,28 @@ export default async function handler(req, res) {
       fetch = chatStream.wrapFetch(globalThis.fetch);
     }
 
-    var geminiKeys = [
-      (process.env.GEMINI_API_KEY1 || '').replace(/\s+/g, ''),
-      (process.env.GEMINI_API_KEY2 || '').replace(/\s+/g, ''),
-      (process.env.GEMINI_API_KEY || '').replace(/\s+/g, '')
-    ].filter(Boolean);
+    // AI ROUTER (lib/aiRouter.mjs): keys by role. Media (image, video) gets
+    // the paid Gemini key only; chat rounds and voice are planned per round
+    // by the router from the same env. chatGeminiKeys only says whether the
+    // main core has any key this session may use (the search call needs
+    // one): a guest or customer session never counts the free key.
+    var routerKeys = resolveKeys(process.env);
+    var geminiKeys = mediaGeminiKeys(process.env);
+    var chatGeminiKeys = (isOperator ? routerKeys.geminiFree : []).concat(routerKeys.geminiPaid);
+    // AI ROUTER cache: only the operator's text and TTS requests are cached,
+    // under keys that carry the operator's identity; a guest or customer
+    // session gets no identity and is never cached.
+    var aiCacheIdentity = cacheIdentity({ isOperator: isOperator, operatorId: isOperator ? user : '' });
+    var aiLedger = sharedLedger({ supUrl: supUrl, supKey: supKey, fetchImpl: function (u, o) { return globalThis.fetch(u, o); } });
 
-    var cartesiaKey = (process.env.CARTESIA_API_KEY || '').replace(/\s+/g, '');
+    var cartesiaKey = routerKeys.cartesia;
     var cartesiaModelId = process.env.CARTESIA_MODEL_ID || 'sonic-3.6';
     
     var supabaseUrl = supUrl;
     var supabaseKey = supKey;
     
-    var replicateToken = (process.env.REPLICATE_API_TOKEN || process.env.REPLICATE_KEY || '').replace(/\s+/g, '');
-    var openaiKey = (process.env.OPENAI_API_KEY || '').replace(/\s+/g, '');
-    var anthropicKey = (process.env.ANTHROPIC_API_KEY || process.env.ANTROPIC_API_KEY || '').replace(/\s+/g, '');
+    var replicateToken = routerKeys.replicate;
+    var anthropicKey = routerKeys.anthropic;
     var githubToken = (process.env.GITHUB_TOKEN || '').replace(/\s+/g, '');
 
     var supabaseStatus = 'DISCONNECTED';
@@ -2292,8 +2467,11 @@ export default async function handler(req, res) {
       });
     };
     var startVideoForRequest = async function (prompt, frame, tier, durationS) {
+      // AI ROUTER: media gets the paid key only, and a provider over its
+      // PG1_DAILY_BUDGET_*_USD is left out (the clip budget still applies).
+      var videoEnv = budgetAllows(process.env, 'replicate', { ledger: aiLedger }) ? process.env : { ...process.env, REPLICATE_API_TOKEN: '', REPLICATE_KEY: '' };
       var started = await startVideoJob({
-        env: process.env, prompt: prompt, image: frame || null, geminiKeys: geminiKeys, tier: tier, durationS: durationS,
+        env: videoEnv, prompt: prompt, image: frame || null, geminiKeys: budgetAllows(process.env, 'gemini_paid', { ledger: aiLedger }) ? geminiKeys : [], tier: tier, durationS: durationS,
         supUrl: supabaseUrl, supKey: supabaseKey, requestId: requestTraceId,
         fetchImpl: (u, o) => fetch(u, o),
         onFailure: videoFailureReporter
@@ -2316,7 +2494,10 @@ export default async function handler(req, res) {
         log401('COMMAND', 'unauthenticated', supUrl, supKey);
         return sendJSON(res, 401, { reply: `[AGENT] Command Aborted: Authentication required.`, traceId: requestTraceId });
       }
-      var isHeavyTask = lower.length > 300 || /analyze|architect|compile|comprehensive|strategy|trillion|revenue strike|report|complex|debug/i.test(lower);
+      // AI ROUTER: heavy (threat analysis, code, storyboards, security
+      // decisions, long pastes) goes to the reasoning core; summaries,
+      // classification, formatting and short replies stay light.
+      var isHeavyTask = classifyTask(promptText) === TASKS.HEAVY;
 
       if (lower === '/status' || lower === '/status update' || lower === 'status') {
         return sendJSON(res, 200, {
@@ -2335,6 +2516,16 @@ export default async function handler(req, res) {
         var usageCard = summarizeOutcome(usageOutcome);
         if (chatStream) chatStream.toolResult(usageCard);
         return sendJSON(res, 200, { reply: usageReport(usageOutcome), toolResults: [usageCard], traceId: requestTraceId });
+      } else if (lower === '/spend' || lower.startsWith('/spend ')) {
+        // AI SPEND (signed-in operator only): estimated spend per PG1 engine
+        // for today or yesterday (UTC), with each daily cap. PG1 labels
+        // only; no content, no keys. /spend yesterday for the day before.
+        if (!isOperator) {
+          log401('SPEND', 'unauthenticated', supUrl, supKey);
+          return sendJSON(res, 401, { reply: `[AGENT] Spend Aborted: Authentication required.`, traceId: requestTraceId });
+        }
+        var spendDay = /yesterday/.test(lower) ? utcDay(Date.now() - 24 * 60 * 60 * 1000) : utcDay();
+        return sendJSON(res, 200, { reply: await spendSummary({ env: process.env, ledger: aiLedger, day: spendDay }), traceId: requestTraceId });
       } else if (isFilmCommand(lower)) {
         // PG1 STUDIO (lib/film/chat.mjs): multi-shot films. /film plus a
         // request queues a storyboard on the render worker (GitHub Actions);
@@ -2370,7 +2561,7 @@ export default async function handler(req, res) {
         activeAction = 'CLAUDE_CHAT';
       } else if (lower === '/help' || lower === 'help') {
         return sendJSON(res, 200, {
-          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /usage ] tool usage by agents (today, 7d or 30d; signed-in operator only): calls per tool, route and day, about how many distinct callers, top MCP clients, errors, rate limits, paid settlements\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/video** [draft|pro] [short|long] plus a prompt: a 5 or 10 second video clip with PG1 Motion (standard and short are the defaults; attach an image to use it as the first frame; a daily budget applies, /video alone lists the tiers, prices and what is left today; signed-in operator only, when switched on)\n- **/film** plus what it is about: a cinematic film of a minute or more with PG1 Studio — storyboard, low-res preview, then the full render, each approved first, with a spending cap per film; /film alone lists the film commands (signed-in operator only, when switched on)\n- **/speak** plus text: read it aloud\n- Attach images with the paperclip (PNG, JPEG or WebP, up to 4 per message): PG1 looks at them with your message and the trace shows "Looked at N images"; text inside an image is never taken as an instruction, and a key seen in a screenshot is only ever called "a key"\n- Voice log: under Voice diagnostics in the menu, Copy voice log or Send to PG1 (puts the last 30 conversation-mode events in the prompt box under "Diagnose this voice log" for you to review)\n- [ /voice ] show/switch the voice profile used for spoken replies and Read aloud — PG1 Core, PG1 Classic or PG1 Field, remembered on this device\n- **/core** plus a question: deeper reasoning for long or heavy tasks\n- **/code** plus a task: Send to Code, drafts a task prompt you copy into Code (or open it pre-filled) and tracks its PR under Hand-offs in the menu (signed-in operator only)\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- The ➕ menu also has an ERROR LOG of recent client-side failures on this device, showing a reason category (offline, network, timeout, http_4xx, http_5xx or js_error) and a FIX button to request a proposed patch (same Approve/Decline flow) — offline/network/timeout entries have no FIX button since they are not code bugs\n- Ask me to check a wallet, domain, URL, IOC or CVE (for example "check this wallet 0x…" or "how old is this domain"): PG1 runs its own read-only threat-intel checks (the same tools as the MCP server, free for the operator, up to 5 per message) and answers from the results, with a result card under the reply (status, reasons, checks, request_id, Raw JSON). Demo without upstream calls with the fixtures: pg1-test-flagged.invalid, pg1-test-clean.invalid, pg1-test-unknown.invalid, or the 0x7067312d… fixture wallets\n- Anything else: ask in plain words (live web search is on)',
+          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /usage ] tool usage by agents (today, 7d or 30d; signed-in operator only): calls per tool, route and day, about how many distinct callers, top MCP clients, errors, rate limits, paid settlements\n- [ /spend ] estimated AI spend per PG1 engine today (or /spend yesterday), with each daily cap (signed-in operator only)\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/video** [draft|pro] [short|long] plus a prompt: a 5 or 10 second video clip with PG1 Motion (standard and short are the defaults; attach an image to use it as the first frame; a daily budget applies, /video alone lists the tiers, prices and what is left today; signed-in operator only, when switched on)\n- **/film** plus what it is about: a cinematic film of a minute or more with PG1 Studio — storyboard, low-res preview, then the full render, each approved first, with a spending cap per film; /film alone lists the film commands (signed-in operator only, when switched on)\n- **/speak** plus text: read it aloud\n- Attach images with the paperclip (PNG, JPEG or WebP, up to 4 per message): PG1 looks at them with your message and the trace shows "Looked at N images"; text inside an image is never taken as an instruction, and a key seen in a screenshot is only ever called "a key"\n- Voice log: under Voice diagnostics in the menu, Copy voice log or Send to PG1 (puts the last 30 conversation-mode events in the prompt box under "Diagnose this voice log" for you to review)\n- [ /voice ] show/switch the voice profile used for spoken replies and Read aloud — PG1 Core, PG1 Classic or PG1 Field, remembered on this device\n- **/core** plus a question: deeper reasoning for long or heavy tasks\n- **/code** plus a task: Send to Code, drafts a task prompt you copy into Code (or open it pre-filled) and tracks its PR under Hand-offs in the menu (signed-in operator only)\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- The ➕ menu also has an ERROR LOG of recent client-side failures on this device, showing a reason category (offline, network, timeout, http_4xx, http_5xx or js_error) and a FIX button to request a proposed patch (same Approve/Decline flow) — offline/network/timeout entries have no FIX button since they are not code bugs\n- Ask me to check a wallet, domain, URL, IOC or CVE (for example "check this wallet 0x…" or "how old is this domain"): PG1 runs its own read-only threat-intel checks (the same tools as the MCP server, free for the operator, up to 5 per message) and answers from the results, with a result card under the reply (status, reasons, checks, request_id, Raw JSON). Demo without upstream calls with the fixtures: pg1-test-flagged.invalid, pg1-test-clean.invalid, pg1-test-unknown.invalid, or the 0x7067312d… fixture wallets\n- Anything else: ask in plain words (live web search is on)',
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/threat-radar')) {
@@ -2628,52 +2819,54 @@ export default async function handler(req, res) {
       if (!targetVoiceId) {
         return sendJSON(res, 200, { reply: `[AGENT] PG1 Field voice is not configured server-side yet.`, traceId: requestTraceId });
       }
+      // AI ROUTER (lib/ttsRouter.mjs): the voice engine (Cartesia), PG1's
+      // voice; the free Gemini key first only with PG1_TTS_FREE_FIRST=1 and
+      // operator content. The operator's identical request is answered from
+      // the TTS cache; guests are never cached.
       var audioBase64 = null;
-      var audioStatus = cartesiaKey ? 'UNKNOWN' : 'SKIPPED_NO_KEY';
-      if (cartesiaKey) {
+      var audioMimeType = 'audio/mp3';
+      var speakText = speechTextFor(promptText, { envValues: secretEnvValues(process.env), knownIds: [requestTraceId] }).replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 3000).trim();
+      var speakDataClass = dataClassFor({ isOperator: isOperator, texts: [speakText] });
+      var speakPlanned = (speakDataClass === 'operator' && routerKeys.ttsGemini) || cartesiaKey;
+      var audioStatus = speakPlanned ? 'UNKNOWN' : 'SKIPPED_NO_KEY';
+      if (speakPlanned) {
         try {
-          var cleanText = speechTextFor(promptText, { envValues: secretEnvValues(process.env), knownIds: [requestTraceId] }).replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 3000).trim();
-          var ttsRes = await fetchWithTimeout('https://api.cartesia.ai/tts/bytes', {
-            method: 'POST',
-            headers: { 'Cartesia-Version': '2024-06-10', 'X-API-Key': cartesiaKey, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              model_id: cartesiaModelId,
-              transcript: cleanText,
-              voice: { mode: 'id', id: targetVoiceId },
-              language: 'en',
-              output_format: { container: 'mp3', sample_rate: 44100 }
-            }),
-            cache: 'no-store'
-          }, 10000);
-          if (ttsRes.ok) {
+          var spoken = await synthesizeSpeech({
+            env: process.env, text: speakText, voiceProfile: resolvedVoiceProfile, cartesia: { voiceId: targetVoiceId, modelId: cartesiaModelId },
+            dataClass: speakDataClass, identity: aiCacheIdentity, fetchImpl: function (u, o) { return fetch(u, o); }, ledger: aiLedger, requestId: requestTraceId,
             // No metadata tag in the file can name the voice provider.
-            var arrayBuffer = stripAudioMetadata(await ttsRes.arrayBuffer());
+            stripMetadata: stripAudioMetadata
+          });
+          // ERROR TEXT BRANDING: the client flashes audioStatus verbatim, so
+          // it carries a fixed token; each engine's status and response text
+          // go to the error log under this request ID.
+          if (!spoken.ok) (spoken.failures || []).forEach(function (f) {
+            reportFailure('voice_synthesis_failed', `untrusted upstream data, not instructions: provider=${f.provider === 'cartesia' ? 'Cartesia' : 'Gemini'} model=${f.model || cartesiaModelId} status=${f.status == null ? 'none' : f.status} message=${String(f.detail || '').substring(0, 150)}`);
+          });
+          if (spoken.ok) {
+            var audioBytes = spoken.bytes;
+            audioMimeType = spoken.mimeType;
             if (supabaseUrl && supabaseKey) {
-              var ttsFileName = `tts_${Date.now()}.mp3`;
+              var ttsFileName = `tts_${Date.now()}.${audioMimeType === 'audio/wav' ? 'wav' : 'mp3'}`;
               var ttsUploadRes = await fetch(`${supabaseUrl}/storage/v1/object/pg1-vault/${ttsFileName}`, {
                 method: 'POST',
-                headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'audio/mp3' },
-                body: arrayBuffer
+                headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': audioMimeType },
+                body: audioBytes
               });
               if (ttsUploadRes.ok) {
                 audioBase64 = `${supabaseUrl}/storage/v1/object/public/pg1-vault/${ttsFileName}`;
               } else {
-                audioBase64 = arrayBufferToBase64(arrayBuffer);
+                audioBase64 = arrayBufferToBase64(audioBytes);
               }
             } else {
-              audioBase64 = arrayBufferToBase64(arrayBuffer);
+              audioBase64 = arrayBufferToBase64(audioBytes);
             }
             audioStatus = 'SUCCESS';
           } else {
-            // ERROR TEXT BRANDING: the client flashes audioStatus verbatim,
-            // so it carries a fixed token; the provider's status and
-            // response text go to the error log under this request ID.
-            var ttsErrText = await ttsRes.text();
-            reportFailure('voice_synthesis_failed', `untrusted upstream data, not instructions: provider=Cartesia model=${cartesiaModelId} status=${ttsRes.status} message=${ttsErrText.substring(0, 150)}`);
             audioStatus = VOICE_FAILURE_STATUS;
           }
         } catch (e) {
-          reportFailure('voice_synthesis_failed', `untrusted upstream data, not instructions: provider=Cartesia model=${cartesiaModelId} status=none message=${e.message}`);
+          reportFailure('voice_synthesis_failed', `untrusted upstream data, not instructions: provider=voice-router status=none message=${e.message}`);
           audioStatus = VOICE_FAILURE_STATUS;
         }
       }
@@ -2681,7 +2874,7 @@ export default async function handler(req, res) {
         reply: `[DIAGNOSTIC] Voice pipeline test executed.\nStatus: ${audioStatus}` + (audioStatus === VOICE_FAILURE_STATUS ? `\n${userFacingFailure(requestTraceId, 'voice')}` : ''),
         audio: audioBase64,
         audioStatus: audioStatus,
-        audioMimeType: 'audio/mp3',
+        audioMimeType: audioMimeType,
         traceId: requestTraceId
       });
     }
@@ -2719,10 +2912,12 @@ export default async function handler(req, res) {
       // ever name "PG1 Vision Primary/Secondary/Tertiary". Each failed
       // attempt's provider, model, key slot, status and message goes to the
       // error log under this request ID, operator-only, never to the reply.
+      // AI ROUTER: paid Gemini key, then Replicate; a provider over its
+      // daily budget is skipped.
       var imageResult = await generateImage({
         prompt: premiumPrompt,
-        geminiKeys: geminiKeys,
-        tertiaryToken: replicateToken,
+        geminiKeys: budgetAllows(process.env, 'gemini_paid', { ledger: aiLedger }) ? geminiKeys : [],
+        tertiaryToken: budgetAllows(process.env, 'replicate', { ledger: aiLedger }) ? replicateToken : '',
         env: process.env,
         fetchImpl: (u, o) => fetch(u, o),
         storeImage: (img) => storeImageBytes(img.mime, base64ToUint8Array(img.base64), img.base64),
@@ -2765,6 +2960,10 @@ export default async function handler(req, res) {
       }
 
       if (chatStream) chatStream.stepDone('image', { label: 'Generated the image', result: imageResult.label });
+      recordUsage({
+        provider: imageResult.slot === 'tertiary' ? 'replicate' : 'gemini_paid', model: imageModels(process.env)[imageResult.slot] || '', task: TASKS.MEDIA,
+        dataClass: isOperator ? 'operator' : 'customer', unit: imageResult.slot === 'tertiary' ? 'image_replicate' : 'image_gemini', requestId: requestTraceId
+      }, { env: process.env, ledger: aiLedger });
 
       return sendJSON(res, 200, {
         reply: 'Image ready.',
@@ -3565,6 +3764,10 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
       });
     }
 
+    // AI ROUTER: the stored context this request loaded, for the privacy
+    // check (lib/aiRouter.mjs dataClassFor).
+    var routerContextText = [formattedArchive, targetedHistoricalData, supabaseFilesReport, unresolvedErrorsReport].join('\n');
+
     if (chatStream) {
       return await streamChatReply(chatStream, {
         activeAction: activeAction,
@@ -3576,8 +3779,14 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
         imageSkipped: imageInput.skipped,
         redactReply: redactReply,
         identityReply: identityChoice.reply,
-        geminiKeys: geminiKeys,
+        geminiKeys: chatGeminiKeys,
         anthropicKey: anthropicKey,
+        env: process.env,
+        isOperator: isOperator,
+        cacheIdentity: aiCacheIdentity,
+        contextText: routerContextText,
+        ledger: aiLedger,
+        requestId: requestTraceId,
         deadlineTs: deadlineTs,
         startTime: startTime,
         supabaseStatus: supabaseStatus,
@@ -3596,9 +3805,17 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
         // PG1 VOICE: speak the reply as it streams. Needs the voice toggle
         // on (speak: true), a TTS key and a configured voice; otherwise the
         // client falls back to the one-shot SPEAK request as before.
-        voice: (reqBody && reqBody.speak === true && cartesiaKey && targetVoiceId)
+        // AI ROUTER (lib/ttsRouter.mjs): the voice engine (Cartesia),
+        // sentence by sentence; the free Gemini key first only with
+        // PG1_TTS_FREE_FIRST=1 and operator content.
+        voice: (reqBody && reqBody.speak === true && targetVoiceId && (cartesiaKey || routerKeys.ttsGemini))
           ? {
-            synth: createSseSynth({ apiKey: cartesiaKey, modelId: cartesiaModelId, voiceId: targetVoiceId, fetchImpl: fetch }),
+            synth: createRoutedSynth({
+              env: process.env, voiceId: targetVoiceId, modelId: cartesiaModelId, voiceProfile: resolvedVoiceProfile,
+              dataClass: dataClassFor({ isOperator: isOperator, texts: [promptText, routerContextText] }),
+              identity: aiCacheIdentity,
+              fetchImpl: fetch, ledger: aiLedger, requestId: requestTraceId
+            }),
             // Leave room under Vercel's 60s maxDuration for "done".
             deadlineTs: startTime + 57000,
             envValues: secretEnvValues(process.env)
@@ -3617,7 +3834,7 @@ ${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(i
       });
     }
 
-    var roundOpts = { activeAction: activeAction, promptText: promptText, sysInstruction: sysInstruction, searchSysInstruction: searchSysInstruction, mediaParts: mediaParts, anthropicKey: anthropicKey, geminiKeys: geminiKeys, deadlineTs: deadlineTs };
+    var roundOpts = { activeAction: activeAction, promptText: promptText, sysInstruction: sysInstruction, searchSysInstruction: searchSysInstruction, mediaParts: mediaParts, anthropicKey: anthropicKey, geminiKeys: chatGeminiKeys, env: process.env, isOperator: isOperator, cacheIdentity: aiCacheIdentity, contextText: routerContextText, ledger: aiLedger, requestId: requestTraceId, deadlineTs: deadlineTs };
     var searchOpts = { onSearchFailure: onSearchFailure };
     var jsonToolOutcomes = [];
     var modelFetchResult;

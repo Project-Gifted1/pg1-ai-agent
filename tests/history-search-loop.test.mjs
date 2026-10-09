@@ -320,7 +320,14 @@ for (const stream of [false, true]) {
     assert.equal(res.statusCode, 200);
     const claude = anthropicRequests(calls);
     assert.ok(claude.length >= 2, `${claude.length} Anthropic requests`);
-    assert.deepEqual(claude[0].body.tool_choice, { type: 'tool', name: SEARCH_HISTORY_TOOL }, 'round 1 is forced');
+    // Opus 5.5 (the router's first heavy model) answers a forced
+    // tool_choice with a 400, so it gets auto plus the required-step line.
+    if (/^claude-(?:opus-5-5|sonnet-5-5)\b/.test(claude[0].body.model)) {
+      assert.equal(claude[0].body.tool_choice, undefined, 'round 1 is not forced by tool_choice on this model');
+      assert.match(claude[0].body.system, new RegExp(`\\[REQUIRED FIRST STEP\\]: Call ${SEARCH_HISTORY_TOOL}`), 'round 1 requires the tool in words');
+    } else {
+      assert.deepEqual(claude[0].body.tool_choice, { type: 'tool', name: SEARCH_HISTORY_TOOL }, 'round 1 is forced');
+    }
     for (const c of claude.slice(1)) assert.deepEqual(c.body.tool_choice, { type: 'none' }, 'later rounds offer no tool');
     assert.equal(historySearches(calls).length, 1);
     // Claude kept calling, so round 2 fell back to the main core, which obeys NONE.

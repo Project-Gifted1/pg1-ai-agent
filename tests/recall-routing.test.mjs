@@ -342,7 +342,13 @@ for (const stream of [false, true]) {
 // recall question's first round require search_history, and neither path
 // ever reaches a web search.
 
-const anthropicForced = (body) => !!body && body.tool_choice && body.tool_choice.type === 'tool' && body.tool_choice.name === SEARCH_HISTORY_TOOL;
+// Required either by tool_choice or, on a model that answers a forced
+// tool_choice with a 400 (Opus 5.5, the router's first heavy model), by
+// tool_choice auto plus the [REQUIRED FIRST STEP] line naming the tool.
+const UNFORCEABLE = /^claude-(?:opus-5-5|sonnet-5-5|fable-5-1|mythos-5-1)\b/;
+const anthropicForced = (body) => !!body && (UNFORCEABLE.test(body.model)
+  ? body.tool_choice === undefined && String(body.system || '').includes(`[REQUIRED FIRST STEP]: Call ${SEARCH_HISTORY_TOOL}`)
+  : !!body.tool_choice && body.tool_choice.type === 'tool' && body.tool_choice.name === SEARCH_HISTORY_TOOL);
 const anthropicHasResults = (body) => JSON.stringify(body.messages || []).includes('"tool_result"');
 function anthropicReply(body, { skip = false } = {}) {
   // Like the live model: skips the tool on auto, calls it when required.
@@ -384,7 +390,7 @@ for (const stream of [false, true]) {
     assert.equal(res.statusCode, 200);
     const ant = anthropicRequests(calls);
     assert.ok(ant.length >= 2, 'a tools round and the answer round on the reasoning core');
-    assert.deepEqual(ant[0].body.tool_choice, { type: 'tool', name: SEARCH_HISTORY_TOOL }, 'round 1 must call search_history');
+    assert.ok(anthropicForced(ant[0].body), 'round 1 must call search_history');
     assert.ok(ant[0].body.tools.some((t) => t.name === SEARCH_HISTORY_TOOL));
     assert.ok(ant.slice(1).every((c) => !anthropicForced(c.body)), 'only the first round is forced');
     assert.match(ant[0].body.system, /\[HISTORY SEARCH\]/);
