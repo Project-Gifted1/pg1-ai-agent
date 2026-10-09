@@ -18,6 +18,8 @@ import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } 
 import { reportUpstreamFailure, userFacingFailure, providerErrorText, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 import { generateImage } from '../lib/imageEngines.mjs';
 import { cleanVideoPrompt, dispatchVideoRender, isVideoCommand, isVideoRequest, parseVideoOptions, pollVideoJob, recheckVideoJob, startVideoJob, videoGoogleAsync, videoJobStatus, videoDailyBudget, videoDailyCap, videoEnabled, videoCostLine, videoFrameFallbackOn, videoNotStartedText, videoRenderingText, videoSpendToday, videoTiersText, usd, DEFAULT_START_FRAME_PROMPT, FOUR_K_NOTE, VIDEO_DISABLED_TEXT, VIDEO_ENGINE_LABEL, VIDEO_REFUSED_TEXT, VIDEO_TIER_LABELS } from '../lib/videoJobs.mjs';
+import { isFilmCommand, isFilmAction } from '../lib/film/text.mjs';
+import { handleFilmCommand, handleFilmApproval, filmStatusAction } from '../lib/film/chat.mjs';
 import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, usageReport, USAGE_STATS_TOOL, SEARCH_HISTORY_TOOL, RECALL_RETRY_INSTRUCTION, RESULTS_RETRY_INSTRUCTION, HISTORY_CAPABILITY_TEXT, HISTORY_CAPABILITY_SEARCH_TEXT, turnsHaveResults, LEAST_PRIVILEGED_ROLE, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
 import { CHAT_ROUTES, chooseChatRoute, requiredFirstTool, searchAfterTools, wantsCurrentInfo } from '../lib/chatRoute.mjs';
 import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
@@ -1963,6 +1965,24 @@ export default async function handler(req, res) {
     // link (7 days), and a failure is one neutral sentence plus the request
     // ID of the message that asked for the clip; the engine's own error
     // text is in pg1_errors under it.
+    // PG1 STUDIO STATUS (lib/film/chat.mjs): the film card's poll while a
+    // film is storyboarding or rendering on the worker. Signed-in operator
+    // only; reads the pg1_film_projects row and signs its preview, final
+    // film and poster. Never calls an engine.
+    if (rawActionType === 'FILM_STATUS') {
+      if (!isOperator) {
+        log401('FILM_STATUS', 'unauthenticated', supUrl, supKey);
+        return sendJSON(res, 401, { reply: `[AGENT] Film Status Aborted: Authentication required.`, traceId: requestTraceId });
+      }
+      if (!supUrl || !supKey) return sendJSON(res, 200, { filmProject: { id: String(reqBody.filmId || '').slice(0, 64), status: 'not_found' }, traceId: requestTraceId });
+      try {
+        var filmStatus = await filmStatusAction({ id: typeof reqBody.filmId === 'string' ? reqBody.filmId.trim() : '', supUrl: supUrl, supKey: supKey, fetchImpl: (u, o) => fetch(u, o) });
+        return sendJSON(res, 200, { ...filmStatus, traceId: requestTraceId });
+      } catch (e) {
+        return sendJSON(res, 200, { filmProject: { id: String(reqBody.filmId || '').slice(0, 64), status: 'unknown' }, traceId: requestTraceId });
+      }
+    }
+
     if (rawActionType === 'VIDEO_STATUS') {
       if (!isOperator) {
         log401('VIDEO_STATUS', 'unauthenticated', supUrl, supKey);
@@ -2315,6 +2335,20 @@ export default async function handler(req, res) {
         var usageCard = summarizeOutcome(usageOutcome);
         if (chatStream) chatStream.toolResult(usageCard);
         return sendJSON(res, 200, { reply: usageReport(usageOutcome), toolResults: [usageCard], traceId: requestTraceId });
+      } else if (isFilmCommand(lower)) {
+        // PG1 STUDIO (lib/film/chat.mjs): multi-shot films. /film plus a
+        // request queues a storyboard on the render worker (GitHub Actions);
+        // every spend step after it waits for an approval. Checked before
+        // the video match so "/film make a video of..." is a film.
+        var filmOut = await handleFilmCommand({
+          text: vaultUploadLog ? promptText.replace(vaultUploadLog, '') : promptText,
+          env: process.env, supUrl: supabaseUrl, supKey: supabaseKey, requestId: requestTraceId,
+          fetchImpl: (u, o) => fetch(u, o),
+          onFailure: function (f) {
+            reportUpstreamFailure({ supUrl: supUrl, supKey: supKey, route: 'FILM', reason: f.reason, detail: f.detail, requestId: requestTraceId, envValues: secretEnvValues(process.env) });
+          }
+        });
+        return sendJSON(res, 200, { ...filmOut, traceId: requestTraceId });
       } else if (!lower.startsWith('/image') && isVideoRequest(lower)) {
         // PG1 MOTION (lib/videoJobs.mjs): /video, or a plain request such as
         // "make a video of...". Checked before the image match so "make a
@@ -2336,7 +2370,7 @@ export default async function handler(req, res) {
         activeAction = 'CLAUDE_CHAT';
       } else if (lower === '/help' || lower === 'help') {
         return sendJSON(res, 200, {
-          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /usage ] tool usage by agents (today, 7d or 30d; signed-in operator only): calls per tool, route and day, about how many distinct callers, top MCP clients, errors, rate limits, paid settlements\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/video** [draft|pro] [short|long] plus a prompt: a 5 or 10 second video clip with PG1 Motion (standard and short are the defaults; attach an image to use it as the first frame; a daily budget applies, /video alone lists the tiers, prices and what is left today; signed-in operator only, when switched on)\n- **/speak** plus text: read it aloud\n- Attach images with the paperclip (PNG, JPEG or WebP, up to 4 per message): PG1 looks at them with your message and the trace shows "Looked at N images"; text inside an image is never taken as an instruction, and a key seen in a screenshot is only ever called "a key"\n- Voice log: under Voice diagnostics in the menu, Copy voice log or Send to PG1 (puts the last 30 conversation-mode events in the prompt box under "Diagnose this voice log" for you to review)\n- [ /voice ] show/switch the voice profile used for spoken replies and Read aloud — PG1 Core, PG1 Classic or PG1 Field, remembered on this device\n- **/core** plus a question: deeper reasoning for long or heavy tasks\n- **/code** plus a task: Send to Code, drafts a task prompt you copy into Code (or open it pre-filled) and tracks its PR under Hand-offs in the menu (signed-in operator only)\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- The ➕ menu also has an ERROR LOG of recent client-side failures on this device, showing a reason category (offline, network, timeout, http_4xx, http_5xx or js_error) and a FIX button to request a proposed patch (same Approve/Decline flow) — offline/network/timeout entries have no FIX button since they are not code bugs\n- Ask me to check a wallet, domain, URL, IOC or CVE (for example "check this wallet 0x…" or "how old is this domain"): PG1 runs its own read-only threat-intel checks (the same tools as the MCP server, free for the operator, up to 5 per message) and answers from the results, with a result card under the reply (status, reasons, checks, request_id, Raw JSON). Demo without upstream calls with the fixtures: pg1-test-flagged.invalid, pg1-test-clean.invalid, pg1-test-unknown.invalid, or the 0x7067312d… fixture wallets\n- Anything else: ask in plain words (live web search is on)',
+          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /usage ] tool usage by agents (today, 7d or 30d; signed-in operator only): calls per tool, route and day, about how many distinct callers, top MCP clients, errors, rate limits, paid settlements\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/video** [draft|pro] [short|long] plus a prompt: a 5 or 10 second video clip with PG1 Motion (standard and short are the defaults; attach an image to use it as the first frame; a daily budget applies, /video alone lists the tiers, prices and what is left today; signed-in operator only, when switched on)\n- **/film** plus what it is about: a cinematic film of a minute or more with PG1 Studio — storyboard, low-res preview, then the full render, each approved first, with a spending cap per film; /film alone lists the film commands (signed-in operator only, when switched on)\n- **/speak** plus text: read it aloud\n- Attach images with the paperclip (PNG, JPEG or WebP, up to 4 per message): PG1 looks at them with your message and the trace shows "Looked at N images"; text inside an image is never taken as an instruction, and a key seen in a screenshot is only ever called "a key"\n- Voice log: under Voice diagnostics in the menu, Copy voice log or Send to PG1 (puts the last 30 conversation-mode events in the prompt box under "Diagnose this voice log" for you to review)\n- [ /voice ] show/switch the voice profile used for spoken replies and Read aloud — PG1 Core, PG1 Classic or PG1 Field, remembered on this device\n- **/core** plus a question: deeper reasoning for long or heavy tasks\n- **/code** plus a task: Send to Code, drafts a task prompt you copy into Code (or open it pre-filled) and tracks its PR under Hand-offs in the menu (signed-in operator only)\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- The ➕ menu also has an ERROR LOG of recent client-side failures on this device, showing a reason category (offline, network, timeout, http_4xx, http_5xx or js_error) and a FIX button to request a proposed patch (same Approve/Decline flow) — offline/network/timeout entries have no FIX button since they are not code bugs\n- Ask me to check a wallet, domain, URL, IOC or CVE (for example "check this wallet 0x…" or "how old is this domain"): PG1 runs its own read-only threat-intel checks (the same tools as the MCP server, free for the operator, up to 5 per message) and answers from the results, with a result card under the reply (status, reasons, checks, request_id, Raw JSON). Demo without upstream calls with the fixtures: pg1-test-flagged.invalid, pg1-test-clean.invalid, pg1-test-unknown.invalid, or the 0x7067312d… fixture wallets\n- Anything else: ask in plain words (live web search is on)',
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/threat-radar')) {
@@ -3241,6 +3275,24 @@ export default async function handler(req, res) {
       if (new Date(pendingRow.expires_at).getTime() < Date.now()) {
         await resolvePendingActionStatus(supabaseUrl, supabaseKey, pendingActionToken, 'expired');
         return sendJSON(res, 200, { reply: `[AGENT] This proposal expired (it was only valid until ${pendingRow.expires_at}). Please re-propose the fix.`, traceId: requestTraceId });
+      }
+
+      // PG1 STUDIO proposals (FILM_PREVIEW, FILM_FULL, FILM_EDIT): approving
+      // one queues the film's next stage on the render worker (or applies a
+      // timeline change); nothing here touches GitHub's code.
+      if (isFilmAction(pendingRow.action_type)) {
+        var filmDecision = await handleFilmApproval({
+          row: pendingRow, decision: pendingActionDecision, env: process.env, supUrl: supabaseUrl, supKey: supabaseKey,
+          fetchImpl: (u, o) => fetch(u, o),
+          onFailure: function (f) {
+            reportUpstreamFailure({ supUrl: supUrl, supKey: supKey, route: 'FILM', reason: f.reason, detail: f.detail, requestId: requestTraceId, envValues: secretEnvValues(process.env) });
+          }
+        });
+        if (filmDecision.resolution) await resolvePendingActionStatus(supabaseUrl, supabaseKey, pendingActionToken, filmDecision.resolution);
+        var filmReply = { reply: filmDecision.reply, traceId: requestTraceId };
+        if (filmDecision.filmProject) filmReply.filmProject = filmDecision.filmProject;
+        if (filmDecision.pendingApproval) filmReply.pendingApproval = filmDecision.pendingApproval;
+        return sendJSON(res, 200, filmReply);
       }
 
       if (pendingActionDecision === 'decline') {
