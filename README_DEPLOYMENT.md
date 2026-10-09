@@ -169,6 +169,26 @@ PG1_DAILY_BUDGET_REPLICATE_USD=3
 # "[film <id>] storyboard written by gemini_paid (gemini-3.8-flash)".
 # The voiceover transcript check is Cartesia speech-to-text plus a word
 # comparison in code; it has no text model to fall back from.
+# PG1 Studio media (stills, clips, music) goes through the router's media
+# route (lib/film/providers.mjs createFilmMedia): Replicate, then the paid
+# Gemini key (GEMINI_API_KEY_PAID only, never the free key).
+#   - A Replicate 429 is waited out (Retry-After or the reset time in the
+#     message, else 10 s, 20 s, 40 s, 80 s; at most 5 sends and 3 minutes)
+#     and the same request is sent again on the same engine. From the first
+#     429 the stage renders one clip at a time. Throttled sends never use
+#     up a shot's 2 QC retries and are never charged to the film.
+#   - Out of credit, or still throttled after the waits: the REST of that
+#     stage goes to the paid Gemini key (stills, clips; optional model
+#     PG1_FILM_GEMINI_STILL_MODEL, clips use PG1_VIDEO_MODEL), with the
+#     reference still and the previous shot's last frame. Music has no
+#     Gemini equivalent and stops the stage with a clear message.
+#   - Each asset (/film media) and the QC report name the engine that made
+#     it with PG1 labels (PG1 media engine, PG1 main core).
+#   - The film card says which stage stopped and whether it was throttling
+#     or credit; /film retry <id> (operator, approve first) restarts it
+#     from that stage and reuses everything already made.
+# Needs supabase/migrations/20261013120000_pg1_film_resume.sql (the
+# failure column and pg1_film_refund).
 # Render worker secrets (.github/workflows/film-render.yml). /film
 # sync-secrets copies these from this deployment into the repo's Actions
 # secrets after you approve it: PG1_VIDEO_RENDER_SECRET, SUPABASE_URL,

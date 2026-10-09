@@ -3486,7 +3486,7 @@ export default async function handler(req, res) {
         return sendJSON(res, 200, { reply: `[AGENT] This proposal expired (it was only valid until ${pendingRow.expires_at}). Please re-propose the fix.`, traceId: requestTraceId });
       }
 
-      // PG1 STUDIO proposals (FILM_PREVIEW, FILM_FULL, FILM_EDIT): approving
+      // PG1 STUDIO proposals (FILM_PREVIEW, FILM_FULL, FILM_EDIT, FILM_RETRY): approving
       // one queues the film's next stage on the render worker (or applies a
       // timeline change); nothing here touches GitHub's code. FILM_SYNC_SECRETS
       // (/film sync-secrets) writes only the render worker's allowlisted

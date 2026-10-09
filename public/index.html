@@ -5334,6 +5334,8 @@
         if (c.audioOk === true) bits.push('voiceover verified');
         if (c.audioOk === false) bits.push('voiceover mismatch');
         parts.push(`<p class="film-card-meta">Checks: ${escapeHTML(bits.join(' · '))}</p>`);
+        // Which PG1 engine made the shots (labels from lib/aiRouter.mjs).
+        if (typeof c.engines === 'string' && c.engines) parts.push(`<p class="film-card-meta">Made by: ${escapeHTML(c.engines)}${typeof c.fallback === 'string' && c.fallback ? ` · the ${escapeHTML(c.fallback)}` : ''}</p>`);
       }
       if (approvals && !active && film.pendingApproval && typeof film.pendingApproval.token === 'string' && /^[0-9a-f-]{36}$/i.test(film.pendingApproval.token)) {
         parts.push(renderApprovalActionsHtml(film.pendingApproval.token));

@@ -64,7 +64,9 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
           # Text engines in fallback order (lib/film/providers.mjs). Paid keys
-          # only: the free Gemini key is never given to this job.
+          # only: the free Gemini key is never given to this job. The paid
+          # Gemini key is also the media fallback when Replicate is out of
+          # credit or still throttled (stills and clips, rest of the stage).
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY_PAID: ${{ secrets.GEMINI_API_KEY_PAID }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -72,6 +74,8 @@ jobs:
           CARTESIA_VOICE_ID: ${{ vars.CARTESIA_VOICE_ID }}
           CARTESIA_MODEL_ID: ${{ vars.CARTESIA_MODEL_ID }}
           PG1_VIDEO_MODEL_REPLICATE_IMAGE: ${{ vars.PG1_VIDEO_MODEL_REPLICATE_IMAGE }}
+          PG1_VIDEO_MODEL: ${{ vars.PG1_VIDEO_MODEL }}
+          PG1_FILM_GEMINI_STILL_MODEL: ${{ vars.PG1_FILM_GEMINI_STILL_MODEL }}
           PG1_FILM_STILL_MODEL: ${{ vars.PG1_FILM_STILL_MODEL }}
           PG1_FILM_MUSIC_MODEL: ${{ vars.PG1_FILM_MUSIC_MODEL }}
           PG1_FILM_CLAUDE_MODEL: ${{ vars.PG1_FILM_CLAUDE_MODEL }}

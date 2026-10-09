@@ -5,7 +5,8 @@
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
-const FILM_MIGRATION = readFileSync(new URL('../../supabase/migrations/20261011120000_pg1_film.sql', import.meta.url), 'utf8');
+const FILM_MIGRATION = ['20261011120000_pg1_film.sql', '20261013120000_pg1_film_resume.sql']
+  .map((f) => readFileSync(new URL(`../../supabase/migrations/${f}`, import.meta.url), 'utf8')).join('\n');
 
 export const json = (v, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'Content-Type': 'application/json' } });
 
@@ -48,6 +49,7 @@ function strip(rows) {
 // Routes for installFetch: [needle, handler(url, options, body)].
 export function filmDbRoutes(db, vault = new Map()) {
   return [
+    ['/rest/v1/rpc/pg1_film_refund', async (u, o, body) => json((await db.query('select * from public.pg1_film_refund($1, $2)', [body.p_project, body.p_amount])).rows)],
     ['/rest/v1/rpc/pg1_film_charge', async (u, o, body) => json((await db.query('select * from public.pg1_film_charge($1, $2)', [body.p_project, body.p_amount])).rows)],
     ['/rest/v1/pg1_errors', (u, o) => (o.method === 'POST' || o.method === 'PATCH' ? new Response('', { status: 201 }) : json([]))],
     ['/rest/v1/', async (u, o, body) => {
