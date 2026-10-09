@@ -24,7 +24,10 @@
  *     recovery attempts, which used to pass temperature/topP;
  *   - the root index.js worker;
  *   - PG1 Studio's film text calls on the paid key (lib/film/providers.mjs
- *     filmThink): the storyboard and a shot check with images.
+ *     filmThink): the storyboard and a shot check with images;
+ *   - PG1 Studio's media fallback on the paid key (geminiStill, geminiClip):
+ *     a still and an image-to-video clip with the reference and the
+ *     previous shot's last frame.
  * A last test pins the set of source files that call Gemini, so a new call
  * site has to be added here before it can ship.
  *
@@ -44,7 +47,7 @@ import { __resetImageBreaker } from '../lib/imageEngines.mjs';
 import { startVideoJob, renderVideoJob } from '../lib/videoJobs.mjs';
 import { synthesizeSpeech } from '../lib/ttsRouter.mjs';
 import worker from '../index.js';
-import { filmThink, imageBlock } from '../lib/film/providers.mjs';
+import { filmThink, imageBlock, geminiStill, geminiClip } from '../lib/film/providers.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ORIGINAL_ENV = { ...process.env };
@@ -346,6 +349,19 @@ test('PG1 Studio text calls on the paid key send only maxOutputTokens and respon
   await filmThink({ env, system: 'check', content: [{ type: 'text', text: 'Frame:' }, imageBlock(Buffer.from('jpeg'))], maxTokens: 4000, fetchImpl: stub.fetch, log: () => {} });
   assertClean(stub, 'film text', 2);
   for (const req of stub.requests) assert.deepEqual(Object.keys(req.body.generationConfig).sort().filter((k) => k !== 'responseMimeType'), ['maxOutputTokens']);
+});
+
+test('PG1 Studio media fallback stills and clips on the paid key send no sampling parameters', async () => {
+  const frame = Buffer.from(PNG_1X1, 'base64');
+  const stub = geminiStub((u) => (u.includes('/interactions')
+    ? Response.json({ id: 'int-1', status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'video', data: Buffer.from('mp4').toString('base64'), mime_type: 'video/mp4' }] }] })
+    : Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: PNG_1X1 } }] } }] })),
+  (u) => (u.startsWith(`${SUP_URL}/`) ? new Response(frame, { status: 200 }) : Promise.reject(new Error('Unexpected network call in test: ' + u))));
+  const env = { GEMINI_API_KEY_PAID: KEY2 };
+  const links = { referenceUrl: `${SUP_URL}/ref.png`, prevFrameUrl: `${SUP_URL}/prev.jpg` };
+  await geminiStill({ env, key: KEY2, prompt: 'a harbour at dawn', ...links, fetchImpl: stub.fetch, sleep: async () => {} });
+  await geminiClip({ env, key: KEY2, prompt: 'the boat leaves', startImageUrl: `${SUP_URL}/start.png`, ...links, fetchImpl: stub.fetch, sleep: async () => {} });
+  assertClean(stub, 'film media', 2);
 });
 
 // --- every call site is covered ------------------------------------------------------
