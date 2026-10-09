@@ -45,6 +45,7 @@ import * as realFf from '../lib/film/ffmpeg.mjs';
 import { makeFilmDb, filmDbRoutes, routedFetch, json } from './helpers/filmDb.mjs';
 
 const ORIGINAL_ENV = { ...process.env };
+const ORIGINAL_FETCH = globalThis.fetch;
 const SUP_URL = 'https://supabase.test';
 const SECRET = 'film-render-secret-0123456789abcdef';
 const REPLICATE = 'r8_film_stub_0123456789abcdef';
@@ -159,7 +160,7 @@ const sum = (rows) => rows.reduce((s, a) => s + Number(a.cost_usd || 0), 0);
 const audioCheckUsd = (qc) => Math.round(Math.max(0.01, qc.durationS * FILM_PRICES.transcribePerSecondUsd) * 100) / 100;
 
 beforeEach(() => __resetRouterState());
-after(() => { process.env = { ...ORIGINAL_ENV }; });
+after(() => { process.env = { ...ORIGINAL_ENV }; globalThis.fetch = ORIGINAL_FETCH; });
 
 // --- 1. backoff ------------------------------------------------------------------------
 
@@ -354,6 +355,8 @@ describe('render stages under engine trouble', () => {
   // --- 3 + 4 + 5 + resume: the preview ---
   test('preview: credit runs out mid-stills, the rest go to the paid key, music stops it clearly; /film retry reuses every still and pays once', async () => {
     process.env = { ...ORIGINAL_ENV, SUPABASE_URL: SUP_URL, SUPABASE_SERVICE_ROLE_KEY: 'service-key' };
+    // The worker's error log (pg1_errors) uses the global fetch.
+    globalThis.fetch = fetchImpl;
     const p = await newFilm('preview_queued');
     const workerEnv = { ...process.env, ...env0, PG1_VIDEO_RENDER_SECRET: SECRET, FILM_PROJECT_ID: p.id, FILM_STAGE: 'preview' };
     workerEnv.FILM_TOKEN = signFilmToken(p.id, workerEnv);
