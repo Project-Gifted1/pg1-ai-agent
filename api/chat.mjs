@@ -1247,11 +1247,10 @@ function chatRoundPlan(opts, toolOpts) {
   var withTools = !!((toolOpts && toolOpts.tools && toolOpts.tools.length) || turns.length);
   var plan = planRoute(task, { env: env, dataClass: dataClass, withTools: withTools || !!(opts.mediaParts && opts.mediaParts.length), ledger: opts.ledger || null });
   // A round with no functions, no images and no turns is answered from the
-  // text cache when the same user sent the identical request in the TTL.
-  // The key carries the caller's identity (opts.cacheIdentity), so the
-  // operator's and a guest's replies never share an entry; no identity, no
-  // cache.
-  var cacheable = !!opts.cacheIdentity && !withTools && !(opts.mediaParts && opts.mediaParts.length) && cacheEnabled(env);
+  // text cache when the operator sent the identical request in the TTL.
+  // Only the operator's rounds are cached (opts.cacheIdentity, scoped into
+  // the key); a guest or customer session is never cached.
+  var cacheable = opts.isOperator === true && !!opts.cacheIdentity && !withTools && !(opts.mediaParts && opts.mediaParts.length) && cacheEnabled(env);
   // The key rounds the [DEPLOYMENT] server time to the minute (the prompt
   // itself keeps the exact time), so a repeat in the same minute can hit.
   var keyedSystem = cacheable ? String(opts.sysInstruction || '').replace(/(Server UTC time: \d{4}-\d\d-\d\dT\d\d:\d\d)[^\s"]*/g, '$1') : '';
@@ -2239,10 +2238,10 @@ export default async function handler(req, res) {
     var routerKeys = resolveKeys(process.env);
     var geminiKeys = mediaGeminiKeys(process.env);
     var chatGeminiKeys = (isOperator ? routerKeys.geminiFree : []).concat(routerKeys.geminiPaid);
-    // AI ROUTER cache: every text and TTS cache key is scoped to this caller
-    // (the operator, or a guest by client address), so a cached reply is
-    // never served to a different user.
-    var aiCacheIdentity = cacheIdentity({ isOperator: isOperator, operatorId: isOperator ? user : '', clientId: clientIp });
+    // AI ROUTER cache: only the operator's text and TTS requests are cached,
+    // under keys that carry the operator's identity; a guest or customer
+    // session gets no identity and is never cached.
+    var aiCacheIdentity = cacheIdentity({ isOperator: isOperator, operatorId: isOperator ? user : '' });
     var aiLedger = sharedLedger({ supUrl: supUrl, supKey: supKey, fetchImpl: function (u, o) { return globalThis.fetch(u, o); } });
 
     var cartesiaKey = routerKeys.cartesia;
@@ -2822,8 +2821,8 @@ export default async function handler(req, res) {
       }
       // AI ROUTER (lib/ttsRouter.mjs): the voice engine (Cartesia), PG1's
       // voice; the free Gemini key first only with PG1_TTS_FREE_FIRST=1 and
-      // operator content. The same user's identical request is answered
-      // from the TTS cache.
+      // operator content. The operator's identical request is answered from
+      // the TTS cache; guests are never cached.
       var audioBase64 = null;
       var audioMimeType = 'audio/mp3';
       var speakText = speechTextFor(promptText, { envValues: secretEnvValues(process.env), knownIds: [requestTraceId] }).replace(/[*_#`[\]()]/g, '').replace(/[^\x20-\x7E]/g, ' ').substring(0, 3000).trim();

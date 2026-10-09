@@ -143,8 +143,8 @@ PG1_DAILY_BUDGET_REPLICATE_USD=3
 # PG1_TTS_GEMINI_VOICE=<voice>   # required with it; there is no default voice
 # PG1_PRICE_<MODEL_ID>=in,out    # override an estimated price per 1M tokens
 # PG1_AI_CACHE=0                 # turn off the text and TTS cache
-# Cache keys carry the caller (the operator, or a guest by client address),
-# so a cached reply is never served to a different user.
+# Only the operator's requests are cached (keys carry the operator's
+# identity); guest and customer sessions are never cached.
 # Spend: /spend (today) or /spend yesterday in the chat, operator only; the
 # first heartbeat after 00:00 UTC logs yesterday's summary as
 # [PG1-AGENT:SPEND]. Each call logs one [pg1-ai-usage] line: provider,

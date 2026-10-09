@@ -7,7 +7,8 @@
  *   4. the privacy rule: the free Gemini key only ever gets operator content,
  *      and a guest or customer session is paid-only whatever it says;
  *   5. daily budgets per provider and the usage log (never content or keys);
- *   6. caching identical text and TTS requests, scoped to one user;
+ *   6. caching the operator's identical text and TTS requests (guests are
+ *      never cached);
  *   7. the chat end to end: free key first, paid only for customer data,
  *      /core on the reasoning core, the /spend summary in PG1 labels.
  *
@@ -58,7 +59,8 @@ const ids = (plan) => plan.map((c) => `${c.provider}:${c.key}`);
 // Opt-in Gemini speech (PG1_TTS_FREE_FIRST=1 plus a named voice).
 const TTS_FREE = { PG1_TTS_FREE_FIRST: '1', PG1_TTS_GEMINI_VOICE: 'Puck' };
 const OP_ID = cacheIdentity({ isOperator: true, operatorId: 'test-operator' });
-const GUEST_ID = cacheIdentity({ isOperator: false, clientId: '203.0.113.7' });
+// A guest's identity: always '' (guests are never cached).
+const GUEST_ID = cacheIdentity({ isOperator: false });
 
 // --- 1. routing ------------------------------------------------------------------------
 
@@ -344,18 +346,20 @@ test('runRoute answers an identical request from the cache, without calling a pr
   assert.equal(calls, 2);
 });
 
-test('cache keys are scoped to one user: different identities never share a key, and no identity means no cache', async () => {
-  assert.ok(OP_ID && GUEST_ID);
-  assert.notEqual(cacheKey(OP_ID, 'chat', 'same prompt'), cacheKey(GUEST_ID, 'chat', 'same prompt'));
-  assert.notEqual(cacheKey(GUEST_ID, 'x'), cacheKey(cacheIdentity({ clientId: '203.0.113.8' }), 'x'), 'two guests differ');
-  assert.equal(cacheKey('', 'chat', 'same prompt'), null);
+test('only the operator is ever cached: a guest has no cache identity, and no identity means no cache', async () => {
+  assert.equal(OP_ID, 'operator:test-operator');
+  assert.equal(GUEST_ID, '');
+  for (const flag of [false, undefined, null, 'true', 1]) {
+    assert.equal(cacheIdentity({ isOperator: flag, operatorId: 'test-operator' }), '', `isOperator=${JSON.stringify(flag)}`);
+  }
+  assert.ok(cacheKey(OP_ID, 'chat', 'same prompt'));
+  assert.equal(cacheKey(GUEST_ID, 'chat', 'same prompt'), null);
   assert.equal(cacheKey(null, 'chat', 'same prompt'), null);
-  assert.equal(cacheIdentity({ isOperator: false, clientId: 'unknown' }), '', 'no usable identity');
-  assert.equal(cacheIdentity({ isOperator: 'true', operatorId: 'x', clientId: '' }), '', 'only isOperator === true is the operator');
-  // runRoute with no key (no identity) calls the provider every time.
+  // runRoute with no key (a guest) calls the provider every time and
+  // stores nothing.
   let calls = 0;
   const cache = createLruCache();
-  for (let i = 0; i < 2; i++) await runRoute({ task: TASKS.LIGHT, env: { GEMINI_API_KEY_PAID: PAID, PG1_AI_CACHE: '1' }, cache, key: cacheKey('', 'p'), log: quiet, attempt: async (c) => { calls++; return { ok: true, value: 'v', model: c.models[0] }; } });
+  for (let i = 0; i < 2; i++) await runRoute({ task: TASKS.LIGHT, env: { GEMINI_API_KEY_PAID: PAID, PG1_AI_CACHE: '1' }, cache, key: cacheKey(GUEST_ID, 'p'), log: quiet, attempt: async (c) => { calls++; return { ok: true, value: 'v', model: c.models[0] }; } });
   assert.equal(calls, 2);
   assert.equal(cache.size, 0);
 });
@@ -437,28 +441,30 @@ test('TTS streamed: sentences on the free key, cached repeats, a customer senten
   assert.deepEqual(seen.slice(1), ['api.cartesia.ai', 'api.cartesia.ai'], 'sticky: one reply, one voice');
 });
 
-test('TTS cache: the operator and a guest never share an entry, whole clips or streamed sentences', async () => {
+test('TTS cache: the operator is cached; a guest is never cached and never gets the operator\'s audio', async () => {
   const seen = [];
   const fetchImpl = async (u) => { seen.push(new URL(u).hostname); return u.includes('/tts/bytes') ? new Response(new Uint8Array([0xff, 0xfb, 1, 2])) : new Response(`data: ${JSON.stringify({ type: 'chunk', data: 'AAAA' })}\n\ndata: ${JSON.stringify({ type: 'done' })}\n\n`); };
   const env = { CARTESIA_API_KEY: 'cart', PG1_AI_CACHE: '1' };
   const speak = (identity, dataClass) => synthesizeSpeech({ env, text: 'Same words.', dataClass, identity, cartesia: { voiceId: 'v' }, fetchImpl, log: quiet });
   assert.equal((await speak(OP_ID, DATA.OPERATOR)).cached, false);
+  assert.equal((await speak(OP_ID, DATA.OPERATOR)).cached, true, 'the operator\'s repeat is cached');
+  const sizeAfterOperator = ttsCache.size;
   assert.equal((await speak(GUEST_ID, DATA.CUSTOMER)).cached, false, 'the guest does not get the operator\'s clip');
-  assert.equal((await speak(OP_ID, DATA.OPERATOR)).cached, true);
-  assert.equal((await speak(GUEST_ID, DATA.CUSTOMER)).cached, true);
-  assert.equal((await speak('', DATA.CUSTOMER)).cached, false, 'no identity, no cache');
-  assert.equal((await speak('', DATA.CUSTOMER)).cached, false);
-  assert.equal(seen.length, 4);
+  assert.equal((await speak(GUEST_ID, DATA.CUSTOMER)).cached, false, 'the guest\'s repeat is not cached either');
+  assert.equal(ttsCache.size, sizeAfterOperator, 'nothing stored for the guest');
+  assert.equal(seen.length, 3);
 
   seen.length = 0;
   ttsCache.clear();
   const op = createRoutedSynth({ env, voiceId: 'v', modelId: 'sonic-3.6', dataClass: DATA.OPERATOR, identity: OP_ID, fetchImpl, log: quiet });
   const guest = createRoutedSynth({ env, voiceId: 'v', modelId: 'sonic-3.6', dataClass: DATA.CUSTOMER, identity: GUEST_ID, fetchImpl, log: quiet });
   assert.notEqual((await op('One sentence.')).cached, true);
-  assert.notEqual((await guest('One sentence.')).cached, true, 'the guest does not get the operator\'s audio');
   assert.equal((await op('One sentence.')).cached, true);
-  assert.equal((await guest('One sentence.')).cached, true);
-  assert.equal(seen.length, 2);
+  assert.equal(ttsCache.size, 1);
+  assert.notEqual((await guest('One sentence.')).cached, true, 'the guest does not get the operator\'s audio');
+  assert.notEqual((await guest('One sentence.')).cached, true, 'the guest\'s repeat is not cached');
+  assert.equal(ttsCache.size, 1, 'nothing stored for the guest');
+  assert.equal(seen.length, 3);
 });
 
 // --- 7. the chat end to end ---------------------------------------------------------------------------------
@@ -632,37 +638,28 @@ test('chat: an identical request inside the TTL is answered from the text cache'
   assert.equal(calls.length, 0, 'served from the cache');
 });
 
-test('chat cache: the operator and a guest sending the identical message never share a cache entry', async () => {
+test('chat cache: only the operator\'s rounds are cached; a guest round is never cached, even with an identity passed', async () => {
   process.env.GEMINI_API_KEY_PAID = PAID;
   const env = { ...process.env, PG1_AI_CACHE: '1' };
   const base = { env, activeAction: 'CHAT', promptText: 'what is a honeypot?', sysInstruction: 'sys', contextText: '' };
   const opRoute = __chatRoundPlan({ ...base, isOperator: true, cacheIdentity: OP_ID }, null);
-  const guestRoute = __chatRoundPlan({ ...base, isOperator: false, cacheIdentity: GUEST_ID }, null);
-  const otherGuest = __chatRoundPlan({ ...base, isOperator: false, cacheIdentity: cacheIdentity({ clientId: '203.0.113.99' }) }, null);
-  assert.ok(opRoute.cacheKey && guestRoute.cacheKey && otherGuest.cacheKey);
-  assert.equal(new Set([opRoute.cacheKey, guestRoute.cacheKey, otherGuest.cacheKey]).size, 3, 'one entry per user');
-  assert.equal(__chatRoundPlan({ ...base, isOperator: false }, null).cacheKey, null, 'no identity: not cached');
+  assert.ok(opRoute.cacheKey);
+  assert.equal(__chatRoundPlan({ ...base, isOperator: false, cacheIdentity: GUEST_ID }, null).cacheKey, null, 'a guest: not cached');
+  // Belt and braces: even a non-empty identity on a guest round is ignored.
+  assert.equal(__chatRoundPlan({ ...base, isOperator: false, cacheIdentity: OP_ID }, null).cacheKey, null, 'a guest round with the operator\'s identity: not cached');
+  assert.equal(__chatRoundPlan({ ...base, isOperator: true }, null).cacheKey, null, 'no identity: not cached');
 
-  // End to end: the operator's reply is cached under the operator's key
-  // only; the guest's key for the identical message finds nothing.
+  // End to end: the operator's repeat is served from the cache.
   textCache.clear();
   let calls = installProviders({ gemini: () => 'Operator answer.' });
   const first = await chat({ prompt: 'what is a honeypot?' });
   assert.match(first.jsonBody.reply, /Operator answer/);
   assert.equal(textCache.size, 1);
-  const n = calls.length;
+  assert.ok(calls.length > 0);
   calls = installProviders();
   const second = await chat({ prompt: 'what is a honeypot?' });
   assert.equal(second.jsonBody.reply, first.jsonBody.reply);
   assert.equal(calls.length, 0, 'the operator is served the operator\'s entry');
-  assert.ok(n > 0);
-  // The identical request (same system prompt, same message) stored under
-  // the operator's key is never found under a guest's.
-  textCache.clear();
-  textCache.set(opRoute.cacheKey, { text: 'Operator only.', provider: 'gemini_paid', family: 'gemini', model: 'm' });
-  assert.equal(textCache.get(opRoute.cacheKey).text, 'Operator only.');
-  assert.equal(textCache.get(guestRoute.cacheKey), undefined);
-  assert.equal(textCache.get(otherGuest.cacheKey), undefined);
 });
 
 test('chat: a provider over its daily budget is skipped', async () => {
