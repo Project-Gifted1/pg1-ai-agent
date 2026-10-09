@@ -178,7 +178,9 @@ function assertNoBrands(strings, what, { imagePath = false } = {}) {
   assert.ok(strings.length > 0, `${what}: some system text was rendered`);
   for (const s of strings) {
     assert.doesNotMatch(s, BRANDS_RE, `${what} names a provider: ${s}`);
-    assert.doesNotMatch(s, /quota|not found for API|aborted|invalid API key|429|404|401|529/i, `${what} echoes an upstream error: ${s}`);
+    // Status codes as whole words: the random request ID (e.g. "va2t4046")
+    // can contain the digits without echoing anything.
+    assert.doesNotMatch(s, /quota|not found for API|aborted|invalid API key|\b(?:429|404|401|529)\b/i, `${what} echoes an upstream error: ${s}`);
     if (imagePath) assert.doesNotMatch(s, /\[SYSTEM\]|\[DIAGNOSTIC\]/, `${what} carries a system/diagnostic line: ${s}`);
   }
 }
