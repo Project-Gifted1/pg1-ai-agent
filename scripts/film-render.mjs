@@ -13,7 +13,10 @@
 //
 // Secrets come from the environment only (GitHub Actions secrets):
 // SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, REPLICATE_API_TOKEN,
-// ANTHROPIC_API_KEY, CARTESIA_API_KEY, PG1_VIDEO_RENDER_SECRET.
+// CARTESIA_API_KEY, PG1_VIDEO_RENDER_SECRET, and the text engines in
+// fallback order: ANTHROPIC_API_KEY, GEMINI_API_KEY_PAID, OPENROUTER_API_KEY
+// (at least one). Never the free Gemini key: film content goes to paid
+// providers only.
 
 import os from 'node:os';
 import path from 'node:path';
@@ -27,7 +30,7 @@ import { runStoryboard, runRender, proposeFullRender, CapReached } from '../lib/
 import { verifyFilmToken, FILM_STAGES } from '../lib/film/dispatch.mjs';
 import * as ff from '../lib/film/ffmpeg.mjs';
 import {
-  filmModels, missingFilmConfig, replicateRun, download, stillInput, clipInput, musicInput, claudeMessage, imageBlock,
+  filmModels, missingFilmConfig, replicateRun, download, stillInput, clipInput, musicInput, filmThink, imageBlock,
   synthesizeLine, pcmToWav, transcribe, cartesiaConfig
 } from '../lib/film/providers.mjs';
 
@@ -38,7 +41,7 @@ const CLAIM = {
 };
 
 // The real engines, behind the neutral names the pipeline uses.
-export function realEngines(env, { fetchImpl = globalThis.fetch } = {}) {
+export function realEngines(env, { fetchImpl = globalThis.fetch, log = console.log } = {}) {
   const models = filmModels(env);
   return {
     async still({ prompt, referenceUrl = null, seed = null }) {
@@ -59,7 +62,8 @@ export function realEngines(env, { fetchImpl = globalThis.fetch } = {}) {
       const line = await synthesizeLine({ env, text, fetchImpl });
       return { wav: pcmToWav(line.pcm, line.sampleRate), durationS: line.durationS, words: line.words };
     },
-    think: ({ system, content, effort, maxTokens }) => claudeMessage({ env, system, content, effort, maxTokens, fetchImpl }),
+    // Claude, then the paid Gemini key, then OpenRouter (lib/film/providers.mjs).
+    think: ({ system, content, effort, maxTokens, validate, purpose }) => filmThink({ env, system, content, effort, maxTokens, validate, purpose, fetchImpl, log }),
     image: (bytes) => imageBlock(bytes),
     transcribe: ({ audio }) => transcribe({ env, audio, fetchImpl })
   };
@@ -91,7 +95,7 @@ export async function main(env = process.env, { log = console.log, engines = nul
     onFailure({ reason: 'film_not_configured', detail: `missing ${missing.join(', ')}`, requestId: project.request_id });
     return fail('not_configured', `missing ${missing.join(', ')}`);
   }
-  const eng = engines || realEngines(env, { fetchImpl });
+  const eng = engines || realEngines(env, { fetchImpl, log });
   const voice = cartesiaConfig(env);
   const voiceKey = `${voice.voiceId}|${voice.modelId}`;
   const workdir = await mkdtemp(path.join(os.tmpdir(), `film-${projectId.slice(0, 8)}-`));
