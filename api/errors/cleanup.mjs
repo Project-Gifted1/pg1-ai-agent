@@ -2,10 +2,12 @@
 // crons entry. Deletes pg1_errors rows older than 30 days (by last_seen),
 // and agent_telemetry rows older than 90 days (lib/telemetry.mjs
 // purgeExpiredTelemetry) - the one daily cleanup job for both tables.
-// Same CRON_SECRET auth pattern as api/heartbeat/pulse.js.
+// CRON_SECRET auth shared with api/heartbeat/pulse.js (lib/cronAuth.mjs):
+// 403 when CRON_SECRET is unset, constant-time Bearer comparison otherwise.
 
 import { getSupabaseCreds } from '../../lib/supabase.mjs';
 import { purgeExpiredTelemetry } from '../../lib/telemetry.mjs';
+import { checkCronAuth } from '../../lib/cronAuth.mjs';
 
 export const config = { maxDuration: 30 };
 
@@ -16,9 +18,9 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  var authHeader = req.headers.authorization;
-  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return res.status(401).json({ error: 'Unauthorized cleanup request' });
+  var auth = checkCronAuth(req);
+  if (!auth.ok) {
+    return res.status(auth.status).json({ error: auth.status === 401 ? 'Unauthorized cleanup request' : auth.error });
   }
 
   var creds;

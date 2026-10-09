@@ -1,11 +1,13 @@
+import { checkCronAuth } from '../../lib/cronAuth.mjs';
+
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const authHeader = req.headers.authorization;
-  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return res.status(401).json({ error: 'Unauthorized pulse request' });
+  const auth = checkCronAuth(req);
+  if (!auth.ok) {
+    return res.status(auth.status).json({ error: auth.status === 401 ? 'Unauthorized pulse request' : auth.error });
   }
 
   try {
