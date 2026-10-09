@@ -960,6 +960,13 @@
     .video-job-engine { color: var(--gold); }
     .video-job-failed { margin: var(--sp-4) 0; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--danger-edge); border-radius: var(--r-md); background: var(--danger-soft); color: var(--danger-text); font-size: var(--fs-sm); }
     @keyframes video-job-spin { to { transform: rotate(360deg); } }
+    .film-card { margin: var(--sp-4) 0; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-1); color: var(--text-2); font-size: var(--fs-sm); display: grid; gap: var(--sp-2); }
+    .film-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); color: var(--text-1); }
+    .film-card-title { font-weight: 600; }
+    .film-card-status { color: var(--text-2); }
+    .film-card-progress { display: flex; align-items: center; gap: var(--sp-2); }
+    .film-card-meta { color: var(--text-3, var(--text-2)); }
+    .film-card-failed { color: var(--danger-text); }
     @media (prefers-reduced-motion: reduce) { .video-job-spinner { animation: none; } }
 
     /* ---------- EMPTY STATE ---------- */
@@ -3451,6 +3458,7 @@
           document.getElementById('auth-modal').style.display = 'none';
           // A clip still rendering from before a reload picks up again.
           pollVideoJobsSoon(1000);
+          pollFilmCardsSoon(1000);
           syncErrorLogToServer().then(updateErrorLogBadge);
         } else {
           alert('Access Denied: Invalid Credentials.');
@@ -4393,6 +4401,16 @@
           if (textEl) textEl.innerHTML += `<br><br>${formatMarkdown(data.reply || (decision === 'approve' ? 'Approved.' : 'Declined.'))}`;
         }
         if (actionsRow) actionsRow.remove();
+        // PG1 STUDIO: an approved film stage brings its card (which then
+        // polls), and an approved edit may bring the next approval.
+        if (bubble && (data.filmProject || (data.pendingApproval && data.pendingApproval.token))) {
+          const extra = document.createElement('div');
+          extra.innerHTML = (data.filmProject ? filmCardHtml(data.filmProject, { approvals: !data.pendingApproval }) : '')
+            + (data.pendingApproval && data.pendingApproval.token ? renderApprovalActionsHtml(data.pendingApproval.token) : '');
+          const actionsEl = bubble.querySelector('.message-actions');
+          Array.from(extra.childNodes).forEach((n) => (actionsEl ? bubble.insertBefore(n, actionsEl) : bubble.appendChild(n)));
+          pollFilmCardsSoon(2000);
+        }
         saveState();
       } catch (err) {
         triggerHaptic(200);
@@ -5277,6 +5295,95 @@
 
     document.addEventListener('visibilitychange', () => { if (!document.hidden) pollVideoJobsSoon(1000); });
 
+    // PG1 STUDIO (lib/film/chat.mjs): a film storyboards and renders on the
+    // render worker. Its card shows where it is, the cost against its cap,
+    // the low-res preview or the finished film, the self-checks, and the
+    // Approve / Decline buttons when a stage is waiting for approval. Cards
+    // for a film that is busy poll /api/chat's FILM_STATUS action (the
+    // signed-in operator's session, paused while the tab is hidden).
+    const FILM_POLL_MS = 10000;
+    let filmPollTimer = null;
+
+    function filmMoney(n) { return (Math.round((Number(n) || 0) * 100) / 100).toFixed(2); }
+
+    function filmCardHtml(film, { approvals = true } = {}) {
+      if (!film || typeof film.id !== 'string' || !VIDEO_JOB_ID_RE.test(film.id)) return '';
+      const active = film.active === true;
+      const parts = [];
+      parts.push(`<div class="film-card-head"><span class="video-job-engine">PG1 Studio</span><span class="film-card-title">${escapeHTML(film.title || 'Untitled film')}</span><span class="film-card-status">· ${escapeHTML(film.label || film.status || '')}</span></div>`);
+      if (active) {
+        const pr = film.progress && film.progress.total ? ` ${escapeHTML(film.progress.label || '')} (${Number(film.progress.done) || 0}/${Number(film.progress.total) || 0})` : '';
+        parts.push(`<div class="film-card-progress" role="status" aria-live="polite"><span class="video-job-spinner" aria-hidden="true"></span><span>${escapeHTML(film.label || 'Working…')}${pr}</span></div>`);
+      }
+      if (film.message) parts.push(`<p class="film-card-failed">${escapeHTML(film.message)}</p>`);
+      if (film.summary) parts.push(`<div class="film-card-summary">${formatMarkdown(film.summary)}</div>`);
+      const url = typeof film.finalUrl === 'string' && /^https:\/\//i.test(film.finalUrl) ? film.finalUrl : typeof film.previewUrl === 'string' && /^https:\/\//i.test(film.previewUrl) ? film.previewUrl : '';
+      if (url) {
+        const poster = typeof film.posterUrl === 'string' && /^https:\/\//i.test(film.posterUrl) ? ` poster="${escapeHTML(film.posterUrl)}"` : '';
+        parts.push(`<div class="media-preview-container"><video controls preload="metadata" playsinline width="100%"${poster} src="${escapeHTML(url)}">Your browser does not support video playback.</video></div>`);
+        if (!film.finalUrl) parts.push('<p class="film-card-meta">Low-res preview: stills with their camera moves, the voiceover, music and captions.</p>');
+      }
+      const est = film.status === 'awaiting_preview_approval' && film.estPreviewUsd != null ? ` · preview about ${filmMoney(film.estPreviewUsd)} USD`
+        : film.status === 'preview_done' && film.estFullUsd != null ? ` · full render about ${filmMoney(film.estFullUsd)} USD` : '';
+      parts.push(`<p class="film-card-meta">Film ${escapeHTML(film.shortId || film.id.slice(0, 8))} · spent ${filmMoney(film.spentUsd)} of ${filmMoney(film.capUsd)} USD${est}</p>`);
+      if (film.checks) {
+        const c = film.checks;
+        const bits = [c.flaggedShots ? `${Number(c.flaggedShots)} shot(s) flagged` : 'all shots passed their checks'];
+        if (c.retries) bits.push(`${Number(c.retries)} retried`);
+        if (c.loudness != null) bits.push(`${Number(c.loudness)} LUFS`);
+        if (c.audioOk === true) bits.push('voiceover verified');
+        if (c.audioOk === false) bits.push('voiceover mismatch');
+        parts.push(`<p class="film-card-meta">Checks: ${escapeHTML(bits.join(' · '))}</p>`);
+      }
+      if (approvals && !active && film.pendingApproval && typeof film.pendingApproval.token === 'string' && /^[0-9a-f-]{36}$/i.test(film.pendingApproval.token)) {
+        parts.push(renderApprovalActionsHtml(film.pendingApproval.token));
+      }
+      return `<div class="film-card" data-film-id="${escapeHTML(film.id)}" data-film-active="${active ? '1' : '0'}">${parts.join('')}</div>`;
+    }
+
+    function activeFilmCards() {
+      return Array.from(document.querySelectorAll('#chat-container .film-card[data-film-active="1"][data-film-id]'));
+    }
+
+    function pollFilmCardsSoon(delay = FILM_POLL_MS) {
+      if (filmPollTimer !== null || !activeFilmCards().length) return;
+      filmPollTimer = setTimeout(pollFilmCards, delay);
+    }
+
+    async function pollFilmCards() {
+      filmPollTimer = null;
+      const cards = activeFilmCards();
+      if (!cards.length) return;
+      if (!sessionUser || !sessionPass || document.hidden) return;
+      for (const card of cards) {
+        const id = card.getAttribute('data-film-id');
+        try {
+          const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'FILM_STATUS', filmId: id, user: sessionUser, pass: sessionPass })
+          });
+          if (res.status === 401) return;
+          const data = await res.json().catch(() => null);
+          const film = data && data.filmProject;
+          if (!film || film.status === 'unknown') continue;
+          if (film.status === 'not_found') {
+            card.setAttribute('data-film-active', '0');
+            continue;
+          }
+          const holder = document.createElement('div');
+          holder.innerHTML = filmCardHtml(film);
+          if (holder.firstElementChild) card.replaceWith(holder.firstElementChild);
+          saveState();
+        } catch (e) {
+          // Offline or the request failed: the next round asks again.
+        }
+      }
+      pollFilmCardsSoon();
+    }
+
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) pollFilmCardsSoon(1000); });
+
     // /video recheck found a clip: the earlier card for that job (failed or
     // still rendering) becomes the player. A failed card saved before it
     // carried the job id is found by the request ID in its sentence.
@@ -5835,6 +5942,10 @@
           && typeof data.videoJob.url === 'string' && /^https:\/\//i.test(data.videoJob.url)) contentHtml += videoPlayerHtml(data.videoJob.url);
         if (Array.isArray(data.toolResults)) data.toolResults.forEach((c) => { if (c && c.video_job) contentHtml += videoJobCardHtml(c.video_job); });
 
+        // PG1 STUDIO: a film's card (its own Approve / Decline buttons only
+        // when the reply does not carry them already).
+        if (data.filmProject) contentHtml += filmCardHtml(data.filmProject, { approvals: !(data.pendingApproval && data.pendingApproval.token) });
+
         if (data.pendingApproval && data.pendingApproval.token) {
           contentHtml += renderApprovalActionsHtml(data.pendingApproval.token);
         }
@@ -5851,6 +5962,7 @@
         agentBubble.innerHTML = contentHtml;
         saveState();
         pollVideoJobsSoon();
+        pollFilmCardsSoon();
         // The header was just re-rendered: put the waveform back if this
         // reply is still being spoken.
         syncVoiceWave();
