@@ -19,7 +19,7 @@ import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   TASKS, DATA, ENGINE_LABELS, resolveKeys, mediaGeminiKeys, classifyTask, dataClassFor, containsCustomerData, planRoute, runRoute,
-  isFallbackFailure, tripBreaker, isTripped, recordUsage, dailyBudgetUsd, budgetAllows, estimateCost, createLruCache, cacheKey, cacheIdentity,
+  isFallbackFailure, isBillingFailure, tripBreaker, isTripped, recordUsage, dailyBudgetUsd, budgetAllows, estimateCost, createLruCache, cacheKey, cacheIdentity,
   textCache, ttsCache, spendSummary, memoryLedger, utcDay, routeModels, __resetRouterState, RATE_LIMIT_WINDOW_MS, BREAKER_WINDOW_MS
 } from '../lib/aiRouter.mjs';
 import { synthesizeSpeech, createRoutedSynth, geminiVoiceName } from '../lib/ttsRouter.mjs';
@@ -178,6 +178,59 @@ test('isFallbackFailure: 429, 402, 5xx, timeouts and quota or billing text move 
   }
   assert.equal(isFallbackFailure(400, 'Invalid JSON payload'), false);
   assert.equal(isFallbackFailure(400, 'blocked by the safety filter'), false);
+});
+
+// Anthropic's exact answer for an account with no credit left: a 400, not
+// a 402 or a 429.
+const ANTHROPIC_CREDIT_TOO_LOW = JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.' }, request_id: 'req_011CSHoEeqs5C35K2UUqR7Fy' });
+
+test('out of credit is a billing failure from any provider, whatever the status: it moves on and opens the breaker', () => {
+  const billing = [
+    [400, ANTHROPIC_CREDIT_TOO_LOW],
+    [400, '[claude-opus-5-5] Anthropic API 400 invalid_request_error: Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'],
+    [402, 'Insufficient credits. Add more using https://openrouter.ai/settings/credits'],
+    [403, 'This request requires more credits, or fewer max_tokens. You requested up to 16000 tokens, but can only afford 1200.'],
+    [429, '{"error":{"message":"You exceeded your current quota, please check your plan and billing details.","type":"insufficient_quota","code":"insufficient_quota"}}'],
+    [429, 'RESOURCE_EXHAUSTED: Your prepayment credits are depleted. Please go to AI Studio to manage your project and billing.'],
+    [400, 'Your account is out of credits.'],
+    [403, 'Your spending limit has been reached'],
+    [402, '']
+  ];
+  for (const [status, text] of billing) {
+    assert.equal(isBillingFailure(status, text), true, `${status} ${text}`);
+    assert.equal(isFallbackFailure(status, text), true, `${status} ${text}`);
+    __resetRouterState();
+    assert.equal(tripBreaker('anthropic', status, text), true);
+    assert.ok(isTripped('anthropic', Date.now() + RATE_LIMIT_WINDOW_MS + 1000), `${status}: the 15-minute window, not the rate-limit one`);
+  }
+  for (const [status, text] of [[400, 'Invalid JSON payload'], [400, 'max_tokens: 64000 > 32000, which is the maximum allowed'], [400, 'prompt is too long'], [403, 'insufficient permissions for this key'], [500, 'credit service error'], [429, 'rate limited']]) {
+    assert.equal(isBillingFailure(status, text), false, `${status} ${text}`);
+  }
+  // The billing words win over a stray "blocked" in the same message.
+  assert.equal(isFallbackFailure(400, 'Requests blocked: your credit balance is too low'), true);
+});
+
+test('runRoute: the reasoning core out of credit (400 invalid_request_error) falls back to the paid main core and goes last after that', async () => {
+  const env = { GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
+  const tried = [];
+  const r = await runRoute({
+    task: TASKS.HEAVY, env, dataClass: DATA.CUSTOMER, log: quiet,
+    attempt: async (c) => { tried.push(c.provider); return c.provider === 'anthropic' ? { ok: false, status: 400, model: 'claude-opus-5-5', detail: ANTHROPIC_CREDIT_TOO_LOW } : { ok: true, value: 'from gemini', model: c.models[0] }; }
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.value, 'from gemini');
+  assert.deepEqual(tried, ['anthropic', 'gemini_paid']);
+  assert.ok(isTripped('anthropic'));
+  assert.deepEqual(planRoute(TASKS.HEAVY, { env }).map((c) => c.provider), ['gemini_paid', 'anthropic']);
+});
+
+test('runRoute: an answer that fails the caller\'s own check (invalid) moves on without opening the breaker', async () => {
+  const env = { GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
+  const tried = [];
+  const r = await runRoute({ task: TASKS.HEAVY, env, log: quiet, attempt: async (c) => { tried.push(c.provider); return c.provider === 'anthropic' ? { ok: false, status: 200, invalid: true, detail: 'no JSON' } : { ok: true, value: 'ok' }; } });
+  assert.equal(r.ok, true);
+  assert.deepEqual(tried, ['anthropic', 'gemini_paid']);
+  assert.equal(isTripped('anthropic'), false);
 });
 
 test('runRoute: walks the plan on quota, billing and 5xx errors and records each attempt', async () => {
@@ -623,6 +676,32 @@ test('chat streamed: the reasoning core failing falls back to the main core, and
   assert.match(body, /Reasoning core unavailable/);
   assert.match(body, /switching to the main core/);
   assert.doesNotMatch(body.replace(/From the main core\./g, ''), /gemini|anthropic|claude|google/i);
+});
+
+test('chat heavy route: the reasoning core out of credit (400 invalid_request_error) falls back to the main core, JSON and streamed', async () => {
+  process.env.GEMINI_API_KEY_PAID = PAID;
+  process.env.ANTHROPIC_API_KEY = ANTHROPIC;
+  const outOfCredit = () => new Response(ANTHROPIC_CREDIT_TOO_LOW, { status: 400, headers: { 'Content-Type': 'application/json', 'request-id': 'req_011CSHoEeqs5C35K2UUqR7Fy' } });
+  for (const stream of [false, true]) {
+    __resetRouterState();
+    let calls = installProviders({ anthropic: outOfCredit, gemini: () => 'Answer from the main core.' });
+    const res = await chat({ prompt: '/core plan the incident response', ...(stream ? { stream: true } : {}) });
+    assert.equal(res.statusCode, 200);
+    const body = stream ? res.chunks.join('') : res.jsonBody.reply;
+    assert.match(body, /Answer from the main core/, stream ? 'streamed' : 'JSON');
+    assert.deepEqual(calls.map((c) => c.provider), ['anthropic', 'gemini'], `${stream ? 'streamed' : 'JSON'}: one Anthropic call, then Gemini`);
+    assert.equal(calls[1].key, PAID);
+    if (stream) assert.match(body, /Reasoning core unavailable/);
+    assert.doesNotMatch(body.replace(/Answer from the main core\./g, ''), /credit balance|anthropic|claude|gemini/i, 'no provider or billing text in the reply');
+    assert.ok(isTripped('anthropic'), 'the drained account is out of the way for the next request');
+
+    // The next heavy request goes straight to the main core: no round trip
+    // to an account that has no credit.
+    calls = installProviders({ anthropic: outOfCredit, gemini: () => 'Second answer.' });
+    const again = await chat({ prompt: '/core review this design', ...(stream ? { stream: true } : {}) });
+    assert.match(stream ? again.chunks.join('') : again.jsonBody.reply, /Second answer/);
+    assert.equal(calls[0].provider, 'gemini');
+  }
 });
 
 test('chat: an identical request inside the TTL is answered from the text cache', async () => {

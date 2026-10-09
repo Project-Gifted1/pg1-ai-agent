@@ -112,7 +112,13 @@ PG1_VIDEO_MODEL_REPLICATE_IMAGE=kwaivgi/kling-v2.1
 #         PG1_TTS_FREE_FIRST=1 and PG1_TTS_GEMINI_VOICE set (default off)
 #   media (image, video, music)  paid Gemini key -> Replicate
 # Next in the list on 429, quota/billing errors, 5xx, timeouts. Never after a
-# content-safety refusal.
+# content-safety refusal. Out of credit counts as billing from any provider,
+# whatever the status: Anthropic's 400 invalid_request_error "Your credit
+# balance is too low", OpenRouter's 402 "Insufficient credits", OpenAI's 429
+# insufficient_quota, a prepaid Gemini key's "prepayment credits are
+# depleted" (isBillingFailure). The drained key goes to the back of every
+# plan for 15 minutes and its other models are not tried, so /core moves
+# straight to the main core instead of failing.
 # PRIVACY: the free key only ever receives operator content. Every request
 # from a guest or customer session goes to paid providers only, whatever it
 # says. In the operator's session, anything with customer or guest data (a usage-stats result, an email address or phone
@@ -149,6 +155,30 @@ PG1_DAILY_BUDGET_REPLICATE_USD=3
 # first heartbeat after 00:00 UTC logs yesterday's summary as
 # [PG1-AGENT:SPEND]. Each call logs one [pg1-ai-usage] line: provider,
 # model, task, tokens, estimated cost; never content or keys.
+
+# PG1 Studio (/film) text calls: storyboard, /film edit in plain words and
+# the shot checks go through the router (lib/film/providers.mjs filmThink),
+# paid providers only:
+#   Claude (ANTHROPIC_API_KEY, model PG1_FILM_CLAUDE_MODEL)
+#     -> paid Gemini (GEMINI_API_KEY_PAID only; never an old Gemini name)
+#     -> OpenRouter (OPENROUTER_API_KEY)
+# Any one of the three is enough for the worker to start. The storyboard
+# passes the same checks (normaliseTimeline) whichever engine writes it; a
+# reply that fails them is asked for once more from the same engine, then
+# the next engine is tried. The worker log names the engine that wrote it:
+# "[film <id>] storyboard written by gemini_paid (gemini-3.8-flash)".
+# The voiceover transcript check is Cartesia speech-to-text plus a word
+# comparison in code; it has no text model to fall back from.
+# Render worker secrets (.github/workflows/film-render.yml). /film
+# sync-secrets copies these from this deployment into the repo's Actions
+# secrets after you approve it: PG1_VIDEO_RENDER_SECRET, SUPABASE_URL,
+# SUPABASE_SERVICE_ROLE_KEY, REPLICATE_API_TOKEN, CARTESIA_API_KEY,
+# GEMINI_API_KEY_PAID, OPENROUTER_API_KEY. It reads those exact names only
+# (OPEN_ROUTER_KEY is not copied: set OPENROUTER_API_KEY here, or add the
+# secret in GitHub). ANTHROPIC_API_KEY is never synced; add it in GitHub
+# by hand. The free Gemini key (GEMINI_API_KEY_FREE) is never given to the
+# worker, and GEMINI_API_KEY_PAID is skipped if it holds the same value:
+# film content may go to paid providers only.
 ```
 
 ### 3. Test the API

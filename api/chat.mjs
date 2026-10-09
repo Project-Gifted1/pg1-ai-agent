@@ -17,7 +17,7 @@ import { searchHistory } from '../lib/historySearch.mjs';
 import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } from '../lib/voiceStream.mjs';
 import { reportUpstreamFailure, userFacingFailure, providerErrorText, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 import { generateImage, imageModels } from '../lib/imageEngines.mjs';
-import { TASKS, budgetAllows, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
+import { TASKS, budgetAllows, isBillingFailure, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
 import { synthesizeSpeech, createRoutedSynth } from '../lib/ttsRouter.mjs';
 import { cleanVideoPrompt, dispatchVideoRender, isVideoCommand, isVideoRequest, parseVideoOptions, pollVideoJob, recheckVideoJob, startVideoJob, videoGoogleAsync, videoJobStatus, videoDailyBudget, videoDailyCap, videoEnabled, videoCostLine, videoFrameFallbackOn, videoNotStartedText, videoRenderingText, videoSpendToday, videoTiersText, usd, DEFAULT_START_FRAME_PROMPT, FOUR_K_NOTE, VIDEO_DISABLED_TEXT, VIDEO_ENGINE_LABEL, VIDEO_REFUSED_TEXT, VIDEO_TIER_LABELS } from '../lib/videoJobs.mjs';
 import { isFilmCommand, isFilmAction } from '../lib/film/text.mjs';
@@ -887,6 +887,9 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
             reportSearchFailure(toolOpts, model, res.status, errText);
             withSearch = false;
             j--;
+          } else if (isBillingFailure(res.status, errText)) {
+            // Out of credit is the key's, not the model's: the next key.
+            break;
           }
         }
       } catch (e) {
@@ -1006,6 +1009,10 @@ async function fetchAnthropicCore(promptText, sysInstruction, mediaParts, contex
         var errText = await res.text();
         lastStatus = res.status;
         lastError = `[${model}] Anthropic API ${providerErrorText(res.status, errText)}`;
+        // Out of credit ("Your credit balance is too low", a 400) is the
+        // account's: another model on the same key fails the same way, so
+        // the round moves straight on to the next engine.
+        if (isBillingFailure(res.status, errText)) break;
       }
     } catch (e) {
       if (timedOut) {
@@ -1099,6 +1106,8 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
             if (hooks.onSearchFailure) hooks.onSearchFailure();
             withSearch = false;
             j--;
+          } else if (isBillingFailure(res.status, errText)) {
+            break;
           }
           continue;
         }
@@ -1189,6 +1198,7 @@ async function streamAnthropicCore(promptText, sysInstruction, mediaParts, anthr
         var errText = await res.text();
         lastStatus = res.status;
         lastError = `[${model}] Anthropic API ${providerErrorText(res.status, errText)}`;
+        if (isBillingFailure(res.status, errText)) break;
         continue;
       }
       clearTimeout(timeoutId);

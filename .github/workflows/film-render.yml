@@ -63,7 +63,11 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          # Text engines in fallback order (lib/film/providers.mjs). Paid keys
+          # only: the free Gemini key is never given to this job.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY_PAID: ${{ secrets.GEMINI_API_KEY_PAID }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
           CARTESIA_VOICE_ID: ${{ vars.CARTESIA_VOICE_ID }}
           CARTESIA_MODEL_ID: ${{ vars.CARTESIA_MODEL_ID }}

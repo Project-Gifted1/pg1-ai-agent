@@ -11,7 +11,8 @@ import sodium from 'libsodium-wrappers';
 import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
 import { handleFilmApproval } from '../lib/film/chat.mjs';
 import { FILM_ACTIONS, parseFilmCommand } from '../lib/film/text.mjs';
-import { FILM_SECRET_NAMES, filmSecretsPlan, syncFilmSecrets, SECRETS_PERMISSION_TEXT } from '../lib/film/secretsSync.mjs';
+import { readFileSync } from 'node:fs';
+import { FILM_SECRET_NAMES, filmSecretsPlan, syncFilmSecrets, syncProposalText, SECRETS_PERMISSION_TEXT } from '../lib/film/secretsSync.mjs';
 import { makeFilmDb, filmDbRoutes, routedFetch, json } from './helpers/filmDb.mjs';
 
 const ORIGINAL_ENV = { ...process.env };
@@ -25,13 +26,17 @@ const VALUES = {
   SUPABASE_URL: SUP_URL,
   SUPABASE_SERVICE_ROLE_KEY: 'service-role-value-BBBB-0123456789',
   REPLICATE_API_TOKEN: 'r8_replicate_value_CCCC_0123456789',
-  CARTESIA_API_KEY: 'sk_car_cartesia_value_DDDD_0123456789'
+  CARTESIA_API_KEY: 'sk_car_cartesia_value_DDDD_0123456789',
+  GEMINI_API_KEY_PAID: 'AQ.gemini_paid_value_IIII_0123456789',
+  OPENROUTER_API_KEY: 'sk-or-openrouter-value-JJJJ-0123456789'
 };
 const FORBIDDEN = {
   ANTHROPIC_API_KEY: 'sk-ant-anthropic-value-EEEE-0123456789',
   GITHUB_TOKEN: 'ghp_general_token_FFFF_0123456789',
   GITHUB_OWNER_KEY: 'ghp_owner_key_GGGG_0123456789',
-  SOME_OTHER_SECRET: 'other-secret-HHHH-0123456789'
+  SOME_OTHER_SECRET: 'other-secret-HHHH-0123456789',
+  // Film content goes to paid providers only: the free key never leaves.
+  GEMINI_API_KEY_FREE: 'AIza-gemini-free-value-KKKK-0123456789'
 };
 const ALL_VALUES = [...Object.values(VALUES), ...Object.values(FORBIDDEN), FILM_TOKEN];
 
@@ -88,7 +93,7 @@ describe('syncFilmSecrets', () => {
     const env = { ...VALUES, ...FORBIDDEN, PG1_FILM_GITHUB_TOKEN: FILM_TOKEN };
     const out = await syncFilmSecrets({ env, fetchImpl });
 
-    assert.deepEqual(FILM_SECRET_NAMES, ['PG1_VIDEO_RENDER_SECRET', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'REPLICATE_API_TOKEN', 'CARTESIA_API_KEY']);
+    assert.deepEqual(FILM_SECRET_NAMES, ['PG1_VIDEO_RENDER_SECRET', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'REPLICATE_API_TOKEN', 'CARTESIA_API_KEY', 'GEMINI_API_KEY_PAID', 'OPENROUTER_API_KEY']);
     assert.equal(out.ok, true);
     assert.deepEqual(out.results, FILM_SECRET_NAMES.map((name) => ({ name, result: name === 'SUPABASE_URL' ? 'updated' : 'created' })));
     assert.deepEqual([...gh.stored.keys()].sort(), [...FILM_SECRET_NAMES].sort());
@@ -96,7 +101,7 @@ describe('syncFilmSecrets', () => {
 
     const puts = fetchImpl.calls.filter((c) => c.method === 'PUT');
     assert.deepEqual(puts.map((c) => c.url).sort(), FILM_SECRET_NAMES.map((n) => `${REPO_SECRETS}/${n}`).sort());
-    assert.ok(!fetchImpl.calls.some((c) => /ANTHROPIC|GITHUB_TOKEN|GITHUB_OWNER_KEY|SOME_OTHER/.test(c.url)));
+    assert.ok(!fetchImpl.calls.some((c) => /ANTHROPIC|GITHUB_TOKEN|GITHUB_OWNER_KEY|SOME_OTHER|GEMINI_API_KEY_FREE/.test(c.url)));
     for (const c of fetchImpl.calls) {
       assert.equal(c.headers.Authorization, `Bearer ${FILM_TOKEN}`);
       assert.ok(c.url.startsWith(REPO_SECRETS));
@@ -120,16 +125,42 @@ describe('syncFilmSecrets', () => {
     const fetchImpl = routedFetch([['api.github.com', gh.handler]]);
     const env = { ...VALUES, SUPABASE_SERVICE_ROLE_KEY: '', CARTESIA_API_KEY: '   ', PG1_FILM_GITHUB_TOKEN: FILM_TOKEN };
     delete env.REPLICATE_API_TOKEN;
-    assert.deepEqual(filmSecretsPlan(env), { ready: ['PG1_VIDEO_RENDER_SECRET', 'SUPABASE_URL'], missing: ['SUPABASE_SERVICE_ROLE_KEY', 'REPLICATE_API_TOKEN', 'CARTESIA_API_KEY'] });
+    delete env.GEMINI_API_KEY_PAID;
+    delete env.OPENROUTER_API_KEY;
+    assert.deepEqual(filmSecretsPlan(env), { ready: ['PG1_VIDEO_RENDER_SECRET', 'SUPABASE_URL'], missing: ['SUPABASE_SERVICE_ROLE_KEY', 'REPLICATE_API_TOKEN', 'CARTESIA_API_KEY', 'GEMINI_API_KEY_PAID', 'OPENROUTER_API_KEY'] });
     const out = await syncFilmSecrets({ env, fetchImpl });
     assert.deepEqual(out.results, [
       { name: 'PG1_VIDEO_RENDER_SECRET', result: 'created' },
       { name: 'SUPABASE_URL', result: 'created' },
       { name: 'SUPABASE_SERVICE_ROLE_KEY', result: 'skipped' },
       { name: 'REPLICATE_API_TOKEN', result: 'skipped' },
-      { name: 'CARTESIA_API_KEY', result: 'skipped' }
+      { name: 'CARTESIA_API_KEY', result: 'skipped' },
+      { name: 'GEMINI_API_KEY_PAID', result: 'skipped' },
+      { name: 'OPENROUTER_API_KEY', result: 'skipped' }
     ]);
     assert.deepEqual([...gh.stored.keys()].sort(), ['PG1_VIDEO_RENDER_SECRET', 'SUPABASE_URL']);
+  });
+
+  test('the free Gemini key never reaches the worker, even when GEMINI_API_KEY_PAID holds its value', async () => {
+    assert.ok(!FILM_SECRET_NAMES.includes('GEMINI_API_KEY_FREE'));
+    assert.ok(!FILM_SECRET_NAMES.some((n) => /^GEMINI_API_KEY\d?$/.test(n)), 'no old Gemini name either (it could hold a free-tier key)');
+    const gh = fakeGitHub();
+    const fetchImpl = routedFetch([['api.github.com', gh.handler]]);
+    const env = { ...VALUES, GEMINI_API_KEY_FREE: FORBIDDEN.GEMINI_API_KEY_FREE, GEMINI_API_KEY_PAID: ` ${FORBIDDEN.GEMINI_API_KEY_FREE} `, PG1_FILM_GITHUB_TOKEN: FILM_TOKEN };
+    assert.ok(filmSecretsPlan(env).missing.includes('GEMINI_API_KEY_PAID'));
+    assert.match(syncProposalText(env), /- GEMINI_API_KEY_PAID: skipped \(it holds the free Gemini key\)/);
+    const out = await syncFilmSecrets({ env, fetchImpl });
+    assert.deepEqual(out.results.find((r) => r.name === 'GEMINI_API_KEY_PAID'), { name: 'GEMINI_API_KEY_PAID', result: 'skipped' });
+    assert.ok(!gh.stored.has('GEMINI_API_KEY_PAID'));
+    assert.ok(![...gh.stored.values()].includes(FORBIDDEN.GEMINI_API_KEY_FREE));
+  });
+
+  test('the render job is given the paid fallback keys and never the free Gemini key', () => {
+    const yml = readFileSync(new URL('../.github/workflows/film-render.yml', import.meta.url), 'utf8');
+    assert.match(yml, /GEMINI_API_KEY_PAID: \$\{\{ secrets\.GEMINI_API_KEY_PAID \}\}/);
+    assert.match(yml, /OPENROUTER_API_KEY: \$\{\{ secrets\.OPENROUTER_API_KEY \}\}/);
+    assert.match(yml, /ANTHROPIC_API_KEY: \$\{\{ secrets\.ANTHROPIC_API_KEY \}\}/);
+    assert.doesNotMatch(yml, /GEMINI_API_KEY_FREE|GEMINI_API_KEY[12]?:/, 'no free or old Gemini name in the job');
   });
 
   test('a token without the Secrets permission writes nothing and says so', async () => {
@@ -264,7 +295,7 @@ describe('/film sync-secrets in the chat', () => {
     assert.equal(githubCalls().length, 0);
   });
 
-  test('approving writes the five secrets and the reply shows names and results only', async () => {
+  test('approving writes the allowlisted secrets and the reply shows names and results only', async () => {
     delete process.env.CARTESIA_API_KEY;
     const proposed = await chat(authed({ prompt: '/film sync-secrets' }));
     assert.match(proposed.jsonBody.reply, /- CARTESIA_API_KEY: skipped \(not set here\)/);
@@ -276,9 +307,12 @@ describe('/film sync-secrets in the chat', () => {
     assert.match(reply, /- SUPABASE_SERVICE_ROLE_KEY: created/);
     assert.match(reply, /- REPLICATE_API_TOKEN: created/);
     assert.match(reply, /- CARTESIA_API_KEY: skipped/);
+    assert.match(reply, /- GEMINI_API_KEY_PAID: created/);
+    assert.match(reply, /- OPENROUTER_API_KEY: created/);
+    assert.doesNotMatch(reply, /GEMINI_API_KEY_FREE/);
     assert.equal((await pendingRows())[0].status, 'approved');
 
-    assert.deepEqual([...gh.stored.keys()].sort(), ['PG1_VIDEO_RENDER_SECRET', 'REPLICATE_API_TOKEN', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_URL']);
+    assert.deepEqual([...gh.stored.keys()].sort(), ['GEMINI_API_KEY_PAID', 'OPENROUTER_API_KEY', 'PG1_VIDEO_RENDER_SECRET', 'REPLICATE_API_TOKEN', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_URL']);
     for (const [name, value] of gh.stored) assert.equal(value, VALUES[name]);
     for (const c of githubCalls()) {
       assert.equal(c.headers.Authorization, `Bearer ${FILM_TOKEN}`);

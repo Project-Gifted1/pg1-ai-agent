@@ -22,7 +22,9 @@
  *   - video: the Interactions API start (async) and the sync render;
  *   - the legacy GeminiClient (both methods) and SelfHealingEngine's
  *     recovery attempts, which used to pass temperature/topP;
- *   - the root index.js worker.
+ *   - the root index.js worker;
+ *   - PG1 Studio's film text calls on the paid key (lib/film/providers.mjs
+ *     filmThink): the storyboard and a shot check with images.
  * A last test pins the set of source files that call Gemini, so a new call
  * site has to be added here before it can ship.
  *
@@ -42,6 +44,7 @@ import { __resetImageBreaker } from '../lib/imageEngines.mjs';
 import { startVideoJob, renderVideoJob } from '../lib/videoJobs.mjs';
 import { synthesizeSpeech } from '../lib/ttsRouter.mjs';
 import worker from '../index.js';
+import { filmThink, imageBlock } from '../lib/film/providers.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ORIGINAL_ENV = { ...process.env };
@@ -335,6 +338,16 @@ test('the root index.js worker sends no sampling parameters', async () => {
   assertClean(stub, 'index.js worker');
 });
 
+test('PG1 Studio text calls on the paid key send only maxOutputTokens and responseMimeType in generationConfig', async () => {
+  const stub = geminiStub(() => Response.json(text('{"ok":true}')));
+  const env = { GEMINI_API_KEY_PAID: KEY2 };
+  const r = await filmThink({ env, system: 'storyboard', content: 'a film', validate: JSON.parse, fetchImpl: stub.fetch, log: () => {} });
+  assert.deepEqual(r.value, { ok: true });
+  await filmThink({ env, system: 'check', content: [{ type: 'text', text: 'Frame:' }, imageBlock(Buffer.from('jpeg'))], maxTokens: 4000, fetchImpl: stub.fetch, log: () => {} });
+  assertClean(stub, 'film text', 2);
+  for (const req of stub.requests) assert.deepEqual(Object.keys(req.body.generationConfig).sort().filter((k) => k !== 'responseMimeType'), ['maxOutputTokens']);
+});
+
 // --- every call site is covered ------------------------------------------------------
 
 function sourceFiles(dir) {
@@ -353,6 +366,6 @@ test('every source file that calls Gemini is one these tests drive', () => {
     .filter((f) => readFileSync(f, 'utf8').includes(GEMINI_HOST))
     .map((f) => f.slice(ROOT.length + 1))
     .sort();
-  assert.deepEqual(callers, ['api/chat.mjs', 'api/lib/gemini-client.js', 'index.js', 'lib/imageEngines.mjs', 'lib/ttsRouter.mjs', 'lib/videoJobs.mjs'],
+  assert.deepEqual(callers, ['api/chat.mjs', 'api/lib/gemini-client.js', 'index.js', 'lib/film/providers.mjs', 'lib/imageEngines.mjs', 'lib/ttsRouter.mjs', 'lib/videoJobs.mjs'],
     'a new Gemini call site: drive it through geminiStub above');
 });
