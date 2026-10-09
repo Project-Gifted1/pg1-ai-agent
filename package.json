@@ -21,6 +21,7 @@
     "@supabase/supabase-js": "2.116.0",
     "@vercel/functions": "3.9.11",
     "cheerio": "1.2.0",
+    "libsodium-wrappers": "0.8.4",
     "web-push": "^3.6.7",
     "@coinbase/cdp-sdk": "1.56.0",
     "@x402/express": "2.26.0",

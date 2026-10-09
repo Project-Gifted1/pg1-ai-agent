@@ -2342,7 +2342,7 @@ export default async function handler(req, res) {
         // the video match so "/film make a video of..." is a film.
         var filmOut = await handleFilmCommand({
           text: vaultUploadLog ? promptText.replace(vaultUploadLog, '') : promptText,
-          env: process.env, supUrl: supabaseUrl, supKey: supabaseKey, requestId: requestTraceId,
+          env: process.env, supUrl: supabaseUrl, supKey: supabaseKey, requestId: requestTraceId, isOperator: isOperator,
           fetchImpl: (u, o) => fetch(u, o),
           onFailure: function (f) {
             reportUpstreamFailure({ supUrl: supUrl, supKey: supKey, route: 'FILM', reason: f.reason, detail: f.detail, requestId: requestTraceId, envValues: secretEnvValues(process.env) });
@@ -3279,10 +3279,12 @@ export default async function handler(req, res) {
 
       // PG1 STUDIO proposals (FILM_PREVIEW, FILM_FULL, FILM_EDIT): approving
       // one queues the film's next stage on the render worker (or applies a
-      // timeline change); nothing here touches GitHub's code.
+      // timeline change); nothing here touches GitHub's code. FILM_SYNC_SECRETS
+      // (/film sync-secrets) writes only the render worker's allowlisted
+      // Actions secrets (lib/film/secretsSync.mjs).
       if (isFilmAction(pendingRow.action_type)) {
         var filmDecision = await handleFilmApproval({
-          row: pendingRow, decision: pendingActionDecision, env: process.env, supUrl: supabaseUrl, supKey: supabaseKey,
+          row: pendingRow, decision: pendingActionDecision, env: process.env, supUrl: supabaseUrl, supKey: supabaseKey, isOperator: isOperator,
           fetchImpl: (u, o) => fetch(u, o),
           onFailure: function (f) {
             reportUpstreamFailure({ supUrl: supUrl, supKey: supKey, route: 'FILM', reason: f.reason, detail: f.detail, requestId: requestTraceId, envValues: secretEnvValues(process.env) });
