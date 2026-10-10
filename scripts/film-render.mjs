@@ -33,6 +33,7 @@ import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { reportUpstreamFailure } from '../lib/upstreamFailure.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { createFilmStore } from '../lib/film/store.mjs';
+import { listFilmAttachments } from '../lib/film/attachments.mjs';
 import { runStoryboard, runRender, proposeFullRender, CapReached, engineLabel } from '../lib/film/pipeline.mjs';
 import { verifyFilmToken, FILM_STAGES } from '../lib/film/dispatch.mjs';
 import * as ff from '../lib/film/ffmpeg.mjs';
@@ -117,7 +118,9 @@ export async function main(env = process.env, { log = console.log, engines = nul
   let media = null;
   try {
     if (stage === 'storyboard') {
-      await runStoryboard({ project, store, engines: eng, ff: ffImpl, workdir, env, log, onFailure });
+      // The images attached to the /film message, by their asset ids.
+      const attachments = await listFilmAttachments(store, projectId);
+      await runStoryboard({ project, store, engines: eng, ff: ffImpl, workdir, env, log, onFailure, attachments });
       log(`[film] ${projectId} storyboard ready`);
       return 0;
     }
@@ -143,7 +146,7 @@ export async function main(env = process.env, { log = console.log, engines = nul
     if (e instanceof CapReached) return fail('cap_reached', `spent ${e.spentUsd} of ${e.capUsd}`, failure);
     if (e && e.refused) return fail('refused', e.detail, failure);
     onFailure({ reason: `film_${stage}_failed`, detail: e && (e.detail || e.stack || e.message), requestId: project.request_id });
-    const reason = e && e.code === 'storyboard_failed' ? 'storyboard_failed' : FAILURE_REASONS[e && e.kind] || 'engine_error';
+    const reason = e && (e.code === 'storyboard_failed' || e.code === 'attachment_missing') ? e.code : FAILURE_REASONS[e && e.kind] || 'engine_error';
     return fail(reason, e && (e.detail || e.message), failure);
   } finally {
     if (!env.FILM_KEEP_WORKDIR) await rm(workdir, { recursive: true, force: true }).catch(() => {});
