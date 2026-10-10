@@ -4,7 +4,8 @@
  * operator's session; when the storyboard is ready the card shows its
  * summary, cost and Approve / Decline; approving brings the preview's card,
  * which polls until the low-res preview plays, with the full render's
- * approval under it. No engine name appears anywhere on the card.
+ * approval under it, and an attached image placed in the film listed as
+ * "Your image". No engine name appears anywhere on the card.
  *
  * /api/chat is a stub. Skipped (not failed) when Playwright or its Chromium
  * is not installed. Run with: npm run test:browser
@@ -67,7 +68,7 @@ function startStubServer() {
             stage = 'preview_ready';
             return json(res, 200, { filmProject: { ...base, status: 'preview_rendering', label: 'Rendering the preview…', active: true, progress: { label: 'Still for shot 1.1', done: 2, total: 9 } } });
           }
-          return json(res, 200, { filmProject: { ...base, status: 'preview_done', label: 'Preview ready: approve the full render', active: false, previewUrl: PREVIEW_URL, estFullUsd: 7.4, pendingApproval: { token: T_FULL }, spentUsd: 0.8 } });
+          return json(res, 200, { filmProject: { ...base, status: 'preview_done', label: 'Preview ready: approve the full render', active: false, previewUrl: PREVIEW_URL, estFullUsd: 7.4, pendingApproval: { token: T_FULL }, spentUsd: 0.8, yourImages: [{ index: 1, label: 'Your image 1', width: 1200, height: 400, shots: ['3.2'], mode: 'hold', used: true, matched: true, similarity: 0.99 }] } });
         }
         if (p && p.action === 'CONFIRM_PENDING_ACTION') {
           log.approvals.push([p.token, p.decision]);
@@ -131,6 +132,8 @@ test('a film card follows the film from storyboard to preview, with its approval
   assert.match(doneText, /Preview ready: approve the full render/);
   assert.match(doneText, /full render about 7\.40 USD/);
   assert.equal(await done.locator('.approval-actions').count(), 1);
+  // An attached image placed in the film is listed as "Your image".
+  assert.equal((await done.locator('.film-card-image[data-your-image="1"]').textContent()).replace(/\s+/g, ' '), 'Your image 1 · shot 3.2, placed unaltered, held · frames match it');
 
   const allCards = await page.locator('.film-card').allTextContents();
   for (const c of allCards) assert.doesNotMatch(c, UPSTREAM_BRAND_RE);

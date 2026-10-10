@@ -2544,6 +2544,9 @@ export default async function handler(req, res) {
         var filmOut = await handleFilmCommand({
           text: vaultUploadLog ? promptText.replace(vaultUploadLog, '') : promptText,
           env: process.env, supUrl: supabaseUrl, supKey: supabaseKey, requestId: requestTraceId, isOperator: isOperator,
+          // The message's attached files, as sent: /film and /film edit
+          // check and store images as the film's own (lib/film/attachments.mjs).
+          attachments: isAuthed ? payloadFiles : [],
           fetchImpl: (u, o) => fetch(u, o),
           onFailure: function (f) {
             reportUpstreamFailure({ supUrl: supUrl, supKey: supKey, route: 'FILM', reason: f.reason, detail: f.detail, requestId: requestTraceId, envValues: secretEnvValues(process.env) });

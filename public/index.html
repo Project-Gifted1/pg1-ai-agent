@@ -967,6 +967,8 @@
     .film-card-progress { display: flex; align-items: center; gap: var(--sp-2); }
     .film-card-meta { color: var(--text-3, var(--text-2)); }
     .film-card-failed { color: var(--danger-text); }
+    .film-card-images { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1, 4px); }
+    .film-card-image strong { color: var(--gold); font-weight: 600; }
     @media (prefers-reduced-motion: reduce) { .video-job-spinner { animation: none; } }
 
     /* ---------- EMPTY STATE ---------- */
@@ -5325,6 +5327,16 @@
       }
       const est = film.status === 'awaiting_preview_approval' && film.estPreviewUsd != null ? ` · preview about ${filmMoney(film.estPreviewUsd)} USD`
         : film.status === 'preview_done' && film.estFullUsd != null ? ` · full render about ${filmMoney(film.estFullUsd)} USD` : '';
+      // Images the operator attached, placed unaltered (lib/film/attachments.mjs).
+      if (Array.isArray(film.yourImages) && film.yourImages.length) {
+        const items = film.yourImages.filter((im) => im && Number.isInteger(im.index)).map((im) => {
+          const shots = Array.isArray(im.shots) ? im.shots.filter((x) => typeof x === 'string').join(', ') : '';
+          const where = im.used === true ? `shot ${shots}, placed unaltered${im.mode === 'push_in' ? ' with a slow push-in' : ', held'}` : im.used === false ? 'not used in the film' : 'stored, for the storyboard';
+          const check = im.matched === true ? ' · frames match it' : im.matched === false ? ' · frames differ from it' : '';
+          return `<li class="film-card-image" data-your-image="${Number(im.index)}"><strong>Your image ${Number(im.index)}</strong> · ${escapeHTML(where)}${check}</li>`;
+        });
+        if (items.length) parts.push(`<ul class="film-card-images" aria-label="Your images">${items.join('')}</ul>`);
+      }
       parts.push(`<p class="film-card-meta">Film ${escapeHTML(film.shortId || film.id.slice(0, 8))} · spent ${filmMoney(film.spentUsd)} of ${filmMoney(film.capUsd)} USD${est}</p>`);
       if (film.checks) {
         const c = film.checks;
