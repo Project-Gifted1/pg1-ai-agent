@@ -1,12 +1,16 @@
 /**
- * Per-source serving switches (lib/sourcePolicy.mjs), 1.15.0 licensing
- * release: with SOURCE_ABUSECH_ENABLED off (the default), no abuse.ch
- * ThreatFox / URLhaus row reaches any response that reads
- * threat_ioc_telemetry - the /api/ioc STIX bundle (free tier and licence),
- * the get_threat_indicators / get_ioc_context / get_ioc_batch MCP tools, the
- * REST /api/ioc/context mirror, the chat tools and the diagnostics endpoint -
- * while every other source is served as before. The playground and A2A don't
- * expose any indicator tool at all, which is pinned here too.
+ * Paid-response licensing gate (lib/sourcePolicy.mjs): every response that
+ * reads threat_ioc_telemetry - the /api/ioc STIX bundle (free tier, licence
+ * and x402), the paid get_threat_indicators / get_ioc_context /
+ * get_ioc_batch MCP tools, the REST /api/ioc/context mirror, the chat tools
+ * and the diagnostics endpoint - carries only sources PG1 may resell.
+ *
+ *   - abuse.ch (every feed), AlienVault OTX, AbuseIPDB and unattributed rows
+ *     (no label, or the legacy "Sovereign-Engine-*" label) are LOCKED off:
+ *     no environment variable can serve them.
+ *   - NVD (public domain) is served.
+ *   - Blocklist.de, PG1-Swarm, ScamSniffer and any other label are off by
+ *     default, each behind its own switch.
  *
  * Supabase is mocked twice over: once returning every seeded row whatever
  * the query says (so the row filter alone must hold), once applying the
@@ -56,57 +60,84 @@ after(() => {
   global.fetch = ORIGINAL_FETCH;
 });
 
-// One row per source label the pipeline has ever written, plus the legacy
-// and unlabelled cases. MIXED is one indicator reported by two sources.
-const MIXED = '198.51.100.50';
 const row = (verification_source, value, indicator_type) => ({
   verification_source, value, indicator_type, confidence_score: 90,
   last_seen: '2026-10-01T00:00:00Z', ingested_at: '2026-10-01T00:00:00Z',
   malware_family: `family of ${value} via ${verification_source}`, tags: [`tag-${value}-${verification_source}`], stix_pattern: null
 });
-const ABUSECH_ROWS = [
-  row('abuse.ch ThreatFox', '203.0.113.10', 'IPv4'),
-  row('abuse.ch URLhaus', 'http://203.0.113.11/payload.exe', 'URL'),
-  row('URLhaus-Fallback', 'http://203.0.113.12/drop.bin', 'URL'),
-  row('abuse.ch ThreatFox', 'tf-only.example', 'domain'),
-  row('abuse.ch ThreatFox', MIXED, 'IPv4')
-];
-const UNATTRIBUTED_ROWS = [
-  row('Sovereign-Engine-v3.2-Cobalt Strike', 'legacy.example', 'domain'),
-  row(null, 'nolabel.example', 'domain')
-];
-const OTHER_SOURCE_ROWS = [
-  row('AlienVault-OTX', '198.51.100.61', 'IPv4'),
-  row('AlienVault-OTX', MIXED, 'IPv4'),
+
+// One indicator reported by abuse.ch and OTX (both locked), and one CVE
+// reported by abuse.ch and NVD (only the NVD row may be served).
+const MIXED_LOCKED = '198.51.100.50';
+const MIXED_CVE = 'CVE-2026-0003';
+
+// Locked off: no switch can serve these.
+const LOCKED_ROWS = {
+  abusech: [
+    row('abuse.ch ThreatFox', '203.0.113.10', 'IPv4'),
+    row('abuse.ch URLhaus', 'http://203.0.113.11/payload.exe', 'URL'),
+    row('URLhaus-Fallback', 'http://203.0.113.12/drop.bin', 'URL'),
+    row('abuse.ch MalwareBazaar', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'FileHash-SHA256'),
+    row('abuse.ch Feodo Tracker', '203.0.113.13', 'IPv4'),
+    row('abuse.ch SSLBL', '203.0.113.14', 'IPv4'),
+    row('abuse.ch ThreatFox', 'tf-only.example', 'domain'),
+    row('abuse.ch ThreatFox', MIXED_LOCKED, 'IPv4'),
+    row('abuse.ch ThreatFox', MIXED_CVE, 'CVE')
+  ],
+  otx: [
+    row('AlienVault-OTX', '198.51.100.61', 'IPv4'),
+    row('AlienVault-OTX', MIXED_LOCKED, 'IPv4'),
+    row('LevelBlue OTX', 'levelblue.example', 'domain')
+  ],
+  abuseipdb: [row('AbuseIPDB', '198.51.100.3', 'IPv4')],
+  unattributed: [
+    row('Sovereign-Engine-v3.2-Cobalt Strike', 'legacy.example', 'domain'),
+    row(null, 'nolabel.example', 'domain'),
+    row('', 'emptylabel.example', 'domain')
+  ]
+};
+// Off by default, each behind its own switch.
+const SWITCHED_ROWS = {
+  blocklist_de: [row('Blocklist.de', '198.51.100.2', 'IPv4')],
+  pg1_swarm: [row('PG1-Swarm-w1-tee', 'swarm.example', 'domain')],
+  scamsniffer: [row('ScamSniffer', 'drainer.example', 'domain')],
+  other: [row('test-source', 'other.example', 'domain')]
+};
+// Served.
+const NVD_ROWS = [
   row('NVD', 'CVE-2026-0001', 'CVE'),
   row('NVD-CVE-v2.0-Gateway', 'CVE-2026-0002', 'CVE'),
-  row('Blocklist.de', '198.51.100.2', 'IPv4'),
-  row('PG1-Swarm-w1-tee', 'swarm.example', 'domain'),
-  row('ScamSniffer', 'drainer.example', 'domain'),
-  row('test-source', 'other.example', 'domain')
+  row('NVD', MIXED_CVE, 'CVE')
 ];
-// AbuseIPDB rows are never served (1.16.0): the source is locked off,
-// because AbuseIPDB results may only go to the customer whose own key fetched
-// them (check_ip_abuse), never into a shared feed.
-const ABUSEIPDB_ROWS = [row('AbuseIPDB', '198.51.100.3', 'IPv4')];
-const ALL_ROWS = [...ABUSECH_ROWS, ...UNATTRIBUTED_ROWS, ...ABUSEIPDB_ROWS, ...OTHER_SOURCE_ROWS];
-const ABUSECH_ONLY_VALUES = ABUSECH_ROWS.map((r) => r.value).filter((v) => v !== MIXED);
-const HIDDEN_VALUES = [...ABUSECH_ONLY_VALUES, ...UNATTRIBUTED_ROWS.map((r) => r.value), ...ABUSEIPDB_ROWS.map((r) => r.value)];
-// Strings that only a served abuse.ch row could put in a response.
-const ABUSECH_MARKERS = [...ABUSECH_ONLY_VALUES, ...ABUSECH_ROWS.flatMap((r) => [r.malware_family, r.tags[0]]), 'ThreatFox', 'URLhaus', 'abuse.ch'];
-const UNIQUE_OTHER_VALUES = OTHER_SOURCE_ROWS.map((r) => r.value).filter((v) => v !== MIXED);
 
-// Applies the subset of PostgREST the source filter uses: and=(...) and
-// or=(verification_source.is.null,and(...)) of verification_source.not.ilike.
+const ALL_LOCKED = Object.values(LOCKED_ROWS).flat();
+const ALL_SWITCHED = Object.values(SWITCHED_ROWS).flat();
+const ALL_ROWS = [...ALL_LOCKED, ...ALL_SWITCHED, ...NVD_ROWS];
+const SERVED_VALUES = [...new Set(NVD_ROWS.map((r) => r.value))];
+// Indicator values only an unservable row knows about.
+const HIDDEN_VALUES = [...new Set([...ALL_LOCKED, ...ALL_SWITCHED].map((r) => r.value))].filter((v) => !SERVED_VALUES.includes(v));
+const LOCKED_LABELS = ['ThreatFox', 'URLhaus', 'abuse.ch', 'MalwareBazaar', 'Feodo', 'SSLBL', 'AlienVault', 'LevelBlue', 'AbuseIPDB', 'Sovereign-Engine'];
+const SWITCHED_LABELS = ['Blocklist.de', 'PG1-Swarm', 'ScamSniffer', 'test-source'];
+
+// Strings only a served row of `rows` could put in a response.
+function markersOf(rows) {
+  return rows.flatMap((r) => [SERVED_VALUES.includes(r.value) ? null : r.value, r.malware_family, r.tags[0]]).filter(Boolean);
+}
+
+// Applies the subset of PostgREST the source filter uses: and=(or(ilike...),
+// not.ilike...), and=(not.ilike...), and the match-nothing condition.
 function applySourceConditions(rows, searchParams) {
   const raw = searchParams.get('and') || searchParams.get('or');
   if (!raw) return rows;
-  const patterns = [...raw.matchAll(/verification_source\.not\.ilike\.([^,)]+)/g)].map((m) =>
-    new RegExp('^' + m[1].split('*').map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$', 'i'));
-  const nullAllowed = searchParams.has('or') && raw.startsWith('(verification_source.is.null');
+  if (raw === '(verification_source.is.null,verification_source.not.is.null)') return [];
+  const toRe = (p) => new RegExp('^' + p.split('*').map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$', 'i');
+  const deny = [...raw.matchAll(/verification_source\.not\.ilike\.([^,)]+)/g)].map((m) => toRe(m[1]));
+  const group = raw.match(/or\(([^)]*)\)/);
+  const allow = group ? [...group[1].matchAll(/verification_source\.ilike\.([^,)]+)/g)].map((m) => toRe(m[1])) : null;
   return rows.filter((r) => {
-    if (r.verification_source == null) return nullAllowed;
-    return patterns.every((re) => !re.test(r.verification_source));
+    if (r.verification_source == null) return false;
+    if (allow && !allow.some((re) => re.test(r.verification_source))) return false;
+    return deny.every((re) => !re.test(r.verification_source));
   });
 }
 
@@ -153,7 +184,7 @@ function makeRes() {
 let ipCounter = 0;
 async function getIocBundle(headers) {
   const res = makeRes();
-  await chatHandler({ method: 'GET', url: '/api/ioc?limit=1000', headers, socket: { remoteAddress: `10.9.0.${++ipCounter}` } }, res);
+  await chatHandler({ method: 'GET', url: '/api/ioc?limit=1000', headers, socket: { remoteAddress: `10.9.0.${++ipCounter % 250}` } }, res);
   return res;
 }
 
@@ -162,7 +193,7 @@ async function callMcp(name, args) {
   await mcpHandler({
     method: 'POST',
     headers: { 'x-api-key': 'valid-license' },
-    socket: { remoteAddress: `10.8.0.${++ipCounter}` },
+    socket: { remoteAddress: `10.8.0.${++ipCounter % 250}` },
     body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }
   }, res);
   assert.equal(res.statusCode, 200, JSON.stringify(res.body));
@@ -186,124 +217,123 @@ async function callChatTool(name, args) {
 
 // `asked` are indicator values the caller sent: a lookup echoes them back
 // ({ indicator, found: false }), which is the caller's input, not our data.
-function assertNoAbusech(label, payload, asked = []) {
+function scrub(payload, asked) {
   let text = typeof payload === 'string' ? payload : JSON.stringify(payload);
   for (const value of asked) text = text.split(JSON.stringify(value)).join('"<asked>"');
-  for (const marker of ABUSECH_MARKERS) {
-    assert.ok(!text.includes(marker), `${label}: abuse.ch data "${marker}" leaked`);
+  return text;
+}
+
+// No locked source (abuse.ch, OTX, AbuseIPDB, unattributed) and, with the
+// default switches, no unconfirmed source either.
+function assertOnlyLicensed(label, payload, asked = [], { allowSwitched = [] } = {}) {
+  const text = scrub(payload, asked);
+  for (const marker of [...markersOf(ALL_LOCKED), ...LOCKED_LABELS]) {
+    assert.ok(!text.includes(marker), `${label}: locked-source data "${marker}" leaked`);
   }
-  for (const value of UNATTRIBUTED_ROWS.flatMap((r) => [r.value, r.malware_family])) {
-    assert.ok(!text.includes(value), `${label}: unattributed row "${value}" leaked`);
+  for (const [id, rows] of Object.entries(SWITCHED_ROWS)) {
+    if (allowSwitched.includes(id)) continue;
+    for (const marker of markersOf(rows)) assert.ok(!text.includes(marker), `${label}: ${id} data "${marker}" leaked`);
+  }
+  for (const name of SWITCHED_LABELS.filter((n) => !allowSwitched.some((id) => SWITCHED_ROWS[id][0].verification_source.startsWith(n)))) {
+    assert.ok(!text.includes(name), `${label}: source label ${name} leaked`);
   }
 }
 
-function assertOtherSourcesPresent(label, payload) {
+function assertNvdPresent(label, payload) {
   const text = typeof payload === 'string' ? payload : JSON.stringify(payload);
-  for (const value of UNIQUE_OTHER_VALUES) {
-    assert.ok(text.includes(value), `${label}: ${value} (another source) is missing`);
-  }
+  for (const value of SERVED_VALUES) assert.ok(text.includes(value), `${label}: NVD record ${value} is missing`);
 }
 
 // ---------------------------------------------------------------------
-// Every route, switch at its default (off)
+// Every route, default switches
 // ---------------------------------------------------------------------
 
 for (const honorSourceFilter of [false, true]) {
   const mode = honorSourceFilter ? 'database applies the source filter' : 'database ignores the source filter';
 
-  test(`/api/ioc free tier STIX bundle: no abuse.ch rows, other sources intact (${mode})`, async () => {
+  test(`/api/ioc free tier STIX bundle: only NVD rows (${mode})`, async () => {
     installFetch({ honorSourceFilter });
     const res = await getIocBundle({ 'x-free-tier': '1' });
     assert.equal(res.statusCode, 200);
-    assertNoAbusech('/api/ioc free tier', res.rawBody);
-    assertOtherSourcesPresent('/api/ioc free tier', res.rawBody);
-    assert.ok(res.rawBody.includes(MIXED), 'the OTX row for the shared indicator is still served');
+    assertOnlyLicensed('/api/ioc free tier', res.rawBody);
+    assertNvdPresent('/api/ioc free tier', res.rawBody);
   });
 
-  test(`/api/ioc licensed (paid) STIX bundle: no abuse.ch rows, other sources intact (${mode})`, async () => {
+  test(`/api/ioc licensed (paid) STIX bundle: only NVD rows (${mode})`, async () => {
     installFetch({ honorSourceFilter });
     const res = await getIocBundle({ 'x-api-key': 'valid-license' });
     assert.equal(res.statusCode, 200);
-    assertNoAbusech('/api/ioc licence', res.rawBody);
-    assertOtherSourcesPresent('/api/ioc licence', res.rawBody);
+    assertOnlyLicensed('/api/ioc licence', res.rawBody);
+    assertNvdPresent('/api/ioc licence', res.rawBody);
   });
 
-  test(`MCP get_threat_indicators (paid): no abuse.ch rows, other sources intact (${mode})`, async () => {
+  test(`MCP get_threat_indicators (paid): only NVD rows (${mode})`, async () => {
     installFetch({ honorSourceFilter });
     const bundle = await callMcp('get_threat_indicators', { limit: 1000 });
-    assertNoAbusech('get_threat_indicators', bundle);
-    assertOtherSourcesPresent('get_threat_indicators', bundle);
+    assertOnlyLicensed('get_threat_indicators', bundle);
+    assertNvdPresent('get_threat_indicators', bundle);
   });
 
-  test(`MCP get_ioc_context: abuse.ch-only indicators are found:false; shared ones show only the other source (${mode})`, async () => {
+  test(`MCP get_ioc_context (paid when found): unlicensed-only indicators are found:false; a shared one shows only NVD (${mode})`, async () => {
     installFetch({ honorSourceFilter });
     for (const value of HIDDEN_VALUES) {
       const out = await callMcp('get_ioc_context', { value });
       assert.equal(out.found, false, value);
-      assertNoAbusech(`get_ioc_context ${value}`, out, [value]);
+      assertOnlyLicensed(`get_ioc_context ${value}`, out, [value]);
     }
-    const mixed = await callMcp('get_ioc_context', { value: MIXED });
+    const mixed = await callMcp('get_ioc_context', { value: MIXED_CVE });
     assert.equal(mixed.found, true);
-    assert.deepEqual(mixed.provenance.sources, ['AlienVault-OTX']);
+    assert.deepEqual(mixed.provenance.sources, ['NVD']);
     assert.equal(mixed.provenance.observation_count, 1);
-    assertNoAbusech('get_ioc_context mixed', mixed);
-    for (const value of UNIQUE_OTHER_VALUES) {
-      const out = await callMcp('get_ioc_context', { value });
-      assert.equal(out.found, true, value);
-    }
+    assertOnlyLicensed('get_ioc_context mixed', mixed, [MIXED_CVE]);
+    for (const value of SERVED_VALUES) assert.equal((await callMcp('get_ioc_context', { value })).found, true, value);
   });
 
-  test(`MCP get_ioc_batch: no abuse.ch rows (${mode})`, async () => {
+  test(`MCP get_ioc_batch (paid when found): only NVD rows (${mode})`, async () => {
     installFetch({ honorSourceFilter });
-    const out = await callMcp('get_ioc_batch', { values: [...HIDDEN_VALUES, MIXED, '198.51.100.61'] });
-    assertNoAbusech('get_ioc_batch', out, HIDDEN_VALUES);
-    for (const value of HIDDEN_VALUES) assert.equal(out.results.find((r) => r.indicator === value).found, false, value);
-    assert.ok(JSON.stringify(out).includes('198.51.100.61'));
-    assert.ok(JSON.stringify(out).includes('AlienVault-OTX'));
+    const out = await callMcp('get_ioc_batch', { values: [...HIDDEN_VALUES.slice(0, 15), MIXED_CVE, 'CVE-2026-0001'] });
+    assertOnlyLicensed('get_ioc_batch', out, [...HIDDEN_VALUES, MIXED_CVE, 'CVE-2026-0001']);
+    for (const value of HIDDEN_VALUES.slice(0, 15)) assert.equal(out.results.find((r) => r.indicator === value).found, false, value);
+    assert.equal(out.total_found, 2);
   });
 
-  test(`REST /api/ioc/context: no abuse.ch rows (${mode})`, async () => {
+  test(`REST /api/ioc/context (paid when found): only NVD rows (${mode})`, async () => {
     installFetch({ honorSourceFilter });
     for (const value of HIDDEN_VALUES) {
       const out = await callRestContext(value);
       assert.equal(out.found, false, value);
-      assertNoAbusech(`/api/ioc/context ${value}`, out, [value]);
+      assertOnlyLicensed(`/api/ioc/context ${value}`, out, [value]);
     }
-    const mixed = await callRestContext(MIXED);
-    assert.deepEqual(mixed.provenance.sources, ['AlienVault-OTX']);
-    assertNoAbusech('/api/ioc/context', mixed);
+    const mixed = await callRestContext(MIXED_CVE);
+    assert.deepEqual(mixed.provenance.sources, ['NVD']);
   });
 
-  test(`chat tools get_ioc_context / get_ioc_batch: no abuse.ch rows (${mode})`, async () => {
+  test(`chat tools get_ioc_context / get_ioc_batch: only NVD rows (${mode})`, async () => {
     installFetch({ honorSourceFilter });
-    for (const value of [...HIDDEN_VALUES, MIXED]) {
-      assertNoAbusech(`chat get_ioc_context ${value}`, await callChatTool('get_ioc_context', { value }), [value]);
+    for (const value of [...HIDDEN_VALUES, MIXED_CVE]) {
+      assertOnlyLicensed(`chat get_ioc_context ${value}`, await callChatTool('get_ioc_context', { value }), [value]);
     }
-    const batch = await callChatTool('get_ioc_batch', { values: [...HIDDEN_VALUES, MIXED, '198.51.100.61'] });
-    assertNoAbusech('chat get_ioc_batch', batch, HIDDEN_VALUES);
-    assert.ok(JSON.stringify(batch).includes('198.51.100.61'));
+    const batch = await callChatTool('get_ioc_batch', { values: [...HIDDEN_VALUES.slice(0, 15), MIXED_CVE] });
+    assertOnlyLicensed('chat get_ioc_batch', batch, [...HIDDEN_VALUES, MIXED_CVE]);
   });
 }
 
-test('the query itself excludes abuse.ch and unattributed rows, so limit counts servable rows', async () => {
+test('the query itself is an allowlist of licensed sources, so limit counts servable rows', async () => {
   const urls = installFetch({ honorSourceFilter: true });
-  await callMcp('get_threat_indicators', { limit: 5 });
+  await callMcp('get_threat_indicators', { limit: 2 });
   assert.equal(urls.length, 1);
-  const params = new URL(urls[0]).searchParams;
-  for (const p of ['*abuse.ch*', '*threatfox*', '*urlhaus*', 'Sovereign-Engine-*']) {
-    assert.ok(params.get('and').includes(`verification_source.not.ilike.${p}`), p);
+  const tree = new URL(urls[0]).searchParams.get('and');
+  assert.ok(tree.startsWith('(or(verification_source.ilike.NVD*)'), tree);
+  for (const p of ['*abuse.ch*', '*threatfox*', '*urlhaus*', '*feodo*', '*alienvault*', '*otx*', '*abuseipdb*', 'Sovereign-Engine-*', '*blocklist.de*', '*scamsniffer*', 'PG1-Swarm-*']) {
+    assert.ok(tree.includes(`verification_source.not.ilike.${p}`), p);
   }
-  const bundle = await callMcp('get_threat_indicators', { limit: 5 });
-  assert.equal(bundle.objects.length, 5);
-  assertNoAbusech('limited bundle', bundle);
+  const bundle = await callMcp('get_threat_indicators', { limit: 2 });
+  assert.equal(bundle.objects.length, 2);
+  assertOnlyLicensed('limited bundle', bundle);
 });
 
-test('diagnostics endpoint withholds indicator-table rows from abuse.ch or with no source', async () => {
-  const { createClient } = await import('@supabase/supabase-js');
-  assert.equal(typeof createClient, 'function');
+test('diagnostics endpoint withholds indicator-table rows from unlicensed sources', async () => {
   installFetch();
-  // The supabase-js client goes through global fetch; answer its table read
-  // with the seeded rows whatever table was asked for.
   const seeded = ALL_ROWS.map((r) => ({ ...r }));
   const plain = global.fetch;
   global.fetch = async (url, options) => {
@@ -319,8 +349,9 @@ test('diagnostics endpoint withholds indicator-table rows from abuse.ch or with 
   const authorization = 'Basic ' + Buffer.from('policy-operator:policy-pass').toString('base64');
   await diagnosticsHandler({ method: 'GET', headers: { authorization }, query: { table: 'threat_indicators', metric: 'records', limit: '100' } }, res);
   assert.equal(res.statusCode, 200, JSON.stringify(res.body));
-  assertNoAbusech('diagnostics records', res.body.records);
-  assertOtherSourcesPresent('diagnostics records', res.body.records);
+  assertOnlyLicensed('diagnostics records', res.body.records);
+  assertNvdPresent('diagnostics records', res.body.records);
+  assert.equal('ABUSEIPDB_API_Configured' in res.body.environment, false, 'the diagnostics report no longer reads an AbuseIPDB env key');
 });
 
 test('playground and A2A expose no indicator tool at all', () => {
@@ -331,48 +362,91 @@ test('playground and A2A expose no indicator tool at all', () => {
 });
 
 // ---------------------------------------------------------------------
-// The switches
+// Locked sources: no environment variable can serve them
 // ---------------------------------------------------------------------
 
-test('SOURCE_ABUSECH_ENABLED=true serves abuse.ch rows again (the switch is what hides them)', async () => {
-  process.env.SOURCE_ABUSECH_ENABLED = 'true';
-  installFetch({ honorSourceFilter: true });
-  const res = await getIocBundle({ 'x-api-key': 'valid-license' });
-  for (const value of ABUSECH_ONLY_VALUES) assert.ok(res.rawBody.includes(value), value);
-  const mixed = await callMcp('get_ioc_context', { value: MIXED });
-  assert.deepEqual(mixed.provenance.sources.sort(), ['AlienVault-OTX', 'abuse.ch ThreatFox']);
-  // Unattributed rows stay hidden: they have their own switch.
-  assert.ok(!res.rawBody.includes('legacy.example'));
-});
+const EVERY_SWITCH_ON = Object.fromEntries([...policy.THREAT_SOURCES, policy.OTHER_SOURCE].map((s) => [s.env, 'true']));
 
-test('the mechanism is generic: SOURCE_OTX_ENABLED=false hides OTX the same way, nothing else moves', async () => {
-  process.env.SOURCE_OTX_ENABLED = 'false';
+test('every switch set to true: abuse.ch, OTX, AbuseIPDB and unattributed rows are still never served, on any paid route', async () => {
+  Object.assign(process.env, EVERY_SWITCH_ON);
+  const allSwitched = Object.keys(SWITCHED_ROWS);
   for (const honorSourceFilter of [false, true]) {
     installFetch({ honorSourceFilter });
+    const res = await getIocBundle({ 'x-api-key': 'valid-license' });
+    assertOnlyLicensed('/api/ioc all on', res.rawBody, [], { allowSwitched: allSwitched });
     const bundle = await callMcp('get_threat_indicators', { limit: 1000 });
-    const text = JSON.stringify(bundle);
-    assert.ok(!text.includes('198.51.100.61'), 'OTX row hidden');
-    assert.ok(!text.includes(MIXED), 'both rows of the shared indicator hidden (abuse.ch off, OTX off)');
-    for (const value of UNIQUE_OTHER_VALUES.filter((v) => v !== '198.51.100.61')) assert.ok(text.includes(value), value);
-    assertNoAbusech('OTX off', bundle);
+    assertOnlyLicensed('get_threat_indicators all on', bundle, [], { allowSwitched: allSwitched });
+    for (const value of [...new Set(ALL_LOCKED.map((r) => r.value))].filter((v) => v !== MIXED_CVE)) {
+      const ctx = await callMcp('get_ioc_context', { value });
+      assert.equal(ctx.found, false, value);
+      assert.equal((await callRestContext(value)).found, false, value);
+    }
+    const batch = await callMcp('get_ioc_batch', { values: [MIXED_LOCKED, '198.51.100.3', 'legacy.example', MIXED_CVE] });
+    assertOnlyLicensed('get_ioc_batch all on', batch, [MIXED_LOCKED, '198.51.100.3', 'legacy.example', MIXED_CVE], { allowSwitched: allSwitched });
+    assert.equal(batch.total_found, 1);
   }
 });
 
-test('SOURCE_SCAMSNIFFER_ENABLED=false hides ScamSniffer rows', async () => {
-  process.env.SOURCE_SCAMSNIFFER_ENABLED = 'false';
-  installFetch();
-  const res = await getIocBundle({ 'x-api-key': 'valid-license' });
-  assert.ok(!res.rawBody.includes('drainer.example'));
-  assert.ok(res.rawBody.includes('198.51.100.61'));
+test('isSourceEnabled: locked sources ignore their switch whatever its value', () => {
+  assert.deepEqual([...policy.LOCKED_SOURCE_IDS].sort(), ['abusech', 'abuseipdb', 'otx', 'unattributed']);
+  for (const id of policy.LOCKED_SOURCE_IDS) {
+    const source = policy.THREAT_SOURCES.find((s) => s.id === id);
+    for (const on of [undefined, 'true', 'TRUE', '1', 'yes', 'on']) {
+      assert.equal(policy.isSourceEnabled(id, on === undefined ? {} : { [source.env]: on }), false, `${id} ${on}`);
+    }
+  }
+  // Every switch on: only the locked sources are filtered out, as a denylist.
+  const [param] = policy.disabledSourceQueryParams(EVERY_SWITCH_ON);
+  const tree = decodeURIComponent(param);
+  assert.ok(tree.startsWith('and=('), tree);
+  assert.ok(!tree.includes('verification_source.is.null'), 'NULL labels never pass');
+  for (const id of policy.LOCKED_SOURCE_IDS) {
+    for (const p of policy.THREAT_SOURCES.find((s) => s.id === id).patterns) assert.ok(tree.includes(`verification_source.not.ilike.${p}`), p);
+  }
+  // An empty-string label passes not.ilike (in PostgREST too); the row filter
+  // in fetchThreatTelemetry, checked on every route above, removes it.
+  const kept = applySourceConditions(ALL_ROWS, new URLSearchParams(param));
+  assert.equal(kept.some((r) => String(r.verification_source ?? '').trim() && policy.LOCKED_SOURCE_IDS.includes(policy.classifySource(r.verification_source))), false);
+  assert.equal(policy.filterServableRows(kept, EVERY_SWITCH_ON).some((r) => policy.LOCKED_SOURCE_IDS.includes(policy.classifySource(r.verification_source))), false);
+});
+
+// ---------------------------------------------------------------------
+// Unconfirmed sources: off by default, each behind its own switch
+// ---------------------------------------------------------------------
+
+for (const [id, rows] of Object.entries(SWITCHED_ROWS)) {
+  const env = id === 'other' ? 'SOURCE_OTHER_ENABLED' : policy.THREAT_SOURCES.find((s) => s.id === id).env;
+  test(`${env}=true serves ${id} rows; locked and other unconfirmed sources stay hidden`, async () => {
+    process.env[env] = 'true';
+    for (const honorSourceFilter of [false, true]) {
+      installFetch({ honorSourceFilter });
+      const bundle = await callMcp('get_threat_indicators', { limit: 1000 });
+      for (const r of rows) assert.ok(JSON.stringify(bundle).includes(r.value), `${id} ${r.value}`);
+      assertOnlyLicensed(`${id} on`, bundle, [], { allowSwitched: [id] });
+      assertNvdPresent(`${id} on`, bundle);
+    }
+  });
+}
+
+test('SOURCE_NVD_ENABLED=false: nothing is servable, and the query asks for nothing', async () => {
+  process.env.SOURCE_NVD_ENABLED = 'false';
+  const [param] = policy.disabledSourceQueryParams();
+  assert.equal(decodeURIComponent(param), 'and=(verification_source.is.null,verification_source.not.is.null)');
+  for (const honorSourceFilter of [false, true]) {
+    installFetch({ honorSourceFilter });
+    const bundle = await callMcp('get_threat_indicators', { limit: 1000 });
+    assert.equal(bundle.objects.length, 0);
+  }
 });
 
 test('classifySource: every label the pipeline has written maps to the right source', () => {
   const cases = {
     'abuse.ch ThreatFox': 'abusech', 'abuse.ch URLhaus': 'abusech', 'URLhaus-Fallback': 'abusech',
-    'ThreatFox': 'abusech', 'abuse.ch MalwareBazaar': 'abusech', 'ABUSE.CH': 'abusech',
+    'ThreatFox': 'abusech', 'abuse.ch MalwareBazaar': 'abusech', 'ABUSE.CH': 'abusech', 'Feodo Tracker': 'abusech',
+    'SSLBL': 'abusech', 'YARAify': 'abusech',
     'Sovereign-Engine-v3.2-Cobalt Strike': 'unattributed', 'Sovereign-Engine-v3.2-OTX pulse': 'unattributed',
     '': 'unattributed', '   ': 'unattributed',
-    'AlienVault-OTX': 'otx', 'NVD': 'nvd', 'NVD-CVE-v2.0-Gateway': 'nvd', 'Blocklist.de': 'blocklist_de',
+    'AlienVault-OTX': 'otx', 'LevelBlue OTX': 'otx', 'NVD': 'nvd', 'NVD-CVE-v2.0-Gateway': 'nvd', 'Blocklist.de': 'blocklist_de',
     'Blocklist.de-Fallback': 'blocklist_de', 'AbuseIPDB': 'abuseipdb', 'PG1-Swarm-w1-tee': 'pg1_swarm',
     'ScamSniffer': 'scamsniffer', 'test-source': 'other'
   };
@@ -382,49 +456,12 @@ test('classifySource: every label the pipeline has written maps to the right sou
 });
 
 test('switch values: defaults, explicit on/off, unknown values keep the default', () => {
-  assert.equal(policy.isSourceEnabled('abusech', {}), false);
-  assert.equal(policy.isSourceEnabled('unattributed', {}), false);
-  assert.equal(policy.isSourceEnabled('otx', {}), true);
-  assert.equal(policy.isSourceEnabled('other', {}), true);
-  for (const on of ['true', 'TRUE', '1', 'yes', 'on', ' true ']) assert.equal(policy.isSourceEnabled('abusech', { SOURCE_ABUSECH_ENABLED: on }), true, on);
-  for (const keep of ['', 'maybe', 'enabled']) assert.equal(policy.isSourceEnabled('abusech', { SOURCE_ABUSECH_ENABLED: keep }), false, keep);
-  for (const off of ['false', '0', 'no', 'off']) assert.equal(policy.isSourceEnabled('otx', { SOURCE_OTX_ENABLED: off }), false, off);
+  const defaults = { nvd: true, blocklist_de: false, pg1_swarm: false, scamsniffer: false, other: false, abusech: false, otx: false, abuseipdb: false, unattributed: false };
+  for (const [id, on] of Object.entries(defaults)) assert.equal(policy.isSourceEnabled(id, {}), on, id);
+  for (const on of ['true', 'TRUE', '1', 'yes', 'on', ' true ']) assert.equal(policy.isSourceEnabled('scamsniffer', { SOURCE_SCAMSNIFFER_ENABLED: on }), true, on);
+  for (const keep of ['', 'maybe', 'enabled']) assert.equal(policy.isSourceEnabled('scamsniffer', { SOURCE_SCAMSNIFFER_ENABLED: keep }), false, keep);
+  for (const off of ['false', '0', 'no', 'off']) assert.equal(policy.isSourceEnabled('nvd', { SOURCE_NVD_ENABLED: off }), false, off);
   assert.equal(policy.isSourceEnabled('no-such-source', {}), false);
-  // Every switch on: only the locked AbuseIPDB source is still filtered out.
-  const [param] = policy.disabledSourceQueryParams(Object.fromEntries(
-    [...policy.THREAT_SOURCES, policy.OTHER_SOURCE].map((s) => [s.env, 'true'])));
-  assert.equal(decodeURIComponent(param), 'or=(verification_source.is.null,and(verification_source.not.ilike.*abuseipdb*))');
-});
-
-test('AbuseIPDB rows are never served: the source is locked off and SOURCE_ABUSEIPDB_ENABLED cannot turn it on', async () => {
-  for (const on of [undefined, 'true', '1', 'yes', 'on']) {
-    const env = on === undefined ? {} : { SOURCE_ABUSEIPDB_ENABLED: on };
-    assert.equal(policy.isSourceEnabled('abuseipdb', env), false, String(on));
-  }
-  process.env.SOURCE_ABUSEIPDB_ENABLED = 'true';
-  try {
-    for (const honorSourceFilter of [false, true]) {
-      installFetch({ honorSourceFilter });
-      const bundle = await callMcp('get_threat_indicators', { limit: 1000 });
-      assert.doesNotMatch(JSON.stringify(bundle), /198\.51\.100\.3\b|AbuseIPDB/i);
-      const ctx = await callMcp('get_ioc_context', { value: '198.51.100.3' });
-      assert.equal(ctx.found, false);
-      const res = await getIocBundle({ 'x-api-key': 'valid-license' });
-      assert.ok(!res.rawBody.includes('198.51.100.3'));
-    }
-  } finally {
-    delete process.env.SOURCE_ABUSEIPDB_ENABLED;
-  }
-});
-
-test('with unattributed rows switched on, NULL labels pass the query filter but abuse.ch still does not', () => {
-  const env = { SOURCE_UNATTRIBUTED_ENABLED: 'true' };
-  const [param] = policy.disabledSourceQueryParams(env);
-  assert.match(param, /^or=/);
-  const kept = applySourceConditions(ALL_ROWS, new URLSearchParams(param));
-  assert.ok(kept.some((r) => r.verification_source == null));
-  assert.ok(kept.some((r) => r.value === 'legacy.example'));
-  assert.ok(!kept.some((r) => policy.classifySource(r.verification_source) === 'abusech'));
 });
 
 test('a failed query is reported, never served as an empty result', async () => {
@@ -435,13 +472,14 @@ test('a failed query is reported, never served as an empty result', async () => 
 });
 
 // ---------------------------------------------------------------------
-// Public wording (one version bump, three description edits)
+// Public wording
 // ---------------------------------------------------------------------
 
+// [tool, text at the 1.14.0 release, text now]
 const DESCRIPTION_EDITS = [
-  ['get_threat_indicators', 'sourced from ThreatFox, URLhaus, OTX and NVD.', 'sourced from OTX and NVD.'],
-  ['get_ioc_context', 'Returns aggregated provenance from ThreatFox, URLhaus, and OTX — reporting', 'Returns aggregated provenance from OTX — reporting'],
-  ['get_ioc_batch', 'aggregated provenance as get_ioc_context from ThreatFox, URLhaus, and OTX.', 'aggregated provenance as get_ioc_context from OTX.']
+  ['get_threat_indicators', 'sourced from ThreatFox, URLhaus, OTX and NVD.', 'sourced from NVD; only sources PG1 may redistribute commercially are served.'],
+  ['get_ioc_context', 'Returns aggregated provenance from ThreatFox, URLhaus, and OTX — reporting', "Returns aggregated provenance from PG1's commercially licensed sources (currently NVD) — reporting"],
+  ['get_ioc_batch', 'aggregated provenance as get_ioc_context from ThreatFox, URLhaus, and OTX.', "aggregated provenance as get_ioc_context from PG1's commercially licensed sources (currently NVD)."]
 ];
 
 test('tool definitions differ from 1.14.0 only by the three listed description edits', () => {
@@ -455,6 +493,18 @@ test('tool definitions differ from 1.14.0 only by the three listed description e
   });
   // SHA-256 of JSON.stringify(TOOLS) at the 1.14.0 release.
   assert.equal(crypto.createHash('sha256').update(JSON.stringify(reverted)).digest('hex'), '47dde1cff3ff1f64f1020b8d06813321f51c8db2142390bad0096616c8767acc');
+});
+
+test('no paid tool description or x402 resource text names an unlicensed source', () => {
+  const UNLICENSED = /abuse\.?ch|threatfox|urlhaus|alienvault|\botx\b|levelblue|abuseipdb|blocklist\.de|scamsniffer/i;
+  for (const name of ['get_threat_indicators', 'get_ioc_context', 'get_ioc_batch', 'get_cve_details', 'get_cve_batch', 'get_cve_by_product', 'get_threat_actor_profile']) {
+    assert.doesNotMatch(TOOLS.find((t) => t.name === name).description, UNLICENSED, name);
+  }
+  const mcp = fs.readFileSync(path.join(ROOT, 'api/mcp.mjs'), 'utf8');
+  assert.doesNotMatch(mcp.match(/const X402_RESOURCE_DESCRIPTION = '[^']*'/)[0], UNLICENSED);
+  const chat = fs.readFileSync(path.join(ROOT, 'api/chat.mjs'), 'utf8');
+  const iocRoute = chat.slice(chat.indexOf('var iocX402RouteConfig'), chat.indexOf('x402Middleware = paymentMiddleware('));
+  assert.doesNotMatch(iocRoute, UNLICENSED, '/api/ioc 402 description and Bazaar example');
 });
 
 test('no public surface claims abuse.ch / ThreatFox / URLhaus data any more', () => {
@@ -492,4 +542,27 @@ test('one version bump: 1.17.0 (the current release) everywhere the server versi
   const get = makeRes();
   await mcpHandler({ method: 'GET', headers: {} }, get);
   assert.equal(get.body.version, '1.17.0');
+});
+
+test('paid CVE and ATT&CK responses carry the notices their sources ask for', async () => {
+  global.fetch = async (url) => {
+    const u = new URL(String(url));
+    if (u.hostname === 'api.gumroad.com') return { ok: true, status: 200, json: async () => ({ success: true, purchase: {} }) };
+    if (u.hostname === 'services.nvd.nist.gov') {
+      return { ok: true, status: 200, json: async () => ({ vulnerabilities: [{ cve: { id: 'CVE-2021-44228', published: '2021-12-10T00:00:00Z', descriptions: [{ lang: 'en', value: 'Log4Shell' }], metrics: {} } }] }) };
+    }
+    if (u.hostname === 'api.first.org') return { ok: true, status: 200, json: async () => ({ data: [{ epss: '0.9', percentile: '0.99' }] }) };
+    if (u.hostname === 'www.cisa.gov') return { ok: true, status: 200, json: async () => ({ vulnerabilities: [] }) };
+    if (u.hostname === 'raw.githubusercontent.com') {
+      return { ok: true, status: 200, json: async () => ({ objects: [{ type: 'intrusion-set', id: 'intrusion-set--1', name: 'APT29', aliases: ['Cozy Bear'], external_references: [{ source_name: 'mitre-attack', external_id: 'G0016' }] }] }) };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+  for (const [name, args] of [['get_cve_details', { cve_id: 'CVE-2021-44228' }], ['get_cve_batch', { cve_ids: ['CVE-2021-44228'] }], ['get_cve_by_product', { vendor: 'apache', product: 'log4j' }]]) {
+    const out = await callMcp(name, args);
+    assert.match(out.attribution, /This product uses data from the NVD API but is not endorsed or certified by the NVD\./, name);
+    assert.match(out.attribution, /EPSS by FIRST/, name);
+  }
+  const actor = await callMcp('get_threat_actor_profile', { actor_name: 'APT29' });
+  assert.match(actor.attribution, /^© \d{4} The MITRE Corporation\. This work is reproduced and distributed with the permission of The MITRE Corporation\./);
 });

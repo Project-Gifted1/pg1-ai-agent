@@ -208,7 +208,7 @@ export const TEST_FIXTURE_OUTPUT_PROPERTIES = {
 export const TOOLS = [
   {
     name: 'get_threat_indicators',
-    description: 'PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of verified threat indicators (IPs, domains, URLs, file hashes) sourced from OTX and NVD. Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for bulk feed synchronizations. Do NOT use for single-item lookups (use get_ioc_context) or CVE analysis (use get_cve_details). USAGE EXCLUSIONS: Does not provide historical query archival beyond the active ingestion window. BEHAVIOR: Pagination is handled via the limit parameter (max 1000). If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta["x402/payment-response"].',
+    description: 'PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of verified threat indicators (IPs, domains, URLs, file hashes) sourced from NVD; only sources PG1 may redistribute commercially are served. Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for bulk feed synchronizations. Do NOT use for single-item lookups (use get_ioc_context) or CVE analysis (use get_cve_details). USAGE EXCLUSIONS: Does not provide historical query archival beyond the active ingestion window. BEHAVIOR: Pagination is handled via the limit parameter (max 1000). If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta["x402/payment-response"].',
     inputSchema: {
       type: 'object',
       properties: {
@@ -232,7 +232,7 @@ export const TOOLS = [
   },
   {
     name: 'get_ioc_context',
-    description: "PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) — the recommended pre-action safety check for AI agents before visiting, downloading, or connecting to something. Returns aggregated provenance from OTX — reporting sources, observation count, aggregated confidence score, known malware families, tags, and first/last seen timestamps. SIBLING DIFFERENTIATION: Use ONLY for point-lookup enrichment of a single indicator. Do NOT use for bulk intelligence downloads (use get_threat_indicators), multiple indicators at once (use get_ioc_batch), or software vulnerability analysis (use get_cve_details). BEHAVIOR: Returns a normal result shaped { found: true, indicator_type, provenance } or { found: false } — never an error for 'not found'. A found:false result means nothing bad is recorded in PG1's sources; it does NOT mean the indicator is safe, only that it isn't in this dataset. Lookups that return found:false are FREE — no payment or free-tier quota is consumed. Payment (x402 via params._meta['x402/payment'], with the PAYMENT-SIGNATURE header also accepted, or a Gumroad X-API-KEY license) is only required when a real record is found. If payment is required but missing or fails, the result has isError: true with the x402 v2 PaymentRequired object in structuredContent.",
+    description: "PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) — the recommended pre-action safety check for AI agents before visiting, downloading, or connecting to something. Returns aggregated provenance from PG1's commercially licensed sources (currently NVD) — reporting sources, observation count, aggregated confidence score, known malware families, tags, and first/last seen timestamps. SIBLING DIFFERENTIATION: Use ONLY for point-lookup enrichment of a single indicator. Do NOT use for bulk intelligence downloads (use get_threat_indicators), multiple indicators at once (use get_ioc_batch), or software vulnerability analysis (use get_cve_details). BEHAVIOR: Returns a normal result shaped { found: true, indicator_type, provenance } or { found: false } — never an error for 'not found'. A found:false result means nothing bad is recorded in PG1's sources; it does NOT mean the indicator is safe, only that it isn't in this dataset. Lookups that return found:false are FREE — no payment or free-tier quota is consumed. Payment (x402 via params._meta['x402/payment'], with the PAYMENT-SIGNATURE header also accepted, or a Gumroad X-API-KEY license) is only required when a real record is found. If payment is required but missing or fails, the result has isError: true with the x402 v2 PaymentRequired object in structuredContent.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -258,7 +258,7 @@ export const TOOLS = [
   },
   {
     name: 'get_ioc_batch',
-    description: "PG1 Sovereign Threat Intelligence: looks up multiple indicators (IPs, domains, URLs, hashes) in a single call — a batched pre-action safety check for AI agents. Each returns the same aggregated provenance as get_ioc_context from OTX. SIBLING DIFFERENTIATION: Use for checking several indicators at once (e.g. all URLs an agent is about to visit). Do NOT use for a single indicator (use get_ioc_context, lower overhead) or bulk feed synchronization (use get_threat_indicators). BEHAVIOR: Accepts up to " + IOC_BATCH_MAX + " indicators per call. A found:false result for any indicator means nothing bad is recorded in PG1's sources — NOT that it's safe. If NONE of the submitted indicators are found, the whole batch is FREE — no payment or free-tier quota consumed. If at least one indicator is found, the normal payment gate (x402 via params._meta['x402/payment'], with the PAYMENT-SIGNATURE header also accepted, or a Gumroad X-API-KEY license) applies to the full batch result.",
+    description: "PG1 Sovereign Threat Intelligence: looks up multiple indicators (IPs, domains, URLs, hashes) in a single call — a batched pre-action safety check for AI agents. Each returns the same aggregated provenance as get_ioc_context from PG1's commercially licensed sources (currently NVD). SIBLING DIFFERENTIATION: Use for checking several indicators at once (e.g. all URLs an agent is about to visit). Do NOT use for a single indicator (use get_ioc_context, lower overhead) or bulk feed synchronization (use get_threat_indicators). BEHAVIOR: Accepts up to " + IOC_BATCH_MAX + " indicators per call. A found:false result for any indicator means nothing bad is recorded in PG1's sources — NOT that it's safe. If NONE of the submitted indicators are found, the whole batch is FREE — no payment or free-tier quota consumed. If at least one indicator is found, the normal payment gate (x402 via params._meta['x402/payment'], with the PAYMENT-SIGNATURE header also accepted, or a Gumroad X-API-KEY license) applies to the full batch result.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -696,6 +696,16 @@ async function handleThreatIndicators(args) {
 // get_cve_details / get_cve_batch / get_cve_by_product shared helpers
 // ---------------------------------------------------------------------
 
+// Notices the CVE tools and get_threat_actor_profile carry in every real
+// response. NVD asks every service using its API to show the first
+// sentence; FIRST asks EPSS users for attribution; the ATT&CK Terms of Use
+// licence commercial use only when MITRE's copyright notice and licence go
+// with each copy.
+export const CVE_ATTRIBUTION = 'This product uses data from the NVD API but is not endorsed or certified by the NVD. Exploit prediction scores: EPSS by FIRST (https://www.first.org/epss). Known exploited status: CISA Known Exploited Vulnerabilities Catalog.';
+export function attackAttribution(year = new Date().getUTCFullYear()) {
+  return `\u00a9 ${year} The MITRE Corporation. This work is reproduced and distributed with the permission of The MITRE Corporation. Licensed under the ATT&CK Terms of Use (https://attack.mitre.org/resources/legal-and-branding/terms-of-use/). MITRE ATT&CK\u00ae is a registered trademark of The MITRE Corporation.`;
+}
+
 var kevCache = null;
 var kevCacheTime = 0;
 const KEV_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -803,7 +813,8 @@ export async function handleCveDetails(args) {
       date_added: kevEntry ? kevEntry.dateAdded : null,
       required_action: kevEntry ? kevEntry.requiredAction : null,
       due_date: kevEntry ? kevEntry.dueDate : null
-    }
+    },
+    attribution: CVE_ATTRIBUTION
   }, { reasons, checks });
 }
 
@@ -876,7 +887,8 @@ export async function handleCveBatch(args) {
   return withResponseMeta({
     total_requested: cveIds.length,
     total_found: results.filter((r) => r.found).length,
-    results
+    results,
+    attribution: CVE_ATTRIBUTION
   }, { reasons, checks });
 }
 
@@ -906,7 +918,7 @@ export async function handleCveByProduct(args) {
 
   if (!vulns.length) {
     const checks = [buildCheck('vulnerability database', 'ok')];
-    return withResponseMeta({ vendor, product, version: version || null, total_found: 0, cves: [] }, { reasons: [], checks });
+    return withResponseMeta({ vendor, product, version: version || null, total_found: 0, cves: [], attribution: CVE_ATTRIBUTION }, { reasons: [], checks });
   }
 
   const kevOutcome = await getKevCatalog().then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: {} }));
@@ -955,7 +967,7 @@ export async function handleCveByProduct(args) {
     buildCheck('known exploited vulnerabilities catalog', kevOutcome.ok ? 'ok' : 'error')
   ];
 
-  return withResponseMeta({ vendor, product, version: version || null, total_found: filtered.length, cves: filtered }, { reasons, checks });
+  return withResponseMeta({ vendor, product, version: version || null, total_found: filtered.length, cves: filtered, attribution: CVE_ATTRIBUTION }, { reasons, checks });
 }
 
 // ---------------------------------------------------------------------
@@ -1109,7 +1121,8 @@ export async function handleThreatActorProfile(args) {
     description: group.description || null,
     associated_techniques: techniques,
     associated_software: software,
-    source: 'MITRE ATT&CK Enterprise'
+    source: 'MITRE ATT&CK Enterprise',
+    attribution: attackAttribution()
   }, { reasons: [], checks: [buildCheck('threat actor intelligence', 'ok')] });
 }
 
@@ -2996,7 +3009,7 @@ function sendMcpFixtureResponse(res, toolName, outcome, requestId, pg1RequestId)
 
 const X402_PAY_TO = (process.env.X402_PAY_TO_ADDRESS || '').trim();
 // X402_NETWORK, X402_SCHEME and X402_PRICE live in lib/x402Config.mjs.
-const X402_RESOURCE_DESCRIPTION = 'PG1 Threat Intelligence: STIX 2.1 threat indicator feed (IPs, domains, URLs, file hashes, CVEs) aggregated from open threat intelligence sources including AlienVault OTX.';
+const X402_RESOURCE_DESCRIPTION = 'PG1 Threat Intelligence: STIX 2.1 threat indicator feed (IPs, domains, URLs, file hashes, CVEs) from sources PG1 may redistribute commercially (currently NVD).';
 const X402_RESOURCE_MIME_TYPE = 'application/json';
 
 // Facilitator client factory, overridable only by tests (see

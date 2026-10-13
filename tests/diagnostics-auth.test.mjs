@@ -28,7 +28,7 @@ const OPERATOR = 'diag-operator';
 const PASS = 'diag-secret-pass';
 const ROW_MARKER = 'ROW-MARKER-5512';
 const ROWS = [
-  { id: 1, verification_source: 'AlienVault-OTX', value: '198.51.100.7', note: ROW_MARKER },
+  { id: 1, verification_source: 'NVD-CVE-v2.0-Gateway', value: 'CVE-2026-0006', note: ROW_MARKER },
   { id: 2, verification_source: 'NVD', value: 'CVE-2026-0007', note: ROW_MARKER }
 ];
 

@@ -67,7 +67,6 @@ export default async function handler(req, res) {
     const hasSupabaseKey = Boolean(supabaseKey);
     const hasOtxApi = Boolean(process.env.OTX_API);
     const hasOtxApiKey = Boolean(process.env.OTX_API_KEY);
-    const hasAbuseIpDbApi = Boolean(process.env.ABUSEIPDB_API);
     const hasNvdApi = Boolean(process.env.NVD_API);
 
     const params = req.method === 'POST' ? requestBody(req) : (req.query || {});
@@ -86,7 +85,6 @@ export default async function handler(req, res) {
         SUPABASE_SERVICE_KEY_Configured: hasSupabaseKey,
         OTX_API_Configured: hasOtxApi,
         OTX_API_KEY_Configured: hasOtxApiKey,
-        ABUSEIPDB_API_Configured: hasAbuseIpDbApi,
         NVD_API_Configured: hasNvdApi
       }
     };

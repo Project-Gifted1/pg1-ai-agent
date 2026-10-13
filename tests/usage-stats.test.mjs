@@ -479,7 +479,12 @@ test('/usage without sign-in is a 401 and never reads the telemetry table', asyn
 });
 
 test('/usage for the signed-in operator answers with the report and the card', async () => {
-  const { calls } = installFetch([['/rest/v1/agent_telemetry', () => Response.json(SEED.filter((r) => !r.is_fixture).map((r) => ({ ...r, created_at: new Date().toISOString() })))]]);
+  // Stamped before the request starts: the report only keeps rows at or
+  // before its own `now`, so a stamp taken inside the mock (at fetch time)
+  // falls after `now` whenever the clock ticks in between, and every row
+  // drops out.
+  const createdAt = new Date(Date.now() - 1000).toISOString();
+  const { calls } = installFetch([['/rest/v1/agent_telemetry', () => Response.json(SEED.filter((r) => !r.is_fixture).map((r) => ({ ...r, created_at: createdAt })))]]);
   const res = makeRes();
   await chatHandler(chatReq({ prompt: '/usage 30d', user: 'test-operator', pass: 'test-secret-pass' }), res);
   assert.equal(res.statusCode, 200);
