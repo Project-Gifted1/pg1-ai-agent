@@ -35,13 +35,28 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # The film tests (end-to-end render, image placement) skip without
+      # ffmpeg. Same packages as film-render.yml.
+      - name: Install ffmpeg and fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+          ffmpeg -version | head -1
       # Chromium is not installed in this job, so tests/browser/ skip here
       # and run in the browser job below.
       - name: npm test (network blocked)
         env:
           NODE_OPTIONS: --import=./tests/ci/no-network.mjs
           PG1_NET_GUARD_LOG: ${{ runner.temp }}/network-violations.jsonl
-        run: npm test
+        run: |
+          set -o pipefail
+          npm test | tee "$RUNNER_TEMP/unit.tap"
+          # ffmpeg is installed above, so a film test skipping for want of it
+          # would be a silent pass; treat it as a failure.
+          if grep -q '# SKIP ffmpeg is not installed' "$RUNNER_TEMP/unit.tap"; then
+            echo "::error::Film tests were skipped: ffmpeg not found"
+            exit 1
+          fi
       - name: Fail on any attempted network access
         if: always()
         env:
