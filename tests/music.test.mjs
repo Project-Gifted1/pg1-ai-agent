@@ -28,8 +28,9 @@ import { execFileSync } from 'node:child_process';
 import { TASKS, DATA, planRoute, resolveKeys, ENGINE_LABELS, __resetRouterState, isTripped } from '../lib/aiRouter.mjs';
 import { UPSTREAM_BRAND_RE } from '../lib/upstreamFailure.mjs';
 import { GEMINI_API, REPLICATE_API } from '../lib/film/providers.mjs';
+import { estimateMusic } from '../lib/music/pipeline.mjs';
 import {
-  generateMusic, musicPlan, musicPrompt, elevenLabsWav, lyriaRequestBody, LICENCE_NOTES, ELEVENLABS_MUSIC_URL, MUSIC_SAMPLE_RATE
+  generateMusic, musicPlan, musicClipPlan, lyriaClipModel, musicCallUsd, musicPrompt, elevenLabsWav, lyriaRequestBody, LICENCE_NOTES, ELEVENLABS_MUSIC_URL, MUSIC_SAMPLE_RATE
 } from '../lib/music/engines.mjs';
 import { checkMusicRequest, lyricFingerprints, SAFETY_REFUSALS, REFUSAL_ALTERNATIVE } from '../lib/music/safety.mjs';
 import { buildZip, readZip, runExport, exportReadme, STEMS, MB, StorageLimitError, guardedUpload, storageMaxBytes } from '../lib/music/export.mjs';
@@ -205,6 +206,35 @@ describe('router: the music tier', () => {
     assert.equal(state.n.lyria, 0);
     out = await generateMusic({ env: {}, spec: spec(), fetchImpl: routedFetch([]), log: quiet });
     assert.equal(out.kind, 'not_configured');
+  });
+
+  test('the Lyria 30-second clip model: its own plan, model id and price; estimates use it for previews and short tracks', async () => {
+    const full = { ELEVENLABS_API_KEY: ELEVEN, GEMINI_API_KEY_PAID: PAID, GEMINI_API_KEY_FREE: FREE, REPLICATE_API_TOKEN: REPLICATE };
+    assert.equal(lyriaClipModel({}), 'lyria-3-clip-preview');
+    assert.equal(lyriaClipModel({ PG1_MUSIC_LYRIA_CLIP_MODEL: 'lyria-3-clip' }), 'lyria-3-clip', 'PG1_MUSIC_LYRIA_CLIP_MODEL overrides it');
+    assert.equal(lyriaClipModel({ PG1_MUSIC_LYRIA_CLIP_MODEL: 'bad model id!' }), 'lyria-3-clip-preview', 'a malformed override is ignored');
+    const clip = musicClipPlan(full);
+    assert.deepEqual(clip.map((c) => [c.provider, c.family, c.key, c.models, c.clip]), [['gemini_paid', 'lyria', PAID, ['lyria-3-clip-preview'], true]], 'the paid Gemini key only');
+    assert.notEqual(clip[0].keyId, musicPlan(full)[1].keyId, 'its own breaker: a failing clip model never holds back lyria-3.5');
+    assert.deepEqual(musicClipPlan({ REPLICATE_API_TOKEN: REPLICATE, GEMINI_API_KEY_FREE: FREE }), [], 'no paid key, no clip (never the free key)');
+    assert.equal(musicCallUsd('gemini_paid', 'short', { clip: true }), 0.04);
+    assert.equal(musicCallUsd('gemini_paid', 'short'), 0.08, 'lyria-3.5 keeps its price');
+    assert.equal(estimateMusic(full, 'preview'), 0.08, 'two clips');
+    assert.equal(estimateMusic(full, 'final', 'short'), 0.04, 'a short final is a clip');
+    assert.equal(estimateMusic(full, 'final', 'full'), 0.8, 'a full final keeps the full tier');
+    assert.equal(estimateMusic({ REPLICATE_API_TOKEN: REPLICATE }, 'preview'), 0.12, 'no paid key: the tier as before');
+
+    // A call on the clip plan: the clip model's URL, its unit and price in the usage row.
+    const state = {};
+    const ledger = memLedger();
+    const env = { GEMINI_API_KEY_PAID: PAID, PG1_MUSIC_LYRIA_CLIP_MODEL: 'lyria-3-clip' };
+    const out = await generateMusic({ env, spec: spec(), plan: musicClipPlan(env), fetchImpl: routedFetch(engineRoutes(state)), sleep: noSleep, log: quiet, ledger });
+    assert.equal(out.ok, true);
+    assert.equal(out.clip, true);
+    assert.equal(out.model, 'lyria-3-clip');
+    assert.equal(out.costUsd, 0.04);
+    assert.match(state.seen[0].url, /\/lyria-3-clip:generateContent$/);
+    assert.deepEqual(ledger.rows.map((r) => [r.provider, r.model, r.ok, r.unit, r.cost_usd]), [['gemini_paid', 'lyria-3-clip', true, 'music_lyria_clip', 0.04]]);
   });
 
   test('prompt and request shapes; raw PCM becomes a WAV with the right channel count', () => {
@@ -508,9 +538,9 @@ describe('/music end to end (real Postgres, stand-in engines and worker tools)',
     const row = (await db.query('select * from pending_actions where token = $1', [token])).rows[0];
     return handleMusicApproval({ row, decision, env, supUrl: SUP_URL, supKey: 'service-key', isOperator: true, fetchImpl, ...extra });
   };
-  const runWorker = async (trackId, stage, extra = {}, { pad = {} } = {}) => {
+  const runWorker = async (trackId, stage, extra = {}, { pad = {}, probe = async () => 30.5, calls = [] } = {}) => {
     const workerEnv = { ...env, MUSIC_TRACK_ID: trackId, MUSIC_STAGE: stage, MUSIC_TOKEN: signMusicToken(trackId, env), ...extra };
-    return workerMain(workerEnv, { fetchImpl, log: quiet, sleep: noSleep, probe: async () => 30.5, run: fakeRun([], { pad }) });
+    return workerMain(workerEnv, { fetchImpl, log: quiet, sleep: noSleep, probe, run: fakeRun(calls, { pad }) });
   };
   const track = async (id) => (await db.query('select * from pg1_music_tracks where id = $1', [id])).rows[0];
   const assets = async (id) => (await db.query('select * from pg1_music_assets where track_id = $1 order by created_at', [id])).rows;
@@ -533,7 +563,7 @@ describe('/music end to end (real Postgres, stand-in engines and worker tools)',
 
   test('previews -> approve a take -> final render with its licence -> export; charged and refunded against the cap', async () => {
     const out = await cmd('/music dusty boom-bap beat, vinyl crackle, jazzy piano --instrumental --bpm 88 --key Fm');
-    assert.match(out.reply, /PG1 Sound is making 2 previews of "Dusty Boom-bap Beat Vinyl Crackle Jazzy" \([0-9a-f]{8}; instrumental · 88 BPM · F minor · about 30 s\), about 0\.16 USD/);
+    assert.match(out.reply, /PG1 Sound is making 2 previews of "Dusty Boom-bap Beat Vinyl Crackle Jazzy" \([0-9a-f]{8}; instrumental · 88 BPM · F minor · about 30 s\), about 0\.08 USD/, 'two clips at 0.04 each');
     assert.match(out.reply, /Spending cap for this track: 2\.00 USD/);
     const id = out.musicTrack.id;
     let t = await track(id);
@@ -550,19 +580,21 @@ describe('/music end to end (real Postgres, stand-in engines and worker tools)',
     assert.equal(await runWorker(id, 'final'), 0);
     assert.equal((await track(id)).status, 'preview_queued');
 
-    // Previews: two Lyria takes (never ElevenLabs, never the free key).
+    // Previews: two takes on the Lyria 30-second clip model (never
+    // ElevenLabs, never the free key).
     assert.equal(await runWorker(id, 'preview'), 0);
     t = await track(id);
     assert.equal(t.status, 'awaiting_choice');
     assert.equal(t.choices.length, 2);
     assert.deepEqual(state.seen.map((s) => [s.engine, s.key]), [['lyria', PAID], ['lyria', PAID]]);
+    assert.ok(state.seen.every((s) => /\/lyria-3-clip-preview:generateContent$/.test(s.url)), 'previews use the clip model');
     assert.match(JSON.stringify(state.seen[0].body), /Take 1: a faithful reading/);
     assert.match(JSON.stringify(state.seen[1].body), /Take 2: a contrasting arrangement/);
     let a = await assets(id);
-    assert.deepEqual(a.map((x) => [x.kind, x.variant, x.provider, x.licence_note]), [['preview', 1, 'gemini_paid', LICENCE_NOTES.gemini_paid], ['preview', 2, 'gemini_paid', LICENCE_NOTES.gemini_paid]]);
-    assert.equal(money(t.spent_usd), '0.16', 'two Lyria takes');
-    const usage = (await db.query('select provider, task, ok, unit from pg1_ai_usage order by id')).rows;
-    assert.deepEqual(usage.map((r) => [r.provider, r.task, r.ok, r.unit]), [['gemini_paid', 'music', true, 'music_lyria'], ['gemini_paid', 'music', true, 'music_lyria']], 'every call is a pg1_ai_usage row');
+    assert.deepEqual(a.map((x) => [x.kind, x.variant, x.provider, x.model, x.licence_note, money(x.cost_usd)]), [['preview', 1, 'gemini_paid', 'lyria-3-clip-preview', LICENCE_NOTES.gemini_paid, '0.04'], ['preview', 2, 'gemini_paid', 'lyria-3-clip-preview', LICENCE_NOTES.gemini_paid, '0.04']]);
+    assert.equal(money(t.spent_usd), '0.08', 'two clips at their own price');
+    const usage = (await db.query('select provider, model, task, ok, unit, cost_usd from pg1_ai_usage order by id')).rows;
+    assert.deepEqual(usage.map((r) => [r.provider, r.model, r.task, r.ok, r.unit, money(r.cost_usd)]), [['gemini_paid', 'lyria-3-clip-preview', 'music', true, 'music_lyria_clip', '0.04'], ['gemini_paid', 'lyria-3-clip-preview', 'music', true, 'music_lyria_clip', '0.04']], 'every call is a pg1_ai_usage row, at the clip price');
 
     // The card: a player and "use take N" per preview, PG1 Sound only.
     let card = await musicCard(store, t);
@@ -587,30 +619,30 @@ describe('/music end to end (real Postgres, stand-in engines and worker tools)',
     const again = await approve(t.choices.find((c) => c.variant === 1).token);
     assert.equal(again.resolution, 'declined', 'the other take has moved on');
 
-    // Final: ElevenLabs is out of credit, Lyria makes the full track.
+    // Final of a --length short track: the clip model again (ElevenLabs,
+    // though set, is not asked).
     env.ELEVENLABS_API_KEY = ELEVEN;
-    state.elevenlabs = () => new Response('{"detail":{"status":"quota_exceeded","message":"insufficient credits"}}', { status: 402 });
     try {
       assert.equal(await runWorker(id, 'final'), 0);
     } finally { delete env.ELEVENLABS_API_KEY; }
+    assert.equal(state.n.elevenlabs, 0);
     t = await track(id);
     assert.equal(t.status, 'done');
     assert.equal(t.provider, 'gemini_paid');
-    assert.equal(t.model, 'lyria-3.5');
+    assert.equal(t.model, 'lyria-3-clip-preview');
     assert.equal(t.licence_note, LICENCE_NOTES.gemini_paid);
     assert.equal(t.master_mime, 'audio/mpeg');
     assert.match(t.master_path, /\/master\/v1-master\.mp3$/);
     assert.equal(Number(t.duration_s), 30.5);
-    // Reserved the dearest engine (ElevenLabs, a short track: 0.20), got
-    // back the difference to Lyria, which made it (0.08).
+    // Reserved and charged at the clip price (0.04).
     a = await assets(id);
     const spentAssets = a.reduce((s, x) => s + Number(x.cost_usd), 0);
     assert.equal(money(t.spent_usd), money(spentAssets));
-    assert.equal(money(t.spent_usd), '0.24');
+    assert.equal(money(t.spent_usd), '0.12');
 
     // /music status: the operator's reply carries the licence note.
     const st = await cmd(`/music status ${id.slice(0, 8)}`);
-    assert.match(st.reply, /Licence \(operator only\): SynthID watermarked; commercial use under Gemini API terms; source MP3 \[gemini_paid \/ lyria-3\.5\]\. No exclusive copyright is claimed\./);
+    assert.match(st.reply, /Licence \(operator only\): SynthID watermarked; commercial use under Gemini API terms; source MP3 \[gemini_paid \/ lyria-3-clip-preview\]\. No exclusive copyright is claimed\./);
     card = st.musicTrack;
     assert.match(card.masterUrl, /^https:\/\//);
     assert.match(card.masterDownloadUrl, /download=Dusty_Boom_bap_Beat_Vinyl_Crackle_Jazzy\.mp3$/);
@@ -634,7 +666,7 @@ describe('/music end to end (real Postgres, stand-in engines and worker tools)',
     const parts = (await assets(id)).filter((x) => x.kind === 'stems_zip' && x.status === 'ok');
     assert.deepEqual(parts.map((x) => x.meta.part), ['master', 'drums', 'bass', 'vocals', 'other', 'midi', 'midi', 'readme', 'zip']);
     assert.ok(parts.every((x) => vault.has(x.storage_path)), 'each file uploaded on its own');
-    assert.equal(money(t.spent_usd), '0.24', 'the export spends nothing');
+    assert.equal(money(t.spent_usd), '0.12', 'the export spends nothing');
     // The card: a download per file plus "Download all (zip)".
     card = (await cmd(`/music status ${id.slice(0, 8)}`)).musicTrack;
     assert.deepEqual(card.downloads.map((d) => d.label), ['Master (FLAC)', 'Drums stem (FLAC)', 'Bass stem (FLAC)', 'Vocals stem (FLAC)', 'Other stem (FLAC)', 'MIDI: bass', 'MIDI: other', 'README']);
@@ -709,13 +741,13 @@ describe('/music end to end (real Postgres, stand-in engines and worker tools)',
   });
 
   test('the cap: a stage that does not fit is stopped and nothing is charged for it', async () => {
-    const out = await cmd('/music ambient drones --instrumental', { env: { ...env, PG1_MUSIC_TRACK_CAP: '0.10' } });
+    const out = await cmd('/music ambient drones --instrumental', { env: { ...env, PG1_MUSIC_TRACK_CAP: '0.05' } });
     const id = out.musicTrack.id;
     assert.equal(await runWorker(id, 'preview'), 1);
     const t = await track(id);
     assert.equal(t.status, 'failed');
     assert.equal(t.error_reason, 'cap_reached');
-    assert.equal(money(t.spent_usd), '0.08', 'take 1 fit, take 2 did not and was never sent');
+    assert.equal(money(t.spent_usd), '0.04', 'take 1 fit, take 2 did not and was never sent');
     assert.equal(state.n.lyria, 1);
   });
 
@@ -747,7 +779,7 @@ describe('/music end to end (real Postgres, stand-in engines and worker tools)',
     assert.equal(await runWorker(id, 'preview'), 0);
     t = await track(id);
     assert.equal(t.status, 'awaiting_choice');
-    assert.equal(money(t.spent_usd), '0.16');
+    assert.equal(money(t.spent_usd), '0.08');
   });
 
   test('/music edit: checked by the safety filter, proposed, then new previews of version 2', async () => {
@@ -776,6 +808,101 @@ describe('/music end to end (real Postgres, stand-in engines and worker tools)',
     assert.equal(await runWorker(id, 'preview'), 0);
     const a = await assets(id);
     assert.deepEqual(a.map((x) => [x.version, x.status]), [[1, 'superseded'], [1, 'superseded'], [2, 'ok'], [2, 'ok']]);
+  });
+
+  // A probe for the stand-in files: the clip-free fallback made 62.04 s; a
+  // file trimmed to 30 s measures 30.
+  const probeTrim = async (file) => (/-30s\.[a-z0-9]+$/.test(file) ? 30 : 62.04);
+
+  test('the clip model fails: lyria-3.5 as before, trimmed to 30 s with ffmpeg; each call billed at its own price', async () => {
+    const out = await cmd('/music late-night synthwave, gated drums --instrumental');
+    const id = out.musicTrack.id;
+    state.lyria = (n, body, u) => (/lyria-3-clip-preview:/.test(u) ? new Response('{"error":{"code":404,"message":"models/lyria-3-clip-preview is not found","status":"NOT_FOUND"}}', { status: 404 }) : undefined);
+    const calls = [];
+    assert.equal(await runWorker(id, 'preview', {}, { probe: probeTrim, calls }), 0);
+    const t = await track(id);
+    assert.equal(t.status, 'awaiting_choice');
+    assert.deepEqual(state.seen.map((s) => s.url.split('/').pop()), ['lyria-3-clip-preview:generateContent', 'lyria-3.5:generateContent', 'lyria-3-clip-preview:generateContent', 'lyria-3.5:generateContent']);
+    // ffmpeg trimmed each take to 30 s; the stored file is the trimmed one.
+    const trims = calls.filter((c) => c[0] === 'ffmpeg' && c.includes('-t'));
+    assert.equal(trims.length, 2);
+    assert.equal(trims[0][trims[0].indexOf('-t') + 1], '30');
+    assert.match(trims[0][trims[0].length - 1], /preview-1-30s\.mp3$/);
+    const a = (await assets(id)).filter((x) => x.kind === 'preview');
+    assert.deepEqual(a.map((x) => [x.variant, x.model, Number(x.duration_s), x.meta.trimmedFromS, money(x.cost_usd)]), [[1, 'lyria-3.5', 30, 62.04, '0.08'], [2, 'lyria-3.5', 30, 62.04, '0.08']]);
+    assert.ok(a.every((x) => !vault.get(x.storage_path).toString('latin1').includes('lyria-mp3')), 'the trimmed bytes were uploaded, not the 62 s take');
+    // The failed clip call was given back; lyria-3.5 billed at its own price.
+    assert.equal(money(t.spent_usd), '0.16');
+    const usage = (await db.query('select model, ok, unit from pg1_ai_usage order by id')).rows;
+    assert.deepEqual(usage.map((r) => [r.model, r.ok, r.unit]), [
+      ['lyria-3-clip-preview', false, 'music_lyria_clip'], ['lyria-3.5', true, 'music_lyria'],
+      ['lyria-3-clip-preview', false, 'music_lyria_clip'], ['lyria-3.5', true, 'music_lyria']
+    ]);
+    // The card's header gives the measured length.
+    const card = await musicCard(store, t);
+    assert.match(card.spec, /about 30 s$/);
+  });
+
+  test('--length full: previews are clips, the final keeps lyria-3.5 at full length (no trim)', async () => {
+    const out = await cmd('/music slow-burn cinematic ballad, piano and strings --instrumental --length full');
+    const id = out.musicTrack.id;
+    assert.match(out.reply, /full length\), about 0\.08 USD/);
+    assert.equal(await runWorker(id, 'preview'), 0);
+    assert.equal((await approve((await track(id)).choices[0].token)).resolution, 'approved');
+    const calls = [];
+    assert.equal(await runWorker(id, 'final', {}, { probe: async () => 151.2, calls }), 0);
+    const t = await track(id);
+    assert.equal(t.model, 'lyria-3.5');
+    assert.equal(Number(t.duration_s), 151.2);
+    assert.equal(calls.filter((c) => c[0] === 'ffmpeg').length, 0, 'a full track is never trimmed');
+    assert.deepEqual(state.seen.map((s) => s.url.split('/').pop()), ['lyria-3-clip-preview:generateContent', 'lyria-3-clip-preview:generateContent', 'lyria-3.5:generateContent']);
+    assert.equal(money(t.spent_usd), '0.16', 'two clips (0.04) and one full track (0.08)');
+  });
+
+  test('a declined take is discarded on the card and in the library; only the other take stays approvable', async () => {
+    const out = await cmd('/music warm 70s soul, Rhodes piano --instrumental');
+    const id = out.musicTrack.id;
+    // Take 2's stored file measures 61.4 s.
+    assert.equal(await runWorker(id, 'preview', {}, { probe: async (file) => (/preview-2/.test(file) ? 61.4 : 30.2) }), 0);
+    let t = await track(id);
+    const [c1, c2] = t.choices;
+    let card = await musicCard(store, t);
+    assert.deepEqual(card.previews.map((p) => [p.variant, p.durationS]), [[1, 30.2], [2, 61.4]], 'each take carries its stored file\'s measured length');
+    assert.match(card.spec, /about 61 s$/, 'the header uses the measured length once previews exist');
+
+    const no = await approve(c1.token, 'decline');
+    assert.equal(no.resolution, 'declined');
+    assert.match(no.reply, /take 1 of [0-9a-f]{8} discarded\. Approve take 2, or change it with \/music edit/);
+    t = await track(id);
+    assert.equal(t.status, 'awaiting_choice');
+    assert.deepEqual(t.choices.map((c) => [c.variant, !!c.declined]), [[1, true], [2, false]]);
+    // The card in the reply: take 1 discarded (no player, no approval), take 2 approvable.
+    card = no.musicTrack;
+    assert.deepEqual(card.previews[0], { variant: 1, discarded: true });
+    assert.equal(card.previews[1].token, c2.token);
+    assert.match(card.previews[1].url, /^https:\/\//);
+    assert.match(card.spec, /about 61 s$/);
+    assert.deepEqual((await musicCard(store, t)).previews, card.previews, 'the same on the next status read');
+    assert.doesNotMatch(JSON.stringify(card), ALL_BRANDS_RE);
+    // The library: the same takes.
+    const lib = await cmd('/music list');
+    assert.deepEqual(lib.musicLibrary[0].previews.map((p) => [p.variant, !!p.discarded, !!p.token]), [[1, true, false], [2, false, true]]);
+    assert.match(lib.reply, /take 1 discarded, take 2/);
+
+    // Take 2 can still be approved.
+    assert.equal((await approve(c2.token)).resolution, 'approved');
+    assert.equal((await track(id)).chosen_variant, 2);
+
+    // Both declined: nothing approvable, and the card says so.
+    const out2 = await cmd('/music dusty lo-fi loop --instrumental');
+    const id2 = out2.musicTrack.id;
+    assert.equal(await runWorker(id2, 'preview'), 0);
+    const t2 = await track(id2);
+    await approve(t2.choices[0].token, 'decline');
+    const last = await approve(t2.choices[1].token, 'decline');
+    assert.match(last.reply, /No take is left to approve; change it with \/music edit/);
+    assert.ok(last.musicTrack.previews.every((p) => p.discarded && !p.token && !p.url));
+    assert.match(last.musicTrack.label, /Both takes discarded/);
   });
 
   test('a refusal by the engine stops the stage with a refusal, and is not routed round', async () => {
