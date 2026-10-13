@@ -19,7 +19,8 @@
 // key. Every engine call is a pg1_ai_usage row (the shared ledger).
 //
 // A failed stage records failure = { stage, kind } on the track, which the
-// card explains and /music retry resumes from.
+// card explains and /music retry resumes from. A file over the storage
+// limit (PG1_STORAGE_MAX_MB, default 48) fails the stage as file_too_large.
 
 import os from 'node:os';
 import path from 'node:path';
@@ -34,6 +35,7 @@ import { createMusicStore } from '../lib/music/store.mjs';
 import { verifyMusicToken } from '../lib/music/dispatch.mjs';
 import { musicPlan } from '../lib/music/engines.mjs';
 import { runPreviews, runFinal, runExportStage, MusicCapReached, MusicStageError } from '../lib/music/pipeline.mjs';
+import { StorageLimitError } from '../lib/music/export.mjs';
 import { MUSIC_STAGES, STAGE_QUEUED, STAGE_RUNNING } from '../lib/music/text.mjs';
 
 const FAILURE_REASONS = { throttled: 'throttled', billing: 'out_of_credit', not_configured: 'not_configured', refused: 'refused', timeout: 'timeout' };
@@ -75,13 +77,18 @@ export async function main(env = process.env, { log = console.log, fetchImpl = g
       const patch = await runFinal({ track, store, env, workdir, deps });
       await store.updateTrack(trackId, { ...patch, status: 'done', choices: null, progress: { label: 'Track ready', done: 1, total: 1 } }, { onlyIfStatus: ['rendering'] });
     } else {
-      const patch = await runExportStage({ track, store, workdir, deps });
+      const patch = await runExportStage({ track, store, env, workdir, deps });
       await store.updateTrack(trackId, { ...patch, status: 'done', progress: { label: 'Export ready', done: 1, total: 1 } }, { onlyIfStatus: ['exporting'] });
     }
     log(`[music] ${trackId} ${stage} done`);
     return 0;
   } catch (e) {
     if (e instanceof MusicCapReached) return fail('cap_reached', `spent ${e.spentUsd} of ${e.capUsd}`, 'cap');
+    // A file over PG1_STORAGE_MAX_MB: never uploaded, its charge already given back.
+    if (e instanceof StorageLimitError) {
+      onFailure({ reason: `music_${stage}_file_too_large`, detail: e.message, requestId: track.request_id });
+      return fail('file_too_large', e.message, 'storage');
+    }
     if (e instanceof MusicStageError) {
       if (e.kind !== 'refused') onFailure({ reason: `music_${stage}_failed`, detail: e.detail, requestId: track.request_id });
       return fail(FAILURE_REASONS[e.kind] || 'engine_error', e.detail, e.kind);

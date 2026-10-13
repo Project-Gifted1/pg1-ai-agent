@@ -138,7 +138,7 @@ function page() {
   vm.createContext(ctx);
   vm.runInContext([
     html.match(/const VIDEO_JOB_ID_RE = [^\n]*;/)[0].replace(/^const/, 'var'),
-    ...['escapeHTML', 'filmMoney', 'renderApprovalActionsHtml', 'musicSafeUrl', 'musicSeconds', 'musicAudioHtml', 'musicCardHtml', 'musicLibraryHtml'].map(extractFunction)
+    ...['escapeHTML', 'filmMoney', 'renderApprovalActionsHtml', 'musicSafeUrl', 'musicSeconds', 'musicAudioHtml', 'musicDownloadsHtml', 'musicCardHtml', 'musicLibraryHtml'].map(extractFunction)
   ].join('\n'), ctx);
   return ctx;
 }
@@ -163,34 +163,49 @@ describe('the page: track card and library', () => {
     assert.doesNotMatch(out, BRANDS_RE);
   });
 
-  test('a finished track: the player, the download, the stems; a busy one: the progress and the poll flag', () => {
+  const DOWNLOADS = [
+    { part: 'master', label: 'Master (FLAC)', url: url('master.flac') }, { part: 'drums', label: 'Drums stem (FLAC)', url: url('drums.flac') },
+    { part: 'bass', label: 'Bass stem (FLAC)', url: url('bass.flac') }, { part: 'vocals', label: 'Vocals stem (FLAC)', url: url('vocals.flac') },
+    { part: 'other', label: 'Other stem (FLAC)', url: url('other.flac') }, { part: 'midi', label: 'MIDI: bass', url: url('bass.mid') },
+    { part: 'readme', label: 'README', url: url('README.md') }
+  ];
+
+  test('a finished track: the player, the download list (master, each stem, MIDI, README) and "Download all (zip)"; a busy one: the progress and the poll flag', () => {
     const p = page();
     const done = p.musicCardHtml({
       id: ID, title: 'Neon Drive', status: 'done', label: 'Track ready', active: false, masterUrl: url('master.mp3'), masterDownloadUrl: `${url('master.mp3')}&download=Neon_Drive.mp3`,
-      stemsUrl: `${url('stems.zip')}&download=Neon_Drive_stems.zip`, durationS: 151, bpm: 103.9, key: 'F# minor', spentUsd: 0.24, capUsd: 2
+      downloads: DOWNLOADS, zipUrl: `${url('stems.zip')}&download=Neon_Drive_stems.zip`, durationS: 151, bpm: 103.9, key: 'F# minor', spentUsd: 0.24, capUsd: 2
     });
     assert.equal((done.match(/<audio controls/g) || []).length, 1);
     assert.match(done, /Download the track/);
-    assert.match(done, /Download stems, MIDI and WAV \(zip\)/);
+    assert.match(done, /<a class="music-download-all" href="[^"]+stems\.zip[^"]*" download>Download all \(zip\)<\/a>/);
+    const labels = [...done.matchAll(/data-music-part="([a-z]+)">([^<]+)<\/a>/g)].map((m) => [m[1], m[2]]);
+    assert.deepEqual(labels, DOWNLOADS.map((d) => [d.part, d.label]));
     assert.match(done, /2:31 · 104 BPM · F# minor/);
     assert.match(done, /data-music-active="0"/);
     assert.doesNotMatch(done, BRANDS_RE);
+    // No zip (over the storage limit): the separate files only.
+    const noZip = p.musicCardHtml({ id: ID, title: 'Neon Drive', status: 'done', masterUrl: url('master.mp3'), downloads: DOWNLOADS });
+    assert.doesNotMatch(noZip, /Download all/);
+    assert.equal((noZip.match(/data-music-part=/g) || []).length, DOWNLOADS.length);
     const busy = p.musicCardHtml({ id: ID, title: 'Neon Drive', status: 'exporting', label: 'Exporting stems, MIDI and WAV…', active: true, progress: { label: 'Separating stems', done: 0, total: 1 } });
     assert.match(busy, /data-music-active="1"/);
     assert.match(busy, /role="status"/);
+    assert.doesNotMatch(busy, /music-downloads/);
     assert.equal(p.musicCardHtml({ id: 'not-an-id' }), '');
-    // Only https links ever reach a player.
-    assert.doesNotMatch(p.musicCardHtml({ id: ID, status: 'done', masterUrl: 'javascript:alert(1)' }), /<audio/);
+    // Only https links ever reach a player or a download.
+    assert.doesNotMatch(p.musicCardHtml({ id: ID, status: 'done', masterUrl: 'javascript:alert(1)', downloads: [{ part: 'master', label: 'Master (FLAC)', url: 'javascript:alert(1)' }], zipUrl: 'http://x/y.zip' }), /<audio|<a /);
   });
 
-  test('the library: one player per stored track, the stems link when exported', () => {
+  test('the library: one player per stored track, its downloads when exported', () => {
     const out = page().musicLibraryHtml([
-      { id: ID, shortId: ID.slice(0, 8), title: 'Neon Drive', label: 'Track ready', url: url('a.mp3'), stemsUrl: url('a.zip'), durationS: 30, bpm: 104, key: 'F# minor' },
+      { id: ID, shortId: ID.slice(0, 8), title: 'Neon Drive', label: 'Track ready', url: url('a.mp3'), downloads: DOWNLOADS, zipUrl: url('a.zip'), durationS: 30, bpm: 104, key: 'F# minor' },
       { id: '22222222-2222-4333-8444-555555555555', shortId: '22222222', title: 'Rain <b>', label: 'Making two previews…', url: null }
     ]);
     assert.equal((out.match(/<li class="music-library-item"/g) || []).length, 2);
     assert.equal((out.match(/<audio controls/g) || []).length, 1);
-    assert.match(out, /Stems zip/);
+    assert.match(out, /Download all \(zip\)/);
+    assert.equal((out.match(/data-music-part=/g) || []).length, DOWNLOADS.length);
     assert.match(out, /Rain &lt;b&gt;/);
     assert.doesNotMatch(out, BRANDS_RE);
   });

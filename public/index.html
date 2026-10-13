@@ -979,6 +979,10 @@
     .music-card audio, .music-library audio { width: 100%; max-width: 100%; }
     .music-links { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
     .music-links a { color: var(--gold); }
+    .music-downloads { display: grid; gap: var(--sp-1, 4px); }
+    .music-downloads a { color: var(--gold); }
+    .music-download-all { font-weight: 600; }
+    .music-download-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-1, 4px) var(--sp-3); }
     .music-library { list-style: none; margin: var(--sp-3) 0; padding: 0; display: grid; gap: var(--sp-3); }
     .music-library-item { display: grid; gap: var(--sp-1, 4px); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-1); }
     @media (prefers-reduced-motion: reduce) { .video-job-spinner { animation: none; } }
@@ -5435,6 +5439,16 @@
       return u ? `<audio controls preload="metadata" src="${escapeHTML(u)}" aria-label="${escapeHTML(label)}">Your browser does not support audio playback.</audio>` : '';
     }
 
+    // The export's downloads: one link per file (master, stems, MIDI,
+    // README), plus "Download all (zip)" when the zip fitted the storage limit.
+    function musicDownloadsHtml(downloads, zipUrl) {
+      const items = (Array.isArray(downloads) ? downloads : []).filter((d) => d && musicSafeUrl(d.url) && typeof d.label === 'string')
+        .map((d) => `<li><a href="${escapeHTML(musicSafeUrl(d.url))}" download data-music-part="${escapeHTML(String(d.part || ''))}">${escapeHTML(d.label)}</a></li>`);
+      const zip = musicSafeUrl(zipUrl);
+      if (!items.length && !zip) return '';
+      return `<div class="music-downloads">${zip ? `<a class="music-download-all" href="${escapeHTML(zip)}" download>Download all (zip)</a>` : ''}${items.length ? `<ul class="music-download-list" aria-label="Stems, MIDI and README">${items.join('')}</ul>` : ''}</div>`;
+    }
+
     function musicCardHtml(track) {
       if (!track || typeof track.id !== 'string' || !VIDEO_JOB_ID_RE.test(track.id)) return '';
       const active = track.active === true;
@@ -5459,10 +5473,9 @@
         const links = [];
         const dl = musicSafeUrl(track.masterDownloadUrl);
         if (dl) links.push(`<a href="${escapeHTML(dl)}" download>Download the track</a>`);
-        const stems = musicSafeUrl(track.stemsUrl);
-        if (stems) links.push(`<a href="${escapeHTML(stems)}" download>Download stems, MIDI and WAV (zip)</a>`);
         if (links.length) parts.push(`<div class="music-links">${links.join('')}</div>`);
       }
+      parts.push(musicDownloadsHtml(track.downloads, track.zipUrl));
       const bits = [`Track ${escapeHTML(track.shortId || track.id.slice(0, 8))}`];
       if (track.durationS) bits.push(musicSeconds(track.durationS));
       if (track.bpm) bits.push(`${Math.round(Number(track.bpm))} BPM`);
@@ -5478,8 +5491,7 @@
         if (i.durationS) bits.push(musicSeconds(i.durationS));
         if (i.bpm) bits.push(`${Math.round(Number(i.bpm))} BPM`);
         if (typeof i.key === 'string' && i.key) bits.push(escapeHTML(i.key));
-        const stems = musicSafeUrl(i.stemsUrl);
-        return `<li class="music-library-item" data-music-library="${escapeHTML(i.id)}"><span><strong>${escapeHTML(i.title || 'Untitled track')}</strong> <span class="music-card-meta">(${escapeHTML(i.shortId || i.id.slice(0, 8))}) · ${bits.join(' · ')}</span></span>${musicAudioHtml(i.url, i.title || 'Track')}${stems ? `<div class="music-links"><a href="${escapeHTML(stems)}" download>Stems zip</a></div>` : ''}</li>`;
+        return `<li class="music-library-item" data-music-library="${escapeHTML(i.id)}"><span><strong>${escapeHTML(i.title || 'Untitled track')}</strong> <span class="music-card-meta">(${escapeHTML(i.shortId || i.id.slice(0, 8))}) · ${bits.join(' · ')}</span></span>${musicAudioHtml(i.url, i.title || 'Track')}${musicDownloadsHtml(i.downloads, i.zipUrl)}</li>`;
       });
       return rows.length ? `<ul class="music-library" aria-label="PG1 Sound library">${rows.join('')}</ul>` : '';
     }

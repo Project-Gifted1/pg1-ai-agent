@@ -32,7 +32,7 @@ import {
   generateMusic, musicPlan, musicPrompt, elevenLabsWav, lyriaRequestBody, LICENCE_NOTES, ELEVENLABS_MUSIC_URL, MUSIC_SAMPLE_RATE
 } from '../lib/music/engines.mjs';
 import { checkMusicRequest, lyricFingerprints, SAFETY_REFUSALS, REFUSAL_ALTERNATIVE } from '../lib/music/safety.mjs';
-import { buildZip, readZip, runExport, exportReadme, STEMS } from '../lib/music/export.mjs';
+import { buildZip, readZip, runExport, exportReadme, STEMS, MB, StorageLimitError, guardedUpload, storageMaxBytes } from '../lib/music/export.mjs';
 import { parseMusicCommand, parseMusicFlags, normaliseKey, musicCapUsd, MUSIC_ACTIONS, isMusicCommand } from '../lib/music/text.mjs';
 import { createMusicStore } from '../lib/music/store.mjs';
 import { signMusicToken, verifyMusicToken, MUSIC_WORKFLOW } from '../lib/music/dispatch.mjs';
@@ -102,6 +102,7 @@ describe('router: the music tier', () => {
     assert.deepEqual(plan.map((c) => c.family), ['elevenlabs_music', 'lyria', 'replicate_music']);
     assert.equal(plan[1].key, PAID);
     assert.deepEqual(plan[1].models, ['lyria-3.5']);
+    assert.deepEqual(plan[0].models, ['music_v2_5'], 'ElevenLabs default model');
     assert.ok(plan.every((c) => c.key !== FREE), 'the free Gemini key is never in the music plan, even for the operator');
     assert.equal(resolveKeys(full).elevenlabs, ELEVEN);
     assert.equal(ENGINE_LABELS.elevenlabs, 'PG1 music engine');
@@ -342,13 +343,19 @@ describe('commands and flags', () => {
   });
 });
 
-// --- 4. the export zip ---------------------------------------------------------------------
+// --- 4. the export: FLAC files, one upload each, the zip when it fits -------------------
 
 // A command runner standing in for ffmpeg and scripts/music_stems.py.
-function fakeRun(calls) {
+// `pad` makes an output bigger: { 'drums.flac': bytes }.
+function fakeRun(calls, { pad = {} } = {}) {
   return async (bin, args) => {
     calls.push([bin, ...args]);
-    if (bin === 'ffmpeg') { await writeFile(args[args.length - 1], Buffer.concat([WAV, Buffer.from('master')])); return { stdout: '', stderr: '' }; }
+    if (bin === 'ffmpeg') {
+      const out = args[args.length - 1];
+      const head = out.endsWith('.flac') ? Buffer.from(`fLaC-${path.basename(out, '.flac')}`) : Buffer.concat([WAV, Buffer.from('master')]);
+      await writeFile(out, Buffer.concat([head, Buffer.alloc(pad[path.basename(out)] || 0, 7)]));
+      return { stdout: '', stderr: '' };
+    }
     const [, , outDir] = args;
     await mkdir(outDir, { recursive: true });
     const stems = {};
@@ -363,11 +370,28 @@ function fakeRun(calls) {
   };
 }
 
-describe('export zip', () => {
+function exportFixture() {
+  const vault = new Map([['music/t1/master/v1-master.mp3', Buffer.from('mp3')]]);
+  const uploads = [];
+  const store = {
+    download: async (p) => vault.get(p),
+    upload: async (p, bytes, mime) => { uploads.push({ p, bytes: Buffer.from(bytes), mime }); return p; }
+  };
+  const track = {
+    id: '11111111-2222-4333-8444-555555555555', title: 'Dusty Boom Bap Beat', version: 1, master_path: 'music/t1/master/v1-master.mp3',
+    provider: 'gemini_paid', model: 'lyria-3.5', licence_note: LICENCE_NOTES.gemini_paid, duration_s: 31.2, options: { instrumental: true, bpm: 88, key: 'F minor' }
+  };
+  return { vault, uploads, store, track };
+}
+
+const EXPORT_DIR = 'music/11111111-2222-4333-8444-555555555555/export';
+const PER_FILE = ['master.flac', 'drums.flac', 'bass.flac', 'vocals.flac', 'other.flac', 'midi-bass.mid', 'midi-other.mid', 'README.md'];
+
+describe('export', () => {
   test('zip round trip: stored audio, deflated text, CRCs checked, readable by another zip reader', async () => {
-    const zip = buildZip([{ name: 'a/README.txt', data: 'hello '.repeat(100) }, { name: 'a/x.wav', data: WAV }, { name: 'a/m.mid', data: Buffer.from([1, 2, 3]) }]);
+    const zip = buildZip([{ name: 'a/README.md', data: 'hello '.repeat(100) }, { name: 'a/x.flac', data: WAV }, { name: 'a/m.mid', data: Buffer.from([1, 2, 3]) }]);
     const back = readZip(zip);
-    assert.deepEqual(back.map((e) => e.name), ['a/README.txt', 'a/x.wav', 'a/m.mid']);
+    assert.deepEqual(back.map((e) => e.name), ['a/README.md', 'a/x.flac', 'a/m.mid']);
     assert.equal(back[0].data.toString(), 'hello '.repeat(100));
     assert.deepEqual(back[1].data, WAV);
     const dir = await mkdtemp(path.join(os.tmpdir(), 'music-zip-'));
@@ -375,62 +399,93 @@ describe('export zip', () => {
     await writeFile(file, zip);
     let other = null;
     try { other = execFileSync('python3', ['-I', '-c', 'import sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); print(z.testzip() or "ok"); print(",".join(z.namelist()))', file], { encoding: 'utf8' }); } catch (e) { other = null; }
-    if (other !== null) assert.equal(other.trim(), 'ok\na/README.txt,a/x.wav,a/m.mid');
+    if (other !== null) assert.equal(other.trim(), 'ok\na/README.md,a/x.flac,a/m.mid');
   });
 
-  test('<title>_stems.zip: master WAV, four stems, MIDI per melodic stem, README with BPM, key, provider and licence', async () => {
-    const vault = new Map([['music/t1/master/v1-master.mp3', Buffer.from('mp3')]]);
-    const uploads = [];
-    const store = {
-      download: async (p) => vault.get(p),
-      upload: async (p, bytes, mime) => { uploads.push({ p, bytes, mime }); return p; }
-    };
+  test('every file is its own upload (FLAC master and stems, MIDI, README.md), then the zip when it fits', async () => {
+    const { uploads, store, track } = exportFixture();
     const calls = [];
-    const track = {
-      id: '11111111-2222-4333-8444-555555555555', title: 'Dusty Boom Bap Beat', version: 1, master_path: 'music/t1/master/v1-master.mp3',
-      provider: 'gemini_paid', model: 'lyria-3.5', licence_note: LICENCE_NOTES.gemini_paid, duration_s: 31.2, options: { instrumental: true, bpm: 88, key: 'F minor' }
-    };
     const workdir = await mkdtemp(path.join(os.tmpdir(), 'music-export-'));
-    const r = await runExport({ track, store, workdir, run: fakeRun(calls), now: new Date('2026-10-13T12:00:00Z') });
-    assert.equal(r.name, 'Dusty_Boom_Bap_Beat_stems.zip');
-    assert.equal(uploads.length, 1);
-    assert.equal(uploads[0].mime, 'application/zip');
-    assert.match(uploads[0].p, /^music\/11111111-2222-4333-8444-555555555555\/export\/v1-Dusty_Boom_Bap_Beat_stems\.zip$/);
-    const entries = readZip(uploads[0].bytes);
-    const names = entries.map((e) => e.name);
+    const r = await runExport({ track, store, workdir, maxBytes: 48 * MB, run: fakeRun(calls), now: new Date('2026-10-13T12:00:00Z') });
+    assert.deepEqual(uploads.map((u) => u.p), [...PER_FILE.map((f) => `${EXPORT_DIR}/v1-${f}`), `${EXPORT_DIR}/v1-Dusty_Boom_Bap_Beat_stems.zip`]);
+    assert.deepEqual(uploads.map((u) => u.mime), [...Array(5).fill('audio/flac'), 'audio/midi', 'audio/midi', 'text/markdown', 'application/zip']);
+    assert.deepEqual(r.parts.map((p) => [p.part, p.stem || null]), [['master', null], ['drums', null], ['bass', null], ['vocals', null], ['other', null], ['midi', 'bass'], ['midi', 'other'], ['readme', null]], 'no vocals MIDI for an instrumental');
+    assert.deepEqual(r.parts.map((p) => p.download).slice(0, 2), ['Dusty_Boom_Bap_Beat_master.flac', 'Dusty_Boom_Bap_Beat_drums.flac']);
+    assert.equal(uploads[1].bytes.toString(), 'fLaC-drums');
+    assert.deepEqual(r.zip, { name: 'Dusty_Boom_Bap_Beat_stems.zip', path: `${EXPORT_DIR}/v1-Dusty_Boom_Bap_Beat_stems.zip`, size: uploads[8].bytes.length });
+    assert.equal(r.zipSkipped, null);
+    const names = readZip(uploads[8].bytes).map((e) => e.name);
     assert.deepEqual(names, [
-      'Dusty_Boom_Bap_Beat_stems/README.txt',
-      'Dusty_Boom_Bap_Beat_stems/Dusty_Boom_Bap_Beat_master.wav',
-      'Dusty_Boom_Bap_Beat_stems/stems/Dusty_Boom_Bap_Beat_drums.wav',
-      'Dusty_Boom_Bap_Beat_stems/stems/Dusty_Boom_Bap_Beat_bass.wav',
-      'Dusty_Boom_Bap_Beat_stems/stems/Dusty_Boom_Bap_Beat_vocals.wav',
-      'Dusty_Boom_Bap_Beat_stems/stems/Dusty_Boom_Bap_Beat_other.wav',
+      'Dusty_Boom_Bap_Beat_stems/Dusty_Boom_Bap_Beat_master.flac',
+      'Dusty_Boom_Bap_Beat_stems/stems/Dusty_Boom_Bap_Beat_drums.flac',
+      'Dusty_Boom_Bap_Beat_stems/stems/Dusty_Boom_Bap_Beat_bass.flac',
+      'Dusty_Boom_Bap_Beat_stems/stems/Dusty_Boom_Bap_Beat_vocals.flac',
+      'Dusty_Boom_Bap_Beat_stems/stems/Dusty_Boom_Bap_Beat_other.flac',
       'Dusty_Boom_Bap_Beat_stems/midi/Dusty_Boom_Bap_Beat_bass.mid',
-      'Dusty_Boom_Bap_Beat_stems/midi/Dusty_Boom_Bap_Beat_other.mid'
-    ], 'no vocals MIDI for an instrumental');
-    for (const e of entries.filter((x) => x.name.endsWith('.wav'))) assert.equal(e.data.toString('ascii', 0, 4), 'RIFF', e.name);
-    assert.equal(entries.find((e) => e.name.endsWith('_drums.wav')).data.toString().slice(-5), 'drums');
-    const readme = entries[0].data.toString();
-    assert.match(readme, /BPM: {8}87\.96 \(detected; asked for 88\)/);
-    assert.match(readme, /Key: {8}F minor \(detected; asked for F minor\)/);
-    assert.match(readme, /Provider: gemini_paid/);
-    assert.match(readme, /Model: {4}lyria-3\.5/);
-    assert.match(readme, /Licence: {2}SynthID watermarked; commercial use under Gemini API terms; source MP3/);
-    assert.match(readme, /No exclusive copyright is claimed\s+or granted/);
-    assert.doesNotMatch(readme, /(?<!no )exclusive copyright (?:is )?(?:owned|held|belongs)/i);
-    assert.match(readme, /midi\/Dusty_Boom_Bap_Beat_bass\.mid/);
-    // ffmpeg made a 44.1 kHz stereo 16-bit WAV; the stems script ran on it.
-    assert.deepEqual(calls[0].slice(-8), ['-vn', '-ac', '2', '-ar', '44100', '-c:a', 'pcm_s16le', path.join(workdir, 'Dusty_Boom_Bap_Beat_master.wav')]);
+      'Dusty_Boom_Bap_Beat_stems/midi/Dusty_Boom_Bap_Beat_other.mid',
+      'Dusty_Boom_Bap_Beat_stems/README.md'
+    ]);
+    // ffmpeg: the master to WAV for the separation, then FLAC for the master and each stem.
+    assert.deepEqual(calls[0].slice(-8), ['-vn', '-ac', '2', '-ar', '44100', '-c:a', 'pcm_s16le', path.join(workdir, 'master.wav')]);
     assert.equal(calls[1][1], 'scripts/music_stems.py');
     assert.ok(calls[1].includes('--no-vocals-midi'));
+    const flac = calls.filter((c) => c[0] === 'ffmpeg' && c[c.length - 1].endsWith('.flac'));
+    assert.equal(flac.length, 5);
+    assert.ok(flac.every((c) => c.includes('flac') && c.includes('s16') && c.includes('44100')));
     assert.equal(r.bpm, 87.96);
     assert.equal(r.key, 'F minor');
+
+    const readme = uploads[7].bytes.toString();
+    assert.match(readme, /^# Dusty Boom Bap Beat — stems export/);
+    assert.match(readme, /- BPM: 87\.96 \(detected; asked for 88\)/);
+    assert.match(readme, /- Key: F minor \(detected; asked for F minor\)/);
+    assert.match(readme, /- Provider: gemini_paid/);
+    assert.match(readme, /- Model: lyria-3\.5/);
+    assert.match(readme, /- Licence: SynthID watermarked; commercial use under Gemini API terms; source MP3/);
+    assert.match(readme, /The master and the stems are FLAC: lossless/);
+    assert.match(readme, /Any DAW can import them as they are, or\s+convert them to WAV/);
+    assert.match(readme, /No exclusive copyright is claimed\s+or granted/);
+    assert.match(readme, /- midi\/bass\.mid/);
+    assert.match(readme, /- stems\/drums\.flac/);
+  });
+
+  test('the zip over the storage limit is skipped; the separate files are still the export', async () => {
+    const { uploads, store, track } = exportFixture();
+    // Each file is ~900 bytes; together they are far over a 2 KB limit.
+    const pad = Object.fromEntries(['master.flac', 'drums.flac', 'bass.flac', 'vocals.flac', 'other.flac'].map((f) => [f, 900]));
+    const r = await runExport({ track, store, workdir: await mkdtemp(path.join(os.tmpdir(), 'music-export-')), maxBytes: 2048, run: fakeRun([], { pad }) });
+    assert.equal(r.zip, null);
+    assert.ok(r.zipSkipped.size > 2048);
+    assert.deepEqual(uploads.map((u) => u.p), PER_FILE.map((f) => `${EXPORT_DIR}/v1-${f}`), 'every file, no zip');
+    assert.ok(uploads.every((u) => u.bytes.length <= 2048));
+  });
+
+  test('size guard: one file over the limit stops the export before anything is uploaded', async () => {
+    const { uploads, store, track } = exportFixture();
+    const pad = { 'vocals.flac': 5000 };
+    await assert.rejects(
+      runExport({ track, store, workdir: await mkdtemp(path.join(os.tmpdir(), 'music-export-')), maxBytes: 4096, run: fakeRun([], { pad }) }),
+      (e) => e instanceof StorageLimitError && e.code === 'file_too_large' && e.file === 'vocals.flac' && /^file too large for storage limit: vocals\.flac/.test(e.message)
+    );
+    assert.equal(uploads.length, 0, 'nothing half-stored');
+    // guardedUpload: checked before every upload.
+    const sent = [];
+    await assert.rejects(guardedUpload({ upload: async (p) => { sent.push(p); return p; } }, 'music/x/master/v1-master.wav', Buffer.alloc(11), 'audio/wav', 10), StorageLimitError);
+    assert.equal(sent.length, 0);
+    assert.equal(await guardedUpload({ upload: async (p) => p }, 'a/b.flac', Buffer.alloc(10), 'audio/flac', 10), 'a/b.flac', 'exactly at the limit is allowed');
+  });
+
+  test('PG1_STORAGE_MAX_MB: default 48, decimals allowed, nonsense ignored', () => {
+    assert.equal(storageMaxBytes({}), 48 * MB);
+    assert.equal(storageMaxBytes({ PG1_STORAGE_MAX_MB: '20' }), 20 * MB);
+    assert.equal(storageMaxBytes({ PG1_STORAGE_MAX_MB: '0.5' }), MB / 2);
+    for (const bad of ['0', '-3', 'big', '']) assert.equal(storageMaxBytes({ PG1_STORAGE_MAX_MB: bad }), 48 * MB, bad);
   });
 
   test('the README states the licence and never claims exclusive copyright', () => {
-    const r = exportReadme({ title: 'X', trackId: 'id', bpm: null, key: null, provider: 'elevenlabs', model: 'music_v1', licenceNote: LICENCE_NOTES.elevenlabs, files: ['README.txt'] });
-    assert.match(r, /Licence: {2}commercial use per Eleven Music terms; lossless/);
-    assert.match(r, /BPM: {8}not detected/);
+    const r = exportReadme({ title: 'X', trackId: 'id', bpm: null, key: null, provider: 'elevenlabs', model: 'music_v2_5', licenceNote: LICENCE_NOTES.elevenlabs, files: ['README.md'] });
+    assert.match(r, /- Licence: commercial use per Eleven Music terms; lossless/);
+    assert.match(r, /- BPM: not detected/);
     assert.match(r, /No exclusive copyright is claimed/);
   });
 });
@@ -453,9 +508,9 @@ describe('/music end to end (real Postgres, stand-in engines and worker tools)',
     const row = (await db.query('select * from pending_actions where token = $1', [token])).rows[0];
     return handleMusicApproval({ row, decision, env, supUrl: SUP_URL, supKey: 'service-key', isOperator: true, fetchImpl, ...extra });
   };
-  const runWorker = async (trackId, stage, extra = {}) => {
+  const runWorker = async (trackId, stage, extra = {}, { pad = {} } = {}) => {
     const workerEnv = { ...env, MUSIC_TRACK_ID: trackId, MUSIC_STAGE: stage, MUSIC_TOKEN: signMusicToken(trackId, env), ...extra };
-    return workerMain(workerEnv, { fetchImpl, log: quiet, sleep: noSleep, probe: async () => 30.5, run: fakeRun([]) });
+    return workerMain(workerEnv, { fetchImpl, log: quiet, sleep: noSleep, probe: async () => 30.5, run: fakeRun([], { pad }) });
   };
   const track = async (id) => (await db.query('select * from pg1_music_tracks where id = $1', [id])).rows[0];
   const assets = async (id) => (await db.query('select * from pg1_music_assets where track_id = $1 order by created_at', [id])).rows;
@@ -561,9 +616,9 @@ describe('/music end to end (real Postgres, stand-in engines and worker tools)',
     assert.match(card.masterDownloadUrl, /download=Dusty_Boom_bap_Beat_Vinyl_Crackle_Jazzy\.mp3$/);
     assert.doesNotMatch(JSON.stringify(card), ALL_BRANDS_RE);
 
-    // Export: no engine spend, the zip in the media library.
+    // Export: no engine spend; each file in the media library, and the zip.
     const ex = await cmd(`/music export ${id.slice(0, 8)}`);
-    assert.match(ex.reply, /exporting .* as Dusty_Boom_bap_Beat_Vinyl_Crackle_Jazzy_stems\.zip/);
+    assert.match(ex.reply, /exporting .* as FLAC \(lossless\).*plus Dusty_Boom_bap_Beat_Vinyl_Crackle_Jazzy_stems\.zip when it fits the storage limit/);
     assert.equal((await track(id)).status, 'export_queued');
     assert.equal(await runWorker(id, 'export'), 0);
     t = await track(id);
@@ -573,15 +628,84 @@ describe('/music end to end (real Postgres, stand-in engines and worker tools)',
     assert.equal(t.musical_key, 'F minor');
     const names = readZip(vault.get(t.stems_path)).map((e) => e.name);
     assert.equal(names.length, 8);
-    assert.ok(names.some((n) => /README\.txt$/.test(n)));
+    assert.ok(names.some((n) => /README\.md$/.test(n)));
+    // One stems_zip row per file, told apart by meta.part (the applied
+    // migration's kinds are not changed).
+    const parts = (await assets(id)).filter((x) => x.kind === 'stems_zip' && x.status === 'ok');
+    assert.deepEqual(parts.map((x) => x.meta.part), ['master', 'drums', 'bass', 'vocals', 'other', 'midi', 'midi', 'readme', 'zip']);
+    assert.ok(parts.every((x) => vault.has(x.storage_path)), 'each file uploaded on its own');
     assert.equal(money(t.spent_usd), '0.24', 'the export spends nothing');
-    // The library lists it with a player and the stems.
+    // The card: a download per file plus "Download all (zip)".
+    card = (await cmd(`/music status ${id.slice(0, 8)}`)).musicTrack;
+    assert.deepEqual(card.downloads.map((d) => d.label), ['Master (FLAC)', 'Drums stem (FLAC)', 'Bass stem (FLAC)', 'Vocals stem (FLAC)', 'Other stem (FLAC)', 'MIDI: bass', 'MIDI: other', 'README']);
+    assert.match(card.downloads[1].url, /download=Dusty_Boom_bap_Beat_Vinyl_Crackle_Jazzy_drums\.flac$/);
+    assert.match(card.zipUrl, /download=Dusty_Boom_bap_Beat_Vinyl_Crackle_Jazzy_stems\.zip$/);
+    assert.doesNotMatch(JSON.stringify(card), ALL_BRANDS_RE);
+    const again2 = await cmd(`/music export ${id.slice(0, 8)}`);
+    assert.match(again2.reply, /already in the media library/);
+    // The library lists it with a player and the same downloads.
     const lib = await cmd('/music list');
     assert.equal(lib.musicLibrary.length, 1);
     assert.match(lib.musicLibrary[0].url, /^https:\/\//);
-    assert.match(lib.musicLibrary[0].stemsUrl, /download=Dusty_Boom_bap_Beat_Vinyl_Crackle_Jazzy_stems\.zip$/);
-    assert.match(lib.reply, /stems ready/);
+    assert.equal(lib.musicLibrary[0].downloads.length, 8);
+    assert.match(lib.musicLibrary[0].zipUrl, /download=Dusty_Boom_bap_Beat_Vinyl_Crackle_Jazzy_stems\.zip$/);
+    assert.match(lib.reply, /stems ready \(zip too\)/);
     assert.doesNotMatch(JSON.stringify(lib), ALL_BRANDS_RE);
+  });
+
+  // A finished track, ready to export.
+  const finishedTrack = async () => {
+    const out = await cmd('/music warm lo-fi chords --instrumental');
+    const id = out.musicTrack.id;
+    assert.equal(await runWorker(id, 'preview'), 0);
+    assert.equal((await approve((await track(id)).choices[0].token)).resolution, 'approved');
+    assert.equal(await runWorker(id, 'final'), 0);
+    return id;
+  };
+
+  test('storage limit: the zip is skipped when it is over PG1_STORAGE_MAX_MB; the card lists the separate files', async () => {
+    const id = await finishedTrack();
+    await cmd(`/music export ${id.slice(0, 8)}`);
+    // ~2 KB: every file (1.5 KB stems, the README) fits, the zip of all of them does not.
+    const pad = Object.fromEntries(['master.flac', 'drums.flac', 'bass.flac', 'vocals.flac', 'other.flac'].map((f) => [f, 1500]));
+    assert.equal(await runWorker(id, 'export', { PG1_STORAGE_MAX_MB: '0.002' }, { pad }), 0);
+    const t = await track(id);
+    assert.equal(t.status, 'done');
+    assert.equal(t.stems_path, null, 'no zip');
+    const parts = (await assets(id)).filter((x) => x.kind === 'stems_zip' && x.status === 'ok').map((x) => x.meta.part);
+    assert.deepEqual(parts, ['master', 'drums', 'bass', 'vocals', 'other', 'midi', 'midi', 'readme']);
+    assert.ok([...vault.keys()].every((k) => !k.endsWith('.zip')));
+    const card = await musicCard(store, t);
+    assert.equal(card.downloads.length, 8);
+    assert.equal(card.zipUrl, undefined);
+  });
+
+  test('storage limit: a file over it fails the stage clearly and its charge is given back', async () => {
+    const out = await cmd('/music ambient pads --instrumental');
+    const id = out.musicTrack.id;
+    // A few bytes: every preview is over it.
+    assert.equal(await runWorker(id, 'preview', { PG1_STORAGE_MAX_MB: '0.000005' }), 1);
+    let t = await track(id);
+    assert.equal(t.status, 'failed');
+    assert.equal(t.error_reason, 'file_too_large');
+    assert.match(t.error_detail, /^file too large for storage limit: v1-take1\.mp3 is/);
+    assert.deepEqual(t.failure, { stage: 'preview', kind: 'storage' });
+    assert.equal(money(t.spent_usd), '0.00', 'the made take is refunded');
+    assert.equal([...vault.keys()].filter((k) => k.includes(id)).length, 0, 'nothing uploaded');
+    const card = await musicCard(store, t);
+    assert.match(card.message, /PG1 Sound stopped at the previews: file too large for storage limit/);
+    assert.doesNotMatch(card.message, ALL_BRANDS_RE);
+
+    // The export: a stem over the limit fails it the same way.
+    const id2 = await finishedTrack();
+    await cmd(`/music export ${id2.slice(0, 8)}`);
+    const before = money((await track(id2)).spent_usd);
+    assert.equal(await runWorker(id2, 'export', { PG1_STORAGE_MAX_MB: '0.00001' }), 1);
+    t = await track(id2);
+    assert.equal(t.error_reason, 'file_too_large');
+    assert.deepEqual(t.failure, { stage: 'export', kind: 'storage' });
+    assert.equal(money(t.spent_usd), before);
+    assert.equal((await assets(id2)).filter((x) => x.kind === 'stems_zip').length, 0);
   });
 
   test('the cap: a stage that does not fit is stopped and nothing is charged for it', async () => {

@@ -210,7 +210,7 @@ PG1_DAILY_BUDGET_REPLICATE_USD=3
 # by hand). The music tier of the router (lib/music/engines.mjs):
 #   ElevenLabs Music (ELEVENLABS_API_KEY, optional; asked for as 44.1 kHz
 #   PCM and stored as WAV; model PG1_MUSIC_ELEVENLABS_MODEL, default
-#   music_v1; PG1_MUSIC_ELEVENLABS_CHANNELS=1|2 forces the channel count)
+#   music_v2_5; PG1_MUSIC_ELEVENLABS_CHANNELS=1|2 forces the channel count)
 #     -> Lyria on the paid Gemini key (GEMINI_API_KEY_PAID only; model
 #        PG1_MUSIC_LYRIA_MODEL, default lyria-3.5; MP3 out)
 #     -> Replicate (REPLICATE_API_TOKEN; PG1_FILM_MUSIC_MODEL, ~30 s, instrumental)
@@ -224,9 +224,15 @@ PG1_DAILY_BUDGET_REPLICATE_USD=3
 # REPLICATE_API_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
 # PG1_VIDEO_RENDER_SECRET) plus ELEVENLABS_API_KEY when set, and the same
 # dispatch settings (PG1_FILM_GITHUB_TOKEN or GITHUB_TOKEN,
-# PG1_FILM_RENDER_REPO, PG1_FILM_RENDER_REF). The export needs the vault
-# bucket to accept zips of up to ~150 MB for a full-length track (master
-# plus four stems as WAV).
+# PG1_FILM_RENDER_REPO, PG1_FILM_RENDER_REF).
+# PG1_STORAGE_MAX_MB=48          # per-file upload limit (Supabase Free plan: 50 MB)
+# The export encodes the master and the four stems as FLAC (lossless) and
+# uploads every file on its own (master.flac, drums.flac, bass.flac,
+# vocals.flac, other.flac, the MIDI files, README.md); <title>_stems.zip is
+# uploaded too only when it fits under PG1_STORAGE_MAX_MB. Every upload
+# (previews, the master, each export file) is checked first: one over the
+# limit fails the stage with "file too large for storage limit" and its
+# charge is given back.
 ```
 
 ### 3. Test the API
