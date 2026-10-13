@@ -1067,6 +1067,8 @@
     .music-card-failed { color: var(--danger-text); }
     .music-take { display: grid; gap: var(--sp-1, 4px); padding: var(--sp-2) 0; border-top: 1px solid var(--border); }
     .music-take-label { color: var(--text-1); font-weight: 600; }
+    .music-take-discarded .music-take-label { color: var(--text-3, var(--text-2)); font-weight: 400; }
+    .music-card-sep { color: var(--text-2); }
     .music-card audio, .music-library audio { width: 100%; max-width: 100%; }
     .music-links { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
     .music-links a { color: var(--gold); }
@@ -4755,15 +4757,25 @@
           const textEl = bubble.querySelector('.message-text');
           if (textEl) appendMarkdown(textEl, data.reply || (decision === 'approve' ? 'Approved.' : 'Declined.'));
         }
+        // PG1 SOUND: a declined take comes back with the track's updated
+        // card, which replaces the cards (and library rows) on the page.
+        const musicDeclined = decision === 'decline' && data.musicTrack && actionsRow && actionsRow.closest('.music-take') ? applyMusicDecline(data.musicTrack) : false;
         if (actionsRow) {
           // PG1 SOUND: approving one take closes the other take's buttons.
-          const takeCard = decision === 'approve' ? actionsRow.closest('.music-card') : null;
+          const takeCard = decision === 'approve' ? actionsRow.closest('.music-card, .music-library-item') : null;
           if (takeCard) takeCard.querySelectorAll('.approval-actions').forEach((el) => el.remove());
+          // A declined take that was not replaced above still loses its player and wording.
+          const take = decision === 'decline' && !musicDeclined ? actionsRow.closest('.music-take') : null;
+          if (take && take.isConnected) {
+            const holder = document.createElement('div');
+            holder.innerHTML = musicTakeHtml({ variant: Number(take.getAttribute('data-music-take')), discarded: true });
+            take.replaceWith(holder.firstElementChild);
+          }
           actionsRow.remove();
         }
         // PG1 STUDIO: an approved film stage brings its card (which then
         // polls), and an approved edit may bring the next approval.
-        if (bubble && (data.filmProject || data.musicTrack || (data.pendingApproval && data.pendingApproval.token))) {
+        if (bubble && !musicDeclined && (data.filmProject || (data.musicTrack && decision !== 'decline') || (data.pendingApproval && data.pendingApproval.token))) {
           const extra = document.createElement('div');
           extra.innerHTML = (data.filmProject ? filmCardHtml(data.filmProject, { approvals: !data.pendingApproval }) : '')
             + (data.musicTrack ? musicCardHtml(data.musicTrack) : '')
@@ -5769,7 +5781,8 @@
     let musicPollTimer = null;
 
     function musicSafeUrl(u) { return typeof u === 'string' && /^https:\/\//i.test(u) ? u : ''; }
-    function musicSeconds(n) { const s = Math.round(Number(n) || 0); return s ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : ''; }
+    // The stored file's measured length, as a player shows it (whole seconds, not rounded up).
+    function musicSeconds(n) { const s = Math.floor(Number(n) || 0); return s > 0 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : ''; }
     function musicAudioHtml(url, label) {
       const u = musicSafeUrl(url);
       return u ? `<audio controls preload="metadata" src="${escapeHTML(u)}" aria-label="${escapeHTML(label)}">Your browser does not support audio playback.</audio>` : '';
@@ -5785,24 +5798,37 @@
       return `<div class="music-downloads">${zip ? `<a class="music-download-all" href="${escapeHTML(zip)}" download>Download all (zip)</a>` : ''}${items.length ? `<ul class="music-download-list" aria-label="Stems, MIDI and README">${items.join('')}</ul>` : ''}</div>`;
     }
 
+    // One row per take: a player and "use take N" (Approve / Decline) while
+    // it is on offer; "Discarded" alone (no player, no approval) once declined.
+    function musicTakeHtml(p) {
+      const n = Number(p.variant);
+      if (p.discarded === true) return `<div class="music-take music-take-discarded" data-music-take="${n}" data-music-discarded="1"><span class="music-take-label">Take ${n} · Discarded</span></div>`;
+      const len = musicSeconds(p.durationS);
+      const buttons = typeof p.token === 'string' && /^[0-9a-f-]{36}$/i.test(p.token) ? renderApprovalActionsHtml(p.token) : '';
+      return `<div class="music-take" data-music-take="${n}"><span class="music-take-label">Take ${n}${len ? ` · ${len}` : ''}</span>${musicAudioHtml(p.url, `Preview, take ${n}`)}${buttons ? `<span class="music-card-meta">Approve to render this take in full.</span>${buttons}` : ''}</div>`;
+    }
+    function musicTakesHtml(previews) {
+      return (Array.isArray(previews) ? previews : []).filter((p) => p && Number.isInteger(p.variant)).map(musicTakeHtml).join('');
+    }
+
     function musicCardHtml(track) {
       if (!track || typeof track.id !== 'string' || !VIDEO_JOB_ID_RE.test(track.id)) return '';
       const active = track.active === true;
       const parts = [];
-      parts.push(`<div class="music-card-head"><span class="video-job-engine">PG1 Sound</span><span class="music-card-title">${escapeHTML(track.title || 'Untitled track')}</span><span class="film-card-status">· ${escapeHTML(track.label || track.status || '')}</span></div>`);
+      // The " · " goes between items only, never before the first.
+      const head = [];
+      const title = typeof track.title === 'string' ? track.title.trim() : '';
+      const status = String(track.label || track.status || '').trim();
+      if (title) head.push(`<span class="music-card-title">${escapeHTML(title)}</span>`);
+      if (status) head.push(`<span class="film-card-status">${escapeHTML(status)}</span>`);
+      parts.push(`<div class="music-card-head"><span class="video-job-engine">PG1 Sound</span>${head.join('<span class="music-card-sep" aria-hidden="true">·</span>')}</div>`);
       if (typeof track.spec === 'string' && track.spec) parts.push(`<p class="music-card-meta">${escapeHTML(track.spec)}</p>`);
       if (active) {
         const pr = track.progress && track.progress.total ? ` ${escapeHTML(track.progress.label || '')} (${Number(track.progress.done) || 0}/${Number(track.progress.total) || 0})` : '';
         parts.push(`<div class="film-card-progress" role="status" aria-live="polite"><span class="video-job-spinner" aria-hidden="true"></span><span>${escapeHTML(track.label || 'Working…')}${pr}</span></div>`);
       }
       if (track.message) parts.push(`<p class="music-card-failed">${escapeHTML(track.message)}</p>`);
-      if (Array.isArray(track.previews)) {
-        track.previews.filter((p) => p && Number.isInteger(p.variant)).forEach((p) => {
-          const len = musicSeconds(p.durationS);
-          const buttons = typeof p.token === 'string' && /^[0-9a-f-]{36}$/i.test(p.token) ? renderApprovalActionsHtml(p.token) : '';
-          parts.push(`<div class="music-take" data-music-take="${Number(p.variant)}"><span class="music-take-label">Take ${Number(p.variant)}${len ? ` · ${len}` : ''}</span>${musicAudioHtml(p.url, `Preview, take ${Number(p.variant)}`)}${buttons ? `<span class="music-card-meta">Approve to render this take in full.</span>${buttons}` : ''}</div>`);
-        });
-      }
+      parts.push(musicTakesHtml(track.previews));
       const master = musicSafeUrl(track.masterUrl);
       if (master) {
         parts.push(musicAudioHtml(master, 'Final track'));
@@ -5823,13 +5849,41 @@
 
     function musicLibraryHtml(items) {
       const rows = (items || []).filter((i) => i && typeof i.id === 'string' && VIDEO_JOB_ID_RE.test(i.id)).map((i) => {
-        const bits = [escapeHTML(i.label || i.status || '')];
+        // Only items that are there, joined: no leading or doubled " · ".
+        const bits = [`(${escapeHTML(i.shortId || i.id.slice(0, 8))})`, escapeHTML(String(i.label || i.status || '').trim())];
         if (i.durationS) bits.push(musicSeconds(i.durationS));
         if (i.bpm) bits.push(`${Math.round(Number(i.bpm))} BPM`);
         if (typeof i.key === 'string' && i.key) bits.push(escapeHTML(i.key));
-        return `<li class="music-library-item" data-music-library="${escapeHTML(i.id)}"><span><strong>${escapeHTML(i.title || 'Untitled track')}</strong> <span class="music-card-meta">(${escapeHTML(i.shortId || i.id.slice(0, 8))}) · ${bits.join(' · ')}</span></span>${musicAudioHtml(i.url, i.title || 'Track')}${musicDownloadsHtml(i.downloads, i.zipUrl)}</li>`;
+        return `<li class="music-library-item" data-music-library="${escapeHTML(i.id)}"><span><strong>${escapeHTML(i.title || 'Untitled track')}</strong> <span class="music-card-meta">${bits.filter(Boolean).join(' · ')}</span></span>${musicAudioHtml(i.url, i.title || 'Track')}${musicTakesHtml(i.previews)}${musicDownloadsHtml(i.downloads, i.zipUrl)}</li>`;
       });
       return rows.length ? `<ul class="music-library" aria-label="PG1 Sound library">${rows.join('')}</ul>` : '';
+    }
+
+    // A declined take: every card for the track is replaced by the updated
+    // one, and the take in any library row becomes "Discarded" (no player,
+    // no approval); the other take stays approvable.
+    function applyMusicDecline(track) {
+      if (!track || typeof track.id !== 'string' || !VIDEO_JOB_ID_RE.test(track.id)) return false;
+      const html = musicCardHtml(track);
+      let changed = false;
+      document.querySelectorAll('#chat-container .music-card[data-music-id]').forEach((card) => {
+        if (card.getAttribute('data-music-id') !== track.id || !html) return;
+        const holder = document.createElement('div');
+        holder.innerHTML = html;
+        if (holder.firstElementChild) { card.replaceWith(holder.firstElementChild); changed = true; }
+      });
+      document.querySelectorAll('#chat-container .music-library-item[data-music-library]').forEach((item) => {
+        if (item.getAttribute('data-music-library') !== track.id) return;
+        (Array.isArray(track.previews) ? track.previews : []).filter((p) => p && p.discarded === true && Number.isInteger(p.variant)).forEach((p) => {
+          const take = item.querySelector(`.music-take[data-music-take="${Number(p.variant)}"]`);
+          if (!take) return;
+          const holder = document.createElement('div');
+          holder.innerHTML = musicTakeHtml(p);
+          take.replaceWith(holder.firstElementChild);
+          changed = true;
+        });
+      });
+      return changed;
     }
 
     function activeMusicCards() {

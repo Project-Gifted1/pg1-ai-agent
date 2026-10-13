@@ -115,6 +115,23 @@ describe('/music in the chat', () => {
     assert.equal((await db.query('select status from pending_actions where token = $1', [token])).rows[0].status, 'approved');
     assert.equal((await db.query('select status, chosen_variant from pg1_music_tracks where id = $1', [t.id])).rows[0].chosen_variant, 1);
   });
+
+  test('declining a take through CONFIRM_PENDING_ACTION sends back the card with that take discarded', async () => {
+    const t = (await db.query("insert into pg1_music_tracks (prompt, title, options, status, cap_usd) values ('x', 'X', '{}', 'awaiting_choice', 2) returning *")).rows[0];
+    const t1 = '22222222-3333-4444-8555-666666666666';
+    const t2 = '33333333-3333-4444-8555-666666666666';
+    await db.query('update pg1_music_tracks set choices = $1 where id = $2', [JSON.stringify([{ variant: 1, token: t1 }, { variant: 2, token: t2 }]), t.id]);
+    for (const [v, tok] of [[1, t1], [2, t2]]) {
+      await db.query("insert into pg1_music_assets (track_id, kind, variant, storage_path, duration_s) values ($1, 'preview', $2, $3, 30.1)", [t.id, v, `music/${t.id}/preview/v1-take${v}.mp3`]);
+      await db.query("insert into pending_actions (token, action_type, plan, diff_summary, status, created_at, expires_at) values ($1, $2, $3, 'take', 'pending', now(), now() + interval '1 day')", [tok, MUSIC_ACTIONS.final, JSON.stringify({ trackId: t.id, variant: v, version: 1, estimateUsd: 0.04 })]);
+    }
+    const res = await chat(authed({ action: 'CONFIRM_PENDING_ACTION', token: t1, decision: 'decline' }));
+    assert.match(res.jsonBody.reply, /PG1 Sound: take 1 of [0-9a-f]{8} discarded\. Approve take 2/);
+    assert.deepEqual(res.jsonBody.musicTrack.previews.map((p) => [p.variant, !!p.discarded, p.token || null]), [[1, true, null], [2, false, t2]]);
+    assert.equal((await db.query('select status from pending_actions where token = $1', [t1])).rows[0].status, 'declined');
+    assert.equal((await db.query('select status from pending_actions where token = $1', [t2])).rows[0].status, 'pending');
+    assert.doesNotMatch(JSON.stringify(res.jsonBody), UPSTREAM_BRAND_RE);
+  });
 });
 
 // --- the page --------------------------------------------------------------------------------
@@ -138,7 +155,7 @@ function page() {
   vm.createContext(ctx);
   vm.runInContext([
     html.match(/const VIDEO_JOB_ID_RE = [^\n]*;/)[0].replace(/^const/, 'var'),
-    ...['escapeHTML', 'filmMoney', 'renderApprovalActionsHtml', 'musicSafeUrl', 'musicSeconds', 'musicAudioHtml', 'musicDownloadsHtml', 'musicCardHtml', 'musicLibraryHtml'].map(extractFunction)
+    ...['escapeHTML', 'filmMoney', 'renderApprovalActionsHtml', 'musicSafeUrl', 'musicSeconds', 'musicAudioHtml', 'musicDownloadsHtml', 'musicTakeHtml', 'musicTakesHtml', 'musicCardHtml', 'musicLibraryHtml'].map(extractFunction)
   ].join('\n'), ctx);
   return ctx;
 }
@@ -160,6 +177,60 @@ describe('the page: track card and library', () => {
     assert.match(out, /Take 1 · 0:30/);
     assert.match(out, /PG1 Sound/);
     assert.match(out, /spent 0\.16 of 2\.00 USD/);
+    assert.doesNotMatch(out, BRANDS_RE);
+  });
+
+  test('a declined take: "Discarded", no player and no "Approve to render"; only the other take is approvable', () => {
+    const out = page().musicCardHtml({
+      id: ID, shortId: ID.slice(0, 8), title: 'Neon Drive', status: 'awaiting_choice', label: 'Previews ready: approve the take to finish', spec: 'instrumental · about 30 s',
+      previews: [{ variant: 1, discarded: true }, { variant: 2, url: url('take2.mp3'), durationS: 30.2, token: T2 }], spentUsd: 0.08, capUsd: 2
+    });
+    assert.match(out, /<div class="music-take music-take-discarded" data-music-take="1" data-music-discarded="1"><span class="music-take-label">Take 1 · Discarded<\/span><\/div>/);
+    assert.equal((out.match(/<audio controls/g) || []).length, 1);
+    assert.equal((out.match(/Approve to render this take in full/g) || []).length, 1);
+    assert.equal((out.match(/class="approval-actions"/g) || []).length, 1);
+    assert.doesNotMatch(out, /aaaaaaaa-bbbb/, 'the declined take has no approval');
+    assert.match(out, /data-music-take="2"[\s\S]*resolveApproval\('ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee', 'approve'/);
+    // A discarded take never shows a player, even if a link were sent.
+    assert.doesNotMatch(page().musicCardHtml({ id: ID, title: 'x', status: 'awaiting_choice', previews: [{ variant: 1, discarded: true, url: url('t.mp3'), token: T1 }] }), /<audio|approval-actions|Approve to render/);
+  });
+
+  test('take lengths are the stored file\'s measured length, as a player shows it (61.9 s is 1:01, not 1:02)', () => {
+    const p = page();
+    assert.equal(p.musicSeconds(61.9), '1:01');
+    assert.equal(p.musicSeconds(61.0), '1:01');
+    assert.equal(p.musicSeconds(30.5), '0:30');
+    assert.equal(p.musicSeconds(0.4), '');
+    assert.equal(p.musicSeconds(null), '');
+    const out = p.musicCardHtml({ id: ID, title: 'Neon Drive', status: 'awaiting_choice', previews: [{ variant: 1, url: url('1.mp3'), durationS: 62.04, token: T1 }, { variant: 2, url: url('2.mp3'), durationS: 61.9, token: T2 }] });
+    assert.match(out, /Take 1 · 1:02/);
+    assert.match(out, /Take 2 · 1:01/);
+  });
+
+  test('the status text has no leading " · " when nothing comes before it', () => {
+    const p = page();
+    const noTitle = p.musicCardHtml({ id: ID, title: '', status: 'awaiting_choice', label: 'Previews ready: approve the take to finish' });
+    assert.match(noTitle, /<div class="music-card-head"><span class="video-job-engine">PG1 Sound<\/span><span class="film-card-status">Previews ready: approve the take to finish<\/span><\/div>/);
+    assert.doesNotMatch(noTitle, />\s*·/, 'no text item starts with the separator');
+    const titled = p.musicCardHtml({ id: ID, title: 'Neon Drive', status: 'done', label: 'Track ready' });
+    assert.match(titled, /<span class="music-card-title">Neon Drive<\/span><span class="music-card-sep" aria-hidden="true">·<\/span><span class="film-card-status">Track ready<\/span>/);
+    const noStatus = p.musicCardHtml({ id: ID, title: 'Neon Drive' });
+    assert.doesNotMatch(noStatus, /music-card-sep/, 'no separator after the last item');
+    // The library: only items that are there, joined.
+    const lib = p.musicLibraryHtml([{ id: ID, shortId: ID.slice(0, 8), title: 'Neon Drive', label: '', durationS: 30 }]);
+    assert.match(lib, /<span class="music-card-meta">\(11111111\) · 0:30<\/span>/);
+    assert.doesNotMatch(lib, /· ·|>\s*·/);
+  });
+
+  test('the library: a track awaiting its choice lists its takes, a declined one as discarded', () => {
+    const out = page().musicLibraryHtml([{
+      id: ID, shortId: ID.slice(0, 8), title: 'Neon Drive', label: 'Previews ready: approve the take to finish',
+      previews: [{ variant: 1, discarded: true }, { variant: 2, url: url('take2.mp3'), durationS: 30, token: T2 }]
+    }]);
+    assert.match(out, /Take 1 · Discarded/);
+    assert.equal((out.match(/<audio controls/g) || []).length, 1);
+    assert.equal((out.match(/Approve to render this take in full/g) || []).length, 1);
+    assert.match(out, /resolveApproval\('ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee', 'approve'/);
     assert.doesNotMatch(out, BRANDS_RE);
   });
 

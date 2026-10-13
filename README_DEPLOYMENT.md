@@ -214,6 +214,12 @@ PG1_DAILY_BUDGET_REPLICATE_USD=3
 #     -> Lyria on the paid Gemini key (GEMINI_API_KEY_PAID only; model
 #        PG1_MUSIC_LYRIA_MODEL, default lyria-3.5; MP3 out)
 #     -> Replicate (REPLICATE_API_TOKEN; PG1_FILM_MUSIC_MODEL, ~30 s, instrumental)
+# Previews and --length short tracks go first to the Lyria 30-second clip
+# model on the same paid key (PG1_MUSIC_LYRIA_CLIP_MODEL, default
+# lyria-3-clip-preview; estimated 0.04 USD a clip, usage unit
+# music_lyria_clip). If it fails (anything but a content refusal), the tier
+# above makes the track and ffmpeg trims it to 30 s. --length full finals
+# use the tier above only.
 # Out of credit, still throttled after its waits, 5xx, a bad key or a
 # missing model moves on; a content refusal stops. Every call is a
 # pg1_ai_usage row (task music); PG1_DAILY_BUDGET_ELEVENLABS_USD caps it.
