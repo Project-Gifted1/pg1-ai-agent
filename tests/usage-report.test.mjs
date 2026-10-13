@@ -382,7 +382,7 @@ test('/api/mcp records free_limit_reached when the free tier is used up, payment
   const { rows } = installFetch([['/rest/v1/free_tier_usage', () => Response.json([{ request_count: 5 }])]]);
   const args = { cve_id: 'CVE-2024-3094' };
   await mcpHandler({ method: 'POST', headers: { 'x-forwarded-for': IP, 'x-free-tier': '1' }, body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_cve_details', arguments: args } } }, makeRes());
-  await mcpHandler({ method: 'POST', headers: { 'x-forwarded-for': IP }, body: { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'get_cve_details', arguments: args } } }, makeRes());
+  await mcpHandler({ method: 'POST', headers: { 'x-forwarded-for': IP, 'x-free-tier': '0' }, body: { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'get_cve_details', arguments: args } } }, makeRes());
   await settle();
   assert.deepEqual(rows.map((r) => [r.tool_name, r.status]), [['get_cve_details', 'free_limit_reached'], ['get_cve_details', 'payment_required']]);
 });

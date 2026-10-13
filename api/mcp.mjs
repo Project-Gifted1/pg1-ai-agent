@@ -107,7 +107,7 @@ import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { x402ResourceServer } from '@x402/express';
 import { encodePaymentRequiredHeader, encodePaymentResponseHeader, decodePaymentSignatureHeader } from '@x402/core/http';
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
-import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT } from '../lib/freeTier.mjs';
+import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT, freeTierWanted, setFreeTierHeaders } from '../lib/freeTier.mjs';
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
 import { X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX, IP_ABUSE_RATE_LIMIT_MAX, PACKAGE_CHECK_RATE_LIMIT_MAX, FREE_MCP_TOOLS, x402PriceUsd } from '../lib/x402Config.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
@@ -3201,16 +3201,14 @@ async function runX402Gate(req, params) {
 // offered at all (header or _meta); if one is present, x402 verification
 // runs first, always.
 //
-// FIX (1.9.2): free tier used to be granted automatically to anyone
-// without a payment header, with no way to decline it. A caller with no
-// license key, no payment header, and no opt-in got served for free
-// instead of seeing a payment challenge — which broke discovery crawlers
-// (e.g. x402 Bazaar) that probe with no credentials specifically to confirm
-// payment is demanded. Free tier now requires an explicit "x-free-tier: 1"
-// header; without it, no license key + no payment offered falls straight
-// through to the x402 gate below.
+// 1.9.2 made the free tier opt-in ("x-free-tier: 1") so discovery
+// crawlers probing without credentials would see the payment challenge.
+// Phase 2 reverses that: almost no client sends the header, so callers went
+// straight to the 402 and the free tier was never used. It is automatic
+// again, and a crawler that wants the challenge sends "X-Free-Tier: 0"
+// (lib/freeTier.mjs).
 // The transport-neutral half of the gate, shared by /api/mcp (runPaymentGate
-// below) and /api/a2a: licence key, then the opt-in free tier, then x402.
+// below) and /api/a2a: licence key, then the automatic free tier, then x402.
 // Writes nothing. `endpoint` labels the settlement log line only; the free
 // tier is one 5/day counter per caller (lib/freeTier.mjs free_tier_usage),
 // whichever of /api/mcp, /api/ioc or /api/a2a spends it. `payment` is an
@@ -3233,12 +3231,15 @@ export async function resolvePaidAccess(req, { licenseKey, identifier, payment, 
   }
 
   const rawPayment = payment || req.headers['x-payment'] || req.headers['payment-signature'];
-  const freeTierOptIn = req.headers['x-free-tier'] === '1';
-  // Set when the caller asked for the free tier and today's quota is used
-  // up, so the payment challenge is recorded as free_limit_reached.
+  // The free tier is automatic (lib/freeTier.mjs): it runs before any
+  // payment challenge unless the caller pays, sends X-Free-Tier: 0 or is a
+  // scanner by its User-Agent.
+  const wantsFreeTier = freeTierWanted(req.headers);
+  // Set when today's free quota is used up, so the payment challenge is
+  // recorded as free_limit_reached.
   let freeLimitReached = false;
 
-  if (!rawPayment && freeTierOptIn) {
+  if (!rawPayment && wantsFreeTier) {
     try {
       const { supUrl, supKey } = getSupabaseCreds();
       const freeTierAvailability = await checkFreeTierAvailable(supUrl, supKey, identifier);
@@ -3248,6 +3249,7 @@ export async function resolvePaidAccess(req, { licenseKey, identifier, payment, 
         // doesn't burn one of the 5/day for nothing.
         return {
           authorized: true,
+          freeTierRemaining: freeTierAvailability.remaining,
           consumeFreeTier: async () => {
             await consumeFreeTier(supUrl, supKey, identifier, freeTierAvailability);
             logSettlementOutcome(endpoint, 'free_tier', identifier, 'remaining=' + freeTierAvailability.remaining);
@@ -3259,7 +3261,7 @@ export async function resolvePaidAccess(req, { licenseKey, identifier, payment, 
   }
 
   const x402Gate = await runX402Gate(req, payment ? { _meta: { 'x402/payment': payment } } : undefined);
-  return freeLimitReached && !x402Gate.authorized ? { ...x402Gate, freeLimitReached: true } : x402Gate;
+  return freeLimitReached && !x402Gate.authorized ? { ...x402Gate, freeLimitReached: true, freeTierRemaining: 0 } : x402Gate;
 }
 
 async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName, pg1RequestId) {
@@ -3282,6 +3284,7 @@ async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentif
     res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + gate.licenseError, data: { request_id: pg1RequestId } }, id: requestId });
     return { authorized: false, handled: true };
   }
+  if (gate.freeTierRemaining !== undefined) setFreeTierHeaders(res, gate.freeTierRemaining);
   return gate;
 }
 
@@ -3503,7 +3506,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', `Content-Type, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier, ${ABUSEIPDB_KEY_HEADER}`);
-  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Request-Id, Retry-After');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Request-Id, Retry-After, X-Free-Tier-Limit, X-Free-Tier-Remaining');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 

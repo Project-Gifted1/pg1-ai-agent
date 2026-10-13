@@ -66,7 +66,7 @@ test('agent card: paid skills are tagged paid and name the price; the a2a-x402 e
   const paid = ['get_cve_batch', 'get_cve_by_product', 'get_cve_details', 'get_threat_actor_profile'];
   for (const skill of card.skills) {
     assert.equal(skill.tags.includes('paid'), paid.includes(skill.id), skill.id);
-    if (paid.includes(skill.id)) assert.match(skill.description, /0\.01 USD via x402.*X-Free-Tier: 1/, skill.id);
+    if (paid.includes(skill.id)) assert.match(skill.description, /0\.01 USD via x402.*5\/day free tier \(automatic\)/, skill.id);
   }
   const ext = card.capabilities.extensions.find((e) => /a2a-x402/.test(e.uri));
   assert.ok(ext);

@@ -27,5 +27,16 @@ export const PROBE_CLIENT_NAMES = Object.freeze([
 // MCP JSON-RPC methods that on their own never make a caller real.
 export const PROBE_ONLY_METHODS = Object.freeze(['initialize', 'tools/list', 'notifications/initialized', 'ping', 'resources/list', 'prompts/list', 'invalid_json', 'other']);
 
+// User-Agent words of x402 discovery scanners, crawlers and health checks
+// (matched case-insensitively as whole words, punctuation ignored). A
+// request from one skips the automatic free tier (lib/freeTier.mjs) and
+// gets the 402 payment challenge at once, which is what a scanner checks
+// for when it lists a paid x402 resource. "X-Free-Tier: 0" does the same
+// for any client.
+export const FREE_TIER_SKIP_USER_AGENTS = Object.freeze([
+  'x402scan', 'x402-scan', 'bazaar', 'x402-bazaar', 'x402-crawler',
+  'bot', 'crawler', 'spider', 'probe', 'healthcheck', 'uptime', 'scanner'
+]);
+
 // Tools that on their own never make a caller real.
 export const PROBE_ONLY_TOOLS = Object.freeze(['get_usage_status']);

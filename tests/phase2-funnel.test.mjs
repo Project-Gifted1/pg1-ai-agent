@@ -215,7 +215,7 @@ test('threat_indicators is read only by operator-only code (operator chat contex
 // ---------------------------------------------------------------------
 
 test(`one ${FREE_TIER_DAILY_LIMIT}/day free-tier counter per caller, shared by /api/mcp and /api/a2a`, async () => {
-  const headers = { 'x-free-tier': '1' };
+  const headers = {}; // automatic: no header needed
   const served = [];
   for (let i = 0; i < FREE_TIER_DAILY_LIMIT; i++) {
     const res = i % 2 === 0
@@ -254,7 +254,8 @@ test('A2A exposes the four paid skills and keeps the indicator feed tools MCP-on
 
 for (const version of ['0.3', '1.0']) {
   test(`A2A ${version}: an unpaid paid skill returns an input-required task with the x402 PaymentRequired object`, async () => {
-    const res = await callA2a('get_threat_actor_profile', { actor_name: 'APT29' }, { headers: { 'a2a-version': version } });
+    // X-Free-Tier: 0 so the challenge comes at once (the free tier is automatic).
+    const res = await callA2a('get_threat_actor_profile', { actor_name: 'APT29' }, { headers: { 'a2a-version': version, 'x-free-tier': '0' } });
     assert.equal(res.statusCode, 200);
     const task = res.body.result;
     assert.equal(task.status.state, version === '1.0' ? 'TASK_STATE_INPUT_REQUIRED' : 'input-required');
@@ -273,7 +274,7 @@ for (const version of ['0.3', '1.0']) {
 }
 
 test('A2A x402: payment in message metadata is verified, the skill runs, then it is settled and the receipt returned', async () => {
-  const unpaid = await callA2a('get_threat_actor_profile', { actor_name: 'APT29' });
+  const unpaid = await callA2a('get_threat_actor_profile', { actor_name: 'APT29' }, { headers: { 'x-free-tier': '0' } });
   const accepted = unpaid.body.result.status.message.metadata['x402.payment.required'].accepts[0];
   const payload = { x402Version: 2, scheme: 'exact', network: 'eip155:8453', accepted, payload: { signature: '0xsig', authorization: { from: '0xPayer', to: accepted.payTo, value: accepted.amount } } };
   const res = await callA2a('get_threat_actor_profile', { actor_name: 'APT29' }, { metadata: { 'x402.payment.status': 'payment-submitted', 'x402.payment.payload': payload } });

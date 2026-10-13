@@ -4,7 +4,7 @@
     "title": "PG1 Sovereign Threat Intelligence API",
     "version": "1.17.0",
     "contact": { "email": "gikewun@gmail.com" },
-    "description": "REST endpoints for PG1 Sovereign Threat Intelligence. This document only covers the plain HTTP endpoints below (GET/POST /api/ioc and GET /api/health); the full tool catalog is also available over two JSON-RPC transports, which are not representable as REST paths:\n\n- MCP (Model Context Protocol, Streamable HTTP JSON-RPC): https://pg1-ai-agent.vercel.app/api/mcp \n- A2A (Agent2Agent, JSON-RPC 2.0): https://pg1-ai-agent.vercel.app/api/a2a — agent card at https://pg1-ai-agent.vercel.app/.well-known/agent-card.json \n\n/api/ioc is gated by one of: a Gumroad licence key (x-api-key header), a per-call x402 v2 micropayment (PAYMENT-SIGNATURE header), or the opt-in free tier (x-free-tier: 1 header, 5 calls/day per IP).",
+    "description": "REST endpoints for PG1 Sovereign Threat Intelligence. This document only covers the plain HTTP endpoints below (GET/POST /api/ioc and GET /api/health); the full tool catalog is also available over two JSON-RPC transports, which are not representable as REST paths:\n\n- MCP (Model Context Protocol, Streamable HTTP JSON-RPC): https://pg1-ai-agent.vercel.app/api/mcp \n- A2A (Agent2Agent, JSON-RPC 2.0): https://pg1-ai-agent.vercel.app/api/a2a — agent card at https://pg1-ai-agent.vercel.app/.well-known/agent-card.json \n\n/api/ioc is gated by one of: a Gumroad licence key (x-api-key header), a per-call x402 v2 micropayment (PAYMENT-SIGNATURE header), or the free tier (automatic, 5 calls/day per IP shared with the paid MCP tools and A2A skills, spent before any 402; send x-free-tier: 0 to skip it).",
     "x-guidance": "To get threat indicators, send GET /api/ioc with optional query parameters (since, type, min_score, limit); an unpaid request returns HTTP 402 with an x402 v2 PaymentRequired challenge, so pay $0.01 per call in USDC on Base (eip155:8453) by retrying with the signed payment in the PAYMENT-SIGNATURE header, and you get back a STIX 2.1 bundle (application/stix+json) of matching indicators. GET /api/health is free and needs no payment."
   },
   "externalDocs": {
@@ -56,7 +56,7 @@
             "name": "x-free-tier",
             "in": "header",
             "required": false,
-            "description": "Opt in to the free tier: set to \"1\" to be considered for a free, unauthenticated, unpaid request. Limited to 5 calls/day per IP. Ignored if a licence key or payment is also present.",
+            "description": "Optional. The free tier (5 calls/day per IP, shared with the paid MCP tools and A2A skills) is used automatically before any 402; set to \"0\" to skip it and get the payment challenge at once. Ignored if a licence key or payment is present.",
             "schema": { "type": "string", "enum": ["1"] }
           }
         ],
@@ -450,7 +450,7 @@
             "name": "x-free-tier",
             "in": "header",
             "required": false,
-            "description": "Opt in to the free tier: set to \"1\" to be considered for a free, unauthenticated, unpaid request. Limited to 5 calls/day per IP. Ignored if a licence key or payment is also present.",
+            "description": "Optional. The free tier (5 calls/day per IP, shared with the paid MCP tools and A2A skills) is used automatically before any 402; set to \"0\" to skip it and get the payment challenge at once. Ignored if a licence key or payment is present.",
             "schema": {
               "type": "string",
               "enum": [

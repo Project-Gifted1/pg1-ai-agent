@@ -158,10 +158,11 @@ for (const aliasPath of ALIAS_PATHS) {
 }
 
 for (const method of METHODS) {
-  test(`${method} ${CANONICAL_PATH} with no headers returns 402, never a 200 bundle`, async () => {
+  // Phase 2: the free tier is automatic; declined here to reach the 402.
+  test(`${method} ${CANONICAL_PATH} with no payment and the free tier declined returns 402, never a 200 bundle`, async () => {
     installFetchMock();
     const res = makeRes();
-    await chatHandler(makeReq({ method, url: CANONICAL_PATH, ip: nextIp() }), res);
+    await chatHandler(makeReq({ method, url: CANONICAL_PATH, ip: nextIp(), headers: { 'x-free-tier': '0' } }), res);
 
     assert.equal(res.statusCode, 402);
     assert.notEqual(res.statusCode, 200);

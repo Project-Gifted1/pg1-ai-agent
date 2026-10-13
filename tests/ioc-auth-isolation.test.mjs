@@ -125,9 +125,9 @@ function installFetchMock({ gumroadSuccess = true, gumroadUnavailable = false } 
   };
 }
 
-test('GET /api/ioc with no headers returns 402 (payment required), not 401', async () => {
+test('GET /api/ioc with no payment and the free tier declined returns 402 (payment required), not 401', async () => {
   installFetchMock();
-  const req = makeReq(null, { method: 'GET', url: '/api/ioc', ip: '10.1.0.1' });
+  const req = makeReq(null, { method: 'GET', url: '/api/ioc', ip: '10.1.0.1', headers: { 'x-free-tier': '0' } });
   const res = makeRes();
   await chatHandler(req, res);
   assert.equal(res.statusCode, 402);
@@ -216,8 +216,9 @@ test('an IP locked out on /api/chat is NOT blocked from /api/ioc or the free tie
   await chatHandler(lockedChatReq, lockedChatRes);
   assert.equal(lockedChatRes.statusCode, 429);
 
-  // /api/ioc with no headers should still get the normal 402, not 429.
-  const iocReq = makeReq(null, { method: 'GET', url: '/api/ioc', ip });
+  // /api/ioc with the free tier declined should still get the normal 402,
+  // not 429.
+  const iocReq = makeReq(null, { method: 'GET', url: '/api/ioc', ip, headers: { 'x-free-tier': '0' } });
   const iocRes = makeRes();
   await chatHandler(iocReq, iocRes);
   assert.equal(iocRes.statusCode, 402);

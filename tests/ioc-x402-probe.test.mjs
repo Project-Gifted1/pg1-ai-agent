@@ -1,6 +1,7 @@
 /**
- * x402scan probe for GET /api/ioc: an unauthenticated request with no input
- * must get the x402 v2 402 challenge (not a 400 or a free bundle), with
+ * x402scan probe for GET /api/ioc: an unauthenticated scanner request with
+ * no input must get the x402 v2 402 challenge (not a 400 or a free bundle),
+ * with
  * accepts[].amount in USDC atomic units ($0.01 = "10000") and matching the
  * price advertised in public/openapi.json's x-payment-info.
  *
@@ -70,7 +71,9 @@ function makeRes() {
 // handler's promise stays pending; wait for the response to be written.
 async function probe(method, url) {
   const res = makeRes();
-  chatHandler({ method, url, headers: { host: 'pg1-ai-agent.vercel.app' }, socket: { remoteAddress: '203.0.113.9' } }, res);
+  // The free tier is automatic (lib/freeTier.mjs) except for scanners by
+  // User-Agent, which must still see the challenge they list a resource by.
+  chatHandler({ method, url, headers: { host: 'pg1-ai-agent.vercel.app', 'user-agent': 'x402scan/1.0' }, socket: { remoteAddress: '203.0.113.9' } }, res);
   for (let i = 0; i < 200 && !res.done; i++) await new Promise((r) => setTimeout(r, 10));
   assert.ok(res.done, 'handler never wrote a response');
   return res;

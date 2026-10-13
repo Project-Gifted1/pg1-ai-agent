@@ -14,8 +14,8 @@ Paid surfaces (all 0.01 USD a call, USDC on Base, `eip155:8453`):
 | `POST /api/a2a` `SendMessage` / `message/send` | `get_cve_details`, `get_cve_batch`, `get_cve_by_product`, `get_threat_actor_profile` | x402 (a2a-x402: `message.metadata["x402.payment.payload"]`, or the header), licence key, free tier |
 
 The free tier is one 5/day counter per caller IP across all three routes
-(`free_tier_usage`), opt-in with `X-Free-Tier: 1`, spent only by a call that
-succeeds.
+(`free_tier_usage`), automatic (no header) before any 402, skipped with
+`X-Free-Tier: 0`, spent only by a call that succeeds.
 
 ## 1. Repo checks (CI, every PR)
 
@@ -90,7 +90,7 @@ steps.
 | 5 | Same, resent with `message.metadata["x402.payment.payload"]` | task `completed`, `x402.payment.status: payment-completed`, receipt in `x402.payment.receipts`; transfer on BaseScan |
 | 6 | `/api/ioc` paid with `@x402/fetch` | 200 STIX bundle; `PAYMENT-RESPONSE` |
 | 7 | Pay from a wallet with no USDC | MCP: PaymentRequired with the verify error; A2A: `input-required` again; no data, no transfer |
-| 8 | Free tier: 2 calls on `/api/mcp`, 2 on `/api/a2a`, 1 on `/api/ioc`, each with `X-Free-Tier: 1` | all 5 served; `get_usage_status` shows 0 left |
+| 8 | Free tier, no headers: 2 calls on `/api/mcp`, 2 on `/api/a2a`, 1 on `/api/ioc` (a browser tab is fine) | all 5 served, `X-Free-Tier-Remaining` 4→0; `get_usage_status` shows 0 left |
 | 9 | 6th free-tier call on any route | payment challenge; `/usage` counts it as `free_limit_reached` |
 | 10 | A free-tier call with a malformed CVE id | error; the counter does not move |
 | 11 | Licence key in `X-API-KEY` on MCP and A2A | data; no transfer, counter unchanged |

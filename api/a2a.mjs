@@ -25,8 +25,9 @@
  *   2. an x402 v2 payment, sent the a2a-x402 extension way: the PaymentPayload
  *      in params.message.metadata["x402.payment.payload"] (the
  *      PAYMENT-SIGNATURE / X-Payment header is also read);
- *   3. the opt-in free tier (X-Free-Tier: 1): ONE 5/day counter per caller,
- *      shared with /api/mcp and /api/ioc (lib/freeTier.mjs).
+ *   3. the free tier, automatic unless the caller pays or sends
+ *      X-Free-Tier: 0: ONE 5/day counter per caller, shared with /api/mcp
+ *      and /api/ioc (lib/freeTier.mjs), spent before any payment challenge.
  * With none of them, the call answers with a Task in state input-required
  * whose status message carries "x402.payment.status": "payment-required"
  * and "x402.payment.required": the x402 v2 PaymentRequired object (the one
@@ -83,7 +84,7 @@ import {
   resolveTestFixture,
   requestCallerHash
 } from './mcp.mjs';
-import { getRequestIdentifier } from '../lib/freeTier.mjs';
+import { getRequestIdentifier, setFreeTierHeaders } from '../lib/freeTier.mjs';
 import { recordTelemetry, toolErrorTelemetryStatus } from '../lib/telemetry.mjs';
 import { buildCheck, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
 import { formatFixIt, invalidInputMessage } from '../lib/invalidInput.mjs';
@@ -267,7 +268,7 @@ function paymentRequiredTask(skill, args, paymentRequired, version, inboundMessa
   const note = {
     payment_required: true,
     skill,
-    message: `${skill} is a paid skill. Pay per call with x402 (the PaymentPayload in message.metadata["${X402_META.payload}"]), send a Gumroad licence key in X-API-KEY, or send X-Free-Tier: 1 for one of the 5 free calls a day shared across /api/mcp, /api/ioc and /api/a2a.`
+    message: `${skill} is a paid skill and today's 5 free calls (shared across /api/mcp, /api/ioc and /api/a2a) are used up or were declined with X-Free-Tier: 0. Pay per call with x402 (the PaymentPayload in message.metadata["${X402_META.payload}"]) or send a Gumroad licence key in X-API-KEY.`
   };
   const status = { state: stateValue('input-required', version), timestamp: new Date().toISOString(), message: buildMessage('agent', note, version, { contextId, taskId, metadata }) };
   const task = {
@@ -348,7 +349,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', `Content-Type, Authorization, x-api-key, A2A-Version, X-A2A-Extensions, X-Free-Tier, PAYMENT-SIGNATURE, X-Payment, ${ABUSEIPDB_KEY_HEADER}`);
-  res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id, Retry-After');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id, Retry-After, X-Free-Tier-Limit, X-Free-Tier-Remaining');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
@@ -488,6 +489,7 @@ export default async function handler(req, res) {
         recordToolError(`/api/a2a:${skill}`, 503, `${skill}_license_verification_unavailable`, 'upstream', pg1RequestId);
         return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, 'License verification temporarily unavailable, please retry.', requestId, undefined, pg1RequestId);
       }
+      if (gate.freeTierRemaining !== undefined) setFreeTierHeaders(res, gate.freeTierRemaining);
       if (gate.licenseError) {
         skillTelemetry.status = 'payment_required';
         return jsonRpcError(res, 200, LICENSE_REJECTED_CODE, 'Payment Required: ' + gate.licenseError, requestId, { payment_required: true }, pg1RequestId);

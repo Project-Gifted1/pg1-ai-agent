@@ -17,13 +17,12 @@ Both accept the same Gumroad license key via the `x-api-key` header, or per-call
 
 ## Free Tier (5 calls/day)
 
-The free tier is **opt-in** — add `x-free-tier: 1` to your request header. Without it, a request with no license key and no payment header returns `402 Payment Required` by default.
+The free tier is **automatic**: a caller with no licence key and no payment gets **5 free paid calls a day** before the first `402 Payment Required`. No header or sign-up is needed, so a browser or an MCP client's first calls just work.
 
-It is **one counter per caller (per IP), shared** by the REST feed (`/api/ioc`), the paid MCP tools (`/api/mcp`) and the paid A2A skills (`/api/a2a`): 5 free paid calls a day in total, whichever route spends them. A call only counts once it succeeds. `get_usage_status` shows what is left.
+It is **one counter per caller (per IP), shared** by the REST feed (`/api/ioc`), the paid MCP tools (`/api/mcp`) and the paid A2A skills (`/api/a2a`): 5 free paid calls a day in total, whichever route spends them. A call only counts once it succeeds; `HEAD` never counts. Each free-tier response carries `X-Free-Tier-Limit` and `X-Free-Tier-Remaining`, and `get_usage_status` shows what is left. A caller offering a payment is always charged, never served free. Send `X-Free-Tier: 0` to skip the free tier and get the payment challenge straight away. Requests whose User-Agent names an x402 scanner, crawler or bot (`config/usageProbes.mjs`) skip it too, so discovery scanners still see the 402 they list paid resources by.
 
 ```bash
-curl -X GET "https://pg1-ai-agent.vercel.app/api/ioc" \
-  -H "x-free-tier: 1"
+curl "https://pg1-ai-agent.vercel.app/api/ioc"
 ```
 
 Optional query parameters: `?since=<ISO timestamp>`, `?type=<IPv4|domain|URL|FileHash-MD5|FileHash-SHA1|FileHash-SHA256>`, `?min_score=<0-100>`, `?limit=<1-1000>`
@@ -91,7 +90,6 @@ smithery mcp add --transport http --id pg1-threat-intel https://pg1-ai-agent.ver
 curl -X POST https://pg1-ai-agent.vercel.app/api/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -H "x-free-tier: 1" \
   -d '{
     "jsonrpc": "2.0",
     "id": 1,
@@ -109,13 +107,13 @@ Call `"method": "tools/list"` against `/api/mcp` for full schemas. Summary:
 
 | Tool | Purpose | Source(s) | Free tier applies? |
 |---|---|---|---|
-| `get_threat_indicators` | Bulk STIX 2.1 indicator feed | NVD (only sources PG1 may redistribute commercially; see [Data source switches](#data-source-switches)) | Yes (needs `x-free-tier: 1`) |
+| `get_threat_indicators` | Bulk STIX 2.1 indicator feed | NVD (only sources PG1 may redistribute commercially; see [Data source switches](#data-source-switches)) | Yes (5 free calls/day, then x402) |
 | `get_ioc_context` | Single-indicator safety check | NVD (see [Data source switches](#data-source-switches)) | Always free if not found |
 | `get_ioc_batch` | Up to 20 indicators per call | NVD (see [Data source switches](#data-source-switches)) | Always free if none found |
-| `get_cve_details` | CVE lookup enriched with NVD, CISA KEV (EPSS only when `PG1_SOURCE_EPSS_PAID` is on) | NVD, CISA KEV | Yes (needs `x-free-tier: 1`) |
-| `get_cve_batch` | Up to 20 CVE IDs per call | NVD, CISA KEV (EPSS as above) | Yes (needs `x-free-tier: 1`) |
-| `get_cve_by_product` | Discover CVEs by vendor/product | NVD | Yes (needs `x-free-tier: 1`) |
-| `get_threat_actor_profile` | APT/threat actor dossiers with MITRE ATT&CK | MITRE ATT&CK Enterprise | Yes (needs `x-free-tier: 1`) |
+| `get_cve_details` | CVE lookup enriched with NVD, CISA KEV (EPSS only when `PG1_SOURCE_EPSS_PAID` is on) | NVD, CISA KEV | Yes (5 free calls/day, then x402) |
+| `get_cve_batch` | Up to 20 CVE IDs per call | NVD, CISA KEV (EPSS as above) | Yes (5 free calls/day, then x402) |
+| `get_cve_by_product` | Discover CVEs by vendor/product | NVD | Yes (5 free calls/day, then x402) |
+| `get_threat_actor_profile` | APT/threat actor dossiers with MITRE ATT&CK | MITRE ATT&CK Enterprise | Yes (5 free calls/day, then x402) |
 | `get_usage_status` | Check your remaining free-tier quota | — | Always free, no header needed |
 | `subscribe_alerts` | Register a webhook for new matching indicators | — | No — license key required |
 | `submit_indicator` | Contribute an observed indicator for review | — | No — license key required |
@@ -160,7 +158,7 @@ A switched-off source's rows never appear in any response, paid or free; an indi
 
 ## A2A (Agent2Agent Protocol)
 
-`/api/a2a` exposes the seven always-free tools (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `check_package`, `get_usage_status`, and `check_ip_abuse`, which needs your own key in the `X-AbuseIPDB-Key` header exactly as on `/api/mcp`) over [A2A](https://a2a-protocol.org/latest/specification/), JSON-RPC 2.0, plus four **paid skills**: `get_cve_details`, `get_cve_batch`, `get_cve_by_product` and `get_threat_actor_profile` (0.01 USD a call). A paid skill is served with a licence key (`X-API-KEY`), an x402 payment, or `X-Free-Tier: 1` (the shared 5/day counter above). Payment follows the [a2a-x402 extension](https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.1): an unpaid call returns a task in state `input-required` whose status message metadata carries `"x402.payment.status": "payment-required"` and the x402 v2 PaymentRequired object in `"x402.payment.required"`; resend the message with the signed PaymentPayload in `message.metadata["x402.payment.payload"]`. The payment is settled only after the skill succeeds, and the receipt comes back in `"x402.payment.receipts"`. The indicator feed tools stay on `/api/mcp`. The agent card is published at [`/.well-known/agent-card.json`](https://pg1-ai-agent.vercel.app/.well-known/agent-card.json). `message/send` (the v0.3 method name) is accepted as an alias of `SendMessage`. The `A2A-Version` header (or query param) selects the response shape — `1.0` or `0.3` (the default when omitted). Rate limits are the MCP tools' own, with the same counters: for example, without a licence key `check_wallet_sanctions` is limited to 120 calls/hour per caller (per IP), and the 121st call in the hour gets the same `rate_limited` error as `check_wallet_age`. Send the skill and its arguments as a `DataPart`:
+`/api/a2a` exposes the seven always-free tools (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `check_package`, `get_usage_status`, and `check_ip_abuse`, which needs your own key in the `X-AbuseIPDB-Key` header exactly as on `/api/mcp`) over [A2A](https://a2a-protocol.org/latest/specification/), JSON-RPC 2.0, plus four **paid skills**: `get_cve_details`, `get_cve_batch`, `get_cve_by_product` and `get_threat_actor_profile` (0.01 USD a call). A paid skill is served free while the caller has free calls left (the shared 5/day counter above, automatic), and after that with a licence key (`X-API-KEY`) or an x402 payment. Payment follows the [a2a-x402 extension](https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.1): an unpaid call returns a task in state `input-required` whose status message metadata carries `"x402.payment.status": "payment-required"` and the x402 v2 PaymentRequired object in `"x402.payment.required"`; resend the message with the signed PaymentPayload in `message.metadata["x402.payment.payload"]`. The payment is settled only after the skill succeeds, and the receipt comes back in `"x402.payment.receipts"`. The indicator feed tools stay on `/api/mcp`. The agent card is published at [`/.well-known/agent-card.json`](https://pg1-ai-agent.vercel.app/.well-known/agent-card.json). `message/send` (the v0.3 method name) is accepted as an alias of `SendMessage`. The `A2A-Version` header (or query param) selects the response shape — `1.0` or `0.3` (the default when omitted). Rate limits are the MCP tools' own, with the same counters: for example, without a licence key `check_wallet_sanctions` is limited to 120 calls/hour per caller (per IP), and the 121st call in the hour gets the same `rate_limited` error as `check_wallet_age`. Send the skill and its arguments as a `DataPart`:
 
 ```bash
 curl -X POST https://pg1-ai-agent.vercel.app/api/a2a \
