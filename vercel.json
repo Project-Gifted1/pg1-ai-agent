@@ -7,6 +7,7 @@
     { "source": "/docs/crypto-alert-bot", "destination": "/docs/crypto-alert-bot/index.html" },
     { "source": "/docs/reason-codes", "destination": "/docs/reason-codes/index.html" },
     { "source": "/docs/testing", "destination": "/docs/testing/index.html" },
+    { "source": "/docs/agents", "destination": "/docs/agents/index.html" },
     { "source": "/docs/attributions", "destination": "/docs/attributions/index.html" }
   ],
   "crons": [
@@ -58,6 +59,15 @@
     },
     {
       "source": "/docs/testing",
+      "headers": [
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "X-Frame-Options", "value": "DENY" }
+      ]
+    },
+    {
+      "source": "/docs/agents",
       "headers": [
         { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" },
         { "key": "X-Content-Type-Options", "value": "nosniff" },

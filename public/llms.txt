@@ -48,6 +48,17 @@ The same call over A2A (version 1.0 response shape):
 curl -X POST "https://pg1-ai-agent.vercel.app/api/a2a?A2A-Version=1.0" -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"messageId":"example-1","role":"ROLE_USER","parts":[{"data":{"skill":"check_domain_age","arguments":{"domain":"example.com"}}}]}}}'
 ```
 
+## Which tool to call
+
+- One IP, domain, URL or file hash: get_ioc_context (free when found: false); several: get_ioc_batch
+- CVE id: get_cve_details (several: get_cve_batch); vendor + product: get_cve_by_product
+- Wallet you will pay or trust: check_wallet_sanctions and check_wallet_age
+- Link, hostname or possible phishing: check_hostname_reputation and check_domain_age
+- npm or PyPI package before installing: check_package
+- Threat actor name: get_threat_actor_profile
+
+`status`: "no_flags" = nothing recorded in the sources checked (not proof of safety); "flagged" = act or escalate, match on reasons[].code; "unknown" = a check did not complete, never treat as clean. Free tier: automatic, 5 paid calls/day per caller shared across /api/mcp, /api/a2a and /api/ioc, then 0.01 USD via x402; the check_* tools are always free (60 calls/hour, check_wallet_sanctions 120, without a licence key). Full guide: https://pg1-ai-agent.vercel.app/docs/agents
+
 ## Response metadata
 
 Every free tool response (and every paid MCP/A2A response) adds `reasons: [{code, message}]` (permanent machine-readable codes, empty when nothing is flagged), `status: "flagged" | "no_flags" | "unknown"` (never "no_flags" when a check didn't complete), `checks: [{source, result, checked_at, data_as_of}]` (generic source labels, never a vendor name), and `request_id` (a UUID, also sent as the `X-Request-Id` header on `/api/mcp` and `/api/a2a`). Full reason-code list: https://pg1-ai-agent.vercel.app/docs/reason-codes
@@ -57,11 +68,11 @@ Every free tool response (and every paid MCP/A2A response) adds `reasons: [{code
 Fixed fixture inputs always return the same answer, free for every caller (no key, no payment, no rate-limit use), with the real response shape plus `test_fixture: true` and `checks[].source: "fixture"`. Exact values only; anything else, even one character off, is a real lookup. UNKNOWN reproduces that tool's real upstream-failure response (for check_wallet_age: the `upstream_unavailable` isError result, never `found: false`). For `check_domain_age`, always check `status` before `found`: `found: false` with `status: "unknown"` means the lookup did not complete, not that the domain is new. MCP covers every tool with a reason code to flag with; A2A covers its 6 free check_* skills. The REST endpoints (/api/ioc) have no fixtures. Full table: https://pg1-ai-agent.vercel.app/docs/testing
 
 - Wallets (check_wallet_sanctions, check_wallet_age): FLAGGED `0x7067312d746573742d6669787475726500000001`, CLEAN `...00000002`, UNKNOWN `...00000003`; check_wallet_age only: DELEGATED `0x7067312d746573742d6669787475726500000004` (delegated: true, reason WALLET_DELEGATED, status "no_flags")
-- Domains/hostnames (check_domain_age, check_hostname_reputation): `pg1-test-flagged.invalid`, `pg1-test-clean.invalid`, `pg1-test-unknown.invalid`
-- get_ioc_context: `192.0.2.1`, `198.51.100.1`, `203.0.113.1`; get_ioc_batch: `["2001:db8::1"]`, `["2001:db8::2"]`, `["2001:db8::3"]`
+- Domains/hostnames (check_domain_age, check_hostname_reputation): `pg1-test-flagged.invalid`, `pg1-test-clean.invalid`, `pg1-test-unknown.invalid`; check_hostname_reputation only: LOOKALIKE `pg1-test-lookalike.invalid` (verdict "lookalike", reason HOSTNAME_LOOKALIKE)
+- get_ioc_context: `192.0.2.1`, `198.51.100.1`, `203.0.113.1`; get_ioc_batch: `["2001:db8::1"]`, `["2001:db8::2"]`, `["2001:db8::3"]`, and MIXED `["2001:db8::1","2001:db8::2"]` (one found, one not)
 - check_ip_abuse (no key header needed for fixtures; synthetic data, no upstream call): `{"ip":"192.0.2.1"}` FLAGGED, `{"ip":"198.51.100.1"}` CLEAN, `{"ip":"203.0.113.1"}` UNKNOWN
-- check_package (synthetic data, no upstream call; "npm" or "pypi"): `{"ecosystem":"npm","name":"_pg1-test-flagged"}` FLAGGED (reported malicious), `{"ecosystem":"npm","name":"_pg1-test-clean"}` CLEAN, `{"ecosystem":"npm","name":"_pg1-test-unknown"}` UNKNOWN (malicious-report and vulnerability checks timed out)
-- get_cve_details / get_cve_batch: `CVE-0000-0001`, `CVE-0000-0002`, `CVE-0000-0003`; get_cve_by_product: vendor `pg1-test.invalid`, product `flagged` / `clean` / `unknown`
+- check_package (synthetic data, no upstream call; "npm" or "pypi"): `{"ecosystem":"npm","name":"_pg1-test-flagged"}` FLAGGED (reported malicious), `{"ecosystem":"npm","name":"_pg1-test-clean"}` CLEAN, `{"ecosystem":"npm","name":"_pg1-test-unknown"}` UNKNOWN (malicious-report and vulnerability checks timed out), `{"ecosystem":"npm","name":"_pg1-test-missing"}` MISSING (exists: false, reason PACKAGE_NOT_FOUND)
+- get_cve_details / get_cve_batch: `CVE-0000-0001`, `CVE-0000-0002`, `CVE-0000-0003`; get_cve_batch MIXED `["CVE-0000-0001","CVE-0000-0002"]` (one known exploited, one not); get_cve_by_product: vendor `pg1-test.invalid`, product `flagged` / `clean` / `unknown`
 
 ```
 curl -X POST https://pg1-ai-agent.vercel.app/api/mcp -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"check_hostname_reputation","arguments":{"hostname":"pg1-test-flagged.invalid"}}}'

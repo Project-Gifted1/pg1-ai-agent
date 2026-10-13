@@ -19,15 +19,24 @@ test('fixtures: each fixture tool has exactly one FLAGGED, one CLEAN and one UNK
     const kinds = TEST_FIXTURES.filter((f) => f.tool === tool).map((f) => f.kind).sort();
     assert.deepEqual(kinds, [...FIXTURE_KINDS, ...(EXTRA_FIXTURE_KINDS[tool] || [])].sort(), `${tool} must have one fixture of each kind`);
   }
-  assert.deepEqual(EXTRA_FIXTURE_KINDS, { check_wallet_age: ['DELEGATED'] });
+  assert.deepEqual(EXTRA_FIXTURE_KINDS, {
+    check_wallet_age: ['DELEGATED'],
+    check_hostname_reputation: ['LOOKALIKE'],
+    check_package: ['MISSING'],
+    get_ioc_batch: ['MIXED'],
+    get_cve_batch: ['MIXED']
+  });
 });
 
-test('fixtures: expected results are FLAGGED=flagged with real reason codes, CLEAN=no_flags, UNKNOWN=unknown, DELEGATED=no_flags with the informational WALLET_DELEGATED', () => {
+test('fixtures: expected results are FLAGGED / LOOKALIKE / MISSING / MIXED = flagged with real reason codes, CLEAN=no_flags, UNKNOWN=unknown, DELEGATED=no_flags with the informational WALLET_DELEGATED', () => {
+  const FLAGGING = ['FLAGGED', 'LOOKALIKE', 'MISSING', 'MIXED'];
   for (const f of TEST_FIXTURES) {
-    const expectedStatus = { FLAGGED: 'flagged', DELEGATED: 'no_flags', CLEAN: 'no_flags', UNKNOWN: 'unknown' }[f.kind];
+    const expectedStatus = FLAGGING.includes(f.kind) ? 'flagged' : { DELEGATED: 'no_flags', CLEAN: 'no_flags', UNKNOWN: 'unknown' }[f.kind];
     assert.equal(f.expected.status, expectedStatus, `${f.tool}/${f.kind}`);
     if (f.kind === 'DELEGATED') assert.deepEqual(f.expected.reason_codes, ['WALLET_DELEGATED']);
-    else if (f.kind === 'FLAGGED') assert.ok(f.expected.reason_codes.length > 0, `${f.tool}/FLAGGED needs a reason code`);
+    else if (f.kind === 'LOOKALIKE') assert.deepEqual(f.expected.reason_codes, ['HOSTNAME_LOOKALIKE']);
+    else if (f.kind === 'MISSING') assert.deepEqual(f.expected.reason_codes, ['PACKAGE_NOT_FOUND']);
+    else if (FLAGGING.includes(f.kind)) assert.ok(f.expected.reason_codes.length > 0, `${f.tool}/${f.kind} needs a reason code`);
     else assert.deepEqual(f.expected.reason_codes, []);
     for (const code of f.expected.reason_codes) assert.ok(code in REASON_CODES, `unknown reason code ${code}`);
     assert.equal(typeof f.expected.summary, 'string');
@@ -76,9 +85,12 @@ test('fixtures: a near-miss value (one character off) is never a fixture', () =>
   assert.equal(matchFixture('check_hostname_reputation', { hostname: 'www.pg1-test-flagged.invalid' }), null);
   assert.equal(matchFixture('get_ioc_context', { value: '192.0.2.2' }), null);
   assert.equal(matchFixture('get_ioc_batch', { values: ['2001:db8::4'] }), null);
-  assert.equal(matchFixture('get_ioc_batch', { values: ['2001:db8::1', '2001:db8::2'] }), null);
+  // The MIXED fixture is exactly [FLAGGED, CLEAN]; any other order or set is real.
+  assert.equal(matchFixture('get_ioc_batch', { values: ['2001:db8::2', '2001:db8::1'] }), null);
   assert.equal(matchFixture('get_cve_details', { cve_id: 'CVE-0000-0004' }), null);
-  assert.equal(matchFixture('get_cve_batch', { cve_ids: ['CVE-0000-0001', 'CVE-0000-0002'] }), null);
+  assert.equal(matchFixture('get_cve_batch', { cve_ids: ['CVE-0000-0002', 'CVE-0000-0001'] }), null);
+  assert.equal(matchFixture('check_hostname_reputation', { hostname: 'pg1-test-lookalike.invalid.' })?.kind, 'LOOKALIKE', 'a trailing dot is normalised by the tool itself');
+  assert.equal(matchFixture('check_package', { ecosystem: 'npm', name: '_pg1-test-misssing' }), null);
   assert.equal(matchFixture('get_cve_by_product', { vendor: 'pg1-test.invalid', product: 'flagge' }), null);
   // get_cve_by_product doesn't normalise case itself, so neither does the fixture match.
   assert.equal(matchFixture('get_cve_by_product', { vendor: 'PG1-test.invalid', product: 'flagged' }), null);
@@ -110,7 +122,7 @@ test('docs: the README "Test your integration" table lists every fixture with it
     const row = '| `' + f.tool + '` | ' + f.kind + ' | `' + JSON.stringify(f.arguments) + '` | ' + f.expected.summary + ' |';
     assert.ok(readme.includes(row), `README is missing the row for ${f.tool}/${f.kind}`);
   }
-  const rowCount = readme.split('\n').filter((l) => /^\| `[a-z_]+` \| (FLAGGED|CLEAN|UNKNOWN|DELEGATED) \|/.test(l)).length;
+  const rowCount = readme.split('\n').filter((l) => /^\| `[a-z_]+` \| (FLAGGED|CLEAN|UNKNOWN|DELEGATED|LOOKALIKE|MISSING|MIXED) \|/.test(l)).length;
   assert.equal(rowCount, TEST_FIXTURES.length, 'README must not list fixtures that do not exist');
   assert.match(readme, /Out of scope:\*\* the REST endpoints \(`\/api\/ioc`/);
   assert.match(readme, /-H "Accept: application\/json, text\/event-stream"/);

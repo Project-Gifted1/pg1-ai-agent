@@ -121,7 +121,7 @@ import { logApiError } from '../lib/errorLog.mjs';
 import { recordTelemetry, callerHash, toolErrorTelemetryStatus } from '../lib/telemetry.mjs';
 import { reason } from '../lib/reasonCodes.mjs';
 import { buildCheck, withResponseMeta, withActionResponseMeta, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
-import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES, FIXTURE_DELEGATE_ADDRESS, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, FIXTURE_DOMAIN_CLEAN_REGISTERED, FIXTURE_PACKAGE_FLAGGED_AGE_DAYS, FIXTURE_PACKAGE_MALICIOUS_REPORT, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
+import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES, FIXTURE_DELEGATE_ADDRESS, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, FIXTURE_DOMAIN_CLEAN_REGISTERED, FIXTURE_PACKAGE_FLAGGED_AGE_DAYS, FIXTURE_PACKAGE_MALICIOUS_REPORT, FIXTURE_LOOKALIKE_OF, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
 import { invalidInput, invalidInputMessage, withFixIt, formatFixIt } from '../lib/invalidInput.mjs';
 import { ABUSEIPDB_KEY_HEADER, ABUSEIPDB_ATTRIBUTION_TEXT, ABUSEIPDB_TIMEOUT_MS, MAX_AGE_DAYS_DEFAULT, abuseIpdbCheckUrlFor, keyRequiredError, readCustomerKey, normalizePublicIp, normalizeMaxAgeDays, getCachedLookup, setCachedLookup, fetchAbuseIpdbCheck } from '../lib/abuseIpdb.mjs';
 import { checkPackage, normalizePackageInput, buildPackageResult, packageCheckFailureReasons, PACKAGE_SOURCES } from '../lib/packageCheck.mjs';
@@ -2821,7 +2821,9 @@ function buildFixtureOutcome(fixture, callerArgs) {
       const hostname = args.hostname;
       const r = kind === 'FLAGGED'
         ? buildHostnameResult(hostname, 'listed', [{ name: PHISHING_SOURCE_NAME, url: PHISHING_SOURCE_URL, match_type: 'exact' }], null, FIXTURE_DATA_AS_OF)
-        : buildHostnameResult(hostname, 'not_listed', [], null, FIXTURE_DATA_AS_OF);
+        : kind === 'LOOKALIKE'
+          ? buildHostnameResult(hostname, 'lookalike', [], FIXTURE_LOOKALIKE_OF, FIXTURE_DATA_AS_OF)
+          : buildHostnameResult(hostname, 'not_listed', [], null, FIXTURE_DATA_AS_OF);
       return result(r);
     }
 
@@ -2867,6 +2869,9 @@ function buildFixtureOutcome(fixture, callerArgs) {
       const now = new Date().toISOString();
       const nowMs = Date.now();
       const version = input.version || '1.0.0';
+      if (kind === 'MISSING') {
+        return result(buildPackageResult(input, { registry: { result: 'ok', data: { exists: false }, fetchedAt: now, cached: false }, osv: { result: 'skipped' }, osvScope: 'version', lookalike: null, nowMs, attributionText: 'PG1 test fixture: synthetic data, not from any registry or advisory database' }));
+      }
       const firstPublished = kind === 'FLAGGED' ? fixtureDaysAgoMidnightUtc(FIXTURE_PACKAGE_FLAGGED_AGE_DAYS, nowMs) : FIXTURE_DATA_AS_OF;
       const data = {
         exists: true,
@@ -2891,7 +2896,10 @@ function buildFixtureOutcome(fixture, callerArgs) {
       if (kind === 'UNKNOWN') {
         return { type: 'service_unavailable', mcpErrorCode: tool === 'get_ioc_context' ? -32603 : -32003, message: 'Threat data temporarily unavailable, please retry.' };
       }
-      const lookups = values.map((value) => (kind === 'CLEAN' ? { indicator: value, found: false } : {
+      // MIXED: each value answers as its own fixture (the FLAGGED value found,
+      // the CLEAN one not).
+      const foundFor = (value) => (kind === 'MIXED' ? value === FIXTURE_VALUES.ipv6.FLAGGED : kind !== 'CLEAN');
+      const lookups = values.map((value) => (!foundFor(value) ? { indicator: value, found: false } : {
         indicator: value,
         found: true,
         indicator_type: value.includes(':') ? 'IPv6' : detectIndicatorType(value),
@@ -2932,7 +2940,8 @@ function buildFixtureOutcome(fixture, callerArgs) {
     case 'get_cve_batch': {
       const results = args.cve_ids.map((raw) => {
         const cveId = raw.toUpperCase();
-        const rec = fixtureCveRecord(cveId, kind);
+        // MIXED: each id answers as its own fixture.
+        const rec = fixtureCveRecord(cveId, kind === 'MIXED' ? (cveId === FIXTURE_VALUES.cve.FLAGGED ? 'FLAGGED' : 'CLEAN') : kind);
         const { last_modified: _lastModified, ...nvd } = rec.nvd;
         return { cve_id: cveId, found: true, nvd, epss: rec.epss, cisa_kev: { is_known_exploited: !!rec.kev, due_date: rec.kev ? rec.kev.dueDate : null } };
       });

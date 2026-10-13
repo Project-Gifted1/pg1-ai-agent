@@ -4,10 +4,82 @@ Threat intelligence API and MCP server for AI agents and security tooling.
 
 **License keys:** new sales are temporarily paused while data licensing is finalised. The free tier and x402 remain available.
 
+## For agents
+
+<!-- This section is published as the public page /docs/agents (public/docs/agents/index.html): after editing it, run npm run docs:build. Keep it free of repo-relative links. The limits below are pinned to lib/x402Config.mjs and lib/freeTier.mjs by tests/agent-guide.test.mjs. -->
+
+### Why agents use PG1
+
+An autonomous agent acts on things it has never seen before: it pays a wallet, opens a link, installs a package, patches a CVE. PG1 checks that thing first and answers in one machine-readable shape, `reasons` + `status` + `checks`, so the agent can decide on its own and a person can audit why.
+
+- **It never says "safe".** PG1 only knows what its sources have recorded, so the best answer it gives is `no_flags`: nothing found in the sources checked. A check that did not finish is `unknown`, never `no_flags`.
+- **Free to start.** The wallet, domain, hostname and package checks are always free. The paid calls start with 5 free calls a day; after that each is 0.01 USD in USDC on Base via x402, with no account or key.
+- **The tools that matter most:** `check_wallet_sanctions`, `check_wallet_age`, `check_hostname_reputation`, `check_domain_age`, `check_package`, `get_cve_details`, `get_cve_batch`, `get_threat_actor_profile` and `get_ioc_context`.
+
+Connect in under 30 seconds. Add the MCP server to your client:
+
+```json
+{ "mcpServers": { "pg1": { "type": "http", "url": "https://pg1-ai-agent.vercel.app/api/mcp" } } }
+```
+
+Or call it directly:
+
+```bash
+curl -X POST https://pg1-ai-agent.vercel.app/api/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"check_hostname_reputation","arguments":{"hostname":"example.com"}}}'
+```
+
+A2A agents use `https://pg1-ai-agent.vercel.app/api/a2a` (agent card at `/.well-known/agent-card.json`).
+
+### Which tool to call
+
+| You have | Call | Notes |
+|---|---|---|
+| One IP, domain, URL or file hash | `get_ioc_context` | Free when nothing is on record (`found: false`). The feed carries only sources PG1 may resell, so for a domain or hostname also run the two hostname checks below. |
+| Several indicators (up to 20) | `get_ioc_batch` | Free when none is found. Read each entry in `results`, not only the batch `status`. |
+| A CVE id | `get_cve_details` | Several ids: `get_cve_batch` (up to 20). |
+| A vendor and product, no CVE id | `get_cve_by_product` | Known-exploited CVEs come first. |
+| A wallet address you are about to pay or trust | `check_wallet_sanctions` **and** `check_wallet_age` | Sanctions list match, then on-chain age; a wallet with no history is flagged. |
+| A link, hostname or possible phishing site | `check_hostname_reputation` **and** `check_domain_age` | Listed or look-alike hostname, then registration age; a domain under 30 days old is flagged. |
+| An npm or PyPI package before installing it | `check_package` | Flags a name that does not exist, a malicious report, or a new look-alike of a popular package. |
+| A threat actor or APT name | `get_threat_actor_profile` | MITRE ATT&CK dossier. |
+| One public IP and your own AbuseIPDB key | `check_ip_abuse` | Send the key in `X-AbuseIPDB-Key`; PG1 has no key of its own. |
+| A bulk feed to ingest | `get_threat_indicators` | STIX 2.1 bundle. REST: `GET /api/ioc`. |
+| Your remaining free calls | `get_usage_status` | Always free. |
+
+### What `status` means
+
+| `status` | Meaning | What to do |
+|---|---|---|
+| `"no_flags"` | Nothing bad is recorded **in the sources checked** (see `checks`). It is not proof the target is safe. | Proceed under your own policy. |
+| `"flagged"` | At least one warning in `reasons`. | Stop, or escalate to a person. Match on `reasons[].code`, never on `message`. |
+| `"unknown"` | A source timed out, errored or was skipped, so the answer is incomplete. | Never treat it as clean: retry, or fail closed. |
+
+Informational codes (`WALLET_DELEGATED`, `IP_TOR_EXIT_NODE`, `IP_WHITELISTED`, `IP_REPORTS_SCORED_ZERO`) report a fact and never change `status`. Every code: [/docs/reason-codes](https://pg1-ai-agent.vercel.app/docs/reason-codes).
+
+### Free tier and rate limits
+
+| Tool | Cost | Limit without a licence key |
+|---|---|---|
+| `check_wallet_sanctions` | Always free | 120 calls/hour per caller |
+| `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `check_package` | Always free | 60 calls/hour per caller, per tool |
+| `check_ip_abuse` | Always free (your own AbuseIPDB quota) | 60 calls/hour per caller |
+| `get_usage_status` | Always free | none |
+| `get_ioc_context`, `get_ioc_batch` | Free when nothing is found; paid when something is | Paid calls use the free tier first |
+| `get_cve_details`, `get_cve_batch`, `get_cve_by_product`, `get_threat_actor_profile`, `get_threat_indicators`, `GET /api/ioc` | Paid: 0.01 USD per call | 5 free calls a day per caller, shared across all of them, then x402 |
+| Test fixtures ([/docs/testing](https://pg1-ai-agent.vercel.app/docs/testing)) | Always free | none, and they spend no free call |
+
+- **No header is needed for the free tier.** It is automatic for any caller with no payment and no licence key. Responses carry `X-Free-Tier-Limit` and `X-Free-Tier-Remaining`.
+- Send `X-Free-Tier: 0` to skip it and get the payment challenge straight away.
+- A licence key in `X-API-KEY` lifts the hourly limits and pays for paid calls.
+- A rate-limited call is a `rate_limited` error with `retry_after`.
+
 ## Two Ways to Connect
 
 - **`/api/ioc`** — simple REST GET, returns the STIX 2.1 indicator feed directly. Best for scripts, curl, and simple integrations.
-- **`/api/mcp`** — full Model Context Protocol server, 14 tools (CVE lookups, batch operations, threat actor dossiers, wallet sanctions screening, domain age, hostname/phishing reputation, wallet age/history, and more). Best for Claude, MCP-compatible agents, and any client speaking the MCP standard.
+- **`/api/mcp`** — full Model Context Protocol server, 16 tools (CVE lookups, batch operations, threat actor dossiers, wallet sanctions screening, domain age, hostname/phishing reputation, wallet age/history, and more). Best for Claude, MCP-compatible agents, and any client speaking the MCP standard.
 
 **Discovery:** [`/llms.txt`](https://pg1-ai-agent.vercel.app/llms.txt) (llmstxt.org format, for AI agents/crawlers) and [`/openapi.json`](https://pg1-ai-agent.vercel.app/openapi.json) (OpenAPI 3.1 spec for `/api/ioc` and `/api/health`).
 
@@ -318,7 +390,7 @@ Source of truth: `lib/reasonCodes.mjs`.
 
 <!-- This section is published as the public page /docs/testing (public/docs/testing/index.html): after editing it, run npm run docs:build. Keep it free of repo-relative links and provider names. The fixture values, the reasoning behind each, and the table rows below come from lib/fixtures.mjs. -->
 
-Every MCP tool that can flag something has three fixed, made-up fixture inputs that always return the same answer: one **FLAGGED**, one **CLEAN** and one **UNKNOWN**. `check_wallet_age` also has a fourth, **DELEGATED**. Use them to test your integration's happy path, its "flagged" path and its skip/retry path without spending anything or depending on live data.
+Every MCP tool that can flag something has three fixed, made-up fixture inputs that always return the same answer: one **FLAGGED**, one **CLEAN** and one **UNKNOWN**. A few have one more for a second case worth testing: `check_wallet_age` **DELEGATED**, `check_hostname_reputation` **LOOKALIKE** (a typosquat rather than a listed hostname), `check_package` **MISSING** (a package that does not exist, like a name an assistant invented), and `get_ioc_batch` / `get_cve_batch` **MIXED** (one flagged entry and one not, so you can check you read each entry and not only the batch status). Use them to test your integration's happy path, its "flagged" path and its skip/retry path without spending anything or depending on live data.
 
 - **Always free**, for every caller: no licence key, no `x-free-tier` header, no x402 payment, no rate-limit usage. This applies to the paid tools too.
 - **Same shape as a real response**: `reasons`, `status`, `checks` and `request_id`, plus `test_fixture: true`. Every `checks[]` entry has `source: "fixture"`. On an error-shaped UNKNOWN, `test_fixture: true` is in `error.data` (JSON-RPC errors) or next to `code` (isError tool results).
@@ -343,6 +415,7 @@ Every MCP tool that can flag something has three fixed, made-up fixture inputs t
 | `check_hostname_reputation` | FLAGGED | `{"hostname":"pg1-test-flagged.invalid"}` | verdict "listed" (match_type "exact"), status "flagged", reason HOSTNAME_PHISHING_LISTED |
 | `check_hostname_reputation` | CLEAN | `{"hostname":"pg1-test-clean.invalid"}` | verdict "not_listed", status "no_flags" |
 | `check_hostname_reputation` | UNKNOWN | `{"hostname":"pg1-test-unknown.invalid"}` | HTTP 503, JSON-RPC error -32003 "Phishing domain list temporarily unavailable, please retry." |
+| `check_hostname_reputation` | LOOKALIKE | `{"hostname":"pg1-test-lookalike.invalid"}` | verdict "lookalike", lookalike_of pg1-test-brand.invalid, status "flagged", reason HOSTNAME_LOOKALIKE |
 | `check_wallet_age` | FLAGGED | `{"address":"0x7067312d746573742d6669787475726500000001"}` | found: false (no transfer history), status "flagged", reason WALLET_NO_HISTORY |
 | `check_wallet_age` | CLEAN | `{"address":"0x7067312d746573742d6669787475726500000002"}` | found: true, first_seen 2023-09-01T00:00:00.000Z, status "no_flags" |
 | `check_wallet_age` | UNKNOWN | `{"address":"0x7067312d746573742d6669787475726500000003"}` | isError: true, code "upstream_unavailable", status "unknown" (never found: false) |
@@ -353,12 +426,14 @@ Every MCP tool that can flag something has three fixed, made-up fixture inputs t
 | `get_ioc_batch` | FLAGGED | `{"values":["2001:db8::1"]}` | total_found 1, status "flagged", reason IOC_FOUND_IN_THREAT_FEED (free, no payment) |
 | `get_ioc_batch` | CLEAN | `{"values":["2001:db8::2"]}` | total_found 0, status "no_flags" |
 | `get_ioc_batch` | UNKNOWN | `{"values":["2001:db8::3"]}` | HTTP 503, JSON-RPC error -32003 "Threat data temporarily unavailable, please retry." |
+| `get_ioc_batch` | MIXED | `{"values":["2001:db8::1","2001:db8::2"]}` | total_requested 2, total_found 1 (first found, second found: false), status "flagged" (free, no payment) |
 | `get_cve_details` | FLAGGED | `{"cve_id":"CVE-0000-0001"}` | cisa_kev.is_known_exploited: true, status "flagged", reason CVE_KNOWN_EXPLOITED_KEV (free, no payment) |
 | `get_cve_details` | CLEAN | `{"cve_id":"CVE-0000-0002"}` | cisa_kev.is_known_exploited: false, status "no_flags" |
 | `get_cve_details` | UNKNOWN | `{"cve_id":"CVE-0000-0003"}` | exploit-score and KEV checks "error", exploit score null, status "unknown" |
 | `get_cve_batch` | FLAGGED | `{"cve_ids":["CVE-0000-0001"]}` | one KEV-listed result, status "flagged", reason CVE_KNOWN_EXPLOITED_KEV (free, no payment) |
 | `get_cve_batch` | CLEAN | `{"cve_ids":["CVE-0000-0002"]}` | one non-KEV result, status "no_flags" |
 | `get_cve_batch` | UNKNOWN | `{"cve_ids":["CVE-0000-0003"]}` | exploit-score and KEV checks "error", status "unknown" |
+| `get_cve_batch` | MIXED | `{"cve_ids":["CVE-0000-0001","CVE-0000-0002"]}` | two results, the first KEV-listed and the second not, status "flagged" (free, no payment) |
 | `get_cve_by_product` | FLAGGED | `{"vendor":"pg1-test.invalid","product":"flagged"}` | one KEV-listed CVE, status "flagged", reason CVE_KNOWN_EXPLOITED_KEV (free, no payment) |
 | `get_cve_by_product` | CLEAN | `{"vendor":"pg1-test.invalid","product":"clean"}` | total_found 0, status "no_flags" |
 | `get_cve_by_product` | UNKNOWN | `{"vendor":"pg1-test.invalid","product":"unknown"}` | exploit-score and KEV checks "error", status "unknown" |
@@ -368,6 +443,7 @@ Every MCP tool that can flag something has three fixed, made-up fixture inputs t
 | `check_package` | FLAGGED | `{"ecosystem":"npm","name":"_pg1-test-flagged"}` | exists: true, age_days 3, reported_malicious: true (MAL-0000-0001), status "flagged", reasons PACKAGE_REPORTED_MALICIOUS and PACKAGE_NEWLY_PUBLISHED (informational) (synthetic data, no upstream call; "pypi" works too) |
 | `check_package` | CLEAN | `{"ecosystem":"npm","name":"_pg1-test-clean"}` | exists: true, first_published 2026-01-01, reported_malicious: false, no vulnerabilities, status "no_flags" |
 | `check_package` | UNKNOWN | `{"ecosystem":"npm","name":"_pg1-test-unknown"}` | exists: true, but the malicious-report and vulnerability checks "timeout", reported_malicious: null, status "unknown" (what a real lookup timeout returns) |
+| `check_package` | MISSING | `{"ecosystem":"npm","name":"_pg1-test-missing"}` | exists: false, status "flagged", reason PACKAGE_NOT_FOUND (a name that does not exist, like one an assistant invented) |
 
 No fixtures exist for `get_threat_indicators` (a bulk feed with no target input), `get_threat_actor_profile` and `get_usage_status` (they have no reason code to flag with), or `subscribe_alerts` and `submit_indicator` (write actions whose `status` is a lifecycle state, not a verdict).
 

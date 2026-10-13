@@ -697,10 +697,10 @@ test('logPackageCheckFailures logs nothing for a complete answer', () => {
 // ---------------------------------------------------------------------------
 // Fixtures
 
-test('fixtures: FLAGGED/CLEAN/UNKNOWN names that npm and PyPI both reject, answered with no request, over MCP and A2A, for either ecosystem', async (t) => {
+test('fixtures: FLAGGED/CLEAN/UNKNOWN/MISSING names that npm and PyPI both reject, answered with no request, over MCP and A2A, for either ecosystem', async (t) => {
   const spy = spyFetch(t);
   const fixtures = TEST_FIXTURES.filter((f) => f.tool === 'check_package');
-  assert.deepEqual(fixtures.map((f) => f.kind), ['FLAGGED', 'CLEAN', 'UNKNOWN']);
+  assert.deepEqual(fixtures.map((f) => f.kind), ['FLAGGED', 'CLEAN', 'UNKNOWN', 'MISSING']);
   for (const f of fixtures) {
     assert.throws(() => pkg.normalizePackageName('npm', f.arguments.name), /./, 'npm rejects it');
     assert.throws(() => pkg.normalizePackageName('pypi', f.arguments.name), /./, 'PyPI rejects it');
@@ -727,6 +727,8 @@ test('fixtures: FLAGGED/CLEAN/UNKNOWN names that npm and PyPI both reject, answe
   const unknown = mcpPayload(await callMcp({ ecosystem: 'npm', name: FIXTURE_VALUES.package.UNKNOWN }));
   assert.equal(unknown.reported_malicious, null);
   assert.equal(unknown.exists, true);
+  const missing = mcpPayload(await callMcp({ ecosystem: 'npm', name: FIXTURE_VALUES.package.MISSING }));
+  assert.equal(missing.exists, false, 'MISSING is a package that does not exist');
 });
 
 test('fixtures do not count against the rate limit; with an invalid version a fixture name is a normal (invalid) input', async (t) => {
