@@ -13,7 +13,7 @@
 import { test } from 'node:test';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
-import a2aHandler, { A2A_SKILL_TOOLS } from '../api/a2a.mjs';
+import a2aHandler, { A2A_SKILL_TOOLS, A2A_PAID_SKILL_NAMES } from '../api/a2a.mjs';
 import mcpHandler, { resolveTestFixture, TOOLS } from '../api/mcp.mjs';
 import { FIXTURE_VALUES } from '../lib/fixtures.mjs';
 import { WALLET_SANCTIONS_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX } from '../lib/x402Config.mjs';
@@ -293,6 +293,8 @@ test('tool definitions are hash-identical to before the limit (name, description
   // check_package (1.17.0) is left out the same way. Moved again by the
   // paid-source licensing gate (the same three descriptions).
   const added = new Set(['check_ip_abuse', 'check_package']);
-  assert.equal(sha(TOOLS.filter((t) => !added.has(t.name))), 'e00e29241d73ff2afe019ba7d355015a12b1abdbef7ee3e134e913bbdde75e28');
-  assert.equal(sha(A2A_SKILL_TOOLS.filter((t) => !added.has(t.name))), '188ab4f12daf429bd01e91689d29d682307afb6e27aae596a0e7324dbb6a2c3d');
+  assert.equal(sha(TOOLS.filter((t) => !added.has(t.name))), 'a856844e14053900ff5ac00572917d10797c94682fd9cbf8cb504ec5394eeff4');
+  // Phase 2 moved it again (the three CVE descriptions, EPSS switch) and
+  // added the paid A2A skills, which are left out like the additions.
+  assert.equal(sha(A2A_SKILL_TOOLS.filter((t) => !added.has(t.name) && !A2A_PAID_SKILL_NAMES.includes(t.name))), '188ab4f12daf429bd01e91689d29d682307afb6e27aae596a0e7324dbb6a2c3d');
 });

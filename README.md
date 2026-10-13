@@ -19,6 +19,8 @@ Both accept the same Gumroad license key via the `x-api-key` header, or per-call
 
 The free tier is **opt-in** — add `x-free-tier: 1` to your request header. Without it, a request with no license key and no payment header returns `402 Payment Required` by default.
 
+It is **one counter per caller (per IP), shared** by the REST feed (`/api/ioc`), the paid MCP tools (`/api/mcp`) and the paid A2A skills (`/api/a2a`): 5 free paid calls a day in total, whichever route spends them. A call only counts once it succeeds. `get_usage_status` shows what is left.
+
 ```bash
 curl -X GET "https://pg1-ai-agent.vercel.app/api/ioc" \
   -H "x-free-tier: 1"
@@ -110,8 +112,8 @@ Call `"method": "tools/list"` against `/api/mcp` for full schemas. Summary:
 | `get_threat_indicators` | Bulk STIX 2.1 indicator feed | NVD (only sources PG1 may redistribute commercially; see [Data source switches](#data-source-switches)) | Yes (needs `x-free-tier: 1`) |
 | `get_ioc_context` | Single-indicator safety check | NVD (see [Data source switches](#data-source-switches)) | Always free if not found |
 | `get_ioc_batch` | Up to 20 indicators per call | NVD (see [Data source switches](#data-source-switches)) | Always free if none found |
-| `get_cve_details` | CVE lookup enriched with NVD, EPSS, CISA KEV | NVD, FIRST.org EPSS, CISA KEV | Yes (needs `x-free-tier: 1`) |
-| `get_cve_batch` | Up to 20 CVE IDs per call | NVD, FIRST.org EPSS, CISA KEV | Yes (needs `x-free-tier: 1`) |
+| `get_cve_details` | CVE lookup enriched with NVD, CISA KEV (EPSS only when `PG1_SOURCE_EPSS_PAID` is on) | NVD, CISA KEV | Yes (needs `x-free-tier: 1`) |
+| `get_cve_batch` | Up to 20 CVE IDs per call | NVD, CISA KEV (EPSS as above) | Yes (needs `x-free-tier: 1`) |
 | `get_cve_by_product` | Discover CVEs by vendor/product | NVD | Yes (needs `x-free-tier: 1`) |
 | `get_threat_actor_profile` | APT/threat actor dossiers with MITRE ATT&CK | MITRE ATT&CK Enterprise | Yes (needs `x-free-tier: 1`) |
 | `get_usage_status` | Check your remaining free-tier quota | — | Always free, no header needed |
@@ -150,11 +152,15 @@ Threat indicator data (`get_threat_indicators`, `get_ioc_context`, `get_ioc_batc
 
 A locked source can only be served again by a code change, made once a licence is signed.
 
+**EPSS in paid CVE responses.** FIRST grants EPSS scores "freely to the public" but has not confirmed resale in writing, so paid CVE responses (`get_cve_details`, `get_cve_batch`, `get_cve_by_product` over MCP or A2A, whether paid by x402, a licence key or the free tier) leave EPSS out and never call FIRST for it: no `epss` field, no EPSS check, no EPSS credit. `PG1_SOURCE_EPSS_PAID=true` puts it back; set it only once FIRST confirms resale in writing. Free responses (the PG1 chat) keep EPSS.
+
+**`threat_indicators`.** The legacy `threat_indicators` table (rows with no `source_id` and nothing in `stix_data`) is never read by a paid route; only the operator's own chat context and the operator-only diagnostics endpoint read it. `tests/phase2-funnel.test.mjs` pins both.
+
 A switched-off source's rows never appear in any response, paid or free; an indicator known only to such a source is reported as `found: false`.
 
 ## A2A (Agent2Agent Protocol)
 
-`/api/a2a` exposes the seven always-free tools (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `check_package`, `get_usage_status`, and `check_ip_abuse`, which needs your own key in the `X-AbuseIPDB-Key` header exactly as on `/api/mcp`) over [A2A](https://a2a-protocol.org/latest/specification/), JSON-RPC 2.0. Paid tools are not available via A2A yet. The agent card is published at [`/.well-known/agent-card.json`](https://pg1-ai-agent.vercel.app/.well-known/agent-card.json). `message/send` (the v0.3 method name) is accepted as an alias of `SendMessage`. The `A2A-Version` header (or query param) selects the response shape — `1.0` or `0.3` (the default when omitted). Rate limits are the MCP tools' own, with the same counters: for example, without a licence key `check_wallet_sanctions` is limited to 120 calls/hour per caller (per IP), and the 121st call in the hour gets the same `rate_limited` error as `check_wallet_age`. Send the skill and its arguments as a `DataPart`:
+`/api/a2a` exposes the seven always-free tools (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `check_package`, `get_usage_status`, and `check_ip_abuse`, which needs your own key in the `X-AbuseIPDB-Key` header exactly as on `/api/mcp`) over [A2A](https://a2a-protocol.org/latest/specification/), JSON-RPC 2.0, plus four **paid skills**: `get_cve_details`, `get_cve_batch`, `get_cve_by_product` and `get_threat_actor_profile` (0.01 USD a call). A paid skill is served with a licence key (`X-API-KEY`), an x402 payment, or `X-Free-Tier: 1` (the shared 5/day counter above). Payment follows the [a2a-x402 extension](https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.1): an unpaid call returns a task in state `input-required` whose status message metadata carries `"x402.payment.status": "payment-required"` and the x402 v2 PaymentRequired object in `"x402.payment.required"`; resend the message with the signed PaymentPayload in `message.metadata["x402.payment.payload"]`. The payment is settled only after the skill succeeds, and the receipt comes back in `"x402.payment.receipts"`. The indicator feed tools stay on `/api/mcp`. The agent card is published at [`/.well-known/agent-card.json`](https://pg1-ai-agent.vercel.app/.well-known/agent-card.json). `message/send` (the v0.3 method name) is accepted as an alias of `SendMessage`. The `A2A-Version` header (or query param) selects the response shape — `1.0` or `0.3` (the default when omitted). Rate limits are the MCP tools' own, with the same counters: for example, without a licence key `check_wallet_sanctions` is limited to 120 calls/hour per caller (per IP), and the 121st call in the hour gets the same `rate_limited` error as `check_wallet_age`. Send the skill and its arguments as a `DataPart`:
 
 ```bash
 curl -X POST https://pg1-ai-agent.vercel.app/api/a2a \

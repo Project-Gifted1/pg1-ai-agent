@@ -107,5 +107,5 @@ test('MCP tool names, descriptions and schemas are identical to the 1.15.0 relea
   assert.equal(TOOLS.length, 16);
   assert.equal(TOOLS[14].name, 'check_ip_abuse');
   assert.equal(TOOLS[15].name, 'check_package');
-  assert.equal(sha256(JSON.stringify(TOOLS.slice(0, 14))), 'e00e29241d73ff2afe019ba7d355015a12b1abdbef7ee3e134e913bbdde75e28');
+  assert.equal(sha256(JSON.stringify(TOOLS.slice(0, 14))), 'a856844e14053900ff5ac00572917d10797c94682fd9cbf8cb504ec5394eeff4');
 });

@@ -115,7 +115,8 @@ test('probe vs real: crawler names and probe-only activity are probes; anything 
     call('d', 'check_domain_age', 'ok', { endpoint: '/api/a2a' }),
     // e: only an unknown method - not real usage
     req('e', 'other', 'method_not_found'),
-    // f: asked for a tool that does not exist - that is a real attempt
+    // f: only asked for a tool that does not exist - Phase 2: a probe of
+    // its own kind (unknown_tools_only), never a real caller on its own
     call('f', null, 'unknown_tool', { requested_tool: 'get_weather' })
   ];
   const { classOf, reasonOf } = classifyCallers(rows);
@@ -127,12 +128,13 @@ test('probe vs real: crawler names and probe-only activity are probes; anything 
   assert.equal(classOf(byCaller('c')), 'real');
   assert.equal(classOf(byCaller('d')), 'real');
   assert.equal(classOf(byCaller('e')), 'probe');
-  assert.equal(classOf(byCaller('f')), 'real');
+  assert.equal(classOf(byCaller('f')), 'probe');
+  assert.equal(reasonOf(byCaller('f')), 'unknown_tools_only');
 
   const s = aggregateUsage(rows, { period: '24h', now: NOW });
-  assert.deepEqual(s.traffic.distinct_callers_estimate, { real: 3, probe: 3 });
-  assert.deepEqual(s.traffic.probe_callers_by_reason, { known_crawler: 1, probe_only_activity: 2 });
-  assert.equal(s.summary.distinct_real_callers_estimate, 3);
+  assert.deepEqual(s.traffic.distinct_callers_estimate, { real: 2, probe: 4 });
+  assert.deepEqual(s.traffic.probe_callers_by_reason, { known_crawler: 1, unknown_tools_only: 1, probe_only_activity: 2 });
+  assert.equal(s.summary.distinct_real_callers_estimate, 2);
   assert.ok(PROBE_ONLY_METHODS.includes('tools/list') && PROBE_ONLY_METHODS.includes('initialize'));
   assert.deepEqual([...PROBE_ONLY_TOOLS], ['get_usage_status']);
 });
@@ -198,7 +200,11 @@ test('payment funnel for real callers: free checks, free limit, 402s, settlement
     free_checks_used: 3, free_tool_calls: 2, free_tier_calls: 1,
     callers_hit_free_limit: 2, free_limit_responses: 3,
     payment_requests: 4, payments_settled: 2, settlement_failures: 1,
-    revenue_usd: 0.03, ioc_feed_x402_calls: 1
+    revenue_usd: 0.03, ioc_feed_x402_calls: 1,
+    // Phase 2: free tier per route (one shared counter) and the drop-off:
+    // r2 was challenged and never served (r1 used the free tier, r3 paid).
+    free_tier_calls_by_route: [{ route: '/api/mcp', calls: 1 }],
+    callers_challenged_never_served: 1
   });
   assert.equal(s.summary.payment_requests, 4);
   assert.equal(s.summary.settled_revenue_usd, 0.03);
@@ -208,12 +214,14 @@ test('payment funnel for real callers: free checks, free limit, 402s, settlement
   assert.match(report, /^Hit the free limit: 2 callers$/m);
   assert.match(report, /^Payment requests issued \(402\): 4$/m);
   assert.match(report, /^Payments settled: 2 · 0\.03 USD · 1 failed settlement$/m);
+  assert.match(report, /^Shown a payment request, never served: 1 caller$/m);
+  assert.match(report, /^Free tier by route \(one 5\/day counter\): \/api\/mcp 1$/m);
   assert.match(report, /^Settled revenue: 0\.03 USD$/m);
 });
 
 // --- errors ---------------------------------------------------------------------
 
-test('error breakdown: by tool, by type, by class, top 5 unrecognised tool names as requested', () => {
+test('error breakdown: by tool, by type, by class, by fault; unknown tools counted apart with the top 5 names as requested', () => {
   const unknown = (caller, name) => call(caller, null, 'unknown_tool', { requested_tool: name });
   const rows = [
     init('r', 'Claude Desktop'),
@@ -228,12 +236,16 @@ test('error breakdown: by tool, by type, by class, top 5 unrecognised tool names
   ];
   const s = aggregateUsage(rows, { period: '24h', now: NOW });
   const e = s.errors;
-  assert.equal(e.total, 14);
-  assert.deepEqual(e.by_class, { real: 12, probe: 2 });
+  // Phase 2: an unknown tool is a caller mistake counted on its own, not an
+  // error, so the 9 unknown_tool calls are out of the total.
+  assert.equal(e.total, 5);
+  assert.deepEqual(e.by_class, { real: 3, probe: 2 });
+  assert.deepEqual(e.unknown_tool_calls, { total: 9, real: 9, probe: 0 });
+  assert.deepEqual(e.by_fault, { caller: 2, pg1: 1, unclassified: 2 });
   assert.equal(e.rate_limited, 1, 'rate limits are counted on their own, not as errors');
-  assert.deepEqual(e.by_tool.slice(0, 2), [{ tool: '(unrecognised)', errors: 9 }, { tool: 'check_wallet_age', errors: 2 }]);
+  assert.deepEqual(e.by_tool.slice(0, 1), [{ tool: 'check_wallet_age', errors: 2 }]);
   assert.deepEqual(e.by_type, [
-    { type: 'unknown_tool', errors: 9 }, { type: 'tool_error', errors: 2 },
+    { type: 'tool_error', errors: 2 },
     { type: 'method_not_found', errors: 1 }, { type: 'parse_error', errors: 1 }, { type: 'server_error', errors: 1 }
   ]);
   assert.deepEqual(e.unrecognised_tools, [
@@ -242,8 +254,9 @@ test('error breakdown: by tool, by type, by class, top 5 unrecognised tool names
   ], 'top 5, exact names, most requested first');
 
   const report = formatUsageReport(s);
-  assert.match(report, /^Total: 14 \(real 12, probe 2\) · rate limited 1$/m);
-  assert.match(report, /^Unrecognised tools requested: `get_weather` 3 · `search` 2 · `GetCVE` 1 · `lookup_ip` 1 · `scan.url` 1$/m);
+  assert.match(report, /^Total: 5 \(real 3, probe 2\) · rate limited 1$/m);
+  assert.match(report, /^Whose fault: PG1 or its sources 1 · caller input 2 · unclassified 2$/m);
+  assert.match(report, /^Unknown tools asked for \(caller mistakes, not errors\): 9 \(real 9, probe 0\) · `get_weather` 3 · `search` 2 · `GetCVE` 1 · `lookup_ip` 1 · `scan.url` 1$/m);
 });
 
 // --- spikes ---------------------------------------------------------------------
