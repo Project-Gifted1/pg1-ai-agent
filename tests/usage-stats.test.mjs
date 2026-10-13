@@ -134,46 +134,57 @@ const SEED = [
   { created_at: D0, event_type: 'initialize', endpoint: '/api/mcp', status: 'ok', client_name: 'fixture-client', caller_hash: H('e'), is_fixture: true }
 ];
 
-test('aggregateUsage: 7d counts per tool, route and day, distinct callers, clients, errors, rate limits, settlements', () => {
+test('aggregateUsage: 7d report - summary, traffic, tools, payments, errors, clients', () => {
   const s = aggregateUsage(SEED, { period: '7d', now: NOW });
   assert.equal(s.period, '7d');
   assert.equal(s.from, '2026-09-29T00:00:00.000Z');
-  assert.equal(s.total_calls, 7);
-  assert.deepEqual(s.calls_per_tool, [
-    { tool: 'check_wallet_sanctions', calls: 2 }, { tool: 'ioc_feed', calls: 2 },
-    { tool: 'check_domain_age', calls: 1 }, { tool: 'check_wallet_age', calls: 1 }, { tool: 'get_cve_details', calls: 1 }
+  assert.deepEqual(s.summary, { real_tool_calls: 7, distinct_real_callers_estimate: 4, payment_requests: 1, settled_revenue_usd: 0.01 });
+  assert.deepEqual(s.traffic.tool_calls, { total: 7, real: 7, probe: 0 });
+  assert.deepEqual(s.traffic.mcp_requests, { total: 7, real: 6, probe: 1 }, 'initialize-only caller 9 is a probe');
+  assert.deepEqual(s.traffic.distinct_callers_estimate, { real: 4, probe: 1 });
+  assert.deepEqual(s.traffic.by_route.map((r) => [r.route, r.requests, r.tool_calls]), [
+    ['/api/mcp', 7, 3], ['/api/ioc', 2, 2], ['/api/a2a', 1, 1], ['/api/playground', 1, 1]
   ]);
-  assert.deepEqual(s.calls_per_route, [
-    { route: '/api/mcp', calls: 3 }, { route: '/api/ioc', calls: 2 }, { route: '/api/a2a', calls: 1 }, { route: '/api/playground', calls: 1 }
+  assert.deepEqual(s.traffic.per_day.map((d) => [d.day, d.real, d.probe, d.spike]), [
+    ['2026-09-29', 2, 0, false], ['2026-09-30', 0, 0, false], ['2026-10-01', 0, 0, false], ['2026-10-02', 0, 0, false],
+    ['2026-10-03', 0, 0, false], ['2026-10-04', 4, 0, true], ['2026-10-05', 4, 1, true]
   ]);
-  assert.deepEqual(s.calls_per_day, [
-    { day: '2026-09-29', calls: 2 }, { day: '2026-09-30', calls: 0 }, { day: '2026-10-01', calls: 0 }, { day: '2026-10-02', calls: 0 },
-    { day: '2026-10-03', calls: 0 }, { day: '2026-10-04', calls: 2 }, { day: '2026-10-05', calls: 3 }
+  assert.deepEqual(s.tools, [
+    { tool: 'check_wallet_sanctions', calls: 2, pricing: 'free' }, { tool: 'ioc_feed', calls: 2, pricing: 'paid' },
+    { tool: 'check_domain_age', calls: 1, pricing: 'free' }, { tool: 'check_wallet_age', calls: 1, pricing: 'free' }, { tool: 'get_cve_details', calls: 1, pricing: 'paid' }
   ]);
-  assert.equal(s.distinct_callers_estimate, 4);
+  assert.equal(s.payments.payment_requests, 1);
+  assert.equal(s.payments.payments_settled, 1);
+  assert.equal(s.payments.settlement_failures, 1);
+  assert.equal(s.payments.revenue_usd, 0.01, 'a settled row without amount_usd counts at the x402 price');
+  assert.equal(s.errors.total, 2, 'tool_error + server_error; payment_required is not an error');
+  assert.equal(s.errors.rate_limited, 1);
+  assert.deepEqual(s.errors.by_class, { real: 2, probe: 0 });
+  assert.deepEqual(s.clients, [
+    { name: 'Claude Desktop', requests: 5, tool_calls: 3, class: 'real' },
+    { name: '(not given)', requests: 1, tool_calls: 0, class: 'probe' },
+    { name: 'cursor', requests: 1, tool_calls: 0, class: 'real' }
+  ]);
   assert.match(s.distinct_callers_note, /estimate/);
   assert.match(s.distinct_callers_note, /not an exact count of agents/);
-  assert.deepEqual(s.top_clients, [{ name: 'Claude Desktop', count: 2 }, { name: '(not given)', count: 1 }, { name: 'cursor', count: 1 }]);
-  assert.equal(s.mcp_initializations, 4);
-  assert.equal(s.errors, 2, 'tool_error + server_error; payment_required is not an error');
-  assert.equal(s.rate_limited, 1);
-  assert.equal(s.paid_settlements, 1);
   assert.equal(s.fixtures_excluded, true);
 });
 
-test('aggregateUsage: today and 30d windows', () => {
-  const today = aggregateUsage(SEED, { period: 'today', now: NOW });
-  assert.equal(today.total_calls, 3);
-  assert.equal(today.distinct_callers_estimate, 2);
-  assert.equal(today.paid_settlements, 0);
-  assert.equal(today.mcp_initializations, 2);
-  assert.deepEqual(today.calls_per_day, [{ day: '2026-10-05', calls: 3 }]);
+test('aggregateUsage: 24h and 30d windows; today is taken as 24h', () => {
+  const day = aggregateUsage(SEED, { period: '24h', now: NOW });
+  assert.equal(day.period, '24h');
+  assert.equal(day.from, new Date(NOW - 24 * 3600 * 1000).toISOString());
+  assert.equal(day.summary.real_tool_calls, 3);
+  assert.equal(day.summary.distinct_real_callers_estimate, 2);
+  assert.equal(day.payments.payments_settled, 0);
+  assert.deepEqual(day.traffic.per_day.map((d) => d.day), ['2026-10-04', '2026-10-05']);
+  assert.equal(aggregateUsage(SEED, { period: 'today', now: NOW }).period, '24h');
 
   const month = aggregateUsage(SEED, { period: '30d', now: NOW });
-  assert.equal(month.total_calls, 8);
-  assert.equal(month.distinct_callers_estimate, 5);
-  assert.equal(month.calls_per_day.length, 30);
-  assert.equal(month.calls_per_day.reduce((n, d) => n + d.calls, 0), 8);
+  assert.equal(month.summary.real_tool_calls, 8);
+  assert.equal(month.summary.distinct_real_callers_estimate, 5);
+  assert.equal(month.traffic.per_day.length, 30);
+  assert.equal(month.traffic.per_day.reduce((n, d) => n + d.total, 0), month.traffic.by_route.reduce((n, r) => n + r.requests, 0));
 
   assert.equal(aggregateUsage(SEED, { period: 'nonsense', now: NOW }).period, '7d', 'unknown period falls back to 7d');
 });
@@ -181,10 +192,10 @@ test('aggregateUsage: today and 30d windows', () => {
 test('fixtures are excluded: by the query filter and again in the aggregation', async () => {
   const fixturesOnly = SEED.filter((r) => r.is_fixture);
   const s = aggregateUsage(fixturesOnly, { period: '7d', now: NOW });
-  assert.equal(s.total_calls, 0);
-  assert.equal(s.distinct_callers_estimate, 0);
-  assert.equal(s.paid_settlements, 0);
-  assert.deepEqual(s.top_clients, []);
+  assert.equal(s.summary.real_tool_calls, 0);
+  assert.equal(s.summary.distinct_real_callers_estimate, 0);
+  assert.equal(s.payments.payments_settled, 0);
+  assert.deepEqual(s.clients, []);
 
   const { calls } = installFetch([['/rest/v1/agent_telemetry', () => Response.json(SEED)]]);
   const stats = await getUsageStats({ period: '7d', now: NOW });
@@ -192,19 +203,20 @@ test('fixtures are excluded: by the query filter and again in the aggregation', 
   assert.equal(read.method, 'GET');
   assert.match(read.url, /[?&]is_fixture=eq\.false(&|$)/);
   assert.ok(read.url.includes(`created_at=gte.${encodeURIComponent(usagePeriodRange('7d', NOW).from)}`));
-  assert.equal(stats.total_calls, 7, 'a fixture row that slipped through is still skipped');
-  assert.equal(stats.paid_settlements, 1);
+  assert.equal(stats.summary.real_tool_calls, 7, 'a fixture row that slipped through is still skipped');
+  assert.equal(stats.payments.payments_settled, 1);
+  assert.equal(stats.schema, 'current');
 });
 
 test('getUsageStats pages through PostgREST with Range headers and flags nothing truncated under the cap', async () => {
   const page0 = Array.from({ length: 1000 }, () => tc(D0, '/api/mcp', 'check_domain_age', 'ok', '1'));
   const page1 = [tc(D0, '/api/a2a', 'check_domain_age', 'ok', '2')];
   const { calls } = installFetch([['/rest/v1/agent_telemetry', (u, o) => Response.json(o.headers.Range === '0-999' ? page0 : page1)]]);
-  const stats = await getUsageStats({ period: 'today', now: NOW });
+  const stats = await getUsageStats({ period: '24h', now: NOW });
   const reads = calls.filter((c) => c.url.includes('/rest/v1/agent_telemetry'));
   assert.deepEqual(reads.map((c) => c.headers.Range), ['0-999', '1000-1999']);
-  assert.equal(stats.total_calls, 1001);
-  assert.equal(stats.distinct_callers_estimate, 2);
+  assert.equal(stats.summary.real_tool_calls, 1001);
+  assert.equal(stats.summary.distinct_real_callers_estimate, 2);
   assert.equal(stats.truncated, false);
 });
 
@@ -407,18 +419,22 @@ test('operator get_usage_stats returns aggregates only, a "report" card and "abo
   assert.equal(card.status_label, 'Report');
   assert.equal(card.title, 'Usage stats');
   const fields = Object.fromEntries(card.fields.map((f) => [f.label, f.value]));
-  assert.equal(fields['Distinct callers'], 'about 4 (estimate, hashed IPs)');
-  assert.equal(fields['Tool calls'], '7');
+  assert.equal(fields['Distinct real callers'], 'about 4 (estimate, hashed IPs)');
+  assert.equal(fields['Real tool calls'], '7');
+  assert.equal(fields['MCP requests'], '7 (real 6, probe 1)');
+  assert.equal(fields['Tool calls'], '7 (real 7, probe 0)');
   assert.equal(fields.Fixtures, 'excluded');
-  assert.equal(fields['Paid settlements'], '1');
+  assert.match(fields['Payment funnel'], /settled 1, 0\.01 USD/);
   assert.equal(unverifiedNote([out]), '', 'a completed report is not "unverified"');
-  assert.match(spokenSummary([out]), /about 4 distinct callers/);
-  assert.match(usageReport(out), /from about 4 distinct callers/);
-  assert.doesNotMatch(usageReport(out), /\b4 agents\b/);
+  assert.match(spokenSummary([out]), /7 real tool calls from about 4 distinct callers/);
+  const report = usageReport(out);
+  assert.match(report, /Distinct real callers: about 4 \(estimated\)/);
+  assert.doesNotMatch(report, /\b4 agents\b/);
 
   const directive = toolDirective(chatToolsForRole('operator'));
   assert.match(directive, /about N distinct callers/);
   assert.match(directive, /never "N agents"/);
+  assert.match(directive, /MCP requests/);
   assert.match(directive, /never estimate, recall or invent a number/);
   assert.doesNotMatch(toolDirective(chatToolsForRole('guest')), /get_usage_stats/);
 });
@@ -467,9 +483,9 @@ test('/usage for the signed-in operator answers with the report and the card', a
   const res = makeRes();
   await chatHandler(chatReq({ prompt: '/usage 30d', user: 'test-operator', pass: 'test-secret-pass' }), res);
   assert.equal(res.statusCode, 200);
-  assert.match(res.jsonBody.reply, /USAGE · the last 30 days/);
-  assert.match(res.jsonBody.reply, /from about 5 distinct callers/);
-  assert.match(res.jsonBody.reply, /Fixture calls are excluded/);
+  assert.match(res.jsonBody.reply, /^## Usage · the last 30 days/);
+  assert.match(res.jsonBody.reply, /Distinct real callers: about 5 \(estimated\)/);
+  assert.match(res.jsonBody.reply, /\[\^note\]: Fixture calls excluded; distinct callers is an estimate from hashed IPs\./);
   assert.equal(res.jsonBody.toolResults.length, 1);
   assert.equal(res.jsonBody.toolResults[0].tool, 'get_usage_stats');
   assert.equal(res.jsonBody.toolResults[0].status, 'report');
@@ -490,7 +506,8 @@ test('/usage on the streamed chat path sends the card as a tool_result event', a
   assert.ok(card, 'a tool_result event');
   assert.equal(card.tool, 'get_usage_stats');
   assert.equal(card.status, 'report');
-  assert.ok(events.some((e) => e.type === 'text' && /about 0 distinct callers/.test(e.text || e.delta || JSON.stringify(e))));
+  assert.ok(events.some((e) => e.type === 'text' && /Usage · the last 24 hours/.test(e.text || e.delta || JSON.stringify(e))));
+  assert.ok(events.some((e) => e.type === 'text' && /about 0 \(estimated\)/.test(e.text || e.delta || JSON.stringify(e))));
   assert.equal(events[events.length - 1].type, 'done');
 });
 
@@ -502,7 +519,7 @@ test('/usage when the read fails: neutral error with request_id, failed card, no
   const card = res.jsonBody.toolResults[0];
   assert.equal(card.status, 'failed');
   assert.match(card.request_id, /^[0-9a-f-]{36}$/);
-  assert.equal(res.jsonBody.reply, `### [ USAGE ]\nUsage stats could not be read right now (request_id \`${card.request_id}\`). No figures are available.`);
+  assert.equal(res.jsonBody.reply, `## Usage\nUsage stats could not be read right now (request_id \`${card.request_id}\`). No figures are available.`);
   assert.ok(!res.jsonBody.reply.includes('db down'));
 });
 

@@ -18,6 +18,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { UPSTREAM_BRAND_RE } from '../../lib/upstreamFailure.mjs';
+import { routeReplyFont } from '../helpers/replyFont.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PUBLIC_DIR = join(ROOT, 'public');
@@ -98,6 +99,7 @@ test('a film card follows the film from storyboard to preview, with its approval
   const browser = await chromium.launch();
   t.after(async () => { await browser.close(); await new Promise((r) => server.close(r)); });
   const context = await browser.newContext({ viewport: { width: 412, height: 915 }, isMobile: true, hasTouch: true });
+  await routeReplyFont(context);
   await context.route('https://vault.example.test/**', (route) => route.fulfill({ status: 200, contentType: 'video/mp4', body: '' }));
   const page = await context.newPage();
   const errors = [];

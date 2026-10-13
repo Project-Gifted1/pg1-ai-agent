@@ -160,6 +160,15 @@
       ]
     },
     {
+      "source": "/api/threads",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "https://pg1-ai-agent.vercel.app" },
+        { "key": "Access-Control-Allow-Methods", "value": "OPTIONS,POST" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" },
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
       "source": "/api/errors/cleanup",
       "headers": [
         { "key": "Content-Type", "value": "application/json" }
@@ -182,7 +191,7 @@
       ]
     },
     {
-      "source": "/api/:path((?!chat$|errors$|errors/cleanup$|handoffs$|playground$|video-render$|mcp$|a2a$).*)",
+      "source": "/api/:path((?!chat$|errors$|errors/cleanup$|handoffs$|threads$|playground$|video-render$|mcp$|a2a$).*)",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },

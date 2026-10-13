@@ -56,6 +56,7 @@ import { existsSync, readFileSync, mkdtempSync, writeFileSync, rmSync } from 'no
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { routeReplyFont } from '../helpers/replyFont.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PUBLIC_DIR = join(ROOT, 'public');
@@ -302,6 +303,7 @@ async function runScenario(t, scenario) {
     permissions: ['microphone'],
     ...(scenario.android ? { userAgent: ANDROID_UA } : {})
   });
+  await routeReplyFont(context);
   await context.addInitScript(PAGE_HOOKS(scenario.contention));
   const page = await context.newPage();
 

@@ -48,7 +48,7 @@ const FUNCS = [
   'readChatStream', 'formatStepDuration', 'stepDurationMs', 'traceRowHtml', 'traceRunningRowHtml', 'stepCountText', 'agentTimestampHtml',
   'toggleTraceDetails', 'createTraceView', 'consumeDirectiveStream', 'syncExecuteButton',
   'onExecuteClick', 'stopDirectives', 'retryButtonHtml', 'retryDirective', 'renderStreamFailure',
-  'toolStatusLabel', 'toolDateText', 'toolCardHtml', 'toolCardsHtml'
+  'toolStatusLabel', 'toolDateText', 'toolCardHtml', 'toolCardsHtml', 'markdownBlock'
 ];
 const SOURCE = [
   html.match(/const TRACE_EVENT_TYPES = [^\n]*;/)[0],
@@ -552,7 +552,7 @@ test('a dropped connection keeps the partial reply and offers a retry that asks 
   ctx.renderStreamFailure(bubble, out, 'tell me "more" <now>', null);
   assert.ok(!classes.has('pending'));
   assert.ok(!classes.has('error'), 'partial text is not shown as an error bubble');
-  assert.match(bubble.innerHTML, /<div class="message-text">Héllo — world &lt;b&gt;x&lt;\/b&gt;<\/div>/);
+  assert.match(bubble.innerHTML, /<div class="message-text" data-raw="Héllo — world &lt;b&gt;x&lt;\/b&gt;">Héllo — world &lt;b&gt;x&lt;\/b&gt;<\/div>/);
   assert.match(bubble.innerHTML, /The connection dropped before the reply finished\./);
   assert.match(bubble.innerHTML, /<button type="button" class="retry-btn" data-prompt="tell me &quot;more&quot; &lt;now&gt;" data-fallback="1"/);
   assert.equal(ctx.log.errors[0].category, 'network');

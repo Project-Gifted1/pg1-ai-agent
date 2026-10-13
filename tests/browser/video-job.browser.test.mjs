@@ -16,6 +16,7 @@ import http from 'node:http';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { routeReplyFont } from '../helpers/replyFont.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PUBLIC_DIR = join(ROOT, 'public');
@@ -125,6 +126,7 @@ test('a video reply shows "Rendering video…", polls with the session, then sho
     await new Promise((r) => server.close(r));
   });
   const context = await browser.newContext({ viewport: { width: 412, height: 915 }, isMobile: true, hasTouch: true });
+  await routeReplyFont(context);
   await context.route('https://vault.example.test/**', (route) => route.fulfill({ status: 200, contentType: 'video/mp4', body: '' }));
   const page = await context.newPage();
   const pageErrors = [];
@@ -182,6 +184,7 @@ test('a finished clip saved by an older build with the rendering text above it s
     await new Promise((r) => server.close(r));
   });
   const context = await browser.newContext({ viewport: { width: 412, height: 915 } });
+  await routeReplyFont(context);
   await context.route('https://vault.example.test/**', (route) => route.fulfill({ status: 200, contentType: 'video/mp4', body: '' }));
   const page = await context.newPage();
   const pageErrors = [];
@@ -210,6 +213,7 @@ test('/video recheck: a clip found later replaces its failed card, found by job 
     await new Promise((r) => server.close(r));
   });
   const context = await browser.newContext({ viewport: { width: 412, height: 915 }, isMobile: true, hasTouch: true });
+  await routeReplyFont(context);
   await context.route('https://vault.example.test/**', (route) => route.fulfill({ status: 200, contentType: 'video/mp4', body: '' }));
   const page = await context.newPage();
   const pageErrors = [];
