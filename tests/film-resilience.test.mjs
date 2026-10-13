@@ -9,8 +9,10 @@
  *  - stage-level fallback: when Replicate is out of credit or still
  *    throttled, the REST of the stage goes to the paid Gemini key (never the
  *    free key), with the reference still and the previous shot's last frame;
- *    music, which has no Gemini equivalent, fails clearly; every asset and
- *    the QC report say which engine made it (PG1 labels);
+ *    music goes through the router's music tier (Lyria on the paid key,
+ *    leaving out the engine the stage switched away from), and when that
+ *    fails too it stops clearly; every asset and the QC report say which
+ *    engine made it (PG1 labels);
  *  - no double charging: a call the engine refused is given back, throttled
  *    attempts never use up a shot's QC retries;
  *  - resume: /film retry (operator only, approve / decline) restarts a
@@ -142,6 +144,13 @@ function mediaRoutes(state) {
     }],
     ['https://replicate.delivery/', () => new Response(Buffer.from('media-bytes'), { status: 200 })],
     [`${GEMINI_API}/`, (u, o, body) => {
+      if (/lyria/.test(u)) {
+        // Music on the paid key (lib/music/engines.mjs).
+        seen.push({ engine: 'lyria', url: u, body, key: o.headers['x-goog-api-key'] });
+        const r = state.lyria ? state.lyria(u, body) : undefined;
+        if (r) return r;
+        return json({ candidates: [{ content: { parts: [{ text: 'instrumental' }, { inlineData: { mimeType: 'audio/mpeg', data: Buffer.from('lyria-mp3').toString('base64') } }] } }] });
+      }
       seen.push({ engine: 'gemini', url: u, body, key: o.headers['x-goog-api-key'] });
       return json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: PNG.toString('base64') } }] } }] });
     }],
@@ -250,7 +259,7 @@ describe('media fallback: the rest of the stage on the paid Gemini key', () => {
     assert.deepEqual(filmMediaPlan({ REPLICATE_API_TOKEN: REPLICATE, GEMINI_API_KEY_PAID: FREE, GEMINI_API_KEY_FREE: FREE }).map((c) => c.provider), ['replicate'], 'a paid key that is the free key is not used');
   });
 
-  test('out of credit: this and every later still and clip go to the paid key, with the reference and the previous frame; music fails clearly', async () => {
+  test('out of credit: this and every later still and clip go to the paid key, with the reference and the previous frame; music goes to Lyria on the paid key', async () => {
     const state = { replicate: () => new Response(NO_CREDIT, { status: 402 }) };
     const fetchImpl = routedFetch([signed, ...mediaRoutes(state)]);
     const logs = [];
@@ -275,8 +284,19 @@ describe('media fallback: the rest of the stage on the paid Gemini key', () => {
     const v = gem.find((x) => x.engine === 'gemini_video').body;
     assert.equal(v.input.filter((p) => p.type === 'image').length, 3, 'clip: its start frame, the reference and the previous frame');
     assert.equal(v.background, false);
-    await assert.rejects(media.music({ mood: 'piano', bpm: 80, stage }), (e) => e.kind === 'billing' && e.notStarted && e.fallback.outcome === 'unavailable' && /no music bed engine/.test(e.detail));
-    assert.equal(state.n.replicate, 1, 'music is not sent anywhere once the stage has switched');
+    const m = await media.music({ mood: 'piano', bpm: 80, stage });
+    assert.equal(m.engine, 'gemini_paid');
+    assert.equal(m.bytes.toString(), 'lyria-mp3');
+    assert.equal(m.ext, 'mp3');
+    const lyria = state.seen.filter((x) => x.engine === 'lyria');
+    assert.equal(lyria.length, 1);
+    assert.equal(lyria[0].key, PAID, 'the paid key only');
+    assert.match(JSON.stringify(lyria[0].body), /Instrumental only/);
+    assert.equal(state.n.replicate, 1, 'Replicate is not asked for the music once the stage has switched away from it');
+    // Lyria out of credit too: the music bed stops clearly.
+    state.lyria = () => new Response(NO_CREDIT, { status: 402 });
+    await assert.rejects(media.music({ mood: 'piano', bpm: 80, stage }), (e) => e.kind === 'billing' && e.notStarted && e.engine === 'replicate' && e.fallback.engine === 'gemini_paid' && e.fallback.outcome === 'failed');
+    assert.equal(state.n.replicate, 1);
     assert.ok(logs.some((l) => /the rest of this stage goes to gemini_paid/.test(l)));
   });
 
@@ -353,7 +373,7 @@ describe('render stages under engine trouble', () => {
   });
 
   // --- 3 + 4 + 5 + resume: the preview ---
-  test('preview: credit runs out mid-stills, the rest go to the paid key, music stops it clearly; /film retry reuses every still and pays once', async () => {
+  test('preview: credit runs out mid-stills, the rest go to the paid key, music stops it clearly when Lyria is out of credit too; /film retry reuses every still and pays once', async () => {
     process.env = { ...ORIGINAL_ENV, SUPABASE_URL: SUP_URL, SUPABASE_SERVICE_ROLE_KEY: 'service-key' };
     // The worker's error log (pg1_errors) uses the global fetch.
     globalThis.fetch = fetchImpl;
@@ -362,6 +382,7 @@ describe('render stages under engine trouble', () => {
     workerEnv.FILM_TOKEN = signFilmToken(p.id, workerEnv);
     // Reference and shot 1 made; then Replicate is out of credit.
     state.replicate = (n) => (n >= 3 ? new Response(NO_CREDIT, { status: 402 }) : undefined);
+    state.lyria = () => new Response(NO_CREDIT, { status: 402 });
     const engines = () => ({ ...realEngines(workerEnv, { fetchImpl, log: () => {}, sleep: async () => {} }), ...textAndVoice() });
     const logs = [];
     assert.equal(await workerMain(workerEnv, { engines: engines(), fetchImpl, ffImpl: fakeFf(), log: (l) => logs.push(l) }), 1);
@@ -371,7 +392,7 @@ describe('render stages under engine trouble', () => {
     assert.equal(film.error_reason, 'out_of_credit');
     assert.equal(film.failure.stage, 'preview');
     assert.equal(film.failure.step, 'music');
-    assert.deepEqual(film.failure.fallback, { engine: ENGINE_LABELS.gemini_paid, outcome: 'unavailable' });
+    assert.deepEqual(film.failure.fallback, { engine: ENGINE_LABELS.gemini_paid, outcome: 'failed' });
     assert.equal(state.n.replicate, 3, 'Replicate was not asked again after it ran out of credit');
     const gem = state.seen.filter((s) => s.engine === 'gemini');
     assert.equal(gem.length, 4, 'shots 2 to 5 on the paid key');
@@ -388,7 +409,7 @@ describe('render stages under engine trouble', () => {
 
     // The card names the stage, the step and that it was credit, PG1 names only.
     const card = await filmCard(store, film);
-    assert.match(card.message, /PG1 Studio stopped at the preview \(the music beds\): the PG1 media engine is out of credit, and the PG1 main core cannot stand in for music/);
+    assert.match(card.message, /PG1 Studio stopped at the preview \(the music beds\): the PG1 media engine is out of credit, and the PG1 main core could not take over either/);
     assert.match(card.message, new RegExp(`/film retry ${p.id.slice(0, 8)}`));
     assert.doesNotMatch(card.message, UPSTREAM_BRAND_RE);
     assert.deepEqual(card.failure, { stage: 'preview', step: 'music', reason: 'out_of_credit' });
@@ -419,22 +440,25 @@ describe('render stages under engine trouble', () => {
     assert.equal(dispatch.body.inputs.stage, 'preview');
 
     // The worker runs the stage again with credit back: no still is made
-    // again, the music is, and everything is paid for once.
+    // again, the music is (by Lyria, first in the music tier), and
+    // everything is paid for once.
     state.replicate = undefined;
+    state.lyria = undefined;
+    __resetRouterState(); // the breaker window on the drained keys has passed
     const before = { replicate: state.n.replicate, gemini: state.seen.filter((s) => s.engine === 'gemini').length };
     workerEnv.FILM_TOKEN = signFilmToken(p.id, workerEnv);
     assert.equal(await workerMain(workerEnv, { engines: engines(), fetchImpl, ffImpl: fakeFf(), log: () => {} }), 0);
     film = await store.getProject(p.id);
     assert.equal(film.status, 'preview_done');
-    assert.equal(state.n.replicate - before.replicate, 3, 'only the three music beds');
-    assert.ok(state.seen.slice(-3).every((s) => /lyria/.test(s.url)));
+    assert.equal(state.n.replicate - before.replicate, 0, 'the music tier starts with Lyria');
+    assert.ok(state.seen.slice(-3).every((s) => s.engine === 'lyria' && /lyria/.test(s.url) && s.key === PAID));
     assert.equal(state.seen.filter((s) => s.engine === 'gemini').length, before.gemini);
     assets = await store.listAssets(p.id);
     assert.equal(assets.filter((a) => a.kind === 'keyframe').length, 5);
     assert.equal(assets.filter((a) => a.kind === 'reference').length, 1);
     assert.equal(money(film.spent_usd), money(sum(assets)), 'no double charge');
     assert.equal(film.qc_report.reused.keyframes, 5);
-    assert.deepEqual(film.qc_report.engines, { [ENGINE_LABELS.replicate]: 3 }, 'this run made only the music, on the media engine');
+    assert.deepEqual(film.qc_report.engines, { [ENGINE_LABELS.gemini_paid]: 3 }, 'this run made only the music, on the paid key');
   });
 
   // --- 3 + 4: the full render ---

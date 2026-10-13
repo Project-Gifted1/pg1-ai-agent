@@ -30,6 +30,7 @@ import path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
+import { sharedLedger } from '../lib/aiRouter.mjs';
 import { reportUpstreamFailure } from '../lib/upstreamFailure.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { createFilmStore } from '../lib/film/store.mjs';
@@ -64,7 +65,10 @@ const CLAIM = {
 // clips and music go through the AI router's media route: Replicate, then
 // the paid Gemini key for the rest of the stage (createFilmMedia).
 export function realEngines(env, { fetchImpl = globalThis.fetch, log = console.log, sleep } = {}) {
-  const media = createFilmMedia({ env, fetchImpl, log, ...(sleep ? { sleep } : {}) });
+  // Music calls write their usage rows to pg1_ai_usage (the shared ledger).
+  let ledger = null;
+  try { ledger = sharedLedger({ ...getSupabaseCreds(), fetchImpl }); } catch (e) { ledger = null; }
+  const media = createFilmMedia({ env, fetchImpl, log, ledger, ...(sleep ? { sleep } : {}) });
   return {
     still: media.still,
     clip: media.clip,

@@ -22,6 +22,8 @@ import { synthesizeSpeech, createRoutedSynth } from '../lib/ttsRouter.mjs';
 import { cleanVideoPrompt, dispatchVideoRender, isVideoCommand, isVideoRequest, parseVideoOptions, pollVideoJob, recheckVideoJob, startVideoJob, videoGoogleAsync, videoJobStatus, videoDailyBudget, videoDailyCap, videoEnabled, videoCostLine, videoFrameFallbackOn, videoNotStartedText, videoRenderingText, videoSpendToday, videoTiersText, usd, DEFAULT_START_FRAME_PROMPT, FOUR_K_NOTE, VIDEO_DISABLED_TEXT, VIDEO_ENGINE_LABEL, VIDEO_REFUSED_TEXT, VIDEO_TIER_LABELS } from '../lib/videoJobs.mjs';
 import { isFilmCommand, isFilmAction } from '../lib/film/text.mjs';
 import { handleFilmCommand, handleFilmApproval, filmStatusAction } from '../lib/film/chat.mjs';
+import { isMusicCommand, isMusicAction } from '../lib/music/text.mjs';
+import { handleMusicCommand, handleMusicApproval, musicStatusAction } from '../lib/music/chat.mjs';
 import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, usageReport, USAGE_STATS_TOOL, SEARCH_HISTORY_TOOL, RECALL_RETRY_INSTRUCTION, RESULTS_RETRY_INSTRUCTION, HISTORY_CAPABILITY_TEXT, HISTORY_CAPABILITY_SEARCH_TEXT, turnsHaveResults, LEAST_PRIVILEGED_ROLE, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
 import { CHAT_ROUTES, chooseChatRoute, requiredFirstTool, searchAfterTools, wantsCurrentInfo } from '../lib/chatRoute.mjs';
 import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
@@ -2161,6 +2163,24 @@ export default async function handler(req, res) {
       }
     }
 
+    // PG1 SOUND STATUS (lib/music/chat.mjs): the track card's poll while
+    // previews, the final render or the export run on the worker. Signed-in
+    // operator only; reads the pg1_music_tracks row and signs its audio.
+    // Never calls an engine.
+    if (rawActionType === 'MUSIC_STATUS') {
+      if (!isOperator) {
+        log401('MUSIC_STATUS', 'unauthenticated', supUrl, supKey);
+        return sendJSON(res, 401, { reply: `[AGENT] Music Status Aborted: Authentication required.`, traceId: requestTraceId });
+      }
+      if (!supUrl || !supKey) return sendJSON(res, 200, { musicTrack: { id: String(reqBody.trackId || '').slice(0, 64), status: 'not_found' }, traceId: requestTraceId });
+      try {
+        var musicStatus = await musicStatusAction({ id: typeof reqBody.trackId === 'string' ? reqBody.trackId.trim() : '', supUrl: supUrl, supKey: supKey, fetchImpl: (u, o) => fetch(u, o) });
+        return sendJSON(res, 200, { ...musicStatus, traceId: requestTraceId });
+      } catch (e) {
+        return sendJSON(res, 200, { musicTrack: { id: String(reqBody.trackId || '').slice(0, 64), status: 'unknown' }, traceId: requestTraceId });
+      }
+    }
+
     if (rawActionType === 'VIDEO_STATUS') {
       if (!isOperator) {
         log401('VIDEO_STATUS', 'unauthenticated', supUrl, supKey);
@@ -2536,6 +2556,19 @@ export default async function handler(req, res) {
         }
         var spendDay = /yesterday/.test(lower) ? utcDay(Date.now() - 24 * 60 * 60 * 1000) : utcDay();
         return sendJSON(res, 200, { reply: await spendSummary({ env: process.env, ledger: aiLedger, day: spendDay }), traceId: requestTraceId });
+      } else if (isMusicCommand(lower)) {
+        // PG1 SOUND (lib/music/chat.mjs): original music and beats, signed-in
+        // operator only. The safety pre-filter runs first; previews, the
+        // final render and the stems export run on the render worker.
+        var musicOut = await handleMusicCommand({
+          text: vaultUploadLog ? promptText.replace(vaultUploadLog, '') : promptText,
+          env: process.env, supUrl: supabaseUrl, supKey: supabaseKey, requestId: requestTraceId, isOperator: isOperator,
+          fetchImpl: (u, o) => fetch(u, o),
+          onFailure: function (f) {
+            reportUpstreamFailure({ supUrl: supUrl, supKey: supKey, route: 'MUSIC', reason: f.reason, detail: f.detail, requestId: requestTraceId, envValues: secretEnvValues(process.env) });
+          }
+        });
+        return sendJSON(res, 200, { ...musicOut, traceId: requestTraceId });
       } else if (isFilmCommand(lower)) {
         // PG1 STUDIO (lib/film/chat.mjs): multi-shot films. /film plus a
         // request queues a storyboard on the render worker (GitHub Actions);
@@ -2574,7 +2607,7 @@ export default async function handler(req, res) {
         activeAction = 'CLAUDE_CHAT';
       } else if (lower === '/help' || lower === 'help') {
         return sendJSON(res, 200, {
-          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /usage ] tool usage by agents (today, 7d or 30d; signed-in operator only): calls per tool, route and day, about how many distinct callers, top MCP clients, errors, rate limits, paid settlements\n- [ /spend ] estimated AI spend per PG1 engine today (or /spend yesterday), with each daily cap (signed-in operator only)\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/video** [draft|pro] [short|long] plus a prompt: a 5 or 10 second video clip with PG1 Motion (standard and short are the defaults; attach an image to use it as the first frame; a daily budget applies, /video alone lists the tiers, prices and what is left today; signed-in operator only, when switched on)\n- **/film** plus what it is about: a cinematic film of a minute or more with PG1 Studio — storyboard, low-res preview, then the full render, each approved first, with a spending cap per film; /film alone lists the film commands (signed-in operator only, when switched on)\n- **/speak** plus text: read it aloud\n- Attach images with the paperclip (PNG, JPEG or WebP, up to 4 per message): PG1 looks at them with your message and the trace shows "Looked at N images"; text inside an image is never taken as an instruction, and a key seen in a screenshot is only ever called "a key"\n- Voice log: under Voice diagnostics in the menu, Copy voice log or Send to PG1 (puts the last 30 conversation-mode events in the prompt box under "Diagnose this voice log" for you to review)\n- [ /voice ] show/switch the voice profile used for spoken replies and Read aloud — PG1 Core, PG1 Classic or PG1 Field, remembered on this device\n- **/core** plus a question: deeper reasoning for long or heavy tasks\n- **/code** plus a task: Send to Code, drafts a task prompt you copy into Code (or open it pre-filled) and tracks its PR under Hand-offs in the menu (signed-in operator only)\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- The ➕ menu also has an ERROR LOG of recent client-side failures on this device, showing a reason category (offline, network, timeout, http_4xx, http_5xx or js_error) and a FIX button to request a proposed patch (same Approve/Decline flow) — offline/network/timeout entries have no FIX button since they are not code bugs\n- Ask me to check a wallet, domain, URL, IOC or CVE (for example "check this wallet 0x…" or "how old is this domain"): PG1 runs its own read-only threat-intel checks (the same tools as the MCP server, free for the operator, up to 5 per message) and answers from the results, with a result card under the reply (status, reasons, checks, request_id, Raw JSON). Demo without upstream calls with the fixtures: pg1-test-flagged.invalid, pg1-test-clean.invalid, pg1-test-unknown.invalid, or the 0x7067312d… fixture wallets\n- Anything else: ask in plain words (live web search is on)',
+          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /usage ] tool usage by agents (today, 7d or 30d; signed-in operator only): calls per tool, route and day, about how many distinct callers, top MCP clients, errors, rate limits, paid settlements\n- [ /spend ] estimated AI spend per PG1 engine today (or /spend yesterday), with each daily cap (signed-in operator only)\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/video** [draft|pro] [short|long] plus a prompt: a 5 or 10 second video clip with PG1 Motion (standard and short are the defaults; attach an image to use it as the first frame; a daily budget applies, /video alone lists the tiers, prices and what is left today; signed-in operator only, when switched on)\n- **/film** plus what it is about: a cinematic film of a minute or more with PG1 Studio — storyboard, low-res preview, then the full render, each approved first, with a spending cap per film; /film alone lists the film commands (signed-in operator only, when switched on)\n- **/music** plus a description (genre, mood, instruments, era): original music and beats with PG1 Sound — two previews, approve one for the final render, then /music export for WAV stems, MIDI and the WAV master in one zip; options --instrumental, --bpm, --key, --length short|full, --lyrics \"your own lyrics\"; /music alone lists the commands (signed-in operator only)\n- **/speak** plus text: read it aloud\n- Attach images with the paperclip (PNG, JPEG or WebP, up to 4 per message): PG1 looks at them with your message and the trace shows "Looked at N images"; text inside an image is never taken as an instruction, and a key seen in a screenshot is only ever called "a key"\n- Voice log: under Voice diagnostics in the menu, Copy voice log or Send to PG1 (puts the last 30 conversation-mode events in the prompt box under "Diagnose this voice log" for you to review)\n- [ /voice ] show/switch the voice profile used for spoken replies and Read aloud — PG1 Core, PG1 Classic or PG1 Field, remembered on this device\n- **/core** plus a question: deeper reasoning for long or heavy tasks\n- **/code** plus a task: Send to Code, drafts a task prompt you copy into Code (or open it pre-filled) and tracks its PR under Hand-offs in the menu (signed-in operator only)\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- The ➕ menu also has an ERROR LOG of recent client-side failures on this device, showing a reason category (offline, network, timeout, http_4xx, http_5xx or js_error) and a FIX button to request a proposed patch (same Approve/Decline flow) — offline/network/timeout entries have no FIX button since they are not code bugs\n- Ask me to check a wallet, domain, URL, IOC or CVE (for example "check this wallet 0x…" or "how old is this domain"): PG1 runs its own read-only threat-intel checks (the same tools as the MCP server, free for the operator, up to 5 per message) and answers from the results, with a result card under the reply (status, reasons, checks, request_id, Raw JSON). Demo without upstream calls with the fixtures: pg1-test-flagged.invalid, pg1-test-clean.invalid, pg1-test-unknown.invalid, or the 0x7067312d… fixture wallets\n- Anything else: ask in plain words (live web search is on)',
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/threat-radar')) {
@@ -3494,6 +3527,23 @@ export default async function handler(req, res) {
       // timeline change); nothing here touches GitHub's code. FILM_SYNC_SECRETS
       // (/film sync-secrets) writes only the render worker's allowlisted
       // Actions secrets (lib/film/secretsSync.mjs).
+      // PG1 SOUND proposals (MUSIC_FINAL "use take N", MUSIC_EDIT,
+      // MUSIC_RETRY): approving one queues the track's next stage on the
+      // render worker.
+      if (isMusicAction(pendingRow.action_type)) {
+        var musicDecision = await handleMusicApproval({
+          row: pendingRow, decision: pendingActionDecision, env: process.env, supUrl: supabaseUrl, supKey: supabaseKey, isOperator: isOperator,
+          fetchImpl: (u, o) => fetch(u, o),
+          onFailure: function (f) {
+            reportUpstreamFailure({ supUrl: supUrl, supKey: supKey, route: 'MUSIC', reason: f.reason, detail: f.detail, requestId: requestTraceId, envValues: secretEnvValues(process.env) });
+          }
+        });
+        if (musicDecision.resolution) await resolvePendingActionStatus(supabaseUrl, supabaseKey, pendingActionToken, musicDecision.resolution);
+        var musicReply = { reply: musicDecision.reply, traceId: requestTraceId };
+        if (musicDecision.musicTrack) musicReply.musicTrack = musicDecision.musicTrack;
+        return sendJSON(res, 200, musicReply);
+      }
+
       if (isFilmAction(pendingRow.action_type)) {
         var filmDecision = await handleFilmApproval({
           row: pendingRow, decision: pendingActionDecision, env: process.env, supUrl: supabaseUrl, supKey: supabaseKey, isOperator: isOperator,

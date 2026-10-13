@@ -28,7 +28,8 @@ const VALUES = {
   REPLICATE_API_TOKEN: 'r8_replicate_value_CCCC_0123456789',
   CARTESIA_API_KEY: 'sk_car_cartesia_value_DDDD_0123456789',
   GEMINI_API_KEY_PAID: 'AQ.gemini_paid_value_IIII_0123456789',
-  OPENROUTER_API_KEY: 'sk-or-openrouter-value-JJJJ-0123456789'
+  OPENROUTER_API_KEY: 'sk-or-openrouter-value-JJJJ-0123456789',
+  ELEVENLABS_API_KEY: 'sk-elevenlabs-value-KKKK-0123456789'
 };
 const FORBIDDEN = {
   ANTHROPIC_API_KEY: 'sk-ant-anthropic-value-EEEE-0123456789',
@@ -93,7 +94,7 @@ describe('syncFilmSecrets', () => {
     const env = { ...VALUES, ...FORBIDDEN, PG1_FILM_GITHUB_TOKEN: FILM_TOKEN };
     const out = await syncFilmSecrets({ env, fetchImpl });
 
-    assert.deepEqual(FILM_SECRET_NAMES, ['PG1_VIDEO_RENDER_SECRET', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'REPLICATE_API_TOKEN', 'CARTESIA_API_KEY', 'GEMINI_API_KEY_PAID', 'OPENROUTER_API_KEY']);
+    assert.deepEqual(FILM_SECRET_NAMES, ['PG1_VIDEO_RENDER_SECRET', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'REPLICATE_API_TOKEN', 'CARTESIA_API_KEY', 'GEMINI_API_KEY_PAID', 'OPENROUTER_API_KEY', 'ELEVENLABS_API_KEY']);
     assert.equal(out.ok, true);
     assert.deepEqual(out.results, FILM_SECRET_NAMES.map((name) => ({ name, result: name === 'SUPABASE_URL' ? 'updated' : 'created' })));
     assert.deepEqual([...gh.stored.keys()].sort(), [...FILM_SECRET_NAMES].sort());
@@ -127,7 +128,8 @@ describe('syncFilmSecrets', () => {
     delete env.REPLICATE_API_TOKEN;
     delete env.GEMINI_API_KEY_PAID;
     delete env.OPENROUTER_API_KEY;
-    assert.deepEqual(filmSecretsPlan(env), { ready: ['PG1_VIDEO_RENDER_SECRET', 'SUPABASE_URL'], missing: ['SUPABASE_SERVICE_ROLE_KEY', 'REPLICATE_API_TOKEN', 'CARTESIA_API_KEY', 'GEMINI_API_KEY_PAID', 'OPENROUTER_API_KEY'] });
+    delete env.ELEVENLABS_API_KEY;
+    assert.deepEqual(filmSecretsPlan(env), { ready: ['PG1_VIDEO_RENDER_SECRET', 'SUPABASE_URL'], missing: ['SUPABASE_SERVICE_ROLE_KEY', 'REPLICATE_API_TOKEN', 'CARTESIA_API_KEY', 'GEMINI_API_KEY_PAID', 'OPENROUTER_API_KEY', 'ELEVENLABS_API_KEY'] });
     const out = await syncFilmSecrets({ env, fetchImpl });
     assert.deepEqual(out.results, [
       { name: 'PG1_VIDEO_RENDER_SECRET', result: 'created' },
@@ -136,7 +138,8 @@ describe('syncFilmSecrets', () => {
       { name: 'REPLICATE_API_TOKEN', result: 'skipped' },
       { name: 'CARTESIA_API_KEY', result: 'skipped' },
       { name: 'GEMINI_API_KEY_PAID', result: 'skipped' },
-      { name: 'OPENROUTER_API_KEY', result: 'skipped' }
+      { name: 'OPENROUTER_API_KEY', result: 'skipped' },
+      { name: 'ELEVENLABS_API_KEY', result: 'skipped' }
     ]);
     assert.deepEqual([...gh.stored.keys()].sort(), ['PG1_VIDEO_RENDER_SECRET', 'SUPABASE_URL']);
   });
@@ -309,10 +312,11 @@ describe('/film sync-secrets in the chat', () => {
     assert.match(reply, /- CARTESIA_API_KEY: skipped/);
     assert.match(reply, /- GEMINI_API_KEY_PAID: created/);
     assert.match(reply, /- OPENROUTER_API_KEY: created/);
+    assert.match(reply, /- ELEVENLABS_API_KEY: created/);
     assert.doesNotMatch(reply, /GEMINI_API_KEY_FREE/);
     assert.equal((await pendingRows())[0].status, 'approved');
 
-    assert.deepEqual([...gh.stored.keys()].sort(), ['GEMINI_API_KEY_PAID', 'OPENROUTER_API_KEY', 'PG1_VIDEO_RENDER_SECRET', 'REPLICATE_API_TOKEN', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_URL']);
+    assert.deepEqual([...gh.stored.keys()].sort(), ['ELEVENLABS_API_KEY', 'GEMINI_API_KEY_PAID', 'OPENROUTER_API_KEY', 'PG1_VIDEO_RENDER_SECRET', 'REPLICATE_API_TOKEN', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_URL']);
     for (const [name, value] of gh.stored) assert.equal(value, VALUES[name]);
     for (const c of githubCalls()) {
       assert.equal(c.headers.Authorization, `Bearer ${FILM_TOKEN}`);
