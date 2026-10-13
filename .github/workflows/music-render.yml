@@ -1,0 +1,100 @@
+name: PG1 Sound render
+
+# One stage of one PG1 Sound track (previews, final render or the stems
+# export), dispatched by api/chat.mjs (lib/music/dispatch.mjs). The worker
+# (scripts/music-render.mjs) refuses a run whose token does not verify
+# against PG1_VIDEO_RENDER_SECRET, and only claims a track that is queued
+# for this stage, so a stray or repeated run spends nothing.
+#
+# The export separates stems with Demucs (htdemucs) and writes MIDI with
+# basic-pitch, both on the CPU; pip downloads and the Demucs weights are
+# cached between runs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      track_id:
+        description: Track id
+        required: true
+        type: string
+      stage:
+        description: preview, final or export
+        required: true
+        type: choice
+        options: [preview, final, export]
+      token:
+        description: Signed render token (set by PG1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: music-${{ inputs.track_id }}
+  cancel-in-progress: false
+
+jobs:
+  render:
+    name: render ${{ inputs.stage }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Mask the render token
+        env:
+          MUSIC_TOKEN: ${{ inputs.token }}
+        run: echo "::add-mask::$MUSIC_TOKEN"
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+      - name: Set up Python (export only)
+        if: inputs.stage == 'export'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+          cache-dependency-path: scripts/music-requirements.txt
+      - name: Cache the Demucs model weights (export only)
+        if: inputs.stage == 'export'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/torch/hub
+          key: demucs-htdemucs-${{ hashFiles('scripts/music-requirements.txt') }}
+      - name: Install Demucs, basic-pitch and torch (CPU, export only)
+        if: inputs.stage == 'export'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r scripts/music-requirements.txt
+          python -c "import demucs, basic_pitch, librosa; print('stems tools ready')"
+      - run: npm ci --omit=dev --ignore-scripts
+      - name: Render
+        env:
+          MUSIC_TRACK_ID: ${{ inputs.track_id }}
+          MUSIC_STAGE: ${{ inputs.stage }}
+          MUSIC_TOKEN: ${{ inputs.token }}
+          PG1_MUSIC_PYTHON: python
+          PG1_VIDEO_RENDER_SECRET: ${{ secrets.PG1_VIDEO_RENDER_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # The music tier (lib/music/engines.mjs), paid keys only: ElevenLabs
+          # (optional, first when set), Lyria on the paid Gemini key, then
+          # Replicate. The free Gemini key is never given to this job.
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          GEMINI_API_KEY_PAID: ${{ secrets.GEMINI_API_KEY_PAID }}
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          PG1_MUSIC_LYRIA_MODEL: ${{ vars.PG1_MUSIC_LYRIA_MODEL }}
+          PG1_MUSIC_ELEVENLABS_MODEL: ${{ vars.PG1_MUSIC_ELEVENLABS_MODEL }}
+          PG1_MUSIC_ELEVENLABS_CHANNELS: ${{ vars.PG1_MUSIC_ELEVENLABS_CHANNELS }}
+          PG1_FILM_MUSIC_MODEL: ${{ vars.PG1_FILM_MUSIC_MODEL }}
+          PG1_DAILY_BUDGET_ELEVENLABS_USD: ${{ vars.PG1_DAILY_BUDGET_ELEVENLABS_USD }}
+          PG1_DAILY_BUDGET_GEMINI_PAID_USD: ${{ vars.PG1_DAILY_BUDGET_GEMINI_PAID_USD }}
+          PG1_DAILY_BUDGET_REPLICATE_USD: ${{ vars.PG1_DAILY_BUDGET_REPLICATE_USD }}
+        run: node scripts/music-render.mjs

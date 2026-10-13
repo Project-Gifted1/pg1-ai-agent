@@ -180,8 +180,10 @@ PG1_DAILY_BUDGET_REPLICATE_USD=3
 #   - Out of credit, or still throttled after the waits: the REST of that
 #     stage goes to the paid Gemini key (stills, clips; optional model
 #     PG1_FILM_GEMINI_STILL_MODEL, clips use PG1_VIDEO_MODEL), with the
-#     reference still and the previous shot's last frame. Music has no
-#     Gemini equivalent and stops the stage with a clear message.
+#     reference still and the previous shot's last frame. Music beds go
+#     through the music tier below (ElevenLabs when set, Lyria on the paid
+#     Gemini key, Replicate), leaving out the engine the stage switched
+#     away from; only when all of them fail does the stage stop.
 #   - Each asset (/film media) and the QC report name the engine that made
 #     it with PG1 labels (PG1 media engine, PG1 main core).
 #   - The film card says which stage stopped and whether it was throttling
@@ -193,12 +195,38 @@ PG1_DAILY_BUDGET_REPLICATE_USD=3
 # sync-secrets copies these from this deployment into the repo's Actions
 # secrets after you approve it: PG1_VIDEO_RENDER_SECRET, SUPABASE_URL,
 # SUPABASE_SERVICE_ROLE_KEY, REPLICATE_API_TOKEN, CARTESIA_API_KEY,
-# GEMINI_API_KEY_PAID, OPENROUTER_API_KEY. It reads those exact names only
+# GEMINI_API_KEY_PAID, OPENROUTER_API_KEY, ELEVENLABS_API_KEY (optional;
+# skipped when not set). It reads those exact names only
 # (OPEN_ROUTER_KEY is not copied: set OPENROUTER_API_KEY here, or add the
 # secret in GitHub). ANTHROPIC_API_KEY is never synced; add it in GitHub
 # by hand. The free Gemini key (GEMINI_API_KEY_FREE) is never given to the
 # worker, and GEMINI_API_KEY_PAID is skipped if it holds the same value:
 # film content may go to paid providers only.
+
+# PG1 Sound (/music): original music and beats with a DAW export, signed-in
+# operator only (lib/music/*, scripts/music-render.mjs,
+# .github/workflows/music-render.yml). Needs
+# supabase/migrations/20261014120000_pg1_music.sql (review it, then run it
+# by hand). The music tier of the router (lib/music/engines.mjs):
+#   ElevenLabs Music (ELEVENLABS_API_KEY, optional; asked for as 44.1 kHz
+#   PCM and stored as WAV; model PG1_MUSIC_ELEVENLABS_MODEL, default
+#   music_v1; PG1_MUSIC_ELEVENLABS_CHANNELS=1|2 forces the channel count)
+#     -> Lyria on the paid Gemini key (GEMINI_API_KEY_PAID only; model
+#        PG1_MUSIC_LYRIA_MODEL, default lyria-3.5; MP3 out)
+#     -> Replicate (REPLICATE_API_TOKEN; PG1_FILM_MUSIC_MODEL, ~30 s, instrumental)
+# Out of credit, still throttled after its waits, 5xx, a bad key or a
+# missing model moves on; a content refusal stops. Every call is a
+# pg1_ai_usage row (task music); PG1_DAILY_BUDGET_ELEVENLABS_USD caps it.
+# PG1_MUSIC_TRACK_CAP=2          # per-track spending cap in USD (default 2)
+# PG1_MUSIC_ENABLED=0            # switch /music off
+# PG1_MUSIC_LYRIC_FINGERPRINTS=  # optional: sha256 of 6-word runs of lyrics to refuse
+# The music worker uses the film worker's secrets (GEMINI_API_KEY_PAID,
+# REPLICATE_API_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+# PG1_VIDEO_RENDER_SECRET) plus ELEVENLABS_API_KEY when set, and the same
+# dispatch settings (PG1_FILM_GITHUB_TOKEN or GITHUB_TOKEN,
+# PG1_FILM_RENDER_REPO, PG1_FILM_RENDER_REF). The export needs the vault
+# bucket to accept zips of up to ~150 MB for a full-length track (master
+# plus four stems as WAV).
 ```
 
 ### 3. Test the API
