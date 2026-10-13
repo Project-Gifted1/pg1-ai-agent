@@ -61,8 +61,8 @@
 <div class="table-wrap" tabindex="0"><table>
 <thead><tr><th scope="col">You have</th><th scope="col">Call</th><th scope="col">Notes</th></tr></thead>
 <tbody>
-<tr><td>One IP, domain, URL or file hash</td><td><code>get_ioc_context</code></td><td>Free when nothing is on record (<code>found: false</code>). The feed carries only sources PG1 may resell, so for a domain or hostname also run the two hostname checks below.</td></tr>
-<tr><td>Several indicators (up to 20)</td><td><code>get_ioc_batch</code></td><td>Free when none is found. Read each entry in <code>results</code>, not only the batch <code>status</code>.</td></tr>
+<tr><td>One IP, domain, URL or file hash</td><td><code>get_ioc_context</code></td><td>Free when nothing is on record (<code>found: false</code>). PG1&#39;s licensed records hold only CVE ids from NVD today, so an IP, domain, URL or hash returns <code>found: false</code>; for a domain or hostname also run the two hostname checks below.</td></tr>
+<tr><td>Several indicators (up to 20)</td><td><code>get_ioc_batch</code></td><td>Free when none is found (the same CVE-only records as above). Read each entry in <code>results</code>, not only the batch <code>status</code>.</td></tr>
 <tr><td>A CVE id</td><td><code>get_cve_details</code></td><td>Several ids: <code>get_cve_batch</code> (up to 20).</td></tr>
 <tr><td>A vendor and product, no CVE id</td><td><code>get_cve_by_product</code></td><td>Known-exploited CVEs come first.</td></tr>
 <tr><td>A wallet address you are about to pay or trust</td><td><code>check_wallet_sanctions</code> <strong>and</strong> <code>check_wallet_age</code></td><td>Sanctions list match, then on-chain age; a wallet with no history is flagged.</td></tr>
@@ -70,7 +70,7 @@
 <tr><td>An npm or PyPI package before installing it</td><td><code>check_package</code></td><td>Flags a name that does not exist, a malicious report, or a new look-alike of a popular package.</td></tr>
 <tr><td>A threat actor or APT name</td><td><code>get_threat_actor_profile</code></td><td>MITRE ATT&amp;CK dossier.</td></tr>
 <tr><td>One public IP and your own AbuseIPDB key</td><td><code>check_ip_abuse</code></td><td>Send the key in <code>X-AbuseIPDB-Key</code>; PG1 has no key of its own.</td></tr>
-<tr><td>A bulk feed to ingest</td><td><code>get_threat_indicators</code></td><td>STIX 2.1 bundle. REST: <code>GET /api/ioc</code>.</td></tr>
+<tr><td>The CVE list to ingest</td><td><code>get_threat_indicators</code></td><td>STIX 2.1 bundle of CVE records from NVD: CVE id and an NVD reference, no scores, no IP/domain/URL/hash indicators. REST: <code>GET /api/ioc</code>.</td></tr>
 <tr><td>Your remaining free calls</td><td><code>get_usage_status</code></td><td>Always free.</td></tr>
 </tbody>
 </table></div>

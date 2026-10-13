@@ -43,7 +43,7 @@ baseEnv();
 
 const mcp = await import('../api/mcp.mjs');
 const { default: a2aHandler, A2A_SKILL_TOOLS, A2A_PAID_SKILL_NAMES } = await import('../api/a2a.mjs');
-const { FREE_TIER_DAILY_LIMIT } = await import('../lib/freeTier.mjs');
+const { FREE_TIER_DAILY_LIMIT, freeTierKey } = await import('../lib/freeTier.mjs');
 const { isEpssPaidEnabled } = await import('../lib/sourcePolicy.mjs');
 const { suggestToolName } = await import('../lib/toolNames.mjs');
 
@@ -224,7 +224,7 @@ test(`one ${FREE_TIER_DAILY_LIMIT}/day free-tier counter per caller, shared by /
     served.push(i % 2 === 0 ? !res.body.result.isError : res.body.result.status.state === 'completed');
   }
   assert.deepEqual(served, Array(FREE_TIER_DAILY_LIMIT).fill(true));
-  assert.equal(state.freeTier.get(IP), FREE_TIER_DAILY_LIMIT);
+  assert.equal(state.freeTier.get(freeTierKey(IP)), FREE_TIER_DAILY_LIMIT);
 
   const mcpAfter = await callMcp('get_cve_details', { cve_id: 'CVE-2021-44228' }, headers);
   assert.equal(mcpAfter.body.result.isError, true);
@@ -239,7 +239,7 @@ test(`one ${FREE_TIER_DAILY_LIMIT}/day free-tier counter per caller, shared by /
 test('a failed paid skill does not spend a free-tier call', async () => {
   const res = await callA2a('get_cve_details', { cve_id: 'not-a-cve' }, { headers: { 'x-free-tier': '1' } });
   assert.ok(res.body.error);
-  assert.equal(state.freeTier.get(IP) || 0, 0);
+  assert.equal(state.freeTier.get(freeTierKey(IP)) || 0, 0);
 });
 
 // ---------------------------------------------------------------------

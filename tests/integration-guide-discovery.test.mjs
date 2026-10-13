@@ -86,7 +86,9 @@ test('package version is unchanged; server version is the 1.17.0 release', () =>
 // 1.17.0 (check_package) changes server.json's version and description;
 // everything else is byte-identical to the 1.15.0 release.
 const SERVER_DESCRIPTION_1_15 = 'Threat intel for AI agents: IOCs, CVEs (EPSS/KEV), wallet sanctions and age, domain and URL checks.';
-const SERVER_DESCRIPTION_1_17 = 'Threat intel for AI agents: IOCs, CVEs, wallet sanctions/age, domain, IP abuse and package checks.';
+// Phase 2 dropped "IOCs": the feed holds only NVD CVE records since the
+// licensing gate (tests/feed-description.test.mjs).
+const SERVER_DESCRIPTION_1_17 = 'Threat intel for AI agents: CVEs, wallet sanctions/age, domain, IP abuse and package checks.';
 
 test('server.json is byte-identical to the 1.15.0 release except the version (1.17.0) and description', () => {
   const raw = fs.readFileSync(path.join(ROOT, 'server.json'), 'utf8');
@@ -107,5 +109,5 @@ test('MCP tool names, descriptions and schemas are identical to the 1.15.0 relea
   assert.equal(TOOLS.length, 16);
   assert.equal(TOOLS[14].name, 'check_ip_abuse');
   assert.equal(TOOLS[15].name, 'check_package');
-  assert.equal(sha256(JSON.stringify(TOOLS.slice(0, 14))), 'a856844e14053900ff5ac00572917d10797c94682fd9cbf8cb504ec5394eeff4');
+  assert.equal(sha256(JSON.stringify(TOOLS.slice(0, 14))), '86e46a80fb863f4e0363c84ce3df795e024b1e36aecae8bee7f565a2626ae57d');
 });

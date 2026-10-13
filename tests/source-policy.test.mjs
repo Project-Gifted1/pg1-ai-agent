@@ -482,6 +482,15 @@ const DESCRIPTION_EDITS = [
   ['get_ioc_batch', 'aggregated provenance as get_ioc_context from ThreatFox, URLhaus, and OTX.', "aggregated provenance as get_ioc_context from PG1's commercially licensed sources (currently NVD)."]
 ];
 
+// Phase 2: the feed holds only NVD CVE records since the licensing gate, so
+// the indicator tools stop describing it as an IP / domain / URL / hash feed.
+// Applied before DESCRIPTION_EDITS when reverting (they edit the same text).
+const FEED_DESCRIPTION_EDITS = [
+  ["get_threat_indicators", "returns a STIX 2.1 bundle of verified threat indicators (IPs, domains, URLs, file hashes) sourced from NVD; only sources PG1 may redistribute commercially are served.", "returns a STIX 2.1 bundle of CVE records from NIST NVD, the only source PG1 may currently redistribute commercially. Today it contains no IP, domain, URL or file-hash indicators: every object is a STIX vulnerability with the CVE id and an NVD reference, without scores (use get_cve_details for CVSS and known-exploited status)."],
+  ["get_ioc_context", "Returns aggregated provenance from PG1's commercially licensed sources (currently NVD) — reporting", "PG1's commercially licensed records currently hold only CVE identifiers from NVD, so an IP, domain, URL or hash returns found: false (free) until other licensed sources are added. A match returns aggregated provenance — reporting"],
+  ["get_ioc_batch", "aggregated provenance as get_ioc_context from PG1's commercially licensed sources (currently NVD).", "aggregated provenance as get_ioc_context from PG1's commercially licensed records, which currently hold only CVE identifiers from NVD (IPs, domains, URLs and hashes return found: false)."]
+];
+
 // Phase 2: EPSS left out of paid responses until FIRST confirms resale
 // (PG1_SOURCE_EPSS_PAID), so the CVE descriptions stop promising it.
 const EPSS_DESCRIPTION_EDITS = [
@@ -490,14 +499,18 @@ const EPSS_DESCRIPTION_EDITS = [
   ["get_cve_by_product", "enriched with CVSS, EPSS, and CISA KEV status, sorted by exploitation risk.", "enriched with CVSS and CISA KEV status (plus EPSS when this server serves EPSS in paid responses), sorted by exploitation risk."]
 ];
 
-test('tool definitions differ from 1.14.0 only by the listed description edits (licensing gate, EPSS switch)', () => {
+test('tool definitions differ from 1.14.0 only by the listed description edits (licensing gate, feed description, EPSS switch)', () => {
   // check_ip_abuse (1.16.0) and check_package (1.17.0) are the additions; the 14 tools
   // before them are pinned.
   const reverted = TOOLS.filter((tool) => tool.name !== 'check_ip_abuse' && tool.name !== 'check_package').map((tool) => {
-    const edit = [...DESCRIPTION_EDITS, ...EPSS_DESCRIPTION_EDITS].find(([name]) => name === tool.name);
-    if (!edit) return tool;
-    assert.ok(tool.description.includes(edit[2]), tool.name);
-    return { ...tool, description: tool.description.replace(edit[2], edit[1]) };
+    let description = tool.description;
+    for (const edits of [FEED_DESCRIPTION_EDITS, DESCRIPTION_EDITS, EPSS_DESCRIPTION_EDITS]) {
+      const edit = edits.find(([name]) => name === tool.name);
+      if (!edit) continue;
+      assert.ok(description.includes(edit[2]), tool.name);
+      description = description.replace(edit[2], edit[1]);
+    }
+    return { ...tool, description };
   });
   // SHA-256 of JSON.stringify(TOOLS) at the 1.14.0 release.
   assert.equal(crypto.createHash('sha256').update(JSON.stringify(reverted)).digest('hex'), '47dde1cff3ff1f64f1020b8d06813321f51c8db2142390bad0096616c8767acc');

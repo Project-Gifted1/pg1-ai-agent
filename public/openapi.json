@@ -5,7 +5,7 @@
     "version": "1.17.0",
     "contact": { "email": "gikewun@gmail.com" },
     "description": "REST endpoints for PG1 Sovereign Threat Intelligence. This document only covers the plain HTTP endpoints below (GET/POST /api/ioc and GET /api/health); the full tool catalog is also available over two JSON-RPC transports, which are not representable as REST paths:\n\n- MCP (Model Context Protocol, Streamable HTTP JSON-RPC): https://pg1-ai-agent.vercel.app/api/mcp \n- A2A (Agent2Agent, JSON-RPC 2.0): https://pg1-ai-agent.vercel.app/api/a2a — agent card at https://pg1-ai-agent.vercel.app/.well-known/agent-card.json \n\n/api/ioc is gated by one of: a Gumroad licence key (x-api-key header), a per-call x402 v2 micropayment (PAYMENT-SIGNATURE header), or the free tier (automatic, 5 calls/day per IP shared with the paid MCP tools and A2A skills, spent before any 402; send x-free-tier: 0 to skip it).",
-    "x-guidance": "To get threat indicators, send GET /api/ioc with optional query parameters (since, type, min_score, limit); an unpaid request returns HTTP 402 with an x402 v2 PaymentRequired challenge, so pay $0.01 per call in USDC on Base (eip155:8453) by retrying with the signed payment in the PAYMENT-SIGNATURE header, and you get back a STIX 2.1 bundle (application/stix+json) of matching indicators. GET /api/health is free and needs no payment."
+    "x-guidance": "To get PG1's CVE feed, send GET /api/ioc with optional query parameters (since, type, min_score, limit); an unpaid request returns HTTP 402 with an x402 v2 PaymentRequired challenge, so pay $0.01 per call in USDC on Base (eip155:8453) by retrying with the signed payment in the PAYMENT-SIGNATURE header, and you get back a STIX 2.1 bundle (application/stix+json) of CVE records from NIST NVD: STIX vulnerability objects with the CVE id and an NVD reference. It holds no IP, domain, URL or file-hash indicators yet. GET /api/health is free and needs no payment."
   },
   "externalDocs": {
     "description": "Integration guide: an alert bot that screens wallets with PG1's free checks.",
@@ -18,21 +18,21 @@
     "/api/ioc": {
       "get": {
         "operationId": "getThreatIndicators",
-        "summary": "STIX 2.1 threat indicator feed",
-        "description": "Returns a STIX 2.1 bundle of threat indicators. Requires a Gumroad licence key, a settled x402 v2 payment, or an opt-in free-tier request (subject to the 5 calls/day per IP limit).",
+        "summary": "STIX 2.1 CVE feed (NVD)",
+        "description": "Returns a STIX 2.1 bundle of CVE records from NIST NVD, the only source PG1 may currently redistribute commercially: vulnerability objects with the CVE id and an NVD reference, no scores. It holds no IP, domain, URL or file-hash indicators yet. Requires a Gumroad licence key, a settled x402 v2 payment, or an opt-in free-tier request (subject to the 5 calls/day per IP limit).",
         "parameters": [
           {
             "name": "since",
             "in": "query",
             "required": false,
-            "description": "ISO timestamp (e.g. 2026-09-20T00:00:00Z). Only indicators last seen after this time are returned.",
+            "description": "ISO timestamp (e.g. 2026-09-20T00:00:00Z). Only records last seen after this time are returned.",
             "schema": { "type": "string" }
           },
           {
             "name": "type",
             "in": "query",
             "required": false,
-            "description": "Exact-match indicator type filter against the stored value.",
+            "description": "Exact-match record type filter. Today the feed holds only CVE records, so any other type returns an empty bundle.",
             "schema": {
               "type": "string",
               "enum": ["IPv4", "IPv6", "domain", "hostname", "URL", "FileHash-MD5", "FileHash-SHA1", "FileHash-SHA256", "CVE"]
@@ -70,7 +70,7 @@
         },
         "responses": {
           "200": {
-            "description": "STIX 2.1 bundle of matching threat indicators.",
+            "description": "STIX 2.1 bundle of matching records (today: CVE vulnerability objects only).",
             "content": {
               "application/stix+json": {
                 "schema": {
@@ -390,14 +390,14 @@
       },
       "post": {
         "operationId": "postThreatIndicators",
-        "summary": "STIX 2.1 threat indicator feed (POST alias of GET)",
+        "summary": "STIX 2.1 CVE feed (NVD) (POST alias of GET)",
         "description": "Identical to GET /api/ioc: same optional query parameters (no request body is read), same gate and price, same STIX 2.1 bundle response. Documented because the endpoint answers POST with the same x402 challenge.",
         "parameters": [
           {
             "name": "since",
             "in": "query",
             "required": false,
-            "description": "ISO timestamp (e.g. 2026-09-20T00:00:00Z). Only indicators last seen after this time are returned.",
+            "description": "ISO timestamp (e.g. 2026-09-20T00:00:00Z). Only records last seen after this time are returned.",
             "schema": {
               "type": "string"
             }
@@ -406,7 +406,7 @@
             "name": "type",
             "in": "query",
             "required": false,
-            "description": "Exact-match indicator type filter against the stored value.",
+            "description": "Exact-match record type filter. Today the feed holds only CVE records, so any other type returns an empty bundle.",
             "schema": {
               "type": "string",
               "enum": [
@@ -481,7 +481,7 @@
         },
         "responses": {
           "200": {
-            "description": "STIX 2.1 bundle of matching threat indicators.",
+            "description": "STIX 2.1 bundle of matching records (today: CVE vulnerability objects only).",
             "content": {
               "application/stix+json": {
                 "schema": {

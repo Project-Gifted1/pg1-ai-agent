@@ -1,6 +1,6 @@
 # PG1 Sovereign Threat Intelligence
 
-> PG1 Sovereign Threat Intelligence: threat-intelligence tools for AI agents, covering wallet sanctions screening, domain age lookups, hostname/phishing reputation checks, bulk STIX 2.1 indicator feeds, CVE enrichment, and threat actor dossiers — served over MCP, A2A, and REST.
+> PG1 Sovereign Threat Intelligence: threat-intelligence tools for AI agents, covering wallet sanctions screening, domain age lookups, hostname/phishing reputation checks, a STIX 2.1 CVE feed from NVD, CVE enrichment, and threat actor dossiers — served over MCP, A2A, and REST.
 
 ## Free tools
 
@@ -16,7 +16,7 @@
 
 - [MCP](https://pg1-ai-agent.vercel.app/api/mcp): Model Context Protocol server (Streamable HTTP, JSON-RPC).
 - [A2A](https://pg1-ai-agent.vercel.app/api/a2a): Agent2Agent JSON-RPC endpoint exposing the seven free tools; agent card at https://pg1-ai-agent.vercel.app/.well-known/agent-card.json.
-- [REST](https://pg1-ai-agent.vercel.app/api/ioc): Simple GET endpoint returning a STIX 2.1 threat indicator feed.
+- [REST](https://pg1-ai-agent.vercel.app/api/ioc): Simple GET endpoint returning a STIX 2.1 bundle of CVE records from NIST NVD (vulnerability objects with the CVE id and an NVD reference; no IP, domain, URL or file-hash indicators yet).
 - [Health](https://pg1-ai-agent.vercel.app/api/health): Uptime/health check.
 - [OpenAPI spec](https://pg1-ai-agent.vercel.app/openapi.json): Machine-readable schema for the REST endpoint.
 - [About](https://pg1-ai-agent.vercel.app/about): Human-readable overview of PG1, its free tools, endpoints and listings.
@@ -50,7 +50,7 @@ curl -X POST "https://pg1-ai-agent.vercel.app/api/a2a?A2A-Version=1.0" -H "Conte
 
 ## Which tool to call
 
-- One IP, domain, URL or file hash: get_ioc_context (free when found: false); several: get_ioc_batch
+- One IP, domain, URL or file hash: get_ioc_context (free when found: false; PG1's licensed records hold only NVD CVE ids today, so these return found: false), several: get_ioc_batch; for a domain or hostname also run the hostname checks below
 - CVE id: get_cve_details (several: get_cve_batch); vendor + product: get_cve_by_product
 - Wallet you will pay or trust: check_wallet_sanctions and check_wallet_age
 - Link, hostname or possible phishing: check_hostname_reputation and check_domain_age
@@ -82,7 +82,7 @@ Invalid input keeps its error code (usually -32602); the message says what was w
 
 ## Paid tools
 
-- [Paid MCP tools](https://pg1-ai-agent.vercel.app/api/mcp): Bulk indicator feeds, CVE enrichment, threat actor dossiers, alert subscriptions, and indicator submission — $0.01 per call via x402 on Base, or a licence key in the `x-api-key` header.
+- [Paid MCP tools](https://pg1-ai-agent.vercel.app/api/mcp): The NVD CVE feed (get_threat_indicators), CVE enrichment, threat actor dossiers, alert subscriptions, and indicator submission — $0.01 per call via x402 on Base, or a licence key in the `x-api-key` header.
 
 ## Listings
 

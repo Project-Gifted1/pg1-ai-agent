@@ -325,7 +325,9 @@ test('unchanged: free tier still grants access with no payment or settlement met
   };
   t.after(() => { global.fetch = originalFetch; });
 
-  const res = await callTool('get_threat_actor_profile', { actor_name: 'APT29' }, { headers: { 'x-free-tier': '1' } });
+  // A caller IP is needed: the counter is keyed by its salted hash and a
+  // request with no IP gets no free tier (lib/freeTier.mjs).
+  const res = await callTool('get_threat_actor_profile', { actor_name: 'APT29' }, { headers: { 'x-free-tier': '1', 'x-forwarded-for': '203.0.113.88' } });
 
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.result.isError, undefined);

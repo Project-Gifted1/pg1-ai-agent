@@ -107,7 +107,7 @@ import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { x402ResourceServer } from '@x402/express';
 import { encodePaymentRequiredHeader, encodePaymentResponseHeader, decodePaymentSignatureHeader } from '@x402/core/http';
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
-import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT, freeTierWanted, setFreeTierHeaders } from '../lib/freeTier.mjs';
+import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT, freeTierKey, freeTierWanted, setFreeTierHeaders } from '../lib/freeTier.mjs';
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
 import { X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX, IP_ABUSE_RATE_LIMIT_MAX, PACKAGE_CHECK_RATE_LIMIT_MAX, FREE_MCP_TOOLS, x402PriceUsd } from '../lib/x402Config.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
@@ -209,7 +209,7 @@ export const TEST_FIXTURE_OUTPUT_PROPERTIES = {
 export const TOOLS = [
   {
     name: 'get_threat_indicators',
-    description: 'PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of verified threat indicators (IPs, domains, URLs, file hashes) sourced from NVD; only sources PG1 may redistribute commercially are served. Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for bulk feed synchronizations. Do NOT use for single-item lookups (use get_ioc_context) or CVE analysis (use get_cve_details). USAGE EXCLUSIONS: Does not provide historical query archival beyond the active ingestion window. BEHAVIOR: Pagination is handled via the limit parameter (max 1000). If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta["x402/payment-response"].',
+    description: 'PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of CVE records from NIST NVD, the only source PG1 may currently redistribute commercially. Today it contains no IP, domain, URL or file-hash indicators: every object is a STIX vulnerability with the CVE id and an NVD reference, without scores (use get_cve_details for CVSS and known-exploited status). Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for bulk feed synchronizations. Do NOT use for single-item lookups (use get_ioc_context) or CVE analysis (use get_cve_details). USAGE EXCLUSIONS: Does not provide historical query archival beyond the active ingestion window. BEHAVIOR: Pagination is handled via the limit parameter (max 1000). If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta["x402/payment-response"].',
     inputSchema: {
       type: 'object',
       properties: {
@@ -233,7 +233,7 @@ export const TOOLS = [
   },
   {
     name: 'get_ioc_context',
-    description: "PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) — the recommended pre-action safety check for AI agents before visiting, downloading, or connecting to something. Returns aggregated provenance from PG1's commercially licensed sources (currently NVD) — reporting sources, observation count, aggregated confidence score, known malware families, tags, and first/last seen timestamps. SIBLING DIFFERENTIATION: Use ONLY for point-lookup enrichment of a single indicator. Do NOT use for bulk intelligence downloads (use get_threat_indicators), multiple indicators at once (use get_ioc_batch), or software vulnerability analysis (use get_cve_details). BEHAVIOR: Returns a normal result shaped { found: true, indicator_type, provenance } or { found: false } — never an error for 'not found'. A found:false result means nothing bad is recorded in PG1's sources; it does NOT mean the indicator is safe, only that it isn't in this dataset. Lookups that return found:false are FREE — no payment or free-tier quota is consumed. Payment (x402 via params._meta['x402/payment'], with the PAYMENT-SIGNATURE header also accepted, or a Gumroad X-API-KEY license) is only required when a real record is found. If payment is required but missing or fails, the result has isError: true with the x402 v2 PaymentRequired object in structuredContent.",
+    description: "PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) — the recommended pre-action safety check for AI agents before visiting, downloading, or connecting to something. PG1's commercially licensed records currently hold only CVE identifiers from NVD, so an IP, domain, URL or hash returns found: false (free) until other licensed sources are added. A match returns aggregated provenance — reporting sources, observation count, aggregated confidence score, known malware families, tags, and first/last seen timestamps. SIBLING DIFFERENTIATION: Use ONLY for point-lookup enrichment of a single indicator. Do NOT use for bulk intelligence downloads (use get_threat_indicators), multiple indicators at once (use get_ioc_batch), or software vulnerability analysis (use get_cve_details). BEHAVIOR: Returns a normal result shaped { found: true, indicator_type, provenance } or { found: false } — never an error for 'not found'. A found:false result means nothing bad is recorded in PG1's sources; it does NOT mean the indicator is safe, only that it isn't in this dataset. Lookups that return found:false are FREE — no payment or free-tier quota is consumed. Payment (x402 via params._meta['x402/payment'], with the PAYMENT-SIGNATURE header also accepted, or a Gumroad X-API-KEY license) is only required when a real record is found. If payment is required but missing or fails, the result has isError: true with the x402 v2 PaymentRequired object in structuredContent.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -259,7 +259,7 @@ export const TOOLS = [
   },
   {
     name: 'get_ioc_batch',
-    description: "PG1 Sovereign Threat Intelligence: looks up multiple indicators (IPs, domains, URLs, hashes) in a single call — a batched pre-action safety check for AI agents. Each returns the same aggregated provenance as get_ioc_context from PG1's commercially licensed sources (currently NVD). SIBLING DIFFERENTIATION: Use for checking several indicators at once (e.g. all URLs an agent is about to visit). Do NOT use for a single indicator (use get_ioc_context, lower overhead) or bulk feed synchronization (use get_threat_indicators). BEHAVIOR: Accepts up to " + IOC_BATCH_MAX + " indicators per call. A found:false result for any indicator means nothing bad is recorded in PG1's sources — NOT that it's safe. If NONE of the submitted indicators are found, the whole batch is FREE — no payment or free-tier quota consumed. If at least one indicator is found, the normal payment gate (x402 via params._meta['x402/payment'], with the PAYMENT-SIGNATURE header also accepted, or a Gumroad X-API-KEY license) applies to the full batch result.",
+    description: "PG1 Sovereign Threat Intelligence: looks up multiple indicators (IPs, domains, URLs, hashes) in a single call — a batched pre-action safety check for AI agents. Each returns the same aggregated provenance as get_ioc_context from PG1's commercially licensed records, which currently hold only CVE identifiers from NVD (IPs, domains, URLs and hashes return found: false). SIBLING DIFFERENTIATION: Use for checking several indicators at once (e.g. all URLs an agent is about to visit). Do NOT use for a single indicator (use get_ioc_context, lower overhead) or bulk feed synchronization (use get_threat_indicators). BEHAVIOR: Accepts up to " + IOC_BATCH_MAX + " indicators per call. A found:false result for any indicator means nothing bad is recorded in PG1's sources — NOT that it's safe. If NONE of the submitted indicators are found, the whole batch is FREE — no payment or free-tier quota consumed. If at least one indicator is found, the normal payment gate (x402 via params._meta['x402/payment'], with the PAYMENT-SIGNATURE header also accepted, or a Gumroad X-API-KEY license) applies to the full batch result.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -1154,11 +1154,20 @@ export async function handleUsageStatus(args, requestIdentifier) {
 
   const { supUrl, supKey } = getSupabaseCreds();
   const today = new Date().toISOString().slice(0, 10);
+  // The counter is stored by the identifier's salted hash, never the IP
+  // (lib/freeTier.mjs freeTierKey). No key (no salt configured) means the
+  // free tier cannot run at all, so there is nothing true to report.
+  const key = freeTierKey(identifier);
+  if (!key) {
+    const err = new Error('Usage records temporarily unavailable, please retry.');
+    err.serviceUnavailable = true;
+    throw err;
+  }
 
   let res;
   try {
     res = await fetch(
-      `${supUrl}/rest/v1/free_tier_usage?identifier=eq.${encodeURIComponent(identifier)}&usage_date=eq.${today}&select=request_count`,
+      `${supUrl}/rest/v1/free_tier_usage?identifier=eq.${key}&usage_date=eq.${today}&select=request_count`,
       { headers: { apikey: supKey, Authorization: `Bearer ${supKey}` } }
     );
   } catch (netErr) {
@@ -3030,7 +3039,7 @@ function sendMcpFixtureResponse(res, toolName, outcome, requestId, pg1RequestId)
 
 const X402_PAY_TO = (process.env.X402_PAY_TO_ADDRESS || '').trim();
 // X402_NETWORK, X402_SCHEME and X402_PRICE live in lib/x402Config.mjs.
-const X402_RESOURCE_DESCRIPTION = 'PG1 Threat Intelligence: STIX 2.1 threat indicator feed (IPs, domains, URLs, file hashes, CVEs) from sources PG1 may redistribute commercially (currently NVD).';
+const X402_RESOURCE_DESCRIPTION = 'PG1 Threat Intelligence: STIX 2.1 bundle of CVE records from NIST NVD (vulnerability objects with the CVE id and an NVD reference), the only source PG1 may currently redistribute commercially. No IP, domain, URL or file-hash indicators yet.';
 const X402_RESOURCE_MIME_TYPE = 'application/json';
 
 // Facilitator client factory, overridable only by tests (see

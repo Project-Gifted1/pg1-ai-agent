@@ -40,7 +40,7 @@ baseEnv();
 const { default: mcpHandler } = await import('../api/mcp.mjs');
 const { default: a2aHandler } = await import('../api/a2a.mjs');
 const { default: chatHandler } = await import('../api/chat.mjs');
-const { FREE_TIER_DAILY_LIMIT, freeTierOptedOut, isFreeTierSkippedUserAgent } = await import('../lib/freeTier.mjs');
+const { FREE_TIER_DAILY_LIMIT, freeTierOptedOut, isFreeTierSkippedUserAgent, freeTierKey } = await import('../lib/freeTier.mjs');
 const { pg1Paywall, renderPaywallPage } = await import('../lib/paywallPage.mjs');
 
 let counters;
@@ -119,21 +119,21 @@ for (const [name, call] of Object.entries(ROUTES)) {
     assert.equal(sixth.served, false);
     assert.equal(sixth.challenged, true, 'the 6th call gets the payment challenge');
     assert.equal(sixth.remaining, '0');
-    assert.equal(counters.get(ip), FREE_TIER_DAILY_LIMIT);
+    assert.equal(counters.get(freeTierKey(ip)), FREE_TIER_DAILY_LIMIT);
   });
 
   test(`${name}: X-Free-Tier: 0 skips the free tier and gets the challenge at once, counter untouched`, async () => {
     const ip = newCaller();
     const r = await call(ip, { 'x-free-tier': '0' });
     assert.equal(r.challenged, true);
-    assert.equal(counters.has(ip), false);
+    assert.equal(counters.has(freeTierKey(ip)), false);
   });
 
   test(`${name}: a caller offering a payment is never served free`, async () => {
     const ip = newCaller();
     const r = await call(ip, { 'payment-signature': 'not-a-valid-payment' });
     assert.equal(r.served, false);
-    assert.equal(counters.has(ip), false);
+    assert.equal(counters.has(freeTierKey(ip)), false);
   });
 }
 
@@ -149,7 +149,7 @@ test('one counter per caller, shared by /api/mcp, /api/a2a and /api/ioc', async 
     const r = await ROUTES[route](ip);
     assert.equal(r.challenged, true, `${route} challenges once the shared quota is spent`);
   }
-  assert.equal(counters.get(ip), FREE_TIER_DAILY_LIMIT);
+  assert.equal(counters.get(freeTierKey(ip)), FREE_TIER_DAILY_LIMIT);
 });
 
 test('another caller keeps its own 5', async () => {
@@ -166,7 +166,7 @@ for (const [name, call] of Object.entries(ROUTES)) {
       const r = await call(ip, { 'user-agent': ua });
       assert.equal(r.challenged, true, ua);
     }
-    assert.equal(counters.has(ip), false);
+    assert.equal(counters.has(freeTierKey(ip)), false);
   });
 }
 
@@ -179,7 +179,7 @@ test('HEAD /api/ioc never spends a free call', async () => {
   const ip = newCaller();
   const r = await ROUTES.ioc(ip, {}, 'HEAD');
   assert.equal(r.challenged, true);
-  assert.equal(counters.has(ip), false);
+  assert.equal(counters.has(freeTierKey(ip)), false);
 });
 
 test('freeTierOptedOut: only an explicit no', () => {
@@ -201,7 +201,7 @@ const PAYMENT_REQUIRED = {
 test('the PG1 402 page: what the endpoint is, the free allowance, the price, how agents pay; no placeholder, no script', () => {
   const html = renderPaywallPage(PAYMENT_REQUIRED);
   assert.match(html, /<title>PG1 Threat Intelligence: payment required<\/title>/);
-  assert.match(html, /STIX 2\.1 threat indicator feed/);
+  assert.match(html, /STIX 2\.1 bundle of CVE records from NIST NVD/);
   assert.match(html, new RegExp(`${FREE_TIER_DAILY_LIMIT} free calls`));
   assert.match(html, /0\.01 USD/);
   assert.match(html, /USDC on Base/);
