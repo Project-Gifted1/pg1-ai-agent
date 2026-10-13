@@ -109,7 +109,7 @@ import { encodePaymentRequiredHeader, encodePaymentResponseHeader, decodePayment
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT } from '../lib/freeTier.mjs';
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
-import { X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX, IP_ABUSE_RATE_LIMIT_MAX, PACKAGE_CHECK_RATE_LIMIT_MAX } from '../lib/x402Config.mjs';
+import { X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX, IP_ABUSE_RATE_LIMIT_MAX, PACKAGE_CHECK_RATE_LIMIT_MAX, FREE_MCP_TOOLS, x402PriceUsd } from '../lib/x402Config.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { detectIndicatorType, lookupIocContext } from '../lib/iocContext.mjs';
 import { fetchThreatTelemetry } from '../lib/sourcePolicy.mjs';
@@ -3200,6 +3200,9 @@ async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentif
 
   const rawPayment = params?._meta?.['x402/payment'] || req.headers['x-payment'] || req.headers['payment-signature'];
   const freeTierOptIn = req.headers['x-free-tier'] === '1';
+  // Set when the caller asked for the free tier and today's quota is used
+  // up, so the payment challenge is recorded as free_limit_reached.
+  let freeLimitReached = false;
 
   if (!rawPayment && freeTierOptIn) {
     try {
@@ -3217,10 +3220,12 @@ async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentif
           }
         };
       }
+      freeLimitReached = freeTierAvailability.reason === 'limit_exceeded';
     } catch (e) {}
   }
 
-  return runX402Gate(req, params);
+  const x402Gate = await runX402Gate(req, params);
+  return freeLimitReached && !x402Gate.authorized ? { ...x402Gate, freeLimitReached: true } : x402Gate;
 }
 
 // Writes the x402 v2 MCP payment-required tool result: HTTP 200 (never 402)
@@ -3249,7 +3254,8 @@ function sendPaymentRequiredResult(res, requestId, paymentRequired, pg1RequestId
 // caller does not also send its own response.
 //
 // Each settle attempt also records a 'settlement' telemetry row (latency is
-// the facilitator settle call only) and marks the surrounding tool call's
+// the facilitator settle call only; a settled row carries the price in USD
+// as amount_usd, for /usage revenue) and marks the surrounding tool call's
 // telemetry as settlement_failed on failure - both fire-and-forget (the
 // write is kept alive past the response by waitUntil in lib/telemetry.mjs).
 async function settleAndRespondOnFailure(res, requestId, gate, pg1RequestId, callTelemetry) {
@@ -3257,7 +3263,7 @@ async function settleAndRespondOnFailure(res, requestId, gate, pg1RequestId, cal
   const settleStartedAt = Date.now();
   const recordSettlement = (status) => {
     if (callTelemetry && status !== 'settled') callTelemetry.status = 'settlement_failed';
-    recordTelemetry({ eventType: 'settlement', endpoint: '/api/mcp', toolName: callTelemetry?.toolName, paymentType: 'x402', status, latencyMs: Date.now() - settleStartedAt, callerHash: callTelemetry?.callerHash });
+    recordTelemetry({ eventType: 'settlement', endpoint: '/api/mcp', toolName: callTelemetry?.toolName, paymentType: 'x402', status, latencyMs: Date.now() - settleStartedAt, callerHash: callTelemetry?.callerHash, amountUsd: status === 'settled' ? x402PriceUsd(X402_PRICE) : null });
   };
   try {
     settleResult = await gate.settle();
@@ -3290,7 +3296,7 @@ const STANDARD_TOOL_HANDLERS = {
 // lookup result — not applied uniformly before the tool runs, like every
 // other STANDARD_TOOL_HANDLERS entry.
 
-const FREE_TOOLS = new Set(['get_usage_status', 'check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_ip_abuse', 'check_package']);
+const FREE_TOOLS = new Set(FREE_MCP_TOOLS);
 
 // One entry point per read-only tool, used by tools/call for the free tools
 // below and by the chat's tool loop (lib/chatTools.mjs) for every read-only
@@ -3325,10 +3331,12 @@ export async function runReadOnlyTool(toolName, args, ctx = {}) {
 const LICENSE_ONLY_TOOLS = new Set(['subscribe_alerts', 'submit_indicator']);
 
 // Telemetry for one tools/call (lib/telemetry.mjs). Status comes from an
-// explicit override set along the way (payment_required, tool_error,
-// rate_limited, settlement_failed, unknown_tool) or else from the HTTP
-// status already sent. An unrecognised tool name is caller input, so it's
-// never stored; the caller IP is only ever passed on as a salted hash.
+// explicit override set along the way (payment_required, free_limit_reached,
+// tool_error, rate_limited, settlement_failed, unknown_tool) or else from
+// the HTTP status already sent. An unrecognised tool name is caller input:
+// it is never stored as tool_name, only as requested_tool, cut down by
+// lib/telemetry.mjs sanitizeRequestedTool. The caller IP is only ever passed
+// on as a salted hash.
 // Called from the handler's finally, after the response is written; the
 // unawaited insert is registered with Vercel's waitUntil inside
 // recordTelemetry, so it still completes before the function is frozen.
@@ -3343,7 +3351,7 @@ function paymentTypeForGate(gate) {
 
 function noteGateTelemetry(callTelemetry, gate) {
   callTelemetry.paymentType = paymentTypeForGate(gate);
-  if (!gate.authorized && !gate.handled) callTelemetry.status = 'payment_required';
+  if (!gate.authorized && !gate.handled) callTelemetry.status = gate.freeLimitReached ? 'free_limit_reached' : 'payment_required';
 }
 
 // Salted hash of the caller IP for telemetry; null when there is none.
@@ -3365,6 +3373,17 @@ function statusFromHttp(statusCode) {
   return 'unknown';
 }
 
+// One 'mcp_request' row for a JSON-RPC request that is neither initialize
+// nor tools/call (those have their own rows), so /usage can count every MCP
+// request. The method is stored only when it is a known one.
+function recordMcpRequestTelemetry(req, method, status) {
+  try {
+    recordTelemetry({ eventType: 'mcp_request', endpoint: '/api/mcp', mcpMethod: method, status, callerHash: requestCallerHash(req) });
+  } catch {
+    // Best-effort - telemetry never affects the response.
+  }
+}
+
 function recordToolCallTelemetry(callTelemetry, res) {
   try {
     const known = KNOWN_TOOL_NAMES.has(callTelemetry.toolName);
@@ -3372,6 +3391,7 @@ function recordToolCallTelemetry(callTelemetry, res) {
       eventType: 'tool_call',
       endpoint: '/api/mcp',
       toolName: known ? callTelemetry.toolName : null,
+      requestedTool: known ? null : callTelemetry.toolName,
       paymentType: callTelemetry.paymentType,
       status: known ? (callTelemetry.status || statusFromHttp(res.statusCode)) : 'unknown_tool',
       latencyMs: Date.now() - callTelemetry.startedAt,
@@ -3447,6 +3467,7 @@ export default async function handler(req, res) {
     try { body = JSON.parse(body); } catch { body = null; }
   }
   if (!body || typeof body !== 'object') {
+    recordMcpRequestTelemetry(req, 'invalid_json', 'parse_error');
     return res.status(400).json({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error: Invalid JSON', data: { request_id: pg1RequestId } }, id: '1' });
   }
 
@@ -3471,10 +3492,12 @@ export default async function handler(req, res) {
     }
 
     if (method === 'notifications/initialized') {
+      recordMcpRequestTelemetry(req, method, 'ok');
       return res.status(204).end();
     }
 
     if (method === 'tools/list') {
+      recordMcpRequestTelemetry(req, method, 'ok');
       return res.status(200).json({ jsonrpc: '2.0', result: { tools: TOOLS }, id: requestId });
     }
 
@@ -3701,6 +3724,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
     }
 
+    recordMcpRequestTelemetry(req, typeof method === 'string' ? method : null, 'method_not_found');
     return res.status(200).json({ jsonrpc: '2.0', error: { code: -32601, message: `Method not found: ${method || 'unknown'}`, data: { request_id: pg1RequestId } }, id: requestId });
   } catch (err) {
     // This is the catch-all for anything the specific handlers above didn't

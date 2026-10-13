@@ -35,6 +35,12 @@
        wake-word clean-up. The speech detector's runtime loads on demand. -->
   <script src="/voice/conversation.js"></script>
   <link rel="preload" href="/fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <!-- REPLY TYPE: Source Serif 4 (SIL OFL) from Google Fonts, for PG1's
+       replies only. Loaded without blocking the first paint; until it
+       arrives (or if it never does) replies use Georgia. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link id="reply-font" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" media="print" onload="this.media='all'">
   <style>
     /* FONTS: self-hosted (public/fonts, latin subset, SIL OFL - licences
        alongside). Only the weights actually used below are shipped. */
@@ -90,12 +96,24 @@
       --info: #7cc4ff;
       --info-hover: #a9d8ff;
       --scrim: rgba(5, 5, 6, 0.72);
+
+      /* reply text (PG1's replies only): off-white serif, code chips and
+         dark grey panels for code blocks and tables */
+      --reply-text: #ebe8e1;
+      --reply-fs: 1.0625rem;
+      --reply-lh: 1.55;
+      --chip-bg: #1e2025;
+      --chip-border: #30333a;
+      --chip-text: #9fd0ff;
+      --panel-bg: #17181b;
+      --panel-head: #1f2024;
       --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a8a8b0' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
       --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--gold);
 
       /* type: 16px body on phones, 17px from 768px */
       --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
       --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", "Liberation Mono", monospace;
+      --font-serif: "Source Serif 4", Georgia, serif;
       --fs-2xs: 0.6875rem;
       --fs-xs: 0.75rem;
       --fs-sm: 0.875rem;
@@ -206,6 +224,12 @@
       --info: #0b5cad;
       --info-hover: #084a8c;
       --scrim: rgba(24, 24, 20, 0.38);
+      --reply-text: #1c1b19;
+      --chip-bg: #eef0f3;
+      --chip-border: #d8dbe1;
+      --chip-text: #0b56a3;
+      --panel-bg: #f3f3f0;
+      --panel-head: #eaeae6;
       --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2346464d' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
       --shadow-1: 0 1px 2px rgba(20, 20, 16, 0.08);
       --shadow-2: 0 6px 20px rgba(20, 20, 16, 0.08);
@@ -213,7 +237,7 @@
     }
 
     @media (min-width: 768px) {
-      :root { --fs-base: 1.0625rem; --header-h: 60px; --turn-gap: var(--sp-10); }
+      :root { --fs-base: 1.0625rem; --header-h: 60px; --turn-gap: var(--sp-10); --reply-fs: 1.125rem; }
     }
 
     *, *::before, *::after {
@@ -317,7 +341,7 @@
     /* ---------- HEADER: menu · PG1 mark + status dot · ➕ ---------- */
     .app-header {
       display: grid;
-      grid-template-columns: var(--tap) 1fr var(--tap);
+      grid-template-columns: var(--tap) 1fr auto;
       align-items: center;
       gap: var(--sp-2);
       min-height: calc(var(--header-h) + var(--safe-top));
@@ -357,6 +381,11 @@
     @keyframes status-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
     .header-btn-wrap { position: relative; display: inline-flex; }
+    .header-actions { display: inline-flex; align-items: center; gap: 0; }
+    /* save: outline bookmark; once the chat is saved, a filled gold one */
+    #save-thread-btn[aria-pressed="true"] { color: var(--gold); }
+    #save-thread-btn[aria-pressed="true"] .icon { fill: currentColor; }
+    #save-thread-btn.is-busy { opacity: 0.6; }
     .error-log-badge {
       position: absolute;
       top: 4px;
@@ -636,6 +665,68 @@
     .md-table th, .md-table td { text-align: left; padding: 10px var(--sp-3); vertical-align: top; }
     .md-table th { font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); background: var(--surface-1); white-space: nowrap; }
     .md-table td { border-top: 1px solid var(--border); overflow-wrap: normal; min-width: 6ch; }
+
+    /* footnotes ([^note]: text) and other meta lines: small muted sans */
+    .md-foot {
+      display: block;
+      margin-top: var(--sp-4);
+      font-family: var(--font-sans);
+      font-size: var(--fs-xs);
+      line-height: 1.45;
+      color: var(--text-3);
+      white-space: normal;
+    }
+
+    /* REPLY TEXT: PG1's replies only - the operator's own messages, cards,
+       buttons and the rest of the app keep the sans. */
+    .message-bubble:not(.user) > .message-text {
+      font-family: var(--font-serif);
+      font-size: var(--reply-fs);
+      line-height: var(--reply-lh);
+      color: var(--reply-text);
+      font-optical-sizing: auto;
+      font-kerning: normal;
+    }
+    .message-bubble:not(.user) > .message-text strong { color: inherit; font-weight: 600; }
+    .message-bubble:not(.user) > .message-text .md-h {
+      font-family: var(--font-serif);
+      font-weight: 600;
+      color: var(--reply-text);
+      letter-spacing: 0;
+      line-height: 1.3;
+      margin: 1.4em 0 0.35em;
+    }
+    .message-bubble:not(.user) > .message-text .md-h:first-child { margin-top: 0; }
+    .message-bubble:not(.user) > .message-text .md-h1 { font-size: 1.3em; }
+    .message-bubble:not(.user) > .message-text .md-h2 { font-size: 1.15em; }
+    .message-bubble:not(.user) > .message-text .md-h3 { font-size: 1.02em; }
+    .message-bubble:not(.user) > .message-text .md-list { margin: 0.5em 0 0.9em; }
+    .message-bubble:not(.user) > .message-text .md-list li { margin: 0.3em 0; }
+    .message-bubble:not(.user) > .message-text .md-code-inline {
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+      color: var(--chip-text);
+      background: var(--chip-bg);
+      border: 1px solid var(--chip-border);
+      border-radius: 6px;
+      padding: 0.08em 0.4em;
+      overflow-wrap: anywhere;
+    }
+    .message-bubble:not(.user) > .message-text .code-block,
+    .message-bubble:not(.user) > .message-text .diff-block,
+    .message-bubble:not(.user) > .message-text .md-table-wrap {
+      background: var(--panel-bg);
+      border-color: var(--chip-border);
+      border-radius: 6px;
+    }
+    .message-bubble:not(.user) > .message-text .code-head,
+    .message-bubble:not(.user) > .message-text .diff-head,
+    .message-bubble:not(.user) > .message-text .md-table th { background: var(--panel-head); }
+    .message-bubble:not(.user) > .message-text pre { font-size: 0.82em; }
+    /* tables keep their columns and scroll sideways inside the panel on a
+       phone instead of squashing or overflowing the page */
+    .message-bubble:not(.user) > .message-text .md-table-wrap { max-width: 100%; }
+    .message-bubble:not(.user) > .message-text .md-table { width: max-content; min-width: 100%; font-family: var(--font-sans); }
 
     .code-block {
       white-space: normal;
@@ -1862,7 +1953,9 @@
       border: 1px solid var(--border);
       border-radius: var(--r-lg);
     }
-    .thread-info { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+    .thread-item { flex-wrap: wrap; }
+    .thread-item.is-current { border-color: var(--gold-line); }
+    .thread-info { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; flex: 1 1 12rem; }
     .thread-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
     .thread-date { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-3); }
     .err-cat {
@@ -1882,7 +1975,7 @@
     .err-resolved { display: inline-block; font-size: var(--fs-xs); font-weight: 600; color: var(--ok); }
     .list-empty { padding: var(--sp-8) 0; text-align: center; font-size: var(--fs-sm); color: var(--text-3); }
 
-    .thread-actions { display: flex; flex-shrink: 0; gap: var(--sp-1); }
+    .thread-actions { display: flex; flex-shrink: 0; gap: var(--sp-1); margin-left: auto; }
     .thread-action-btn {
       display: inline-block;
       min-height: var(--tap);
@@ -2088,6 +2181,7 @@
     <symbol id="i-export" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4h6v3"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M6.5 3.5h11a1 1 0 0 1 1 1V20.5L12 16.5l-6.5 4V4.5a1 1 0 0 1 1-1z"/></symbol>
     <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
     <symbol id="i-converse" viewBox="0 0 24 24"><rect x="8" y="4" width="6" height="10" rx="3"/><path d="M5 11a6 6 0 0 0 12 0M11 17v3M19 6.5a5 5 0 0 1 0 7"/></symbol>
     <symbol id="i-clip" viewBox="0 0 24 24"><path d="m20 11.5-8 8a5 5 0 0 1-7-7l8.5-8.5a3.5 3.5 0 0 1 5 5L10 17.5a2 2 0 0 1-3-3L14.5 7"/></symbol>
@@ -2167,30 +2261,11 @@
     <div class="matrix-card">
       <div class="modal-head">
         <h2 id="threads-title">Session threads</h2>
+        <p class="modal-note">Chats you saved with the save button in the top bar.</p>
       </div>
       <button type="button" class="icon-btn modal-close" aria-label="Close" data-dialog-close onclick="triggerHaptic(40); closeThreadsModal()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
-      <div class="thread-list" id="thread-list-container">
-        <div class="thread-item" id="thread-demo-1">
-          <div class="thread-info">
-            <span class="thread-title">Directive: Node Scaling</span>
-            <span class="thread-date">2026-09-06 | 10:45 AM</span>
-          </div>
-          <div class="thread-actions">
-            <button type="button" class="thread-action-btn is-primary" onclick="triggerHaptic(30); loadThread('thread-demo-1')">Load</button>
-            <button type="button" class="thread-action-btn danger" onclick="triggerHaptic([40, 40]); deleteThread('thread-demo-1')">Delete</button>
-          </div>
-        </div>
-        <div class="thread-item" id="thread-demo-2">
-          <div class="thread-info">
-            <span class="thread-title">System Audit Log</span>
-            <span class="thread-date">2026-09-05 | 08:30 PM</span>
-          </div>
-          <div class="thread-actions">
-            <button type="button" class="thread-action-btn is-primary" onclick="triggerHaptic(30); loadThread('thread-demo-2')">Load</button>
-            <button type="button" class="thread-action-btn danger" onclick="triggerHaptic([40, 40]); deleteThread('thread-demo-2')">Delete</button>
-          </div>
-        </div>
-      </div>
+      <!-- Saved chats from /api/threads, newest first (renderThreadList). -->
+      <div class="thread-list" id="thread-list-container" aria-live="polite"></div>
     </div>
   </div>
 
@@ -2200,9 +2275,15 @@
       <h1 class="brand" aria-label="PG1"><svg class="lockup" aria-hidden="true" focusable="false"><use href="#pg1-lockup"/></svg></h1>
       <span id="header-status-dot" class="status-dot-mini" role="img" aria-label="Status: ACTIVE | API LINKED" data-state="green"></span>
     </div>
-    <div class="header-btn-wrap">
-      <button type="button" id="quick-menu-btn" class="icon-btn" onclick="triggerHaptic(); toggleQuickMenu()" title="Quick commands" aria-label="Quick commands" aria-haspopup="true" aria-expanded="false" aria-controls="quick-menu"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
-      <span id="error-log-badge" class="error-log-badge" aria-hidden="true"></span>
+    <div class="header-actions">
+      <!-- SAVE CHAT: saves this conversation as a thread (Session threads in
+           the menu); once saved it shows filled and later messages update
+           the same thread. Signed-in operator only. -->
+      <button type="button" id="save-thread-btn" class="icon-btn" onclick="triggerHaptic(30); saveCurrentThread()" title="Save chat" aria-label="Save chat" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg></button>
+      <div class="header-btn-wrap">
+        <button type="button" id="quick-menu-btn" class="icon-btn" onclick="triggerHaptic(); toggleQuickMenu()" title="Quick commands" aria-label="Quick commands" aria-haspopup="true" aria-expanded="false" aria-controls="quick-menu"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
+        <span id="error-log-badge" class="error-log-badge" aria-hidden="true"></span>
+      </div>
     </div>
   </header>
 
@@ -2518,6 +2599,7 @@
     function saveState() {
       const chatHTML = document.getElementById('chat-container').innerHTML;
       localStorage.setItem('pg1_matrix_state', chatHTML);
+      if (typeof scheduleThreadSync === 'function') scheduleThreadSync();
     }
 
     function formatBytes(bytes) {
@@ -2526,6 +2608,7 @@
 
     window.onload = () => {
       initSpeechSettings();
+      readCurrentThread();
       const savedVoiceProfile = localStorage.getItem('pg1_voice_profile');
       if (savedVoiceProfile) {
         const voiceSelect = document.getElementById('voice-profile-select');
@@ -2626,20 +2709,250 @@
       textarea.style.height = (textarea.scrollHeight) + 'px';
     }
 
+    // SAVED CHATS: the save button in the top bar and the Session threads
+    // sheet, backed by /api/threads (signed-in operator only, stored in
+    // Supabase with secrets withheld server-side). Saving makes the chat on
+    // screen a thread; from then on every change on screen (a new message, a
+    // deleted one) updates that thread automatically, a moment later. The
+    // saved thread's id and title are remembered on this device so a reload
+    // keeps the link. Only the text of each message is saved: result cards,
+    // images and audio stay on this device.
+    const CURRENT_THREAD_KEY = 'pg1_current_thread';
+    const THREAD_SYNC_DELAY_MS = 1200;
+    // var, not let: saveState() can run before this point in the script.
+    var currentThread = null;
+    var threadSyncTimer = null;
+    var threadSyncRunning = false;
+    var threadSyncAgain = false;
+
+    function readCurrentThread() {
+      try {
+        const v = JSON.parse(localStorage.getItem(CURRENT_THREAD_KEY));
+        if (v && typeof v.id === 'string') currentThread = { id: v.id, title: String(v.title || '') };
+      } catch (e) {}
+      renderSaveButton();
+    }
+
+    function setCurrentThread(thread) {
+      currentThread = thread && thread.id ? { id: thread.id, title: String(thread.title || '') } : null;
+      try {
+        if (currentThread) localStorage.setItem(CURRENT_THREAD_KEY, JSON.stringify(currentThread));
+        else localStorage.removeItem(CURRENT_THREAD_KEY);
+      } catch (e) {}
+      renderSaveButton();
+    }
+
+    function renderSaveButton() {
+      const btn = document.getElementById('save-thread-btn');
+      if (!btn) return;
+      const saved = !!currentThread;
+      btn.setAttribute('aria-pressed', String(saved));
+      const label = saved ? `Saved chat: ${currentThread.title || 'untitled'}` : 'Save chat';
+      btn.setAttribute('aria-label', label);
+      btn.title = saved ? 'Saved - updates automatically' : 'Save chat';
+    }
+
+    // The conversation on screen as { role, text, at } (oldest first): the
+    // markdown each message was written in, else its text. The welcome card,
+    // a reply still being written and failed requests are left out.
+    function threadMessagesFromScreen() {
+      const out = [];
+      document.querySelectorAll('#chat-container .message-bubble').forEach((el) => {
+        if (el.classList.contains('welcome') || el.classList.contains('pending') || el.classList.contains('error')) return;
+        const text = Array.from(el.querySelectorAll('.message-text'))
+          .map((t) => (t.dataset.raw != null ? t.dataset.raw : innerTextWithoutDiffSr(t)))
+          .join('\n\n')
+          .trim();
+        if (!text) return;
+        out.push({ role: el.classList.contains('user') ? 'user' : 'assistant', text, at: el.dataset.at || null });
+      });
+      return out;
+    }
+
+    async function threadsRequest(payload) {
+      if (!sessionUser || !sessionPass) {
+        const err = new Error('Sign in to save chats.');
+        err.status = 401;
+        throw err;
+      }
+      const res = await fetch('/api/threads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, user: sessionUser, pass: sessionPass })
+      });
+      let data = {};
+      try { data = await res.json(); } catch (e) {}
+      if (!res.ok) {
+        const err = new Error(data.message || data.error || `HTTP ${res.status}`);
+        err.status = res.status;
+        throw err;
+      }
+      return data;
+    }
+
+    // The save button. Unsaved: saves the chat as a new thread titled from
+    // its first message. Already saved: saves it again right away.
+    async function saveCurrentThread() {
+      const btn = document.getElementById('save-thread-btn');
+      const messages = threadMessagesFromScreen();
+      if (!sessionUser || !sessionPass) { flashStatus('Sign in to save chats.', false); return; }
+      if (!messages.length) { flashStatus('Nothing to save yet. Send a message first.', false); return; }
+      if (currentThread) { await syncCurrentThread(); flashStatus('Saved', false); return; }
+      if (btn) btn.classList.add('is-busy');
+      try {
+        const data = await threadsRequest({ op: 'save', messages });
+        setCurrentThread(data.thread);
+        flashStatus('Saved', false);
+      } catch (e) {
+        flashStatus(e.status === 401 ? 'Saving chats is for the signed-in operator only.' : `Could not save this chat: ${e.message}`, false);
+      } finally {
+        if (btn) btn.classList.remove('is-busy');
+      }
+    }
+
+    // Auto-update after saving: called from saveState() on every change.
+    function scheduleThreadSync() {
+      if (!currentThread || !sessionUser) return;
+      clearTimeout(threadSyncTimer);
+      threadSyncTimer = setTimeout(syncCurrentThread, THREAD_SYNC_DELAY_MS);
+    }
+
+    async function syncCurrentThread() {
+      clearTimeout(threadSyncTimer);
+      if (!currentThread || !sessionUser) return;
+      if (threadSyncRunning) { threadSyncAgain = true; return; }
+      threadSyncRunning = true;
+      const id = currentThread.id;
+      try {
+        const messages = threadMessagesFromScreen();
+        if (messages.length) await threadsRequest({ op: 'save', id, messages });
+      } catch (e) {
+        if (e.status === 404 && currentThread && currentThread.id === id) {
+          setCurrentThread(null);
+          flashStatus('This chat\'s saved copy was deleted. Tap save to save it again.', false);
+        }
+      } finally {
+        threadSyncRunning = false;
+        if (threadSyncAgain) { threadSyncAgain = false; syncCurrentThread(); }
+      }
+    }
+
+    function threadDateText(iso) {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return '';
+      return d.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function renderThreadList(threads) {
+      const list = document.getElementById('thread-list-container');
+      if (!list) return;
+      if (!threads.length) {
+        list.innerHTML = '<p class="list-empty">No saved chats yet</p>';
+        return;
+      }
+      list.innerHTML = threads.map((t) => {
+        const id = escapeHTML(t.id);
+        const current = currentThread && currentThread.id === t.id;
+        const count = Number(t.message_count) || 0;
+        return `<div class="thread-item${current ? ' is-current' : ''}" data-thread-id="${id}">
+          <div class="thread-info">
+            <span class="thread-title">${escapeHTML(t.title)}</span>
+            <span class="thread-date">${escapeHTML(threadDateText(t.updated_at))} · ${count} message${count === 1 ? '' : 's'}${current ? ' · open now' : ''}</span>
+          </div>
+          <div class="thread-actions">
+            <button type="button" class="thread-action-btn is-primary" data-action="load" onclick="triggerHaptic(30); loadThread('${id}')">Load</button>
+            <button type="button" class="thread-action-btn" data-action="rename" onclick="triggerHaptic(30); renameThread('${id}')">Rename</button>
+            <button type="button" class="thread-action-btn danger" data-action="delete" onclick="triggerHaptic([40, 40]); deleteThread('${id}')">Delete</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    var threadListCache = [];
+    async function refreshThreadList() {
+      const list = document.getElementById('thread-list-container');
+      if (!list) return;
+      if (!sessionUser || !sessionPass) {
+        list.innerHTML = '<p class="list-empty">Sign in to see saved chats.</p>';
+        return;
+      }
+      list.innerHTML = '<p class="list-empty">Loading saved chats…</p>';
+      try {
+        const data = await threadsRequest({ op: 'list' });
+        threadListCache = Array.isArray(data.threads) ? data.threads : [];
+        renderThreadList(threadListCache);
+      } catch (e) {
+        list.innerHTML = `<p class="list-empty">${e.status === 401 ? 'Saved chats are for the signed-in operator only.' : 'Saved chats are unavailable right now.'}</p>`;
+      }
+    }
+
     function openThreadsModal() {
       document.getElementById('threads-modal').style.display = 'flex';
+      refreshThreadList();
     }
     function closeThreadsModal() {
       document.getElementById('threads-modal').style.display = 'none';
     }
-    function loadThread(threadId) {
-      alert(`System routing to Thread ID: ${threadId}`);
-      closeThreadsModal();
+
+    function threadBubbleHtml(m) {
+      const time = m.at ? new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      return `<span class="msg-timestamp">${escapeHTML(time)}</span>${markdownBlock(m.text)}${messageActionsHtml(m.role === 'user' ? 'user' : 'agent')}`;
     }
-    function deleteThread(threadId) {
-      if (confirm('AUTHORIZATION REQUIRED: Purge this thread from the Sovereign matrix?')) {
-        const el = document.getElementById(threadId);
-        if (el) el.remove();
+
+    // Load: the saved conversation replaces the one on screen and carries on
+    // from there (the next message is sent with this history).
+    async function loadThread(threadId) {
+      const unsaved = !currentThread && threadMessagesFromScreen().length > 0;
+      if (unsaved && !confirm('Load this saved chat? The chat on screen is not saved and will be replaced.')) return;
+      try {
+        if (currentThread && currentThread.id !== threadId) await syncCurrentThread();
+        const data = await threadsRequest({ op: 'get', id: threadId });
+        const thread = data.thread;
+        const chat = document.getElementById('chat-container');
+        chat.innerHTML = '';
+        (thread.messages || []).forEach((m) => {
+          const el = document.createElement('div');
+          el.className = m.role === 'user' ? 'message-bubble user' : 'message-bubble';
+          if (m.at) el.dataset.at = m.at;
+          el.innerHTML = threadBubbleHtml(m);
+          chat.appendChild(el);
+        });
+        if (!chat.children.length) renderWelcome();
+        setCurrentThread(thread);
+        saveState();
+        closeThreadsModal();
+        chat.scrollTop = chat.scrollHeight;
+        flashStatus(`Loaded "${thread.title}"`, false);
+      } catch (e) {
+        flashStatus(e.status === 404 ? 'That saved chat no longer exists.' : 'Could not load that chat right now.', false);
+        refreshThreadList();
+      }
+    }
+
+    async function renameThread(threadId) {
+      const known = threadListCache.find((t) => t.id === threadId);
+      const title = prompt('Rename this saved chat', known ? known.title : '');
+      if (title == null) return;
+      if (!title.trim()) { flashStatus('A title cannot be empty.', false); return; }
+      try {
+        const data = await threadsRequest({ op: 'rename', id: threadId, title: title.trim() });
+        if (currentThread && currentThread.id === threadId) setCurrentThread(data.thread);
+        await refreshThreadList();
+      } catch (e) {
+        flashStatus('Could not rename that chat right now.', false);
+      }
+    }
+
+    async function deleteThread(threadId) {
+      const known = threadListCache.find((t) => t.id === threadId);
+      if (!confirm(`Delete "${known ? known.title : 'this saved chat'}"? This cannot be undone.`)) return;
+      try {
+        await threadsRequest({ op: 'delete', id: threadId, confirm: true });
+        if (currentThread && currentThread.id === threadId) setCurrentThread(null);
+        await refreshThreadList();
+        flashStatus('Deleted', false);
+      } catch (e) {
+        flashStatus('Could not delete that chat right now.', false);
       }
     }
 
@@ -2721,7 +3034,7 @@
       userBubble.className = 'message-bubble user';
       userBubble.innerHTML = `
         <span class="msg-timestamp">${time}</span>
-        <div class="message-text">${formatMarkdown(userText)}</div>
+        ${markdownBlock(userText)}
         ${messageActionsHtml('user')}`;
       chatContainer.appendChild(userBubble);
 
@@ -2729,7 +3042,7 @@
       agentBubble.className = 'message-bubble';
       agentBubble.innerHTML = `
         <span class="msg-timestamp">${time}</span>
-        <div class="message-text">${formatMarkdown(replyText)}</div>
+        ${markdownBlock(replyText)}
         ${messageActionsHtml('agent')}`;
       chatContainer.appendChild(agentBubble);
 
@@ -2816,6 +3129,21 @@
       );
     }
 
+    // A message's text block. The markdown source rides along in data-raw
+    // (escaped, so it is inert) so a saved chat stores what was written,
+    // not the rendered text (threadMessagesFromScreen).
+    function markdownBlock(raw, extraHtml = '') {
+      const src = typeof raw === 'string' ? raw : '';
+      return `<div class="message-text" data-raw="${escapeHTML(src)}">${formatMarkdown(src)}${extraHtml}</div>`;
+    }
+
+    // Adds a follow-up reply (an approval result) under an existing text block.
+    function appendMarkdown(textEl, raw) {
+      const before = textEl.dataset.raw != null ? textEl.dataset.raw : textEl.innerText;
+      textEl.innerHTML += `<br><br>${formatMarkdown(raw)}`;
+      textEl.dataset.raw = `${before}\n\n${raw}`;
+    }
+
     function formatMarkdown(str) {
       if (!str || typeof str !== 'string') return '';
       // SECURITY: the whole reply is HTML-escaped here, before any markdown
@@ -2889,6 +3217,10 @@
         let m;
         if (/^\u0000CODEBLOCK\d+\u0000$/.test(line.trim())) {
           segments.push({ block: true, html: line.trim() });
+          i++;
+        } else if ((m = line.match(/^\[\^[\w-]+\]: +(.+)$/))) {
+          // A footnote line ("[^note]: text"): small muted text.
+          segments.push({ block: true, html: `<div class="md-foot" role="note">${m[1]}</div>` });
           i++;
         } else if ((m = line.match(/^(#{1,3}) +(.+)$/))) {
           const level = m[1].length;
@@ -3575,7 +3907,11 @@
       return out.slice(-THREAD_HISTORY_MAX_MESSAGES);
     }
 
+    // Clearing starts a new chat: a saved thread keeps what it has and the
+    // save button goes back to unsaved.
     function clearChat() {
+      if (currentThread) syncCurrentThread();
+      setCurrentThread(null);
       renderWelcome();
       saveState();
     }
@@ -4417,7 +4753,7 @@
         triggerHaptic(decision === 'approve' ? [30, 50, 30] : 50);
         if (bubble) {
           const textEl = bubble.querySelector('.message-text');
-          if (textEl) textEl.innerHTML += `<br><br>${formatMarkdown(data.reply || (decision === 'approve' ? 'Approved.' : 'Declined.'))}`;
+          if (textEl) appendMarkdown(textEl, data.reply || (decision === 'approve' ? 'Approved.' : 'Declined.'));
         }
         if (actionsRow) {
           // PG1 SOUND: approving one take closes the other take's buttons.
@@ -4506,7 +4842,7 @@
 
         const textEl = agentBubble.querySelector('.message-text');
         if (textEl && data.reply) {
-          textEl.innerHTML += `<br><br>${formatMarkdown(data.reply)}`;
+          appendMarkdown(textEl, data.reply);
         }
         if (data.pendingApproval && data.pendingApproval.token) {
           const wrapper = document.createElement('div');
@@ -4914,7 +5250,7 @@
         userBubble.className = 'message-bubble user';
         userBubble.innerHTML = `
         <span class="msg-timestamp">${time}</span>
-        <div class="message-text">${formatMarkdown(userText)}</div>
+        ${markdownBlock(userText)}
         ${messageActionsHtml('user')}`;
         chatContainer.appendChild(userBubble);
       }
@@ -4952,7 +5288,7 @@
         reply = '[AGENT] Could not draft the hand-off. Try again in a moment.';
       }
       agentBubble.classList.remove('pending');
-      agentBubble.innerHTML = `<span class="msg-timestamp">${time}</span><div class="message-text">${formatMarkdown(reply)}</div>${card}${messageActionsHtml('agent')}`;
+      agentBubble.innerHTML = `<span class="msg-timestamp">${time}</span>${markdownBlock(reply)}${card}${messageActionsHtml('agent')}`;
       saveState();
       refreshHandoffList();
     }
@@ -5943,7 +6279,7 @@
       userBubble.className = 'message-bubble user';
       userBubble.innerHTML = `
         <span class="msg-timestamp">${currentTime}</span>
-        <div class="message-text">${formatMarkdown(text || '[Vision Data Transmitted]')}${statusText}</div>
+        ${markdownBlock(text || '[Vision Data Transmitted]', statusText)}
         ${messageActionsHtml('user')}`;
       chatContainer.appendChild(userBubble);
       
@@ -6065,7 +6401,7 @@
         triggerHaptic([30, 50, 30]); 
         const finalTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
-        let contentHtml = `${agentTimestampHtml(finalTime, tracePill)}${traceHtml}<div class="message-text">${formatMarkdown(data.reply || 'Execution complete.')}</div>${toolCardsHtml(data.toolResults)}`;
+        let contentHtml = `${agentTimestampHtml(finalTime, tracePill)}${traceHtml}${markdownBlock(data.reply || 'Execution complete.')}${toolCardsHtml(data.toolResults)}`;
 
         if (data.searchEntryPoint) {
           contentHtml += '<div class="search-entry-point">' + data.searchEntryPoint + '</div>';
@@ -6215,7 +6551,7 @@
       bubble.classList.remove('pending');
       if (category && !streamed.text) bubble.classList.add('error');
       if (category === 'offline' || category === 'network') bubble.classList.add('offline');
-      const textHtml = streamed.text ? `<div class="message-text">${formatMarkdown(streamed.text)}</div>` : '';
+      const textHtml = streamed.text ? markdownBlock(streamed.text) : '';
       const retry = prompt ? retryButtonHtml(prompt, streamed.failed === 'dropped') : '';
       bubble.innerHTML = `${agentTimestampHtml(time, streamed.tracePill)}${streamed.traceHtml || ''}${textHtml}${toolCardsHtml(streamed.toolResults)}<div class="stream-note" role="status"><span class="stream-note-text">${escapeHTML(note)}</span>${retry}</div>${streamed.text ? messageActionsHtml('agent') : ''}`;
       saveState();

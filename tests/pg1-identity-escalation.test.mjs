@@ -265,5 +265,5 @@ test('the page sends the on-screen thread as history, without the welcome card o
   assert.match(html, /function threadHistory\(exclude\) \{/);
   assert.match(html, /if \(el === exclude \|\| el\.classList\.contains\('welcome'\) \|\| el\.classList\.contains\('pending'\)\) return;/);
   assert.match(html, /clientEnv: getClientEnvironment\(\),\s*history: threadHistory\(agentBubble\)\s*\};/);
-  assert.match(html, /function clearChat\(\) \{\s*renderWelcome\(\);\s*saveState\(\);\s*\}/, 'clearing the chat leaves only the welcome card, so the count restarts');
+  assert.match(html, /function clearChat\(\) \{\s*if \(currentThread\) syncCurrentThread\(\);\s*setCurrentThread\(null\);\s*renderWelcome\(\);\s*saveState\(\);\s*\}/, 'clearing the chat leaves only the welcome card, so the count restarts');
 });

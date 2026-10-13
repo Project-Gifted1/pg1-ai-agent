@@ -28,6 +28,7 @@ import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createToolExecutor, summarizeOutcome, traceLabels, spokenSummary } from '../../lib/chatTools.mjs';
 import { FIXTURE_VALUES } from '../../lib/fixtures.mjs';
+import { routeReplyFont } from '../helpers/replyFont.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PUBLIC_DIR = join(ROOT, 'public');
@@ -171,6 +172,7 @@ for (const theme of ['light', 'dark']) {
       await new Promise((r) => server.close(r));
     });
     const context = await browser.newContext({ viewport: { width: 412, height: 915 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: theme });
+    await routeReplyFont(context);
     await context.addInitScript((value) => { try { localStorage.setItem('pg1_theme', value); } catch (e) {} }, theme);
     const page = await context.newPage();
     const pageErrors = [];

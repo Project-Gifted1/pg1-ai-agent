@@ -114,7 +114,9 @@ async function paymentFor(toolName, args) {
 }
 
 function assertRowShape(row) {
-  assert.deepEqual(Object.keys(row).sort(), ['caller_hash', 'client_name', 'client_version', 'endpoint', 'event_type', 'is_fixture', 'latency_ms', 'payment_type', 'status', 'tool_name']);
+  // mcp_method, requested_tool and amount_usd appear only on the rows they apply to.
+  const optional = ['amount_usd', 'mcp_method', 'requested_tool'];
+  assert.deepEqual(Object.keys(row).filter((k) => !optional.includes(k)).sort(), ['caller_hash', 'client_name', 'client_version', 'endpoint', 'event_type', 'is_fixture', 'latency_ms', 'payment_type', 'status', 'tool_name']);
   assert.equal(row.is_fixture, false);
   assert.equal(row.endpoint, '/api/mcp');
   assert.ok(Number.isInteger(row.latency_ms) && row.latency_ms >= 0);
@@ -223,7 +225,7 @@ test('paid x402 call records a settlement row and an x402 tool_call row', async 
   rows.forEach(assertRowShape);
   const settlement = rows.find((r) => r.event_type === 'settlement');
   const call = rows.find((r) => r.event_type === 'tool_call');
-  assert.deepEqual({ ...settlement, latency_ms: 0 }, { event_type: 'settlement', endpoint: '/api/mcp', tool_name: 'get_threat_actor_profile', payment_type: 'x402', status: 'settled', latency_ms: 0, client_name: null, client_version: null, caller_hash: null, is_fixture: false });
+  assert.deepEqual({ ...settlement, latency_ms: 0 }, { event_type: 'settlement', endpoint: '/api/mcp', tool_name: 'get_threat_actor_profile', payment_type: 'x402', status: 'settled', latency_ms: 0, client_name: null, client_version: null, caller_hash: null, is_fixture: false, amount_usd: 0.01 });
   assert.equal(call.payment_type, 'x402');
   assert.equal(call.status, 'ok');
 });
@@ -265,13 +267,16 @@ test('unknown tool name is never stored (caller input) - status unknown_tool', a
   assert.equal(rows[0].status, 'unknown_tool');
 });
 
-test('non-tools/call methods record nothing', async (t) => {
+test('non-tools/call methods record one mcp_request row, never a tool_call', async (t) => {
   const rows = setup(t);
   const res = makeRes();
   await handler({ method: 'POST', headers: {}, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } }, res);
   await new Promise((r) => setImmediate(r));
   assert.equal(res.statusCode, 200);
-  assert.equal(rows.length, 0);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].event_type, 'mcp_request');
+  assert.equal(rows[0].mcp_method, 'tools/list');
+  assert.equal(rows[0].tool_name, null);
 });
 
 for (const behaviour of ['reject', 'http_error']) {

@@ -25,6 +25,7 @@ import http from 'node:http';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { routeReplyFont } from '../helpers/replyFont.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PUBLIC_DIR = join(ROOT, 'public');
@@ -142,6 +143,7 @@ test('an attached image is resized to 1600 px and sent to the server as image in
     await new Promise((r) => server.close(r));
   });
   const context = await browser.newContext({ viewport: { width: 412, height: 915 }, isMobile: true, hasTouch: true });
+  await routeReplyFont(context);
   const page = await context.newPage();
   const pageErrors = [];
   const consoleErrors = [];

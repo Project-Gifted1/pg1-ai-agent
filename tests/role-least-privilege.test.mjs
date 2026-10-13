@@ -225,7 +225,7 @@ test('authenticated operator: /status, /export, /vault and /usage all work', asy
   const calls = installFetch();
   const usage = await chat({ prompt: '/usage 7d', ...OPERATOR });
   assert.equal(usage.statusCode, 200);
-  assert.match(usage.jsonBody.reply, /USAGE · the last 7 days/);
+  assert.match(usage.jsonBody.reply, /Usage · the last 7 days/);
   assert.equal(usage.jsonBody.toolResults[0].tool, USAGE_STATS_TOOL);
   assert.equal(usage.jsonBody.toolResults[0].status, 'report');
   assert.ok(calls.some((c) => c.url.includes('/rest/v1/agent_telemetry') && c.method === 'GET'));
