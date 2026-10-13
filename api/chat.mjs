@@ -127,10 +127,10 @@ if (X402_PAY_TO) {
     // pricing/description/bazaar metadata and the same gate as GET.
     var iocX402RouteConfig = {
       accepts: [{ scheme: X402_SCHEME, price: X402_PRICE, network: X402_NETWORK, payTo: X402_PAY_TO }],
-      description: 'PG1 Threat Intelligence: STIX 2.1 threat indicator feed (IPs, domains, URLs, file hashes, CVEs) aggregated from open threat intelligence sources including AlienVault OTX.',
+      description: 'PG1 Threat Intelligence: STIX 2.1 threat indicator feed (IPs, domains, URLs, file hashes, CVEs) from sources PG1 may redistribute commercially (currently NVD).',
       mimeType: 'application/stix+json',
       extensions: declareDiscoveryExtension({
-        input: { type: 'IPv4', min_score: 50, limit: 100 },
+        input: { type: 'CVE', min_score: 50, limit: 100 },
         inputSchema: {
           properties: {
             since: { type: 'string', description: 'ISO timestamp (e.g. 2026-09-20T00:00:00Z). Only indicators last seen after this time are returned.' },
@@ -149,19 +149,14 @@ if (X402_PAY_TO) {
             id: 'bundle--3f1b1e2a-0a3e-4b9a-8f7f-2f6e9a0b3c1d',
             objects: [
               {
-                type: 'indicator',
+                type: 'vulnerability',
                 spec_version: '2.1',
-                id: 'indicator--7c9b6f2e-6b6b-4a2a-9c3e-1a9d9a2b6f3e',
+                id: 'vulnerability--7c9b6f2e-6b6b-4a2a-9c3e-1a9d9a2b6f3e',
                 created: '2026-09-20T00:00:00Z',
                 modified: '2026-09-24T12:00:00Z',
-                name: 'IPv4 Threat Indicator - 198.51.100.23',
-                description: 'Threat indicator sourced from AlienVault-OTX.',
-                indicator_types: ['malicious-activity'],
-                pattern: "[ipv4-addr:value = '198.51.100.23']",
-                pattern_type: 'stix',
-                valid_from: '2026-09-24T12:00:00Z',
-                confidence: 75,
-                external_references: [{ source_name: 'AlienVault-OTX', description: 'Sourced from AlienVault-OTX' }]
+                name: 'CVE-2021-44228',
+                description: 'Vulnerability sourced from NVD.',
+                external_references: [{ source_name: 'cve', external_id: 'CVE-2021-44228' }]
               }
             ]
           }

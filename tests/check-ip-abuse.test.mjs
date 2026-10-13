@@ -188,7 +188,7 @@ beforeEach(() => {
 // Registry drift: the 14 pre-existing tools are unchanged
 // ---------------------------------------------------------------------
 
-test('the 14 pre-existing MCP tools are byte-identical to the 1.15.0 snapshot (names, descriptions, schemas, order)', () => {
+test('the 14 pre-existing MCP tools are byte-identical to the snapshot (names, descriptions, schemas, order)', () => {
   const snapshot = JSON.parse(fs.readFileSync(path.join(ROOT, 'tests/fixtures/existing-14-tools-snapshot.json'), 'utf8'));
   assert.equal(snapshot.length, 14);
   assert.deepEqual(TOOLS.slice(0, 14), snapshot);
@@ -198,7 +198,7 @@ test('the 14 pre-existing MCP tools are byte-identical to the 1.15.0 snapshot (n
   assert.equal(TOOLS[15].name, 'check_package');
   assert.equal(new Set(TOOLS.map((t) => t.name)).size, TOOLS.length, 'no name clash');
   const sha = crypto.createHash('sha256').update(JSON.stringify(TOOLS.slice(0, 14))).digest('hex');
-  assert.equal(sha, 'a177e3276b64a976e1b3a8412e77418e7846bf532379c8c9129882aff3488f06');
+  assert.equal(sha, 'e00e29241d73ff2afe019ba7d355015a12b1abdbef7ee3e134e913bbdde75e28');
 });
 
 test('the 5 pre-existing A2A skills are unchanged; check_ip_abuse is added as the 6th, with the MCP definition', () => {

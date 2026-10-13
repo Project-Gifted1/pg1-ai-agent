@@ -113,7 +113,7 @@ function installFetchMock({ gumroadSuccess = true, gumroadUnavailable = false } 
             confidence_score: 75,
             last_seen: '2026-09-24T12:00:00Z',
             ingested_at: '2026-09-20T00:00:00Z',
-            verification_source: 'test-source'
+            verification_source: 'NVD'
           }
         ]
       };

@@ -261,7 +261,7 @@ test('wallet age timeout: the function limit still leaves 10s+ of margin over th
 // SHA-256 of JSON.stringify(TOOLS) and of the check_wallet_age entry, taken
 // from api/mcp.mjs before this change: field names, descriptions and the
 // MCP tool definitions must stay byte-identical.
-const TOOLS_SHA256 = '10c3d9969cf1c595717ed826a882c3b22c4b3c05938d2bb4158a0e3310c4855a';
+const TOOLS_SHA256 = 'bfdd45a9a7a57824ca147a21cbc08c2b6ade504a9ce71d36bd1be8b6abe0bf12';
 const WALLET_AGE_TOOL_SHA256 = '16fafc99e96925c027cd660b9564e8fe5edffb5a512d504bf12bcc8cf312189d';
 
 test('wallet age timeout: MCP tool definitions are hash-identical to before', async () => {

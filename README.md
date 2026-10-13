@@ -107,9 +107,9 @@ Call `"method": "tools/list"` against `/api/mcp` for full schemas. Summary:
 
 | Tool | Purpose | Source(s) | Free tier applies? |
 |---|---|---|---|
-| `get_threat_indicators` | Bulk STIX 2.1 indicator feed | OTX, NVD | Yes (needs `x-free-tier: 1`) |
-| `get_ioc_context` | Single-indicator safety check | OTX | Always free if not found |
-| `get_ioc_batch` | Up to 20 indicators per call | OTX | Always free if none found |
+| `get_threat_indicators` | Bulk STIX 2.1 indicator feed | NVD (only sources PG1 may redistribute commercially; see [Data source switches](#data-source-switches)) | Yes (needs `x-free-tier: 1`) |
+| `get_ioc_context` | Single-indicator safety check | NVD (see [Data source switches](#data-source-switches)) | Always free if not found |
+| `get_ioc_batch` | Up to 20 indicators per call | NVD (see [Data source switches](#data-source-switches)) | Always free if none found |
 | `get_cve_details` | CVE lookup enriched with NVD, EPSS, CISA KEV | NVD, FIRST.org EPSS, CISA KEV | Yes (needs `x-free-tier: 1`) |
 | `get_cve_batch` | Up to 20 CVE IDs per call | NVD, FIRST.org EPSS, CISA KEV | Yes (needs `x-free-tier: 1`) |
 | `get_cve_by_product` | Discover CVEs by vendor/product | NVD | Yes (needs `x-free-tier: 1`) |
@@ -137,14 +137,18 @@ Call `"method": "tools/list"` against `/api/mcp` for full schemas. Summary:
 
 ### Data source switches
 
-Threat indicator data (`get_threat_indicators`, `get_ioc_context`, `get_ioc_batch`, `/api/ioc`, `/api/ioc/context`, and the chat and playground checks built on them) is filtered by upstream source in one place, `lib/sourcePolicy.mjs`, on every query. Each source has an environment switch:
+Threat indicator data (`get_threat_indicators`, `get_ioc_context`, `get_ioc_batch`, `/api/ioc`, `/api/ioc/context`, and the chat and playground checks built on them) is filtered by upstream source in one place, `lib/sourcePolicy.mjs`, on every query. These are paid responses, so a source is served only when PG1 may resell it: our own data, public-domain data, or a source whose terms explicitly allow commercial resale.
 
 | Variable | Default | Covers |
 |---|---|---|
-| `SOURCE_ABUSECH_ENABLED` | **off** | abuse.ch ThreatFox / URLhaus. Not served while there is no commercial agreement with abuse.ch. |
-| `SOURCE_UNATTRIBUTED_ENABLED` | **off** | Rows with no source label, and rows from the old pipeline labelled `Sovereign-Engine-v3.2-*`, which can't be told apart by source. |
-| `SOURCE_ABUSEIPDB_ENABLED` | **always off** (locked; the variable is ignored) | AbuseIPDB-labelled rows. Under PG1's agreement with AbuseIPDB, AbuseIPDB results only ever go to the customer whose own key fetched them (`check_ip_abuse`), never into a shared feed. |
-| `SOURCE_OTX_ENABLED`, `SOURCE_NVD_ENABLED`, `SOURCE_BLOCKLIST_DE_ENABLED`, `SOURCE_PG1_SWARM_ENABLED`, `SOURCE_SCAMSNIFFER_ENABLED`, `SOURCE_OTHER_ENABLED` | on | Set to `false` to stop serving that source. |
+| `SOURCE_ABUSECH_ENABLED` | **always off** (locked; the variable is ignored) | abuse.ch (ThreatFox, URLhaus, MalwareBazaar, Feodo, SSLBL, YARAify). Not served in the paid API until licensed. |
+| `SOURCE_OTX_ENABLED` | **always off** (locked) | AlienVault OTX. No commercial licence. |
+| `SOURCE_ABUSEIPDB_ENABLED` | **always off** (locked) | AbuseIPDB-labelled rows. PG1 declined AbuseIPDB's licence; `check_ip_abuse` only ever uses the caller's own key. |
+| `SOURCE_UNATTRIBUTED_ENABLED` | **always off** (locked) | Rows with no source label, and rows from the old pipeline labelled `Sovereign-Engine-v3.2-*`, which hide the real feed. No recorded source means unlicensed. |
+| `SOURCE_NVD_ENABLED` | on | NIST NVD (US Government work, public domain). |
+| `SOURCE_BLOCKLIST_DE_ENABLED`, `SOURCE_PG1_SWARM_ENABLED`, `SOURCE_SCAMSNIFFER_ENABLED`, `SOURCE_OTHER_ENABLED` | **off** | Blocklist.de, `PG1-Swarm-*` labels, ScamSniffer, and any other label. Off until their terms are confirmed for commercial resale; set to `true` only once they are. |
+
+A locked source can only be served again by a code change, made once a licence is signed.
 
 A switched-off source's rows never appear in any response, paid or free; an indicator known only to such a source is reported as `found: false`.
 
