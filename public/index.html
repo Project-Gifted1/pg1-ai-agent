@@ -1060,6 +1060,12 @@
     .film-card-failed { color: var(--danger-text); }
     .film-card-images { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1, 4px); }
     .film-card-image strong { color: var(--gold); font-weight: 600; }
+    .pdf-card { margin: var(--sp-4) 0; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-1); color: var(--text-2); font-size: var(--fs-sm); display: flex; align-items: center; gap: var(--sp-3); }
+    .pdf-card .icon { flex: none; width: 22px; height: 22px; }
+    .pdf-card-info { display: grid; gap: 2px; min-width: 0; flex: 1; }
+    .pdf-card-title { color: var(--text-1); font-weight: 600; overflow-wrap: anywhere; }
+    .pdf-card-meta { color: var(--text-3); }
+    .pdf-card-download { flex: none; padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--text-1); text-decoration: none; }
     .music-card { margin: var(--sp-4) 0; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-1); color: var(--text-2); font-size: var(--fs-sm); display: grid; gap: var(--sp-2); }
     .music-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); color: var(--text-1); }
     .music-card-title { font-weight: 600; }
@@ -3345,7 +3351,7 @@
     function messageActionsHtml(role) {
       const items = role === 'user'
         ? [['editBubble', 'Edit message', 'i-edit', 40], ['copyBubbleText', 'Copy message', 'i-copy', 40], ['deleteBubble', 'Delete message', 'i-trash', 40]]
-        : [['speakBubble', 'Read aloud', 'i-speaker', ''], ['copyBubbleText', 'Copy reply', 'i-copy', ''], ['deleteBubble', 'Delete reply', 'i-trash', '']];
+        : [['speakBubble', 'Read aloud', 'i-speaker', ''], ['copyBubbleText', 'Copy reply', 'i-copy', ''], ['savePdfBubble', 'Save as PDF', 'i-file', ''], ['deleteBubble', 'Delete reply', 'i-trash', '']];
       const button = ([fn, label, icon, ms]) => {
         const done = fn === 'copyBubbleText' ? '<svg class="icon icon-done" aria-hidden="true"><use href="#i-check"/></svg>' : '';
         return `<button type="button" class="msg-action" onclick="triggerHaptic(${ms}); ${fn}(this)" aria-label="${label}" title="${label}"><svg class="icon icon-main" aria-hidden="true"><use href="#${icon}"/></svg>${done}</button>`;
@@ -4712,6 +4718,16 @@
       return player;
     }
 
+    // PDF (lib/pdf): the Save as PDF icon sends "/pdf this" with this
+    // reply's own markdown, so any reply (not only the last) becomes a PDF.
+    function savePdfBubble(el) {
+      const textEl = el.closest('.message-bubble').querySelector('.message-text');
+      if (!textEl) return;
+      const raw = textEl.dataset.raw != null ? textEl.dataset.raw : innerTextWithoutDiffSr(textEl);
+      if (!raw.trim()) return;
+      submitDirective({ retryText: '/pdf this', pdfSource: raw.slice(0, 200000) });
+    }
+
     function copyBubbleText(el) {
       const text = innerTextWithoutDiffSr(el.closest('.message-bubble').querySelector('.message-text'));
       navigator.clipboard.writeText(text).then(() => {
@@ -5843,6 +5859,22 @@
       return (Array.isArray(previews) ? previews : []).filter((p) => p && Number.isInteger(p.variant)).map(musicTakeHtml).join('');
     }
 
+    // PDF card (lib/pdf/chat.mjs): title, page count, size and a download
+    // link (https only), or a note when the vault is not configured.
+    function pdfCardHtml(pdf) {
+      if (!pdf || typeof pdf !== 'object') return '';
+      const pages = Number(pdf.pages) || 0;
+      const bytes = Number(pdf.bytes) || 0;
+      const size = bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+      const url = typeof pdf.url === 'string' && /^https:\/\//i.test(pdf.url) ? pdf.url : '';
+      return `<div class="pdf-card" data-pdf-id="${escapeHTML(String(pdf.shortId || ''))}">
+        <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+        <div class="pdf-card-info"><span class="pdf-card-title">${escapeHTML(String(pdf.title || 'PG1 document'))}</span>
+        <span class="pdf-card-meta">PDF · ${pages} page${pages === 1 ? '' : 's'} · ${escapeHTML(size)}${pdf.truncated ? ' · truncated at the page limit' : ''}${url ? ' · in the media library' : ''}</span></div>
+        ${url ? `<a class="pdf-card-download" href="${escapeHTML(url)}" target="_blank" rel="noopener noreferrer" download>Download</a>` : '<span class="pdf-card-meta">Not stored</span>'}
+      </div>`;
+    }
+
     function musicCardHtml(track) {
       if (!track || typeof track.id !== 'string' || !VIDEO_JOB_ID_RE.test(track.id)) return '';
       const active = track.active === true;
@@ -6426,6 +6458,7 @@
           taskState: turnState.taskState,
           contextSummary: turnState.contextSummary
         };
+        if (typeof options.pdfSource === 'string') payload.pdfSource = options.pdfSource;
         // LIVE TRACE: ask for a streamed reply with steps (operator only;
         // the server ignores it otherwise and replies with JSON as before).
         const wantStream = !options.noStream && !!(sessionUser && sessionPass);
@@ -6529,6 +6562,8 @@
         // PG1 SOUND: a track's card (previews with "use take N", the master,
         // the stems), and the media library with a player per track.
         if (data.musicTrack) contentHtml += musicCardHtml(data.musicTrack);
+        // PDF: the document's card (title, pages, size, download).
+        if (data.pdf) contentHtml += pdfCardHtml(data.pdf);
         if (Array.isArray(data.musicLibrary)) contentHtml += musicLibraryHtml(data.musicLibrary);
 
         if (data.pendingApproval && data.pendingApproval.token) {
