@@ -1,0 +1,819 @@
+{
+  "_note": "Frozen at the v1.14.0 release (merge 3382f1c, 3 Oct 2026) for the presign-guard integration. Do not edit: later releases may only add to these tools (tests/presign-guard-contract.test.mjs).",
+  "tools": {
+    "check_wallet_sanctions": {
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Mandatory wallet address to screen, e.g. an EVM 0x address, a bech32 (bc1/tb1/ltc1...) address, or a base58 address."
+          },
+          "currency": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional currency/chain filter to narrow the match, e.g. 'BTC', 'ETH', 'XMR'."
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "The address exactly as submitted."
+          },
+          "address_normalized": {
+            "type": "string",
+            "description": "The address after normalization, used to match against sanctioned_wallets."
+          },
+          "listed": {
+            "type": "boolean"
+          },
+          "matches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sdn_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "currency": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "programs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "sdn_uid": {
+                  "type": [
+                    "string",
+                    "number",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "source": {
+            "type": "string"
+          },
+          "list_last_synced": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "disclaimer": {
+            "type": "string"
+          },
+          "reasons": {
+            "type": "array",
+            "description": "Machine-readable reason codes for anything flagged in this result. Empty when nothing was flagged.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ]
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "flagged",
+              "no_flags",
+              "unknown"
+            ],
+            "description": "\"unknown\" whenever a source needed for this answer timed out, errored, or was skipped - never \"no_flags\" in that case."
+          },
+          "checks": {
+            "type": "array",
+            "description": "Which underlying sources were checked for this result and whether each one completed.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "description": "Generic label for the data source checked, never a vendor name."
+                },
+                "result": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "timeout",
+                    "error",
+                    "skipped"
+                  ]
+                },
+                "checked_at": {
+                  "type": "string"
+                },
+                "data_as_of": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "source",
+                "result",
+                "checked_at",
+                "data_as_of"
+              ]
+            }
+          },
+          "request_id": {
+            "type": "string",
+            "description": "UUID for this request, also sent as the X-Request-Id response header."
+          },
+          "test_fixture": {
+            "type": "boolean",
+            "description": "true only when the input was a documented integration test fixture and this response is canned; absent on real results."
+          }
+        },
+        "required": [
+          "address",
+          "address_normalized",
+          "listed",
+          "matches",
+          "source",
+          "list_last_synced"
+        ]
+      },
+      "responseKeys": {
+        "{\"address\":\"0x1111111111111111111111111111111111111111\"}": [
+          "address",
+          "address_normalized",
+          "listed",
+          "matches",
+          "source",
+          "list_last_synced",
+          "disclaimer",
+          "reasons",
+          "status",
+          "checks"
+        ],
+        "{\"address\":\"0x3333333333333333333333333333333333333333\"}": [
+          "address",
+          "address_normalized",
+          "listed",
+          "matches",
+          "source",
+          "list_last_synced",
+          "message",
+          "disclaimer",
+          "reasons",
+          "status",
+          "checks"
+        ]
+      }
+    },
+    "check_domain_age": {
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Mandatory domain name or URL to check, e.g. 'example.com' or 'https://example.com/path'. The registrable domain is extracted automatically."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "found": {
+            "type": "boolean",
+            "description": "Whether a registration record was found. Same meaning as the deprecated \"available\" field."
+          },
+          "available": {
+            "type": "boolean",
+            "description": "Deprecated — use \"found\" instead. Kept for backward compatibility."
+          },
+          "domain": {
+            "type": "string"
+          },
+          "registration_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "age_days": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "expiration_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "registrar": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "newly_registered": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "invalid_domain",
+              "bootstrap_unavailable",
+              "unsupported_tld",
+              "timeout",
+              "lookup_failed",
+              null
+            ]
+          },
+          "reasons": {
+            "type": "array",
+            "description": "Machine-readable reason codes for anything flagged in this result. Empty when nothing was flagged.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ]
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "flagged",
+              "no_flags",
+              "unknown"
+            ],
+            "description": "\"unknown\" whenever a source needed for this answer timed out, errored, or was skipped - never \"no_flags\" in that case."
+          },
+          "checks": {
+            "type": "array",
+            "description": "Which underlying sources were checked for this result and whether each one completed.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "description": "Generic label for the data source checked, never a vendor name."
+                },
+                "result": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "timeout",
+                    "error",
+                    "skipped"
+                  ]
+                },
+                "checked_at": {
+                  "type": "string"
+                },
+                "data_as_of": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "source",
+                "result",
+                "checked_at",
+                "data_as_of"
+              ]
+            }
+          },
+          "request_id": {
+            "type": "string",
+            "description": "UUID for this request, also sent as the X-Request-Id response header."
+          },
+          "test_fixture": {
+            "type": "boolean",
+            "description": "true only when the input was a documented integration test fixture and this response is canned; absent on real results."
+          }
+        },
+        "required": [
+          "found",
+          "available",
+          "domain"
+        ]
+      },
+      "responseKeys": {
+        "{\"domain\":\"example.com\"}": [
+          "found",
+          "available",
+          "domain",
+          "registration_date",
+          "age_days",
+          "expiration_date",
+          "registrar",
+          "newly_registered",
+          "note",
+          "source",
+          "reasons",
+          "status",
+          "checks"
+        ],
+        "{\"domain\":\"bad domain\"}": [
+          "found",
+          "available",
+          "domain",
+          "reason",
+          "reason_code",
+          "reasons",
+          "status",
+          "checks"
+        ]
+      }
+    },
+    "check_hostname_reputation": {
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "hostname": {
+            "type": "string",
+            "description": "Mandatory bare hostname to screen, e.g. 'example.com'. Not a URL — no scheme, path, port, spaces, or wildcards. One hostname per call."
+          }
+        },
+        "required": [
+          "hostname"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "hostname": {
+            "type": "string",
+            "description": "The hostname after normalization (trimmed, lowercased, trailing dot stripped, IDN converted to punycode)."
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "allowlisted",
+              "listed",
+              "lookalike",
+              "not_listed"
+            ],
+            "description": "Never \"safe\" or \"clean\"."
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "match_type": {
+                  "type": "string",
+                  "enum": [
+                    "allowlist",
+                    "exact",
+                    "parent_domain",
+                    "confusable",
+                    "keyword"
+                  ]
+                }
+              }
+            }
+          },
+          "lookalike_of": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The matched brand/fuzzylist domain for a \"lookalike\" verdict, otherwise null."
+          },
+          "list_synced_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "checked_at": {
+            "type": "string"
+          },
+          "attribution": {
+            "type": "string"
+          },
+          "reasons": {
+            "type": "array",
+            "description": "Machine-readable reason codes for anything flagged in this result. Empty when nothing was flagged.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ]
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "flagged",
+              "no_flags",
+              "unknown"
+            ],
+            "description": "\"unknown\" whenever a source needed for this answer timed out, errored, or was skipped - never \"no_flags\" in that case."
+          },
+          "checks": {
+            "type": "array",
+            "description": "Which underlying sources were checked for this result and whether each one completed.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "description": "Generic label for the data source checked, never a vendor name."
+                },
+                "result": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "timeout",
+                    "error",
+                    "skipped"
+                  ]
+                },
+                "checked_at": {
+                  "type": "string"
+                },
+                "data_as_of": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "source",
+                "result",
+                "checked_at",
+                "data_as_of"
+              ]
+            }
+          },
+          "request_id": {
+            "type": "string",
+            "description": "UUID for this request, also sent as the X-Request-Id response header."
+          },
+          "test_fixture": {
+            "type": "boolean",
+            "description": "true only when the input was a documented integration test fixture and this response is canned; absent on real results."
+          }
+        },
+        "required": [
+          "hostname",
+          "verdict",
+          "sources",
+          "lookalike_of",
+          "list_synced_at",
+          "checked_at",
+          "attribution"
+        ]
+      },
+      "responseKeys": {
+        "{\"hostname\":\"example.com\"}": [
+          "hostname",
+          "verdict",
+          "sources",
+          "lookalike_of",
+          "list_synced_at",
+          "checked_at",
+          "attribution",
+          "reasons",
+          "status",
+          "checks"
+        ],
+        "{\"hostname\":\"metamask-login.com\"}": [
+          "hostname",
+          "verdict",
+          "sources",
+          "lookalike_of",
+          "list_synced_at",
+          "checked_at",
+          "attribution",
+          "reasons",
+          "status",
+          "checks"
+        ],
+        "{\"hostname\":\"evil-drainer.com\"}": [
+          "hostname",
+          "verdict",
+          "sources",
+          "lookalike_of",
+          "list_synced_at",
+          "checked_at",
+          "attribution",
+          "reasons",
+          "status",
+          "checks"
+        ]
+      }
+    },
+    "check_wallet_age": {
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Mandatory EVM wallet address to check, formatted '0x' followed by 40 hex characters (case-insensitive)."
+          },
+          "chain": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "base",
+              "ethereum",
+              "arbitrum",
+              "optimism",
+              "polygon",
+              "bsc",
+              null
+            ],
+            "description": "Optional chain to check: 'base', 'ethereum', 'arbitrum', 'optimism', 'polygon', or 'bsc'. Defaults to 'base'.",
+            "default": "base"
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "The address, lowercased."
+          },
+          "chain": {
+            "type": "string"
+          },
+          "found": {
+            "type": "boolean"
+          },
+          "first_seen": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ISO timestamp of the earliest observed transfer in or out, or null if none found."
+          },
+          "age_days": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "first_seen_block": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "first_direction": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "in",
+              "out",
+              null
+            ]
+          },
+          "is_contract": {
+            "type": "boolean"
+          },
+          "delegated": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "true when the address currently has an EIP-7702 delegation on this chain (its code is exactly 0xef0100 followed by a 20-byte delegate address), false when it does not, null when the code check did not complete. Checked live on every call, never cached. is_contract is unchanged and is still true for a delegated address."
+          },
+          "delegate_address": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The lowercased delegate contract address when delegated is true, otherwise null."
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "cached": {
+            "type": "boolean"
+          },
+          "reasons": {
+            "type": "array",
+            "description": "Machine-readable reason codes for anything flagged in this result. Empty when nothing was flagged.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ]
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "flagged",
+              "no_flags",
+              "unknown"
+            ],
+            "description": "\"unknown\" whenever a source needed for this answer timed out, errored, or was skipped - never \"no_flags\" in that case."
+          },
+          "checks": {
+            "type": "array",
+            "description": "Which underlying sources were checked for this result and whether each one completed.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "description": "Generic label for the data source checked, never a vendor name."
+                },
+                "result": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "timeout",
+                    "error",
+                    "skipped"
+                  ]
+                },
+                "checked_at": {
+                  "type": "string"
+                },
+                "data_as_of": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "source",
+                "result",
+                "checked_at",
+                "data_as_of"
+              ]
+            }
+          },
+          "request_id": {
+            "type": "string",
+            "description": "UUID for this request, also sent as the X-Request-Id response header."
+          },
+          "test_fixture": {
+            "type": "boolean",
+            "description": "true only when the input was a documented integration test fixture and this response is canned; absent on real results."
+          }
+        },
+        "required": [
+          "address",
+          "chain",
+          "found",
+          "first_seen",
+          "age_days",
+          "first_seen_block",
+          "first_direction",
+          "is_contract",
+          "source",
+          "cached"
+        ]
+      },
+      "responseKeys": {
+        "{\"address\":\"0x4444444444444444444444444444444444444444\",\"chain\":\"base\"}": [
+          "address",
+          "chain",
+          "found",
+          "first_seen",
+          "age_days",
+          "first_seen_block",
+          "first_direction",
+          "is_contract",
+          "delegated",
+          "delegate_address",
+          "note",
+          "source",
+          "cached",
+          "reasons",
+          "status",
+          "checks"
+        ],
+        "{\"address\":\"0x2222222222222222222222222222222222222222\",\"chain\":\"base\"}": [
+          "address",
+          "chain",
+          "found",
+          "first_seen",
+          "age_days",
+          "first_seen_block",
+          "first_direction",
+          "is_contract",
+          "delegated",
+          "delegate_address",
+          "note",
+          "source",
+          "cached",
+          "reasons",
+          "status",
+          "checks"
+        ]
+      }
+    }
+  }
+}
