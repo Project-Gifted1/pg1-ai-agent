@@ -710,8 +710,9 @@ const SCHEMA_TOOLS_WITH_NEW_META = new Set(['check_wallet_sanctions', 'check_dom
 test('check_wallet_age: is the 14th tool, and the 13 pre-existing tool definitions are unchanged except the agreed optional outputSchema additions', () => {
   // 16 since check_ip_abuse (1.16.0) and check_package (1.17.0); it is
   // still the 14th.
-  assert.equal(TOOLS.length, 16);
-  assert.equal(TOOLS[13].name, 'check_wallet_age');
+  const LEGACY = TOOLS.filter((t) => !['preflight_check', 'check_x402_endpoint', 'check_agent_card', 'verify_result'].includes(t.name));
+  assert.equal(LEGACY.length, 16);
+  assert.equal(LEGACY[13].name, 'check_wallet_age');
   const snapshotPath = path.join(__dirname, 'fixtures', 'existing-13-tools-snapshot.json');
   const snapshot = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
   assert.equal(snapshot.length, 13);
@@ -1122,7 +1123,9 @@ test('computeStatus: informational reason codes never flag on their own', () => 
   assert.deepEqual([...INFORMATIONAL_REASON_CODES], [
     'WALLET_DELEGATED', 'IP_TOR_EXIT_NODE', 'IP_WHITELISTED', 'IP_REPORTS_SCORED_ZERO',
     // check_package (1.17.0): facts that never flag on their own.
-    'PACKAGE_LOOKALIKE', 'PACKAGE_NEWLY_PUBLISHED', 'PACKAGE_KNOWN_VULNERABILITIES', 'PACKAGE_DEPRECATED', 'PACKAGE_INSTALL_SCRIPTS'
+    'PACKAGE_LOOKALIKE', 'PACKAGE_NEWLY_PUBLISHED', 'PACKAGE_KNOWN_VULNERABILITIES', 'PACKAGE_DEPRECATED', 'PACKAGE_INSTALL_SCRIPTS',
+    // 1.18.0 (preflight): a wallet under 7 days old is reported, not flagged.
+    'WALLET_NEW_7D'
   ]);
   const ok = [{ result: 'ok' }];
   assert.equal(computeStatus([{ code: 'IP_WHITELISTED' }], ok), 'no_flags');
@@ -1134,7 +1137,7 @@ test('computeStatus: informational reason codes never flag on their own', () => 
   assert.equal(computeStatus([{ code: 'WALLET_DELEGATED' }, { code: 'WALLET_NO_HISTORY' }], ok), 'flagged');
   assert.equal(computeStatus([{ code: 'WALLET_SANCTIONED' }], ok), 'flagged');
   assert.equal(computeStatus([], ok), 'no_flags');
-  assert.deepEqual([...INCOMPLETE_REASON_CODES], ['WALLET_AGE_PARTIAL']);
+  assert.deepEqual([...INCOMPLETE_REASON_CODES], ['WALLET_AGE_PARTIAL', 'X402_NO_PAYMENT_REQUEST', 'AGENT_CARD_NOT_FOUND', 'PREFLIGHT_CHECK_INCOMPLETE']);
   // An incomplete code is "unknown" even if checks were (wrongly) all ok.
   assert.equal(computeStatus([{ code: 'WALLET_AGE_PARTIAL' }], ok), 'unknown');
   assert.equal(computeStatus([{ code: 'WALLET_AGE_PARTIAL' }, { code: 'WALLET_DELEGATED' }], ok), 'unknown');

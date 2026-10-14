@@ -49,6 +49,9 @@ const KEY_A = hex80('customer-a');
 const KEY_B = hex80('customer-b');
 
 const PUBLIC_IP = '8.8.8.8';
+// P8 (1.18.0) added four tools at the front; the older list is checked as it was.
+const P8_TOOLS = ['preflight_check', 'check_x402_endpoint', 'check_agent_card', 'verify_result'];
+const LEGACY_TOOLS = TOOLS.filter((t) => !P8_TOOLS.includes(t.name));
 const tool = TOOLS.find((t) => t.name === 'check_ip_abuse');
 
 // Synthetic upstream body, labelled as such. Never real AbuseIPDB data.
@@ -191,13 +194,13 @@ beforeEach(() => {
 test('the 14 pre-existing MCP tools are byte-identical to the snapshot (names, descriptions, schemas, order)', () => {
   const snapshot = JSON.parse(fs.readFileSync(path.join(ROOT, 'tests/fixtures/existing-14-tools-snapshot.json'), 'utf8'));
   assert.equal(snapshot.length, 14);
-  assert.deepEqual(TOOLS.slice(0, 14), snapshot);
+  assert.deepEqual(LEGACY_TOOLS.slice(0, 14), snapshot);
   // 16 since check_package (1.17.0), after check_ip_abuse.
-  assert.equal(TOOLS.length, 16);
-  assert.equal(TOOLS[14].name, 'check_ip_abuse');
-  assert.equal(TOOLS[15].name, 'check_package');
+  assert.equal(LEGACY_TOOLS.length, 16);
+  assert.equal(LEGACY_TOOLS[14].name, 'check_ip_abuse');
+  assert.equal(LEGACY_TOOLS[15].name, 'check_package');
   assert.equal(new Set(TOOLS.map((t) => t.name)).size, TOOLS.length, 'no name clash');
-  const sha = crypto.createHash('sha256').update(JSON.stringify(TOOLS.slice(0, 14))).digest('hex');
+  const sha = crypto.createHash('sha256').update(JSON.stringify(LEGACY_TOOLS.slice(0, 14))).digest('hex');
   assert.equal(sha, '206a7a24b7e82a2b077b432a032b4f50161cc6128ae12e50da7fc132a10cf200');
 });
 

@@ -513,7 +513,7 @@ const FREE_FEED_BEHAVIOR_EDITS = [
 test('tool definitions differ from 1.14.0 only by the listed description edits (licensing gate, feed description, EPSS switch, free feed)', () => {
   // check_ip_abuse (1.16.0) and check_package (1.17.0) are the additions; the 14 tools
   // before them are pinned.
-  const reverted = TOOLS.filter((tool) => tool.name !== 'check_ip_abuse' && tool.name !== 'check_package').map((tool) => {
+  const reverted = TOOLS.filter((tool) => tool.name !== 'check_ip_abuse' && tool.name !== 'check_package' && !['preflight_check', 'check_x402_endpoint', 'check_agent_card', 'verify_result'].includes(tool.name)).map((tool) => {
     let description = tool.description;
     for (const edits of [FREE_FEED_EDITS, FREE_FEED_BEHAVIOR_EDITS, FEED_DESCRIPTION_EDITS, DESCRIPTION_EDITS, EPSS_DESCRIPTION_EDITS]) {
       const edit = edits.find(([name]) => name === tool.name);

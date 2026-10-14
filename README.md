@@ -14,7 +14,9 @@ An autonomous agent acts on things it has never seen before: it pays a wallet, o
 
 - **It never says "safe".** PG1 only knows what its sources have recorded, so the best answer it gives is `no_flags`: nothing found in the sources checked. A check that did not finish is `unknown`, never `no_flags`.
 - **Free to start.** The wallet, domain, hostname and package checks are always free. The paid calls start with 5 free calls a day; after that each is 0.01 USD in USDC on Base via x402, with no account or key.
-- **The tools that matter most:** `check_wallet_sanctions`, `check_wallet_age`, `check_hostname_reputation`, `check_domain_age`, `check_package`, `get_cve_details`, `get_cve_batch`, `get_threat_actor_profile` and `get_ioc_context`.
+- **One call before you act:** `preflight_check` takes the action you are about to take (`pay`, `open`, `install`, `patch`, `trust_agent`) and its target, runs every relevant check in parallel and returns one decision. It fails closed: a check that does not finish makes it `unknown`.
+- **Signed results.** Every result carries an Ed25519 signature over the request, the result, its sources, a timestamp and PG1's version; check it offline against [/.well-known/pg1-signing-key](https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key) or with the free `verify_result` tool.
+- **The tools that matter most:** `preflight_check`, `check_wallet_sanctions`, `check_wallet_age`, `check_hostname_reputation`, `check_domain_age`, `check_package`, `get_cve_details`, `get_cve_batch`, `get_threat_actor_profile` and `get_ioc_context`.
 
 Connect in under 30 seconds. Add the MCP server to your client:
 
@@ -37,6 +39,10 @@ A2A agents use `https://pg1-ai-agent.vercel.app/api/a2a` (agent card at `/.well-
 
 | You have | Call | Notes |
 |---|---|---|
+| An action you are about to take (pay, open, install, patch, trust an agent) | `preflight_check` | Start here. One paid call (5 free a day) that runs the checks below in parallel and returns one decision: `no_flags`, `flagged` or `unknown`. |
+| An x402 endpoint you are about to pay | `check_x402_endpoint` | Reads its 402 payment request: payTo sanctions and wallet age, network and asset sanity, TLS, domain age. |
+| Another agent you are about to trust | `check_agent_card` | Fetches its A2A agent card: schema validity, domain age and reputation, look-alike names. |
+| A PG1 result and its signature | `verify_result` | Checks the Ed25519 signature against PG1's published keys. Always free. |
 | One IP, domain, URL or file hash | `get_ioc_context` | Free when nothing is on record (`found: false`). PG1's licensed records hold only CVE ids from NVD today, so an IP, domain, URL or hash returns `found: false`; for a domain or hostname also run the two hostname checks below. |
 | Several indicators (up to 20) | `get_ioc_batch` | Free when none is found (the same CVE-only records as above). Read each entry in `results`, not only the batch `status`. |
 | A CVE id | `get_cve_details` | Several ids: `get_cve_batch` (up to 20). |
@@ -66,6 +72,9 @@ Informational codes (`WALLET_DELEGATED`, `IP_TOR_EXIT_NODE`, `IP_WHITELISTED`, `
 | `check_wallet_sanctions` | Always free | 120 calls/hour per caller |
 | `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `check_package` | Always free | 60 calls/hour per caller, per tool |
 | `check_ip_abuse` | Always free (your own AbuseIPDB quota) | 60 calls/hour per caller |
+| `check_x402_endpoint`, `check_agent_card` | Always free | 60 calls/hour per caller, per tool |
+| `verify_result` | Always free | none |
+| `preflight_check` | Paid: 0.01 USD per call | 5 free calls a day per caller, shared with the other paid tools, then x402 |
 | `get_usage_status` | Always free | none |
 | `get_ioc_context`, `get_ioc_batch` | Free when nothing is found; paid when something is | Paid calls use the free tier first |
 | `get_threat_indicators`, `GET /api/ioc` (the STIX feed) | Free while the feed holds no current data (`PG1_FEED_PAID` off) | none, and it does not use the 5 free calls a day |
@@ -80,7 +89,7 @@ Informational codes (`WALLET_DELEGATED`, `IP_TOR_EXIT_NODE`, `IP_WHITELISTED`, `
 ## Two Ways to Connect
 
 - **`/api/ioc`** — simple REST GET, returns a STIX 2.1 bundle of CVE records from NIST NVD (the only source PG1 may currently redistribute commercially; no IP, domain, URL or file-hash indicators yet). Free while it holds no current data: no key, no payment, no free-tier use. Best for scripts, curl, and simple integrations.
-- **`/api/mcp`** — full Model Context Protocol server, 16 tools (CVE lookups, batch operations, threat actor dossiers, wallet sanctions screening, domain age, hostname/phishing reputation, wallet age/history, and more). Best for Claude, MCP-compatible agents, and any client speaking the MCP standard.
+- **`/api/mcp`** — full Model Context Protocol server, 20 tools (one-call preflight, CVE lookups, batch operations, threat actor dossiers, wallet sanctions screening, domain age, hostname/phishing reputation, wallet age/history, and more). Best for Claude, MCP-compatible agents, and any client speaking the MCP standard.
 
 **Discovery:** [`/llms.txt`](https://pg1-ai-agent.vercel.app/llms.txt) (llmstxt.org format, for AI agents/crawlers) and [`/openapi.json`](https://pg1-ai-agent.vercel.app/openapi.json) (OpenAPI 3.1 spec for `/api/ioc` and `/api/health`).
 

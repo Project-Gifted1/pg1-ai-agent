@@ -106,8 +106,10 @@ test('server.json description: within the Registry\'s 100-character limit, names
 });
 
 test('MCP tool names, descriptions and schemas are identical to the 1.15.0 release (plus check_ip_abuse, 1.16.0, check_package, 1.17.0, and the licensing gate\'s three indicator-source descriptions)', () => {
-  assert.equal(TOOLS.length, 16);
-  assert.equal(TOOLS[14].name, 'check_ip_abuse');
-  assert.equal(TOOLS[15].name, 'check_package');
-  assert.equal(sha256(JSON.stringify(TOOLS.slice(0, 14))), '206a7a24b7e82a2b077b432a032b4f50161cc6128ae12e50da7fc132a10cf200');
+  // P8 (1.18.0) added four tools at the front; the older list is unchanged.
+  const LEGACY = TOOLS.filter((t) => !['preflight_check', 'check_x402_endpoint', 'check_agent_card', 'verify_result'].includes(t.name));
+  assert.equal(LEGACY.length, 16);
+  assert.equal(LEGACY[14].name, 'check_ip_abuse');
+  assert.equal(LEGACY[15].name, 'check_package');
+  assert.equal(sha256(JSON.stringify(LEGACY.slice(0, 14))), '206a7a24b7e82a2b077b432a032b4f50161cc6128ae12e50da7fc132a10cf200');
 });

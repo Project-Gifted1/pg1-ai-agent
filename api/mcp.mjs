@@ -125,6 +125,10 @@ import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES,
 import { invalidInput, invalidInputMessage, withFixIt, formatFixIt } from '../lib/invalidInput.mjs';
 import { ABUSEIPDB_KEY_HEADER, ABUSEIPDB_ATTRIBUTION_TEXT, ABUSEIPDB_TIMEOUT_MS, MAX_AGE_DAYS_DEFAULT, abuseIpdbCheckUrlFor, keyRequiredError, readCustomerKey, normalizePublicIp, normalizeMaxAgeDays, getCachedLookup, setCachedLookup, fetchAbuseIpdbCheck } from '../lib/abuseIpdb.mjs';
 import { checkPackage, normalizePackageInput, buildPackageResult, packageCheckFailureReasons, PACKAGE_SOURCES } from '../lib/packageCheck.mjs';
+import { PREFLIGHT_DEF, PREFLIGHT_TOOL, runPreflight } from '../lib/preflight.mjs';
+import { checkX402Endpoint, checkAgentCard } from '../lib/agentChecks.mjs';
+import { signResult, verifySignedResult, publicJwks, MCP_SIGNATURE_META } from '../lib/signing.mjs';
+import { cachedCheck } from '../lib/resultCache.mjs';
 
 export const config = { maxDuration: 30 };
 
@@ -210,7 +214,31 @@ export const TEST_FIXTURE_OUTPUT_PROPERTIES = {
 // starts (lib/x402Config.mjs isFeedPaid; an env change needs a redeploy).
 const FEED_PAID_AT_START = isFeedPaid();
 
+// 1.18.0 (P8): preflight_check comes first in tools/list: the one call an
+// agent makes before it acts. check_x402_endpoint, check_agent_card and
+// verify_result are always free.
+export const EDGE_FREE_TOOLS = Object.freeze(['check_x402_endpoint', 'check_agent_card', 'verify_result']);
+const EDGE_TOOLS = [
+  PREFLIGHT_DEF,
+  {
+    name: 'check_x402_endpoint',
+    description: 'PG1 Sovereign Threat Intelligence: checks an x402-paid URL before you pay it. Fetches the URL once (https only; private addresses and redirects refused) and reads its x402 payment request: each option\'s network must be a known settlement network and its asset the known USDC contract there; the receiving wallet (payTo) is screened against the OFAC SDN list and its on-chain age read; TLS and the domain\'s age are checked. Always free (60/hour per caller). Returns status flagged / no_flags / unknown with reasons (X402_UNKNOWN_NETWORK, X402_UNKNOWN_ASSET, WALLET_SANCTIONED, WALLET_NEW_7D, ENDPOINT_TLS_FAILED, DOMAIN_NEWLY_REGISTERED_30D, X402_NO_PAYMENT_REQUEST). Never says "safe".',
+    inputSchema: { type: 'object', properties: { url: { type: 'string', maxLength: 2048, description: 'The https URL of the paid resource.' } }, required: ['url'], additionalProperties: false }
+  },
+  {
+    name: 'check_agent_card',
+    description: 'PG1 Sovereign Threat Intelligence: checks another agent before you trust it. Fetches its /.well-known/agent-card.json (https only; private addresses and redirects refused): is it a valid A2A agent card, does its name claim a well-known brand the domain does not belong to, how old is the domain, is the hostname on the phishing blocklist or a look-alike. Always free (60/hour per caller). Give url or domain.',
+    inputSchema: { type: 'object', properties: { url: { type: 'string', maxLength: 2048, description: 'The agent\'s https URL or its agent card URL.' }, domain: { type: 'string', maxLength: 253, description: 'Or just the agent\'s domain.' } }, additionalProperties: false }
+  },
+  {
+    name: 'verify_result',
+    description: 'PG1 Sovereign Threat Intelligence: verifies that a result really came from PG1, unchanged. Every PG1 tool result is signed (Ed25519) over its request hash, result, sources, timestamp and PG1 version; the signature is in result._meta["pg1/signature"] (MCP), the task\'s metadata["pg1.signature"] (A2A) or "signature" (REST). Give the result object and the signature block; optionally tool and arguments to check it answers that exact request. Public keys: https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key (JWKS); you can verify offline without this tool. Always free.',
+    inputSchema: { type: 'object', properties: { result: { type: 'object', description: 'The tool result as received (its signature field, if any, is ignored).' }, signature: { type: 'object', description: 'The signature block.' }, tool: { type: 'string', description: 'Optional: the tool that was called.' }, arguments: { type: 'object', description: 'Optional: the arguments it was called with.' } }, required: ['result', 'signature'], additionalProperties: false }
+  }
+];
+
 export const TOOLS = [
+  ...EDGE_TOOLS,
   {
     name: 'get_threat_indicators',
     description: 'PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of CVE records from NIST NVD, the only source PG1 may currently redistribute commercially. Today it contains no IP, domain, URL or file-hash indicators: every object is a STIX vulnerability with the CVE id and an NVD reference, without scores (use get_cve_details for CVSS and known-exploited status). ' + (FEED_PAID_AT_START ? 'Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). ' : 'FREE while this feed holds no current data: no payment, no licence key, and it does not use the 5 free calls a day. ') + 'SIBLING DIFFERENTIATION: Use ONLY for bulk feed synchronizations. Do NOT use for single-item lookups (use get_ioc_context) or CVE analysis (use get_cve_details). USAGE EXCLUSIONS: Does not provide historical query archival beyond the active ingestion window. BEHAVIOR: Pagination is handled via the limit parameter (max 1000).' + (FEED_PAID_AT_START ? ' If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta["x402/payment-response"].' : ''),
@@ -3395,6 +3423,8 @@ export function paidResponseOptions(env = process.env) {
 }
 
 export const STANDARD_TOOL_HANDLERS = {
+  // P8: one paid call that runs every relevant check (lib/preflight.mjs).
+  [PREFLIGHT_TOOL]: (args) => runPreflight(args, { runTool: internalRunTool }),
   get_threat_indicators: handleThreatIndicators,
   get_cve_details: handleCveDetails,
   get_cve_batch: handleCveBatch,
@@ -3407,7 +3437,7 @@ export const STANDARD_TOOL_HANDLERS = {
 // lookup result — not applied uniformly before the tool runs, like every
 // other STANDARD_TOOL_HANDLERS entry.
 
-const FREE_TOOLS = new Set(FREE_MCP_TOOLS);
+const FREE_TOOLS = new Set([...FREE_MCP_TOOLS, ...EDGE_FREE_TOOLS]);
 
 // One entry point per read-only tool, used by tools/call for the free tools
 // below and by the chat's tool loop (lib/chatTools.mjs) for every read-only
@@ -3430,8 +3460,34 @@ export const READ_ONLY_TOOL_RUNNERS = Object.freeze({
   get_cve_details: (args) => handleCveDetails(args),
   get_cve_batch: (args) => handleCveBatch(args),
   get_cve_by_product: (args) => handleCveByProduct(args),
-  get_threat_actor_profile: (args) => handleThreatActorProfile(args)
+  get_threat_actor_profile: (args) => handleThreatActorProfile(args),
+  check_x402_endpoint: (args, ctx) => edgeCheck('check_x402_endpoint', args, ctx),
+  check_agent_card: (args, ctx) => edgeCheck('check_agent_card', args, ctx),
+  verify_result: (args) => handleVerifyResult(args)
 });
+
+// The agent-economy checks call PG1's own checks as a licensed caller (the
+// outer call is the one that is rate-limited, 60/hour per caller).
+const edgeLimits = new Map();
+function edgeRateLimited(identifier, licensed) {
+  if (licensed || !identifier || identifier === 'unknown') return false;
+  const now = Date.now();
+  const e = edgeLimits.get(identifier);
+  if (!e || e.start + RATE_LIMIT_WINDOW_MS < now) { edgeLimits.set(identifier, { start: now, n: 1 }); return false; }
+  e.n++;
+  return e.n > 60;
+}
+export const internalRunTool = (name, args) => runReadOnlyTool(name, args, { identifier: 'pg1-internal', licensed: true });
+async function edgeCheck(name, args, ctx = {}) {
+  if (edgeRateLimited(ctx.identifier, ctx.licensed)) throw Object.assign(new Error(`${name} is limited to 60 calls/hour per caller. Retry later.`), { mcpToolError: true, code: 'rate_limited', retryAfter: 600 });
+  const run = name === 'check_x402_endpoint' ? checkX402Endpoint : checkAgentCard;
+  // Short-TTL cache of completed results (lib/resultCache.mjs).
+  return cachedCheck(name, args, () => run(args, { runTool: internalRunTool }));
+}
+function handleVerifyResult(args) {
+  const out = verifySignedResult({ result: args && args.result, signature: args && args.signature, jwks: publicJwks(), tool: args && typeof args.tool === 'string' ? args.tool : null, args: args && args.arguments });
+  return withResponseMeta({ valid: out.valid, reason: out.reason, kid: out.kid || null, jwks_url: 'https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key' }, { reasons: [], checks: [buildCheck('PG1 signing keys', 'ok')], requestId: null });
+}
 
 export async function runReadOnlyTool(toolName, args, ctx = {}) {
   const runner = READ_ONLY_TOOL_RUNNERS[toolName];
@@ -3533,7 +3589,11 @@ export const TOOL_SOURCE_LABELS = {
   check_hostname_reputation: 'phishing domain list',
   check_wallet_age: 'on-chain transfer history',
   check_ip_abuse: IP_ABUSE_SOURCE,
-  check_package: PACKAGE_SOURCES.registry
+  check_package: PACKAGE_SOURCES.registry,
+  preflight_check: 'PG1 checks',
+  check_x402_endpoint: 'x402 endpoint',
+  check_agent_card: 'agent card',
+  verify_result: 'PG1 signing keys'
 };
 
 // ---------------------------------------------------------------------
@@ -3616,6 +3676,21 @@ export default async function handler(req, res) {
     if (method === 'tools/call') {
       const toolName = params?.name;
       const toolArgs = params?.arguments || {};
+      // SIGNED RESULTS (lib/signing.mjs): every successful tool result gets
+      // result._meta["pg1/signature"] over its request hash, result,
+      // sources, timestamp and PG1 version.
+      const sendJson = res.json.bind(res);
+      res.json = (out) => {
+        try {
+          const r = out && out.result;
+          if (r && !r.isError && Array.isArray(r.content) && r.content[0] && typeof r.content[0].text === 'string') {
+            const parsed = JSON.parse(r.content[0].text);
+            const sig = signResult({ tool: toolName, args: toolArgs, result: parsed });
+            if (sig) r._meta = { ...(r._meta || {}), [MCP_SIGNATURE_META]: sig };
+          }
+        } catch (e) { /* an unparseable result is sent unsigned */ }
+        return sendJson(out);
+      };
 
       // Integration test fixtures (issue #215 part B): an exact fixture
       // input is answered here, before any licence check, payment gate,

@@ -37,7 +37,7 @@ function subsection(title) {
   return SECTION.slice(start, next === -1 ? undefined : next);
 }
 
-const toolsIn = (text) => [...new Set([...text.matchAll(/`([a-z_]+)`/g)].map((m) => m[1]).filter((n) => /^(get|check)_/.test(n)))];
+const toolsIn = (text) => [...new Set([...text.matchAll(/`([a-z0-9_]+)`/g)].map((m) => m[1]).filter((n) => /^(get|check)_|^(preflight_check|verify_result)$/.test(n)))];
 
 test('the decision tree names only real tools, and covers every lookup tool', () => {
   const tree = subsection('Which tool to call');

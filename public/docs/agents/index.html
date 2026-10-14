@@ -45,7 +45,9 @@
 <ul>
 <li><strong>It never says &quot;safe&quot;.</strong> PG1 only knows what its sources have recorded, so the best answer it gives is <code>no_flags</code>: nothing found in the sources checked. A check that did not finish is <code>unknown</code>, never <code>no_flags</code>.</li>
 <li><strong>Free to start.</strong> The wallet, domain, hostname and package checks are always free. The paid calls start with 5 free calls a day; after that each is 0.01 USD in USDC on Base via x402, with no account or key.</li>
-<li><strong>The tools that matter most:</strong> <code>check_wallet_sanctions</code>, <code>check_wallet_age</code>, <code>check_hostname_reputation</code>, <code>check_domain_age</code>, <code>check_package</code>, <code>get_cve_details</code>, <code>get_cve_batch</code>, <code>get_threat_actor_profile</code> and <code>get_ioc_context</code>.</li>
+<li><strong>One call before you act:</strong> <code>preflight_check</code> takes the action you are about to take (<code>pay</code>, <code>open</code>, <code>install</code>, <code>patch</code>, <code>trust_agent</code>) and its target, runs every relevant check in parallel and returns one decision. It fails closed: a check that does not finish makes it <code>unknown</code>.</li>
+<li><strong>Signed results.</strong> Every result carries an Ed25519 signature over the request, the result, its sources, a timestamp and PG1&#39;s version; check it offline against <a href="https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key">/.well-known/pg1-signing-key</a> or with the free <code>verify_result</code> tool.</li>
+<li><strong>The tools that matter most:</strong> <code>preflight_check</code>, <code>check_wallet_sanctions</code>, <code>check_wallet_age</code>, <code>check_hostname_reputation</code>, <code>check_domain_age</code>, <code>check_package</code>, <code>get_cve_details</code>, <code>get_cve_batch</code>, <code>get_threat_actor_profile</code> and <code>get_ioc_context</code>.</li>
 </ul>
 <p>Connect in under 30 seconds. Add the MCP server to your client:</p>
 <div class="code"><div class="code-bar"><span class="code-lang">json</span><button type="button" class="copy" data-copy hidden>Copy</button></div><pre tabindex="0"><code class="language-json">{ &quot;mcpServers&quot;: { &quot;pg1&quot;: { &quot;type&quot;: &quot;http&quot;, &quot;url&quot;: &quot;https://pg1-ai-agent.vercel.app/api/mcp&quot; } } }
@@ -61,6 +63,10 @@
 <div class="table-wrap" tabindex="0"><table>
 <thead><tr><th scope="col">You have</th><th scope="col">Call</th><th scope="col">Notes</th></tr></thead>
 <tbody>
+<tr><td>An action you are about to take (pay, open, install, patch, trust an agent)</td><td><code>preflight_check</code></td><td>Start here. One paid call (5 free a day) that runs the checks below in parallel and returns one decision: <code>no_flags</code>, <code>flagged</code> or <code>unknown</code>.</td></tr>
+<tr><td>An x402 endpoint you are about to pay</td><td><code>check_x402_endpoint</code></td><td>Reads its 402 payment request: payTo sanctions and wallet age, network and asset sanity, TLS, domain age.</td></tr>
+<tr><td>Another agent you are about to trust</td><td><code>check_agent_card</code></td><td>Fetches its A2A agent card: schema validity, domain age and reputation, look-alike names.</td></tr>
+<tr><td>A PG1 result and its signature</td><td><code>verify_result</code></td><td>Checks the Ed25519 signature against PG1&#39;s published keys. Always free.</td></tr>
 <tr><td>One IP, domain, URL or file hash</td><td><code>get_ioc_context</code></td><td>Free when nothing is on record (<code>found: false</code>). PG1&#39;s licensed records hold only CVE ids from NVD today, so an IP, domain, URL or hash returns <code>found: false</code>; for a domain or hostname also run the two hostname checks below.</td></tr>
 <tr><td>Several indicators (up to 20)</td><td><code>get_ioc_batch</code></td><td>Free when none is found (the same CVE-only records as above). Read each entry in <code>results</code>, not only the batch <code>status</code>.</td></tr>
 <tr><td>A CVE id</td><td><code>get_cve_details</code></td><td>Several ids: <code>get_cve_batch</code> (up to 20).</td></tr>
@@ -91,6 +97,9 @@
 <tr><td><code>check_wallet_sanctions</code></td><td>Always free</td><td>120 calls/hour per caller</td></tr>
 <tr><td><code>check_domain_age</code>, <code>check_hostname_reputation</code>, <code>check_wallet_age</code>, <code>check_package</code></td><td>Always free</td><td>60 calls/hour per caller, per tool</td></tr>
 <tr><td><code>check_ip_abuse</code></td><td>Always free (your own AbuseIPDB quota)</td><td>60 calls/hour per caller</td></tr>
+<tr><td><code>check_x402_endpoint</code>, <code>check_agent_card</code></td><td>Always free</td><td>60 calls/hour per caller, per tool</td></tr>
+<tr><td><code>verify_result</code></td><td>Always free</td><td>none</td></tr>
+<tr><td><code>preflight_check</code></td><td>Paid: 0.01 USD per call</td><td>5 free calls a day per caller, shared with the other paid tools, then x402</td></tr>
 <tr><td><code>get_usage_status</code></td><td>Always free</td><td>none</td></tr>
 <tr><td><code>get_ioc_context</code>, <code>get_ioc_batch</code></td><td>Free when nothing is found; paid when something is</td><td>Paid calls use the free tier first</td></tr>
 <tr><td><code>get_threat_indicators</code>, <code>GET /api/ioc</code> (the STIX feed)</td><td>Free while the feed holds no current data (<code>PG1_FEED_PAID</code> off)</td><td>none, and it does not use the 5 free calls a day</td></tr>

@@ -270,6 +270,6 @@ test('wallet age timeout: MCP tool definitions are hash-identical to before', as
   // Moved again by Phase 2's EPSS switch (the three CVE descriptions, see
   // tests/source-policy.test.mjs EPSS_DESCRIPTION_EDITS), and by the free
   // feed (get_threat_indicators, FREE_FEED_EDITS there).
-  assert.equal(sha(TOOLS.filter((t) => t.name !== 'check_package')), TOOLS_SHA256);
+  assert.equal(sha(TOOLS.filter((t) => t.name !== 'check_package' && !['preflight_check', 'check_x402_endpoint', 'check_agent_card', 'verify_result'].includes(t.name))), TOOLS_SHA256);
   assert.equal(sha(TOOLS.find((t) => t.name === 'check_wallet_age')), WALLET_AGE_TOOL_SHA256);
 });
