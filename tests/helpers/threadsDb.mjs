@@ -7,15 +7,21 @@ import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
 const MIGRATION = readFileSync(new URL('../../supabase/migrations/20261015120000_pg1_usage_report_and_chat_threads.sql', import.meta.url), 'utf8');
+// Task state and rolling summary columns (P1).
+const TASK_STATE_MIGRATION = readFileSync(new URL('../../supabase/migrations/20261017120000_pg1_thread_task_state.sql', import.meta.url), 'utf8');
 
 // The telemetry part of the migration needs the table it alters.
-export async function makeThreadsDb() {
+export async function makeThreadsDb({ withTaskState = true } = {}) {
   const db = new PGlite();
   await db.exec('create role anon; create role authenticated; create role service_role;');
   await db.exec(`create table public.agent_telemetry (id bigint generated always as identity primary key, created_at timestamptz not null default now(),
     event_type text not null default 'tool_call', endpoint text not null, tool_name text, payment_type text not null default 'none', status text not null)`);
   await db.exec(MIGRATION);
   await db.exec(MIGRATION); // re-runnable
+  if (withTaskState) {
+    await db.exec(TASK_STATE_MIGRATION);
+    await db.exec(TASK_STATE_MIGRATION); // re-runnable
+  }
   return db;
 }
 

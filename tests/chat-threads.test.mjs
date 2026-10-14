@@ -79,7 +79,9 @@ test('migration: pg1_chat_threads has the columns, checks, RLS on and nothing fo
     where table_schema = 'public' and table_name = 'pg1_chat_threads' order by ordinal_position`);
   assert.deepEqual(cols.map((c) => [c.column_name, c.data_type, c.is_nullable]), [
     ['id', 'uuid', 'NO'], ['created_at', 'timestamp with time zone', 'NO'], ['updated_at', 'timestamp with time zone', 'NO'],
-    ['title', 'text', 'NO'], ['messages', 'jsonb', 'NO'], ['message_count', 'integer', 'NO']
+    ['title', 'text', 'NO'], ['messages', 'jsonb', 'NO'], ['message_count', 'integer', 'NO'],
+    // P1 (20261017120000_pg1_thread_task_state.sql): the thread's task state and rolling summary.
+    ['task_state', 'jsonb', 'YES'], ['context_summary', 'jsonb', 'YES']
   ]);
   const { rows: rls } = await db.query(`select relrowsecurity from pg_class where oid = 'public.pg1_chat_threads'::regclass`);
   assert.equal(rls[0].relrowsecurity, true);

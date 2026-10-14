@@ -11,6 +11,11 @@
 //   { op: 'save', id, messages }           replaces that thread's messages
 //                                          (auto-update after saving); the
 //                                          title is left as it is
+//   ... save also takes taskState and contextSummary (the thread's task
+//   state and rolling summary, lib/taskState.mjs / lib/contextWindow.mjs),
+//   stored in task_state / context_summary and returned by get, so loading
+//   a thread restores them. Before the 20261017 migration adds those
+//   columns, save and get fall back to the old columns.
 //   { op: 'rename', id, title }
 //   { op: 'delete', id, confirm: true }    the client asks first; without
 //                                          confirm: true nothing is deleted
@@ -23,7 +28,7 @@ import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { resolveOperatorSession } from '../lib/operatorSession.mjs';
 import {
   THREAD_TABLE, THREAD_ID_RE, THREAD_LIST_LIMIT, ThreadInputError,
-  cleanMessages, cleanTitle, autoTitle, threadGuard, threadSummary
+  cleanMessages, cleanTitle, autoTitle, threadGuard, threadSummary, cleanThreadContext
 } from '../lib/chatThreads.mjs';
 
 export const config = { maxDuration: 15 };
@@ -73,7 +78,11 @@ async function rest(db, query, options = {}) {
     headers: { ...db.headers, ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(options.headers || {}) },
     signal: AbortSignal.timeout(8000)
   });
-  if (!res.ok) throw new Error(`threads storage ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(`threads storage ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
   const text = await res.text();
   return text ? JSON.parse(text) : null;
 }
@@ -82,6 +91,17 @@ function threadId(body) {
   const id = typeof body.id === 'string' ? body.id.trim() : '';
   if (!THREAD_ID_RE.test(id)) throw new ThreadInputError('Invalid thread id');
   return id.toLowerCase();
+}
+
+// A 400 from PostgREST on a request that names task_state/context_summary
+// means the columns do not exist yet (migration not run): retry without.
+async function withContextColumns(withCols, withoutCols) {
+  try {
+    return await withCols();
+  } catch (err) {
+    if (err && err.status === 400) return withoutCols();
+    throw err;
+  }
 }
 
 const notFound = (res) => res.status(404).json({ error: 'not_found', message: 'That saved chat no longer exists.' });
@@ -122,32 +142,39 @@ export default async function handler(req, res) {
 
     if (op === 'get') {
       const id = threadId(body);
-      const rows = await rest(db, `?select=${SUMMARY_COLUMNS},messages&id=eq.${id}`);
+      const rows = await withContextColumns(
+        () => rest(db, `?select=${SUMMARY_COLUMNS},messages,task_state,context_summary&id=eq.${id}`),
+        () => rest(db, `?select=${SUMMARY_COLUMNS},messages&id=eq.${id}`)
+      );
       if (!Array.isArray(rows) || !rows[0]) return notFound(res);
-      return res.status(200).json({ ok: true, thread: { ...threadSummary(rows[0]), messages: Array.isArray(rows[0].messages) ? rows[0].messages : [] } });
+      const ctx = cleanThreadContext({ taskState: rows[0].task_state, contextSummary: rows[0].context_summary });
+      return res.status(200).json({ ok: true, thread: { ...threadSummary(rows[0]), messages: Array.isArray(rows[0].messages) ? rows[0].messages : [], taskState: ctx.task_state || null, contextSummary: ctx.context_summary || null } });
     }
 
     if (op === 'save') {
       const guard = threadGuard();
       const messages = cleanMessages(body.messages, guard);
+      const context = cleanThreadContext(body, guard);
       const now = new Date().toISOString();
       if (body.id != null) {
         const id = threadId(body);
-        const rows = await rest(db, `?id=eq.${id}&select=${SUMMARY_COLUMNS}`, {
+        const patch = (extra) => rest(db, `?id=eq.${id}&select=${SUMMARY_COLUMNS}`, {
           method: 'PATCH',
           headers: { Prefer: 'return=representation' },
-          body: JSON.stringify({ messages, message_count: messages.length, updated_at: now })
+          body: JSON.stringify({ messages, message_count: messages.length, updated_at: now, ...extra })
         });
+        const rows = Object.keys(context).length ? await withContextColumns(() => patch(context), () => patch({})) : await patch({});
         if (!Array.isArray(rows) || !rows[0]) return notFound(res);
         return res.status(200).json({ ok: true, thread: threadSummary(rows[0]) });
       }
       if (!messages.length) throw new ThreadInputError('There is nothing to save yet.');
       const title = body.title != null && String(body.title).trim() ? cleanTitle(body.title, guard) : cleanTitle(autoTitle(messages), guard);
-      const rows = await rest(db, `?select=${SUMMARY_COLUMNS}`, {
+      const insert = (extra) => rest(db, `?select=${SUMMARY_COLUMNS}`, {
         method: 'POST',
         headers: { Prefer: 'return=representation' },
-        body: JSON.stringify({ title, messages, message_count: messages.length, created_at: now, updated_at: now })
+        body: JSON.stringify({ title, messages, message_count: messages.length, created_at: now, updated_at: now, ...extra })
       });
+      const rows = Object.keys(context).length ? await withContextColumns(() => insert(context), () => insert({})) : await insert({});
       if (!Array.isArray(rows) || !rows[0]) throw new Error('threads storage returned no row');
       return res.status(201).json({ ok: true, thread: threadSummary(rows[0]) });
     }
