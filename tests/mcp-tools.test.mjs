@@ -104,7 +104,7 @@ test('a paid tool (standard gate) returns 503 + Retry-After: 5 when Gumroad is u
   assert.equal(attackBundleFetched, false, 'tool handler must not run when license verification is unavailable');
 });
 
-test('a license-only tool (subscribe_alerts) with a genuinely invalid license key returns 402, unchanged', async (t) => {
+test('a license-only tool (submit_indicator) with a genuinely invalid license key returns 402, unchanged', async (t) => {
   const originalFetch = global.fetch;
   global.fetch = async (url) => {
     if (String(url).includes('api.gumroad.com')) {
@@ -116,12 +116,12 @@ test('a license-only tool (subscribe_alerts) with a genuinely invalid license ke
     global.fetch = originalFetch;
   });
 
-  const res = await callToolWithLicense('subscribe_alerts', { webhook_url: 'https://example.com/hook' }, 'bad-license-key');
+  const res = await callToolWithLicense('submit_indicator', { indicator: '203.0.113.9' }, 'bad-license-key');
   assert.equal(res.statusCode, 402);
   assert.equal(res.body.error.code, -32001);
 });
 
-test('a license-only tool (subscribe_alerts) returns 503 + Retry-After: 5 when Gumroad is unreachable, and does not write a subscription', async (t) => {
+test('a license-only tool (submit_indicator) returns 503 + Retry-After: 5 when Gumroad is unreachable, and does not write a submission', async (t) => {
   const originalFetch = global.fetch;
   let subscriptionWritten = false;
   global.fetch = async (url) => {
@@ -129,7 +129,7 @@ test('a license-only tool (subscribe_alerts) returns 503 + Retry-After: 5 when G
     if (urlStr.includes('api.gumroad.com')) {
       throw new Error('gumroad unreachable');
     }
-    if (urlStr.includes('alert_subscriptions')) {
+    if (urlStr.includes('submitted_indicators_staging')) {
       subscriptionWritten = true;
       return { ok: true, json: async () => ([{ id: 1, created_at: new Date().toISOString() }]) };
     }
@@ -139,12 +139,12 @@ test('a license-only tool (subscribe_alerts) returns 503 + Retry-After: 5 when G
     global.fetch = originalFetch;
   });
 
-  const res = await callToolWithLicense('subscribe_alerts', { webhook_url: 'https://example.com/hook' }, 'timeout-license-key');
+  const res = await callToolWithLicense('submit_indicator', { indicator: '203.0.113.9' }, 'timeout-license-key');
   assert.equal(res.statusCode, 503);
   assert.equal(res.body.error.code, -32003);
   assert.match(res.body.error.message, /temporarily unavailable/i);
   assert.equal(res.headers['Retry-After'], '5');
-  assert.equal(subscriptionWritten, false, 'must not write a subscription when license verification is unavailable');
+  assert.equal(subscriptionWritten, false, 'must not write a submission when license verification is unavailable');
 });
 
 // check_wallet_sanctions now queries public.sanctioned_wallets *before*

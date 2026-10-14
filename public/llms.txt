@@ -112,7 +112,7 @@ Invalid input keeps its error code (usually -32602); the message says what was w
 
 ## Paid tools
 
-- [Paid MCP tools](https://pg1-ai-agent.vercel.app/api/mcp): CVE enrichment, threat actor dossiers, alert subscriptions, and indicator submission — $0.01 per call via x402 on Base, or a licence key in the `x-api-key` header.
+- [Paid MCP tools](https://pg1-ai-agent.vercel.app/api/mcp): CVE enrichment, threat actor dossiers, and indicator submission — $0.01 per call via x402 on Base, or a licence key in the `x-api-key` header.
 
 ## Listings
 

@@ -14,7 +14,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import handler, { TOOLS, config } from '../api/mcp.mjs';
+// Definition drift is checked on TOOL_DEFINITIONS (every defined tool, switched
+// off or not): a tool hidden by a flag (PG1_ALERTS) keeps its definition.
+import handler, { TOOL_DEFINITIONS as TOOLS, config } from '../api/mcp.mjs';
 import { FIXTURE_VALUES } from '../lib/fixtures.mjs';
 
 const ADDRESS = '0x' + 'b'.repeat(40);

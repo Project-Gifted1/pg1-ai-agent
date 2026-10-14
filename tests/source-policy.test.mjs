@@ -46,7 +46,9 @@ baseEnv();
 
 // Route modules read some env at import time, so import after setting it.
 const { default: chatHandler } = await import('../api/chat.mjs');
-const { default: mcpHandler, TOOLS } = await import('../api/mcp.mjs');
+// Definition drift is checked on TOOL_DEFINITIONS (every defined tool, switched
+// off or not): a tool hidden by a flag (PG1_ALERTS) keeps its definition.
+const { default: mcpHandler, TOOL_DEFINITIONS: TOOLS } = await import('../api/mcp.mjs');
 const { default: restContextHandler } = await import('../api/ioc/context.js');
 const { default: diagnosticsHandler } = await import('../api/diagnostics/system-status-check.js');
 const { A2A_SKILL_TOOLS } = await import('../api/a2a.mjs');

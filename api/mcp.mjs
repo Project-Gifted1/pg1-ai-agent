@@ -253,7 +253,9 @@ const EDGE_TOOLS = [
   HOSTING_DEF
 ];
 
-export const TOOLS = [
+// Every tool PG1 has a definition for, in order. TOOLS (below) is what is
+// listed and served: the same array without the tools that are switched off.
+export const TOOL_DEFINITIONS = [
   ...EDGE_TOOLS,
   {
     name: 'get_threat_indicators',
@@ -642,6 +644,24 @@ export const TOOLS = [
     }
   }
 ];
+
+// subscribe_alerts is OFF until alert delivery exists: nothing sends the
+// webhooks yet, and the alert_subscriptions table is not in production. Off,
+// it is not in tools/list, the agent card, the docs or the pricing, and a call
+// gets a "not available" result before any licence check, payment or free-tier
+// count. PG1_ALERTS=true brings the unchanged tool back.
+export const ALERT_TOOLS = Object.freeze(['subscribe_alerts']);
+export function alertsEnabled(env = process.env) {
+  return ['true', '1', 'yes', 'on'].includes(String(env.PG1_ALERTS || '').trim().toLowerCase());
+}
+export function listedTools(env = process.env) {
+  return alertsEnabled(env) ? TOOL_DEFINITIONS : TOOL_DEFINITIONS.filter((t) => !ALERT_TOOLS.includes(t.name));
+}
+export const TOOLS = listedTools();
+// Alerts are served by watchlists (P8, lib/watchlists.mjs): the not-available
+// answer points there instead.
+export const ALERTS_NOT_AVAILABLE_MESSAGE = 'subscribe_alerts is not available. Use a watchlist instead: POST https://pg1-ai-agent.vercel.app/api/watchlists with {"items":[{"kind":"wallet|domain|package|cve_product","target":"..."}],"webhook_url":"https://..."} rechecks each item and POSTs a signed webhook when its status changes; 0.05 USD per item for 30 days, paid by x402. Nothing was charged and no free call was used.';
+export const ALERTS_ALTERNATIVE = Object.freeze({ endpoint: 'POST https://pg1-ai-agent.vercel.app/api/watchlists', price_usd_per_item: 0.05, period_days: 30, payment: 'x402' });
 
 // ---------------------------------------------------------------------
 // get_threat_indicators
@@ -3593,7 +3613,9 @@ const LICENSE_ONLY_TOOLS = new Set(['subscribe_alerts', 'submit_indicator']);
 // unawaited insert is registered with Vercel's waitUntil inside
 // recordTelemetry, so it still completes before the function is frozen.
 const TOOL_NAMES = TOOLS.map((t) => t.name);
-const KNOWN_TOOL_NAMES = new Set(TOOL_NAMES);
+// A switched-off tool is still a known name (recorded as itself, not as an
+// unknown tool); the did-you-mean list only offers listed tools.
+const KNOWN_TOOL_NAMES = new Set(TOOL_DEFINITIONS.map((t) => t.name));
 
 function paymentTypeForGate(gate) {
   if (!gate.authorized) return 'none';
@@ -3758,7 +3780,8 @@ export default async function handler(req, res) {
       recordMcpRequestTelemetry(req, method, 'ok');
       // Public Tool Foundry tools follow PG1's own (lib/foundry/tools.mjs).
       const foundryTools = await publicFoundryToolDefs({ loadStore: foundryStoreOrNull });
-      return res.status(200).json({ jsonrpc: '2.0', result: { tools: foundryTools.length ? [...TOOLS, ...foundryTools] : TOOLS }, id: requestId });
+      const tools = listedTools();
+      return res.status(200).json({ jsonrpc: '2.0', result: { tools: foundryTools.length ? [...tools, ...foundryTools] : tools }, id: requestId });
     }
 
     if (method === 'tools/call') {
@@ -3793,6 +3816,15 @@ export default async function handler(req, res) {
         callTelemetry.paymentType = 'free';
         if (fixtureOutcome.type === 'tool_error') callTelemetry.status = 'tool_error';
         return sendMcpFixtureResponse(res, toolName, fixtureOutcome, requestId, pg1RequestId);
+      }
+
+      // A switched-off tool (PG1_ALERTS): answered before any licence check,
+      // payment gate or free-tier count, so it costs the caller nothing.
+      if (ALERT_TOOLS.includes(toolName) && !alertsEnabled()) {
+        callTelemetry.paymentType = 'none';
+        callTelemetry.status = 'not_available';
+        const body = { error: true, code: 'not_available', message: ALERTS_NOT_AVAILABLE_MESSAGE, use_instead: ALERTS_ALTERNATIVE, charged: false, free_tier_used: false, request_id: pg1RequestId };
+        return res.status(200).json({ jsonrpc: '2.0', result: { content: [{ type: 'text', text: JSON.stringify(body, null, 2) }], isError: true }, id: requestId });
       }
 
       const licenseKey = req.headers['x-api-key'];

@@ -22,7 +22,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computeStatus } from '../lib/responseMeta.mjs';
 import { INFORMATIONAL_REASON_CODES, INCOMPLETE_REASON_CODES } from '../lib/reasonCodes.mjs';
-import handler, { TOOLS, RESPONSE_META_OUTPUT_PROPERTIES, TEST_FIXTURE_OUTPUT_PROPERTIES, parseWalletDelegation } from '../api/mcp.mjs';
+// Definition drift is checked on TOOL_DEFINITIONS (every defined tool, switched
+// off or not): a tool hidden by a flag (PG1_ALERTS) keeps its definition.
+import handler, { TOOL_DEFINITIONS as TOOLS, RESPONSE_META_OUTPUT_PROPERTIES, TEST_FIXTURE_OUTPUT_PROPERTIES, parseWalletDelegation } from '../api/mcp.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

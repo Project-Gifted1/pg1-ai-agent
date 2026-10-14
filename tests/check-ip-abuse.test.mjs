@@ -28,7 +28,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 process.env.X402_PAY_TO_ADDRESS = '0x1111111111111111111111111111111111111111';
 const mcp = await import('../api/mcp.mjs');
-const { default: mcpHandler, TOOLS, __setX402FacilitatorForTests } = mcp;
+// Definition drift is checked on TOOL_DEFINITIONS (every defined tool, switched
+// off or not): a tool hidden by a flag (PG1_ALERTS) keeps its definition.
+const { default: mcpHandler, TOOL_DEFINITIONS: TOOLS, __setX402FacilitatorForTests } = mcp;
 const { default: a2aHandler, A2A_SKILL_TOOLS } = await import('../api/a2a.mjs');
 const abuse = await import('../lib/abuseIpdb.mjs');
 const { GEMINI_SCHEMA_KEYS, toGeminiSchema, chatToolsForRole, CHAT_TOOL_ROLES } = await import('../lib/chatTools.mjs');

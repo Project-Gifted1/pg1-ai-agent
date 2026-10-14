@@ -376,7 +376,7 @@ test('mcp: a 402 (missing license key on a license-only tool) is not logged', as
   withSupabaseEnv(t);
   const errorLogCalls = installFetchMock(t, []);
 
-  const res = await callMcpTool('subscribe_alerts', { webhook_url: 'https://example.com/hook' });
+  const res = await callMcpTool('submit_indicator', { indicator: '203.0.113.9' });
   assert.equal(res.statusCode, 402);
   assert.equal(errorLogCalls.length, 0);
 });
