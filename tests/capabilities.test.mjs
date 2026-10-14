@@ -178,7 +178,8 @@ test('offerViolations: unavailable, gated and unclear features are caught; custo
 
 test('licenceReviewNote warns the operator when a package relies on an unsettled licence', () => {
   const n = licenceReviewNote('## Packages\n| Tier | Price |\n|---|---|\n| Starter | $25 | 4 video clips with music |');
-  assert.match(n, /^\*\*Licence under review \(operator only\):\*\* text- and image-to-video clips, music \(original tracks and film beds\) rely on licence terms PG1 has not settled \(G1: /);
+  assert.match(n, /^\*\*Licence under review \(operator only\):\*\* text- and image-to-video clips, music for films \(score beds\) rely on licence terms PG1 has not settled \(G1: /);
+  assert.match(licenceReviewNote('Sound package: 3 original tracks a month'), /music \(pg1 sound tracks\)/);
   assert.match(n, /G2: /);
   assert.equal(licenceReviewNote('What is the weather?'), '');
 });
@@ -260,4 +261,42 @@ test('storage options: monthly cost with each provider\'s free allowance', () =>
   assert.equal(storageMonthlyUsd(by.backblaze_b2, { gb: 100, egressGb: 1000 }), 7.7, '700 GB over 3x at 0.01');
   assert.equal(storageMonthlyUsd(by.supabase_pro, { gb: 500, egressGb: 1000 }), 76.02, '400 GB over the plan + 750 GB egress at 0.09');
   assert.equal(storageMonthlyUsd(by.wasabi, { gb: 100, egressGb: 0 }), 7.99, '1 TB minimum');
+});
+
+// --- E1 answered: the paid ElevenLabs plan ------------------------------------------
+
+test('E1 answered: ElevenLabs TTS, dialogue, sound effects and voice output are commercial_ok on the paid plan', () => {
+  assert.match(LICENCE_QUESTIONS.E1.answered, /paid ElevenLabs plan/);
+  assert.match(LICENCE_QUESTIONS.E1.answered, /ELEVENLABS_API_KEY set in Vercel/);
+  for (const e of REGISTRY) assert.ok(!e.review.includes('E1'), `${e.id} no longer waits on E1`);
+  for (const id of ['dialogue_tts', 'sound_effects', 'voice_cloning']) {
+    assert.equal(capability(id).licence, 'commercial_ok', id);
+    assert.ok(capability(id).models.every((m) => m.provider === 'elevenlabs' && m.licence === 'commercial_ok'), id);
+  }
+  assert.ok(capability('dialogue_tts').licenceConditions.some((c) => /Beta Service.*\(E2\)/.test(c)), 'the beta question stays a condition');
+  assert.match(capability('voiceover_single').candidates.find((c) => c.provider === 'elevenlabs').licence, /^commercial_ok on the paid plan/);
+  assert.equal(offerability(capability('dialogue_tts')), 'on_request');
+  assert.equal(offerability(capability('voice_cloning')), 'never', 'still gated to Phase 4');
+  assert.match(offersDirective(), /Only as "custom, on request"[^\n]*Dialogue text-to-speech \(several voices\)/);
+});
+
+test('E1 answered: the plan\'s film, TV and radio exclusion is recorded and film music stays on Lyria through the Gemini API', async () => {
+  const eleven = capability('music').models.find((m) => m.provider === 'elevenlabs');
+  assert.deepEqual([...eleven.excludes], ['film', 'TV', 'radio', 'large studio games']);
+  assert.deepEqual(registryJson().features.find((f) => f.id === 'music').chosen[0].excludes, ['film', 'TV', 'radio', 'large studio games']);
+  const film = capability('film_music');
+  assert.deepEqual(film.models.map((m) => `${m.provider}:${m.model}`), ['google:lyria-3.5', 'google:lyria-3-clip-preview']);
+  assert.equal(film.licence, 'unclear', 'Lyria is still G2');
+  assert.deepEqual([...film.review], ['G2']);
+  assert.equal(offerability(film), 'review');
+  assert.deepEqual(offerViolations('Every film includes an original score.').map((v) => `${v.id}:${v.reason}`), ['film_music:its licence is under review (G2)']);
+
+  const { filmMusicExclude } = await import('../lib/film/providers.mjs');
+  const { musicPlan } = await import('../lib/music/engines.mjs');
+  const env = { ELEVENLABS_API_KEY: 'el-test', GEMINI_API_KEY_PAID: 'paid-test', REPLICATE_API_TOKEN: 'r8-test' };
+  assert.deepEqual(filmMusicExclude(env), ['elevenlabs', 'replicate']);
+  assert.deepEqual([...new Set(musicPlan(env, { exclude: filmMusicExclude(env) }).map((c) => c.provider))], ['gemini_paid'], 'a film bed is planned on the Gemini API only');
+  assert.ok(musicPlan(env).some((c) => c.provider === 'elevenlabs'), 'PG1 Sound tracks still start with ElevenLabs');
+  const covered = { ...env, PG1_ELEVENLABS_FILM_RIGHTS: '1' };
+  assert.deepEqual(filmMusicExclude(covered), ['replicate'], 'only a plan that covers film lets ElevenLabs make film beds');
 });

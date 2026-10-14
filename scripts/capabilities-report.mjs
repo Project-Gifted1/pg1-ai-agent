@@ -54,8 +54,13 @@ export function reportMarkdown() {
   out.push('## 3. Open licence questions (for your review)', '');
   out.push('Every feature marked **unclear** is treated as not commercial: PG1 does not offer it to clients until the question is answered and the registry is changed.', '');
   for (const [code, q] of Object.entries(LICENCE_QUESTIONS)) {
+    if (q.answered) continue;
     const blocks = REGISTRY.filter((e) => e.review.includes(code)).map((e) => e.feature);
     out.push(`- **${code}. ${q.question}** ${q.detail} Blocks: ${blocks.join('; ') || 'none'}. ${links(q.sources)}`);
+  }
+  out.push('', 'Answered:', '');
+  for (const [code, q] of Object.entries(LICENCE_QUESTIONS)) {
+    if (q.answered) out.push(`- **${code}. ${q.question}** ${q.answered} ${links(q.sources)}`);
   }
   out.push('');
 
@@ -104,7 +109,7 @@ const PHASES = [
   '- multi-voice dialogue (once E2 is answered);',
   '- 5.1/7.1 mixes from stems (ffmpeg).',
   '',
-  'Each feature moves to standard in the registry only when it is wired and tested. Move large deliverables to R2. Settle G1, G2, R1, E1 and C1 first; until then, pin client work to ElevenLabs for music, which stops the Lyria fallbacks making client tracks.',
+  'Each feature moves to standard in the registry only when it is wired and tested. Move large deliverables to R2. Settle G1, G2, R1 and C1 first (E1 is answered); until then, pin PG1 Sound client tracks to ElevenLabs, which stops the Lyria fallbacks making them. Film beds stay on Lyria through the Gemini API, so film music waits on G2 unless the ElevenLabs plan is upgraded to cover film.',
   '',
   '**Phase 3: client accounts.** Per-client projects, deliverable history and signed download pages on R2, with no seats or account managers until you decide otherwise. The registry gains the account features, and the guard starts allowing them.',
   '',

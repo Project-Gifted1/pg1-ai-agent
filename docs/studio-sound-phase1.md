@@ -15,9 +15,10 @@ Registry version 2026-10-14. Generated from `lib/capabilities/registry.mjs` and 
 | Video upscaling to 8K | unavailable | - | **unclear** (no provider) | unknown per second of output video | after a priced test | never offered |
 | Frame interpolation (smoother motion, higher frame rate) | custom | ffmpeg minterpolate (motion-compensated) (pg1, chosen, on PG1's render runner) | commercial_ok | 0.06 USD per minute of output video (PG1 estimate) | 0.09 USD per minute of output video | custom, on request |
 | Voice-over (one voice) | standard | sonic-3.6 (cartesia, primary) | **unclear** (C1) | 0.05 USD per 1,000 characters (PG1 estimate) | 0.075 USD per 1,000 characters | not offered (licence review) |
-| Dialogue text-to-speech (several voices) | custom | eleven_v3 (Text to Dialogue) (elevenlabs, chosen) | **unclear** (E1, E2) | 0.1 USD per 1,000 characters (official) | 0.15 USD per 1,000 characters | not offered (licence review) |
+| Dialogue text-to-speech (several voices) | custom | eleven_v3 (Text to Dialogue) (elevenlabs, chosen) | commercial_ok | 0.1 USD per 1,000 characters (official) | 0.15 USD per 1,000 characters | custom, on request |
 | Sound effects and Foley | custom | eleven_text_to_sound_v2 (elevenlabs, chosen) | commercial_ok | 0.12 USD per minute of audio (official) | 0.18 USD per minute of audio | custom, on request |
-| Music (original tracks and film beds) | standard | Eleven Music (elevenlabs, primary); lyria-3.5 (google, fallback); lyria-3-clip-preview (google, fallback (30 s)); google/lyria-2 (replicate, last fallback) | **unclear** (G2, R1) | 0.15 USD per minute of music (official) | 0.225 USD per minute of music | not offered (licence review) |
+| Music (PG1 Sound tracks) | standard | Eleven Music (elevenlabs, primary); lyria-3.5 (google, fallback); lyria-3-clip-preview (google, fallback (30 s)); google/lyria-2 (replicate, last fallback) | **unclear** (G2, R1) | 0.15 USD per minute of music (official) | 0.225 USD per minute of music | not offered (licence review) |
+| Music for films (score beds) | standard | lyria-3.5 (google, primary (Gemini API)); lyria-3-clip-preview (google, fallback (Gemini API, 30 s)) | **unclear** (G2) | 0.08 USD per music bed (official) | 0.12 USD per music bed | not offered (licence review) |
 | Stem separation | standard | demucs htdemucs (MIT) (pg1, primary, on PG1's runner) | commercial_ok | 0.03 USD per track (about 3 minutes) (PG1 estimate) | 0.045 USD per track (about 3 minutes) | may be offered |
 | 5.1 and 7.1 surround mixes | custom | ffmpeg surround / pan from stems (pg1, chosen, on PG1's runner) | commercial_ok | 0.01 USD per track (PG1 estimate) | 0.015 USD per track | custom, on request |
 | Consented voice cloning (own voice only) | custom (gated: phase4) | Professional Voice Cloning (elevenlabs, chosen (own voice, voice-captcha verified)) | commercial_ok | 0.1 USD per 1,000 characters spoken in the cloned voice (official) | 0.15 USD per 1,000 characters spoken in the cloned voice | never offered |
@@ -101,13 +102,20 @@ Wired now: lib/film/providers.mjs (cartesiaConfig): Cartesia sonic, one voice pe
 
 Unit cost: PG1's film estimate (lib/film/cost.mjs voicePerCharUsd).
 
+| Provider | Model | What it does | Max resolution / length | Price | Licence, resale | Sources |
+|---|---|---|---|---|---|---|
+| cartesia | sonic-3.6 | single-voice TTS (wired now) | - | PG1 estimate 0.05 USD per 1,000 characters | unclear (C1) |  |
+| elevenlabs | Eleven multilingual / v3 TTS | single-voice TTS; a commercial_ok replacement for Cartesia if C1 stays open | 5,000 characters per request (v3) | 0.08-0.10 USD per 1,000 characters (pages disagree) | commercial_ok on the paid plan (E1 answered) | [1](https://elevenlabs.io/pricing/api) [2](https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform) |
+
 ### Dialogue text-to-speech (several voices)
 
 Unit cost: ElevenLabs pages disagree: 0.08 and 0.10 USD per 1,000 characters for v3; the dearer is used.
 
+Licence conditions: The paid ElevenLabs plan (E1, answered). Not a Beta Service: confirm v3 dialogue is out of beta before it is wired (E2).
+
 | Provider | Model | What it does | Max resolution / length | Price | Licence, resale | Sources |
 |---|---|---|---|---|---|---|
-| elevenlabs | eleven_v3 Text to Dialogue | multi-speaker dialogue in one request | 5,000 characters per request (about 5 minutes) | 0.08-0.10 USD per 1,000 characters (pages disagree) | unclear (E1, E2): commercial on paid plans unless a Beta Service | [1](https://elevenlabs.io/pricing/api) [2](https://elevenlabs.io/docs/overview/models) [3](https://help.elevenlabs.io/hc/en-us/articles/35869113958801-How-much-does-it-cost-to-generate-using-Eleven-v3) [4](https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform) |
+| elevenlabs | eleven_v3 Text to Dialogue | multi-speaker dialogue in one request | 5,000 characters per request (about 5 minutes) | 0.08-0.10 USD per 1,000 characters (pages disagree) | commercial_ok on the paid plan (E1 answered), unless still a Beta Service (E2) | [1](https://elevenlabs.io/pricing/api) [2](https://elevenlabs.io/docs/overview/models) [3](https://help.elevenlabs.io/hc/en-us/articles/35869113958801-How-much-does-it-cost-to-generate-using-Eleven-v3) [4](https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform) |
 | google | gemini-2.5-flash-preview-tts | speech with one or two speakers | 8,192 input tokens | 10 USD per 1M audio output tokens (about 0.02 USD per minute at 32 tokens per second) | unclear (G1) | [1](https://ai.google.dev/gemini-api/docs/pricing) [2](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-preview-tts) |
 | replicate | resemble-ai/chatterbox-multilingual | TTS with voice prompts | not retrieved | not retrieved | unclear (R1) | [1](https://replicate.com/resemble-ai/chatterbox-multilingual) |
 
@@ -115,26 +123,40 @@ Unit cost: ElevenLabs pages disagree: 0.08 and 0.10 USD per 1,000 characters for
 
 Unit cost: The credits page lists 200 credits per generation instead; confirm the billing basis.
 
-Licence conditions: A paid ElevenLabs plan (E1); not a Beta Service.
+Licence conditions: The paid ElevenLabs plan (E1, answered); not a Beta Service.
 
 | Provider | Model | What it does | Max resolution / length | Price | Licence, resale | Sources |
 |---|---|---|---|---|---|---|
 | elevenlabs | eleven_text_to_sound_v2 | sound effects from text, optional seamless loop | 0.5-30 s per generation | 0.12 USD per minute (API page); 40 credits per second when a duration is set | commercial_ok on paid plans | [1](https://elevenlabs.io/pricing/api) [2](https://elevenlabs.io/docs/overview/capabilities/sound-effects) [3](https://elevenlabs.io/docs/api-reference/text-to-sound-effects/convert) [4](https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform) |
 
-### Music (original tracks and film beds)
+### Music (PG1 Sound tracks)
 
 Wired now: lib/music/engines.mjs: ElevenLabs Music, then Lyria 3.5 (paid Gemini key), the Lyria 3 clip model, then google/lyria-2 on Replicate.
 
 Unit cost: Eleven Music. Lyria 3.5 is 0.08 USD per song and the Lyria 3 clip 0.04 USD per 30 s request.
 
-Licence conditions: ElevenLabs alone is commercial_ok on a paid plan (E1), except film, TV, radio and large studio games, which need Enterprise.
+Licence conditions: ElevenLabs Music is commercial_ok on the paid plan (E1, answered) except film, TV, radio and large studio games, which the plan excludes (Enterprise only). Music for a film is the film_music feature. The Lyria fallbacks keep this feature unclear (G2) until they are settled or client tracks are pinned to ElevenLabs.
 
 | Provider | Model | What it does | Max resolution / length | Price | Licence, resale | Sources |
 |---|---|---|---|---|---|---|
-| elevenlabs | Eleven Music | songs and instrumentals from a prompt | up to 5 minutes | 0.15 USD per minute | commercial_ok on paid plans; film, TV, radio, studio games only on Enterprise; streaming from Creator up (E1) | [1](https://elevenlabs.io/pricing/api) [2](https://elevenlabs.io/eleven-music-api) [3](https://elevenlabs.io/music-terms) |
+| elevenlabs | Eleven Music | songs and instrumentals from a prompt | up to 5 minutes | 0.15 USD per minute | commercial_ok on the paid plan (E1 answered); excludes film, TV, radio and large studio games (Enterprise only); streaming from Creator up | [1](https://elevenlabs.io/pricing/api) [2](https://elevenlabs.io/eleven-music-api) [3](https://elevenlabs.io/music-terms) |
 | google | lyria-3.5 | full songs | full song | 0.08 USD per song | unclear (G2) | [1](https://ai.google.dev/gemini-api/docs/pricing) [2](https://ai.google.dev/gemini-api/docs/music-generation) |
 | google | lyria-3-clip-preview | 30 s clips, 48 kHz stereo | 30 s | 0.04 USD per request | unclear (G2) | [1](https://ai.google.dev/gemini-api/docs/pricing) [2](https://ai.google.dev/gemini-api/docs/models/lyria-3-clip-preview) |
 | replicate | google/lyria-2 | instrumental clips with SynthID | 30 s, 48 kHz stereo | per output; rate not retrieved | unclear (G2, R1) | [1](https://replicate.com/google/lyria-2) |
+
+### Music for films (score beds)
+
+Wired now: lib/film/providers.mjs (filmMusicExclude): Lyria on the paid Gemini key only; ElevenLabs only with PG1_ELEVENLABS_FILM_RIGHTS=1, never Replicate.
+
+Unit cost: Lyria 3.5 at 0.08 USD per song; the clip model is 0.04 USD per 30 s. PG1 Studio's own film estimate is lower (lib/film/cost.mjs, 0.06 USD per bed).
+
+Licence conditions: ElevenLabs Music is not used: the plan excludes film, TV and radio. Set PG1_ELEVENLABS_FILM_RIGHTS=1 only if the plan covers film (Enterprise).
+
+| Provider | Model | What it does | Max resolution / length | Price | Licence, resale | Sources |
+|---|---|---|---|---|---|---|
+| google | lyria-3.5 (Gemini API) | full songs and instrumentals | full song | 0.08 USD per song | unclear (G2) | [1](https://ai.google.dev/gemini-api/docs/pricing) [2](https://ai.google.dev/gemini-api/docs/music-generation) |
+| google | lyria-3-clip-preview (Gemini API) | 30 s clips, 48 kHz stereo | 30 s | 0.04 USD per request | unclear (G2) | [1](https://ai.google.dev/gemini-api/docs/pricing) [2](https://ai.google.dev/gemini-api/docs/models/lyria-3-clip-preview) |
+| elevenlabs | Eleven Music | songs and instrumentals | up to 5 minutes | 0.15 USD per minute | not for film on the current plan (Enterprise only) | [1](https://elevenlabs.io/music-terms) [2](https://elevenlabs.io/eleven-music-api) |
 
 ### Stem separation
 
@@ -147,7 +169,7 @@ Licence conditions: Demucs is MIT. The stems carry the licence of the track they
 | Provider | Model | What it does | Max resolution / length | Price | Licence, resale | Sources |
 |---|---|---|---|---|---|---|
 | pg1 | Demucs htdemucs | 4 stems (6 with htdemucs_6s) | any length; runner time grows with it | runner time only | commercial_ok (MIT) | [1](https://github.com/facebookresearch/demucs) [2](https://docs.github.com/en/billing/reference/actions-runner-pricing) |
-| elevenlabs | music/stem-separation | 2 or 6 stems as a ZIP | not stated | 0.5x (2 stems) to 1x (4 stems) the generation cost, per an ElevenLabs blog post | commercial_ok on paid plans (E1) | [1](https://elevenlabs.io/docs/api-reference/music/separate-stems) [2](https://elevenlabs.io/blog/eleven-music-new-tools-for-exploring-editing-and-producing-music-with-ai) |
+| elevenlabs | music/stem-separation | 2 or 6 stems as a ZIP | not stated | 0.5x (2 stems) to 1x (4 stems) the generation cost, per an ElevenLabs blog post | commercial_ok on the paid plan (E1 answered) | [1](https://elevenlabs.io/docs/api-reference/music/separate-stems) [2](https://elevenlabs.io/blog/eleven-music-new-tools-for-exploring-editing-and-producing-music-with-ai) |
 | replicate | cjwbw/demucs | Demucs on Replicate | - | about 0.016 USD per run | MIT upstream | [1](https://replicate.com/cjwbw/demucs) [2](https://github.com/facebookresearch/demucs) |
 
 ### 5.1 and 7.1 surround mixes
@@ -165,7 +187,7 @@ Licence conditions: The mix carries the licence of the track and stems it is mad
 
 Unit cost: Making the clone itself is part of the plan subscription (not separately priced on the pages found).
 
-Licence conditions: A paid ElevenLabs plan, Creator or above for Professional Voice Cloning (E1). Only the account holder's own voice: ElevenLabs does not allow a Professional clone of someone else's voice, even with consent.
+Licence conditions: The paid ElevenLabs plan (E1, answered); Professional Voice Cloning needs Creator or above, so confirm the plan name before Phase 4. Only the account holder's own voice: ElevenLabs does not allow a Professional clone of someone else's voice, even with consent.
 
 Consent and verification by provider:
 
@@ -185,11 +207,14 @@ Consent and verification by provider:
 Every feature marked **unclear** is treated as not commercial: PG1 does not offer it to clients until the question is answered and the registry is changed.
 
 - **G1. Google outputs (Gemini Omni, Veo, Lyria, Gemini image and TTS on the paid Gemini API): may PG1 resell them to clients?** The Gemini API Additional Terms say Google does not claim ownership of generated content and that paid-tier data is not used to improve products, but they grant no express commercial licence. The Google APIs Terms (Section 5, prohibitions on content) bar selling or distributing content returned by an API unless its owner or the law allows it; whether that clause reaches generated output is not answered on Google's pages. Blocks: Text- and image-to-video clips; Scene and character consistency; Storyboard and keyframe images. [1](https://ai.google.dev/gemini-api/terms) [2](https://developers.google.com/terms)
-- **G2. Lyria music on the paid Gemini API: may it be published and sold, including on streaming platforms and YouTube?** Same terms as G1. Lyria output carries a SynthID watermark. Google's pages give no music-specific rights table, unlike ElevenLabs'. Blocks: Music (original tracks and film beds). [1](https://ai.google.dev/gemini-api/terms) [2](https://ai.google.dev/gemini-api/docs/music-generation) [3](https://replicate.com/google/lyria-2)
-- **R1. Replicate-hosted video and upscaling models (Kling, Topaz, FILM): what does each model's own licence allow?** Replicate grants its rights in outputs, including commercial use, "subject to any third-party terms" of the model used. The model pages' licence tabs could not be loaded, so each model's terms are unconfirmed. Blocks: Text- and image-to-video clips; Video upscaling to 4K; Music (original tracks and film beds). [1](https://replicate.com/terms) [2](https://replicate.com/kwaivgi/kling-v2.1) [3](https://replicate.com/topazlabs/video-upscale/api/learn-more) [4](https://replicate.com/google-research/frame-interpolation)
-- **E1. Which ElevenLabs plan is ELEVENLABS_API_KEY on?** Paid plans include a commercial licence; the free plan does not and requires attribution. Eleven Music on self-serve plans excludes film, TV, radio and large studio games (Enterprise only). Streaming distribution needs Creator or above. Sound effects, stem separation through ElevenLabs and voice cloning are marked commercial_ok on the condition that the key is on a paid plan; if it is not, they are not commercial. Blocks: Dialogue text-to-speech (several voices). [1](https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform) [2](https://elevenlabs.io/music-terms) [3](https://elevenlabs.io/eleven-music-api)
-- **E2. Is Eleven v3 Text to Dialogue still a Beta Service?** Content made with ElevenLabs Beta Services cannot be used commercially or in production. The pages found do not say whether v3 dialogue is out of beta. Blocks: Dialogue text-to-speech (several voices). [1](https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform) [2](https://elevenlabs.io/docs/overview/models) [3](https://help.elevenlabs.io/hc/en-us/articles/35869113958801-How-much-does-it-cost-to-generate-using-Eleven-v3)
+- **G2. Lyria music on the paid Gemini API: may it be published and sold, including on streaming platforms and YouTube?** Same terms as G1. Lyria output carries a SynthID watermark. Google's pages give no music-specific rights table, unlike ElevenLabs'. Blocks: Music (PG1 Sound tracks); Music for films (score beds). [1](https://ai.google.dev/gemini-api/terms) [2](https://ai.google.dev/gemini-api/docs/music-generation) [3](https://replicate.com/google/lyria-2)
+- **R1. Replicate-hosted video and upscaling models (Kling, Topaz, FILM): what does each model's own licence allow?** Replicate grants its rights in outputs, including commercial use, "subject to any third-party terms" of the model used. The model pages' licence tabs could not be loaded, so each model's terms are unconfirmed. Blocks: Text- and image-to-video clips; Video upscaling to 4K; Music (PG1 Sound tracks). [1](https://replicate.com/terms) [2](https://replicate.com/kwaivgi/kling-v2.1) [3](https://replicate.com/topazlabs/video-upscale/api/learn-more) [4](https://replicate.com/google-research/frame-interpolation)
+- **E2. Is Eleven v3 Text to Dialogue still a Beta Service?** Content made with ElevenLabs Beta Services cannot be used commercially or in production. The pages found do not say whether v3 dialogue is out of beta. The operator has marked dialogue commercial_ok on the paid plan; check this before dialogue is wired (Phase 2). Blocks: none. [1](https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform) [2](https://elevenlabs.io/docs/overview/models) [3](https://help.elevenlabs.io/hc/en-us/articles/35869113958801-How-much-does-it-cost-to-generate-using-Eleven-v3)
 - **C1. Cartesia (the voice PG1 Studio uses now for voice-over): do its terms allow resale of output?** Cartesia was outside this phase's providers (Replicate, Google, ElevenLabs), so its terms were not reviewed. Blocks: Voice-over (one voice). 
+
+Answered:
+
+- **E1. Which ElevenLabs plan is ELEVENLABS_API_KEY on?** Answered 2026-10-14 by the operator: a paid ElevenLabs plan (plan name to be recorded), with ELEVENLABS_API_KEY set in Vercel. ElevenLabs TTS, dialogue, sound effects and voice output are commercial_ok on it. The plan's Eleven Music licence excludes film, TV, radio and large studio games, so film beds stay on Lyria through the Gemini API (lib/film/providers.mjs filmMusicExclude) unless PG1_ELEVENLABS_FILM_RIGHTS=1 records that the plan covers film. [1](https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform) [2](https://elevenlabs.io/music-terms) [3](https://elevenlabs.io/eleven-music-api)
 
 ## 4. Compute cost per film package (PG1 estimates)
 
@@ -242,7 +267,7 @@ Monthly figures leave out per-request fees and Supabase's 25 USD plan fee.
 - multi-voice dialogue (once E2 is answered);
 - 5.1/7.1 mixes from stems (ffmpeg).
 
-Each feature moves to standard in the registry only when it is wired and tested. Move large deliverables to R2. Settle G1, G2, R1, E1 and C1 first; until then, pin client work to ElevenLabs for music, which stops the Lyria fallbacks making client tracks.
+Each feature moves to standard in the registry only when it is wired and tested. Move large deliverables to R2. Settle G1, G2, R1 and C1 first (E1 is answered); until then, pin PG1 Sound client tracks to ElevenLabs, which stops the Lyria fallbacks making them. Film beds stay on Lyria through the Gemini API, so film music waits on G2 unless the ElevenLabs plan is upgraded to cover film.
 
 **Phase 3: client accounts.** Per-client projects, deliverable history and signed download pages on R2, with no seats or account managers until you decide otherwise. The registry gains the account features, and the guard starts allowing them.
 
