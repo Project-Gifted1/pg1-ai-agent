@@ -14,7 +14,9 @@ import { test } from 'node:test';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import a2aHandler, { A2A_SKILL_TOOLS, A2A_PAID_SKILL_NAMES } from '../api/a2a.mjs';
-import mcpHandler, { resolveTestFixture, TOOLS } from '../api/mcp.mjs';
+// Definition drift is checked on TOOL_DEFINITIONS (every defined tool, switched
+// off or not): a tool hidden by a flag (PG1_ALERTS) keeps its definition.
+import mcpHandler, { resolveTestFixture, TOOL_DEFINITIONS as TOOLS } from '../api/mcp.mjs';
 import { FIXTURE_VALUES } from '../lib/fixtures.mjs';
 import { WALLET_SANCTIONS_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX } from '../lib/x402Config.mjs';
 

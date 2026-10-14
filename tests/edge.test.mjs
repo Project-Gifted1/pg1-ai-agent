@@ -367,7 +367,8 @@ test('SSRF is blocked everywhere a URL comes in: the checks, preflight, watchlis
   // Over MCP: the tools answer with an error, never a fetch.
   const r = await callMcp('check_x402_endpoint', { url: 'https://169.254.169.254/latest/meta-data' });
   assert.equal(r.body.result.isError, true);
-  // subscribe_alerts (licence holders): a valid licence still cannot point it at a private address.
+  // subscribe_alerts (licence holders, when PG1_ALERTS is on): a valid licence still cannot point it at a private address.
+  process.env.PG1_ALERTS = 'true';
   const calls = [];
   globalThis.fetch = async (url) => {
     calls.push(String(url));

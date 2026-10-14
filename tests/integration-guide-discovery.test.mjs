@@ -19,7 +19,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DOC_PAGES } from '../scripts/build-docs.mjs';
 import { PROVIDER_NAME_RE } from '../lib/playground.mjs';
-import { TOOLS } from '../api/mcp.mjs';
+// Definition drift is checked on TOOL_DEFINITIONS (every defined tool, switched
+// off or not): a tool hidden by a flag (PG1_ALERTS) keeps its definition.
+import { TOOL_DEFINITIONS as TOOLS } from '../api/mcp.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');

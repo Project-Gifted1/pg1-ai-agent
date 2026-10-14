@@ -136,7 +136,6 @@ test('MCP paid-tool invalid input (after a valid licence) keeps its code and car
     ['get_cve_batch', { cve_ids: Array.from({ length: 21 }, () => MARKER) }],
     ['get_cve_by_product', { vendor: MARKER }],
     ['get_threat_actor_profile', { actor_name: '   ' }],
-    ['subscribe_alerts', { webhook_url: `http://${MARKER}` }],
     ['submit_indicator', { indicator: MARKER }]
   ]) {
     const res = await callMcp(name, args, headers);
