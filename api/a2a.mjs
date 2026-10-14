@@ -82,8 +82,14 @@ import {
   logPackageCheckFailures,
   recordToolError,
   resolveTestFixture,
-  requestCallerHash
+  requestCallerHash,
+  runPricedX402Gate
 } from './mcp.mjs';
+import { waitUntil } from '@vercel/functions';
+import { checkFreeTierAvailable, consumeFreeTier, freeTierWanted } from '../lib/freeTier.mjs';
+import { getSupabaseCreds } from '../lib/supabase.mjs';
+import { submitJob, payJob, runAcceptedJob, jobView, createJobStore, JobRefusal } from '../lib/a2aJobs/jobs.mjs';
+import { JOB_TYPES } from '../lib/a2aJobs/catalogue.mjs';
 import { getRequestIdentifier, setFreeTierHeaders } from '../lib/freeTier.mjs';
 import { recordTelemetry, toolErrorTelemetryStatus } from '../lib/telemetry.mjs';
 import { buildCheck, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
@@ -110,7 +116,8 @@ const SKILL_SOURCE_LABELS = {
   get_threat_actor_profile: 'threat actor intelligence'
 };
 
-export const config = { maxDuration: 30 };
+// 60 s: an accepted A2A job runs in the background (waitUntil) after the reply.
+export const config = { maxDuration: 60 };
 
 export const A2A_FREE_SKILL_NAMES = Object.freeze(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'get_usage_status', 'check_ip_abuse', 'check_package']);
 export const A2A_PAID_SKILL_NAMES = Object.freeze(['get_cve_details', 'get_cve_batch', 'get_cve_by_product', 'get_threat_actor_profile']);
@@ -222,7 +229,7 @@ function extractDataPart(message) {
 }
 
 function stateValue(state, version) {
-  if (version === '1.0') return { completed: 'TASK_STATE_COMPLETED', 'input-required': 'TASK_STATE_INPUT_REQUIRED' }[state] || 'TASK_STATE_FAILED';
+  if (version === '1.0') return { completed: 'TASK_STATE_COMPLETED', 'input-required': 'TASK_STATE_INPUT_REQUIRED', working: 'TASK_STATE_WORKING', canceled: 'TASK_STATE_CANCELED', submitted: 'TASK_STATE_SUBMITTED' }[state] || 'TASK_STATE_FAILED';
   return state;
 }
 
@@ -341,6 +348,86 @@ function recordSkillTelemetry(skillTelemetry, res) {
   }
 }
 
+// --- A2A jobs (lib/a2aJobs) ------------------------------------------------------
+// submit_job -> quote (input-required with the x402 requirements at the
+// job's price) -> payment on the task (message.taskId = job id) -> working
+// -> completed with artifacts (JSON, PDF: signed links, 7 days) or failed
+// (one retry, then a wallet credit; never an on-chain refund). GetTask
+// reads a job's state; CancelTask cancels a quoted job.
+
+export const JOB_SKILL = 'submit_job';
+const JOB_STATE = { quoted: 'input-required', working: 'working', completed: 'completed', failed: 'failed', expired: 'canceled', cancelled: 'canceled', refused: 'failed' };
+
+function buildFilePart(file, version) {
+  if (version === '1.0') return { url: file.url, mediaType: file.mime_type, filename: file.name };
+  return { kind: 'file', file: { uri: file.url, mimeType: file.mime_type, name: file.name } };
+}
+
+async function jobTask(job, version, inboundMessage, { paymentRequired = null, signArtifact = null, settlement = null } = {}) {
+  const view = await jobView(job, { signArtifact });
+  const contextId = (inboundMessage && inboundMessage.contextId) || job.id;
+  const state = JOB_STATE[job.status] || 'failed';
+  let metadata;
+  if (job.status === 'quoted' && paymentRequired) metadata = { [X402_META.status]: 'payment-required', [X402_META.required]: paymentRequired };
+  if (settlement && settlement.success) metadata = { [X402_META.status]: 'payment-completed', [X402_META.receipts]: [settlement] };
+  const task = {
+    id: job.id,
+    contextId,
+    status: { state: stateValue(state, version), timestamp: new Date().toISOString(), message: buildMessage('agent', view, version, { contextId, taskId: job.id, metadata }) },
+    ...(metadata ? { metadata } : {})
+  };
+  if (job.status === 'completed') {
+    const files = (view.artifacts || []).filter((a) => a.url);
+    task.artifacts = [{ artifactId: `${job.id}-result`, name: job.job_type, parts: [buildDataPart(job.result || {}, version), ...files.map((f) => buildFilePart(f, version))] }];
+  }
+  if (version === '0.3') task.kind = 'task';
+  return task;
+}
+
+// The job runner's model, PDF and storage code is loaded only when a job
+// needs it, so the A2A check path itself never reaches model code.
+const loadJobService = () => import('../lib/a2aJobs/service.mjs');
+
+function jobDeps(req, { supUrl, supKey }) {
+  const store = createJobStore({ supUrl, supKey });
+  const outputs = {
+    sign: async (a) => (await loadJobService()).outputStorage({ supUrl, supKey }).sign(a),
+    makePdf: async (doc) => (await loadJobService()).outputStorage({ supUrl, supKey }).makePdf(doc),
+    storeOutputs: async (j, out) => (await loadJobService()).outputStorage({ supUrl, supKey }).storeOutputs(j, out)
+  };
+  const identifier = getRequestIdentifier(req);
+  const audit = { supUrl, supKey };
+  const startRun = (job, { onSuccess = null } = {}) => {
+    const run = loadJobService().then((svc) => {
+      const model = svc.jobModel({});
+      return runAcceptedJob(job, {
+        store, audit, onSuccess,
+        execDeps: { runTool: svc.runJobTool, guard: svc.jobGuard(), makePdf: (doc) => outputs.makePdf(doc), writeModel: (m) => model.write(m), spentUsd: () => model.spent() },
+        storeOutputs: (j, out) => outputs.storeOutputs(j, out)
+      });
+    }).catch((e) => console.error('[A2A_JOB] run failed:', e && e.message));
+    try { waitUntil(run); } catch (e) { /* outside Vercel the promise still runs */ }
+    return run;
+  };
+  return {
+    store, outputs, audit, startRun, callerId: identifier,
+    freeTier: { wanted: freeTierWanted(req.headers), check: () => checkFreeTierAvailable(supUrl, supKey, identifier), consume: (avail) => consumeFreeTier(supUrl, supKey, identifier, avail) },
+    gate: (job, payment) => runPricedX402Gate(req, { payment, priceUsd: Number(job.price_usd), description: `PG1 A2A job ${job.job_type} (${job.items} item${job.items === 1 ? '' : 's'})` }),
+    screen: null
+  };
+}
+
+function jobRefusalResponse(res, err, requestId, pg1RequestId) {
+  if (err.retryAfter) res.setHeader('Retry-After', String(err.retryAfter));
+  return jsonRpcError(res, err.status, err.rpcCode, err.message, requestId, err.data, pg1RequestId);
+}
+
+// Test hook: the job dependencies are swapped in by tests/a2a-jobs.test.mjs.
+let jobDepsFactory = jobDeps;
+export function __setJobDeps(factory) {
+  jobDepsFactory = factory || jobDeps;
+}
+
 export default async function handler(req, res) {
   // A UUID unique to this request (issue #215), distinct from the JSON-RPC
   // `requestId` below (the caller's own `id` field, echoed back as-is).
@@ -415,6 +502,21 @@ export default async function handler(req, res) {
       );
     }
 
+    if ((METHODS.getTask.includes(method) || METHODS.cancelTask.includes(method)) && params && typeof params.id === 'string' && /^[0-9a-f-]{36}$/i.test(params.id)) {
+      let creds = null;
+      try { creds = getSupabaseCreds(); } catch (e) { creds = null; }
+      const deps = creds ? jobDepsFactory(req, creds) : null;
+      const job = deps ? await deps.store.get(params.id).catch(() => null) : null;
+      if (job) {
+        if (METHODS.cancelTask.includes(method)) {
+          if (job.status !== 'quoted') return jsonRpcError(res, 200, A2A_ERROR_CODES.TaskNotCancelableError, `Task ${job.id} is ${job.status} and cannot be canceled.`, requestId, undefined, pg1RequestId);
+          const rows = await deps.store.update(job.id, { status: 'cancelled' }, { onlyIfStatus: 'quoted' });
+          return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(rows[0] || { ...job, status: 'cancelled' }, version, null), id: requestId });
+        }
+        return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(job, version, null, { signArtifact: (a) => deps.outputs.sign(a) }), id: requestId });
+      }
+    }
+
     if (METHODS.getTask.includes(method) || METHODS.cancelTask.includes(method)) {
       return jsonRpcError(
         res, 200, A2A_ERROR_CODES.TaskNotFoundError,
@@ -428,6 +530,30 @@ export default async function handler(req, res) {
     }
 
     const inboundMessage = params && params.message;
+    // A2A jobs, step 2: a payment sent on a job's task.
+    const jobPayment = inboundMessage && inboundMessage.metadata && inboundMessage.metadata[X402_META.payload];
+    if (inboundMessage && typeof inboundMessage.taskId === 'string' && /^[0-9a-f-]{36}$/i.test(inboundMessage.taskId) && jobPayment) {
+      skillTelemetry = { skill: JOB_SKILL, req, status: null, startedAt: Date.now(), paymentType: 'x402' };
+      let creds;
+      try { creds = getSupabaseCreds(); } catch (e) { return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, 'Jobs are not available on this deployment.', requestId, undefined, pg1RequestId); }
+      const deps = jobDepsFactory(req, creds);
+      try {
+        const paid = await payJob({ jobId: inboundMessage.taskId, deps: { ...deps, gate: (job) => deps.gate(job, jobPayment) } });
+        if (paid.paymentRequired) {
+          skillTelemetry.status = 'payment_required';
+          return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(paid.job, version, inboundMessage, { paymentRequired: paid.paymentRequired }), id: requestId });
+        }
+        if (paid.accepted && paid.settlement) recordTelemetry({ eventType: 'settlement', endpoint: '/api/a2a', toolName: `job.${paid.job.job_type}`.slice(0, 64), paymentType: 'x402', status: 'settled', callerHash: requestCallerHash(req), amountUsd: Number(paid.job.price_usd) });
+        skillTelemetry.status = 'ok';
+        return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(paid.job, version, inboundMessage, { settlement: paid.settlement, signArtifact: (a) => deps.outputs.sign(a) }), id: requestId });
+      } catch (err) {
+        if (err && err.jobRefusal) {
+          skillTelemetry.status = err.status === 503 ? 'server_error' : err.status === 429 ? 'rate_limited' : 'client_error';
+          return jobRefusalResponse(res, err, requestId, pg1RequestId);
+        }
+        throw err;
+      }
+    }
     const data = extractDataPart(inboundMessage);
     if (!data) {
       return jsonRpcError(
@@ -443,6 +569,31 @@ export default async function handler(req, res) {
 
     const skill = data.skill;
     const args = (data.arguments && typeof data.arguments === 'object') ? data.arguments : {};
+
+    // A2A jobs, step 1: submit -> validated quote (or accepted on the free tier).
+    if (skill === JOB_SKILL) {
+      skillTelemetry = { skill: JOB_SKILL, req, status: null, startedAt: Date.now(), paymentType: 'none' };
+      let creds;
+      try { creds = getSupabaseCreds(); } catch (e) { return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, 'Jobs are not available on this deployment.', requestId, undefined, pg1RequestId); }
+      const deps = jobDepsFactory(req, creds);
+      try {
+        const submitted = await submitJob({ jobType: String(args.job_type || ''), input: args.input, deps });
+        if (submitted.accepted) {
+          skillTelemetry.paymentType = 'free_tier';
+          skillTelemetry.status = 'ok';
+          return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(submitted.job, version, inboundMessage), id: requestId });
+        }
+        const gate = await deps.gate(submitted.job, undefined);
+        skillTelemetry.status = 'payment_required';
+        return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(submitted.job, version, inboundMessage, { paymentRequired: gate.paymentRequired }), id: requestId });
+      } catch (err) {
+        if (err && err.jobRefusal) {
+          skillTelemetry.status = err.status === 503 ? 'server_error' : 'invalid_input';
+          return jobRefusalResponse(res, err, requestId, pg1RequestId);
+        }
+        throw err;
+      }
+    }
 
     if (typeof skill !== 'string' || !A2A_SKILL_NAMES.includes(skill)) {
       if (typeof skill === 'string' && skill) skillTelemetry = { skill, req, unknown: true, startedAt: Date.now() };

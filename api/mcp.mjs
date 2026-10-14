@@ -3145,8 +3145,9 @@ function buildFallbackPaymentRequired(resourceInfo, error) {
 // accepts, and verify via the facilitator. Never runs the tool or settles —
 // callers run the tool first and invoke the returned `settle` function only
 // on tool success, per the x402 v2 MCP transport spec.
-async function runX402Gate(req, params) {
+async function runX402Gate(req, params, { price = X402_PRICE, description = null } = {}) {
   const resourceInfo = buildX402ResourceInfo(req);
+  if (description) resourceInfo.description = String(description).slice(0, 200);
   const server = getX402Server();
   if (!server) {
     return { authorized: false, paymentRequired: buildFallbackPaymentRequired(resourceInfo, 'x402 payment path is not configured on this deployment. Use a Gumroad license key (X-API-KEY) instead.') };
@@ -3158,7 +3159,7 @@ async function runX402Gate(req, params) {
 
   let requirements;
   try {
-    requirements = await server.buildPaymentRequirements({ scheme: X402_SCHEME, price: X402_PRICE, network: X402_NETWORK, payTo: X402_PAY_TO });
+    requirements = await server.buildPaymentRequirements({ scheme: X402_SCHEME, price, network: X402_NETWORK, payTo: X402_PAY_TO });
   } catch (e) {
     return { authorized: false, paymentRequired: buildFallbackPaymentRequired(resourceInfo, 'x402 payment path misconfigured: ' + e.message) };
   }
@@ -3204,9 +3205,29 @@ async function runX402Gate(req, params) {
 
   return {
     authorized: true,
+    payer: payerOfPayment(paymentPayload),
     settle: () => server.settlePayment(paymentPayload, matchingRequirements),
     settlementFailurePaymentRequired: (message) => server.createPaymentRequiredResponse(requirements, resourceInfo, message, undefined, undefined, paymentPayload)
   };
+}
+
+// The paying wallet of an x402 v2 "exact" PaymentPayload: the EIP-3009
+// authorization's from (EVM) or the payload's own payer field. Lowercased;
+// null when absent. Used for the A2A job limits and sanctions screening;
+// stored only as a salted hash.
+export function payerOfPayment(payload) {
+  const p = payload && typeof payload === 'object' ? payload : {};
+  const inner = p.payload && typeof p.payload === 'object' ? p.payload : {};
+  const from = (inner.authorization && inner.authorization.from) || inner.from || p.payer || null;
+  return typeof from === 'string' && /^0x[0-9a-fA-F]{40}$/.test(from) ? from.toLowerCase() : (typeof from === 'string' && from.length >= 26 && from.length <= 64 ? from : null);
+}
+
+// A2A jobs (lib/a2aJobs): the same x402 gate at the job's own price. The
+// payment is verified here and settled only by the caller, when the job is
+// accepted to run.
+export async function runPricedX402Gate(req, { payment, priceUsd, description }) {
+  const price = `$${Number(priceUsd).toFixed(6).replace(/0+$/, '').replace(/\.$/, '')}`;
+  return runX402Gate(req, payment ? { _meta: { 'x402/payment': payment } } : undefined, { price, description });
 }
 
 // Shared by the get_ioc_context and get_ioc_batch special cases, and by

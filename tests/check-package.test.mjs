@@ -869,6 +869,10 @@ function importGraph(entry) {
     const src = fs.readFileSync(file, 'utf8');
     for (const m of src.matchAll(/(?:^|\n)\s*(?:import|export)\s[^;]*?from\s+['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)/g)) {
       const spec = m[1] || m[2];
+      // The A2A job runner (lib/a2aJobs/service.mjs, P7) is loaded with a
+      // dynamic import only when a paid job runs; it is not on the
+      // check_package path and is covered by tests/a2a-jobs.test.mjs.
+      if (m[2] && /a2aJobs\/service\.mjs$/.test(spec)) continue;
       if (spec.startsWith('.')) walk(path.resolve(path.dirname(file), spec));
       else bare.add(spec);
     }

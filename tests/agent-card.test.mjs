@@ -56,7 +56,8 @@ test('agent card: no card-wide security requirement; only check_ip_abuse declare
 });
 
 test('agent card has exactly one skill per A2A skill (free and paid), matching api/a2a.mjs', () => {
-  const cardSkillIds = card.skills.map((s) => s.id).sort();
+  // A2A jobs (lib/a2aJobs, P7): submit_job and one job.* entry per job type are checked in tests/a2a-jobs.test.mjs.
+  const cardSkillIds = card.skills.map((s) => s.id).filter((id) => id !== 'submit_job' && !id.startsWith('job.')).sort();
   const exposedSkillIds = A2A_SKILL_TOOLS.map((t) => t.name).sort();
   assert.deepEqual(cardSkillIds, exposedSkillIds);
   assert.deepEqual(cardSkillIds, ['check_domain_age', 'check_hostname_reputation', 'check_ip_abuse', 'check_package', 'check_wallet_age', 'check_wallet_sanctions', 'get_cve_batch', 'get_cve_by_product', 'get_cve_details', 'get_threat_actor_profile', 'get_usage_status']);
@@ -64,7 +65,7 @@ test('agent card has exactly one skill per A2A skill (free and paid), matching a
 
 test('agent card: paid skills are tagged paid and name the price; the a2a-x402 extension is declared, not required', () => {
   const paid = ['get_cve_batch', 'get_cve_by_product', 'get_cve_details', 'get_threat_actor_profile'];
-  for (const skill of card.skills) {
+  for (const skill of card.skills.filter((s) => s.id !== 'submit_job' && !s.id.startsWith('job.'))) {
     assert.equal(skill.tags.includes('paid'), paid.includes(skill.id), skill.id);
     if (paid.includes(skill.id)) assert.match(skill.description, /0\.01 USD via x402.*5\/day free tier \(automatic\)/, skill.id);
   }

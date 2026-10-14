@@ -382,7 +382,7 @@ test('every source file that calls Gemini is one these tests drive', () => {
     .filter((f) => readFileSync(f, 'utf8').includes(GEMINI_HOST))
     .map((f) => f.slice(ROOT.length + 1))
     .sort();
-  assert.deepEqual(callers, ['api/chat.mjs', 'api/lib/gemini-client.js', 'index.js', 'lib/contextWindow.mjs', 'lib/film/providers.mjs', 'lib/imageEngines.mjs', 'lib/lab/policy.mjs', 'lib/lab/runner.mjs', 'lib/ttsRouter.mjs', 'lib/videoJobs.mjs'],
+  assert.deepEqual(callers, ['api/chat.mjs', 'api/lib/gemini-client.js', 'index.js', 'lib/a2aJobs/service.mjs', 'lib/contextWindow.mjs', 'lib/film/providers.mjs', 'lib/imageEngines.mjs', 'lib/lab/policy.mjs', 'lib/lab/runner.mjs', 'lib/ttsRouter.mjs', 'lib/videoJobs.mjs'],
     'a new Gemini call site: drive it through geminiStub above');
 });
 
