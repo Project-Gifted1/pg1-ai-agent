@@ -5,7 +5,7 @@
 
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { serviceStatus, statusPageHtml } from '../lib/statusMetrics.mjs';
-import { publicJwks } from '../lib/signing.mjs';
+import { signingStatus } from '../lib/signing.mjs';
 import { TOOLS } from './mcp.mjs';
 
 export const config = { maxDuration: 10 };
@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   let creds = {};
   try { creds = getSupabaseCreds(); } catch (e) { creds = {}; }
   const status = await serviceStatus({ supUrl: creds.supUrl, supKey: creds.supKey, tools: TOOLS.map((t) => t.name) });
-  const signing = publicJwks().keys.length > 0;
+  const signing = signingStatus().enabled;
   res.setHeader('Cache-Control', 'public, max-age=60');
   res.setHeader('Access-Control-Allow-Origin', '*');
   const wantsJson = (req.query && req.query.format === 'json') || /application\/json/i.test(String((req.headers && req.headers.accept) || ''));

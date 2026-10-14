@@ -182,6 +182,35 @@ test('signature round trip, tamper detection, request binding, and key rotation'
   assert.deepEqual(signing.publicJwks(), { keys: [] });
 });
 
+test('signing status: on/off with a reason, tolerant of paste slips, never logs key material; JWKS cache is short', () => {
+  const env = (v) => ({ PG1_SIGNING_KEY: v });
+  const on = signing.signingStatus(env(SEED));
+  assert.equal(on.enabled, true);
+  assert.equal(on.reason, 'ok');
+  // Stray newline, surrounding quotes, and a wrapped paste all still load the same key.
+  const kid = signing.publicJwks(env(SEED)).keys[0].kid;
+  for (const v of [`${SEED}\n`, `  ${SEED}  `, `"${SEED}"`, `${SEED.slice(0, 20)}\n${SEED.slice(20)}`]) {
+    assert.equal(signing.publicJwks(env(v)).keys[0].kid, kid);
+  }
+  assert.equal(signing.signingStatus({}).reason, 'not_set');
+  assert.equal(signing.signingStatus(env('   ')).reason, 'not_set');
+  assert.equal(signing.signingStatus(env(SEED.slice(0, 30))).reason, 'wrong_length');
+  assert.equal(signing.signingStatus(env(`${SEED}!`)).reason, 'invalid_characters');
+  assert.equal(signing.signingStatus(env('-----BEGIN PRIVATE KEY-----\nnope\n-----END PRIVATE KEY-----')).reason, 'invalid_pem');
+  for (const v of [SEED, SEED.slice(0, 30), `${SEED}!`]) {
+    const line = signing.signingStartupLine(env(v));
+    assert.match(line, /^\[signing\] (on|off)/);
+    assert.ok(!line.includes(v) && !line.includes(SEED.slice(0, 12)), 'no key material in the log line');
+  }
+  assert.match(signing.signingStartupLine({}), /^\[signing\] off \(not_set\)/);
+
+  const k = makeRes();
+  signingKeyHandler({ method: 'GET', headers: {} }, k);
+  const maxAge = Number(/max-age=(\d+)/.exec(k.headers['cache-control'])[1]);
+  assert.ok(maxAge <= 300, 'a rotated key shows up within minutes');
+  assert.ok(!/s-maxage/.test(k.headers['cache-control']), 'no long CDN copy');
+});
+
 test('MCP results carry _meta["pg1/signature"]; the JWKS route serves it; verify_result and the JS SDK confirm it and catch tampering', async () => {
   const args = { domain: FIXTURE_VALUES.domain.CLEAN };
   const res = await callMcp('check_domain_age', args);
