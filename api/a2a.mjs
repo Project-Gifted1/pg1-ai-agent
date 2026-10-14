@@ -4,7 +4,8 @@
  * Protocol: Agent2Agent (A2A) JSON-RPC 2.0 transport
  *           (https://a2a-protocol.org/latest/specification/)
  *
- * Exposes ONLY the seven always-free MCP tools as A2A skills:
+ * Exposes the always-free MCP tools as A2A skills (A2A_FREE_SKILL_NAMES),
+ * originally these seven:
  * check_wallet_sanctions, check_domain_age, check_hostname_reputation,
  * check_wallet_age, get_usage_status, and (1.16.0) check_ip_abuse, the
  * bring-your-own-key AbuseIPDB lookup: the caller's own key comes from the
@@ -94,7 +95,7 @@ import { FOUNDRY_SKILL, submitBuild, payBuild, refreshBuild, foundryJobView, Fou
 import { isFoundryToolName, callFoundryTool, FoundryCallError, TOOL_KEY_HEADER } from '../lib/foundry/tools.mjs';
 import { createFoundryStore } from '../lib/foundry/store.mjs';
 import { payerHash } from '../lib/a2aJobs/jobs.mjs';
-import { signResult, A2A_SIGNATURE_META } from '../lib/signing.mjs';
+import { signResult, A2A_SIGNATURE_META, pg1Version } from '../lib/signing.mjs';
 import { waitUntil } from '@vercel/functions';
 import { checkFreeTierAvailable, consumeFreeTier, freeTierWanted } from '../lib/freeTier.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
@@ -492,7 +493,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-a2a',
-      version: '1.19.0',
+      version: pg1Version(),
       protocol: 'Agent2Agent (A2A) over JSON-RPC 2.0',
       supportedVersions: ['1.0', '0.3'],
       agentCard: 'https://pg1-ai-agent.vercel.app/.well-known/agent-card.json',

@@ -43,7 +43,7 @@ Per-tool calls, success rate and p50/p95 latency over the last 24 hours: https:/
 ## Endpoints
 
 - [MCP](https://pg1-ai-agent.vercel.app/api/mcp): Model Context Protocol server (Streamable HTTP, JSON-RPC).
-- [A2A](https://pg1-ai-agent.vercel.app/api/a2a): Agent2Agent JSON-RPC endpoint exposing the seven free tools; agent card at https://pg1-ai-agent.vercel.app/.well-known/agent-card.json.
+- [A2A](https://pg1-ai-agent.vercel.app/api/a2a): Agent2Agent JSON-RPC endpoint: ten free skills, six paid skills (preflight_check, hosting_advisor and the CVE and threat-actor tools), paid jobs (submit_job) and commissioned tools (build_tool); agent card at https://pg1-ai-agent.vercel.app/.well-known/agent-card.json.
 - [REST](https://pg1-ai-agent.vercel.app/api/ioc): Simple GET endpoint returning a STIX 2.1 bundle of CVE records from NIST NVD (vulnerability objects with the CVE id and an NVD reference; no IP, domain, URL or file-hash indicators yet). Free while it holds no current data: no payment, no licence key, and it does not use the 5 free calls a day (the operator's PG1_FEED_PAID switch makes it paid again).
 - [Health](https://pg1-ai-agent.vercel.app/api/health): Uptime/health check.
 - [OpenAPI spec](https://pg1-ai-agent.vercel.app/openapi.json): Machine-readable schema for the REST endpoint.
@@ -112,7 +112,10 @@ Invalid input keeps its error code (usually -32602); the message says what was w
 
 ## Paid tools
 
-- [Paid MCP tools](https://pg1-ai-agent.vercel.app/api/mcp): CVE enrichment, threat actor dossiers, and indicator submission — $0.01 per call via x402 on Base, or a licence key in the `x-api-key` header.
+- [Paid MCP tools](https://pg1-ai-agent.vercel.app/api/mcp): preflight_check, hosting_advisor, get_cve_details, get_cve_batch, get_cve_by_product and get_threat_actor_profile; get_ioc_context and get_ioc_batch only when a record is found. 0.01 USD per call via x402 on Base, or a licence key in the `x-api-key` header, after the shared 5/day free tier.
+- [Free STIX feed](https://pg1-ai-agent.vercel.app/api/ioc): get_threat_indicators (and GET /api/ioc), CVE records from NIST NVD only; free while the feed holds no current data, no free-tier use.
+- [Licence key only](https://pg1-ai-agent.vercel.app/api/mcp): submit_indicator, to report an indicator you observed (reviewed before use). Not sold per call.
+- Alerts: use a watchlist (see Watchlists above).
 
 ## Listings
 
