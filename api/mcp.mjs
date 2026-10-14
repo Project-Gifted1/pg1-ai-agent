@@ -3,7 +3,11 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.20.0 — RELEASE: marketplace listings (server.json, README,
+ * Version: 1.20.1 — DOCS: preflight_check positioned as the one decision
+ *   after the free point checks (llms.txt, /docs/agents); tool descriptions
+ *   say no_flags means no flags found, never "safe"
+ *   (tests/no-safe-wording.test.mjs).
+ * 1.20.0 — RELEASE: marketplace listings (server.json, README,
  *   llms.txt, /docs/agents, agent card) match the live tools/list: 20 tools,
  *   subscribe_alerts hidden (PG1_ALERTS), the STIX feed free and NVD-only.
  *   serverInfo and GET read the version from server.json.
@@ -240,12 +244,12 @@ const EDGE_TOOLS = [
   PREFLIGHT_DEF,
   {
     name: 'check_x402_endpoint',
-    description: 'PG1 Sovereign Threat Intelligence: checks an x402-paid URL before you pay it. Fetches the URL once (https only; private addresses and redirects refused) and reads its x402 payment request: each option\'s network must be a known settlement network and its asset the known USDC contract there; the receiving wallet (payTo) is screened against the OFAC SDN list and its on-chain age read; TLS and the domain\'s age are checked. Always free (60/hour per caller). Returns status flagged / no_flags / unknown with reasons (X402_UNKNOWN_NETWORK, X402_UNKNOWN_ASSET, WALLET_SANCTIONED, WALLET_NEW_7D, ENDPOINT_TLS_FAILED, DOMAIN_NEWLY_REGISTERED_30D, X402_NO_PAYMENT_REQUEST). Never says "safe".',
+    description: 'PG1 Sovereign Threat Intelligence: checks an x402-paid URL before you pay it. Fetches the URL once (https only; private addresses and redirects refused) and reads its x402 payment request: each option\'s network must be a known settlement network and its asset the known USDC contract there; the receiving wallet (payTo) is screened against the OFAC SDN list and its on-chain age read; TLS and the domain\'s age are checked. Always free (60/hour per caller). Returns status flagged / no_flags / unknown with reasons (X402_UNKNOWN_NETWORK, X402_UNKNOWN_ASSET, WALLET_SANCTIONED, WALLET_NEW_7D, ENDPOINT_TLS_FAILED, DOMAIN_NEWLY_REGISTERED_30D, X402_NO_PAYMENT_REQUEST). no_flags means no flags found, never "safe".',
     inputSchema: { type: 'object', properties: { url: { type: 'string', maxLength: 2048, description: 'The https URL of the paid resource.' } }, required: ['url'], additionalProperties: false }
   },
   {
     name: 'check_agent_card',
-    description: 'PG1 Sovereign Threat Intelligence: checks another agent before you trust it. Fetches its /.well-known/agent-card.json (https only; private addresses and redirects refused): is it a valid A2A agent card, does its name claim a well-known brand the domain does not belong to, how old is the domain, is the hostname on the phishing blocklist or a look-alike. Always free (60/hour per caller). Give url or domain.',
+    description: 'PG1 Sovereign Threat Intelligence: checks another agent before you trust it. Fetches its /.well-known/agent-card.json (https only; private addresses and redirects refused): is it a valid A2A agent card, does its name claim a well-known brand the domain does not belong to, how old is the domain, is the hostname on the phishing blocklist or a look-alike. Always free (60/hour per caller). Give url or domain. Returns status flagged / no_flags / unknown; no_flags means no flags found, never "safe".',
     inputSchema: { type: 'object', properties: { url: { type: 'string', maxLength: 2048, description: 'The agent\'s https URL or its agent card URL.' }, domain: { type: 'string', maxLength: 253, description: 'Or just the agent\'s domain.' } }, additionalProperties: false }
   },
   {

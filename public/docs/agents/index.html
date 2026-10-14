@@ -34,6 +34,7 @@
     <ul>
       <li><a href="#why-agents-use-pg1">Why agents use PG1</a></li>
       <li><a href="#which-tool-to-call">Which tool to call</a></li>
+      <li><a href="#one-preflight_check-three-actions">One <code>preflight_check</code>, three actions</a></li>
       <li><a href="#what-status-means">What <code>status</code> means</a></li>
       <li><a href="#verify-a-result">Verify a result</a></li>
       <li><a href="#free-tier-and-rate-limits">Free tier and rate limits</a></li>
@@ -41,6 +42,7 @@
   </nav>
 
   <article class="doc">
+<p>Start with the free point checks. When you want one decision before acting, use <code>preflight_check</code>.</p>
 <h2 id="why-agents-use-pg1">Why agents use PG1</h2>
 <p>An autonomous agent acts on things it has never seen before: it pays a wallet, opens a link, installs a package, patches a CVE. PG1 checks that thing first and answers in one machine-readable shape, <code>reasons</code> + <code>status</code> + <code>checks</code>, so the agent can decide on its own and a person can audit why.</p>
 <ul>
@@ -64,7 +66,7 @@
 <div class="table-wrap" tabindex="0"><table>
 <thead><tr><th scope="col">You have</th><th scope="col">Call</th><th scope="col">Notes</th></tr></thead>
 <tbody>
-<tr><td>An action you are about to take (pay, open, install, patch, trust an agent)</td><td><code>preflight_check</code></td><td>Start here. One paid call (5 free a day) that runs the checks below in parallel and returns one decision: <code>no_flags</code>, <code>flagged</code> or <code>unknown</code>.</td></tr>
+<tr><td>An action you are about to take (pay, open, install, patch, trust an agent)</td><td><code>preflight_check</code></td><td>Start here when you want one decision. 0.01 USD per call, 5 free calls a day (shared with the other paid tools). Runs the checks below in parallel and returns one decision: <code>no_flags</code> (no flags found), <code>flagged</code> or <code>unknown</code>. Fail closed: a check that does not finish makes the decision <code>unknown</code>, never <code>no_flags</code>.</td></tr>
 <tr><td>An x402 endpoint you are about to pay</td><td><code>check_x402_endpoint</code></td><td>Reads its 402 payment request: payTo sanctions and wallet age, network and asset sanity, TLS, domain age.</td></tr>
 <tr><td>Another agent you are about to trust</td><td><code>check_agent_card</code></td><td>Fetches its A2A agent card: schema validity, domain age and reputation, look-alike names.</td></tr>
 <tr><td>Where to host a workload (privacy, residency, latency, uptime, budget)</td><td><code>hosting_advisor</code></td><td>Ranked regions and providers with cited reasons, a redundancy plan and privacy-by-design guidance. Paid; not legal advice. REST: <code>POST /api/hosting-advisor</code>.</td></tr>
@@ -83,11 +85,25 @@
 <tr><td>An indicator you observed and want to report</td><td><code>submit_indicator</code></td><td>Licence key only (<code>X-API-KEY</code>); not sold per call. Submissions are reviewed before use.</td></tr>
 </tbody>
 </table></div>
+<h2 id="one-preflight_check-three-actions">One <code>preflight_check</code>, three actions</h2>
+<p>Each call returns one <code>decision</code>. These targets are PG1&#39;s test fixtures (<a href="https://pg1-ai-agent.vercel.app/docs/testing">/docs/testing</a>), so the checks inside make no upstream lookup and the answers are fixed; each <code>preflight_check</code> call still counts against the 5 free calls a day.</p>
+<div class="code"><div class="code-bar"><span class="code-lang">json</span><button type="button" class="copy" data-copy hidden>Copy</button></div><pre tabindex="0"><code class="language-json">{&quot;action&quot;:&quot;open&quot;,&quot;target&quot;:&quot;https://pg1-test-flagged.invalid/login&quot;}
+{&quot;action&quot;:&quot;pay&quot;,&quot;target&quot;:&quot;0x7067312d746573742d6669787475726500000002&quot;}
+{&quot;action&quot;:&quot;install&quot;,&quot;target&quot;:&quot;_pg1-test-unknown&quot;,&quot;ecosystem&quot;:&quot;npm&quot;}
+</code></pre></div>
+<div class="table-wrap" tabindex="0"><table>
+<thead><tr><th scope="col">Action</th><th scope="col">Checks run</th><th scope="col"><code>decision</code></th><th scope="col">Why</th></tr></thead>
+<tbody>
+<tr><td><code>open</code> + URL</td><td><code>check_hostname_reputation</code>, <code>check_domain_age</code></td><td><code>flagged</code></td><td><code>HOSTNAME_PHISHING_LISTED</code> and <code>DOMAIN_NEWLY_REGISTERED_30D</code></td></tr>
+<tr><td><code>pay</code> + wallet</td><td><code>check_wallet_sanctions</code>, <code>check_wallet_age</code></td><td><code>no_flags</code></td><td>No flags found in the sources checked. It is not a verdict that the wallet is safe.</td></tr>
+<tr><td><code>install</code> + package</td><td><code>check_package</code></td><td><code>unknown</code></td><td>The package lookups did not complete, so the decision fails closed. Stop or ask a person.</td></tr>
+</tbody>
+</table></div>
 <h2 id="what-status-means">What <code>status</code> means</h2>
 <div class="table-wrap" tabindex="0"><table>
 <thead><tr><th scope="col"><code>status</code></th><th scope="col">Meaning</th><th scope="col">What to do</th></tr></thead>
 <tbody>
-<tr><td><code>&quot;no_flags&quot;</code></td><td>Nothing bad is recorded <strong>in the sources checked</strong> (see <code>checks</code>). It is not proof the target is safe.</td><td>Proceed under your own policy.</td></tr>
+<tr><td><code>&quot;no_flags&quot;</code></td><td>No flags found <strong>in the sources checked</strong> (see <code>checks</code>). PG1 never calls a target &quot;safe&quot;.</td><td>Proceed under your own policy.</td></tr>
 <tr><td><code>&quot;flagged&quot;</code></td><td>At least one warning in <code>reasons</code>.</td><td>Stop, or escalate to a person. Match on <code>reasons[].code</code>, never on <code>message</code>.</td></tr>
 <tr><td><code>&quot;unknown&quot;</code></td><td>A source timed out, errored or was skipped, so the answer is incomplete.</td><td>Never treat it as clean: retry, or fail closed.</td></tr>
 </tbody>

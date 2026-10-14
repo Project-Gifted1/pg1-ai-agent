@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "PG1 Sovereign Threat Intelligence API",
-    "version": "1.20.0",
+    "version": "1.20.1",
     "contact": {
       "email": "gikewun@gmail.com"
     },

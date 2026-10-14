@@ -1,8 +1,8 @@
-# Registries for PG1 1.20.0 (report only: nothing submitted)
+# Registries for PG1 1.20.1 (report only: nothing submitted)
 
 | Registry | What | State | To submit |
 |---|---|---|---|
-| Official MCP Registry | `server.json` (`io.github.Project-Gifted1/pg1-threat-intel`, 1.20.0) | Listed at an earlier version; 1.20.0 is not published | After merge and the production deploy: Actions, "Publish MCP Server" (`.github/workflows/publish-mcp.yml`), Run workflow on `main`. It logs in with GitHub OIDC and runs `mcp-publisher publish` |
+| Official MCP Registry | `server.json` (`io.github.Project-Gifted1/pg1-threat-intel`, 1.20.1) | Listed at an earlier version; 1.20.1 is not published | After merge and the production deploy: Actions, "Publish MCP Server" (`.github/workflows/publish-mcp.yml`), Run workflow on `main`. It logs in with GitHub OIDC and runs `mcp-publisher publish` |
 | Smithery | `@gikewun/pg1-threat-intel`, a URL listing of `/api/mcp` (no config file in the repo) | Listed; Smithery scans the live tools/list | After the deploy: `npx @smithery/cli mcp publish "https://pg1-ai-agent.vercel.app/api/mcp" -n @gikewun/pg1-threat-intel`, or republish from the server's page on smithery.ai, so it rescans 20 tools |
 | Glama | the MCP server | Listed; re-reads tools/list | Nothing, or "refresh" in its dashboard |
 | npm | `sdk/js` as `pg1-sdk` 0.1.0 | Publish-ready, not published; name availability not checked | `cd sdk/js && npm publish --access public` (Apache-2.0; prepack copies sdk/LICENSE in) |

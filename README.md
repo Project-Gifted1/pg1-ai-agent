@@ -8,6 +8,8 @@ Threat intelligence API and MCP server for AI agents and security tooling.
 
 <!-- This section is published as the public page /docs/agents (public/docs/agents/index.html): after editing it, run npm run docs:build. Keep it free of repo-relative links. The limits below are pinned to lib/x402Config.mjs and lib/freeTier.mjs by tests/agent-guide.test.mjs. -->
 
+Start with the free point checks. When you want one decision before acting, use `preflight_check`.
+
 ### Why agents use PG1
 
 An autonomous agent acts on things it has never seen before: it pays a wallet, opens a link, installs a package, patches a CVE. PG1 checks that thing first and answers in one machine-readable shape, `reasons` + `status` + `checks`, so the agent can decide on its own and a person can audit why.
@@ -39,7 +41,7 @@ A2A agents use `https://pg1-ai-agent.vercel.app/api/a2a` (agent card at `/.well-
 
 | You have | Call | Notes |
 |---|---|---|
-| An action you are about to take (pay, open, install, patch, trust an agent) | `preflight_check` | Start here. One paid call (5 free a day) that runs the checks below in parallel and returns one decision: `no_flags`, `flagged` or `unknown`. |
+| An action you are about to take (pay, open, install, patch, trust an agent) | `preflight_check` | Start here when you want one decision. 0.01 USD per call, 5 free calls a day (shared with the other paid tools). Runs the checks below in parallel and returns one decision: `no_flags` (no flags found), `flagged` or `unknown`. Fail closed: a check that does not finish makes the decision `unknown`, never `no_flags`. |
 | An x402 endpoint you are about to pay | `check_x402_endpoint` | Reads its 402 payment request: payTo sanctions and wallet age, network and asset sanity, TLS, domain age. |
 | Another agent you are about to trust | `check_agent_card` | Fetches its A2A agent card: schema validity, domain age and reputation, look-alike names. |
 | Where to host a workload (privacy, residency, latency, uptime, budget) | `hosting_advisor` | Ranked regions and providers with cited reasons, a redundancy plan and privacy-by-design guidance. Paid; not legal advice. REST: `POST /api/hosting-advisor`. |
@@ -57,11 +59,27 @@ A2A agents use `https://pg1-ai-agent.vercel.app/api/a2a` (agent card at `/.well-
 | Your remaining free calls | `get_usage_status` | Always free. |
 | An indicator you observed and want to report | `submit_indicator` | Licence key only (`X-API-KEY`); not sold per call. Submissions are reviewed before use. |
 
+### One `preflight_check`, three actions
+
+Each call returns one `decision`. These targets are PG1's test fixtures ([/docs/testing](https://pg1-ai-agent.vercel.app/docs/testing)), so the checks inside make no upstream lookup and the answers are fixed; each `preflight_check` call still counts against the 5 free calls a day.
+
+```json
+{"action":"open","target":"https://pg1-test-flagged.invalid/login"}
+{"action":"pay","target":"0x7067312d746573742d6669787475726500000002"}
+{"action":"install","target":"_pg1-test-unknown","ecosystem":"npm"}
+```
+
+| Action | Checks run | `decision` | Why |
+|---|---|---|---|
+| `open` + URL | `check_hostname_reputation`, `check_domain_age` | `flagged` | `HOSTNAME_PHISHING_LISTED` and `DOMAIN_NEWLY_REGISTERED_30D` |
+| `pay` + wallet | `check_wallet_sanctions`, `check_wallet_age` | `no_flags` | No flags found in the sources checked. It is not a verdict that the wallet is safe. |
+| `install` + package | `check_package` | `unknown` | The package lookups did not complete, so the decision fails closed. Stop or ask a person. |
+
 ### What `status` means
 
 | `status` | Meaning | What to do |
 |---|---|---|
-| `"no_flags"` | Nothing bad is recorded **in the sources checked** (see `checks`). It is not proof the target is safe. | Proceed under your own policy. |
+| `"no_flags"` | No flags found **in the sources checked** (see `checks`). PG1 never calls a target "safe". | Proceed under your own policy. |
 | `"flagged"` | At least one warning in `reasons`. | Stop, or escalate to a person. Match on `reasons[].code`, never on `message`. |
 | `"unknown"` | A source timed out, errored or was skipped, so the answer is incomplete. | Never treat it as clean: retry, or fail closed. |
 
