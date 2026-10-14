@@ -139,7 +139,7 @@ test('unknown skill returns a clear -32602 error listing available skills', asyn
 
 test('A2A exposes the free skills plus the four paid CVE / ATT&CK skills; the licence-only and feed tools stay MCP-only', async () => {
   const skillIds = A2A_SKILL_TOOLS.map((t) => t.name);
-  assert.deepEqual(skillIds.sort(), ['check_domain_age', 'check_hostname_reputation', 'check_wallet_sanctions', 'check_wallet_age', 'get_usage_status', 'check_ip_abuse', 'check_package', 'get_cve_details', 'get_cve_batch', 'get_cve_by_product', 'get_threat_actor_profile'].sort());
+  assert.deepEqual(skillIds.sort(), ['check_domain_age', 'check_hostname_reputation', 'check_wallet_sanctions', 'check_wallet_age', 'get_usage_status', 'check_ip_abuse', 'check_package', 'get_cve_details', 'get_cve_batch', 'get_cve_by_product', 'get_threat_actor_profile', 'preflight_check', 'check_x402_endpoint', 'check_agent_card', 'verify_result'].sort());
 
   const res = await callSkill('SendMessage', 'subscribe_alerts', { webhook_url: 'https://example.com/hook' });
   assert.equal(res.statusCode, 400);

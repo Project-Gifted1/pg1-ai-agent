@@ -129,6 +129,8 @@ import { PREFLIGHT_DEF, PREFLIGHT_TOOL, runPreflight } from '../lib/preflight.mj
 import { checkX402Endpoint, checkAgentCard } from '../lib/agentChecks.mjs';
 import { signResult, verifySignedResult, publicJwks, MCP_SIGNATURE_META } from '../lib/signing.mjs';
 import { cachedCheck } from '../lib/resultCache.mjs';
+import { checkUrlShape } from '../lib/netGuard.mjs';
+import { serviceStatus } from '../lib/statusMetrics.mjs';
 
 export const config = { maxDuration: 30 };
 
@@ -1230,6 +1232,8 @@ export async function handleUsageStatus(args, requestIdentifier) {
     free_tier_calls_used_today: callsToday,
     free_tier_calls_remaining_today: remaining,
     license_status: licenseStatus,
+    // Reliability of every public tool, last 24 hours (lib/statusMetrics.mjs; also /status).
+    service_status: await serviceStatus({ supUrl, supKey, tools: TOOLS.map((t) => t.name), timeoutMs: 1500 }).then((st) => (st.available ? { window_hours: st.window_hours, tools: st.tools, page: 'https://pg1-ai-agent.vercel.app/status' } : null)).catch(() => null),
     checked_at: new Date().toISOString()
   }, { reasons: [], checks });
 }
@@ -1244,6 +1248,17 @@ async function handleSubscribeAlerts(args, licenseKey) {
     throw invalidInput({
       problem: webhookUrl ? 'webhook_url is not an https:// URL' : 'webhook_url is missing',
       expected: 'an absolute URL starting with https://',
+      example: 'https://hooks.example.com/pg1-alerts'
+    });
+  }
+  // SSRF guard (lib/netGuard.mjs): no private, loopback, metadata or
+  // credentialed webhook URLs.
+  try {
+    checkUrlShape(webhookUrl);
+  } catch (e) {
+    throw invalidInput({
+      problem: `webhook_url is not allowed: ${e.message}`,
+      expected: 'a public https URL on a standard port, with no credentials',
       example: 'https://hooks.example.com/pg1-alerts'
     });
   }

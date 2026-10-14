@@ -83,8 +83,10 @@ import {
   recordToolError,
   resolveTestFixture,
   requestCallerHash,
-  runPricedX402Gate
+  runPricedX402Gate,
+  runReadOnlyTool
 } from './mcp.mjs';
+import { signResult, A2A_SIGNATURE_META } from '../lib/signing.mjs';
 import { waitUntil } from '@vercel/functions';
 import { checkFreeTierAvailable, consumeFreeTier, freeTierWanted } from '../lib/freeTier.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
@@ -113,14 +115,18 @@ const SKILL_SOURCE_LABELS = {
   get_cve_details: 'vulnerability database',
   get_cve_batch: 'vulnerability database',
   get_cve_by_product: 'vulnerability database',
-  get_threat_actor_profile: 'threat actor intelligence'
+  get_threat_actor_profile: 'threat actor intelligence',
+  preflight_check: 'PG1 preflight',
+  check_x402_endpoint: 'x402 payment request',
+  check_agent_card: 'agent card',
+  verify_result: 'PG1 signing keys'
 };
 
 // 60 s: an accepted A2A job runs in the background (waitUntil) after the reply.
 export const config = { maxDuration: 60 };
 
-export const A2A_FREE_SKILL_NAMES = Object.freeze(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'get_usage_status', 'check_ip_abuse', 'check_package']);
-export const A2A_PAID_SKILL_NAMES = Object.freeze(['get_cve_details', 'get_cve_batch', 'get_cve_by_product', 'get_threat_actor_profile']);
+export const A2A_FREE_SKILL_NAMES = Object.freeze(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'get_usage_status', 'check_ip_abuse', 'check_package', 'check_x402_endpoint', 'check_agent_card', 'verify_result']);
+export const A2A_PAID_SKILL_NAMES = Object.freeze(['preflight_check', 'get_cve_details', 'get_cve_batch', 'get_cve_by_product', 'get_threat_actor_profile']);
 const A2A_SKILL_NAMES = [...A2A_FREE_SKILL_NAMES, ...A2A_PAID_SKILL_NAMES];
 
 // Message metadata keys of the a2a-x402 extension.
@@ -185,6 +191,10 @@ async function runSkill(skill, args, identifier, licenseKey, req) {
       return handleCheckIpAbuse(args, { identifier, licenseKey, abuseIpdbKey: readCustomerKey(req.headers) });
     case 'check_package':
       return handleCheckPackage(args, identifier, licenseKey);
+    case 'check_x402_endpoint':
+    case 'check_agent_card':
+    case 'verify_result':
+      return runReadOnlyTool(skill, args, { identifier, licenseKey });
     default:
       return undefined;
   }
@@ -294,6 +304,9 @@ function taskResult(skill, args, result, version, inboundMessage, { paymentMetad
   const taskId = crypto.randomUUID();
   const contextId = (inboundMessage && inboundMessage.contextId) || crypto.randomUUID();
   const inboundData = { skill, arguments: args };
+  // Signed results (lib/signing.mjs): metadata["pg1.signature"].
+  const signature = signResult({ tool: skill, args, result });
+  if (signature) paymentMetadata = { ...(paymentMetadata || {}), [A2A_SIGNATURE_META]: signature };
 
   const task = {
     id: taskId,

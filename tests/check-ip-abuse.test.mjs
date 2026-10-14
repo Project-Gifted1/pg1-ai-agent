@@ -208,7 +208,7 @@ test('the 5 pre-existing A2A skills are unchanged; check_ip_abuse is added as th
   const names = A2A_SKILL_TOOLS.map((t) => t.name);
   // Phase 2 added the paid skills (tests/phase2-funnel.test.mjs).
   const paid = ['get_cve_details', 'get_cve_batch', 'get_cve_by_product', 'get_threat_actor_profile'];
-  assert.deepEqual(names.filter((n) => n !== 'check_ip_abuse' && n !== 'check_package' && !paid.includes(n)).sort(), ['check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_wallet_sanctions', 'get_usage_status']);
+  assert.deepEqual(names.filter((n) => n !== 'check_ip_abuse' && n !== 'check_package' && !paid.includes(n) && !P8_TOOLS.includes(n)).sort(), ['check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_wallet_sanctions', 'get_usage_status']);
   assert.ok(names.includes('check_ip_abuse'));
   assert.equal(A2A_SKILL_TOOLS.find((t) => t.name === 'check_ip_abuse'), tool);
 });

@@ -46,6 +46,27 @@
   ],
   "skills": [
     {
+      "id": "preflight_check",
+      "name": "preflight_check",
+      "description": "One call before an agent acts. Give the action (pay, open, install, patch, trust_agent) and its target; PG1 runs every relevant check in parallel and returns one decision: no_flags, flagged or unknown, with merged reasons, per-check results and latency. Fail closed: a check that does not finish makes the decision unknown, never no_flags. Paid: 0.01 USD via x402 or a licence key, after the shared 5/day free tier (automatic). Results are signed (metadata[\"pg1.signature\"]).",
+      "tags": [
+        "threat-intelligence",
+        "paid",
+        "preflight",
+        "agent-safety"
+      ],
+      "examples": [
+        "Preflight: I am about to pay 0x1234... on Base.",
+        "Preflight: I am about to install the npm package left-pad@1.3.0."
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
+    },
+    {
       "id": "check_wallet_sanctions",
       "name": "check_wallet_sanctions",
       "description": "Checks a cryptocurrency wallet address against the OFAC SDN (Specially Designated Nationals) sanctions list, synced daily from US Treasury data. Always free. Returns listed/matches/source/list_last_synced; informational only, never phrased as \"safe\" or \"clean\".",
@@ -164,6 +185,63 @@
       "examples": [
         "Does the npm package 'expresss' exist, and does its name imitate a popular package?",
         "Check the PyPI package requests version 2.31.0 before I install it."
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
+    },
+    {
+      "id": "check_x402_endpoint",
+      "name": "check_x402_endpoint",
+      "description": "Check an x402 endpoint before paying it: reads its 402 payment request, then screens payTo against the sanctions list and its on-chain age, checks the network and asset are known, the TLS connection and the domain age. Always free, 60 calls/hour per caller. https URLs only; private addresses and redirects are refused.",
+      "tags": [
+        "x402",
+        "payments",
+        "agent-safety",
+        "sanctions"
+      ],
+      "examples": [
+        "Is it safe to pay https://api.example.com/paid-endpoint?"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
+    },
+    {
+      "id": "check_agent_card",
+      "name": "check_agent_card",
+      "description": "Check another agent before trusting it: fetches its A2A agent card, validates the schema, flags a name that claims a brand its domain does not belong to, and checks the domain's age and reputation. Always free, 60 calls/hour per caller.",
+      "tags": [
+        "a2a",
+        "agent-safety",
+        "impersonation"
+      ],
+      "examples": [
+        "Check the agent at https://agent.example.com"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
+    },
+    {
+      "id": "verify_result",
+      "name": "verify_result",
+      "description": "Verify a PG1 result's Ed25519 signature against PG1's published keys (/.well-known/pg1-signing-key). Always free. Give result and signature, and optionally the tool and arguments it answered.",
+      "tags": [
+        "signatures",
+        "verification"
+      ],
+      "examples": [
+        "Verify this PG1 result and its signature."
       ],
       "inputModes": [
         "application/json"
