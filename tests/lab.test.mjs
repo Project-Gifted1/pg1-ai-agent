@@ -223,7 +223,7 @@ test('lab.yml: lab environment, lab-scoped secrets only, fresh runners, tests wi
   assert.match(code, /PG1_LAB_DISPATCH_SECRET: \$\{\{ secrets\.PG1_LAB_DISPATCH_SECRET \}\}\n/);
   assert.match(code, /PG1_LAB_GITHUB_TOKEN: \$\{\{ secrets\.PG1_LAB_GITHUB_TOKEN \|\| github\.token \}\}/);
   const experimentJob = yml.slice(yml.indexOf('\n  experiment:'), yml.indexOf('\n  test:'));
-  const pullJob = yml.slice(yml.indexOf('\n  pull:'));
+  const pullJob = yml.slice(yml.indexOf('\n  pull:'), yml.indexOf('\n  notify:'));
   assert.doesNotMatch(experimentJob, /github\.token|PG1_LAB_GITHUB_TOKEN|permissions:/, 'the experiment job gets no GitHub write token');
   assert.match(pullJob, /permissions:\n      contents: write\n      pull-requests: write\n/);
   assert.equal((code.match(/: write/g) || []).length, 2, 'write permissions only in the pull job');

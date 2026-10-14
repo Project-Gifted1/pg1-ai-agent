@@ -66,6 +66,7 @@ function startStubServer() {
         if (url.pathname === '/api/errors') return json(200, { errors: [], ok: true });
         if (url.pathname === '/api/handoffs') return json(200, { handoffs: [] });
         if (url.pathname === '/api/threads') return json(200, { threads: [] });
+        if (url.pathname === '/api/watches') return json(200, { ok: true, reports: [] });
         if (url.pathname === '/api/chat') {
           if (parsed && parsed.prompt === 'AUTH_VERIFY') return json(200, { authenticated: true });
           if (parsed && parsed.action === 'SPEAK') return json(200, { reply: 'ok' });

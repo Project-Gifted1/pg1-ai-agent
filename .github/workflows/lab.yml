@@ -19,7 +19,7 @@ name: PG1 lab
 # and fails closed ("CI none") until the operator starts CI themselves:
 # close and reopen the draft PR, or push a commit to lab/<id>.
 #
-# Three jobs on three fresh runners:
+# Three jobs on three fresh runners, and the notice:
 #   experiment  model calls only (POSTs to model APIs; research GETs public
 #               pages through lib/netGuard.mjs); writes the result and, for
 #               a code experiment, the proposed files
@@ -29,6 +29,9 @@ name: PG1 lab
 #               fresh checkout commits exactly the proposed files to
 #               lab/<id>, pushes, and opens a DRAFT pull request. PG1 never
 #               merges it.
+#   notify      always, last: one signed result notice to PG1
+#               (/api/hooks/lab, needs the PG1_URL variable) so the
+#               experiment is synced and reported at once
 # Hard limits: the runner stops at the signed budget and
 # PG1_LAB_MAX_MINUTES; each job has its own timeout.
 
@@ -185,3 +188,43 @@ jobs:
           path: lab-out/result.json
           retention-days: 14
           overwrite: true
+
+  notify:
+    # The result notice: when every other job is done (passed, failed or
+    # skipped), one signed POST tells PG1 to sync this experiment now instead
+    # of waiting for the webhook or the re-sync cron. Signed with the lab's own
+    # PG1_LAB_DISPATCH_SECRET over "<timestamp>.<body>"; carries only the
+    # experiment id, this run's id and the experiment job's result, never the
+    # findings. No checkout, no npm, no write permission. Set the repository
+    # (or "lab" environment) variable PG1_URL to PG1's address to turn it on;
+    # unset, the step does nothing. A failed notice never fails the run.
+    needs: [experiment, test, pull]
+    if: always()
+    runs-on: ubuntu-latest
+    environment: lab
+    timeout-minutes: 3
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Send the signed result notice to PG1
+        continue-on-error: true
+        env:
+          PG1_LAB_DISPATCH_SECRET: ${{ secrets.PG1_LAB_DISPATCH_SECRET }}
+          PG1_URL: ${{ vars.PG1_URL }}
+          LAB_ID: ${{ inputs.experiment_id }}
+          RUN_ID: ${{ github.run_id }}
+          EXPERIMENT_RESULT: ${{ needs.experiment.result }}
+        run: |
+          node -e '
+            const crypto = require("crypto");
+            const base = String(process.env.PG1_URL || "").replace(/\/+$/, "");
+            const secret = process.env.PG1_LAB_DISPATCH_SECRET || "";
+            if (!/^https:\/\//.test(base) || !secret) { console.log("PG1_URL or the dispatch secret is not set: no notice sent."); process.exit(0); }
+            const body = JSON.stringify({ experiment_id: process.env.LAB_ID, run_id: Number(process.env.RUN_ID), conclusion: process.env.EXPERIMENT_RESULT || "unknown" });
+            const ts = String(Math.floor(Date.now() / 1000));
+            const sig = "sha256=" + crypto.createHmac("sha256", secret).update(ts + "." + body).digest("hex");
+            fetch(base + "/api/hooks/lab", { method: "POST", headers: { "Content-Type": "application/json", "X-PG1-Timestamp": ts, "X-PG1-Signature": sig }, body, signal: AbortSignal.timeout(20000) })
+              .then((r) => console.log("PG1 answered " + r.status))
+              .catch((e) => console.log("PG1 could not be reached: " + e.name));
+          '

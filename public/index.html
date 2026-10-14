@@ -1078,6 +1078,8 @@
     .pg1-action:hover { background: var(--gold-soft); }
     .pg1-action:active { transform: scale(0.97); }
     .pg1-action:focus-visible { border-radius: var(--r-full); }
+    a.pg1-action { text-decoration: none; }
+    .message-bubble.is-report { border-left: 2px solid var(--gold-line); }
     .pg1-action[data-confirm="1"] { border-color: var(--border); color: var(--text-2, inherit); }
     .pg1-action[data-confirm="1"] .icon { color: var(--text-3, currentColor); }
     .pg1-action.armed { background: var(--gold); border-color: var(--gold); color: var(--bg, #000); }
@@ -2239,6 +2241,7 @@
     <symbol id="i-vault" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
     <symbol id="i-sync" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4.5L4 8M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.5 4.5L20 16M20 20v-4h-4"/></symbol>
     <symbol id="i-wave" viewBox="0 0 24 24"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5 2.5 20h19z"/><path d="M12 10v4M12 17h.01"/></symbol>
     <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></symbol>
     <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.75"/><path d="m21 16-5-5-9 9"/></symbol>
@@ -2346,6 +2349,13 @@
       <button type="button" class="drawer-item" onclick="triggerHaptic(); closeDrawer(); openThreadsModal()"><svg class="icon" aria-hidden="true"><use href="#i-threads"/></svg>Session threads</button>
       <button type="button" class="drawer-item" onclick="triggerHaptic(); closeDrawer(); openVisionMatrix()"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg>Vision matrix</button>
       <button type="button" class="drawer-item" onclick="triggerHaptic(); closeDrawer(); requestVaultExport()"><svg class="icon" aria-hidden="true"><use href="#i-export"/></svg>Export transcript</button>
+      <!-- NOTIFICATIONS (lib/watches): push opt-in on this device, so a
+           report on a watched lab run, PR, workflow run or deploy reaches
+           the operator even with PG1 closed. Signed-in operator only. -->
+      <div class="drawer-row">
+        <span class="drawer-row-label" id="push-label"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg>Notifications</span>
+        <button type="button" id="push-btn" class="switch" role="switch" aria-checked="false" aria-labelledby="push-label" onclick="triggerHaptic(); togglePushNotifications()"></button>
+      </div>
       <button type="button" class="drawer-item is-danger" onclick="triggerHaptic(); closeDrawer(); clearChat()"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Clear chat</button>
     </nav>
 
@@ -2644,6 +2654,7 @@
     window.onload = () => {
       initSpeechSettings();
       readCurrentThread();
+      renderPushSwitch();
       const savedVoiceProfile = localStorage.getItem('pg1_voice_profile');
       if (savedVoiceProfile) {
         const voiceSelect = document.getElementById('voice-profile-select');
@@ -2742,6 +2753,153 @@
     function autoResize(textarea) {
       textarea.style.height = 'auto';
       textarea.style.height = (textarea.scrollHeight) + 'px';
+    }
+
+    // WATCHES AND REPORTS (lib/watches, api/watches.mjs). When something
+    // watched from a chat (a lab run, a PR, a workflow run, a deploy)
+    // changes state, PG1 writes a report for that chat's thread key: the
+    // saved thread's id, or else this screen's own key (kept on this
+    // device). The page asks for undelivered reports when it opens, every
+    // minute while it is visible, after a thread loads and when a push
+    // notification is tapped; each one is shown once as a reply bubble with
+    // its buttons and then marked as shown. A saved thread keeps it like
+    // any other message.
+    const SCREEN_KEY_NAME = 'pg1_screen_key';
+    var screenKey = null;
+    try { screenKey = localStorage.getItem(SCREEN_KEY_NAME); } catch (e) {}
+    if (!/^[0-9a-f-]{36}$/.test(screenKey || '')) {
+      screenKey = (self.crypto && crypto.randomUUID) ? crypto.randomUUID() : null;
+      try { if (screenKey) localStorage.setItem(SCREEN_KEY_NAME, screenKey); } catch (e) {}
+    }
+    function currentThreadKey() {
+      return (currentThread && currentThread.id) || screenKey || null;
+    }
+    // A tapped notification opens /?thread=<id>&report=<id>: that thread
+    // loads once the operator is signed in.
+    var openThreadAfterSignIn = null;
+    try {
+      const q = new URLSearchParams(location.search);
+      if (/^[0-9a-f-]{36}$/.test(q.get('thread') || '')) openThreadAfterSignIn = q.get('thread');
+      if (q.has('thread') || q.has('report')) history.replaceState(null, '', location.pathname);
+    } catch (e) {}
+    var shownReports = new Set();
+    var reportPollTimer = null;
+    var reportPollRunning = false;
+    async function watchesRequest(payload) {
+      const res = await fetch('/api/watches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, user: sessionUser, pass: sessionPass }) });
+      let data = {};
+      try { data = await res.json(); } catch (e) {}
+      if (!res.ok) { const err = new Error(data.message || data.error || `HTTP ${res.status}`); err.status = res.status; throw err; }
+      return data;
+    }
+    function appendReport(r) {
+      const chat = document.getElementById('chat-container');
+      if (!chat || shownReports.has(r.id)) return;
+      shownReports.add(r.id);
+      const el = document.createElement('div');
+      el.className = 'message-bubble is-report';
+      el.dataset.at = r.created_at || new Date().toISOString();
+      el.dataset.report = r.id;
+      const time = new Date(el.dataset.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      el.innerHTML = `<span class="msg-timestamp">${escapeHTML(time)}</span>${markdownBlock(String(r.body || r.title || ''))}${actionsHtml(r.actions)}${messageActionsHtml('agent')}`;
+      chat.appendChild(el);
+      chat.scrollTop = chat.scrollHeight;
+    }
+    async function pollReports() {
+      if (!sessionUser || !sessionPass || reportPollRunning) return;
+      if (openThreadAfterSignIn) {
+        const id = openThreadAfterSignIn;
+        openThreadAfterSignIn = null;
+        if (!currentThread || currentThread.id !== id) { await loadThread(id); return; }
+      }
+      reportPollRunning = true;
+      try {
+        const keys = [currentThread && currentThread.id, screenKey].filter(Boolean);
+        const data = await watchesRequest({ op: 'inbox', threadKeys: keys });
+        const reports = Array.isArray(data.reports) ? data.reports : [];
+        reports.forEach(appendReport);
+        if (reports.length) {
+          saveState();
+          await watchesRequest({ op: 'ack', ids: reports.map((r) => r.id) });
+        }
+      } catch (e) {
+        /* the next poll tries again */
+      } finally {
+        reportPollRunning = false;
+      }
+    }
+    function pollReportsSoon(ms) {
+      clearTimeout(reportPollTimer);
+      reportPollTimer = setTimeout(pollReports, ms);
+    }
+    setInterval(() => { if (document.visibilityState === 'visible') pollReports(); }, 60000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pollReportsSoon(500); });
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', (ev) => {
+        const d = ev.data || {};
+        if (d.type !== 'pg1-report') return;
+        try { const u = new URL(String(d.url || '/'), location.origin); const t = u.searchParams.get('thread'); if (/^[0-9a-f-]{36}$/.test(t || '')) openThreadAfterSignIn = t; } catch (e) {}
+        pollReportsSoon(200);
+      });
+    }
+
+    // PUSH OPT-IN: the Notifications switch. On: asks the browser for
+    // permission, registers /sw.js, subscribes with the deployment's VAPID
+    // public key and stores the subscription (operator only). Off:
+    // unsubscribes this device and removes it. The notification says only
+    // what changed in a few words; the report itself is fetched here after
+    // sign-in.
+    function pushSupported() {
+      return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    }
+    async function currentPushSubscription() {
+      if (!pushSupported()) return null;
+      const reg = await navigator.serviceWorker.getRegistration('/');
+      return reg ? reg.pushManager.getSubscription() : null;
+    }
+    async function renderPushSwitch() {
+      const btn = document.getElementById('push-btn');
+      if (!btn) return;
+      let on = false;
+      try { on = !!(await currentPushSubscription()) && Notification.permission === 'granted'; } catch (e) {}
+      btn.setAttribute('aria-checked', String(on));
+      btn.disabled = !pushSupported();
+    }
+    function vapidKeyBytes(b64) {
+      const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+      const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+      return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+    }
+    async function togglePushNotifications() {
+      if (!pushSupported()) { flashStatus('This browser cannot show push notifications.', false); return; }
+      if (!sessionUser || !sessionPass) { flashStatus('Sign in to turn on notifications.', false); return; }
+      const btn = document.getElementById('push-btn');
+      const turningOn = btn && btn.getAttribute('aria-checked') !== 'true';
+      try {
+        if (!turningOn) {
+          const sub = await currentPushSubscription();
+          if (sub) {
+            await watchesRequest({ op: 'unsubscribe', endpoint: sub.endpoint }).catch(() => {});
+            await sub.unsubscribe();
+          }
+          flashStatus('Notifications are off on this device.', false);
+          return;
+        }
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') { flashStatus('Notifications are blocked for this site in the browser settings.', false); return; }
+        const { publicKey } = await watchesRequest({ op: 'vapid' });
+        if (!publicKey) { flashStatus('Push notifications are not set up on this deployment yet.', false); return; }
+        const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+        await navigator.serviceWorker.ready;
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: vapidKeyBytes(publicKey) });
+        await watchesRequest({ op: 'subscribe', subscription: sub.toJSON(), label: /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'desktop' });
+        flashStatus('Notifications are on for this device.', false);
+      } catch (e) {
+        flashStatus(`Notifications could not be changed: ${e.status === 401 ? 'sign in first' : e.message}`, false);
+      } finally {
+        renderPushSwitch();
+      }
     }
 
     // SAVED CHATS: the save button in the top bar and the Session threads
@@ -2983,6 +3141,7 @@
         closeThreadsModal();
         chat.scrollTop = chat.scrollHeight;
         flashStatus(`Loaded "${thread.title}"`, false);
+        pollReportsSoon(300);
       } catch (e) {
         flashStatus(e.status === 404 ? 'That saved chat no longer exists.' : 'Could not load that chat right now.', false);
         refreshThreadList();
@@ -3877,6 +4036,8 @@
           pollFilmCardsSoon(1000);
           pollMusicCardsSoon(1000);
           syncErrorLogToServer().then(updateErrorLogBadge);
+          pollReportsSoon(500);
+          renderPushSwitch();
         } else {
           alert('Access Denied: Invalid Credentials.');
         }
@@ -4817,7 +4978,8 @@
           user: sessionUser,
           pass: sessionPass,
           taskState: turnState.taskState,
-          contextSummary: turnState.contextSummary
+          contextSummary: turnState.contextSummary,
+          threadKey: currentThreadKey()
         };
         const response = await fetch('/api/chat', {
           method: 'POST',
@@ -5904,12 +6066,15 @@
     // changes something (data-confirm) needs a second tap within 4 s, and
     // a pending confirm can also be answered by voice: "yes" or "no".
     let pendingConfirm = null;
+    // A link action (a report's "Open PR") opens GitHub in a new tab; only
+    // https://github.com/ links are drawn.
+    const ACTION_LINK_RE = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(?:pull|actions\/runs)\/\d+/;
     function actionsHtml(list) {
-      const items = (Array.isArray(list) ? list : []).filter((a) => a && typeof a.command === 'string' && /^\/[a-z]/.test(a.command) && typeof a.label === 'string').slice(0, 4);
+      const items = (Array.isArray(list) ? list : []).filter((a) => a && typeof a.label === 'string' && ((typeof a.command === 'string' && /^\/[a-z]/.test(a.command)) || (a.kind === 'link' && ACTION_LINK_RE.test(String(a.url || ''))))).slice(0, 4);
       if (!items.length) return '';
       const confirm = items.find((a) => a.kind === 'confirm');
       pendingConfirm = confirm ? { command: confirm.command, label: confirm.label, until: Date.now() + 120000 } : null;
-      return `<div class="pg1-actions" role="group" aria-label="Actions">${items.map((a) => `<button type="button" class="pg1-action" data-command="${escapeHTML(a.command)}" data-confirm="${a.confirm && a.kind !== 'confirm' ? '1' : '0'}" data-label="${escapeHTML(a.label)}" onclick="runReplyAction(this)"><svg class="icon" aria-hidden="true"><use href="#i-${a.kind === 'confirm' ? 'check' : a.confirm ? 'stop' : 'arrow-right'}"/></svg><span>${escapeHTML(a.label)}</span></button>`).join('')}</div>`;
+      return `<div class="pg1-actions" role="group" aria-label="Actions">${items.map((a) => a.kind === 'link' ? `<a class="pg1-action" href="${escapeHTML(a.url)}" target="_blank" rel="noopener noreferrer"><svg class="icon" aria-hidden="true"><use href="#i-external"/></svg><span>${escapeHTML(a.label)}</span></a>` : `<button type="button" class="pg1-action" data-command="${escapeHTML(a.command)}" data-confirm="${a.confirm && a.kind !== 'confirm' ? '1' : '0'}" data-label="${escapeHTML(a.label)}" onclick="runReplyAction(this)"><svg class="icon" aria-hidden="true"><use href="#i-${a.kind === 'confirm' ? 'check' : a.confirm ? 'stop' : 'arrow-right'}"/></svg><span>${escapeHTML(a.label)}</span></button>`).join('')}</div>`;
     }
     function sendCommand(command) {
       const input = document.getElementById('prompt-input');
@@ -6565,7 +6730,10 @@
           clientEnv: getClientEnvironment(),
           history: threadHistory(agentBubble),
           taskState: turnState.taskState,
-          contextSummary: turnState.contextSummary
+          contextSummary: turnState.contextSummary,
+          // WATCHES: where a report on something started or watched from
+          // this chat goes (the saved thread, else this screen).
+          threadKey: currentThreadKey()
         };
         if (typeof options.pdfSource === 'string') payload.pdfSource = options.pdfSource;
         // LIVE TRACE: ask for a streamed reply with steps (operator only;
