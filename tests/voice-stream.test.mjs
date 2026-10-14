@@ -447,7 +447,7 @@ test('voice on: audio streams in order before done, the TTS key never leaves the
   useVoice();
   const calls = installFetch([...supabaseRoutes(), geminiRoute(REPLY_WITH_EVERYTHING), ttsRoute()]);
   const res = makeRes();
-  await chatHandler(makeReq(authed({ prompt: 'status please', stream: true, speak: true })), res);
+  await chatHandler(makeReq(authed({ prompt: 'give me an update please', stream: true, speak: true })), res);
   const events = eventsOf(res);
   const types = events.map((e) => e.type);
   const audio = events.filter((e) => e.type === 'audio');

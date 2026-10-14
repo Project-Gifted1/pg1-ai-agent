@@ -91,9 +91,11 @@ function assertInert(out, label) {
   assert.doesNotMatch(out, /<img(?![^>]*src="(?:https?:|data:image\/))/i, `${label}: unsafe <img> leaked`);
   assert.doesNotMatch(out, /<iframe|<svg[^>]*onload|<object|<embed/i, `${label}: active element leaked`);
   // formatMarkdown's own handlers are the only ones allowed: code-copy and
-  // slash-command chips.
+  // slash-command chips (the command rides in an escaped data-command).
   const handlers = out.match(/\son[a-z]+\s*=\s*"[^"]*"/gi) || [];
-  for (const h of handlers) assert.match(h, /^ onclick="(copyCodeBlock\(this\)|triggerHaptic\(30\); document\.getElementById\('prompt-input'\)\.value='\/[a-zA-Z0-9_-]+')/, `${label}: unexpected handler ${h}`);
+  for (const h of handlers) assert.match(h, /^ onclick="(copyCodeBlock\(this\)|runCommandChip\(this\))"$/, `${label}: unexpected handler ${h}`);
+  // A chip's command is only ever a plain command: no quote, no markup.
+  for (const c of out.match(/data-command="[^"]*"/g) || []) assert.match(c, /^data-command="\/[a-zA-Z0-9_-]+(?: [a-zA-Z0-9:_-]+){0,3}"$/, `${label}: unsafe chip command ${c}`);
   assert.doesNotMatch(out, /href\s*=\s*["']?\s*(javascript|data|vbscript):/i, `${label}: script URL leaked`);
 }
 
