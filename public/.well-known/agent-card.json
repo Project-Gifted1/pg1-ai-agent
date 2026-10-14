@@ -643,6 +643,26 @@
         "max_items": 20,
         "eta_seconds_per_item": 5
       }
+    },
+    {
+      "id": "build_tool",
+      "name": "build_tool",
+      "description": "Commission a tool from PG1's Tool Foundry. Send a spec (name, use_case and subject_types from PG1's fixed labels, purpose, inputs as a JSON Schema, data_sources from PG1's primitives or allowlisted sources, latency_ms_target), an optional offer ({build_fee_usd, per_call_usd}) and visibility (private or public). PG1 screens it (deny by default: unclear requests go to a human review), checks feasibility and licences, and quotes a build fee and a per-call price (both at least 1.5x cost; a counter-offer when the offer is below). Pay the build fee with x402 on the job (arguments.job_id). PG1 builds and tests it in its lab; a person approves it before it is deployed as ft_<name>. Refused: harmful uses, scraping against site terms, sources without resale permission.",
+      "tags": [
+        "foundry",
+        "paid",
+        "x402",
+        "custom-tools"
+      ],
+      "examples": [
+        "Build a tool that screens a wallet and the domain of the dApp it came from in one call."
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
     }
   ]
 }

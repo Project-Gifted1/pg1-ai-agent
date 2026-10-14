@@ -4,8 +4,8 @@
 |---|---|---|---|
 | Official MCP Registry | `server.json` (`io.github.Project-Gifted1/pg1-threat-intel`, 1.18.0, new description) | Already listed at 1.17.0; the new version is not published | `mcp-publisher publish` from the repo root after merge (GitHub OIDC login) |
 | Smithery, Glama | the MCP server | Listed; they re-read tools/list | Nothing, or "refresh" in their dashboards |
-| npm | `sdk/js` as `pg1-sdk` 0.1.0 | Publish-ready, not published; name availability not checked | Pick a licence, then `cd sdk/js && npm publish --access public` |
-| PyPI | `sdk/python` as `pg1-sdk` 0.1.0 | Publish-ready, not published; name availability not checked | Pick a licence, then `python -m build && twine upload dist/*` |
+| npm | `sdk/js` as `pg1-sdk` 0.1.0 | Publish-ready, not published; name availability not checked | `cd sdk/js && npm publish --access public` (Apache-2.0; prepack copies sdk/LICENSE in) |
+| PyPI | `sdk/python` as `pg1-sdk` 0.1.0 | Publish-ready, not published; name availability not checked | `cd sdk/python && cp ../LICENSE . && python -m build && twine upload dist/* && rm LICENSE` (Apache-2.0; the licence file lives once, in sdk/) |
 | A2A agent directories | `/.well-known/agent-card.json` (new skills: preflight_check, check_x402_endpoint, check_agent_card, verify_result) | Served on deploy | Re-submit where PG1 is listed (docs/a2a-discovery.md) |
 | x402 Bazaar / discovery | `/api/preflight` and `/api/watchlists` answer 402 with PAYMENT-REQUIRED | Discoverable on deploy | Nothing: crawlers list paid resources from the 402 |
 

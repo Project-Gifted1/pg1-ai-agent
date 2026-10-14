@@ -134,6 +134,9 @@ import { signResult, verifySignedResult, publicJwks, MCP_SIGNATURE_META } from '
 import { cachedCheck } from '../lib/resultCache.mjs';
 import { checkUrlShape } from '../lib/netGuard.mjs';
 import { serviceStatus } from '../lib/statusMetrics.mjs';
+import { isFoundryToolName, callFoundryTool, publicFoundryToolDefs, TOOL_KEY_HEADER } from '../lib/foundry/tools.mjs';
+import { createFoundryStore } from '../lib/foundry/store.mjs';
+import { payerHash as walletHash } from '../lib/a2aJobs/jobs.mjs';
 
 export const config = { maxDuration: 30 };
 
@@ -3484,6 +3487,16 @@ export const READ_ONLY_TOOL_RUNNERS = Object.freeze({
   verify_result: (args) => handleVerifyResult(args)
 });
 
+// The Foundry store, or null where storage is not configured.
+function foundryStoreOrNull() {
+  try {
+    const { supUrl, supKey } = getSupabaseCreds();
+    return createFoundryStore({ supUrl, supKey, timeoutMs: 1500 });
+  } catch (e) {
+    return null;
+  }
+}
+
 // The agent-economy checks call PG1's own checks as a licensed caller (the
 // outer call is the one that is rate-limited, 60/hour per caller).
 const edgeLimits = new Map();
@@ -3585,7 +3598,7 @@ function recordMcpRequestTelemetry(req, method, status) {
 
 function recordToolCallTelemetry(callTelemetry, res) {
   try {
-    const known = KNOWN_TOOL_NAMES.has(callTelemetry.toolName);
+    const known = KNOWN_TOOL_NAMES.has(callTelemetry.toolName) || isFoundryToolName(callTelemetry.toolName);
     recordTelemetry({
       eventType: 'tool_call',
       endpoint: '/api/mcp',
@@ -3701,7 +3714,9 @@ export default async function handler(req, res) {
 
     if (method === 'tools/list') {
       recordMcpRequestTelemetry(req, method, 'ok');
-      return res.status(200).json({ jsonrpc: '2.0', result: { tools: TOOLS }, id: requestId });
+      // Public Tool Foundry tools follow PG1's own (lib/foundry/tools.mjs).
+      const foundryTools = await publicFoundryToolDefs({ loadStore: foundryStoreOrNull });
+      return res.status(200).json({ jsonrpc: '2.0', result: { tools: foundryTools.length ? [...TOOLS, ...foundryTools] : TOOLS }, id: requestId });
     }
 
     if (method === 'tools/call') {
@@ -3906,6 +3921,41 @@ export default async function handler(req, res) {
         }
         if (gate.consumeFreeTier) await gate.consumeFreeTier();
         return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
+      }
+
+      // Tool Foundry: a commissioned ft_* tool, paid per call via x402.
+      if (isFoundryToolName(toolName)) {
+        const store = foundryStoreOrNull();
+        if (!store) return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: 'Unknown tool.', data: { request_id: pg1RequestId, unknown_tool: true } }, id: requestId });
+        const metaPayment = params?._meta?.['x402/payment'];
+        try {
+          const called = await callFoundryTool({ name: toolName, args: toolArgs, toolKey: req.headers[TOOL_KEY_HEADER] || null }, {
+            store,
+            gate: (priceUsd, description) => runPricedX402Gate(req, { payment: metaPayment || undefined, priceUsd, description }),
+            paymentOffered: !!(metaPayment || req.headers['payment-signature'] || req.headers['x-payment']),
+            subscriberHash: walletHash,
+            runTool: internalRunTool
+          });
+          if (called.paymentRequired) {
+            callTelemetry.status = 'payment_required';
+            return sendPaymentRequiredResult(res, requestId, called.paymentRequired, pg1RequestId);
+          }
+          callTelemetry.paymentType = 'x402';
+          if (called.result.checks.some((c) => c.result !== 'ok')) callTelemetry.status = 'upstream_error';
+          const result = { content: [{ type: 'text', text: JSON.stringify({ ...called.result, request_id: pg1RequestId }, null, 2) }] };
+          if (called.settlement) {
+            res.setHeader('PAYMENT-RESPONSE', encodePaymentResponseHeader(called.settlement));
+            result._meta = { 'x402/payment-response': called.settlement };
+          }
+          return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
+        } catch (err) {
+          if (err && (err.foundryCall || err.mcpToolError)) {
+            callTelemetry.status = err.status >= 500 ? 'server_error' : 'invalid_input';
+            if (err.code === 'unknown_tool') return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: 'Unknown tool.', data: { request_id: pg1RequestId, unknown_tool: true } }, id: requestId });
+            return res.status(200).json({ jsonrpc: '2.0', result: { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: err.message, code: err.code, request_id: pg1RequestId }) }] }, id: requestId });
+          }
+          throw err;
+        }
       }
 
       const toolHandler = STANDARD_TOOL_HANDLERS[toolName];

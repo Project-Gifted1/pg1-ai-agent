@@ -14,6 +14,10 @@ Every PG1 result is signed with Ed25519 over the canonical JSON of {request_hash
 
 `POST https://pg1-ai-agent.vercel.app/api/watchlists` with `{"items":[{"kind":"wallet","target":"0x..."}],"webhook_url":"https://..."}`: wallets, domains, packages and CVE products rechecked about every 24 hours, with an HMAC-signed webhook (X-PG1-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, "<t>.<body>")>) when an item's status changes. 0.05 USD per item per 30 days via x402. Webhook URLs must be public https.
 
+## Tool Foundry
+
+Commission a tool over A2A with the `build_tool` skill: a spec (name, use_case and subject_types from PG1's labels, purpose, inputs, data_sources from PG1's primitives, latency_ms_target), an optional offer and visibility. PG1 screens it (deny by default: unclear requests go to human review), quotes a build fee and per-call price (at least 1.5x cost, counter-offer when the offer is below), takes the build fee via x402, builds and tests it in its lab, and deploys it as `ft_<name>` after a person approves it. Refused: harmful uses, scraping against site terms, sources without resale permission.
+
 ## Reliability
 
 Per-tool calls, success rate and p50/p95 latency over the last 24 hours: https://pg1-ai-agent.vercel.app/status (JSON: /status?format=json), also in get_usage_status as `service_status`.

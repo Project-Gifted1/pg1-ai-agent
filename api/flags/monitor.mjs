@@ -3,7 +3,8 @@
 // error rate or cost per call over the last hour passes its threshold is
 // switched off, and the operator is told in the error log (category
 // alert). Also the tool error-rate alert: any public tool failing more than
-// 5% of its calls over the last hour (lib/statusMetrics.mjs). CRON_SECRET auth (lib/cronAuth.mjs), like the other crons.
+// 5% of its calls over the last hour (lib/statusMetrics.mjs), and Foundry tools
+// failing more than 25% are disabled (lib/foundry/tools.mjs). CRON_SECRET auth (lib/cronAuth.mjs), like the other crons.
 
 import { getSupabaseCreds } from '../../lib/supabase.mjs';
 import { checkCronAuth } from '../../lib/cronAuth.mjs';
@@ -11,6 +12,8 @@ import { monitorFlags } from '../../lib/flags.mjs';
 import { monitorErrorRates } from '../../lib/statusMetrics.mjs';
 import { notifyOperator } from '../../lib/notify.mjs';
 import { TOOLS } from '../mcp.mjs';
+import { autoDisableFoundryTools } from '../../lib/foundry/tools.mjs';
+import { createFoundryStore } from '../../lib/foundry/store.mjs';
 
 export const config = { maxDuration: 30 };
 
@@ -30,7 +33,11 @@ export default async function handler(req, res) {
     try {
       alerted = (await monitorErrorRates({ supUrl: creds.supUrl, supKey: creds.supKey, tools: TOOLS.map((t) => t.name), notify: notifyOperator })).map((b) => b.tool);
     } catch (e) { /* telemetry unreadable: the flags result still stands */ }
-    return res.status(200).json({ ok: true, checked: results.length, disabled: results.filter((r) => r.breach).map((r) => r.key), error_rate_alerts: alerted });
+    let foundryDisabled = [];
+    try {
+      foundryDisabled = await autoDisableFoundryTools({ supUrl: creds.supUrl, supKey: creds.supKey, store: createFoundryStore({ supUrl: creds.supUrl, supKey: creds.supKey }), notify: notifyOperator });
+    } catch (e) { /* the Foundry tables may not exist yet */ }
+    return res.status(200).json({ ok: true, checked: results.length, disabled: results.filter((r) => r.breach).map((r) => r.key), error_rate_alerts: alerted, foundry_disabled: foundryDisabled });
   } catch (e) {
     return res.status(502).json({ error: 'flags unreadable' });
   }

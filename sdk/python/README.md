@@ -16,4 +16,4 @@ if not r["verified"]["valid"] or r["result"]["decision"] != "no_flags":
 - `pg1_sdk.frameworks`: `tool_specs`, `openai_function_tools`, `langchain_tools`.
 - `unknown` is never clean: fail closed.
 
-Status: publish-ready, **not published**. Licence: not chosen yet (`UNLICENSED`); the operator picks one before publishing.
+Status: publish-ready, **not published**. Licence: Apache-2.0 (sdk/LICENSE). The rest of the PG1 repository is not licensed.

@@ -17,4 +17,4 @@ if (!verified.valid || result.decision !== 'no_flags') throw new Error('stop: ' 
 - **Frameworks.** `pg1-sdk/frameworks`: `vercelAiTools`, `langchainTools`, `openAiFunctionTools`, or the neutral `pg1ToolSpecs`. Examples in `examples/`.
 
 Status: publish-ready, **not published**.
-Licence: not chosen yet (`UNLICENSED`); the operator picks one before publishing.
+Licence: Apache-2.0 (sdk/LICENSE). The rest of the PG1 repository is not licensed.

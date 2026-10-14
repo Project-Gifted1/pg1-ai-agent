@@ -84,8 +84,13 @@ import {
   resolveTestFixture,
   requestCallerHash,
   runPricedX402Gate,
-  runReadOnlyTool
+  runReadOnlyTool,
+  internalRunTool
 } from './mcp.mjs';
+import { FOUNDRY_SKILL, submitBuild, payBuild, refreshBuild, foundryJobView, FoundryRefusal } from '../lib/foundry/jobs.mjs';
+import { isFoundryToolName, callFoundryTool, FoundryCallError, TOOL_KEY_HEADER } from '../lib/foundry/tools.mjs';
+import { createFoundryStore } from '../lib/foundry/store.mjs';
+import { payerHash } from '../lib/a2aJobs/jobs.mjs';
 import { signResult, A2A_SIGNATURE_META } from '../lib/signing.mjs';
 import { waitUntil } from '@vercel/functions';
 import { checkFreeTierAvailable, consumeFreeTier, freeTierWanted } from '../lib/freeTier.mjs';
@@ -239,7 +244,7 @@ function extractDataPart(message) {
 }
 
 function stateValue(state, version) {
-  if (version === '1.0') return { completed: 'TASK_STATE_COMPLETED', 'input-required': 'TASK_STATE_INPUT_REQUIRED', working: 'TASK_STATE_WORKING', canceled: 'TASK_STATE_CANCELED', submitted: 'TASK_STATE_SUBMITTED' }[state] || 'TASK_STATE_FAILED';
+  if (version === '1.0') return { completed: 'TASK_STATE_COMPLETED', 'input-required': 'TASK_STATE_INPUT_REQUIRED', working: 'TASK_STATE_WORKING', canceled: 'TASK_STATE_CANCELED', submitted: 'TASK_STATE_SUBMITTED', rejected: 'TASK_STATE_REJECTED' }[state] || 'TASK_STATE_FAILED';
   return state;
 }
 
@@ -395,6 +400,30 @@ async function jobTask(job, version, inboundMessage, { paymentRequired = null, s
   }
   if (version === '0.3') task.kind = 'task';
   return task;
+}
+
+// --- Tool Foundry ---------------------------------------------------------------
+// build_tool: submit a spec (screened, then quoted, counter-offered, sent to
+// review or refused); pay the build fee on the job (arguments.job_id plus the
+// x402 payment in message.metadata); read the job's state (job_id alone).
+const FOUNDRY_STATE = { review: 'submitted', refused: 'rejected', infeasible: 'rejected', quoted: 'input-required', counter_offer: 'input-required', expired: 'canceled', building: 'working', awaiting_approval: 'working', deployed: 'completed', rejected: 'failed', build_failed: 'failed' };
+
+function foundryTask(job, version, inboundMessage, { paymentRequired = null, settlement = null } = {}) {
+  const view = foundryJobView(job);
+  const contextId = (inboundMessage && inboundMessage.contextId) || job.id;
+  let metadata;
+  if (paymentRequired && ['quoted', 'counter_offer'].includes(job.status)) metadata = { [X402_META.status]: 'payment-required', [X402_META.required]: paymentRequired };
+  if (settlement && settlement.success) metadata = { [X402_META.status]: 'payment-completed', [X402_META.receipts]: [settlement] };
+  const task = { id: job.id, contextId, status: { state: stateValue(FOUNDRY_STATE[job.status] || 'failed', version), timestamp: new Date().toISOString(), message: buildMessage('agent', view, version, { contextId, taskId: job.id, metadata }) }, ...(metadata ? { metadata } : {}) };
+  if (version === '0.3') task.kind = 'task';
+  return task;
+}
+
+// The lab and classifier code is loaded only when a build request comes in.
+const defaultFoundryDeps = async (req, { supUrl, supKey }) => (await import('../lib/foundry/service.mjs')).foundryDeps({ supUrl, supKey, callerHash: requestCallerHash(req) });
+let foundryDepsFactory = defaultFoundryDeps;
+export function __setFoundryDeps(factory) {
+  foundryDepsFactory = factory || defaultFoundryDeps;
 }
 
 // The job runner's model, PDF and storage code is loaded only when a job
@@ -603,6 +632,64 @@ export default async function handler(req, res) {
         if (err && err.jobRefusal) {
           skillTelemetry.status = err.status === 503 ? 'server_error' : 'invalid_input';
           return jobRefusalResponse(res, err, requestId, pg1RequestId);
+        }
+        throw err;
+      }
+    }
+
+    // Tool Foundry (lib/foundry): build_tool requests and commissioned ft_* tools.
+    if (skill === FOUNDRY_SKILL || isFoundryToolName(skill)) {
+      skillTelemetry = { skill, req, status: null, startedAt: Date.now(), paymentType: 'none' };
+      let creds;
+      try { creds = getSupabaseCreds(); } catch (e) { return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, 'The Foundry is not available on this deployment.', requestId, undefined, pg1RequestId); }
+      const metaPayment = inboundMessage && inboundMessage.metadata && inboundMessage.metadata[X402_META.payload];
+      try {
+        if (skill === FOUNDRY_SKILL) {
+          const deps = await foundryDepsFactory(req, creds);
+          let out;
+          if (typeof args.job_id === 'string') {
+            if (metaPayment) {
+              out = await payBuild(args.job_id, { ...deps, gate: (job) => runPricedX402Gate(req, { payment: metaPayment, priceUsd: Number(job.build_fee_usd), description: `PG1 Foundry build fee: ft_${job.spec.name}` }), subscriberHash: payerHash });
+              if (out.settlement) skillTelemetry.paymentType = 'x402';
+            } else {
+              const job = await deps.store.getJob(args.job_id);
+              if (!job) throw new FoundryRefusal('No such Foundry job.', { status: 404, code: 'not_found' });
+              out = { job: await refreshBuild(job, deps) };
+              if (['quoted', 'counter_offer'].includes(out.job.status)) out.paymentRequired = (await runPricedX402Gate(req, { priceUsd: Number(out.job.build_fee_usd), description: `PG1 Foundry build fee: ft_${out.job.spec.name}` })).paymentRequired;
+            }
+          } else {
+            const job = await submitBuild({ spec: args.spec, offer: args.offer, visibility: args.visibility || 'private' }, deps);
+            out = { job };
+            if (['quoted', 'counter_offer'].includes(job.status)) out.paymentRequired = (await runPricedX402Gate(req, { priceUsd: Number(job.build_fee_usd), description: `PG1 Foundry build fee: ft_${job.spec.name}` })).paymentRequired;
+          }
+          skillTelemetry.status = 'ok';
+          return res.status(200).json({ jsonrpc: '2.0', result: foundryTask(out.job, version, inboundMessage, { paymentRequired: out.paymentRequired, settlement: out.settlement, tool: out.tool }), id: requestId });
+        }
+        const store = createFoundryStore({ supUrl: creds.supUrl, supKey: creds.supKey });
+        const called = await callFoundryTool({ name: skill, args, toolKey: req.headers[TOOL_KEY_HEADER] || null }, {
+          store,
+          gate: (priceUsd, description) => runPricedX402Gate(req, { payment: metaPayment || undefined, priceUsd, description }),
+          paymentOffered: !!(metaPayment || req.headers['payment-signature'] || req.headers['x-payment']),
+          subscriberHash: payerHash,
+          runTool: internalRunTool,
+          screen: null
+        });
+        if (called.paymentRequired) {
+          skillTelemetry.status = 'payment_required';
+          return res.status(200).json({ jsonrpc: '2.0', result: paymentRequiredTask(skill, args, called.paymentRequired, version, inboundMessage), id: requestId });
+        }
+        skillTelemetry.paymentType = 'x402';
+        skillTelemetry.status = called.result.status === 'unknown' && called.result.checks.some((c) => c.result !== 'ok') ? 'upstream_error' : 'ok';
+        const paymentMetadata = called.settlement ? { [X402_META.status]: 'payment-completed', [X402_META.receipts]: [called.settlement] } : undefined;
+        return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, args, { ...called.result, request_id: pg1RequestId }, version, inboundMessage, { paymentMetadata }), id: requestId });
+      } catch (err) {
+        if (err && (err.foundryRefusal || err.foundryCall)) {
+          skillTelemetry.status = err.status >= 500 ? 'server_error' : 'invalid_input';
+          return jsonRpcError(res, 200, err.status === 404 ? A2A_ERROR_CODES.TaskNotFoundError : -32602, err.message, requestId, { code: err.code, ...(err.data || {}) }, pg1RequestId);
+        }
+        if (err && err.mcpToolError) {
+          skillTelemetry.status = 'invalid_input';
+          return jsonRpcError(res, 200, -32602, err.message, requestId, { code: err.code }, pg1RequestId);
         }
         throw err;
       }
