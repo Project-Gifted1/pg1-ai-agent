@@ -5,6 +5,9 @@
  * that feed must say so, and none may call it an IOC or indicator feed or
  * promise IPs, domains, URLs or file hashes while it holds none.
  *
+ * The feed is also FREE while it holds no current data (PG1_FEED_PAID off,
+ * tests/feed-pricing.test.mjs), and every description says so.
+ *
  * Run with: node --test tests/feed-description.test.mjs
  */
 
@@ -26,6 +29,7 @@ const tool = (name) => TOOLS.find((t) => t.name === name).description;
 // The claim each description must not make while only NVD is served.
 const INDICATOR_FEED = /indicator feed|IOC feed|bundle of (verified )?threat indicators|\(IPs, domains, URLs, file hashes/i;
 const SAYS_CVE_FROM_NVD = /CVE records from (NIST )?NVD/;
+const SAYS_FREE = /free while (this feed|the feed|it) holds no current data/i;
 
 test('the premise: NVD is the only source served by default', () => {
   assert.deepEqual(THREAT_SOURCES.filter((s) => isSourceEnabled(s.id, {})).map((s) => s.id), ['nvd']);
@@ -35,6 +39,8 @@ test('MCP tool descriptions: the feed is CVE records from NVD; lookups say IPs/d
   assert.match(tool('get_threat_indicators'), SAYS_CVE_FROM_NVD);
   assert.match(tool('get_threat_indicators'), /no IP, domain, URL or file-hash indicators/);
   assert.doesNotMatch(tool('get_threat_indicators'), INDICATOR_FEED);
+  assert.match(tool('get_threat_indicators'), SAYS_FREE);
+  assert.doesNotMatch(tool('get_threat_indicators'), /Payment required/);
   for (const name of ['get_ioc_context', 'get_ioc_batch']) {
     assert.match(tool(name), /currently hold only CVE identifiers from NVD/, name);
     assert.match(tool(name), /found: false/, name);
@@ -42,13 +48,17 @@ test('MCP tool descriptions: the feed is CVE records from NVD; lookups say IPs/d
 });
 
 test('the x402 resource text (MCP and /api/ioc) and the browser 402 page say the same', () => {
-  const mcp = read('api/mcp.mjs').match(/const X402_RESOURCE_DESCRIPTION = '([^']*)'/)[1];
+  // The MCP resource covers the paid tools only, so it names the licensed
+  // lookups' CVE-only data; the feed itself is free and not in it.
+  const mcp = read('api/mcp.mjs').match(/const X402_RESOURCE_DESCRIPTION = '((?:[^'\\]|\\.)*)'/)[1];
+  assert.match(mcp, /CVE identifiers from NVD only/);
+  assert.doesNotMatch(mcp, INDICATOR_FEED);
+  assert.doesNotMatch(mcp, /STIX/, 'the free feed is not sold under the MCP resource');
+  // The /api/ioc challenge (only sent when PG1_FEED_PAID is on).
   const chat = read('api/chat.mjs');
   const ioc = chat.slice(chat.indexOf('var iocX402RouteConfig'), chat.indexOf('x402Middleware = paymentMiddleware('));
-  for (const [label, text] of [['MCP resource', mcp], ['/api/ioc 402', ioc]]) {
-    assert.match(text, SAYS_CVE_FROM_NVD, label);
-    assert.doesNotMatch(text, INDICATOR_FEED, label);
-  }
+  assert.match(ioc, SAYS_CVE_FROM_NVD, '/api/ioc 402');
+  assert.doesNotMatch(ioc, INDICATOR_FEED, '/api/ioc 402');
   const page = renderPaywallPage({ resource: { url: 'https://pg1-ai-agent.vercel.app/api/ioc' } });
   assert.match(page, SAYS_CVE_FROM_NVD);
   assert.doesNotMatch(page, INDICATOR_FEED);
@@ -63,4 +73,5 @@ test('README, /docs/agents, llms.txt, OpenAPI, the About page, the home page, th
   assert.doesNotMatch(JSON.parse(read('server.json')).description, /\bIOCs?\b/);
   for (const rel of ['README.md', 'public/llms.txt', 'public/openapi.json', 'public/about/index.html']) assert.match(read(rel), SAYS_CVE_FROM_NVD, rel);
   assert.match(read('public/docs/agents/index.html'), /STIX 2\.1 bundle of CVE records from NVD/);
+  for (const rel of ['README.md', 'public/llms.txt', 'public/openapi.json', 'public/about/index.html', 'public/docs/agents/index.html']) assert.match(read(rel), SAYS_FREE, `${rel}: the feed is free`);
 });

@@ -13,6 +13,10 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
+// These tests exercise the paid /api/ioc gate, so the feed is made paid
+// (it is free by default while it holds no current data; tests/feed-pricing.test.mjs).
+process.env.PG1_FEED_PAID = 'true';
+
 process.env.SUPABASE_URL = 'https://example.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
 process.env.USER_API_KEY = 'test-operator';

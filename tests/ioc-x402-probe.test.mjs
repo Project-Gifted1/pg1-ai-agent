@@ -3,7 +3,8 @@
  * no input must get the x402 v2 402 challenge (not a 400 or a free bundle),
  * with
  * accepts[].amount in USDC atomic units ($0.01 = "10000") and matching the
- * price advertised in public/openapi.json's x-payment-info.
+ * price advertised in lib/x402Config.mjs. Runs with PG1_FEED_PAID=true: by
+ * default the feed is free and there is no challenge (tests/feed-pricing).
  *
  * Drives the real api/chat.mjs x402 setup. Only the network is stubbed: a
  * throwaway Ed25519 key stands in for the CDP API key (so JWT signing works
@@ -15,10 +16,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { decodePaymentRequiredHeader } from '@x402/core/http';
+
+// These tests exercise the paid /api/ioc gate, so the feed is made paid
+// (it is free by default while it holds no current data; tests/feed-pricing.test.mjs).
+process.env.PG1_FEED_PAID = 'true';
 
 const PAY_TO = '0x000000000000000000000000000000000000dEaD';
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
@@ -79,10 +81,12 @@ async function probe(method, url) {
   return res;
 }
 
-function openapiPriceUsd() {
-  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-  const spec = JSON.parse(fs.readFileSync(path.join(repoRoot, 'public', 'openapi.json'), 'utf8'));
-  return spec.paths['/api/ioc'].get['x-payment-info'].price.amount;
+// The advertised price. openapi.json carries no x-payment-info for /api/ioc
+// while the feed is free, so the paid price comes from lib/x402Config.mjs,
+// the single source every discovery file is checked against.
+async function advertisedPriceUsd() {
+  const { x402PriceUsd } = await import('../lib/x402Config.mjs');
+  return x402PriceUsd();
 }
 
 for (const url of ['/api/ioc', '/api/ioc?limit=1']) {
@@ -96,7 +100,7 @@ for (const url of ['/api/ioc', '/api/ioc?limit=1']) {
   });
 }
 
-test('accepts[].amount is USDC atomic units ("10000" = $0.01) on Base, matching openapi x-payment-info', async () => {
+test('accepts[].amount is USDC atomic units ("10000" = $0.01) on Base, matching the advertised price', async () => {
   const res = await probe('GET', '/api/ioc');
   const [accept] = res.body.accepts;
   assert.equal(accept.scheme, 'exact');
@@ -105,7 +109,7 @@ test('accepts[].amount is USDC atomic units ("10000" = $0.01) on Base, matching 
   assert.equal(accept.payTo, PAY_TO);
   assert.equal(accept.amount, '10000');
   assert.match(accept.amount, /^\d+$/, 'amount must be an integer string, never decimal dollars');
-  assert.equal(Math.round(Number(openapiPriceUsd()) * 1e6), Number(accept.amount));
+  assert.equal(Math.round(Number(await advertisedPriceUsd()) * 1e6), Number(accept.amount));
 });
 
 test('the 402 probe never touches threat data or Gumroad', async () => {

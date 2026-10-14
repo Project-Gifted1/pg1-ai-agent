@@ -21,6 +21,10 @@ import util from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// These tests exercise the paid /api/ioc gate, so the feed is made paid
+// (it is free by default while it holds no current data; tests/feed-pricing.test.mjs).
+process.env.PG1_FEED_PAID = 'true';
+
 const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_FETCH = global.fetch;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -40,7 +44,7 @@ const { default: a2aHandler } = await import('../api/a2a.mjs');
 const { default: chatHandler } = await import('../api/chat.mjs');
 const { default: cleanupHandler } = await import('../api/errors/cleanup.mjs');
 const { FREE_TIER_DAILY_LIMIT, FREE_TIER_RETENTION_DAYS, freeTierKey, purgeExpiredFreeTierUsage } = await import('../lib/freeTier.mjs');
-const { callerHash } = await import('../lib/telemetry.mjs');
+const { callerHash, licenceKeyHash } = await import('../lib/telemetry.mjs');
 
 const IP = '198.51.100.173';
 const HASH = /^[0-9a-f]{32}$/;
@@ -170,11 +174,30 @@ test(`rows older than ${FREE_TIER_RETENTION_DAYS} days are deleted by the daily 
   assert.ok(captured.some((c) => c.method === 'DELETE' && /\/rest\/v1\/free_tier_usage\?usage_date=lt\.\d{4}-\d{2}-\d{2}$/.test(c.url)));
 });
 
-test('the migration resets raw-IP rows and makes free_tier_usage accept only hashes', () => {
+test('the one migration resets raw-IP rows, clears raw licence keys and makes both tables accept only hashed labels', () => {
   const sql = fs.readFileSync(path.join(ROOT, 'supabase/migrations/20261016120000_free_tier_usage_hashed.sql'), 'utf8');
+  assert.deepEqual(fs.readdirSync(path.join(ROOT, 'supabase/migrations')).filter((f) => /free_tier|licen[cs]e|access_logs/.test(f)), ['20261016120000_free_tier_usage_hashed.sql'], 'one migration for this change');
+  assert.match(sql, /create table if not exists public\.free_tier_usage/);
   assert.match(sql, /delete from public\.free_tier_usage where identifier !~ '\^\[0-9a-f\]\{32\}\$';/);
+  assert.match(sql, /drop constraint if exists free_tier_usage_identifier_hashed;/);
   assert.match(sql, /add constraint free_tier_usage_identifier_hashed check \(identifier ~ '\^\[0-9a-f\]\{32\}\$'\)/);
+  assert.match(sql, /create index if not exists free_tier_usage_usage_date_idx/);
   assert.match(sql, /delete from public\.api_access_logs\s+where license_key like 'free-tier:%'/);
+  assert.match(sql, /update public\.api_access_logs\s+set license_key = 'redacted'/);
+  assert.match(sql, /drop constraint if exists api_access_logs_license_key_hashed;/);
+  // Raw licence keys are overwritten, never deleted with their rows.
+  assert.doesNotMatch(sql, /delete from public\.api_access_logs\s+where license_key !~/);
+
+  // Every label the code writes passes the constraint; raw IPs and keys fail it.
+  const pattern = sql.match(/add constraint api_access_logs_license_key_hashed check \(\s*license_key ~ '([^']+)'/)[1];
+  assert.ok(sql.includes(`license_key !~ '${pattern}'`), 'the update clears exactly what the constraint rejects');
+  const allowed = new RegExp(pattern);
+  const written = [`license:${licenceKeyHash('ABCD-1234-RAW')}`, `free-tier:${freeTierKey(IP)}`, 'x402:0x897583A6da146826ecA90e5c24158bC226C29d53', 'x402:unknown-payer', 'free-feed', 'redacted'];
+  for (const label of written) assert.match(label, allowed, label);
+  for (const raw of ['ABCD-1234-RAW', `free-tier:${IP}`, IP, 'license:ABCD-1234-RAW', 'x402:not-a-wallet']) assert.doesNotMatch(raw, allowed, raw);
+  const chat = fs.readFileSync(path.join(ROOT, 'api/chat.mjs'), 'utf8');
+  const calls = [...chat.matchAll(/buildAndServeStixBundle\(([^)]*)\)/g)].map((m) => m[1]).filter((a) => a !== 'accessIdentifier');
+  assert.deepEqual(calls, ["'free-feed'", "licenceHash ? 'license:' + licenceHash : 'redacted'", "'free-tier:' + freeTierAvailability.key", "'x402:' + payerAddress"], 'a new access-log label must be added to the migration\'s pattern');
 });
 
 test('no code path builds a free_tier_usage key or an api_access_logs free-tier label from the raw IP', () => {
@@ -183,6 +206,7 @@ test('no code path builds a free_tier_usage key or an api_access_logs free-tier 
   assert.doesNotMatch(freeTier, /identifier=eq\.\$\{encodeURIComponent\(identifier\)\}/);
   const chat = fs.readFileSync(path.join(ROOT, 'api/chat.mjs'), 'utf8');
   assert.doesNotMatch(chat, /'free-tier:' \+ iocRequestIdentifier/);
+  assert.doesNotMatch(chat, /buildAndServeStixBundle\(clientLicenseKey\)/, 'the raw licence key is never logged');
   const mcpSrc = fs.readFileSync(path.join(ROOT, 'api/mcp.mjs'), 'utf8');
   assert.doesNotMatch(mcpSrc, /free_tier_usage\?identifier=eq\.\$\{encodeURIComponent\(identifier\)\}/);
 });

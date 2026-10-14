@@ -70,7 +70,7 @@
 <tr><td>An npm or PyPI package before installing it</td><td><code>check_package</code></td><td>Flags a name that does not exist, a malicious report, or a new look-alike of a popular package.</td></tr>
 <tr><td>A threat actor or APT name</td><td><code>get_threat_actor_profile</code></td><td>MITRE ATT&amp;CK dossier.</td></tr>
 <tr><td>One public IP and your own AbuseIPDB key</td><td><code>check_ip_abuse</code></td><td>Send the key in <code>X-AbuseIPDB-Key</code>; PG1 has no key of its own.</td></tr>
-<tr><td>The CVE list to ingest</td><td><code>get_threat_indicators</code></td><td>STIX 2.1 bundle of CVE records from NVD: CVE id and an NVD reference, no scores, no IP/domain/URL/hash indicators. REST: <code>GET /api/ioc</code>.</td></tr>
+<tr><td>The CVE list to ingest</td><td><code>get_threat_indicators</code></td><td>STIX 2.1 bundle of CVE records from NVD: CVE id and an NVD reference, no scores, no IP/domain/URL/hash indicators. REST: <code>GET /api/ioc</code>. Free while it holds no current data (<code>PG1_FEED_PAID</code> off): no payment, no licence key, and it does not use the 5 free calls a day.</td></tr>
 <tr><td>Your remaining free calls</td><td><code>get_usage_status</code></td><td>Always free.</td></tr>
 </tbody>
 </table></div>
@@ -93,7 +93,8 @@
 <tr><td><code>check_ip_abuse</code></td><td>Always free (your own AbuseIPDB quota)</td><td>60 calls/hour per caller</td></tr>
 <tr><td><code>get_usage_status</code></td><td>Always free</td><td>none</td></tr>
 <tr><td><code>get_ioc_context</code>, <code>get_ioc_batch</code></td><td>Free when nothing is found; paid when something is</td><td>Paid calls use the free tier first</td></tr>
-<tr><td><code>get_cve_details</code>, <code>get_cve_batch</code>, <code>get_cve_by_product</code>, <code>get_threat_actor_profile</code>, <code>get_threat_indicators</code>, <code>GET /api/ioc</code></td><td>Paid: 0.01 USD per call</td><td>5 free calls a day per caller, shared across all of them, then x402</td></tr>
+<tr><td><code>get_threat_indicators</code>, <code>GET /api/ioc</code> (the STIX feed)</td><td>Free while the feed holds no current data (<code>PG1_FEED_PAID</code> off)</td><td>none, and it does not use the 5 free calls a day</td></tr>
+<tr><td><code>get_cve_details</code>, <code>get_cve_batch</code>, <code>get_cve_by_product</code>, <code>get_threat_actor_profile</code></td><td>Paid: 0.01 USD per call</td><td>5 free calls a day per caller, shared across all of them, then x402</td></tr>
 <tr><td>Test fixtures (<a href="https://pg1-ai-agent.vercel.app/docs/testing">/docs/testing</a>)</td><td>Always free</td><td>none, and they spend no free call</td></tr>
 </tbody>
 </table></div>

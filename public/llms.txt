@@ -16,7 +16,7 @@
 
 - [MCP](https://pg1-ai-agent.vercel.app/api/mcp): Model Context Protocol server (Streamable HTTP, JSON-RPC).
 - [A2A](https://pg1-ai-agent.vercel.app/api/a2a): Agent2Agent JSON-RPC endpoint exposing the seven free tools; agent card at https://pg1-ai-agent.vercel.app/.well-known/agent-card.json.
-- [REST](https://pg1-ai-agent.vercel.app/api/ioc): Simple GET endpoint returning a STIX 2.1 bundle of CVE records from NIST NVD (vulnerability objects with the CVE id and an NVD reference; no IP, domain, URL or file-hash indicators yet).
+- [REST](https://pg1-ai-agent.vercel.app/api/ioc): Simple GET endpoint returning a STIX 2.1 bundle of CVE records from NIST NVD (vulnerability objects with the CVE id and an NVD reference; no IP, domain, URL or file-hash indicators yet). Free while it holds no current data: no payment, no licence key, and it does not use the 5 free calls a day (the operator's PG1_FEED_PAID switch makes it paid again).
 - [Health](https://pg1-ai-agent.vercel.app/api/health): Uptime/health check.
 - [OpenAPI spec](https://pg1-ai-agent.vercel.app/openapi.json): Machine-readable schema for the REST endpoint.
 - [About](https://pg1-ai-agent.vercel.app/about): Human-readable overview of PG1, its free tools, endpoints and listings.
@@ -57,7 +57,7 @@ curl -X POST "https://pg1-ai-agent.vercel.app/api/a2a?A2A-Version=1.0" -H "Conte
 - npm or PyPI package before installing: check_package
 - Threat actor name: get_threat_actor_profile
 
-`status`: "no_flags" = nothing recorded in the sources checked (not proof of safety); "flagged" = act or escalate, match on reasons[].code; "unknown" = a check did not complete, never treat as clean. Free tier: automatic, 5 paid calls/day per caller shared across /api/mcp, /api/a2a and /api/ioc, then 0.01 USD via x402; the check_* tools are always free (60 calls/hour, check_wallet_sanctions 120, without a licence key). Full guide: https://pg1-ai-agent.vercel.app/docs/agents
+`status`: "no_flags" = nothing recorded in the sources checked (not proof of safety); "flagged" = act or escalate, match on reasons[].code; "unknown" = a check did not complete, never treat as clean. Free tier: automatic, 5 paid calls/day per caller shared across /api/mcp and /api/a2a, then 0.01 USD via x402; the STIX feed (get_threat_indicators, /api/ioc) is free while it holds no current data (PG1_FEED_PAID off) and uses none of the 5; the check_* tools are always free (60 calls/hour, check_wallet_sanctions 120, without a licence key). Full guide: https://pg1-ai-agent.vercel.app/docs/agents
 
 ## Response metadata
 
@@ -82,7 +82,7 @@ Invalid input keeps its error code (usually -32602); the message says what was w
 
 ## Paid tools
 
-- [Paid MCP tools](https://pg1-ai-agent.vercel.app/api/mcp): The NVD CVE feed (get_threat_indicators), CVE enrichment, threat actor dossiers, alert subscriptions, and indicator submission — $0.01 per call via x402 on Base, or a licence key in the `x-api-key` header.
+- [Paid MCP tools](https://pg1-ai-agent.vercel.app/api/mcp): CVE enrichment, threat actor dossiers, alert subscriptions, and indicator submission — $0.01 per call via x402 on Base, or a licence key in the `x-api-key` header.
 
 ## Listings
 

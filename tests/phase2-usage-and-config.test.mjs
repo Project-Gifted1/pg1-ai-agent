@@ -102,11 +102,18 @@ test('the /usage text shows probe reasons, fault split, unknown tools and the dr
 // ---------------------------------------------------------------------
 
 test('the repo agrees with itself on price, network, asset, payee and the free-tier limit', () => {
-  for (const r of staticPaymentChecks()) assert.ok(r.ok, `${r.name}: ${r.detail}`);
+  for (const r of staticPaymentChecks({ env: {} })) assert.ok(r.ok, `${r.name}: ${r.detail}`);
   assert.deepEqual(expectedAccepts(), { scheme: 'exact', network: 'eip155:8453', asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', amount: '10000' });
 });
 
-function mockDeployment({ payTo = '0x897583A6da146826ecA90e5c24158bC226C29d53', a2aState = 'input-required' } = {}) {
+test('the static check ties /api/ioc in /.well-known/x402 to PG1_FEED_PAID: not listed while the feed is free', () => {
+  const feedRow = (env) => staticPaymentChecks({ env }).find((r) => r.name.includes('/api/ioc'));
+  assert.equal(feedRow({}).ok, true, 'default: the free feed is not listed as paid');
+  // Turning the switch on without restoring the /api/ioc resource is caught.
+  assert.equal(feedRow({ PG1_FEED_PAID: 'true' }).ok, false);
+});
+
+function mockDeployment({ payTo = '0x897583A6da146826ecA90e5c24158bC226C29d53', a2aState = 'input-required', feed = 'free' } = {}) {
   const accept = { scheme: 'exact', network: 'eip155:8453', amount: '10000', asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', payTo };
   const pr = { x402Version: 2, error: 'Payment required', resource: {}, accepts: [accept] };
   const header = Buffer.from(JSON.stringify(pr)).toString('base64');
@@ -114,8 +121,10 @@ function mockDeployment({ payTo = '0x897583A6da146826ecA90e5c24158bC226C29d53', 
   return async (url, options = {}) => {
     const u = new URL(url);
     const body = options.body ? JSON.parse(options.body) : null;
-    if (u.pathname === '/.well-known/x402') return res(200, { x402Version: 2, resources: [{ resource: `${u.origin}/api/ioc`, accepts: [accept] }] });
-    if (u.pathname === '/api/ioc') return res(402, pr, { 'payment-required': header });
+    if (u.pathname === '/.well-known/x402') return res(200, { x402Version: 2, resources: [{ resource: `${u.origin}/api/mcp`, accepts: [accept] }] });
+    if (u.pathname === '/api/ioc' && feed === 'free') return res(200, { type: 'bundle', id: 'bundle--x', objects: [] });
+    if (u.pathname === '/api/ioc' && feed === 'paid') return res(402, pr, { 'payment-required': header });
+    if (u.pathname === '/api/ioc') return res(500, { error: 'down' });
     if (u.pathname === '/api/mcp' && body.params.name === 'get_usage_status') return res(200, { jsonrpc: '2.0', result: { content: [{ type: 'text', text: JSON.stringify({ free_tier_daily_limit: 5 }) }] } });
     if (u.pathname === '/api/mcp') return res(200, { jsonrpc: '2.0', result: { isError: true, structuredContent: pr, content: [{ type: 'text', text: JSON.stringify(pr) }] } }, { 'payment-required': header });
     if (u.pathname === '/api/a2a') return res(200, { jsonrpc: '2.0', result: { status: { state: a2aState, message: { metadata: { 'x402.payment.status': 'payment-required', 'x402.payment.required': pr } } } } });
@@ -127,10 +136,15 @@ test('live checks pass against a deployment that answers with the published term
   const results = await livePaymentChecks('https://deploy.example', { fetchImpl: mockDeployment() });
   for (const r of results) assert.ok(r.ok, `${r.name}: ${r.detail}`);
   assert.equal(results.length, 6);
+  assert.match(results.find((r) => r.name.startsWith('/api/ioc')).detail, /free \(200 bundle\)/);
+  const paidFeed = await livePaymentChecks('https://deploy.example', { fetchImpl: mockDeployment({ feed: 'paid' }) });
+  for (const r of paidFeed) assert.ok(r.ok, `${r.name}: ${r.detail}`);
+  const brokenFeed = await livePaymentChecks('https://deploy.example', { fetchImpl: mockDeployment({ feed: 'broken' }) });
+  assert.ok(brokenFeed.some((r) => !r.ok && r.name.startsWith('/api/ioc')));
 });
 
 test('live checks catch a deployment paying a different address, or an A2A gate that does not ask for payment', async () => {
-  const wrongPayee = await livePaymentChecks('https://deploy.example', { fetchImpl: mockDeployment({ payTo: '0x000000000000000000000000000000000000bEEF' }) });
+  const wrongPayee = await livePaymentChecks('https://deploy.example', { fetchImpl: mockDeployment({ payTo: '0x000000000000000000000000000000000000bEEF', feed: 'paid' }) });
   assert.ok(wrongPayee.filter((r) => !r.ok).length >= 4);
   assert.ok(wrongPayee.some((r) => !r.ok && /payTo/.test(r.detail)));
   const openA2a = await livePaymentChecks('https://deploy.example', { fetchImpl: mockDeployment({ a2aState: 'completed' }) });

@@ -261,14 +261,15 @@ test('wallet age timeout: the function limit still leaves 10s+ of margin over th
 // SHA-256 of JSON.stringify(TOOLS) and of the check_wallet_age entry, taken
 // from api/mcp.mjs before this change: field names, descriptions and the
 // MCP tool definitions must stay byte-identical.
-const TOOLS_SHA256 = 'f8c703b80fcf2158581447affc5cfe6464d4bbd67515cc4aec2fa7e7536b5a89';
+const TOOLS_SHA256 = '9785649dc3f438b3e4bcd06b63b123b28288b4312562c5e81c02d4f613f13837';
 const WALLET_AGE_TOOL_SHA256 = '16fafc99e96925c027cd660b9564e8fe5edffb5a512d504bf12bcc8cf312189d';
 
 test('wallet age timeout: MCP tool definitions are hash-identical to before', async () => {
   const sha = (o) => crypto.createHash('sha256').update(JSON.stringify(o)).digest('hex');
   // check_package (1.17.0) was added after this pin, at the end of the list.
   // Moved again by Phase 2's EPSS switch (the three CVE descriptions, see
-  // tests/source-policy.test.mjs EPSS_DESCRIPTION_EDITS).
+  // tests/source-policy.test.mjs EPSS_DESCRIPTION_EDITS), and by the free
+  // feed (get_threat_indicators, FREE_FEED_EDITS there).
   assert.equal(sha(TOOLS.filter((t) => t.name !== 'check_package')), TOOLS_SHA256);
   assert.equal(sha(TOOLS.find((t) => t.name === 'check_wallet_age')), WALLET_AGE_TOOL_SHA256);
 });

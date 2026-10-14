@@ -109,7 +109,7 @@ import { encodePaymentRequiredHeader, encodePaymentResponseHeader, decodePayment
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT, freeTierKey, freeTierWanted, setFreeTierHeaders } from '../lib/freeTier.mjs';
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
-import { X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX, IP_ABUSE_RATE_LIMIT_MAX, PACKAGE_CHECK_RATE_LIMIT_MAX, FREE_MCP_TOOLS, x402PriceUsd } from '../lib/x402Config.mjs';
+import { isFeedPaid, X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX, IP_ABUSE_RATE_LIMIT_MAX, PACKAGE_CHECK_RATE_LIMIT_MAX, FREE_MCP_TOOLS, x402PriceUsd } from '../lib/x402Config.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { detectIndicatorType, lookupIocContext } from '../lib/iocContext.mjs';
 import { fetchThreatTelemetry, isEpssPaidEnabled } from '../lib/sourcePolicy.mjs';
@@ -206,10 +206,14 @@ export const TEST_FIXTURE_OUTPUT_PROPERTIES = {
   test_fixture: { type: 'boolean', description: 'true only when the input was a documented integration test fixture and this response is canned; absent on real results.' }
 };
 
+// Whether the feed tool's description states a price: fixed when the server
+// starts (lib/x402Config.mjs isFeedPaid; an env change needs a redeploy).
+const FEED_PAID_AT_START = isFeedPaid();
+
 export const TOOLS = [
   {
     name: 'get_threat_indicators',
-    description: 'PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of CVE records from NIST NVD, the only source PG1 may currently redistribute commercially. Today it contains no IP, domain, URL or file-hash indicators: every object is a STIX vulnerability with the CVE id and an NVD reference, without scores (use get_cve_details for CVSS and known-exploited status). Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for bulk feed synchronizations. Do NOT use for single-item lookups (use get_ioc_context) or CVE analysis (use get_cve_details). USAGE EXCLUSIONS: Does not provide historical query archival beyond the active ingestion window. BEHAVIOR: Pagination is handled via the limit parameter (max 1000). If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta["x402/payment-response"].',
+    description: 'PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of CVE records from NIST NVD, the only source PG1 may currently redistribute commercially. Today it contains no IP, domain, URL or file-hash indicators: every object is a STIX vulnerability with the CVE id and an NVD reference, without scores (use get_cve_details for CVSS and known-exploited status). ' + (FEED_PAID_AT_START ? 'Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). ' : 'FREE while this feed holds no current data: no payment, no licence key, and it does not use the 5 free calls a day. ') + 'SIBLING DIFFERENTIATION: Use ONLY for bulk feed synchronizations. Do NOT use for single-item lookups (use get_ioc_context) or CVE analysis (use get_cve_details). USAGE EXCLUSIONS: Does not provide historical query archival beyond the active ingestion window. BEHAVIOR: Pagination is handled via the limit parameter (max 1000).' + (FEED_PAID_AT_START ? ' If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta["x402/payment-response"].' : ''),
     inputSchema: {
       type: 'object',
       properties: {
@@ -3039,7 +3043,9 @@ function sendMcpFixtureResponse(res, toolName, outcome, requestId, pg1RequestId)
 
 const X402_PAY_TO = (process.env.X402_PAY_TO_ADDRESS || '').trim();
 // X402_NETWORK, X402_SCHEME and X402_PRICE live in lib/x402Config.mjs.
-const X402_RESOURCE_DESCRIPTION = 'PG1 Threat Intelligence: STIX 2.1 bundle of CVE records from NIST NVD (vulnerability objects with the CVE id and an NVD reference), the only source PG1 may currently redistribute commercially. No IP, domain, URL or file-hash indicators yet.';
+// The resource every paid MCP tool's 402 names. The STIX feed tool is free
+// while PG1_FEED_PAID is off, so this describes the tools that are paid.
+const X402_RESOURCE_DESCRIPTION = 'PG1 Threat Intelligence MCP server: paid tools, 0.01 USD per call - CVE enrichment from NIST NVD and the CISA Known Exploited Vulnerabilities catalog, MITRE ATT&CK threat actor profiles, and lookups that find a record in PG1\'s licensed data (currently CVE identifiers from NVD only).';
 const X402_RESOURCE_MIME_TYPE = 'application/json';
 
 // Facilitator client factory, overridable only by tests (see
@@ -3791,8 +3797,12 @@ export default async function handler(req, res) {
         return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: formatFixIt(unknownTool, pg1RequestId), data: { request_id: pg1RequestId, unknown_tool: true, suggestion } }, id: requestId });
       }
 
-      const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName, pg1RequestId);
+      // The STIX feed is free while PG1_FEED_PAID is off (lib/x402Config.mjs):
+      // no gate at all, so no 402, no free-tier call spent, nothing settled.
+      const feedFree = toolName === 'get_threat_indicators' && !isFeedPaid();
+      const gate = feedFree ? { authorized: true } : await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName, pg1RequestId);
       noteGateTelemetry(callTelemetry, gate);
+      if (feedFree) callTelemetry.paymentType = 'free';
       if (gate.handled) return;
       if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired, pg1RequestId);
 

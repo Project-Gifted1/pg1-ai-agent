@@ -6,7 +6,7 @@ import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT, freeTierWanted, setFreeTierHeaders } from '../lib/freeTier.mjs';
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
-import { X402_NETWORK, X402_NETWORK_NAME, X402_PRICE, X402_SCHEME, x402PriceText } from '../lib/x402Config.mjs';
+import { isFeedPaid, X402_NETWORK, X402_NETWORK_NAME, X402_PRICE, X402_SCHEME, x402PriceText } from '../lib/x402Config.mjs';
 import { logApiError } from '../lib/errorLog.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { collectImageInputs, imageInputDirective, imageCountLabel, describeSkipped, fileExtensionFor, redactLeakedSecrets, SECRET_PLACEHOLDER, SECRET_WARNING, MAX_IMAGES_PER_MESSAGE, MAX_IMAGE_BYTES, MAX_IMAGE_EDGE_PX } from '../lib/visionInput.mjs';
@@ -26,7 +26,7 @@ import { isMusicCommand, isMusicAction } from '../lib/music/text.mjs';
 import { handleMusicCommand, handleMusicApproval, musicStatusAction } from '../lib/music/chat.mjs';
 import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, usageReport, USAGE_STATS_TOOL, SEARCH_HISTORY_TOOL, RECALL_RETRY_INSTRUCTION, RESULTS_RETRY_INSTRUCTION, HISTORY_CAPABILITY_TEXT, HISTORY_CAPABILITY_SEARCH_TEXT, turnsHaveResults, LEAST_PRIVILEGED_ROLE, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
 import { CHAT_ROUTES, chooseChatRoute, requiredFirstTool, searchAfterTools, wantsCurrentInfo } from '../lib/chatRoute.mjs';
-import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
+import { recordTelemetry, callerHash, licenceKeyHash } from '../lib/telemetry.mjs';
 import { fetchThreatTelemetry } from '../lib/sourcePolicy.mjs';
 import { pg1Paywall } from '../lib/paywallPage.mjs';
 import { resolveWriteRepo, checkWritePath, checkWritePaths, agentBranchName, createAgentBranch } from '../lib/githubWriteGuard.mjs';
@@ -1905,6 +1905,16 @@ export default async function handler(req, res) {
     console.log('[X402_DEBUG] x402Middleware configured:', !!x402Middleware, '| X402_PAY_TO set:', !!X402_PAY_TO);
     debugLogPaymentHeader(rawPaymentHeader);
 
+    // 0. The STIX feed is free while PG1_FEED_PAID is off (lib/x402Config.mjs):
+    // served to anyone, before any licence, free-tier or x402 step, so there
+    // is no 402, no free-tier call spent and nothing charged even if a
+    // payment header is sent.
+    if (!isFeedPaid()) {
+      iocTelemetry.paymentType = 'free';
+      logSettlementOutcome('/api/ioc', 'success', iocRequestIdentifier, 'free_feed');
+      return await buildAndServeStixBundle('free-feed');
+    }
+
     // 1. Gumroad license path — checked first if a key is actually provided.
     if (clientLicenseKey) {
       try {
@@ -1922,7 +1932,9 @@ export default async function handler(req, res) {
         }
         logSettlementOutcome('/api/ioc', 'success', iocRequestIdentifier, 'license');
         iocTelemetry.paymentType = 'license';
-        return await buildAndServeStixBundle(clientLicenseKey);
+        // Logged by the key's salted hash, never the key itself.
+        var licenceHash = licenceKeyHash(clientLicenseKey);
+        return await buildAndServeStixBundle(licenceHash ? 'license:' + licenceHash : 'redacted');
       } catch (err) {
         recordServerError(supUrl, supKey, 'IOC', 500, 'license_check_exception');
         return sendJSON(res, 500, { error: 'Internal Server Error: Telemetry stream failed.' });
@@ -2010,7 +2022,9 @@ export default async function handler(req, res) {
         logSettlementOutcome('/api/ioc', 'rejected', iocRequestIdentifier, 'middleware_wrote_response');
         return;
       }
-      var payerAddress = (getHeader('x-payment-payer') || 'unknown-payer');
+      // Caller-supplied header: stored only when it is a wallet address.
+      var payerHeader = String(getHeader('x-payment-payer') || '').trim();
+      var payerAddress = /^0x[0-9a-fA-F]{40}$/.test(payerHeader) ? payerHeader : 'unknown-payer';
       logSettlementOutcome('/api/ioc', 'success', iocRequestIdentifier, 'x402');
       iocTelemetry.paymentType = 'x402';
       return await buildAndServeStixBundle('x402:' + payerAddress);

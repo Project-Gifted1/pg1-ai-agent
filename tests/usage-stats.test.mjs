@@ -17,6 +17,10 @@
 import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 
+// These tests exercise the paid /api/ioc gate, so the feed is made paid
+// (it is free by default while it holds no current data; tests/feed-pricing.test.mjs).
+process.env.PG1_FEED_PAID = 'true';
+
 process.env.TELEMETRY_IP_SALT = 'test-salt-for-usage-stats';
 delete process.env.X402_PAY_TO_ADDRESS;
 

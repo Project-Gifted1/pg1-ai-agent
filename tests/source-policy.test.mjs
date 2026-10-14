@@ -499,12 +499,23 @@ const EPSS_DESCRIPTION_EDITS = [
   ["get_cve_by_product", "enriched with CVSS, EPSS, and CISA KEV status, sorted by exploitation risk.", "enriched with CVSS and CISA KEV status (plus EPSS when this server serves EPSS in paid responses), sorted by exploitation risk."]
 ];
 
-test('tool definitions differ from 1.14.0 only by the listed description edits (licensing gate, feed description, EPSS switch)', () => {
+// Follow-up: the feed is FREE while it holds no current data (PG1_FEED_PAID
+// off, the default), so get_threat_indicators drops its payment sentences.
+// Two edits on the same tool, so two lists; applied first when reverting.
+const PAYMENT_SENTENCE = 'Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). ';
+const FREE_FEED_EDITS = [
+  ['get_threat_indicators', PAYMENT_SENTENCE, 'FREE while this feed holds no current data: no payment, no licence key, and it does not use the 5 free calls a day. ']
+];
+const FREE_FEED_BEHAVIOR_EDITS = [
+  ['get_threat_indicators', 'Pagination is handled via the limit parameter (max 1000). If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta["x402/payment-response"].', 'Pagination is handled via the limit parameter (max 1000).']
+];
+
+test('tool definitions differ from 1.14.0 only by the listed description edits (licensing gate, feed description, EPSS switch, free feed)', () => {
   // check_ip_abuse (1.16.0) and check_package (1.17.0) are the additions; the 14 tools
   // before them are pinned.
   const reverted = TOOLS.filter((tool) => tool.name !== 'check_ip_abuse' && tool.name !== 'check_package').map((tool) => {
     let description = tool.description;
-    for (const edits of [FEED_DESCRIPTION_EDITS, DESCRIPTION_EDITS, EPSS_DESCRIPTION_EDITS]) {
+    for (const edits of [FREE_FEED_EDITS, FREE_FEED_BEHAVIOR_EDITS, FEED_DESCRIPTION_EDITS, DESCRIPTION_EDITS, EPSS_DESCRIPTION_EDITS]) {
       const edit = edits.find(([name]) => name === tool.name);
       if (!edit) continue;
       assert.ok(description.includes(edit[2]), tool.name);

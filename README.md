@@ -46,7 +46,7 @@ A2A agents use `https://pg1-ai-agent.vercel.app/api/a2a` (agent card at `/.well-
 | An npm or PyPI package before installing it | `check_package` | Flags a name that does not exist, a malicious report, or a new look-alike of a popular package. |
 | A threat actor or APT name | `get_threat_actor_profile` | MITRE ATT&CK dossier. |
 | One public IP and your own AbuseIPDB key | `check_ip_abuse` | Send the key in `X-AbuseIPDB-Key`; PG1 has no key of its own. |
-| The CVE list to ingest | `get_threat_indicators` | STIX 2.1 bundle of CVE records from NVD: CVE id and an NVD reference, no scores, no IP/domain/URL/hash indicators. REST: `GET /api/ioc`. |
+| The CVE list to ingest | `get_threat_indicators` | STIX 2.1 bundle of CVE records from NVD: CVE id and an NVD reference, no scores, no IP/domain/URL/hash indicators. REST: `GET /api/ioc`. Free while it holds no current data (`PG1_FEED_PAID` off): no payment, no licence key, and it does not use the 5 free calls a day. |
 | Your remaining free calls | `get_usage_status` | Always free. |
 
 ### What `status` means
@@ -68,7 +68,8 @@ Informational codes (`WALLET_DELEGATED`, `IP_TOR_EXIT_NODE`, `IP_WHITELISTED`, `
 | `check_ip_abuse` | Always free (your own AbuseIPDB quota) | 60 calls/hour per caller |
 | `get_usage_status` | Always free | none |
 | `get_ioc_context`, `get_ioc_batch` | Free when nothing is found; paid when something is | Paid calls use the free tier first |
-| `get_cve_details`, `get_cve_batch`, `get_cve_by_product`, `get_threat_actor_profile`, `get_threat_indicators`, `GET /api/ioc` | Paid: 0.01 USD per call | 5 free calls a day per caller, shared across all of them, then x402 |
+| `get_threat_indicators`, `GET /api/ioc` (the STIX feed) | Free while the feed holds no current data (`PG1_FEED_PAID` off) | none, and it does not use the 5 free calls a day |
+| `get_cve_details`, `get_cve_batch`, `get_cve_by_product`, `get_threat_actor_profile` | Paid: 0.01 USD per call | 5 free calls a day per caller, shared across all of them, then x402 |
 | Test fixtures ([/docs/testing](https://pg1-ai-agent.vercel.app/docs/testing)) | Always free | none, and they spend no free call |
 
 - **No header is needed for the free tier.** It is automatic for any caller with no payment and no licence key. Responses carry `X-Free-Tier-Limit` and `X-Free-Tier-Remaining`.
@@ -78,20 +79,22 @@ Informational codes (`WALLET_DELEGATED`, `IP_TOR_EXIT_NODE`, `IP_WHITELISTED`, `
 
 ## Two Ways to Connect
 
-- **`/api/ioc`** — simple REST GET, returns a STIX 2.1 bundle of CVE records from NIST NVD (the only source PG1 may currently redistribute commercially; no IP, domain, URL or file-hash indicators yet). Best for scripts, curl, and simple integrations.
+- **`/api/ioc`** — simple REST GET, returns a STIX 2.1 bundle of CVE records from NIST NVD (the only source PG1 may currently redistribute commercially; no IP, domain, URL or file-hash indicators yet). Free while it holds no current data: no key, no payment, no free-tier use. Best for scripts, curl, and simple integrations.
 - **`/api/mcp`** — full Model Context Protocol server, 16 tools (CVE lookups, batch operations, threat actor dossiers, wallet sanctions screening, domain age, hostname/phishing reputation, wallet age/history, and more). Best for Claude, MCP-compatible agents, and any client speaking the MCP standard.
 
 **Discovery:** [`/llms.txt`](https://pg1-ai-agent.vercel.app/llms.txt) (llmstxt.org format, for AI agents/crawlers) and [`/openapi.json`](https://pg1-ai-agent.vercel.app/openapi.json) (OpenAPI 3.1 spec for `/api/ioc` and `/api/health`).
 
 **Opt-in:** `/api/ioc/context?value=<indicator>` — a REST mirror of the `get_ioc_context` MCP tool, disabled by default. The operator must set `ENABLE_REST_IOC_CONTEXT=true` for this route to respond; otherwise it returns `404 {"error":"not available"}`. Not listed in x402 Bazaar/discovery metadata.
 
-Both accept the same Gumroad license key via the `x-api-key` header, or per-call x402 micropayments ($0.01/call) via the `PAYMENT-SIGNATURE` header (x402 v2).
+Paid MCP tools accept a Gumroad license key via the `x-api-key` header, or per-call x402 micropayments ($0.01/call) via the `PAYMENT-SIGNATURE` header (x402 v2). `/api/ioc` takes the same when the operator makes the feed paid again (`PG1_FEED_PAID=true`).
 
 ## Free Tier (5 calls/day)
 
 The free tier is **automatic**: a caller with no licence key and no payment gets **5 free paid calls a day** before the first `402 Payment Required`. No header or sign-up is needed, so a browser or an MCP client's first calls just work.
 
-It is **one counter per caller (per IP), shared** by the REST feed (`/api/ioc`), the paid MCP tools (`/api/mcp`) and the paid A2A skills (`/api/a2a`): 5 free paid calls a day in total, whichever route spends them. A call only counts once it succeeds; `HEAD` never counts. Each free-tier response carries `X-Free-Tier-Limit` and `X-Free-Tier-Remaining`, and `get_usage_status` shows what is left. A caller offering a payment is always charged, never served free. Send `X-Free-Tier: 0` to skip the free tier and get the payment challenge straight away. Requests whose User-Agent names an x402 scanner, crawler or bot (`config/usageProbes.mjs`) skip it too, so discovery scanners still see the 402 they list paid resources by.
+It is **one counter per caller (a salted hash of the IP, never the IP itself), shared** by the paid MCP tools (`/api/mcp`) and the paid A2A skills (`/api/a2a`): 5 free paid calls a day in total, whichever route spends them. A call only counts once it succeeds; `HEAD` never counts. Each free-tier response carries `X-Free-Tier-Limit` and `X-Free-Tier-Remaining`, and `get_usage_status` shows what is left. A caller offering a payment is always charged, never served free. Send `X-Free-Tier: 0` to skip the free tier and get the payment challenge straight away. Requests whose User-Agent names an x402 scanner, crawler or bot (`config/usageProbes.mjs`) skip it too, so discovery scanners still see the 402 they list paid resources by.
+
+**The STIX feed is free while it holds no current data.** `get_threat_indicators` and `GET /api/ioc` are served to anyone: no 402, no licence key, and they do not count against the 5 calls a day, even with `X-Free-Tier: 0` or a payment header (nothing is charged). The operator sets `PG1_FEED_PAID=true` to make the feed paid again once the pipeline fetches recent CVEs; it then uses the free tier and x402 like the other paid tools.
 
 ```bash
 curl "https://pg1-ai-agent.vercel.app/api/ioc"
@@ -179,7 +182,7 @@ Call `"method": "tools/list"` against `/api/mcp` for full schemas. Summary:
 
 | Tool | Purpose | Source(s) | Free tier applies? |
 |---|---|---|---|
-| `get_threat_indicators` | STIX 2.1 bundle of CVE records (CVE id and NVD reference; no IP/domain/URL/hash indicators yet) | NVD (only sources PG1 may redistribute commercially; see [Data source switches](#data-source-switches)) | Yes (5 free calls/day, then x402) |
+| `get_threat_indicators` | STIX 2.1 bundle of CVE records (CVE id and NVD reference; no IP/domain/URL/hash indicators yet) | NVD (only sources PG1 may redistribute commercially; see [Data source switches](#data-source-switches)) | No: free while the feed holds no current data (`PG1_FEED_PAID`) |
 | `get_ioc_context` | Single-indicator safety check | NVD (see [Data source switches](#data-source-switches)) | Always free if not found |
 | `get_ioc_batch` | Up to 20 indicators per call | NVD (see [Data source switches](#data-source-switches)) | Always free if none found |
 | `get_cve_details` | CVE lookup enriched with NVD, CISA KEV (EPSS only when `PG1_SOURCE_EPSS_PAID` is on) | NVD, CISA KEV | Yes (5 free calls/day, then x402) |
@@ -223,6 +226,10 @@ Threat indicator data (`get_threat_indicators`, `get_ioc_context`, `get_ioc_batc
 A locked source can only be served again by a code change, made once a licence is signed.
 
 **EPSS in paid CVE responses.** FIRST grants EPSS scores "freely to the public" but has not confirmed resale in writing, so paid CVE responses (`get_cve_details`, `get_cve_batch`, `get_cve_by_product` over MCP or A2A, whether paid by x402, a licence key or the free tier) leave EPSS out and never call FIRST for it: no `epss` field, no EPSS check, no EPSS credit. `PG1_SOURCE_EPSS_PAID=true` puts it back; set it only once FIRST confirms resale in writing. Free responses (the PG1 chat) keep EPSS.
+
+**The STIX feed's price.** `get_threat_indicators` and `/api/ioc` are free while the feed holds no current data. `PG1_FEED_PAID=true` makes them paid again (0.01 USD a call, the shared free tier first); at the same time add `/api/ioc` back to `public/.well-known/x402` and `x-payment-info` to its two operations in `public/openapi.json` (`node scripts/verify-payment-config.mjs` checks this).
+
+**Licence keys are never stored.** `api_access_logs` records a licence-key caller as `license:<HMAC>` (salted with `TELEMETRY_IP_SALT`, domain-separated from the IP hash), a free-tier caller as `free-tier:<IP hash>`, and the free feed as `free-feed`; a database check constraint rejects anything else.
 
 **`threat_indicators`.** The legacy `threat_indicators` table (rows with no `source_id` and nothing in `stix_data`) is never read by a paid route; only the operator's own chat context and the operator-only diagnostics endpoint read it. `tests/phase2-funnel.test.mjs` pins both.
 
