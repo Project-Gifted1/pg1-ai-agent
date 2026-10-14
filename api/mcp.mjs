@@ -3,7 +3,10 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.17.0 — ADD: new free tool check_package (also an A2A skill, a
+ * Version: 1.18.0 — ADD: preflight_check (one paid call, every relevant check in
+ *   parallel, fail closed), check_x402_endpoint, check_agent_card and
+ *   verify_result; every result signed (Ed25519, lib/signing.mjs).
+ * 1.17.0 — ADD: new free tool check_package (also an A2A skill, a
  *          chat tool for every role and a playground check), a pre-install
  *          check of one npm or PyPI package (lib/packageCheck.mjs): does it
  *          exist, first/latest publish dates, OSV malicious-package reports
@@ -3488,11 +3491,24 @@ function edgeRateLimited(identifier, licensed) {
   if (licensed || !identifier || identifier === 'unknown') return false;
   const now = Date.now();
   const e = edgeLimits.get(identifier);
-  if (!e || e.start + RATE_LIMIT_WINDOW_MS < now) { edgeLimits.set(identifier, { start: now, n: 1 }); return false; }
+  if (!e || e.start + RATE_LIMIT_WINDOW_MS < now) {
+    if (edgeLimits.size > 20000) edgeLimits.clear(); // bounded memory per instance
+    edgeLimits.set(identifier, { start: now, n: 1 });
+    return false;
+  }
   e.n++;
   return e.n > 60;
 }
-export const internalRunTool = (name, args) => runReadOnlyTool(name, args, { identifier: 'pg1-internal', licensed: true });
+// Test fixtures (lib/fixtures.mjs) answer first, so a preflight or a
+// watchlist on a fixture target is deterministic and makes no upstream call.
+export const internalRunTool = async (name, args) => {
+  const fx = resolveTestFixture(name, args);
+  if (fx) {
+    if (fx.type === 'result') return fx.result;
+    throw Object.assign(new Error(fx.message || 'fixture error'), { code: fx.code || 'fixture_error', mcpToolError: true });
+  }
+  return runReadOnlyTool(name, args, { identifier: 'pg1-internal', licensed: true });
+};
 async function edgeCheck(name, args, ctx = {}) {
   if (edgeRateLimited(ctx.identifier, ctx.licensed)) throw Object.assign(new Error(`${name} is limited to 60 calls/hour per caller. Retry later.`), { mcpToolError: true, code: 'rate_limited', retryAfter: 600 });
   const run = name === 'check_x402_endpoint' ? checkX402Endpoint : checkAgentCard;
@@ -3637,7 +3653,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.17.0',
+      version: '1.18.0',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp',
@@ -3673,7 +3689,7 @@ export default async function handler(req, res) {
       recordTelemetry({ eventType: 'initialize', endpoint: '/api/mcp', status: 'ok', clientName: clientInfo.name, clientVersion: clientInfo.version, callerHash: requestCallerHash(req) });
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.17.0' } },
+        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.18.0' } },
         id: requestId
       });
     }

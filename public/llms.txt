@@ -2,7 +2,27 @@
 
 > PG1 Sovereign Threat Intelligence: threat-intelligence tools for AI agents, covering wallet sanctions screening, domain age lookups, hostname/phishing reputation checks, a STIX 2.1 CVE feed from NVD, CVE enrichment, and threat actor dossiers — served over MCP, A2A, and REST.
 
+## Start here: preflight_check
+
+- [preflight_check](https://pg1-ai-agent.vercel.app/api/mcp): One call before an agent acts (since 1.18.0). Give `action` (pay, open, install, patch, trust_agent) and `target` (a wallet, URL, hostname, package name[@version] with `ecosystem`, CVE id or "vendor product version", or an agent URL/domain). PG1 runs every relevant check in parallel and returns one `decision`: no_flags, flagged or unknown, with merged `reasons` (each naming the check that raised it), per-check results and `latency_ms`. Fail closed: a check that does not finish makes the decision unknown (PREFLIGHT_CHECK_INCOMPLETE), never no_flags. Paid: 0.01 USD via x402 or a licence key, after the shared 5/day free tier. Also an A2A skill and REST: `POST https://pg1-ai-agent.vercel.app/api/preflight` with `{"action":"pay","target":"0x..."}`.
+
+## Signed results
+
+Every PG1 result is signed with Ed25519 over the canonical JSON of {request_hash, result, sources, timestamp, version}: MCP in `result._meta["pg1/signature"]`, A2A in the task's `metadata["pg1.signature"]`, REST as `signature`. Public keys (JWKS): https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key. Verify offline with the SDKs (/sdk) or with the free `verify_result` tool. Guide: https://pg1-ai-agent.vercel.app/docs/agents
+
+## Watchlists
+
+`POST https://pg1-ai-agent.vercel.app/api/watchlists` with `{"items":[{"kind":"wallet","target":"0x..."}],"webhook_url":"https://..."}`: wallets, domains, packages and CVE products rechecked about every 24 hours, with an HMAC-signed webhook (X-PG1-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, "<t>.<body>")>) when an item's status changes. 0.05 USD per item per 30 days via x402. Webhook URLs must be public https.
+
+## Reliability
+
+Per-tool calls, success rate and p50/p95 latency over the last 24 hours: https://pg1-ai-agent.vercel.app/status (JSON: /status?format=json), also in get_usage_status as `service_status`.
+
 ## Free tools
+
+- [check_x402_endpoint](https://pg1-ai-agent.vercel.app/api/mcp): Check an x402 endpoint before paying it (since 1.18.0): reads its 402 payment request, screens payTo against the sanctions list and its on-chain age, checks the network and asset are known, the TLS connection and the domain age. https only; private addresses and redirects refused. 60 calls/hour per caller.
+- [check_agent_card](https://pg1-ai-agent.vercel.app/api/mcp): Check another agent before trusting it (since 1.18.0): fetches its A2A agent card, validates the schema, flags a name that claims a brand its domain does not belong to, and checks the domain's age and reputation. 60 calls/hour per caller.
+- [verify_result](https://pg1-ai-agent.vercel.app/api/mcp): Verify a PG1 result's Ed25519 signature against the published keys (since 1.18.0).
 
 - [check_wallet_sanctions](https://pg1-ai-agent.vercel.app/api/mcp): Checks a cryptocurrency wallet address against the OFAC SDN sanctions list; informational only, never phrased as "safe" or "clean".
 - [check_domain_age](https://pg1-ai-agent.vercel.app/api/mcp): Looks up a domain's registration age via RDAP; a newly registered domain is reported as a phishing signal, not proof of malicious intent.
@@ -52,6 +72,8 @@ curl -X POST "https://pg1-ai-agent.vercel.app/api/a2a?A2A-Version=1.0" -H "Conte
 
 - One IP, domain, URL or file hash: get_ioc_context (free when found: false; PG1's licensed records hold only NVD CVE ids today, so these return found: false), several: get_ioc_batch; for a domain or hostname also run the hostname checks below
 - CVE id: get_cve_details (several: get_cve_batch); vendor + product: get_cve_by_product
+- About to act (pay, open, install, patch, trust an agent): preflight_check, one call
+- An x402 endpoint you will pay: check_x402_endpoint; another agent: check_agent_card
 - Wallet you will pay or trust: check_wallet_sanctions and check_wallet_age
 - Link, hostname or possible phishing: check_hostname_reputation and check_domain_age
 - npm or PyPI package before installing: check_package

@@ -35,6 +35,7 @@
       <li><a href="#why-agents-use-pg1">Why agents use PG1</a></li>
       <li><a href="#which-tool-to-call">Which tool to call</a></li>
       <li><a href="#what-status-means">What <code>status</code> means</a></li>
+      <li><a href="#verify-a-result">Verify a result</a></li>
       <li><a href="#free-tier-and-rate-limits">Free tier and rate limits</a></li>
     </ul>
   </nav>
@@ -90,6 +91,16 @@
 </tbody>
 </table></div>
 <p>Informational codes (<code>WALLET_DELEGATED</code>, <code>IP_TOR_EXIT_NODE</code>, <code>IP_WHITELISTED</code>, <code>IP_REPORTS_SCORED_ZERO</code>) report a fact and never change <code>status</code>. Every code: <a href="https://pg1-ai-agent.vercel.app/docs/reason-codes">/docs/reason-codes</a>.</p>
+<h2 id="verify-a-result">Verify a result</h2>
+<p>Every PG1 result is signed with Ed25519, so an agent can prove later, offline, that PG1 said it:</p>
+<ul>
+<li><strong>Where:</strong> MCP <code>result._meta[&quot;pg1/signature&quot;]</code>, A2A the task&#39;s <code>metadata[&quot;pg1.signature&quot;]</code>, REST (<code>/api/preflight</code>) the top-level <code>signature</code>.</li>
+<li><strong>What is signed:</strong> the canonical JSON (keys sorted, no spaces) of <code>{ request_hash, result, sources, timestamp, version }</code>. <code>request_hash</code> is the SHA-256 of the canonical <code>{ tool, arguments }</code> you sent, so a signature cannot be moved to another request; <code>sources</code> is the result&#39;s <code>checks[].source</code> list.</li>
+<li><strong>The block:</strong> <code>{ alg: &quot;EdDSA&quot;, kid, request_hash, sources, timestamp, version, sig }</code>, <code>sig</code> base64url.</li>
+<li><strong>Keys:</strong> <a href="https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key">/.well-known/pg1-signing-key</a> (a JWKS; pick the key by <code>kid</code>). Old keys stay listed after a rotation, so old signatures keep verifying.</li>
+<li><strong>How:</strong> the free <code>verify_result</code> tool, or offline with the PG1 SDKs (<code>verifyResult</code> in JavaScript, <code>verify_result</code> in Python): rebuild the canonical payload from the result without its <code>signature</code> field and check <code>sig</code> with the key.</li>
+</ul>
+<p>Watchlist webhooks are signed separately with HMAC-SHA256: <code>X-PG1-Signature: t=&lt;unix&gt;,v1=&lt;hex HMAC(secret, &quot;&lt;t&gt;.&lt;body&gt;&quot;)&gt;</code>; reject a delivery older than 5 minutes.</p>
 <h2 id="free-tier-and-rate-limits">Free tier and rate limits</h2>
 <div class="table-wrap" tabindex="0"><table>
 <thead><tr><th scope="col">Tool</th><th scope="col">Cost</th><th scope="col">Limit without a licence key</th></tr></thead>

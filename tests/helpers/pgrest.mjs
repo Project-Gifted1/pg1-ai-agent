@@ -1,6 +1,7 @@
 // A small PostgREST stand-in over a real Postgres (PGlite), for the tables
 // the PG1 upgrade adds. Handles what lib/* sends: select=, column filters
-// (eq, neq, in, gt, gte, lt, lte, is), order=, limit=, POST (object or
+// (eq, neq, in, gt, gte, lt, lte, is, and or=(...) of those), order= (with
+// nullsfirst/nullslast), limit=, POST (object or
 // array, Prefer: return=representation|minimal), PATCH and DELETE with the
 // same filters, and rpc/<fn> with named arguments. jsonb columns are sent
 // as JSON text; array columns as arrays. Anything else throws, so a test
@@ -30,6 +31,13 @@ function parseFilters(params, types, vals) {
   const where = [];
   for (const [k, v] of params) {
     if (['select', 'order', 'limit', 'offset', 'on_conflict'].includes(k)) continue;
+    // or=(col.op.value,col.op."quoted value"): each part is one filter.
+    if (k === 'or') {
+      const parts = String(v).replace(/^\(|\)$/g, '').match(/[a-z_]+\.[a-z]+\.(?:"[^"]*"|[^,]*)/g) || [];
+      const sub = parts.map((p) => { const i = p.indexOf('.'); return parseFilters([[p.slice(0, i), p.slice(i + 1).replace(/^([a-z]+)\."(.*)"$/s, '$1.$2')]], types, vals)[0]; });
+      if (sub.length) where.push(`(${sub.join(' or ')})`);
+      continue;
+    }
     if (!/^[a-z_]+$/.test(k) || !types.has(k)) throw new Error(`unsupported filter column ${k}`);
     const m = /^(eq|neq|in|gt|gte|lt|lte|is)\.(.*)$/s.exec(v);
     if (!m) throw new Error(`unsupported filter ${k}=${v}`);
@@ -104,7 +112,7 @@ export function pgRest(db, { calls = [], base = 'https://supabase.test', passthr
       }
       let order = '';
       const o = u.searchParams.get('order');
-      if (o) order = ' order by ' + o.split(',').map((p) => { const [c, d] = p.split('.'); if (!types.has(c)) throw new Error('bad order'); return `${c} ${d === 'desc' ? 'desc' : 'asc'}`; }).join(', ');
+      if (o) order = ' order by ' + o.split(',').map((p) => { const [c, d, n] = p.split('.'); if (!types.has(c)) throw new Error('bad order'); return `${c} ${d === 'desc' ? 'desc' : 'asc'}${n === 'nullsfirst' ? ' nulls first' : n === 'nullslast' ? ' nulls last' : ''}`; }).join(', ');
       const limit = u.searchParams.get('limit') ? ` limit ${Number(u.searchParams.get('limit'))}` : '';
       const r = await db.query(`select ${select} from public.${path}${w}${order}${limit}`, vals);
       return json(r.rows);

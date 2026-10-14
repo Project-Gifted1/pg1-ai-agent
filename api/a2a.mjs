@@ -456,7 +456,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-a2a',
-      version: '1.17.0',
+      version: '1.18.0',
       protocol: 'Agent2Agent (A2A) over JSON-RPC 2.0',
       supportedVersions: ['1.0', '0.3'],
       agentCard: 'https://pg1-ai-agent.vercel.app/.well-known/agent-card.json',

@@ -65,6 +65,18 @@ A2A agents use `https://pg1-ai-agent.vercel.app/api/a2a` (agent card at `/.well-
 
 Informational codes (`WALLET_DELEGATED`, `IP_TOR_EXIT_NODE`, `IP_WHITELISTED`, `IP_REPORTS_SCORED_ZERO`) report a fact and never change `status`. Every code: [/docs/reason-codes](https://pg1-ai-agent.vercel.app/docs/reason-codes).
 
+### Verify a result
+
+Every PG1 result is signed with Ed25519, so an agent can prove later, offline, that PG1 said it:
+
+- **Where:** MCP `result._meta["pg1/signature"]`, A2A the task's `metadata["pg1.signature"]`, REST (`/api/preflight`) the top-level `signature`.
+- **What is signed:** the canonical JSON (keys sorted, no spaces) of `{ request_hash, result, sources, timestamp, version }`. `request_hash` is the SHA-256 of the canonical `{ tool, arguments }` you sent, so a signature cannot be moved to another request; `sources` is the result's `checks[].source` list.
+- **The block:** `{ alg: "EdDSA", kid, request_hash, sources, timestamp, version, sig }`, `sig` base64url.
+- **Keys:** [/.well-known/pg1-signing-key](https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key) (a JWKS; pick the key by `kid`). Old keys stay listed after a rotation, so old signatures keep verifying.
+- **How:** the free `verify_result` tool, or offline with the PG1 SDKs (`verifyResult` in JavaScript, `verify_result` in Python): rebuild the canonical payload from the result without its `signature` field and check `sig` with the key.
+
+Watchlist webhooks are signed separately with HMAC-SHA256: `X-PG1-Signature: t=<unix>,v1=<hex HMAC(secret, "<t>.<body>")>`; reject a delivery older than 5 minutes.
+
 ### Free tier and rate limits
 
 | Tool | Cost | Limit without a licence key |
