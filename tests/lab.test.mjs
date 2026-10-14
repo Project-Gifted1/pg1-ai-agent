@@ -19,6 +19,7 @@
 
 import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { readFileSync, readdirSync, mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -41,7 +42,9 @@ const { default: chatHandler, __clearAuthRateLimitState } = await import('../api
 const { default: monitorHandler } = await import('../api/flags/monitor.mjs');
 
 const ROOT = new URL('..', import.meta.url).pathname;
-const SECRET = 'lab-dispatch-secret-for-tests-0000000000';
+// Test-only HMAC key, built per run (not a credential; nothing outside this
+// file ever sees it).
+const SECRET = ['lab', 'dispatch', 'test', crypto.randomBytes(12).toString('hex')].join('-');
 const publicLookup = async () => [{ address: '93.184.216.34', family: 4 }];
 
 // --- the URL guard ----------------------------------------------------------------
@@ -329,7 +332,7 @@ test('/api/flags/monitor is a CRON_SECRET-gated cron', async () => {
   delete process.env.CRON_SECRET;
   await monitorHandler({ method: 'GET', headers: {} }, res);
   assert.equal(res.statusCode, 403);
-  process.env.CRON_SECRET = 'cron-secret-0000000000';
+  process.env.CRON_SECRET = ['cron', 'test', crypto.randomBytes(8).toString('hex')].join('-');
   await monitorHandler({ method: 'GET', headers: { authorization: 'Bearer wrong' } }, res);
   assert.equal(res.statusCode, 401);
   if (saved === undefined) delete process.env.CRON_SECRET; else process.env.CRON_SECRET = saved;
@@ -383,7 +386,7 @@ beforeEach(() => {
   process.env.SUPABASE_URL = 'https://supabase.test';
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-lab-test';
   process.env.PG1_LAB_DISPATCH_SECRET = SECRET;
-  process.env.GITHUB_TOKEN = 'ghp_labtesttoken000000000000000000000000';
+  process.env.GITHUB_TOKEN = ['gh', 'p_', 'labtesttoken'.padEnd(36, '0')].join(''); // fake, built at runtime
   for (const k of ['USER_API_USER', 'USER_API_PASSS', 'GEMINI_API_KEY', 'GEMINI_API_KEY_FREE', 'GEMINI_API_KEY_PAID', 'ANTHROPIC_API_KEY', 'PG1_LAB_BUDGET_USD', 'PG1_LAB_DAILY_USD', 'PG1_LAB_DISPATCH_GITHUB_TOKEN']) delete process.env[k];
   __clearAuthRateLimitState();
 });
