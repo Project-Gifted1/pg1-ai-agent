@@ -24,6 +24,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// P11: these tests are about x402 itself; the payer's sanctions screening
+// (lib/screening.mjs) is covered by tests/screening.test.mjs.
+const { __setScreeningForTests } = await import('../lib/screening.mjs');
+__setScreeningForTests(async () => ({ allowed: true, refused: false, unavailable: false, lists: [], cached: false }));
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_FETCH = global.fetch;

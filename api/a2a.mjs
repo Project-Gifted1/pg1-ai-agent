@@ -85,8 +85,11 @@ import {
   requestCallerHash,
   runPricedX402Gate,
   runReadOnlyTool,
-  internalRunTool
+  internalRunTool,
+  screenPaymentPayer
 } from './mcp.mjs';
+import { payerScreen } from '../lib/screening.mjs';
+import { notifyOperator } from '../lib/notify.mjs';
 import { FOUNDRY_SKILL, submitBuild, payBuild, refreshBuild, foundryJobView, FoundryRefusal } from '../lib/foundry/jobs.mjs';
 import { isFoundryToolName, callFoundryTool, FoundryCallError, TOOL_KEY_HEADER } from '../lib/foundry/tools.mjs';
 import { createFoundryStore } from '../lib/foundry/store.mjs';
@@ -145,6 +148,8 @@ const X402_META = Object.freeze({
 });
 // App-level (non-A2A) code for a rejected licence key, next to -32010.
 const LICENSE_REJECTED_CODE = -32011;
+// P11: the paying wallet matched a sanctions list (no quote, no 402).
+const PAYER_REFUSED_CODE = -32012;
 
 // Reused verbatim from api/mcp.mjs's TOOLS array — same descriptions/schemas.
 export const A2A_SKILL_TOOLS = TOOLS.filter((tool) => A2A_SKILL_NAMES.includes(tool.name));
@@ -456,7 +461,8 @@ function jobDeps(req, { supUrl, supKey }) {
     store, outputs, audit, startRun, callerId: identifier,
     freeTier: { wanted: freeTierWanted(req.headers), check: () => checkFreeTierAvailable(supUrl, supKey, identifier), consume: (avail) => consumeFreeTier(supUrl, supKey, identifier, avail) },
     gate: (job, payment) => runPricedX402Gate(req, { payment, priceUsd: Number(job.price_usd), description: `PG1 A2A job ${job.job_type} (${job.items} item${job.items === 1 ? '' : 's'})` }),
-    screen: null
+    // P11: the paying wallet is screened before anything is settled.
+    screen: payerScreen({ supUrl, supKey, notify: notifyOperator, context: 'a2a job' })
   };
 }
 
@@ -594,6 +600,11 @@ export default async function handler(req, res) {
           skillTelemetry.status = err.status === 503 ? 'server_error' : err.status === 429 ? 'rate_limited' : 'client_error';
           return jobRefusalResponse(res, err, requestId, pg1RequestId);
         }
+        if (err && err.screeningUnavailable) {
+          skillTelemetry.status = 'server_error';
+          res.setHeader('Retry-After', '60');
+          return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, err.message, requestId, { code: 'screening_unavailable' }, pg1RequestId);
+        }
         throw err;
       }
     }
@@ -612,6 +623,19 @@ export default async function handler(req, res) {
 
     const skill = data.skill;
     const args = (data.arguments && typeof data.arguments === 'object') ? data.arguments : {};
+
+    // P11: a caller that names its paying wallet before a quote (arguments.payer
+    // or message.metadata["pg1.payer"]) is screened first: no quote for a
+    // sanctioned wallet. The binding screen runs again on the payment itself.
+    const payerHint = (typeof args.payer === 'string' && args.payer) || (inboundMessage && inboundMessage.metadata && typeof inboundMessage.metadata['pg1.payer'] === 'string' && inboundMessage.metadata['pg1.payer']) || null;
+    if (payerHint && (skill === JOB_SKILL || skill === FOUNDRY_SKILL || A2A_PAID_SKILL_NAMES.includes(skill) || isFoundryToolName(skill))) {
+      const screened = await screenPaymentPayer(payerHint, `quote ${skill}`);
+      if (!screened.allowed) {
+        skillTelemetry = { skill, req, status: screened.refused ? 'payer_refused' : 'server_error', startedAt: Date.now(), paymentType: 'none' };
+        if (screened.unavailable) res.setHeader('Retry-After', '60');
+        return jsonRpcError(res, screened.refused ? 200 : 503, screened.refused ? PAYER_REFUSED_CODE : SERVICE_UNAVAILABLE_CODE, screened.message, requestId, { code: screened.refused ? 'payer_refused' : 'screening_unavailable' }, pg1RequestId);
+      }
+    }
 
     // A2A jobs, step 1: submit -> validated quote (or accepted on the free tier).
     if (skill === JOB_SKILL) {
@@ -650,7 +674,7 @@ export default async function handler(req, res) {
           let out;
           if (typeof args.job_id === 'string') {
             if (metaPayment) {
-              out = await payBuild(args.job_id, { ...deps, gate: (job) => runPricedX402Gate(req, { payment: metaPayment, priceUsd: Number(job.build_fee_usd), description: `PG1 Foundry build fee: ft_${job.spec.name}` }), subscriberHash: payerHash });
+              out = await payBuild(args.job_id, { screen: payerScreen({ supUrl: creds.supUrl, supKey: creds.supKey, notify: notifyOperator, context: 'foundry build' }), ...deps, gate: (job) => runPricedX402Gate(req, { payment: metaPayment, priceUsd: Number(job.build_fee_usd), description: `PG1 Foundry build fee: ft_${job.spec.name}` }), subscriberHash: payerHash });
               if (out.settlement) skillTelemetry.paymentType = 'x402';
             } else {
               const job = await deps.store.getJob(args.job_id);
@@ -673,7 +697,7 @@ export default async function handler(req, res) {
           paymentOffered: !!(metaPayment || req.headers['payment-signature'] || req.headers['x-payment']),
           subscriberHash: payerHash,
           runTool: internalRunTool,
-          screen: null
+          screen: payerScreen({ supUrl: creds.supUrl, supKey: creds.supKey, notify: notifyOperator, context: 'foundry tool call' })
         });
         if (called.paymentRequired) {
           skillTelemetry.status = 'payment_required';
@@ -691,6 +715,11 @@ export default async function handler(req, res) {
         if (err && err.mcpToolError) {
           skillTelemetry.status = 'invalid_input';
           return jsonRpcError(res, 200, -32602, err.message, requestId, { code: err.code }, pg1RequestId);
+        }
+        if (err && err.screeningUnavailable) {
+          skillTelemetry.status = 'server_error';
+          res.setHeader('Retry-After', '60');
+          return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, err.message, requestId, { code: 'screening_unavailable' }, pg1RequestId);
         }
         throw err;
       }
@@ -740,6 +769,11 @@ export default async function handler(req, res) {
         res.setHeader('Retry-After', '5');
         recordToolError(`/api/a2a:${skill}`, 503, `${skill}_license_verification_unavailable`, 'upstream', pg1RequestId);
         return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, 'License verification temporarily unavailable, please retry.', requestId, undefined, pg1RequestId);
+      }
+      if (gate.payerRefused || gate.screeningUnavailable) {
+        skillTelemetry.status = gate.payerRefused ? 'payer_refused' : 'server_error';
+        if (gate.screeningUnavailable) res.setHeader('Retry-After', '60');
+        return jsonRpcError(res, gate.payerRefused ? 200 : 503, gate.payerRefused ? PAYER_REFUSED_CODE : SERVICE_UNAVAILABLE_CODE, gate.message, requestId, { code: gate.payerRefused ? 'payer_refused' : 'screening_unavailable' }, pg1RequestId);
       }
       if (gate.freeTierRemaining !== undefined) setFreeTierHeaders(res, gate.freeTierRemaining);
       if (gate.licenseError) {

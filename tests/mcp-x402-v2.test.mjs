@@ -23,6 +23,11 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { encodePaymentSignatureHeader, decodePaymentRequiredHeader, decodePaymentResponseHeader } from '@x402/core/http';
 
+// P11: these tests are about x402 itself; the payer's sanctions screening
+// (lib/screening.mjs) is covered by tests/screening.test.mjs.
+const { __setScreeningForTests } = await import('../lib/screening.mjs');
+__setScreeningForTests(async () => ({ allowed: true, refused: false, unavailable: false, lists: [], cached: false }));
+
 const PAY_TO = '0x000000000000000000000000000000000000dEaD';
 
 process.env.X402_PAY_TO_ADDRESS = PAY_TO;
