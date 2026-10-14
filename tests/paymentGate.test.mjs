@@ -2,14 +2,14 @@
  * Tests for lib/paymentGate.mjs's verifyGumroadLicense (issue #115): shared
  * Gumroad license verification used by api/chat.mjs, api/mcp.mjs and
  * api/ioc/context.js. Covers subscription-lapse handling, the
- * increment_uses_count=false request flag, the 10min success cache, and the
+ * increment_uses_count=false request flag, the 24h success cache, and the
  * 2s timeout with cache fallback.
  * Run with: node --test tests/paymentGate.test.mjs
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
+import { verifyGumroadLicense, LICENSE_CACHE_TTL_MS } from '../lib/paymentGate.mjs';
 
 function withMockFetch(t, impl) {
   const originalFetch = global.fetch;
@@ -224,4 +224,51 @@ test('never echoes the raw license key back in an error result', async (t) => {
   const result = await verifyGumroadLicense(rawKey);
   assert.equal(result.valid, false);
   assert.doesNotMatch(JSON.stringify(result), new RegExp(rawKey));
+});
+
+// Shifts Date.now() forward by `ms` for the rest of the test.
+function advanceClock(t, ms) {
+  const realNow = Date.now;
+  const base = realNow();
+  Date.now = () => base + ms + (realNow() - base);
+  t.after(() => { Date.now = realNow; });
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+test('a successful verification is cached for 24 hours', () => {
+  assert.equal(LICENSE_CACHE_TTL_MS, DAY_MS);
+});
+
+test('a Gumroad outage within 24 hours of a successful check does not drop the key: no request is even made', async (t) => {
+  let callCount = 0;
+  let gumroadDown = false;
+  withMockFetch(t, async () => {
+    callCount += 1;
+    if (gumroadDown) return { ok: false, status: 503, json: async () => { throw new SyntaxError('Unexpected token < in JSON'); } };
+    return jsonResponse({ success: true, purchase: {} });
+  });
+
+  assert.equal((await verifyGumroadLicense('outage-24h-key')).valid, true);
+  assert.equal(callCount, 1);
+
+  gumroadDown = true;
+  advanceClock(t, DAY_MS - 60_000);
+  const during = await verifyGumroadLicense('outage-24h-key');
+  assert.equal(during.valid, true, '23h59m later, with Gumroad down, the key is still valid');
+  assert.equal(callCount, 1, 'served from the cache: Gumroad was not contacted');
+});
+
+test('after 24 hours the key is verified with Gumroad again', async (t) => {
+  let callCount = 0;
+  withMockFetch(t, async () => {
+    callCount += 1;
+    return jsonResponse(callCount === 1 ? { success: true, purchase: {} } : { success: false });
+  });
+
+  assert.equal((await verifyGumroadLicense('expiring-24h-key')).valid, true);
+  advanceClock(t, DAY_MS + 60_000);
+  const after = await verifyGumroadLicense('expiring-24h-key');
+  assert.equal(callCount, 2, 'the cache entry expired and Gumroad was asked again');
+  assert.equal(after.valid, false, 'a key Gumroad now rejects is rejected once the day is up');
 });

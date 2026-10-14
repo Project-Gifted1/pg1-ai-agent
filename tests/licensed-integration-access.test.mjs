@@ -10,6 +10,9 @@
  *     paid route that runs the same checks: authorized by the key before the
  *     free tier, screening or x402 are reached, with every inner check exempt
  *     from the hourly limits.
+ * A key verified once stays good for 24 hours (lib/paymentGate.mjs), so a
+ * Gumroad outage inside that window does not drop the integration to the
+ * anonymous limits.
  * The same loops without the key are rate limited, so each assertion here can
  * fail.
  * Run with: node --test tests/licensed-integration-access.test.mjs
@@ -211,4 +214,38 @@ test('without a key the same REST preflight is gated (control): free tier first,
   const res = await restPreflight({ 'x-forwarded-for': freshIp(), 'x-free-tier': '0' }, { action: 'pay', target: TOOLS.check_wallet_sanctions(1).address });
   assert.equal(res.statusCode, 402);
   assert.equal(seen.x402, 1);
+});
+
+test('a Gumroad outage within 24 hours of the last good check keeps a licensed integration unlimited on /api/mcp and /api/a2a', async (t) => {
+  const seen = withWorld(t);
+  // A key of its own, so the verification below is the first for it.
+  const key = ['TEST', 'OUTAGE', String(Date.now() % 1e6)].join('-');
+  const okFetch = global.fetch;
+  let gumroadDown = false;
+  global.fetch = async (url, opts = {}) => {
+    if (String(url).includes('api.gumroad.com')) {
+      seen.gumroad += 1;
+      if (gumroadDown) return new Response('<html>503</html>', { status: 503 });
+      return new Response(JSON.stringify(new URLSearchParams(String(opts.body)).get('license_key') === key ? { success: true, purchase: {} } : { success: false }), { status: 200 });
+    }
+    return okFetch(url, opts);
+  };
+  const headers = { 'x-forwarded-for': freshIp(), 'x-api-key': key };
+  assert.ok(mcpOk(await mcpCall('check_domain_age', TOOLS.check_domain_age(), headers)), 'first call verifies the key');
+  const verifiedCalls = seen.gumroad;
+
+  gumroadDown = true;
+  const realNow = Date.now;
+  const start = realNow();
+  Date.now = () => start + 23 * 60 * 60 * 1000 + (realNow() - start);
+  t.after(() => { Date.now = realNow; });
+
+  for (let i = 1; i <= CALLS; i++) {
+    for (const [tool, argsFor] of Object.entries(TOOLS)) {
+      assert.ok(mcpOk(await mcpCall(tool, argsFor(i), headers)), `mcp ${tool} call ${i} during the outage`);
+      assert.ok(a2aOk(await a2aCall(tool, argsFor(i), headers)), `a2a ${tool} call ${i} during the outage`);
+    }
+  }
+  assert.equal(seen.gumroad, verifiedCalls, 'Gumroad was not contacted during the outage');
+  assert.equal(seen.freeTier + seen.screening + seen.x402, 0);
 });
