@@ -16,6 +16,8 @@ import { encodePaymentRequiredHeader, encodePaymentResponseHeader } from '@x402/
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { createWatchlistStore, createWatchlist, authorizeWatchlist, watchlistView, cancelWatchlist, WatchlistError } from '../lib/watchlists.mjs';
 import { payerHash } from '../lib/a2aJobs/jobs.mjs';
+import { payerScreen } from '../lib/screening.mjs';
+import { notifyOperator } from '../lib/notify.mjs';
 
 export const config = { maxDuration: 20 };
 
@@ -52,7 +54,8 @@ export default async function handler(req, res) {
         store,
         gate: (priceUsd, description) => runPricedX402Gate(req, { priceUsd, description }),
         subscriberHash: payerHash,
-        screen: deps.screen,
+        // P11: the paying wallet is screened before settlement.
+        screen: deps.screen || payerScreen({ supUrl: creds.supUrl, supKey: creds.supKey, ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}), notify: notifyOperator, context: 'watchlist' }),
         lookup: deps.lookup
       });
       if (out.status === 402) {
@@ -68,6 +71,10 @@ export default async function handler(req, res) {
     return res.status(200).json({ ...(await watchlistView(store, w)), request_id: requestId });
   } catch (err) {
     if (err && err.watchlistError) return res.status(err.status).json({ error: err.code, message: err.message, request_id: requestId });
+    if (err && err.screeningUnavailable) {
+      res.setHeader('Retry-After', '60');
+      return res.status(503).json({ error: 'screening_unavailable', message: err.message, request_id: requestId });
+    }
     console.error('[watchlists] unhandled:', err && err.message);
     return res.status(500).json({ error: 'internal_error', request_id: requestId });
   }

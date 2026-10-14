@@ -136,6 +136,8 @@ import { signResult, verifySignedResult, publicJwks, MCP_SIGNATURE_META } from '
 import { cachedCheck } from '../lib/resultCache.mjs';
 import { HOSTING_DEF, HOSTING_TOOL, hostingAdvice } from '../lib/hosting/advisor.mjs';
 import { loadHostingData } from '../lib/hosting/store.mjs';
+import { screenPayer } from '../lib/screening.mjs';
+import { notifyOperator } from '../lib/notify.mjs';
 import { checkUrlShape } from '../lib/netGuard.mjs';
 import { serviceStatus } from '../lib/statusMetrics.mjs';
 import { isFoundryToolName, callFoundryTool, publicFoundryToolDefs, TOOL_KEY_HEADER } from '../lib/foundry/tools.mjs';
@@ -3200,7 +3202,14 @@ function buildFallbackPaymentRequired(resourceInfo, error) {
 // accepts, and verify via the facilitator. Never runs the tool or settles —
 // callers run the tool first and invoke the returned `settle` function only
 // on tool success, per the x402 v2 MCP transport spec.
+// Tests swap in a verified-payment stand-in (__setX402GateForTests).
+let x402GateOverride = null;
+export function __setX402GateForTests(fn) {
+  x402GateOverride = fn || null;
+}
+
 async function runX402Gate(req, params, { price = X402_PRICE, description = null } = {}) {
+  if (x402GateOverride) return x402GateOverride(req, params, { price, description });
   const resourceInfo = buildX402ResourceInfo(req);
   if (description) resourceInfo.description = String(description).slice(0, 200);
   const server = getX402Server();
@@ -3264,6 +3273,13 @@ async function runX402Gate(req, params, { price = X402_PRICE, description = null
     settle: () => server.settlePayment(paymentPayload, matchingRequirements),
     settlementFailurePaymentRequired: (message) => server.createPaymentRequiredResponse(requirements, resourceInfo, message, undefined, undefined, paymentPayload)
   };
+}
+
+// P11: the screening every x402 payer gets (lib/screening.mjs).
+export function screenPaymentPayer(wallet, context) {
+  let creds = {};
+  try { creds = getSupabaseCreds(); } catch (e) { creds = {}; }
+  return screenPayer(wallet, { ...creds, notify: notifyOperator, context });
 }
 
 // The paying wallet of an x402 v2 "exact" PaymentPayload: the EIP-3009
@@ -3361,6 +3377,13 @@ export async function resolvePaidAccess(req, { licenseKey, identifier, payment, 
   }
 
   const x402Gate = await runX402Gate(req, payment ? { _meta: { 'x402/payment': payment } } : undefined);
+  // P11: a verified payment's wallet is screened before anything is served
+  // or settled. A match is refused outright (no 402 to retry); screening
+  // that cannot run refuses for now (fail closed).
+  if (x402Gate.authorized && x402Gate.settle) {
+    const screened = await screenPaymentPayer(x402Gate.payer, `per-call ${endpoint}`);
+    if (!screened.allowed) return { authorized: false, payerRefused: screened.refused, screeningUnavailable: screened.unavailable, message: screened.message };
+  }
   return freeLimitReached && !x402Gate.authorized ? { ...x402Gate, freeLimitReached: true, freeTierRemaining: 0 } : x402Gate;
 }
 
@@ -3383,6 +3406,11 @@ async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentif
   if (gate.licenseError) {
     res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + gate.licenseError, data: { request_id: pg1RequestId } }, id: requestId });
     return { authorized: false, handled: true };
+  }
+  if (gate.payerRefused || gate.screeningUnavailable) {
+    if (gate.screeningUnavailable) res.setHeader('Retry-After', '60');
+    res.status(200).json({ jsonrpc: '2.0', result: { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: gate.message, code: gate.payerRefused ? 'payer_refused' : 'screening_unavailable', request_id: pg1RequestId }) }] }, id: requestId });
+    return { authorized: false, handled: true, payerRefused: gate.payerRefused };
   }
   if (gate.freeTierRemaining !== undefined) setFreeTierHeaders(res, gate.freeTierRemaining);
   return gate;
@@ -3948,7 +3976,12 @@ export default async function handler(req, res) {
             gate: (priceUsd, description) => runPricedX402Gate(req, { payment: metaPayment || undefined, priceUsd, description }),
             paymentOffered: !!(metaPayment || req.headers['payment-signature'] || req.headers['x-payment']),
             subscriberHash: walletHash,
-            runTool: internalRunTool
+            runTool: internalRunTool,
+            screen: async (wallet, context) => {
+              const r = await screenPaymentPayer(wallet, context);
+              if (r.unavailable) throw Object.assign(new Error(r.message), { foundryCall: true, status: 503, code: 'screening_unavailable' });
+              return r;
+            }
           });
           if (called.paymentRequired) {
             callTelemetry.status = 'payment_required';

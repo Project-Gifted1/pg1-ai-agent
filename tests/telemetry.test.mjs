@@ -15,6 +15,11 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { encodePaymentSignatureHeader } from '@x402/core/http';
 
+// P11: these tests are about x402 itself; the payer's sanctions screening
+// (lib/screening.mjs) is covered by tests/screening.test.mjs.
+const { __setScreeningForTests } = await import('../lib/screening.mjs');
+__setScreeningForTests(async () => ({ allowed: true, refused: false, unavailable: false, lists: [], cached: false }));
+
 process.env.X402_PAY_TO_ADDRESS = '0x000000000000000000000000000000000000dEaD';
 delete process.env.CDP_API_KEY_ID;
 delete process.env.CDP_API_KEY_SECRET;

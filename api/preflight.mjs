@@ -62,6 +62,11 @@ export function makePaidRestHandler({ tool, endpoint, argsFrom, usage }) {
         telemetry.status = 'server_error';
         return res.status(503).json({ error: 'license_verification_unavailable', message: 'Licence verification is temporarily unavailable, please retry.', request_id: requestId });
       }
+      if (gate.payerRefused || gate.screeningUnavailable) {
+        telemetry.status = gate.payerRefused ? 'payer_refused' : 'server_error';
+        if (gate.screeningUnavailable) res.setHeader('Retry-After', '60');
+        return res.status(gate.payerRefused ? 403 : 503).json({ error: gate.payerRefused ? 'payer_refused' : 'screening_unavailable', message: gate.message, request_id: requestId });
+      }
       if (gate.freeTierRemaining !== undefined) setFreeTierHeaders(res, gate.freeTierRemaining);
       if (gate.licenseError) {
         telemetry.status = 'payment_required';
