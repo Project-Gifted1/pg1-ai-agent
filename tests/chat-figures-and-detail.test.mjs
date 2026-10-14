@@ -96,8 +96,10 @@ test('A3: figures from a search turn come with its sources; with none, they are 
   const sources = groundingSources({ groundingChunks: [{ web: { uri: 'https://example.org/rates', title: 'example.org' } }, { web: { uri: 'http://insecure.example/x', title: 'x' } }, { web: { uri: 'https://example.org/rates', title: 'dup' } }] });
   assert.deepEqual(sources, [{ url: 'https://example.org/rates', title: 'example.org' }]);
   assert.match(sourcesNote({ text: SECOND, sources }), /^\*\*Sources \(this reply's web search\):\*\*\n1\. \[example\.org\]\(https:\/\/example\.org\/rates\)/);
-  assert.match(sourcesNote({ text: `Based on web search data:\n${SECOND}`, sources: [] }), /no source for the figures above, so they are PG1's own proposal, not market data/);
-  assert.equal(sourcesNote({ text: SECOND, sources: [] }), '', 'figures with no search claim are left to the [SOURCED FIGURES] directive');
+  assert.match(sourcesNote({ text: `Based on web search data:\n${SECOND}`, sources: [] }), /no source for the figures above, so they are PG1's own estimates, not market data/);
+  // Item 5 (Studio + Sound brief): figures in no cited source are labelled
+  // PG1's estimate, even with no search claim.
+  assert.equal(sourcesNote({ text: SECOND, sources: [] }), '**Note:** the prices above are PG1\'s own estimates, not figures from a cited source.');
   assert.equal(sourcesNote({ text: 'No numbers here.', sources }), '');
   assert.match(SOURCED_FIGURES_DIRECTIVE, /Never write "based on web search data"/);
 });
@@ -110,7 +112,7 @@ test('A3: through the chat, a priced reply shows the search sources (streamed); 
   const seen = stubModel(`Based on web search data:\n${SECOND}`);
   const json = await chat({ prompt: 'what should the packages cost?' });
   assert.ok(seen.prompts[0].includes(SOURCED_FIGURES_DIRECTIVE));
-  assert.match(json.jsonBody.reply, /they are PG1's own proposal, not market data/);
+  assert.match(json.jsonBody.reply, /they are PG1's own estimates, not market data/);
 });
 
 // --- A4 -------------------------------------------------------------------------

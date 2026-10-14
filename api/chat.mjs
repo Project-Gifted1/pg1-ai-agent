@@ -37,6 +37,8 @@ import { PG1_VOICE_DIRECTIVE } from '../lib/persona.mjs';
 import { wantsDetail, DETAIL_DIRECTIVE, SOURCED_FIGURES_DIRECTIVE, COMMAND_FORMS_DIRECTIVE, groundingSources, sourcesNote, figureChanges, figureChangeNote, tierChanges, tierChangeNote } from '../lib/replyFacts.mjs';
 import { offersDirective, offerViolations, offerNote, licenceReviewNote } from '../lib/capabilities/offers.mjs';
 import { resolveSources } from '../lib/clientDocs.mjs';
+import { whiteLabel, isOfferRequest, splitsName, providerSource } from '../lib/whiteLabel.mjs';
+import { ownPriceAmounts } from '../lib/capabilities/costs.mjs';
 import { isSkillsCommand, handleSkillsCommand, turnSuggestions } from '../lib/skills/chat.mjs';
 import { isLabCommand, handleLabCommand, isLabAction, handleLabApproval, LAB_ARCHITECTURE_TEXT } from '../lib/lab/chat.mjs';
 import { isOpportunitiesCommand, handleOpportunitiesCommand } from '../lib/opportunities.mjs';
@@ -1496,7 +1498,7 @@ async function streamChatReply(stream, opts) {
   var replyScrubber = createReplyScrubber(function (chunk) {
     stream.text(chunk);
     if (voice && !toolOutcomes.length) voice.push(chunk);
-  }, { redact: opts.redactReply || null, replacement: opts.identityReply || undefined });
+  }, { redact: opts.redactReply || null, replacement: opts.identityReply || undefined, keepTogether: opts.keepTogether || null });
   // VISION: "Looking at N images" opens with the model call that carries
   // them and ticks when the reply starts arriving (the model has read them).
   var imageCount = opts.imageCount || 0;
@@ -2384,10 +2386,12 @@ export default async function handler(req, res) {
     var turnFactNotes = async function (text, result) {
       var r = result || {};
       var sources = (r.sources && r.sources.length) ? await resolveSources(r.sources, { fetchImpl: function (u, o) { return globalThis.fetch(u, o); } }) : [];
+      // An offer is client-facing: a provider's own site is not cited in it.
+      if (offerTurn) sources = sources.filter(function (src) { return !providerSource(src); });
       return [
-        sourcesNote({ text: text, sources: sources }),
+        sourcesNote({ text: text, sources: sources, ownAmounts: ownPriceAmounts(turnCtx.state.figures) }),
         figureChangeNote(figureChanges(turnCtx.state.figures, text)),
-        tierChangeNote(tierChanges(turnCtx.state.figures, text)),
+        tierChangeNote(tierChanges(turnCtx.state.figures, text, { columns: turnCtx.state.columns || [] })),
         offerNote(offerViolations(text)),
         isOperator ? licenceReviewNote(text) : ''
       ].filter(Boolean).join('\n\n');
@@ -2495,6 +2499,7 @@ export default async function handler(req, res) {
       placeholder: imageCount > 0 ? SECRET_PLACEHOLDER : SECRET_WITHHELD,
       errorSummary: isErrorSummaryQuestion(promptText)
     });
+    var offerTurn = isOfferRequest(promptText);
     var redactReply = function (text) {
       var removed = [];
       var out = text;
@@ -2505,7 +2510,10 @@ export default async function handler(req, res) {
       }
       var guarded = replySecretGuard(out);
       guarded.removed.forEach(function (l) { if (removed.indexOf(l) === -1) removed.push(l); });
-      return { text: guarded.text, removed: removed, redacted: removed.length > 0 };
+      // WHITE LABEL (lib/whiteLabel.mjs): a reply to a request for an offer,
+      // package, quote or proposal is client-facing, so provider and model
+      // names become PG1 Studio / PG1 Sound (no note: nothing was withheld).
+      return { text: offerTurn ? whiteLabel(guarded.text) : guarded.text, removed: removed, redacted: removed.length > 0 };
     };
 
     // The operator's stored context (recent messages, vault files, error
@@ -4185,6 +4193,7 @@ ${turnDirectives}${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imag
         imageCount: imageCount,
         imageSkipped: imageInput.skipped,
         redactReply: redactReply,
+        keepTogether: offerTurn ? splitsName : null,
         identityReply: identityChoice.reply,
         geminiKeys: chatGeminiKeys,
         anthropicKey: anthropicKey,
