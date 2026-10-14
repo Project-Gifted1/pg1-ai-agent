@@ -567,15 +567,15 @@ test('no public surface claims abuse.ch / ThreatFox / URLhaus data any more', ()
 
 test('one version bump: 1.17.0 (the current release) everywhere the server version is published', async () => {
   const read = (rel) => JSON.parse(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
-  assert.equal(read('server.json').version, '1.19.0');
-  assert.equal(read('public/.well-known/agent-card.json').version, '1.19.0');
-  assert.equal(read('public/openapi.json').info.version, '1.19.0');
+  assert.equal(read('server.json').version, '1.20.0');
+  assert.equal(read('public/.well-known/agent-card.json').version, '1.20.0');
+  assert.equal(read('public/openapi.json').info.version, '1.20.0');
   const res = makeRes();
   await mcpHandler({ method: 'POST', headers: {}, body: { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} } }, res);
-  assert.equal(res.body.result.serverInfo.version, '1.19.0');
+  assert.equal(res.body.result.serverInfo.version, '1.20.0');
   const get = makeRes();
   await mcpHandler({ method: 'GET', headers: {} }, get);
-  assert.equal(get.body.version, '1.19.0');
+  assert.equal(get.body.version, '1.20.0');
 });
 
 test('paid CVE and ATT&CK responses carry the notices their sources ask for', async () => {

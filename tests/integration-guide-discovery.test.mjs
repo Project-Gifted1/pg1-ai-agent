@@ -69,7 +69,7 @@ test('llms.txt has a short "Integration guides" section linking the guide', () =
 
 test('agent card documentationUrl points to the guide; nothing else in the card changes', () => {
   assert.equal(CARD.documentationUrl, GUIDE_URL);
-  assert.equal(CARD.version, '1.19.0');
+  assert.equal(CARD.version, '1.20.0');
   assert.doesNotMatch(CARD.description, /docs\/crypto-alert-bot/, 'the spec field carries the link; the description stays as is');
 });
 
@@ -77,12 +77,12 @@ test('openapi.json externalDocs points to the guide', () => {
   assert.equal(OPENAPI.externalDocs.url, GUIDE_URL);
   assert.equal(typeof OPENAPI.externalDocs.description, 'string');
   noVendorNames('openapi.json externalDocs', OPENAPI.externalDocs.description);
-  assert.equal(OPENAPI.info.version, '1.19.0');
+  assert.equal(OPENAPI.info.version, '1.20.0');
 });
 
 test('package version is unchanged; server version is the 1.17.0 release', () => {
   assert.equal(JSON.parse(read('package.json')).version, '1.0.3');
-  assert.equal(JSON.parse(read('server.json')).version, '1.19.0');
+  assert.equal(JSON.parse(read('server.json')).version, '1.20.0');
 });
 
 // 1.17.0 (check_package) changes server.json's version and description;
@@ -98,7 +98,7 @@ test('server.json is byte-identical to the 1.15.0 release except the version (1.
   // 1.18.0 (P8) leads with preflight; 1.17.0's description is kept above for the record.
   assert.equal(JSON.parse(raw).description, SERVER_DESCRIPTION_1_18);
   assert.ok(SERVER_DESCRIPTION_1_17);
-  const reverted = raw.replace('"version": "1.19.0"', '"version": "1.15.0"').replace(SERVER_DESCRIPTION_1_18, SERVER_DESCRIPTION_1_15);
+  const reverted = raw.replace('"version": "1.20.0"', '"version": "1.15.0"').replace(SERVER_DESCRIPTION_1_18, SERVER_DESCRIPTION_1_15);
   assert.equal(sha256(reverted), 'f0888cac3c000b2a8e6beded4cdfdbf8426c044ba787f48f2f57245df42d4137');
 });
 

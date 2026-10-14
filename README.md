@@ -55,6 +55,7 @@ A2A agents use `https://pg1-ai-agent.vercel.app/api/a2a` (agent card at `/.well-
 | One public IP and your own AbuseIPDB key | `check_ip_abuse` | Send the key in `X-AbuseIPDB-Key`; PG1 has no key of its own. |
 | The CVE list to ingest | `get_threat_indicators` | STIX 2.1 bundle of CVE records from NVD: CVE id and an NVD reference, no scores, no IP/domain/URL/hash indicators. REST: `GET /api/ioc`. Free while it holds no current data (`PG1_FEED_PAID` off): no payment, no licence key, and it does not use the 5 free calls a day. |
 | Your remaining free calls | `get_usage_status` | Always free. |
+| An indicator you observed and want to report | `submit_indicator` | Licence key only (`X-API-KEY`); not sold per call. Submissions are reviewed before use. |
 
 ### What `status` means
 
@@ -92,6 +93,7 @@ Watchlist webhooks are signed separately with HMAC-SHA256: `X-PG1-Signature: t=<
 | `get_ioc_context`, `get_ioc_batch` | Free when nothing is found; paid when something is | Paid calls use the free tier first |
 | `get_threat_indicators`, `GET /api/ioc` (the STIX feed) | Free while the feed holds no current data (`PG1_FEED_PAID` off) | none, and it does not use the 5 free calls a day |
 | `get_cve_details`, `get_cve_batch`, `get_cve_by_product`, `get_threat_actor_profile` | Paid: 0.01 USD per call | 5 free calls a day per caller, shared across all of them, then x402 |
+| `submit_indicator` | Licence key only (no x402, no free tier) | none |
 | Test fixtures ([/docs/testing](https://pg1-ai-agent.vercel.app/docs/testing)) | Always free | none, and they spend no free call |
 
 - **No header is needed for the free tier.** It is automatic for any caller with no payment and no licence key. Responses carry `X-Free-Tier-Limit` and `X-Free-Tier-Remaining`.
@@ -102,7 +104,7 @@ Watchlist webhooks are signed separately with HMAC-SHA256: `X-PG1-Signature: t=<
 ## Two Ways to Connect
 
 - **`/api/ioc`** — simple REST GET, returns a STIX 2.1 bundle of CVE records from NIST NVD (the only source PG1 may currently redistribute commercially; no IP, domain, URL or file-hash indicators yet). Free while it holds no current data: no key, no payment, no free-tier use. Best for scripts, curl, and simple integrations.
-- **`/api/mcp`** — full Model Context Protocol server, 21 tools (one-call preflight, a hosting advisor, CVE lookups, batch operations, threat actor dossiers, wallet sanctions screening, domain age, hostname/phishing reputation, wallet age/history, and more). Best for Claude, MCP-compatible agents, and any client speaking the MCP standard.
+- **`/api/mcp`** — full Model Context Protocol server, 20 tools (one-call preflight, a hosting advisor, CVE lookups, batch operations, threat actor dossiers, wallet sanctions screening, domain age, hostname/phishing reputation, wallet age/history, and more). Best for Claude, MCP-compatible agents, and any client speaking the MCP standard.
 
 **Discovery:** [`/llms.txt`](https://pg1-ai-agent.vercel.app/llms.txt) (llmstxt.org format, for AI agents/crawlers) and [`/openapi.json`](https://pg1-ai-agent.vercel.app/openapi.json) (OpenAPI 3.1 spec for `/api/ioc` and `/api/health`).
 
@@ -204,6 +206,11 @@ Call `"method": "tools/list"` against `/api/mcp` for full schemas. Summary:
 
 | Tool | Purpose | Source(s) | Free tier applies? |
 |---|---|---|---|
+| `preflight_check` | One call before an agent pays, opens, installs, patches or trusts another agent: every relevant check in parallel, one decision (`no_flags`, `flagged`, `unknown`), fail closed | PG1's own checks below | Yes (5 free calls/day, then x402). REST: `POST /api/preflight` |
+| `check_x402_endpoint` | Check an x402 endpoint before paying it: payTo sanctions and wallet age, network and asset, TLS, domain age | The checks below, live | Always free (60 calls/hour without a licence key) |
+| `check_agent_card` | Check another agent before trusting it: A2A card schema, domain age and reputation, look-alike names | The checks below, live | Always free (60 calls/hour without a licence key) |
+| `verify_result` | Verify a PG1 result's Ed25519 signature against the published keys | `/.well-known/pg1-signing-key` | Always free |
+| `hosting_advisor` | Ranked hosting regions and providers with cited legal, privacy and latency reasons; not legal advice | PG1's curated, cited dataset | Yes (5 free calls/day, then x402). REST: `POST /api/hosting-advisor` |
 | `get_threat_indicators` | STIX 2.1 bundle of CVE records (CVE id and NVD reference; no IP/domain/URL/hash indicators yet) | NVD (only sources PG1 may redistribute commercially; see [Data source switches](#data-source-switches)) | No: free while the feed holds no current data (`PG1_FEED_PAID`) |
 | `get_ioc_context` | Single-indicator safety check | NVD (see [Data source switches](#data-source-switches)) | Always free if not found |
 | `get_ioc_batch` | Up to 20 indicators per call | NVD (see [Data source switches](#data-source-switches)) | Always free if none found |
@@ -212,7 +219,6 @@ Call `"method": "tools/list"` against `/api/mcp` for full schemas. Summary:
 | `get_cve_by_product` | Discover CVEs by vendor/product | NVD | Yes (5 free calls/day, then x402) |
 | `get_threat_actor_profile` | APT/threat actor dossiers with MITRE ATT&CK | MITRE ATT&CK Enterprise | Yes (5 free calls/day, then x402) |
 | `get_usage_status` | Check your remaining free-tier quota | — | Always free, no header needed |
-| `subscribe_alerts` | **Not available** (not in `tools/list`; a call returns `not_available`, free). For alerts use a watchlist: `POST /api/watchlists`, 0.05 USD per item for 30 days via x402, signed webhook on every status change | — | Never charged |
 | `submit_indicator` | Contribute an observed indicator for review | — | No — license key required |
 | `check_wallet_sanctions` | Screen a wallet address against sanctions | OFAC SDN List (US Treasury), synced daily | Always free (120 calls/hour without a licence key) |
 | `check_domain_age` | Domain registration age via RDAP | RDAP (per-TLD server, resolved via the IANA bootstrap registry) | Always free |
@@ -220,6 +226,8 @@ Call `"method": "tools/list"` against `/api/mcp` for full schemas. Summary:
 | `check_wallet_age` | When an EVM address first appeared on a chain, via on-chain transfer history | On-chain transfer history (per-chain) | Always free (60 calls/hour without a licence key) |
 | `check_ip_abuse` | Abuse confidence score and report counts for one public IP, with **your own** AbuseIPDB key | AbuseIPDB, live, with the key you send in `X-AbuseIPDB-Key` | No PG1 charge; uses your own AbuseIPDB quota (60 calls/hour without a licence key). See [Bring your own AbuseIPDB key](#bring-your-own-abuseipdb-key) |
 | `check_package` | Check before you install: one npm or PyPI package (exists?, age, reported malicious, known vulnerabilities, look-alike name, npm deprecation and install scripts) | npm public registry / PyPI, and OSV.dev (OpenSSF Malicious Packages, GitHub Advisory Database, PyPI Advisory Database); see [/docs/attributions](https://pg1-ai-agent.vercel.app/docs/attributions) | Always free (60 calls/hour without a licence key). See [Check a package before you install it](#check-a-package-before-you-install-it) |
+
+`subscribe_alerts` is **Not available** (not in `tools/list`; a call returns `not_available`, free). For alerts use a watchlist: `POST /api/watchlists`, 0.05 USD per item for 30 days via x402, signed webhook on every status change.
 
 ### Important wording caveats
 
@@ -259,7 +267,7 @@ A switched-off source's rows never appear in any response, paid or free; an indi
 
 ## A2A (Agent2Agent Protocol)
 
-`/api/a2a` exposes the seven always-free tools (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `check_package`, `get_usage_status`, and `check_ip_abuse`, which needs your own key in the `X-AbuseIPDB-Key` header exactly as on `/api/mcp`) over [A2A](https://a2a-protocol.org/latest/specification/), JSON-RPC 2.0, plus four **paid skills**: `get_cve_details`, `get_cve_batch`, `get_cve_by_product` and `get_threat_actor_profile` (0.01 USD a call). A paid skill is served free while the caller has free calls left (the shared 5/day counter above, automatic), and after that with a licence key (`X-API-KEY`) or an x402 payment. Payment follows the [a2a-x402 extension](https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.1): an unpaid call returns a task in state `input-required` whose status message metadata carries `"x402.payment.status": "payment-required"` and the x402 v2 PaymentRequired object in `"x402.payment.required"`; resend the message with the signed PaymentPayload in `message.metadata["x402.payment.payload"]`. The payment is settled only after the skill succeeds, and the receipt comes back in `"x402.payment.receipts"`. The NVD CVE feed and the record lookups stay on `/api/mcp`. The agent card is published at [`/.well-known/agent-card.json`](https://pg1-ai-agent.vercel.app/.well-known/agent-card.json). `message/send` (the v0.3 method name) is accepted as an alias of `SendMessage`. The `A2A-Version` header (or query param) selects the response shape — `1.0` or `0.3` (the default when omitted). Rate limits are the MCP tools' own, with the same counters: for example, without a licence key `check_wallet_sanctions` is limited to 120 calls/hour per caller (per IP), and the 121st call in the hour gets the same `rate_limited` error as `check_wallet_age`. Send the skill and its arguments as a `DataPart`:
+`/api/a2a` exposes ten always-free skills (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `check_package`, `check_x402_endpoint`, `check_agent_card`, `verify_result`, `get_usage_status`, and `check_ip_abuse`, which needs your own key in the `X-AbuseIPDB-Key` header exactly as on `/api/mcp`) over [A2A](https://a2a-protocol.org/latest/specification/), JSON-RPC 2.0, plus six **paid skills**: `preflight_check`, `hosting_advisor`, `get_cve_details`, `get_cve_batch`, `get_cve_by_product` and `get_threat_actor_profile` (0.01 USD a call), paid jobs (`submit_job`) and commissioned tools (`build_tool`). A paid skill is served free while the caller has free calls left (the shared 5/day counter above, automatic), and after that with a licence key (`X-API-KEY`) or an x402 payment. Payment follows the [a2a-x402 extension](https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.1): an unpaid call returns a task in state `input-required` whose status message metadata carries `"x402.payment.status": "payment-required"` and the x402 v2 PaymentRequired object in `"x402.payment.required"`; resend the message with the signed PaymentPayload in `message.metadata["x402.payment.payload"]`. The payment is settled only after the skill succeeds, and the receipt comes back in `"x402.payment.receipts"`. The NVD CVE feed and the record lookups stay on `/api/mcp`. The agent card is published at [`/.well-known/agent-card.json`](https://pg1-ai-agent.vercel.app/.well-known/agent-card.json). `message/send` (the v0.3 method name) is accepted as an alias of `SendMessage`. The `A2A-Version` header (or query param) selects the response shape — `1.0` or `0.3` (the default when omitted). Rate limits are the MCP tools' own, with the same counters: for example, without a licence key `check_wallet_sanctions` is limited to 120 calls/hour per caller (per IP), and the 121st call in the hour gets the same `rate_limited` error as `check_wallet_age`. Send the skill and its arguments as a `DataPart`:
 
 ```bash
 curl -X POST https://pg1-ai-agent.vercel.app/api/a2a \

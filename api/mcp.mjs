@@ -3,7 +3,11 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.19.0 — ADD: hosting_advisor (paid; lib/hosting), the Tool Foundry's
+ * Version: 1.20.0 — RELEASE: marketplace listings (server.json, README,
+ *   llms.txt, /docs/agents, agent card) match the live tools/list: 20 tools,
+ *   subscribe_alerts hidden (PG1_ALERTS), the STIX feed free and NVD-only.
+ *   serverInfo and GET read the version from server.json.
+ * 1.19.0 — ADD: hosting_advisor (paid; lib/hosting), the Tool Foundry's
  *   ft_* tools (lib/foundry).
  * 1.18.0 — ADD: preflight_check (one paid call, every relevant check in
  *   parallel, fail closed), check_x402_endpoint, check_agent_card and
@@ -132,7 +136,7 @@ import { ABUSEIPDB_KEY_HEADER, ABUSEIPDB_ATTRIBUTION_TEXT, ABUSEIPDB_TIMEOUT_MS,
 import { checkPackage, normalizePackageInput, buildPackageResult, packageCheckFailureReasons, PACKAGE_SOURCES } from '../lib/packageCheck.mjs';
 import { PREFLIGHT_DEF, PREFLIGHT_TOOL, runPreflight } from '../lib/preflight.mjs';
 import { checkX402Endpoint, checkAgentCard } from '../lib/agentChecks.mjs';
-import { signResult, verifySignedResult, publicJwks, MCP_SIGNATURE_META } from '../lib/signing.mjs';
+import { signResult, verifySignedResult, publicJwks, MCP_SIGNATURE_META, pg1Version } from '../lib/signing.mjs';
 import { cachedCheck } from '../lib/resultCache.mjs';
 import { HOSTING_DEF, HOSTING_TOOL, hostingAdvice } from '../lib/hosting/advisor.mjs';
 import { loadHostingData } from '../lib/hosting/store.mjs';
@@ -3730,7 +3734,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.19.0',
+      version: pg1Version(),
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp',
@@ -3766,7 +3770,7 @@ export default async function handler(req, res) {
       recordTelemetry({ eventType: 'initialize', endpoint: '/api/mcp', status: 'ok', clientName: clientInfo.name, clientVersion: clientInfo.version, callerHash: requestCallerHash(req) });
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.19.0' } },
+        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: pg1Version() } },
         id: requestId
       });
     }
