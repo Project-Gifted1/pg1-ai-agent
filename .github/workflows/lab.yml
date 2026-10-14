@@ -2,13 +2,22 @@ name: PG1 lab
 
 # One PG1 lab experiment (lib/lab, dispatched by /lab start in the chat).
 #
-# Isolation. Every secret comes from the GitHub environment "lab" and is
-# lab-scoped: PG1_LAB_DISPATCH_SECRET, PG1_LAB_ANTHROPIC_API_KEY,
-# PG1_LAB_GEMINI_API_KEY (keys with their own small spend limits) and
+# Isolation. Secrets come from the GitHub environment "lab" (or the
+# repository): PG1_LAB_DISPATCH_SECRET (required, no fallback),
+# PG1_LAB_ANTHROPIC_API_KEY / PG1_LAB_GEMINI_API_KEY (lab keys with their own
+# small spend limits; when unset, the repository's ANTHROPIC_API_KEY /
+# GEMINI_API_KEY_PAID, still capped by the signed budget) and
 # PG1_LAB_GITHUB_TOKEN (fine-grained: this repository only, Contents and
-# Pull requests read/write, nothing else). No payment key, no production
-# Supabase key, no wallet: this file names no other secret, and
-# tests/lab.test.mjs fails if it ever does.
+# Pull requests read/write; when unset, the pull job's built-in token with
+# exactly those two permissions). No payment key, no production Supabase
+# key, no wallet: this file names no other secret, and tests/lab.test.mjs
+# fails if it ever does.
+#
+# A draft PR opened with the built-in token does NOT trigger the Tests
+# workflow (GitHub never starts workflows for the built-in token's pushes
+# and PRs). The promotion gate then finds no "npm test" check on the PR head
+# and fails closed ("CI none") until the operator starts CI themselves:
+# close and reopen the draft PR, or push a commit to lab/<id>.
 #
 # Three jobs on three fresh runners:
 #   experiment  model calls only (POSTs to model APIs; research GETs public
@@ -90,8 +99,8 @@ jobs:
           LAB_BUDGET_USD: ${{ inputs.budget_usd }}
           LAB_TOKEN: ${{ inputs.token }}
           PG1_LAB_DISPATCH_SECRET: ${{ secrets.PG1_LAB_DISPATCH_SECRET }}
-          PG1_LAB_ANTHROPIC_API_KEY: ${{ secrets.PG1_LAB_ANTHROPIC_API_KEY }}
-          PG1_LAB_GEMINI_API_KEY: ${{ secrets.PG1_LAB_GEMINI_API_KEY }}
+          PG1_LAB_ANTHROPIC_API_KEY: ${{ secrets.PG1_LAB_ANTHROPIC_API_KEY || secrets.ANTHROPIC_API_KEY }}
+          PG1_LAB_GEMINI_API_KEY: ${{ secrets.PG1_LAB_GEMINI_API_KEY || secrets.GEMINI_API_KEY_PAID }}
           PG1_LAB_MAX_MINUTES: '15'
         run: node scripts/lab-run.mjs
       - uses: actions/upload-artifact@v4
@@ -143,6 +152,11 @@ jobs:
     runs-on: ubuntu-latest
     environment: lab
     timeout-minutes: 10
+    # For the built-in token fallback only; a set PG1_LAB_GITHUB_TOKEN carries
+    # its own (same) permissions.
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -160,7 +174,8 @@ jobs:
           path: lab-out
       - name: Push the branch and open a draft pull request
         env:
-          PG1_LAB_GITHUB_TOKEN: ${{ secrets.PG1_LAB_GITHUB_TOKEN }}
+          PG1_LAB_GITHUB_TOKEN: ${{ secrets.PG1_LAB_GITHUB_TOKEN || github.token }}
+          PG1_LAB_PR_TOKEN: ${{ secrets.PG1_LAB_GITHUB_TOKEN != '' && 'lab' || 'builtin' }}
         run: |
           if [ -f lab-out/patch.json ]; then node scripts/lab-pr.mjs; fi
       - uses: actions/upload-artifact@v4
