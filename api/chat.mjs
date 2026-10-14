@@ -34,10 +34,10 @@ import { isPdfRequest, handlePdfCommand, PDF_WRITE_SYSTEM, PDF_CHAT_DIRECTIVE } 
 import { replyActions } from '../lib/replyActions.mjs';
 import { resolveIntent } from '../lib/voiceIntents.mjs';
 import { PG1_VOICE_DIRECTIVE } from '../lib/persona.mjs';
-import { wantsDetail, DETAIL_DIRECTIVE, SOURCED_FIGURES_DIRECTIVE, COMMAND_FORMS_DIRECTIVE, groundingSources, sourcesNote, figureChanges, figureChangeNote, tierChanges, tierChangeNote } from '../lib/replyFacts.mjs';
+import { wantsDetail, DETAIL_DIRECTIVE, SOURCED_FIGURES_DIRECTIVE, COMMAND_FORMS_DIRECTIVE, groundingSources, sourcesNote, figureChanges, figureChangeNote, tierChanges, tierChangeNote, extractFigures } from '../lib/replyFacts.mjs';
 import { offersDirective, offerViolations, offerNote, licenceReviewNote } from '../lib/capabilities/offers.mjs';
 import { resolveSources } from '../lib/clientDocs.mjs';
-import { whiteLabel, isOfferRequest, splitsName, providerSource } from '../lib/whiteLabel.mjs';
+import { whiteLabel, isOfferRequest, splitsName, providerSource, withTrademark, hasTrademark, BRAND_LINE } from '../lib/whiteLabel.mjs';
 import { ownPriceAmounts } from '../lib/capabilities/costs.mjs';
 import { isSkillsCommand, handleSkillsCommand, turnSuggestions } from '../lib/skills/chat.mjs';
 import { isLabCommand, handleLabCommand, isLabAction, handleLabApproval, LAB_ARCHITECTURE_TEXT } from '../lib/lab/chat.mjs';
@@ -2388,7 +2388,11 @@ export default async function handler(req, res) {
       var sources = (r.sources && r.sources.length) ? await resolveSources(r.sources, { fetchImpl: function (u, o) { return globalThis.fetch(u, o); } }) : [];
       // An offer is client-facing: a provider's own site is not cited in it.
       if (offerTurn) sources = sources.filter(function (src) { return !providerSource(src); });
+      // An offer that sets out prices closes with the trademark line, unless
+      // the reply already names Project-Gifted1™.
+      var brand = offerTurn && extractFigures(text).length && !hasTrademark(withTrademark(text)) ? BRAND_LINE : '';
       return [
+        brand,
         sourcesNote({ text: text, sources: sources, ownAmounts: ownPriceAmounts(turnCtx.state.figures) }),
         figureChangeNote(figureChanges(turnCtx.state.figures, text)),
         tierChangeNote(tierChanges(turnCtx.state.figures, text, { columns: turnCtx.state.columns || [] })),
@@ -2513,7 +2517,8 @@ export default async function handler(req, res) {
       // WHITE LABEL (lib/whiteLabel.mjs): a reply to a request for an offer,
       // package, quote or proposal is client-facing, so provider and model
       // names become PG1 Studio / PG1 Sound (no note: nothing was withheld).
-      return { text: offerTurn ? whiteLabel(guarded.text) : guarded.text, removed: removed, redacted: removed.length > 0 };
+      // TRADEMARK: the company is written Project-Gifted1™ in an offer.
+      return { text: offerTurn ? withTrademark(whiteLabel(guarded.text)) : guarded.text, removed: removed, redacted: removed.length > 0 };
     };
 
     // The operator's stored context (recent messages, vault files, error

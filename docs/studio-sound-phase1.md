@@ -1,5 +1,7 @@
 # PG1 Studio + Sound: Phase 1 research and capability registry
 
+Project-Gifted1™ · PG1 Studio and PG1 Sound. Internal report: it names providers and models, which client-facing output never does.
+
 Registry version 2026-10-14. Generated from `lib/capabilities/registry.mjs` and `lib/capabilities/costs.mjs` by `node scripts/capabilities-report.mjs`; edit those, not this file.
 
 **How the figures were gathered.** The research ran on 2026-10-14 through web-search extracts of official provider pages and model cards. This session's network policy blocked loading the pages themselves, so every figure marked *official* is unverified until checked on the live page, and where pages disagreed the dearer figure is used. Figures marked *PG1 estimate* are PG1's own. No figure here comes from a third-party blog or a search redirect link.

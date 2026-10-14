@@ -6,6 +6,7 @@
 import { writeFileSync } from 'node:fs';
 import { REGISTRY, LICENCE_QUESTIONS, NOT_OFFERED, REGISTRY_VERSION } from '../lib/capabilities/registry.mjs';
 import { offerability } from '../lib/capabilities/offers.mjs';
+import { TRADEMARK } from '../lib/whiteLabel.mjs';
 import { estimateFilmCost, estimateFilmStorage, PACKAGE_GRID, STORAGE_OPTIONS, storageMonthlyUsd, ASSUMPTIONS, BITRATE_SOURCES, PIPELINE_MAX_SECONDS } from '../lib/capabilities/costs.mjs';
 
 const esc = (s) => String(s == null ? '-' : s).replace(/\|/g, '\\|').replace(/\n/g, ' ');
@@ -16,6 +17,7 @@ const OFFER_TEXT = { offer: 'may be offered', on_request: 'custom, on request', 
 export function reportMarkdown() {
   const out = [];
   out.push('# PG1 Studio + Sound: Phase 1 research and capability registry', '');
+  out.push(`${TRADEMARK} · PG1 Studio and PG1 Sound. Internal report: it names providers and models, which client-facing output never does.`, '');
   out.push(`Registry version ${REGISTRY_VERSION}. Generated from \`lib/capabilities/registry.mjs\` and \`lib/capabilities/costs.mjs\` by \`node scripts/capabilities-report.mjs\`; edit those, not this file.`, '');
   out.push('**How the figures were gathered.** The research ran on 2026-10-14 through web-search extracts of official provider pages and model cards. This session\'s network policy blocked loading the pages themselves, so every figure marked *official* is unverified until checked on the live page, and where pages disagreed the dearer figure is used. Figures marked *PG1 estimate* are PG1\'s own. No figure here comes from a third-party blog or a search redirect link.', '');
 

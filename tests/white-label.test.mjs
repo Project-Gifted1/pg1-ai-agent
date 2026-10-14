@@ -13,7 +13,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { whiteLabel, namesProvider, isOfferRequest, splitsName, stripProviderLinks } from '../lib/whiteLabel.mjs';
+import { whiteLabel, namesProvider, isOfferRequest, splitsName, stripProviderLinks, withTrademark, TRADEMARK, BRAND_LINE } from '../lib/whiteLabel.mjs';
+import { renderPdf } from '../lib/pdf/render.mjs';
+import { PDFDocument } from 'pdf-lib';
 import { prepareClientDocument } from '../lib/clientDocs.mjs';
 import { handlePdfCommand } from '../lib/pdf/chat.mjs';
 import { offersDirective, RIGHTS_WORDING, SAFETY_WORDING, licenceReviewNote, offerNote, offerViolations } from '../lib/capabilities/offers.mjs';
@@ -176,4 +178,77 @@ test('provider names stay in the internal registry and the report', () => {
   assert.match(report, /gemini-omni-1\.1-flash/);
   const registry = readFileSync(new URL('../lib/capabilities/registry.json', import.meta.url), 'utf8');
   assert.match(registry, /kwaivgi\/kling-v2\.1/);
+});
+
+// --- the trademark ------------------------------------------------------------------
+
+test('trademark: the company is always written Project-Gifted1™, and white labelling never touches it', () => {
+  assert.equal(TRADEMARK, 'Project-Gifted1™');
+  assert.equal(BRAND_LINE, 'PG1 Studio and PG1 Sound are services of Project-Gifted1™.');
+  for (const t of ['Project Gifted1', 'Project-Gifted1', 'project-gifted1', 'Project-Gifted1 (TM)', 'Project-Gifted1&trade;', 'Project-Gifted1™']) assert.equal(withTrademark(`By ${t}.`), 'By Project-Gifted1™.', t);
+  assert.equal(withTrademark('See https://github.com/Project-Gifted1/pg1-ai-agent by Project-Gifted1.'), 'See https://github.com/Project-Gifted1/pg1-ai-agent by Project-Gifted1™.', 'a URL is never changed');
+  assert.equal(whiteLabel(`${BRAND_LINE} Clips by Kling.`), `${BRAND_LINE} Clips by PG1 Studio.`);
+  assert.match(offersDirective(), /Trademark: PG1 Studio and PG1 Sound are services of Project-Gifted1™; write the company exactly as Project-Gifted1™, with the ™/);
+});
+
+test('trademark: every PDF page footer and the document author carry Project-Gifted1™', async () => {
+  const r = await renderPdf({ title: 'Long', markdown: Array.from({ length: 120 }, (_, i) => `Paragraph ${i + 1} with some words to fill the page.`).join('\n\n') });
+  assert.ok(r.pages >= 2);
+  const { text } = await pdfText(r.bytes);
+  assert.equal(text.split('Project-Gifted1™ · Made with PG1 ·').length - 1, r.pages, 'one footer mark per page');
+  const doc = await PDFDocument.load(r.bytes, { updateMetadata: false });
+  assert.equal(doc.getAuthor(), 'Project-Gifted1™');
+  assert.equal(doc.getProducer(), 'PG1');
+});
+
+test('trademark: a client proposal names Project-Gifted1™ in its subtitle and closes with the brand line', () => {
+  const p = prepareClientDocument({ title: 'Video packages', markdown: '## Short-form video packages\n| Tier | Price |\n|---|---|\n| Creator | $45/month |\n\nA Project Gifted1 production.' });
+  assert.match(p.markdown, /A Project-Gifted1™ production\./);
+  assert.ok(p.markdown.endsWith(`\n\n${BRAND_LINE}`));
+  assert.equal(prepareClientDocument({ title: 'x packages', markdown: `## X packages\n- Creator: $45\n\n${BRAND_LINE}` }).markdown.split(BRAND_LINE).length, 2, 'never twice');
+});
+
+test('trademark: a priced chat offer carries Project-Gifted1™ (JSON and streamed); an operator question does not get it', async () => {
+  const { default: chatHandler, __clearAuthRateLimitState } = await import('../api/chat.mjs');
+  const { createSseParser } = await import('../lib/chatStream.mjs');
+  const saved = { ...process.env };
+  const savedFetch = globalThis.fetch;
+  let reply = '## Bakery video packages\n| Tier | Price |\n|---|---|\n| Creator | $45/month |\n| Studio | $80/month |';
+  try {
+    Object.assign(process.env, { USER_API_KEY: 'test-operator', USER_API_PASS: 'test-secret-pass', GEMINI_API_KEY: 'stub-gemini-key' });
+    for (const k of ['ANTHROPIC_API_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'CARTESIA_API_KEY']) delete process.env[k];
+    __clearAuthRateLimitState();
+    globalThis.fetch = async (url) => {
+      const u = String(url);
+      if (!u.includes('generativelanguage.googleapis.com')) throw new Error('Unexpected network call in test: ' + u);
+      const cand = { content: { parts: [{ text: reply }] }, finishReason: 'STOP' };
+      if (u.includes('streamGenerateContent')) return new Response(`data: ${JSON.stringify({ candidates: [cand] })}\n\n`);
+      return Response.json({ candidates: [cand] });
+    };
+    const mk = () => ({ statusCode: null, headers: {}, jsonBody: null, chunks: [], setHeader(k, v) { this.headers[k] = v; }, getHeader(k) { return this.headers[k]; }, status(c) { this.statusCode = c; return this; }, json(b) { this.jsonBody = b; return this; }, write(c) { this.chunks.push(String(c)); return true; }, end() { return this; }, on() {} });
+    const req = (body, ip) => ({ method: 'POST', url: '/api/chat', headers: {}, socket: { remoteAddress: ip }, body: { user: 'test-operator', pass: 'test-secret-pass', ...body } });
+    const json = mk();
+    await chatHandler(req({ prompt: 'price video packages for a bakery client' }, '10.92.0.1'), json);
+    assert.ok(json.jsonBody.reply.includes(BRAND_LINE));
+    const streamed = mk();
+    await chatHandler(req({ prompt: 'price video packages for a bakery client', stream: true }, '10.92.0.2'), streamed);
+    const events = [];
+    const parser = createSseParser(({ data }) => events.push(JSON.parse(data)));
+    parser.push(streamed.chunks.join(''));
+    parser.end();
+    assert.ok(events.filter((e) => e.type === 'text').map((e) => e.text).join('').includes(BRAND_LINE));
+    // A reply that already writes the company gets it marked, not a second line.
+    reply = '## Bakery video packages\n- Creator: $45/month\n\nPrepared by Project Gifted1.';
+    const named = mk();
+    await chatHandler(req({ prompt: 'price video packages for a bakery client' }, '10.92.0.3'), named);
+    assert.match(named.jsonBody.reply, /Prepared by Project-Gifted1™\./);
+    assert.ok(!named.jsonBody.reply.includes(BRAND_LINE));
+    // Not an offer: no brand line.
+    const own = mk();
+    await chatHandler(req({ prompt: 'what did the last render cost?' }, '10.92.0.4'), own);
+    assert.ok(!own.jsonBody.reply.includes(BRAND_LINE));
+  } finally {
+    process.env = saved;
+    globalThis.fetch = savedFetch;
+  }
 });

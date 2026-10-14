@@ -242,7 +242,7 @@ test('/pdf for a client: titled by the offer, no private or personal context, no
   assert.equal(r.pdf.title, 'Bakery video packages proposal');
   const { title, text } = await pdfText(uploads[0]);
   assert.equal(title, 'Bakery video packages proposal');
-  assert.match(text, /Prepared 2026-10-14/);
+  assert.match(text, /Prepared by Project-Gifted1™ · 2026-10-14/);
   assert.match(text, /Creator \$45\/month/);
   for (const banned of [/Agreement/, /Anna/, /sister/i, /our cost/i, /Exclusive/i, /PG1 chat/]) assert.doesNotMatch(text, banned);
   assert.match(r.reply, /Titled "Bakery video packages proposal" rather than "Bakery Service Agreement"/);
