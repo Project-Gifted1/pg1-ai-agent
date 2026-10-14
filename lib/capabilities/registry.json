@@ -1,0 +1,1055 @@
+{
+  "version": "2026-10-14",
+  "priceMultiplier": 1.5,
+  "researchNote": "Figures from search-engine extracts of official provider pages on 2026-10-14; the pages could not be loaded directly. Every official figure is unverified until confirmed on the live page.",
+  "features": [
+    {
+      "id": "text_image_to_video",
+      "feature": "Text- and image-to-video clips",
+      "area": "studio",
+      "status": "standard",
+      "gatedUntil": null,
+      "wired": "lib/videoJobs.mjs (PG1 Motion), lib/film/providers.mjs (film shots): Gemini Omni first, Kling on Replicate as the start-frame fallback",
+      "chosen": [
+        {
+          "provider": "google",
+          "model": "gemini-omni-1.1-flash",
+          "role": "primary",
+          "licence": "unclear"
+        },
+        {
+          "provider": "replicate",
+          "model": "kwaivgi/kling-v2.1",
+          "role": "fallback (needs a start image)",
+          "licence": "unclear"
+        }
+      ],
+      "licence": "unclear",
+      "licenceConditions": [],
+      "review": [
+        "G1",
+        "R1"
+      ],
+      "unitCost": {
+        "usd": 0.1,
+        "unit": "second of 720p video",
+        "basis": "official",
+        "verified": false,
+        "note": "Gemini Omni 1.1 Flash at 720p; Kling standard is a PG1 estimate of 0.30 USD per 5 s clip (0.06 USD per second).",
+        "sources": [
+          "https://ai.google.dev/gemini-api/docs/pricing"
+        ]
+      },
+      "minPrice": {
+        "usd": 0.15,
+        "unit": "second of 720p video",
+        "basis": "official"
+      },
+      "note": null,
+      "candidates": [
+        {
+          "provider": "google",
+          "model": "gemini-omni-1.1-flash",
+          "does": "text, image and short video references to video with audio; scene extension",
+          "max": "3-10 s per generation, extend to about 40 s; 360p, 720p, 1080p, 4K at 24 fps",
+          "price": "about 0.10 USD per second at 720p (official); 360p about a third of that",
+          "licence": "unclear (G1)",
+          "sources": [
+            "https://ai.google.dev/gemini-api/docs/pricing",
+            "https://ai.google.dev/gemini-api/docs/omni",
+            "https://blog.google/innovation-and-ai/technology/developers-tools/build-with-gemini-omni-1-1-flash/"
+          ]
+        },
+        {
+          "provider": "google",
+          "model": "veo-3.1 / veo-3.1-fast / veo-3.1-lite",
+          "does": "text and image to video with audio, up to 3 reference images, extension of Veo clips",
+          "max": "8 s clips at 720p, 1080p or 4K (Lite: no 4K, no extension); extension to 37 s on Google Cloud",
+          "price": "Veo 3.1 0.40 USD/s (720p, 1080p), 0.60 USD/s 4K; Fast 0.10/0.12/0.30; Lite 0.05/0.08",
+          "licence": "unclear (G1); PG1 does not use Veo: the preview models shut down on 2026-10-22 (lib/videoJobs.mjs)",
+          "sources": [
+            "https://ai.google.dev/gemini-api/docs/pricing",
+            "https://ai.google.dev/gemini-api/docs/veo",
+            "https://ai.google.dev/gemini-api/docs/models/veo-3.1-lite-generate-preview",
+            "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/video/extend-videos"
+          ]
+        },
+        {
+          "provider": "replicate",
+          "model": "kwaivgi/kling-v2.1",
+          "does": "image-to-video (start image required)",
+          "max": "5 or 10 s; 720p standard, 1080p pro, 24 fps",
+          "price": "per run; Replicate's June 2025 comparison listed about 0.25-0.90 USD per video; current rate not retrieved",
+          "licence": "unclear (R1)",
+          "sources": [
+            "https://replicate.com/kwaivgi/kling-v2.1",
+            "https://replicate.com/blog/compare-ai-video-models",
+            "https://replicate.com/terms"
+          ]
+        },
+        {
+          "provider": "replicate",
+          "model": "kwaivgi/kling-v2.5-turbo-pro",
+          "does": "text and image to video",
+          "max": "not retrieved",
+          "price": "not retrieved",
+          "licence": "unclear (R1)",
+          "sources": [
+            "https://replicate.com/kwaivgi/kling-v2.5-turbo-pro"
+          ]
+        },
+        {
+          "provider": "replicate",
+          "model": "google/veo-3.1-lite",
+          "does": "text and image to video with audio",
+          "max": "720p, 1080p",
+          "price": "0.05 USD/s 720p, 0.08 USD/s 1080p",
+          "licence": "unclear (G1, R1)",
+          "sources": [
+            "https://replicate.com/google/veo-3.1-lite"
+          ]
+        },
+        {
+          "provider": "replicate",
+          "model": "wan-video/wan-2.5-i2v",
+          "does": "image to video",
+          "max": "480p, 720p, 1080p",
+          "price": "not retrieved",
+          "licence": "unclear (R1)",
+          "sources": [
+            "https://replicate.com/wan-video/wan-2.5-i2v"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scene_character_consistency",
+      "feature": "Scene and character consistency",
+      "area": "studio",
+      "status": "standard",
+      "gatedUntil": null,
+      "wired": "lib/film: one shared reference still per film; each shot's keyframe is made from it (FLUX Kontext Pro), then animated from that keyframe",
+      "chosen": [
+        {
+          "provider": "replicate",
+          "model": "black-forest-labs/flux-kontext-pro",
+          "role": "primary (reference and keyframes)",
+          "licence": "commercial_ok"
+        },
+        {
+          "provider": "google",
+          "model": "gemini-3.1-flash-image",
+          "role": "fallback stills",
+          "licence": "unclear"
+        }
+      ],
+      "licence": "unclear",
+      "licenceConditions": [],
+      "review": [
+        "G1"
+      ],
+      "unitCost": {
+        "usd": 0.067,
+        "unit": "still",
+        "basis": "official",
+        "verified": false,
+        "note": "Kontext Pro 0.04 USD per image; the Gemini fallback about 0.067 USD per 1K image. The clip made from each still is priced under text_image_to_video.",
+        "sources": [
+          "https://ai.google.dev/gemini-api/docs/pricing",
+          "https://bfl.ai/pricing"
+        ]
+      },
+      "minPrice": {
+        "usd": 0.1005,
+        "unit": "still",
+        "basis": "official"
+      },
+      "note": null,
+      "candidates": [
+        {
+          "provider": "replicate",
+          "model": "black-forest-labs/flux-kontext-pro",
+          "does": "image editing and generation from a reference image",
+          "max": "one image per run",
+          "price": "0.04 USD per image",
+          "licence": "commercial_ok: outputs generated on Replicate may be used commercially",
+          "sources": [
+            "https://replicate.com/black-forest-labs/flux-kontext-pro",
+            "https://replicate.com/blog/flux-kontext",
+            "https://bfl.ai/pricing"
+          ]
+        },
+        {
+          "provider": "google",
+          "model": "gemini-omni-1.1-flash (references)",
+          "does": "images and up to 3 video references (3 s each) guide the clip",
+          "max": "as text_image_to_video",
+          "price": "as text_image_to_video",
+          "licence": "unclear (G1)",
+          "sources": [
+            "https://ai.google.dev/gemini-api/docs/omni",
+            "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/video/generate-videos-from-references"
+          ]
+        },
+        {
+          "provider": "google",
+          "model": "veo-3.1 (reference images)",
+          "does": "up to 3 reference images per clip",
+          "max": "8 s",
+          "price": "as Veo above",
+          "licence": "unclear (G1)",
+          "sources": [
+            "https://ai.google.dev/gemini-api/docs/veo"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "storyboard_keyframes",
+      "feature": "Storyboard and keyframe images",
+      "area": "studio",
+      "status": "standard",
+      "gatedUntil": null,
+      "wired": "lib/film/storyboard.mjs (the storyboard), lib/film/providers.mjs (stills); /film storyboard <id> makes the PDF",
+      "chosen": [
+        {
+          "provider": "replicate",
+          "model": "black-forest-labs/flux-kontext-pro",
+          "role": "primary stills",
+          "licence": "commercial_ok"
+        },
+        {
+          "provider": "google",
+          "model": "gemini-3.1-flash-image",
+          "role": "fallback stills",
+          "licence": "unclear"
+        }
+      ],
+      "licence": "unclear",
+      "licenceConditions": [],
+      "review": [
+        "G1"
+      ],
+      "unitCost": {
+        "usd": 0.067,
+        "unit": "still",
+        "basis": "official",
+        "verified": false,
+        "note": "Dearest path (the Gemini fallback). Writing the storyboard itself is a PG1 estimate of 0.15 USD (lib/film/cost.mjs).",
+        "sources": [
+          "https://ai.google.dev/gemini-api/docs/pricing",
+          "https://bfl.ai/pricing"
+        ]
+      },
+      "minPrice": {
+        "usd": 0.1005,
+        "unit": "still",
+        "basis": "official"
+      },
+      "note": null,
+      "candidates": [
+        {
+          "provider": "replicate",
+          "model": "black-forest-labs/flux-kontext-pro",
+          "does": "keyframes that keep the reference",
+          "max": "one image per run",
+          "price": "0.04 USD per image",
+          "licence": "commercial_ok",
+          "sources": [
+            "https://replicate.com/black-forest-labs/flux-kontext-pro",
+            "https://bfl.ai/pricing"
+          ]
+        },
+        {
+          "provider": "google",
+          "model": "gemini-3.1-flash-image",
+          "does": "image generation and editing",
+          "max": "up to 4K images",
+          "price": "about 0.045 (0.5K), 0.067 (1K), 0.101 (2K), 0.151 (4K) USD per image",
+          "licence": "unclear (G1)",
+          "sources": [
+            "https://ai.google.dev/gemini-api/docs/pricing"
+          ]
+        },
+        {
+          "provider": "google",
+          "model": "imagen-4",
+          "does": "text to image",
+          "max": "-",
+          "price": "-",
+          "licence": "-",
+          "note": "Shut down on 2026-08-17 per Google's model page",
+          "sources": [
+            "https://ai.google.dev/gemini-api/docs/models/imagen"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "upscale_4k",
+      "feature": "Video upscaling to 4K",
+      "area": "studio",
+      "status": "custom",
+      "gatedUntil": null,
+      "wired": null,
+      "chosen": [
+        {
+          "provider": "replicate",
+          "model": "topazlabs/video-upscale",
+          "role": "chosen",
+          "licence": "unclear"
+        }
+      ],
+      "licence": "unclear",
+      "licenceConditions": [],
+      "review": [
+        "R1"
+      ],
+      "unitCost": {
+        "usd": null,
+        "unit": "second of output video",
+        "basis": "unknown",
+        "verified": false,
+        "note": "Replicate bills it per second of output; the rate could not be retrieved. Generating natively at 4K with Gemini Omni (about 0.30 USD per second, unconfirmed) is the alternative.",
+        "sources": [
+          "https://replicate.com/topazlabs/video-upscale/api/learn-more",
+          "https://replicate.com/docs/topics/models/official-models"
+        ]
+      },
+      "minPrice": {
+        "usd": null,
+        "unit": "second of output video",
+        "basis": "unknown"
+      },
+      "note": null,
+      "candidates": [
+        {
+          "provider": "replicate",
+          "model": "topazlabs/video-upscale",
+          "does": "upscales existing video, frame rates up to 120 fps",
+          "max": "up to 4K",
+          "price": "per second of output; rate not retrieved",
+          "licence": "unclear (R1)",
+          "sources": [
+            "https://replicate.com/topazlabs/video-upscale/api/learn-more",
+            "https://replicate.com/collections/ai-enhance-videos"
+          ]
+        },
+        {
+          "provider": "replicate",
+          "model": "lucataco/real-esrgan-video",
+          "does": "Real-ESRGAN upscaling of MP4",
+          "max": "not stated",
+          "price": "about 0.18 USD per run (A100)",
+          "licence": "unclear (R1)",
+          "sources": [
+            "https://replicate.com/lucataco/real-esrgan-video"
+          ]
+        },
+        {
+          "provider": "google",
+          "model": "gemini-omni-1.1-flash (4K output)",
+          "does": "generates at 4K rather than upscaling",
+          "max": "3-10 s per generation",
+          "price": "about 0.30 USD per second (unconfirmed)",
+          "licence": "unclear (G1)",
+          "sources": [
+            "https://ai.google.dev/gemini-api/docs/pricing",
+            "https://ai.google.dev/gemini-api/docs/omni"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "upscale_8k",
+      "feature": "Video upscaling to 8K",
+      "area": "studio",
+      "status": "unavailable",
+      "gatedUntil": null,
+      "wired": null,
+      "chosen": [],
+      "licence": "unclear",
+      "licenceConditions": [],
+      "review": [],
+      "unitCost": {
+        "usd": null,
+        "unit": "second of output video",
+        "basis": "unknown",
+        "verified": false,
+        "note": null,
+        "sources": []
+      },
+      "minPrice": {
+        "usd": null,
+        "unit": "second of output video",
+        "basis": "unknown"
+      },
+      "note": "No Replicate, Google or ElevenLabs model found outputs 8K video; Replicate's Topaz model and Google's models top out at 4K.",
+      "candidates": [
+        {
+          "provider": "replicate",
+          "model": "topazlabs/video-upscale",
+          "does": "upscaling",
+          "max": "up to 4K",
+          "price": "-",
+          "licence": "-",
+          "sources": [
+            "https://replicate.com/collections/ai-enhance-videos"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "frame_interpolation",
+      "feature": "Frame interpolation (smoother motion, higher frame rate)",
+      "area": "studio",
+      "status": "custom",
+      "gatedUntil": null,
+      "wired": null,
+      "chosen": [
+        {
+          "provider": "pg1",
+          "model": "ffmpeg minterpolate (motion-compensated)",
+          "role": "chosen, on PG1's render runner",
+          "licence": "commercial_ok"
+        }
+      ],
+      "licence": "commercial_ok",
+      "licenceConditions": [
+        "FFmpeg's licence (LGPL/GPL) covers the software, not the frames it outputs."
+      ],
+      "review": [],
+      "unitCost": {
+        "usd": 0.06,
+        "unit": "minute of output video",
+        "basis": "pg1_estimate",
+        "verified": false,
+        "note": "PG1 estimate: about 10 runner-minutes per output minute at 1080p, at 0.006 USD per Linux 2-core minute.",
+        "sources": [
+          "https://docs.github.com/en/billing/reference/actions-runner-pricing"
+        ]
+      },
+      "minPrice": {
+        "usd": 0.09,
+        "unit": "minute of output video",
+        "basis": "pg1_estimate"
+      },
+      "note": null,
+      "candidates": [
+        {
+          "provider": "pg1",
+          "model": "ffmpeg minterpolate",
+          "does": "motion-compensated frame interpolation",
+          "max": "any resolution; runner time grows with it",
+          "price": "runner time only",
+          "licence": "commercial_ok",
+          "sources": [
+            "https://ffmpeg.org/ffmpeg-filters.html",
+            "https://docs.github.com/en/billing/reference/actions-runner-pricing"
+          ]
+        },
+        {
+          "provider": "replicate",
+          "model": "google-research/frame-interpolation (FILM)",
+          "does": "interpolates between frames",
+          "max": "per frame pair",
+          "price": "about 0.0026 USD per run (T4)",
+          "licence": "unclear (R1)",
+          "sources": [
+            "https://replicate.com/google-research/frame-interpolation"
+          ]
+        },
+        {
+          "provider": "replicate",
+          "model": "pollinations/rife-video-interpolation",
+          "does": "RIFE video interpolation",
+          "max": "not stated",
+          "price": "about 0.037 USD per run",
+          "licence": "unclear (R1); Practical-RIFE models are MIT per its repo",
+          "sources": [
+            "https://replicate.com/pollinations/rife-video-interpolation",
+            "https://github.com/hzwer/Practical-RIFE"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "voiceover_single",
+      "feature": "Voice-over (one voice)",
+      "area": "studio",
+      "status": "standard",
+      "gatedUntil": null,
+      "wired": "lib/film/providers.mjs (cartesiaConfig): Cartesia sonic, one voice per film",
+      "chosen": [
+        {
+          "provider": "cartesia",
+          "model": "sonic-3.6",
+          "role": "primary",
+          "licence": "unclear"
+        }
+      ],
+      "licence": "unclear",
+      "licenceConditions": [],
+      "review": [
+        "C1"
+      ],
+      "unitCost": {
+        "usd": 0.05,
+        "unit": "1,000 characters",
+        "basis": "pg1_estimate",
+        "verified": false,
+        "note": "PG1's film estimate (lib/film/cost.mjs voicePerCharUsd).",
+        "sources": []
+      },
+      "minPrice": {
+        "usd": 0.075,
+        "unit": "1,000 characters",
+        "basis": "pg1_estimate"
+      },
+      "note": null,
+      "candidates": []
+    },
+    {
+      "id": "dialogue_tts",
+      "feature": "Dialogue text-to-speech (several voices)",
+      "area": "studio",
+      "status": "custom",
+      "gatedUntil": null,
+      "wired": null,
+      "chosen": [
+        {
+          "provider": "elevenlabs",
+          "model": "eleven_v3 (Text to Dialogue)",
+          "role": "chosen",
+          "licence": "unclear"
+        }
+      ],
+      "licence": "unclear",
+      "licenceConditions": [],
+      "review": [
+        "E1",
+        "E2"
+      ],
+      "unitCost": {
+        "usd": 0.1,
+        "unit": "1,000 characters",
+        "basis": "official",
+        "verified": false,
+        "note": "ElevenLabs pages disagree: 0.08 and 0.10 USD per 1,000 characters for v3; the dearer is used.",
+        "sources": [
+          "https://elevenlabs.io/pricing/api"
+        ]
+      },
+      "minPrice": {
+        "usd": 0.15,
+        "unit": "1,000 characters",
+        "basis": "official"
+      },
+      "note": null,
+      "candidates": [
+        {
+          "provider": "elevenlabs",
+          "model": "eleven_v3 Text to Dialogue",
+          "does": "multi-speaker dialogue in one request",
+          "max": "5,000 characters per request (about 5 minutes)",
+          "price": "0.08-0.10 USD per 1,000 characters (pages disagree)",
+          "licence": "unclear (E1, E2): commercial on paid plans unless a Beta Service",
+          "sources": [
+            "https://elevenlabs.io/pricing/api",
+            "https://elevenlabs.io/docs/overview/models",
+            "https://help.elevenlabs.io/hc/en-us/articles/35869113958801-How-much-does-it-cost-to-generate-using-Eleven-v3",
+            "https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform"
+          ]
+        },
+        {
+          "provider": "google",
+          "model": "gemini-2.5-flash-preview-tts",
+          "does": "speech with one or two speakers",
+          "max": "8,192 input tokens",
+          "price": "10 USD per 1M audio output tokens (about 0.02 USD per minute at 32 tokens per second)",
+          "licence": "unclear (G1)",
+          "sources": [
+            "https://ai.google.dev/gemini-api/docs/pricing",
+            "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-preview-tts"
+          ]
+        },
+        {
+          "provider": "replicate",
+          "model": "resemble-ai/chatterbox-multilingual",
+          "does": "TTS with voice prompts",
+          "max": "not retrieved",
+          "price": "not retrieved",
+          "licence": "unclear (R1)",
+          "sources": [
+            "https://replicate.com/resemble-ai/chatterbox-multilingual"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sound_effects",
+      "feature": "Sound effects and Foley",
+      "area": "sound",
+      "status": "custom",
+      "gatedUntil": null,
+      "wired": null,
+      "chosen": [
+        {
+          "provider": "elevenlabs",
+          "model": "eleven_text_to_sound_v2",
+          "role": "chosen",
+          "licence": "commercial_ok"
+        }
+      ],
+      "licence": "commercial_ok",
+      "licenceConditions": [
+        "A paid ElevenLabs plan (E1); not a Beta Service."
+      ],
+      "review": [],
+      "unitCost": {
+        "usd": 0.12,
+        "unit": "minute of audio",
+        "basis": "official",
+        "verified": false,
+        "note": "The credits page lists 200 credits per generation instead; confirm the billing basis.",
+        "sources": [
+          "https://elevenlabs.io/pricing/api"
+        ]
+      },
+      "minPrice": {
+        "usd": 0.18,
+        "unit": "minute of audio",
+        "basis": "official"
+      },
+      "note": null,
+      "candidates": [
+        {
+          "provider": "elevenlabs",
+          "model": "eleven_text_to_sound_v2",
+          "does": "sound effects from text, optional seamless loop",
+          "max": "0.5-30 s per generation",
+          "price": "0.12 USD per minute (API page); 40 credits per second when a duration is set",
+          "licence": "commercial_ok on paid plans",
+          "sources": [
+            "https://elevenlabs.io/pricing/api",
+            "https://elevenlabs.io/docs/overview/capabilities/sound-effects",
+            "https://elevenlabs.io/docs/api-reference/text-to-sound-effects/convert",
+            "https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "music",
+      "feature": "Music (original tracks and film beds)",
+      "area": "sound",
+      "status": "standard",
+      "gatedUntil": null,
+      "wired": "lib/music/engines.mjs: ElevenLabs Music, then Lyria 3.5 (paid Gemini key), the Lyria 3 clip model, then google/lyria-2 on Replicate",
+      "chosen": [
+        {
+          "provider": "elevenlabs",
+          "model": "Eleven Music",
+          "role": "primary",
+          "licence": "commercial_ok"
+        },
+        {
+          "provider": "google",
+          "model": "lyria-3.5",
+          "role": "fallback",
+          "licence": "unclear"
+        },
+        {
+          "provider": "google",
+          "model": "lyria-3-clip-preview",
+          "role": "fallback (30 s)",
+          "licence": "unclear"
+        },
+        {
+          "provider": "replicate",
+          "model": "google/lyria-2",
+          "role": "last fallback",
+          "licence": "unclear"
+        }
+      ],
+      "licence": "unclear",
+      "licenceConditions": [
+        "ElevenLabs alone is commercial_ok on a paid plan (E1), except film, TV, radio and large studio games, which need Enterprise."
+      ],
+      "review": [
+        "G2",
+        "R1"
+      ],
+      "unitCost": {
+        "usd": 0.15,
+        "unit": "minute of music",
+        "basis": "official",
+        "verified": false,
+        "note": "Eleven Music. Lyria 3.5 is 0.08 USD per song and the Lyria 3 clip 0.04 USD per 30 s request.",
+        "sources": [
+          "https://elevenlabs.io/pricing/api"
+        ]
+      },
+      "minPrice": {
+        "usd": 0.225,
+        "unit": "minute of music",
+        "basis": "official"
+      },
+      "note": null,
+      "candidates": [
+        {
+          "provider": "elevenlabs",
+          "model": "Eleven Music",
+          "does": "songs and instrumentals from a prompt",
+          "max": "up to 5 minutes",
+          "price": "0.15 USD per minute",
+          "licence": "commercial_ok on paid plans; film, TV, radio, studio games only on Enterprise; streaming from Creator up (E1)",
+          "sources": [
+            "https://elevenlabs.io/pricing/api",
+            "https://elevenlabs.io/eleven-music-api",
+            "https://elevenlabs.io/music-terms"
+          ]
+        },
+        {
+          "provider": "google",
+          "model": "lyria-3.5",
+          "does": "full songs",
+          "max": "full song",
+          "price": "0.08 USD per song",
+          "licence": "unclear (G2)",
+          "sources": [
+            "https://ai.google.dev/gemini-api/docs/pricing",
+            "https://ai.google.dev/gemini-api/docs/music-generation"
+          ]
+        },
+        {
+          "provider": "google",
+          "model": "lyria-3-clip-preview",
+          "does": "30 s clips, 48 kHz stereo",
+          "max": "30 s",
+          "price": "0.04 USD per request",
+          "licence": "unclear (G2)",
+          "sources": [
+            "https://ai.google.dev/gemini-api/docs/pricing",
+            "https://ai.google.dev/gemini-api/docs/models/lyria-3-clip-preview"
+          ]
+        },
+        {
+          "provider": "replicate",
+          "model": "google/lyria-2",
+          "does": "instrumental clips with SynthID",
+          "max": "30 s, 48 kHz stereo",
+          "price": "per output; rate not retrieved",
+          "licence": "unclear (G2, R1)",
+          "sources": [
+            "https://replicate.com/google/lyria-2"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stem_separation",
+      "feature": "Stem separation",
+      "area": "sound",
+      "status": "standard",
+      "gatedUntil": null,
+      "wired": "lib/music/export.mjs + scripts/music_stems.py on the music-render runner: Demucs htdemucs (drums, bass, vocals, other) and basic-pitch MIDI",
+      "chosen": [
+        {
+          "provider": "pg1",
+          "model": "demucs htdemucs (MIT)",
+          "role": "primary, on PG1's runner",
+          "licence": "commercial_ok"
+        }
+      ],
+      "licence": "commercial_ok",
+      "licenceConditions": [
+        "Demucs is MIT. The stems carry the licence of the track they come from."
+      ],
+      "review": [],
+      "unitCost": {
+        "usd": 0.03,
+        "unit": "track (about 3 minutes)",
+        "basis": "pg1_estimate",
+        "verified": false,
+        "note": "PG1 estimate: about 5 runner-minutes per track at 0.006 USD per minute.",
+        "sources": [
+          "https://docs.github.com/en/billing/reference/actions-runner-pricing"
+        ]
+      },
+      "minPrice": {
+        "usd": 0.045,
+        "unit": "track (about 3 minutes)",
+        "basis": "pg1_estimate"
+      },
+      "note": null,
+      "candidates": [
+        {
+          "provider": "pg1",
+          "model": "Demucs htdemucs",
+          "does": "4 stems (6 with htdemucs_6s)",
+          "max": "any length; runner time grows with it",
+          "price": "runner time only",
+          "licence": "commercial_ok (MIT)",
+          "sources": [
+            "https://github.com/facebookresearch/demucs",
+            "https://docs.github.com/en/billing/reference/actions-runner-pricing"
+          ]
+        },
+        {
+          "provider": "elevenlabs",
+          "model": "music/stem-separation",
+          "does": "2 or 6 stems as a ZIP",
+          "max": "not stated",
+          "price": "0.5x (2 stems) to 1x (4 stems) the generation cost, per an ElevenLabs blog post",
+          "licence": "commercial_ok on paid plans (E1)",
+          "sources": [
+            "https://elevenlabs.io/docs/api-reference/music/separate-stems",
+            "https://elevenlabs.io/blog/eleven-music-new-tools-for-exploring-editing-and-producing-music-with-ai"
+          ]
+        },
+        {
+          "provider": "replicate",
+          "model": "cjwbw/demucs",
+          "does": "Demucs on Replicate",
+          "max": "-",
+          "price": "about 0.016 USD per run",
+          "licence": "MIT upstream",
+          "sources": [
+            "https://replicate.com/cjwbw/demucs",
+            "https://github.com/facebookresearch/demucs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "surround_upmix",
+      "feature": "5.1 and 7.1 surround mixes",
+      "area": "sound",
+      "status": "custom",
+      "gatedUntil": null,
+      "wired": null,
+      "chosen": [
+        {
+          "provider": "pg1",
+          "model": "ffmpeg surround / pan from stems",
+          "role": "chosen, on PG1's runner",
+          "licence": "commercial_ok"
+        }
+      ],
+      "licence": "commercial_ok",
+      "licenceConditions": [
+        "The mix carries the licence of the track and stems it is made from. No provider model was found that generates surround audio."
+      ],
+      "review": [],
+      "unitCost": {
+        "usd": 0.01,
+        "unit": "track",
+        "basis": "pg1_estimate",
+        "verified": false,
+        "note": "PG1 estimate: about 1-2 runner-minutes per track.",
+        "sources": [
+          "https://docs.github.com/en/billing/reference/actions-runner-pricing"
+        ]
+      },
+      "minPrice": {
+        "usd": 0.015,
+        "unit": "track",
+        "basis": "pg1_estimate"
+      },
+      "note": null,
+      "candidates": [
+        {
+          "provider": "pg1",
+          "model": "ffmpeg surround filter",
+          "does": "active upmix stereo to 5.1, and 5.1 to 7.1",
+          "max": "-",
+          "price": "runner time only",
+          "licence": "commercial_ok",
+          "sources": [
+            "https://ffmpeg.org/ffmpeg-filters.html"
+          ]
+        },
+        {
+          "provider": "pg1",
+          "model": "ffmpeg pan from Demucs stems",
+          "does": "places stems in a 5.1(side) or 7.1 layout (dialogue and vocals centre, drums and bass front with LFE, other in the surrounds)",
+          "max": "-",
+          "price": "runner time only",
+          "licence": "commercial_ok",
+          "sources": [
+            "https://ffmpeg.org/ffmpeg-filters.html",
+            "https://github.com/facebookresearch/demucs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "voice_cloning",
+      "feature": "Consented voice cloning (own voice only)",
+      "area": "sound",
+      "status": "custom",
+      "gatedUntil": "phase4",
+      "wired": null,
+      "chosen": [
+        {
+          "provider": "elevenlabs",
+          "model": "Professional Voice Cloning",
+          "role": "chosen (own voice, voice-captcha verified)",
+          "licence": "commercial_ok"
+        }
+      ],
+      "licence": "commercial_ok",
+      "licenceConditions": [
+        "A paid ElevenLabs plan, Creator or above for Professional Voice Cloning (E1).",
+        "Only the account holder's own voice: ElevenLabs does not allow a Professional clone of someone else's voice, even with consent."
+      ],
+      "review": [],
+      "unitCost": {
+        "usd": 0.1,
+        "unit": "1,000 characters spoken in the cloned voice",
+        "basis": "official",
+        "verified": false,
+        "note": "Making the clone itself is part of the plan subscription (not separately priced on the pages found).",
+        "sources": [
+          "https://elevenlabs.io/pricing/api"
+        ]
+      },
+      "minPrice": {
+        "usd": 0.15,
+        "unit": "1,000 characters spoken in the cloned voice",
+        "basis": "official"
+      },
+      "note": null,
+      "candidates": [
+        {
+          "provider": "elevenlabs",
+          "model": "Professional Voice Cloning",
+          "does": "a high-fidelity clone from about 30 minutes of audio",
+          "max": "-",
+          "price": "plan (Creator or above) plus TTS per character",
+          "licence": "commercial_ok on paid plans",
+          "sources": [
+            "https://elevenlabs.io/docs/eleven-api/concepts/voice-cloning",
+            "https://elevenlabs.io/docs/cookbooks/voices/professional-voice-cloning",
+            "https://help.elevenlabs.io/hc/en-us/articles/36842751624209-Can-I-create-a-Professional-Voice-Clone-of-someone-else-s-voice"
+          ]
+        },
+        {
+          "provider": "elevenlabs",
+          "model": "Instant Voice Cloning",
+          "does": "a quick clone from 1-2 minutes of audio",
+          "max": "-",
+          "price": "plan plus TTS per character",
+          "licence": "commercial_ok on paid plans",
+          "sources": [
+            "https://elevenlabs.io/docs/eleven-api/concepts/voice-cloning"
+          ]
+        },
+        {
+          "provider": "google",
+          "model": "Chirp 3 Instant Custom Voice",
+          "does": "a custom voice from 10 s of reference audio",
+          "max": "-",
+          "price": "60 USD per 1M characters",
+          "licence": "unclear (G1)",
+          "sources": [
+            "https://docs.cloud.google.com/text-to-speech/docs/chirp3-instant-custom-voice",
+            "https://cloud.google.com/text-to-speech/pricing"
+          ]
+        },
+        {
+          "provider": "replicate",
+          "model": "resemble-ai/chatterbox-multilingual",
+          "does": "zero-shot voice prompts",
+          "max": "-",
+          "price": "not retrieved",
+          "licence": "unclear (R1)",
+          "sources": [
+            "https://replicate.com/resemble-ai/chatterbox-multilingual",
+            "https://replicate.com/terms"
+          ]
+        }
+      ]
+    }
+  ],
+  "licenceQuestions": {
+    "G1": {
+      "question": "Google outputs (Gemini Omni, Veo, Lyria, Gemini image and TTS on the paid Gemini API): may PG1 resell them to clients?",
+      "detail": "The Gemini API Additional Terms say Google does not claim ownership of generated content and that paid-tier data is not used to improve products, but they grant no express commercial licence. The Google APIs Terms (Section 5, prohibitions on content) bar selling or distributing content returned by an API unless its owner or the law allows it; whether that clause reaches generated output is not answered on Google's pages.",
+      "sources": [
+        "https://ai.google.dev/gemini-api/terms",
+        "https://developers.google.com/terms"
+      ]
+    },
+    "G2": {
+      "question": "Lyria music on the paid Gemini API: may it be published and sold, including on streaming platforms and YouTube?",
+      "detail": "Same terms as G1. Lyria output carries a SynthID watermark. Google's pages give no music-specific rights table, unlike ElevenLabs'.",
+      "sources": [
+        "https://ai.google.dev/gemini-api/terms",
+        "https://ai.google.dev/gemini-api/docs/music-generation",
+        "https://replicate.com/google/lyria-2"
+      ]
+    },
+    "R1": {
+      "question": "Replicate-hosted video and upscaling models (Kling, Topaz, FILM): what does each model's own licence allow?",
+      "detail": "Replicate grants its rights in outputs, including commercial use, \"subject to any third-party terms\" of the model used. The model pages' licence tabs could not be loaded, so each model's terms are unconfirmed.",
+      "sources": [
+        "https://replicate.com/terms",
+        "https://replicate.com/kwaivgi/kling-v2.1",
+        "https://replicate.com/topazlabs/video-upscale/api/learn-more",
+        "https://replicate.com/google-research/frame-interpolation"
+      ]
+    },
+    "E1": {
+      "question": "Which ElevenLabs plan is ELEVENLABS_API_KEY on?",
+      "detail": "Paid plans include a commercial licence; the free plan does not and requires attribution. Eleven Music on self-serve plans excludes film, TV, radio and large studio games (Enterprise only). Streaming distribution needs Creator or above. Sound effects, stem separation through ElevenLabs and voice cloning are marked commercial_ok on the condition that the key is on a paid plan; if it is not, they are not commercial.",
+      "sources": [
+        "https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform",
+        "https://elevenlabs.io/music-terms",
+        "https://elevenlabs.io/eleven-music-api"
+      ]
+    },
+    "E2": {
+      "question": "Is Eleven v3 Text to Dialogue still a Beta Service?",
+      "detail": "Content made with ElevenLabs Beta Services cannot be used commercially or in production. The pages found do not say whether v3 dialogue is out of beta.",
+      "sources": [
+        "https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform",
+        "https://elevenlabs.io/docs/overview/models",
+        "https://help.elevenlabs.io/hc/en-us/articles/35869113958801-How-much-does-it-cost-to-generate-using-Eleven-v3"
+      ]
+    },
+    "C1": {
+      "question": "Cartesia (the voice PG1 Studio uses now for voice-over): do its terms allow resale of output?",
+      "detail": "Cartesia was outside this phase's providers (Replicate, Google, ElevenLabs), so its terms were not reviewed.",
+      "sources": []
+    }
+  },
+  "notOffered": [
+    {
+      "id": "client_accounts",
+      "label": "client accounts or seats",
+      "never": false
+    },
+    {
+      "id": "account_manager",
+      "label": "an account manager",
+      "never": false
+    },
+    {
+      "id": "dedicated_compute",
+      "label": "dedicated compute or GPUs",
+      "never": false
+    },
+    {
+      "id": "ip_indemnification",
+      "label": "IP indemnification",
+      "never": true
+    },
+    {
+      "id": "exclusive_rights",
+      "label": "exclusive rights",
+      "never": true
+    }
+  ]
+}

@@ -34,7 +34,9 @@ import { isPdfRequest, handlePdfCommand, PDF_WRITE_SYSTEM, PDF_CHAT_DIRECTIVE } 
 import { replyActions } from '../lib/replyActions.mjs';
 import { resolveIntent } from '../lib/voiceIntents.mjs';
 import { PG1_VOICE_DIRECTIVE } from '../lib/persona.mjs';
-import { wantsDetail, DETAIL_DIRECTIVE, SOURCED_FIGURES_DIRECTIVE, COMMAND_FORMS_DIRECTIVE, groundingSources, sourcesNote, figureChanges, figureChangeNote } from '../lib/replyFacts.mjs';
+import { wantsDetail, DETAIL_DIRECTIVE, SOURCED_FIGURES_DIRECTIVE, COMMAND_FORMS_DIRECTIVE, groundingSources, sourcesNote, figureChanges, figureChangeNote, tierChanges, tierChangeNote } from '../lib/replyFacts.mjs';
+import { offersDirective, offerViolations, offerNote, licenceReviewNote } from '../lib/capabilities/offers.mjs';
+import { resolveSources } from '../lib/clientDocs.mjs';
 import { isSkillsCommand, handleSkillsCommand, turnSuggestions } from '../lib/skills/chat.mjs';
 import { isLabCommand, handleLabCommand, isLabAction, handleLabApproval, LAB_ARCHITECTURE_TEXT } from '../lib/lab/chat.mjs';
 import { isOpportunitiesCommand, handleOpportunitiesCommand } from '../lib/opportunities.mjs';
@@ -1659,7 +1661,7 @@ async function streamChatReply(stream, opts) {
   if (note && result.text && !result.aborted && !stream.clientGone) replyScrubber.push('\n\n' + note);
   // Figures: the search sources behind them, and any figure this reply
   // changed without saying so (lib/replyFacts.mjs), from code, not the model.
-  var factNote = (opts.factNotes && result.text && !result.aborted && !stream.clientGone && !result.partial) ? opts.factNotes(result.text, result) : '';
+  var factNote = (opts.factNotes && result.text && !result.aborted && !stream.clientGone && !result.partial) ? await opts.factNotes(result.text, result) : '';
   if (factNote) replyScrubber.push('\n\n' + factNote);
   replyScrubber.flush();
   if (result.text && replyScrubber.redacted.length) {
@@ -2374,9 +2376,21 @@ export default async function handler(req, res) {
     // sources this turn's web search returned (or a label that none backs
     // the figures), and any figure from earlier in the thread that the
     // reply changed without saying so.
-    var turnFactNotes = function (text, result) {
+    // Search sources are shown with their real URLs: a grounding redirect
+    // is followed once or left out (lib/clientDocs.mjs). OFFERS
+    // (lib/capabilities/offers.mjs): anything the reply offers that the
+    // capability registry does not allow, and the operator-only licence
+    // warning for a package that relies on an unsettled licence.
+    var turnFactNotes = async function (text, result) {
       var r = result || {};
-      return [sourcesNote({ text: text, sources: r.sources || [] }), figureChangeNote(figureChanges(turnCtx.state.figures, text))].filter(Boolean).join('\n\n');
+      var sources = (r.sources && r.sources.length) ? await resolveSources(r.sources, { fetchImpl: function (u, o) { return globalThis.fetch(u, o); } }) : [];
+      return [
+        sourcesNote({ text: text, sources: sources }),
+        figureChangeNote(figureChanges(turnCtx.state.figures, text)),
+        tierChangeNote(tierChanges(turnCtx.state.figures, text)),
+        offerNote(offerViolations(text)),
+        isOperator ? licenceReviewNote(text) : ''
+      ].filter(Boolean).join('\n\n');
     };
     var turnResult = function (reply) {
       turnCtx.state = updateFromReply(turnCtx.state, { prompt: turnCtx.prompt, reply: reply });
@@ -2771,7 +2785,7 @@ export default async function handler(req, res) {
           // /pdf <request>: one model round on the reasoning core first.
           writeDocument: async function (request) {
             var written = await fetchModelRound({
-              activeAction: 'CLAUDE_CHAT', promptText: request, sysInstruction: PDF_WRITE_SYSTEM, mediaParts: [], anthropicKey: anthropicKey,
+              activeAction: 'CLAUDE_CHAT', promptText: request, sysInstruction: PDF_WRITE_SYSTEM + '\n' + offersDirective(), mediaParts: [], anthropicKey: anthropicKey,
               geminiKeys: chatGeminiKeys, env: process.env, isOperator: isOperator, cacheIdentity: null, contextText: '', ledger: aiLedger,
               requestId: requestTraceId, deadlineTs: deadlineTs
             }, { onSearchFailure: function (detail) { reportFailure('search_failed', detail); } });
@@ -4107,7 +4121,7 @@ export default async function handler(req, res) {
     // [TASK STATE] opens the prompt when the thread has one; the self-check
     // and the [REFERENCES] line go with the other directives.
     var turnPreamble = turnTaskBlock ? turnTaskBlock + '\n\n' : '';
-    var turnDirectives = PG1_VOICE_DIRECTIVE + '\n' + SELF_CHECK_DIRECTIVE + '\n' + SOURCED_FIGURES_DIRECTIVE + '\n' + PDF_CHAT_DIRECTIVE + '\n' + COMMAND_FORMS_DIRECTIVE + '\n' + (referenceLine(turnReference) ? referenceLine(turnReference) + '\n' : '') + (skillsOn ? skillsIndexBlock(turnSkills) + '\n' : '');
+    var turnDirectives = PG1_VOICE_DIRECTIVE + '\n' + SELF_CHECK_DIRECTIVE + '\n' + SOURCED_FIGURES_DIRECTIVE + '\n' + offersDirective() + '\n' + PDF_CHAT_DIRECTIVE + '\n' + COMMAND_FORMS_DIRECTIVE + '\n' + (referenceLine(turnReference) ? referenceLine(turnReference) + '\n' : '') + (skillsOn ? skillsIndexBlock(turnSkills) + '\n' : '');
     var sysInstruction = `${turnPreamble}You are PG1, the chat assistant of Project-Gifted1's threat-intelligence app, running on Vercel.
 [STRICT DIRECTIVE - GROUNDING & HONESTY]: Be absolutely honest at all times about the actual factual content of your answers. Never lie or fabricate results. Never state system health, uptime, integrity, file counts, pipeline status or runtime details unless that exact value appears in [CONTEXT]; if asked about status, say you cannot verify it here and point the operator to the /status command. The vault file list in [CONTEXT] is capped at 20 entries, so never present its length as a total. Stay completely grounded in the factual reality of the project. We operate an automated cybersecurity architecture deploying GitHub workflows and Supabase vault integration.
 ${identityDirective()}
@@ -4265,7 +4279,7 @@ ${turnDirectives}${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imag
     // The honesty note comes from the outcomes, not the model.
     var unverified = jsonToolOutcomes.length ? unverifiedNote(jsonToolOutcomes) : '';
     if (!modelFailed && unverified) replyText += '\n\n' + unverified;
-    var jsonFactNote = modelFailed ? '' : turnFactNotes(replyText, modelFetchResult);
+    var jsonFactNote = modelFailed ? '' : await turnFactNotes(replyText, modelFetchResult);
     if (jsonFactNote) replyText += '\n\n' + jsonFactNote;
 
     if (supabaseUrl && supabaseKey && !modelFailed && !isPdfExport) {
