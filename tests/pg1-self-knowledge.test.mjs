@@ -178,7 +178,7 @@ test('capabilities: Send to Code, the live trace with its "N steps" pill, the wa
   assert.ok(prompt.includes('a small animated waveform button appears in that message\'s header, and tapping the waveform stops the speech'));
   assert.ok(prompt.includes('spoken sentence by sentence while it is still being written'));
   // Icon-only message actions
-  assert.match(prompt, /- Message actions: under every reply there are three icon-only buttons with no visible text, labelled for screen readers as Read aloud \(speaker icon\), Copy reply and Delete reply/);
+  assert.match(prompt, /- Message actions: under every reply there are four icon-only buttons with no visible text, labelled for screen readers as Read aloud \(speaker icon\), Copy reply, Save as PDF \(document icon: that reply becomes a PDF with a download card\) and Delete reply/);
   assert.ok(prompt.includes('Edit message, Copy message and Delete message'));
   assert.ok(prompt.includes('There is no button labelled SPEAK, COPY or DELETE, so never tell the operator to "tap SPEAK".'));
 });
@@ -196,8 +196,8 @@ test('no stale UI names: nothing tells PG1 about a SPEAK button or a VOICE toggl
 
 test('the prompt describes the page as shipped: Read aloud / Copy / Delete are icon-only, the waveform stops speech, the switch is "Spoken replies"', () => {
   // Agent message actions: real buttons with an aria-label and an icon, no visible text.
-  const actions = html.match(/: \[\['speakBubble', 'Read aloud', 'i-speaker', ''\], \['copyBubbleText', 'Copy reply', 'i-copy', ''\], \['deleteBubble', 'Delete reply', 'i-trash', ''\]\];/);
-  assert.ok(actions, 'agent actions are Read aloud, Copy reply, Delete reply');
+  const actions = html.match(/: \[\['speakBubble', 'Read aloud', 'i-speaker', ''\], \['copyBubbleText', 'Copy reply', 'i-copy', ''\], \['savePdfBubble', 'Save as PDF', 'i-file', ''\], \['deleteBubble', 'Delete reply', 'i-trash', ''\]\];/);
+  assert.ok(actions, 'agent actions are Read aloud, Copy reply, Save as PDF, Delete reply');
   assert.match(html, /\[\['editBubble', 'Edit message', 'i-edit', 40\], \['copyBubbleText', 'Copy message', 'i-copy', 40\], \['deleteBubble', 'Delete message', 'i-trash', 40\]\]/);
   const button = html.match(/return `<button type="button" class="msg-action" onclick="[^"]*" aria-label="\$\{label\}" title="\$\{label\}">(.*?)<\/button>`;/);
   assert.ok(button, 'one shared action button template');

@@ -82,8 +82,24 @@ import {
   logPackageCheckFailures,
   recordToolError,
   resolveTestFixture,
-  requestCallerHash
+  requestCallerHash,
+  runPricedX402Gate,
+  runReadOnlyTool,
+  internalRunTool,
+  screenPaymentPayer
 } from './mcp.mjs';
+import { payerScreen } from '../lib/screening.mjs';
+import { notifyOperator } from '../lib/notify.mjs';
+import { FOUNDRY_SKILL, submitBuild, payBuild, refreshBuild, foundryJobView, FoundryRefusal } from '../lib/foundry/jobs.mjs';
+import { isFoundryToolName, callFoundryTool, FoundryCallError, TOOL_KEY_HEADER } from '../lib/foundry/tools.mjs';
+import { createFoundryStore } from '../lib/foundry/store.mjs';
+import { payerHash } from '../lib/a2aJobs/jobs.mjs';
+import { signResult, A2A_SIGNATURE_META } from '../lib/signing.mjs';
+import { waitUntil } from '@vercel/functions';
+import { checkFreeTierAvailable, consumeFreeTier, freeTierWanted } from '../lib/freeTier.mjs';
+import { getSupabaseCreds } from '../lib/supabase.mjs';
+import { submitJob, payJob, runAcceptedJob, jobView, createJobStore, JobRefusal } from '../lib/a2aJobs/jobs.mjs';
+import { JOB_TYPES } from '../lib/a2aJobs/catalogue.mjs';
 import { getRequestIdentifier, setFreeTierHeaders } from '../lib/freeTier.mjs';
 import { recordTelemetry, toolErrorTelemetryStatus } from '../lib/telemetry.mjs';
 import { buildCheck, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
@@ -107,13 +123,19 @@ const SKILL_SOURCE_LABELS = {
   get_cve_details: 'vulnerability database',
   get_cve_batch: 'vulnerability database',
   get_cve_by_product: 'vulnerability database',
-  get_threat_actor_profile: 'threat actor intelligence'
+  get_threat_actor_profile: 'threat actor intelligence',
+  preflight_check: 'PG1 preflight',
+  check_x402_endpoint: 'x402 payment request',
+  check_agent_card: 'agent card',
+  verify_result: 'PG1 signing keys',
+  hosting_advisor: 'PG1 hosting dataset'
 };
 
-export const config = { maxDuration: 30 };
+// 60 s: an accepted A2A job runs in the background (waitUntil) after the reply.
+export const config = { maxDuration: 60 };
 
-export const A2A_FREE_SKILL_NAMES = Object.freeze(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'get_usage_status', 'check_ip_abuse', 'check_package']);
-export const A2A_PAID_SKILL_NAMES = Object.freeze(['get_cve_details', 'get_cve_batch', 'get_cve_by_product', 'get_threat_actor_profile']);
+export const A2A_FREE_SKILL_NAMES = Object.freeze(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'get_usage_status', 'check_ip_abuse', 'check_package', 'check_x402_endpoint', 'check_agent_card', 'verify_result']);
+export const A2A_PAID_SKILL_NAMES = Object.freeze(['preflight_check', 'hosting_advisor', 'get_cve_details', 'get_cve_batch', 'get_cve_by_product', 'get_threat_actor_profile']);
 const A2A_SKILL_NAMES = [...A2A_FREE_SKILL_NAMES, ...A2A_PAID_SKILL_NAMES];
 
 // Message metadata keys of the a2a-x402 extension.
@@ -126,6 +148,8 @@ const X402_META = Object.freeze({
 });
 // App-level (non-A2A) code for a rejected licence key, next to -32010.
 const LICENSE_REJECTED_CODE = -32011;
+// P11: the paying wallet matched a sanctions list (no quote, no 402).
+const PAYER_REFUSED_CODE = -32012;
 
 // Reused verbatim from api/mcp.mjs's TOOLS array — same descriptions/schemas.
 export const A2A_SKILL_TOOLS = TOOLS.filter((tool) => A2A_SKILL_NAMES.includes(tool.name));
@@ -178,6 +202,10 @@ async function runSkill(skill, args, identifier, licenseKey, req) {
       return handleCheckIpAbuse(args, { identifier, licenseKey, abuseIpdbKey: readCustomerKey(req.headers) });
     case 'check_package':
       return handleCheckPackage(args, identifier, licenseKey);
+    case 'check_x402_endpoint':
+    case 'check_agent_card':
+    case 'verify_result':
+      return runReadOnlyTool(skill, args, { identifier, licenseKey });
     default:
       return undefined;
   }
@@ -222,7 +250,7 @@ function extractDataPart(message) {
 }
 
 function stateValue(state, version) {
-  if (version === '1.0') return { completed: 'TASK_STATE_COMPLETED', 'input-required': 'TASK_STATE_INPUT_REQUIRED' }[state] || 'TASK_STATE_FAILED';
+  if (version === '1.0') return { completed: 'TASK_STATE_COMPLETED', 'input-required': 'TASK_STATE_INPUT_REQUIRED', working: 'TASK_STATE_WORKING', canceled: 'TASK_STATE_CANCELED', submitted: 'TASK_STATE_SUBMITTED', rejected: 'TASK_STATE_REJECTED' }[state] || 'TASK_STATE_FAILED';
   return state;
 }
 
@@ -287,6 +315,9 @@ function taskResult(skill, args, result, version, inboundMessage, { paymentMetad
   const taskId = crypto.randomUUID();
   const contextId = (inboundMessage && inboundMessage.contextId) || crypto.randomUUID();
   const inboundData = { skill, arguments: args };
+  // Signed results (lib/signing.mjs): metadata["pg1.signature"].
+  const signature = signResult({ tool: skill, args, result });
+  if (signature) paymentMetadata = { ...(paymentMetadata || {}), [A2A_SIGNATURE_META]: signature };
 
   const task = {
     id: taskId,
@@ -341,6 +372,111 @@ function recordSkillTelemetry(skillTelemetry, res) {
   }
 }
 
+// --- A2A jobs (lib/a2aJobs) ------------------------------------------------------
+// submit_job -> quote (input-required with the x402 requirements at the
+// job's price) -> payment on the task (message.taskId = job id) -> working
+// -> completed with artifacts (JSON, PDF: signed links, 7 days) or failed
+// (one retry, then a wallet credit; never an on-chain refund). GetTask
+// reads a job's state; CancelTask cancels a quoted job.
+
+export const JOB_SKILL = 'submit_job';
+const JOB_STATE = { quoted: 'input-required', working: 'working', completed: 'completed', failed: 'failed', expired: 'canceled', cancelled: 'canceled', refused: 'failed' };
+
+function buildFilePart(file, version) {
+  if (version === '1.0') return { url: file.url, mediaType: file.mime_type, filename: file.name };
+  return { kind: 'file', file: { uri: file.url, mimeType: file.mime_type, name: file.name } };
+}
+
+async function jobTask(job, version, inboundMessage, { paymentRequired = null, signArtifact = null, settlement = null } = {}) {
+  const view = await jobView(job, { signArtifact });
+  const contextId = (inboundMessage && inboundMessage.contextId) || job.id;
+  const state = JOB_STATE[job.status] || 'failed';
+  let metadata;
+  if (job.status === 'quoted' && paymentRequired) metadata = { [X402_META.status]: 'payment-required', [X402_META.required]: paymentRequired };
+  if (settlement && settlement.success) metadata = { [X402_META.status]: 'payment-completed', [X402_META.receipts]: [settlement] };
+  const task = {
+    id: job.id,
+    contextId,
+    status: { state: stateValue(state, version), timestamp: new Date().toISOString(), message: buildMessage('agent', view, version, { contextId, taskId: job.id, metadata }) },
+    ...(metadata ? { metadata } : {})
+  };
+  if (job.status === 'completed') {
+    const files = (view.artifacts || []).filter((a) => a.url);
+    task.artifacts = [{ artifactId: `${job.id}-result`, name: job.job_type, parts: [buildDataPart(job.result || {}, version), ...files.map((f) => buildFilePart(f, version))] }];
+  }
+  if (version === '0.3') task.kind = 'task';
+  return task;
+}
+
+// --- Tool Foundry ---------------------------------------------------------------
+// build_tool: submit a spec (screened, then quoted, counter-offered, sent to
+// review or refused); pay the build fee on the job (arguments.job_id plus the
+// x402 payment in message.metadata); read the job's state (job_id alone).
+const FOUNDRY_STATE = { review: 'submitted', refused: 'rejected', infeasible: 'rejected', quoted: 'input-required', counter_offer: 'input-required', expired: 'canceled', building: 'working', awaiting_approval: 'working', deployed: 'completed', rejected: 'failed', build_failed: 'failed' };
+
+function foundryTask(job, version, inboundMessage, { paymentRequired = null, settlement = null } = {}) {
+  const view = foundryJobView(job);
+  const contextId = (inboundMessage && inboundMessage.contextId) || job.id;
+  let metadata;
+  if (paymentRequired && ['quoted', 'counter_offer'].includes(job.status)) metadata = { [X402_META.status]: 'payment-required', [X402_META.required]: paymentRequired };
+  if (settlement && settlement.success) metadata = { [X402_META.status]: 'payment-completed', [X402_META.receipts]: [settlement] };
+  const task = { id: job.id, contextId, status: { state: stateValue(FOUNDRY_STATE[job.status] || 'failed', version), timestamp: new Date().toISOString(), message: buildMessage('agent', view, version, { contextId, taskId: job.id, metadata }) }, ...(metadata ? { metadata } : {}) };
+  if (version === '0.3') task.kind = 'task';
+  return task;
+}
+
+// The lab and classifier code is loaded only when a build request comes in.
+const defaultFoundryDeps = async (req, { supUrl, supKey }) => (await import('../lib/foundry/service.mjs')).foundryDeps({ supUrl, supKey, callerHash: requestCallerHash(req) });
+let foundryDepsFactory = defaultFoundryDeps;
+export function __setFoundryDeps(factory) {
+  foundryDepsFactory = factory || defaultFoundryDeps;
+}
+
+// The job runner's model, PDF and storage code is loaded only when a job
+// needs it, so the A2A check path itself never reaches model code.
+const loadJobService = () => import('../lib/a2aJobs/service.mjs');
+
+function jobDeps(req, { supUrl, supKey }) {
+  const store = createJobStore({ supUrl, supKey });
+  const outputs = {
+    sign: async (a) => (await loadJobService()).outputStorage({ supUrl, supKey }).sign(a),
+    makePdf: async (doc) => (await loadJobService()).outputStorage({ supUrl, supKey }).makePdf(doc),
+    storeOutputs: async (j, out) => (await loadJobService()).outputStorage({ supUrl, supKey }).storeOutputs(j, out)
+  };
+  const identifier = getRequestIdentifier(req);
+  const audit = { supUrl, supKey };
+  const startRun = (job, { onSuccess = null } = {}) => {
+    const run = loadJobService().then((svc) => {
+      const model = svc.jobModel({});
+      return runAcceptedJob(job, {
+        store, audit, onSuccess,
+        execDeps: { runTool: svc.runJobTool, guard: svc.jobGuard(), makePdf: (doc) => outputs.makePdf(doc), writeModel: (m) => model.write(m), spentUsd: () => model.spent() },
+        storeOutputs: (j, out) => outputs.storeOutputs(j, out)
+      });
+    }).catch((e) => console.error('[A2A_JOB] run failed:', e && e.message));
+    try { waitUntil(run); } catch (e) { /* outside Vercel the promise still runs */ }
+    return run;
+  };
+  return {
+    store, outputs, audit, startRun, callerId: identifier,
+    freeTier: { wanted: freeTierWanted(req.headers), check: () => checkFreeTierAvailable(supUrl, supKey, identifier), consume: (avail) => consumeFreeTier(supUrl, supKey, identifier, avail) },
+    gate: (job, payment) => runPricedX402Gate(req, { payment, priceUsd: Number(job.price_usd), description: `PG1 A2A job ${job.job_type} (${job.items} item${job.items === 1 ? '' : 's'})` }),
+    // P11: the paying wallet is screened before anything is settled.
+    screen: payerScreen({ supUrl, supKey, notify: notifyOperator, context: 'a2a job' })
+  };
+}
+
+function jobRefusalResponse(res, err, requestId, pg1RequestId) {
+  if (err.retryAfter) res.setHeader('Retry-After', String(err.retryAfter));
+  return jsonRpcError(res, err.status, err.rpcCode, err.message, requestId, err.data, pg1RequestId);
+}
+
+// Test hook: the job dependencies are swapped in by tests/a2a-jobs.test.mjs.
+let jobDepsFactory = jobDeps;
+export function __setJobDeps(factory) {
+  jobDepsFactory = factory || jobDeps;
+}
+
 export default async function handler(req, res) {
   // A UUID unique to this request (issue #215), distinct from the JSON-RPC
   // `requestId` below (the caller's own `id` field, echoed back as-is).
@@ -356,7 +492,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-a2a',
-      version: '1.17.0',
+      version: '1.19.0',
       protocol: 'Agent2Agent (A2A) over JSON-RPC 2.0',
       supportedVersions: ['1.0', '0.3'],
       agentCard: 'https://pg1-ai-agent.vercel.app/.well-known/agent-card.json',
@@ -415,6 +551,21 @@ export default async function handler(req, res) {
       );
     }
 
+    if ((METHODS.getTask.includes(method) || METHODS.cancelTask.includes(method)) && params && typeof params.id === 'string' && /^[0-9a-f-]{36}$/i.test(params.id)) {
+      let creds = null;
+      try { creds = getSupabaseCreds(); } catch (e) { creds = null; }
+      const deps = creds ? jobDepsFactory(req, creds) : null;
+      const job = deps ? await deps.store.get(params.id).catch(() => null) : null;
+      if (job) {
+        if (METHODS.cancelTask.includes(method)) {
+          if (job.status !== 'quoted') return jsonRpcError(res, 200, A2A_ERROR_CODES.TaskNotCancelableError, `Task ${job.id} is ${job.status} and cannot be canceled.`, requestId, undefined, pg1RequestId);
+          const rows = await deps.store.update(job.id, { status: 'cancelled' }, { onlyIfStatus: 'quoted' });
+          return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(rows[0] || { ...job, status: 'cancelled' }, version, null), id: requestId });
+        }
+        return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(job, version, null, { signArtifact: (a) => deps.outputs.sign(a) }), id: requestId });
+      }
+    }
+
     if (METHODS.getTask.includes(method) || METHODS.cancelTask.includes(method)) {
       return jsonRpcError(
         res, 200, A2A_ERROR_CODES.TaskNotFoundError,
@@ -428,6 +579,35 @@ export default async function handler(req, res) {
     }
 
     const inboundMessage = params && params.message;
+    // A2A jobs, step 2: a payment sent on a job's task.
+    const jobPayment = inboundMessage && inboundMessage.metadata && inboundMessage.metadata[X402_META.payload];
+    if (inboundMessage && typeof inboundMessage.taskId === 'string' && /^[0-9a-f-]{36}$/i.test(inboundMessage.taskId) && jobPayment) {
+      skillTelemetry = { skill: JOB_SKILL, req, status: null, startedAt: Date.now(), paymentType: 'x402' };
+      let creds;
+      try { creds = getSupabaseCreds(); } catch (e) { return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, 'Jobs are not available on this deployment.', requestId, undefined, pg1RequestId); }
+      const deps = jobDepsFactory(req, creds);
+      try {
+        const paid = await payJob({ jobId: inboundMessage.taskId, deps: { ...deps, gate: (job) => deps.gate(job, jobPayment) } });
+        if (paid.paymentRequired) {
+          skillTelemetry.status = 'payment_required';
+          return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(paid.job, version, inboundMessage, { paymentRequired: paid.paymentRequired }), id: requestId });
+        }
+        if (paid.accepted && paid.settlement) recordTelemetry({ eventType: 'settlement', endpoint: '/api/a2a', toolName: `job.${paid.job.job_type}`.slice(0, 64), paymentType: 'x402', status: 'settled', callerHash: requestCallerHash(req), amountUsd: Number(paid.job.price_usd) });
+        skillTelemetry.status = 'ok';
+        return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(paid.job, version, inboundMessage, { settlement: paid.settlement, signArtifact: (a) => deps.outputs.sign(a) }), id: requestId });
+      } catch (err) {
+        if (err && err.jobRefusal) {
+          skillTelemetry.status = err.status === 503 ? 'server_error' : err.status === 429 ? 'rate_limited' : 'client_error';
+          return jobRefusalResponse(res, err, requestId, pg1RequestId);
+        }
+        if (err && err.screeningUnavailable) {
+          skillTelemetry.status = 'server_error';
+          res.setHeader('Retry-After', '60');
+          return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, err.message, requestId, { code: 'screening_unavailable' }, pg1RequestId);
+        }
+        throw err;
+      }
+    }
     const data = extractDataPart(inboundMessage);
     if (!data) {
       return jsonRpcError(
@@ -443,6 +623,107 @@ export default async function handler(req, res) {
 
     const skill = data.skill;
     const args = (data.arguments && typeof data.arguments === 'object') ? data.arguments : {};
+
+    // P11: a caller that names its paying wallet before a quote (arguments.payer
+    // or message.metadata["pg1.payer"]) is screened first: no quote for a
+    // sanctioned wallet. The binding screen runs again on the payment itself.
+    const payerHint = (typeof args.payer === 'string' && args.payer) || (inboundMessage && inboundMessage.metadata && typeof inboundMessage.metadata['pg1.payer'] === 'string' && inboundMessage.metadata['pg1.payer']) || null;
+    if (payerHint && (skill === JOB_SKILL || skill === FOUNDRY_SKILL || A2A_PAID_SKILL_NAMES.includes(skill) || isFoundryToolName(skill))) {
+      const screened = await screenPaymentPayer(payerHint, `quote ${skill}`);
+      if (!screened.allowed) {
+        skillTelemetry = { skill, req, status: screened.refused ? 'payer_refused' : 'server_error', startedAt: Date.now(), paymentType: 'none' };
+        if (screened.unavailable) res.setHeader('Retry-After', '60');
+        return jsonRpcError(res, screened.refused ? 200 : 503, screened.refused ? PAYER_REFUSED_CODE : SERVICE_UNAVAILABLE_CODE, screened.message, requestId, { code: screened.refused ? 'payer_refused' : 'screening_unavailable' }, pg1RequestId);
+      }
+    }
+
+    // A2A jobs, step 1: submit -> validated quote (or accepted on the free tier).
+    if (skill === JOB_SKILL) {
+      skillTelemetry = { skill: JOB_SKILL, req, status: null, startedAt: Date.now(), paymentType: 'none' };
+      let creds;
+      try { creds = getSupabaseCreds(); } catch (e) { return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, 'Jobs are not available on this deployment.', requestId, undefined, pg1RequestId); }
+      const deps = jobDepsFactory(req, creds);
+      try {
+        const submitted = await submitJob({ jobType: String(args.job_type || ''), input: args.input, deps });
+        if (submitted.accepted) {
+          skillTelemetry.paymentType = 'free_tier';
+          skillTelemetry.status = 'ok';
+          return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(submitted.job, version, inboundMessage), id: requestId });
+        }
+        const gate = await deps.gate(submitted.job, undefined);
+        skillTelemetry.status = 'payment_required';
+        return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(submitted.job, version, inboundMessage, { paymentRequired: gate.paymentRequired }), id: requestId });
+      } catch (err) {
+        if (err && err.jobRefusal) {
+          skillTelemetry.status = err.status === 503 ? 'server_error' : 'invalid_input';
+          return jobRefusalResponse(res, err, requestId, pg1RequestId);
+        }
+        throw err;
+      }
+    }
+
+    // Tool Foundry (lib/foundry): build_tool requests and commissioned ft_* tools.
+    if (skill === FOUNDRY_SKILL || isFoundryToolName(skill)) {
+      skillTelemetry = { skill, req, status: null, startedAt: Date.now(), paymentType: 'none' };
+      let creds;
+      try { creds = getSupabaseCreds(); } catch (e) { return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, 'The Foundry is not available on this deployment.', requestId, undefined, pg1RequestId); }
+      const metaPayment = inboundMessage && inboundMessage.metadata && inboundMessage.metadata[X402_META.payload];
+      try {
+        if (skill === FOUNDRY_SKILL) {
+          const deps = await foundryDepsFactory(req, creds);
+          let out;
+          if (typeof args.job_id === 'string') {
+            if (metaPayment) {
+              out = await payBuild(args.job_id, { screen: payerScreen({ supUrl: creds.supUrl, supKey: creds.supKey, notify: notifyOperator, context: 'foundry build' }), ...deps, gate: (job) => runPricedX402Gate(req, { payment: metaPayment, priceUsd: Number(job.build_fee_usd), description: `PG1 Foundry build fee: ft_${job.spec.name}` }), subscriberHash: payerHash });
+              if (out.settlement) skillTelemetry.paymentType = 'x402';
+            } else {
+              const job = await deps.store.getJob(args.job_id);
+              if (!job) throw new FoundryRefusal('No such Foundry job.', { status: 404, code: 'not_found' });
+              out = { job: await refreshBuild(job, deps) };
+              if (['quoted', 'counter_offer'].includes(out.job.status)) out.paymentRequired = (await runPricedX402Gate(req, { priceUsd: Number(out.job.build_fee_usd), description: `PG1 Foundry build fee: ft_${out.job.spec.name}` })).paymentRequired;
+            }
+          } else {
+            const job = await submitBuild({ spec: args.spec, offer: args.offer, visibility: args.visibility || 'private' }, deps);
+            out = { job };
+            if (['quoted', 'counter_offer'].includes(job.status)) out.paymentRequired = (await runPricedX402Gate(req, { priceUsd: Number(job.build_fee_usd), description: `PG1 Foundry build fee: ft_${job.spec.name}` })).paymentRequired;
+          }
+          skillTelemetry.status = 'ok';
+          return res.status(200).json({ jsonrpc: '2.0', result: foundryTask(out.job, version, inboundMessage, { paymentRequired: out.paymentRequired, settlement: out.settlement, tool: out.tool }), id: requestId });
+        }
+        const store = createFoundryStore({ supUrl: creds.supUrl, supKey: creds.supKey });
+        const called = await callFoundryTool({ name: skill, args, toolKey: req.headers[TOOL_KEY_HEADER] || null }, {
+          store,
+          gate: (priceUsd, description) => runPricedX402Gate(req, { payment: metaPayment || undefined, priceUsd, description }),
+          paymentOffered: !!(metaPayment || req.headers['payment-signature'] || req.headers['x-payment']),
+          subscriberHash: payerHash,
+          runTool: internalRunTool,
+          screen: payerScreen({ supUrl: creds.supUrl, supKey: creds.supKey, notify: notifyOperator, context: 'foundry tool call' })
+        });
+        if (called.paymentRequired) {
+          skillTelemetry.status = 'payment_required';
+          return res.status(200).json({ jsonrpc: '2.0', result: paymentRequiredTask(skill, args, called.paymentRequired, version, inboundMessage), id: requestId });
+        }
+        skillTelemetry.paymentType = 'x402';
+        skillTelemetry.status = called.result.status === 'unknown' && called.result.checks.some((c) => c.result !== 'ok') ? 'upstream_error' : 'ok';
+        const paymentMetadata = called.settlement ? { [X402_META.status]: 'payment-completed', [X402_META.receipts]: [called.settlement] } : undefined;
+        return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, args, { ...called.result, request_id: pg1RequestId }, version, inboundMessage, { paymentMetadata }), id: requestId });
+      } catch (err) {
+        if (err && (err.foundryRefusal || err.foundryCall)) {
+          skillTelemetry.status = err.status >= 500 ? 'server_error' : 'invalid_input';
+          return jsonRpcError(res, 200, err.status === 404 ? A2A_ERROR_CODES.TaskNotFoundError : -32602, err.message, requestId, { code: err.code, ...(err.data || {}) }, pg1RequestId);
+        }
+        if (err && err.mcpToolError) {
+          skillTelemetry.status = 'invalid_input';
+          return jsonRpcError(res, 200, -32602, err.message, requestId, { code: err.code }, pg1RequestId);
+        }
+        if (err && err.screeningUnavailable) {
+          skillTelemetry.status = 'server_error';
+          res.setHeader('Retry-After', '60');
+          return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, err.message, requestId, { code: 'screening_unavailable' }, pg1RequestId);
+        }
+        throw err;
+      }
+    }
 
     if (typeof skill !== 'string' || !A2A_SKILL_NAMES.includes(skill)) {
       if (typeof skill === 'string' && skill) skillTelemetry = { skill, req, unknown: true, startedAt: Date.now() };
@@ -488,6 +769,11 @@ export default async function handler(req, res) {
         res.setHeader('Retry-After', '5');
         recordToolError(`/api/a2a:${skill}`, 503, `${skill}_license_verification_unavailable`, 'upstream', pg1RequestId);
         return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, 'License verification temporarily unavailable, please retry.', requestId, undefined, pg1RequestId);
+      }
+      if (gate.payerRefused || gate.screeningUnavailable) {
+        skillTelemetry.status = gate.payerRefused ? 'payer_refused' : 'server_error';
+        if (gate.screeningUnavailable) res.setHeader('Retry-After', '60');
+        return jsonRpcError(res, gate.payerRefused ? 200 : 503, gate.payerRefused ? PAYER_REFUSED_CODE : SERVICE_UNAVAILABLE_CODE, gate.message, requestId, { code: gate.payerRefused ? 'payer_refused' : 'screening_unavailable' }, pg1RequestId);
       }
       if (gate.freeTierRemaining !== undefined) setFreeTierHeaders(res, gate.freeTierRemaining);
       if (gate.licenseError) {

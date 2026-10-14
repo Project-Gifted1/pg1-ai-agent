@@ -67,6 +67,18 @@
 <tr><td><code>PACKAGE_KNOWN_VULNERABILITIES</code></td><td>Informational</td><td>The version checked has known vulnerabilities in the advisory databases checked.</td></tr>
 <tr><td><code>PACKAGE_DEPRECATED</code></td><td>Informational</td><td>The version checked is marked deprecated by its publisher.</td></tr>
 <tr><td><code>PACKAGE_INSTALL_SCRIPTS</code></td><td>Informational</td><td>The version checked runs scripts when it is installed (preinstall, install or postinstall).</td></tr>
+<tr><td><code>X402_NO_PAYMENT_REQUEST</code></td><td>Incomplete</td><td>The URL did not answer with an x402 payment request, so its payment terms could not be checked.</td></tr>
+<tr><td><code>X402_UNKNOWN_NETWORK</code></td><td>Warning</td><td>The payment request names a network that is not a known x402 settlement network.</td></tr>
+<tr><td><code>X402_UNKNOWN_ASSET</code></td><td>Warning</td><td>The payment request asks for an asset that is not the known USDC contract on its network.</td></tr>
+<tr><td><code>ENDPOINT_TLS_FAILED</code></td><td>Warning</td><td>The endpoint could not be reached over HTTPS with a valid certificate.</td></tr>
+<tr><td><code>WALLET_NEW_7D</code></td><td>Informational</td><td>The receiving wallet&#39;s first on-chain activity was fewer than 7 days ago.</td></tr>
+<tr><td><code>AGENT_CARD_NOT_FOUND</code></td><td>Incomplete</td><td>No agent card was found at the domain&#39;s /.well-known/agent-card.json.</td></tr>
+<tr><td><code>AGENT_CARD_INVALID</code></td><td>Warning</td><td>The agent card is not a valid A2A agent card (required fields missing or malformed).</td></tr>
+<tr><td><code>AGENT_CARD_NAME_IMPERSONATION</code></td><td>Warning</td><td>The agent card&#39;s name claims a well-known brand that the domain does not belong to.</td></tr>
+<tr><td><code>PREFLIGHT_CHECK_INCOMPLETE</code></td><td>Incomplete</td><td>At least one of the checks this decision needs did not finish, so the decision is unknown.</td></tr>
+<tr><td><code>HOSTING_REQUEST_REFUSED</code></td><td>Warning</td><td>The hosting request asks for something PG1 does not advise on (lawful use only); the refusal names the lawful alternative.</td></tr>
+<tr><td><code>HOSTING_FACTS_STALE</code></td><td>Informational</td><td>Some facts behind this hosting advice were last checked more than 180 days ago.</td></tr>
+<tr><td><code>HOSTING_FACTS_UNVERIFIED</code></td><td>Informational</td><td>Some facts behind this hosting advice are not yet verified against their cited source.</td></tr>
 </tbody>
 </table></div>
 <h2 id="how-codes-affect-status">How codes affect status</h2>
@@ -82,7 +94,7 @@
 <li>A response&#39;s <code>message</code> can be more specific than the meaning above (for example, it may include a count). Match on <code>code</code>, never on <code>message</code>.</li>
 </ul>
 <h2 id="test-inputs">Test inputs</h2>
-<p>Fixed test inputs, free for every caller, are listed on <a href="/docs/testing">Test your integration</a>. They return <code>WALLET_SANCTIONED</code>, <code>DOMAIN_NEWLY_REGISTERED_30D</code>, <code>HOSTNAME_PHISHING_LISTED</code>, <code>HOSTNAME_LOOKALIKE</code>, <code>WALLET_NO_HISTORY</code>, <code>CVE_KNOWN_EXPLOITED_KEV</code>, <code>IOC_FOUND_IN_THREAT_FEED</code>, <code>WALLET_DELEGATED</code>, <code>IP_ABUSE_REPORTED</code>, <code>PACKAGE_REPORTED_MALICIOUS</code>, <code>PACKAGE_NOT_FOUND</code> and <code>PACKAGE_NEWLY_PUBLISHED</code> without a live lookup. No test input returns <code>WALLET_AGE_PARTIAL</code>, <code>IP_TOR_EXIT_NODE</code>, <code>IP_WHITELISTED</code>, <code>IP_REPORTS_SCORED_ZERO</code>, <code>PACKAGE_VERSION_NOT_FOUND</code>, <code>PACKAGE_NEW_LOOKALIKE</code>, <code>PACKAGE_LOOKALIKE</code>, <code>PACKAGE_KNOWN_VULNERABILITIES</code>, <code>PACKAGE_DEPRECATED</code> or <code>PACKAGE_INSTALL_SCRIPTS</code>.</p>
+<p>Fixed test inputs, free for every caller, are listed on <a href="/docs/testing">Test your integration</a>. They return <code>WALLET_SANCTIONED</code>, <code>DOMAIN_NEWLY_REGISTERED_30D</code>, <code>HOSTNAME_PHISHING_LISTED</code>, <code>HOSTNAME_LOOKALIKE</code>, <code>WALLET_NO_HISTORY</code>, <code>CVE_KNOWN_EXPLOITED_KEV</code>, <code>IOC_FOUND_IN_THREAT_FEED</code>, <code>WALLET_DELEGATED</code>, <code>IP_ABUSE_REPORTED</code>, <code>PACKAGE_REPORTED_MALICIOUS</code>, <code>PACKAGE_NOT_FOUND</code> and <code>PACKAGE_NEWLY_PUBLISHED</code> without a live lookup. No test input returns <code>WALLET_AGE_PARTIAL</code>, <code>IP_TOR_EXIT_NODE</code>, <code>IP_WHITELISTED</code>, <code>IP_REPORTS_SCORED_ZERO</code>, <code>PACKAGE_VERSION_NOT_FOUND</code>, <code>PACKAGE_NEW_LOOKALIKE</code>, <code>PACKAGE_LOOKALIKE</code>, <code>PACKAGE_KNOWN_VULNERABILITIES</code>, <code>PACKAGE_DEPRECATED</code>, <code>PACKAGE_INSTALL_SCRIPTS</code>, <code>X402_NO_PAYMENT_REQUEST</code>, <code>X402_UNKNOWN_NETWORK</code>, <code>X402_UNKNOWN_ASSET</code>, <code>ENDPOINT_TLS_FAILED</code>, <code>WALLET_NEW_7D</code>, <code>AGENT_CARD_NOT_FOUND</code>, <code>AGENT_CARD_INVALID</code>, <code>AGENT_CARD_NAME_IMPERSONATION</code>, <code>PREFLIGHT_CHECK_INCOMPLETE</code>, <code>HOSTING_REQUEST_REFUSED</code>, <code>HOSTING_FACTS_STALE</code> or <code>HOSTING_FACTS_UNVERIFIED</code>.</p>
   </article>
 
   <footer>

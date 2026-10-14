@@ -67,7 +67,7 @@ test('llms.txt has a short "Integration guides" section linking the guide', () =
 
 test('agent card documentationUrl points to the guide; nothing else in the card changes', () => {
   assert.equal(CARD.documentationUrl, GUIDE_URL);
-  assert.equal(CARD.version, '1.17.0');
+  assert.equal(CARD.version, '1.19.0');
   assert.doesNotMatch(CARD.description, /docs\/crypto-alert-bot/, 'the spec field carries the link; the description stays as is');
 });
 
@@ -75,12 +75,12 @@ test('openapi.json externalDocs points to the guide', () => {
   assert.equal(OPENAPI.externalDocs.url, GUIDE_URL);
   assert.equal(typeof OPENAPI.externalDocs.description, 'string');
   noVendorNames('openapi.json externalDocs', OPENAPI.externalDocs.description);
-  assert.equal(OPENAPI.info.version, '1.17.0');
+  assert.equal(OPENAPI.info.version, '1.19.0');
 });
 
 test('package version is unchanged; server version is the 1.17.0 release', () => {
   assert.equal(JSON.parse(read('package.json')).version, '1.0.3');
-  assert.equal(JSON.parse(read('server.json')).version, '1.17.0');
+  assert.equal(JSON.parse(read('server.json')).version, '1.19.0');
 });
 
 // 1.17.0 (check_package) changes server.json's version and description;
@@ -89,11 +89,14 @@ const SERVER_DESCRIPTION_1_15 = 'Threat intel for AI agents: IOCs, CVEs (EPSS/KE
 // Phase 2 dropped "IOCs": the feed holds only NVD CVE records since the
 // licensing gate (tests/feed-description.test.mjs).
 const SERVER_DESCRIPTION_1_17 = 'Threat intel for AI agents: CVEs, wallet sanctions/age, domain, IP abuse and package checks.';
+const SERVER_DESCRIPTION_1_18 = 'Preflight for AI agents, signed: one call; wallet, domain, IP abuse, package checks and CVEs.';
 
-test('server.json is byte-identical to the 1.15.0 release except the version (1.17.0) and description', () => {
+test('server.json is byte-identical to the 1.15.0 release except the version (1.18.0) and description', () => {
   const raw = fs.readFileSync(path.join(ROOT, 'server.json'), 'utf8');
-  assert.equal(JSON.parse(raw).description, SERVER_DESCRIPTION_1_17);
-  const reverted = raw.replace('"version": "1.17.0"', '"version": "1.15.0"').replace(SERVER_DESCRIPTION_1_17, SERVER_DESCRIPTION_1_15);
+  // 1.18.0 (P8) leads with preflight; 1.17.0's description is kept above for the record.
+  assert.equal(JSON.parse(raw).description, SERVER_DESCRIPTION_1_18);
+  assert.ok(SERVER_DESCRIPTION_1_17);
+  const reverted = raw.replace('"version": "1.19.0"', '"version": "1.15.0"').replace(SERVER_DESCRIPTION_1_18, SERVER_DESCRIPTION_1_15);
   assert.equal(sha256(reverted), 'f0888cac3c000b2a8e6beded4cdfdbf8426c044ba787f48f2f57245df42d4137');
 });
 
@@ -106,8 +109,10 @@ test('server.json description: within the Registry\'s 100-character limit, names
 });
 
 test('MCP tool names, descriptions and schemas are identical to the 1.15.0 release (plus check_ip_abuse, 1.16.0, check_package, 1.17.0, and the licensing gate\'s three indicator-source descriptions)', () => {
-  assert.equal(TOOLS.length, 16);
-  assert.equal(TOOLS[14].name, 'check_ip_abuse');
-  assert.equal(TOOLS[15].name, 'check_package');
-  assert.equal(sha256(JSON.stringify(TOOLS.slice(0, 14))), '206a7a24b7e82a2b077b432a032b4f50161cc6128ae12e50da7fc132a10cf200');
+  // P8 (1.18.0) added four tools at the front; the older list is unchanged.
+  const LEGACY = TOOLS.filter((t) => !['preflight_check', 'check_x402_endpoint', 'check_agent_card', 'verify_result', 'hosting_advisor'].includes(t.name));
+  assert.equal(LEGACY.length, 16);
+  assert.equal(LEGACY[14].name, 'check_ip_abuse');
+  assert.equal(LEGACY[15].name, 'check_package');
+  assert.equal(sha256(JSON.stringify(LEGACY.slice(0, 14))), '206a7a24b7e82a2b077b432a032b4f50161cc6128ae12e50da7fc132a10cf200');
 });

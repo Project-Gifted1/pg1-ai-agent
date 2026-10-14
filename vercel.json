@@ -8,7 +8,10 @@
     { "source": "/docs/reason-codes", "destination": "/docs/reason-codes/index.html" },
     { "source": "/docs/testing", "destination": "/docs/testing/index.html" },
     { "source": "/docs/agents", "destination": "/docs/agents/index.html" },
-    { "source": "/docs/attributions", "destination": "/docs/attributions/index.html" }
+    { "source": "/docs/attributions", "destination": "/docs/attributions/index.html" },
+    { "source": "/docs/screening", "destination": "/docs/screening/index.html" },
+    { "source": "/.well-known/pg1-signing-key", "destination": "/api/signing-key" },
+    { "source": "/status", "destination": "/api/status" }
   ],
   "crons": [
     {
@@ -18,6 +21,22 @@
     {
       "path": "/api/errors/cleanup",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/flags/monitor",
+      "schedule": "17 * * * *"
+    },
+    {
+      "path": "/api/opportunities/weekly",
+      "schedule": "41 6 * * 1"
+    },
+    {
+      "path": "/api/watchlists/recheck",
+      "schedule": "23 */6 * * *"
+    },
+    {
+      "path": "/api/sanctions/sync-eu",
+      "schedule": "37 4 * * *"
     }
   ],
   "headers": [
@@ -77,6 +96,15 @@
     },
     {
       "source": "/docs/attributions",
+      "headers": [
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "X-Frame-Options", "value": "DENY" }
+      ]
+    },
+    {
+      "source": "/docs/screening",
       "headers": [
         { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'" },
         { "key": "X-Content-Type-Options", "value": "nosniff" },
@@ -201,7 +229,16 @@
       ]
     },
     {
-      "source": "/api/:path((?!chat$|errors$|errors/cleanup$|handoffs$|threads$|playground$|video-render$|mcp$|a2a$).*)",
+      "source": "/api/(preflight|watchlists)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,POST,DELETE" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Accept, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier" },
+        { "key": "Access-Control-Expose-Headers", "value": "PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Free-Tier-Limit, X-Free-Tier-Remaining, X-Request-Id" }
+      ]
+    },
+    {
+      "source": "/api/:path((?!chat$|errors$|errors/cleanup$|handoffs$|threads$|playground$|video-render$|mcp$|a2a$|preflight$|watchlists$).*)",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },

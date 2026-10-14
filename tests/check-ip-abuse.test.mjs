@@ -49,6 +49,9 @@ const KEY_A = hex80('customer-a');
 const KEY_B = hex80('customer-b');
 
 const PUBLIC_IP = '8.8.8.8';
+// P8 (1.18.0) added four tools at the front; the older list is checked as it was.
+const P8_TOOLS = ['preflight_check', 'check_x402_endpoint', 'check_agent_card', 'verify_result', 'hosting_advisor'];
+const LEGACY_TOOLS = TOOLS.filter((t) => !P8_TOOLS.includes(t.name));
 const tool = TOOLS.find((t) => t.name === 'check_ip_abuse');
 
 // Synthetic upstream body, labelled as such. Never real AbuseIPDB data.
@@ -191,13 +194,13 @@ beforeEach(() => {
 test('the 14 pre-existing MCP tools are byte-identical to the snapshot (names, descriptions, schemas, order)', () => {
   const snapshot = JSON.parse(fs.readFileSync(path.join(ROOT, 'tests/fixtures/existing-14-tools-snapshot.json'), 'utf8'));
   assert.equal(snapshot.length, 14);
-  assert.deepEqual(TOOLS.slice(0, 14), snapshot);
+  assert.deepEqual(LEGACY_TOOLS.slice(0, 14), snapshot);
   // 16 since check_package (1.17.0), after check_ip_abuse.
-  assert.equal(TOOLS.length, 16);
-  assert.equal(TOOLS[14].name, 'check_ip_abuse');
-  assert.equal(TOOLS[15].name, 'check_package');
+  assert.equal(LEGACY_TOOLS.length, 16);
+  assert.equal(LEGACY_TOOLS[14].name, 'check_ip_abuse');
+  assert.equal(LEGACY_TOOLS[15].name, 'check_package');
   assert.equal(new Set(TOOLS.map((t) => t.name)).size, TOOLS.length, 'no name clash');
-  const sha = crypto.createHash('sha256').update(JSON.stringify(TOOLS.slice(0, 14))).digest('hex');
+  const sha = crypto.createHash('sha256').update(JSON.stringify(LEGACY_TOOLS.slice(0, 14))).digest('hex');
   assert.equal(sha, '206a7a24b7e82a2b077b432a032b4f50161cc6128ae12e50da7fc132a10cf200');
 });
 
@@ -205,7 +208,7 @@ test('the 5 pre-existing A2A skills are unchanged; check_ip_abuse is added as th
   const names = A2A_SKILL_TOOLS.map((t) => t.name);
   // Phase 2 added the paid skills (tests/phase2-funnel.test.mjs).
   const paid = ['get_cve_details', 'get_cve_batch', 'get_cve_by_product', 'get_threat_actor_profile'];
-  assert.deepEqual(names.filter((n) => n !== 'check_ip_abuse' && n !== 'check_package' && !paid.includes(n)).sort(), ['check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_wallet_sanctions', 'get_usage_status']);
+  assert.deepEqual(names.filter((n) => n !== 'check_ip_abuse' && n !== 'check_package' && !paid.includes(n) && !P8_TOOLS.includes(n)).sort(), ['check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_wallet_sanctions', 'get_usage_status']);
   assert.ok(names.includes('check_ip_abuse'));
   assert.equal(A2A_SKILL_TOOLS.find((t) => t.name === 'check_ip_abuse'), tool);
 });
@@ -841,17 +844,17 @@ test('CORS: X-AbuseIPDB-Key is allowed on /api/mcp and /api/a2a only', async () 
 test('version 1.17.0 (check_package, after check_ip_abuse shipped in 1.16.0) on /api/mcp (GET + serverInfo), /api/a2a GET, server.json, agent card, openapi', async () => {
   const get = makeRes();
   await mcpHandler({ method: 'GET', headers: {} }, get);
-  assert.equal(get.body.version, '1.17.0');
+  assert.equal(get.body.version, '1.19.0');
   const init = makeRes();
   await mcpHandler({ method: 'POST', headers: {}, body: { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} } }, init);
-  assert.equal(init.body.result.serverInfo.version, '1.17.0');
+  assert.equal(init.body.result.serverInfo.version, '1.19.0');
   const a2aGet = makeRes();
   await a2aHandler({ method: 'GET', headers: {}, query: {} }, a2aGet);
-  assert.equal(a2aGet.body.version, '1.17.0');
+  assert.equal(a2aGet.body.version, '1.19.0');
   const read = (rel) => JSON.parse(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
-  assert.equal(read('server.json').version, '1.17.0');
-  assert.equal(read('public/.well-known/agent-card.json').version, '1.17.0');
-  assert.equal(read('public/openapi.json').info.version, '1.17.0');
+  assert.equal(read('server.json').version, '1.19.0');
+  assert.equal(read('public/.well-known/agent-card.json').version, '1.19.0');
+  assert.equal(read('public/openapi.json').info.version, '1.19.0');
 });
 
 test('docs: agent card skill, llms.txt and README carry the bring-your-own-key section with a header curl example', () => {

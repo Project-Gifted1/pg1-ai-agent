@@ -382,6 +382,39 @@ test('every source file that calls Gemini is one these tests drive', () => {
     .filter((f) => readFileSync(f, 'utf8').includes(GEMINI_HOST))
     .map((f) => f.slice(ROOT.length + 1))
     .sort();
-  assert.deepEqual(callers, ['api/chat.mjs', 'api/lib/gemini-client.js', 'index.js', 'lib/film/providers.mjs', 'lib/imageEngines.mjs', 'lib/ttsRouter.mjs', 'lib/videoJobs.mjs'],
+  assert.deepEqual(callers, ['api/chat.mjs', 'api/lib/gemini-client.js', 'index.js', 'lib/a2aJobs/service.mjs', 'lib/contextWindow.mjs', 'lib/film/providers.mjs', 'lib/imageEngines.mjs', 'lib/lab/policy.mjs', 'lib/lab/runner.mjs', 'lib/ttsRouter.mjs', 'lib/videoJobs.mjs'],
     'a new Gemini call site: drive it through geminiStub above');
+});
+
+// TASK STATE (lib/contextWindow.mjs cheapModelCaller): the free-key calls
+// that update the task state and fold older turns into the summary.
+test('the task-state and rolling-summary calls on the free key carry no sampling parameter', async () => {
+  process.env.GEMINI_API_KEY_FREE = 'AIzaStubFreeKeyForTaskStateTests0000000000';
+  process.env.PG1_CONTEXT_RECENT_TOKENS = '200';
+  try {
+    const stub = geminiStub((u, body) => {
+      const sys = systemOf(body);
+      if (/^You keep a short task state/.test(sys)) return Response.json(text('{"goal":"Edit the promo film","constraints_add":[],"decisions_add":[],"open_add":[],"open_done":[]}'));
+      if (/^You maintain a rolling summary/.test(sys)) return Response.json(text('- The operator is editing a promo film.'));
+      return reply(u, 200, text('Done.'));
+    });
+    globalThis.fetch = stub.fetch;
+    const long = 'x'.repeat(600);
+    const history = [
+      { role: 'user', text: `make a promo film ${long}` }, { role: 'model', text: `Storyboard ready ${long}` },
+      { role: 'user', text: 'trim shot 2' }, { role: 'model', text: 'Trimmed.' },
+      { role: 'user', text: 'what next?' }
+    ];
+    const res = await chat({ prompt: 'what next?', history });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.jsonBody.taskState.goal, 'Edit the promo film');
+    assert.match(res.jsonBody.contextSummary.text, /promo film/);
+    assertClean(stub, 'task state + summary + reply', 3);
+    const cheap = stub.requests.filter((r) => /^You (?:keep a short task state|maintain a rolling summary)/.test(systemOf(r.body)));
+    assert.equal(cheap.length, 2, 'one task-state call and one summary fold');
+    for (const r of cheap) assert.equal(new URL(r.url).searchParams.get('key'), null, 'the key goes in a header, never the URL');
+  } finally {
+    delete process.env.GEMINI_API_KEY_FREE;
+    delete process.env.PG1_CONTEXT_RECENT_TOKENS;
+  }
 });

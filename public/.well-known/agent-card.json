@@ -1,8 +1,8 @@
 {
   "protocolVersion": "0.3.0",
   "name": "PG1 Sovereign Threat Intelligence",
-  "description": "Threat intelligence agent for AI agents and security tooling: wallet sanctions screening, domain age lookups, hostname/phishing reputation checks, wallet age/history checks, free-tier usage status, bring-your-own-key AbuseIPDB IP lookups (your own AbuseIPDB key in the X-AbuseIPDB-Key header), and pre-install npm/PyPI package checks, all free. Paid skills: CVE enrichment (single, batch, by product) and MITRE ATT&CK threat actor dossiers, 0.01 USD per call via x402 (a2a-x402 extension: the PaymentPayload in message.metadata[\"x402.payment.payload\"]), a Gumroad licence key in X-API-KEY, after 5 free calls a day per caller (automatic; shared with the MCP server at /api/mcp; X-Free-Tier: 0 skips them). The NVD CVE feed (free while it holds no current data) and the record lookups stay on /api/mcp and /api/ioc.",
-  "version": "1.17.0",
+  "description": "Threat intelligence agent for AI agents and security tooling: wallet sanctions screening, domain age lookups, hostname/phishing reputation checks, wallet age/history checks, free-tier usage status, bring-your-own-key AbuseIPDB IP lookups (your own AbuseIPDB key in the X-AbuseIPDB-Key header), and pre-install npm/PyPI package checks, all free. Paid skills: CVE enrichment (single, batch, by product) and MITRE ATT&CK threat actor dossiers, 0.01 USD per call via x402 (a2a-x402 extension: the PaymentPayload in message.metadata[\"x402.payment.payload\"]), a Gumroad licence key in X-API-KEY, after 5 free calls a day per caller (automatic; shared with the MCP server at /api/mcp; X-Free-Tier: 0 skips them). The NVD CVE feed (free while it holds no current data) and the record lookups stay on /api/mcp and /api/ioc. Paid jobs: batch wallet screens (up to 500), CVE exposure reports (PDF + JSON), hostname/package batch checks (up to 200) and threat write-up PDFs, quoted then paid over a2a-x402 (submit_job).",
+  "version": "1.19.0",
   "documentationUrl": "https://pg1-ai-agent.vercel.app/docs/crypto-alert-bot",
   "url": "https://pg1-ai-agent.vercel.app/api/a2a",
   "preferredTransport": "JSONRPC",
@@ -38,53 +38,153 @@
       "description": "Your own AbuseIPDB API key (free or paid), used only by the check_ip_abuse skill and only for your own request. PG1 has no AbuseIPDB key of its own. Never send it as a skill argument."
     }
   },
-  "defaultInputModes": ["application/json"],
-  "defaultOutputModes": ["application/json"],
+  "defaultInputModes": [
+    "application/json"
+  ],
+  "defaultOutputModes": [
+    "application/json"
+  ],
   "skills": [
+    {
+      "id": "preflight_check",
+      "name": "preflight_check",
+      "description": "One call before an agent acts. Give the action (pay, open, install, patch, trust_agent) and its target; PG1 runs every relevant check in parallel and returns one decision: no_flags, flagged or unknown, with merged reasons, per-check results and latency. Fail closed: a check that does not finish makes the decision unknown, never no_flags. Paid: 0.01 USD via x402 or a licence key, after the shared 5/day free tier (automatic). Results are signed (metadata[\"pg1.signature\"]).",
+      "tags": [
+        "threat-intelligence",
+        "paid",
+        "preflight",
+        "agent-safety"
+      ],
+      "examples": [
+        "Preflight: I am about to pay 0x1234... on Base.",
+        "Preflight: I am about to install the npm package left-pad@1.3.0."
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
+    },
+    {
+      "id": "hosting_advisor",
+      "name": "hosting_advisor",
+      "description": "Ranked hosting regions and providers for a workload, with cited reasons: data-protection regime, published government data-access frameworks, provider acceptable-use fit, sanctions and export-control compliance, estimated latency, a redundancy and resilience plan, and privacy-by-design guidance. Structured input; stale or unverified facts are flagged. Not legal advice; lawful use only. Paid: 0.01 USD via x402 or a licence key, after the shared 5/day free tier (automatic).",
+      "tags": [
+        "hosting",
+        "privacy",
+        "compliance",
+        "paid"
+      ],
+      "examples": [
+        "Where should I host an API for EU users with high privacy needs and a $100/month budget?"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
+    },
     {
       "id": "check_wallet_sanctions",
       "name": "check_wallet_sanctions",
       "description": "Checks a cryptocurrency wallet address against the OFAC SDN (Specially Designated Nationals) sanctions list, synced daily from US Treasury data. Always free. Returns listed/matches/source/list_last_synced; informational only, never phrased as \"safe\" or \"clean\".",
-      "tags": ["threat-intelligence", "sanctions", "wallet", "crypto"],
-      "examples": ["Is wallet 0x1234...abcd on the OFAC sanctions list?"],
-      "inputModes": ["application/json"],
-      "outputModes": ["application/json"]
+      "tags": [
+        "threat-intelligence",
+        "sanctions",
+        "wallet",
+        "crypto"
+      ],
+      "examples": [
+        "Is wallet 0x1234...abcd on the OFAC sanctions list?"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
     },
     {
       "id": "check_domain_age",
       "name": "check_domain_age",
       "description": "Looks up a domain's registration age via RDAP (the IANA-standardized WHOIS successor). Always free. A newly registered domain (age_days < 30) is reported as a common phishing signal, not proof of malicious intent.",
-      "tags": ["threat-intelligence", "domain", "rdap", "phishing"],
-      "examples": ["How old is the domain example.com?"],
-      "inputModes": ["application/json"],
-      "outputModes": ["application/json"]
+      "tags": [
+        "threat-intelligence",
+        "domain",
+        "rdap",
+        "phishing"
+      ],
+      "examples": [
+        "How old is the domain example.com?"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
     },
     {
       "id": "check_hostname_reputation",
       "name": "check_hostname_reputation",
       "description": "Checks a single hostname against the MetaMask eth-phishing-detect blocklist/allowlist plus a lookalike/typosquat detector, synced daily. Always free; rate-limited to 60 calls/hour per caller without a Gumroad license key (X-API-KEY exempts the limit).",
-      "tags": ["threat-intelligence", "phishing", "hostname", "lookalike"],
-      "examples": ["Is metamask-login.com a known phishing or lookalike domain?"],
-      "inputModes": ["application/json"],
-      "outputModes": ["application/json"]
+      "tags": [
+        "threat-intelligence",
+        "phishing",
+        "hostname",
+        "lookalike"
+      ],
+      "examples": [
+        "Is metamask-login.com a known phishing or lookalike domain?"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
     },
     {
       "id": "check_wallet_age",
       "name": "check_wallet_age",
       "description": "Reports when an EVM wallet address first appeared on a given chain, based on its earliest on-chain transfer history (in or out), plus whether it's a contract. Always free; rate-limited to 60 calls/hour per caller without a Gumroad license key (X-API-KEY exempts the limit). Reports age and history only — never a claim that an address is safe.",
-      "tags": ["threat-intelligence", "wallet", "crypto", "age"],
-      "examples": ["When did wallet 0x1234...abcd first appear on Base?"],
-      "inputModes": ["application/json"],
-      "outputModes": ["application/json"]
+      "tags": [
+        "threat-intelligence",
+        "wallet",
+        "crypto",
+        "age"
+      ],
+      "examples": [
+        "When did wallet 0x1234...abcd first appear on Base?"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
     },
     {
       "id": "check_ip_abuse",
       "name": "check_ip_abuse",
       "description": "Bring your own AbuseIPDB key: looks up one public IPv4 or IPv6 address in AbuseIPDB with YOUR OWN AbuseIPDB API key, sent in the X-AbuseIPDB-Key request header (never as a skill argument). Returns abuse_confidence_score, total_reports, distinct_reporters, last_reported_at, country_code, usage_type, isp, domain, is_tor and is_whitelisted, with attribution (Data from AbuseIPDB, https://www.abuseipdb.com/check/<ip>). No PG1 charge: it uses your own AbuseIPDB quota; 60 calls/hour per caller without a Gumroad license key. Without the header it returns abuseipdb_key_required and AbuseIPDB is not contacted. Status follows AbuseIPDB's own judgement: a whitelisted address is no_flags (informational IP_WHITELISTED); otherwise abuse_confidence_score above 0 is flagged (IP_ABUSE_REPORTED); reports scored 0 are no_flags (informational IP_REPORTS_SCORED_ZERO). A score of 0 is not proof the address is harmless.",
-      "tags": ["threat-intelligence", "ip", "abuse-reports", "bring-your-own-key"],
-      "examples": ["How many abuse reports does 8.8.8.8 have in AbuseIPDB (with my own key)?"],
-      "inputModes": ["application/json"],
-      "outputModes": ["application/json"],
+      "tags": [
+        "threat-intelligence",
+        "ip",
+        "abuse-reports",
+        "bring-your-own-key"
+      ],
+      "examples": [
+        "How many abuse reports does 8.8.8.8 have in AbuseIPDB (with my own key)?"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ],
       "security": [
         {
           "abuseipdbKey": []
@@ -95,55 +195,494 @@
       "id": "check_package",
       "name": "check_package",
       "description": "Check before you install: a pre-install check of one npm or PyPI package. Always free, no AI model; rate-limited to 60 calls/hour per caller without a Gumroad license key (X-API-KEY exempts the limit). Reports whether the package (and version) exists, first and latest publish dates, public malicious-package reports and known vulnerabilities (ids and severity) for the version checked, whether the name looks like a popular package's, and for npm the deprecated flag and install scripts. Flagged when the version is reported malicious (such reports can be false positives), the package or version does not exist, or the package is under 30 days old with a look-alike name; unknown when a lookup did not complete; never \"safe\" or \"clean\". Data sources and licences: https://pg1-ai-agent.vercel.app/docs/attributions",
-      "tags": ["supply-chain", "packages", "npm", "pypi", "typosquatting"],
-      "examples": ["Does the npm package 'expresss' exist, and does its name imitate a popular package?", "Check the PyPI package requests version 2.31.0 before I install it."],
-      "inputModes": ["application/json"],
-      "outputModes": ["application/json"]
+      "tags": [
+        "supply-chain",
+        "packages",
+        "npm",
+        "pypi",
+        "typosquatting"
+      ],
+      "examples": [
+        "Does the npm package 'expresss' exist, and does its name imitate a popular package?",
+        "Check the PyPI package requests version 2.31.0 before I install it."
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
+    },
+    {
+      "id": "check_x402_endpoint",
+      "name": "check_x402_endpoint",
+      "description": "Check an x402 endpoint before paying it: reads its 402 payment request, then screens payTo against the sanctions list and its on-chain age, checks the network and asset are known, the TLS connection and the domain age. Always free, 60 calls/hour per caller. https URLs only; private addresses and redirects are refused.",
+      "tags": [
+        "x402",
+        "payments",
+        "agent-safety",
+        "sanctions"
+      ],
+      "examples": [
+        "Is it safe to pay https://api.example.com/paid-endpoint?"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
+    },
+    {
+      "id": "check_agent_card",
+      "name": "check_agent_card",
+      "description": "Check another agent before trusting it: fetches its A2A agent card, validates the schema, flags a name that claims a brand its domain does not belong to, and checks the domain's age and reputation. Always free, 60 calls/hour per caller.",
+      "tags": [
+        "a2a",
+        "agent-safety",
+        "impersonation"
+      ],
+      "examples": [
+        "Check the agent at https://agent.example.com"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
+    },
+    {
+      "id": "verify_result",
+      "name": "verify_result",
+      "description": "Verify a PG1 result's Ed25519 signature against PG1's published keys (/.well-known/pg1-signing-key). Always free. Give result and signature, and optionally the tool and arguments it answered.",
+      "tags": [
+        "signatures",
+        "verification"
+      ],
+      "examples": [
+        "Verify this PG1 result and its signature."
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
     },
     {
       "id": "get_usage_status",
       "name": "get_usage_status",
       "description": "Returns your remaining free-tier calls for today and current Gumroad license status. Always free.",
-      "tags": ["account", "usage", "quota"],
-      "examples": ["How many free-tier calls do I have left today?"],
-      "inputModes": ["application/json"],
-      "outputModes": ["application/json"]
+      "tags": [
+        "account",
+        "usage",
+        "quota"
+      ],
+      "examples": [
+        "How many free-tier calls do I have left today?"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
     },
     {
       "id": "get_cve_details",
       "name": "get_cve_details",
       "description": "Enriched lookup of one CVE: NVD description and CVSS, CISA Known Exploited Vulnerabilities status (and the FIRST EPSS score only when PG1 serves EPSS in paid responses). Paid: 0.01 USD via x402 or a licence key, after the shared 5/day free tier (automatic).",
-      "tags": ["threat-intelligence", "paid", "cve", "vulnerability", "kev"],
-      "examples": ["Look up CVE-2021-44228"],
-      "inputModes": ["application/json"],
-      "outputModes": ["application/json"]
+      "tags": [
+        "threat-intelligence",
+        "paid",
+        "cve",
+        "vulnerability",
+        "kev"
+      ],
+      "examples": [
+        "Look up CVE-2021-44228"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
     },
     {
       "id": "get_cve_batch",
       "name": "get_cve_batch",
       "description": "The same CVE enrichment for up to 20 CVE ids in one call; malformed or unknown ids are reported per entry. Paid: 0.01 USD via x402 or a licence key, after the shared 5/day free tier (automatic).",
-      "tags": ["threat-intelligence", "paid", "cve", "vulnerability", "batch"],
-      "examples": ["Look up CVE-2021-44228 and CVE-2023-4863"],
-      "inputModes": ["application/json"],
-      "outputModes": ["application/json"]
+      "tags": [
+        "threat-intelligence",
+        "paid",
+        "cve",
+        "vulnerability",
+        "batch"
+      ],
+      "examples": [
+        "Look up CVE-2021-44228 and CVE-2023-4863"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
     },
     {
       "id": "get_cve_by_product",
       "name": "get_cve_by_product",
       "description": "CVEs affecting a vendor/product (optionally a version) from NVD keyword search, with CVSS and CISA KEV status, known-exploited first. Paid: 0.01 USD via x402 or a licence key, after the shared 5/day free tier (automatic).",
-      "tags": ["threat-intelligence", "paid", "cve", "vulnerability", "product"],
-      "examples": ["Which CVEs affect apache log4j 2.14.1?"],
-      "inputModes": ["application/json"],
-      "outputModes": ["application/json"]
+      "tags": [
+        "threat-intelligence",
+        "paid",
+        "cve",
+        "vulnerability",
+        "product"
+      ],
+      "examples": [
+        "Which CVEs affect apache log4j 2.14.1?"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
     },
     {
       "id": "get_threat_actor_profile",
       "name": "get_threat_actor_profile",
       "description": "A threat actor dossier from MITRE ATT&CK Enterprise (aliases, techniques, software), with MITRE's copyright and licence notice. Paid: 0.01 USD via x402 or a licence key, after the shared 5/day free tier (automatic).",
-      "tags": ["threat-intelligence", "paid", "threat-actor", "mitre-attack", "apt"],
-      "examples": ["Profile APT29"],
-      "inputModes": ["application/json"],
-      "outputModes": ["application/json"]
+      "tags": [
+        "threat-intelligence",
+        "paid",
+        "threat-actor",
+        "mitre-attack",
+        "apt"
+      ],
+      "examples": [
+        "Profile APT29"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
+    },
+    {
+      "id": "submit_job",
+      "name": "submit_job",
+      "description": "Submit a paid A2A job (see the job.* skills for the catalogue, each with its inputSchema and pricing). Send a DataPart {\"skill\":\"submit_job\",\"arguments\":{\"job_type\":\"<type>\",\"input\":{...}}}. PG1 validates the input, checks it is not busy (a busy agent answers 503 with Retry-After, never 402) and returns a quote as an input-required task: price, ETA, a 15-minute expiry and the x402 payment requirements at that price. Pay on the same task (message.taskId) with the PaymentPayload in message.metadata[\"x402.payment.payload\"]; payment is settled only when the job is accepted to run. Poll GetTask (tasks/get) with the task id; completed jobs carry a JSON result and, where made, a PDF, as signed links valid for 7 days. A failed job is retried once, then its price is held as credit for the paying wallet (no on-chain refund). Limits: 5 jobs per hour and 2 running at once per wallet. Jobs under 0.05 USD can use the shared 5/day free tier.",
+      "tags": [
+        "job",
+        "paid",
+        "x402"
+      ],
+      "examples": [
+        "Submit a batch_wallet_screen job for 50 wallets"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json",
+        "application/pdf"
+      ]
+    },
+    {
+      "id": "job.batch_wallet_screen",
+      "name": "Batch wallet screen",
+      "description": "Screens up to 500 EVM wallets: OFAC SDN sanctions match and on-chain age (first seen) per wallet, as one JSON report. Paid A2A job: submit with the submit_job skill ({\"skill\":\"submit_job\",\"arguments\":{\"job_type\":\"batch_wallet_screen\",\"input\":{...}}}); PG1 validates and returns a quote (price, ETA, expiry) as an input-required task with the x402 payment requirements; pay by sending the PaymentPayload in message.metadata[\"x402.payment.payload\"] with the task's taskId. Settled only when the job is accepted to run. Price: 0.013 USD for 1 item, 1.51 USD for 500. Jobs under 0.05 USD can use the shared 5/day free tier.",
+      "tags": [
+        "job",
+        "paid",
+        "x402"
+      ],
+      "examples": [
+        "Submit a batch_wallet_screen job"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "wallets": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            }
+          },
+          "chain": {
+            "type": "string",
+            "enum": [
+              "ethereum",
+              "base",
+              "arbitrum",
+              "optimism",
+              "polygon"
+            ]
+          }
+        },
+        "required": [
+          "wallets"
+        ],
+        "additionalProperties": false
+      },
+      "pricing": {
+        "currency": "USD",
+        "base_usd": 0.01,
+        "per_item_usd": 0.003,
+        "max_items": 500,
+        "eta_seconds_per_item": 0.398798
+      }
+    },
+    {
+      "id": "job.cve_exposure_report",
+      "name": "CVE exposure report",
+      "description": "For up to 25 products (vendor, product, optional version): the known CVEs from NVD with severity, as JSON and a PDF report. Paid A2A job: submit with the submit_job skill ({\"skill\":\"submit_job\",\"arguments\":{\"job_type\":\"cve_exposure_report\",\"input\":{...}}}); PG1 validates and returns a quote (price, ETA, expiry) as an input-required task with the x402 payment requirements; pay by sending the PaymentPayload in message.metadata[\"x402.payment.payload\"] with the task's taskId. Settled only when the job is accepted to run. Price: 0.06 USD for 1 item, 0.3 USD for 25. Jobs under 0.05 USD can use the shared 5/day free tier.",
+      "tags": [
+        "job",
+        "paid",
+        "x402",
+        "pdf"
+      ],
+      "examples": [
+        "Submit a cve_exposure_report job"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json",
+        "application/pdf"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "products": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 25,
+            "items": {
+              "type": "object",
+              "properties": {
+                "vendor": {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                "product": {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                "version": {
+                  "type": "string",
+                  "maxLength": 40
+                }
+              },
+              "required": [
+                "product"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "products"
+        ],
+        "additionalProperties": false
+      },
+      "pricing": {
+        "currency": "USD",
+        "base_usd": 0.05,
+        "per_item_usd": 0.01,
+        "max_items": 25,
+        "eta_seconds_per_item": 6
+      }
+    },
+    {
+      "id": "job.hostname_package_batch",
+      "name": "Hostname and package batch check",
+      "description": "Up to 200 items in total: hostnames (phishing blocklist and look-alike check) and npm/PyPI packages (existence, age, malicious reports, known vulnerabilities), as one JSON report. Paid A2A job: submit with the submit_job skill ({\"skill\":\"submit_job\",\"arguments\":{\"job_type\":\"hostname_package_batch\",\"input\":{...}}}); PG1 validates and returns a quote (price, ETA, expiry) as an input-required task with the x402 payment requirements; pay by sending the PaymentPayload in message.metadata[\"x402.payment.payload\"] with the task's taskId. Settled only when the job is accepted to run. Price: 0.0065 USD for 1 item, 0.305 USD for 200. Jobs under 0.05 USD can use the shared 5/day free tier.",
+      "tags": [
+        "job",
+        "paid",
+        "x402"
+      ],
+      "examples": [
+        "Submit a hostname_package_batch job"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "hostnames": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "type": "string",
+              "maxLength": 253
+            }
+          },
+          "packages": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "type": "object",
+              "properties": {
+                "ecosystem": {
+                  "type": "string",
+                  "enum": [
+                    "npm",
+                    "pypi"
+                  ]
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 214
+                },
+                "version": {
+                  "type": "string",
+                  "maxLength": 64
+                }
+              },
+              "required": [
+                "ecosystem",
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "pricing": {
+        "currency": "USD",
+        "base_usd": 0.005,
+        "per_item_usd": 0.0015,
+        "max_items": 200,
+        "eta_seconds_per_item": 0.497487
+      }
+    },
+    {
+      "id": "job.threat_writeup_pdf",
+      "name": "Threat write-up (PDF)",
+      "description": "Runs PG1's checks on up to 20 subjects (wallets, domains, hostnames, packages, CVEs) and writes a plain-language threat write-up from the results only, as a PDF plus the JSON results. Paid A2A job: submit with the submit_job skill ({\"skill\":\"submit_job\",\"arguments\":{\"job_type\":\"threat_writeup_pdf\",\"input\":{...}}}); PG1 validates and returns a quote (price, ETA, expiry) as an input-required task with the x402 payment requirements; pay by sending the PaymentPayload in message.metadata[\"x402.payment.payload\"] with the task's taskId. Settled only when the job is accepted to run. Price: 0.26 USD for 1 item, 0.45 USD for 20. Jobs under 0.05 USD can use the shared 5/day free tier.",
+      "tags": [
+        "job",
+        "paid",
+        "x402",
+        "pdf"
+      ],
+      "examples": [
+        "Submit a threat_writeup_pdf job"
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json",
+        "application/pdf"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subjects": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "wallet",
+                    "domain",
+                    "hostname",
+                    "package",
+                    "cve"
+                  ]
+                },
+                "value": {
+                  "type": "string",
+                  "maxLength": 253
+                },
+                "ecosystem": {
+                  "type": "string",
+                  "enum": [
+                    "npm",
+                    "pypi"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "audience": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "subjects"
+        ],
+        "additionalProperties": false
+      },
+      "pricing": {
+        "currency": "USD",
+        "base_usd": 0.25,
+        "per_item_usd": 0.01,
+        "max_items": 20,
+        "eta_seconds_per_item": 5
+      }
+    },
+    {
+      "id": "build_tool",
+      "name": "build_tool",
+      "description": "Commission a tool from PG1's Tool Foundry. Send a spec (name, use_case and subject_types from PG1's fixed labels, purpose, inputs as a JSON Schema, data_sources from PG1's primitives or allowlisted sources, latency_ms_target), an optional offer ({build_fee_usd, per_call_usd}) and visibility (private or public). PG1 screens it (deny by default: unclear requests go to a human review), checks feasibility and licences, and quotes a build fee and a per-call price (both at least 1.5x cost; a counter-offer when the offer is below). Pay the build fee with x402 on the job (arguments.job_id). PG1 builds and tests it in its lab; a person approves it before it is deployed as ft_<name>. Refused: harmful uses, scraping against site terms, sources without resale permission.",
+      "tags": [
+        "foundry",
+        "paid",
+        "x402",
+        "custom-tools"
+      ],
+      "examples": [
+        "Build a tool that screens a wallet and the domain of the dApp it came from in one call."
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
     }
   ]
 }

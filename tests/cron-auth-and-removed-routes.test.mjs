@@ -137,7 +137,7 @@ test('cleanup: 403 with no CRON_SECRET and no Supabase call; 401 on a wrong head
 test('every cron path in vercel.json is gated by checkCronAuth', () => {
   const vercel = JSON.parse(readFileSync(join(ROOT, 'vercel.json'), 'utf8'));
   const paths = (vercel.crons || []).map((c) => c.path);
-  assert.deepEqual(paths.sort(), ['/api/errors/cleanup', '/api/heartbeat/pulse']);
+  assert.deepEqual(paths.sort(), ['/api/errors/cleanup', '/api/flags/monitor', '/api/heartbeat/pulse', '/api/opportunities/weekly', '/api/sanctions/sync-eu', '/api/watchlists/recheck']);
   for (const p of paths) {
     const base = join(ROOT, p.slice(1));
     const file = ['.js', '.mjs'].map((ext) => base + ext).find((f) => existsSync(f));

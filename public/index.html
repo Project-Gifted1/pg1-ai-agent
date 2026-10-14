@@ -1060,6 +1060,14 @@
     .film-card-failed { color: var(--danger-text); }
     .film-card-images { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1, 4px); }
     .film-card-image strong { color: var(--gold); font-weight: 600; }
+    .pg1-suggestions { display: grid; gap: var(--sp-2); margin: var(--sp-3) 0; }
+    .pg1-suggestion { text-align: left; padding: 8px 12px; border: 1px dashed var(--border); border-radius: var(--r-sm); background: transparent; color: var(--text-2); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+    .pdf-card { margin: var(--sp-4) 0; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-1); color: var(--text-2); font-size: var(--fs-sm); display: flex; align-items: center; gap: var(--sp-3); }
+    .pdf-card .icon { flex: none; width: 22px; height: 22px; }
+    .pdf-card-info { display: grid; gap: 2px; min-width: 0; flex: 1; }
+    .pdf-card-title { color: var(--text-1); font-weight: 600; overflow-wrap: anywhere; }
+    .pdf-card-meta { color: var(--text-3); }
+    .pdf-card-download { flex: none; padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--text-1); text-decoration: none; }
     .music-card { margin: var(--sp-4) 0; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-1); color: var(--text-2); font-size: var(--fs-sm); display: grid; gap: var(--sp-2); }
     .music-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); color: var(--text-1); }
     .music-card-title { font-weight: 600; }
@@ -2720,6 +2728,28 @@
     // keeps the link. Only the text of each message is saved: result cards,
     // images and audio stay on this device.
     const CURRENT_THREAD_KEY = 'pg1_current_thread';
+    // TASK STATE (lib/taskState.mjs): the thread's task state and rolling
+    // summary, as the server last returned them. Sent with every message,
+    // saved with a saved thread and restored when it is loaded. Otherwise
+    // kept for this browser session only (sessionStorage), never sent
+    // anywhere else.
+    const TURN_STATE_KEY = 'pg1_turn_state';
+    var turnState = { taskState: null, contextSummary: null };
+    try { const v = JSON.parse(sessionStorage.getItem(TURN_STATE_KEY)); if (v && typeof v === 'object') turnState = { taskState: v.taskState || null, contextSummary: v.contextSummary || null }; } catch (e) {}
+    function setTurnState(next) {
+      turnState = { taskState: next && next.taskState || null, contextSummary: next && next.contextSummary || null };
+      try { sessionStorage.setItem(TURN_STATE_KEY, JSON.stringify(turnState)); } catch (e) {}
+    }
+    // A reply's updated state, and its card lines kept on the bubble so
+    // later messages carry what the cards said.
+    function absorbTurnResult(data, bubble) {
+      if (!data || typeof data !== 'object') return;
+      if (data.taskState || data.contextSummary) setTurnState({ taskState: data.taskState || turnState.taskState, contextSummary: data.contextSummary || turnState.contextSummary });
+      if (bubble && Array.isArray(data.cards) && data.cards.length) bubble.dataset.cards = JSON.stringify(data.cards.slice(0, 6));
+    }
+    function bubbleCards(el) {
+      try { const c = JSON.parse(el.dataset.cards || '[]'); return Array.isArray(c) ? c.filter((x) => typeof x === 'string') : []; } catch (e) { return []; }
+    }
     const THREAD_SYNC_DELAY_MS = 1200;
     // var, not let: saveState() can run before this point in the script.
     var currentThread = null;
@@ -2766,7 +2796,8 @@
           .join('\n\n')
           .trim();
         if (!text) return;
-        out.push({ role: el.classList.contains('user') ? 'user' : 'assistant', text, at: el.dataset.at || null });
+        const cards = bubbleCards(el);
+        out.push(Object.assign({ role: el.classList.contains('user') ? 'user' : 'assistant', text, at: el.dataset.at || null }, cards.length ? { cards } : {}));
       });
       return out;
     }
@@ -2802,7 +2833,7 @@
       if (currentThread) { await syncCurrentThread(); flashStatus('Saved', false); return; }
       if (btn) btn.classList.add('is-busy');
       try {
-        const data = await threadsRequest({ op: 'save', messages });
+        const data = await threadsRequest({ op: 'save', messages, taskState: turnState.taskState, contextSummary: turnState.contextSummary });
         setCurrentThread(data.thread);
         flashStatus('Saved', false);
       } catch (e) {
@@ -2827,7 +2858,7 @@
       const id = currentThread.id;
       try {
         const messages = threadMessagesFromScreen();
-        if (messages.length) await threadsRequest({ op: 'save', id, messages });
+        if (messages.length) await threadsRequest({ op: 'save', id, messages, taskState: turnState.taskState, contextSummary: turnState.contextSummary });
       } catch (e) {
         if (e.status === 404 && currentThread && currentThread.id === id) {
           setCurrentThread(null);
@@ -2916,10 +2947,12 @@
           const el = document.createElement('div');
           el.className = m.role === 'user' ? 'message-bubble user' : 'message-bubble';
           if (m.at) el.dataset.at = m.at;
+          if (Array.isArray(m.cards) && m.cards.length) el.dataset.cards = JSON.stringify(m.cards);
           el.innerHTML = threadBubbleHtml(m);
           chat.appendChild(el);
         });
         if (!chat.children.length) renderWelcome();
+        setTurnState({ taskState: thread.taskState || null, contextSummary: thread.contextSummary || null });
         setCurrentThread(thread);
         saveState();
         closeThreadsModal();
@@ -3320,7 +3353,7 @@
     function messageActionsHtml(role) {
       const items = role === 'user'
         ? [['editBubble', 'Edit message', 'i-edit', 40], ['copyBubbleText', 'Copy message', 'i-copy', 40], ['deleteBubble', 'Delete message', 'i-trash', 40]]
-        : [['speakBubble', 'Read aloud', 'i-speaker', ''], ['copyBubbleText', 'Copy reply', 'i-copy', ''], ['deleteBubble', 'Delete reply', 'i-trash', '']];
+        : [['speakBubble', 'Read aloud', 'i-speaker', ''], ['copyBubbleText', 'Copy reply', 'i-copy', ''], ['savePdfBubble', 'Save as PDF', 'i-file', ''], ['deleteBubble', 'Delete reply', 'i-trash', '']];
       const button = ([fn, label, icon, ms]) => {
         const done = fn === 'copyBubbleText' ? '<svg class="icon icon-done" aria-hidden="true"><use href="#i-check"/></svg>' : '';
         return `<button type="button" class="msg-action" onclick="triggerHaptic(${ms}); ${fn}(this)" aria-label="${label}" title="${label}"><svg class="icon icon-main" aria-hidden="true"><use href="#${icon}"/></svg>${done}</button>`;
@@ -3896,15 +3929,18 @@
     // replies already gave the branded identity answer (lib/identity.mjs).
     // The welcome card and the reply still being written are left out;
     // clearing the chat empties it, so a new thread starts the count at 0.
-    const THREAD_HISTORY_MAX_MESSAGES = 60;
-    const THREAD_HISTORY_MAX_CHARS = 2000;
+    // The server keeps the newest turns verbatim and folds older ones into
+    // the rolling summary (lib/contextWindow.mjs), so the window is wide.
+    const THREAD_HISTORY_MAX_MESSAGES = 120;
+    const THREAD_HISTORY_MAX_CHARS = 4000;
     function threadHistory(exclude) {
       const out = [];
       document.querySelectorAll('#chat-container .message-bubble').forEach((el) => {
         if (el === exclude || el.classList.contains('welcome') || el.classList.contains('pending')) return;
         const text = Array.from(el.querySelectorAll('.message-text')).map((t) => t.textContent || '').join('\n').trim();
         if (!text) return;
-        out.push({ role: el.classList.contains('user') ? 'user' : 'model', text: text.slice(0, THREAD_HISTORY_MAX_CHARS) });
+        const cards = bubbleCards(el);
+        out.push(Object.assign({ role: el.classList.contains('user') ? 'user' : 'model', text: text.slice(0, THREAD_HISTORY_MAX_CHARS) }, cards.length ? { cards } : {}));
       });
       return out.slice(-THREAD_HISTORY_MAX_MESSAGES);
     }
@@ -3914,6 +3950,7 @@
     function clearChat() {
       if (currentThread) syncCurrentThread();
       setCurrentThread(null);
+      setTurnState(null);
       renderWelcome();
       saveState();
     }
@@ -4683,6 +4720,16 @@
       return player;
     }
 
+    // PDF (lib/pdf): the Save as PDF icon sends "/pdf this" with this
+    // reply's own markdown, so any reply (not only the last) becomes a PDF.
+    function savePdfBubble(el) {
+      const textEl = el.closest('.message-bubble').querySelector('.message-text');
+      if (!textEl) return;
+      const raw = textEl.dataset.raw != null ? textEl.dataset.raw : innerTextWithoutDiffSr(textEl);
+      if (!raw.trim()) return;
+      submitDirective({ retryText: '/pdf this', pdfSource: raw.slice(0, 200000) });
+    }
+
     function copyBubbleText(el) {
       const text = innerTextWithoutDiffSr(el.closest('.message-bubble').querySelector('.message-text'));
       navigator.clipboard.writeText(text).then(() => {
@@ -4737,7 +4784,9 @@
           token: token,
           decision: decision,
           user: sessionUser,
-          pass: sessionPass
+          pass: sessionPass,
+          taskState: turnState.taskState,
+          contextSummary: turnState.contextSummary
         };
         const response = await fetch('/api/chat', {
           method: 'POST',
@@ -4752,6 +4801,7 @@
           throw new Error(`Server returned non-JSON response (${response.status}): ${responseText.substring(0, 150)}`);
         }
 
+        absorbTurnResult(data, null);
         triggerHaptic(decision === 'approve' ? [30, 50, 30] : 50);
         if (bubble) {
           const textEl = bubble.querySelector('.message-text');
@@ -5811,6 +5861,35 @@
       return (Array.isArray(previews) ? previews : []).filter((p) => p && Number.isInteger(p.variant)).map(musicTakeHtml).join('');
     }
 
+    // PDF card (lib/pdf/chat.mjs): title, page count, size and a download
+    // link (https only), or a note when the vault is not configured.
+    function suggestionsHtml(list) {
+      const items = (Array.isArray(list) ? list : []).filter((x) => x && typeof x.text === 'string').slice(0, 3);
+      if (!items.length) return '';
+      return `<div class="pg1-suggestions">${items.map((x) => `<button type="button" class="pg1-suggestion" data-command="${escapeHTML(String(x.command || ''))}" onclick="triggerHaptic(20); useSuggestion(this)">${escapeHTML(x.text)}</button>`).join('')}</div>`;
+    }
+    function useSuggestion(el) {
+      const input = document.getElementById('prompt-input');
+      if (!input) return;
+      input.value = el.getAttribute('data-command') || '';
+      input.focus();
+      if (typeof autoResize === 'function') autoResize(input);
+    }
+
+    function pdfCardHtml(pdf) {
+      if (!pdf || typeof pdf !== 'object') return '';
+      const pages = Number(pdf.pages) || 0;
+      const bytes = Number(pdf.bytes) || 0;
+      const size = bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+      const url = typeof pdf.url === 'string' && /^https:\/\//i.test(pdf.url) ? pdf.url : '';
+      return `<div class="pdf-card" data-pdf-id="${escapeHTML(String(pdf.shortId || ''))}">
+        <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+        <div class="pdf-card-info"><span class="pdf-card-title">${escapeHTML(String(pdf.title || 'PG1 document'))}</span>
+        <span class="pdf-card-meta">PDF · ${pages} page${pages === 1 ? '' : 's'} · ${escapeHTML(size)}${pdf.truncated ? ' · truncated at the page limit' : ''}${url ? ' · in the media library' : ''}</span></div>
+        ${url ? `<a class="pdf-card-download" href="${escapeHTML(url)}" target="_blank" rel="noopener noreferrer" download>Download</a>` : '<span class="pdf-card-meta">Not stored</span>'}
+      </div>`;
+    }
+
     function musicCardHtml(track) {
       if (!track || typeof track.id !== 'string' || !VIDEO_JOB_ID_RE.test(track.id)) return '';
       const active = track.active === true;
@@ -6390,8 +6469,11 @@
           user: sessionUser,
           pass: sessionPass,
           clientEnv: getClientEnvironment(),
-          history: threadHistory(agentBubble)
+          history: threadHistory(agentBubble),
+          taskState: turnState.taskState,
+          contextSummary: turnState.contextSummary
         };
+        if (typeof options.pdfSource === 'string') payload.pdfSource = options.pdfSource;
         // LIVE TRACE: ask for a streamed reply with steps (operator only;
         // the server ignores it otherwise and replies with JSON as before).
         const wantStream = !options.noStream && !!(sessionUser && sessionPass);
@@ -6452,6 +6534,7 @@
           }
         }
         
+        absorbTurnResult(data, agentBubble);
         triggerHaptic([30, 50, 30]); 
         const finalTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
@@ -6494,6 +6577,11 @@
         // PG1 SOUND: a track's card (previews with "use take N", the master,
         // the stems), and the media library with a player per track.
         if (data.musicTrack) contentHtml += musicCardHtml(data.musicTrack);
+        // PDF: the document's card (title, pages, size, download).
+        if (data.pdf) contentHtml += pdfCardHtml(data.pdf);
+        // SKILLS: suggestions (a /pin rule, a skill update, /learn); a tap
+        // puts the command in the prompt box, nothing runs by itself.
+        if (Array.isArray(data.suggestions)) contentHtml += suggestionsHtml(data.suggestions);
         if (Array.isArray(data.musicLibrary)) contentHtml += musicLibraryHtml(data.musicLibrary);
 
         if (data.pendingApproval && data.pendingApproval.token) {

@@ -145,7 +145,8 @@ test('a caller spending its free tier on MCP, A2A and /api/ioc, then hitting the
   assert.ok(accessLog, '/api/ioc logged its free-tier access');
   assert.equal(JSON.parse(accessLog.body).license_key, `free-tier:${key}`);
 
-  const telemetry = captured.filter((c) => c.url.includes('/rest/v1/agent_telemetry'));
+  // Writes only: get_usage_status also reads the public tool metrics (lib/statusMetrics.mjs).
+  const telemetry = captured.filter((c) => c.url.includes('/rest/v1/agent_telemetry') && c.method !== 'GET');
   assert.ok(telemetry.length > 0);
   for (const t of telemetry) assert.match(JSON.parse(t.body).caller_hash, HASH);
 

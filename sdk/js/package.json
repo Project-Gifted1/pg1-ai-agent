@@ -1,0 +1,19 @@
+{
+  "name": "pg1-sdk",
+  "version": "0.1.0",
+  "description": "PG1 client for agents: preflight_check before you act, every PG1 tool, offline verification of PG1's signed results, and x402 payment handling.",
+  "type": "module",
+  "main": "./index.mjs",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": { "types": "./index.d.ts", "default": "./index.mjs" },
+    "./frameworks": { "default": "./frameworks.mjs" }
+  },
+  "files": ["index.mjs", "index.d.ts", "frameworks.mjs", "README.md", "LICENSE"],
+  "engines": { "node": ">=20" },
+  "keywords": ["agents", "mcp", "a2a", "x402", "security", "preflight", "threat-intelligence"],
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/Project-Gifted1/pg1-ai-agent", "directory": "sdk/js" },
+  "scripts": { "prepack": "cp ../LICENSE LICENSE", "postpack": "rm -f LICENSE" },
+  "homepage": "https://pg1-ai-agent.vercel.app/docs/agents"
+}

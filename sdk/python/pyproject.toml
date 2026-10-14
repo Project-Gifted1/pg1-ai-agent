@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pg1-sdk"
+version = "0.1.0"
+description = "PG1 client for agents: preflight_check before you act, every PG1 tool, offline verification of PG1's signed results, and x402 payment handling."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["cryptography>=41"]
+keywords = ["agents", "mcp", "a2a", "x402", "security", "preflight"]
+license = { text = "Apache-2.0" }
+
+[project.urls]
+Homepage = "https://pg1-ai-agent.vercel.app/docs/agents"
+Repository = "https://github.com/Project-Gifted1/pg1-ai-agent"
+
+[tool.setuptools]
+packages = ["pg1_sdk"]

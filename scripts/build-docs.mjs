@@ -69,6 +69,14 @@ export const DOC_PAGES = [
     description: 'For AI agents: why to use PG1, which tool to call for a wallet, link, package, CVE or indicator, what each status means, and the free tier and rate limits.'
   },
   {
+    source: 'docs/screening.md',
+    output: 'public/docs/screening/index.html',
+    route: '/docs/screening',
+    kicker: 'PG1 reference',
+    editHint: 'edit docs/screening.md',
+    description: 'Reference: how PG1 screens paying wallets against the OFAC SDN and EU consolidated sanctions lists, the sources and update cadence, and how a wrongly matched wallet can appeal.'
+  },
+  {
     source: 'lib/attributions.mjs',
     output: 'public/docs/attributions/index.html',
     route: '/docs/attributions',

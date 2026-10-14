@@ -3,7 +3,12 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.17.0 — ADD: new free tool check_package (also an A2A skill, a
+ * Version: 1.19.0 — ADD: hosting_advisor (paid; lib/hosting), the Tool Foundry's
+ *   ft_* tools (lib/foundry).
+ * 1.18.0 — ADD: preflight_check (one paid call, every relevant check in
+ *   parallel, fail closed), check_x402_endpoint, check_agent_card and
+ *   verify_result; every result signed (Ed25519, lib/signing.mjs).
+ * 1.17.0 — ADD: new free tool check_package (also an A2A skill, a
  *          chat tool for every role and a playground check), a pre-install
  *          check of one npm or PyPI package (lib/packageCheck.mjs): does it
  *          exist, first/latest publish dates, OSV malicious-package reports
@@ -125,6 +130,19 @@ import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES,
 import { invalidInput, invalidInputMessage, withFixIt, formatFixIt } from '../lib/invalidInput.mjs';
 import { ABUSEIPDB_KEY_HEADER, ABUSEIPDB_ATTRIBUTION_TEXT, ABUSEIPDB_TIMEOUT_MS, MAX_AGE_DAYS_DEFAULT, abuseIpdbCheckUrlFor, keyRequiredError, readCustomerKey, normalizePublicIp, normalizeMaxAgeDays, getCachedLookup, setCachedLookup, fetchAbuseIpdbCheck } from '../lib/abuseIpdb.mjs';
 import { checkPackage, normalizePackageInput, buildPackageResult, packageCheckFailureReasons, PACKAGE_SOURCES } from '../lib/packageCheck.mjs';
+import { PREFLIGHT_DEF, PREFLIGHT_TOOL, runPreflight } from '../lib/preflight.mjs';
+import { checkX402Endpoint, checkAgentCard } from '../lib/agentChecks.mjs';
+import { signResult, verifySignedResult, publicJwks, MCP_SIGNATURE_META } from '../lib/signing.mjs';
+import { cachedCheck } from '../lib/resultCache.mjs';
+import { HOSTING_DEF, HOSTING_TOOL, hostingAdvice } from '../lib/hosting/advisor.mjs';
+import { loadHostingData } from '../lib/hosting/store.mjs';
+import { screenPayer } from '../lib/screening.mjs';
+import { notifyOperator } from '../lib/notify.mjs';
+import { checkUrlShape } from '../lib/netGuard.mjs';
+import { serviceStatus } from '../lib/statusMetrics.mjs';
+import { isFoundryToolName, callFoundryTool, publicFoundryToolDefs, TOOL_KEY_HEADER } from '../lib/foundry/tools.mjs';
+import { createFoundryStore } from '../lib/foundry/store.mjs';
+import { payerHash as walletHash } from '../lib/a2aJobs/jobs.mjs';
 
 export const config = { maxDuration: 30 };
 
@@ -210,7 +228,33 @@ export const TEST_FIXTURE_OUTPUT_PROPERTIES = {
 // starts (lib/x402Config.mjs isFeedPaid; an env change needs a redeploy).
 const FEED_PAID_AT_START = isFeedPaid();
 
+// 1.18.0 (P8): preflight_check comes first in tools/list: the one call an
+// agent makes before it acts. check_x402_endpoint, check_agent_card and
+// verify_result are always free.
+export const EDGE_FREE_TOOLS = Object.freeze(['check_x402_endpoint', 'check_agent_card', 'verify_result']);
+const EDGE_TOOLS = [
+  PREFLIGHT_DEF,
+  {
+    name: 'check_x402_endpoint',
+    description: 'PG1 Sovereign Threat Intelligence: checks an x402-paid URL before you pay it. Fetches the URL once (https only; private addresses and redirects refused) and reads its x402 payment request: each option\'s network must be a known settlement network and its asset the known USDC contract there; the receiving wallet (payTo) is screened against the OFAC SDN list and its on-chain age read; TLS and the domain\'s age are checked. Always free (60/hour per caller). Returns status flagged / no_flags / unknown with reasons (X402_UNKNOWN_NETWORK, X402_UNKNOWN_ASSET, WALLET_SANCTIONED, WALLET_NEW_7D, ENDPOINT_TLS_FAILED, DOMAIN_NEWLY_REGISTERED_30D, X402_NO_PAYMENT_REQUEST). Never says "safe".',
+    inputSchema: { type: 'object', properties: { url: { type: 'string', maxLength: 2048, description: 'The https URL of the paid resource.' } }, required: ['url'], additionalProperties: false }
+  },
+  {
+    name: 'check_agent_card',
+    description: 'PG1 Sovereign Threat Intelligence: checks another agent before you trust it. Fetches its /.well-known/agent-card.json (https only; private addresses and redirects refused): is it a valid A2A agent card, does its name claim a well-known brand the domain does not belong to, how old is the domain, is the hostname on the phishing blocklist or a look-alike. Always free (60/hour per caller). Give url or domain.',
+    inputSchema: { type: 'object', properties: { url: { type: 'string', maxLength: 2048, description: 'The agent\'s https URL or its agent card URL.' }, domain: { type: 'string', maxLength: 253, description: 'Or just the agent\'s domain.' } }, additionalProperties: false }
+  },
+  {
+    name: 'verify_result',
+    description: 'PG1 Sovereign Threat Intelligence: verifies that a result really came from PG1, unchanged. Every PG1 tool result is signed (Ed25519) over its request hash, result, sources, timestamp and PG1 version; the signature is in result._meta["pg1/signature"] (MCP), the task\'s metadata["pg1.signature"] (A2A) or "signature" (REST). Give the result object and the signature block; optionally tool and arguments to check it answers that exact request. Public keys: https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key (JWKS); you can verify offline without this tool. Always free.',
+    inputSchema: { type: 'object', properties: { result: { type: 'object', description: 'The tool result as received (its signature field, if any, is ignored).' }, signature: { type: 'object', description: 'The signature block.' }, tool: { type: 'string', description: 'Optional: the tool that was called.' }, arguments: { type: 'object', description: 'Optional: the arguments it was called with.' } }, required: ['result', 'signature'], additionalProperties: false }
+  },
+  // P10: hosting_advisor (lib/hosting), paid like the CVE tools.
+  HOSTING_DEF
+];
+
 export const TOOLS = [
+  ...EDGE_TOOLS,
   {
     name: 'get_threat_indicators',
     description: 'PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of CVE records from NIST NVD, the only source PG1 may currently redistribute commercially. Today it contains no IP, domain, URL or file-hash indicators: every object is a STIX vulnerability with the CVE id and an NVD reference, without scores (use get_cve_details for CVSS and known-exploited status). ' + (FEED_PAID_AT_START ? 'Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). ' : 'FREE while this feed holds no current data: no payment, no licence key, and it does not use the 5 free calls a day. ') + 'SIBLING DIFFERENTIATION: Use ONLY for bulk feed synchronizations. Do NOT use for single-item lookups (use get_ioc_context) or CVE analysis (use get_cve_details). USAGE EXCLUSIONS: Does not provide historical query archival beyond the active ingestion window. BEHAVIOR: Pagination is handled via the limit parameter (max 1000).' + (FEED_PAID_AT_START ? ' If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta["x402/payment-response"].' : ''),
@@ -1202,6 +1246,8 @@ export async function handleUsageStatus(args, requestIdentifier) {
     free_tier_calls_used_today: callsToday,
     free_tier_calls_remaining_today: remaining,
     license_status: licenseStatus,
+    // Reliability of every public tool, last 24 hours (lib/statusMetrics.mjs; also /status).
+    service_status: await serviceStatus({ supUrl, supKey, tools: TOOLS.map((t) => t.name), timeoutMs: 1500 }).then((st) => (st.available ? { window_hours: st.window_hours, tools: st.tools, page: 'https://pg1-ai-agent.vercel.app/status' } : null)).catch(() => null),
     checked_at: new Date().toISOString()
   }, { reasons: [], checks });
 }
@@ -1216,6 +1262,17 @@ async function handleSubscribeAlerts(args, licenseKey) {
     throw invalidInput({
       problem: webhookUrl ? 'webhook_url is not an https:// URL' : 'webhook_url is missing',
       expected: 'an absolute URL starting with https://',
+      example: 'https://hooks.example.com/pg1-alerts'
+    });
+  }
+  // SSRF guard (lib/netGuard.mjs): no private, loopback, metadata or
+  // credentialed webhook URLs.
+  try {
+    checkUrlShape(webhookUrl);
+  } catch (e) {
+    throw invalidInput({
+      problem: `webhook_url is not allowed: ${e.message}`,
+      expected: 'a public https URL on a standard port, with no credentials',
       example: 'https://hooks.example.com/pg1-alerts'
     });
   }
@@ -3145,8 +3202,16 @@ function buildFallbackPaymentRequired(resourceInfo, error) {
 // accepts, and verify via the facilitator. Never runs the tool or settles —
 // callers run the tool first and invoke the returned `settle` function only
 // on tool success, per the x402 v2 MCP transport spec.
-async function runX402Gate(req, params) {
+// Tests swap in a verified-payment stand-in (__setX402GateForTests).
+let x402GateOverride = null;
+export function __setX402GateForTests(fn) {
+  x402GateOverride = fn || null;
+}
+
+async function runX402Gate(req, params, { price = X402_PRICE, description = null } = {}) {
+  if (x402GateOverride) return x402GateOverride(req, params, { price, description });
   const resourceInfo = buildX402ResourceInfo(req);
+  if (description) resourceInfo.description = String(description).slice(0, 200);
   const server = getX402Server();
   if (!server) {
     return { authorized: false, paymentRequired: buildFallbackPaymentRequired(resourceInfo, 'x402 payment path is not configured on this deployment. Use a Gumroad license key (X-API-KEY) instead.') };
@@ -3158,7 +3223,7 @@ async function runX402Gate(req, params) {
 
   let requirements;
   try {
-    requirements = await server.buildPaymentRequirements({ scheme: X402_SCHEME, price: X402_PRICE, network: X402_NETWORK, payTo: X402_PAY_TO });
+    requirements = await server.buildPaymentRequirements({ scheme: X402_SCHEME, price, network: X402_NETWORK, payTo: X402_PAY_TO });
   } catch (e) {
     return { authorized: false, paymentRequired: buildFallbackPaymentRequired(resourceInfo, 'x402 payment path misconfigured: ' + e.message) };
   }
@@ -3204,9 +3269,36 @@ async function runX402Gate(req, params) {
 
   return {
     authorized: true,
+    payer: payerOfPayment(paymentPayload),
     settle: () => server.settlePayment(paymentPayload, matchingRequirements),
     settlementFailurePaymentRequired: (message) => server.createPaymentRequiredResponse(requirements, resourceInfo, message, undefined, undefined, paymentPayload)
   };
+}
+
+// P11: the screening every x402 payer gets (lib/screening.mjs).
+export function screenPaymentPayer(wallet, context) {
+  let creds = {};
+  try { creds = getSupabaseCreds(); } catch (e) { creds = {}; }
+  return screenPayer(wallet, { ...creds, notify: notifyOperator, context });
+}
+
+// The paying wallet of an x402 v2 "exact" PaymentPayload: the EIP-3009
+// authorization's from (EVM) or the payload's own payer field. Lowercased;
+// null when absent. Used for the A2A job limits and sanctions screening;
+// stored only as a salted hash.
+export function payerOfPayment(payload) {
+  const p = payload && typeof payload === 'object' ? payload : {};
+  const inner = p.payload && typeof p.payload === 'object' ? p.payload : {};
+  const from = (inner.authorization && inner.authorization.from) || inner.from || p.payer || null;
+  return typeof from === 'string' && /^0x[0-9a-fA-F]{40}$/.test(from) ? from.toLowerCase() : (typeof from === 'string' && from.length >= 26 && from.length <= 64 ? from : null);
+}
+
+// A2A jobs (lib/a2aJobs): the same x402 gate at the job's own price. The
+// payment is verified here and settled only by the caller, when the job is
+// accepted to run.
+export async function runPricedX402Gate(req, { payment, priceUsd, description }) {
+  const price = `$${Number(priceUsd).toFixed(6).replace(/0+$/, '').replace(/\.$/, '')}`;
+  return runX402Gate(req, payment ? { _meta: { 'x402/payment': payment } } : undefined, { price, description });
 }
 
 // Shared by the get_ioc_context and get_ioc_batch special cases, and by
@@ -3285,6 +3377,13 @@ export async function resolvePaidAccess(req, { licenseKey, identifier, payment, 
   }
 
   const x402Gate = await runX402Gate(req, payment ? { _meta: { 'x402/payment': payment } } : undefined);
+  // P11: a verified payment's wallet is screened before anything is served
+  // or settled. A match is refused outright (no 402 to retry); screening
+  // that cannot run refuses for now (fail closed).
+  if (x402Gate.authorized && x402Gate.settle) {
+    const screened = await screenPaymentPayer(x402Gate.payer, `per-call ${endpoint}`);
+    if (!screened.allowed) return { authorized: false, payerRefused: screened.refused, screeningUnavailable: screened.unavailable, message: screened.message };
+  }
   return freeLimitReached && !x402Gate.authorized ? { ...x402Gate, freeLimitReached: true, freeTierRemaining: 0 } : x402Gate;
 }
 
@@ -3307,6 +3406,11 @@ async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentif
   if (gate.licenseError) {
     res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + gate.licenseError, data: { request_id: pg1RequestId } }, id: requestId });
     return { authorized: false, handled: true };
+  }
+  if (gate.payerRefused || gate.screeningUnavailable) {
+    if (gate.screeningUnavailable) res.setHeader('Retry-After', '60');
+    res.status(200).json({ jsonrpc: '2.0', result: { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: gate.message, code: gate.payerRefused ? 'payer_refused' : 'screening_unavailable', request_id: pg1RequestId }) }] }, id: requestId });
+    return { authorized: false, handled: true, payerRefused: gate.payerRefused };
   }
   if (gate.freeTierRemaining !== undefined) setFreeTierHeaders(res, gate.freeTierRemaining);
   return gate;
@@ -3374,6 +3478,15 @@ export function paidResponseOptions(env = process.env) {
 }
 
 export const STANDARD_TOOL_HANDLERS = {
+  // P8: one paid call that runs every relevant check (lib/preflight.mjs).
+  [PREFLIGHT_TOOL]: (args) => runPreflight(args, { runTool: internalRunTool }),
+  // P10: the curated dataset from storage, or the bundled seed.
+  [HOSTING_TOOL]: async (args) => {
+    let creds = {};
+    try { creds = getSupabaseCreds(); } catch (e) { creds = {}; }
+    const data = await loadHostingData(creds);
+    return hostingAdvice(args, { data, dataSource: data.source });
+  },
   get_threat_indicators: handleThreatIndicators,
   get_cve_details: handleCveDetails,
   get_cve_batch: handleCveBatch,
@@ -3386,7 +3499,7 @@ export const STANDARD_TOOL_HANDLERS = {
 // lookup result — not applied uniformly before the tool runs, like every
 // other STANDARD_TOOL_HANDLERS entry.
 
-const FREE_TOOLS = new Set(FREE_MCP_TOOLS);
+const FREE_TOOLS = new Set([...FREE_MCP_TOOLS, ...EDGE_FREE_TOOLS]);
 
 // One entry point per read-only tool, used by tools/call for the free tools
 // below and by the chat's tool loop (lib/chatTools.mjs) for every read-only
@@ -3409,8 +3522,57 @@ export const READ_ONLY_TOOL_RUNNERS = Object.freeze({
   get_cve_details: (args) => handleCveDetails(args),
   get_cve_batch: (args) => handleCveBatch(args),
   get_cve_by_product: (args) => handleCveByProduct(args),
-  get_threat_actor_profile: (args) => handleThreatActorProfile(args)
+  get_threat_actor_profile: (args) => handleThreatActorProfile(args),
+  check_x402_endpoint: (args, ctx) => edgeCheck('check_x402_endpoint', args, ctx),
+  check_agent_card: (args, ctx) => edgeCheck('check_agent_card', args, ctx),
+  verify_result: (args) => handleVerifyResult(args)
 });
+
+// The Foundry store, or null where storage is not configured.
+function foundryStoreOrNull() {
+  try {
+    const { supUrl, supKey } = getSupabaseCreds();
+    return createFoundryStore({ supUrl, supKey, timeoutMs: 1500 });
+  } catch (e) {
+    return null;
+  }
+}
+
+// The agent-economy checks call PG1's own checks as a licensed caller (the
+// outer call is the one that is rate-limited, 60/hour per caller).
+const edgeLimits = new Map();
+function edgeRateLimited(identifier, licensed) {
+  if (licensed || !identifier || identifier === 'unknown') return false;
+  const now = Date.now();
+  const e = edgeLimits.get(identifier);
+  if (!e || e.start + RATE_LIMIT_WINDOW_MS < now) {
+    if (edgeLimits.size > 20000) edgeLimits.clear(); // bounded memory per instance
+    edgeLimits.set(identifier, { start: now, n: 1 });
+    return false;
+  }
+  e.n++;
+  return e.n > 60;
+}
+// Test fixtures (lib/fixtures.mjs) answer first, so a preflight or a
+// watchlist on a fixture target is deterministic and makes no upstream call.
+export const internalRunTool = async (name, args) => {
+  const fx = resolveTestFixture(name, args);
+  if (fx) {
+    if (fx.type === 'result') return fx.result;
+    throw Object.assign(new Error(fx.message || 'fixture error'), { code: fx.code || 'fixture_error', mcpToolError: true });
+  }
+  return runReadOnlyTool(name, args, { identifier: 'pg1-internal', licensed: true });
+};
+async function edgeCheck(name, args, ctx = {}) {
+  if (edgeRateLimited(ctx.identifier, ctx.licensed)) throw Object.assign(new Error(`${name} is limited to 60 calls/hour per caller. Retry later.`), { mcpToolError: true, code: 'rate_limited', retryAfter: 600 });
+  const run = name === 'check_x402_endpoint' ? checkX402Endpoint : checkAgentCard;
+  // Short-TTL cache of completed results (lib/resultCache.mjs).
+  return cachedCheck(name, args, () => run(args, { runTool: internalRunTool }));
+}
+function handleVerifyResult(args) {
+  const out = verifySignedResult({ result: args && args.result, signature: args && args.signature, jwks: publicJwks(), tool: args && typeof args.tool === 'string' ? args.tool : null, args: args && args.arguments });
+  return withResponseMeta({ valid: out.valid, reason: out.reason, kid: out.kid || null, jwks_url: 'https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key' }, { reasons: [], checks: [buildCheck('PG1 signing keys', 'ok')], requestId: null });
+}
 
 export async function runReadOnlyTool(toolName, args, ctx = {}) {
   const runner = READ_ONLY_TOOL_RUNNERS[toolName];
@@ -3477,7 +3639,7 @@ function recordMcpRequestTelemetry(req, method, status) {
 
 function recordToolCallTelemetry(callTelemetry, res) {
   try {
-    const known = KNOWN_TOOL_NAMES.has(callTelemetry.toolName);
+    const known = KNOWN_TOOL_NAMES.has(callTelemetry.toolName) || isFoundryToolName(callTelemetry.toolName);
     recordTelemetry({
       eventType: 'tool_call',
       endpoint: '/api/mcp',
@@ -3499,6 +3661,7 @@ function recordToolCallTelemetry(callTelemetry, res) {
 // the single shared catch blocks below can build the right checks entry
 // without duplicating per-tool logic.
 export const TOOL_SOURCE_LABELS = {
+  hosting_advisor: 'PG1 hosting dataset',
   get_threat_indicators: 'threat indicator feed',
   get_cve_details: 'vulnerability database',
   get_cve_batch: 'vulnerability database',
@@ -3512,7 +3675,11 @@ export const TOOL_SOURCE_LABELS = {
   check_hostname_reputation: 'phishing domain list',
   check_wallet_age: 'on-chain transfer history',
   check_ip_abuse: IP_ABUSE_SOURCE,
-  check_package: PACKAGE_SOURCES.registry
+  check_package: PACKAGE_SOURCES.registry,
+  preflight_check: 'PG1 checks',
+  check_x402_endpoint: 'x402 endpoint',
+  check_agent_card: 'agent card',
+  verify_result: 'PG1 signing keys'
 };
 
 // ---------------------------------------------------------------------
@@ -3541,7 +3708,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.17.0',
+      version: '1.19.0',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp',
@@ -3577,7 +3744,7 @@ export default async function handler(req, res) {
       recordTelemetry({ eventType: 'initialize', endpoint: '/api/mcp', status: 'ok', clientName: clientInfo.name, clientVersion: clientInfo.version, callerHash: requestCallerHash(req) });
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.17.0' } },
+        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.19.0' } },
         id: requestId
       });
     }
@@ -3589,12 +3756,29 @@ export default async function handler(req, res) {
 
     if (method === 'tools/list') {
       recordMcpRequestTelemetry(req, method, 'ok');
-      return res.status(200).json({ jsonrpc: '2.0', result: { tools: TOOLS }, id: requestId });
+      // Public Tool Foundry tools follow PG1's own (lib/foundry/tools.mjs).
+      const foundryTools = await publicFoundryToolDefs({ loadStore: foundryStoreOrNull });
+      return res.status(200).json({ jsonrpc: '2.0', result: { tools: foundryTools.length ? [...TOOLS, ...foundryTools] : TOOLS }, id: requestId });
     }
 
     if (method === 'tools/call') {
       const toolName = params?.name;
       const toolArgs = params?.arguments || {};
+      // SIGNED RESULTS (lib/signing.mjs): every successful tool result gets
+      // result._meta["pg1/signature"] over its request hash, result,
+      // sources, timestamp and PG1 version.
+      const sendJson = res.json.bind(res);
+      res.json = (out) => {
+        try {
+          const r = out && out.result;
+          if (r && !r.isError && Array.isArray(r.content) && r.content[0] && typeof r.content[0].text === 'string') {
+            const parsed = JSON.parse(r.content[0].text);
+            const sig = signResult({ tool: toolName, args: toolArgs, result: parsed });
+            if (sig) r._meta = { ...(r._meta || {}), [MCP_SIGNATURE_META]: sig };
+          }
+        } catch (e) { /* an unparseable result is sent unsigned */ }
+        return sendJson(out);
+      };
 
       // Integration test fixtures (issue #215 part B): an exact fixture
       // input is answered here, before any licence check, payment gate,
@@ -3779,6 +3963,46 @@ export default async function handler(req, res) {
         }
         if (gate.consumeFreeTier) await gate.consumeFreeTier();
         return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
+      }
+
+      // Tool Foundry: a commissioned ft_* tool, paid per call via x402.
+      if (isFoundryToolName(toolName)) {
+        const store = foundryStoreOrNull();
+        if (!store) return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: 'Unknown tool.', data: { request_id: pg1RequestId, unknown_tool: true } }, id: requestId });
+        const metaPayment = params?._meta?.['x402/payment'];
+        try {
+          const called = await callFoundryTool({ name: toolName, args: toolArgs, toolKey: req.headers[TOOL_KEY_HEADER] || null }, {
+            store,
+            gate: (priceUsd, description) => runPricedX402Gate(req, { payment: metaPayment || undefined, priceUsd, description }),
+            paymentOffered: !!(metaPayment || req.headers['payment-signature'] || req.headers['x-payment']),
+            subscriberHash: walletHash,
+            runTool: internalRunTool,
+            screen: async (wallet, context) => {
+              const r = await screenPaymentPayer(wallet, context);
+              if (r.unavailable) throw Object.assign(new Error(r.message), { foundryCall: true, status: 503, code: 'screening_unavailable' });
+              return r;
+            }
+          });
+          if (called.paymentRequired) {
+            callTelemetry.status = 'payment_required';
+            return sendPaymentRequiredResult(res, requestId, called.paymentRequired, pg1RequestId);
+          }
+          callTelemetry.paymentType = 'x402';
+          if (called.result.checks.some((c) => c.result !== 'ok')) callTelemetry.status = 'upstream_error';
+          const result = { content: [{ type: 'text', text: JSON.stringify({ ...called.result, request_id: pg1RequestId }, null, 2) }] };
+          if (called.settlement) {
+            res.setHeader('PAYMENT-RESPONSE', encodePaymentResponseHeader(called.settlement));
+            result._meta = { 'x402/payment-response': called.settlement };
+          }
+          return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
+        } catch (err) {
+          if (err && (err.foundryCall || err.mcpToolError)) {
+            callTelemetry.status = err.status >= 500 ? 'server_error' : 'invalid_input';
+            if (err.code === 'unknown_tool') return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: 'Unknown tool.', data: { request_id: pg1RequestId, unknown_tool: true } }, id: requestId });
+            return res.status(200).json({ jsonrpc: '2.0', result: { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: err.message, code: err.code, request_id: pg1RequestId }) }] }, id: requestId });
+          }
+          throw err;
+        }
       }
 
       const toolHandler = STANDARD_TOOL_HANDLERS[toolName];

@@ -802,3 +802,18 @@ curl -X POST https://your-app/api/chat \
 - 📋 [EXECUTIVE_SUMMARY.js](./EXECUTIVE_SUMMARY.js)
 - 🔍 [IMPLEMENTATION_AUDIT.js](./IMPLEMENTATION_AUDIT.js)
 - 🗺️ [UPGRADE_ROADMAP.js](./UPGRADE_ROADMAP.js)
+
+## Chat context and task focus
+
+Each chat thread carries a task state (goal, constraints, decisions, open
+items, the films, tracks and checks being worked on, and pinned rules). It
+opens the system prompt as a `[TASK STATE]` block of at most 600 tokens.
+Commands: `/task`, `/task set <goal>`, `/task clear`, `/pin <rule>`,
+`/unpin <n>`. The newest turns (`PG1_CONTEXT_RECENT_TOKENS`, default 3000)
+go to the model verbatim, result cards included as `[card] ...` lines;
+older turns are folded into a rolling summary. A refinement ("make it
+shorter") or a long-context turn is never planned on the free or light
+tier. The state and summary are saved with a saved chat
+(`pg1_chat_threads.task_state`, `context_summary`; migration
+`20261017120000_pg1_thread_task_state.sql`) and restored when it is loaded.
+A guest's state stays in that browser session and is never stored.
