@@ -84,7 +84,11 @@ export function pgRest(db, { calls = [], base = 'https://supabase.test', passthr
         const out = [];
         for (const row of rows) {
           const keys = Object.keys(row).filter((k) => types.has(k));
-          const r = await db.query(`insert into public.${path} (${keys.join(', ')}) values (${keys.map((_, i) => `$${i + 1}`).join(', ')}) returning ${select}`, keys.map((k) => enc(k, row[k])));
+          const conflict = u.searchParams.get('on_conflict');
+          const upsert = conflict && /resolution=merge-duplicates/.test(prefer) && types.has(conflict)
+            ? ` on conflict (${conflict}) do update set ${keys.filter((k) => k !== conflict).map((k) => `${k} = excluded.${k}`).join(', ') || `${conflict} = excluded.${conflict}`}`
+            : '';
+          const r = await db.query(`insert into public.${path} (${keys.join(', ')}) values (${keys.map((_, i) => `$${i + 1}`).join(', ')})${upsert} returning ${select}`, keys.map((k) => enc(k, row[k])));
           out.push(...r.rows);
         }
         return ret ? json(out, 201) : new Response(null, { status: 201 });

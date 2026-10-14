@@ -1,0 +1,172 @@
+name: PG1 lab
+
+# One PG1 lab experiment (lib/lab, dispatched by /lab start in the chat).
+#
+# Isolation. Every secret comes from the GitHub environment "lab" and is
+# lab-scoped: PG1_LAB_DISPATCH_SECRET, PG1_LAB_ANTHROPIC_API_KEY,
+# PG1_LAB_GEMINI_API_KEY (keys with their own small spend limits) and
+# PG1_LAB_GITHUB_TOKEN (fine-grained: this repository only, Contents and
+# Pull requests read/write, nothing else). No payment key, no production
+# Supabase key, no wallet: this file names no other secret, and
+# tests/lab.test.mjs fails if it ever does.
+#
+# Three jobs on three fresh runners:
+#   experiment  model calls only (POSTs to model APIs; research GETs public
+#               pages through lib/netGuard.mjs); writes the result and, for
+#               a code experiment, the proposed files
+#   test        code experiments only: applies the files and runs the test
+#               suite with NO secrets and the network blocked
+#   pull        code experiments only, and only when the tests passed: a
+#               fresh checkout commits exactly the proposed files to
+#               lab/<id>, pushes, and opens a DRAFT pull request. PG1 never
+#               merges it.
+# Hard limits: the runner stops at the signed budget and
+# PG1_LAB_MAX_MINUTES; each job has its own timeout.
+
+on:
+  workflow_dispatch:
+    inputs:
+      experiment_id:
+        description: Experiment id (set by PG1)
+        required: true
+        type: string
+      kind:
+        description: research, skill or code
+        required: true
+        type: choice
+        options: [research, skill, code]
+      goal:
+        description: What the experiment is for
+        required: true
+        type: string
+      input:
+        description: Base64 JSON input (set by PG1)
+        required: false
+        type: string
+        default: ''
+      budget_usd:
+        description: This experiment's budget in USD (signed)
+        required: true
+        type: string
+      token:
+        description: Signed dispatch token (set by PG1)
+        required: true
+        type: string
+
+run-name: lab ${{ inputs.experiment_id }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lab-${{ inputs.experiment_id }}
+  cancel-in-progress: false
+
+jobs:
+  experiment:
+    runs-on: ubuntu-latest
+    environment: lab
+    timeout-minutes: 20
+    steps:
+      - name: Mask the dispatch token
+        env:
+          LAB_TOKEN: ${{ inputs.token }}
+        run: echo "::add-mask::$LAB_TOKEN"
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --omit=dev --ignore-scripts
+      - name: Run the experiment
+        timeout-minutes: 17
+        env:
+          LAB_ID: ${{ inputs.experiment_id }}
+          LAB_KIND: ${{ inputs.kind }}
+          LAB_GOAL: ${{ inputs.goal }}
+          LAB_INPUT: ${{ inputs.input }}
+          LAB_BUDGET_USD: ${{ inputs.budget_usd }}
+          LAB_TOKEN: ${{ inputs.token }}
+          PG1_LAB_DISPATCH_SECRET: ${{ secrets.PG1_LAB_DISPATCH_SECRET }}
+          PG1_LAB_ANTHROPIC_API_KEY: ${{ secrets.PG1_LAB_ANTHROPIC_API_KEY }}
+          PG1_LAB_GEMINI_API_KEY: ${{ secrets.PG1_LAB_GEMINI_API_KEY }}
+          PG1_LAB_MAX_MINUTES: '15'
+        run: node scripts/lab-run.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab-result-${{ inputs.experiment_id }}
+          path: lab-out/
+          if-no-files-found: warn
+          retention-days: 14
+          overwrite: true
+
+  test:
+    needs: experiment
+    if: inputs.kind == 'code'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: lab-result-${{ inputs.experiment_id }}
+          path: lab-out
+      - name: Apply the proposed change and run the tests (no secrets, network blocked)
+        timeout-minutes: 15
+        env:
+          NODE_OPTIONS: --import=./tests/ci/no-network.mjs
+        run: |
+          set +e
+          if [ ! -f lab-out/patch.json ]; then echo '{"passed":false,"summary":"no patch"}' > "$RUNNER_TEMP/test.json"; exit 0; fi
+          node scripts/lab-apply.mjs lab-out/patch.json > "$RUNNER_TEMP/test.log" 2>&1 && npm test >> "$RUNNER_TEMP/test.log" 2>&1
+          code=$?
+          node -e 'const fs=require("fs");const log=fs.readFileSync(process.argv[1],"utf8");fs.writeFileSync(process.argv[2],JSON.stringify({passed:process.argv[3]==="0",summary:log.split("\n").filter(l=>/^# (tests|pass|fail|skipped)/.test(l)||/^not ok/.test(l)).slice(-40).join("\n")}))' "$RUNNER_TEMP/test.log" "$RUNNER_TEMP/test.json" "$code"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lab-test-${{ inputs.experiment_id }}
+          path: ${{ runner.temp }}/test.json
+          retention-days: 14
+
+  pull:
+    needs: [experiment, test]
+    if: inputs.kind == 'code'
+    runs-on: ubuntu-latest
+    environment: lab
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v4
+        with:
+          name: lab-result-${{ inputs.experiment_id }}
+          path: lab-out
+      - uses: actions/download-artifact@v4
+        with:
+          name: lab-test-${{ inputs.experiment_id }}
+          path: lab-out
+      - name: Push the branch and open a draft pull request
+        env:
+          PG1_LAB_GITHUB_TOKEN: ${{ secrets.PG1_LAB_GITHUB_TOKEN }}
+        run: |
+          if [ -f lab-out/patch.json ]; then node scripts/lab-pr.mjs; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab-result-${{ inputs.experiment_id }}
+          path: lab-out/result.json
+          retention-days: 14
+          overwrite: true
