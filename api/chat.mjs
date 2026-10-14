@@ -34,7 +34,11 @@ import { isPdfRequest, handlePdfCommand, PDF_WRITE_SYSTEM, PDF_CHAT_DIRECTIVE } 
 import { replyActions } from '../lib/replyActions.mjs';
 import { resolveIntent } from '../lib/voiceIntents.mjs';
 import { PG1_VOICE_DIRECTIVE } from '../lib/persona.mjs';
-import { wantsDetail, DETAIL_DIRECTIVE, SOURCED_FIGURES_DIRECTIVE, COMMAND_FORMS_DIRECTIVE, groundingSources, sourcesNote, figureChanges, figureChangeNote } from '../lib/replyFacts.mjs';
+import { wantsDetail, DETAIL_DIRECTIVE, SOURCED_FIGURES_DIRECTIVE, COMMAND_FORMS_DIRECTIVE, groundingSources, sourcesNote, figureChanges, figureChangeNote, tierChanges, tierChangeNote, extractFigures } from '../lib/replyFacts.mjs';
+import { offersDirective, offerViolations, offerNote, licenceReviewNote } from '../lib/capabilities/offers.mjs';
+import { resolveSources } from '../lib/clientDocs.mjs';
+import { whiteLabel, isOfferRequest, splitsName, providerSource, withTrademark, hasTrademark, BRAND_LINE } from '../lib/whiteLabel.mjs';
+import { ownPriceAmounts } from '../lib/capabilities/costs.mjs';
 import { isSkillsCommand, handleSkillsCommand, turnSuggestions } from '../lib/skills/chat.mjs';
 import { isLabCommand, handleLabCommand, isLabAction, handleLabApproval, LAB_ARCHITECTURE_TEXT } from '../lib/lab/chat.mjs';
 import { isOpportunitiesCommand, handleOpportunitiesCommand } from '../lib/opportunities.mjs';
@@ -1494,7 +1498,7 @@ async function streamChatReply(stream, opts) {
   var replyScrubber = createReplyScrubber(function (chunk) {
     stream.text(chunk);
     if (voice && !toolOutcomes.length) voice.push(chunk);
-  }, { redact: opts.redactReply || null, replacement: opts.identityReply || undefined });
+  }, { redact: opts.redactReply || null, replacement: opts.identityReply || undefined, keepTogether: opts.keepTogether || null });
   // VISION: "Looking at N images" opens with the model call that carries
   // them and ticks when the reply starts arriving (the model has read them).
   var imageCount = opts.imageCount || 0;
@@ -1659,7 +1663,7 @@ async function streamChatReply(stream, opts) {
   if (note && result.text && !result.aborted && !stream.clientGone) replyScrubber.push('\n\n' + note);
   // Figures: the search sources behind them, and any figure this reply
   // changed without saying so (lib/replyFacts.mjs), from code, not the model.
-  var factNote = (opts.factNotes && result.text && !result.aborted && !stream.clientGone && !result.partial) ? opts.factNotes(result.text, result) : '';
+  var factNote = (opts.factNotes && result.text && !result.aborted && !stream.clientGone && !result.partial) ? await opts.factNotes(result.text, result) : '';
   if (factNote) replyScrubber.push('\n\n' + factNote);
   replyScrubber.flush();
   if (result.text && replyScrubber.redacted.length) {
@@ -2374,9 +2378,27 @@ export default async function handler(req, res) {
     // sources this turn's web search returned (or a label that none backs
     // the figures), and any figure from earlier in the thread that the
     // reply changed without saying so.
-    var turnFactNotes = function (text, result) {
+    // Search sources are shown with their real URLs: a grounding redirect
+    // is followed once or left out (lib/clientDocs.mjs). OFFERS
+    // (lib/capabilities/offers.mjs): anything the reply offers that the
+    // capability registry does not allow, and the operator-only licence
+    // warning for a package that relies on an unsettled licence.
+    var turnFactNotes = async function (text, result) {
       var r = result || {};
-      return [sourcesNote({ text: text, sources: r.sources || [] }), figureChangeNote(figureChanges(turnCtx.state.figures, text))].filter(Boolean).join('\n\n');
+      var sources = (r.sources && r.sources.length) ? await resolveSources(r.sources, { fetchImpl: function (u, o) { return globalThis.fetch(u, o); } }) : [];
+      // An offer is client-facing: a provider's own site is not cited in it.
+      if (offerTurn) sources = sources.filter(function (src) { return !providerSource(src); });
+      // An offer that sets out prices closes with the trademark line, unless
+      // the reply already names Project-Gifted1™.
+      var brand = offerTurn && extractFigures(text).length && !hasTrademark(withTrademark(text)) ? BRAND_LINE : '';
+      return [
+        brand,
+        sourcesNote({ text: text, sources: sources, ownAmounts: ownPriceAmounts(turnCtx.state.figures) }),
+        figureChangeNote(figureChanges(turnCtx.state.figures, text)),
+        tierChangeNote(tierChanges(turnCtx.state.figures, text, { columns: turnCtx.state.columns || [] })),
+        offerNote(offerViolations(text)),
+        isOperator ? licenceReviewNote(text) : ''
+      ].filter(Boolean).join('\n\n');
     };
     var turnResult = function (reply) {
       turnCtx.state = updateFromReply(turnCtx.state, { prompt: turnCtx.prompt, reply: reply });
@@ -2481,6 +2503,7 @@ export default async function handler(req, res) {
       placeholder: imageCount > 0 ? SECRET_PLACEHOLDER : SECRET_WITHHELD,
       errorSummary: isErrorSummaryQuestion(promptText)
     });
+    var offerTurn = isOfferRequest(promptText);
     var redactReply = function (text) {
       var removed = [];
       var out = text;
@@ -2491,7 +2514,11 @@ export default async function handler(req, res) {
       }
       var guarded = replySecretGuard(out);
       guarded.removed.forEach(function (l) { if (removed.indexOf(l) === -1) removed.push(l); });
-      return { text: guarded.text, removed: removed, redacted: removed.length > 0 };
+      // WHITE LABEL (lib/whiteLabel.mjs): a reply to a request for an offer,
+      // package, quote or proposal is client-facing, so provider and model
+      // names become PG1 Studio / PG1 Sound (no note: nothing was withheld).
+      // TRADEMARK: the company is written Project-Gifted1™ in an offer.
+      return { text: offerTurn ? withTrademark(whiteLabel(guarded.text)) : guarded.text, removed: removed, redacted: removed.length > 0 };
     };
 
     // The operator's stored context (recent messages, vault files, error
@@ -2771,7 +2798,7 @@ export default async function handler(req, res) {
           // /pdf <request>: one model round on the reasoning core first.
           writeDocument: async function (request) {
             var written = await fetchModelRound({
-              activeAction: 'CLAUDE_CHAT', promptText: request, sysInstruction: PDF_WRITE_SYSTEM, mediaParts: [], anthropicKey: anthropicKey,
+              activeAction: 'CLAUDE_CHAT', promptText: request, sysInstruction: PDF_WRITE_SYSTEM + '\n' + offersDirective(), mediaParts: [], anthropicKey: anthropicKey,
               geminiKeys: chatGeminiKeys, env: process.env, isOperator: isOperator, cacheIdentity: null, contextText: '', ledger: aiLedger,
               requestId: requestTraceId, deadlineTs: deadlineTs
             }, { onSearchFailure: function (detail) { reportFailure('search_failed', detail); } });
@@ -4107,7 +4134,7 @@ export default async function handler(req, res) {
     // [TASK STATE] opens the prompt when the thread has one; the self-check
     // and the [REFERENCES] line go with the other directives.
     var turnPreamble = turnTaskBlock ? turnTaskBlock + '\n\n' : '';
-    var turnDirectives = PG1_VOICE_DIRECTIVE + '\n' + SELF_CHECK_DIRECTIVE + '\n' + SOURCED_FIGURES_DIRECTIVE + '\n' + PDF_CHAT_DIRECTIVE + '\n' + COMMAND_FORMS_DIRECTIVE + '\n' + (referenceLine(turnReference) ? referenceLine(turnReference) + '\n' : '') + (skillsOn ? skillsIndexBlock(turnSkills) + '\n' : '');
+    var turnDirectives = PG1_VOICE_DIRECTIVE + '\n' + SELF_CHECK_DIRECTIVE + '\n' + SOURCED_FIGURES_DIRECTIVE + '\n' + offersDirective() + '\n' + PDF_CHAT_DIRECTIVE + '\n' + COMMAND_FORMS_DIRECTIVE + '\n' + (referenceLine(turnReference) ? referenceLine(turnReference) + '\n' : '') + (skillsOn ? skillsIndexBlock(turnSkills) + '\n' : '');
     var sysInstruction = `${turnPreamble}You are PG1, the chat assistant of Project-Gifted1's threat-intelligence app, running on Vercel.
 [STRICT DIRECTIVE - GROUNDING & HONESTY]: Be absolutely honest at all times about the actual factual content of your answers. Never lie or fabricate results. Never state system health, uptime, integrity, file counts, pipeline status or runtime details unless that exact value appears in [CONTEXT]; if asked about status, say you cannot verify it here and point the operator to the /status command. The vault file list in [CONTEXT] is capped at 20 entries, so never present its length as a total. Stay completely grounded in the factual reality of the project. We operate an automated cybersecurity architecture deploying GitHub workflows and Supabase vault integration.
 ${identityDirective()}
@@ -4171,6 +4198,7 @@ ${turnDirectives}${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imag
         imageCount: imageCount,
         imageSkipped: imageInput.skipped,
         redactReply: redactReply,
+        keepTogether: offerTurn ? splitsName : null,
         identityReply: identityChoice.reply,
         geminiKeys: chatGeminiKeys,
         anthropicKey: anthropicKey,
@@ -4265,7 +4293,7 @@ ${turnDirectives}${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imag
     // The honesty note comes from the outcomes, not the model.
     var unverified = jsonToolOutcomes.length ? unverifiedNote(jsonToolOutcomes) : '';
     if (!modelFailed && unverified) replyText += '\n\n' + unverified;
-    var jsonFactNote = modelFailed ? '' : turnFactNotes(replyText, modelFetchResult);
+    var jsonFactNote = modelFailed ? '' : await turnFactNotes(replyText, modelFetchResult);
     if (jsonFactNote) replyText += '\n\n' + jsonFactNote;
 
     if (supabaseUrl && supabaseKey && !modelFailed && !isPdfExport) {

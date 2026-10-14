@@ -416,7 +416,8 @@ test('chat: "make it a PDF" returns the PDF itself and the prompt forbids sendin
   chatStorage();
   const history = [{ role: 'user', text: 'price it' }, { role: 'model', text: '# Packages\n\nCreator $45.' }, { role: 'user', text: 'make it a PDF' }];
   const res = await chat({ prompt: 'make it a PDF', history });
-  assert.equal(res.jsonBody.pdf.title, 'Packages');
+  // A client document is titled by the offer (item 7): a bare "Packages" says nothing.
+  assert.equal(res.jsonBody.pdf.title, 'PG1 Studio packages proposal');
   assert.doesNotMatch(res.jsonBody.reply, /run \/pdf|tap|icon/i);
   const { PDF_CHAT_DIRECTIVE } = await import('../lib/pdf/chat.mjs');
   assert.match(PDF_CHAT_DIRECTIVE, /Never tell the operator to run \/pdf, tap the Save as PDF icon/);
