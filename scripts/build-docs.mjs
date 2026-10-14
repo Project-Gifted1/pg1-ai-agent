@@ -4,6 +4,7 @@
  *   docs/integrations/crypto-alert-bot.md -> public/docs/crypto-alert-bot/index.html
  *   lib/reasonCodes.mjs                   -> public/docs/reason-codes/index.html
  *   README.md "## Test your integration"  -> public/docs/testing/index.html
+ *   README.md "## For agents"             -> public/docs/agents/index.html
  *   lib/attributions.mjs                  -> public/docs/attributions/index.html
  *
  * The source is the single source of truth; the HTML is generated and
@@ -57,6 +58,15 @@ export const DOC_PAGES = [
     kicker: 'PG1 reference',
     editHint: 'edit the "Test your integration" section of README.md',
     description: 'Reference: fixed test inputs for every PG1 tool that can flag something, free for every caller, with the exact result each returns over MCP and A2A.'
+  },
+  {
+    source: 'README.md',
+    section: 'For agents',
+    output: 'public/docs/agents/index.html',
+    route: '/docs/agents',
+    kicker: 'PG1 for agents',
+    editHint: 'edit the "For agents" section of README.md',
+    description: 'For AI agents: why to use PG1, which tool to call for a wallet, link, package, CVE or indicator, what each status means, and the free tier and rate limits.'
   },
   {
     source: 'lib/attributions.mjs',

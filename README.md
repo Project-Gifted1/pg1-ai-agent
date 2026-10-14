@@ -4,24 +4,100 @@ Threat intelligence API and MCP server for AI agents and security tooling.
 
 **License keys:** new sales are temporarily paused while data licensing is finalised. The free tier and x402 remain available.
 
+## For agents
+
+<!-- This section is published as the public page /docs/agents (public/docs/agents/index.html): after editing it, run npm run docs:build. Keep it free of repo-relative links. The limits below are pinned to lib/x402Config.mjs and lib/freeTier.mjs by tests/agent-guide.test.mjs. -->
+
+### Why agents use PG1
+
+An autonomous agent acts on things it has never seen before: it pays a wallet, opens a link, installs a package, patches a CVE. PG1 checks that thing first and answers in one machine-readable shape, `reasons` + `status` + `checks`, so the agent can decide on its own and a person can audit why.
+
+- **It never says "safe".** PG1 only knows what its sources have recorded, so the best answer it gives is `no_flags`: nothing found in the sources checked. A check that did not finish is `unknown`, never `no_flags`.
+- **Free to start.** The wallet, domain, hostname and package checks are always free. The paid calls start with 5 free calls a day; after that each is 0.01 USD in USDC on Base via x402, with no account or key.
+- **The tools that matter most:** `check_wallet_sanctions`, `check_wallet_age`, `check_hostname_reputation`, `check_domain_age`, `check_package`, `get_cve_details`, `get_cve_batch`, `get_threat_actor_profile` and `get_ioc_context`.
+
+Connect in under 30 seconds. Add the MCP server to your client:
+
+```json
+{ "mcpServers": { "pg1": { "type": "http", "url": "https://pg1-ai-agent.vercel.app/api/mcp" } } }
+```
+
+Or call it directly:
+
+```bash
+curl -X POST https://pg1-ai-agent.vercel.app/api/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"check_hostname_reputation","arguments":{"hostname":"example.com"}}}'
+```
+
+A2A agents use `https://pg1-ai-agent.vercel.app/api/a2a` (agent card at `/.well-known/agent-card.json`).
+
+### Which tool to call
+
+| You have | Call | Notes |
+|---|---|---|
+| One IP, domain, URL or file hash | `get_ioc_context` | Free when nothing is on record (`found: false`). PG1's licensed records hold only CVE ids from NVD today, so an IP, domain, URL or hash returns `found: false`; for a domain or hostname also run the two hostname checks below. |
+| Several indicators (up to 20) | `get_ioc_batch` | Free when none is found (the same CVE-only records as above). Read each entry in `results`, not only the batch `status`. |
+| A CVE id | `get_cve_details` | Several ids: `get_cve_batch` (up to 20). |
+| A vendor and product, no CVE id | `get_cve_by_product` | Known-exploited CVEs come first. |
+| A wallet address you are about to pay or trust | `check_wallet_sanctions` **and** `check_wallet_age` | Sanctions list match, then on-chain age; a wallet with no history is flagged. |
+| A link, hostname or possible phishing site | `check_hostname_reputation` **and** `check_domain_age` | Listed or look-alike hostname, then registration age; a domain under 30 days old is flagged. |
+| An npm or PyPI package before installing it | `check_package` | Flags a name that does not exist, a malicious report, or a new look-alike of a popular package. |
+| A threat actor or APT name | `get_threat_actor_profile` | MITRE ATT&CK dossier. |
+| One public IP and your own AbuseIPDB key | `check_ip_abuse` | Send the key in `X-AbuseIPDB-Key`; PG1 has no key of its own. |
+| The CVE list to ingest | `get_threat_indicators` | STIX 2.1 bundle of CVE records from NVD: CVE id and an NVD reference, no scores, no IP/domain/URL/hash indicators. REST: `GET /api/ioc`. Free while it holds no current data (`PG1_FEED_PAID` off): no payment, no licence key, and it does not use the 5 free calls a day. |
+| Your remaining free calls | `get_usage_status` | Always free. |
+
+### What `status` means
+
+| `status` | Meaning | What to do |
+|---|---|---|
+| `"no_flags"` | Nothing bad is recorded **in the sources checked** (see `checks`). It is not proof the target is safe. | Proceed under your own policy. |
+| `"flagged"` | At least one warning in `reasons`. | Stop, or escalate to a person. Match on `reasons[].code`, never on `message`. |
+| `"unknown"` | A source timed out, errored or was skipped, so the answer is incomplete. | Never treat it as clean: retry, or fail closed. |
+
+Informational codes (`WALLET_DELEGATED`, `IP_TOR_EXIT_NODE`, `IP_WHITELISTED`, `IP_REPORTS_SCORED_ZERO`) report a fact and never change `status`. Every code: [/docs/reason-codes](https://pg1-ai-agent.vercel.app/docs/reason-codes).
+
+### Free tier and rate limits
+
+| Tool | Cost | Limit without a licence key |
+|---|---|---|
+| `check_wallet_sanctions` | Always free | 120 calls/hour per caller |
+| `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `check_package` | Always free | 60 calls/hour per caller, per tool |
+| `check_ip_abuse` | Always free (your own AbuseIPDB quota) | 60 calls/hour per caller |
+| `get_usage_status` | Always free | none |
+| `get_ioc_context`, `get_ioc_batch` | Free when nothing is found; paid when something is | Paid calls use the free tier first |
+| `get_threat_indicators`, `GET /api/ioc` (the STIX feed) | Free while the feed holds no current data (`PG1_FEED_PAID` off) | none, and it does not use the 5 free calls a day |
+| `get_cve_details`, `get_cve_batch`, `get_cve_by_product`, `get_threat_actor_profile` | Paid: 0.01 USD per call | 5 free calls a day per caller, shared across all of them, then x402 |
+| Test fixtures ([/docs/testing](https://pg1-ai-agent.vercel.app/docs/testing)) | Always free | none, and they spend no free call |
+
+- **No header is needed for the free tier.** It is automatic for any caller with no payment and no licence key. Responses carry `X-Free-Tier-Limit` and `X-Free-Tier-Remaining`.
+- Send `X-Free-Tier: 0` to skip it and get the payment challenge straight away.
+- A licence key in `X-API-KEY` lifts the hourly limits and pays for paid calls.
+- A rate-limited call is a `rate_limited` error with `retry_after`.
+
 ## Two Ways to Connect
 
-- **`/api/ioc`** — simple REST GET, returns the STIX 2.1 indicator feed directly. Best for scripts, curl, and simple integrations.
-- **`/api/mcp`** — full Model Context Protocol server, 14 tools (CVE lookups, batch operations, threat actor dossiers, wallet sanctions screening, domain age, hostname/phishing reputation, wallet age/history, and more). Best for Claude, MCP-compatible agents, and any client speaking the MCP standard.
+- **`/api/ioc`** — simple REST GET, returns a STIX 2.1 bundle of CVE records from NIST NVD (the only source PG1 may currently redistribute commercially; no IP, domain, URL or file-hash indicators yet). Free while it holds no current data: no key, no payment, no free-tier use. Best for scripts, curl, and simple integrations.
+- **`/api/mcp`** — full Model Context Protocol server, 16 tools (CVE lookups, batch operations, threat actor dossiers, wallet sanctions screening, domain age, hostname/phishing reputation, wallet age/history, and more). Best for Claude, MCP-compatible agents, and any client speaking the MCP standard.
 
 **Discovery:** [`/llms.txt`](https://pg1-ai-agent.vercel.app/llms.txt) (llmstxt.org format, for AI agents/crawlers) and [`/openapi.json`](https://pg1-ai-agent.vercel.app/openapi.json) (OpenAPI 3.1 spec for `/api/ioc` and `/api/health`).
 
 **Opt-in:** `/api/ioc/context?value=<indicator>` — a REST mirror of the `get_ioc_context` MCP tool, disabled by default. The operator must set `ENABLE_REST_IOC_CONTEXT=true` for this route to respond; otherwise it returns `404 {"error":"not available"}`. Not listed in x402 Bazaar/discovery metadata.
 
-Both accept the same Gumroad license key via the `x-api-key` header, or per-call x402 micropayments ($0.01/call) via the `PAYMENT-SIGNATURE` header (x402 v2).
+Paid MCP tools accept a Gumroad license key via the `x-api-key` header, or per-call x402 micropayments ($0.01/call) via the `PAYMENT-SIGNATURE` header (x402 v2). `/api/ioc` takes the same when the operator makes the feed paid again (`PG1_FEED_PAID=true`).
 
 ## Free Tier (5 calls/day)
 
-The free tier is **opt-in** — add `x-free-tier: 1` to your request header. Without it, a request with no license key and no payment header returns `402 Payment Required` by default.
+The free tier is **automatic**: a caller with no licence key and no payment gets **5 free paid calls a day** before the first `402 Payment Required`. No header or sign-up is needed, so a browser or an MCP client's first calls just work.
+
+It is **one counter per caller (a salted hash of the IP, never the IP itself), shared** by the paid MCP tools (`/api/mcp`) and the paid A2A skills (`/api/a2a`): 5 free paid calls a day in total, whichever route spends them. A call only counts once it succeeds; `HEAD` never counts. Each free-tier response carries `X-Free-Tier-Limit` and `X-Free-Tier-Remaining`, and `get_usage_status` shows what is left. A caller offering a payment is always charged, never served free. Send `X-Free-Tier: 0` to skip the free tier and get the payment challenge straight away. Requests whose User-Agent names an x402 scanner, crawler or bot (`config/usageProbes.mjs`) skip it too, so discovery scanners still see the 402 they list paid resources by.
+
+**The STIX feed is free while it holds no current data.** `get_threat_indicators` and `GET /api/ioc` are served to anyone: no 402, no licence key, and they do not count against the 5 calls a day, even with `X-Free-Tier: 0` or a payment header (nothing is charged). The operator sets `PG1_FEED_PAID=true` to make the feed paid again once the pipeline fetches recent CVEs; it then uses the free tier and x402 like the other paid tools.
 
 ```bash
-curl -X GET "https://pg1-ai-agent.vercel.app/api/ioc" \
-  -H "x-free-tier: 1"
+curl "https://pg1-ai-agent.vercel.app/api/ioc"
 ```
 
 Optional query parameters: `?since=<ISO timestamp>`, `?type=<IPv4|domain|URL|FileHash-MD5|FileHash-SHA1|FileHash-SHA256>`, `?min_score=<0-100>`, `?limit=<1-1000>`
@@ -89,7 +165,6 @@ smithery mcp add --transport http --id pg1-threat-intel https://pg1-ai-agent.ver
 curl -X POST https://pg1-ai-agent.vercel.app/api/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -H "x-free-tier: 1" \
   -d '{
     "jsonrpc": "2.0",
     "id": 1,
@@ -107,13 +182,13 @@ Call `"method": "tools/list"` against `/api/mcp` for full schemas. Summary:
 
 | Tool | Purpose | Source(s) | Free tier applies? |
 |---|---|---|---|
-| `get_threat_indicators` | Bulk STIX 2.1 indicator feed | NVD (only sources PG1 may redistribute commercially; see [Data source switches](#data-source-switches)) | Yes (needs `x-free-tier: 1`) |
+| `get_threat_indicators` | STIX 2.1 bundle of CVE records (CVE id and NVD reference; no IP/domain/URL/hash indicators yet) | NVD (only sources PG1 may redistribute commercially; see [Data source switches](#data-source-switches)) | No: free while the feed holds no current data (`PG1_FEED_PAID`) |
 | `get_ioc_context` | Single-indicator safety check | NVD (see [Data source switches](#data-source-switches)) | Always free if not found |
 | `get_ioc_batch` | Up to 20 indicators per call | NVD (see [Data source switches](#data-source-switches)) | Always free if none found |
-| `get_cve_details` | CVE lookup enriched with NVD, EPSS, CISA KEV | NVD, FIRST.org EPSS, CISA KEV | Yes (needs `x-free-tier: 1`) |
-| `get_cve_batch` | Up to 20 CVE IDs per call | NVD, FIRST.org EPSS, CISA KEV | Yes (needs `x-free-tier: 1`) |
-| `get_cve_by_product` | Discover CVEs by vendor/product | NVD | Yes (needs `x-free-tier: 1`) |
-| `get_threat_actor_profile` | APT/threat actor dossiers with MITRE ATT&CK | MITRE ATT&CK Enterprise | Yes (needs `x-free-tier: 1`) |
+| `get_cve_details` | CVE lookup enriched with NVD, CISA KEV (EPSS only when `PG1_SOURCE_EPSS_PAID` is on) | NVD, CISA KEV | Yes (5 free calls/day, then x402) |
+| `get_cve_batch` | Up to 20 CVE IDs per call | NVD, CISA KEV (EPSS as above) | Yes (5 free calls/day, then x402) |
+| `get_cve_by_product` | Discover CVEs by vendor/product | NVD | Yes (5 free calls/day, then x402) |
+| `get_threat_actor_profile` | APT/threat actor dossiers with MITRE ATT&CK | MITRE ATT&CK Enterprise | Yes (5 free calls/day, then x402) |
 | `get_usage_status` | Check your remaining free-tier quota | — | Always free, no header needed |
 | `subscribe_alerts` | Register a webhook for new matching indicators | — | No — license key required |
 | `submit_indicator` | Contribute an observed indicator for review | — | No — license key required |
@@ -150,11 +225,19 @@ Threat indicator data (`get_threat_indicators`, `get_ioc_context`, `get_ioc_batc
 
 A locked source can only be served again by a code change, made once a licence is signed.
 
+**EPSS in paid CVE responses.** FIRST grants EPSS scores "freely to the public" but has not confirmed resale in writing, so paid CVE responses (`get_cve_details`, `get_cve_batch`, `get_cve_by_product` over MCP or A2A, whether paid by x402, a licence key or the free tier) leave EPSS out and never call FIRST for it: no `epss` field, no EPSS check, no EPSS credit. `PG1_SOURCE_EPSS_PAID=true` puts it back; set it only once FIRST confirms resale in writing. Free responses (the PG1 chat) keep EPSS.
+
+**The STIX feed's price.** `get_threat_indicators` and `/api/ioc` are free while the feed holds no current data. `PG1_FEED_PAID=true` makes them paid again (0.01 USD a call, the shared free tier first); at the same time add `/api/ioc` back to `public/.well-known/x402` and `x-payment-info` to its two operations in `public/openapi.json` (`node scripts/verify-payment-config.mjs` checks this).
+
+**Licence keys are never stored.** `api_access_logs` records a licence-key caller as `license:<HMAC>` (salted with `TELEMETRY_IP_SALT`, domain-separated from the IP hash), a free-tier caller as `free-tier:<IP hash>`, and the free feed as `free-feed`; a database check constraint rejects anything else.
+
+**`threat_indicators`.** The legacy `threat_indicators` table (rows with no `source_id` and nothing in `stix_data`) is never read by a paid route; only the operator's own chat context and the operator-only diagnostics endpoint read it. `tests/phase2-funnel.test.mjs` pins both.
+
 A switched-off source's rows never appear in any response, paid or free; an indicator known only to such a source is reported as `found: false`.
 
 ## A2A (Agent2Agent Protocol)
 
-`/api/a2a` exposes the seven always-free tools (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `check_package`, `get_usage_status`, and `check_ip_abuse`, which needs your own key in the `X-AbuseIPDB-Key` header exactly as on `/api/mcp`) over [A2A](https://a2a-protocol.org/latest/specification/), JSON-RPC 2.0. Paid tools are not available via A2A yet. The agent card is published at [`/.well-known/agent-card.json`](https://pg1-ai-agent.vercel.app/.well-known/agent-card.json). `message/send` (the v0.3 method name) is accepted as an alias of `SendMessage`. The `A2A-Version` header (or query param) selects the response shape — `1.0` or `0.3` (the default when omitted). Rate limits are the MCP tools' own, with the same counters: for example, without a licence key `check_wallet_sanctions` is limited to 120 calls/hour per caller (per IP), and the 121st call in the hour gets the same `rate_limited` error as `check_wallet_age`. Send the skill and its arguments as a `DataPart`:
+`/api/a2a` exposes the seven always-free tools (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `check_package`, `get_usage_status`, and `check_ip_abuse`, which needs your own key in the `X-AbuseIPDB-Key` header exactly as on `/api/mcp`) over [A2A](https://a2a-protocol.org/latest/specification/), JSON-RPC 2.0, plus four **paid skills**: `get_cve_details`, `get_cve_batch`, `get_cve_by_product` and `get_threat_actor_profile` (0.01 USD a call). A paid skill is served free while the caller has free calls left (the shared 5/day counter above, automatic), and after that with a licence key (`X-API-KEY`) or an x402 payment. Payment follows the [a2a-x402 extension](https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.1): an unpaid call returns a task in state `input-required` whose status message metadata carries `"x402.payment.status": "payment-required"` and the x402 v2 PaymentRequired object in `"x402.payment.required"`; resend the message with the signed PaymentPayload in `message.metadata["x402.payment.payload"]`. The payment is settled only after the skill succeeds, and the receipt comes back in `"x402.payment.receipts"`. The NVD CVE feed and the record lookups stay on `/api/mcp`. The agent card is published at [`/.well-known/agent-card.json`](https://pg1-ai-agent.vercel.app/.well-known/agent-card.json). `message/send` (the v0.3 method name) is accepted as an alias of `SendMessage`. The `A2A-Version` header (or query param) selects the response shape — `1.0` or `0.3` (the default when omitted). Rate limits are the MCP tools' own, with the same counters: for example, without a licence key `check_wallet_sanctions` is limited to 120 calls/hour per caller (per IP), and the 121st call in the hour gets the same `rate_limited` error as `check_wallet_age`. Send the skill and its arguments as a `DataPart`:
 
 ```bash
 curl -X POST https://pg1-ai-agent.vercel.app/api/a2a \
@@ -181,7 +264,7 @@ curl -X POST https://pg1-ai-agent.vercel.app/api/a2a \
 - **Your key only.** Send it in the `X-AbuseIPDB-Key` HTTP request header on `/api/mcp` or `/api/a2a`. It is never a tool argument (arguments end up in model context and logs). PG1 has no AbuseIPDB key of its own and never falls back to one: no header, no AbuseIPDB call, and the tool returns `isError: true` with code `abuseipdb_key_required`.
 - **Your results only**, always with attribution: every result carries `attribution: { "text": "Data from AbuseIPDB", "url": "https://www.abuseipdb.com/check/<ip>" }`.
 - **Cached per key only**: in memory for 15 minutes, keyed by `sha256(your key) + ip + max_age_in_days`. Never stored in a database, never served to anyone else. Raw keys are never stored, logged or returned.
-- **Never shared**: results never go into the threat indicator feed, `get_ioc_context`, `get_threat_indicators` or the pipeline.
+- **Never shared**: results never go into PG1's feed, `get_ioc_context`, `get_threat_indicators` or the pipeline.
 - **No PG1 charge** (no x402 payment); lookups count against your own AbuseIPDB quota. PG1's usual limit applies on top: 60 calls/hour per caller without a Gumroad licence key.
 
 Get a key from your AbuseIPDB account: <https://www.abuseipdb.com/account/api>.
@@ -314,7 +397,7 @@ Source of truth: `lib/reasonCodes.mjs`.
 
 <!-- This section is published as the public page /docs/testing (public/docs/testing/index.html): after editing it, run npm run docs:build. Keep it free of repo-relative links and provider names. The fixture values, the reasoning behind each, and the table rows below come from lib/fixtures.mjs. -->
 
-Every MCP tool that can flag something has three fixed, made-up fixture inputs that always return the same answer: one **FLAGGED**, one **CLEAN** and one **UNKNOWN**. `check_wallet_age` also has a fourth, **DELEGATED**. Use them to test your integration's happy path, its "flagged" path and its skip/retry path without spending anything or depending on live data.
+Every MCP tool that can flag something has three fixed, made-up fixture inputs that always return the same answer: one **FLAGGED**, one **CLEAN** and one **UNKNOWN**. A few have one more for a second case worth testing: `check_wallet_age` **DELEGATED**, `check_hostname_reputation` **LOOKALIKE** (a typosquat rather than a listed hostname), `check_package` **MISSING** (a package that does not exist, like a name an assistant invented), and `get_ioc_batch` / `get_cve_batch` **MIXED** (one flagged entry and one not, so you can check you read each entry and not only the batch status). Use them to test your integration's happy path, its "flagged" path and its skip/retry path without spending anything or depending on live data.
 
 - **Always free**, for every caller: no licence key, no `x-free-tier` header, no x402 payment, no rate-limit usage. This applies to the paid tools too.
 - **Same shape as a real response**: `reasons`, `status`, `checks` and `request_id`, plus `test_fixture: true`. Every `checks[]` entry has `source: "fixture"`. On an error-shaped UNKNOWN, `test_fixture: true` is in `error.data` (JSON-RPC errors) or next to `code` (isError tool results).
@@ -339,6 +422,7 @@ Every MCP tool that can flag something has three fixed, made-up fixture inputs t
 | `check_hostname_reputation` | FLAGGED | `{"hostname":"pg1-test-flagged.invalid"}` | verdict "listed" (match_type "exact"), status "flagged", reason HOSTNAME_PHISHING_LISTED |
 | `check_hostname_reputation` | CLEAN | `{"hostname":"pg1-test-clean.invalid"}` | verdict "not_listed", status "no_flags" |
 | `check_hostname_reputation` | UNKNOWN | `{"hostname":"pg1-test-unknown.invalid"}` | HTTP 503, JSON-RPC error -32003 "Phishing domain list temporarily unavailable, please retry." |
+| `check_hostname_reputation` | LOOKALIKE | `{"hostname":"pg1-test-lookalike.invalid"}` | verdict "lookalike", lookalike_of pg1-test-brand.invalid, status "flagged", reason HOSTNAME_LOOKALIKE |
 | `check_wallet_age` | FLAGGED | `{"address":"0x7067312d746573742d6669787475726500000001"}` | found: false (no transfer history), status "flagged", reason WALLET_NO_HISTORY |
 | `check_wallet_age` | CLEAN | `{"address":"0x7067312d746573742d6669787475726500000002"}` | found: true, first_seen 2023-09-01T00:00:00.000Z, status "no_flags" |
 | `check_wallet_age` | UNKNOWN | `{"address":"0x7067312d746573742d6669787475726500000003"}` | isError: true, code "upstream_unavailable", status "unknown" (never found: false) |
@@ -349,12 +433,14 @@ Every MCP tool that can flag something has three fixed, made-up fixture inputs t
 | `get_ioc_batch` | FLAGGED | `{"values":["2001:db8::1"]}` | total_found 1, status "flagged", reason IOC_FOUND_IN_THREAT_FEED (free, no payment) |
 | `get_ioc_batch` | CLEAN | `{"values":["2001:db8::2"]}` | total_found 0, status "no_flags" |
 | `get_ioc_batch` | UNKNOWN | `{"values":["2001:db8::3"]}` | HTTP 503, JSON-RPC error -32003 "Threat data temporarily unavailable, please retry." |
+| `get_ioc_batch` | MIXED | `{"values":["2001:db8::1","2001:db8::2"]}` | total_requested 2, total_found 1 (first found, second found: false), status "flagged" (free, no payment) |
 | `get_cve_details` | FLAGGED | `{"cve_id":"CVE-0000-0001"}` | cisa_kev.is_known_exploited: true, status "flagged", reason CVE_KNOWN_EXPLOITED_KEV (free, no payment) |
 | `get_cve_details` | CLEAN | `{"cve_id":"CVE-0000-0002"}` | cisa_kev.is_known_exploited: false, status "no_flags" |
 | `get_cve_details` | UNKNOWN | `{"cve_id":"CVE-0000-0003"}` | exploit-score and KEV checks "error", exploit score null, status "unknown" |
 | `get_cve_batch` | FLAGGED | `{"cve_ids":["CVE-0000-0001"]}` | one KEV-listed result, status "flagged", reason CVE_KNOWN_EXPLOITED_KEV (free, no payment) |
 | `get_cve_batch` | CLEAN | `{"cve_ids":["CVE-0000-0002"]}` | one non-KEV result, status "no_flags" |
 | `get_cve_batch` | UNKNOWN | `{"cve_ids":["CVE-0000-0003"]}` | exploit-score and KEV checks "error", status "unknown" |
+| `get_cve_batch` | MIXED | `{"cve_ids":["CVE-0000-0001","CVE-0000-0002"]}` | two results, the first KEV-listed and the second not, status "flagged" (free, no payment) |
 | `get_cve_by_product` | FLAGGED | `{"vendor":"pg1-test.invalid","product":"flagged"}` | one KEV-listed CVE, status "flagged", reason CVE_KNOWN_EXPLOITED_KEV (free, no payment) |
 | `get_cve_by_product` | CLEAN | `{"vendor":"pg1-test.invalid","product":"clean"}` | total_found 0, status "no_flags" |
 | `get_cve_by_product` | UNKNOWN | `{"vendor":"pg1-test.invalid","product":"unknown"}` | exploit-score and KEV checks "error", status "unknown" |
@@ -364,6 +450,7 @@ Every MCP tool that can flag something has three fixed, made-up fixture inputs t
 | `check_package` | FLAGGED | `{"ecosystem":"npm","name":"_pg1-test-flagged"}` | exists: true, age_days 3, reported_malicious: true (MAL-0000-0001), status "flagged", reasons PACKAGE_REPORTED_MALICIOUS and PACKAGE_NEWLY_PUBLISHED (informational) (synthetic data, no upstream call; "pypi" works too) |
 | `check_package` | CLEAN | `{"ecosystem":"npm","name":"_pg1-test-clean"}` | exists: true, first_published 2026-01-01, reported_malicious: false, no vulnerabilities, status "no_flags" |
 | `check_package` | UNKNOWN | `{"ecosystem":"npm","name":"_pg1-test-unknown"}` | exists: true, but the malicious-report and vulnerability checks "timeout", reported_malicious: null, status "unknown" (what a real lookup timeout returns) |
+| `check_package` | MISSING | `{"ecosystem":"npm","name":"_pg1-test-missing"}` | exists: false, status "flagged", reason PACKAGE_NOT_FOUND (a name that does not exist, like one an assistant invented) |
 
 No fixtures exist for `get_threat_indicators` (a bulk feed with no target input), `get_threat_actor_profile` and `get_usage_status` (they have no reason code to flag with), or `subscribe_alerts` and `submit_indicator` (write actions whose `status` is a lifecycle state, not a verdict).
 

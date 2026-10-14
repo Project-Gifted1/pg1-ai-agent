@@ -172,7 +172,7 @@ const KEY_SLOT_RE = /\bkey[\s_-]*(?:slot[\s_=:-]*)?#?\d+\b|\bkey[\s_-]*slot\b|(?
 // Rule 1: PG1's own licence keys.
 
 test('"how do I get a PG1 API key?" gets an honest licence answer, never the identity reply', async () => {
-  modelReply = `PG1 licence keys exist, but licence sales are paused right now and the Gumroad product is unpublished. Pay-per-call is live: /api/ioc accepts x402 payments of ${x402OfferText()}, with no account or key. The always-free tools need no key, but without one ${freeToolLimitsText()}, and /api/ioc has an opt-in free tier of ${FREE_TIER_DAILY_LIMIT} calls/day.`;
+  modelReply = `PG1 licence keys exist, but licence sales are paused right now and the Gumroad product is unpublished. Pay-per-call is live: /api/ioc accepts x402 payments of ${x402OfferText()}, with no account or key. The always-free tools need no key, but without one ${freeToolLimitsText()}, and the paid calls start with an automatic free tier of ${FREE_TIER_DAILY_LIMIT} calls/day.`;
   const res = await ask('how do I get a PG1 API key?');
   assert.equal(res.statusCode, 200);
   assert.equal(modelCalls.length, 1, 'a licence question is answered by the model');
@@ -180,7 +180,7 @@ test('"how do I get a PG1 API key?" gets an honest licence answer, never the ide
   assert.match(sys, /\[KEY QUESTION — required\]/);
   assert.match(sys, /licence sales are currently paused/);
   assert.match(sys, /need no key/);
-  assert.match(sys, /opt-in free tier of 5 calls\/day/);
+  assert.match(sys, /automatic free tier of 5 calls\/day/);
   assert.match(sys, /Give no price other than the x402 price/);
   assert.equal(res.body.reply, modelReply);
   assert.ok(!res.body.reply.includes(brandedIdentityLine()), 'no identity reply');
@@ -207,7 +207,7 @@ test('licence directive: names the anonymous rate limits from config and the /ap
   assert.equal(WALLET_AGE_RATE_LIMIT_MAX, 60);
   assert.equal(RATE_LIMIT_WINDOW_MS, 60 * 60 * 1000);
   assert.ok(d.includes(`check_hostname_reputation, check_wallet_age and check_package are limited to ${HOSTNAME_REPUTATION_RATE_LIMIT_MAX} calls/hour each`), d);
-  assert.ok(d.includes(`opt-in free tier of ${FREE_TIER_DAILY_LIMIT} calls/day`), d);
+  assert.ok(d.includes(`automatic free tier of ${FREE_TIER_DAILY_LIMIT} calls/day per caller`), d);
 });
 
 test('licence directive and business state: sales still paused, no invented URL, no "$" before a digit', () => {

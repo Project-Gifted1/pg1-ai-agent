@@ -198,12 +198,14 @@ test('the 14 pre-existing MCP tools are byte-identical to the snapshot (names, d
   assert.equal(TOOLS[15].name, 'check_package');
   assert.equal(new Set(TOOLS.map((t) => t.name)).size, TOOLS.length, 'no name clash');
   const sha = crypto.createHash('sha256').update(JSON.stringify(TOOLS.slice(0, 14))).digest('hex');
-  assert.equal(sha, 'e00e29241d73ff2afe019ba7d355015a12b1abdbef7ee3e134e913bbdde75e28');
+  assert.equal(sha, '206a7a24b7e82a2b077b432a032b4f50161cc6128ae12e50da7fc132a10cf200');
 });
 
 test('the 5 pre-existing A2A skills are unchanged; check_ip_abuse is added as the 6th, with the MCP definition', () => {
   const names = A2A_SKILL_TOOLS.map((t) => t.name);
-  assert.deepEqual(names.filter((n) => n !== 'check_ip_abuse' && n !== 'check_package').sort(), ['check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_wallet_sanctions', 'get_usage_status']);
+  // Phase 2 added the paid skills (tests/phase2-funnel.test.mjs).
+  const paid = ['get_cve_details', 'get_cve_batch', 'get_cve_by_product', 'get_threat_actor_profile'];
+  assert.deepEqual(names.filter((n) => n !== 'check_ip_abuse' && n !== 'check_package' && !paid.includes(n)).sort(), ['check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_wallet_sanctions', 'get_usage_status']);
   assert.ok(names.includes('check_ip_abuse'));
   assert.equal(A2A_SKILL_TOOLS.find((t) => t.name === 'check_ip_abuse'), tool);
 });

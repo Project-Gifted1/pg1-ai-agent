@@ -1,12 +1,15 @@
 // /api/errors/cleanup (issue #201 Phase 2b): scheduled via vercel.json's
 // crons entry. Deletes pg1_errors rows older than 30 days (by last_seen),
-// and agent_telemetry rows older than 90 days (lib/telemetry.mjs
-// purgeExpiredTelemetry) - the one daily cleanup job for both tables.
+// agent_telemetry rows older than 90 days (lib/telemetry.mjs
+// purgeExpiredTelemetry) and free_tier_usage rows older than 7 days
+// (lib/freeTier.mjs purgeExpiredFreeTierUsage) - the one daily cleanup job
+// for all three tables.
 // CRON_SECRET auth shared with api/heartbeat/pulse.js (lib/cronAuth.mjs):
 // 403 when CRON_SECRET is unset, constant-time Bearer comparison otherwise.
 
 import { getSupabaseCreds } from '../../lib/supabase.mjs';
 import { purgeExpiredTelemetry } from '../../lib/telemetry.mjs';
+import { purgeExpiredFreeTierUsage } from '../../lib/freeTier.mjs';
 import { checkCronAuth } from '../../lib/cronAuth.mjs';
 
 export const config = { maxDuration: 30 };
@@ -35,6 +38,7 @@ export default async function handler(req, res) {
   // Telemetry retention runs first and on its own: a pg1_errors failure
   // below must not keep expired telemetry rows around (and vice versa).
   var telemetry = await purgeExpiredTelemetry();
+  var freeTier = await purgeExpiredFreeTierUsage();
 
   try {
     var deleteRes = await fetch(`${creds.supUrl}/rest/v1/pg1_errors?last_seen=lt.${encodeURIComponent(cutoffIso)}`, {
@@ -46,12 +50,15 @@ export default async function handler(req, res) {
       }
     });
     if (!deleteRes.ok) {
-      return res.status(502).json({ error: 'Cleanup delete failed', status: deleteRes.status, telemetry });
+      return res.status(502).json({ error: 'Cleanup delete failed', status: deleteRes.status, telemetry, free_tier: freeTier });
     }
     if (!telemetry.ok) {
-      return res.status(502).json({ error: 'Telemetry retention delete failed', cutoff: cutoffIso, telemetry });
+      return res.status(502).json({ error: 'Telemetry retention delete failed', cutoff: cutoffIso, telemetry, free_tier: freeTier });
     }
-    return res.status(200).json({ ok: true, cutoff: cutoffIso, telemetry });
+    if (!freeTier.ok) {
+      return res.status(502).json({ error: 'Free-tier retention delete failed', cutoff: cutoffIso, telemetry, free_tier: freeTier });
+    }
+    return res.status(200).json({ ok: true, cutoff: cutoffIso, telemetry, free_tier: freeTier });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }

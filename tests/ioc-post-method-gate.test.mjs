@@ -36,6 +36,10 @@ import chatHandler from '../api/chat.mjs';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { paymentMiddleware, x402ResourceServer } from '@x402/express';
 
+// These tests exercise the paid /api/ioc gate, so the feed is made paid
+// (it is free by default while it holds no current data; tests/feed-pricing.test.mjs).
+process.env.PG1_FEED_PAID = 'true';
+
 const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_FETCH = global.fetch;
 
@@ -132,32 +136,37 @@ function installFetchMock() {
 // (tier 4) or 200 (tier 1/2) code paths. This directly exercises the new
 // method allowlist and confirms POST/HEAD now behave identically to GET.
 
-test('POST /api/ioc with no headers and no body returns a 402 identical to GET', async () => {
+// Phase 2: the free tier is automatic, so an unpaid request reaches the 402
+// once it is declined (X-Free-Tier: 0) or used up; tests/free-tier-routes
+// covers the 5 free calls themselves.
+const DECLINE_FREE_TIER = { 'x-free-tier': '0' };
+
+test('POST /api/ioc with no payment, no body and the free tier declined returns a 402 identical to GET', async () => {
   installFetchMock();
 
   const getRes = makeRes();
-  await chatHandler(makeReq({ method: 'GET', ip: '10.2.0.1' }), getRes);
+  await chatHandler(makeReq({ method: 'GET', ip: '10.2.0.1', headers: DECLINE_FREE_TIER }), getRes);
 
   const postRes = makeRes();
-  await chatHandler(makeReq({ method: 'POST', ip: '10.2.0.1' }), postRes);
+  await chatHandler(makeReq({ method: 'POST', ip: '10.2.0.1', headers: DECLINE_FREE_TIER }), postRes);
 
   assert.equal(getRes.statusCode, 402);
   assert.equal(postRes.statusCode, 402);
   assert.deepEqual(postRes.body, getRes.body);
 });
 
-test('HEAD /api/ioc with no headers returns 402, same as GET', async () => {
+test('HEAD /api/ioc with no headers returns 402: HEAD never spends a free call', async () => {
   installFetchMock();
   const res = makeRes();
   await chatHandler(makeReq({ method: 'HEAD', ip: '10.2.0.2' }), res);
   assert.equal(res.statusCode, 402);
 });
 
-test('POST /api/ioc with x-free-tier: 1 returns 200 with a STIX bundle, same as GET', async () => {
+test('POST /api/ioc with no headers gets a free-tier call: 200 with a STIX bundle, same as GET', async () => {
   installFetchMock();
   const res = makeRes();
   await chatHandler(
-    makeReq({ method: 'POST', ip: '10.2.0.3', headers: { 'x-free-tier': '1' } }),
+    makeReq({ method: 'POST', ip: '10.2.0.3' }),
     res
   );
   assert.equal(res.statusCode, 200);

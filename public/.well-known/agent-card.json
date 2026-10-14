@@ -1,7 +1,7 @@
 {
   "protocolVersion": "0.3.0",
   "name": "PG1 Sovereign Threat Intelligence",
-  "description": "Threat intelligence agent for AI agents and security tooling: wallet sanctions screening, domain age lookups, hostname/phishing reputation checks, wallet age/history checks, free-tier usage status, bring-your-own-key AbuseIPDB IP lookups (your own AbuseIPDB key in the X-AbuseIPDB-Key header), and pre-install npm/PyPI package checks. Paid tools (bulk indicator feeds, CVE enrichment, threat actor dossiers) are available via the companion MCP server at /api/mcp, not via A2A yet.",
+  "description": "Threat intelligence agent for AI agents and security tooling: wallet sanctions screening, domain age lookups, hostname/phishing reputation checks, wallet age/history checks, free-tier usage status, bring-your-own-key AbuseIPDB IP lookups (your own AbuseIPDB key in the X-AbuseIPDB-Key header), and pre-install npm/PyPI package checks, all free. Paid skills: CVE enrichment (single, batch, by product) and MITRE ATT&CK threat actor dossiers, 0.01 USD per call via x402 (a2a-x402 extension: the PaymentPayload in message.metadata[\"x402.payment.payload\"]), a Gumroad licence key in X-API-KEY, after 5 free calls a day per caller (automatic; shared with the MCP server at /api/mcp; X-Free-Tier: 0 skips them). The NVD CVE feed (free while it holds no current data) and the record lookups stay on /api/mcp and /api/ioc.",
   "version": "1.17.0",
   "documentationUrl": "https://pg1-ai-agent.vercel.app/docs/crypto-alert-bot",
   "url": "https://pg1-ai-agent.vercel.app/api/a2a",
@@ -21,7 +21,14 @@
   "capabilities": {
     "streaming": false,
     "pushNotifications": false,
-    "extendedAgentCard": false
+    "extendedAgentCard": false,
+    "extensions": [
+      {
+        "uri": "https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.1",
+        "description": "x402 payments for the paid skills: an unpaid call returns an input-required task with x402.payment.status payment-required and the x402 v2 PaymentRequired object in x402.payment.required; send the PaymentPayload in message.metadata x402.payment.payload. Settled only after the skill succeeds; the receipt is in x402.payment.receipts.",
+        "required": false
+      }
+    ]
   },
   "securitySchemes": {
     "abuseipdbKey": {
@@ -78,7 +85,11 @@
       "examples": ["How many abuse reports does 8.8.8.8 have in AbuseIPDB (with my own key)?"],
       "inputModes": ["application/json"],
       "outputModes": ["application/json"],
-      "security": [{ "abuseipdbKey": [] }]
+      "security": [
+        {
+          "abuseipdbKey": []
+        }
+      ]
     },
     {
       "id": "check_package",
@@ -95,6 +106,42 @@
       "description": "Returns your remaining free-tier calls for today and current Gumroad license status. Always free.",
       "tags": ["account", "usage", "quota"],
       "examples": ["How many free-tier calls do I have left today?"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "get_cve_details",
+      "name": "get_cve_details",
+      "description": "Enriched lookup of one CVE: NVD description and CVSS, CISA Known Exploited Vulnerabilities status (and the FIRST EPSS score only when PG1 serves EPSS in paid responses). Paid: 0.01 USD via x402 or a licence key, after the shared 5/day free tier (automatic).",
+      "tags": ["threat-intelligence", "paid", "cve", "vulnerability", "kev"],
+      "examples": ["Look up CVE-2021-44228"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "get_cve_batch",
+      "name": "get_cve_batch",
+      "description": "The same CVE enrichment for up to 20 CVE ids in one call; malformed or unknown ids are reported per entry. Paid: 0.01 USD via x402 or a licence key, after the shared 5/day free tier (automatic).",
+      "tags": ["threat-intelligence", "paid", "cve", "vulnerability", "batch"],
+      "examples": ["Look up CVE-2021-44228 and CVE-2023-4863"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "get_cve_by_product",
+      "name": "get_cve_by_product",
+      "description": "CVEs affecting a vendor/product (optionally a version) from NVD keyword search, with CVSS and CISA KEV status, known-exploited first. Paid: 0.01 USD via x402 or a licence key, after the shared 5/day free tier (automatic).",
+      "tags": ["threat-intelligence", "paid", "cve", "vulnerability", "product"],
+      "examples": ["Which CVEs affect apache log4j 2.14.1?"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "get_threat_actor_profile",
+      "name": "get_threat_actor_profile",
+      "description": "A threat actor dossier from MITRE ATT&CK Enterprise (aliases, techniques, software), with MITRE's copyright and licence notice. Paid: 0.01 USD via x402 or a licence key, after the shared 5/day free tier (automatic).",
+      "tags": ["threat-intelligence", "paid", "threat-actor", "mitre-attack", "apt"],
+      "examples": ["Profile APT29"],
       "inputModes": ["application/json"],
       "outputModes": ["application/json"]
     }

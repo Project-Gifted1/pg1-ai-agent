@@ -18,8 +18,22 @@
  * check_wallet_sanctions: 120/hour per IP without a license key
  * (WALLET_SANCTIONS_RATE_LIMIT_MAX), one counter shared with /api/mcp.
  *
- * Paid tools are deliberately NOT exposed here; they wait for the A2A
- * licensing/payment story to be worked out.
+ * Paid skills (Phase 2): get_cve_details, get_cve_batch, get_cve_by_product
+ * and get_threat_actor_profile, the same handlers as /api/mcp, behind the
+ * same gate (api/mcp.mjs resolvePaidAccess), in the same order:
+ *   1. a Gumroad licence key (X-API-KEY header);
+ *   2. an x402 v2 payment, sent the a2a-x402 extension way: the PaymentPayload
+ *      in params.message.metadata["x402.payment.payload"] (the
+ *      PAYMENT-SIGNATURE / X-Payment header is also read);
+ *   3. the free tier, automatic unless the caller pays or sends
+ *      X-Free-Tier: 0: ONE 5/day counter per caller, shared with /api/mcp
+ *      and /api/ioc (lib/freeTier.mjs), spent before any payment challenge.
+ * With none of them, the call answers with a Task in state input-required
+ * whose status message carries "x402.payment.status": "payment-required"
+ * and "x402.payment.required": the x402 v2 PaymentRequired object (the one
+ * /api/mcp returns). A paid call is settled only after the skill succeeds;
+ * the receipt is in "x402.payment.receipts". The indicator feed tools
+ * (get_threat_indicators, get_ioc_context, get_ioc_batch) stay MCP-only.
  *
  * Version negotiation (spec 3.6.2): the A2A-Version header, or the
  * A2A-Version query param if the header is absent/empty, selects the wire
@@ -54,6 +68,9 @@
 
 import {
   TOOLS,
+  STANDARD_TOOL_HANDLERS,
+  paidResponseOptions,
+  resolvePaidAccess,
   handleUsageStatus,
   handleCheckWalletSanctions,
   enforceWalletSanctionsRateLimit,
@@ -67,11 +84,13 @@ import {
   resolveTestFixture,
   requestCallerHash
 } from './mcp.mjs';
-import { getRequestIdentifier } from '../lib/freeTier.mjs';
-import { recordTelemetry } from '../lib/telemetry.mjs';
+import { getRequestIdentifier, setFreeTierHeaders } from '../lib/freeTier.mjs';
+import { recordTelemetry, toolErrorTelemetryStatus } from '../lib/telemetry.mjs';
 import { buildCheck, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
 import { formatFixIt, invalidInputMessage } from '../lib/invalidInput.mjs';
 import { ABUSEIPDB_KEY_HEADER, readCustomerKey } from '../lib/abuseIpdb.mjs';
+import { suggestToolName } from '../lib/toolNames.mjs';
+import { X402_PRICE, x402PriceUsd } from '../lib/x402Config.mjs';
 
 // Generic (never vendor-named) `checks[].source` labels for the 6 skills
 // exposed here, keyed by skill name - same idea as api/mcp.mjs's
@@ -84,12 +103,29 @@ const SKILL_SOURCE_LABELS = {
   check_hostname_reputation: 'phishing domain list',
   check_wallet_age: 'on-chain transfer history',
   check_ip_abuse: 'IP abuse reports',
-  check_package: 'package registry'
+  check_package: 'package registry',
+  get_cve_details: 'vulnerability database',
+  get_cve_batch: 'vulnerability database',
+  get_cve_by_product: 'vulnerability database',
+  get_threat_actor_profile: 'threat actor intelligence'
 };
 
 export const config = { maxDuration: 30 };
 
-const A2A_SKILL_NAMES = ['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'get_usage_status', 'check_ip_abuse', 'check_package'];
+export const A2A_FREE_SKILL_NAMES = Object.freeze(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'get_usage_status', 'check_ip_abuse', 'check_package']);
+export const A2A_PAID_SKILL_NAMES = Object.freeze(['get_cve_details', 'get_cve_batch', 'get_cve_by_product', 'get_threat_actor_profile']);
+const A2A_SKILL_NAMES = [...A2A_FREE_SKILL_NAMES, ...A2A_PAID_SKILL_NAMES];
+
+// Message metadata keys of the a2a-x402 extension.
+const X402_META = Object.freeze({
+  status: 'x402.payment.status',
+  required: 'x402.payment.required',
+  payload: 'x402.payment.payload',
+  receipts: 'x402.payment.receipts',
+  error: 'x402.payment.error'
+});
+// App-level (non-A2A) code for a rejected licence key, next to -32010.
+const LICENSE_REJECTED_CODE = -32011;
 
 // Reused verbatim from api/mcp.mjs's TOOLS array — same descriptions/schemas.
 export const A2A_SKILL_TOOLS = TOOLS.filter((tool) => A2A_SKILL_NAMES.includes(tool.name));
@@ -155,7 +191,8 @@ function jsonRpcError(res, status, code, message, id, data, pg1RequestId) {
 }
 
 // Spec 3.6.2: header takes precedence over the query param; missing/empty
-// resolves to "0.3"; anything besides "1.0" and empty/missing is rejected.
+// resolves to "0.3"; anything besides "1.0", "0.3" and empty/missing is
+// rejected.
 function resolveVersion(req) {
   let raw = req.headers && req.headers['a2a-version'];
   if (raw === undefined || raw === '') {
@@ -166,6 +203,8 @@ function resolveVersion(req) {
   if (Array.isArray(raw)) raw = raw[0];
   if (raw === undefined || raw === null || raw === '') return { version: '0.3', requested: raw };
   if (raw === '1.0') return { version: '1.0', requested: raw };
+  // An explicit "0.3" is as valid as leaving it out (supportedVersions).
+  if (raw === '0.3') return { version: '0.3', requested: raw };
   return { version: null, requested: raw };
 }
 
@@ -183,7 +222,7 @@ function extractDataPart(message) {
 }
 
 function stateValue(state, version) {
-  if (version === '1.0') return state === 'completed' ? 'TASK_STATE_COMPLETED' : 'TASK_STATE_FAILED';
+  if (version === '1.0') return { completed: 'TASK_STATE_COMPLETED', 'input-required': 'TASK_STATE_INPUT_REQUIRED' }[state] || 'TASK_STATE_FAILED';
   return state;
 }
 
@@ -197,7 +236,7 @@ function buildDataPart(data, version) {
   return { kind: 'data', data };
 }
 
-function buildMessage(role, data, version, { messageId, contextId, taskId }) {
+function buildMessage(role, data, version, { messageId, contextId, taskId, metadata }) {
   const message = {
     role: roleValue(role, version),
     parts: [buildDataPart(data, version)],
@@ -205,11 +244,45 @@ function buildMessage(role, data, version, { messageId, contextId, taskId }) {
     contextId,
     taskId
   };
+  if (metadata) message.metadata = metadata;
   if (version === '0.3') message.kind = 'message';
   return message;
 }
 
-function taskResult(skill, args, result, version, inboundMessage) {
+// The inbound message without the payment payload (a signed authorisation
+// is never echoed back in history).
+function historyMessageMetadata(inboundMessage) {
+  const meta = inboundMessage && inboundMessage.metadata;
+  if (!meta || typeof meta !== 'object') return undefined;
+  const { [X402_META.payload]: _payload, ...rest } = meta;
+  return Object.keys(rest).length ? rest : undefined;
+}
+
+// A paid skill call that needs payment first (a2a-x402): an input-required
+// Task whose status message carries the PaymentRequired object.
+function paymentRequiredTask(skill, args, paymentRequired, version, inboundMessage, { failed = false } = {}) {
+  const taskId = crypto.randomUUID();
+  const contextId = (inboundMessage && inboundMessage.contextId) || crypto.randomUUID();
+  const metadata = { [X402_META.status]: failed ? 'payment-failed' : 'payment-required', [X402_META.required]: paymentRequired };
+  if (failed && paymentRequired && paymentRequired.error) metadata[X402_META.error] = paymentRequired.error;
+  const note = {
+    payment_required: true,
+    skill,
+    message: `${skill} is a paid skill and today's 5 free calls (shared across /api/mcp, /api/ioc and /api/a2a) are used up or were declined with X-Free-Tier: 0. Pay per call with x402 (the PaymentPayload in message.metadata["${X402_META.payload}"]) or send a Gumroad licence key in X-API-KEY.`
+  };
+  const status = { state: stateValue('input-required', version), timestamp: new Date().toISOString(), message: buildMessage('agent', note, version, { contextId, taskId, metadata }) };
+  const task = {
+    id: taskId,
+    contextId,
+    status,
+    metadata,
+    history: [buildMessage('user', { skill, arguments: args }, version, { messageId: inboundMessage && inboundMessage.messageId, contextId, taskId, metadata: historyMessageMetadata(inboundMessage) })]
+  };
+  if (version === '0.3') task.kind = 'task';
+  return task;
+}
+
+function taskResult(skill, args, result, version, inboundMessage, { paymentMetadata } = {}) {
   const now = new Date().toISOString();
   const taskId = crypto.randomUUID();
   const contextId = (inboundMessage && inboundMessage.contextId) || crypto.randomUUID();
@@ -219,6 +292,7 @@ function taskResult(skill, args, result, version, inboundMessage) {
     id: taskId,
     contextId,
     status: { state: stateValue('completed', version), timestamp: now },
+    ...(paymentMetadata ? { metadata: paymentMetadata } : {}),
     artifacts: [
       {
         artifactId: crypto.randomUUID(),
@@ -227,8 +301,8 @@ function taskResult(skill, args, result, version, inboundMessage) {
       }
     ],
     history: [
-      buildMessage('user', inboundData, version, { messageId: inboundMessage && inboundMessage.messageId, contextId, taskId }),
-      buildMessage('agent', result, version, { contextId, taskId })
+      buildMessage('user', inboundData, version, { messageId: inboundMessage && inboundMessage.messageId, contextId, taskId, metadata: historyMessageMetadata(inboundMessage) }),
+      buildMessage('agent', result, version, { contextId, taskId, metadata: paymentMetadata })
     ]
   };
   if (version === '0.3') task.kind = 'task';
@@ -236,8 +310,11 @@ function taskResult(skill, args, result, version, inboundMessage) {
 }
 
 // Telemetry for one skill call (lib/telemetry.mjs): the skill name (always
-// one of A2A_SKILL_NAMES), how it ended, and a salted hash of the caller IP.
-// Every skill here is free. Never the arguments or the result.
+// one of A2A_SKILL_NAMES), how it was paid for (free skills: 'free'; paid
+// skills: license / free_tier / x402 / none), how it ended, and a salted
+// hash of the caller IP. Never the arguments or the result. An unknown
+// skill is recorded too, as unknown_tool with the name reduced in
+// lib/telemetry.mjs (requested_tool), like /api/mcp.
 function statusFromHttp(statusCode) {
   if (statusCode >= 200 && statusCode < 300) return 'ok';
   if (statusCode === 429) return 'rate_limited';
@@ -251,9 +328,10 @@ function recordSkillTelemetry(skillTelemetry, res) {
     recordTelemetry({
       eventType: 'tool_call',
       endpoint: '/api/a2a',
-      toolName: skillTelemetry.skill,
-      paymentType: 'free',
-      status: skillTelemetry.status || statusFromHttp(res.statusCode),
+      toolName: skillTelemetry.unknown ? null : skillTelemetry.skill,
+      requestedTool: skillTelemetry.unknown ? skillTelemetry.skill : null,
+      paymentType: skillTelemetry.paymentType || 'free',
+      status: skillTelemetry.unknown ? 'unknown_tool' : (skillTelemetry.status || statusFromHttp(res.statusCode)),
       latencyMs: Date.now() - skillTelemetry.startedAt,
       callerHash: requestCallerHash(skillTelemetry.req),
       isFixture: skillTelemetry.isFixture === true
@@ -270,8 +348,8 @@ export default async function handler(req, res) {
   res.setHeader('X-Request-Id', pg1RequestId);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', `Content-Type, Authorization, x-api-key, A2A-Version, ${ABUSEIPDB_KEY_HEADER}`);
-  res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id, Retry-After');
+  res.setHeader('Access-Control-Allow-Headers', `Content-Type, Authorization, x-api-key, A2A-Version, X-A2A-Extensions, X-Free-Tier, PAYMENT-SIGNATURE, X-Payment, ${ABUSEIPDB_KEY_HEADER}`);
+  res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id, Retry-After, X-Free-Tier-Limit, X-Free-Tier-Remaining');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
@@ -367,11 +445,13 @@ export default async function handler(req, res) {
     const args = (data.arguments && typeof data.arguments === 'object') ? data.arguments : {};
 
     if (typeof skill !== 'string' || !A2A_SKILL_NAMES.includes(skill)) {
+      if (typeof skill === 'string' && skill) skillTelemetry = { skill, req, unknown: true, startedAt: Date.now() };
+      const suggestion = typeof skill === 'string' ? suggestToolName(skill, A2A_SKILL_NAMES) : null;
       return jsonRpcError(res, 400, -32602, formatFixIt({
-        problem: 'Unknown skill: the DataPart\'s "skill" is not one of this agent\'s skills',
+        problem: `Unknown skill: the DataPart's "skill" is not one of this agent's skills${suggestion ? `. Did you mean ${suggestion}?` : ''}`,
         expected: `"skill" set to one of ${A2A_SKILL_NAMES.join(', ')}`,
-        example: 'check_domain_age'
-      }, pg1RequestId), requestId, undefined, pg1RequestId);
+        example: suggestion || 'check_domain_age'
+      }, pg1RequestId), requestId, { unknown_skill: true, suggestion }, pg1RequestId);
     }
 
     skillTelemetry = { skill, req, status: null, startedAt: Date.now() };
@@ -398,9 +478,33 @@ export default async function handler(req, res) {
     const licenseKey = req.headers['x-api-key'];
     const identifier = getRequestIdentifier(req);
 
+    // Paid skills: the shared gate first (api/mcp.mjs resolvePaidAccess).
+    let gate = null;
+    if (A2A_PAID_SKILL_NAMES.includes(skill)) {
+      const metaPayment = inboundMessage && inboundMessage.metadata && inboundMessage.metadata[X402_META.payload];
+      gate = await resolvePaidAccess(req, { licenseKey, identifier, payment: metaPayment || undefined, endpoint: '/api/a2a' });
+      skillTelemetry.paymentType = !gate.authorized ? 'none' : gate.settle ? 'x402' : gate.consumeFreeTier ? 'free_tier' : 'license';
+      if (gate.licenseUnavailable) {
+        res.setHeader('Retry-After', '5');
+        recordToolError(`/api/a2a:${skill}`, 503, `${skill}_license_verification_unavailable`, 'upstream', pg1RequestId);
+        return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, 'License verification temporarily unavailable, please retry.', requestId, undefined, pg1RequestId);
+      }
+      if (gate.freeTierRemaining !== undefined) setFreeTierHeaders(res, gate.freeTierRemaining);
+      if (gate.licenseError) {
+        skillTelemetry.status = 'payment_required';
+        return jsonRpcError(res, 200, LICENSE_REJECTED_CODE, 'Payment Required: ' + gate.licenseError, requestId, { payment_required: true }, pg1RequestId);
+      }
+      if (!gate.authorized) {
+        skillTelemetry.status = gate.freeLimitReached ? 'free_limit_reached' : 'payment_required';
+        return res.status(200).json({ jsonrpc: '2.0', result: paymentRequiredTask(skill, args, gate.paymentRequired, version, inboundMessage), id: requestId });
+      }
+    }
+
     let toolResult;
     try {
-      toolResult = await runSkill(skill, args, identifier, licenseKey, req);
+      toolResult = gate
+        ? await STANDARD_TOOL_HANDLERS[skill](args, paidResponseOptions())
+        : await runSkill(skill, args, identifier, licenseKey, req);
     } catch (err) {
       if (err.serviceUnavailable) {
         recordToolError(`/api/a2a:${skill}`, 503, `${skill}_upstream_unavailable`, 'upstream', pg1RequestId);
@@ -418,7 +522,7 @@ export default async function handler(req, res) {
           const isTimeout = /timed out/i.test(err.message);
           recordToolError(`/api/a2a:${skill}`, null, `${skill}_${isTimeout ? 'timeout' : 'upstream_unavailable'}`, isTimeout ? 'timeout' : 'upstream', pg1RequestId);
         }
-        skillTelemetry.status = err.code === 'rate_limited' ? 'rate_limited' : 'tool_error';
+        skillTelemetry.status = toolErrorTelemetryStatus(err);
         const errorChecks = [buildCheck(SKILL_SOURCE_LABELS[skill] || skill, classifyToolErrorCheckResult(err))];
         const errorData = { code: err.code, ...errorResponseMeta(errorChecks, pg1RequestId) };
         if (err.retryAfter) {
@@ -427,12 +531,35 @@ export default async function handler(req, res) {
         }
         return jsonRpcError(res, 200, -32000, invalidInputMessage(err, pg1RequestId), requestId, errorData, pg1RequestId);
       }
-      return jsonRpcError(res, 400, -32602, invalidInputMessage(err, pg1RequestId), requestId, undefined, pg1RequestId);
+      return jsonRpcError(res, 400, err.notFound ? -32004 : -32602, invalidInputMessage(err, pg1RequestId), requestId, undefined, pg1RequestId);
     }
     toolResult.request_id = pg1RequestId;
     if (skill === 'check_package') logPackageCheckFailures('/api/a2a', toolResult, pg1RequestId);
 
-    return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, args, toolResult, version, inboundMessage), id: requestId });
+    let paymentMetadata;
+    if (gate && gate.settle) {
+      // Settled only now, after the skill succeeded (x402: never before).
+      const settleStartedAt = Date.now();
+      let settled = null;
+      let failure = 'Settlement failed';
+      try {
+        settled = await gate.settle();
+        if (!settled || !settled.success) failure = (settled && (settled.errorMessage || settled.errorReason)) || failure;
+      } catch (e) {
+        failure = 'Settlement failed: ' + e.message;
+      }
+      const ok = !!(settled && settled.success);
+      recordTelemetry({ eventType: 'settlement', endpoint: '/api/a2a', toolName: skill, paymentType: 'x402', status: ok ? 'settled' : 'failed', latencyMs: Date.now() - settleStartedAt, callerHash: requestCallerHash(req), amountUsd: ok ? x402PriceUsd(X402_PRICE) : null });
+      if (!ok) {
+        skillTelemetry.status = 'settlement_failed';
+        const paymentRequired = await gate.settlementFailurePaymentRequired(failure);
+        return res.status(200).json({ jsonrpc: '2.0', result: paymentRequiredTask(skill, args, paymentRequired, version, inboundMessage, { failed: true }), id: requestId });
+      }
+      paymentMetadata = { [X402_META.status]: 'payment-completed', [X402_META.receipts]: [settled] };
+    }
+    if (gate && gate.consumeFreeTier) await gate.consumeFreeTier();
+
+    return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, args, toolResult, version, inboundMessage, { paymentMetadata }), id: requestId });
   } catch (err) {
     // Catch-all for anything the specific handling above didn't already turn
     // into a sanitized message (a genuine bug, not an expected failure) -

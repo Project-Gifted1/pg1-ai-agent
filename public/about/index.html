@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0a0a0b">
   <meta name="color-scheme" content="dark">
   <title>About PG1 Threat Intelligence</title>
-  <meta name="description" content="PG1 is a threat-intelligence service for AI agents: free wallet, domain, hostname and package checks over MCP, A2A and REST, plus a STIX 2.1 indicator feed paid per call with x402 on Base.">
+  <meta name="description" content="PG1 is a threat-intelligence service for AI agents: free wallet, domain, hostname and package checks over MCP, A2A and REST, a STIX 2.1 CVE feed from NVD (free for now), and CVE enrichment paid per call with x402 on Base.">
   <link rel="canonical" href="https://pg1-ai-agent.vercel.app/about">
   <link rel="icon" href="/brand/pg1-shield.svg" type="image/svg+xml">
   <style>
@@ -124,9 +124,9 @@
   </section>
 
   <section aria-labelledby="ioc">
-    <h2 id="ioc">Indicator feed: /api/ioc</h2>
-    <p><code>GET /api/ioc</code> returns a STIX 2.1 bundle (<code>application/stix+json</code>) of threat indicators, filterable by <code>since</code>, <code>type</code>, <code>min_score</code> and <code>limit</code>.</p>
-    <p>It is paid per call with x402: a request without payment gets HTTP 402 and an x402 v2 payment challenge for $0.01 in USDC on Base (<code>eip155:8453</code>). A licence key is also accepted. The MCP server lists further tools (bulk indicator feeds, CVE enrichment, threat-actor profiles) on the same terms.</p>
+    <h2 id="ioc">CVE feed: /api/ioc</h2>
+    <p><code>GET /api/ioc</code> returns a STIX 2.1 bundle (<code>application/stix+json</code>) of CVE records from NIST NVD, the only source PG1 may currently redistribute commercially: vulnerability objects with the CVE id and an NVD reference, no scores. It holds no IP, domain, URL or file-hash indicators yet. Filterable by <code>since</code>, <code>type</code>, <code>min_score</code> and <code>limit</code>. It is free while it holds no current data: no payment, no licence key, and it does not use the 5 free calls a day. The operator's <code>PG1_FEED_PAID</code> switch makes it paid again once the pipeline fetches recent CVEs.</p>
+    <p>When paid, it is paid per call with x402: a request without payment gets HTTP 402 and an x402 v2 payment challenge for $0.01 in USDC on Base (<code>eip155:8453</code>), and a licence key is also accepted. The MCP server's paid tools (CVE enrichment with scores, threat-actor profiles) are on those terms today.</p>
   </section>
 
   <section aria-labelledby="connect">

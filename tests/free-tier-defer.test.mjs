@@ -13,6 +13,10 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
+// These tests exercise the paid /api/ioc gate, so the feed is made paid
+// (it is free by default while it holds no current data; tests/feed-pricing.test.mjs).
+process.env.PG1_FEED_PAID = 'true';
+
 process.env.SUPABASE_URL = 'https://example.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
 process.env.USER_API_KEY = 'test-operator';
@@ -132,7 +136,9 @@ function installMcpFetchMock(telemetryOk) {
 async function callFreeTierTool() {
   const req = {
     method: 'POST',
-    headers: { 'x-free-tier': '1' },
+    // A caller IP is needed: the counter is keyed by its salted hash, and a
+    // request with no IP at all gets no free tier (lib/freeTier.mjs).
+    headers: { 'x-free-tier': '1', 'x-forwarded-for': '203.0.113.77' },
     body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_threat_indicators', arguments: {} } }
   };
   const res = makeRes();

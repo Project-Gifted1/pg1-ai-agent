@@ -43,8 +43,14 @@ test('robots.txt exists and allows all crawlers', () => {
 // POST /api/ioc is listed too: the runtime answers POST with the same x402
 // challenge, and x402scan's probe prefers a POST advisory over GET, so the
 // POST operation must carry its own input schema (see the test below).
-const PAID_OPERATIONS = [['/api/ioc', 'get', '0.01'], ['/api/ioc', 'post', '0.01']];
-const FREE_OPERATIONS = [['/api/health', 'get']];
+// The STIX feed (/api/ioc) is free while it holds no current data
+// (PG1_FEED_PAID, default off; tests/feed-pricing.test.mjs), so no REST
+// operation is paid today: the paid tools are on /api/mcp. Turning the feed
+// paid again means moving both /api/ioc operations back into PAID_OPERATIONS
+// with x-payment-info and a non-anonymous security requirement.
+const PAID_OPERATIONS = [];
+const FREE_FEED_OPERATIONS = [['/api/ioc', 'get'], ['/api/ioc', 'post']];
+const FREE_OPERATIONS = [['/api/health', 'get'], ...FREE_FEED_OPERATIONS];
 
 function loadSpec() {
   return JSON.parse(fs.readFileSync(path.join(publicDir, 'openapi.json'), 'utf8'));
@@ -92,6 +98,17 @@ for (const [route, method, price] of PAID_OPERATIONS) {
   });
 }
 
+for (const [route, method] of FREE_FEED_OPERATIONS) {
+  test(`openapi.json free feed operation ${method.toUpperCase()} ${route} keeps its schemas and says it is free`, () => {
+    const op = loadSpec().paths[route][method];
+    assert.match(op.operationId || '', /^[A-Za-z][A-Za-z0-9_]*$/);
+    const ok = op.responses['200'];
+    assert.ok(Object.values(ok.content || {}).every((c) => c.schema && c.schema.type === 'object' && c.schema.properties));
+    assert.match(op.description, /FREE while the feed holds no current data/);
+    assert.match(op.responses['402'].description, /PG1_FEED_PAID/, 'a 402 is documented only for the paid switch');
+  });
+}
+
 for (const [route, method] of FREE_OPERATIONS) {
   test(`openapi.json free operation ${method.toUpperCase()} ${route} declares security: []`, () => {
     const op = loadSpec().paths[route][method];
@@ -110,7 +127,7 @@ test('openapi.json info.contact.email is set', () => {
 // path item's) is non-empty or it has a requestBody with a content schema.
 // x402scan probes every method and prefers POST over GET, so every method the
 // runtime gates with x402 needs one (HEAD is only picked if neither exists).
-test('openapi.json gives every x402-gated /api/ioc method an operation-level input schema', () => {
+test('openapi.json gives every /api/ioc method an operation-level input schema (x402scan, should the feed be paid again)', () => {
   const item = loadSpec().paths['/api/ioc'];
   for (const method of ['get', 'post']) {
     const op = item[method];

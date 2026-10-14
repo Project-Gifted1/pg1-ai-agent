@@ -107,20 +107,21 @@ import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { x402ResourceServer } from '@x402/express';
 import { encodePaymentRequiredHeader, encodePaymentResponseHeader, decodePaymentSignatureHeader } from '@x402/core/http';
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
-import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT } from '../lib/freeTier.mjs';
+import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT, freeTierKey, freeTierWanted, setFreeTierHeaders } from '../lib/freeTier.mjs';
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
-import { X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX, IP_ABUSE_RATE_LIMIT_MAX, PACKAGE_CHECK_RATE_LIMIT_MAX, FREE_MCP_TOOLS, x402PriceUsd } from '../lib/x402Config.mjs';
+import { isFeedPaid, X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX, IP_ABUSE_RATE_LIMIT_MAX, PACKAGE_CHECK_RATE_LIMIT_MAX, FREE_MCP_TOOLS, x402PriceUsd } from '../lib/x402Config.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { detectIndicatorType, lookupIocContext } from '../lib/iocContext.mjs';
-import { fetchThreatTelemetry } from '../lib/sourcePolicy.mjs';
+import { fetchThreatTelemetry, isEpssPaidEnabled } from '../lib/sourcePolicy.mjs';
+import { suggestToolName } from '../lib/toolNames.mjs';
 import { normalizeWalletAddress, isRecognizedWalletAddress } from '../lib/walletAddress.mjs';
 import { extractRegistrableDomain } from '../lib/domainExtraction.mjs';
 import { domainToASCII, domainToUnicode } from 'node:url';
 import { logApiError } from '../lib/errorLog.mjs';
-import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
+import { recordTelemetry, callerHash, toolErrorTelemetryStatus } from '../lib/telemetry.mjs';
 import { reason } from '../lib/reasonCodes.mjs';
 import { buildCheck, withResponseMeta, withActionResponseMeta, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
-import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES, FIXTURE_DELEGATE_ADDRESS, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, FIXTURE_DOMAIN_CLEAN_REGISTERED, FIXTURE_PACKAGE_FLAGGED_AGE_DAYS, FIXTURE_PACKAGE_MALICIOUS_REPORT, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
+import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES, FIXTURE_DELEGATE_ADDRESS, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, FIXTURE_DOMAIN_CLEAN_REGISTERED, FIXTURE_PACKAGE_FLAGGED_AGE_DAYS, FIXTURE_PACKAGE_MALICIOUS_REPORT, FIXTURE_LOOKALIKE_OF, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
 import { invalidInput, invalidInputMessage, withFixIt, formatFixIt } from '../lib/invalidInput.mjs';
 import { ABUSEIPDB_KEY_HEADER, ABUSEIPDB_ATTRIBUTION_TEXT, ABUSEIPDB_TIMEOUT_MS, MAX_AGE_DAYS_DEFAULT, abuseIpdbCheckUrlFor, keyRequiredError, readCustomerKey, normalizePublicIp, normalizeMaxAgeDays, getCachedLookup, setCachedLookup, fetchAbuseIpdbCheck } from '../lib/abuseIpdb.mjs';
 import { checkPackage, normalizePackageInput, buildPackageResult, packageCheckFailureReasons, PACKAGE_SOURCES } from '../lib/packageCheck.mjs';
@@ -205,10 +206,14 @@ export const TEST_FIXTURE_OUTPUT_PROPERTIES = {
   test_fixture: { type: 'boolean', description: 'true only when the input was a documented integration test fixture and this response is canned; absent on real results.' }
 };
 
+// Whether the feed tool's description states a price: fixed when the server
+// starts (lib/x402Config.mjs isFeedPaid; an env change needs a redeploy).
+const FEED_PAID_AT_START = isFeedPaid();
+
 export const TOOLS = [
   {
     name: 'get_threat_indicators',
-    description: 'PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of verified threat indicators (IPs, domains, URLs, file hashes) sourced from NVD; only sources PG1 may redistribute commercially are served. Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for bulk feed synchronizations. Do NOT use for single-item lookups (use get_ioc_context) or CVE analysis (use get_cve_details). USAGE EXCLUSIONS: Does not provide historical query archival beyond the active ingestion window. BEHAVIOR: Pagination is handled via the limit parameter (max 1000). If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta["x402/payment-response"].',
+    description: 'PG1 Sovereign Threat Intelligence: returns a STIX 2.1 bundle of CVE records from NIST NVD, the only source PG1 may currently redistribute commercially. Today it contains no IP, domain, URL or file-hash indicators: every object is a STIX vulnerability with the CVE id and an NVD reference, without scores (use get_cve_details for CVSS and known-exploited status). ' + (FEED_PAID_AT_START ? 'Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). ' : 'FREE while this feed holds no current data: no payment, no licence key, and it does not use the 5 free calls a day. ') + 'SIBLING DIFFERENTIATION: Use ONLY for bulk feed synchronizations. Do NOT use for single-item lookups (use get_ioc_context) or CVE analysis (use get_cve_details). USAGE EXCLUSIONS: Does not provide historical query archival beyond the active ingestion window. BEHAVIOR: Pagination is handled via the limit parameter (max 1000).' + (FEED_PAID_AT_START ? ' If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta["x402/payment-response"].' : ''),
     inputSchema: {
       type: 'object',
       properties: {
@@ -221,7 +226,7 @@ export const TOOLS = [
   },
   {
     name: 'get_cve_details',
-    description: 'PG1 Sovereign Threat Intelligence: enriched CVE lookup combining NVD (description, CVSS score/vector), FIRST.org EPSS (exploit-probability score and percentile), and the CISA Known Exploited Vulnerabilities catalog (active wild exploitation status). Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for specific CVE lookups. Do NOT use for IP/domain/hash enrichment (use get_ioc_context) or bulk feed ingestion (use get_threat_indicators). USAGE EXCLUSIONS: Does not support wildcard search or threat-actor dossier profiling. BEHAVIOR: If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta["x402/payment-response"]. Returns 404 if CVE is not found.',
+    description: 'PG1 Sovereign Threat Intelligence: enriched CVE lookup combining NVD (description, CVSS score/vector) and the CISA Known Exploited Vulnerabilities catalog (active wild exploitation status). The epss field (FIRST.org EPSS exploit-probability score and percentile) is present only when this server serves EPSS in paid responses. Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use ONLY for specific CVE lookups. Do NOT use for IP/domain/hash enrichment (use get_ioc_context) or bulk feed ingestion (use get_threat_indicators). USAGE EXCLUSIONS: Does not support wildcard search or threat-actor dossier profiling. BEHAVIOR: If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta["x402/payment-response"]. Returns 404 if CVE is not found.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -232,7 +237,7 @@ export const TOOLS = [
   },
   {
     name: 'get_ioc_context',
-    description: "PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) — the recommended pre-action safety check for AI agents before visiting, downloading, or connecting to something. Returns aggregated provenance from PG1's commercially licensed sources (currently NVD) — reporting sources, observation count, aggregated confidence score, known malware families, tags, and first/last seen timestamps. SIBLING DIFFERENTIATION: Use ONLY for point-lookup enrichment of a single indicator. Do NOT use for bulk intelligence downloads (use get_threat_indicators), multiple indicators at once (use get_ioc_batch), or software vulnerability analysis (use get_cve_details). BEHAVIOR: Returns a normal result shaped { found: true, indicator_type, provenance } or { found: false } — never an error for 'not found'. A found:false result means nothing bad is recorded in PG1's sources; it does NOT mean the indicator is safe, only that it isn't in this dataset. Lookups that return found:false are FREE — no payment or free-tier quota is consumed. Payment (x402 via params._meta['x402/payment'], with the PAYMENT-SIGNATURE header also accepted, or a Gumroad X-API-KEY license) is only required when a real record is found. If payment is required but missing or fails, the result has isError: true with the x402 v2 PaymentRequired object in structuredContent.",
+    description: "PG1 Sovereign Threat Intelligence: looks up a single specific indicator value (IP, domain, URL, or hash) — the recommended pre-action safety check for AI agents before visiting, downloading, or connecting to something. PG1's commercially licensed records currently hold only CVE identifiers from NVD, so an IP, domain, URL or hash returns found: false (free) until other licensed sources are added. A match returns aggregated provenance — reporting sources, observation count, aggregated confidence score, known malware families, tags, and first/last seen timestamps. SIBLING DIFFERENTIATION: Use ONLY for point-lookup enrichment of a single indicator. Do NOT use for bulk intelligence downloads (use get_threat_indicators), multiple indicators at once (use get_ioc_batch), or software vulnerability analysis (use get_cve_details). BEHAVIOR: Returns a normal result shaped { found: true, indicator_type, provenance } or { found: false } — never an error for 'not found'. A found:false result means nothing bad is recorded in PG1's sources; it does NOT mean the indicator is safe, only that it isn't in this dataset. Lookups that return found:false are FREE — no payment or free-tier quota is consumed. Payment (x402 via params._meta['x402/payment'], with the PAYMENT-SIGNATURE header also accepted, or a Gumroad X-API-KEY license) is only required when a real record is found. If payment is required but missing or fails, the result has isError: true with the x402 v2 PaymentRequired object in structuredContent.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -243,7 +248,7 @@ export const TOOLS = [
   },
   {
     name: 'get_cve_batch',
-    description: "PG1 Sovereign Threat Intelligence: looks up multiple CVE identifiers in a single call, each enriched with NVD description/CVSS, FIRST.org EPSS score, and CISA KEV status — same enrichment as get_cve_details, batched. Payment required: $0.01 via x402, sent in params._meta['x402/payment'] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for looking up several known CVE ids at once (e.g. from an SBOM or scan report). Do NOT use for a single CVE (use get_cve_details, lower overhead) or for discovering CVEs by vendor/product (use get_cve_by_product). BEHAVIOR: Accepts up to " + CVE_BATCH_MAX + " ids per call; malformed or not-found ids are reported per-entry rather than failing the whole batch.",
+    description: "PG1 Sovereign Threat Intelligence: looks up multiple CVE identifiers in a single call, each enriched with NVD description/CVSS and CISA KEV status (plus the FIRST.org EPSS score when this server serves EPSS in paid responses) — same enrichment as get_cve_details, batched. Payment required: $0.01 via x402, sent in params._meta['x402/payment'] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for looking up several known CVE ids at once (e.g. from an SBOM or scan report). Do NOT use for a single CVE (use get_cve_details, lower overhead) or for discovering CVEs by vendor/product (use get_cve_by_product). BEHAVIOR: Accepts up to " + CVE_BATCH_MAX + " ids per call; malformed or not-found ids are reported per-entry rather than failing the whole batch.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -258,7 +263,7 @@ export const TOOLS = [
   },
   {
     name: 'get_ioc_batch',
-    description: "PG1 Sovereign Threat Intelligence: looks up multiple indicators (IPs, domains, URLs, hashes) in a single call — a batched pre-action safety check for AI agents. Each returns the same aggregated provenance as get_ioc_context from PG1's commercially licensed sources (currently NVD). SIBLING DIFFERENTIATION: Use for checking several indicators at once (e.g. all URLs an agent is about to visit). Do NOT use for a single indicator (use get_ioc_context, lower overhead) or bulk feed synchronization (use get_threat_indicators). BEHAVIOR: Accepts up to " + IOC_BATCH_MAX + " indicators per call. A found:false result for any indicator means nothing bad is recorded in PG1's sources — NOT that it's safe. If NONE of the submitted indicators are found, the whole batch is FREE — no payment or free-tier quota consumed. If at least one indicator is found, the normal payment gate (x402 via params._meta['x402/payment'], with the PAYMENT-SIGNATURE header also accepted, or a Gumroad X-API-KEY license) applies to the full batch result.",
+    description: "PG1 Sovereign Threat Intelligence: looks up multiple indicators (IPs, domains, URLs, hashes) in a single call — a batched pre-action safety check for AI agents. Each returns the same aggregated provenance as get_ioc_context from PG1's commercially licensed records, which currently hold only CVE identifiers from NVD (IPs, domains, URLs and hashes return found: false). SIBLING DIFFERENTIATION: Use for checking several indicators at once (e.g. all URLs an agent is about to visit). Do NOT use for a single indicator (use get_ioc_context, lower overhead) or bulk feed synchronization (use get_threat_indicators). BEHAVIOR: Accepts up to " + IOC_BATCH_MAX + " indicators per call. A found:false result for any indicator means nothing bad is recorded in PG1's sources — NOT that it's safe. If NONE of the submitted indicators are found, the whole batch is FREE — no payment or free-tier quota consumed. If at least one indicator is found, the normal payment gate (x402 via params._meta['x402/payment'], with the PAYMENT-SIGNATURE header also accepted, or a Gumroad X-API-KEY license) applies to the full batch result.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -287,7 +292,7 @@ export const TOOLS = [
   },
   {
     name: 'get_cve_by_product',
-    description: 'PG1 Sovereign Threat Intelligence: returns CVEs affecting a given vendor/product (optionally a specific version), enriched with CVSS, EPSS, and CISA KEV status, sorted by exploitation risk. Sourced from NVD keyword search. Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for discovering CVEs by vendor/product when you do not already have an exact CVE id. Do NOT use for a known CVE id (use get_cve_details / get_cve_batch). USAGE EXCLUSIONS: Uses NVD keyword search, not strict CPE matching — results may include near-matches. BEHAVIOR: Returns up to 50 results per call.',
+    description: 'PG1 Sovereign Threat Intelligence: returns CVEs affecting a given vendor/product (optionally a specific version), enriched with CVSS and CISA KEV status (plus EPSS when this server serves EPSS in paid responses), sorted by exploitation risk. Sourced from NVD keyword search. Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). SIBLING DIFFERENTIATION: Use for discovering CVEs by vendor/product when you do not already have an exact CVE id. Do NOT use for a known CVE id (use get_cve_details / get_cve_batch). USAGE EXCLUSIONS: Uses NVD keyword search, not strict CPE matching — results may include near-matches. BEHAVIOR: Returns up to 50 results per call.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -702,6 +707,17 @@ async function handleThreatIndicators(args) {
 // licence commercial use only when MITRE's copyright notice and licence go
 // with each copy.
 export const CVE_ATTRIBUTION = 'This product uses data from the NVD API but is not endorsed or certified by the NVD. Exploit prediction scores: EPSS by FIRST (https://www.first.org/epss). Known exploited status: CISA Known Exploited Vulnerabilities Catalog.';
+// The notice when a response carries no EPSS score (paid responses while
+// PG1_SOURCE_EPSS_PAID is off, lib/sourcePolicy.mjs).
+export const CVE_ATTRIBUTION_NO_EPSS = 'This product uses data from the NVD API but is not endorsed or certified by the NVD. Known exploited status: CISA Known Exploited Vulnerabilities Catalog.';
+const cveAttribution = (includeEpss) => (includeEpss ? CVE_ATTRIBUTION : CVE_ATTRIBUTION_NO_EPSS);
+const epssField = (includeEpss, epss) => (includeEpss ? { epss: epss ? { score: epss.epss_score, percentile: epss.epss_percentile } : null } : {});
+const NO_EPSS = Promise.resolve({ ok: true, value: null });
+
+// The CVE handlers take { includeEpss }: true (the default) for free
+// responses, isEpssPaidEnabled() for paid ones (paidResponseOptions). With
+// includeEpss false, FIRST is never called and the response has no epss
+// field, no EPSS check and no EPSS credit.
 export function attackAttribution(year = new Date().getUTCFullYear()) {
   return `\u00a9 ${year} The MITRE Corporation. This work is reproduced and distributed with the permission of The MITRE Corporation. Licensed under the ATT&CK Terms of Use (https://attack.mitre.org/resources/legal-and-branding/terms-of-use/). MITRE ATT&CK\u00ae is a registered trademark of The MITRE Corporation.`;
 }
@@ -762,7 +778,7 @@ async function fetchNvdCveDetails(cveId) {
   };
 }
 
-export async function handleCveDetails(args) {
+export async function handleCveDetails(args, { includeEpss = true } = {}) {
   const cveId = args?.cve_id;
   if (!cveId || !/^CVE-\d{4}-\d{4,}$/i.test(String(cveId))) {
     const err = invalidInput({
@@ -777,7 +793,7 @@ export async function handleCveDetails(args) {
 
   const [nvd, epssOutcome, kevOutcome] = await Promise.all([
     fetchNvdCveDetails(normalizedId).catch((e) => ({ error: e.message })),
-    fetchEpssScore(normalizedId).then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: null })),
+    includeEpss ? fetchEpssScore(normalizedId).then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: null })) : NO_EPSS,
     getKevCatalog().then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: {} }))
   ]);
 
@@ -793,7 +809,7 @@ export async function handleCveDetails(args) {
   const reasons = kevEntry ? [reason('CVE_KNOWN_EXPLOITED_KEV')] : [];
   const checks = [
     buildCheck('vulnerability database', 'ok', { dataAsOf: nvd.last_modified || nvd.published || null }),
-    buildCheck('exploit prediction score', epssOutcome.ok ? 'ok' : 'error'),
+    ...(includeEpss ? [buildCheck('exploit prediction score', epssOutcome.ok ? 'ok' : 'error')] : []),
     buildCheck('known exploited vulnerabilities catalog', kevOutcome.ok ? 'ok' : 'error')
   ];
 
@@ -807,18 +823,18 @@ export async function handleCveDetails(args) {
       published: nvd.published,
       last_modified: nvd.last_modified
     },
-    epss: epss ? { score: epss.epss_score, percentile: epss.epss_percentile } : null,
+    ...epssField(includeEpss, epss),
     cisa_kev: {
       is_known_exploited: !!kevEntry,
       date_added: kevEntry ? kevEntry.dateAdded : null,
       required_action: kevEntry ? kevEntry.requiredAction : null,
       due_date: kevEntry ? kevEntry.dueDate : null
     },
-    attribution: CVE_ATTRIBUTION
+    attribution: cveAttribution(includeEpss)
   }, { reasons, checks });
 }
 
-export async function handleCveBatch(args) {
+export async function handleCveBatch(args, { includeEpss = true } = {}) {
   const cveIds = args?.cve_ids;
   if (!Array.isArray(cveIds) || cveIds.length === 0) {
     throw invalidInput({
@@ -847,7 +863,7 @@ export async function handleCveBatch(args) {
 
     const [nvd, epssOutcome] = await Promise.all([
       fetchNvdCveDetails(cveId).catch((e) => ({ error: e.message })),
-      fetchEpssScore(cveId).then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: null }))
+      includeEpss ? fetchEpssScore(cveId).then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: null })) : NO_EPSS
     ]);
     if (!epssOutcome.ok) anyEpssFailed = true;
     const epss = epssOutcome.value;
@@ -868,7 +884,7 @@ export async function handleCveBatch(args) {
         severity: nvd.cvss_severity,
         published: nvd.published
       },
-      epss: epss ? { score: epss.epss_score, percentile: epss.epss_percentile } : null,
+      ...epssField(includeEpss, epss),
       cisa_kev: {
         is_known_exploited: !!kevEntry,
         due_date: kevEntry ? kevEntry.dueDate : null
@@ -880,7 +896,7 @@ export async function handleCveBatch(args) {
   const reasons = anyKev ? [reason('CVE_KNOWN_EXPLOITED_KEV')] : [];
   const checks = [
     buildCheck('vulnerability database', 'ok'),
-    buildCheck('exploit prediction score', anyEpssFailed ? 'error' : 'ok'),
+    ...(includeEpss ? [buildCheck('exploit prediction score', anyEpssFailed ? 'error' : 'ok')] : []),
     buildCheck('known exploited vulnerabilities catalog', kevOutcome.ok ? 'ok' : 'error')
   ];
 
@@ -888,11 +904,11 @@ export async function handleCveBatch(args) {
     total_requested: cveIds.length,
     total_found: results.filter((r) => r.found).length,
     results,
-    attribution: CVE_ATTRIBUTION
+    attribution: cveAttribution(includeEpss)
   }, { reasons, checks });
 }
 
-export async function handleCveByProduct(args) {
+export async function handleCveByProduct(args, { includeEpss = true } = {}) {
   const vendor = args?.vendor;
   const product = args?.product;
   const version = args?.version;
@@ -918,7 +934,7 @@ export async function handleCveByProduct(args) {
 
   if (!vulns.length) {
     const checks = [buildCheck('vulnerability database', 'ok')];
-    return withResponseMeta({ vendor, product, version: version || null, total_found: 0, cves: [], attribution: CVE_ATTRIBUTION }, { reasons: [], checks });
+    return withResponseMeta({ vendor, product, version: version || null, total_found: 0, cves: [], attribution: cveAttribution(includeEpss) }, { reasons: [], checks });
   }
 
   const kevOutcome = await getKevCatalog().then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: {} }));
@@ -934,7 +950,7 @@ export async function handleCveByProduct(args) {
     else if (metrics.cvssMetricV30?.[0]) { cvssData = metrics.cvssMetricV30[0].cvssData; cvssVersion = '3.0'; }
     else if (metrics.cvssMetricV2?.[0]) { cvssData = metrics.cvssMetricV2[0].cvssData; cvssVersion = '2.0'; }
 
-    const epssOutcome = await fetchEpssScore(cveId).then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: null }));
+    const epssOutcome = includeEpss ? await fetchEpssScore(cveId).then((value) => ({ ok: true, value })).catch(() => ({ ok: false, value: null })) : { ok: true, value: null };
     if (!epssOutcome.ok) anyEpssFailed = true;
     const epss = epssOutcome.value;
     const kevEntry = kevCatalog[cveId];
@@ -944,7 +960,7 @@ export async function handleCveByProduct(args) {
       description: enDesc ? enDesc.value : null,
       published: vuln.published,
       cvss: cvssData ? { version: cvssVersion, score: cvssData.baseScore, severity: cvssData.baseSeverity } : null,
-      epss: epss ? { score: epss.epss_score, percentile: epss.epss_percentile } : null,
+      ...epssField(includeEpss, epss),
       is_known_exploited: !!kevEntry,
       kev_due_date: kevEntry ? kevEntry.dueDate : null
     };
@@ -963,11 +979,11 @@ export async function handleCveByProduct(args) {
   const reasons = anyKev ? [reason('CVE_KNOWN_EXPLOITED_KEV')] : [];
   const checks = [
     buildCheck('vulnerability database', 'ok'),
-    buildCheck('exploit prediction score', anyEpssFailed ? 'error' : 'ok'),
+    ...(includeEpss ? [buildCheck('exploit prediction score', anyEpssFailed ? 'error' : 'ok')] : []),
     buildCheck('known exploited vulnerabilities catalog', kevOutcome.ok ? 'ok' : 'error')
   ];
 
-  return withResponseMeta({ vendor, product, version: version || null, total_found: filtered.length, cves: filtered, attribution: CVE_ATTRIBUTION }, { reasons, checks });
+  return withResponseMeta({ vendor, product, version: version || null, total_found: filtered.length, cves: filtered, attribution: cveAttribution(includeEpss) }, { reasons, checks });
 }
 
 // ---------------------------------------------------------------------
@@ -1142,11 +1158,20 @@ export async function handleUsageStatus(args, requestIdentifier) {
 
   const { supUrl, supKey } = getSupabaseCreds();
   const today = new Date().toISOString().slice(0, 10);
+  // The counter is stored by the identifier's salted hash, never the IP
+  // (lib/freeTier.mjs freeTierKey). No key (no salt configured) means the
+  // free tier cannot run at all, so there is nothing true to report.
+  const key = freeTierKey(identifier);
+  if (!key) {
+    const err = new Error('Usage records temporarily unavailable, please retry.');
+    err.serviceUnavailable = true;
+    throw err;
+  }
 
   let res;
   try {
     res = await fetch(
-      `${supUrl}/rest/v1/free_tier_usage?identifier=eq.${encodeURIComponent(identifier)}&usage_date=eq.${today}&select=request_count`,
+      `${supUrl}/rest/v1/free_tier_usage?identifier=eq.${key}&usage_date=eq.${today}&select=request_count`,
       { headers: { apikey: supKey, Authorization: `Bearer ${supKey}` } }
     );
   } catch (netErr) {
@@ -2809,7 +2834,9 @@ function buildFixtureOutcome(fixture, callerArgs) {
       const hostname = args.hostname;
       const r = kind === 'FLAGGED'
         ? buildHostnameResult(hostname, 'listed', [{ name: PHISHING_SOURCE_NAME, url: PHISHING_SOURCE_URL, match_type: 'exact' }], null, FIXTURE_DATA_AS_OF)
-        : buildHostnameResult(hostname, 'not_listed', [], null, FIXTURE_DATA_AS_OF);
+        : kind === 'LOOKALIKE'
+          ? buildHostnameResult(hostname, 'lookalike', [], FIXTURE_LOOKALIKE_OF, FIXTURE_DATA_AS_OF)
+          : buildHostnameResult(hostname, 'not_listed', [], null, FIXTURE_DATA_AS_OF);
       return result(r);
     }
 
@@ -2855,6 +2882,9 @@ function buildFixtureOutcome(fixture, callerArgs) {
       const now = new Date().toISOString();
       const nowMs = Date.now();
       const version = input.version || '1.0.0';
+      if (kind === 'MISSING') {
+        return result(buildPackageResult(input, { registry: { result: 'ok', data: { exists: false }, fetchedAt: now, cached: false }, osv: { result: 'skipped' }, osvScope: 'version', lookalike: null, nowMs, attributionText: 'PG1 test fixture: synthetic data, not from any registry or advisory database' }));
+      }
       const firstPublished = kind === 'FLAGGED' ? fixtureDaysAgoMidnightUtc(FIXTURE_PACKAGE_FLAGGED_AGE_DAYS, nowMs) : FIXTURE_DATA_AS_OF;
       const data = {
         exists: true,
@@ -2879,7 +2909,10 @@ function buildFixtureOutcome(fixture, callerArgs) {
       if (kind === 'UNKNOWN') {
         return { type: 'service_unavailable', mcpErrorCode: tool === 'get_ioc_context' ? -32603 : -32003, message: 'Threat data temporarily unavailable, please retry.' };
       }
-      const lookups = values.map((value) => (kind === 'CLEAN' ? { indicator: value, found: false } : {
+      // MIXED: each value answers as its own fixture (the FLAGGED value found,
+      // the CLEAN one not).
+      const foundFor = (value) => (kind === 'MIXED' ? value === FIXTURE_VALUES.ipv6.FLAGGED : kind !== 'CLEAN');
+      const lookups = values.map((value) => (!foundFor(value) ? { indicator: value, found: false } : {
         indicator: value,
         found: true,
         indicator_type: value.includes(':') ? 'IPv6' : detectIndicatorType(value),
@@ -2920,7 +2953,8 @@ function buildFixtureOutcome(fixture, callerArgs) {
     case 'get_cve_batch': {
       const results = args.cve_ids.map((raw) => {
         const cveId = raw.toUpperCase();
-        const rec = fixtureCveRecord(cveId, kind);
+        // MIXED: each id answers as its own fixture.
+        const rec = fixtureCveRecord(cveId, kind === 'MIXED' ? (cveId === FIXTURE_VALUES.cve.FLAGGED ? 'FLAGGED' : 'CLEAN') : kind);
         const { last_modified: _lastModified, ...nvd } = rec.nvd;
         return { cve_id: cveId, found: true, nvd, epss: rec.epss, cisa_kev: { is_known_exploited: !!rec.kev, due_date: rec.kev ? rec.kev.dueDate : null } };
       });
@@ -3009,7 +3043,9 @@ function sendMcpFixtureResponse(res, toolName, outcome, requestId, pg1RequestId)
 
 const X402_PAY_TO = (process.env.X402_PAY_TO_ADDRESS || '').trim();
 // X402_NETWORK, X402_SCHEME and X402_PRICE live in lib/x402Config.mjs.
-const X402_RESOURCE_DESCRIPTION = 'PG1 Threat Intelligence: STIX 2.1 threat indicator feed (IPs, domains, URLs, file hashes, CVEs) from sources PG1 may redistribute commercially (currently NVD).';
+// The resource every paid MCP tool's 402 names. The STIX feed tool is free
+// while PG1_FEED_PAID is off, so this describes the tools that are paid.
+const X402_RESOURCE_DESCRIPTION = 'PG1 Threat Intelligence MCP server: paid tools, 0.01 USD per call - CVE enrichment from NIST NVD and the CISA Known Exploited Vulnerabilities catalog, MITRE ATT&CK threat actor profiles, and lookups that find a record in PG1\'s licensed data (currently CVE identifiers from NVD only).';
 const X402_RESOURCE_MIME_TYPE = 'application/json';
 
 // Facilitator client factory, overridable only by tests (see
@@ -3189,47 +3225,58 @@ async function runX402Gate(req, params) {
 // offered at all (header or _meta); if one is present, x402 verification
 // runs first, always.
 //
-// FIX (1.9.2): free tier used to be granted automatically to anyone
-// without a payment header, with no way to decline it. A caller with no
-// license key, no payment header, and no opt-in got served for free
-// instead of seeing a payment challenge — which broke discovery crawlers
-// (e.g. x402 Bazaar) that probe with no credentials specifically to confirm
-// payment is demanded. Free tier now requires an explicit "x-free-tier: 1"
-// header; without it, no license key + no payment offered falls straight
-// through to the x402 gate below.
-async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName, pg1RequestId) {
+// 1.9.2 made the free tier opt-in ("x-free-tier: 1") so discovery
+// crawlers probing without credentials would see the payment challenge.
+// Phase 2 reverses that: almost no client sends the header, so callers went
+// straight to the 402 and the free tier was never used. It is automatic
+// again, and a crawler that wants the challenge sends "X-Free-Tier: 0"
+// (lib/freeTier.mjs).
+// The transport-neutral half of the gate, shared by /api/mcp (runPaymentGate
+// below) and /api/a2a: licence key, then the automatic free tier, then x402.
+// Writes nothing. `endpoint` labels the settlement log line only; the free
+// tier is one 5/day counter per caller (lib/freeTier.mjs free_tier_usage),
+// whichever of /api/mcp, /api/ioc or /api/a2a spends it. `payment` is an
+// x402 v2 PaymentPayload the transport already extracted (MCP
+// params._meta["x402/payment"], A2A message metadata "x402.payment.payload");
+// otherwise the PAYMENT-SIGNATURE / X-Payment header is read.
+// Returns one of:
+//   { authorized: true }                              valid licence key
+//   { authorized: true, consumeFreeTier }             free tier granted
+//   { authorized: true, settle, ... }                 x402 payment verified
+//   { authorized: false, licenseUnavailable: true }   Gumroad unreachable
+//   { authorized: false, licenseError }               licence key rejected
+//   { authorized: false, paymentRequired, freeLimitReached? }
+export async function resolvePaidAccess(req, { licenseKey, identifier, payment, endpoint = '/api/mcp' } = {}) {
   if (licenseKey) {
     const check = await verifyGumroadLicense(licenseKey);
     if (check.valid) return { authorized: true };
-    if (check.reason === 'verification_unavailable') {
-      res.setHeader('Retry-After', '5');
-      recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_license_verification_unavailable`, 'upstream', pg1RequestId);
-      res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: 'License verification temporarily unavailable, please retry.', data: { request_id: pg1RequestId } }, id: requestId });
-      return { authorized: false, handled: true };
-    }
-    res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + check.error, data: { request_id: pg1RequestId } }, id: requestId });
-    return { authorized: false, handled: true };
+    if (check.reason === 'verification_unavailable') return { authorized: false, licenseUnavailable: true };
+    return { authorized: false, licenseError: check.error };
   }
 
-  const rawPayment = params?._meta?.['x402/payment'] || req.headers['x-payment'] || req.headers['payment-signature'];
-  const freeTierOptIn = req.headers['x-free-tier'] === '1';
-  // Set when the caller asked for the free tier and today's quota is used
-  // up, so the payment challenge is recorded as free_limit_reached.
+  const rawPayment = payment || req.headers['x-payment'] || req.headers['payment-signature'];
+  // The free tier is automatic (lib/freeTier.mjs): it runs before any
+  // payment challenge unless the caller pays, sends X-Free-Tier: 0 or is a
+  // scanner by its User-Agent.
+  const wantsFreeTier = freeTierWanted(req.headers);
+  // Set when today's free quota is used up, so the payment challenge is
+  // recorded as free_limit_reached.
   let freeLimitReached = false;
 
-  if (!rawPayment && freeTierOptIn) {
+  if (!rawPayment && wantsFreeTier) {
     try {
       const { supUrl, supKey } = getSupabaseCreds();
-      const freeTierAvailability = await checkFreeTierAvailable(supUrl, supKey, mcpRequestIdentifier);
+      const freeTierAvailability = await checkFreeTierAvailable(supUrl, supKey, identifier);
       if (freeTierAvailability.allowed) {
         // Deferred like x402's settle(): the caller must invoke this only
         // after the gated tool call actually succeeds, so a failed lookup
         // doesn't burn one of the 5/day for nothing.
         return {
           authorized: true,
+          freeTierRemaining: freeTierAvailability.remaining,
           consumeFreeTier: async () => {
-            await consumeFreeTier(supUrl, supKey, mcpRequestIdentifier, freeTierAvailability);
-            logSettlementOutcome('/api/mcp', 'free_tier', mcpRequestIdentifier, 'remaining=' + freeTierAvailability.remaining);
+            await consumeFreeTier(supUrl, supKey, identifier, freeTierAvailability);
+            logSettlementOutcome(endpoint, 'free_tier', identifier, 'remaining=' + freeTierAvailability.remaining);
           }
         };
       }
@@ -3237,8 +3284,32 @@ async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentif
     } catch (e) {}
   }
 
-  const x402Gate = await runX402Gate(req, params);
-  return freeLimitReached && !x402Gate.authorized ? { ...x402Gate, freeLimitReached: true } : x402Gate;
+  const x402Gate = await runX402Gate(req, payment ? { _meta: { 'x402/payment': payment } } : undefined);
+  return freeLimitReached && !x402Gate.authorized ? { ...x402Gate, freeLimitReached: true, freeTierRemaining: 0 } : x402Gate;
+}
+
+async function runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName, pg1RequestId) {
+  const metaPayment = params?._meta?.['x402/payment'];
+  const gate = await resolvePaidAccess(req, {
+    licenseKey,
+    identifier: mcpRequestIdentifier,
+    // Any _meta payment, even a malformed one, means "paying, not free tier";
+    // runX402Gate only reads an object one.
+    payment: metaPayment || undefined,
+    endpoint: '/api/mcp'
+  });
+  if (gate.licenseUnavailable) {
+    res.setHeader('Retry-After', '5');
+    recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_license_verification_unavailable`, 'upstream', pg1RequestId);
+    res.status(503).json({ jsonrpc: '2.0', error: { code: -32003, message: 'License verification temporarily unavailable, please retry.', data: { request_id: pg1RequestId } }, id: requestId });
+    return { authorized: false, handled: true };
+  }
+  if (gate.licenseError) {
+    res.status(402).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Payment Required: ' + gate.licenseError, data: { request_id: pg1RequestId } }, id: requestId });
+    return { authorized: false, handled: true };
+  }
+  if (gate.freeTierRemaining !== undefined) setFreeTierHeaders(res, gate.freeTierRemaining);
+  return gate;
 }
 
 // Writes the x402 v2 MCP payment-required tool result: HTTP 200 (never 402)
@@ -3296,7 +3367,13 @@ async function settleAndRespondOnFailure(res, requestId, gate, pg1RequestId, cal
   return settleResult;
 }
 
-const STANDARD_TOOL_HANDLERS = {
+// Options every paid tool handler gets (the CVE tools read includeEpss;
+// the rest ignore it). Read per call, so the switch needs no redeploy.
+export function paidResponseOptions(env = process.env) {
+  return { includeEpss: isEpssPaidEnabled(env) };
+}
+
+export const STANDARD_TOOL_HANDLERS = {
   get_threat_indicators: handleThreatIndicators,
   get_cve_details: handleCveDetails,
   get_cve_batch: handleCveBatch,
@@ -3353,7 +3430,8 @@ const LICENSE_ONLY_TOOLS = new Set(['subscribe_alerts', 'submit_indicator']);
 // Called from the handler's finally, after the response is written; the
 // unawaited insert is registered with Vercel's waitUntil inside
 // recordTelemetry, so it still completes before the function is frozen.
-const KNOWN_TOOL_NAMES = new Set(TOOLS.map((t) => t.name));
+const TOOL_NAMES = TOOLS.map((t) => t.name);
+const KNOWN_TOOL_NAMES = new Set(TOOL_NAMES);
 
 function paymentTypeForGate(gate) {
   if (!gate.authorized) return 'none';
@@ -3452,7 +3530,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', `Content-Type, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier, ${ABUSEIPDB_KEY_HEADER}`);
-  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Request-Id, Retry-After');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Request-Id, Retry-After, X-Free-Tier-Limit, X-Free-Tier-Remaining');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
@@ -3562,7 +3640,7 @@ export default async function handler(req, res) {
               const isTimeout = /timed out/i.test(toolErr.message);
               recordToolError(`/api/mcp:${toolName}`, null, `${toolName}_${isTimeout ? 'timeout' : 'upstream_unavailable'}`, isTimeout ? 'timeout' : 'upstream', pg1RequestId);
             }
-            callTelemetry.status = toolErr.code === 'rate_limited' ? 'rate_limited' : 'tool_error';
+            callTelemetry.status = toolErrorTelemetryStatus(toolErr);
             const errorChecks = [buildCheck(TOOL_SOURCE_LABELS[toolName] || toolName, classifyToolErrorCheckResult(toolErr))];
             const errorBody = { error: true, code: toolErr.code, message: invalidInputMessage(toolErr, pg1RequestId), ...errorResponseMeta(errorChecks, pg1RequestId) };
             if (toolErr.retryAfter) {
@@ -3705,18 +3783,32 @@ export default async function handler(req, res) {
 
       const toolHandler = STANDARD_TOOL_HANDLERS[toolName];
       if (!toolHandler) {
-        const unknownTool = { problem: 'params.name is not the name of a tool on this server', expected: `one of ${TOOLS.map((t) => t.name).join(', ')} (see tools/list)`, example: 'check_domain_age' };
-        return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: formatFixIt(unknownTool, pg1RequestId), data: { request_id: pg1RequestId } }, id: requestId });
+        // MCP spec (server/tools, "Error Handling"): an unknown tool is a
+        // JSON-RPC -32602 protocol error. The message never echoes the
+        // requested name; data.suggestion is one of our own names, when one
+        // is close (lib/toolNames.mjs). Telemetry records it as
+        // unknown_tool, a caller mistake, not a PG1 error (/usage).
+        const suggestion = suggestToolName(toolName, TOOL_NAMES);
+        const unknownTool = {
+          problem: suggestion ? `Unknown tool: params.name is not a tool on this server. Did you mean ${suggestion}?` : 'Unknown tool: params.name is not a tool on this server',
+          expected: `one of ${TOOL_NAMES.join(', ')} (see tools/list)`,
+          example: suggestion || 'check_domain_age'
+        };
+        return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: formatFixIt(unknownTool, pg1RequestId), data: { request_id: pg1RequestId, unknown_tool: true, suggestion } }, id: requestId });
       }
 
-      const gate = await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName, pg1RequestId);
+      // The STIX feed is free while PG1_FEED_PAID is off (lib/x402Config.mjs):
+      // no gate at all, so no 402, no free-tier call spent, nothing settled.
+      const feedFree = toolName === 'get_threat_indicators' && !isFeedPaid();
+      const gate = feedFree ? { authorized: true } : await runPaymentGate(req, res, requestId, licenseKey, mcpRequestIdentifier, params, toolName, pg1RequestId);
       noteGateTelemetry(callTelemetry, gate);
+      if (feedFree) callTelemetry.paymentType = 'free';
       if (gate.handled) return;
       if (!gate.authorized) return sendPaymentRequiredResult(res, requestId, gate.paymentRequired, pg1RequestId);
 
       let toolResult;
       try {
-        toolResult = await toolHandler(toolArgs);
+        toolResult = await toolHandler(toolArgs, paidResponseOptions());
       } catch (toolErr) {
         if (toolErr.serviceUnavailable) {
           recordToolError(`/api/mcp:${toolName}`, 503, `${toolName}_upstream_unavailable`, 'upstream', pg1RequestId);

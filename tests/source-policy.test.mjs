@@ -482,14 +482,46 @@ const DESCRIPTION_EDITS = [
   ['get_ioc_batch', 'aggregated provenance as get_ioc_context from ThreatFox, URLhaus, and OTX.', "aggregated provenance as get_ioc_context from PG1's commercially licensed sources (currently NVD)."]
 ];
 
-test('tool definitions differ from 1.14.0 only by the three listed description edits', () => {
+// Phase 2: the feed holds only NVD CVE records since the licensing gate, so
+// the indicator tools stop describing it as an IP / domain / URL / hash feed.
+// Applied before DESCRIPTION_EDITS when reverting (they edit the same text).
+const FEED_DESCRIPTION_EDITS = [
+  ["get_threat_indicators", "returns a STIX 2.1 bundle of verified threat indicators (IPs, domains, URLs, file hashes) sourced from NVD; only sources PG1 may redistribute commercially are served.", "returns a STIX 2.1 bundle of CVE records from NIST NVD, the only source PG1 may currently redistribute commercially. Today it contains no IP, domain, URL or file-hash indicators: every object is a STIX vulnerability with the CVE id and an NVD reference, without scores (use get_cve_details for CVSS and known-exploited status)."],
+  ["get_ioc_context", "Returns aggregated provenance from PG1's commercially licensed sources (currently NVD) — reporting", "PG1's commercially licensed records currently hold only CVE identifiers from NVD, so an IP, domain, URL or hash returns found: false (free) until other licensed sources are added. A match returns aggregated provenance — reporting"],
+  ["get_ioc_batch", "aggregated provenance as get_ioc_context from PG1's commercially licensed sources (currently NVD).", "aggregated provenance as get_ioc_context from PG1's commercially licensed records, which currently hold only CVE identifiers from NVD (IPs, domains, URLs and hashes return found: false)."]
+];
+
+// Phase 2: EPSS left out of paid responses until FIRST confirms resale
+// (PG1_SOURCE_EPSS_PAID), so the CVE descriptions stop promising it.
+const EPSS_DESCRIPTION_EDITS = [
+  ["get_cve_details", "enriched CVE lookup combining NVD (description, CVSS score/vector), FIRST.org EPSS (exploit-probability score and percentile), and the CISA Known Exploited Vulnerabilities catalog (active wild exploitation status).", "enriched CVE lookup combining NVD (description, CVSS score/vector) and the CISA Known Exploited Vulnerabilities catalog (active wild exploitation status). The epss field (FIRST.org EPSS exploit-probability score and percentile) is present only when this server serves EPSS in paid responses."],
+  ["get_cve_batch", "each enriched with NVD description/CVSS, FIRST.org EPSS score, and CISA KEV status — same enrichment as get_cve_details, batched.", "each enriched with NVD description/CVSS and CISA KEV status (plus the FIRST.org EPSS score when this server serves EPSS in paid responses) — same enrichment as get_cve_details, batched."],
+  ["get_cve_by_product", "enriched with CVSS, EPSS, and CISA KEV status, sorted by exploitation risk.", "enriched with CVSS and CISA KEV status (plus EPSS when this server serves EPSS in paid responses), sorted by exploitation risk."]
+];
+
+// Follow-up: the feed is FREE while it holds no current data (PG1_FEED_PAID
+// off, the default), so get_threat_indicators drops its payment sentences.
+// Two edits on the same tool, so two lists; applied first when reverting.
+const PAYMENT_SENTENCE = 'Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). ';
+const FREE_FEED_EDITS = [
+  ['get_threat_indicators', PAYMENT_SENTENCE, 'FREE while this feed holds no current data: no payment, no licence key, and it does not use the 5 free calls a day. ']
+];
+const FREE_FEED_BEHAVIOR_EDITS = [
+  ['get_threat_indicators', 'Pagination is handled via the limit parameter (max 1000). If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta["x402/payment-response"].', 'Pagination is handled via the limit parameter (max 1000).']
+];
+
+test('tool definitions differ from 1.14.0 only by the listed description edits (licensing gate, feed description, EPSS switch, free feed)', () => {
   // check_ip_abuse (1.16.0) and check_package (1.17.0) are the additions; the 14 tools
   // before them are pinned.
   const reverted = TOOLS.filter((tool) => tool.name !== 'check_ip_abuse' && tool.name !== 'check_package').map((tool) => {
-    const edit = DESCRIPTION_EDITS.find(([name]) => name === tool.name);
-    if (!edit) return tool;
-    assert.ok(tool.description.includes(edit[2]), tool.name);
-    return { ...tool, description: tool.description.replace(edit[2], edit[1]) };
+    let description = tool.description;
+    for (const edits of [FREE_FEED_EDITS, FREE_FEED_BEHAVIOR_EDITS, FEED_DESCRIPTION_EDITS, DESCRIPTION_EDITS, EPSS_DESCRIPTION_EDITS]) {
+      const edit = edits.find(([name]) => name === tool.name);
+      if (!edit) continue;
+      assert.ok(description.includes(edit[2]), tool.name);
+      description = description.replace(edit[2], edit[1]);
+    }
+    return { ...tool, description };
   });
   // SHA-256 of JSON.stringify(TOOLS) at the 1.14.0 release.
   assert.equal(crypto.createHash('sha256').update(JSON.stringify(reverted)).digest('hex'), '47dde1cff3ff1f64f1020b8d06813321f51c8db2142390bad0096616c8767acc');
@@ -561,7 +593,17 @@ test('paid CVE and ATT&CK responses carry the notices their sources ask for', as
   for (const [name, args] of [['get_cve_details', { cve_id: 'CVE-2021-44228' }], ['get_cve_batch', { cve_ids: ['CVE-2021-44228'] }], ['get_cve_by_product', { vendor: 'apache', product: 'log4j' }]]) {
     const out = await callMcp(name, args);
     assert.match(out.attribution, /This product uses data from the NVD API but is not endorsed or certified by the NVD\./, name);
-    assert.match(out.attribution, /EPSS by FIRST/, name);
+    // Phase 2: paid responses carry no EPSS (PG1_SOURCE_EPSS_PAID off), so
+    // no EPSS credit either; KEV is still credited.
+    assert.doesNotMatch(out.attribution, /EPSS/, name);
+    assert.match(out.attribution, /CISA Known Exploited Vulnerabilities Catalog/, name);
+  }
+  process.env.PG1_SOURCE_EPSS_PAID = 'true';
+  try {
+    const withEpss = await callMcp('get_cve_details', { cve_id: 'CVE-2021-44228' });
+    assert.match(withEpss.attribution, /EPSS by FIRST/);
+  } finally {
+    delete process.env.PG1_SOURCE_EPSS_PAID;
   }
   const actor = await callMcp('get_threat_actor_profile', { actor_name: 'APT29' });
   assert.match(actor.attribution, /^© \d{4} The MITRE Corporation\. This work is reproduced and distributed with the permission of The MITRE Corporation\./);

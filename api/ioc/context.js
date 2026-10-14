@@ -8,14 +8,14 @@
  *
  * Gating mirrors get_ioc_context in api/mcp.mjs and /api/ioc in api/chat.mjs:
  * a found:false result is always free; a found:true result requires a valid
- * Gumroad license key (X-API-KEY), an explicit free-tier opt-in
- * (X-Free-Tier: 1, subject to the daily quota), or an x402 payment
+ * Gumroad license key (X-API-KEY), a free-tier call (automatic, 5/day
+ * shared with every paid route; X-Free-Tier: 0 opts out), or an x402 payment
  * (PAYMENT-SIGNATURE header).
  */
 
 import { getSupabaseCreds } from '../../lib/supabase.mjs';
 import { lookupIocContext } from '../../lib/iocContext.mjs';
-import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome } from '../../lib/freeTier.mjs';
+import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, freeTierWanted, setFreeTierHeaders } from '../../lib/freeTier.mjs';
 import { verifyGumroadLicense, ensureExpressCompat, mirrorPaymentRequiredIntoJsonBody, createX402Gate } from '../../lib/paymentGate.mjs';
 
 export const config = { maxDuration: 30 };
@@ -37,7 +37,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier');
-  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Free-Tier-Limit, X-Free-Tier-Remaining');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
@@ -84,9 +84,11 @@ export default async function handler(req, res) {
   }
 
   const rawPayment = req.headers['x-payment'] || req.headers['payment-signature'];
-  const freeTierOptIn = req.headers['x-free-tier'] === '1';
+  // Automatic, as on every paid route (lib/freeTier.mjs); X-Free-Tier: 0
+  // and scanner User-Agents skip it.
+  const wantsFreeTier = freeTierWanted(req.headers);
 
-  if (!authorized && !rawPayment && freeTierOptIn) {
+  if (!authorized && !rawPayment && wantsFreeTier) {
     try {
       const { supUrl, supKey } = getSupabaseCreds();
       // Safe to consume immediately (unlike the deferred use in api/mcp.mjs
@@ -95,6 +97,7 @@ export default async function handler(req, res) {
       const freeTierAvailability = await checkFreeTierAvailable(supUrl, supKey, requestIdentifier);
       if (freeTierAvailability.allowed) {
         authorized = true;
+        setFreeTierHeaders(res, freeTierAvailability.remaining);
         await consumeFreeTier(supUrl, supKey, requestIdentifier, freeTierAvailability);
         logSettlementOutcome('/api/ioc/context', 'free_tier', requestIdentifier, 'remaining=' + freeTierAvailability.remaining);
       }

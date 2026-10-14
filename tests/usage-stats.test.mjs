@@ -17,6 +17,10 @@
 import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 
+// These tests exercise the paid /api/ioc gate, so the feed is made paid
+// (it is free by default while it holds no current data; tests/feed-pricing.test.mjs).
+process.env.PG1_FEED_PAID = 'true';
+
 process.env.TELEMETRY_IP_SALT = 'test-salt-for-usage-stats';
 delete process.env.X402_PAY_TO_ADDRESS;
 
@@ -348,7 +352,8 @@ test('/api/ioc records one ioc_feed row with how it ended, never the query or th
   delete process.env.X402_PAY_TO_ADDRESS;
   const { rows } = installFetch();
   const res = makeRes();
-  await chatHandler({ method: 'GET', url: '/api/ioc?type=ipv4&min_score=90', headers: { 'x-forwarded-for': CALLER_IP }, socket: { remoteAddress: CALLER_IP }, body: null }, res);
+  // X-Free-Tier: 0 so the unpaid call gets its 402 (the free tier is automatic).
+  await chatHandler({ method: 'GET', url: '/api/ioc?type=ipv4&min_score=90', headers: { 'x-forwarded-for': CALLER_IP, 'x-free-tier': '0' }, socket: { remoteAddress: CALLER_IP }, body: null }, res);
   await settle();
   assert.equal(res.statusCode, 402);
   const ioc = rows.filter((r) => r.endpoint === '/api/ioc');
