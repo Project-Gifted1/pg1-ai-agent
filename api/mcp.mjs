@@ -123,7 +123,7 @@ import { normalizeWalletAddress, isRecognizedWalletAddress } from '../lib/wallet
 import { extractRegistrableDomain } from '../lib/domainExtraction.mjs';
 import { domainToASCII, domainToUnicode } from 'node:url';
 import { logApiError } from '../lib/errorLog.mjs';
-import { recordTelemetry, callerHash, toolErrorTelemetryStatus } from '../lib/telemetry.mjs';
+import { recordTelemetry, callerHash, licenceKeyHash, toolErrorTelemetryStatus } from '../lib/telemetry.mjs';
 import { reason } from '../lib/reasonCodes.mjs';
 import { buildCheck, withResponseMeta, withActionResponseMeta, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
 import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES, FIXTURE_DELEGATE_ADDRESS, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, FIXTURE_DOMAIN_CLEAN_REGISTERED, FIXTURE_PACKAGE_FLAGGED_AGE_DAYS, FIXTURE_PACKAGE_MALICIOUS_REPORT, FIXTURE_LOOKALIKE_OF, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
@@ -1280,6 +1280,14 @@ async function handleSubscribeAlerts(args, licenseKey) {
     throw new Error('subscribe_alerts requires a valid Gumroad license key — not available via per-query x402.');
   }
 
+  // The licence key is stored only as its salted HMAC (licenceKeyHash, the
+  // same hash api_access_logs uses), never in plain text. Look a
+  // subscription up by license_key_hash=eq.<licenceKeyHash(key)>.
+  const keyHash = licenceKeyHash(licenseKey);
+  if (!keyHash) {
+    throw new Error('subscribe_alerts is not available: the licence-key hash salt is not configured.');
+  }
+
   const { supUrl, supKey } = getSupabaseCreds();
   const filter = args?.filter || {};
 
@@ -1291,7 +1299,7 @@ async function handleSubscribeAlerts(args, licenseKey) {
       'Content-Type': 'application/json',
       Prefer: 'return=representation'
     },
-    body: JSON.stringify({ webhook_url: webhookUrl, filter, license_key: licenseKey })
+    body: JSON.stringify({ webhook_url: webhookUrl, filter, license_key_hash: keyHash })
   });
 
   if (!insertRes.ok) {

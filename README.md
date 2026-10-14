@@ -251,7 +251,7 @@ A locked source can only be served again by a code change, made once a licence i
 
 **The STIX feed's price.** `get_threat_indicators` and `/api/ioc` are free while the feed holds no current data. `PG1_FEED_PAID=true` makes them paid again (0.01 USD a call, the shared free tier first); at the same time add `/api/ioc` back to `public/.well-known/x402` and `x-payment-info` to its two operations in `public/openapi.json` (`node scripts/verify-payment-config.mjs` checks this).
 
-**Licence keys are never stored.** `api_access_logs` records a licence-key caller as `license:<HMAC>` (salted with `TELEMETRY_IP_SALT`, domain-separated from the IP hash), a free-tier caller as `free-tier:<IP hash>`, and the free feed as `free-feed`; a database check constraint rejects anything else.
+**Licence keys are never stored.** `api_access_logs` records a licence-key caller as `license:<HMAC>` (salted with `TELEMETRY_IP_SALT`, domain-separated from the IP hash), a free-tier caller as `free-tier:<IP hash>`, and the free feed as `free-feed`; a database check constraint rejects anything else. `alert_subscriptions` (subscribe_alerts) stores the same salted hash in `license_key_hash`, never the key itself.
 
 **`threat_indicators`.** The legacy `threat_indicators` table (rows with no `source_id` and nothing in `stix_data`) is never read by a paid route; only the operator's own chat context and the operator-only diagnostics endpoint read it. `tests/phase2-funnel.test.mjs` pins both.
 
