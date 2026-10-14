@@ -502,3 +502,148 @@ test('parseLabCommand', () => {
   assert.equal(parseLabCommand('/lab').sub, 'help');
   assert.deepEqual(parseLabCommand('/promote skill:x'), { sub: 'promote', id: 'skill:x', goal: '', opts: {} });
 });
+
+// --- B3: a finished run always ends as done or failed with a reason ------------------
+
+const { syncLabExperiment, syncActiveLabExperiments, LAB_RESULT_GRACE_MS, LAB_HELP_TEXT } = await import('../lib/lab/chat.mjs');
+const E2981021_ZIP = readFileSync(new URL('./fixtures/lab-result-e2981021.zip', import.meta.url));
+
+async function startedExperiment(gh, run) {
+  const before = gh.dispatches.length;
+  await chat({ prompt: '/lab start research and draft agent auth scope preflight check MCP tool' });
+  const id = gh.dispatches[before].inputs.experiment_id;
+  gh.runs.set(run.id, { name: `lab ${id}`, status: 'completed', conclusion: 'success', updated_at: new Date().toISOString(), ...run });
+  return id;
+}
+
+test('B3: the real e2981021 artifact (redirected to blob storage) is read without the GitHub token and ends the experiment as done', async () => {
+  const { db, gh } = await labWorld();
+  const id = await startedExperiment(gh, { id: 38588549715 });
+  gh.artifacts.set(38588549715, { name: `lab-result-${id}`, zip: E2981021_ZIP });
+  const inner = globalThis.fetch;
+  const blob = [];
+  globalThis.fetch = async (u, o = {}) => {
+    const url = String(u);
+    if (/\/actions\/artifacts\/\d+\/zip$/.test(url)) {
+      assert.equal(o.redirect, 'manual', 'the zip redirect is followed by hand');
+      return new Response(null, { status: 302, headers: { location: 'https://blob.example/artifact.zip?sig=x' } });
+    }
+    if (url.startsWith('https://blob.example/')) { blob.push(o.headers || {}); return new Response(E2981021_ZIP); }
+    return inner(u, o);
+  };
+  // No id: /lab report shows the latest experiment, synced first.
+  const report = await chat({ prompt: '/lab report' });
+  assert.match(report.jsonBody.reply, new RegExp(`^### \\[ LAB ${id.slice(0, 8)} · research · done \\]`));
+  assert.match(report.jsonBody.reply, /Spent \$0\.01 of \$2\.00 over 1 model calls\./);
+  assert.match(report.jsonBody.reply, /## Findings[\s\S]*auth_scope_preflight_check/);
+  assert.equal(blob.length, 1);
+  assert.equal(Object.keys(blob[0]).some((k) => k.toLowerCase() === 'authorization'), false, 'the GitHub token never goes to blob storage');
+  const { rows } = await db.query('select status, spent_usd::text as spent, run_id::text as run from public.pg1_lab_experiments');
+  assert.deepEqual(rows, [{ status: 'done', spent: '0.012074', run: '38588549715' }]);
+  // The spend is on the ledger once, however often the experiment is read.
+  await chat({ prompt: '/lab status' });
+  await chat({ prompt: `/lab report ${id.slice(0, 8)}` });
+  const ledger = await db.query(`select cost_usd::text as cost from public.pg1_ai_usage where task = 'lab'`);
+  assert.deepEqual(ledger.rows, [{ cost: '0.012074' }]);
+});
+
+test('B3: a finished run with no artifact, a refused artifact list or an unreadable zip ends as failed with the reason', async () => {
+  const { db, gh } = await labWorld();
+  process.env.PG1_LAB_DAILY_USD = '10';
+  const noArtifact = await startedExperiment(gh, { id: 701 });
+  const bad = await startedExperiment(gh, { id: 702 });
+  gh.artifacts.set(702, { name: `lab-result-${bad}`, zip: Buffer.from('not a zip') });
+  const failedRun = await startedExperiment(gh, { id: 703, conclusion: 'failure' });
+  const status = await chat({ prompt: '/lab status' });
+  for (const id of [noArtifact, bad, failedRun]) assert.match(status.jsonBody.reply, new RegExp(`${id.slice(0, 8)} · research · failed`));
+  const err = async (id) => (await db.query('select status, error from public.pg1_lab_experiments where id = $1', [id])).rows[0];
+  assert.deepEqual(await err(noArtifact), { status: 'failed', error: 'no result from the runner: the run uploaded no lab-result artifact' });
+  assert.match((await err(bad)).error, /^no result from the runner: the result artifact is not a readable zip/);
+  assert.equal((await err(failedRun)).error, "no result from the runner: the run uploaded no lab-result artifact (the run's conclusion: failure)");
+  assert.match((await chat({ prompt: `/lab report ${bad.slice(0, 8)}` })).jsonBody.reply, /Failed: no result from the runner: the result artifact is not a readable zip/);
+});
+
+test('B3: a 403 on the artifacts names the token permission; a transient 502 waits within the grace period, then fails', async () => {
+  const store = { rows: new Map(), async update(id, patch) { const r = { ...this.rows.get(id), ...patch }; this.rows.set(id, r); return r; } };
+  const e = { id: '0a0a0a0a-1111-2222-3333-444444444444', kind: 'research', status: 'running', run_id: 5 };
+  store.rows.set(e.id, { ...e });
+  const ended = Date.parse('2026-10-14T15:22:38Z');
+  const run = { id: 5, status: 'completed', conclusion: 'success', updated_at: '2026-10-14T15:22:38Z' };
+  const gh = (read) => ({ getRun: async () => run, readResult: async () => read });
+  const forbidden = await syncLabExperiment({ ...e }, { store, gh: gh(createLabGithubReason(403)), supUrl: 'x', supKey: 'y', now: ended + 1000 });
+  assert.equal(forbidden.status, 'failed');
+  assert.match(forbidden.error, /artifact list HTTP 403 \(the deployment's GitHub token needs Actions: read on this repository\)/);
+  const waiting = await syncLabExperiment({ ...e }, { store, gh: gh(createLabGithubReason(502)), supUrl: 'x', supKey: 'y', now: ended + 60000 });
+  assert.equal(waiting.status, 'running');
+  assert.equal(waiting.error, 'waiting to read the result: artifact list HTTP 502');
+  const late = await syncLabExperiment({ ...e }, { store, gh: gh(createLabGithubReason(502)), supUrl: 'x', supKey: 'y', now: ended + LAB_RESULT_GRACE_MS + 1 });
+  assert.equal(late.status, 'failed');
+  assert.equal(late.error, 'no result from the runner: artifact list HTTP 502');
+  // A throwing reader is treated the same way, never left stuck.
+  const thrown = await syncLabExperiment({ ...e }, { store, gh: { getRun: async () => run, readResult: async () => { throw new Error('socket hang up'); } }, supUrl: 'x', supKey: 'y', now: ended + LAB_RESULT_GRACE_MS + 1 });
+  assert.equal(thrown.status, 'failed');
+  assert.match(thrown.error, /socket hang up/);
+});
+
+// readResult's answer for an artifact list HTTP status, from the real reader.
+function createLabGithubReason(status) {
+  return { ok: false, reason: `artifact list HTTP ${status}${status === 403 ? ' (the deployment\'s GitHub token needs Actions: read on this repository)' : ''}`, transient: status >= 500 };
+}
+
+test('B3: the real reader reports the artifact list status and marks 5xx transient', async () => {
+  const token = ['gh', 'p_', 'readertest'.padEnd(36, '0')].join('');
+  for (const [status, transient] of [[403, false], [502, true]]) {
+    const gh = createLabGithub({ env: { GITHUB_TOKEN: token }, fetchImpl: async () => new Response('{}', { status }) });
+    assert.deepEqual(await gh.readResult(9, 'x'), createLabGithubReason(status));
+  }
+});
+
+test('B3: a result Postgres cannot store (a NUL character) is still stored as done, cleaned', async () => {
+  const { db, gh } = await labWorld();
+  const id = await startedExperiment(gh, { id: 704 });
+  gh.artifacts.set(704, { name: `lab-result-${id}`, zip: makeZip({ 'result.json': JSON.stringify({ id, kind: 'research', status: 'done', spent_usd: 0.02, calls: 1, report_markdown: '## Findings\nnul here:\u0000 end', sources: [{ url: 'https://a.example', title: 'bad \ud800 title' }] }) }) });
+  await chat({ prompt: '/lab status' });
+  const { rows } = await db.query('select status, result from public.pg1_lab_experiments where id = $1', [id]);
+  assert.equal(rows[0].status, 'done');
+  assert.equal(rows[0].result.report_markdown, '## Findings\nnul here: end');
+});
+
+test('B3: the hourly monitor closes a finished run nobody asked about; one failing experiment does not block the others', async () => {
+  const { db, gh } = await labWorld();
+  const done = await startedExperiment(gh, { id: 705 });
+  gh.artifacts.set(705, { name: `lab-result-${done}`, zip: makeZip({ 'result.json': JSON.stringify({ id: done, kind: 'research', status: 'done', spent_usd: 0.01, calls: 1, report_markdown: 'ok' }) }) });
+  const broken = await startedExperiment(gh, { id: 706 });
+  await db.query('update public.pg1_lab_experiments set run_id = 706, status = $2 where id = $1', [broken, 'running']);
+  const inner = globalThis.fetch;
+  globalThis.fetch = async (u, o) => { if (String(u).endsWith('/actions/runs/706')) throw new Error('boom'); return inner(u, o); };
+  const out = await syncActiveLabExperiments({ env: process.env, supUrl: 'https://supabase.test', supKey: 'k' });
+  assert.deepEqual(out.find((x) => x.id === done), { id: done, status: 'done', error: null });
+  assert.deepEqual(out.find((x) => x.id === broken), { id: broken, status: 'running', error: 'sync failed' });
+  assert.match(readFileSync(new URL('../api/flags/monitor.mjs', import.meta.url), 'utf8'), /await syncActiveLabExperiments\(/);
+});
+
+// --- A5: /lab report without an id, and the help's command forms -------------------
+
+test('A5: /lab report alone shows the latest experiment; /lab stop alone asks for the id; every help form parses', async () => {
+  const { gh } = await labWorld();
+  assert.match((await chat({ prompt: '/lab report' })).jsonBody.reply, /^No lab experiments yet\. Start one with \/lab start <goal>\.$/);
+  await chat({ prompt: '/lab start first' });
+  await chat({ prompt: '/lab start second' });
+  const latest = gh.dispatches[1].inputs.experiment_id;
+  const report = (await chat({ prompt: '/lab report' })).jsonBody.reply;
+  assert.match(report, new RegExp(`^### \\[ LAB ${latest.slice(0, 8)} · research · queued \\]`));
+  assert.match(report, /No report yet: the run has not started on GitHub\./);
+  assert.doesNotMatch(report, /no id/);
+  assert.equal((await chat({ prompt: '/lab stop' })).jsonBody.reply, 'Say which experiment to stop: /lab stop <id>. /lab status lists the ids.');
+  assert.match(LAB_HELP_TEXT, /\*\*\/lab report\*\* \[id\]: one experiment's findings and cost \(the latest when no id is given\)/);
+  for (const form of ['/lab start goal', '/lab status', '/lab report', '/lab report e2981021', '/lab stop e2981021']) assert.notEqual(parseLabCommand(form).sub, 'help', form);
+});
+
+test('runner: a refused model call (401, out of credit) bills nothing and says which provider refused', async () => {
+  const fetchImpl = async () => new Response(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }), { status: 401 });
+  const r = await runExperiment({ id: '0b0b0b0b-1111-2222-3333-444444444444', kind: 'skill', goal: 'g', env: { PG1_LAB_ANTHROPIC_API_KEY: 'k' }, budgetUsd: 2, fetchImpl });
+  assert.equal(r.status, 'failed');
+  assert.equal(r.error, 'model call failed (anthropic 401 authentication_error)');
+  assert.equal(r.spent_usd, 0);
+  assert.equal(r.calls, 1);
+});

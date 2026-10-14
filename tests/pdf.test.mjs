@@ -379,3 +379,46 @@ test('handlePdfCommand refuses anyone but the operator and never throws', async 
   const r = await handlePdfCommand({ text: '/pdf write something', isOperator: true, writeDocument: async () => { throw new Error('boom'); } });
   assert.match(r.reply, /could not make that PDF/);
 });
+
+// --- A1: PG1 makes the PDF itself when asked in plain words --------------------------
+
+test('plain-language PDF requests are PG1\'s to make; questions about PDFs are not', () => {
+  for (const t of ['make it a PDF', 'as a PDF file', 'Can I get that as a PDF?', 'I want this in PDF format', 'convert it to PDF please']) {
+    assert.ok(isPdfRequest(t), t);
+    assert.deepEqual(parsePdfCommand(t), { kind: 'reply', rest: '' }, t);
+  }
+  for (const t of ['Send me the full detailed breakdown as a PDF file', 'give me a PDF of the pricing tiers', 'make a pdf with all three packages and what each includes']) {
+    assert.ok(isPdfRequest(t), t);
+    const cmd = parsePdfCommand(t);
+    assert.equal(cmd.kind, 'write', t);
+    assert.equal(cmd.fromChat, true, t);
+  }
+  for (const t of ['what is a PDF?', 'how do I make a PDF?', 'the pdf I sent you', 'summarise this PDF', 'can you read the attached pdf', 'make this a table']) assert.equal(isPdfRequest(t), false, t);
+});
+
+test('a PDF asked for mid-thread is written from the conversation, keeping its figures', async () => {
+  const history = [
+    { role: 'user', text: 'price a short-form video package' },
+    { role: 'model', text: '| Tier | Price |\n|---|---|\n| Creator | $45/month |\n| Studio | $80/month |' },
+    { role: 'user', text: 'Send me the full detailed breakdown as a PDF file' }
+  ];
+  let request = '';
+  const { calls, fetchImpl } = storageStub();
+  const r = await handlePdfCommand({ text: 'Send me the full detailed breakdown as a PDF file', history, isOperator: true, supUrl: 'https://supabase.test', supKey: 'k', fetchImpl, writeDocument: async (req) => { request = req; return { markdown: '# Video packages\n\n| Tier | Price |\n|---|---|\n| Creator | $45/month |' }; } });
+  assert.match(request, /^Send me the full detailed breakdown as a PDF file/);
+  assert.match(request, /<conversation>[\s\S]*\| Creator \| \$45\/month \|[\s\S]*<\/conversation>/);
+  assert.match(request, /keep every figure PG1 proposed exactly as last stated/);
+  assert.equal(r.pdf.title, 'Video packages');
+  assert.ok(calls.some((c) => /\/storage\/v1\/object\/pg1-vault\/documents\//.test(c.url)), 'the PDF is made and stored, not handed back as an instruction');
+});
+
+test('chat: "make it a PDF" returns the PDF itself and the prompt forbids sending the operator to /pdf', async () => {
+  chatStorage();
+  const history = [{ role: 'user', text: 'price it' }, { role: 'model', text: '# Packages\n\nCreator $45.' }, { role: 'user', text: 'make it a PDF' }];
+  const res = await chat({ prompt: 'make it a PDF', history });
+  assert.equal(res.jsonBody.pdf.title, 'Packages');
+  assert.doesNotMatch(res.jsonBody.reply, /run \/pdf|tap|icon/i);
+  const { PDF_CHAT_DIRECTIVE } = await import('../lib/pdf/chat.mjs');
+  assert.match(PDF_CHAT_DIRECTIVE, /Never tell the operator to run \/pdf, tap the Save as PDF icon/);
+  assert.ok(readFileSync(new URL('../api/chat.mjs', import.meta.url), 'utf8').includes('PDF_CHAT_DIRECTIVE + '), 'the directive is in every chat prompt');
+});

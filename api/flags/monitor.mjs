@@ -4,7 +4,10 @@
 // switched off, and the operator is told in the error log (category
 // alert). Also the tool error-rate alert: any public tool failing more than
 // 5% of its calls over the last hour (lib/statusMetrics.mjs), and Foundry tools
-// failing more than 25% are disabled (lib/foundry/tools.mjs). CRON_SECRET auth (lib/cronAuth.mjs), like the other crons.
+// failing more than 25% are disabled (lib/foundry/tools.mjs). Also the lab:
+// every queued or running experiment is synced with its GitHub run, so a
+// finished run ends as done or failed with a reason even when nobody runs
+// /lab status (lib/lab/chat.mjs syncActiveLabExperiments). CRON_SECRET auth (lib/cronAuth.mjs), like the other crons.
 
 import { getSupabaseCreds } from '../../lib/supabase.mjs';
 import { checkCronAuth } from '../../lib/cronAuth.mjs';
@@ -14,6 +17,7 @@ import { notifyOperator } from '../../lib/notify.mjs';
 import { TOOLS } from '../mcp.mjs';
 import { autoDisableFoundryTools } from '../../lib/foundry/tools.mjs';
 import { createFoundryStore } from '../../lib/foundry/store.mjs';
+import { syncActiveLabExperiments } from '../../lib/lab/chat.mjs';
 
 export const config = { maxDuration: 30 };
 
@@ -37,7 +41,8 @@ export default async function handler(req, res) {
     try {
       foundryDisabled = await autoDisableFoundryTools({ supUrl: creds.supUrl, supKey: creds.supKey, store: createFoundryStore({ supUrl: creds.supUrl, supKey: creds.supKey }), notify: notifyOperator });
     } catch (e) { /* the Foundry tables may not exist yet */ }
-    return res.status(200).json({ ok: true, checked: results.length, disabled: results.filter((r) => r.breach).map((r) => r.key), error_rate_alerts: alerted, foundry_disabled: foundryDisabled });
+    const lab = await syncActiveLabExperiments({ supUrl: creds.supUrl, supKey: creds.supKey });
+    return res.status(200).json({ ok: true, checked: results.length, disabled: results.filter((r) => r.breach).map((r) => r.key), error_rate_alerts: alerted, foundry_disabled: foundryDisabled, lab_synced: lab.map((x) => ({ id: x.id.slice(0, 8), status: x.status })) });
   } catch (e) {
     return res.status(502).json({ error: 'flags unreadable' });
   }

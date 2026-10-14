@@ -78,7 +78,13 @@ With this in place, a lab pull request reaches `main` only through your review a
 | `/lab start <goal> [--kind research\|skill\|code] [--skill <name>] [--url <https url>]` | Checks the budgets, records the experiment, and dispatches the workflow with a signed token. |
 | `/lab status` | Lists the latest experiments. A finished one is read back: its spend goes on the usage ledger (task `lab`), skill drafts are stored with status `lab`, and the gate runs. |
 | `/lab stop <id>` | Cancels the run. |
-| `/lab report <id>` | Shows the findings and the gate's evidence. |
+| `/lab report [id]` | Shows the findings, the spend and the gate's evidence. With no id, the latest experiment. An unfinished experiment is synced with its run first. |
+
+## How a result gets back
+
+The runner never writes to Supabase or to the Vercel deployment. It uploads its result as the run's artifact `lab-result-<id>`. The deployment pulls it from GitHub with its own token (`PG1_LAB_DISPATCH_GITHUB_TOKEN` or `GITHUB_TOKEN`, which needs Actions: read). The artifact download redirects to blob storage, and the deployment follows that redirect without the token. It then writes the result to `pg1_lab_experiments`. This happens on `/lab status`, on `/lab report`, and every hour from `/api/flags/monitor`.
+
+A finished run always ends as `done`, as the runner's own `failed`, `over_budget` or `timeout`, or as `failed` with the reason in `error`. Possible reasons: no artifact, the artifact list refused (HTTP 401/403/404 means the token lacks Actions: read), an unreadable zip, or no `result.json`. Only a transient read failure (network, 429, 5xx) waits, for at most 30 minutes after the run ended. The reason is shown in `/lab report` while it waits. A result Postgres cannot store as is gets cleaned (NUL characters removed). If the full result still cannot be stored, the outcome and spend are stored with the report cut to 8000 characters. Spend goes on the ledger only after the record is written, so a retry never counts it twice.
 | `/promote` | Lists the feature flags. |
 | `/promote <flag>` | Moves a flag from operator-only to public. |
 

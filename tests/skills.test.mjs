@@ -328,7 +328,9 @@ test('chat: an active skill is listed in [SKILLS]; a request that fits it loads 
   });
   // Messages/errors reads answer from tables that do not exist here: the
   // stand-in says 404 and the chat carries on without them.
-  const res = await chat({ prompt: 'make a pdf report of our usage this week' });
+  // A question about a PDF report (a request for one is made by the PDF
+  // route itself, tests/pdf.test.mjs).
+  const res = await chat({ prompt: 'how should the pdf report of our usage this week be laid out?' });
   assert.equal(res.statusCode, 200);
   const sys = ((gem[0].systemInstruction || {}).parts || []).map((p) => p.text).join('');
   assert.match(sys, /\[SKILLS\]: Active skills[\s\S]*- pdf-report: Producing a polished PDF report/);
