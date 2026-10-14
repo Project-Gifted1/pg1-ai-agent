@@ -1061,6 +1061,30 @@
     .film-card-images { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1, 4px); }
     .film-card-image strong { color: var(--gold); font-weight: 600; }
     .pg1-suggestions { display: grid; gap: var(--sp-2); margin: var(--sp-3) 0; }
+    /* ACTIONS (lib/replyActions.mjs): real commands as buttons under a
+       reply. A button that changes something asks for a second tap. */
+    .pg1-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-3) 0 var(--sp-1); }
+    .pg1-action {
+      display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 var(--sp-3);
+      background: var(--surface-2, transparent); border: 1px solid var(--gold-line); border-radius: var(--r-full);
+      color: var(--text-1, inherit); font: inherit; font-size: var(--fs-sm); line-height: var(--lh-tight); cursor: pointer;
+      transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+      animation: pg1-action-in 220ms var(--ease-out) both;
+    }
+    .pg1-action:nth-child(2) { animation-delay: 40ms; }
+    .pg1-action:nth-child(3) { animation-delay: 80ms; }
+    .pg1-action:nth-child(4) { animation-delay: 120ms; }
+    .pg1-action .icon { color: var(--gold); width: 14px; height: 14px; }
+    .pg1-action:hover { background: var(--gold-soft); }
+    .pg1-action:active { transform: scale(0.97); }
+    .pg1-action:focus-visible { border-radius: var(--r-full); }
+    .pg1-action[data-confirm="1"] { border-color: var(--border); color: var(--text-2, inherit); }
+    .pg1-action[data-confirm="1"] .icon { color: var(--text-3, currentColor); }
+    .pg1-action.armed { background: var(--gold); border-color: var(--gold); color: var(--bg, #000); }
+    .pg1-action.armed .icon { color: inherit; }
+    .pg1-action[disabled] { opacity: 0.55; cursor: default; }
+    @keyframes pg1-action-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .pg1-action { animation: none; transition: none; } }
     .pg1-suggestion { text-align: left; padding: 8px 12px; border: 1px dashed var(--border); border-radius: var(--r-sm); background: transparent; color: var(--text-2); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
     .pdf-card { margin: var(--sp-4) 0; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-1); color: var(--text-2); font-size: var(--fs-sm); display: flex; align-items: center; gap: var(--sp-3); }
     .pdf-card .icon { flex: none; width: 22px; height: 22px; }
@@ -2202,6 +2226,7 @@
     <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
     <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></symbol>
     <symbol id="i-screen" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
     <symbol id="i-stop" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><rect x="9" y="9" width="6" height="6" rx="1"/></symbol>
@@ -3226,14 +3251,20 @@
       }
       escaped = diffOut.join('\n');
 
+      // [ /cmd ] chips run the whole command, arguments included
+      // ("[ /lab report e2981021 ]"); the command rides in data-command and
+      // runs through runCommandChip(), never as inline script text.
       escaped = escaped.replace(/\[\s*((?:[^\]]*?\s)?(\/[a-zA-Z0-9_-]+)(?![\w.\/-])[^\]]*?)\s*\]/g, function(match, fullInner, cmdCode) {
-        return `<button type="button" class="cmd-chip" onclick="triggerHaptic(30); document.getElementById('prompt-input').value='${cmdCode}'; autoResize(document.getElementById('prompt-input')); submitDirective();">${fullInner}</button>`;
+        const whole = /^\/[a-zA-Z0-9_-]+(?: [a-zA-Z0-9:_-]+){0,3}$/.test(fullInner.trim()) ? fullInner.trim() : cmdCode;
+        return `<button type="button" class="cmd-chip" data-command="${whole}" onclick="runCommandChip(this)">${fullInner}</button>`;
       });
 
       // Images only from http(s) or an inline data:image URL - anything else
       // (javascript:, vbscript:, ...) stays as the escaped plain text.
       escaped = escaped.replace(/!\[([^\]]*)\]\(((?:https?:\/\/|data:image\/)[^)\s]+)\)/g, '</div><div class="media-preview-container"><img src="$2" alt="$1" loading="lazy" /></div><div class="message-text">');
       escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      // A command in backticks (`/lab report e2981021`) is a button too.
+      escaped = escaped.replace(/`(\/[a-z][a-z0-9-]*(?: [a-z0-9:_-]+){0,3})`/g, '<button type="button" class="cmd-chip" data-command="$1" onclick="runCommandChip(this)">$1</button>');
       escaped = escaped.replace(/`([^`]+)`/g, '<span class="md-code-inline">$1</span>');
 
       escaped = escaped.replace(/(?<!src=")https?:\/\/[^\s<]+?(?=&quot;|&#39;|[.,)]?(?:\s|<|$))/g, function (url) { return '<a class="md-link" href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>'; });
@@ -5868,6 +5899,62 @@
       if (!items.length) return '';
       return `<div class="pg1-suggestions">${items.map((x) => `<button type="button" class="pg1-suggestion" data-command="${escapeHTML(String(x.command || ''))}" onclick="triggerHaptic(20); useSuggestion(this)">${escapeHTML(x.text)}</button>`).join('')}</div>`;
     }
+    // ACTIONS: buttons for real commands (the server checks every one
+    // against lib/replyActions.mjs COMMANDS). A tap runs it; a button that
+    // changes something (data-confirm) needs a second tap within 4 s, and
+    // a pending confirm can also be answered by voice: "yes" or "no".
+    let pendingConfirm = null;
+    function actionsHtml(list) {
+      const items = (Array.isArray(list) ? list : []).filter((a) => a && typeof a.command === 'string' && /^\/[a-z]/.test(a.command) && typeof a.label === 'string').slice(0, 4);
+      if (!items.length) return '';
+      const confirm = items.find((a) => a.kind === 'confirm');
+      pendingConfirm = confirm ? { command: confirm.command, label: confirm.label, until: Date.now() + 120000 } : null;
+      return `<div class="pg1-actions" role="group" aria-label="Actions">${items.map((a) => `<button type="button" class="pg1-action" data-command="${escapeHTML(a.command)}" data-confirm="${a.confirm && a.kind !== 'confirm' ? '1' : '0'}" data-label="${escapeHTML(a.label)}" onclick="runReplyAction(this)"><svg class="icon" aria-hidden="true"><use href="#i-${a.kind === 'confirm' ? 'check' : a.confirm ? 'stop' : 'arrow-right'}"/></svg><span>${escapeHTML(a.label)}</span></button>`).join('')}</div>`;
+    }
+    function sendCommand(command) {
+      const input = document.getElementById('prompt-input');
+      if (!input || !command) return;
+      pendingConfirm = null;
+      input.value = command;
+      if (typeof autoResize === 'function') autoResize(input);
+      submitDirective();
+    }
+    function runReplyAction(el) {
+      const command = el.getAttribute('data-command') || '';
+      if (el.getAttribute('data-confirm') === '1' && !el.classList.contains('armed')) {
+        triggerHaptic(20);
+        el.classList.add('armed');
+        el.querySelector('span').textContent = 'Tap again to confirm';
+        setTimeout(() => { if (el.isConnected && el.classList.contains('armed')) { el.classList.remove('armed'); el.querySelector('span').textContent = el.getAttribute('data-label') || command; } }, 4000);
+        return;
+      }
+      triggerHaptic(30);
+      el.closest('.pg1-actions').querySelectorAll('.pg1-action').forEach((b) => { b.disabled = true; });
+      sendCommand(command);
+    }
+    function runCommandChip(el) {
+      triggerHaptic(30);
+      sendCommand(el.getAttribute('data-command') || '');
+    }
+    // Things said (or typed) that the page handles itself, with no request:
+    // "stop speaking", "read that again", and "yes" / "no" to a pending
+    // confirm. Returns the command to send instead, '' when handled, or
+    // null when the text is an ordinary message.
+    function localIntent(text) {
+      const t = String(text || '').toLowerCase().replace(/[.!?,]+$/g, '').replace(/^(?:(?:hey|ok|okay)\s+)?pg ?1[,:]?\s+/, '').trim();
+      if (pendingConfirm && pendingConfirm.until > Date.now()) {
+        if (/^(?:yes|yeah|yep|yes please|confirm|confirmed|do it|go ahead|go for it|ok do it)$/.test(t)) { const c = pendingConfirm.command; pendingConfirm = null; return c; }
+        if (/^(?:no|nope|cancel|leave it|never mind|nevermind|don'?t)$/.test(t)) { pendingConfirm = null; appendLocalExchange(text, 'Left it as it is.'); return ''; }
+      }
+      if (/^(?:stop|stop speaking|stop talking|be quiet|quiet|shush|silence|that'?s enough)$/.test(t) && isVoicePlaying()) { stopVoicePlayback(); return ''; }
+      if (/^(?:read (?:that|it) (?:again|aloud)|repeat (?:that|it)|say (?:that|it) again)$/.test(t)) {
+        const bubbles = document.querySelectorAll('#chat-container .message-bubble:not(.user)');
+        const last = bubbles[bubbles.length - 1];
+        const textEl = last && last.querySelector('.message-text');
+        if (textEl) { speakMessage(textEl.innerText, last); return ''; }
+      }
+      return null;
+    }
     function useSuggestion(el) {
       const input = document.getElementById('prompt-input');
       if (!input) return;
@@ -6343,7 +6430,14 @@
     async function submitDirective(options = {}) {
       const input = document.getElementById('prompt-input');
       const isRetry = typeof options.retryText === 'string';
-      const text = isRetry ? options.retryText.trim() : input.value.trim();
+      let text = isRetry ? options.retryText.trim() : input.value.trim();
+
+      // "stop speaking", "read that again", "yes" to a pending confirm.
+      if (!isRetry) {
+        const local = localIntent(text);
+        if (local === '') { input.value = ''; input.style.height = 'auto'; return; }
+        if (local) { text = local; input.value = local; }
+      }
 
       const voiceCmdMatch = text.toLowerCase().match(/^\/voice(?:[- ]([a-z0-9-]+))?$/);
       if (voiceCmdMatch) {
@@ -6582,6 +6676,8 @@
         // SKILLS: suggestions (a /pin rule, a skill update, /learn); a tap
         // puts the command in the prompt box, nothing runs by itself.
         if (Array.isArray(data.suggestions)) contentHtml += suggestionsHtml(data.suggestions);
+        // ACTIONS: real commands as buttons (lib/replyActions.mjs).
+        contentHtml += actionsHtml(data.actions);
         if (Array.isArray(data.musicLibrary)) contentHtml += musicLibraryHtml(data.musicLibrary);
 
         if (data.pendingApproval && data.pendingApproval.token) {

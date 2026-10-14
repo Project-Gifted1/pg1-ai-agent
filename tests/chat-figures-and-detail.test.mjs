@@ -152,7 +152,7 @@ test('A5/A6: the prompt lists only real lab command forms and describes the real
   await chat({ prompt: 'how does the lab work?' });
   const p = seen.prompts[0];
   assert.ok(p.includes(COMMAND_FORMS_DIRECTIVE));
-  assert.match(COMMAND_FORMS_DIRECTIVE, /"\/lab report e2981021"/);
+  assert.match(COMMAND_FORMS_DIRECTIVE, /`\/lab report e2981021`/);
   assert.ok(p.includes('/lab report <id> shows one experiment\'s report and cost (/lab report alone shows the latest one)'));
   assert.ok(p.includes(LAB_ARCHITECTURE_TEXT));
   assert.match(LAB_ARCHITECTURE_TEXT, /The runner on GitHub never touches Supabase or this server/);
