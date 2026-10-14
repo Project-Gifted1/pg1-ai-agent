@@ -49,9 +49,9 @@ test('the decision tree names only real tools, and covers every lookup tool', ()
   assert.match(tree, /`check_hostname_reputation` \*\*and\*\* `check_domain_age`/);
 });
 
-test('the status table says no_flags is not proof of safety and unknown is never clean', () => {
+test('the status table says no_flags means no flags found (never "safe") and unknown is never clean', () => {
   const status = subsection('What `status` means');
-  assert.match(status, /`"no_flags"` \| Nothing bad is recorded \*\*in the sources checked\*\*/);
+  assert.match(status, /`"no_flags"` \| No flags found \*\*in the sources checked\*\*.*never calls a target "safe"/);
   assert.match(status, /`"flagged"` \|.*escalate/);
   assert.match(status, /`"unknown"` \|.*Never treat it as clean/);
 });

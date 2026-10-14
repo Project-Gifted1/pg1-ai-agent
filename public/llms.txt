@@ -2,13 +2,37 @@
 
 > PG1 Sovereign Threat Intelligence: threat-intelligence tools for AI agents, covering wallet sanctions screening, domain age lookups, hostname/phishing reputation checks, a STIX 2.1 CVE feed from NVD, CVE enrichment, and threat actor dossiers — served over MCP, A2A, and REST.
 
-## Start here: preflight_check
+Start with the free point checks. When you want one decision before acting, use preflight_check.
 
-- [preflight_check](https://pg1-ai-agent.vercel.app/api/mcp): One call before an agent acts (since 1.18.0). Give `action` (pay, open, install, patch, trust_agent) and `target` (a wallet, URL, hostname, package name[@version] with `ecosystem`, CVE id or "vendor product version", or an agent URL/domain). PG1 runs every relevant check in parallel and returns one `decision`: no_flags, flagged or unknown, with merged `reasons` (each naming the check that raised it), per-check results and `latency_ms`. Fail closed: a check that does not finish makes the decision unknown (PREFLIGHT_CHECK_INCOMPLETE), never no_flags. Paid: 0.01 USD via x402 or a licence key, after the shared 5/day free tier. Also an A2A skill and REST: `POST https://pg1-ai-agent.vercel.app/api/preflight` with `{"action":"pay","target":"0x..."}`.
+## Free point checks
+
+- [check_wallet_sanctions](https://pg1-ai-agent.vercel.app/api/mcp): Checks a cryptocurrency wallet address against the OFAC SDN sanctions list; informational only, never phrased as "safe" or "clean".
+- [check_domain_age](https://pg1-ai-agent.vercel.app/api/mcp): Looks up a domain's registration age via RDAP; a newly registered domain is reported as a phishing signal, not proof of malicious intent.
+- [check_hostname_reputation](https://pg1-ai-agent.vercel.app/api/mcp): Screens a hostname against a phishing/lookalike blocklist; returns allowlisted, listed, lookalike, or not_listed — never "safe" or "clean".
+- [check_wallet_age](https://pg1-ai-agent.vercel.app/api/mcp): Reports when an EVM wallet address first appeared on a chain, based on its earliest on-chain transfer history; reports age and history only, never a safety verdict. Age is per chain: the same address can be old on one chain and new on another. Also reports EIP-7702 delegation, checked live on every call and never cached: `delegated` is true when the address's code on that chain is exactly 0xef0100 plus a 20-byte delegate address (given in `delegate_address`), false otherwise, and null when the code check did not complete (never guessed false; the age is still returned). A delegated address gets reason code WALLET_DELEGATED, which states the fact only and never changes `status` on its own (an old delegated wallet is `status: "no_flags"`). check_wallet_age status rule: "flagged" only with WALLET_NO_HISTORY; otherwise "unknown" if anything didn't complete (WALLET_AGE_PARTIAL, which is listed in reasons but never flags, or `delegated: null`); otherwise "no_flags". Cached answers count against the 60/hour anonymous rate limit. `is_contract` is unchanged and is still true for a delegated address.
+- [check_ip_abuse](https://pg1-ai-agent.vercel.app/api/mcp): Bring your own AbuseIPDB key (since 1.16.0): looks up one public IPv4/IPv6 address in AbuseIPDB with your own key, sent in the `X-AbuseIPDB-Key` header (never as an argument). Returns abuse_confidence_score, report counts, country, usage type, ISP, domain, Tor and whitelist flags, always with attribution (Data from AbuseIPDB, https://www.abuseipdb.com/check/<ip>). Flagged only when AbuseIPDB scores the address above 0 and does not whitelist it; a score of 0 is not proof the address is harmless, and results are never "safe" or "clean". No PG1 charge; uses your own AbuseIPDB quota. See "Bring your own AbuseIPDB key" below.
+- [check_package](https://pg1-ai-agent.vercel.app/api/mcp): Check before you install (since 1.17.0): a pre-install check of one npm or PyPI package (`ecosystem`, `name`, optional `version`; latest by default). Reports whether the package and version exist, first and latest publish dates, public malicious-package reports and known vulnerabilities (ids and severity) for the version checked, whether the name looks like a popular package's, and for npm the deprecated flag and install scripts. "flagged" when the version is reported malicious (PACKAGE_REPORTED_MALICIOUS; such reports can be false positives), the package or version does not exist (PACKAGE_NOT_FOUND, PACKAGE_VERSION_NOT_FOUND), or the package is under 30 days old with a look-alike name (PACKAGE_NEW_LOOKALIKE); "unknown" when a lookup did not complete (`exists: null`, never false); never "safe" or "clean". Free, no AI model, 60 calls/hour per caller without a licence key. Data sources and licences: https://pg1-ai-agent.vercel.app/docs/attributions
+- [get_usage_status](https://pg1-ai-agent.vercel.app/api/mcp): Returns your remaining free-tier calls for today and current license status.
+
+## One decision before acting: preflight_check
+
+- [preflight_check](https://pg1-ai-agent.vercel.app/api/mcp): One call before an agent acts. Give `action` (pay, open, install, patch, trust_agent) and `target`; PG1 runs every relevant check in parallel and returns one `decision`: no_flags (no flags found in the checks run, never "safe"), flagged or unknown, with merged `reasons`, per-check results and `latency_ms`. 0.01 USD per call via x402 or a licence key, 5 free calls a day (shared with the other paid tools). Fail closed: a check that does not finish makes the decision unknown (PREFLIGHT_CHECK_INCOMPLETE), never no_flags. Also an A2A skill and REST `POST https://pg1-ai-agent.vercel.app/api/preflight`.
+- [check_x402_endpoint](https://pg1-ai-agent.vercel.app/api/mcp): Free. Check an x402 endpoint before paying it: payTo sanctions and on-chain age, known network and asset, TLS, domain age. https only; 60 calls/hour per caller.
+- [check_agent_card](https://pg1-ai-agent.vercel.app/api/mcp): Free. Check another agent before trusting it: A2A agent card schema, a name claiming a brand its domain does not own, domain age and reputation. 60 calls/hour per caller.
+- [verify_result](https://pg1-ai-agent.vercel.app/api/mcp): Free. Verify a PG1 result's Ed25519 signature against the published keys.
+
+Example, three actions on PG1's test fixtures (/docs/testing; each preflight_check call still counts against the 5 free calls a day):
+
+```
+{"action":"open","target":"https://pg1-test-flagged.invalid/login"}  -> decision "flagged" (HOSTNAME_PHISHING_LISTED, DOMAIN_NEWLY_REGISTERED_30D)
+{"action":"pay","target":"0x7067312d746573742d6669787475726500000002"}  -> decision "no_flags" (no flags found in the sources checked)
+{"action":"install","target":"_pg1-test-unknown","ecosystem":"npm"}  -> decision "unknown" (a lookup did not complete: fail closed, stop or ask a person)
+```
 
 ## Signed results
 
-Every PG1 result is signed with Ed25519 over the canonical JSON of {request_hash, result, sources, timestamp, version}: MCP in `result._meta["pg1/signature"]`, A2A in the task's `metadata["pg1.signature"]`, REST as `signature`. Public keys (JWKS): https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key. Verify offline with the SDKs (/sdk) or with the free `verify_result` tool. Guide: https://pg1-ai-agent.vercel.app/docs/agents
+Every PG1 result is signed with Ed25519 over {request_hash, result, sources, timestamp, version}: MCP `result._meta["pg1/signature"]`, A2A `metadata["pg1.signature"]`, REST `signature`.
+Public keys (JWKS): https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key. Verify offline with the SDKs, or call verify_result, which is always free. Guide: https://pg1-ai-agent.vercel.app/docs/agents
 
 ## Watchlists
 
@@ -25,20 +49,6 @@ Commission a tool over A2A with the `build_tool` skill: a spec (name, use_case a
 ## Reliability
 
 Per-tool calls, success rate and p50/p95 latency over the last 24 hours: https://pg1-ai-agent.vercel.app/status (JSON: /status?format=json), also in get_usage_status as `service_status`.
-
-## Free tools
-
-- [check_x402_endpoint](https://pg1-ai-agent.vercel.app/api/mcp): Check an x402 endpoint before paying it (since 1.18.0): reads its 402 payment request, screens payTo against the sanctions list and its on-chain age, checks the network and asset are known, the TLS connection and the domain age. https only; private addresses and redirects refused. 60 calls/hour per caller.
-- [check_agent_card](https://pg1-ai-agent.vercel.app/api/mcp): Check another agent before trusting it (since 1.18.0): fetches its A2A agent card, validates the schema, flags a name that claims a brand its domain does not belong to, and checks the domain's age and reputation. 60 calls/hour per caller.
-- [verify_result](https://pg1-ai-agent.vercel.app/api/mcp): Verify a PG1 result's Ed25519 signature against the published keys (since 1.18.0).
-
-- [check_wallet_sanctions](https://pg1-ai-agent.vercel.app/api/mcp): Checks a cryptocurrency wallet address against the OFAC SDN sanctions list; informational only, never phrased as "safe" or "clean".
-- [check_domain_age](https://pg1-ai-agent.vercel.app/api/mcp): Looks up a domain's registration age via RDAP; a newly registered domain is reported as a phishing signal, not proof of malicious intent.
-- [check_hostname_reputation](https://pg1-ai-agent.vercel.app/api/mcp): Screens a hostname against a phishing/lookalike blocklist; returns allowlisted, listed, lookalike, or not_listed — never "safe" or "clean".
-- [check_wallet_age](https://pg1-ai-agent.vercel.app/api/mcp): Reports when an EVM wallet address first appeared on a chain, based on its earliest on-chain transfer history; reports age and history only, never a safety verdict. Age is per chain: the same address can be old on one chain and new on another. Also reports EIP-7702 delegation, checked live on every call and never cached: `delegated` is true when the address's code on that chain is exactly 0xef0100 plus a 20-byte delegate address (given in `delegate_address`), false otherwise, and null when the code check did not complete (never guessed false; the age is still returned). A delegated address gets reason code WALLET_DELEGATED, which states the fact only and never changes `status` on its own (an old delegated wallet is `status: "no_flags"`). check_wallet_age status rule: "flagged" only with WALLET_NO_HISTORY; otherwise "unknown" if anything didn't complete (WALLET_AGE_PARTIAL, which is listed in reasons but never flags, or `delegated: null`); otherwise "no_flags". Cached answers count against the 60/hour anonymous rate limit. `is_contract` is unchanged and is still true for a delegated address.
-- [check_ip_abuse](https://pg1-ai-agent.vercel.app/api/mcp): Bring your own AbuseIPDB key (since 1.16.0): looks up one public IPv4/IPv6 address in AbuseIPDB with your own key, sent in the `X-AbuseIPDB-Key` header (never as an argument). Returns abuse_confidence_score, report counts, country, usage type, ISP, domain, Tor and whitelist flags, always with attribution (Data from AbuseIPDB, https://www.abuseipdb.com/check/<ip>). Flagged only when AbuseIPDB scores the address above 0 and does not whitelist it; a score of 0 is not proof the address is harmless, and results are never "safe" or "clean". No PG1 charge; uses your own AbuseIPDB quota. See "Bring your own AbuseIPDB key" below.
-- [check_package](https://pg1-ai-agent.vercel.app/api/mcp): Check before you install (since 1.17.0): a pre-install check of one npm or PyPI package (`ecosystem`, `name`, optional `version`; latest by default). Reports whether the package and version exist, first and latest publish dates, public malicious-package reports and known vulnerabilities (ids and severity) for the version checked, whether the name looks like a popular package's, and for npm the deprecated flag and install scripts. "flagged" when the version is reported malicious (PACKAGE_REPORTED_MALICIOUS; such reports can be false positives), the package or version does not exist (PACKAGE_NOT_FOUND, PACKAGE_VERSION_NOT_FOUND), or the package is under 30 days old with a look-alike name (PACKAGE_NEW_LOOKALIKE); "unknown" when a lookup did not complete (`exists: null`, never false); never "safe" or "clean". Free, no AI model, 60 calls/hour per caller without a licence key. Data sources and licences: https://pg1-ai-agent.vercel.app/docs/attributions
-- [get_usage_status](https://pg1-ai-agent.vercel.app/api/mcp): Returns your remaining free-tier calls for today and current license status.
 
 ## Endpoints
 
@@ -78,16 +88,16 @@ curl -X POST "https://pg1-ai-agent.vercel.app/api/a2a?A2A-Version=1.0" -H "Conte
 
 ## Which tool to call
 
+- About to act (pay, open, install, patch, trust an agent) and want one decision: preflight_check, one call
 - One IP, domain, URL or file hash: get_ioc_context (free when found: false; PG1's licensed records hold only NVD CVE ids today, so these return found: false), several: get_ioc_batch; for a domain or hostname also run the hostname checks below
 - CVE id: get_cve_details (several: get_cve_batch); vendor + product: get_cve_by_product
-- About to act (pay, open, install, patch, trust an agent): preflight_check, one call
 - An x402 endpoint you will pay: check_x402_endpoint; another agent: check_agent_card
 - Wallet you will pay or trust: check_wallet_sanctions and check_wallet_age
 - Link, hostname or possible phishing: check_hostname_reputation and check_domain_age
 - npm or PyPI package before installing: check_package
 - Threat actor name: get_threat_actor_profile
 
-`status`: "no_flags" = nothing recorded in the sources checked (not proof of safety); "flagged" = act or escalate, match on reasons[].code; "unknown" = a check did not complete, never treat as clean. Free tier: automatic, 5 paid calls/day per caller shared across /api/mcp and /api/a2a, then 0.01 USD via x402; the STIX feed (get_threat_indicators, /api/ioc) is free while it holds no current data (PG1_FEED_PAID off) and uses none of the 5; the check_* tools are always free (60 calls/hour, check_wallet_sanctions 120, without a licence key). Full guide: https://pg1-ai-agent.vercel.app/docs/agents
+`status`: "no_flags" = no flags found in the sources checked (never "safe"); "flagged" = act or escalate, match on reasons[].code; "unknown" = a check did not complete, never treat as clean. Free tier: automatic, 5 paid calls/day per caller shared across /api/mcp and /api/a2a, then 0.01 USD via x402; the STIX feed (get_threat_indicators, /api/ioc) is free while it holds no current data (PG1_FEED_PAID off) and uses none of the 5; the check_* tools are always free (60 calls/hour, check_wallet_sanctions 120, without a licence key). Full guide: https://pg1-ai-agent.vercel.app/docs/agents
 
 ## Response metadata
 
