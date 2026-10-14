@@ -1060,6 +1060,8 @@
     .film-card-failed { color: var(--danger-text); }
     .film-card-images { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1, 4px); }
     .film-card-image strong { color: var(--gold); font-weight: 600; }
+    .pg1-suggestions { display: grid; gap: var(--sp-2); margin: var(--sp-3) 0; }
+    .pg1-suggestion { text-align: left; padding: 8px 12px; border: 1px dashed var(--border); border-radius: var(--r-sm); background: transparent; color: var(--text-2); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
     .pdf-card { margin: var(--sp-4) 0; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-1); color: var(--text-2); font-size: var(--fs-sm); display: flex; align-items: center; gap: var(--sp-3); }
     .pdf-card .icon { flex: none; width: 22px; height: 22px; }
     .pdf-card-info { display: grid; gap: 2px; min-width: 0; flex: 1; }
@@ -5861,6 +5863,19 @@
 
     // PDF card (lib/pdf/chat.mjs): title, page count, size and a download
     // link (https only), or a note when the vault is not configured.
+    function suggestionsHtml(list) {
+      const items = (Array.isArray(list) ? list : []).filter((x) => x && typeof x.text === 'string').slice(0, 3);
+      if (!items.length) return '';
+      return `<div class="pg1-suggestions">${items.map((x) => `<button type="button" class="pg1-suggestion" data-command="${escapeHTML(String(x.command || ''))}" onclick="triggerHaptic(20); useSuggestion(this)">${escapeHTML(x.text)}</button>`).join('')}</div>`;
+    }
+    function useSuggestion(el) {
+      const input = document.getElementById('prompt-input');
+      if (!input) return;
+      input.value = el.getAttribute('data-command') || '';
+      input.focus();
+      if (typeof autoResize === 'function') autoResize(input);
+    }
+
     function pdfCardHtml(pdf) {
       if (!pdf || typeof pdf !== 'object') return '';
       const pages = Number(pdf.pages) || 0;
@@ -6564,6 +6579,9 @@
         if (data.musicTrack) contentHtml += musicCardHtml(data.musicTrack);
         // PDF: the document's card (title, pages, size, download).
         if (data.pdf) contentHtml += pdfCardHtml(data.pdf);
+        // SKILLS: suggestions (a /pin rule, a skill update, /learn); a tap
+        // puts the command in the prompt box, nothing runs by itself.
+        if (Array.isArray(data.suggestions)) contentHtml += suggestionsHtml(data.suggestions);
         if (Array.isArray(data.musicLibrary)) contentHtml += musicLibraryHtml(data.musicLibrary);
 
         if (data.pendingApproval && data.pendingApproval.token) {
