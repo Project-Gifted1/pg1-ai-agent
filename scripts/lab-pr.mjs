@@ -4,7 +4,10 @@
 // pull request. Nothing else: it never merges, never approves, never
 // touches another branch. Paths are checked again here. The PR is opened
 // only when the lab's own test run passed; the repository's CI then runs on
-// the PR and is the evidence the promotion gate reads.
+// the PR and is the evidence the promotion gate reads. With the built-in
+// token (PG1_LAB_PR_TOKEN=builtin) GitHub starts no workflow for the push or
+// the PR, so the body tells the operator how to start CI; until then the
+// gate finds no "npm test" check and fails closed.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -33,7 +36,7 @@ export async function openDraftPr({ env = process.env, dir = 'lab-out', fetchImp
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json', 'User-Agent': 'PG1-lab' },
     body: JSON.stringify({
       title: String(result.code.title || branch).slice(0, 120), head: branch, base: env.LAB_BASE || 'main', draft: true,
-      body: `Draft opened by the PG1 lab, experiment \`${result.id}\`. **PG1 never merges lab pull requests**: the operator reviews and decides.\n\n**Goal:** ${String(result.goal || '').slice(0, 500)}\n\n**Summary:** ${String(result.code.summary || '').slice(0, 2000)}\n\nLab test run: passed.\n\n\`\`\`\n${String(tests.summary || '').slice(-1500)}\n\`\`\``
+      body: `Draft opened by the PG1 lab, experiment \`${result.id}\`. **PG1 never merges lab pull requests**: the operator reviews and decides.\n\n**Goal:** ${String(result.goal || '').slice(0, 500)}\n\n**Summary:** ${String(result.code.summary || '').slice(0, 2000)}\n\nLab test run: passed.\n\n${env.PG1_LAB_PR_TOKEN === 'builtin' ? '**CI has not started:** this PR was opened with the built-in GITHUB_TOKEN, which never triggers workflows. Close and reopen it (or push a commit) to run Tests; the promotion gate waits for the \`npm test\` check.\n\n' : ''}\`\`\`\n${String(tests.summary || '').slice(-1500)}\n\`\`\``
     })
   });
   const pr = await res.json().catch(() => ({}));

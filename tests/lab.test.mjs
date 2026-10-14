@@ -30,6 +30,7 @@ const { createLabFetch, createBudgetMeter, LabBudgetError, labBudgetUsd, labDail
 const { signLabToken, verifyLabToken } = await import('../lib/lab/token.mjs');
 const { runExperiment } = await import('../lib/lab/runner.mjs');
 const { evaluateGate } = await import('../lib/lab/gate.mjs');
+const { createLabGithub } = await import('../lib/lab/github.mjs');
 const { unzip } = await import('../lib/lab/unzip.mjs');
 const { priceCoversCost, minimumPrice, assertPricing, MIN_PRICE_MULTIPLIER } = await import('../lib/pricing.mjs');
 const { judgeFlag, monitorFlags, flagOn, createFlagStore } = await import('../lib/flags.mjs');
@@ -208,14 +209,26 @@ test('lab.yml: lab environment, lab-scoped secrets only, fresh runners, tests wi
   const yml = readFileSync(path.join(ROOT, '.github/workflows/lab.yml'), 'utf8');
   const secrets = [...yml.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((m) => m[1]);
   assert.ok(secrets.length >= 4);
-  assert.deepEqual([...new Set(secrets)].sort(), ['PG1_LAB_ANTHROPIC_API_KEY', 'PG1_LAB_DISPATCH_SECRET', 'PG1_LAB_GEMINI_API_KEY', 'PG1_LAB_GITHUB_TOKEN']);
+  assert.deepEqual([...new Set(secrets)].sort(), ['ANTHROPIC_API_KEY', 'GEMINI_API_KEY_PAID', 'PG1_LAB_ANTHROPIC_API_KEY', 'PG1_LAB_DISPATCH_SECRET', 'PG1_LAB_GEMINI_API_KEY', 'PG1_LAB_GITHUB_TOKEN']);
   const code = yml.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
   assert.doesNotMatch(code, /SUPABASE|SERVICE_ROLE|X402|CDP_|WALLET|PRIVATE_KEY|\bGITHUB_TOKEN\b/);
   assert.match(yml, /^permissions:\n  contents: read$/m);
+  // Fallbacks: model keys to the existing repository keys, the PR token to
+  // the built-in token; the dispatch secret has none.
+  assert.match(code, /PG1_LAB_ANTHROPIC_API_KEY: \$\{\{ secrets\.PG1_LAB_ANTHROPIC_API_KEY \|\| secrets\.ANTHROPIC_API_KEY \}\}/);
+  assert.match(code, /PG1_LAB_GEMINI_API_KEY: \$\{\{ secrets\.PG1_LAB_GEMINI_API_KEY \|\| secrets\.GEMINI_API_KEY_PAID \}\}/);
+  assert.match(code, /PG1_LAB_DISPATCH_SECRET: \$\{\{ secrets\.PG1_LAB_DISPATCH_SECRET \}\}\n/);
+  assert.match(code, /PG1_LAB_GITHUB_TOKEN: \$\{\{ secrets\.PG1_LAB_GITHUB_TOKEN \|\| github\.token \}\}/);
+  const experimentJob = yml.slice(yml.indexOf('\n  experiment:'), yml.indexOf('\n  test:'));
+  const pullJob = yml.slice(yml.indexOf('\n  pull:'));
+  assert.doesNotMatch(experimentJob, /github\.token|PG1_LAB_GITHUB_TOKEN|permissions:/, 'the experiment job gets no GitHub write token');
+  assert.match(pullJob, /permissions:\n      contents: write\n      pull-requests: write\n/);
+  assert.equal((code.match(/: write/g) || []).length, 2, 'write permissions only in the pull job');
+  assert.doesNotMatch(pullJob, /API_KEY|DISPATCH_SECRET/, 'the pull job has no model key or dispatch secret');
   assert.match(yml, /environment: lab/);
   assert.equal((yml.match(/timeout-minutes:/g) || []).length >= 4, true);
   const testJob = yml.slice(yml.indexOf('\n  test:'), yml.indexOf('\n  pull:'));
-  assert.doesNotMatch(testJob, /secrets\./, 'the job that runs proposed code has no secrets');
+  assert.doesNotMatch(testJob, /secrets\.|github\.token|permissions:/, 'the job that runs proposed code has no secrets');
   assert.match(testJob, /no-network\.mjs/);
   assert.match(readFileSync(path.join(ROOT, 'scripts/lab-pr.mjs'), 'utf8'), /draft: true/);
   for (const f of ['scripts/lab-pr.mjs', 'scripts/lab-run.mjs', 'scripts/lab-apply.mjs', ...readdirSync(path.join(ROOT, 'lib/lab')).map((n) => `lib/lab/${n}`)]) {
@@ -230,6 +243,24 @@ test('lab.yml: lab environment, lab-scoped secrets only, fresh runners, tests wi
 });
 
 // --- gate, pricing, flags -------------------------------------------------------------
+
+test('CI evidence needs the Tests workflow\'s npm test check on the PR head; other apps\' checks alone are "none"', async () => {
+  const ghWith = (checkRuns) => createLabGithub({ env: { GITHUB_TOKEN: 't' }, fetchImpl: async (u) => {
+    if (/\/pulls\/7$/.test(String(u))) return Response.json({ head: { sha: 'abc' } });
+    if (/\/commits\/abc\/check-runs/.test(String(u))) return Response.json({ check_runs: checkRuns });
+    throw new Error('unexpected ' + u);
+  } });
+  // A PR opened with the built-in GITHUB_TOKEN: Tests never ran, only a deploy preview did.
+  const vercelOnly = await ghWith([{ name: 'Vercel', status: 'completed', conclusion: 'success' }]).prChecks(7);
+  assert.equal(vercelOnly.state, 'none');
+  assert.equal((await ghWith([]).prChecks(7)).state, 'none');
+  assert.equal((await ghWith([{ name: 'npm test', status: 'in_progress', conclusion: null }]).prChecks(7)).state, 'pending');
+  assert.equal((await ghWith([{ name: 'npm test', status: 'completed', conclusion: 'success' }, { name: 'Vercel', status: 'completed', conclusion: 'success' }]).prChecks(7)).state, 'success');
+  assert.equal((await ghWith([{ name: 'npm test', status: 'completed', conclusion: 'failure' }]).prChecks(7)).state, 'failure');
+  const gate = evaluateGate({ candidate: { type: 'code', files: ['lib/x.mjs'] }, result: { code: { files: ['lib/x.mjs'], title: 't', summary: 's' } }, ci: vercelOnly });
+  assert.equal(gate.pass, false);
+  assert.match(gate.checks[0].evidence, /CI none.*built-in GITHUB_TOKEN.*close and reopen/);
+});
 
 const goodSkill = { name: 'cve-digest', description: 'A weekly digest of new CVEs for a product list.', instructions: '1. List the products.\n2. Look up new CVEs.\nPitfalls: never invent a CVE.', evals: [{ prompt: 'Digest for nginx', traits: ['lists CVE ids'] }] };
 

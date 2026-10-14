@@ -8,10 +8,10 @@ the production server, with keys that are scoped to the lab.
 
 | | Lab | Production |
 |---|---|---|
-| Model keys | `PG1_LAB_ANTHROPIC_API_KEY`, `PG1_LAB_GEMINI_API_KEY` (set a low spend limit at each provider) | the deployment's own keys |
+| Model keys | `PG1_LAB_ANTHROPIC_API_KEY`, `PG1_LAB_GEMINI_API_KEY` (set a low spend limit at each provider); when unset, the repository's `ANTHROPIC_API_KEY` / `GEMINI_API_KEY_PAID` | the deployment's own keys |
 | Data | none: mocks and the repository's fixtures | Supabase (service role) |
 | Payments / wallet | none | x402, CDP |
-| GitHub | `PG1_LAB_GITHUB_TOKEN`: push a `lab/<id>` branch and open a **draft** PR | `GITHUB_TOKEN` dispatches the workflow and reads its result |
+| GitHub | `PG1_LAB_GITHUB_TOKEN` (or, when unset, the pull job's built-in token): push a `lab/<id>` branch and open a **draft** PR | `GITHUB_TOKEN` dispatches the workflow and reads its result |
 | Network | GET public https pages through `lib/netGuard.mjs` (no private addresses, no redirects); POST only to the model APIs | — |
 | Limits | `PG1_LAB_BUDGET_USD` (default 2) per experiment, `PG1_LAB_DAILY_USD` (default 5) per UTC day, 15 minutes per experiment, 20 per job | — |
 
@@ -30,6 +30,13 @@ In GitHub, under *Settings → Environments → New environment*, create an envi
 | `PG1_LAB_DISPATCH_SECRET` | 32+ random characters. Set the **same value** in Vercel as `PG1_LAB_DISPATCH_SECRET`. |
 | `PG1_LAB_ANTHROPIC_API_KEY` and/or `PG1_LAB_GEMINI_API_KEY` | Separate keys for the lab, each with a provider-side spend cap. |
 | `PG1_LAB_GITHUB_TOKEN` | The fine-grained token below. |
+
+`PG1_LAB_DISPATCH_SECRET` is always required, in GitHub and in Vercel. The others are optional:
+
+- **Model keys.** With no `PG1_LAB_*` model key, the experiment job uses the repository secrets `ANTHROPIC_API_KEY` and `GEMINI_API_KEY_PAID` (the ones `claude.yml` and the render workflows already use). The signed per-experiment budget and `PG1_LAB_DAILY_USD` still cap spend, but those keys have no lab-only cap at the provider, so a separate lab key is still the safer choice.
+- **GitHub token.** With no `PG1_LAB_GITHUB_TOKEN`, the pull job uses the built-in `GITHUB_TOKEN` with `contents: write` and `pull-requests: write` (that job only; the workflow default stays `contents: read`). Turn on *Settings → Actions → General → Workflow permissions → Allow GitHub Actions to create and approve pull requests*, or the PR call is refused. **Limitation:** GitHub never starts workflows for pushes and PRs made with the built-in token, so the Tests workflow does not run on the draft PR. The promotion gate requires an `npm test` check on the PR head and treats its absence as `CI none`, a failure, so nothing reaches the approval card untested. To start CI, close and reopen the draft PR (or push a commit to `lab/<id>`) yourself; the next `/lab status` re-reads the checks. A fine-grained `PG1_LAB_GITHUB_TOKEN` avoids that step: its PRs trigger Tests normally.
+
+The Supabase service-role key, the wallet and the payment secrets (`SUPABASE_*`, `CDP_*`, `X402_*`) are never given to the lab, whether or not the `PG1_LAB_*` secrets are set.
 
 In Vercel, set `PG1_LAB_DISPATCH_SECRET`, and optionally `PG1_LAB_BUDGET_USD` and `PG1_LAB_DAILY_USD`. The existing `GITHUB_TOKEN` (Actions: read and write) dispatches the workflow and reads its results. To keep these lab permissions on their own token, set `PG1_LAB_DISPATCH_GITHUB_TOKEN` instead.
 
