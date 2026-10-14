@@ -124,14 +124,15 @@ const SKILL_SOURCE_LABELS = {
   preflight_check: 'PG1 preflight',
   check_x402_endpoint: 'x402 payment request',
   check_agent_card: 'agent card',
-  verify_result: 'PG1 signing keys'
+  verify_result: 'PG1 signing keys',
+  hosting_advisor: 'PG1 hosting dataset'
 };
 
 // 60 s: an accepted A2A job runs in the background (waitUntil) after the reply.
 export const config = { maxDuration: 60 };
 
 export const A2A_FREE_SKILL_NAMES = Object.freeze(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'get_usage_status', 'check_ip_abuse', 'check_package', 'check_x402_endpoint', 'check_agent_card', 'verify_result']);
-export const A2A_PAID_SKILL_NAMES = Object.freeze(['preflight_check', 'get_cve_details', 'get_cve_batch', 'get_cve_by_product', 'get_threat_actor_profile']);
+export const A2A_PAID_SKILL_NAMES = Object.freeze(['preflight_check', 'hosting_advisor', 'get_cve_details', 'get_cve_batch', 'get_cve_by_product', 'get_threat_actor_profile']);
 const A2A_SKILL_NAMES = [...A2A_FREE_SKILL_NAMES, ...A2A_PAID_SKILL_NAMES];
 
 // Message metadata keys of the a2a-x402 extension.
@@ -485,7 +486,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-a2a',
-      version: '1.18.0',
+      version: '1.19.0',
       protocol: 'Agent2Agent (A2A) over JSON-RPC 2.0',
       supportedVersions: ['1.0', '0.3'],
       agentCard: 'https://pg1-ai-agent.vercel.app/.well-known/agent-card.json',

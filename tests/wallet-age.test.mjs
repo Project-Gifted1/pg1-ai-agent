@@ -710,7 +710,7 @@ const SCHEMA_TOOLS_WITH_NEW_META = new Set(['check_wallet_sanctions', 'check_dom
 test('check_wallet_age: is the 14th tool, and the 13 pre-existing tool definitions are unchanged except the agreed optional outputSchema additions', () => {
   // 16 since check_ip_abuse (1.16.0) and check_package (1.17.0); it is
   // still the 14th.
-  const LEGACY = TOOLS.filter((t) => !['preflight_check', 'check_x402_endpoint', 'check_agent_card', 'verify_result'].includes(t.name));
+  const LEGACY = TOOLS.filter((t) => !['preflight_check', 'check_x402_endpoint', 'check_agent_card', 'verify_result', 'hosting_advisor'].includes(t.name));
   assert.equal(LEGACY.length, 16);
   assert.equal(LEGACY[13].name, 'check_wallet_age');
   const snapshotPath = path.join(__dirname, 'fixtures', 'existing-13-tools-snapshot.json');
@@ -1125,7 +1125,9 @@ test('computeStatus: informational reason codes never flag on their own', () => 
     // check_package (1.17.0): facts that never flag on their own.
     'PACKAGE_LOOKALIKE', 'PACKAGE_NEWLY_PUBLISHED', 'PACKAGE_KNOWN_VULNERABILITIES', 'PACKAGE_DEPRECATED', 'PACKAGE_INSTALL_SCRIPTS',
     // 1.18.0 (preflight): a wallet under 7 days old is reported, not flagged.
-    'WALLET_NEW_7D'
+    'WALLET_NEW_7D',
+    // hosting_advisor (1.19.0): data-quality notes.
+    'HOSTING_FACTS_STALE', 'HOSTING_FACTS_UNVERIFIED'
   ]);
   const ok = [{ result: 'ok' }];
   assert.equal(computeStatus([{ code: 'IP_WHITELISTED' }], ok), 'no_flags');

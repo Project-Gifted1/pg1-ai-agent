@@ -50,7 +50,7 @@ const KEY_B = hex80('customer-b');
 
 const PUBLIC_IP = '8.8.8.8';
 // P8 (1.18.0) added four tools at the front; the older list is checked as it was.
-const P8_TOOLS = ['preflight_check', 'check_x402_endpoint', 'check_agent_card', 'verify_result'];
+const P8_TOOLS = ['preflight_check', 'check_x402_endpoint', 'check_agent_card', 'verify_result', 'hosting_advisor'];
 const LEGACY_TOOLS = TOOLS.filter((t) => !P8_TOOLS.includes(t.name));
 const tool = TOOLS.find((t) => t.name === 'check_ip_abuse');
 
@@ -844,17 +844,17 @@ test('CORS: X-AbuseIPDB-Key is allowed on /api/mcp and /api/a2a only', async () 
 test('version 1.17.0 (check_package, after check_ip_abuse shipped in 1.16.0) on /api/mcp (GET + serverInfo), /api/a2a GET, server.json, agent card, openapi', async () => {
   const get = makeRes();
   await mcpHandler({ method: 'GET', headers: {} }, get);
-  assert.equal(get.body.version, '1.18.0');
+  assert.equal(get.body.version, '1.19.0');
   const init = makeRes();
   await mcpHandler({ method: 'POST', headers: {}, body: { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} } }, init);
-  assert.equal(init.body.result.serverInfo.version, '1.18.0');
+  assert.equal(init.body.result.serverInfo.version, '1.19.0');
   const a2aGet = makeRes();
   await a2aHandler({ method: 'GET', headers: {}, query: {} }, a2aGet);
-  assert.equal(a2aGet.body.version, '1.18.0');
+  assert.equal(a2aGet.body.version, '1.19.0');
   const read = (rel) => JSON.parse(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
-  assert.equal(read('server.json').version, '1.18.0');
-  assert.equal(read('public/.well-known/agent-card.json').version, '1.18.0');
-  assert.equal(read('public/openapi.json').info.version, '1.18.0');
+  assert.equal(read('server.json').version, '1.19.0');
+  assert.equal(read('public/.well-known/agent-card.json').version, '1.19.0');
+  assert.equal(read('public/openapi.json').info.version, '1.19.0');
 });
 
 test('docs: agent card skill, llms.txt and README carry the bring-your-own-key section with a header curl example', () => {

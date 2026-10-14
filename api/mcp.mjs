@@ -3,7 +3,9 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.18.0 — ADD: preflight_check (one paid call, every relevant check in
+ * Version: 1.19.0 — ADD: hosting_advisor (paid; lib/hosting), the Tool Foundry's
+ *   ft_* tools (lib/foundry).
+ * 1.18.0 — ADD: preflight_check (one paid call, every relevant check in
  *   parallel, fail closed), check_x402_endpoint, check_agent_card and
  *   verify_result; every result signed (Ed25519, lib/signing.mjs).
  * 1.17.0 — ADD: new free tool check_package (also an A2A skill, a
@@ -132,6 +134,8 @@ import { PREFLIGHT_DEF, PREFLIGHT_TOOL, runPreflight } from '../lib/preflight.mj
 import { checkX402Endpoint, checkAgentCard } from '../lib/agentChecks.mjs';
 import { signResult, verifySignedResult, publicJwks, MCP_SIGNATURE_META } from '../lib/signing.mjs';
 import { cachedCheck } from '../lib/resultCache.mjs';
+import { HOSTING_DEF, HOSTING_TOOL, hostingAdvice } from '../lib/hosting/advisor.mjs';
+import { loadHostingData } from '../lib/hosting/store.mjs';
 import { checkUrlShape } from '../lib/netGuard.mjs';
 import { serviceStatus } from '../lib/statusMetrics.mjs';
 import { isFoundryToolName, callFoundryTool, publicFoundryToolDefs, TOOL_KEY_HEADER } from '../lib/foundry/tools.mjs';
@@ -242,7 +246,9 @@ const EDGE_TOOLS = [
     name: 'verify_result',
     description: 'PG1 Sovereign Threat Intelligence: verifies that a result really came from PG1, unchanged. Every PG1 tool result is signed (Ed25519) over its request hash, result, sources, timestamp and PG1 version; the signature is in result._meta["pg1/signature"] (MCP), the task\'s metadata["pg1.signature"] (A2A) or "signature" (REST). Give the result object and the signature block; optionally tool and arguments to check it answers that exact request. Public keys: https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key (JWKS); you can verify offline without this tool. Always free.',
     inputSchema: { type: 'object', properties: { result: { type: 'object', description: 'The tool result as received (its signature field, if any, is ignored).' }, signature: { type: 'object', description: 'The signature block.' }, tool: { type: 'string', description: 'Optional: the tool that was called.' }, arguments: { type: 'object', description: 'Optional: the arguments it was called with.' } }, required: ['result', 'signature'], additionalProperties: false }
-  }
+  },
+  // P10: hosting_advisor (lib/hosting), paid like the CVE tools.
+  HOSTING_DEF
 ];
 
 export const TOOLS = [
@@ -3446,6 +3452,13 @@ export function paidResponseOptions(env = process.env) {
 export const STANDARD_TOOL_HANDLERS = {
   // P8: one paid call that runs every relevant check (lib/preflight.mjs).
   [PREFLIGHT_TOOL]: (args) => runPreflight(args, { runTool: internalRunTool }),
+  // P10: the curated dataset from storage, or the bundled seed.
+  [HOSTING_TOOL]: async (args) => {
+    let creds = {};
+    try { creds = getSupabaseCreds(); } catch (e) { creds = {}; }
+    const data = await loadHostingData(creds);
+    return hostingAdvice(args, { data, dataSource: data.source });
+  },
   get_threat_indicators: handleThreatIndicators,
   get_cve_details: handleCveDetails,
   get_cve_batch: handleCveBatch,
@@ -3620,6 +3633,7 @@ function recordToolCallTelemetry(callTelemetry, res) {
 // the single shared catch blocks below can build the right checks entry
 // without duplicating per-tool logic.
 export const TOOL_SOURCE_LABELS = {
+  hosting_advisor: 'PG1 hosting dataset',
   get_threat_indicators: 'threat indicator feed',
   get_cve_details: 'vulnerability database',
   get_cve_batch: 'vulnerability database',
@@ -3666,7 +3680,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       name: 'pg1-threat-intel',
-      version: '1.18.0',
+      version: '1.19.0',
       status: 'healthy',
       protocol: 'Model Context Protocol over Streamable HTTP',
       endpoint: 'https://pg1-ai-agent.vercel.app/api/mcp',
@@ -3702,7 +3716,7 @@ export default async function handler(req, res) {
       recordTelemetry({ eventType: 'initialize', endpoint: '/api/mcp', status: 'ok', clientName: clientInfo.name, clientVersion: clientInfo.version, callerHash: requestCallerHash(req) });
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.18.0' } },
+        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: '1.19.0' } },
         id: requestId
       });
     }

@@ -2,7 +2,7 @@
   "protocolVersion": "0.3.0",
   "name": "PG1 Sovereign Threat Intelligence",
   "description": "Threat intelligence agent for AI agents and security tooling: wallet sanctions screening, domain age lookups, hostname/phishing reputation checks, wallet age/history checks, free-tier usage status, bring-your-own-key AbuseIPDB IP lookups (your own AbuseIPDB key in the X-AbuseIPDB-Key header), and pre-install npm/PyPI package checks, all free. Paid skills: CVE enrichment (single, batch, by product) and MITRE ATT&CK threat actor dossiers, 0.01 USD per call via x402 (a2a-x402 extension: the PaymentPayload in message.metadata[\"x402.payment.payload\"]), a Gumroad licence key in X-API-KEY, after 5 free calls a day per caller (automatic; shared with the MCP server at /api/mcp; X-Free-Tier: 0 skips them). The NVD CVE feed (free while it holds no current data) and the record lookups stay on /api/mcp and /api/ioc. Paid jobs: batch wallet screens (up to 500), CVE exposure reports (PDF + JSON), hostname/package batch checks (up to 200) and threat write-up PDFs, quoted then paid over a2a-x402 (submit_job).",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "documentationUrl": "https://pg1-ai-agent.vercel.app/docs/crypto-alert-bot",
   "url": "https://pg1-ai-agent.vercel.app/api/a2a",
   "preferredTransport": "JSONRPC",
@@ -58,6 +58,26 @@
       "examples": [
         "Preflight: I am about to pay 0x1234... on Base.",
         "Preflight: I am about to install the npm package left-pad@1.3.0."
+      ],
+      "inputModes": [
+        "application/json"
+      ],
+      "outputModes": [
+        "application/json"
+      ]
+    },
+    {
+      "id": "hosting_advisor",
+      "name": "hosting_advisor",
+      "description": "Ranked hosting regions and providers for a workload, with cited reasons: data-protection regime, published government data-access frameworks, provider acceptable-use fit, sanctions and export-control compliance, estimated latency, a redundancy and resilience plan, and privacy-by-design guidance. Structured input; stale or unverified facts are flagged. Not legal advice; lawful use only. Paid: 0.01 USD via x402 or a licence key, after the shared 5/day free tier (automatic).",
+      "tags": [
+        "hosting",
+        "privacy",
+        "compliance",
+        "paid"
+      ],
+      "examples": [
+        "Where should I host an API for EU users with high privacy needs and a $100/month budget?"
       ],
       "inputModes": [
         "application/json"

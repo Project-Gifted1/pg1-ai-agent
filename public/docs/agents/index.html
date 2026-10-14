@@ -67,6 +67,7 @@
 <tr><td>An action you are about to take (pay, open, install, patch, trust an agent)</td><td><code>preflight_check</code></td><td>Start here. One paid call (5 free a day) that runs the checks below in parallel and returns one decision: <code>no_flags</code>, <code>flagged</code> or <code>unknown</code>.</td></tr>
 <tr><td>An x402 endpoint you are about to pay</td><td><code>check_x402_endpoint</code></td><td>Reads its 402 payment request: payTo sanctions and wallet age, network and asset sanity, TLS, domain age.</td></tr>
 <tr><td>Another agent you are about to trust</td><td><code>check_agent_card</code></td><td>Fetches its A2A agent card: schema validity, domain age and reputation, look-alike names.</td></tr>
+<tr><td>Where to host a workload (privacy, residency, latency, uptime, budget)</td><td><code>hosting_advisor</code></td><td>Ranked regions and providers with cited reasons, a redundancy plan and privacy-by-design guidance. Paid; not legal advice. REST: <code>POST /api/hosting-advisor</code>.</td></tr>
 <tr><td>A PG1 result and its signature</td><td><code>verify_result</code></td><td>Checks the Ed25519 signature against PG1&#39;s published keys. Always free.</td></tr>
 <tr><td>One IP, domain, URL or file hash</td><td><code>get_ioc_context</code></td><td>Free when nothing is on record (<code>found: false</code>). PG1&#39;s licensed records hold only CVE ids from NVD today, so an IP, domain, URL or hash returns <code>found: false</code>; for a domain or hostname also run the two hostname checks below.</td></tr>
 <tr><td>Several indicators (up to 20)</td><td><code>get_ioc_batch</code></td><td>Free when none is found (the same CVE-only records as above). Read each entry in <code>results</code>, not only the batch <code>status</code>.</td></tr>
@@ -110,7 +111,7 @@
 <tr><td><code>check_ip_abuse</code></td><td>Always free (your own AbuseIPDB quota)</td><td>60 calls/hour per caller</td></tr>
 <tr><td><code>check_x402_endpoint</code>, <code>check_agent_card</code></td><td>Always free</td><td>60 calls/hour per caller, per tool</td></tr>
 <tr><td><code>verify_result</code></td><td>Always free</td><td>none</td></tr>
-<tr><td><code>preflight_check</code></td><td>Paid: 0.01 USD per call</td><td>5 free calls a day per caller, shared with the other paid tools, then x402</td></tr>
+<tr><td><code>preflight_check</code>, <code>hosting_advisor</code></td><td>Paid: 0.01 USD per call</td><td>5 free calls a day per caller, shared with the other paid tools, then x402</td></tr>
 <tr><td><code>get_usage_status</code></td><td>Always free</td><td>none</td></tr>
 <tr><td><code>get_ioc_context</code>, <code>get_ioc_batch</code></td><td>Free when nothing is found; paid when something is</td><td>Paid calls use the free tier first</td></tr>
 <tr><td><code>get_threat_indicators</code>, <code>GET /api/ioc</code> (the STIX feed)</td><td>Free while the feed holds no current data (<code>PG1_FEED_PAID</code> off)</td><td>none, and it does not use the 5 free calls a day</td></tr>

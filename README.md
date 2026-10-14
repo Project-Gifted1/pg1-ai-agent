@@ -42,6 +42,7 @@ A2A agents use `https://pg1-ai-agent.vercel.app/api/a2a` (agent card at `/.well-
 | An action you are about to take (pay, open, install, patch, trust an agent) | `preflight_check` | Start here. One paid call (5 free a day) that runs the checks below in parallel and returns one decision: `no_flags`, `flagged` or `unknown`. |
 | An x402 endpoint you are about to pay | `check_x402_endpoint` | Reads its 402 payment request: payTo sanctions and wallet age, network and asset sanity, TLS, domain age. |
 | Another agent you are about to trust | `check_agent_card` | Fetches its A2A agent card: schema validity, domain age and reputation, look-alike names. |
+| Where to host a workload (privacy, residency, latency, uptime, budget) | `hosting_advisor` | Ranked regions and providers with cited reasons, a redundancy plan and privacy-by-design guidance. Paid; not legal advice. REST: `POST /api/hosting-advisor`. |
 | A PG1 result and its signature | `verify_result` | Checks the Ed25519 signature against PG1's published keys. Always free. |
 | One IP, domain, URL or file hash | `get_ioc_context` | Free when nothing is on record (`found: false`). PG1's licensed records hold only CVE ids from NVD today, so an IP, domain, URL or hash returns `found: false`; for a domain or hostname also run the two hostname checks below. |
 | Several indicators (up to 20) | `get_ioc_batch` | Free when none is found (the same CVE-only records as above). Read each entry in `results`, not only the batch `status`. |
@@ -86,7 +87,7 @@ Watchlist webhooks are signed separately with HMAC-SHA256: `X-PG1-Signature: t=<
 | `check_ip_abuse` | Always free (your own AbuseIPDB quota) | 60 calls/hour per caller |
 | `check_x402_endpoint`, `check_agent_card` | Always free | 60 calls/hour per caller, per tool |
 | `verify_result` | Always free | none |
-| `preflight_check` | Paid: 0.01 USD per call | 5 free calls a day per caller, shared with the other paid tools, then x402 |
+| `preflight_check`, `hosting_advisor` | Paid: 0.01 USD per call | 5 free calls a day per caller, shared with the other paid tools, then x402 |
 | `get_usage_status` | Always free | none |
 | `get_ioc_context`, `get_ioc_batch` | Free when nothing is found; paid when something is | Paid calls use the free tier first |
 | `get_threat_indicators`, `GET /api/ioc` (the STIX feed) | Free while the feed holds no current data (`PG1_FEED_PAID` off) | none, and it does not use the 5 free calls a day |
@@ -101,7 +102,7 @@ Watchlist webhooks are signed separately with HMAC-SHA256: `X-PG1-Signature: t=<
 ## Two Ways to Connect
 
 - **`/api/ioc`** — simple REST GET, returns a STIX 2.1 bundle of CVE records from NIST NVD (the only source PG1 may currently redistribute commercially; no IP, domain, URL or file-hash indicators yet). Free while it holds no current data: no key, no payment, no free-tier use. Best for scripts, curl, and simple integrations.
-- **`/api/mcp`** — full Model Context Protocol server, 20 tools (one-call preflight, CVE lookups, batch operations, threat actor dossiers, wallet sanctions screening, domain age, hostname/phishing reputation, wallet age/history, and more). Best for Claude, MCP-compatible agents, and any client speaking the MCP standard.
+- **`/api/mcp`** — full Model Context Protocol server, 21 tools (one-call preflight, a hosting advisor, CVE lookups, batch operations, threat actor dossiers, wallet sanctions screening, domain age, hostname/phishing reputation, wallet age/history, and more). Best for Claude, MCP-compatible agents, and any client speaking the MCP standard.
 
 **Discovery:** [`/llms.txt`](https://pg1-ai-agent.vercel.app/llms.txt) (llmstxt.org format, for AI agents/crawlers) and [`/openapi.json`](https://pg1-ai-agent.vercel.app/openapi.json) (OpenAPI 3.1 spec for `/api/ioc` and `/api/health`).
 

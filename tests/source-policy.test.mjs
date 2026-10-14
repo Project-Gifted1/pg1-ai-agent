@@ -513,7 +513,7 @@ const FREE_FEED_BEHAVIOR_EDITS = [
 test('tool definitions differ from 1.14.0 only by the listed description edits (licensing gate, feed description, EPSS switch, free feed)', () => {
   // check_ip_abuse (1.16.0) and check_package (1.17.0) are the additions; the 14 tools
   // before them are pinned.
-  const reverted = TOOLS.filter((tool) => tool.name !== 'check_ip_abuse' && tool.name !== 'check_package' && !['preflight_check', 'check_x402_endpoint', 'check_agent_card', 'verify_result'].includes(tool.name)).map((tool) => {
+  const reverted = TOOLS.filter((tool) => tool.name !== 'check_ip_abuse' && tool.name !== 'check_package' && !['preflight_check', 'check_x402_endpoint', 'check_agent_card', 'verify_result', 'hosting_advisor'].includes(tool.name)).map((tool) => {
     let description = tool.description;
     for (const edits of [FREE_FEED_EDITS, FREE_FEED_BEHAVIOR_EDITS, FEED_DESCRIPTION_EDITS, DESCRIPTION_EDITS, EPSS_DESCRIPTION_EDITS]) {
       const edit = edits.find(([name]) => name === tool.name);
@@ -565,15 +565,15 @@ test('no public surface claims abuse.ch / ThreatFox / URLhaus data any more', ()
 
 test('one version bump: 1.17.0 (the current release) everywhere the server version is published', async () => {
   const read = (rel) => JSON.parse(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
-  assert.equal(read('server.json').version, '1.18.0');
-  assert.equal(read('public/.well-known/agent-card.json').version, '1.18.0');
-  assert.equal(read('public/openapi.json').info.version, '1.18.0');
+  assert.equal(read('server.json').version, '1.19.0');
+  assert.equal(read('public/.well-known/agent-card.json').version, '1.19.0');
+  assert.equal(read('public/openapi.json').info.version, '1.19.0');
   const res = makeRes();
   await mcpHandler({ method: 'POST', headers: {}, body: { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} } }, res);
-  assert.equal(res.body.result.serverInfo.version, '1.18.0');
+  assert.equal(res.body.result.serverInfo.version, '1.19.0');
   const get = makeRes();
   await mcpHandler({ method: 'GET', headers: {} }, get);
-  assert.equal(get.body.version, '1.18.0');
+  assert.equal(get.body.version, '1.19.0');
 });
 
 test('paid CVE and ATT&CK responses carry the notices their sources ask for', async () => {
