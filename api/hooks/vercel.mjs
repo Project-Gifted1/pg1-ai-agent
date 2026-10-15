@@ -3,9 +3,12 @@
 // Production deploys are watched automatically; a watched deploy that ends
 // gets its report (lib/watches). Unsigned or wrongly signed events are
 // refused and logged without their payload. See docs/watches.md.
+//
+// A Web handler (POST, no default export) so the HMAC is checked over the
+// exact bytes Vercel signed, not a parsed body (see api/hooks/github.mjs).
 
-import { createVercelHookHandler } from '../../lib/watches/hooks.mjs';
+import { createVercelHookHandler, asWebHandler } from '../../lib/watches/hooks.mjs';
 
 export const config = { maxDuration: 30 };
 
-export default createVercelHookHandler();
+export const POST = asWebHandler(createVercelHookHandler());
