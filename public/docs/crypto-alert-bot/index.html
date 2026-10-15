@@ -215,7 +215,7 @@ checkWalletSanctions(&#39;0x7067312d746573742d6669787475726500000002&#39;).then(
 <thead><tr><th scope="col">Code</th><th scope="col">Effect on <code>status</code></th><th scope="col">Meaning</th></tr></thead>
 <tbody>
 <tr><td><code>WALLET_NO_HISTORY</code></td><td><code>&quot;flagged&quot;</code></td><td>No transfer history on this chain (<code>found: false</code>). This is the normal result for a brand-new or never-used address.</td></tr>
-<tr><td><code>WALLET_AGE_PARTIAL</code></td><td><code>&quot;unknown&quot;</code></td><td>Internal transfers were not checked in time. The wallet may be older than <code>age_days</code> shows.</td></tr>
+<tr><td><code>WALLET_AGE_PARTIAL</code></td><td><code>&quot;unknown&quot;</code></td><td>Internal transfers, or part of the transfer history, were not checked in time. The wallet may be older than <code>age_days</code> shows.</td></tr>
 <tr><td><code>WALLET_DELEGATED</code></td><td>none (informational)</td><td>An EIP-7702 delegation is currently set. On its own it does not change <code>status</code>.</td></tr>
 </tbody>
 </table></div>
@@ -271,7 +271,7 @@ checkWalletAge(&#39;0x7067312d746573742d6669787475726500000002&#39;, &#39;ethere
 <div class="table-wrap" tabindex="0"><table>
 <thead><tr><th scope="col">Situation</th><th scope="col">HTTP</th><th scope="col"><code>error.code</code></th><th scope="col"><code>error.data.code</code></th><th scope="col"><code>error.data.status</code></th></tr></thead>
 <tbody>
-<tr><td>Wallet-age lookup failed or timed out (5 s upstream timeout, one retry within a 12 s budget)</td><td>200</td><td><code>-32000</code></td><td><code>upstream_unavailable</code></td><td><code>&quot;unknown&quot;</code></td></tr>
+<tr><td>Wallet-age lookup failed, or timed out with no usable partial answer (2.5 s budget)</td><td>200</td><td><code>-32000</code></td><td><code>upstream_unavailable</code></td><td><code>&quot;unknown&quot;</code></td></tr>
 <tr><td>Wallet-age or sanctions rate limit reached</td><td>200</td><td><code>-32000</code></td><td><code>rate_limited</code></td><td><code>&quot;unknown&quot;</code></td></tr>
 <tr><td>Bad address or chain</td><td>200</td><td><code>-32000</code></td><td><code>invalid_address</code> / <code>invalid_chain</code></td><td><code>&quot;unknown&quot;</code></td></tr>
 <tr><td>Sanctions list unreachable</td><td>503</td><td><code>-32010</code></td><td>(none)</td><td>(none)</td></tr>
@@ -283,7 +283,7 @@ checkWalletAge(&#39;0x7067312d746573742d6669787475726500000002&#39;, &#39;ethere
   &quot;jsonrpc&quot;: &quot;2.0&quot;,
   &quot;error&quot;: {
     &quot;code&quot;: -32000,
-    &quot;message&quot;: &quot;Wallet age lookup timed out after 5000ms.&quot;,
+    &quot;message&quot;: &quot;Wallet age lookup timed out after 2500ms.&quot;,
     &quot;data&quot;: {
       &quot;code&quot;: &quot;upstream_unavailable&quot;,
       &quot;reasons&quot;: [],
@@ -295,7 +295,7 @@ checkWalletAge(&#39;0x7067312d746573742d6669787475726500000002&#39;, &#39;ethere
   &quot;id&quot;: 1
 }
 </code></pre></div>
-<p>A wallet-age outage is always an <code>error</code>, never <code>found: false</code>. So an outage can&#39;t make a wallet look brand new, and it can&#39;t make one look established either.</p>
+<p>A wallet-age outage is always an <code>error</code>, never <code>found: false</code>. When the 2.5 s budget runs out after part of the transfer history already found a transfer, that partial age comes back as a <code>result</code> with <code>WALLET_AGE_PARTIAL</code> (<code>status: &quot;unknown&quot;</code>) instead, and it is never cached. So an outage can&#39;t make a wallet look brand new, and it can&#39;t make one look established either.</p>
 <hr>
 <h2 id="5-rate-limits-caching-and-backoff">5. Rate limits, caching and backoff</h2>
 <h3 id="limits-without-a-key">Limits without a key</h3>

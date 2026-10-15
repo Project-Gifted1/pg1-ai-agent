@@ -2115,12 +2115,16 @@ const WALLET_AGE_TIMEOUT_MS_MIN = 100;
 const WALLET_AGE_TIMEOUT_MS_MAX = 10000;
 // Total wall-clock budget for one check_wallet_age call, measured from the
 // start of handleCheckWalletAge (license check and cache read included).
-// The single transfer-history retry (see handleCheckWalletAge) only runs
-// inside what is left of it, and its own timeout is cut to fit, so upstream
-// time never exceeds this. Default 12000ms, well under api/mcp.mjs's and
-// api/a2a.mjs's 30s maxDuration; overridable with WALLET_AGE_TOTAL_BUDGET_MS,
-// clamped to at most 20000ms so a misconfiguration still leaves 10s margin.
-const WALLET_AGE_TOTAL_BUDGET_MS_DEFAULT = 12000;
+// Every upstream timer (the first attempt, the cached-answer delegation
+// check, and the single transfer-history retry, see handleCheckWalletAge)
+// is cut to what is left of it, so upstream time never exceeds this.
+// Default 2500ms: when it runs out, whatever part of the transfer history
+// did come back is returned as a partial age (WALLET_AGE_PARTIAL, never
+// cached) rather than an error - see walletAgePartialFallback. With the
+// default the first attempt uses the whole budget, so there is no retry.
+// Overridable with WALLET_AGE_TOTAL_BUDGET_MS, clamped to at most 20000ms
+// so a misconfiguration still leaves 10s margin under the 30s maxDuration.
+const WALLET_AGE_TOTAL_BUDGET_MS_DEFAULT = 2500;
 const WALLET_AGE_TOTAL_BUDGET_MS_MAX = 20000;
 // The retry is skipped unless at least this much budget is left (or the
 // whole per-attempt timeout, if that is smaller) - a retry with only a
@@ -2143,6 +2147,12 @@ function walletAgeTimeoutMs() {
 
 function walletAgeTotalBudgetMs() {
   return readWalletAgeMsEnv('WALLET_AGE_TOTAL_BUDGET_MS', WALLET_AGE_TOTAL_BUDGET_MS_DEFAULT, WALLET_AGE_TIMEOUT_MS_MIN, WALLET_AGE_TOTAL_BUDGET_MS_MAX);
+}
+
+// The timeout a first attempt actually gets: the per-attempt timeout, cut
+// to the total budget. This is the figure a timeout error reports.
+function walletAgeEffectiveTimeoutMs() {
+  return Math.min(walletAgeTimeoutMs(), walletAgeTotalBudgetMs());
 }
 const WALLET_AGE_NOT_FOUND_CACHE_TTL_MS = 10 * 60 * 1000;
 const WALLET_AGE_ADDRESS_RE = /^0x[0-9a-f]{40}$/i;
@@ -2322,7 +2332,11 @@ async function setWalletAgeCache(address, chain, row) {
 // never a judgement (see lib/reasonCodes.mjs). `partial` is true exactly
 // when internal transfers weren't checked in time (see skipCache in
 // handleCheckWalletAge below) - a second, distinct checks entry for that
-// sub-check, never silently folded into the main "ok" one.
+// sub-check, never silently folded into the main "ok" one. `partial` is
+// 'history' instead for the partial age fallback (part of the plain
+// transfer history itself didn't answer in time, see
+// walletAgePartialFallback), which labels that entry and the reason to say
+// so.
 //
 // `delegation` is the live EIP-7702 code check ({ delegated, delegate_address,
 // checkResult }, see checkWalletDelegation below). It always gets its own
@@ -2336,7 +2350,7 @@ async function setWalletAgeCache(address, chain, row) {
 // request's own).
 function walletAgeChecks(partial, delegation, ageDataAsOf) {
   const checks = [buildCheck(WALLET_AGE_SOURCE, 'ok', { dataAsOf: ageDataAsOf })];
-  if (partial) checks.push(buildCheck(`${WALLET_AGE_SOURCE} (internal transfers)`, 'timeout'));
+  if (partial) checks.push(buildCheck(`${WALLET_AGE_SOURCE} (${partial === 'history' ? 'remaining lookups' : 'internal transfers'})`, 'timeout'));
   checks.push(buildCheck(WALLET_DELEGATION_SOURCE, delegation.checkResult));
   return checks;
 }
@@ -2346,6 +2360,12 @@ function walletAgeChecks(partial, delegation, ageDataAsOf) {
 function walletAgeCacheDataAsOf(row) {
   const t = new Date(row.checked_at).getTime();
   return Number.isNaN(t) ? null : new Date(t).toISOString();
+}
+
+const WALLET_AGE_PARTIAL_HISTORY_NOTE = 'Part of the transfer history was not checked in time; the wallet may be older than shown.';
+
+function walletAgePartialReason(partial) {
+  return partial === 'history' ? reason('WALLET_AGE_PARTIAL', WALLET_AGE_PARTIAL_HISTORY_NOTE) : reason('WALLET_AGE_PARTIAL');
 }
 
 function walletDelegationFields(delegation) {
@@ -2376,14 +2396,14 @@ function buildWalletAgeFoundResult(address, chain, row, cached, partial, delegat
     source: WALLET_AGE_SOURCE,
     cached
   }, {
-    reasons: [...(partial ? [reason('WALLET_AGE_PARTIAL')] : []), ...walletDelegationReasons(delegation)],
+    reasons: [...(partial ? [walletAgePartialReason(partial)] : []), ...walletDelegationReasons(delegation)],
     checks: walletAgeChecks(partial, delegation, ageDataAsOf)
   });
 }
 
 function buildWalletAgeNotFoundResult(address, chain, isContract, cached, partial, delegation, ageDataAsOf = null) {
   const reasons = [reason('WALLET_NO_HISTORY')];
-  if (partial) reasons.push(reason('WALLET_AGE_PARTIAL'));
+  if (partial) reasons.push(walletAgePartialReason(partial));
   reasons.push(...walletDelegationReasons(delegation));
   return withResponseMeta({
     address,
@@ -2472,13 +2492,13 @@ async function checkWalletDelegation(url, address, signal) {
   }
 }
 
-// Same, for the cached-answer path, which has no upstream budget of its
-// own running: a fresh upstream-timeout timer for just this one call.
-async function checkWalletDelegationStandalone(chain, address) {
+// Same, for the cached-answer path: a timer of its own for just this one
+// call, cut to what is left of the call's total budget.
+async function checkWalletDelegationStandalone(chain, address, deadline) {
   const apiKey = process.env.ALCHEMY_API_KEY;
   if (!apiKey) return { delegated: null, delegate_address: null, checkResult: 'error' };
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), walletAgeTimeoutMs());
+  const timeout = setTimeout(() => controller.abort(), Math.max(0, Math.min(walletAgeTimeoutMs(), deadline - Date.now())));
   try {
     return await checkWalletDelegation(walletAgeUpstreamUrl(chain, apiKey), address, controller.signal);
   } finally {
@@ -2490,12 +2510,26 @@ function walletAgeUpstreamUrl(chain, apiKey) {
   return `https://${WALLET_AGE_CHAIN_SLUGS[chain]}.g.alchemy.com/v2/${apiKey}`;
 }
 
+// One arm's three calls ([out, in, code]). Resolves and rejects like
+// Promise.all - an upstream error rejects at once - except that a timeout
+// (AbortError) waits for the other calls to settle and carries their
+// allSettled results as `parts`, so the partial age fallback can use
+// whatever part did answer (see walletAgePartialFallback).
 function runWalletAgeUpstreamCalls(url, address, categories, signal) {
-  return Promise.all([
+  const calls = [
     fetchEarliestTransfer(url, address, categories, 'out', signal),
     fetchEarliestTransfer(url, address, categories, 'in', signal),
     alchemyRpcCall(url, { jsonrpc: '2.0', id: 3, method: 'eth_getCode', params: [address, 'latest'] }, signal)
-  ]);
+  ];
+  return new Promise((resolve, reject) => {
+    for (const call of calls) call.catch((err) => { if (!(err && err.name === 'AbortError')) reject(err); });
+    Promise.allSettled(calls).then((parts) => {
+      const failed = parts.find((p) => p.status !== 'fulfilled');
+      if (!failed) return resolve(parts.map((p) => p.value));
+      if (failed.reason && typeof failed.reason === 'object') failed.reason.parts = parts;
+      reject(failed.reason);
+    });
+  });
 }
 
 // One attempt at the transfer-history lookups (plain, plus internal-inclusive
@@ -2525,10 +2559,32 @@ function walletAgeHistoryTimedOut({ plainSettled, internalSettled }, supportsInt
   return reasons.some((r) => r && r.name === 'AbortError');
 }
 
+// Partial age fallback, for a transfer-history lookup that ran out of time
+// with neither arm complete: the earliest transfer among the calls that did
+// answer, plus is_contract from an answered code check. Returns null (so
+// the caller still throws upstream_unavailable) unless a transfer was
+// actually found and is_contract is known - a partial view never reports
+// found:false (an unchecked direction is not "no history") and never
+// guesses is_contract.
+function walletAgePartialFallback({ plainSettled, internalSettled }, supportsInternal) {
+  const arms = supportsInternal ? [plainSettled, internalSettled] : [plainSettled];
+  let earliest = null;
+  let isContract = null;
+  for (const arm of arms) {
+    const [outPart, inPart, codePart] = arm.reason?.parts || [];
+    if (outPart?.status === 'fulfilled') earliest = pickEarliestTransfer(earliest, outPart.value);
+    if (inPart?.status === 'fulfilled') earliest = pickEarliestTransfer(earliest, inPart.value);
+    if (codePart?.status === 'fulfilled') isContract = !!isContract || (!!codePart.value && codePart.value !== '0x');
+  }
+  if (!earliest || isContract === null) return null;
+  return { earliest, isContract };
+}
+
 export async function handleCheckWalletAge(args, identifier, licenseKey, { licensed: callerLicensed = false } = {}) {
   const startedAt = Date.now();
   const timeoutMs = walletAgeTimeoutMs();
   const deadline = startedAt + walletAgeTotalBudgetMs();
+  const effectiveTimeoutMs = walletAgeEffectiveTimeoutMs();
   const address = normalizeWalletAgeAddress(args?.address);
   const chain = normalizeWalletAgeChain(args?.chain);
 
@@ -2551,12 +2607,12 @@ export async function handleCheckWalletAge(args, identifier, licenseKey, { licen
   const cachedRow = await getWalletAgeCache(address, chain);
   if (cachedRow) {
     if (cachedRow.first_seen) {
-      const delegation = await checkWalletDelegationStandalone(chain, address);
+      const delegation = await checkWalletDelegationStandalone(chain, address, deadline);
       return buildWalletAgeFoundResult(address, chain, cachedRow, true, false, delegation, walletAgeCacheDataAsOf(cachedRow));
     }
     const checkedAt = new Date(cachedRow.checked_at).getTime();
     if (!Number.isNaN(checkedAt) && (Date.now() - checkedAt) < WALLET_AGE_NOT_FOUND_CACHE_TTL_MS) {
-      const delegation = await checkWalletDelegationStandalone(chain, address);
+      const delegation = await checkWalletDelegationStandalone(chain, address, deadline);
       return buildWalletAgeNotFoundResult(address, chain, cachedRow.is_contract, true, false, delegation, walletAgeCacheDataAsOf(cachedRow));
     }
   }
@@ -2607,8 +2663,22 @@ export async function handleCheckWalletAge(args, identifier, licenseKey, { licen
   const internalOk = supportsInternal && internalSettled.status === 'fulfilled';
 
   if (!plainOk && !internalOk) {
-    const message = walletAgeHistoryTimedOut(history, supportsInternal)
-      ? `Wallet age lookup timed out after ${timeoutMs}ms.`
+    const timedOut = walletAgeHistoryTimedOut(history, supportsInternal);
+    const fallback = timedOut ? walletAgePartialFallback(history, supportsInternal) : null;
+    if (fallback) {
+      const row = {
+        first_seen: fallback.earliest.timestamp,
+        first_seen_block: parseInt(fallback.earliest.block, 16),
+        first_direction: fallback.earliest.direction,
+        is_contract: fallback.isContract
+      };
+      // Never cached: the missing part may hold an earlier transfer.
+      const result = buildWalletAgeFoundResult(address, chain, row, false, 'history', delegation);
+      result.note = WALLET_AGE_PARTIAL_HISTORY_NOTE;
+      return result;
+    }
+    const message = timedOut
+      ? `Wallet age lookup timed out after ${effectiveTimeoutMs}ms.`
       : 'Wallet age lookup failed: upstream on-chain data source unavailable.';
     throw new WalletAgeUpstreamError(message);
   }
@@ -2927,7 +2997,7 @@ function buildFixtureOutcome(fixture, callerArgs) {
 
     case 'check_wallet_age': {
       if (kind === 'UNKNOWN') {
-        return { type: 'tool_error', code: 'upstream_unavailable', message: `Wallet age lookup timed out after ${walletAgeTimeoutMs()}ms.`, checks: [fixtureCheck('timeout')] };
+        return { type: 'tool_error', code: 'upstream_unavailable', message: `Wallet age lookup timed out after ${walletAgeEffectiveTimeoutMs()}ms.`, checks: [fixtureCheck('timeout')] };
       }
       const address = args.address.trim().toLowerCase();
       const chain = normalizeWalletAgeChain(callerArgs.chain);
