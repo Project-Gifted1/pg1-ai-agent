@@ -18,8 +18,9 @@
  * from the first message with a "Saved" toast and a pressed save button,
  * later messages update it automatically, rename, load restores the
  * conversation and continues it, delete asks first, and a guest cannot
- * save. Writes docs/screenshots/usage-report-412-*.png,
- * reply-style-412-*.png and threads-sheet-412-*.png for the PR.
+ * save. The /usage reply is one lead line and the usage card (its own
+ * test: tests/browser/usage-card.browser.test.mjs). Writes
+ * docs/screenshots/reply-style-412-*.png and threads-sheet-412-*.png.
  *
  * Skipped (not failed) when Playwright or its Chromium is not installed.
  */
@@ -54,7 +55,8 @@ process.env.SUPABASE_URL = 'https://supabase.test';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-test';
 const { default: threadsHandler, __clearThreadsRateLimitState } = await import('../../api/threads.mjs');
 const { aggregateUsage } = await import('../../lib/usageStats.mjs');
-const { createToolExecutor, summarizeOutcome, usageReport, USAGE_STATS_TOOL } = await import('../../lib/chatTools.mjs');
+const { createToolExecutor, summarizeOutcome, USAGE_STATS_TOOL } = await import('../../lib/chatTools.mjs');
+const { usageLead, usageContextLines } = await import('../../lib/usageCard.mjs');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
@@ -104,7 +106,7 @@ function seedTelemetry() {
 async function usageReply() {
   const stats = { ...aggregateUsage(seedTelemetry(), { period: '7d', now: NOW }), truncated: false, schema: 'current', generated_at: new Date(NOW).toISOString() };
   const outcome = await createToolExecutor({ role: 'operator', log: () => {}, record: () => {}, usageStats: async () => stats })({ id: 'usage', name: USAGE_STATS_TOOL, args: { period: '7d' } });
-  return { reply: usageReport(outcome), toolResults: [summarizeOutcome(outcome)] };
+  return { reply: usageLead(outcome.result), toolResults: [summarizeOutcome(outcome)], cards: usageContextLines(outcome.result) };
 }
 
 const STYLE_REPLY = [
@@ -240,18 +242,16 @@ for (const theme of ['dark', 'light']) {
     mkdirSync(SHOTS_DIR, { recursive: true });
 
     const report = await send(page, '/usage');
-    const text = report.locator('.message-text').first();
-    assert.equal(await text.locator('.md-h2').first().textContent(), 'Usage · the last 7 days');
-    const headings = await text.locator('.md-h3').allTextContents();
-    assert.deepEqual(headings, ['Summary', 'Traffic', 'Tools', 'Payments', 'Errors', 'Clients']);
-    const body = await text.textContent();
-    assert.match(body, /MCP requests: \d+ \(real \d+, probe \d+\)/);
-    assert.match(body, /Tool calls: \d+ \(real \d+, probe \d+\)/);
-    assert.match(body, /\(spike\)/);
-    assert.equal(await text.locator('.md-foot').textContent(), 'Fixture calls excluded; distinct callers is an estimate from hashed IPs.');
+    assert.match(await report.locator('.message-text').first().innerText(), /^Usage, last 7 days: 50 real tool calls from about 4 distinct callers, \$0\.02 settled\./);
+    assert.equal(await report.locator('.usage-card').count(), 1, 'the breakdown is the usage card');
+    assert.equal(await report.locator('.md-h3').count(), 0, 'no second copy of the figures as text');
 
+    // Code blocks and a wide table: dark panels, the table scrolls in place.
+    await page.evaluate(() => { clearChat(); });
+    const styled = await send(page, 'show me the reply style');
     await page.waitForFunction(() => document.fonts.check('17px "Source Serif 4"'));
-    const style = await text.evaluate((el) => {
+    const styledText = styled.locator('.message-text').first();
+    const style = await styledText.evaluate((el) => {
       const cs = getComputedStyle(el);
       const chip = getComputedStyle(el.querySelector('.md-code-inline'));
       const h = getComputedStyle(el.querySelector('.md-h3'));
@@ -285,12 +285,6 @@ for (const theme of ['dark', 'light']) {
       assert.equal(style.chip.bg, 'rgb(30, 32, 37)', 'dark grey chip');
     }
 
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, 'no horizontal page scroll');
-    await shoot(page, text, `usage-report-412-${theme}.png`);
-
-    // Code blocks and a wide table: dark panels, the table scrolls in place.
-    await page.evaluate(() => { clearChat(); });
-    const styled = await send(page, 'show me the reply style');
     const wrap = styled.locator('.md-table-wrap');
     const tableBox = await wrap.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth, radius: getComputedStyle(el).borderTopLeftRadius, overflow: getComputedStyle(el).overflowX }));
     assert.ok(tableBox.scroll > tableBox.client, 'the wide table is wider than its panel');
@@ -349,7 +343,9 @@ test('saved chats in the browser: save, auto-update, rename, load and continue, 
   const saved = threadsCalls('save')[0];
   assert.equal(saved.body.id, undefined);
   assert.deepEqual(saved.body.messages.map((m) => m.role), ['user', 'assistant']);
-  assert.match(saved.body.messages[1].text, /^## Usage · the last 7 days/, 'the markdown is saved, not the rendered text');
+  assert.match(saved.body.messages[1].text, /^\*\*Usage, last 7 days:\*\*/, 'the markdown is saved, not the rendered text');
+  assert.equal(saved.body.messages[1].cards.length, 4, 'the card\'s figures are saved as text lines');
+  assert.match(saved.body.messages[1].cards[0], /^\[card\] Usage last 7 days: real tool calls 50, about 4 distinct real callers/);
   let rows = (await db.query('select id, title, message_count from public.pg1_chat_threads')).rows;
   assert.equal(rows.length, 1);
   assert.equal(rows[0].title, '/usage');
@@ -388,7 +384,8 @@ test('saved chats in the browser: save, auto-update, rename, load and continue, 
   await page.locator(`.thread-item[data-thread-id="${id}"] [data-action="load"]`).click();
   await page.waitForFunction(() => document.querySelectorAll('#chat-container .message-bubble:not(.welcome)').length === 4);
   assert.equal(await saveBtn.getAttribute('aria-pressed'), 'true');
-  assert.equal(await page.locator('#chat-container .message-bubble:not(.user) .md-h3').first().textContent(), 'Summary', 'markdown re-rendered');
+  assert.equal(await page.locator('#chat-container .message-bubble:not(.user) .message-text strong').first().textContent(), 'Usage, last 7 days:', 'markdown re-rendered');
+  assert.equal(await page.locator('#chat-container .usage-card').count(), 0, 'cards stay on the device that showed them');
   const reply = await send(page, 'And this week compared to last?');
   assert.match(await reply.locator('.message-text').textContent(), /There are 5 earlier messages in this chat/, 'the server got the loaded history');
   await page.waitForTimeout(1600);

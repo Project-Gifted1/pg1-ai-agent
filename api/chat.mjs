@@ -46,7 +46,9 @@ import { cleanThreadKey } from '../lib/watches/store.mjs';
 import { autoWatch } from '../lib/watches/engine.mjs';
 import { honestReply, ranKinds, HONEST_ACTIONS_DIRECTIVE } from '../lib/honestActions.mjs';
 import { isOpportunitiesCommand, handleOpportunitiesCommand } from '../lib/opportunities.mjs';
-import { isA2aCommand, handleA2aCommand, a2aJobsSection } from '../lib/a2aJobs/admin.mjs';
+import { isA2aCommand, handleA2aCommand, a2aJobsSummary } from '../lib/a2aJobs/admin.mjs';
+import { usageCardView, usageLead, usageContextLines } from '../lib/usageCard.mjs';
+import { getStorageUsage } from '../lib/storageUsage.mjs';
 import { isWatchlistsCommand, handleWatchlistsCommand } from '../lib/watchlists.mjs';
 import { isFoundryCommand, handleFoundryCommand } from '../lib/foundry/admin.mjs';
 import { isHostingCommand, handleHostingCommand } from '../lib/hosting/admin.mjs';
@@ -57,7 +59,7 @@ import { authorize, autonomyMode, commandAction, tierOf, logAutonomy, recentAuto
 import { activeSkills, createSkillStore } from '../lib/skills/store.mjs';
 import { skillsIndexBlock, matchSkills, loadedSkillResult, LOAD_SKILL_TOOL } from '../lib/skills/skill.mjs';
 import { cleanTaskState, applyTaskCommand, isTaskCommand, updateFromReply, renderTaskState, resolveReference, referenceLine, clarifyingQuestion, fillCommandId, modelTaskUpdate } from '../lib/taskState.mjs';
-import { cleanHistory, cleanSummary, splitHistory, foldSummary, renderConversation, recentTokenBudget, needsRoutingFloor, conversationTokens, cardLines, cheapModelCaller, SELF_CHECK_DIRECTIVE } from '../lib/contextWindow.mjs';
+import { cleanHistory, cleanSummary, splitHistory, foldSummary, renderConversation, recentTokenBudget, needsRoutingFloor, conversationTokens, cardLines, MAX_CARD_LINES, cheapModelCaller, SELF_CHECK_DIRECTIVE } from '../lib/contextWindow.mjs';
 
 // ---------------------------------------------------------------------
 // AUTH: timing-safe secret comparison + in-memory per-IP failure lockout
@@ -2417,7 +2419,9 @@ export default async function handler(req, res) {
       var actions = Array.isArray(r.actions) ? r.actions : replyActions({ prompt: turnCtx.prompt, reply: typeof r.reply === 'string' ? r.reply : '', hasPdf: !!r.pdf, pendingApproval: !!(r.pendingApproval && r.pendingApproval.token) });
       // HONEST ACTIONS: a false claim's real, confirmable action first.
       if (Array.isArray(r.honestActions) && r.honestActions.length) actions = r.honestActions.concat(actions.filter(function (a) { return a && !r.honestActions.some(function (h) { return h.command === a.command; }); })).slice(0, 4);
-      return { taskState: turnCtx.state, contextSummary: turnCtx.summary, cards: cardLines(reply), actions: actions };
+      // A reply that brings its own [card] lines (/usage) keeps them first.
+      var ownCards = Array.isArray(r.cards) ? r.cards.filter(function (c) { return typeof c === 'string' && /^\[card\]/.test(c); }) : [];
+      return { taskState: turnCtx.state, contextSummary: turnCtx.summary, cards: ownCards.concat(cardLines(reply)).slice(0, MAX_CARD_LINES), actions: actions };
     };
     // HONEST ACTIONS (lib/honestActions.mjs): a model reply that says it
     // started, stopped, watched or changed something with no action behind
@@ -2873,18 +2877,26 @@ export default async function handler(req, res) {
         }
         var usageOutcome = await createToolExecutor({ role: sessionRole, identifier: clientIp })({ id: 'usage', name: USAGE_STATS_TOOL, args: { period: lower.slice('/usage'.length).trim() } });
         var usageCard = summarizeOutcome(usageOutcome);
-        if (chatStream) chatStream.toolResult(usageCard);
-        // A2A JOBS (lib/a2aJobs/admin.mjs): type, success rate, revenue,
-        // cost, margin and credits for the same period.
-        var usagePeriodDays = /24h|today/.test(lower) ? 1 : /30d/.test(lower) ? 30 : 7;
-        var jobsSection = '';
-        if (supabaseUrl && supabaseKey && usageOutcome && usageOutcome.ok) {
-          try {
-            var jobRows = await createJobStore({ supUrl: supabaseUrl, supKey: supabaseKey, fetchImpl: function (u, o) { return fetch(u, o); } }).list({ sinceIso: new Date(Date.now() - usagePeriodDays * 86400000).toISOString(), limit: 1000 });
-            jobsSection = '\n\n' + a2aJobsSection(jobRows, { periodLabel: usagePeriodDays === 1 ? 'the last 24 hours' : `the last ${usagePeriodDays} days` });
-          } catch (e) { jobsSection = '\n\n### A2A jobs\nJob figures could not be read right now.'; }
+        if (usageOutcome && usageOutcome.ok) {
+          // The card gets two more sections here: A2A jobs (lib/a2aJobs) in
+          // Revenue, and Storage (lib/storageUsage.mjs), for the same period.
+          var usagePeriodDays = /24h|today/.test(lower) ? 1 : /30d/.test(lower) ? 30 : 7;
+          var usageJobs;
+          var usageStorage = null;
+          if (supabaseUrl && supabaseKey) {
+            var usageFetch = function (u, o) { return fetch(u, o); };
+            var usageExtras = await Promise.all([
+              createJobStore({ supUrl: supabaseUrl, supKey: supabaseKey, fetchImpl: usageFetch }).list({ sinceIso: new Date(Date.now() - usagePeriodDays * 86400000).toISOString(), limit: 1000 }).then(function (rows) { return { summary: a2aJobsSummary(rows) }; }, function () { return { error: true }; }),
+              getStorageUsage({ supUrl: supabaseUrl, supKey: supabaseKey, fetchImpl: usageFetch })
+            ]);
+            usageJobs = usageExtras[0];
+            usageStorage = usageExtras[1];
+          }
+          usageCard.usage = usageCardView(usageOutcome.result, { jobs: usageJobs, storage: usageStorage });
         }
-        return sendJSON(res, 200, { reply: usageReport(usageOutcome) + jobsSection, toolResults: [usageCard], traceId: requestTraceId });
+        if (chatStream) chatStream.toolResult(usageCard);
+        if (!usageOutcome || !usageOutcome.ok) return sendJSON(res, 200, { reply: usageReport(usageOutcome), toolResults: [usageCard], traceId: requestTraceId });
+        return sendJSON(res, 200, { reply: usageLead(usageOutcome.result), toolResults: [usageCard], cards: usageContextLines(usageOutcome.result), traceId: requestTraceId });
       } else if (lower === '/spend' || lower.startsWith('/spend ')) {
         // AI SPEND (signed-in operator only): estimated spend per PG1 engine
         // for today or yesterday (UTC), with each daily cap. PG1 labels

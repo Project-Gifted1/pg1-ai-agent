@@ -141,7 +141,7 @@ const SEED = [
 test('aggregateUsage: 7d report - summary, traffic, tools, payments, errors, clients', () => {
   const s = aggregateUsage(SEED, { period: '7d', now: NOW });
   assert.equal(s.period, '7d');
-  assert.equal(s.from, '2026-09-29T00:00:00.000Z');
+  assert.equal(s.from, '2026-09-28T23:00:00.000Z', 'midnight in Ireland (IST)');
   assert.deepEqual(s.summary, { real_tool_calls: 7, distinct_real_callers_estimate: 4, payment_requests: 1, settled_revenue_usd: 0.01 });
   assert.deepEqual(s.traffic.tool_calls, { total: 7, real: 7, probe: 0 });
   assert.deepEqual(s.traffic.mcp_requests, { total: 7, real: 6, probe: 1 }, 'initialize-only caller 9 is a probe');
@@ -493,10 +493,14 @@ test('/usage for the signed-in operator answers with the report and the card', a
   const res = makeRes();
   await chatHandler(chatReq({ prompt: '/usage 30d', user: 'test-operator', pass: 'test-secret-pass' }), res);
   assert.equal(res.statusCode, 200);
-  assert.match(res.jsonBody.reply, /^## Usage · the last 30 days/);
-  assert.match(res.jsonBody.reply, /Distinct real callers: about 5 \(estimated\)/);
-  assert.match(res.jsonBody.reply, /\[\^note\]: Fixture calls excluded; distinct callers is an estimate from hashed IPs\./);
+  assert.match(res.jsonBody.reply, /^\*\*Usage, last 30 days:\*\* \d+ real tool calls? from about 5 distinct callers, \$0\.01 settled\. The full breakdown is in the card below\.$/);
   assert.equal(res.jsonBody.toolResults.length, 1);
+  assert.equal(res.jsonBody.cards.length, 5, 'the figures as [card] lines for the history, then the card line');
+  assert.ok(res.jsonBody.cards.slice(0, 4).every((c) => /^\[card\] Usage/.test(c) && c.length < 200));
+  const view = res.jsonBody.toolResults[0].usage;
+  assert.deepEqual(view.sections.map((x) => x.title), ['Period', 'Calls and callers', 'Revenue and 402s', 'Top tools', 'Errors', 'Storage']);
+  assert.equal(view.note, 'Fixture calls excluded. Caller counts are estimates from hashed IPs.');
+  assert.match(view.sections[1].groups[0].rows[1].value, /^about 5$/);
   assert.equal(res.jsonBody.toolResults[0].tool, 'get_usage_stats');
   assert.equal(res.jsonBody.toolResults[0].status, 'report');
   const read = calls.find((c) => c.url.includes('/rest/v1/agent_telemetry') && c.method === 'GET');
@@ -516,8 +520,8 @@ test('/usage on the streamed chat path sends the card as a tool_result event', a
   assert.ok(card, 'a tool_result event');
   assert.equal(card.tool, 'get_usage_stats');
   assert.equal(card.status, 'report');
-  assert.ok(events.some((e) => e.type === 'text' && /Usage · the last 24 hours/.test(e.text || e.delta || JSON.stringify(e))));
-  assert.ok(events.some((e) => e.type === 'text' && /about 0 \(estimated\)/.test(e.text || e.delta || JSON.stringify(e))));
+  assert.ok(events.some((e) => e.type === 'text' && /Usage, last 24 hours:/.test(e.text || e.delta || JSON.stringify(e))));
+  assert.ok(card.usage && card.usage.sections.length === 6, 'the streamed card carries the usage view');
   assert.equal(events[events.length - 1].type, 'done');
 });
 
