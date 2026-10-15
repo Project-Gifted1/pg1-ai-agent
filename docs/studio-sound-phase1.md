@@ -224,12 +224,12 @@ Assumptions: 5-second shots, 4 shots a scene, 900 voice-over characters a minute
 
 | Film | Resolution | Shots | Clips | Everything else | Expected cost | Min price (1.5x) | One film in today's pipeline? |
 |---|---|---|---|---|---|---|---|
-| 1 min | 1080p | 12 | 11.49 USD | 1.41 USD | 12.90 USD | 19.35 USD | yes |
-| 1 min | 4k | 12 | 22.74 USD | 1.45 USD | 24.19 USD | 36.29 USD | yes |
-| 3 min | 1080p | 36 | 34.47 USD | 3.84 USD | 38.31 USD | 57.47 USD | yes |
-| 3 min | 4k | 36 | 68.22 USD | 3.97 USD | 72.19 USD | 108.29 USD | yes |
-| 10 min | 1080p | 120 | 114.90 USD | 12.34 USD | 127.24 USD | 190.86 USD | no: over 300 s (30 shots of at most 10 s) |
-| 10 min | 4k | 120 | 227.40 USD | 12.76 USD | 240.16 USD | 360.24 USD | no: over 300 s (30 shots of at most 10 s) |
+| 1 min | 1080p | 12 | 11.49 USD | 1.47 USD | 12.96 USD | 19.44 USD | yes |
+| 1 min | 4k | 12 | 22.74 USD | 1.51 USD | 24.25 USD | 36.38 USD | yes |
+| 3 min | 1080p | 36 | 34.47 USD | 4.02 USD | 38.49 USD | 57.74 USD | yes |
+| 3 min | 4k | 36 | 68.22 USD | 4.15 USD | 72.37 USD | 108.56 USD | yes |
+| 10 min | 1080p | 120 | 114.90 USD | 12.94 USD | 127.84 USD | 191.76 USD | no: over 300 s (30 shots of at most 10 s) |
+| 10 min | 4k | 120 | 227.40 USD | 13.36 USD | 240.76 USD | 361.14 USD | no: over 300 s (30 shots of at most 10 s) |
 
 Clips (with retries) are 89-95% of every package's cost, so the clip rate decides the price. A 3-minute film fits today only with longer shots (18 shots of 10 s); its estimate above uses 5-second shots, which is the dearer case.
 

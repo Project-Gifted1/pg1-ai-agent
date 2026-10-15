@@ -159,6 +159,8 @@ function mediaRoutes(state) {
     }],
     [INTERACTIONS_URL, (u, o, body) => {
       seen.push({ engine: 'gemini_video', url: u, body, key: o.headers['x-goog-api-key'] });
+      const r = state.omni ? state.omni(u, body) : undefined;
+      if (r) return r;
       return json({ id: 'int-1', status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'video', data: Buffer.from('gemini-mp4').toString('base64'), mime_type: 'video/mp4' }] }] });
     }]
   ];
@@ -256,27 +258,32 @@ describe('media fallback: the rest of the stage on the paid Gemini key', () => {
   const links = { referenceUrl: `${SUP_URL}/storage/v1/object/sign/pg1-vault/ref.png?token=t`, prevFrameUrl: `${SUP_URL}/storage/v1/object/sign/pg1-vault/prev.jpg?token=t` };
   const signed = ['/storage/v1/object/sign/pg1-vault/', () => new Response(PNG, { status: 200 })];
 
-  test('the plan is Replicate then the paid key only', () => {
+  test('each kind has its own chain (ROUTING_CHAINS): stills Replicate then the paid key; clips the paid key (Omni) then Replicate (Kling); never the free key', () => {
     assert.deepEqual(filmMediaPlan(env).map((c) => [c.provider, c.key]), [['replicate', REPLICATE], ['gemini_paid', PAID]]);
+    assert.deepEqual(filmMediaPlan(env, { kind: 'clip' }).map((c) => [c.provider, c.model]), [['gemini_paid', 'gemini-omni-1.1-flash'], ['replicate', 'kwaivgi/kling-v2.1']]);
     assert.deepEqual(filmMediaPlan({ REPLICATE_API_TOKEN: REPLICATE, GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY: OLD }).map((c) => c.provider), ['replicate'], 'never the free key or an old Gemini name');
     assert.deepEqual(filmMediaPlan({ REPLICATE_API_TOKEN: REPLICATE, GEMINI_API_KEY_PAID: FREE, GEMINI_API_KEY_FREE: FREE }).map((c) => c.provider), ['replicate'], 'a paid key that is the free key is not used');
+    assert.deepEqual(filmMediaPlan(env, { kind: 'clip', clientWork: true }).map((c) => c.provider), ['gemini_paid'], 'Kling (R1) is never used for a client film');
   });
 
-  test('out of credit: this and every later still and clip go to the paid key, with the reference and the previous frame; music goes to Lyria on the paid key', async () => {
+  test('stills out of credit: this and every later still go to the paid key, with the reference and the previous frame; clips keep their own chain; music on Lyria', async () => {
     const state = { replicate: () => new Response(NO_CREDIT, { status: 402 }) };
     const fetchImpl = routedFetch([signed, ...mediaRoutes(state)]);
     const logs = [];
-    const media = createFilmMedia({ env, fetchImpl, log: (l) => logs.push(l), sleep: async () => {} });
+    const alerts = [];
+    const media = createFilmMedia({ env, fetchImpl, log: (l) => logs.push(l), sleep: async () => {}, alert: async (a) => { alerts.push(a); } });
     const stage = newMediaStage();
     const a = await media.still({ prompt: 'shot one', ...links, stage });
     assert.equal(a.engine, 'gemini_paid');
     assert.deepEqual(stage.switched, { from: 'replicate', to: 'gemini_paid', kind: 'billing', what: 'still' });
+    assert.deepEqual(alerts, [{ engine: 'replicate', kind: 'billing', status: 402, what: 'stills', next: 'gemini_paid' }]);
     const b = await media.still({ prompt: 'shot two', ...links, stage });
     const c = await media.clip({ prompt: 'the boat leaves', startImageUrl: links.prevFrameUrl.replace('prev', 'start'), ...links, tier: 'standard', seconds: 5, stage });
     assert.equal(b.engine, 'gemini_paid');
-    assert.equal(c.engine, 'gemini_paid');
+    assert.equal(c.engine, 'gemini_paid', 'Gemini Omni is the clips chain\'s first engine anyway');
     assert.equal(c.bytes.toString(), 'gemini-mp4');
-    assert.equal(state.n.replicate, 1, 'Replicate is not asked again for the rest of the stage');
+    assert.equal(stage.kinds.clip.switched, null, 'the clips never switched');
+    assert.equal(state.n.replicate, 1, 'Replicate is not asked again for the rest of the stage\'s stills');
     const gem = state.seen.filter((s) => s.engine !== 'replicate');
     assert.equal(gem.length, 3);
     assert.ok(gem.every((g) => g.key === PAID), 'the paid key only');
@@ -287,7 +294,7 @@ describe('media fallback: the rest of the stage on the paid Gemini key', () => {
     const v = gem.find((x) => x.engine === 'gemini_video').body;
     assert.equal(v.input.filter((p) => p.type === 'image').length, 3, 'clip: its start frame, the reference and the previous frame');
     assert.equal(v.background, false);
-    const m = await media.music({ mood: 'piano', bpm: 80, stage });
+    const m = await media.music({ mood: 'piano', bpm: 80, seconds: 24, stage });
     assert.equal(m.engine, 'gemini_paid');
     assert.equal(m.bytes.toString(), 'lyria-mp3');
     assert.equal(m.ext, 'mp3');
@@ -295,29 +302,43 @@ describe('media fallback: the rest of the stage on the paid Gemini key', () => {
     assert.equal(lyria.length, 1);
     assert.equal(lyria[0].key, PAID, 'the paid key only');
     assert.match(JSON.stringify(lyria[0].body), /Instrumental only/);
-    assert.equal(state.n.replicate, 1, 'Replicate is not asked for the music once the stage has switched away from it');
-    // Lyria out of credit too: the music bed stops clearly.
-    state.lyria = () => new Response(NO_CREDIT, { status: 402 });
-    await assert.rejects(media.music({ mood: 'piano', bpm: 80, stage }), (e) => e.kind === 'billing' && e.notStarted && e.engine === 'replicate' && e.fallback.engine === 'gemini_paid' && e.fallback.outcome === 'failed');
+    assert.match(JSON.stringify(lyria[0].body), /Exactly 24 seconds long[^"]*Not a loop/, 'scored to the scene');
     assert.equal(state.n.replicate, 1);
-    assert.ok(logs.some((l) => /the rest of this stage goes to gemini_paid/.test(l)));
+    // Lyria and its clip model out of credit too: the music bed stops clearly.
+    state.lyria = () => new Response(NO_CREDIT, { status: 402 });
+    await assert.rejects(media.music({ mood: 'piano', bpm: 80, stage }), (e) => e.kind === 'billing' && e.notStarted && e.engine === 'gemini_paid' && e.fallback.engine === 'gemini_paid' && e.fallback.outcome === 'failed');
+    assert.equal(state.n.replicate, 1, 'never Replicate\'s Lyria for a film');
+    assert.ok(logs.some((l) => /the rest of this stage's stills go to gemini_paid/.test(l)));
   });
 
-  test('still throttled after the waits: the same switch; no paid key: a clear credit or throttle error', async () => {
-    const state = { replicate: () => new Response(THROTTLED(1), { status: 429 }) };
+  test('Omni still throttled after the waits: the clips move to Kling; no paid key: a clear credit or throttle error', async () => {
+    const state = { omni: () => new Response('{"error":{"code":429,"message":"Resource has been exhausted. Please retry in 1s.","status":"RESOURCE_EXHAUSTED"}}', { status: 429 }) };
     const stage = newMediaStage();
     const media = createFilmMedia({ env, fetchImpl: routedFetch([signed, ...mediaRoutes(state)]), log: () => {}, sleep: async () => {} });
     const out = await media.clip({ prompt: 'x', startImageUrl: links.referenceUrl, ...links, tier: 'standard', seconds: 5, stage });
-    assert.equal(out.engine, 'gemini_paid');
-    assert.equal(state.n.replicate, 5);
+    assert.equal(out.engine, 'replicate');
+    assert.equal(state.seen.filter((s) => s.engine === 'gemini_video').length, 5, 'THROTTLE_POLICY: five sends');
     assert.equal(stage.throttled, true);
     assert.equal(stage.throttles, 4, 'every throttle waited out is counted');
     assert.equal(stage.switched.kind, 'throttled');
+    assert.equal(stage.kinds.clip.engine, 'replicate');
 
     const s2 = { replicate: () => new Response(NO_CREDIT, { status: 402 }) };
     const lone = createFilmMedia({ env: { REPLICATE_API_TOKEN: REPLICATE, GEMINI_API_KEY_FREE: FREE }, fetchImpl: routedFetch([signed, ...mediaRoutes(s2)]), log: () => {} });
     await assert.rejects(lone.still({ prompt: 'x', ...links, stage: newMediaStage() }), (e) => e.kind === 'billing' && e.fallback.outcome === 'not_configured');
     assert.equal(s2.seen.filter((s) => s.engine !== 'replicate').length, 0, 'the free key is never used');
+  });
+
+  test('a refusal never moves to the next engine', async () => {
+    const state = { gemini: () => json({ promptFeedback: { blockReason: 'PROHIBITED_CONTENT' } }), replicate: () => new Response(NO_CREDIT, { status: 402 }) };
+    const media = createFilmMedia({ env, fetchImpl: routedFetch([signed, ...mediaRoutes(state)]), log: () => {}, sleep: async () => {} });
+    const stage = newMediaStage();
+    // Replicate out of credit -> the paid key, which refuses: stop there.
+    await assert.rejects(media.still({ prompt: 'x', ...links, stage }), (e) => e.refused === true && e.kind === 'refused');
+    const omni = { omni: () => json({ id: 'i', status: 'failed', error: { message: 'blocked by safety filter: PROHIBITED_CONTENT' } }) };
+    const m2 = createFilmMedia({ env, fetchImpl: routedFetch([signed, ...mediaRoutes(omni)]), log: () => {}, sleep: async () => {} });
+    await assert.rejects(m2.clip({ prompt: 'x', startImageUrl: links.referenceUrl, ...links, tier: 'standard', seconds: 5, stage: newMediaStage() }), (e) => e.refused === true);
+    assert.equal(omni.seen.filter((s) => s.engine === 'replicate').length, 0, 'Kling is never asked after a refusal');
   });
 });
 
@@ -391,7 +412,8 @@ describe('render stages under engine trouble', () => {
     assert.equal(film.status, 'preview_done');
     assert.equal(film.error_reason, null);
     const gem = state.seen.filter((s) => s.engine === 'gemini');
-    assert.equal(gem.length, 4, 'shots 2 to 5 on the paid key');
+    assert.equal(gem.length, 5, 'shots 2 to 5 on the paid key, then shot 1 again so every still has one look');
+    assert.deepEqual(film.qc_report.regenerated.map((x) => `${x.what}:${x.shotId}`), ['still:s1-sh1']);
     // Lyria and then its 30-second clip model (the registry's film_music
     // fallback) were asked for the first scene only: once out of quota, the
     // other scenes were not tried again.
@@ -400,7 +422,9 @@ describe('render stages under engine trouble', () => {
     assert.ok(lyria.every((l) => l.key === PAID));
     const assets = await store.listAssets(p.id);
     assert.equal(assets.filter((a) => a.kind === 'music').length, 0);
-    assert.equal(money(film.spent_usd), money(sum(assets)), 'the music reservations were given back');
+    const every = (await db.query('select cost_usd from pg1_film_assets where project_id = $1', [p.id])).rows;
+    assert.equal(money(film.spent_usd), money(sum(every)), 'the music reservations were given back (the replaced still was paid for once)');
+    assert.ok(assets.filter((a) => a.kind === 'keyframe').every((a) => a.meta.engine === ENGINE_LABELS.gemini_paid), 'one engine for every still in the film');
     assert.deepEqual(film.qc_report.music.scenes, [1, 2, 3]);
     assert.equal(film.qc_report.music.unavailable, true);
     assert.equal(film.qc_report.music.reason, 'billing');
@@ -489,32 +513,33 @@ describe('render stages under engine trouble', () => {
   });
 
   // --- 3 + 4: the full render ---
-  test('full render: throttled clips are waited out without using up QC retries, then the rest of the stage goes to the paid key; the QC report says which engine made each shot', async () => {
+  test('full render: throttled clips are waited out without using up QC retries, then the rest of the stage goes to Kling and clip 1 is made again on it; the QC report says which engine made each shot', async () => {
     const pre = await newFilm('preview_rendering');
     await runRender({ project: pre, stage: 'preview', store, engines: { ...fakeMedia(), ...textAndVoice() }, ff: fakeFf(), workdir: tmp() });
     const spentBefore = Number((await store.getProject(pre.id)).spent_usd);
-    // Clip 1 throttled twice then made; clip 2 throttled to the end -> switch.
+    // Omni: clip 1 throttled twice then made; clip 2 throttled to the end -> Kling.
+    let omni = 0;
+    state.omni = () => { omni++; return omni <= 2 || (omni >= 4 && omni <= 8) ? new Response('{"error":{"code":429,"message":"Resource has been exhausted. Please retry in 2s.","status":"RESOURCE_EXHAUSTED"}}', { status: 429 }) : undefined; };
     state.n.replicate = 0;
-    state.replicate = (n) => (n <= 2 || (n >= 4 && n <= 8) ? new Response(THROTTLED(2), { status: 429 }) : undefined);
     const calls = [];
     const engines = { ...realEngines(env0, { fetchImpl, log: () => {}, sleep: async () => {} }), ...textAndVoice({ calls }) };
     const p = await store.getProject(pre.id);
     const r = await runRender({ project: p, stage: 'full', store, engines, ff: fakeFf(), workdir: tmp(), env: { ...env0, PG1_FILM_CONCURRENCY: '1' } });
-    assert.equal(state.n.replicate, 8, '3 sends for clip 1, 5 for clip 2');
+    assert.equal(omni, 8, '3 sends for clip 1, 5 for clip 2');
+    assert.equal(state.n.replicate, 5, 'Kling: clips 2 to 5, then clip 1 again');
     assert.equal(r.qcReport.generated.retries, 0, 'throttles never use up a QC retry');
     assert.ok(r.qcReport.shots.every((s) => s.attempts === 1));
-    assert.deepEqual(r.qcReport.shots.map((s) => s.engine), [ENGINE_LABELS.replicate, ...Array(4).fill(ENGINE_LABELS.gemini_paid)]);
-    assert.deepEqual(r.qcReport.engines, { [ENGINE_LABELS.replicate]: 1, [ENGINE_LABELS.gemini_paid]: 4 });
-    assert.deepEqual(r.qcReport.media.fallback, { from: ENGINE_LABELS.replicate, to: ENGINE_LABELS.gemini_paid, reason: 'throttled', at: 'clip' });
+    assert.deepEqual(r.qcReport.shots.map((s) => s.engine), Array(5).fill(ENGINE_LABELS.replicate), 'one clip style in the film');
+    assert.deepEqual(r.qcReport.engines, { [ENGINE_LABELS.gemini_paid]: 1, [ENGINE_LABELS.replicate]: 5 });
+    assert.deepEqual(r.qcReport.regenerated.filter((x) => x.what === 'clip').map((x) => x.shotId), ['s1-sh1']);
+    assert.deepEqual(r.qcReport.media.fallback, { from: ENGINE_LABELS.gemini_paid, to: ENGINE_LABELS.replicate, reason: 'throttled', at: 'clip' });
     assert.equal(r.qcReport.media.concurrency, 1);
     assert.doesNotMatch(JSON.stringify(r.qcReport), UPSTREAM_BRAND_RE);
-    const videos = state.seen.filter((s) => s.engine === 'gemini_video');
-    assert.equal(videos.length, 4);
-    for (const v of videos) assert.ok(v.body.input.filter((x) => x.type === 'image').length >= 2, 'a start frame plus the reference (and the previous frame when it differs)');
-    const clips = (await store.listAssets(p.id)).filter((a) => a.kind === 'clip');
+    const all = (await db.query('select kind, status, cost_usd from pg1_film_assets where project_id = $1 and kind = $2', [p.id, 'clip'])).rows;
+    assert.deepEqual(all.map((a) => a.status).sort(), ['ok', 'ok', 'ok', 'ok', 'ok', 'superseded']);
     // Charged each clip at its own engine's price plus its check: nothing for the refused sends.
     const spent = Number((await store.getProject(p.id)).spent_usd) - spentBefore;
-    assert.equal(money(spent), money(sum(clips) + clips.length * FILM_PRICES.qcUsd + audioCheckUsd(r.qcReport)));
+    assert.equal(money(spent), money(sum(all) + all.length * FILM_PRICES.qcUsd + audioCheckUsd(r.qcReport)));
   });
 
   // --- 4 + resume: a stage stopped mid-retry ---

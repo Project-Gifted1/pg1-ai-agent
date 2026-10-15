@@ -260,7 +260,7 @@ test('package estimates: 1, 3 and 10 minutes at 1080p and 4K, each line summed, 
   assert.equal(one.shots, 12);
   assert.equal(one.lines.find((l) => l.label === 'Video clips (1080p)').usd, 9, '60 s at 0.15 USD per second');
   assert.equal(one.lines.find((l) => l.label === 'Shot stills').usd, 12 * FILM_PRICES.stillUsd);
-  assert.equal(one.expectedUsd, 12.9);
+  assert.equal(one.expectedUsd, 12.96, 'music beds at 0.08 USD each (Lyria 3.5)');
   assert.equal(estimateFilmCost({ minutes: 1, resolution: '4k' }).lines.find((l) => /Video clips/.test(l.label)).usd, 18, '60 s at 0.30 USD per second');
   assert.equal(PIPELINE_MAX_SECONDS, 300, '30 shots of at most 10 s');
   assert.equal(estimateFilmCost({ minutes: 10 }).fitsPipeline, false, 'a 10-minute film does not fit the current pipeline');

@@ -17,7 +17,9 @@ import { searchHistory } from '../lib/historySearch.mjs';
 import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } from '../lib/voiceStream.mjs';
 import { reportUpstreamFailure, userFacingFailure, providerErrorText, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 import { generateImage, imageModels } from '../lib/imageEngines.mjs';
-import { TASKS, budgetAllows, isBillingFailure, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
+import { createCapacityAlerts } from '../lib/router/alerts.mjs';
+import { getSupabaseCreds } from '../lib/supabase.mjs';
+import { TASKS, FAILURE, failureClass, budgetAllows, isBillingFailure, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
 import { synthesizeSpeech, createRoutedSynth } from '../lib/ttsRouter.mjs';
 import { cleanVideoPrompt, dispatchVideoRender, isVideoCommand, isVideoRequest, parseVideoOptions, pollVideoJob, recheckVideoJob, startVideoJob, videoGoogleAsync, videoJobStatus, videoDailyBudget, videoDailyCap, videoEnabled, videoCostLine, videoFrameFallbackOn, videoNotStartedText, videoRenderingText, videoSpendToday, videoTiersText, usd, DEFAULT_START_FRAME_PROMPT, FOUR_K_NOTE, VIDEO_DISABLED_TEXT, VIDEO_ENGINE_LABEL, VIDEO_REFUSED_TEXT, VIDEO_TIER_LABELS } from '../lib/videoJobs.mjs';
 import { isFilmCommand, isFilmAction } from '../lib/film/text.mjs';
@@ -42,7 +44,7 @@ import { ownPriceAmounts } from '../lib/capabilities/costs.mjs';
 import { isSkillsCommand, handleSkillsCommand, turnSuggestions } from '../lib/skills/chat.mjs';
 import { isLabCommand, handleLabCommand, isLabAction, handleLabApproval, LAB_ARCHITECTURE_TEXT } from '../lib/lab/chat.mjs';
 import { isWatchCommand, isWatchRequest, handleWatchCommand } from '../lib/watches/chat.mjs';
-import { cleanThreadKey } from '../lib/watches/store.mjs';
+import { cleanThreadKey, createWatchStore } from '../lib/watches/store.mjs';
 import { autoWatch } from '../lib/watches/engine.mjs';
 import { honestReply, ranKinds, HONEST_ACTIONS_DIRECTIVE } from '../lib/honestActions.mjs';
 import { isOpportunitiesCommand, handleOpportunitiesCommand } from '../lib/opportunities.mjs';
@@ -1312,6 +1314,26 @@ export function __chatRoundPlan(opts, toolOpts) {
   return chatRoundPlan(opts, toolOpts);
 }
 
+// After a failed round: a content-safety refusal stops the round (another
+// engine would only route round the first one's filter); a capacity failure
+// raises the operator's alert (lib/router/alerts.mjs, once per engine per
+// hour) and moves on; anything else moves on as before.
+var chatAlert = null;
+function roundFailureStops(route, c, result, next) {
+  var cls = failureClass({ status: result.status == null ? null : result.status, text: result.error || '' });
+  if (cls === FAILURE.CAPACITY) {
+    try {
+      if (!chatAlert) {
+        var creds = null;
+        try { creds = getSupabaseCreds(); } catch (e) { creds = null; }
+        chatAlert = createCapacityAlerts({ env: process.env, store: creds ? createWatchStore(creds) : null, ...(creds || {}) });
+      }
+      chatAlert({ engine: c.provider, status: result.status == null ? null : result.status, what: 'chat replies', next: next ? next.provider : null }).catch(function () {});
+    } catch (e) { /* an alert never breaks a reply */ }
+  }
+  return cls === FAILURE.REFUSED;
+}
+
 // The error-log text for a round where every candidate failed (operator
 // only; never shown in a reply): "Anthropic failed (...); Gemini fallback
 // also failed (...)".
@@ -1389,6 +1411,8 @@ async function fetchModelRound(opts, toolOpts) {
     }
     tripBreaker(c.keyId, result.status, result.error);
     errors.push({ provider: c.provider, error: result.error });
+    // Only a capacity failure moves to the next engine; a refusal stops.
+    if (roundFailureStops(route, c, result, route.plan[i + 1])) break;
   }
   return { text: null, error: roundFailureText(errors) };
 }
@@ -1612,6 +1636,7 @@ async function streamChatReply(stream, opts) {
         if (result.text || (result.calls && result.calls.length) || result.aborted || result.partial) break;
         tripBreaker(c.keyId, result.status, result.error);
         errors.push({ provider: c.provider, error: result.error });
+        if (roundFailureStops(route, c, result, route.plan[ci + 1])) break;
       }
       if (!result) {
         modelStep = `model${suffix}`;
