@@ -16,10 +16,10 @@ Registry version 2026-10-14. Generated from `lib/capabilities/registry.mjs` and 
 | Video upscaling to 4K | custom | topazlabs/video-upscale (replicate, chosen) | **unclear** (R1) | unknown per second of output video | after a priced test | not offered (licence review) |
 | Video upscaling to 8K | unavailable | - | **unclear** (no provider) | unknown per second of output video | after a priced test | never offered |
 | Frame interpolation (smoother motion, higher frame rate) | custom | ffmpeg minterpolate (motion-compensated) (pg1, chosen, on PG1's render runner) | commercial_ok | 0.06 USD per minute of output video (PG1 estimate) | 0.09 USD per minute of output video | custom, on request |
-| Voice-over (one voice) | standard | sonic-3.6 (cartesia, primary); eleven_multilingual_v2 (elevenlabs, fallback (Cartesia timed out or down)) | **unclear** (C1) | 0.05 USD per 1,000 characters (PG1 estimate) | 0.075 USD per 1,000 characters | not offered (licence review) |
+| Voice-over (one voice) | standard | eleven_multilingual_v2 (elevenlabs, primary (brand voice)); sonic-3.6 (cartesia, fallback) | **unclear** (C1) | 0.05 USD per 1,000 characters (PG1 estimate) | 0.075 USD per 1,000 characters | not offered (licence review) |
 | Dialogue text-to-speech (several voices) | custom | eleven_v3 (Text to Dialogue) (elevenlabs, chosen) | commercial_ok | 0.1 USD per 1,000 characters (official) | 0.15 USD per 1,000 characters | custom, on request |
 | Sound effects and Foley | custom | eleven_text_to_sound_v2 (elevenlabs, chosen) | commercial_ok | 0.12 USD per minute of audio (official) | 0.18 USD per minute of audio | custom, on request |
-| Music (PG1 Sound tracks) | standard | Eleven Music (elevenlabs, primary); lyria-3.5 (google, fallback); lyria-3-clip-preview (google, fallback (30 s)); google/lyria-2 (replicate, last fallback) | **unclear** (R1) | 0.15 USD per minute of music (official) | 0.225 USD per minute of music | not offered (licence review) |
+| Music (PG1 Sound tracks) | standard | lyria-3.5 (google, primary); lyria-3-clip-preview (google, fallback (30 s)); Eleven Music (elevenlabs, last fallback (not for film)) | commercial_ok | 0.15 USD per minute of music (official) | 0.225 USD per minute of music | may be offered |
 | Music for films (score beds) | standard | lyria-3.5 (google, primary (Gemini API)); lyria-3-clip-preview (google, fallback (Gemini API, 30 s)) | commercial_ok | 0.08 USD per music bed (official) | 0.12 USD per music bed | may be offered |
 | Stem separation | standard | demucs htdemucs (MIT) (pg1, primary, on PG1's runner) | commercial_ok | 0.03 USD per track (about 3 minutes) (PG1 estimate) | 0.045 USD per track (about 3 minutes) | may be offered |
 | 5.1 and 7.1 surround mixes | custom | ffmpeg surround / pan from stems (pg1, chosen, on PG1's runner) | commercial_ok | 0.01 USD per track (PG1 estimate) | 0.015 USD per track | custom, on request |
@@ -31,7 +31,7 @@ Never offered in this phase: client accounts or seats, an account manager, dedic
 
 ### Text- and image-to-video clips
 
-Wired now: lib/videoJobs.mjs (PG1 Motion), lib/film/providers.mjs (film shots): Gemini Omni first, Kling on Replicate as the start-frame fallback.
+Wired now: lib/videoJobs.mjs (PG1 Motion), lib/film/providers.mjs (film shots, ROUTING_CHAINS.clips): Gemini Omni first, Kling on Replicate as the start-frame fallback (never for client films: R1).
 
 Unit cost: Gemini Omni 1.1 Flash at 720p; Kling standard is a PG1 estimate of 0.30 USD per 5 s clip (0.06 USD per second).
 
@@ -100,7 +100,7 @@ Licence conditions: FFmpeg's licence (LGPL/GPL) covers the software, not the fra
 
 ### Voice-over (one voice)
 
-Wired now: lib/film/providers.mjs (createFilmVoice): Cartesia sonic, sent once more on a timeout or outage, then ElevenLabs TTS for the rest of the stage; one voice per film.
+Wired now: lib/film/providers.mjs (createFilmVoice, ROUTING_CHAINS.voice): the ElevenLabs brand voice (PG1_FILM_VOICE_ID), then Cartesia sonic (sent once more on a timeout); one voice per film, never Cartesia for client films (C1).
 
 Unit cost: PG1's film estimate (lib/film/cost.mjs voicePerCharUsd).
 
@@ -133,11 +133,11 @@ Licence conditions: The paid ElevenLabs plan (E1, Creator plan); not a Beta Serv
 
 ### Music (PG1 Sound tracks)
 
-Wired now: lib/music/engines.mjs: ElevenLabs Music, then Lyria 3.5 (paid Gemini key), the Lyria 3 clip model, then google/lyria-2 on Replicate.
+Wired now: lib/music/engines.mjs (ROUTING_CHAINS.music): Lyria 3.5 (paid Gemini key), the Lyria 3 clip model, then ElevenLabs Music; Replicate's Lyria 2 is no longer used (R1).
 
 Unit cost: Eleven Music. Lyria 3.5 is 0.08 USD per song and the Lyria 3 clip 0.04 USD per 30 s request.
 
-Licence conditions: ElevenLabs Music is commercial_ok on the paid plan (E1, Creator plan) except film, TV, radio and large studio games, which the plan excludes (Enterprise only). Music for a film is the film_music feature. Lyria through the Gemini API is commercial_ok (G2, answered); the last fallback, Lyria 2 on Replicate, keeps this feature unclear (R1) until it is settled or left out of client tracks.
+Licence conditions: ElevenLabs Music is commercial_ok on the paid plan (E1, Creator plan) except film, TV, radio and large studio games, which the plan excludes (Enterprise only). Music for a film is the film_music feature. Lyria through the Gemini API is commercial_ok (G2, answered). Lyria 2 on Replicate (R1) is no longer in the chain.
 
 | Provider | Model | What it does | Max resolution / length | Price | Licence, resale | Sources |
 |---|---|---|---|---|---|---|
@@ -208,7 +208,7 @@ Consent and verification by provider:
 
 Every feature marked **unclear** is treated as not commercial: PG1 does not offer it to clients until the question is answered and the registry is changed.
 
-- **R1. Replicate-hosted video and upscaling models (Kling, Topaz, FILM): what does each model's own licence allow?** Replicate grants its rights in outputs, including commercial use, "subject to any third-party terms" of the model used. The model pages' licence tabs could not be loaded, so each model's terms are unconfirmed. Blocks: Text- and image-to-video clips; Video upscaling to 4K; Music (PG1 Sound tracks). [1](https://replicate.com/terms) [2](https://replicate.com/kwaivgi/kling-v2.1) [3](https://replicate.com/topazlabs/video-upscale/api/learn-more) [4](https://replicate.com/google-research/frame-interpolation)
+- **R1. Replicate-hosted video and upscaling models (Kling, Topaz, FILM): what does each model's own licence allow?** Replicate grants its rights in outputs, including commercial use, "subject to any third-party terms" of the model used. The model pages' licence tabs could not be loaded, so each model's terms are unconfirmed. Blocks: Text- and image-to-video clips; Video upscaling to 4K. [1](https://replicate.com/terms) [2](https://replicate.com/kwaivgi/kling-v2.1) [3](https://replicate.com/topazlabs/video-upscale/api/learn-more) [4](https://replicate.com/google-research/frame-interpolation)
 - **C1. Cartesia (the voice PG1 Studio uses now for voice-over): do its terms allow resale of output?** Cartesia was outside this phase's providers (Replicate, Google, ElevenLabs), so its terms were not reviewed. Blocks: Voice-over (one voice). 
 
 Answered:

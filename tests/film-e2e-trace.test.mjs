@@ -205,8 +205,8 @@ describe('one film end to end on the real engines', () => {
       'elevenlabs:1', 'elevenlabs:2', // ElevenLabs from then on
       'elevenlabs:0' // line 1 recorded again, so the film has one voice
     ]);
-    assert.equal(voice[0].model, registryModel('voiceover_single', 'cartesia', 'primary'));
-    assert.ok(voice.filter((t) => t.provider === 'elevenlabs').every((t) => t.model === registryModel('voiceover_single', 'elevenlabs', 'fallback') && t.format === 'pcm_24000'));
+    assert.equal(voice[0].model, registryModel('voiceover_single', 'cartesia'));
+    assert.ok(voice.filter((t) => t.provider === 'elevenlabs').every((t) => t.model === registryModel('voiceover_single', 'elevenlabs') && t.format === 'pcm_24000'));
     const music = trace.filter((t) => t.step === 'music');
     assert.deepEqual(music.map((t) => t.model), [registryModel('film_music', 'gemini_paid', 'primary'), registryModel('film_music', 'gemini_paid', 'primary')], 'one Lyria 3.5 bed per scene, on the paid Gemini key');
     assert.ok(!trace.some((t) => t.provider === 'replicate' && /lyria|music/.test(t.model)), 'never Replicate\'s Lyria for a film');

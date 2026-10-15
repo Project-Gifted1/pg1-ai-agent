@@ -76,7 +76,7 @@ test('a feature\'s licence is the worst of its deliverable models; unclear ones 
   assert.equal(featureLicence({ models: [{ deliverable: true, licence: 'commercial_ok' }, { deliverable: true, licence: 'unclear' }] }), 'unclear');
   assert.equal(featureLicence({ models: [{ deliverable: true, licence: 'commercial_ok' }, { deliverable: true, licence: 'non_commercial' }] }), 'non_commercial');
   assert.equal(featureLicence({ models: [] }), 'unclear', 'no model: never commercial_ok');
-  assert.equal(capability('music').licence, 'unclear', 'the Lyria fallbacks keep music unclear even though ElevenLabs is commercial_ok');
+  assert.equal(capability('music').licence, 'commercial_ok', 'Lyria (G2 answered) and ElevenLabs on the paid plan; Replicate\'s Lyria 2 (R1) is out of the chain');
   assert.equal(capability('upscale_8k').status, 'unavailable');
   assert.equal(capability('voice_cloning').gatedUntil, 'phase4');
 });
@@ -130,10 +130,10 @@ test('offerability: standard + commercial_ok may be offered, custom only on requ
 test('[OFFERS] lists what may be offered with its min price, what only on request, and what never', () => {
   const d = offersDirective();
   assert.match(d, /^\[OFFERS\]/);
-  assert.match(d, /May be included in a package: [^\n]*Storyboard and keyframe images \(at least 0\.1005 USD per still\)[^\n]*Music for films \(score beds\) \(at least 0\.12 USD per music bed\)[^\n]*Stem separation \(at least 0\.045 USD per track \(about 3 minutes\) \(from PG1's own cost estimate\)\)/);
+  assert.match(d, /May be included in a package: [^\n]*Storyboard and keyframe images \(at least 0\.1005 USD per still\)[^\n]*Music \(PG1 Sound tracks\) \(at least 0\.225 USD per minute of music\)[^\n]*Music for films \(score beds\) \(at least 0\.12 USD per music bed\)[^\n]*Stem separation \(at least 0\.045 USD per track \(about 3 minutes\) \(from PG1's own cost estimate\)\)/);
   assert.match(d, /Only as "custom, on request"[^\n]*Sound effects and Foley \(at least 0\.18 USD per minute of audio\)/);
   assert.match(d, /Only as "custom, on request"[^\n]*5\.1 and 7\.1 surround mixes/);
-  assert.match(d, /until the operator settles its licence[^\n]*Text- and image-to-video clips \[licence question R1\][^\n]*Voice-over \(one voice\) \[licence question C1\][^\n]*Music \(PG1 Sound tracks\) \[licence question R1\]/);
+  assert.match(d, /until the operator settles its licence[^\n]*Text- and image-to-video clips \[licence question R1\][^\n]*Voice-over \(one voice\) \[licence question C1\]\./);
   assert.match(d, /Never offered: [^\n]*Video upscaling to 8K \(no provider offers it\)/);
   assert.match(d, /Never offered: [^\n]*Consented voice cloning \(own voice only\) \(not before a later phase\)/);
   for (const n of NOT_OFFERED) assert.ok(d.includes(n.label), n.label);
@@ -200,7 +200,7 @@ test('offerViolations: unavailable, gated and unclear features are caught; custo
 test('licenceReviewNote warns the operator when a package relies on an unsettled licence', () => {
   const n = licenceReviewNote('## Packages\n| Tier | Price |\n|---|---|\n| Starter | $25 | 4 video clips with music |');
   assert.equal(n, '**Licence under review (operator only):** text- and image-to-video clips rely on licence questions not yet settled (R1; see the Studio + Sound report). Do not send this offer to a client until they are answered.', 'film music is settled; video still waits on R1');
-  assert.match(licenceReviewNote('Sound package: 3 original tracks a month'), /music \(pg1 sound tracks\) rely on licence questions not yet settled \(R1;/);
+  assert.equal(licenceReviewNote('Sound package: 3 original tracks a month'), '', 'PG1 Sound tracks are settled now that Replicate\'s Lyria 2 is out of the chain');
   assert.equal(namesProvider(n), false, 'the note names no provider');
   assert.equal(licenceReviewNote('What is the weather?'), '');
 });
@@ -309,7 +309,7 @@ test('E1 answered: ElevenLabs TTS, dialogue, sound effects and voice output are 
 test('E1 answered: the plan\'s film, TV and radio exclusion is recorded and film music stays on Lyria through the Gemini API', async () => {
   const eleven = capability('music').models.find((m) => m.provider === 'elevenlabs');
   assert.deepEqual([...eleven.excludes], ['film', 'TV', 'radio', 'large studio games']);
-  assert.deepEqual(registryJson().features.find((f) => f.id === 'music').chosen[0].excludes, ['film', 'TV', 'radio', 'large studio games']);
+  assert.deepEqual(registryJson().features.find((f) => f.id === 'music').chosen.find((m) => m.provider === 'elevenlabs').excludes, ['film', 'TV', 'radio', 'large studio games']);
   const film = capability('film_music');
   assert.deepEqual(film.models.map((m) => `${m.provider}:${m.model}`), ['google:lyria-3.5', 'google:lyria-3-clip-preview']);
   assert.equal(film.licence, 'commercial_ok', 'Lyria through the Gemini API: G2 answered');
@@ -321,7 +321,7 @@ test('E1 answered: the plan\'s film, TV and radio exclusion is recorded and film
   const env = { ELEVENLABS_API_KEY: 'el-test', GEMINI_API_KEY_PAID: 'paid-test', REPLICATE_API_TOKEN: 'r8-test' };
   assert.deepEqual(filmMusicExclude(env), ['elevenlabs', 'replicate']);
   assert.deepEqual([...new Set(musicPlan(env, { exclude: filmMusicExclude(env) }).map((c) => c.provider))], ['gemini_paid'], 'a film bed is planned on the Gemini API only');
-  assert.ok(musicPlan(env).some((c) => c.provider === 'elevenlabs'), 'PG1 Sound tracks still start with ElevenLabs');
+  assert.deepEqual(musicPlan(env).map((c) => c.provider), ['gemini_paid', 'elevenlabs'], 'PG1 Sound tracks: Lyria first, ElevenLabs as the fallback (ROUTING_CHAINS.music)');
   const covered = { ...env, PG1_ELEVENLABS_FILM_RIGHTS: '1' };
   assert.deepEqual(filmMusicExclude(covered), ['replicate'], 'only a plan that covers film lets ElevenLabs make film beds');
 });
@@ -343,7 +343,8 @@ test('G1 and G2 answered: Google output through the Gemini API is commercial_ok 
     assert.ok(!e.review.includes('G1') && !e.review.includes('G2'), `${e.id} no longer waits on G1 or G2`);
     for (const c of e.candidates) if (/^(?:gemini|veo|imagen|lyria)/.test(c.model) && c.provider === 'google') assert.match(c.licence, /^commercial_ok: operator accepted Google's generated-content terms; operator responsible for use/, c.model);
   }
-  const lyria2 = capability('music').models.find((m) => m.model === 'google/lyria-2');
-  assert.deepEqual([lyria2.licence, [...lyria2.review]], ['unclear', ['R1']]);
-  assert.deepEqual(REGISTRY.filter((e) => e.licence === 'unclear').map((e) => `${e.id}:${e.review.join(',')}`), ['text_image_to_video:R1', 'upscale_4k:R1', 'upscale_8k:', 'voiceover_single:C1', 'music:R1']);
+  // Replicate's Lyria 2 is a candidate only, out of every chain.
+  assert.ok(!capability('music').models.some((m) => m.model === 'google/lyria-2'));
+  assert.match(capability('music').candidates.find((c) => c.model === 'google/lyria-2').licence, /unclear \(R1/);
+  assert.deepEqual(REGISTRY.filter((e) => e.licence === 'unclear').map((e) => `${e.id}:${e.review.join(',')}`), ['text_image_to_video:R1', 'upscale_4k:R1', 'upscale_8k:', 'voiceover_single:C1']);
 });
