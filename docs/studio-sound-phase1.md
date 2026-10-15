@@ -16,7 +16,7 @@ Registry version 2026-10-14. Generated from `lib/capabilities/registry.mjs` and 
 | Video upscaling to 4K | custom | topazlabs/video-upscale (replicate, chosen) | **unclear** (R1) | unknown per second of output video | after a priced test | not offered (licence review) |
 | Video upscaling to 8K | unavailable | - | **unclear** (no provider) | unknown per second of output video | after a priced test | never offered |
 | Frame interpolation (smoother motion, higher frame rate) | custom | ffmpeg minterpolate (motion-compensated) (pg1, chosen, on PG1's render runner) | commercial_ok | 0.06 USD per minute of output video (PG1 estimate) | 0.09 USD per minute of output video | custom, on request |
-| Voice-over (one voice) | standard | sonic-3.6 (cartesia, primary) | **unclear** (C1) | 0.05 USD per 1,000 characters (PG1 estimate) | 0.075 USD per 1,000 characters | not offered (licence review) |
+| Voice-over (one voice) | standard | sonic-3.6 (cartesia, primary); eleven_multilingual_v2 (elevenlabs, fallback (Cartesia timed out or down)) | **unclear** (C1) | 0.05 USD per 1,000 characters (PG1 estimate) | 0.075 USD per 1,000 characters | not offered (licence review) |
 | Dialogue text-to-speech (several voices) | custom | eleven_v3 (Text to Dialogue) (elevenlabs, chosen) | commercial_ok | 0.1 USD per 1,000 characters (official) | 0.15 USD per 1,000 characters | custom, on request |
 | Sound effects and Foley | custom | eleven_text_to_sound_v2 (elevenlabs, chosen) | commercial_ok | 0.12 USD per minute of audio (official) | 0.18 USD per minute of audio | custom, on request |
 | Music (PG1 Sound tracks) | standard | Eleven Music (elevenlabs, primary); lyria-3.5 (google, fallback); lyria-3-clip-preview (google, fallback (30 s)); google/lyria-2 (replicate, last fallback) | **unclear** (R1) | 0.15 USD per minute of music (official) | 0.225 USD per minute of music | not offered (licence review) |
@@ -100,7 +100,7 @@ Licence conditions: FFmpeg's licence (LGPL/GPL) covers the software, not the fra
 
 ### Voice-over (one voice)
 
-Wired now: lib/film/providers.mjs (cartesiaConfig): Cartesia sonic, one voice per film.
+Wired now: lib/film/providers.mjs (createFilmVoice): Cartesia sonic, sent once more on a timeout or outage, then ElevenLabs TTS for the rest of the stage; one voice per film.
 
 Unit cost: PG1's film estimate (lib/film/cost.mjs voicePerCharUsd).
 
@@ -148,7 +148,7 @@ Licence conditions: ElevenLabs Music is commercial_ok on the paid plan (E1, Crea
 
 ### Music for films (score beds)
 
-Wired now: lib/film/providers.mjs (filmMusicExclude): Lyria on the paid Gemini key only; ElevenLabs only with PG1_ELEVENLABS_FILM_RIGHTS=1, never Replicate.
+Wired now: lib/film/providers.mjs (filmMusicExclude) and lib/music/engines.mjs (filmMusicPlan): Lyria 3.5 on the paid Gemini key, then the Lyria clip model; ElevenLabs only with PG1_ELEVENLABS_FILM_RIGHTS=1, never Replicate. A bed none can make is left out and the film finishes without it (music unavailable).
 
 Unit cost: Lyria 3.5 at 0.08 USD per song; the clip model is 0.04 USD per 30 s. PG1 Studio's own film estimate is lower (lib/film/cost.mjs, 0.06 USD per bed).
 

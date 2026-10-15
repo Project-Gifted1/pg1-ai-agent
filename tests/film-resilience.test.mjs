@@ -10,9 +10,10 @@
  *    throttled, the REST of the stage goes to the paid Gemini key (never the
  *    free key), with the reference still and the previous shot's last frame;
  *    music goes through the router's music tier (Lyria on the paid key,
- *    leaving out the engine the stage switched away from), and when that
- *    fails too it stops clearly; every asset and the QC report say which
- *    engine made it (PG1 labels);
+ *    then its clip model, leaving out the engine the stage switched away
+ *    from), and when that fails too the film finishes without music and
+ *    says so; every asset and the QC report say which engine made it (PG1
+ *    labels);
  *  - no double charging: a call the engine refused is given back, throttled
  *    attempts never use up a shot's QC retries;
  *  - resume: /film retry (operator only, approve / decline) restarts a
@@ -152,6 +153,8 @@ function mediaRoutes(state) {
         return json({ candidates: [{ content: { parts: [{ text: 'instrumental' }, { inlineData: { mimeType: 'audio/mpeg', data: Buffer.from('lyria-mp3').toString('base64') } }] } }] });
       }
       seen.push({ engine: 'gemini', url: u, body, key: o.headers['x-goog-api-key'] });
+      const g = state.gemini ? state.gemini(u, body) : undefined;
+      if (g) return g;
       return json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: PNG.toString('base64') } }] } }] });
     }],
     [INTERACTIONS_URL, (u, o, body) => {
@@ -373,46 +376,73 @@ describe('render stages under engine trouble', () => {
   });
 
   // --- 3 + 4 + 5 + resume: the preview ---
-  test('preview: credit runs out mid-stills, the rest go to the paid key, music stops it clearly when Lyria is out of credit too; /film retry reuses every still and pays once', async () => {
+  test('preview: credit runs out mid-stills, the rest go to the paid key; Lyria out of quota too: the preview still finishes, without music, and says so', async () => {
+    process.env = { ...ORIGINAL_ENV, SUPABASE_URL: SUP_URL, SUPABASE_SERVICE_ROLE_KEY: 'service-key' };
+    globalThis.fetch = fetchImpl;
+    const p = await newFilm('preview_queued');
+    const workerEnv = { ...process.env, ...env0, PG1_VIDEO_RENDER_SECRET: SECRET, FILM_PROJECT_ID: p.id, FILM_STAGE: 'preview' };
+    workerEnv.FILM_TOKEN = signFilmToken(p.id, workerEnv);
+    state.replicate = (n) => (n >= 3 ? new Response(NO_CREDIT, { status: 402 }) : undefined);
+    state.lyria = () => new Response(NO_CREDIT, { status: 402 });
+    const engines = { ...realEngines(workerEnv, { fetchImpl, log: () => {}, sleep: async () => {} }), ...textAndVoice() };
+    assert.equal(await workerMain(workerEnv, { engines, fetchImpl, ffImpl: fakeFf(), log: () => {} }), 0, 'music never fails a film');
+
+    const film = await store.getProject(p.id);
+    assert.equal(film.status, 'preview_done');
+    assert.equal(film.error_reason, null);
+    const gem = state.seen.filter((s) => s.engine === 'gemini');
+    assert.equal(gem.length, 4, 'shots 2 to 5 on the paid key');
+    // Lyria and then its 30-second clip model (the registry's film_music
+    // fallback) were asked for the first scene only: once out of quota, the
+    // other scenes were not tried again.
+    const lyria = state.seen.filter((s) => s.engine === 'lyria');
+    assert.deepEqual(lyria.map((l) => /lyria-3-clip/.test(l.url) ? 'clip' : 'full'), ['full', 'clip']);
+    assert.ok(lyria.every((l) => l.key === PAID));
+    const assets = await store.listAssets(p.id);
+    assert.equal(assets.filter((a) => a.kind === 'music').length, 0);
+    assert.equal(money(film.spent_usd), money(sum(assets)), 'the music reservations were given back');
+    assert.deepEqual(film.qc_report.music.scenes, [1, 2, 3]);
+    assert.equal(film.qc_report.music.unavailable, true);
+    assert.equal(film.qc_report.music.reason, 'billing');
+
+    const card = await filmCard(store, film);
+    assert.equal(card.checks.music.unavailable, true);
+    const status = await handleFilmCommand({ env: { ...workerEnv, PG1_VIDEO_ENABLED: '1' }, supUrl: SUP_URL, supKey: 'service-key', fetchImpl, text: `/film status ${p.id.slice(0, 8)}`, isOperator: true });
+    assert.match(status.reply, /Music unavailable: .* \(scenes 1, 2, 3\)/);
+    assert.doesNotMatch(status.reply, UPSTREAM_BRAND_RE);
+    // The full render's estimate makes the music beds it is missing.
+    const row = (await db.query('select * from pending_actions where token = $1', [film.pending_token])).rows[0];
+    assert.match(row.diff_summary, /Music beds ×3/);
+  });
+
+  test('preview: stills out of credit on both engines stops the stage clearly; /film retry reuses what was made and pays once', async () => {
     process.env = { ...ORIGINAL_ENV, SUPABASE_URL: SUP_URL, SUPABASE_SERVICE_ROLE_KEY: 'service-key' };
     // The worker's error log (pg1_errors) uses the global fetch.
     globalThis.fetch = fetchImpl;
     const p = await newFilm('preview_queued');
     const workerEnv = { ...process.env, ...env0, PG1_VIDEO_RENDER_SECRET: SECRET, FILM_PROJECT_ID: p.id, FILM_STAGE: 'preview' };
     workerEnv.FILM_TOKEN = signFilmToken(p.id, workerEnv);
-    // Reference and shot 1 made; then Replicate is out of credit.
+    // Reference and shot 1 made; then Replicate and the paid key are out of credit.
     state.replicate = (n) => (n >= 3 ? new Response(NO_CREDIT, { status: 402 }) : undefined);
-    state.lyria = () => new Response(NO_CREDIT, { status: 402 });
+    state.gemini = () => new Response(NO_CREDIT, { status: 402 });
     const engines = () => ({ ...realEngines(workerEnv, { fetchImpl, log: () => {}, sleep: async () => {} }), ...textAndVoice() });
-    const logs = [];
-    assert.equal(await workerMain(workerEnv, { engines: engines(), fetchImpl, ffImpl: fakeFf(), log: (l) => logs.push(l) }), 1);
+    assert.equal(await workerMain(workerEnv, { engines: engines(), fetchImpl, ffImpl: fakeFf(), log: () => {} }), 1);
 
     let film = await store.getProject(p.id);
     assert.equal(film.status, 'failed');
     assert.equal(film.error_reason, 'out_of_credit');
     assert.equal(film.failure.stage, 'preview');
-    assert.equal(film.failure.step, 'music');
+    assert.equal(film.failure.step, 'stills');
     assert.deepEqual(film.failure.fallback, { engine: ENGINE_LABELS.gemini_paid, outcome: 'failed' });
     assert.equal(state.n.replicate, 3, 'Replicate was not asked again after it ran out of credit');
-    const gem = state.seen.filter((s) => s.engine === 'gemini');
-    assert.equal(gem.length, 4, 'shots 2 to 5 on the paid key');
-    assert.ok(gem.every((g) => g.key === PAID && inlineImages(g.body).length === 2), 'each with the reference and the previous shot\'s frame');
-
-    // The media library says which engine made each still.
     let assets = await store.listAssets(p.id);
-    const stills = assets.filter((a) => a.kind === 'keyframe').sort((a, b) => a.scene - b.scene || a.shot - b.shot);
-    assert.deepEqual(stills.map((a) => a.meta.engine), [ENGINE_LABELS.replicate, ...Array(4).fill(ENGINE_LABELS.gemini_paid)]);
-    assert.equal(assets.find((a) => a.kind === 'reference').meta.engine, ENGINE_LABELS.replicate);
-    assert.equal(assets.filter((a) => a.kind === 'music').length, 0);
-    // Charged only for what was made: the refused music call was given back.
-    assert.equal(money(film.spent_usd), money(sum(assets)));
+    assert.equal(money(film.spent_usd), money(sum(assets)), 'the refused calls were given back');
 
-    // The card names the stage, the step and that it was credit, PG1 names only.
     const card = await filmCard(store, film);
-    assert.match(card.message, /PG1 Studio stopped at the preview \(the music beds\): the PG1 media engine is out of credit, and the PG1 main core could not take over either/);
+    assert.match(card.message, /PG1 Studio stopped at the preview \(the shot stills\): the PG1 media engine is out of credit, and the PG1 main core could not take over either/);
     assert.match(card.message, new RegExp(`/film retry ${p.id.slice(0, 8)}`));
     assert.doesNotMatch(card.message, UPSTREAM_BRAND_RE);
-    assert.deepEqual(card.failure, { stage: 'preview', step: 'music', reason: 'out_of_credit' });
+    assert.deepEqual(card.failure, { stage: 'preview', step: 'stills', reason: 'out_of_credit' });
 
     // /film retry: operator only, through approve.
     const cmdOpts = { env: { ...workerEnv, PG1_VIDEO_ENABLED: '1', GITHUB_TOKEN: 'gh-test' }, supUrl: SUP_URL, supKey: 'service-key', fetchImpl };
@@ -421,9 +451,9 @@ describe('render stages under engine trouble', () => {
     assert.match(guest.reply, /Only the signed-in operator/);
     const proposed = await handleFilmCommand({ ...cmdOpts, text: `/film retry ${p.id.slice(0, 8)}`, isOperator: true });
     assert.match(proposed.reply, /retry film .* from the preview, where it stopped/);
-    assert.match(proposed.reply, /9 assets already made .* are reused, not made or paid for again/, 'the reference, 5 stills and 3 voice lines');
-    assert.match(proposed.reply, /Music beds ×3/);
-    assert.doesNotMatch(proposed.reply, /Shot stills|Reference still/, 'stills are not estimated again');
+    assert.match(proposed.reply, /2 assets already made .* are reused, not made or paid for again/, 'the reference and the first still');
+    assert.match(proposed.reply, /Shot stills ×4/);
+    assert.doesNotMatch(proposed.reply, /Reference still/, 'the reference is not estimated again');
     assert.doesNotMatch(proposed.reply, UPSTREAM_BRAND_RE);
     const row = (await db.query('select * from pending_actions where token = $1', [proposed.pendingApproval.token])).rows[0];
     assert.equal(row.action_type, FILM_ACTIONS.retry);
@@ -439,26 +469,23 @@ describe('render stages under engine trouble', () => {
     const dispatch = fetchImpl.calls.filter((c) => c.url.includes('api.github.com')).pop();
     assert.equal(dispatch.body.inputs.stage, 'preview');
 
-    // The worker runs the stage again with credit back: no still is made
-    // again, the music is (by Lyria, first in the music tier), and
-    // everything is paid for once.
+    // With credit back: the reference and shot 1 are reused, the rest made
+    // once, music by Lyria; everything paid for once.
     state.replicate = undefined;
-    state.lyria = undefined;
+    state.gemini = undefined;
     __resetRouterState(); // the breaker window on the drained keys has passed
-    const before = { replicate: state.n.replicate, gemini: state.seen.filter((s) => s.engine === 'gemini').length };
     workerEnv.FILM_TOKEN = signFilmToken(p.id, workerEnv);
     assert.equal(await workerMain(workerEnv, { engines: engines(), fetchImpl, ffImpl: fakeFf(), log: () => {} }), 0);
     film = await store.getProject(p.id);
     assert.equal(film.status, 'preview_done');
-    assert.equal(state.n.replicate - before.replicate, 0, 'the music tier starts with Lyria');
-    assert.ok(state.seen.slice(-3).every((s) => s.engine === 'lyria' && /lyria/.test(s.url) && s.key === PAID));
-    assert.equal(state.seen.filter((s) => s.engine === 'gemini').length, before.gemini);
     assets = await store.listAssets(p.id);
-    assert.equal(assets.filter((a) => a.kind === 'keyframe').length, 5);
+    assert.equal(assets.filter((a) => a.kind === 'keyframe' && a.status === 'ok').length, 5);
     assert.equal(assets.filter((a) => a.kind === 'reference').length, 1);
+    assert.equal(assets.filter((a) => a.kind === 'music').length, 3);
+    assert.equal(film.qc_report.reused.keyframes, 1);
+    assert.equal(film.qc_report.reused.reference, 1);
+    assert.equal(film.qc_report.music.unavailable, false);
     assert.equal(money(film.spent_usd), money(sum(assets)), 'no double charge');
-    assert.equal(film.qc_report.reused.keyframes, 5);
-    assert.deepEqual(film.qc_report.engines, { [ENGINE_LABELS.gemini_paid]: 3 }, 'this run made only the music, on the paid key');
   });
 
   // --- 3 + 4: the full render ---
