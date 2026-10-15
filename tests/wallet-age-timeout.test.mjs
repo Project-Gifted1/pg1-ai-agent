@@ -1,13 +1,15 @@
 /**
  * Tests for api/mcp.mjs — check_wallet_age's upstream timeout and retry:
- * the per-attempt upstream timeout is 5000ms by default (was 2500ms, which
- * a ~2.6s slow call tripped), configurable with WALLET_AGE_UPSTREAM_TIMEOUT_MS;
- * a transfer-history timeout gets at most ONE retry, only inside the total
- * budget (WALLET_AGE_TOTAL_BUDGET_MS, default 12000ms, under the 30s
- * maxDuration), and the retry's own timeout is cut to what is left of it;
- * a failure is still the same upstream_unavailable / status "unknown" error,
- * never a guessed age; and the MCP tool definitions are hash-identical to
- * the ones before this change.
+ * the per-attempt upstream timeout is 5000ms by default, configurable with
+ * WALLET_AGE_UPSTREAM_TIMEOUT_MS; every upstream timer is cut to the total
+ * budget (WALLET_AGE_TOTAL_BUDGET_MS, default 2500ms, under the 30s
+ * maxDuration); a transfer-history timeout gets at most ONE retry, only
+ * inside that budget, and the retry's own timeout is cut to what is left of
+ * it; when the budget runs out, whatever part of the transfer history did
+ * answer is returned as a partial age (WALLET_AGE_PARTIAL, status
+ * "unknown", never cached), otherwise the same upstream_unavailable /
+ * status "unknown" error, never a guessed age; and the MCP tool definitions
+ * are hash-identical to the ones before this change.
  * Run with: node --test tests/wallet-age-timeout.test.mjs
  */
 
@@ -130,8 +132,8 @@ function assertUnknownTimeout(res, parsed, ms) {
   }
 }
 
-test('wallet age timeout: a slow (2.6s) upstream succeeds under the default 5000ms timeout, with no retry', async (t) => {
-  baseEnv(t);
+test('wallet age timeout: a slow (2.6s) upstream succeeds when the budget is raised above the 2500ms default, with no retry', async (t) => {
+  baseEnv(t, { WALLET_AGE_TOTAL_BUDGET_MS: '12000' });
   const state = mockAlchemy(t, { historyDelay: () => 2600 });
   const started = Date.now();
   const { res, parsed } = await callTool({ address: ADDRESS, chain: 'arbitrum' });
@@ -245,12 +247,21 @@ test('wallet age timeout: a delegation-check timeout is never retried and never 
 test('wallet age timeout: an invalid or out-of-range env value falls back to / clamps within safe limits', async (t) => {
   // The UNKNOWN fixture reports the configured timeout in its message
   // without any upstream call.
+  // A budget above the 10000ms clamp, so the per-attempt figure shows through.
   for (const [raw, expected] of [[undefined, 5000], ['abc', 5000], ['', 5000], ['-5', 100], ['999999', 10000], ['7000', 7000]]) {
-    baseEnv(t, { WALLET_AGE_UPSTREAM_TIMEOUT_MS: raw });
+    baseEnv(t, { WALLET_AGE_UPSTREAM_TIMEOUT_MS: raw, WALLET_AGE_TOTAL_BUDGET_MS: '20000' });
     const { parsed } = await callTool({ address: FIXTURE_VALUES.wallet.UNKNOWN });
     assert.equal(parsed.message, `Wallet age lookup timed out after ${expected}ms.`, `env ${JSON.stringify(raw)}`);
     assert.equal(parsed.code, 'upstream_unavailable');
     assert.equal(parsed.status, 'unknown');
+  }
+});
+
+test('wallet age timeout: the reported timeout is the per-attempt timeout cut to the total budget', async (t) => {
+  for (const [timeout, budget, expected] of [[undefined, undefined, 2500], ['1000', undefined, 1000], [undefined, '4000', 4000], [undefined, 'abc', 2500], [undefined, '99999', 5000]]) {
+    baseEnv(t, { WALLET_AGE_UPSTREAM_TIMEOUT_MS: timeout, WALLET_AGE_TOTAL_BUDGET_MS: budget });
+    const { parsed } = await callTool({ address: FIXTURE_VALUES.wallet.UNKNOWN });
+    assert.equal(parsed.message, `Wallet age lookup timed out after ${expected}ms.`, `timeout ${timeout}, budget ${budget}`);
   }
 });
 
@@ -274,4 +285,189 @@ test('wallet age timeout: MCP tool definitions are hash-identical to before', as
   // feed (get_threat_indicators, FREE_FEED_EDITS there).
   assert.equal(sha(TOOLS.filter((t) => t.name !== 'check_package' && !['preflight_check', 'check_x402_endpoint', 'check_agent_card', 'verify_result', 'hosting_advisor'].includes(t.name))), TOOLS_SHA256);
   assert.equal(sha(TOOLS.find((t) => t.name === 'check_wallet_age')), WALLET_AGE_TOOL_SHA256);
+});
+
+// ---------------------------------------------------------------------
+// 2.5s default budget and the partial age fallback
+// ---------------------------------------------------------------------
+
+// Per-call Alchemy mock: `delays` gives ms (Infinity hangs until aborted)
+// for each call kind - 'out' / 'in' (getAssetTransfers by direction, with a
+// `-internal` suffix for the internal-inclusive arm, which falls back to
+// the plain kind's entry when not given), 'code' (id-3
+// getCode, `code-internal` likewise) and 'delegation' (id-4 getCode).
+// `results` overrides a call's result. Supabase cache traffic is recorded.
+function mockPerCall(t, { delays = {}, results = {} } = {}) {
+  const state = { calls: [], cacheWrites: 0 };
+  const original = global.fetch;
+  global.fetch = async (url, options = {}) => {
+    if (String(url).includes('/rest/v1/wallet_first_seen')) {
+      if (options.method === 'POST') state.cacheWrites += 1;
+      return { ok: true, json: async () => [] };
+    }
+    const body = JSON.parse(options.body);
+    let kind;
+    if (body.method === 'eth_getCode') kind = body.id === DELEGATION_RPC_ID ? 'delegation' : 'code';
+    else kind = body.params[0].fromAddress ? 'out' : 'in';
+    const internal = body.method === 'alchemy_getAssetTransfers' && body.params[0].category.includes('internal');
+    // Which arm a getCode belongs to is not visible in the request; both
+    // arms share the 'code' delay unless `code-internal` is given.
+    const key = internal ? `${kind}-internal` : kind;
+    state.calls.push(key);
+    let result = results[key] ?? results[kind];
+    if (result === undefined) {
+      if (kind === 'out') result = { transfers: [] };
+      else if (kind === 'in') result = { transfers: OLD_IN_TRANSFER };
+      else result = '0x';
+    }
+    return abortable(options.signal, delays[key] ?? delays[kind] ?? 0, { ok: true, json: async () => ({ jsonrpc: '2.0', id: body.id, result }) });
+  };
+  t.after(() => { global.fetch = original; });
+  return state;
+}
+
+test('wallet age budget: a hung upstream times out at the 2500ms default budget, with no retry', async (t) => {
+  baseEnv(t);
+  const state = mockAlchemy(t, { historyDelay: () => Infinity, delegationDelay: Infinity });
+  const started = Date.now();
+  const { res, parsed } = await callTool({ address: ADDRESS, chain: 'arbitrum' });
+  const elapsed = Date.now() - started;
+  assertUnknownTimeout(res, parsed, 2500);
+  assert.equal(state.attempts, 1);
+  assert.ok(state.attemptAbortedAt[1] >= 2400 && state.attemptAbortedAt[1] < 2800, `aborted at ${state.attemptAbortedAt[1]}ms`);
+  assert.ok(elapsed < 3000, `took ${elapsed}ms`);
+});
+
+test('wallet age budget: a normal (~1s) upstream still answers in full under the default budget', async (t) => {
+  baseEnv(t);
+  const state = mockPerCall(t, { delays: { out: 1000, in: 1000, code: 1000, delegation: 1000 } });
+  const { res, parsed } = await callTool({ address: ADDRESS, chain: 'arbitrum' });
+  assert.notEqual(res.body.result.isError, true);
+  assert.equal(parsed.found, true);
+  assert.equal(parsed.note, null);
+  assert.equal(parsed.status, 'no_flags');
+  assert.deepEqual(parsed.reasons, []);
+  assert.equal(state.calls.filter((c) => c === 'out').length, 1);
+});
+
+test('wallet age budget: partial fallback - one direction answered with a transfer, the other ran out of budget', async (t) => {
+  baseEnv(t, { WALLET_AGE_TOTAL_BUDGET_MS: '400' });
+  mockPerCall(t, { delays: { out: Infinity } });
+  const started = Date.now();
+  const { res, parsed } = await callTool({ address: ADDRESS, chain: 'arbitrum' });
+  const elapsed = Date.now() - started;
+  assert.notEqual(res.body.result.isError, true);
+  assert.equal(parsed.found, true);
+  assert.equal(parsed.first_seen, '2022-02-02T00:00:00.000Z');
+  assert.equal(parsed.first_direction, 'in');
+  assert.equal(parsed.first_seen_block, 2);
+  assert.equal(parsed.is_contract, false);
+  assert.equal(parsed.cached, false);
+  assert.equal(parsed.note, 'Part of the transfer history was not checked in time; the wallet may be older than shown.');
+  assert.equal(parsed.status, 'unknown');
+  assert.deepEqual(parsed.reasons, [{ code: 'WALLET_AGE_PARTIAL', message: 'Part of the transfer history was not checked in time; the wallet may be older than shown.' }]);
+  assert.deepEqual(parsed.checks.map((c) => [c.source, c.result]), [
+    ['on-chain transfer history', 'ok'],
+    ['on-chain transfer history (remaining lookups)', 'timeout'],
+    ['on-chain code', 'ok']
+  ]);
+  assert.ok(elapsed < 700, `took ${elapsed}ms`);
+});
+
+test('wallet age budget: a partial age is never written to the permanent cache', async (t) => {
+  baseEnv(t, { WALLET_AGE_TOTAL_BUDGET_MS: '400', SUPABASE_URL: 'https://example.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'test-key' });
+  const state = mockPerCall(t, { delays: { out: Infinity } });
+  const { parsed } = await callTool({ address: ADDRESS, chain: 'arbitrum' });
+  assert.equal(parsed.found, true);
+  assert.equal(state.cacheWrites, 0);
+});
+
+test('wallet age budget: partial fallback across both arms on an internal-supporting chain picks the earliest answered transfer', async (t) => {
+  baseEnv(t, { WALLET_AGE_TOTAL_BUDGET_MS: '400' });
+  const earlier = [{ metadata: { blockTimestamp: '2020-01-01T00:00:00.000Z' }, blockNum: '0x1' }];
+  mockPerCall(t, {
+    delays: { in: Infinity, 'in-internal': 0, 'out-internal': Infinity },
+    results: { out: { transfers: [] }, 'in-internal': { transfers: earlier } }
+  });
+  const { res, parsed } = await callTool({ address: ADDRESS, chain: 'base' });
+  assert.notEqual(res.body.result.isError, true);
+  assert.equal(parsed.found, true);
+  assert.equal(parsed.first_seen, '2020-01-01T00:00:00.000Z');
+  assert.equal(parsed.first_direction, 'in');
+  assert.equal(parsed.status, 'unknown');
+  assert.deepEqual(parsed.reasons.map((r) => r.code), ['WALLET_AGE_PARTIAL']);
+});
+
+test('wallet age budget: no partial fallback when the answered part found no transfer - never found:false on a timeout', async (t) => {
+  baseEnv(t, { WALLET_AGE_TOTAL_BUDGET_MS: '400' });
+  mockPerCall(t, { delays: { in: Infinity }, results: { out: { transfers: [] } } });
+  const { res, parsed } = await callTool({ address: ADDRESS, chain: 'arbitrum' });
+  assertUnknownTimeout(res, parsed, 400);
+});
+
+test('wallet age budget: no partial fallback when is_contract did not answer - never guessed', async (t) => {
+  baseEnv(t, { WALLET_AGE_TOTAL_BUDGET_MS: '400' });
+  mockPerCall(t, { delays: { out: Infinity, code: Infinity } });
+  const { res, parsed } = await callTool({ address: ADDRESS, chain: 'arbitrum' });
+  assertUnknownTimeout(res, parsed, 400);
+});
+
+test('wallet age budget: no partial fallback on an upstream error (only on running out of time)', async (t) => {
+  baseEnv(t, { WALLET_AGE_TOTAL_BUDGET_MS: '400' });
+  mockPerCall(t, { results: { out: null } });
+  const original = global.fetch;
+  global.fetch = async (url, options = {}) => {
+    const body = JSON.parse(options.body);
+    if (body.method === 'alchemy_getAssetTransfers' && body.params[0].fromAddress) return { ok: false, status: 500, json: async () => ({}) };
+    return original(url, options);
+  };
+  const { res, parsed } = await callTool({ address: ADDRESS, chain: 'arbitrum' });
+  assert.equal(res.body.result.isError, true);
+  assert.equal(parsed.code, 'upstream_unavailable');
+  assert.equal(parsed.message, 'Wallet age lookup failed: upstream on-chain data source unavailable.');
+});
+
+test('wallet age budget: an upstream error still fails at once, not after waiting out the budget', async (t) => {
+  baseEnv(t, { WALLET_AGE_TOTAL_BUDGET_MS: '2000' });
+  mockPerCall(t, { delays: { in: Infinity, code: Infinity } });
+  const original = global.fetch;
+  global.fetch = async (url, options = {}) => {
+    const body = JSON.parse(options.body);
+    if (body.method === 'alchemy_getAssetTransfers' && body.params[0].fromAddress) return { ok: false, status: 500, json: async () => ({}) };
+    return original(url, options);
+  };
+  const started = Date.now();
+  const { res, parsed } = await callTool({ address: ADDRESS, chain: 'arbitrum' });
+  const elapsed = Date.now() - started;
+  assert.equal(res.body.result.isError, true);
+  assert.equal(parsed.message, 'Wallet age lookup failed: upstream on-chain data source unavailable.');
+  // The other two calls hang; the arm must not wait for them.
+  assert.ok(elapsed < 500, `took ${elapsed}ms`);
+});
+
+test('wallet age budget: the partial fallback keeps a completed delegation check', async (t) => {
+  baseEnv(t, { WALLET_AGE_TOTAL_BUDGET_MS: '400' });
+  mockPerCall(t, { delays: { out: Infinity }, results: { delegation: '0xef0100' + 'c'.repeat(40) } });
+  const { parsed } = await callTool({ address: ADDRESS, chain: 'arbitrum' });
+  assert.equal(parsed.found, true);
+  assert.equal(parsed.delegated, true);
+  assert.deepEqual(parsed.reasons.map((r) => r.code), ['WALLET_AGE_PARTIAL', 'WALLET_DELEGATED']);
+});
+
+test('wallet age budget: a cached answer\'s delegation check is cut to the remaining budget', async (t) => {
+  baseEnv(t, { WALLET_AGE_TOTAL_BUDGET_MS: '300', SUPABASE_URL: 'https://example.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'test-key' });
+  const original = global.fetch;
+  global.fetch = async (url, options = {}) => {
+    if (String(url).includes('/rest/v1/wallet_first_seen')) {
+      return { ok: true, json: async () => [{ address: ADDRESS, chain: 'arbitrum', first_seen: '2022-02-02T00:00:00+00:00', first_seen_block: 2, first_direction: 'in', is_contract: false, checked_at: '2026-01-01T00:00:00+00:00' }] };
+    }
+    return abortable(options.signal, Infinity);
+  };
+  t.after(() => { global.fetch = original; });
+  const started = Date.now();
+  const { parsed } = await callTool({ address: ADDRESS, chain: 'arbitrum' });
+  const elapsed = Date.now() - started;
+  assert.equal(parsed.cached, true);
+  assert.equal(parsed.delegated, null);
+  assert.ok(elapsed < 700, `took ${elapsed}ms (the 5000ms per-attempt timeout would have run past the budget)`);
 });

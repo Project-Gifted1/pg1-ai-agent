@@ -195,7 +195,7 @@ Reason codes this check can return:
 | Code | Effect on `status` | Meaning |
 |---|---|---|
 | `WALLET_NO_HISTORY` | `"flagged"` | No transfer history on this chain (`found: false`). This is the normal result for a brand-new or never-used address. |
-| `WALLET_AGE_PARTIAL` | `"unknown"` | Internal transfers were not checked in time. The wallet may be older than `age_days` shows. |
+| `WALLET_AGE_PARTIAL` | `"unknown"` | Internal transfers, or part of the transfer history, were not checked in time. The wallet may be older than `age_days` shows. |
 | `WALLET_DELEGATED` | none (informational) | An EIP-7702 delegation is currently set. On its own it does not change `status`. |
 
 On the PG1 side, a found answer is cached permanently and a `found: false` answer is cached for 10 minutes. The delegation check runs live on every call.
@@ -262,7 +262,7 @@ Failures from `/api/a2a` come back as a JSON-RPC `error`, not a `result`:
 
 | Situation | HTTP | `error.code` | `error.data.code` | `error.data.status` |
 |---|---|---|---|---|
-| Wallet-age lookup failed or timed out (5 s upstream timeout, one retry within a 12 s budget) | 200 | `-32000` | `upstream_unavailable` | `"unknown"` |
+| Wallet-age lookup failed, or timed out with no usable partial answer (2.5 s budget) | 200 | `-32000` | `upstream_unavailable` | `"unknown"` |
 | Wallet-age or sanctions rate limit reached | 200 | `-32000` | `rate_limited` | `"unknown"` |
 | Bad address or chain | 200 | `-32000` | `invalid_address` / `invalid_chain` | `"unknown"` |
 | Sanctions list unreachable | 503 | `-32010` | (none) | (none) |
@@ -275,7 +275,7 @@ Every error has `error.data.request_id`, and the same id is in the `X-Request-Id
   "jsonrpc": "2.0",
   "error": {
     "code": -32000,
-    "message": "Wallet age lookup timed out after 5000ms.",
+    "message": "Wallet age lookup timed out after 2500ms.",
     "data": {
       "code": "upstream_unavailable",
       "reasons": [],
@@ -288,7 +288,7 @@ Every error has `error.data.request_id`, and the same id is in the `X-Request-Id
 }
 ```
 
-A wallet-age outage is always an `error`, never `found: false`. So an outage can't make a wallet look brand new, and it can't make one look established either.
+A wallet-age outage is always an `error`, never `found: false`. When the 2.5 s budget runs out after part of the transfer history already found a transfer, that partial age comes back as a `result` with `WALLET_AGE_PARTIAL` (`status: "unknown"`) instead, and it is never cached. So an outage can't make a wallet look brand new, and it can't make one look established either.
 
 ---
 
