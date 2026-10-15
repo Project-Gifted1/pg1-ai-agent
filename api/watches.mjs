@@ -15,13 +15,17 @@
 //                                      subscription (endpoint and its two
 //                                      public keys, as the browser gives them)
 //   { op: 'unsubscribe', endpoint }    removes it
+//   { op: 'test', subscription }       stores this device again (the same
+//                                      upsert as subscribe) and sends one
+//                                      test notification to it only;
+//                                      answers { sent: 0 | 1 }
 //
 // Failures are neutral: no Supabase detail reaches the page.
 
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { resolveOperatorSession } from '../lib/operatorSession.mjs';
 import { createWatchStore } from '../lib/watches/store.mjs';
-import { vapidKeys } from '../lib/watches/push.mjs';
+import { vapidKeys, pushToOperator } from '../lib/watches/push.mjs';
 
 export const config = { maxDuration: 15 };
 
@@ -64,69 +68,86 @@ export function cleanSubscription(sub) {
   return { endpoint, p256dh, auth };
 }
 
-export default async function handler(req, res) {
-  res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Cache-Control', 'no-store');
-  if (req.method === 'OPTIONS') return res.status(204).end();
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST, OPTIONS');
-    return res.status(405).json({ error: 'Method Not Allowed' });
-  }
-  if (isRateLimited(clientIp(req))) return res.status(429).json({ error: 'Too many requests, please slow down.' });
+const TEST_TITLE = 'PG1 test notification';
+const TEST_BODY = 'Notifications work on this device.';
 
-  let body = req.body;
-  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = null; } }
-  if (!body || typeof body !== 'object') return res.status(400).json({ error: 'Invalid JSON body' });
-  req.body = body;
-  const session = resolveOperatorSession(req);
-  if (session.rateLimited) return res.status(429).json({ error: 'Too many failed sign-in attempts. Try again later.' });
-  if (!session.isOperator) return res.status(401).json({ error: 'unauthorized', message: 'Watches and reports are for the signed-in operator only.' });
+// webpushImpl is for tests; the deployment loads web-push itself.
+export function createWatchesHandler({ webpushImpl = null } = {}) {
+  return async function handler(req, res) {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store');
+    if (req.method === 'OPTIONS') return res.status(204).end();
+    if (req.method !== 'POST') {
+      res.setHeader('Allow', 'POST, OPTIONS');
+      return res.status(405).json({ error: 'Method Not Allowed' });
+    }
+    if (isRateLimited(clientIp(req))) return res.status(429).json({ error: 'Too many requests, please slow down.' });
 
-  if (body.op === 'vapid') {
-    const keys = vapidKeys();
-    return res.status(200).json({ ok: true, publicKey: keys ? keys.publicKey : null });
-  }
+    let body = req.body;
+    if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = null; } }
+    if (!body || typeof body !== 'object') return res.status(400).json({ error: 'Invalid JSON body' });
+    req.body = body;
+    const session = resolveOperatorSession(req);
+    if (session.rateLimited) return res.status(429).json({ error: 'Too many failed sign-in attempts. Try again later.' });
+    if (!session.isOperator) return res.status(401).json({ error: 'unauthorized', message: 'Watches and reports are for the signed-in operator only.' });
 
-  let store;
-  try {
-    const { supUrl, supKey } = getSupabaseCreds();
-    store = createWatchStore({ supUrl, supKey });
-  } catch (e) {
-    return res.status(503).json({ error: 'unavailable', message: 'Watches are not available on this deployment.' });
-  }
+    if (body.op === 'vapid') {
+      const keys = vapidKeys();
+      return res.status(200).json({ ok: true, publicKey: keys ? keys.publicKey : null });
+    }
 
-  try {
-    if (body.op === 'inbox') {
-      const reports = await store.inbox(Array.isArray(body.threadKeys) ? body.threadKeys : []);
-      return res.status(200).json({ ok: true, reports });
+    let store;
+    try {
+      const { supUrl, supKey } = getSupabaseCreds();
+      store = createWatchStore({ supUrl, supKey });
+    } catch (e) {
+      return res.status(503).json({ error: 'unavailable', message: 'Watches are not available on this deployment.' });
     }
-    if (body.op === 'ack') {
-      return res.status(200).json({ ok: true, acknowledged: await store.ack(body.ids) });
+
+    try {
+      if (body.op === 'inbox') {
+        const reports = await store.inbox(Array.isArray(body.threadKeys) ? body.threadKeys : []);
+        return res.status(200).json({ ok: true, reports });
+      }
+      if (body.op === 'ack') {
+        return res.status(200).json({ ok: true, acknowledged: await store.ack(body.ids) });
+      }
+      if (body.op === 'list') {
+        return res.status(200).json({ ok: true, watches: await store.list({ limit: 50 }) });
+      }
+      if (body.op === 'stop') {
+        const w = await store.get(typeof body.id === 'string' ? body.id : '');
+        if (!w) return res.status(404).json({ error: 'not_found', message: 'There is no such watch.' });
+        if (w.status !== 'open') return res.status(200).json({ ok: true, watch: w });
+        return res.status(200).json({ ok: true, watch: await store.close(w.id, 'stopped') });
+      }
+      if (body.op === 'subscribe') {
+        if (!vapidKeys()) return res.status(503).json({ error: 'unavailable', message: 'Push notifications are not set up on this deployment.' });
+        const sub = cleanSubscription(body.subscription);
+        if (!sub) return res.status(400).json({ error: 'bad_request', message: 'That is not a push subscription.' });
+        await store.addSubscription({ ...sub, label: typeof body.label === 'string' ? body.label : '' });
+        return res.status(200).json({ ok: true, subscribed: true });
+      }
+      if (body.op === 'test') {
+        if (!vapidKeys()) return res.status(503).json({ error: 'unavailable', message: 'Push notifications are not set up on this deployment.' });
+        const sub = cleanSubscription(body.subscription);
+        if (!sub) return res.status(400).json({ error: 'bad_request', message: 'That is not a push subscription.' });
+        const row = await store.addSubscription({ ...sub, label: typeof body.label === 'string' ? body.label : '' });
+        const device = { ...sub, id: row && row.id, failures: 0 };
+        const sent = await pushToOperator({ store, title: TEST_TITLE, body: TEST_BODY, url: '/', tag: 'pg1-test', webpushImpl, devices: [device] });
+        return res.status(200).json({ ok: true, sent });
+      }
+      if (body.op === 'unsubscribe') {
+        const endpoint = typeof body.endpoint === 'string' ? body.endpoint.trim().slice(0, 1000) : '';
+        if (!endpoint) return res.status(400).json({ error: 'bad_request', message: 'endpoint is required' });
+        return res.status(200).json({ ok: true, removed: await store.removeSubscription(endpoint) });
+      }
+      return res.status(400).json({ error: 'bad_request', message: `Unknown op '${typeof body.op === 'string' ? body.op.slice(0, 20) : ''}'` });
+    } catch (err) {
+      console.error('[WATCHES] storage failed:', err && err.status ? `status=${err.status}` : 'error');
+      return res.status(502).json({ error: 'unavailable', message: 'Watches could not be reached right now.' });
     }
-    if (body.op === 'list') {
-      return res.status(200).json({ ok: true, watches: await store.list({ limit: 50 }) });
-    }
-    if (body.op === 'stop') {
-      const w = await store.get(typeof body.id === 'string' ? body.id : '');
-      if (!w) return res.status(404).json({ error: 'not_found', message: 'There is no such watch.' });
-      if (w.status !== 'open') return res.status(200).json({ ok: true, watch: w });
-      return res.status(200).json({ ok: true, watch: await store.close(w.id, 'stopped') });
-    }
-    if (body.op === 'subscribe') {
-      if (!vapidKeys()) return res.status(503).json({ error: 'unavailable', message: 'Push notifications are not set up on this deployment.' });
-      const sub = cleanSubscription(body.subscription);
-      if (!sub) return res.status(400).json({ error: 'bad_request', message: 'That is not a push subscription.' });
-      await store.addSubscription({ ...sub, label: typeof body.label === 'string' ? body.label : '' });
-      return res.status(200).json({ ok: true, subscribed: true });
-    }
-    if (body.op === 'unsubscribe') {
-      const endpoint = typeof body.endpoint === 'string' ? body.endpoint.trim().slice(0, 1000) : '';
-      if (!endpoint) return res.status(400).json({ error: 'bad_request', message: 'endpoint is required' });
-      return res.status(200).json({ ok: true, removed: await store.removeSubscription(endpoint) });
-    }
-    return res.status(400).json({ error: 'bad_request', message: `Unknown op '${typeof body.op === 'string' ? body.op.slice(0, 20) : ''}'` });
-  } catch (err) {
-    console.error('[WATCHES] storage failed:', err && err.status ? `status=${err.status}` : 'error');
-    return res.status(502).json({ error: 'unavailable', message: 'Watches could not be reached right now.' });
-  }
+  };
 }
+
+export default createWatchesHandler();

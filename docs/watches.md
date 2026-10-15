@@ -80,9 +80,16 @@ autonomy policy, the lab budgets and the kill switch all apply.
 
 ## Push notifications
 
-The menu's **Notifications** switch registers `/sw.js`, subscribes with the
-deployment's `VAPID_PUBLIC_KEY` and stores the subscription in
-`pg1_push_subscriptions` (operator only). A notification carries a short
+The menu's **Notifications** switch (top of the menu, under **Background
+reports**; shown only after the operator signs in) registers `/sw.js`,
+subscribes with the deployment's `VAPID_PUBLIC_KEY` and stores the
+subscription in `pg1_push_subscriptions` (operator only). Under the switch it
+shows the state (on, off, blocked by the browser, not available, not set up
+on the server) and every result, including how to unblock the site in
+Chrome. **Send test notification** stores this device again and pushes one
+test to it (`/api/watches` `op: 'test'`), so delivery can be checked at once.
+After sign-in a device that already has a subscription is stored again, so a
+row the server lost comes back on its own. A notification carries a short
 title and one line, cleaned of secrets, key and wallet shapes, links and
 provider names; tapping it opens PG1 on the report's thread, where the full
 report is fetched after sign-in.
@@ -137,6 +144,11 @@ Vercel **Team Settings → Webhooks → Create Webhook**:
 
 ### Push opt-in
 
-Open PG1, sign in, open the menu and turn **Notifications** on; allow
-notifications when the browser asks. On iPhone or iPad, add PG1 to the Home
+Open PG1, sign in, open the ☰ menu and turn **Notifications** on (the first
+section, under **Background reports**); tap **Allow** when the browser asks,
+then tap **Send test notification**. If the state says **Blocked by the
+browser**, follow the steps shown under the switch: in Chrome, tap the icon
+left of the address bar → Permissions → Notifications → Allow (or ⋮ →
+Settings → Site settings → Notifications → the PG1 site → Allow), make sure
+Android Settings → Apps → Chrome → Notifications is on, then reload PG1. On iPhone or iPad, add PG1 to the Home
 Screen first (Share → Add to Home Screen) and turn it on from there.
