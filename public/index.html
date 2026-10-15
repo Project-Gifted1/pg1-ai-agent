@@ -1329,6 +1329,74 @@
        colour, and it never relies on colour alone (the word is always
        there). */
     .tool-cards { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-4); }
+    /* USAGE CARD (/usage, lib/usageCard.mjs): one card in sections of
+       two-column rows (label left, figure right in tabular numbers, a muted
+       line under the figure), one hairline between sections only. Lists
+       longer than five rows open with "Show N more". Same tokens in light
+       and dark. */
+    .usage-card { display: flex; flex-direction: column; max-width: 100%; padding: var(--sp-3) var(--sp-4) var(--sp-4); background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-lg); font-size: var(--fs-sm); line-height: 1.4; color: var(--text-2); }
+    .usage-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding-bottom: var(--sp-2); }
+    .usage-title { font-weight: 600; font-size: var(--fs-base); color: var(--text-strong); }
+    .usage-sec { padding: var(--sp-3) 0 var(--sp-1); }
+    .usage-sec + .usage-sec { border-top: 1px solid var(--border); }
+    .usage-h { margin: 0 0 var(--sp-2); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
+    .usage-group + .usage-group { margin-top: var(--sp-3); }
+    .usage-sub-h { margin: 0 0 var(--sp-1); font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); }
+    .usage-rows { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+    .usage-rows + .usage-rows { margin-top: 6px; }
+    .usage-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--sp-3); align-items: baseline; }
+    .usage-label { min-width: 0; color: var(--text); overflow-wrap: anywhere; }
+    .usage-label.is-mono { font-family: var(--font-mono); font-size: var(--fs-xs); }
+    .usage-value { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+    .usage-num { font-weight: 600; color: var(--text-strong); white-space: nowrap; }
+    .usage-row-sub { grid-column: 1 / -1; margin: 0; justify-self: end; max-width: 100%; text-align: right; font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .usage-tag { display: inline-block; margin-left: var(--sp-2); padding: 0 6px; border: 1px solid var(--warn-line); border-radius: var(--r-full); background: var(--warn-soft); color: var(--warn-text); font-family: inherit; font-size: var(--fs-2xs); font-weight: 600; line-height: 1.5; vertical-align: 1px; }
+    .usage-bar { grid-column: 1 / -1; display: block; height: 6px; margin: 4px 0 0; border-radius: var(--r-full); background: var(--surface-3); overflow: hidden; }
+    .usage-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--gold-fill); }
+    .usage-bar.is-warn > span { background: var(--danger); }
+    .usage-gnote, .usage-empty { margin: var(--sp-1) 0 0; font-size: var(--fs-xs); color: var(--text-3); }
+    .usage-more { margin-top: 6px; padding: 4px 0; background: none; border: 0; color: var(--gold); font: inherit; font-size: var(--fs-xs); font-weight: 600; cursor: pointer; }
+    /* Motion (minor): the card rises in, its sections follow one after
+       another, storage bars fill from the left, folded rows fade in when
+       opened. All of it is off with reduced motion. */
+    .usage-card { animation: rise-in var(--dur-3) var(--ease-out) both; }
+    .usage-sec { animation: usage-sec-in 420ms var(--ease-out) both; }
+    .usage-sec:nth-of-type(2) { animation-delay: 60ms; }
+    .usage-sec:nth-of-type(3) { animation-delay: 120ms; }
+    .usage-sec:nth-of-type(4) { animation-delay: 180ms; }
+    .usage-sec:nth-of-type(5) { animation-delay: 240ms; }
+    .usage-sec:nth-of-type(6) { animation-delay: 300ms; }
+    .usage-sec:nth-of-type(7) { animation-delay: 360ms; }
+    @keyframes usage-sec-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .usage-bar > span { transform-origin: left center; animation: meter-fill 900ms cubic-bezier(0.2, 0.8, 0.2, 1) 350ms both; }
+    @keyframes meter-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+    .usage-rows[id]:not([hidden]) { animation: fade-in var(--dur-2) var(--ease-out) both; }
+    .usage-more { transition: color var(--dur-1) var(--ease-out), opacity var(--dur-1) var(--ease-out); }
+    .usage-more:hover { text-decoration: underline; text-underline-offset: 3px; }
+    .usage-more:active { opacity: 0.7; }
+    .usage-tag { animation: pop-in var(--dur-2) var(--ease-out) 500ms both; }
+
+    /* LAB REPLIES (/lab status, /lab report, decorateLabHtml): the status
+       word becomes a chip (a soft pulsing dot while queued or running) and
+       "$spent of $budget" a small meter that fills in. */
+    .lab-state { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: var(--r-full); background: var(--surface-2); font-family: var(--font-sans, inherit); font-size: 0.78em; font-weight: 600; line-height: 1.6; color: var(--text); vertical-align: 1px; white-space: nowrap; animation: pop-in var(--dur-2) var(--ease-out) both; }
+    .lab-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+    .lab-state[data-state="running"], .lab-state[data-state="queued"] { border-color: var(--gold-line); background: var(--gold-soft); }
+    .lab-state[data-state="running"]::before, .lab-state[data-state="queued"]::before { background: var(--gold-fill); animation: lab-pulse 1.6s ease-in-out infinite; }
+    .lab-state[data-state="queued"]::before { animation-duration: 2.4s; }
+    .lab-state[data-state="done"] { border-color: var(--ok); background: var(--ok-soft); }
+    .lab-state[data-state="done"]::before { background: var(--ok); }
+    .lab-state[data-state="failed"], .lab-state[data-state="over_budget"], .lab-state[data-state="timeout"] { border-color: var(--danger-line); background: var(--danger-soft); color: var(--danger-text); }
+    .lab-state[data-state="failed"]::before, .lab-state[data-state="over_budget"]::before, .lab-state[data-state="timeout"]::before { background: var(--danger); }
+    @keyframes lab-pulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--gold-line); } 50% { opacity: 0.55; box-shadow: 0 0 0 4px transparent; } }
+    .lab-meter { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .lab-meter-bar { display: inline-block; width: 56px; height: 5px; border-radius: var(--r-full); background: var(--surface-3); overflow: hidden; vertical-align: middle; }
+    .lab-meter-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--gold-fill); transform-origin: left center; animation: meter-fill 900ms cubic-bezier(0.2, 0.8, 0.2, 1) 200ms both; }
+    .lab-meter-bar.is-high > span { background: var(--danger); }
+    @media (prefers-reduced-motion: reduce) {
+      .usage-card, .usage-sec, .usage-bar > span, .usage-rows[id], .usage-tag, .lab-state, .lab-state::before, .lab-meter-bar > span { animation: none !important; }
+    }
+    .usage-note { margin: var(--sp-3) 0 0; padding-top: var(--sp-2); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-3); }
     .tool-card {
       display: flex;
       flex-direction: column;
@@ -3490,7 +3558,28 @@
         .reduce((acc, seg, idx, arr) => acc + (idx > 0 && !seg.block && !arr[idx - 1].block ? '\n' : '') + seg.html, '');
 
       escaped = escaped.replace(/\u0000CODEBLOCK(\d+)\u0000/g, function(match, idx) { return codeBlocks[Number(idx)]; });
+      if (/^\s*###\s*\[ LAB\b/.test(String(str))) escaped = decorateLabHtml(escaped);
       return escaped;
+    }
+
+    // LAB REPLIES: on an already-escaped /lab status or /lab report reply,
+    // the experiment's status word (after " · ") becomes a chip and
+    // "$spent of $budget" a meter. Only these fixed shapes are touched; the
+    // rest of the text stays as it was. Code blocks are left alone.
+    const LAB_STATES = ['queued', 'running', 'done', 'failed', 'over_budget', 'timeout', 'stopped'];
+    function decorateLabHtml(html) {
+      return String(html).split(/(<div class="code-block"[\s\S]*?<\/pre><\/div>)/).map((part, i) => {
+        if (i % 2) return part;
+        return part
+          .replace(new RegExp(` · (${LAB_STATES.join('|')})(?=( · | \\]|<))`, 'g'), (m, st) => ` · <span class="lab-state" data-state="${st}">${st.replace('_', ' ')}</span>`)
+          .replace(/\$(\d[\d,]*(?:\.\d+)?) of \$(\d[\d,]*(?:\.\d+)?)/g, (m, a, b) => {
+            const spent = Number(a.replace(/,/g, ''));
+            const budget = Number(b.replace(/,/g, ''));
+            if (!(budget > 0) || !isFinite(spent)) return m;
+            const pct = Math.min(100, Math.max(0, (spent / budget) * 100));
+            return `<span class="lab-meter">${m}<span class="lab-meter-bar${pct >= 90 ? ' is-high' : ''}" aria-hidden="true"><span style="width: ${pct.toFixed(1)}%"></span></span></span>`;
+          });
+      }).join('');
     }
 
     // Renders diff lines as a diff, never as markdown. The lines must
@@ -6304,8 +6393,63 @@
       return Number.isNaN(d.getTime()) ? iso : d.toISOString().slice(0, 10);
     }
 
+    // USAGE CARD: lib/usageCard.mjs's view (card.usage), drawn as sections
+    // of two-column rows. Every string is escaped; figures arrive already
+    // formatted. A row with `at` (an instant) gets "2h ago" from this
+    // device's clock, so a saved chat reopened later still reads right.
+    let usageCardSeq = 0;
+    function usageRelative(ms) {
+      const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+      if (s < 60) return 'just now';
+      if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+      if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+      const d = Math.floor(s / 86400);
+      return d <= 30 ? `${d} day${d === 1 ? '' : 's'} ago` : '';
+    }
+    function usageRowHtml(r) {
+      if (!r || typeof r !== 'object') return '';
+      const sub = typeof r.at === 'number' && isFinite(r.at) ? usageRelative(r.at) : (r.sub || '');
+      const bar = typeof r.bar === 'number' && isFinite(r.bar)
+        ? `<dd class="usage-bar${r.warn ? ' is-warn' : ''}" aria-hidden="true"><span style="width: ${Math.min(100, Math.max(0, r.bar))}%"></span></dd>`
+        : '';
+      return `<div class="usage-row"><dt class="usage-label${r.mono ? ' is-mono' : ''}">${escapeHTML(String(r.label == null ? '' : r.label))}${r.tag ? `<span class="usage-tag">${escapeHTML(String(r.tag))}</span>` : ''}</dt>`
+        + `<dd class="usage-value"><span class="usage-num">${escapeHTML(String(r.value == null ? '—' : r.value))}</span></dd>`
+        + (sub ? `<dd class="usage-row-sub">${escapeHTML(String(sub))}</dd>` : '')
+        + bar + '</div>';
+    }
+    function usageGroupHtml(g) {
+      if (!g || typeof g !== 'object') return '';
+      const rows = Array.isArray(g.rows) ? g.rows : [];
+      const more = Array.isArray(g.more) ? g.more : [];
+      let html = g.title ? `<div class="usage-sub-h">${escapeHTML(String(g.title))}</div>` : '';
+      if (rows.length) html += `<dl class="usage-rows">${rows.map(usageRowHtml).join('')}</dl>`;
+      else if (g.empty) html += `<p class="usage-empty">${escapeHTML(String(g.empty))}</p>`;
+      if (more.length) {
+        const id = `usage-more-${Date.now().toString(36)}-${(usageCardSeq++).toString(36)}`;
+        html += `<dl class="usage-rows" id="${id}" hidden>${more.map(usageRowHtml).join('')}</dl>`
+          + `<button type="button" class="usage-more" aria-expanded="false" aria-controls="${id}" data-more="Show ${more.length} more" onclick="toggleUsageMore(this)">Show ${more.length} more</button>`;
+      }
+      if (g.note) html += `<p class="usage-gnote">${escapeHTML(String(g.note))}</p>`;
+      return `<div class="usage-group">${html}</div>`;
+    }
+    function usageCardHtml(view) {
+      const sections = Array.isArray(view.sections) ? view.sections : [];
+      const body = sections.map((sec) => `<div class="usage-sec" data-section="${escapeHTML(String(sec.id || ''))}"><div class="usage-h" role="heading" aria-level="4">${escapeHTML(String(sec.title || ''))}</div>${(Array.isArray(sec.groups) ? sec.groups : []).map(usageGroupHtml).join('')}</div>`).join('');
+      return `<section class="usage-card" aria-label="Usage report"><div class="usage-head"><span class="usage-title">${escapeHTML(String(view.title || 'Usage'))}</span><span class="tool-chip is-report">Report</span></div>`
+        + body + (view.note ? `<p class="usage-note">${escapeHTML(String(view.note))}</p>` : '') + '</section>';
+    }
+    function toggleUsageMore(btn) {
+      const target = document.getElementById(btn.getAttribute('aria-controls'));
+      if (!target) return;
+      const open = btn.getAttribute('aria-expanded') !== 'true';
+      btn.setAttribute('aria-expanded', String(open));
+      target.hidden = !open;
+      btn.textContent = open ? 'Show less' : (btn.dataset.more || 'Show more');
+    }
+
     function toolCardHtml(card) {
       if (!card || typeof card !== 'object' || !card.tool) return '';
+      if (card.usage && typeof card.usage === 'object') return usageCardHtml(card.usage);
       const uid = `tool-raw-${Date.now().toString(36)}-${(toolCardSeq++).toString(36)}`;
       const status = TOOL_STATUS_CLASS[card.status] ? card.status : 'unknown';
       const title = escapeHTML(card.title || String(card.tool).replace(/_/g, ' '));
