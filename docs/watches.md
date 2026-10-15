@@ -51,6 +51,14 @@ when the secret is not set). Each refusal logs one line, the source and the
 reason (`[hooks] rejected source=github reason=bad_signature`), never the
 payload.
 
+The signature is checked over the exact bytes sent. The hook routes are
+Web handlers (`export const POST`, no default export), so Vercel does not
+read or JSON-parse the body first; keep them that way. The secret is
+trimmed of surrounding whitespace and newlines. Reasons: `not_configured`,
+`unsigned`, `malformed`, `no_raw_body` (the body was already consumed,
+i.e. a route was turned back into a `(req, res)` handler), `bad_signature`
+(the secret differs, or the body was changed), `stale` (lab only).
+
 ## Autonomy and the kill switch
 
 - Watching something on its own (`watch:auto`) and reporting

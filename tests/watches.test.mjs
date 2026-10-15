@@ -116,7 +116,8 @@ async function addDevice(store, n = 1) {
 function makeRes() {
   return { statusCode: null, headers: {}, jsonBody: null, setHeader(k, v) { this.headers[k] = v; }, getHeader(k) { return this.headers[k]; }, status(c) { this.statusCode = c; return this; }, json(b) { this.jsonBody = b; return this; }, write() { return true; }, end() { return this; }, on() {} };
 }
-// A request whose body is a raw stream, as Vercel hands it to a function.
+// A request whose body is an unread raw stream (the routes themselves get
+// the exact bytes as req.rawBody from asWebHandler; see hooks-raw-body.test).
 function rawReq(body, headers = {}) {
   const buf = Buffer.from(typeof body === 'string' ? body : JSON.stringify(body));
   const req = Readable.from([buf]);
