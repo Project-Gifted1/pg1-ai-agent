@@ -37,6 +37,10 @@
     {
       "path": "/api/sanctions/sync-eu",
       "schedule": "37 4 * * *"
+    },
+    {
+      "path": "/api/watches/sync",
+      "schedule": "*/5 * * * *"
     }
   ],
   "headers": [
@@ -207,6 +211,23 @@
       ]
     },
     {
+      "source": "/api/watches",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "https://pg1-ai-agent.vercel.app" },
+        { "key": "Access-Control-Allow-Methods", "value": "OPTIONS,POST" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" },
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
+      "source": "/sw.js",
+      "headers": [
+        { "key": "Content-Type", "value": "text/javascript; charset=utf-8" },
+        { "key": "Cache-Control", "value": "no-cache" },
+        { "key": "Service-Worker-Allowed", "value": "/" }
+      ]
+    },
+    {
       "source": "/api/errors/cleanup",
       "headers": [
         { "key": "Content-Type", "value": "application/json" }
@@ -238,7 +259,7 @@
       ]
     },
     {
-      "source": "/api/:path((?!chat$|errors$|errors/cleanup$|handoffs$|threads$|playground$|video-render$|mcp$|a2a$|preflight$|watchlists$).*)",
+      "source": "/api/:path((?!chat$|errors$|errors/cleanup$|handoffs$|threads$|watches$|playground$|video-render$|mcp$|a2a$|preflight$|watchlists$).*)",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },

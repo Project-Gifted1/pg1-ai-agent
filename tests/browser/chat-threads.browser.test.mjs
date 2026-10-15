@@ -157,6 +157,7 @@ async function startServer() {
         if (url.pathname === '/api/health') return json(res, 200, { status: 'ok' });
         if (url.pathname === '/api/errors') return json(res, 200, { errors: [], ok: true });
         if (url.pathname === '/api/handoffs') return json(res, 200, { handoffs: [] });
+        if (url.pathname === '/api/watches') return json(res, 200, { ok: true, reports: [] });
         if (url.pathname === '/api/chat') {
           const prompt = parsed && parsed.prompt;
           if (prompt === 'AUTH_VERIFY') return json(res, 200, { authenticated: parsed.user === 'operator' && parsed.pass === 'passkey' });
