@@ -11,7 +11,8 @@
 --              commercial_ok engines only)
 --   price_usd  the package price of a client film: spend may not pass
 --              price / 1.5 (the 1.5x floor)
---   statuses   director_queued, directing, awaiting_delivery_approval
+--   statuses   awaiting_director_approval, director_queued, directing,
+--              awaiting_delivery_approval
 -- pg1_film_assets kinds: sfx, dialogue, stem, social, notes, logo
 -- pg1_router_alerts: one row per engine, the last capacity alert sent;
 --   pg1_router_alert_claim takes the hour's alert atomically.
@@ -49,7 +50,7 @@ alter table public.pg1_film_projects add constraint pg1_film_status_ok check (st
   'storyboard_queued', 'storyboarding', 'awaiting_preview_approval',
   'preview_queued', 'preview_rendering', 'preview_done',
   'full_queued', 'full_rendering', 'done', 'failed', 'cancelled',
-  'director_queued', 'directing', 'awaiting_delivery_approval'
+  'awaiting_director_approval', 'director_queued', 'directing', 'awaiting_delivery_approval'
 ));
 alter table public.pg1_film_assets add constraint pg1_film_asset_kind_ok check (kind in (
   'reference', 'keyframe', 'clip', 'voice', 'music', 'preview', 'final', 'frame', 'transcript',

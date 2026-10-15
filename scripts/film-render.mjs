@@ -37,13 +37,15 @@ import { secretEnvValues } from '../lib/handoff.mjs';
 import { createFilmStore } from '../lib/film/store.mjs';
 import { createCapacityAlerts } from '../lib/router/alerts.mjs';
 import { createWatchStore } from '../lib/watches/store.mjs';
+import { pushToOperator } from '../lib/watches/push.mjs';
+import { runDirector } from '../lib/film/director.mjs';
 import { listFilmAttachments } from '../lib/film/attachments.mjs';
 import { runStoryboard, runRender, proposeFullRender, CapReached, engineLabel } from '../lib/film/pipeline.mjs';
 import { verifyFilmToken, FILM_STAGES } from '../lib/film/dispatch.mjs';
 import * as ff from '../lib/film/ffmpeg.mjs';
 import {
   missingFilmConfig, createFilmMedia, createFilmVoice, filmThink, imageBlock, pcmToWav, transcribe, cartesiaConfig,
-  elevenLabsVoiceConfig, synthesizeLineElevenLabs
+  elevenLabsVoiceConfig, synthesizeLineElevenLabs, createFilmDialogue, soundEffect
 } from '../lib/film/providers.mjs';
 
 // error_reason for the engine trouble that stops a stage.
@@ -64,7 +66,8 @@ export function failureOf(e, media) {
 const CLAIM = {
   storyboard: { from: 'storyboard_queued', to: 'storyboarding' },
   preview: { from: 'preview_queued', to: 'preview_rendering' },
-  full: { from: 'full_queued', to: 'full_rendering' }
+  full: { from: 'full_queued', to: 'full_rendering' },
+  director: { from: 'director_queued', to: 'directing' }
 };
 
 // The real engines, behind the neutral names the pipeline uses. Stills,
@@ -80,6 +83,7 @@ export function realEngines(env, { fetchImpl = globalThis.fetch, log = console.l
   // One voiceover line's time limit (default 60 s), PG1_FILM_VOICE_TIMEOUT_MS.
   const voiceTimeoutMs = Math.min(300000, Math.max(1, Number(env.PG1_FILM_VOICE_TIMEOUT_MS) || 60000));
   const voice = createFilmVoice({ env, fetchImpl, log, timeoutMs: voiceTimeoutMs, clientWork, alert, ...(sleep ? { sleep } : {}) });
+  const dialogue = createFilmDialogue({ env, fetchImpl, log, alert });
   return {
     still: media.still,
     clip: media.clip,
@@ -90,6 +94,12 @@ export function realEngines(env, { fetchImpl = globalThis.fetch, log = console.l
       const line = await voice({ text, stage });
       return { wav: pcmToWav(line.pcm, line.sampleRate), durationS: line.durationS, words: line.words, engine: line.engine };
     },
+    // Director Mode: dialogue in the characters' voices, and SFX cues.
+    async dialogue({ lines, stage, characters }) {
+      const line = await dialogue({ lines, stage, characters });
+      return { wav: pcmToWav(line.pcm, line.sampleRate), durationS: line.durationS, words: line.words, engine: line.engine };
+    },
+    sfx: ({ text, seconds }) => soundEffect({ env, text, seconds, fetchImpl }),
     // Claude, then the paid Gemini key, then OpenRouter (lib/film/providers.mjs).
     think: ({ system, content, effort, maxTokens, validate, purpose }) => filmThink({ env, system, content, effort, maxTokens, validate, purpose, fetchImpl, log, alert }),
     image: (bytes) => imageBlock(bytes),
@@ -164,7 +174,15 @@ export async function main(env = process.env, { log = console.log, engines = nul
       log(`[film] ${projectId} storyboard ready`);
       return 0;
     }
-    media = { engine: null, throttled: false, throttles: 0, switched: null };
+    media = { engine: null, throttled: false, throttles: 0, switched: null, kinds: {} };
+    if (stage === 'director') {
+      // Director Mode: every stage alone; the operator hears at the end.
+      const watchStore = createWatchStore({ ...creds, fetchImpl });
+      const notify = ({ title, body }) => pushToOperator({ store: watchStore, env, title, body, url: '/', tag: `pg1-film-${projectId.slice(0, 8)}` }).catch(() => 0);
+      const out = await runDirector({ project, store, engines: eng, ff: ffImpl, workdir, env, log, onFailure, voiceKey, media, notify });
+      log(`[film] ${projectId} director ${out.status}`);
+      return 0;
+    }
     const r = await runRender({ project, stage, store, engines: eng, ff: ffImpl, workdir, env, log, onFailure, voiceKey, media });
     if (stage === 'preview') {
       const fresh = await store.getProject(projectId);

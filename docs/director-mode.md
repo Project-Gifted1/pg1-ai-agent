@@ -115,8 +115,10 @@ the 1.5x floor), `--credit on|off` (the PG1 credit lines on a client film).
 Images attached to the message are the client's or the operator's brand
 assets, as for `/film`.
 
-One approval at the start (the budget and cap, as every PG1 spend), then the
-worker runs every stage alone. It stops only when the cap or price floor
+One approval at the start (the budget and cap, as every PG1 spend; status
+`awaiting_director_approval`), then the worker runs every stage alone
+(`director_queued`, `directing`, then `done` or, for a client film,
+`awaiting_delivery_approval`). It stops only when the cap or price floor
 would be passed, a safety filter refuses, or, for a client film, before
 delivery (`PG1_DIRECTOR_CLIENT_APPROVAL`, default on).
 
@@ -152,7 +154,10 @@ craft terms, with a note).
 - `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` as Actions secrets, so the render
   worker can push the alerts and the end-of-film notice.
 - `PG1_DIRECTOR_CLIENT_APPROVAL` (default on), `PG1_STUDIO_LOGO_PATH`
-  (storage path of the logo end card; default the PG1 mark).
+  (storage path of the logo end card; default the PG1 mark shipped in
+  `public/brand/pg1-icon-512.png`), `PG1_DIRECTOR_VOICES` (optional
+  `Name=voiceId;Name=voiceId` for characters' dialogue; default premade
+  voices in cast order).
 - The migration `supabase/migrations/20261030120000_pg1_director.sql`.
 
 ## Open questions for the operator
