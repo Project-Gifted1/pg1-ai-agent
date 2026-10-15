@@ -39,7 +39,7 @@ const { isWatchRequest, subjectFrom, referencesIn } = await import('../lib/watch
 const { fromGithubEvent, fromVercelEvent, ciState } = await import('../lib/watches/sources.mjs');
 const { authorize } = await import('../lib/autonomy.mjs');
 const { default: chatHandler, __clearAuthRateLimitState } = await import('../api/chat.mjs');
-const { default: watchesApi, __clearWatchesRateLimitState, cleanSubscription } = await import('../api/watches.mjs');
+const { default: watchesApi, createWatchesHandler, __clearWatchesRateLimitState, cleanSubscription } = await import('../api/watches.mjs');
 const { default: syncCron } = await import('../api/watches/sync.mjs');
 
 const ROOT = new URL('..', import.meta.url).pathname;
@@ -147,9 +147,9 @@ async function chat(body, creds = OPERATOR) {
   await chatHandler({ method: 'POST', url: '/api/chat', headers: {}, socket: { remoteAddress: `10.85.0.${++ip % 250}` }, body: { ...creds, ...body } }, res);
   return res;
 }
-async function api(body, creds = OPERATOR) {
+async function api(body, creds = OPERATOR, handler = watchesApi) {
   const res = makeRes();
-  await watchesApi({ method: 'POST', headers: {}, socket: { remoteAddress: `10.86.0.${++ip % 250}` }, body: { ...creds, ...body } }, res);
+  await handler({ method: 'POST', headers: {}, socket: { remoteAddress: `10.86.0.${++ip % 250}` }, body: { ...creds, ...body } }, res);
   return res;
 }
 
@@ -541,6 +541,40 @@ test('api/watches: operator only; inbox returns undelivered reports for the thre
   assert.equal((await api({ op: 'unsubscribe', endpoint: 'https://push.example/1' })).jsonBody.removed, 1);
 });
 
+test('api/watches test op: only the signed-in operator; stores this device and pushes one test to it only', async () => {
+  const w = await world();
+  const handler = createWatchesHandler({ webpushImpl: w.webpush });
+  const device = { endpoint: 'https://push.example/phone', keys: { p256dh: 'B'.repeat(87), auth: 'a'.repeat(22) } };
+  await addDevice(w.store, 9);
+  // Guests and wrong passwords: 401, nothing stored, nothing sent.
+  for (const creds of [{ user: '', pass: '' }, { user: 'test-operator', pass: 'wrong' }, {}]) {
+    for (const op of ['vapid', 'subscribe', 'test']) {
+      const r = await api({ op, subscription: device }, creds, handler);
+      assert.equal(r.statusCode, 401, `${op} as a guest`);
+      assert.equal(r.jsonBody.publicKey, undefined, 'no key for a guest');
+    }
+  }
+  assert.equal(w.pushes.length, 0);
+  assert.deepEqual((await rows(w.db, 'select endpoint from public.pg1_push_subscriptions')).map((r) => r.endpoint), ['https://push.example/device-9']);
+  // The operator: the device is stored (even if the server had lost it) and only it gets the test.
+  const r = await api({ op: 'test', subscription: device, label: 'phone' }, OPERATOR, handler);
+  assert.equal(r.statusCode, 200);
+  assert.equal(r.jsonBody.sent, 1);
+  assert.deepEqual(w.pushes.map((p) => p.endpoint), ['https://push.example/phone']);
+  assert.equal(w.pushes[0].payload.title, 'PG1 test notification');
+  assert.equal(w.pushes[0].payload.tag, 'pg1-test');
+  const [stored] = await rows(w.db, `select label, last_ok_at from public.pg1_push_subscriptions where endpoint = 'https://push.example/phone'`);
+  assert.equal(stored.label, 'phone');
+  assert.ok(stored.last_ok_at, 'a delivered test marks the device ok');
+  // A device the push service dropped: sent 0, and the row is removed.
+  w.webpush.gone.add('https://push.example/phone');
+  assert.equal((await api({ op: 'test', subscription: device }, OPERATOR, handler)).jsonBody.sent, 0);
+  assert.equal((await rows(w.db, `select count(*)::int as n from public.pg1_push_subscriptions where endpoint = 'https://push.example/phone'`))[0].n, 0);
+  assert.equal((await api({ op: 'test', subscription: { endpoint: 'http://x' } }, OPERATOR, handler)).statusCode, 400);
+  delete process.env.VAPID_PRIVATE_KEY;
+  assert.equal((await api({ op: 'test', subscription: device }, OPERATOR, handler)).statusCode, 503);
+});
+
 // --- the migration, the page, the workflow and the cron schedule --------------------------
 
 test('migration: RLS on, nothing for anon or authenticated, one open watch per target, no destructive statement', async () => {
@@ -560,6 +594,10 @@ test('migration: RLS on, nothing for anon or authenticated, one open watch per t
 test('page: push opt-in switch, service worker, report inbox and the thread key on every message', () => {
   const html = readFileSync(`${ROOT}public/index.html`, 'utf8');
   assert.match(html, /id="push-btn" class="switch" role="switch"/);
+  assert.match(html, /<div id="push-panel"[^>]* hidden>/, 'the Notifications section starts hidden: guests never see it');
+  assert.match(html, /id="push-test-btn"[^>]*>.*Send test notification/);
+  assert.match(html, /Site settings → Notifications/);
+  assert.match(html, /showOperatorPushPanel\(\);/, 'shown after a successful sign-in');
   assert.match(html, /navigator\.serviceWorker\.register\('\/sw\.js'/);
   assert.match(html, /pushManager\.subscribe\(\{ userVisibleOnly: true, applicationServerKey/);
   assert.match(html, /op: 'inbox', threadKeys: keys/);

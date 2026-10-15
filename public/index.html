@@ -515,6 +515,15 @@
     .drawer-row-label .icon { color: var(--text-2); }
     .drawer-foot { margin-top: auto; padding: 0 var(--sp-3); font-size: var(--fs-xs); color: var(--text-3); }
 
+    /* Notifications (push-panel): the state under the label, and the
+       switch's own messages (blocked, test sent, errors) in the menu. */
+    .push-panel .drawer-row-label > span { display: flex; flex-direction: column; }
+    .push-state { font-size: var(--fs-xs); color: var(--text-3); line-height: 1.3; }
+    .push-state[data-state="on"] { color: var(--ok); }
+    .push-state[data-state="blocked"], .push-state[data-state="error"] { color: var(--danger); }
+    .push-msg { margin: 0 var(--sp-3) var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2); font-size: var(--fs-sm); line-height: 1.4; color: var(--text); white-space: pre-line; }
+    .push-msg.is-error { border-color: var(--danger-line); }
+
     /* switch (Spoken replies) */
     .switch {
       position: relative;
@@ -2344,18 +2353,29 @@
       <span id="status-detail" class="status-detail">Connected. The agent API is responding.</span>
     </div>
 
+    <!-- NOTIFICATIONS (lib/watches): push opt-in on this device, so a
+         report on a watched lab run, PR, workflow run or deploy reaches the
+         operator even with PG1 closed. Hidden until the operator signs in
+         (showOperatorPushPanel); /api/watches refuses everyone else. The
+         state line and the message under it live here, in the menu, so
+         nothing the switch says is hidden behind the open drawer. -->
+    <div id="push-panel" class="drawer-section push-panel" role="group" aria-labelledby="push-section-label" hidden>
+      <span class="drawer-label" id="push-section-label">Background reports</span>
+      <div class="drawer-row">
+        <span class="drawer-row-label" id="push-label"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications<small id="push-state" class="push-state" data-state="off">Off on this device</small></span></span>
+        <button type="button" id="push-btn" class="switch" role="switch" aria-checked="false" aria-labelledby="push-label" aria-describedby="push-state" onclick="triggerHaptic(); togglePushNotifications()"></button>
+      </div>
+      <div class="drawer-row drawer-row-actions">
+        <button type="button" id="push-test-btn" class="handoff-btn" onclick="triggerHaptic(30); sendTestNotification()" disabled><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg>Send test notification</button>
+      </div>
+      <p id="push-msg" class="push-msg" role="status" aria-live="polite" hidden></p>
+    </div>
+
     <nav class="drawer-section" aria-label="Session">
       <span class="drawer-label">Session</span>
       <button type="button" class="drawer-item" onclick="triggerHaptic(); closeDrawer(); openThreadsModal()"><svg class="icon" aria-hidden="true"><use href="#i-threads"/></svg>Session threads</button>
       <button type="button" class="drawer-item" onclick="triggerHaptic(); closeDrawer(); openVisionMatrix()"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg>Vision matrix</button>
       <button type="button" class="drawer-item" onclick="triggerHaptic(); closeDrawer(); requestVaultExport()"><svg class="icon" aria-hidden="true"><use href="#i-export"/></svg>Export transcript</button>
-      <!-- NOTIFICATIONS (lib/watches): push opt-in on this device, so a
-           report on a watched lab run, PR, workflow run or deploy reaches
-           the operator even with PG1 closed. Signed-in operator only. -->
-      <div class="drawer-row">
-        <span class="drawer-row-label" id="push-label"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg>Notifications</span>
-        <button type="button" id="push-btn" class="switch" role="switch" aria-checked="false" aria-labelledby="push-label" onclick="triggerHaptic(); togglePushNotifications()"></button>
-      </div>
       <button type="button" class="drawer-item is-danger" onclick="triggerHaptic(); closeDrawer(); clearChat()"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Clear chat</button>
     </nav>
 
@@ -2843,12 +2863,16 @@
       });
     }
 
-    // PUSH OPT-IN: the Notifications switch. On: asks the browser for
-    // permission, registers /sw.js, subscribes with the deployment's VAPID
-    // public key and stores the subscription (operator only). Off:
-    // unsubscribes this device and removes it. The notification says only
-    // what changed in a few words; the report itself is fetched here after
-    // sign-in.
+    // PUSH OPT-IN: the Notifications section of the menu, shown to the
+    // signed-in operator only. On: asks the browser for permission,
+    // registers /sw.js, subscribes with the deployment's VAPID public key and
+    // stores the subscription. Off: unsubscribes this device and removes it.
+    // "Send test notification" stores this device again and asks the server
+    // to push one test to it. Every outcome is written under the switch
+    // (push-msg), never only to the toast, which sits behind the open menu.
+    // The notification says only what changed in a few words; the report
+    // itself is fetched here after sign-in.
+    let pushServerReady = null; // null: not asked yet; false: no VAPID key on the server
     function pushSupported() {
       return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
     }
@@ -2857,24 +2881,85 @@
       const reg = await navigator.serviceWorker.getRegistration('/');
       return reg ? reg.pushManager.getSubscription() : null;
     }
+    // 'unsupported' | 'blocked' | 'unconfigured' | 'on' | 'off'
+    async function pushState() {
+      if (!pushSupported()) return 'unsupported';
+      if (Notification.permission === 'denied') return 'blocked';
+      if (pushServerReady === false) return 'unconfigured';
+      let sub = null;
+      try { sub = await currentPushSubscription(); } catch (e) {}
+      return sub && Notification.permission === 'granted' ? 'on' : 'off';
+    }
+    const PUSH_STATE_TEXT = {
+      on: 'On for this device',
+      off: 'Off on this device',
+      blocked: 'Blocked by the browser',
+      unsupported: 'Not available in this browser',
+      unconfigured: 'Not set up on the server'
+    };
+    function pushBlockedHelp() {
+      const host = location.host;
+      return `Chrome is blocking notifications for ${host}. To allow them:\n`
+        + `1. Tap the icon left of the address bar (ⓘ or the sliders), then Permissions → Notifications → Allow.\n`
+        + `   Or: Chrome ⋮ → Settings → Site settings → Notifications → ${host} → Allow.\n`
+        + `2. Check Android Settings → Apps → Chrome → Notifications is on.\n`
+        + `3. Reload PG1, sign in, and turn Notifications on again.`;
+    }
+    function setPushMessage(text, isError = false) {
+      const el = document.getElementById('push-msg');
+      if (!el) return;
+      el.textContent = text || '';
+      el.hidden = !text;
+      el.classList.toggle('is-error', !!(text && isError));
+    }
     async function renderPushSwitch() {
       const btn = document.getElementById('push-btn');
-      if (!btn) return;
-      let on = false;
-      try { on = !!(await currentPushSubscription()) && Notification.permission === 'granted'; } catch (e) {}
-      btn.setAttribute('aria-checked', String(on));
-      btn.disabled = !pushSupported();
+      if (!btn) return 'off';
+      const state = await pushState();
+      btn.setAttribute('aria-checked', String(state === 'on'));
+      btn.disabled = state === 'unsupported' || state === 'unconfigured';
+      const label = document.getElementById('push-state');
+      if (label) { label.textContent = PUSH_STATE_TEXT[state]; label.dataset.state = state; }
+      const test = document.getElementById('push-test-btn');
+      if (test) test.disabled = state !== 'on';
+      return state;
+    }
+    // After sign-in: show the section and, when this device already has a
+    // subscription, store it again (an upsert) so a device the server lost
+    // is back without touching the switch.
+    async function showOperatorPushPanel() {
+      const panel = document.getElementById('push-panel');
+      if (!panel || !sessionUser || !sessionPass) return;
+      panel.hidden = false;
+      const state = await renderPushSwitch();
+      if (state === 'blocked') setPushMessage(pushBlockedHelp(), true);
+      if (state === 'unsupported') setPushMessage('This browser cannot show push notifications. On Android, use Chrome.', true);
+      if (state === 'on') {
+        try {
+          const sub = await currentPushSubscription();
+          if (sub) await watchesRequest({ op: 'subscribe', subscription: sub.toJSON(), label: pushDeviceLabel() });
+        } catch (e) { /* the switch still works; the next toggle or test reports it */ }
+      }
+    }
+    function pushDeviceLabel() {
+      return /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'desktop';
     }
     function vapidKeyBytes(b64) {
       const pad = '='.repeat((4 - (b64.length % 4)) % 4);
       const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
       return Uint8Array.from(raw, (c) => c.charCodeAt(0));
     }
+    function sameKey(buf, bytes) {
+      if (!buf) return false;
+      const a = new Uint8Array(buf);
+      return a.length === bytes.length && a.every((v, i) => v === bytes[i]);
+    }
     async function togglePushNotifications() {
-      if (!pushSupported()) { flashStatus('This browser cannot show push notifications.', false); return; }
-      if (!sessionUser || !sessionPass) { flashStatus('Sign in to turn on notifications.', false); return; }
+      if (!pushSupported()) { setPushMessage('This browser cannot show push notifications. On Android, use Chrome.', true); return; }
+      if (!sessionUser || !sessionPass) { setPushMessage('Sign in to turn on notifications.', true); return; }
       const btn = document.getElementById('push-btn');
       const turningOn = btn && btn.getAttribute('aria-checked') !== 'true';
+      if (btn) btn.disabled = true;
       try {
         if (!turningOn) {
           const sub = await currentPushSubscription();
@@ -2882,23 +2967,48 @@
             await watchesRequest({ op: 'unsubscribe', endpoint: sub.endpoint }).catch(() => {});
             await sub.unsubscribe();
           }
-          flashStatus('Notifications are off on this device.', false);
+          setPushMessage('Notifications are off on this device.');
           return;
         }
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') { flashStatus('Notifications are blocked for this site in the browser settings.', false); return; }
+        setPushMessage('Asking the browser for permission…');
+        const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+        if (permission === 'denied') { setPushMessage(pushBlockedHelp(), true); return; }
+        if (permission !== 'granted') { setPushMessage('The permission prompt was closed without an answer. Tap the switch again and choose Allow.', true); return; }
+        setPushMessage('Registering this device…');
         const { publicKey } = await watchesRequest({ op: 'vapid' });
-        if (!publicKey) { flashStatus('Push notifications are not set up on this deployment yet.', false); return; }
-        const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+        if (!publicKey) { pushServerReady = false; setPushMessage('Push notifications are not set up on the server yet (VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY).', true); return; }
+        pushServerReady = true;
+        const key = vapidKeyBytes(publicKey);
+        const reg = (await navigator.serviceWorker.getRegistration('/')) || await navigator.serviceWorker.register('/sw.js', { scope: '/' });
         await navigator.serviceWorker.ready;
         let sub = await reg.pushManager.getSubscription();
-        if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: vapidKeyBytes(publicKey) });
-        await watchesRequest({ op: 'subscribe', subscription: sub.toJSON(), label: /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'desktop' });
-        flashStatus('Notifications are on for this device.', false);
+        // A subscription made with another key cannot be reused.
+        if (sub && !sameKey(sub.options && sub.options.applicationServerKey, key)) { await sub.unsubscribe().catch(() => {}); sub = null; }
+        if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+        await watchesRequest({ op: 'subscribe', subscription: sub.toJSON(), label: pushDeviceLabel() });
+        setPushMessage('Notifications are on for this device. Tap "Send test notification" to check delivery.');
       } catch (e) {
-        flashStatus(`Notifications could not be changed: ${e.status === 401 ? 'sign in first' : e.message}`, false);
+        if (e && e.name === 'NotAllowedError') setPushMessage(pushBlockedHelp(), true);
+        else setPushMessage(`Notifications could not be changed: ${e && e.status === 401 ? 'sign in first' : (e && e.message) || 'unknown error'}`, true);
       } finally {
-        renderPushSwitch();
+        await renderPushSwitch();
+      }
+    }
+    async function sendTestNotification() {
+      if (!sessionUser || !sessionPass) { setPushMessage('Sign in to send a test notification.', true); return; }
+      const btn = document.getElementById('push-test-btn');
+      if (btn) btn.disabled = true;
+      try {
+        const sub = await currentPushSubscription();
+        if (!sub || Notification.permission !== 'granted') { setPushMessage('Turn Notifications on first.', true); return; }
+        setPushMessage('Sending a test notification…');
+        const { sent } = await watchesRequest({ op: 'test', subscription: sub.toJSON(), label: pushDeviceLabel() });
+        if (sent > 0) setPushMessage('Test sent. It should appear within a few seconds. If it does not, check Android Settings → Apps → Chrome → Notifications.');
+        else setPushMessage('The push service did not accept the test. Turn Notifications off and on again, then send another test.', true);
+      } catch (e) {
+        setPushMessage(`The test could not be sent: ${e && e.status === 401 ? 'sign in first' : (e && e.message) || 'unknown error'}`, true);
+      } finally {
+        await renderPushSwitch();
       }
     }
 
@@ -4037,7 +4147,7 @@
           pollMusicCardsSoon(1000);
           syncErrorLogToServer().then(updateErrorLogBadge);
           pollReportsSoon(500);
-          renderPushSwitch();
+          showOperatorPushPanel();
         } else {
           alert('Access Denied: Invalid Credentials.');
         }
