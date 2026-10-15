@@ -70,15 +70,23 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY_PAID: ${{ secrets.GEMINI_API_KEY_PAID }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # Music beds: the router's music tier (lib/music/engines.mjs).
-          # ElevenLabs is optional and goes first when set; then Lyria on
-          # the paid Gemini key, then Replicate.
-          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          # Film music beds: Lyria on the paid Gemini key, then the Lyria
+          # clip model (lib/music/engines.mjs filmMusicPlan). Never
+          # Replicate, and never ElevenLabs Music: the plan excludes film
+          # (lib/film/providers.mjs filmMusicExclude). A bed neither can
+          # make is left out and the film finishes without it.
           PG1_MUSIC_LYRIA_MODEL: ${{ vars.PG1_MUSIC_LYRIA_MODEL }}
-          PG1_MUSIC_ELEVENLABS_MODEL: ${{ vars.PG1_MUSIC_ELEVENLABS_MODEL }}
+          PG1_MUSIC_LYRIA_CLIP_MODEL: ${{ vars.PG1_MUSIC_LYRIA_CLIP_MODEL }}
+          # Voiceover: Cartesia, sent once more on a timeout or outage, then
+          # ElevenLabs TTS (Creator plan) for the rest of the stage
+          # (createFilmVoice). Either key will do; both is safest.
           CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
           CARTESIA_VOICE_ID: ${{ vars.CARTESIA_VOICE_ID }}
           CARTESIA_MODEL_ID: ${{ vars.CARTESIA_MODEL_ID }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          PG1_FILM_ELEVENLABS_VOICE_ID: ${{ vars.PG1_FILM_ELEVENLABS_VOICE_ID }}
+          PG1_FILM_ELEVENLABS_TTS_MODEL: ${{ vars.PG1_FILM_ELEVENLABS_TTS_MODEL }}
+          PG1_FILM_VOICE_TIMEOUT_MS: ${{ vars.PG1_FILM_VOICE_TIMEOUT_MS }}
           PG1_VIDEO_MODEL_REPLICATE_IMAGE: ${{ vars.PG1_VIDEO_MODEL_REPLICATE_IMAGE }}
           PG1_VIDEO_MODEL: ${{ vars.PG1_VIDEO_MODEL }}
           PG1_FILM_GEMINI_STILL_MODEL: ${{ vars.PG1_FILM_GEMINI_STILL_MODEL }}

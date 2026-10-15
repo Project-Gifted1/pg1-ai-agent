@@ -13,7 +13,8 @@
 //
 // Secrets come from the environment only (GitHub Actions secrets):
 // SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, REPLICATE_API_TOKEN,
-// CARTESIA_API_KEY, PG1_VIDEO_RENDER_SECRET, and the text engines in
+// CARTESIA_API_KEY (ELEVENLABS_API_KEY is the voiceover fallback, and
+// either will do), PG1_VIDEO_RENDER_SECRET, and the text engines in
 // fallback order: ANTHROPIC_API_KEY, GEMINI_API_KEY_PAID, OPENROUTER_API_KEY
 // (at least one). Never the free Gemini key: film content goes to paid
 // providers only. GEMINI_API_KEY_PAID is also the media fallback: stills
@@ -39,7 +40,7 @@ import { runStoryboard, runRender, proposeFullRender, CapReached, engineLabel } 
 import { verifyFilmToken, FILM_STAGES } from '../lib/film/dispatch.mjs';
 import * as ff from '../lib/film/ffmpeg.mjs';
 import {
-  missingFilmConfig, createFilmMedia, filmThink, imageBlock, synthesizeLine, pcmToWav, transcribe, cartesiaConfig
+  missingFilmConfig, createFilmMedia, createFilmVoice, filmThink, imageBlock, pcmToWav, transcribe, cartesiaConfig
 } from '../lib/film/providers.mjs';
 
 // error_reason for the engine trouble that stops a stage.
@@ -69,13 +70,18 @@ export function realEngines(env, { fetchImpl = globalThis.fetch, log = console.l
   let ledger = null;
   try { ledger = sharedLedger({ ...getSupabaseCreds(), fetchImpl }); } catch (e) { ledger = null; }
   const media = createFilmMedia({ env, fetchImpl, log, ledger, ...(sleep ? { sleep } : {}) });
+  // One voiceover line's time limit (default 60 s), PG1_FILM_VOICE_TIMEOUT_MS.
+  const voiceTimeoutMs = Math.min(300000, Math.max(1, Number(env.PG1_FILM_VOICE_TIMEOUT_MS) || 60000));
+  const voice = createFilmVoice({ env, fetchImpl, log, timeoutMs: voiceTimeoutMs, ...(sleep ? { sleep } : {}) });
   return {
     still: media.still,
     clip: media.clip,
     music: media.music,
-    async voice({ text }) {
-      const line = await synthesizeLine({ env, text, fetchImpl });
-      return { wav: pcmToWav(line.pcm, line.sampleRate), durationS: line.durationS, words: line.words };
+    // Cartesia, sent once more on a timeout or outage, then ElevenLabs TTS
+    // for the rest of the stage (createFilmVoice).
+    async voice({ text, stage }) {
+      const line = await voice({ text, stage });
+      return { wav: pcmToWav(line.pcm, line.sampleRate), durationS: line.durationS, words: line.words, engine: line.engine };
     },
     // Claude, then the paid Gemini key, then OpenRouter (lib/film/providers.mjs).
     think: ({ system, content, effort, maxTokens, validate, purpose }) => filmThink({ env, system, content, effort, maxTokens, validate, purpose, fetchImpl, log }),
