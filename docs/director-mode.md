@@ -158,7 +158,7 @@ craft terms, with a note).
   `public/brand/pg1-icon-512.png`), `PG1_DIRECTOR_VOICES` (optional
   `Name=voiceId;Name=voiceId` for characters' dialogue; default premade
   voices in cast order).
-- The migration `supabase/migrations/20261030120000_pg1_director.sql`.
+- The migration `supabase/migrations/20261029130000_pg1_director.sql`.
 
 ## Open questions for the operator
 
