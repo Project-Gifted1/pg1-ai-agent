@@ -5372,12 +5372,26 @@
     }
 
     // PG1 VOICE (streamed speech): with voice on, a streamed reply carries
-    // "audio" events — base64 16-bit PCM, numbered by `seq` — alongside its
-    // text (lib/voiceStream.mjs). They are scheduled back to back on one Web
-    // Audio clock as they arrive, so speech starts with the first sentence
+    // "audio" events — base64 16-bit PCM at 24 kHz, numbered by `seq` —
+    // alongside its text (lib/voiceStream.mjs). They are scheduled back to
+    // back on one Web Audio clock, so speech starts with the first sentence
     // instead of after the whole reply. If no streamed audio plays, the
     // reply falls back to speakMessage() as before.
+    //
+    // The start of a reply is where it used to break up: the first chunks
+    // are 20-40 ms of audio each, and with only VOICE_LEAD_SECONDS of head
+    // start a chunk arriving a little late left a gap, a hard cut in the
+    // waveform heard as crackle on the first syllables. So the player now
+    // holds the first VOICE_PREBUFFER_SECONDS of audio (or waits at most
+    // VOICE_PREBUFFER_MAX_WAIT_MS) before it starts, fades the reply in and
+    // out over VOICE_FADE_SECONDS, fades in after any gap, never plays a
+    // container header, and keeps 16-bit samples aligned across chunks.
     const VOICE_LEAD_SECONDS = 0.08;
+    const VOICE_PREBUFFER_SECONDS = 0.25;
+    const VOICE_PREBUFFER_MAX_WAIT_MS = 400;
+    const VOICE_FADE_SECONDS = 0.015;
+    const VOICE_GAP_FADE_SECONDS = 0.005;
+    const VOICE_SOURCE_RATE = 24000;
     let voiceAudioCtx = null;
     let activeVoicePlayer = null;
     // The HTMLAudio element of the one-shot SPEAK path, so Stop reaches it too.
@@ -5387,16 +5401,66 @@
     // The reply bubble being spoken (gets the waveform), or null.
     let voiceBubble = null;
 
+    // Called inside a tap (voice on, conversation, sending a message): the
+    // context is created or resumed there and primed with a moment of
+    // silence, so the output (a phone's speaker, Bluetooth headphones) is
+    // already awake when the first chunk arrives instead of clipping it.
     function getVoiceAudioContext() {
       const Ctor = window.AudioContext || window.webkitAudioContext;
       if (!Ctor) return null;
       try {
-        if (!voiceAudioCtx || voiceAudioCtx.state === 'closed') voiceAudioCtx = new Ctor();
-        if (voiceAudioCtx.state === 'suspended' && voiceAudioCtx.resume) voiceAudioCtx.resume().catch(() => {});
+        const fresh = !voiceAudioCtx || voiceAudioCtx.state === 'closed';
+        if (fresh) voiceAudioCtx = new Ctor();
+        const suspended = voiceAudioCtx.state === 'suspended';
+        if (suspended && voiceAudioCtx.resume) voiceAudioCtx.resume().catch(() => {});
+        if (fresh || suspended) primeVoiceOutput(voiceAudioCtx);
       } catch (e) {
         return null;
       }
       return voiceAudioCtx;
+    }
+
+    // A short silent buffer through the output: wakes the audio device.
+    function primeVoiceOutput(ctx) {
+      try {
+        if (!ctx || !ctx.createBuffer || !ctx.createBufferSource) return false;
+        const rate = ctx.sampleRate || VOICE_SOURCE_RATE;
+        const src = ctx.createBufferSource();
+        src.buffer = ctx.createBuffer(1, Math.max(1, Math.round(rate * 0.05)), rate);
+        src.connect(ctx.destination);
+        src.start(0);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    // A RIFF/WAVE header at the start of a sentence's audio is never played
+    // as samples: returns the bytes after the "data" chunk header and the
+    // header's sample rate (16-bit mono PCM only), or the bytes unchanged.
+    function stripWavHeader(bytes) {
+      const b = bytes;
+      const tag = (o) => String.fromCharCode(b[o], b[o + 1], b[o + 2], b[o + 3]);
+      if (!b || b.length < 12 || tag(0) !== 'RIFF' || tag(8) !== 'WAVE') return { bytes: b, sampleRate: null, header: false };
+      const u32 = (o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
+      let rate = null;
+      let o = 12;
+      while (o + 8 <= b.length) {
+        const id = tag(o);
+        const size = u32(o + 4);
+        if (id === 'fmt ' && o + 16 <= b.length) rate = u32(o + 12);
+        if (id === 'data') return { bytes: b.subarray(o + 8), sampleRate: rate, header: true };
+        o += 8 + size + (size % 2);
+      }
+      // A header with no data chunk yet: nothing in it is audio.
+      return { bytes: b.subarray(b.length), sampleRate: rate, header: true };
+    }
+
+    // A linear ramp over the first `count` samples (in place).
+    function applyFadeIn(samples, count) {
+      const n = Math.min(samples.length, Math.max(0, Math.floor(count)));
+      for (let i = 0; i < n; i++) samples[i] *= i / n;
+      return samples;
     }
 
     function base64ToBytes(b64) {
@@ -5427,40 +5491,110 @@
 
     // One reply's speech. push() takes "audio" events in any order and
     // plays them strictly by seq; stop() silences everything at once and
-    // ignores whatever arrives afterwards.
+    // ignores whatever arrives afterwards. Nothing plays until
+    // VOICE_PREBUFFER_SECONDS of audio is queued (or the reply ended, or
+    // VOICE_PREBUFFER_MAX_WAIT_MS passed since its first chunk); everything
+    // goes through one gain node, which fades the reply in and out.
     function createVoicePlayer(ctx, onChange) {
       const pending = new Map();
       const sources = new Set();
+      const queue = [];
+      let queuedSeconds = 0;
+      let started = false;
+      let waitTimer = null;
       let nextSeq = 0;
       let playhead = 0;
       let carry = null;
+      let sentence = null;
+      let rate = VOICE_SOURCE_RATE;
       let scheduled = 0;
       let stopped = false;
       let endInfo = null;
+      let master = null;
+      try {
+        if (ctx.createGain) {
+          master = ctx.createGain();
+          master.connect(ctx.destination);
+        }
+      } catch (e) {
+        master = null;
+      }
+      const output = master || ctx.destination;
       // Called when speech starts and whenever it may have stopped.
       const changed = () => { if (onChange) onChange(player); };
-      const schedule = (ev) => {
-        let decoded;
-        try {
-          decoded = pcm16ToFloat32(base64ToBytes(ev.data), carry);
-        } catch (e) {
-          return;
+      // base64 -> samples at the source rate. A new sentence is a new TTS
+      // stream: a header at its start is stripped, and a stray odd byte from
+      // the previous one is dropped so it can't shift every sample after it.
+      const decode = (ev) => {
+        let bytes = base64ToBytes(ev.data);
+        if (ev.sentence !== sentence) {
+          sentence = ev.sentence;
+          carry = null;
+          const h = stripWavHeader(bytes);
+          bytes = h.bytes;
+          if (h.sampleRate) rate = h.sampleRate;
+          else if (Number(ev.sample_rate) > 0) rate = Number(ev.sample_rate);
         }
+        const decoded = pcm16ToFloat32(bytes, carry);
         carry = decoded.carry;
-        if (!decoded.samples.length) return;
-        const rate = Number(ev.sample_rate) || 24000;
-        const buffer = ctx.createBuffer(1, decoded.samples.length, rate);
-        buffer.getChannelData(0).set(decoded.samples);
+        return decoded.samples;
+      };
+      const play = (samples, sampleRate) => {
+        const now = ctx.currentTime;
+        const gap = scheduled > 0 && playhead < now + 0.002;
+        const startAt = Math.max(playhead, now + VOICE_LEAD_SECONDS);
+        // The reply's first samples, and the first after a gap, ramp in:
+        // no click from a hard start.
+        if (!scheduled) applyFadeIn(samples, sampleRate * VOICE_FADE_SECONDS);
+        else if (gap) applyFadeIn(samples, sampleRate * VOICE_GAP_FADE_SECONDS);
+        const buffer = ctx.createBuffer(1, samples.length, sampleRate);
+        buffer.getChannelData(0).set(samples);
         const src = ctx.createBufferSource();
         src.buffer = buffer;
-        src.connect(ctx.destination);
-        const startAt = Math.max(playhead, ctx.currentTime + VOICE_LEAD_SECONDS);
+        src.connect(output);
+        if (!scheduled && master && master.gain && master.gain.setValueAtTime) {
+          try { master.gain.cancelScheduledValues(0); master.gain.setValueAtTime(1, startAt); } catch (e) { /* default gain 1 */ }
+        }
         src.onended = () => { sources.delete(src); if (!sources.size) changed(); };
         sources.add(src);
         src.start(startAt);
         playhead = startAt + buffer.duration;
         scheduled++;
         if (scheduled === 1) changed();
+      };
+      const flush = () => {
+        if (waitTimer) { clearTimeout(waitTimer); waitTimer = null; }
+        if (stopped) return;
+        started = true;
+        while (queue.length) {
+          const q = queue.shift();
+          play(q.samples, q.rate);
+        }
+        queuedSeconds = 0;
+      };
+      const take = (ev) => {
+        let samples;
+        try {
+          samples = decode(ev);
+        } catch (e) {
+          return;
+        }
+        if (!samples.length) return;
+        if (started) { play(samples, rate); return; }
+        queue.push({ samples, rate });
+        queuedSeconds += samples.length / rate;
+        if (queuedSeconds >= VOICE_PREBUFFER_SECONDS) flush();
+        else if (!waitTimer) waitTimer = setTimeout(flush, VOICE_PREBUFFER_MAX_WAIT_MS);
+      };
+      // A short fade to silence where the last scheduled audio ends.
+      const fadeOut = () => {
+        if (!master || !master.gain || !master.gain.linearRampToValueAtTime || !scheduled) return;
+        try {
+          const end = Math.max(playhead, ctx.currentTime);
+          const from = Math.max(ctx.currentTime, end - VOICE_FADE_SECONDS);
+          master.gain.setValueAtTime(1, from);
+          master.gain.linearRampToValueAtTime(0, end);
+        } catch (e) { /* no automation: the last samples just end */ }
       };
       const player = {
         push(ev) {
@@ -5470,17 +5604,22 @@
             const next = pending.get(nextSeq);
             pending.delete(nextSeq);
             nextSeq++;
-            schedule(next);
+            take(next);
           }
-          if (scheduled && ctx.state === 'suspended' && ctx.resume) ctx.resume().catch(() => {});
+          if ((scheduled || queue.length) && ctx.state === 'suspended' && ctx.resume) ctx.resume().catch(() => {});
         },
         end(ev) {
           endInfo = ev && typeof ev === 'object' ? ev : { ok: false };
+          // A reply shorter than the head start plays now.
+          if (!started && queue.length) flush();
+          fadeOut();
           if (!sources.size) changed();
         },
         stop() {
           if (stopped) return;
           stopped = true;
+          if (waitTimer) { clearTimeout(waitTimer); waitTimer = null; }
+          queue.length = 0;
           pending.clear();
           sources.forEach((src) => {
             src.onended = null;
@@ -5488,18 +5627,19 @@
             try { src.disconnect(); } catch (e) { /* already disconnected */ }
           });
           sources.clear();
+          if (master) { try { master.disconnect(); } catch (e) { /* already disconnected */ } }
           changed();
         },
         get stopped() { return stopped; },
         get playing() { return !stopped && sources.size > 0; },
         // Started and not finished: stays true across a short gap between
         // sentences while more audio is still on its way, so the waveform
-        // and Stop don't flicker.
-        get speaking() { return !stopped && scheduled > 0 && (sources.size > 0 || !endInfo); },
-        // Chunks handed to the audio clock: anything above 0 means the
-        // reply was (at least partly) spoken from the stream, so the
-        // one-shot fallback must not repeat it.
-        get scheduledChunks() { return scheduled; },
+        // and Stop don't flicker. Audio held for the head start counts.
+        get speaking() { return !stopped && (scheduled > 0 || queue.length > 0) && (sources.size > 0 || queue.length > 0 || !endInfo); },
+        // Chunks handed to the audio clock (or held for its head start):
+        // anything above 0 means the reply was (at least partly) spoken
+        // from the stream, so the one-shot fallback must not repeat it.
+        get scheduledChunks() { return scheduled + queue.length; },
         get endInfo() { return endInfo; }
       };
       return player;
