@@ -406,6 +406,7 @@ describe('/movie in the chat', () => {
       if (r.filmProject) assertWhite(JSON.stringify({ ...r.filmProject, previewUrl: null, finalUrl: null, posterUrl: null }), `${t} card`);
     }
     assert.match((await cmd(`/movie screenplay ${sid}`)).reply, /EXT\. BAKERY DOOR - DAWN/);
+    assert.match((await cmd(`/movie status ${sid}`)).reply, /Approved cost estimate:\n- Character and location bibles[\s\S]*Total: about \d+\.\d\d USD/);
     const p0 = await store.getProject(id);
     await store.updateProject(id, { director: { ...p0.director, takes: { 's1-d3': { accepted: { clip: 'x' }, attempts: [{ attempt: 1 }] }, 's1-w1': { accepted: { clip: 'w' }, attempts: [{ attempt: 1 }] } } } });
     const r = await cmd(`/movie retake ${sid} s1-d3`);
