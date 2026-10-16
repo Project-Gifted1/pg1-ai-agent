@@ -47,6 +47,7 @@ import {
   missingFilmConfig, createFilmMedia, createFilmVoice, filmThink, imageBlock, pcmToWav, transcribe, cartesiaConfig,
   elevenLabsVoiceConfig, synthesizeLineElevenLabs, createFilmDialogue, soundEffect
 } from '../lib/film/providers.mjs';
+import { prepareFilmVoices, castVoiceFor, listAccountVoices, fallbackVoice, voicesListText } from '../lib/film/voices.mjs';
 
 // error_reason for the engine trouble that stops a stage.
 const FAILURE_REASONS = { throttled: 'throttled', billing: 'out_of_credit', not_configured: 'not_configured', budget: 'budget', timeout: 'timeout' };
@@ -82,9 +83,24 @@ export function realEngines(env, { fetchImpl = globalThis.fetch, log = console.l
   const media = createFilmMedia({ env, fetchImpl, log, ledger, clientWork, alert, ...(sleep ? { sleep } : {}) });
   // One voiceover line's time limit (default 60 s), PG1_FILM_VOICE_TIMEOUT_MS.
   const voiceTimeoutMs = Math.min(300000, Math.max(1, Number(env.PG1_FILM_VOICE_TIMEOUT_MS) || 60000));
-  const voice = createFilmVoice({ env, fetchImpl, log, timeoutMs: voiceTimeoutMs, clientWork, alert, ...(sleep ? { sleep } : {}) });
-  const dialogue = createFilmDialogue({ env, fetchImpl, log, alert, clientWork });
+  // The film's voices (lib/film/voices.mjs): set by prepareVoices before a
+  // stage records anything, read at every line.
+  let cast = null;
+  let castTimeline = null;
+  const voiceFor = (character) => castVoiceFor(cast, character, castTimeline);
+  const voice = createFilmVoice({ env, fetchImpl, log, timeoutMs: voiceTimeoutMs, clientWork, alert, voiceId: () => voiceFor('narrator'), ...(sleep ? { sleep } : {}) });
+  const dialogue = createFilmDialogue({ env, fetchImpl, log, alert, clientWork, voiceFor });
   return {
+    // The film's saved cast (director.cast), made once and reused by every
+    // retry and regeneration; a voice that left the account falls back for
+    // its role only. save(cast) writes it onto the film.
+    async prepareVoices({ project, script = null, timeline = null, save }) {
+      const out = await prepareFilmVoices({ project, script, timeline, env, fetchImpl, log, save, clientWork });
+      cast = out.effective;
+      castTimeline = timeline || (project && project.timeline) || null;
+      return out;
+    },
+    voiceFor,
     still: media.still,
     clip: media.clip,
     music: media.music,
@@ -116,10 +132,15 @@ export async function voiceCheck(env = process.env, { fetchImpl = globalThis.fet
   const cfg = elevenLabsVoiceConfig(env);
   if (!cfg.apiKey) { log('[voice-check] failed: ELEVENLABS_API_KEY is not set for this job'); return 2; }
   try {
-    const line = await synthesizeLineElevenLabs({ env, text: VOICE_CHECK_LINE, fetchImpl, timeoutMs: 60000 });
+    // The voice a film without a chosen voice gets (the fallback chain).
+    const list = await listAccountVoices({ env, fetchImpl });
+    const pick = fallbackVoice({ env, list });
+    const line = await synthesizeLineElevenLabs({ env, text: VOICE_CHECK_LINE, fetchImpl, timeoutMs: 60000, voiceId: pick.voice_id });
     const out = String(env.VOICE_CHECK_OUT || '').trim() || path.join(os.tmpdir(), 'voice-check.wav');
     await writeFile(out, pcmToWav(line.pcm, line.sampleRate));
-    log(`[voice-check] ok: ${cfg.brandVoice ? 'the brand voice (PG1_FILM_VOICE_ID)' : 'PG1_FILM_VOICE_ID is NOT set, so a premade default voice'}; model ${cfg.modelId}; ${line.sampleRate} Hz; ${line.durationS.toFixed(2)} s; ${line.words.length} words timed`);
+    log(`[voice-check] ok: ${pick.source === 'env' ? 'the brand voice (PG1_FILM_VOICE_ID)' : pick.source === 'premade' ? 'the premade fallback voice' : 'the offline premade voice'}; model ${cfg.modelId}; ${line.sampleRate} Hz; ${line.durationS.toFixed(2)} s; ${line.words.length} words timed; voice ${pick.name ? `"${pick.name}" ` : ''}${pick.voice_id}${pick.note ? ` (${pick.note})` : ''}`);
+    // The account's voices as /voices shows them (operator-only log).
+    if (list.ok) log(`[voice-check] voices:\n${voicesListText(list.voices)}`);
     return 0;
   } catch (e) {
     log(`[voice-check] failed: ${e && e.kind ? `${e.kind} ` : ''}${e && (e.detail || e.message)}`);
@@ -183,6 +204,11 @@ export async function main(env = process.env, { log = console.log, engines = nul
       const out = await runDirector({ project, store, engines: eng, ff: ffImpl, workdir, env, log, onFailure, voiceKey, media, notify });
       log(`[film] ${projectId} director ${out.status}`);
       return 0;
+    }
+    // The film's voice: its saved cast, else --voice or the fallback chain,
+    // saved on the film so every later stage reads in the same voice.
+    if (typeof eng.prepareVoices === 'function') {
+      await eng.prepareVoices({ project, save: (c) => store.updateProject(projectId, { director: { ...(project.director || {}), cast: c } }) }).catch((e) => log(`[film] voices: ${e && e.message}`));
     }
     const r = await runRender({ project, stage, store, engines: eng, ff: ffImpl, workdir, env, log, onFailure, voiceKey, media });
     if (stage === 'preview') {

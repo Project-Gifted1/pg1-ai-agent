@@ -100,7 +100,7 @@ Licence conditions: FFmpeg's licence (LGPL/GPL) covers the software, not the fra
 
 ### Voice-over (one voice)
 
-Wired now: lib/film/providers.mjs (createFilmVoice, ROUTING_CHAINS.voice): the ElevenLabs brand voice (PG1_FILM_VOICE_ID), then Cartesia sonic (sent once more on a timeout); one voice per film, never Cartesia for client films (C1).
+Wired now: lib/film/providers.mjs (createFilmVoice, ROUTING_CHAINS.voice): ElevenLabs in each film's own voice (lib/film/voices.mjs: --voice, the Director cast, else PG1_FILM_VOICE_ID, else the premade fallback), then Cartesia sonic (sent once more on a timeout); one voice per film, never Cartesia for client films (C1).
 
 Unit cost: PG1's film estimate (lib/film/cost.mjs voicePerCharUsd).
 
