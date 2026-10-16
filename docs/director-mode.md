@@ -109,7 +109,7 @@ render worker share it; without the table it falls back to once per process.
 
 ## Part B: Director Mode
 
-`/film director <brief>` (operator only). Options: `--seconds 20..120`,
+`/film director <brief>` (operator only). Options: `--seconds 15..300` (at most 30 shots of 10 s; the cap and the 1.5x floor still apply),
 `--client "<name>"` (client film), `--price <usd>` (the package price, for
 the 1.5x floor), `--credit on|off` (the PG1 credit lines on a client film).
 Images attached to the message are the client's or the operator's brand

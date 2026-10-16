@@ -38,7 +38,7 @@ jobs:
   render:
     name: render ${{ inputs.stage }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 240
     steps:
       - name: Mask the render token
         env:

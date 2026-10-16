@@ -314,7 +314,8 @@ describe('Director Mode rules', () => {
     assert.match(directorBrief('a short shot like Christopher Nolan would').brief, /distinctive, deliberate cinematic style/);
     assert.match(directorBrief('a Kubrick-esque corridor').brief, /distinctive corridor/);
     assert.equal(directorBrief('a harbour at dawn').notes.length, 0);
-    assert.deepEqual(parseDirectorRequest('dawn --seconds 400').seconds, 180);
+    assert.deepEqual(parseDirectorRequest('dawn --seconds 400').seconds, 300, 'at most 30 shots of 10 s');
+    assert.deepEqual(parseDirectorRequest('dawn --seconds 240').seconds, 240);
     for (const lines of [creditLines({ title: 'X' }), creditLines({ client: { name: 'Acme', credit: true } }), creditLines({ client: { name: 'Acme', credit: false } })]) {
       assert.ok(creditsAreWhiteLabel(lines), lines.join(' | '));
     }
@@ -347,5 +348,27 @@ describe('Director Mode rules', () => {
     assert.equal(e30.shots, 6);
     assert.ok(e20.expectedUsd > 0 && e30.expectedUsd > e20.expectedUsd);
     assert.equal(e20.expectedUsd, Math.round((e20.lines.reduce((s, l) => s + l.usd, 0) + 1 * (0.5 + 0.04 + 0.04)) * 100) / 100);
+  });
+});
+
+describe('Director Mode length and music', () => {
+  test('a 300 s film is estimated as 30 shots of 10 s, dearer than 30 shots of 5 s', async () => {
+    const { MAX_DIRECTOR_SECONDS } = await import('../lib/film/director.mjs');
+    assert.equal(MAX_DIRECTOR_SECONDS, 300);
+    const long = estimateDirector({ seconds: 300 });
+    const short = estimateDirector({ seconds: 150 });
+    assert.ok(long.expectedUsd > short.expectedUsd, `${long.expectedUsd} > ${short.expectedUsd}`);
+  });
+
+  test('a music bed is scored to its scene: the fingerprint follows the planned scene length', async () => {
+    const { assetFingerprints, sceneSecondsPlanned } = await import('../lib/film/timeline.mjs');
+    const tl = (durs) => ({
+      characters: [], tier: 'standard', style: { look: 'x', reference_prompt: 'y' },
+      scenes: [{ id: 's1', music: { mood: 'calm', bpm: 90 }, shots: durs.map((d, i) => ({ id: `s1-sh${i + 1}`, duration_s: d, visual_prompt: `p${i}`, camera: 'static', characters: [] })) }]
+    });
+    assert.deepEqual(sceneSecondsPlanned(tl([5, 6])), { s1: 15 });
+    const fp = (durs) => assetFingerprints(tl(durs)).music.s1;
+    assert.equal(fp([5, 6]), fp([5, 7]), 'a small trim keeps the bed');
+    assert.notEqual(fp([5, 6]), fp([10, 10]), 'a longer scene gets a new bed');
   });
 });

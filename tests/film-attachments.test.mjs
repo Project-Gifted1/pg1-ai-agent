@@ -511,8 +511,9 @@ test('without attachments the timeline, fingerprints, estimates, cuts, edits and
   const prompts = [STORYBOARD_SYSTEM, storyboardUserPrompt('a film', { tier: 'pro' }), timelineSummary(t)];
   assert.equal(storyboardSystem({ attachments: [] }), STORYBOARD_SYSTEM);
   const digest = crypto.createHash('sha256').update(JSON.stringify({ t, fp, est, plan, edited, prompts })).digest('hex').slice(0, 16);
-  // 4121277f: music beds at 0.08 USD (Lyria 3.5), was 0.06; nothing else moved.
-  assert.equal(digest, '4121277fc1a57440');
+  // 4121277f: music beds at 0.08 USD (Lyria 3.5), was 0.06.
+  // 8643f7df: a music fingerprint carries its scene's planned length; nothing else moved.
+  assert.equal(digest, '8643f7df0ae7fccd');
 });
 
 // --- real ffmpeg -------------------------------------------------------------------------------
