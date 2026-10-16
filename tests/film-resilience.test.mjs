@@ -486,7 +486,7 @@ describe('render stages under engine trouble', () => {
     assert.equal((await store.getProject(p.id)).status, 'failed');
     const ok = await handleFilmApproval({ ...cmdOpts, row, decision: 'approve', isOperator: true });
     assert.equal(ok.resolution, 'approved');
-    assert.match(ok.reply, /rendering the low-res preview .*reusing everything already made/);
+    assert.match(ok.reply, /rendering the preview .*reusing everything already made/);
     film = await store.getProject(p.id);
     assert.equal(film.status, 'preview_queued');
     assert.equal(film.failure, null);

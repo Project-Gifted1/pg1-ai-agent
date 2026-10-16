@@ -48,9 +48,14 @@ import {
   elevenLabsVoiceConfig, synthesizeLineElevenLabs, createFilmDialogue, soundEffect
 } from '../lib/film/providers.mjs';
 import { prepareFilmVoices, castVoiceFor, listAccountVoices, fallbackVoice, voicesListText } from '../lib/film/voices.mjs';
+import { runMovieScript, runMovie } from '../lib/movie/pipeline.mjs';
+import { dialogueClip, speechToSpeech } from '../lib/movie/engines.mjs';
+import { MOVIE_STAGES, sayMovie } from '../lib/movie/text.mjs';
 
 // error_reason for the engine trouble that stops a stage.
 const FAILURE_REASONS = { throttled: 'throttled', billing: 'out_of_credit', not_configured: 'not_configured', budget: 'budget', timeout: 'timeout' };
+// Codes a movie stage stops with, kept as its error_reason.
+const MOVIE_CODES = new Set(['screenplay_failed', 'no_speech_engine']);
 
 // What the film card and /film retry need, with PG1 labels only.
 export function failureOf(e, media) {
@@ -68,7 +73,10 @@ const CLAIM = {
   storyboard: { from: 'storyboard_queued', to: 'storyboarding' },
   preview: { from: 'preview_queued', to: 'preview_rendering' },
   full: { from: 'full_queued', to: 'full_rendering' },
-  director: { from: 'director_queued', to: 'directing' }
+  director: { from: 'director_queued', to: 'directing' },
+  // /movie keeps a film's statuses (lib/movie/text.mjs MOVIE_STATUS_LABELS).
+  movie_script: { from: 'storyboard_queued', to: 'storyboarding' },
+  movie: { from: 'director_queued', to: 'directing' }
 };
 
 // The real engines, behind the neutral names the pipeline uses. Stills,
@@ -116,6 +124,10 @@ export function realEngines(env, { fetchImpl = globalThis.fetch, log = console.l
       return { wav: pcmToWav(line.pcm, line.sampleRate), durationS: line.durationS, words: line.words, engine: line.engine };
     },
     sfx: ({ text, seconds }) => soundEffect({ env, text, seconds, fetchImpl, clientWork }),
+    // /movie: a shot whose characters speak on screen, lip-synced, from the
+    // bible's references; and a take's line into the cast voice.
+    dialogueClip: ({ prompt, seconds, refs }) => dialogueClip({ env, prompt, seconds, refs, clientWork, fetchImpl, ...(sleep ? { sleep } : {}) }),
+    sts: ({ audio, voiceId, seconds }) => speechToSpeech({ env, audio, voiceId, seconds, clientWork, fetchImpl }),
     // Claude, then the paid Gemini key, then OpenRouter (lib/film/providers.mjs).
     think: ({ system, content, effort, maxTokens, validate, purpose }) => filmThink({ env, system, content, effort, maxTokens, validate, purpose, fetchImpl, log, alert, clientWork }),
     image: (bytes) => imageBlock(bytes),
@@ -197,6 +209,21 @@ export async function main(env = process.env, { log = console.log, engines = nul
       return 0;
     }
     media = { engine: null, throttled: false, throttles: 0, switched: null, kinds: {} };
+    if (stage === MOVIE_STAGES.script || stage === MOVIE_STAGES.render) {
+      // /movie: the screenplay and the cast (then checkpoint a), or the shoot
+      // (only after both approvals). The operator hears at each step's end.
+      const watchStore = createWatchStore({ ...creds, fetchImpl });
+      const notify = notifyImpl || (({ title, body }) => pushToOperator({ store: watchStore, env, title, body, url: '/', tag: `pg1-movie-${projectId.slice(0, 8)}` }).catch(() => 0));
+      if (stage === MOVIE_STAGES.script) {
+        const out = await runMovieScript({ project, store, engines: eng, env, log, onFailure, workdir });
+        await notify({ title: sayMovie(`PG1 Studio: "${out.screenplay.title}" screenplay ready`), body: sayMovie('Approve the screenplay and cast to see the cost estimate.') });
+        log(`[film] ${projectId} movie screenplay ready`);
+      } else {
+        const out = await runMovie({ project, store, engines: eng, ff: ffImpl, env, log, onFailure, workdir, notify });
+        log(`[film] ${projectId} movie done (${out.plan.totalS} s); gate ${out.gate.pass ? 'passed' : 'flagged'}`);
+      }
+      return 0;
+    }
     if (stage === 'director') {
       // Director Mode: every stage alone; the operator hears at the end.
       const watchStore = createWatchStore({ ...creds, fetchImpl });
@@ -231,7 +258,7 @@ export async function main(env = process.env, { log = console.log, engines = nul
     if (e instanceof CapReached) return fail(e.floor ? 'price_floor' : 'cap_reached', e.floor ? `spent ${e.spentUsd}; the package price allows ${e.capUsd} (price / 1.5)` : `spent ${e.spentUsd} of ${e.capUsd}`, failure);
     if (e && e.refused) return fail('refused', e.detail, failure);
     onFailure({ reason: `film_${stage}_failed`, detail: e && (e.detail || e.stack || e.message), requestId: project.request_id });
-    const reason = e && (e.code === 'storyboard_failed' || e.code === 'attachment_missing') ? e.code : FAILURE_REASONS[e && e.kind] || 'engine_error';
+    const reason = e && (e.code === 'storyboard_failed' || e.code === 'attachment_missing' || MOVIE_CODES.has(e.code)) ? e.code : FAILURE_REASONS[e && e.kind] || 'engine_error';
     return fail(reason, e && (e.detail || e.message), failure);
   } finally {
     if (!env.FILM_KEEP_WORKDIR) await rm(workdir, { recursive: true, force: true }).catch(() => {});

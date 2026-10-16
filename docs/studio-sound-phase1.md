@@ -18,6 +18,7 @@ Registry version 2026-10-14. Generated from `lib/capabilities/registry.mjs` and 
 | Frame interpolation (smoother motion, higher frame rate) | custom | ffmpeg minterpolate (motion-compensated) (pg1, chosen, on PG1's render runner) | commercial_ok | 0.06 USD per minute of output video (PG1 estimate) | 0.09 USD per minute of output video | custom, on request |
 | Voice-over (one voice) | standard | eleven_multilingual_v2 (elevenlabs, primary (brand voice)); sonic-3.6 (cartesia, fallback) | **unclear** (C1) | 0.05 USD per 1,000 characters (PG1 estimate) | 0.075 USD per 1,000 characters | not offered (licence review) |
 | Dialogue text-to-speech (several voices) | custom | eleven_v3 (Text to Dialogue) (elevenlabs, chosen) | commercial_ok | 0.1 USD per 1,000 characters (official) | 0.15 USD per 1,000 characters | custom, on request |
+| Speech-to-speech (a spoken line into a cast voice, timing kept) | standard | eleven_multilingual_sts_v2 (elevenlabs, chosen) | commercial_ok | 0.3 USD per minute of audio (PG1 estimate) | 0.45 USD per minute of audio | may be offered |
 | Sound effects and Foley | custom | eleven_text_to_sound_v2 (elevenlabs, chosen) | commercial_ok | 0.12 USD per minute of audio (official) | 0.18 USD per minute of audio | custom, on request |
 | Music (PG1 Sound tracks) | standard | lyria-3.5 (google, primary); lyria-3-clip-preview (google, fallback (30 s)); Eleven Music (elevenlabs, last fallback (not for film)) | commercial_ok | 0.15 USD per minute of music (official) | 0.225 USD per minute of music | may be offered |
 | Music for films (score beds) | standard | lyria-3.5 (google, primary (Gemini API)); lyria-3-clip-preview (google, fallback (Gemini API, 30 s)) | commercial_ok | 0.08 USD per music bed (official) | 0.12 USD per music bed | may be offered |
@@ -120,6 +121,18 @@ Licence conditions: The Creator plan (E1, Creator plan). Eleven v3 and its Text 
 | elevenlabs | eleven_v3 Text to Dialogue | multi-speaker dialogue in one request | 5,000 characters per request (about 5 minutes) | 0.08-0.10 USD per 1,000 characters (pages disagree) | commercial_ok on the Creator plan (E1); generally available, not beta (E2) | [1](https://elevenlabs.io/pricing/api) [2](https://elevenlabs.io/docs/overview/models) [3](https://elevenlabs.io/blog/eleven-v3) [4](https://help.elevenlabs.io/hc/en-us/articles/35869113958801-How-much-does-it-cost-to-generate-using-Eleven-v3) [5](https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform) |
 | google | gemini-2.5-flash-preview-tts | speech with one or two speakers | 8,192 input tokens | 10 USD per 1M audio output tokens (about 0.02 USD per minute at 32 tokens per second) | commercial_ok: operator accepted Google's generated-content terms; operator responsible for use (G1) | [1](https://ai.google.dev/gemini-api/docs/pricing) [2](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-preview-tts) |
 | replicate | resemble-ai/chatterbox-multilingual | TTS with voice prompts | not retrieved | not retrieved | unclear (R1) | [1](https://replicate.com/resemble-ai/chatterbox-multilingual) |
+
+### Speech-to-speech (a spoken line into a cast voice, timing kept)
+
+Wired now: lib/movie/engines.mjs (ROUTING_CHAINS.speech_to_speech): each line a /movie character says on screen is turned into that character's cast voice, so the timing and the lip sync stay and every character sounds the same all movie.
+
+Unit cost: PG1 estimate: speech-to-speech is billed by the length of the audio converted.
+
+Licence conditions: The paid ElevenLabs plan (E1, Creator plan): voice output is commercial_ok; only voices cleared for client work are used for a client (lib/film/voices.mjs isClientCleared).
+
+| Provider | Model | What it does | Max resolution / length | Price | Licence, resale | Sources |
+|---|---|---|---|---|---|---|
+| elevenlabs | eleven_multilingual_sts_v2 | converts recorded speech into another voice, keeping its timing, delivery and emotion | per request, a short clip of audio | billed by audio length (PG1 estimate 0.30 USD per minute) | commercial_ok on the paid plan (E1, Creator plan) | [1](https://elevenlabs.io/docs/api-reference/speech-to-speech/convert) [2](https://elevenlabs.io/pricing/api) [3](https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform) |
 
 ### Sound effects and Foley
 

@@ -626,6 +626,62 @@
       ]
     },
     {
+      "id": "speech_to_speech",
+      "feature": "Speech-to-speech (a spoken line into a cast voice, timing kept)",
+      "area": "sound",
+      "status": "standard",
+      "gatedUntil": null,
+      "wired": "lib/movie/engines.mjs (ROUTING_CHAINS.speech_to_speech): each line a /movie character says on screen is turned into that character's cast voice, so the timing and the lip sync stay and every character sounds the same all movie",
+      "chosen": [
+        {
+          "provider": "elevenlabs",
+          "model": "eleven_multilingual_sts_v2",
+          "role": "chosen",
+          "licence": "commercial_ok",
+          "licenceNote": "the paid ElevenLabs plan (E1, Creator)",
+          "licenceSources": [
+            "https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform"
+          ]
+        }
+      ],
+      "licence": "commercial_ok",
+      "licenceConditions": [
+        "The paid ElevenLabs plan (E1, Creator plan): voice output is commercial_ok; only voices cleared for client work are used for a client (lib/film/voices.mjs isClientCleared)."
+      ],
+      "review": [],
+      "unitCost": {
+        "usd": 0.3,
+        "unit": "minute of audio",
+        "basis": "pg1_estimate",
+        "verified": false,
+        "note": "PG1 estimate: speech-to-speech is billed by the length of the audio converted.",
+        "sources": [
+          "https://elevenlabs.io/pricing/api"
+        ]
+      },
+      "minPrice": {
+        "usd": 0.45,
+        "unit": "minute of audio",
+        "basis": "pg1_estimate"
+      },
+      "note": null,
+      "candidates": [
+        {
+          "provider": "elevenlabs",
+          "model": "eleven_multilingual_sts_v2",
+          "does": "converts recorded speech into another voice, keeping its timing, delivery and emotion",
+          "max": "per request, a short clip of audio",
+          "price": "billed by audio length (PG1 estimate 0.30 USD per minute)",
+          "licence": "commercial_ok on the paid plan (E1, Creator plan)",
+          "sources": [
+            "https://elevenlabs.io/docs/api-reference/speech-to-speech/convert",
+            "https://elevenlabs.io/pricing/api",
+            "https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform"
+          ]
+        }
+      ]
+    },
+    {
       "id": "sound_effects",
       "feature": "Sound effects and Foley",
       "area": "sound",

@@ -9,6 +9,8 @@ name: PG1 Studio render
 # Two more stages: director (Director Mode runs every stage of one film
 # alone, docs/director-mode.md) and voice_check (one fixed test line in the
 # ElevenLabs brand voice, kept as the run's artifact; no film, no database).
+# /movie adds movie_script (the screenplay and the cast, lib/movie) and movie
+# (the shoot, after both of the operator's approvals).
 
 on:
   workflow_dispatch:
@@ -18,10 +20,10 @@ on:
         required: true
         type: string
       stage:
-        description: storyboard, preview, full, director, or voice_check (one test line in the brand voice; no film)
+        description: storyboard, preview, full, director, movie_script, movie, or voice_check (one test line in the brand voice; no film)
         required: true
         type: choice
-        options: [storyboard, preview, full, director, voice_check]
+        options: [storyboard, preview, full, director, movie_script, movie, voice_check]
       token:
         description: Signed render token (set by PG1)
         required: true
@@ -55,7 +57,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
-          ffmpeg -hide_banner -filters | grep -E ' (subtitles|xfade|loudnorm|sidechaincompress|zoompan) '
+          ffmpeg -hide_banner -filters | grep -E ' (subtitles|xfade|loudnorm|sidechaincompress|zoompan|freezedetect|silencedetect|gradients|alimiter|aloop) '
       - run: npm ci --omit=dev --ignore-scripts
       - name: Render
         env:
@@ -103,6 +105,10 @@ jobs:
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           VAPID_SUBJECT: ${{ vars.VAPID_SUBJECT }}
           PG1_DIRECTOR_CLIENT_APPROVAL: ${{ vars.PG1_DIRECTOR_CLIENT_APPROVAL }}
+          # /movie (lib/movie): shots at once (default 2) and the
+          # speech-to-speech model (default eleven_multilingual_sts_v2).
+          PG1_MOVIE_CONCURRENCY: ${{ vars.PG1_MOVIE_CONCURRENCY }}
+          PG1_MOVIE_STS_MODEL: ${{ vars.PG1_MOVIE_STS_MODEL }}
           PG1_STUDIO_LOGO_PATH: ${{ vars.PG1_STUDIO_LOGO_PATH }}
           # Large files (clips, masters, the 9:16 cut, stems) on Cloudflare R2;
           # without these they stay in Supabase Storage (lib/storage/r2.mjs).

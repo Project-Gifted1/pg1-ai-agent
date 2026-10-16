@@ -202,6 +202,38 @@ PG1_DAILY_BUDGET_REPLICATE_USD=3
 # by hand. The free Gemini key (GEMINI_API_KEY_FREE) is never given to the
 # worker, and GEMINI_API_KEY_PAID is skipped if it holds the same value:
 # film content may go to paid providers only.
+#
+# The master spec (every /film and /movie delivery, lib/film/ffmpeg.mjs
+# MASTER): 1920x1080 when the sources deliver it, else their own frame and
+# never lower; 24 fps; H.264 High, CRF 18 with a bitrate floor (8 Mb/s at
+# 1080p, scaled by pixel count below it); AAC 256 kb/s stereo, 48 kHz;
+# -14 LUFS integrated, true peak -1 dBTP. A clip is never padded with a held
+# frame and the audio covers the whole runtime. Before delivery the QC gate
+# runs ffprobe, freezedetect (no freeze over 1 s), silencedetect (no silence
+# over 2 s) and a loudness check; a failure is fixed and rendered once more.
+# The worker image needs ffmpeg with freezedetect, silencedetect, gradients,
+# alimiter and aloop (Ubuntu's ffmpeg has them; film-render.yml checks).
+# On a Vercel preview deployment the render worker runs from the preview's
+# own branch (VERCEL_GIT_COMMIT_REF) unless PG1_FILM_RENDER_REF is set.
+
+# PG1 Studio movies (/movie, lib/movie): characters who act and speak on
+# screen, signed-in operator only; the same table, worker, dispatch and
+# secrets as /film (stages movie_script and movie; no new migration).
+# /movie "<idea>" [--length <minutes>, default 2] [--voice "<narrator>"]
+# [--client]: the screenplay and the cast are written first, then two
+# approvals (MOVIE_SCRIPT: the screenplay and cast; MOVIE_BUDGET: the cost
+# per stage and in total) before the shoot spends anything.
+#   Picture with on-screen speech: ROUTING_CHAINS.movie_dialogue_clips
+#     (GEMINI_API_KEY_PAID; PG1_VIDEO_MODEL, default the Omni model, 1080p).
+#     There is no silent fallback: without it the shoot stops.
+#   Each line into its cast voice: ROUTING_CHAINS.speech_to_speech
+#     (ELEVENLABS_API_KEY; PG1_MOVIE_STS_MODEL, default eleven_multilingual_sts_v2).
+#   Bibles' reference images: the film's stills chain; ambience and effects:
+#     the sound effects chain; score: the film music chain (PG1 Sound).
+# PG1_MOVIE_MAX_USD=60           # per-movie spending cap in USD (default 60)
+# PG1_MOVIE_CONCURRENCY=2        # shots made at once on the worker (1-4)
+# Client movies (--client) use only commercial_ok engines and only voices
+# cleared for client work (/voices).
 
 # PG1 Sound (/music): original music and beats with a DAW export, signed-in
 # operator only (lib/music/*, scripts/music-render.mjs,
