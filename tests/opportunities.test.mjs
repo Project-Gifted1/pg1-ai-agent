@@ -103,6 +103,10 @@ test('the weekly scan starts one lab research experiment with the signals; refus
   assert.deepEqual(rows, [{ action: 'opportunity:research', decision: 'allowed' }, { action: 'opportunity:research', decision: 'denied' }]);
 });
 
+// What a code experiment's runner really returns besides the change: the
+// research it did first and the build (lib/lab/runner.mjs).
+const codeResearched = { report_markdown: '## Research\n## Findings\nSourcify publishes verified contract metadata; its terms permit commercial reuse.\n\n## Code change\ns', stages: { research: { ok: true, chars: 90, sources: 1, calls: 1 }, build: { ok: true, files: 2 } } };
+
 test('/lab status stores the proposals; approve only prototypes in the lab; the prototype meets the gate with the opportunity\'s sources and price', async () => {
   const { db, gh, fetchImpl } = await makeLabWorld(MIGRATIONS);
   const op = (text) => handleOpportunitiesCommand({ text, env: ENV, ...SUP, fetchImpl, isOperator: true, getStats: async () => STATS });
@@ -125,10 +129,12 @@ test('/lab status stores the proposals; approve only prototypes in the lab; the 
   assert.match((await op(`/opportunities approve ${bad.slice(0, 8)}`)).reply, /is prototyping; only a proposed one/);
   // The prototype comes back as a draft PR with green CI.
   gh.checks.set(41, [{ name: 'npm test', status: 'completed', conclusion: 'success' }]);
-  gh.finish({ kind: 'code', code: { branch: 'lab/x', files: ['lib/contractCheck.mjs', 'tests/contract-check.test.mjs'], title: 't', summary: 's', pr_number: 41, pr_url: 'https://github.com/Project-Gifted1/pg1-ai-agent/pull/41' } });
+  gh.finish({ kind: 'code', ...codeResearched, code: { branch: 'lab/x', files: ['lib/contractCheck.mjs', 'tests/contract-check.test.mjs'], title: 't', summary: 's', tests: { passed: true, summary: '# pass 1' }, pr_number: 41, pr_url: 'https://github.com/Project-Gifted1/pg1-ai-agent/pull/41' } });
   const status = await handleLabCommand({ text: '/lab status', env: ENV, ...SUP, fetchImpl, isOperator: true });
   assert.equal(status.pendingApproval, undefined, 'an unverified source never reaches the approval card');
-  const { rows: exp } = await db.query(`select gate from public.pg1_lab_experiments where kind = 'code'`);
+  const { rows: exp } = await db.query(`select gate, status, error from public.pg1_lab_experiments where kind = 'code'`);
+  assert.equal(exp[0].status, 'failed', 'a failed gate fails the experiment: it is never "done"');
+  assert.match(exp[0].error, /^gate: licence/);
   const licence = exp[0].gate.checks.find((c) => c.name === 'licence');
   assert.equal(licence.ok, false);
   assert.match(licence.evidence, /without cited resale terms/);
@@ -148,9 +154,10 @@ test('a cleared prototype reaches the approval card with the evidence; approving
   const { rows } = await db.query('select id from public.pg1_opportunities');
   await op(`/opportunities approve ${rows[0].id.slice(0, 8)}`);
   gh.checks.set(42, [{ name: 'npm test', status: 'completed', conclusion: 'success' }, { name: 'browser tests', status: 'completed', conclusion: 'success' }]);
-  gh.finish({ kind: 'code', code: { branch: 'lab/y', files: ['lib/contractCheck.mjs'], title: 't', summary: 's', pr_number: 42, pr_url: 'https://github.com/Project-Gifted1/pg1-ai-agent/pull/42' } });
+  gh.finish({ kind: 'code', ...codeResearched, code: { branch: 'lab/y', files: ['lib/contractCheck.mjs'], title: 't', summary: 's', tests: { passed: true, summary: '# pass 1' }, pr_number: 42, pr_url: 'https://github.com/Project-Gifted1/pg1-ai-agent/pull/42' } });
   const status = await handleLabCommand({ text: '/lab status', env: ENV, ...SUP, fetchImpl, isOperator: true });
   assert.ok(status.pendingApproval);
+  assert.equal((await db.query(`select status from public.pg1_lab_experiments where kind = 'code'`)).rows[0].status, 'done', 'done once every stage, the gate included, passed');
   assert.match(status.reply, /✓ evals: CI success[\s\S]*✓ licence: https:\/\/sourcify\.dev: resale_permitted \(https:\/\/sourcify\.dev\/terms\)[\s\S]*✓ cost: price \$0\.005 vs worst-case cost \$0\.002/);
   const { rows: card } = await db.query('select plan from public.pending_actions');
   const done = await handleLabApproval({ row: { plan: card[0].plan }, decision: 'approve', ...SUP, fetchImpl, isOperator: true });

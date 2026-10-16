@@ -11,6 +11,7 @@
  * Run with: node --test tests/reply-actions-and-voice.test.mjs
  */
 
+import { labCardView } from '../lib/lab/card.mjs';
 import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
@@ -59,9 +60,16 @@ test('a button only ever runs a real command, with its arguments; invented comma
   assert.deepEqual(mentionedCommands('Run /lab report e2981021, or /lab nuke, or [ /lab status ].').map((a) => a.command), ['/lab report e2981021', '/lab status']);
 });
 
-test('/lab status gets a Report button per finished experiment and a confirming Stop per running one', () => {
-  const reply = '### [ LAB ]\n- e2981021 · research · done · $0.01 of $2.00 · a\n- bbbbbbbb · code · failed · $0.20 of $2.00 · b\n- aaaaaaaa · code · running · $0.00 of $2.00 · c';
-  assert.deepEqual(replyActions({ prompt: '/lab status', reply }).map((a) => [a.label, a.confirm]), [['Lab report e2981021', false], ['Lab report bbbbbbbb', false], ['Stop experiment aaaaaaaa', true]]);
+test('/lab status: every lab gets its own Report button on its card (and a confirming Stop while it runs), however many there are', () => {
+  // Five labs: the reply's own button row stops at four, so the buttons live
+  // on the cards (lib/lab/card.mjs); the row repeats none of them.
+  const ids = ['e1c7b356', 'e2f6594e', '74cdef04', '45a8b26f', 'e2981021'];
+  const cards = ids.map((id8, i) => labCardView({ id: `${id8}-0000-4000-8000-000000000000`, kind: 'research', status: i === 0 ? 'running' : 'done', budget_usd: 2 }, { actions: true }));
+  assert.deepEqual(cards.map((c) => c.actions.filter((a) => a.command.startsWith('/lab report')).length), [1, 1, 1, 1, 1], 'one report button per lab');
+  assert.deepEqual(cards.find((c) => c.id8 === 'e2981021').actions, [{ label: 'Lab report e2981021', command: '/lab report e2981021' }]);
+  assert.deepEqual(cards[0].actions.map((a) => [a.label, !!a.confirm]), [['Lab report e1c7b356', false], ['Stop experiment e1c7b356', true]]);
+  for (const c of cards) for (const a of c.actions) assert.ok(commandAction(a.command), `${a.command} is a real command`);
+  assert.deepEqual(replyActions({ prompt: '/lab status', reply: '**Lab**: the latest 5 experiments: 1 running, 4 done. Each card has its report button.' }), []);
   const running = replyActions({ prompt: '/lab report aaaaaaaa', reply: '### [ LAB aaaaaaaa · code · running ]\nGoal: x' });
   assert.deepEqual(running.map((a) => a.command), ['/lab stop aaaaaaaa', '/lab status']);
 });

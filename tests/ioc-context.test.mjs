@@ -79,8 +79,9 @@ function mockFetch({ gumroadSuccess, gumroadUnavailable } = {}) {
         ok: true,
         json: async () => [
           {
-            indicator_type: 'IPv4',
-            value: '198.51.100.23',
+            // NVD publishes CVE records only (lib/sourcePolicy.mjs rowSource)
+            indicator_type: 'CVE',
+            value: 'CVE-2026-0001',
             confidence_score: 80,
             last_seen: '2026-09-24T12:00:00Z',
             ingested_at: '2026-09-20T00:00:00Z',
@@ -99,7 +100,7 @@ function mockFetch({ gumroadSuccess, gumroadUnavailable } = {}) {
 
 test('a genuinely invalid license key on a found indicator returns 402, unchanged', async () => {
   global.fetch = mockFetch({ gumroadSuccess: false });
-  const req = makeReq({ value: '198.51.100.23' }, { 'x-api-key': 'bad-license-key' });
+  const req = makeReq({ value: 'CVE-2026-0001' }, { 'x-api-key': 'bad-license-key' });
   const res = makeRes();
   await handler(req, res);
   assert.equal(res.statusCode, 402);
@@ -110,7 +111,7 @@ test('a genuinely invalid license key on a found indicator returns 402, unchange
 test('issue #117: a Gumroad-unreachable verification on a found indicator returns 503 + Retry-After: 5, not 402', async () => {
   global.fetch = mockFetch({ gumroadUnavailable: true });
   const req = makeReq(
-    { value: '198.51.100.23' },
+    { value: 'CVE-2026-0001' },
     { 'x-api-key': 'some-license-key', 'x-free-tier': '1' }
   );
   const res = makeRes();
@@ -122,7 +123,7 @@ test('issue #117: a Gumroad-unreachable verification on a found indicator return
 
 test('a valid license key on a found indicator is authorized and returns 200', async () => {
   global.fetch = mockFetch({ gumroadSuccess: true });
-  const req = makeReq({ value: '198.51.100.23' }, { 'x-api-key': 'valid-license-key' });
+  const req = makeReq({ value: 'CVE-2026-0001' }, { 'x-api-key': 'valid-license-key' });
   const res = makeRes();
   await handler(req, res);
   assert.equal(res.statusCode, 200);

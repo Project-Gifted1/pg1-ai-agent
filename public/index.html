@@ -1404,6 +1404,8 @@
     .lab-state[data-state="done"]::before { background: var(--ok); }
     .lab-state[data-state="failed"], .lab-state[data-state="over_budget"], .lab-state[data-state="timeout"] { border-color: var(--danger-line); background: var(--danger-soft); color: var(--danger-text); }
     .lab-state[data-state="failed"]::before, .lab-state[data-state="over_budget"]::before, .lab-state[data-state="timeout"]::before { background: var(--danger); }
+    .lab-state[data-state="near_budget"] { border-color: var(--gold-line); background: var(--gold-soft); }
+    .lab-state[data-state="near_budget"]::before { background: var(--gold-fill); }
     @keyframes lab-pulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--gold-line); } 50% { opacity: 0.55; box-shadow: 0 0 0 4px transparent; } }
     .lab-meter { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
     .lab-meter-bar { display: inline-block; width: 56px; height: 5px; border-radius: var(--r-full); background: var(--surface-3); overflow: hidden; vertical-align: middle; }
@@ -1438,6 +1440,7 @@
 .lab-card-id{font-weight:600;color:var(--text-strong);font-variant-numeric:tabular-nums}
 .lab-card-goal{margin:4px 0 0;color:var(--text);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .lab-card-kind{margin:2px 0 0;font-size:var(--fs-xs);color:var(--text-3)}
+.lab-card .lab-card-actions{margin:0}
 .lab-bot{width:76px;height:72px;overflow:visible}
 .b-body{fill:var(--gold-fill);stroke:var(--on-gold);stroke-width:1.5}
 .b-limb,.b-line{fill:none;stroke:var(--text-2);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
@@ -1460,12 +1463,10 @@
 .b-bub{fill:var(--ok);opacity:.7}
 .b-spk{fill:var(--gold-fill);stroke:var(--gold);stroke-width:.8}
 .b-smk{fill:var(--text-2);opacity:.5}
-.b-coin{fill:var(--gold-fill);stroke:var(--gold);stroke-width:1.2}
-.b-coin-mark{stroke:var(--gold);stroke-width:1.4}
-.p-clip,.p-flask,.p-up,.p-shrug,.p-smoke,.p-pocket,.p-coin,.m-flat{display:none}
-[data-pose=queued] .p-clip,[data-pose=running] .p-flask,[data-pose=done] .p-up,[data-pose=failed] .p-shrug,[data-pose=failed] .p-smoke,[data-pose=failed] .m-flat,[data-pose=over_budget] .p-pocket,[data-pose=over_budget] .p-coin,[data-pose=over_budget] .m-flat{display:inline}
+.p-clip,.p-flask,.p-up,.p-shrug,.p-smoke,.p-pocket,.m-flat{display:none}
+[data-pose=queued] .p-clip,[data-pose=running] .p-flask,[data-pose=done] .p-up,[data-pose=failed] .p-shrug,[data-pose=failed] .p-smoke,[data-pose=failed] .m-flat,[data-pose=over_budget] .p-pocket,[data-pose=over_budget] .m-flat{display:inline}
 [data-pose=queued] .a-l,[data-pose=running] .a-r,[data-pose=done] .a-r,[data-pose=failed] .a-l,[data-pose=failed] .a-r,[data-pose=failed] .m-smile,[data-pose=over_budget] .m-smile{display:none}
-.b-board,.b-rod,.b-bub,.b-res,.b-spk,.b-smk,.p-shrug,.b-cn,.b-lining,.b-bulb{transform-box:fill-box;transform-origin:center}
+.b-board,.b-rod,.b-bub,.b-res,.b-spk,.b-smk,.p-shrug,.b-lining,.b-bulb{transform-box:fill-box;transform-origin:center}
 .b-board{transform-origin:80% 90%}
 .b-rod{transform-origin:50% 0%}
 .b-lining{transform-origin:50% 0%}
@@ -1484,7 +1485,6 @@
 .is-live[data-pose=failed] .b-smk:nth-of-type(3){animation-delay:500ms}
 .is-live[data-pose=failed] .p-shrug{animation:bot-shrug 900ms ease-in-out 2 both}
 .is-live[data-pose=over_budget] .b-lining{animation:bot-lining 700ms var(--ease-out) both}
-.is-live[data-pose=over_budget] .b-cn{animation:bot-coin 2.2s cubic-bezier(.3,.6,.4,1) 300ms both}
 @keyframes bot-tap{0%,55%,100%{transform:rotate(0)}65%{transform:rotate(-8deg)}75%{transform:rotate(0)}85%{transform:rotate(-5deg)}}
 @keyframes bot-blink{0%,100%{opacity:1}50%{opacity:.35}}
 @keyframes bot-stir{from{transform:rotate(-11deg)}to{transform:rotate(11deg)}}
@@ -1494,7 +1494,6 @@
 @keyframes bot-smoke{0%{transform:translateY(8px) scale(.5);opacity:0}30%{opacity:.7}100%{transform:translateY(-12px) scale(1.4);opacity:.2}}
 @keyframes bot-shrug{0%,100%{transform:none}45%{transform:translateY(-3px)}}
 @keyframes bot-lining{from{transform:scaleY(0)}to{transform:none}}
-@keyframes bot-coin{0%{transform:translate(-36px,-24px) rotate(0)}25%{transform:translate(-34px,0) rotate(60deg)}100%{transform:none}}
 .lab-beaker{margin:0;display:flex;flex-direction:column;align-items:center;gap:2px}
 .lab-beaker svg{width:34px;height:46px;overflow:visible}
 .lab-beaker .bk-glass{fill:none;stroke:var(--text-2);stroke-width:1.6;stroke-linejoin:round}
@@ -1513,8 +1512,7 @@
 .lab-track li[data-state=done] .dot{background:var(--ok);border-color:var(--ok)}
 .lab-track li[data-state=current] .dot{background:var(--gold-fill);border-color:var(--gold-fill)}
 .lab-track li[data-state=failed] .dot{background:var(--danger);border-color:var(--danger)}
-.lab-track li[data-state=skipped]{opacity:.55}
-.lab-track li[data-state=skipped] .dot{transform:scale(.6)}
+.lab-track li[data-state=skipped]{color:var(--text-3)}
 .lab-track li[data-state=current],.lab-track li[data-state=failed]{color:var(--text);font-weight:600}
 .lab-track .dot::after{content:"";position:absolute;inset:-5px;border-radius:50%;border:2px solid var(--gold-fill);opacity:0}
 .is-live[data-status=queued] li[data-state=current] .dot::after,.is-live[data-status=running] li[data-state=current] .dot::after{animation:dot-pulse 1.8s ease-out infinite}
@@ -3103,6 +3101,7 @@
       const labView = labViewFromReport(r);
       el.innerHTML = `<span class="msg-timestamp">${escapeHTML(time)}</span>${markdownBlock(String(r.body || r.title || ''))}${labView ? `<div class="lab-cards">${labCardHtml(labView)}</div>` : ''}${actionsHtml(r.actions)}${messageActionsHtml('agent')}`;
       chat.appendChild(el);
+      dedupeLabCards(chat);
       chat.scrollTop = chat.scrollHeight;
     }
     async function pollReports() {
@@ -3888,7 +3887,7 @@
     // the experiment's status word (after " · ") becomes a chip and
     // "$spent of $budget" a meter. Only these fixed shapes are touched; the
     // rest of the text stays as it was. Code blocks are left alone.
-    const LAB_STATES = ['queued', 'running', 'done', 'failed', 'over_budget', 'timeout', 'stopped'];
+    const LAB_STATES = ['queued', 'running', 'done', 'failed', 'over_budget', 'near_budget', 'timeout', 'stopped'];
     function decorateLabHtml(html) {
       return String(html).split(/(<div class="code-block"[\s\S]*?<\/pre><\/div>)/).map((part, i) => {
         if (i % 2) return part;
@@ -3929,15 +3928,20 @@
       + '<g class="p-up"><path class="b-limb" d="M83 48 92 34"/><g class="b-res"><rect class="b-paper" x="85" y="11" width="19" height="23" rx="2"/><path class="b-ok" d="M89.5 22.5l3.5 3.5 6.5-7"/></g><path class="b-spk" d="M110 9l1.4 3.4 3.4 1.4-3.4 1.4-1.4 3.4-1.4-3.4-3.4-1.4 3.4-1.4z"/><path class="b-spk" d="M80 7l1 2.4 2.4 1-2.4 1-1 2.4-1-2.4-2.4-1 2.4-1z"/><path class="b-spk" d="M111 30l1 2.4 2.4 1-2.4 1-1 2.4-1-2.4-2.4-1 2.4-1z"/></g>'
       + '<g class="p-shrug"><path class="b-limb" d="M37 56 28 54 24 46"/><path class="b-limb" d="M83 56 92 54 96 46"/></g>'
       + '<g class="p-smoke"><circle class="b-smk" cx="51" cy="15" r="5"/><circle class="b-smk" cx="61" cy="9" r="6"/><circle class="b-smk" cx="71" cy="15" r="4.5"/></g>'
-      + '<g class="p-coin"><g class="b-cn"><circle class="b-coin" cx="108" cy="95" r="5"/><path class="b-coin-mark" d="M108 92.5v5"/></g></g>'
       + '</svg>';
 
     const LAB_POSE_WORDS = { queued: 'queued: waiting for a runner', running: 'running', done: 'done: result ready', failed: 'failed', over_budget: 'stopped at its budget', stopped: 'stopped' };
+    const LAB_CARD_ACTION_RE = /^\/lab (?:report|stop) [0-9a-f]{8}$/;
     function labMoney(n) { return `$${(Math.round((Number(n) || 0) * 100) / 100).toFixed(2)}`; }
+    // One lab card, from the server's view (lib/lab/card.mjs labCardView):
+    // the stages and the status words are the server's, never guessed here.
+    // data-lab-id keys the card: a lab is on screen once (dedupeLabCards).
     function labCardHtml(v, { live = true } = {}) {
       if (!v || typeof v !== 'object') return '';
       const pose = Object.hasOwn(LAB_POSE_WORDS, v.pose) ? v.pose : 'queued';
       const status = LAB_STATES.includes(v.status) ? v.status : pose;
+      const label = typeof v.label === 'string' && /^[a-z ]{2,20}$/.test(v.label) ? v.label : status.replace('_', ' ');
+      const chip = label.replace(/ /g, '_');
       const fill = Math.min(1, Math.max(0, Number(v.fill) || 0));
       const pct = Math.round(fill * 100);
       const high = fill >= 0.9;
@@ -3948,42 +3952,53 @@
         return `<li data-state="${st}"><span class="dot" aria-hidden="true"></span>${escapeHTML(String(s.name || ''))}<span class="sr-only">: ${stageWord[st]}</span></li>`;
       }).join('');
       const id8 = escapeHTML(String(v.id8 || '').slice(0, 8));
-      return `<section class="lab-card${live ? ' is-live' : ''}" data-pose="${pose}" data-status="${status}" aria-label="Lab experiment ${id8}: ${escapeHTML(LAB_POSE_WORDS[pose])}">`
+      const threshold = Number.isFinite(Number(v.threshold_usd)) && v.threshold_usd !== null && label === 'near budget' ? Number(v.threshold_usd) : null;
+      const buttons = (Array.isArray(v.actions) ? v.actions : []).filter((a) => a && typeof a.label === 'string' && LAB_CARD_ACTION_RE.test(String(a.command || ''))).slice(0, 2);
+      const actions = buttons.length ? `<div class="pg1-actions lab-card-actions" role="group" aria-label="Lab ${id8} actions">${buttons.map((a) => `<button type="button" class="pg1-action" data-command="${escapeHTML(a.command)}" data-confirm="${a.confirm ? '1' : '0'}" data-label="${escapeHTML(a.label)}" onclick="runReplyAction(this)"><svg class="icon" aria-hidden="true"><use href="#i-${a.confirm ? 'stop' : 'arrow-right'}"/></svg><span>${escapeHTML(a.label)}</span></button>`).join('')}</div>` : '';
+      return `<section class="lab-card${live ? ' is-live' : ''}" data-lab-id="${id8}" data-pose="${pose}" data-status="${status}" aria-label="Lab experiment ${id8}: ${escapeHTML(label === 'near budget' ? 'stopped near its budget' : LAB_POSE_WORDS[pose])}">`
         + '<div class="lab-card-top">' + LAB_BOT_SVG
-        + `<div class="lab-card-main"><div class="lab-card-head"><span class="lab-card-id">Lab ${id8}</span><span class="lab-state" data-state="${status}">${escapeHTML(status.replace('_', ' '))}</span></div>`
+        + `<div class="lab-card-main"><div class="lab-card-head"><span class="lab-card-id">Lab ${id8}</span><span class="lab-state" data-state="${escapeHTML(chip)}">${escapeHTML(label)}</span></div>`
         + (v.goal ? `<p class="lab-card-goal">${escapeHTML(String(v.goal))}</p>` : '')
-        + `<p class="lab-card-kind">${escapeHTML(String(v.kind || 'lab'))} experiment</p></div>`
+        + `<p class="lab-card-kind">${escapeHTML(String(v.kind || 'lab'))} experiment${threshold !== null ? ` · stopped at its ${labMoney(threshold)} threshold` : ''}</p></div>`
         + `<figure class="lab-beaker${high ? ' is-high' : ''}" aria-label="Budget: ${labMoney(v.spent_usd)} of ${labMoney(v.budget_usd)} spent, ${pct}%"><svg viewBox="6 0 34 50" aria-hidden="true"><path class="bk-cap" d="M8 6h26"/><rect class="bk-liquid" x="11.5" y="6" width="17" height="40" rx="1" style="--fill: ${fill.toFixed(3)}"/><path class="bk-glass" d="M9 3h22M10.5 3v40a5 5 0 0 0 5 5h9a5 5 0 0 0 5-5V3"/></svg>`
         + `<figcaption>${labMoney(v.spent_usd)}<br>of ${labMoney(v.budget_usd)}</figcaption></figure></div>`
         + (track ? `<ol class="lab-track" aria-label="Stage">${track}</ol>` : '')
+        + actions
         + '</section>';
     }
+    const LAB_CARDS_MAX = 8;
     function labCardsHtml(list) {
       if (!Array.isArray(list) || !list.length) return '';
-      const cards = list.slice(0, 3).map((v) => labCardHtml(v)).filter(Boolean);
+      // Keyed by lab: a lab listed twice is drawn once, from its last
+      // (newest) entry, in that entry's place.
+      const key = (v) => String(v.id8 || String(v.id || '').slice(0, 8));
+      const views = list.filter((v) => v && typeof v === 'object' && key(v));
+      const last = new Map(views.map((v, i) => [key(v), i]));
+      const cards = views.filter((v, i) => last.get(key(v)) === i).slice(0, LAB_CARDS_MAX).map((v) => labCardHtml(v)).filter(Boolean);
       return cards.length ? `<div class="lab-cards">${cards.join('')}</div>` : '';
     }
+    // A watch report's card: the one the server built (an actions entry of
+    // kind lab_card); none for a report without it.
     function labViewFromReport(r) {
-      if (!r || r.target_type !== 'lab') return null;
-      const body = String(r.body || '');
-      const status = LAB_STATES.includes(r.state) ? r.state : null;
-      if (!status) return null;
-      const cost = /\$(\d+(?:\.\d+)?) of its \$(\d+(?:\.\d+)?) budget/.exec(body);
-      const spent = cost ? Number(cost[1]) : 0;
-      const budget = cost ? Number(cost[2]) : 0;
-      const kind = (/lab experiment [0-9a-f]{8} \((\w+)/.exec(body) || [])[1] || 'lab';
-      const built = Array.isArray(r.actions) && r.actions.some((a) => a && a.command === '/lab status');
-      const pose = { timeout: 'failed' }[status] || status;
-      const finished = !['queued', 'running'].includes(status);
-      const names = ['research', 'build', 'test', 'gate'];
-      const at = built ? 1 : 0;
-      const stages = names.map((name, i) => {
-        if (finished && !built && i > 0) return { name, state: 'skipped' };
-        if (i < at) return { name, state: 'done' };
-        if (i > at) return { name, state: 'todo' };
-        return { name, state: !finished ? 'current' : status === 'done' ? 'done' : 'failed' };
-      });
-      return { id8: String(r.target_id || '').slice(0, 8), kind, goal: '', status, pose, spent_usd: spent, budget_usd: budget, fill: budget > 0 ? Math.min(1, spent / budget) : 0, stages };
+      if (!r || r.target_type !== 'lab' || !Array.isArray(r.actions)) return null;
+      const entry = r.actions.find((a) => a && a.kind === 'lab_card' && a.card && typeof a.card === 'object');
+      return entry ? entry.card : null;
+    }
+    // Each lab is on screen once: when a newer card for the same lab is
+    // drawn, the older one goes (an emptied card row goes with it). On a
+    // restored chat the latest card of each lab stays.
+    function dedupeLabCards(root) {
+      const chat = root || document.getElementById('chat-container');
+      if (!chat) return;
+      const cards = [...chat.querySelectorAll('.lab-card[data-lab-id]')];
+      const last = new Map();
+      for (const el of cards) last.set(el.dataset.labId, el);
+      for (const el of cards) {
+        if (!el.dataset.labId || last.get(el.dataset.labId) === el) continue;
+        const row = el.parentElement;
+        el.remove();
+        if (row && row.classList.contains('lab-cards') && !row.querySelector('.lab-card')) row.remove();
+      }
     }
 
     const RADAR_LAST_VISIT = 'pg1_radar_last_visit';
@@ -4045,7 +4060,7 @@
         + `<p class="radar-asof">Data as of <strong>${escapeHTML(String(view.as_of || ''))}</strong> (Ireland time)</p>`
         + (note ? `<p class="radar-note is-warn" role="status">${escapeHTML(note)}</p>` : '')
         + `<div class="radar-body">${scope}<ul class="radar-counts" aria-label="Findings by status">${countList}</ul></div>`
-        + `<div class="radar-sec"><p class="radar-h">Feeds, new items per day</p><ul class="radar-feeds">${feedRows}</ul></div>`
+        + `<div class="radar-sec"><p class="radar-h">Feeds, new items per day</p><ul class="radar-feeds">${feedRows}</ul>${typeof view.tally_text === 'string' && view.tally_text ? `<p class="radar-note radar-tally">${escapeHTML(view.tally_text)}</p>` : ''}</div>`
         + `<div class="radar-sec"><p class="radar-h">Recent findings</p>${findsHtml}</div>`
         + (view.kev === 'error' ? '<p class="radar-note is-warn">The known exploited catalog could not be read, so CVEs show as unknown.</p>' : '')
         + '</section>';
@@ -4112,6 +4127,7 @@
     }
 
     function settleRestoredCards(root) {
+      dedupeLabCards(root && root.id === 'chat-container' ? root : document.getElementById('chat-container'));
       (root || document).querySelectorAll('.lab-card.is-live, .radar-card.is-live').forEach((el) => el.classList.remove('is-live', 'is-fresh', 'is-loading'));
       (root || document).querySelectorAll('.radar-card .radar-refresh[disabled]').forEach((b) => { b.disabled = false; });
       (root || document).querySelectorAll('.radar-card[aria-busy]').forEach((el) => {
@@ -7569,6 +7585,8 @@
         // reply is still being spoken.
         syncVoiceWave();
         pollMusicCardsSoon();
+        // A lab drawn again replaces its earlier card (keyed by lab id).
+        if (data.labCards) dedupeLabCards();
         startCountUps(agentBubble);
         if (data.milestone) celebrateMilestone(data.milestone);
 

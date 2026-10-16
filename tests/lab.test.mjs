@@ -111,6 +111,9 @@ test('the dispatch token binds id, kind, budget, goal and input, and expires', (
 
 // --- the runner ---------------------------------------------------------------------
 
+// Findings long enough to count as findings (MIN_FINDINGS_CHARS).
+const FINDINGS = '## Findings\nA public CVE dataset exists; its terms allow reuse with attribution. Resale terms not found.';
+
 function modelStub(handler) {
   const calls = [];
   const fetchImpl = async (url, options = {}) => {
@@ -137,16 +140,31 @@ test('runner: research uses search, fetches the given pages read-only, marks eve
     assert.match(prompt, /untrusted data/);
     assert.doesNotMatch(prompt, /steal\(\)/, 'scripts are stripped from fetched pages');
     for (const k of ['temperature', 'topP', 'topK']) assert.ok(!(body.generationConfig || {})[k]);
-    return '## Findings\nA dataset exists.';
+    return FINDINGS;
   });
   const r = await runExperiment({ id: 'aaaaaaaa-0000-0000-0000-000000000000', kind: 'research', goal: 'Find a free CVE dataset', input: { urls: ['https://pages.example/terms'] }, env: { PG1_LAB_GEMINI_API_KEY: 'g' }, budgetUsd: 2, fetchImpl, lookup: publicLookup });
   assert.equal(r.status, 'done');
   assert.match(r.report_markdown, /## Findings/);
+  assert.equal(r.stages.research.ok, true);
+  assert.equal(r.stages.research.chars, FINDINGS.length);
+  assert.equal(r.stages.research.calls, 1);
+  assert.ok(r.stages.research.sources >= 1);
   assert.ok(r.sources.every((s) => s.licence === 'unverified' && s.resale_terms_url === null));
   assert.equal(r.untrusted, true);
   assert.ok(r.spent_usd > 0);
   assert.ok(calls.filter((c) => c.method === 'POST').every((c) => c.u.startsWith('https://generativelanguage.googleapis.com/')), 'POSTs only to the model API');
   assert.equal(calls.find((c) => c.method === 'POST').headers['x-goog-api-key'], 'g');
+});
+
+test('runner: research that comes back empty (or nearly) fails the research stage, never "done"', async () => {
+  for (const answer of ['', '   ', 'No.', '## Findings\n']) {
+    const { fetchImpl } = modelStub(async () => answer);
+    const r = await runExperiment({ id: 'a1a1a1a1-0000-0000-0000-000000000000', kind: 'research', goal: 'Find a free CVE dataset', env: { PG1_LAB_GEMINI_API_KEY: 'g' }, budgetUsd: 2, fetchImpl, lookup: publicLookup });
+    assert.equal(r.status, 'failed', JSON.stringify(answer));
+    assert.match(r.error, /^research: the model returned (no findings|only \d+ characters of findings)/);
+    assert.equal(r.stages.research.ok, false);
+    assert.equal(r.calls, 1, 'the model call did run');
+  }
 });
 
 test('runner: a skill experiment drafts, checks and evaluates trait by trait', async () => {
@@ -157,7 +175,10 @@ test('runner: a skill experiment drafts, checks and evaluates trait by trait', a
     return 'CVE-2026-0001 affects nginx.';
   });
   const r = await runExperiment({ id: 'bbbbbbbb-0000-0000-0000-000000000000', kind: 'skill', goal: 'CVE digests', env: { PG1_LAB_ANTHROPIC_API_KEY: 'a' }, budgetUsd: 2, fetchImpl });
-  assert.equal(r.status, 'done');
+  // A failing eval fails the test stage: the run is not "done".
+  assert.equal(r.status, 'failed');
+  assert.equal(r.error, 'test: 0 of 1 evals passed');
+  assert.deepEqual(r.stages.build, { ok: true, skill: 'cve-digest' });
   assert.equal(r.skill_drafts[0].name, 'cve-digest');
   assert.equal(r.skill_drafts[0].origin, 'lab');
   assert.deepEqual(r.evals[0].traits.map((t) => t.pass), [true, false]);
@@ -166,20 +187,30 @@ test('runner: a skill experiment drafts, checks and evaluates trait by trait', a
   const r2 = await runExperiment({ id: 'cccccccc-0000-0000-0000-000000000000', kind: 'skill', goal: 'x', env: { PG1_LAB_ANTHROPIC_API_KEY: 'a' }, budgetUsd: 2, fetchImpl: unsafe.fetchImpl });
   assert.deepEqual(r2.skill_drafts, []);
   assert.match(r2.report_markdown, /failed PG1's checks/);
+  assert.equal(r2.status, 'failed');
+  assert.match(r2.error, /^build: the drafted skill failed PG1's checks/);
 });
 
 test('runner: code proposals are confined to allowed paths; over budget stops before the call', async () => {
-  const ok = modelStub(async () => JSON.stringify({ summary: 'Add a helper', files: [{ path: 'lib/helpers/x.mjs', content: 'export const x = 1;\n' }, { path: 'tests/x.test.mjs', content: '// test\n' }], tests: 'unit' }));
+  // The code lab researches first (search-grounded), then builds.
+  const research = (answer) => async (system, prompt, provider, body) => (/researching before a change/.test(system) ? FINDINGS : answer(system, prompt, provider, body));
+  const ok = modelStub(research(() => JSON.stringify({ summary: 'Add a helper', files: [{ path: 'lib/helpers/x.mjs', content: 'export const x = 1;\n' }, { path: 'tests/x.test.mjs', content: '// test\n' }], tests: 'unit' })));
   const r = await runExperiment({ id: 'dddddddd-0000-0000-0000-000000000000', kind: 'code', goal: 'helper', env: { PG1_LAB_ANTHROPIC_API_KEY: 'a' }, budgetUsd: 2, fetchImpl: ok.fetchImpl });
   assert.equal(r.status, 'done');
+  assert.equal(r.stages.research.ok, true);
+  assert.deepEqual(r.stages.build, { ok: true, files: 2 });
+  assert.match(r.report_markdown, /^## Research\n## Findings[\s\S]*## Code change/);
+  assert.match(ok.calls.filter((c) => c.method === 'POST')[1].body.messages[0].content, /<research_findings untrusted="true">/, 'the findings feed the build');
   assert.equal(r.code.branch, 'lab/dddddddd');
   assert.deepEqual(r.patch.map((f) => f.path), ['lib/helpers/x.mjs', 'tests/x.test.mjs']);
   for (const bad of ['.github/workflows/tests.yml', 'vercel.json', 'package.json', 'lib/autonomy.mjs', 'lib/lab/policy.mjs', 'scripts/lab-pr.mjs', '../etc/passwd', '.env.local', 'lib/auditLog.mjs', 'tests/ci/no-network.mjs']) {
     assert.equal(checkCodePath(bad).ok, false, bad);
-    const evil = modelStub(async () => JSON.stringify({ summary: 'x', files: [{ path: bad, content: 'x' }] }));
+    const evil = modelStub(research(() => JSON.stringify({ summary: 'x', files: [{ path: bad, content: 'x' }] })));
     const rr = await runExperiment({ id: 'eeeeeeee-0000-0000-0000-000000000000', kind: 'code', goal: 'x', env: { PG1_LAB_ANTHROPIC_API_KEY: 'a' }, budgetUsd: 2, fetchImpl: evil.fetchImpl });
     assert.equal(rr.code, null, bad);
     assert.match(rr.report_markdown, /Refused/, bad);
+    assert.equal(rr.status, 'failed', bad);
+    assert.match(rr.error, /^build: Refused/, bad);
   }
   const poor = modelStub(async () => 'x');
   const over = await runExperiment({ id: 'ffffffff-0000-0000-0000-000000000000', kind: 'code', goal: 'x', env: { PG1_LAB_ANTHROPIC_API_KEY: 'a' }, budgetUsd: 0.01, fetchImpl: poor.fetchImpl });
@@ -194,7 +225,7 @@ test('scripts: lab-run refuses a bad token and writes the result; lab-apply refu
   assert.equal(await labRunMain(env, { out: dir, fetchImpl: async () => { throw new Error('no calls'); } }), 1);
   assert.match(readFileSync(`${dir}/result.json`, 'utf8'), /dispatch token malformed/);
   const good = { ...env, LAB_TOKEN: signLabToken({ id, kind: 'research', budgetUsd: 2, goal: 'g', input: '', secret: SECRET }) };
-  const { fetchImpl } = modelStub(async () => '## Findings\nnone');
+  const { fetchImpl } = modelStub(async () => FINDINGS);
   assert.equal(await labRunMain(good, { out: dir, fetchImpl }), 0);
   assert.equal(JSON.parse(readFileSync(`${dir}/result.json`, 'utf8')).status, 'done');
   const over = { ...good, LAB_BUDGET_USD: '50' };
@@ -458,7 +489,11 @@ test('chat: /lab status reads a finished skill experiment back, records spend, s
   const result = { id, kind: 'skill', status: 'done', spent_usd: 0.42, calls: 4, report_markdown: '## Skill cve-digest\nEvals: 1 of 1 passed', skill_drafts: [{ ...goodSkill, origin: 'lab', untrusted: false, allowed_tools: null }], evals: [{ prompt: 'Digest for nginx', pass: true, traits: [{ trait: 'lists CVE ids', pass: true }] }] };
   gh.artifacts.set(901, { name: `lab-result-${id}`, zip: makeZip({ 'result.json': JSON.stringify(result) }) });
   const status = await chat({ prompt: '/lab status' });
-  assert.match(status.jsonBody.reply, new RegExp(`- ${id.slice(0, 8)} · skill · done · \\$0\\.42 of \\$2\\.00`));
+  assert.match(status.jsonBody.reply, /^\*\*Lab\*\*: the latest experiment: 1 done\./);
+  assert.equal(status.jsonBody.labCards.length, 1);
+  assert.equal(status.jsonBody.labCards[0].status, 'done', 'done only once the gate passed');
+  assert.deepEqual(status.jsonBody.labCards[0].stages.map((x) => x.state), ['skipped', 'done', 'done', 'done']);
+  assert.equal(status.jsonBody.labCards[0].spent_usd, 0.42);
   assert.match(status.jsonBody.reply, /\*\*Approval needed\*\*[\s\S]*✓ evals: 1 of 1 evals passed[\s\S]*✓ safety[\s\S]*✓ licence: no new data sources[\s\S]*✓ cost: not priced/);
   const token = status.jsonBody.pendingApproval.token;
   assert.ok(token);
@@ -466,8 +501,9 @@ test('chat: /lab status reads a finished skill experiment back, records spend, s
   assert.deepEqual(ledger, [{ task: 'lab', c: 0.42, request_id: `lab:${id}` }]);
   const { rows: sk } = await db.query(`select status, origin from public.pg1_skills where name = 'cve-digest'`);
   assert.deepEqual(sk, [{ status: 'lab', origin: 'lab' }], 'the draft is stored with status lab, not active');
-  // A second /lab status does not make a second card.
-  assert.equal((await chat({ prompt: '/lab status' })).jsonBody.pendingApproval, undefined);
+  // A second /lab status makes no second card: it shows the one waiting.
+  assert.equal((await chat({ prompt: '/lab status' })).jsonBody.pendingApproval.token, token);
+  assert.equal((await db.query(`select count(*)::int as n from public.pending_actions`)).rows[0].n, 1);
   const approve = await chat({ action: 'CONFIRM_PENDING_ACTION', token, decision: 'approve' });
   assert.match(approve.jsonBody.reply, /skill cve-digest is active \(operator only, flag skill:cve-digest\)/);
   const { rows: active } = await db.query(`select status from public.pg1_skills where name = 'cve-digest'`);
@@ -487,7 +523,10 @@ test('chat: a failing eval never reaches the approval card; /lab stop cancels a 
   gh.artifacts.set(902, { name: `lab-result-${id}`, zip: makeZip({ 'result.json': JSON.stringify({ id, kind: 'skill', status: 'done', spent_usd: 0.1, skill_drafts: [goodSkill], evals: [{ prompt: 'p', pass: false, traits: [] }] }) }) });
   const status = await chat({ prompt: '/lab status' });
   assert.equal(status.jsonBody.pendingApproval, undefined);
-  assert.match(status.jsonBody.reply, /gate failed/);
+  assert.match(status.jsonBody.reply, /1 failed/);
+  const card = status.jsonBody.labCards[0];
+  assert.equal(card.status, 'failed');
+  assert.deepEqual(card.stages.map((x) => x.state), ['skipped', 'done', 'failed', 'todo'], 'it stopped at the test stage (its evals)');
   await chat({ prompt: '/lab start long one' });
   const id2 = gh.dispatches[1].inputs.experiment_id;
   gh.runs.set(903, { id: 903, name: `lab ${id2}`, status: 'in_progress', conclusion: null });
@@ -497,8 +536,15 @@ test('chat: a failing eval never reaches the approval card; /lab stop cancels a 
 });
 
 test('parseLabCommand', () => {
-  assert.deepEqual(parseLabCommand('/lab start find data --kind code'), { sub: 'start', id: '', goal: 'find data', opts: { kind: 'code', urls: [], skill: '' } });
-  assert.deepEqual(parseLabCommand('/lab start test it --skill pdf-report').opts, { kind: 'skill', urls: [], skill: 'pdf-report' });
+  assert.deepEqual(parseLabCommand('/lab start find data --kind code'), { sub: 'start', id: '', goal: 'find data', opts: { kind: 'code', urls: [], skill: '', kindNote: '' } });
+  assert.deepEqual(parseLabCommand('/lab start test it --skill pdf-report').opts, { kind: 'skill', urls: [], skill: 'pdf-report', kindNote: '' });
+  // No --kind: the goal's words decide; build work is code even when
+  // --kind research was given.
+  assert.equal(parseLabCommand('/lab start compare two CVE feeds for freshness').opts.kind, 'research');
+  assert.equal(parseLabCommand('/lab start build verify_agent_delegation').opts.kind, 'code');
+  const forced = parseLabCommand('/lab start --kind research Implement sanitized demand tracking middleware').opts;
+  assert.equal(forced.kind, 'code');
+  assert.match(forced.kindNote, /research, build, test and the gate/);
   assert.equal(parseLabCommand('/lab').sub, 'help');
   assert.deepEqual(parseLabCommand('/promote skill:x'), { sub: 'promote', id: 'skill:x', goal: '', opts: {} });
 });
@@ -508,9 +554,9 @@ test('parseLabCommand', () => {
 const { syncLabExperiment, syncActiveLabExperiments, LAB_RESULT_GRACE_MS, LAB_HELP_TEXT } = await import('../lib/lab/chat.mjs');
 const E2981021_ZIP = readFileSync(new URL('./fixtures/lab-result-e2981021.zip', import.meta.url));
 
-async function startedExperiment(gh, run) {
+async function startedExperiment(gh, run, goal = 'survey how MCP servers check agent auth scopes before a call') {
   const before = gh.dispatches.length;
-  await chat({ prompt: '/lab start research and draft agent auth scope preflight check MCP tool' });
+  await chat({ prompt: `/lab start ${goal}` });
   const id = gh.dispatches[before].inputs.experiment_id;
   gh.runs.set(run.id, { name: `lab ${id}`, status: 'completed', conclusion: 'success', updated_at: new Date().toISOString(), ...run });
   return id;
@@ -555,7 +601,8 @@ test('B3: a finished run with no artifact, a refused artifact list or an unreada
   gh.artifacts.set(702, { name: `lab-result-${bad}`, zip: Buffer.from('not a zip') });
   const failedRun = await startedExperiment(gh, { id: 703, conclusion: 'failure' });
   const status = await chat({ prompt: '/lab status' });
-  for (const id of [noArtifact, bad, failedRun]) assert.match(status.jsonBody.reply, new RegExp(`${id.slice(0, 8)} · research · failed`));
+  assert.match(status.jsonBody.reply, /3 failed/);
+  for (const id of [noArtifact, bad, failedRun]) assert.equal(status.jsonBody.labCards.find((c) => c.id === id).status, 'failed');
   const err = async (id) => (await db.query('select status, error from public.pg1_lab_experiments where id = $1', [id])).rows[0];
   assert.deepEqual(await err(noArtifact), { status: 'failed', error: 'no result from the runner: the run uploaded no lab-result artifact' });
   assert.match((await err(bad)).error, /^no result from the runner: the result artifact is not a readable zip/);
@@ -601,17 +648,17 @@ test('B3: the real reader reports the artifact list status and marks 5xx transie
 test('B3: a result Postgres cannot store (a NUL character) is still stored as done, cleaned', async () => {
   const { db, gh } = await labWorld();
   const id = await startedExperiment(gh, { id: 704 });
-  gh.artifacts.set(704, { name: `lab-result-${id}`, zip: makeZip({ 'result.json': JSON.stringify({ id, kind: 'research', status: 'done', spent_usd: 0.02, calls: 1, report_markdown: '## Findings\nnul here:\u0000 end', sources: [{ url: 'https://a.example', title: 'bad \ud800 title' }] }) }) });
+  gh.artifacts.set(704, { name: `lab-result-${id}`, zip: makeZip({ 'result.json': JSON.stringify({ id, kind: 'research', status: 'done', spent_usd: 0.02, calls: 1, report_markdown: `${FINDINGS}\nnul here:\u0000 end`, sources: [{ url: 'https://a.example', title: 'bad \ud800 title' }] }) }) });
   await chat({ prompt: '/lab status' });
   const { rows } = await db.query('select status, result from public.pg1_lab_experiments where id = $1', [id]);
   assert.equal(rows[0].status, 'done');
-  assert.equal(rows[0].result.report_markdown, '## Findings\nnul here: end');
+  assert.equal(rows[0].result.report_markdown, `${FINDINGS}\nnul here: end`);
 });
 
 test('B3: the hourly monitor closes a finished run nobody asked about; one failing experiment does not block the others', async () => {
   const { db, gh } = await labWorld();
   const done = await startedExperiment(gh, { id: 705 });
-  gh.artifacts.set(705, { name: `lab-result-${done}`, zip: makeZip({ 'result.json': JSON.stringify({ id: done, kind: 'research', status: 'done', spent_usd: 0.01, calls: 1, report_markdown: 'ok' }) }) });
+  gh.artifacts.set(705, { name: `lab-result-${done}`, zip: makeZip({ 'result.json': JSON.stringify({ id: done, kind: 'research', status: 'done', spent_usd: 0.01, calls: 1, report_markdown: FINDINGS }) }) });
   const broken = await startedExperiment(gh, { id: 706 });
   await db.query('update public.pg1_lab_experiments set run_id = 706, status = $2 where id = $1', [broken, 'running']);
   const inner = globalThis.fetch;
@@ -643,7 +690,7 @@ test('runner: a refused model call (401, out of credit) bills nothing and says w
   const fetchImpl = async () => new Response(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }), { status: 401 });
   const r = await runExperiment({ id: '0b0b0b0b-1111-2222-3333-444444444444', kind: 'skill', goal: 'g', env: { PG1_LAB_ANTHROPIC_API_KEY: 'k' }, budgetUsd: 2, fetchImpl });
   assert.equal(r.status, 'failed');
-  assert.equal(r.error, 'model call failed (anthropic 401 authentication_error)');
+  assert.equal(r.error, 'build: model call failed (anthropic 401 authentication_error)', 'the stage it stopped in leads the error');
   assert.equal(r.spent_usd, 0);
   assert.equal(r.calls, 1);
 });
