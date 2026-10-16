@@ -123,7 +123,9 @@ test('unauthenticated SPEAK is still rejected before any profile check', async (
   assert.equal(res.statusCode, 401);
 });
 
-test('the /voices command no longer exists', async () => {
+// /voices came back as the film voice list (lib/film/voices.mjs); the old
+// spoken-reply voice library is still gone.
+test('/voices is the film voice list, never the old voice library', async () => {
   const req = makeReq(
     { prompt: '/voices', user: 'test-operator', pass: 'test-secret-pass' },
     { ip: '10.4.0.6' }
@@ -142,7 +144,9 @@ test('/help never names a third-party voice provider or a specific voice', async
 
   assert.equal(res.statusCode, 200);
   assert.doesNotMatch(res.body.reply, THIRD_PARTY_NAMES);
-  assert.doesNotMatch(res.body.reply, /\/voices/);
+  // /voices is listed only as the film voice list, never a voice library.
+  assert.match(res.body.reply, /\[ \/voices \] the voices films can use/);
+  assert.doesNotMatch(res.body.reply, /voice library/i);
 });
 
 test('unknown and not-configured voice-profile replies never name a third-party voice provider', async () => {

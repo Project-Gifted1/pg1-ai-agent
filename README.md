@@ -543,6 +543,15 @@ Invalid input keeps its existing error code (JSON-RPC `-32602` for most tools, `
 address is not a valid EVM address. Expected: '0x' followed by exactly 40 hex characters (case-insensitive). Example: 0x7067312d746573742d6669787475726500000002. request_id: 9cf7345b-f8d6-46f7-8e45-0da5e25a002d
 ```
 
+## PG1 Studio film voices (operator)
+
+Each film's voice is chosen per film; no environment variable is required.
+
+- **`/voices`** (signed-in operator only) lists the voices in the account with a short description (accent, age, gender, use) and whether each is **cleared for client work**: stock (premade) voices and voices the account made itself are; voices added from the shared voice library never are.
+- **`/film ... --voice "<name or id>"`** and **`/film director ... --voice "<name or id>"`** pick the voice (the narrator, in Director Mode). An exact id matches first, then the name (case-insensitive, trimmed). An unknown name gets the three closest names, a name shared by two voices lists their ids, and a voice that is not cleared is refused on a client film; each of these stops before anything is created or spent.
+- **Director Mode without `--voice`** casts the narrator and every speaking character from the account's voices to fit the treatment (age, gender, tone, accent) and saves the cast on the film (`director.cast`). Retries and regenerations reuse it; a film is never recast. A cast voice that has left the account falls back for that role only, and the film goes on.
+- **Fallback order** when a film has no chosen or cast voice: `PG1_FILM_VOICE_ID` (optional) while that voice is still in the account (and cleared, for a client film), else the premade voice named in `FALLBACK_PREMADE_VOICE` (`lib/film/voices.mjs`, a male British voice), whose id is looked up by name in the account's voice list. A missing or invalid voice never fails a film.
+
 ## Acknowledgements
 
 - **Frits** ([x402 Doctor](https://x402-doctor.onrender.com/)): found the payment-gate ordering bug and confirmed the fix, so PG1 now returns a proper x402 payment challenge by default.

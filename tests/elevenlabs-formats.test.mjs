@@ -47,7 +47,9 @@ test('no ElevenLabs request asks for pcm_44100 or pcm_48000 (TTS, dialogue, soun
     assert.equal(await voiceCheck({ ...env, VOICE_CHECK_OUT: path.join(os.tmpdir(), `pg1-voice-check-${process.pid}.wav`) }, { fetchImpl, log: () => {} }), 0);
   }
   assert.ok(urls.length >= 15, `${urls.length} requests`);
-  for (const u of urls) {
+  // Every request that makes audio; listing the account's voices (the voice
+  // check's fallback lookup) returns no audio and has no format.
+  for (const u of urls.filter((x) => new URL(x).pathname !== '/v1/voices')) {
     const format = new URL(u).searchParams.get('output_format');
     assert.ok(format, `${u} names its format`);
     assert.doesNotMatch(format, PRO_ONLY, u);

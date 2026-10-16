@@ -34,7 +34,7 @@ Lab's research call all take their order from `ROUTING_CHAINS`.
 | `stills` | FLUX Kontext Pro (Replicate), Gemini image | film reference and shot stills |
 | `clips` | Gemini Omni, Kling (Replicate) | film clips (was Kling first) |
 | `image` | Gemini image, Gemini image pro, FLUX schnell (Replicate) | `/image` (order unchanged) |
-| `voice` | ElevenLabs brand voice (`PG1_FILM_VOICE_ID`), Cartesia | film voice-over (was Cartesia first) |
+| `voice` | ElevenLabs in the film's own voice (`--voice`, the Director cast, else `PG1_FILM_VOICE_ID`, else the premade fallback), Cartesia | film voice-over (was Cartesia first) |
 | `dialogue` | ElevenLabs Text to Dialogue, ElevenLabs per-line TTS (same voices) | Director dialogue lines (new) |
 | `sfx` | ElevenLabs sound effects | Director SFX cues (new) |
 | `music_film` | Lyria 3.5, Lyria clip (both Gemini API); ElevenLabs only with `PG1_ELEVENLABS_FILM_RIGHTS=1` | film beds |
@@ -173,8 +173,13 @@ craft terms, with a note).
 
 ## Manual steps and migration
 
-- `PG1_FILM_VOICE_ID`: the ElevenLabs brand voice id (Vercel and GitHub
-  Actions variable). Cartesia's voice is `CARTESIA_VOICE_ID` only from now.
+- `PG1_FILM_VOICE_ID` (optional): the ElevenLabs voice for films with no
+  `--voice` and no cast. Fallback order: `PG1_FILM_VOICE_ID` while it is
+  still in the account (GET /v1/voices; cleared, for a client film), else
+  `FALLBACK_PREMADE_VOICE` (`lib/film/voices.mjs`: the premade voice
+  George, male and British), its id looked up by name in the account's
+  voice list. A missing or invalid voice never fails a film. Cartesia's
+  voice is `CARTESIA_VOICE_ID` only.
 - `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` as Actions secrets, so the render
   worker can push the alerts and the end-of-film notice.
 - `PG1_DIRECTOR_CLIENT_APPROVAL` (default on), `PG1_STUDIO_LOGO_PATH`
@@ -202,3 +207,39 @@ craft terms, with a note).
 - T1: may output from OpenRouter, the AI gateway or OpenAI go into a client
   deliverable? Until answered, a client film's text runs on Claude, then the
   paid Gemini key (one line in `ROUTING_CHAINS` changes it).
+
+## Film voices (per film)
+
+`lib/film/voices.mjs`. Voices come from the account (ElevenLabs `GET /v1/voices`,
+cached in memory for 5 minutes, so one film reads the list once).
+
+- **`--voice "<name or id>"`** on `/film` and `/film director`: exact
+  `voice_id` first, then the name, case-insensitive and trimmed (the part
+  before " - " of a premade tagline name also matches). Unknown: the three
+  closest names (edit distance). Two voices with the name: both listed with
+  ids. Either stops before the film row, the render dispatch or any engine
+  call. Saved on the film as `director.cast.narrator` (source `flag`).
+- **Director casting** (no `--voice`, or `--voice` for the narrator only):
+  after the shot list, the narrator and every character with dialogue are
+  matched to voice labels (`gender`, `age`, `accent`, `description`,
+  `use_case`) and descriptions, from the character's own description first
+  and the script clauses that name it after; each role gets its own voice.
+  Saved as `director.cast = { narrator: { voice_id, name }, characters:
+  { "<role>": { voice_id, name } }, cast_at, source }`. Every resume, retry
+  and regeneration reads it; a film is never recast (a role the shot list
+  adds later is cast on its own). A cast voice gone from the account falls
+  back for that role only, logged, and the lines it already read are
+  recorded again so a role never changes voice mid-film.
+- **Client clearance** (`isClientCleared`): premade voices, and voices the
+  account owns (`is_owner: true` with category `cloned`, `generated` or
+  `professional`). Never a Voice Library copy: `sharing.status` `copied` or
+  `copied_disabled`, or `sharing.original_voice_id` naming another voice.
+  Library copies share categories with our own voices, so category alone
+  never decides. Used by `/voices`, casting and `--voice`.
+- **`/voices`** (operator only): name, a short description from the labels,
+  cleared for client work yes/no, and the id. PG1 wording only; provider
+  errors stay in the server log.
+- **Engine rules** (unchanged): `pcm_24000`; one engine per stage (a stage
+  that moves to Cartesia records its earlier lines again there); never
+  Cartesia for a client film (the primary is sent twice, then the stage
+  fails in PG1 words).
