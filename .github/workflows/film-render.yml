@@ -110,8 +110,9 @@ jobs:
           PG1_MOVIE_CONCURRENCY: ${{ vars.PG1_MOVIE_CONCURRENCY }}
           PG1_MOVIE_STS_MODEL: ${{ vars.PG1_MOVIE_STS_MODEL }}
           PG1_STUDIO_LOGO_PATH: ${{ vars.PG1_STUDIO_LOGO_PATH }}
-          # Large files (clips, masters, the 9:16 cut, stems) on Cloudflare R2;
-          # without these they stay in Supabase Storage (lib/storage/r2.mjs).
+          # Large files (clips, masters, the 9:16 cut, stems) on Cloudflare R2,
+          # never the vault: without these a render stage does not start
+          # (lib/storage/largeMedia.mjs).
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET: ${{ vars.R2_BUCKET }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}

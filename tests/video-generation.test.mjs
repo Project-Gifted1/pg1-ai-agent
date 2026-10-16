@@ -68,6 +68,9 @@ function resetEnv() {
   process.env.SUPABASE_URL = SUP_URL;
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key-0123456789';
   process.env.PG1_VIDEO_ENABLED = '1';
+  // Clips are large media (lib/storage/largeMedia.mjs): these tests store
+  // them in the stand-in vault, so the vault fallback is switched on.
+  process.env.PG1_LARGE_MEDIA_IN_VAULT = '1';
   // These tests cover the background job and its GET poll, which stay
   // behind PG1_VIDEO_GOOGLE_ASYNC=1; the synchronous render (the default)
   // is in video-sync-render.test.mjs.

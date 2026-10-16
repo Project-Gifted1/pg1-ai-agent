@@ -35,6 +35,7 @@ import { sharedLedger } from '../lib/aiRouter.mjs';
 import { reportUpstreamFailure } from '../lib/upstreamFailure.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { createFilmStore } from '../lib/film/store.mjs';
+import { largeMediaStorageMissing } from '../lib/storage/largeMedia.mjs';
 import { createCapacityAlerts } from '../lib/router/alerts.mjs';
 import { createWatchStore } from '../lib/watches/store.mjs';
 import { pushToOperator } from '../lib/watches/push.mjs';
@@ -188,7 +189,11 @@ export async function main(env = process.env, { log = console.log, engines = nul
     log(`[film] ${projectId} ${stage} failed: ${reason}${failure.step ? ` at ${failure.step}` : ''}`);
     return 1;
   };
-  const missing = missingFilmConfig(env);
+  // Masters, previews, cuts, clips and stems go to R2, never the vault
+  // (lib/storage/largeMedia.mjs): a stage that makes them does not start
+  // without it. The storyboard and the screenplay make only small files.
+  const makesLargeMedia = stage !== 'storyboard' && stage !== MOVIE_STAGES.script;
+  const missing = [...missingFilmConfig(env), ...(makesLargeMedia ? largeMediaStorageMissing(env) : [])];
   if (missing.length && !engines) {
     onFailure({ reason: 'film_not_configured', detail: `missing ${missing.join(', ')}`, requestId: project.request_id });
     return fail('not_configured', `missing ${missing.join(', ')}`);

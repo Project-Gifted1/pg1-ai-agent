@@ -22,6 +22,7 @@
 // card explains and /music retry resumes from. A file over the storage
 // limit (PG1_STORAGE_MAX_MB, default 48) fails the stage as file_too_large.
 
+import { largeMediaStorageMissing } from '../lib/storage/largeMedia.mjs';
 import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -62,6 +63,13 @@ export async function main(env = process.env, { log = console.log, fetchImpl = g
     log(`[music] ${trackId} ${stage} failed: ${reason}`);
     return 1;
   };
+  // Masters, previews and exports go to R2, never the vault
+  // (lib/storage/largeMedia.mjs): no stage starts without it.
+  const storageMissing = largeMediaStorageMissing(env);
+  if (storageMissing.length) {
+    onFailure({ reason: 'music_not_configured', detail: `missing ${storageMissing.join(', ')}`, requestId: track.request_id });
+    return fail('not_configured', `missing ${storageMissing.join(', ')}`);
+  }
   if (stage !== 'export' && !musicPlan(env).length) {
     onFailure({ reason: 'music_not_configured', detail: 'no music engine key (GEMINI_API_KEY_PAID, REPLICATE_API_TOKEN or ELEVENLABS_API_KEY)', requestId: track.request_id });
     return fail('not_configured', 'no music engine key');

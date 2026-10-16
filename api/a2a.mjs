@@ -103,6 +103,7 @@ import { submitJob, payJob, runAcceptedJob, jobView, createJobStore, JobRefusal 
 import { JOB_TYPES } from '../lib/a2aJobs/catalogue.mjs';
 import { getRequestIdentifier, setFreeTierHeaders } from '../lib/freeTier.mjs';
 import { recordTelemetry, toolErrorTelemetryStatus } from '../lib/telemetry.mjs';
+import { callerKindOf } from '../lib/ownTraffic.mjs';
 import { buildCheck, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
 import { formatFixIt, invalidInputMessage } from '../lib/invalidInput.mjs';
 import { ABUSEIPDB_KEY_HEADER, readCustomerKey } from '../lib/abuseIpdb.mjs';
@@ -366,6 +367,7 @@ function recordSkillTelemetry(skillTelemetry, res) {
       status: skillTelemetry.unknown ? 'unknown_tool' : (skillTelemetry.status || statusFromHttp(res.statusCode)),
       latencyMs: Date.now() - skillTelemetry.startedAt,
       callerHash: requestCallerHash(skillTelemetry.req),
+      callerKind: callerKindOf(skillTelemetry.req),
       isFixture: skillTelemetry.isFixture === true
     });
   } catch {
@@ -593,7 +595,7 @@ export default async function handler(req, res) {
           skillTelemetry.status = 'payment_required';
           return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(paid.job, version, inboundMessage, { paymentRequired: paid.paymentRequired }), id: requestId });
         }
-        if (paid.accepted && paid.settlement) recordTelemetry({ eventType: 'settlement', endpoint: '/api/a2a', toolName: `job.${paid.job.job_type}`.slice(0, 64), paymentType: 'x402', status: 'settled', callerHash: requestCallerHash(req), amountUsd: Number(paid.job.price_usd) });
+        if (paid.accepted && paid.settlement) recordTelemetry({ eventType: 'settlement', endpoint: '/api/a2a', toolName: `job.${paid.job.job_type}`.slice(0, 64), paymentType: 'x402', status: 'settled', callerHash: requestCallerHash(req), callerKind: callerKindOf(req), amountUsd: Number(paid.job.price_usd) });
         skillTelemetry.status = 'ok';
         return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(paid.job, version, inboundMessage, { settlement: paid.settlement, signArtifact: (a) => deps.outputs.sign(a) }), id: requestId });
       } catch (err) {
@@ -836,7 +838,7 @@ export default async function handler(req, res) {
         failure = 'Settlement failed: ' + e.message;
       }
       const ok = !!(settled && settled.success);
-      recordTelemetry({ eventType: 'settlement', endpoint: '/api/a2a', toolName: skill, paymentType: 'x402', status: ok ? 'settled' : 'failed', latencyMs: Date.now() - settleStartedAt, callerHash: requestCallerHash(req), amountUsd: ok ? x402PriceUsd(X402_PRICE) : null });
+      recordTelemetry({ eventType: 'settlement', endpoint: '/api/a2a', toolName: skill, paymentType: 'x402', status: ok ? 'settled' : 'failed', latencyMs: Date.now() - settleStartedAt, callerHash: requestCallerHash(req), callerKind: callerKindOf(req), amountUsd: ok ? x402PriceUsd(X402_PRICE) : null });
       if (!ok) {
         skillTelemetry.status = 'settlement_failed';
         const paymentRequired = await gate.settlementFailurePaymentRequired(failure);

@@ -60,6 +60,9 @@ function resetEnv() {
   process.env.SUPABASE_URL = SUP_URL;
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key-0123456789';
   process.env.PG1_VIDEO_ENABLED = '1';
+  // Clips are large media (lib/storage/largeMedia.mjs): these tests store
+  // them in the stand-in vault, so the vault fallback is switched on.
+  process.env.PG1_LARGE_MEDIA_IN_VAULT = '1';
   process.env.PG1_VIDEO_RENDER_SECRET = RENDER_SECRET;
   process.env.PG1_VIDEO_RENDER_URL = RENDER_URL;
   for (const k of ['USER_API_USER', 'USER_API_PASSS', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'ANTROPIC_API_KEY', 'SUPABASEAPI_KEY',

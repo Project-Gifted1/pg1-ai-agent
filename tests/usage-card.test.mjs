@@ -70,8 +70,12 @@ test('the card: six sections in order, no raw JSON, ISO date or provider name; l
   assert.equal(byBucket.more.length, 2, 'the rest behind "Show 2 more"');
   const jobs = view.sections[2].groups.find((g) => g.title === 'A2A jobs');
   assert.equal(jobs.empty, 'No accepted jobs in this period.');
-  const files = view.sections[5].groups[0].rows[1];
+  const files = view.sections[5].groups.find((g) => !g.title).rows[1];
   assert.deepEqual([files.label, files.value, files.sub, files.bar, files.warn], ['File storage', '900.0 MB', 'of 1.0 GB · 87.9%', 87.9, true]);
+  // Over 80%: a warning group comes first.
+  const warning = view.sections[5].groups[0];
+  assert.equal(warning.title, 'Warning');
+  assert.equal(warning.rows[0].label, 'File storage');
   // No storage figures: a plain sentence, not an error dump.
   assert.equal(usageCardView(r, { now, storage: null }).sections[5].groups[0].empty, 'Storage figures are not available right now.');
   // The chat tool's card (no extras) has no Storage section.

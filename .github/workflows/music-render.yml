@@ -84,6 +84,12 @@ jobs:
           PG1_VIDEO_RENDER_SECRET: ${{ secrets.PG1_VIDEO_RENDER_SECRET }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Masters, previews and exports on Cloudflare R2, never the vault
+          # (lib/storage/largeMedia.mjs): without these no stage starts.
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           # The music tier (lib/music/engines.mjs), paid keys only: ElevenLabs
           # (optional, first when set), Lyria on the paid Gemini key, then
           # Replicate. The free Gemini key is never given to this job.
