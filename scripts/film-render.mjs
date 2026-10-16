@@ -83,7 +83,7 @@ export function realEngines(env, { fetchImpl = globalThis.fetch, log = console.l
   // One voiceover line's time limit (default 60 s), PG1_FILM_VOICE_TIMEOUT_MS.
   const voiceTimeoutMs = Math.min(300000, Math.max(1, Number(env.PG1_FILM_VOICE_TIMEOUT_MS) || 60000));
   const voice = createFilmVoice({ env, fetchImpl, log, timeoutMs: voiceTimeoutMs, clientWork, alert, ...(sleep ? { sleep } : {}) });
-  const dialogue = createFilmDialogue({ env, fetchImpl, log, alert });
+  const dialogue = createFilmDialogue({ env, fetchImpl, log, alert, clientWork });
   return {
     still: media.still,
     clip: media.clip,
@@ -99,9 +99,9 @@ export function realEngines(env, { fetchImpl = globalThis.fetch, log = console.l
       const line = await dialogue({ lines, stage, characters });
       return { wav: pcmToWav(line.pcm, line.sampleRate), durationS: line.durationS, words: line.words, engine: line.engine };
     },
-    sfx: ({ text, seconds }) => soundEffect({ env, text, seconds, fetchImpl }),
+    sfx: ({ text, seconds }) => soundEffect({ env, text, seconds, fetchImpl, clientWork }),
     // Claude, then the paid Gemini key, then OpenRouter (lib/film/providers.mjs).
-    think: ({ system, content, effort, maxTokens, validate, purpose }) => filmThink({ env, system, content, effort, maxTokens, validate, purpose, fetchImpl, log, alert }),
+    think: ({ system, content, effort, maxTokens, validate, purpose }) => filmThink({ env, system, content, effort, maxTokens, validate, purpose, fetchImpl, log, alert, clientWork }),
     image: (bytes) => imageBlock(bytes),
     transcribe: ({ audio }) => transcribe({ env, audio, fetchImpl })
   };
@@ -127,7 +127,8 @@ export async function voiceCheck(env = process.env, { fetchImpl = globalThis.fet
   }
 }
 
-export async function main(env = process.env, { log = console.log, engines = null, fetchImpl = globalThis.fetch, ffImpl = ff } = {}) {
+// notify: the end-of-film push (tests read it; the real one is pushToOperator).
+export async function main(env = process.env, { log = console.log, engines = null, fetchImpl = globalThis.fetch, ffImpl = ff, notify: notifyImpl = null } = {}) {
   const projectId = String(env.FILM_PROJECT_ID || '').trim().toLowerCase();
   const stage = String(env.FILM_STAGE || '').trim();
   if (stage === 'voice_check') return voiceCheck(env, { fetchImpl, log });
@@ -178,7 +179,7 @@ export async function main(env = process.env, { log = console.log, engines = nul
     if (stage === 'director') {
       // Director Mode: every stage alone; the operator hears at the end.
       const watchStore = createWatchStore({ ...creds, fetchImpl });
-      const notify = ({ title, body }) => pushToOperator({ store: watchStore, env, title, body, url: '/', tag: `pg1-film-${projectId.slice(0, 8)}` }).catch(() => 0);
+      const notify = notifyImpl || (({ title, body }) => pushToOperator({ store: watchStore, env, title, body, url: '/', tag: `pg1-film-${projectId.slice(0, 8)}` }).catch(() => 0));
       const out = await runDirector({ project, store, engines: eng, ff: ffImpl, workdir, env, log, onFailure, voiceKey, media, notify });
       log(`[film] ${projectId} director ${out.status}`);
       return 0;

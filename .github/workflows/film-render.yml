@@ -38,7 +38,7 @@ jobs:
   render:
     name: render ${{ inputs.stage }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 240
     steps:
       - name: Mask the render token
         env:
@@ -104,6 +104,12 @@ jobs:
           VAPID_SUBJECT: ${{ vars.VAPID_SUBJECT }}
           PG1_DIRECTOR_CLIENT_APPROVAL: ${{ vars.PG1_DIRECTOR_CLIENT_APPROVAL }}
           PG1_STUDIO_LOGO_PATH: ${{ vars.PG1_STUDIO_LOGO_PATH }}
+          # Large files (clips, masters, the 9:16 cut, stems) on Cloudflare R2;
+          # without these they stay in Supabase Storage (lib/storage/r2.mjs).
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           VOICE_CHECK_OUT: ${{ runner.temp }}/voice-check.wav
         run: node scripts/film-render.mjs
       - name: Keep the voice check line

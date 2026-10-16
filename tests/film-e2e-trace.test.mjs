@@ -131,6 +131,14 @@ function engineRoutes(trace, st) {
         if (st.lyria) { const r = st.lyria(model); if (r) return r; }
         return json({ candidates: [{ content: { parts: [{ text: 'instrumental' }, { inlineData: { mimeType: 'audio/mpeg', data: Buffer.from('lyria-mp3').toString('base64') } }] } }] });
       }
+      // Text on the paid key (a client film's text runs here alone, T1).
+      if (!/image/.test(model)) {
+        const sys = body.systemInstruction && body.systemInstruction.parts ? body.systemInstruction.parts.map((x) => x.text).join('') : '';
+        const qc = sys === QC_SYSTEM;
+        trace.push({ step: qc ? 'shot check' : 'storyboard', provider: 'gemini_paid', model });
+        const text = qc ? '{"pass":true,"score":8,"issues":[],"best_start_s":0.5,"description":"as described"}' : JSON.stringify(storyboardJson());
+        return json({ candidates: [{ content: { parts: [{ text }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 500 } });
+      }
       trace.push({ step: 'still', provider: 'gemini_paid', model });
       return json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: PNG.toString('base64') } }] } }] });
     }],

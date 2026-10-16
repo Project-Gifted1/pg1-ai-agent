@@ -27,7 +27,7 @@ import { WRITING_SYSTEM, creditLines, directorBrief, parseDirectorRequest, estim
 import { withCredits } from '../lib/film/pipeline.mjs';
 import { createFilmStore } from '../lib/film/store.mjs';
 import { signFilmToken } from '../lib/film/dispatch.mjs';
-import { FILM_ACTIONS, parseFilmCommand } from '../lib/film/text.mjs';
+import { FILM_ACTIONS, parseFilmCommand, FILM_FAILURE_TEXT, filmFailureText } from '../lib/film/text.mjs';
 import { handleFilmCommand, handleFilmApproval, filmCard } from '../lib/film/chat.mjs';
 import { main as workerMain, realEngines } from '../scripts/film-render.mjs';
 import { createCapacityAlerts, __resetAlerts } from '../lib/router/alerts.mjs';
@@ -96,22 +96,24 @@ function fakeFf() {
 
 const sse = (events) => new Response(events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join(''), { status: 200 });
 function engineRoutes(trace, st) {
+  // One text answer per Director step, from whichever text engine is asked
+  // (a client film's text runs on the paid Gemini key alone, T1).
+  const textReply = (sys, sent, provider) => {
+    const step = sys === WRITING_SYSTEM ? 'writing' : sys.startsWith(STILL_CHECK_SYSTEM.slice(0, 40)) ? 'still check' : sys === DAILIES_SYSTEM ? 'dailies' : sys === QC_SYSTEM ? 'shot check' : 'shot list';
+    trace.push({ step, provider, text: sent.slice(0, 4000) });
+    if (step === 'writing') return JSON.stringify(SCRIPT);
+    if (step === 'shot list') return JSON.stringify(SHOTS);
+    if (step === 'still check') {
+      const n = trace.filter((t) => t.step === 'still check').length;
+      return n === 2 ? '{"pass":false,"score":3,"issues":[{"type":"composition","detail":"framed too wide for a medium close-up"}],"description":"x"}' : '{"pass":true,"score":8,"issues":[],"description":"ok"}';
+    }
+    const n = trace.filter((t) => t.step === 'dailies').length;
+    return n === 1 ? '{"pass":false,"score":3,"issues":[{"type":"faces_hands","detail":"six fingers on the left hand"}],"best_start_s":0,"description":"x"}' : '{"pass":true,"score":8,"issues":[],"best_start_s":0.5,"description":"as intended"}';
+  };
   return [
     ['api.github.com', (u, o, body) => { trace.push({ step: 'dispatch', body }); return new Response(null, { status: 204 }); }],
     [ANTHROPIC_URL, (u, o, body) => {
-      const sys = String(body.system);
-      const step = sys === WRITING_SYSTEM ? 'writing' : sys.startsWith(STILL_CHECK_SYSTEM.slice(0, 40)) ? 'still check' : sys === DAILIES_SYSTEM ? 'dailies' : sys === QC_SYSTEM ? 'shot check' : 'shot list';
-      trace.push({ step, provider: 'anthropic', text: JSON.stringify(body.messages).slice(0, 4000) });
-      let text;
-      if (step === 'writing') text = JSON.stringify(SCRIPT);
-      else if (step === 'shot list') text = JSON.stringify(SHOTS);
-      else if (step === 'still check') {
-        const n = trace.filter((t) => t.step === 'still check').length;
-        text = n === 2 ? '{"pass":false,"score":3,"issues":[{"type":"composition","detail":"framed too wide for a medium close-up"}],"description":"x"}' : '{"pass":true,"score":8,"issues":[],"description":"ok"}';
-      } else {
-        const n = trace.filter((t) => t.step === 'dailies').length;
-        text = n === 1 ? '{"pass":false,"score":3,"issues":[{"type":"faces_hands","detail":"six fingers on the left hand"}],"best_start_s":0,"description":"x"}' : '{"pass":true,"score":8,"issues":[],"best_start_s":0.5,"description":"as intended"}';
-      }
+      const text = textReply(String(body.system), JSON.stringify(body.messages), 'anthropic');
       return json({ model: body.model, content: [{ type: 'text', text }], stop_reason: 'end_turn', usage: { input_tokens: 800, output_tokens: 400 } });
     }],
     [`${REPLICATE_API}/models/`, (u) => {
@@ -126,8 +128,13 @@ function engineRoutes(trace, st) {
       if (st.omni) { const r = st.omni(); if (r) return r; }
       return json({ id: 'i', status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'video', data: Buffer.from('mp4').toString('base64'), mime_type: 'video/mp4' }] }] });
     }],
-    [`${GEMINI_API}/`, (u) => {
+    [`${GEMINI_API}/`, (u, o, body) => {
       const model = decodeURIComponent(u.split('/models/')[1].split(':')[0]);
+      if (!/lyria|image/.test(model)) {
+        const sys = body.systemInstruction ? body.systemInstruction.parts.map((x) => x.text).join('') : '';
+        const text = textReply(sys, JSON.stringify(body.contents), 'gemini_paid');
+        return json({ candidates: [{ content: { parts: [{ text }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 800, candidatesTokenCount: 400 } });
+      }
       trace.push({ step: /lyria/.test(model) ? 'music' : 'still', provider: 'gemini_paid', model });
       if (/lyria/.test(model)) return json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/mpeg', data: Buffer.from('mp3').toString('base64') } }] } }] });
       return json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: PNG.toString('base64') } }] } }] });
@@ -143,6 +150,9 @@ function engineRoutes(trace, st) {
     [CARTESIA_STT_URL, () => { trace.push({ step: 'transcript' }); return json({ text: 'Before the town wakes, Am I too early? Never. the day begins with bread.' }); }]
   ];
 }
+
+// Provider, company and model names a viewer, a client or a file may never carry.
+const BANNED = /(?<![a-z0-9])(?:eleven[\s_-]*labs|google|gemini|veo|lyria|replicate|kling|kwaivgi|cartesia|flux|kontext|black-forest-labs|openrouter|openai|anthropic|claude|gpt|chatgpt|sonic|omni|imagen|eleven_v3|eleven_multilingual(?:_v2)?|eleven_text_to_sound(?:_v2)?|ink-whisper|whisper)(?![a-z0-9])/i;
 
 beforeEach(() => { __resetRouterState(); __resetAlerts(); segments.length = 0; asses = []; mixes = []; });
 after(() => { process.env = { ...ORIGINAL_ENV }; globalThis.fetch = ORIGINAL_FETCH; });
@@ -168,12 +178,12 @@ describe('Director Mode, end to end', () => {
     await store.updateProject(p.id, { mode: 'director', client, price_usd: priceUsd, director: { stage: 'writing', done: [], seconds: 20, notes: directorBrief(brief).notes, regenerated: [] } });
     return p;
   };
-  const runDirectorStage = async (p, { clientWork = false } = {}) => {
+  const runDirectorStage = async (p, { clientWork = false, notify = null } = {}) => {
     const env = { ...process.env, ...KEYS, PG1_VIDEO_RENDER_SECRET: SECRET, FILM_PROJECT_ID: p.id, FILM_STAGE: 'director' };
     env.FILM_TOKEN = signFilmToken(p.id, env);
     const logs = [];
     const engines = realEngines(env, { fetchImpl, log: (l) => logs.push(l), sleep: async () => {}, clientWork, alert: createCapacityAlerts({ env, log: (l) => logs.push(l) }) });
-    const code = await workerMain(env, { engines, fetchImpl, ffImpl: fakeFf(), log: (l) => logs.push(l) });
+    const code = await workerMain(env, { engines, fetchImpl, ffImpl: fakeFf(), log: (l) => logs.push(l), ...(notify ? { notify } : {}) });
     return { code, logs, film: await store.getProject(p.id) };
   };
 
@@ -233,6 +243,85 @@ describe('Director Mode, end to end', () => {
     assert.ok(r.logs.some((l) => /director done/.test(l)));
   });
 
+  test('white label: the credits, the notes PDF, deliverable names, file metadata, error messages and the push name no provider or model', async () => {
+    const pushes = [];
+    const p = await newDirectorFilm();
+    const r = await runDirectorStage(p, { notify: async (n) => { pushes.push(n); return 1; } });
+    assert.equal(r.code, 0, r.logs.join('\n'));
+    // The credits, exactly, then the held logo end card; no copyright line.
+    assert.deepEqual([...DIRECTOR_CREDIT_LINES], ['Directed by PG1 Studio', 'Music and sound by PG1 Sound', 'A Project-Gifted1™ production']);
+    assert.deepEqual(creditLines({ title: r.film.timeline.title }).slice(-3), [...DIRECTOR_CREDIT_LINES]);
+    const crawl = asses.at(-1);
+    let at = -1;
+    for (const l of DIRECTOR_CREDIT_LINES) { const i = crawl.indexOf(l); assert.ok(i > at, `${l} in order`); at = i; }
+    assert.doesNotMatch(crawl, /©|\(c\)|copyright/i);
+    assert.equal(segments.at(-1).kind, 'image', 'the logo end card is the last thing on screen');
+    assert.equal(segments.at(-1).img, DEFAULT_LOGO_FILE);
+    assert.equal(segments.at(-1).mode, 'hold', 'held, never generated');
+    // Every stored file: its name, description and metadata.
+    const assets = await store.listAssets(p.id);
+    const delivered = assets.filter((a) => ['final', 'social', 'stem', 'notes'].includes(a.kind));
+    assert.deepEqual([...new Set(delivered.map((a) => a.kind))].sort(), ['final', 'notes', 'social', 'stem']);
+    for (const a of assets) {
+      assert.doesNotMatch(`${a.storage_path} ${a.thumb_path || ''}`, BANNED, `file name ${a.storage_path}`);
+      assert.doesNotMatch(`${a.description || ''} ${a.mime_type || ''}`, BANNED, `description of ${a.storage_path}`);
+      assert.doesNotMatch(JSON.stringify(a.meta || {}), BANNED, `metadata of ${a.storage_path}`);
+    }
+    // The director's notes PDF: its text blocks and its document metadata.
+    const notes = assets.find((a) => a.kind === 'notes');
+    assert.match(notes.storage_path, /\.pdf$/);
+    const pdfBytes = await store.download(notes.storage_path);
+    const { PDFDocument } = await import('pdf-lib');
+    const pdf = await PDFDocument.load(pdfBytes, { updateMetadata: false });
+    for (const v of [pdf.getTitle(), pdf.getAuthor(), pdf.getSubject(), pdf.getCreator(), pdf.getProducer(), pdf.getKeywords()]) assert.doesNotMatch(String(v || ''), BANNED, String(v));
+    assert.doesNotMatch(Buffer.from(pdfBytes).toString('latin1'), BANNED, 'no provider or model name anywhere in the file');
+    assert.doesNotMatch(JSON.stringify(directorNotesBlocks({ project: r.film, director: r.film.director, timeline: r.film.timeline, qcReport: r.film.qc_report, plan: { segments: [], joins: [], totalS: 0 } })), BANNED);
+    // The film's report and card, and the push at the end (film, cost, shots made again).
+    assert.doesNotMatch(JSON.stringify(r.film.qc_report), BANNED);
+    assert.doesNotMatch(JSON.stringify(r.film.director), BANNED);
+    assert.doesNotMatch(JSON.stringify(await filmCard(store, r.film)), BANNED);
+    assert.equal(pushes.length, 1);
+    assert.match(pushes[0].title, /is ready/);
+    assert.match(pushes[0].body, /USD spent, \d+ shot\(s\) made again/);
+    assert.doesNotMatch(`${pushes[0].title} ${pushes[0].body}`, BANNED);
+    // Every reason a film can stop, as the operator and a client read it.
+    for (const reason of [...Object.keys(FILM_FAILURE_TEXT), 'licence']) {
+      const failed = { ...r.film, status: 'failed', error_reason: reason, error_detail: 'replicate kwaivgi/kling-v2.1 402: out of credit; gemini-omni-1.1-flash 429; elevenlabs eleven_v3 500', failure: { stage: 'director', step: 'clips', engine: 'replicate', fallback: { engine: 'gemini_paid', outcome: 'failed' }, licence: reason === 'licence' } };
+      const card = await filmCard(store, failed);
+      assert.doesNotMatch(String(card.message || ''), BANNED, `${reason}: ${card.message}`);
+      assert.doesNotMatch(filmFailureText(reason), BANNED, reason);
+    }
+  });
+
+  test('with R2 set up, the clips, master, 9:16 cut and stems go to pg1-storage; stills, voice and the notes stay in the vault', async () => {
+    const account = '0123456789abcdef0123456789abcdef';
+    const objects = new Map();
+    const r2Route = [`https://${account}.r2.cloudflarestorage.com/pg1-storage/`, (u, o) => {
+      const key = decodeURIComponent(new URL(u).pathname.slice('/pg1-storage/'.length));
+      assert.match(String(o.headers.Authorization), /^AWS4-HMAC-SHA256 /);
+      if (o.method === 'PUT') { objects.set(key, Buffer.from(o.body)); return new Response('', { status: 200 }); }
+      return objects.has(key) ? new Response(objects.get(key), { status: 200 }) : new Response('', { status: 404 });
+    }];
+    fetchImpl = routedFetch([r2Route, ...filmDbRoutes(db), ...engineRoutes(trace, st)]);
+    globalThis.fetch = fetchImpl;
+    process.env = { ...process.env, R2_ACCOUNT_ID: account, R2_ACCESS_KEY_ID: 'r2-key-id', R2_SECRET_ACCESS_KEY: 'r2-secret' };
+    const p = await newDirectorFilm();
+    const r = await runDirectorStage(p);
+    assert.equal(r.code, 0, r.logs.join('\n'));
+    const assets = await store.listAssets(p.id);
+    for (const a of assets) {
+      const large = ['clip', 'final', 'preview', 'social', 'stem'].includes(a.kind);
+      assert.equal(String(a.storage_path).startsWith('r2:films/'), large, `${a.kind} ${a.storage_path}`);
+    }
+    assert.ok(assets.some((a) => a.kind === 'final') && assets.some((a) => a.kind === 'social') && assets.filter((a) => a.kind === 'stem').length === 3);
+    assert.ok([...objects.keys()].every((k) => k.startsWith(`films/${p.id}/`)));
+    // The film card links the master on R2 (the chat side needs the same
+    // R2 settings: a store without them cannot sign an R2 link).
+    assert.equal((await filmCard(store, r.film)).finalUrl, null, 'no R2 settings: no link');
+    const card = await filmCard(createFilmStore({ supUrl: SUP_URL, supKey: 'service-key', fetchImpl }), r.film);
+    assert.match(JSON.stringify(card), new RegExp(`${account}\\.r2\\.cloudflarestorage\\.com/pg1-storage/films/${p.id}/final/`));
+  });
+
   test('a client film: licensed engines only, the client credited, approval before delivery', async () => {
     const p = await newDirectorFilm({ brief: 'A 20s spot for a bakery', client: { name: 'Acme Bakery', credit: false } });
     const r = await runDirectorStage(p, { clientWork: true });
@@ -284,7 +373,7 @@ describe('Director Mode, end to end', () => {
     assert.ok(Number(r.film.spent_usd) > spentBefore);
   });
 
-  test('/film director: one budget approval, then the worker alone; operator only', async () => {
+  test('/film director: client films wait for one approval, the operator\'s own start at once; operator only', async () => {
     const cmdOpts = { env: { ...process.env, ...KEYS, PG1_VIDEO_ENABLED: '1', PG1_VIDEO_RENDER_SECRET: SECRET, GITHUB_TOKEN: 'gh' }, supUrl: SUP_URL, supKey: 'service-key', fetchImpl };
     assert.deepEqual(parseFilmCommand('/film director a harbour at dawn --seconds 30'), { sub: 'director', id: null, rest: 'a harbour at dawn --seconds 30' });
     assert.match((await handleFilmCommand({ ...cmdOpts, text: '/film director a harbour at dawn', isOperator: false })).reply, /Only the signed-in operator/);
@@ -306,6 +395,24 @@ describe('Director Mode, end to end', () => {
     assert.match(ok.reply, /Director Mode is directing the film/);
     assert.equal(trace.filter((t) => t.step === 'dispatch').at(-1).body.inputs.stage, 'director');
     assert.equal((await store.getProject(film.id)).status, 'director_queued');
+
+    // The operator's own film starts at once: no proposal, straight to the worker.
+    const before = trace.filter((t) => t.step === 'dispatch').length;
+    const own = await handleFilmCommand({ ...cmdOpts, text: '/film director a 20s film about a lighthouse', isOperator: true });
+    assert.equal(own.pendingApproval, undefined, 'no start approval for the operator\'s own film');
+    assert.match(own.reply, /Started: Director Mode is directing the film\. It stops on its own only if the spending cap or the price floor would be passed or a safety check refuses/);
+    assert.equal(trace.filter((t) => t.step === 'dispatch').length, before + 1);
+    assert.equal(trace.filter((t) => t.step === 'dispatch').at(-1).body.inputs.stage, 'director');
+    assert.equal((await store.getProject(own.filmProject.id)).status, 'director_queued');
+
+    // PG1_DIRECTOR_START_APPROVAL=1 asks first; a client film always asks, whatever the setting.
+    const asked = await handleFilmCommand({ ...cmdOpts, env: { ...cmdOpts.env, PG1_DIRECTOR_START_APPROVAL: '1' }, text: '/film director a 20s film about a lighthouse', isOperator: true });
+    assert.ok(asked.pendingApproval && asked.pendingApproval.token);
+    assert.match(asked.reply, /Approve to start \(PG1_DIRECTOR_START_APPROVAL=1\)/);
+    const client = await handleFilmCommand({ ...cmdOpts, env: { ...cmdOpts.env, PG1_DIRECTOR_START_APPROVAL: '0' }, text: '/film director a 20s spot --client Acme', isOperator: true });
+    assert.ok(client.pendingApproval && client.pendingApproval.token, 'a client film always waits for the operator');
+    assert.match(client.reply, /A client film waits for your approval to start/);
+    assert.equal(trace.filter((t) => t.step === 'dispatch').length, before + 1, 'neither of those started');
   });
 });
 
@@ -314,7 +421,7 @@ describe('Director Mode rules', () => {
     assert.match(directorBrief('a short shot like Christopher Nolan would').brief, /distinctive, deliberate cinematic style/);
     assert.match(directorBrief('a Kubrick-esque corridor').brief, /distinctive corridor/);
     assert.equal(directorBrief('a harbour at dawn').notes.length, 0);
-    assert.deepEqual(parseDirectorRequest('dawn --seconds 400').seconds, 180);
+    assert.deepEqual(parseDirectorRequest('dawn --seconds 400').seconds, 300, '30 shots of 10 s at most');
     for (const lines of [creditLines({ title: 'X' }), creditLines({ client: { name: 'Acme', credit: true } }), creditLines({ client: { name: 'Acme', credit: false } })]) {
       assert.ok(creditsAreWhiteLabel(lines), lines.join(' | '));
     }

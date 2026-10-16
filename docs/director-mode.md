@@ -61,11 +61,18 @@ One classifier, `failureClass(status, text, { refused })` in
 
 ### A3. Licence for client work
 
-A call made for a client film (`client` set on the project) uses only steps
-whose registry model licence is `commercial_ok`. As the registry stands:
-Kling (R1) and Cartesia (C1) are `unclear`, so a client film's clips run on
-Gemini Omni alone and its voice on ElevenLabs alone; when those are out, the
-stage stops with a clear message instead of using an unlicensed engine.
+A call made for a client film (`client` set on the project) or a client
+track (`/music … --client`) uses only steps whose registry licence is
+`commercial_ok`. Only Google (G1, G2) and ElevenLabs (E1) output is
+`commercial_ok`; every other engine is `unclear` until the operator answers
+its licence question: FLUX Kontext Pro, FLUX schnell and Kling on Replicate
+(R1), Cartesia (C1), and Claude, OpenRouter, the AI gateway and OpenAI (T1).
+So a client film's text runs on the paid Gemini key, its stills on Gemini
+image, its clips on Gemini Omni and its voice, dialogue and SFX on
+ElevenLabs. ElevenLabs Music is never used for a client (`clientExcluded`:
+its licence excludes film, TV and radio), on `/music` or in a film; the
+operator's own tracks keep it. When no cleared engine is left, the stage
+stops with a clear message instead of using an unlicensed engine.
 
 ### A4. One engine per stage
 
@@ -99,28 +106,41 @@ render worker share it; without the table it falls back to once per process.
 - Music beds are scored to each scene's length (asked for that many
   seconds; the clip model only for scenes of 30 s or less, else as a
   fallback that fades out). The mix no longer loops a bed.
-- The router ledger records each clip's real cost (Kling 0.30 USD per 5 s
-  standard, Gemini Omni at its per-second price), not the 1.40 USD worst
-  case, and a Lyria 3.5 bed at 0.08 USD (the clip model at its own 0.04), so
-  `/usage` matches the film's own charges. Film estimates use 0.08 per bed.
+- Music cues are scored to each scene's length from the shot list (the sum
+  of its shots' durations, or the edit's length when narration makes the
+  scene longer); a cue's fingerprint holds that length, so a scene made
+  longer or shorter gets a new cue.
+- Every engine's price lives in the registry (`ENGINE_UNIT_COSTS`) and the
+  ledger records the price of the engine that made the call: Kling 0.30 USD
+  and Gemini Omni 0.50 USD per 5 s standard clip (not 1.40), FLUX Kontext
+  Pro 0.04 and Gemini image 0.067 per still, Lyria 3.5 0.08 per bed (the
+  clip model 0.04), ElevenLabs 0.10 per 1,000 characters (speech and
+  dialogue), 0.12 per minute (SFX), 0.15 per minute (music), Cartesia 0.05
+  per 1,000 characters. `supabase/migrations/20261029140000_pg1_ledger_clip_costs.sql`
+  corrects the clip rows written before (preview query in
+  `supabase/previews/`).
+- ElevenLabs requests use Creator-plan formats only: `pcm_24000` for speech
+  and dialogue, `mp3_44100_192` for SFX and music (`pcm_44100` and
+  `pcm_48000` need the Pro plan; a test keeps them out).
 - A real ElevenLabs test line in the brand voice: a `voice_check` stage of
   the render workflow (one fixed sentence, no database writes, the WAV kept
   as the run's artifact), dispatched once from this branch.
 
 ## Part B: Director Mode
 
-`/film director <brief>` (operator only). Options: `--seconds 20..120`,
+`/film director <brief>` (operator only). Options: `--seconds 15..300`
+(at most 30 shots of 10 s; the cap and the 1.5x floor still stop it sooner),
 `--client "<name>"` (client film), `--price <usd>` (the package price, for
 the 1.5x floor), `--credit on|off` (the PG1 credit lines on a client film).
 Images attached to the message are the client's or the operator's brand
 assets, as for `/film`.
 
-One approval at the start (the budget and cap, as every PG1 spend; status
-`awaiting_director_approval`), then the worker runs every stage alone
-(`director_queued`, `directing`, then `done` or, for a client film,
-`awaiting_delivery_approval`). It stops only when the cap or price floor
-would be passed, a safety filter refuses, or, for a client film, before
-delivery (`PG1_DIRECTOR_CLIENT_APPROVAL`, default on).
+The operator's own film starts at once (`director_queued`, `directing`,
+`done`) and stops on its own only when the cap or the price floor would be
+passed or a safety filter refuses; `PG1_DIRECTOR_START_APPROVAL=1` makes it
+ask first. A client film always waits for the operator's approval to start
+(`awaiting_director_approval`) and, with `PG1_DIRECTOR_CLIENT_APPROVAL` on
+(the default), again before delivery (`awaiting_delivery_approval`).
 
 Every stage's output is saved on the project (`director` column) and every
 asset in the media library with its fingerprint, so a stopped run resumes at
@@ -158,7 +178,16 @@ craft terms, with a note).
   `public/brand/pg1-icon-512.png`), `PG1_DIRECTOR_VOICES` (optional
   `Name=voiceId;Name=voiceId` for characters' dialogue; default premade
   voices in cast order).
-- The migration `supabase/migrations/20261030120000_pg1_director.sql`.
+- `PG1_DIRECTOR_START_APPROVAL` (optional, Vercel): `1` makes the
+  operator's own Director films wait for an approval to start.
+- Cloudflare R2 for the large files (clips, masters, the 9:16 cut, stems),
+  bucket `pg1-storage`, in both Vercel and GitHub Actions:
+  `R2_ACCOUNT_ID` and `R2_BUCKET` (Actions variables), `R2_ACCESS_KEY_ID`
+  and `R2_SECRET_ACCESS_KEY` (Actions secrets; `/film sync-secrets` copies
+  them from Vercel). Without them every file stays in Supabase Storage.
+- The migrations `supabase/migrations/20261029130000_pg1_director.sql` and
+  `supabase/migrations/20261029140000_pg1_ledger_clip_costs.sql` (run the
+  preview query first).
 
 ## Open questions for the operator
 
@@ -166,5 +195,6 @@ craft terms, with a note).
   request's text chain (Claude first) is applied to storyboards, checks and
   heavy chat. Moving every light reply to Claude would multiply chat cost;
   one line in `ROUTING_CHAINS` changes it.
-- The single approval at the start of a Director run (budget and cap) is
-  kept, as for every PG1 spend; `PG1_DIRECTOR_START_APPROVAL=0` removes it.
+- T1: may output from Claude, OpenRouter, the AI gateway or OpenAI go into
+  a client deliverable? Until answered, a client film's text runs on the
+  paid Gemini key alone (one line in `ROUTING_CHAINS` changes it).

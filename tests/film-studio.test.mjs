@@ -468,7 +468,8 @@ describe('render worker', () => {
     await store.updateProject(p.id, { timeline: edited, timeline_version: 2 });
     p = await store.getProject(p.id);
     await runRender({ project: p, stage: 'full', store, engines, ff: fakeFf(), workdir: workdir() });
-    assert.deepEqual(engines.calls.map((c) => c[0]), ['music'], 'only the changed music bed');
+    // Scene 3's new mood, and scene 1's cue scored again to its trimmed length.
+    assert.deepEqual(engines.calls.map((c) => c[0]), ['music', 'music'], 'only the changed music beds');
   });
 
   test('the cap stops a stage before a call it cannot pay for', async () => {
