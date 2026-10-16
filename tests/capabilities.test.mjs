@@ -121,7 +121,7 @@ test('offerability: standard + commercial_ok may be offered, custom only on requ
   assert.equal(offerability(capability('voice_cloning'), { shipped: [1, 2, 3, 4] }), 'never', 'Phase 4 listed, but the filter still refuses it');
   assert.equal(offerability(capability('voice_cloning'), { shipped: [1, 4], gates: {} }), 'on_request', 'once the filter allows own-voice cloning');
   assert.equal(offerability(capability('stem_separation')), 'offer');
-  assert.equal(offerability(capability('storyboard_keyframes')), 'offer', 'G1 answered');
+  assert.equal(offerability(capability('storyboard_keyframes')), 'review', 'FLUX Kontext Pro on Replicate keeps it under R1 (client films use the Gemini stills alone)');
   assert.equal(offerability(capability('film_music')), 'offer', 'G2 answered');
   assert.equal(offerability(capability('sound_effects')), 'on_request');
   assert.equal(offerability(capability('text_image_to_video')), 'review', 'the Replicate fallback keeps it under R1');
@@ -130,10 +130,10 @@ test('offerability: standard + commercial_ok may be offered, custom only on requ
 test('[OFFERS] lists what may be offered with its min price, what only on request, and what never', () => {
   const d = offersDirective();
   assert.match(d, /^\[OFFERS\]/);
-  assert.match(d, /May be included in a package: [^\n]*Storyboard and keyframe images \(at least 0\.1005 USD per still\)[^\n]*Music \(PG1 Sound tracks\) \(at least 0\.225 USD per minute of music\)[^\n]*Music for films \(score beds\) \(at least 0\.12 USD per music bed\)[^\n]*Stem separation \(at least 0\.045 USD per track \(about 3 minutes\) \(from PG1's own cost estimate\)\)/);
+  assert.match(d, /May be included in a package: [^\n]*Music \(PG1 Sound tracks\) \(at least 0\.225 USD per minute of music\)[^\n]*Music for films \(score beds\) \(at least 0\.12 USD per music bed\)[^\n]*Stem separation \(at least 0\.045 USD per track \(about 3 minutes\) \(from PG1's own cost estimate\)\)/);
   assert.match(d, /Only as "custom, on request"[^\n]*Sound effects and Foley \(at least 0\.18 USD per minute of audio\)/);
   assert.match(d, /Only as "custom, on request"[^\n]*5\.1 and 7\.1 surround mixes/);
-  assert.match(d, /until the operator settles its licence[^\n]*Text- and image-to-video clips \[licence question R1\][^\n]*Voice-over \(one voice\) \[licence question C1\]\./);
+  assert.match(d, /until the operator settles its licence[^\n]*Text- and image-to-video clips \[licence question R1\][^\n]*Storyboard and keyframe images \[licence question R1\][^\n]*Voice-over \(one voice\) \[licence question C1\]\./);
   assert.match(d, /Never offered: [^\n]*Video upscaling to 8K \(no provider offers it\)/);
   assert.match(d, /Never offered: [^\n]*Consented voice cloning \(own voice only\) \(not before a later phase\)/);
   for (const n of NOT_OFFERED) assert.ok(d.includes(n.label), n.label);
@@ -346,5 +346,5 @@ test('G1 and G2 answered: Google output through the Gemini API is commercial_ok 
   // Replicate's Lyria 2 is a candidate only, out of every chain.
   assert.ok(!capability('music').models.some((m) => m.model === 'google/lyria-2'));
   assert.match(capability('music').candidates.find((c) => c.model === 'google/lyria-2').licence, /unclear \(R1/);
-  assert.deepEqual(REGISTRY.filter((e) => e.licence === 'unclear').map((e) => `${e.id}:${e.review.join(',')}`), ['text_image_to_video:R1', 'upscale_4k:R1', 'upscale_8k:', 'voiceover_single:C1']);
+  assert.deepEqual(REGISTRY.filter((e) => e.licence === 'unclear').map((e) => `${e.id}:${e.review.join(',')}`), ['text_image_to_video:R1', 'scene_character_consistency:R1', 'storyboard_keyframes:R1', 'upscale_4k:R1', 'upscale_8k:', 'voiceover_single:C1']);
 });

@@ -136,8 +136,8 @@
         {
           "provider": "replicate",
           "model": "black-forest-labs/flux-kontext-pro",
-          "role": "primary (reference and keyframes)",
-          "licence": "commercial_ok"
+          "role": "primary (reference and keyframes); never for client films",
+          "licence": "unclear"
         },
         {
           "provider": "google",
@@ -150,9 +150,11 @@
           ]
         }
       ],
-      "licence": "commercial_ok",
+      "licence": "unclear",
       "licenceConditions": [],
-      "review": [],
+      "review": [
+        "R1"
+      ],
       "unitCost": {
         "usd": 0.067,
         "unit": "still",
@@ -177,7 +179,7 @@
           "does": "image editing and generation from a reference image",
           "max": "one image per run",
           "price": "0.04 USD per image",
-          "licence": "commercial_ok: outputs generated on Replicate may be used commercially",
+          "licence": "unclear (R1: Replicate-hosted; Replicate's page says outputs may be used commercially, but the operator has not cleared it for client work)",
           "sources": [
             "https://replicate.com/black-forest-labs/flux-kontext-pro",
             "https://replicate.com/blog/flux-kontext",
@@ -220,8 +222,8 @@
         {
           "provider": "replicate",
           "model": "black-forest-labs/flux-kontext-pro",
-          "role": "primary stills",
-          "licence": "commercial_ok"
+          "role": "primary stills; never for client films",
+          "licence": "unclear"
         },
         {
           "provider": "google",
@@ -234,9 +236,11 @@
           ]
         }
       ],
-      "licence": "commercial_ok",
+      "licence": "unclear",
       "licenceConditions": [],
-      "review": [],
+      "review": [
+        "R1"
+      ],
       "unitCost": {
         "usd": 0.067,
         "unit": "still",
@@ -261,7 +265,7 @@
           "does": "keyframes that keep the reference",
           "max": "one image per run",
           "price": "0.04 USD per image",
-          "licence": "commercial_ok",
+          "licence": "unclear (R1)",
           "sources": [
             "https://replicate.com/black-forest-labs/flux-kontext-pro",
             "https://bfl.ai/pricing"
@@ -833,7 +837,7 @@
         "unit": "music bed",
         "basis": "official",
         "verified": false,
-        "note": "Lyria 3.5 at 0.08 USD per song; the clip model is 0.04 USD per 30 s. PG1 Studio's own film estimate is lower (lib/film/cost.mjs, 0.06 USD per bed).",
+        "note": "Lyria 3.5 at 0.08 USD per song; the clip model is 0.04 USD per 30 s. PG1 Studio's film estimate is the same 0.08 USD per bed (lib/film/cost.mjs).",
         "sources": [
           "https://ai.google.dev/gemini-api/docs/pricing"
         ]
@@ -1129,7 +1133,7 @@
       ]
     },
     "R1": {
-      "question": "Replicate-hosted video and upscaling models (Kling, Topaz, FILM): what does each model's own licence allow?",
+      "question": "Replicate-hosted models (Kling, FLUX Kontext Pro, FLUX schnell, Topaz, FILM): what does each model's own licence allow?",
       "detail": "Replicate grants its rights in outputs, including commercial use, \"subject to any third-party terms\" of the model used. The model pages' licence tabs could not be loaded, so each model's terms are unconfirmed.",
       "answered": null,
       "sources": [
@@ -1157,6 +1161,12 @@
         "https://elevenlabs.io/blog/eleven-v3",
         "https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform"
       ]
+    },
+    "T1": {
+      "question": "Text engines other than Google (Anthropic Claude, OpenRouter, the AI gateway, OpenAI): may their output go into a client deliverable?",
+      "detail": "Only Google (G1, G2) and ElevenLabs (E1) output has an operator answer for client work. Until this one is answered, a client job's text (storyboards, scripts, checks) runs on the paid Gemini key alone; the operator's own films keep the whole text chain.",
+      "answered": null,
+      "sources": []
     },
     "C1": {
       "question": "Cartesia (the voice PG1 Studio uses now for voice-over): do its terms allow resale of output?",
