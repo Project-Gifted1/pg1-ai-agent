@@ -93,6 +93,22 @@ test('a film renders end to end with ffmpeg', { skip: !HAS_FFMPEG && 'ffmpeg is 
     assert.equal(full.qcReport.generated.retries, 1);
     assert.equal(full.qcReport.flagged.length, 0);
     assert.ok(full.plan.captions.some((c) => /first line/.test(c.text)));
+    // The master spec (shared with /movie): the preview (stills) at 1080p,
+    // the full film at its clips' own 720p, never lower; High profile,
+    // 24 fps, over the bitrate floor, AAC 256k stereo; the QC gate passed.
+    const pv = await ff.probeMedia(prevFile);
+    assert.deepEqual([pv.width, pv.height], [1920, 1080], 'the preview is never 854x480 again');
+    const fp = await ff.probeMedia(out);
+    assert.deepEqual([fp.width, fp.height, fp.fps, fp.codec, fp.profile, fp.audioCodec, fp.channels], [1280, 720, 24, 'h264', 'High', 'aac', 2]);
+    for (const p2 of [pv, fp]) {
+      assert.ok(p2.videoKbps >= ff.minVideoKbps(p2), `${p2.videoKbps} kb/s at ${p2.width}x${p2.height}`);
+      assert.ok(p2.audioKbps >= 240, `audio ${p2.audioKbps} kb/s`);
+    }
+    assert.equal(full.qcReport.gate.pass, true, JSON.stringify(full.qcReport.gate));
+    assert.deepEqual(full.qcReport.gate.freezes, ['no freeze over 1 s']);
+    assert.deepEqual(full.qcReport.gate.silences, ['no silence over 2 s']);
+    assert.deepEqual(full.qcReport.master, { width: 1280, height: 720 });
+    assert.equal(preview.qcReport.gate.pass, true, JSON.stringify(preview.qcReport.gate));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

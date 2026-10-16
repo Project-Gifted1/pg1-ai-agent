@@ -595,7 +595,7 @@ describe('/film in the chat', () => {
     assert.match(status.jsonBody.filmProject.summary, /drone shot over the harbour/);
 
     const ok = await chat(authed({ action: 'CONFIRM_PENDING_ACTION', token: p.pending_token, decision: 'approve' }));
-    assert.match(ok.jsonBody.reply, /rendering the low-res preview/);
+    assert.match(ok.jsonBody.reply, /rendering the preview/);
     assert.equal(ok.jsonBody.filmProject.status, 'preview_queued');
     assert.equal(calls.filter((c) => c.url.includes('api.github.com')).pop().body.inputs.stage, 'preview');
     assert.equal((await db.query('select status from pending_actions where token = $1', [p.pending_token])).rows[0].status, 'approved');

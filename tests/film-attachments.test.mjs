@@ -561,7 +561,8 @@ describe('placing an image with ffmpeg', { skip: !HAS_FFMPEG && 'ffmpeg is not i
   test('a tall image is pillarboxed; a push-in zooms at most 5%', async () => {
     const img = path.join(dir, 'tall.png');
     await writeFile(img, TALL);
-    const size = realFf.FILM_SIZES.preview;
+    // The geometry on a small frame (the master is 1080p; the maths is the same).
+    const size = { width: 854, height: 480, crf: 18, preset: 'medium' };
     const fit = realFf.letterboxFit(100, 200, size.width, size.height);
     assert.deepEqual(fit, { w: 240, h: 480, x: 307, y: 0 });
     const seg = path.join(dir, 'push.mp4');

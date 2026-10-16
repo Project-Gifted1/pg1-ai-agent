@@ -46,6 +46,7 @@ describe('licences in ROUTING_CHAINS', () => {
       'voice:elevenlabs:eleven_multilingual_v2=commercial_ok', 'voice:cartesia:sonic-3.6=unclear',
       'dialogue:elevenlabs:eleven_v3 (Text to Dialogue)=commercial_ok', 'dialogue:elevenlabs:eleven_multilingual_v2=commercial_ok',
       'sfx:elevenlabs:eleven_text_to_sound_v2=commercial_ok',
+      'movie_dialogue_clips:gemini_paid:gemini-omni-1.1-flash=commercial_ok', 'speech_to_speech:elevenlabs:eleven_multilingual_sts_v2=commercial_ok',
       'music_film:gemini_paid:lyria-3.5=commercial_ok', 'music_film:gemini_paid:lyria-3-clip-preview=commercial_ok', 'music_film:elevenlabs:Eleven Music=commercial_ok',
       'music:gemini_paid:lyria-3.5=commercial_ok', 'music:gemini_paid:lyria-3-clip-preview=commercial_ok', 'music:elevenlabs:Eleven Music=commercial_ok'
     ]);
