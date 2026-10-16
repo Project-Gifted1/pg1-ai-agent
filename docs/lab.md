@@ -80,6 +80,10 @@ With this in place, a lab pull request reaches `main` only through your review a
 | `/lab stop <id>` | Cancels the run. |
 | `/lab report [id]` | Shows the findings, the spend and the gate's evidence. With no id, the latest experiment. An unfinished experiment is synced with its run first. |
 
+## The lab card
+
+`/lab status` (the latest three), `/lab report` and every lab watch report show a card built from the experiment's row (`lib/lab/card.mjs`): the PG1 lab mascot in the pose of the real status (queued taps its clipboard, running stirs its flask, done holds up the result, failed puffs smoke and shrugs, over budget turns out an empty pocket), a beaker filled to the spend over the budget cap (red from 90%), and the stage track research → build → test → gate with a dot on the stage the row records. Finished states play once and rest; a card restored from a saved chat does not move. Nothing moves under reduced motion.
+
 ## How a result gets back
 
 The runner never writes to Supabase or to the Vercel deployment. It uploads its result as the run's artifact `lab-result-<id>`. The deployment pulls it from GitHub with its own token (`PG1_LAB_DISPATCH_GITHUB_TOKEN` or `GITHUB_TOKEN`, which needs Actions: read). The artifact download redirects to blob storage, and the deployment follows that redirect without the token. It then writes the result to `pg1_lab_experiments`. This happens on `/lab status`, on `/lab report`, and every hour from `/api/flags/monitor`.
