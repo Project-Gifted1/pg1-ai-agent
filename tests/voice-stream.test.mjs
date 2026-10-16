@@ -225,7 +225,8 @@ function fakeSynth({ delays = {}, fail = {}, chunksPer = 2 } = {}) {
       await new Promise((r) => setTimeout(r, delays[idx] || 0));
       if (signal.aborted) return { ok: false, reason: 'aborted' };
       if (fail[idx] && c === fail[idx].afterChunks) return { ok: false, reason: fail[idx].reason || 'http_500' };
-      onChunk(Buffer.from(`${idx}:${c}`).toString('base64'));
+      // Whole 16-bit samples (an even byte count), as real PCM is.
+      onChunk(Buffer.from(`${idx}:${c};`).toString('base64'));
     }
     return { ok: true, chunks: chunksPer };
   };
@@ -244,7 +245,7 @@ test('audio chunks are numbered and emitted in speaking order, even when a later
   assert.deepEqual(calls.map((c) => c.text), ['First sentence here.', 'Second one now.', 'Third']);
   const audio = events.filter((e) => e.type === 'audio');
   assert.deepEqual(audio.map((e) => e.seq), [0, 1, 2, 3, 4, 5]);
-  assert.deepEqual(audio.map((e) => Buffer.from(e.data, 'base64').toString()), ['0:0', '0:1', '1:0', '1:1', '2:0', '2:1']);
+  assert.deepEqual(audio.map((e) => Buffer.from(e.data, 'base64').toString()), ['0:0;', '0:1;', '1:0;', '1:1;', '2:0;', '2:1;']);
   assert.deepEqual(audio.map((e) => e.sentence), [0, 0, 1, 1, 2, 2]);
   for (const a of audio) {
     assert.equal(a.encoding, VOICE_AUDIO_FORMAT.encoding);
@@ -574,11 +575,11 @@ function extractFunction(name) {
 }
 
 const CLIENT_SOURCE = [
-  html.match(/const VOICE_LEAD_SECONDS = [^\n]*;/)[0].replace(/^const /, 'var '),
+  ...html.match(/const VOICE_[A-Z_]+ = [\d.]+;/g).map((l) => l.replace(/^const /, 'var ')),
   'var voiceAudioCtx = null; var activeVoicePlayer = null; var fallbackVoiceAudio = null; var voiceGeneration = 0; var voiceBubble = null;',
   html.match(/const VOICE_WAVE_HTML = [^\n]*;/)[0].replace(/^const /, 'var '),
   'var inFlightDirectives = new Set();',
-  ...['getVoiceAudioContext', 'base64ToBytes', 'pcm16ToFloat32', 'createVoicePlayer', 'trackFallbackAudio', 'isVoicePlaying',
+  ...['getVoiceAudioContext', 'primeVoiceOutput', 'stripWavHeader', 'applyFadeIn', 'base64ToBytes', 'pcm16ToFloat32', 'createVoicePlayer', 'trackFallbackAudio', 'isVoicePlaying',
     'syncVoiceWave', 'syncVoiceUi', 'stopVoicePlayback', 'startVoicePlayer', 'stopDirectives', 'syncExecuteButton', 'speakMessage'].map(extractFunction)
 ].join('\n');
 
@@ -587,6 +588,9 @@ function makeAudioContext() {
     state: 'running',
     currentTime: 1,
     sources: [],
+    // The silent buffer that wakes the output (primeVoiceOutput) is kept
+    // apart from the reply's own audio.
+    primed: [],
     destination: {},
     createBuffer(channels, length, rate) {
       const data = new Float32Array(length);
@@ -596,9 +600,13 @@ function makeAudioContext() {
       const src = {
         buffer: null, startedAt: null, stopped: false, disconnected: false, onended: null,
         connect() {}, disconnect() { src.disconnected = true; },
-        start(at) { src.startedAt = at; }, stop() { src.stopped = true; }
+        start(at) {
+          src.startedAt = at;
+          const d = src.buffer && src.buffer.getChannelData(0);
+          (at === 0 && d && d.every((v) => v === 0) ? ctx.primed : ctx.sources).push(src);
+        },
+        stop() { src.stopped = true; }
       };
-      ctx.sources.push(src);
       return src;
     },
     resume: () => Promise.resolve()
