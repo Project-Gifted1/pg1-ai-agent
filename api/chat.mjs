@@ -32,6 +32,7 @@ import { handleMusicCommand, handleMusicApproval, musicStatusAction } from '../l
 import { chatToolsForRole, chatToolPolicy, toGeminiFunctionDeclarations, toAnthropicTools, toolDirective, toolPlainName, createToolExecutor, runToolLoop, summarizeOutcome, traceLabels, unverifiedNote, spokenSummary, geminiContents, parseGeminiParts, anthropicMessages, parseAnthropicContent, createAnthropicToolAccumulator, usageReport, USAGE_STATS_TOOL, SEARCH_HISTORY_TOOL, RECALL_RETRY_INSTRUCTION, RESULTS_RETRY_INSTRUCTION, HISTORY_CAPABILITY_TEXT, HISTORY_CAPABILITY_SEARCH_TEXT, turnsHaveResults, LEAST_PRIVILEGED_ROLE, CHAT_TOOL_MAX_CALLS, CHAT_TOOL_TIMEOUT_MS } from '../lib/chatTools.mjs';
 import { CHAT_ROUTES, chooseChatRoute, requiredFirstTool, searchAfterTools, wantsCurrentInfo } from '../lib/chatRoute.mjs';
 import { recordTelemetry, callerHash, licenceKeyHash } from '../lib/telemetry.mjs';
+import { callerKindOf } from '../lib/ownTraffic.mjs';
 import { fetchThreatTelemetry } from '../lib/sourcePolicy.mjs';
 import { pg1Paywall } from '../lib/paywallPage.mjs';
 import { resolveWriteRepo, checkWritePath, checkWritePaths, agentBranchName, createAgentBranch } from '../lib/githubWriteGuard.mjs';
@@ -363,7 +364,8 @@ function recordIocTelemetry(iocTelemetry, req, res) {
       paymentType: iocTelemetry.paymentType,
       status: iocTelemetry.freeLimitReached && res.statusCode === 402 ? 'free_limit_reached' : iocTelemetryStatus(res.statusCode),
       latencyMs: Date.now() - iocTelemetry.startedAt,
-      callerHash: callerHash(getRequestIdentifier(req))
+      callerHash: callerHash(getRequestIdentifier(req)),
+      callerKind: callerKindOf(req)
     });
   } catch (e) {
     // Best-effort - telemetry never affects the response.
@@ -2935,7 +2937,7 @@ export default async function handler(req, res) {
             if (Array.isArray(firstRows) && firstRows[0] && firstRows[0].created_at) usageMilestone = { kind: 'first_settled_payment', at: firstRows[0].created_at };
           } catch (e) { /* no milestone this time */ }
         }
-        return sendJSON(res, 200, { reply: usageLead(usageOutcome.result), toolResults: [usageCard], cards: usageContextLines(usageOutcome.result), ...(usageMilestone ? { milestone: usageMilestone } : {}), traceId: requestTraceId });
+        return sendJSON(res, 200, { reply: usageLead(usageOutcome.result, { storage: usageStorage }), toolResults: [usageCard], cards: usageContextLines(usageOutcome.result), ...(usageMilestone ? { milestone: usageMilestone } : {}), traceId: requestTraceId });
       } else if (isVoicesCommand(lower)) {
         // FILM VOICES (lib/film/voices.mjs, signed-in operator only): the
         // voices films can use, a short description from their labels and

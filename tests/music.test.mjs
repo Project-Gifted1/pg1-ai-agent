@@ -533,7 +533,10 @@ describe('/music end to end (real Postgres, stand-in engines and worker tools)',
   const github = [];
   const env = {
     PG1_VIDEO_RENDER_SECRET: SECRET, GITHUB_TOKEN: 'gh-test', GEMINI_API_KEY_PAID: PAID, GEMINI_API_KEY_FREE: FREE, REPLICATE_API_TOKEN: REPLICATE,
-    SUPABASE_URL: SUP_URL, SUPABASE_SERVICE_ROLE_KEY: 'service-key'
+    SUPABASE_URL: SUP_URL, SUPABASE_SERVICE_ROLE_KEY: 'service-key',
+    // Masters and exports are large media (lib/storage/largeMedia.mjs):
+    // stored in the stand-in vault here.
+    PG1_LARGE_MEDIA_IN_VAULT: '1'
   };
   const cmd = (text, extra = {}) => handleMusicCommand({ text, env, supUrl: SUP_URL, supKey: 'service-key', isOperator: true, requestId: 'req12345', fetchImpl, ...extra });
   const approve = async (token, decision = 'approve', extra = {}) => {

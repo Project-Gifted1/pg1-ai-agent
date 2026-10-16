@@ -76,7 +76,8 @@ test('unknown tools are counted on their own, never as errors', () => {
 
 test('errors are broken down by fault and by tool x type x caller class', () => {
   const r = aggregateUsage(ROWS, { period: '24h', now: NOW });
-  assert.deepEqual(r.errors.by_fault, { caller: 1, pg1: 1, unclassified: 1 });
+  // tool_error counts as PG1's or its source's fault, never unclassified.
+  assert.deepEqual(r.errors.by_fault, { caller: 1, pg1: 2, unclassified: 0 });
   const cell = r.errors.breakdown.find((c) => c.tool === 'check_wallet_age' && c.type === 'upstream_error');
   assert.deepEqual({ fault: cell.fault, errors: cell.errors, real: cell.real, probe: cell.probe }, { fault: 'pg1', errors: 1, real: 1, probe: 0 });
 });
@@ -91,7 +92,7 @@ test('funnel: callers shown a payment request and never served, and free tier by
 test('the /usage text shows probe reasons, fault split, unknown tools and the drop-off', () => {
   const text = formatUsageReport(aggregateUsage(ROWS, { period: '24h', now: NOW }));
   assert.match(text, /Probe callers: unknown tools only 1/);
-  assert.match(text, /Whose fault: PG1 or its sources 1 · caller input 1 · unclassified 1/);
+  assert.match(text, /Whose fault: PG1 or its sources 2 · caller input 1$/m);
   assert.match(text, /Unknown tools asked for \(caller mistakes, not errors\): 3 \(real 1, probe 2\)/);
   assert.match(text, /Shown a payment request, never served: 1 caller/);
   assert.match(text, /Free tier by route \(one 5\/day counter\): \/api\/a2a 1 · \/api\/mcp 1/);

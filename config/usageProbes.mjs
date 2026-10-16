@@ -21,11 +21,43 @@ export const PROBE_CLIENT_NAMES = Object.freeze([
   'aisec-registry-probe',
   'ps-mcp-tools-probe',
   'AgentsJunction health checker',
-  'posthog-mcp-registry-probe'
+  'posthog-mcp-registry-probe',
+  // MCP checkers that also call tools with their own probe names (below).
+  'verifymcp',
+  'mcpcheckup'
+]);
+
+// Tool names that only checkers send (an auth or reachability probe of a
+// tool that does not exist). A caller that sent one is a probe, whatever
+// else it called: these checkers also call a real tool to test the server.
+// Matched against the requested name as stored (lib/telemetry.mjs reduces
+// it, so a long random suffix may already be cut off).
+export const PROBE_TOOL_NAME_PATTERNS = Object.freeze([
+  /^_*verifymcp/i,
+  /^_*mcpcheckup/i,
+  /^__\w*probe/i
+]);
+
+// User-Agent words of our own checkers and of partner integrations we run
+// with (matched case-insensitively as whole words): their traffic is ours
+// (lib/ownTraffic.mjs), never real and never probe.
+//   x402-endpoint-validator   .github/workflows/x402-validate.yml
+//   pg1-payment-config-check  scripts/verify-payment-config.mjs
+//   pg1-self-test             our own smoke tests against a deployment
+//   x402-doctor               Frits's x402 Doctor integration
+export const OWN_USER_AGENTS = Object.freeze([
+  'x402-endpoint-validator',
+  'pg1-payment-config-check',
+  'pg1-self-test',
+  'x402-doctor',
+  'x402doctor'
 ]);
 
 // MCP JSON-RPC methods that on their own never make a caller real.
-export const PROBE_ONLY_METHODS = Object.freeze(['initialize', 'tools/list', 'notifications/initialized', 'ping', 'resources/list', 'prompts/list', 'invalid_json', 'other']);
+// Any method that is not one of these and not tools/call is probe activity
+// too (lib/usageStats.mjs): an unknown or unsupported method never makes a
+// caller real.
+export const PROBE_ONLY_METHODS = Object.freeze(['initialize', 'tools/list', 'notifications/initialized', 'ping', 'resources/list', 'resources/templates/list', 'prompts/list', 'invalid_json', 'batch', 'invalid_request', 'other']);
 
 // User-Agent words of x402 discovery scanners, crawlers and health checks
 // (matched case-insensitively as whole words, punctuation ignored). A

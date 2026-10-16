@@ -24,7 +24,8 @@ import crypto from 'node:crypto';
 import { recordToolError } from './mcp.mjs';
 import { createToolExecutor } from '../lib/chatTools.mjs';
 import { getRequestIdentifier } from '../lib/freeTier.mjs';
-import { recordTelemetry, callerHash } from '../lib/telemetry.mjs';
+import { recordTelemetry, callerHash, outcomeTelemetryStatus } from '../lib/telemetry.mjs';
+import { callerKindOf } from '../lib/ownTraffic.mjs';
 import { resolveEnsName } from '../lib/ens.mjs';
 import {
   validatePlaygroundRequest, toolArgs, createPlaygroundLimiter, limitMessage, playgroundCard, MESSAGES
@@ -62,9 +63,9 @@ export function createPlaygroundHandler({
   record = recordToolError,
   telemetry = recordTelemetry
 } = {}) {
-  function track(tool, ip, startedAt, status, isFixture) {
+  function track(tool, ip, startedAt, status, isFixture, req) {
     try {
-      telemetry({ eventType: 'tool_call', endpoint: ROUTE, toolName: tool, paymentType: 'free', status, latencyMs: Date.now() - startedAt, callerHash: callerHash(ip), isFixture: isFixture === true });
+      telemetry({ eventType: 'tool_call', endpoint: ROUTE, toolName: tool, paymentType: 'free', status, latencyMs: Date.now() - startedAt, callerHash: callerHash(ip), callerKind: callerKindOf(req), isFixture: isFixture === true });
     } catch {
       // Best-effort - telemetry never affects the response.
     }
@@ -92,7 +93,7 @@ export function createPlaygroundHandler({
     const startedAt = Date.now();
     const allowed = limiter.take(valid.tool, ip);
     if (!allowed.ok) {
-      track(valid.tool, ip, startedAt, 'rate_limited', false);
+      track(valid.tool, ip, startedAt, 'rate_limited', false, req);
       const requestId = crypto.randomUUID();
       const retry = Math.max(1, Math.ceil(allowed.retryMs / 1000));
       res.setHeader('Retry-After', String(retry));
@@ -106,11 +107,13 @@ export function createPlaygroundHandler({
       const execute = createToolExecutor({ role: 'guest', identifier: `playground:${limiter.visitorKey(ip)}`, route: ROUTE, record, resolveEns, ...executorOptions });
       const outcome = await execute({ id: null, name: valid.tool, args: toolArgs(valid) });
       const card = playgroundCard(outcome);
-      track(valid.tool, ip, startedAt, outcome.ok ? 'ok' : outcome.code === 'rate_limited' ? 'rate_limited' : 'tool_error', outcome.test_fixture === true);
+      // A failed check is the caller's only when its input was refused
+      // (invalid_*); anything else is PG1's or its source's (/usage).
+      track(valid.tool, ip, startedAt, outcomeTelemetryStatus(outcome), outcome.test_fixture === true, req);
       return send(res, 200, { ok: true, card }, card.request_id);
     } catch (err) {
       const requestId = crypto.randomUUID();
-      track(valid.tool, ip, startedAt, 'server_error', false);
+      track(valid.tool, ip, startedAt, 'server_error', false, req);
       record(ROUTE, 500, 'playground_unhandled_error', 'js_error', requestId);
       return send(res, 500, { ok: false, error: { code: 'unavailable', message: 'The check could not be completed right now.' }, request_id: requestId }, requestId);
     }

@@ -286,7 +286,7 @@ test('video: the Interactions start and the sync render send no sampling paramet
     if (u.startsWith(SUP_URL)) return Response.json([]);
     throw new Error('Unexpected network call in test: ' + u);
   };
-  const env = { PG1_VIDEO_ENABLED: '1', PG1_VIDEO_GOOGLE_ASYNC: '1' };
+  const env = { PG1_VIDEO_ENABLED: '1', PG1_VIDEO_GOOGLE_ASYNC: '1', PG1_LARGE_MEDIA_IN_VAULT: '1' };
 
   const start = geminiStub(() => Response.json({ id: 'v1_interaction_start', status: 'in_progress' }), db);
   const started = await startVideoJob({ env, prompt: 'a gold shield turning slowly', geminiKeys: [KEY1, KEY2], supUrl: SUP_URL, supKey: 'service-role', fetchImpl: start.fetch });

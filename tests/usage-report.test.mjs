@@ -137,7 +137,7 @@ test('probe vs real: crawler names and probe-only activity are probes; anything 
 
   const s = aggregateUsage(rows, { period: '24h', now: NOW });
   assert.deepEqual(s.traffic.distinct_callers_estimate, { real: 2, probe: 4 });
-  assert.deepEqual(s.traffic.probe_callers_by_reason, { known_crawler: 1, unknown_tools_only: 1, probe_only_activity: 2 });
+  assert.deepEqual(s.traffic.probe_callers_by_reason, { known_crawler: 1, probe_tool_name: 0, unknown_tools_only: 1, probe_only_activity: 2 });
   assert.equal(s.summary.distinct_real_callers_estimate, 2);
   assert.ok(PROBE_ONLY_METHODS.includes('tools/list') && PROBE_ONLY_METHODS.includes('initialize'));
   assert.deepEqual([...PROBE_ONLY_TOOLS], ['get_usage_status']);
@@ -200,7 +200,12 @@ test('payment funnel for real callers: free checks, free limit, 402s, settlement
     init('p', 'agentrank-probe'), call('p', 'get_cve_details', 'payment_required')
   ];
   const s = aggregateUsage(rows, { period: '24h', now: NOW });
-  assert.deepEqual(s.payments, {
+  const { payment_requests_by_tool: byTool, payment_requests_callers: challengedCallers, ...funnel } = s.payments;
+  // Which tools the 402s were for, and how many distinct callers got them.
+  assert.deepEqual(byTool.map((t) => [t.tool, t.requests]), byTool.map((t) => [t.tool, t.requests]).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])));
+  assert.equal(byTool.reduce((n, t) => n + t.requests, 0), 4, 'every real 402 is under one tool');
+  assert.ok(challengedCallers >= 1);
+  assert.deepEqual(funnel, {
     free_checks_used: 3, free_tool_calls: 2, free_tier_calls: 1,
     callers_hit_free_limit: 2, free_limit_responses: 3,
     payment_requests: 4, payments_settled: 2, settlement_failures: 1,
@@ -245,7 +250,8 @@ test('error breakdown: by tool, by type, by class, by fault; unknown tools count
   assert.equal(e.total, 5);
   assert.deepEqual(e.by_class, { real: 3, probe: 2 });
   assert.deepEqual(e.unknown_tool_calls, { total: 9, real: 9, probe: 0 });
-  assert.deepEqual(e.by_fault, { caller: 2, pg1: 1, unclassified: 2 });
+  // A tool error is PG1's or its source's, never the caller's.
+  assert.deepEqual(e.by_fault, { caller: 2, pg1: 3, unclassified: 0 });
   assert.equal(e.rate_limited, 1, 'rate limits are counted on their own, not as errors');
   assert.deepEqual(e.by_tool.slice(0, 1), [{ tool: 'check_wallet_age', errors: 2 }]);
   assert.deepEqual(e.by_type, [
@@ -259,7 +265,7 @@ test('error breakdown: by tool, by type, by class, by fault; unknown tools count
 
   const report = formatUsageReport(s);
   assert.match(report, /^Total: 5 \(real 3, probe 2\) · rate limited 1$/m);
-  assert.match(report, /^Whose fault: PG1 or its sources 1 · caller input 2 · unclassified 2$/m);
+  assert.match(report, /^Whose fault: PG1 or its sources 3 · caller input 2$/m);
   assert.match(report, /^Unknown tools asked for \(caller mistakes, not errors\): 9 \(real 9, probe 0\) · `get_weather` 3 · `search` 2 · `GetCVE` 1 · `lookup_ip` 1 · `scan.url` 1$/m);
 });
 
@@ -302,7 +308,8 @@ test('report layout: title, then Summary, Traffic, Tools, Payments, Errors, Clie
   const blocks = report.split('\n\n');
   assert.equal(blocks[0], '## Usage · the last 7 days');
   const headings = blocks.slice(1, -1).map((b) => b.split('\n')[0]);
-  assert.deepEqual(headings, ['### Summary', '### Traffic', '### Tools', '### Payments', '### Errors', '### Clients']);
+  assert.deepEqual(headings.filter((h) => h !== '### Checks'), ['### Summary', '### Traffic', '### Tools', '### Payments', '### Errors', '### Clients']);
+  assert.ok(!headings.includes('### Checks') || headings[headings.length - 1] === '### Checks', 'Checks, when shown, comes last');
   for (const b of blocks.slice(1, -1)) {
     const lines = b.split('\n').slice(1);
     assert.ok(lines.length >= 1 && lines.length <= 5, `${b.split('\n')[0]} has ${lines.length} lines`);
@@ -331,9 +338,10 @@ test('before the migration the read falls back to the old columns and the report
     : Response.json([init('c', 'Claude Desktop'), call('c', 'check_domain_age')]))]]);
   const stats = await getUsageStats({ period: '7d', now: NOW });
   const reads = calls.filter((c) => c.url.includes('/rest/v1/agent_telemetry'));
-  assert.equal(reads.length, 2);
-  assert.ok(reads[0].url.includes('mcp_method,requested_tool,amount_usd'));
-  assert.ok(!reads[1].url.includes('mcp_method'));
+  assert.equal(reads.length, 3, 'current, then without caller_kind, then legacy');
+  assert.ok(reads[0].url.includes('mcp_method,requested_tool,amount_usd,caller_kind'));
+  assert.ok(reads[1].url.includes('mcp_method,requested_tool,amount_usd') && !reads[1].url.includes('caller_kind'));
+  assert.ok(!reads[2].url.includes('mcp_method'));
   assert.equal(stats.schema, 'legacy');
   assert.equal(stats.summary.real_tool_calls, 1);
   assert.match(formatUsageReport(stats), /predates the latest migration/);
@@ -343,7 +351,7 @@ test('before the migration the read falls back to the old columns and the report
 
 const IP = '198.51.100.23';
 
-test('/api/mcp records tools/list, notifications, unknown methods and bad JSON as mcp_request rows', async () => {
+test('/api/mcp records tools/list, notifications, unknown methods (by name, reduced) and bad JSON as mcp_request rows', async () => {
   const { rows } = installFetch();
   const headers = { 'x-forwarded-for': IP };
   await mcpHandler({ method: 'POST', headers, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } }, makeRes());
@@ -356,8 +364,8 @@ test('/api/mcp records tools/list, notifications, unknown methods and bad JSON a
   assert.deepEqual(rows.map((r) => [r.event_type, r.mcp_method, r.status]), [
     ['mcp_request', 'tools/list', 'ok'],
     ['mcp_request', 'notifications/initialized', 'ok'],
-    ['mcp_request', 'other', 'method_not_found'],
-    ['mcp_request', 'other', 'method_not_found'],
+    ['mcp_request', 'resources/read', 'client_error'],
+    ['mcp_request', 'evil', 'method_not_found'],
     ['mcp_request', 'invalid_json', 'parse_error']
   ], 'a plain GET health check is not recorded');
   for (const r of rows) {

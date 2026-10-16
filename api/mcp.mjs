@@ -132,6 +132,7 @@ import { extractRegistrableDomain } from '../lib/domainExtraction.mjs';
 import { domainToASCII, domainToUnicode } from 'node:url';
 import { logApiError } from '../lib/errorLog.mjs';
 import { recordTelemetry, callerHash, toolErrorTelemetryStatus } from '../lib/telemetry.mjs';
+import { callerKindOf } from '../lib/ownTraffic.mjs';
 import { reason } from '../lib/reasonCodes.mjs';
 import { buildCheck, withResponseMeta, withActionResponseMeta, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
 import { matchFixture, FIXTURE_CHECK_SOURCE, FIXTURE_DATA_AS_OF, FIXTURE_VALUES, FIXTURE_DELEGATE_ADDRESS, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, FIXTURE_DOMAIN_CLEAN_REGISTERED, FIXTURE_PACKAGE_FLAGGED_AGE_DAYS, FIXTURE_PACKAGE_MALICIOUS_REPORT, FIXTURE_LOOKALIKE_OF, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
@@ -1063,13 +1064,13 @@ export async function handleCveByProduct(args, { includeEpss = true } = {}) {
 // ---------------------------------------------------------------------
 
 const IOC_VALUE_FIX_IT = {
-  problem: 'value is missing or empty',
+  problem: 'value is missing, empty or not a string',
   expected: 'a single indicator string: an IPv4 address, domain, full URL, or MD5/SHA-1/SHA-256 hash',
   example: '198.51.100.1'
 };
 
 export async function handleIocContext(args) {
-  const value = args?.value?.trim();
+  const value = typeof args?.value === 'string' ? args.value.trim() : '';
   if (!value) {
     throw invalidInput(IOC_VALUE_FIX_IT);
   }
@@ -3549,7 +3550,7 @@ async function settleAndRespondOnFailure(res, requestId, gate, pg1RequestId, cal
   const settleStartedAt = Date.now();
   const recordSettlement = (status) => {
     if (callTelemetry && status !== 'settled') callTelemetry.status = 'settlement_failed';
-    recordTelemetry({ eventType: 'settlement', endpoint: '/api/mcp', toolName: callTelemetry?.toolName, paymentType: 'x402', status, latencyMs: Date.now() - settleStartedAt, callerHash: callTelemetry?.callerHash, amountUsd: status === 'settled' ? x402PriceUsd(X402_PRICE) : null });
+    recordTelemetry({ eventType: 'settlement', endpoint: '/api/mcp', toolName: callTelemetry?.toolName, paymentType: 'x402', status, latencyMs: Date.now() - settleStartedAt, callerHash: callTelemetry?.callerHash, callerKind: callTelemetry?.callerKind, amountUsd: status === 'settled' ? x402PriceUsd(X402_PRICE) : null });
   };
   try {
     settleResult = await gate.settle();
@@ -3728,10 +3729,11 @@ function statusFromHttp(statusCode) {
 
 // One 'mcp_request' row for a JSON-RPC request that is neither initialize
 // nor tools/call (those have their own rows), so /usage can count every MCP
-// request. The method is stored only when it is a known one.
+// request. A method that is not one of lib/telemetry.mjs MCP_METHODS is
+// stored reduced (sanitizeMcpMethod), so /usage can name it.
 function recordMcpRequestTelemetry(req, method, status) {
   try {
-    recordTelemetry({ eventType: 'mcp_request', endpoint: '/api/mcp', mcpMethod: method, status, callerHash: requestCallerHash(req) });
+    recordTelemetry({ eventType: 'mcp_request', endpoint: '/api/mcp', mcpMethod: method, status, callerHash: requestCallerHash(req), callerKind: callerKindOf(req) });
   } catch {
     // Best-effort - telemetry never affects the response.
   }
@@ -3739,7 +3741,8 @@ function recordMcpRequestTelemetry(req, method, status) {
 
 function recordToolCallTelemetry(callTelemetry, res) {
   try {
-    const known = KNOWN_TOOL_NAMES.has(callTelemetry.toolName) || isFoundryToolName(callTelemetry.toolName);
+    // A Tool Foundry name with no such tool (or no store) is unknown too.
+    const known = callTelemetry.status !== 'unknown_tool' && (KNOWN_TOOL_NAMES.has(callTelemetry.toolName) || isFoundryToolName(callTelemetry.toolName));
     recordTelemetry({
       eventType: 'tool_call',
       endpoint: '/api/mcp',
@@ -3749,6 +3752,7 @@ function recordToolCallTelemetry(callTelemetry, res) {
       status: known ? (callTelemetry.status || statusFromHttp(res.statusCode)) : 'unknown_tool',
       latencyMs: Date.now() - callTelemetry.startedAt,
       callerHash: callTelemetry.callerHash,
+      callerKind: callTelemetry.callerKind,
       isFixture: callTelemetry.isFixture === true
     });
   } catch {
@@ -3781,6 +3785,55 @@ export const TOOL_SOURCE_LABELS = {
   check_agent_card: 'agent card',
   verify_result: 'PG1 signing keys'
 };
+
+// What initialize declares: tools, plus prompts and resources (both always
+// empty lists, so a client that lists them gets an answer, not -32601).
+// No list ever changes while a session is open, and nothing can be
+// subscribed to.
+export const MCP_SERVER_CAPABILITIES = Object.freeze({
+  tools: { listChanged: false },
+  prompts: { listChanged: false },
+  resources: { subscribe: false, listChanged: false }
+});
+
+// A JSON-RPC batch: each message through the handler with a capturing
+// response; notifications give nothing back; an empty batch, or one with
+// nothing to answer, is answered as JSON-RPC says (an error / 202).
+export const MCP_BATCH_MAX = 20;
+
+function captureResponse() {
+  const cap = { statusCode: 200, body: undefined, headers: {} };
+  cap.res = {
+    setHeader(k, v) { cap.headers[String(k).toLowerCase()] = v; },
+    getHeader(k) { return cap.headers[String(k).toLowerCase()]; },
+    status(c) { cap.statusCode = c; return this; },
+    json(b) { cap.body = b; return this; },
+    end() { return this; },
+    get headersSent() { return cap.body !== undefined; }
+  };
+  return cap;
+}
+
+async function handleBatch(req, res, messages, pg1RequestId) {
+  if (!messages.length || messages.length > MCP_BATCH_MAX) {
+    return res.status(200).json({ jsonrpc: '2.0', error: { code: -32600, message: messages.length ? `Invalid Request: at most ${MCP_BATCH_MAX} messages per batch` : 'Invalid Request: empty batch', data: { request_id: pg1RequestId } }, id: null });
+  }
+  const answers = [];
+  for (const message of messages) {
+    if (!message || typeof message !== 'object' || Array.isArray(message)) {
+      answers.push({ jsonrpc: '2.0', error: { code: -32600, message: 'Invalid Request', data: { request_id: pg1RequestId } }, id: null });
+      continue;
+    }
+    const cap = captureResponse();
+    await handler({ ...req, method: 'POST', headers: req.headers, socket: req.socket, body: message }, cap.res);
+    if (cap.body && typeof cap.body === 'object') {
+      for (const [k, v] of Object.entries(cap.headers)) if (k.startsWith('payment-') || k === 'retry-after') res.setHeader(k, v);
+      answers.push(cap.body);
+    }
+  }
+  if (!answers.length) return res.status(202).end();
+  return res.status(200).json(answers);
+}
 
 // ---------------------------------------------------------------------
 // HTTP HANDLER
@@ -3826,11 +3879,31 @@ export default async function handler(req, res) {
   }
   if (!body || typeof body !== 'object') {
     recordMcpRequestTelemetry(req, 'invalid_json', 'parse_error');
-    return res.status(400).json({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error: Invalid JSON', data: { request_id: pg1RequestId } }, id: '1' });
+    return res.status(400).json({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error: Invalid JSON', data: { request_id: pg1RequestId } }, id: null });
   }
+
+  // A JSON-RPC batch (MCP 2025-03-26): each message is handled on its own
+  // and the answers come back as one array, without the notifications'.
+  // Each message in it is recorded on its own, not the batch.
+  if (Array.isArray(body)) return handleBatch(req, res, body, pg1RequestId);
 
   const { id, method, params } = body;
   const requestId = (id !== undefined && id !== null) ? id : '1';
+
+  if (typeof method !== 'string' || !method) {
+    recordMcpRequestTelemetry(req, 'invalid_request', 'client_error');
+    return res.status(200).json({ jsonrpc: '2.0', error: { code: -32600, message: 'Invalid Request: method is missing or not a string', data: { request_id: pg1RequestId } }, id: id === undefined ? null : id });
+  }
+
+  // A notification (JSON-RPC: no id; MCP: every notifications/* method) is
+  // never answered, never with an error: 202 Accepted with no body
+  // (Streamable HTTP). notifications/initialized, notifications/cancelled,
+  // notifications/progress, notifications/roots/list_changed and any other
+  // all end here.
+  if (id === undefined || method.startsWith('notifications/')) {
+    recordMcpRequestTelemetry(req, method, 'ok');
+    return res.status(202).end();
+  }
   // Set for every tools/call (fixtures included); recorded in the finally
   // below, after the response has been written.
   let callTelemetry = null;
@@ -3841,17 +3914,34 @@ export default async function handler(req, res) {
       // version (sanitised and cut short in lib/telemetry.mjs) and a salted
       // hash of the caller IP - nothing else from the request.
       const clientInfo = params && typeof params.clientInfo === 'object' && params.clientInfo ? params.clientInfo : {};
-      recordTelemetry({ eventType: 'initialize', endpoint: '/api/mcp', status: 'ok', clientName: clientInfo.name, clientVersion: clientInfo.version, callerHash: requestCallerHash(req) });
+      recordTelemetry({ eventType: 'initialize', endpoint: '/api/mcp', status: 'ok', clientName: clientInfo.name, clientVersion: clientInfo.version, callerHash: requestCallerHash(req), callerKind: callerKindOf(req) });
       return res.status(200).json({
         jsonrpc: '2.0',
-        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pg1-threat-intel', version: pg1Version() } },
+        result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: MCP_SERVER_CAPABILITIES, serverInfo: { name: 'pg1-threat-intel', version: pg1Version() } },
         id: requestId
       });
     }
 
-    if (method === 'notifications/initialized') {
+    // ping (basic utility): an empty result.
+    if (method === 'ping') {
       recordMcpRequestTelemetry(req, method, 'ok');
-      return res.status(204).end();
+      return res.status(200).json({ jsonrpc: '2.0', result: {}, id: requestId });
+    }
+
+    // PG1 serves tools only; prompts and resources are declared (so clients
+    // that list them get an answer) and always empty.
+    if (method === 'prompts/list' || method === 'resources/list' || method === 'resources/templates/list') {
+      recordMcpRequestTelemetry(req, method, 'ok');
+      const key = method === 'prompts/list' ? 'prompts' : method === 'resources/list' ? 'resources' : 'resourceTemplates';
+      return res.status(200).json({ jsonrpc: '2.0', result: { [key]: [] }, id: requestId });
+    }
+    if (method === 'prompts/get') {
+      recordMcpRequestTelemetry(req, method, 'client_error');
+      return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: 'Invalid params: unknown prompt (this server has no prompts; see prompts/list)', data: { request_id: pg1RequestId } }, id: requestId });
+    }
+    if (method === 'resources/read') {
+      recordMcpRequestTelemetry(req, method, 'client_error');
+      return res.status(200).json({ jsonrpc: '2.0', error: { code: -32002, message: 'Resource not found (this server has no resources; see resources/list)', data: { request_id: pg1RequestId } }, id: requestId });
     }
 
     if (method === 'tools/list') {
@@ -3887,7 +3977,7 @@ export default async function handler(req, res) {
       // free, for every caller, key or no key.
       // Fixture calls are recorded too, flagged is_fixture, so the usage
       // stats can leave them out.
-      callTelemetry = { toolName, paymentType: 'none', status: null, startedAt: Date.now(), callerHash: requestCallerHash(req) };
+      callTelemetry = { toolName, paymentType: 'none', status: null, startedAt: Date.now(), callerHash: requestCallerHash(req), callerKind: callerKindOf(req) };
       const fixtureOutcome = resolveTestFixture(toolName, toolArgs);
       if (fixtureOutcome) {
         callTelemetry.isFixture = true;
@@ -3997,8 +4087,9 @@ export default async function handler(req, res) {
 
       // SPECIAL CASE: get_ioc_context — free when not found, gated when found.
       if (toolName === 'get_ioc_context') {
-        const value = toolArgs?.value?.trim();
+        const value = typeof toolArgs?.value === 'string' ? toolArgs.value.trim() : '';
         if (!value) {
+          callTelemetry.status = 'invalid_input';
           return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: formatFixIt(IOC_VALUE_FIX_IT, pg1RequestId), data: { request_id: pg1RequestId } }, id: requestId });
         }
         let lookupResult;
@@ -4078,7 +4169,10 @@ export default async function handler(req, res) {
       // Tool Foundry: a commissioned ft_* tool, paid per call via x402.
       if (isFoundryToolName(toolName)) {
         const store = foundryStoreOrNull();
-        if (!store) return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: 'Unknown tool.', data: { request_id: pg1RequestId, unknown_tool: true } }, id: requestId });
+        if (!store) {
+          callTelemetry.status = 'unknown_tool';
+          return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: 'Unknown tool.', data: { request_id: pg1RequestId, unknown_tool: true } }, id: requestId });
+        }
         const metaPayment = params?._meta?.['x402/payment'];
         try {
           const called = await callFoundryTool({ name: toolName, args: toolArgs, toolKey: req.headers[TOOL_KEY_HEADER] || null }, {
@@ -4108,6 +4202,7 @@ export default async function handler(req, res) {
         } catch (err) {
           if (err && (err.foundryCall || err.mcpToolError)) {
             callTelemetry.status = err.status >= 500 ? 'server_error' : 'invalid_input';
+            if (err.code === 'unknown_tool') callTelemetry.status = 'unknown_tool';
             if (err.code === 'unknown_tool') return res.status(200).json({ jsonrpc: '2.0', error: { code: -32602, message: 'Unknown tool.', data: { request_id: pg1RequestId, unknown_tool: true } }, id: requestId });
             return res.status(200).json({ jsonrpc: '2.0', result: { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: err.message, code: err.code, request_id: pg1RequestId }) }] }, id: requestId });
           }
@@ -4163,7 +4258,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ jsonrpc: '2.0', result, id: requestId });
     }
 
-    recordMcpRequestTelemetry(req, typeof method === 'string' ? method : null, 'method_not_found');
+    recordMcpRequestTelemetry(req, method, 'method_not_found');
     return res.status(200).json({ jsonrpc: '2.0', error: { code: -32601, message: `Method not found: ${method || 'unknown'}`, data: { request_id: pg1RequestId } }, id: requestId });
   } catch (err) {
     // This is the catch-all for anything the specific handlers above didn't
