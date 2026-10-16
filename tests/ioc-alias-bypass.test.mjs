@@ -111,8 +111,9 @@ function installFetchMock() {
         ok: true,
         json: async () => [
           {
-            indicator_type: 'IPv4',
-            value: '198.51.100.23',
+            // NVD publishes CVE records only (lib/sourcePolicy.mjs rowSource)
+            indicator_type: 'CVE',
+            value: 'CVE-2026-0001',
             confidence_score: 75,
             last_seen: '2026-09-24T12:00:00Z',
             ingested_at: '2026-09-20T00:00:00Z',

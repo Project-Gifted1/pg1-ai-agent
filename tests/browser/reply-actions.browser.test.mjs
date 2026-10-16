@@ -19,6 +19,7 @@ import http from 'node:http';
 import { existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { labCardView } from '../../lib/lab/card.mjs';
 import { replyActions } from '../../lib/replyActions.mjs';
 import { resolveIntent } from '../../lib/voiceIntents.mjs';
 import { routeReplyFont } from '../helpers/replyFont.mjs';
@@ -39,14 +40,20 @@ if (chromium && !existsSync(chromium.executablePath())) skip = `Chromium is not 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.wasm': 'application/wasm', '.onnx': 'application/octet-stream', '.css': 'text/css; charset=utf-8' };
 
 const HOWTO = 'The run finished. Open its report with `/lab report e2981021`; the other experiment is still running.';
-const STATUS = '### [ LAB ]\n- e2981021 · research · done · $0.01 of $2.00 · agent auth scope preflight\n- aaaaaaaa · code · running · $0.00 of $2.00 · draft tool';
+// /lab status: a summary, and one card per lab with its own buttons
+// (lib/lab/chat.mjs, lib/lab/card.mjs).
+const STATUS = '**Lab**: the latest 2 experiments: 1 done, 1 running. Each card has its report button.';
+const STATUS_CARDS = [
+  labCardView({ id: 'e2981021-4070-40fd-b160-e012feec0449', kind: 'research', goal: 'agent auth scope preflight', status: 'done', spent_usd: 0.01, budget_usd: 2 }, { actions: true }),
+  labCardView({ id: 'aaaaaaaa-1111-4111-8111-111111111111', kind: 'code', goal: 'draft tool', status: 'running', spent_usd: 0, budget_usd: 2 }, { actions: true })
+];
 
 // What the server answers for each prompt (its own modules build the actions).
 function answer(prompt) {
   const intent = resolveIntent(prompt);
   if (intent && intent.action) return { reply: intent.question, actions: [intent.action] };
   const p = intent ? intent.command : prompt;
-  if (p === '/lab status') return { reply: STATUS, actions: replyActions({ prompt: p, reply: STATUS }) };
+  if (p === '/lab status') return { reply: STATUS, labCards: STATUS_CARDS, actions: replyActions({ prompt: p, reply: STATUS }) };
   if (/^\/lab (report|stop) /.test(p)) return { reply: `Ran ${p}.`, actions: [] };
   return { reply: HOWTO, actions: replyActions({ prompt: p, reply: HOWTO }) };
 }
@@ -75,10 +82,10 @@ function startStubServer() {
           if (parsed && parsed.stream === true) {
             res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache' });
             res.write(`event: text\ndata: ${JSON.stringify({ type: 'text', text: a.reply })}\n\n`);
-            res.write(`event: done\ndata: ${JSON.stringify({ type: 'done', request_id: 'r1', result: { actions: a.actions } })}\n\n`);
+            res.write(`event: done\ndata: ${JSON.stringify({ type: 'done', request_id: 'r1', result: { actions: a.actions, labCards: a.labCards } })}\n\n`);
             return res.end();
           }
-          return json(200, { reply: a.reply, actions: a.actions });
+          return json(200, { reply: a.reply, actions: a.actions, labCards: a.labCards });
         }
         log.missing.push(url.pathname);
         return json(404, { error: 'not stubbed' });
@@ -129,16 +136,18 @@ test('reply actions and spoken commands: buttons run full commands, risky ones c
   assert.equal(await lastReply().locator('.pg1-action').count(), 0, 'no second button for a command that is already a chip');
   const chip = page.locator('.cmd-chip[data-command="/lab report e2981021"]').first();
 
-  // 2. "PG1, lab status" by voice or text: the server runs /lab status; its
-  //    reply has a Report button and a Stop button that needs two taps.
+  // 2. "PG1, lab status" by voice or text: the server runs /lab status;
+  //    each lab's card has its Report button, and a running one a Stop
+  //    button that needs two taps.
   await settled(await send('PG1, lab status'));
   const actions = lastReply().locator('.pg1-action');
-  assert.deepEqual(await actions.allTextContents(), ['Lab report e2981021', 'Stop experiment aaaaaaaa']);
+  assert.deepEqual(await actions.allTextContents(), ['Lab report e2981021', 'Lab report aaaaaaaa', 'Stop experiment aaaaaaaa']);
+  assert.equal(await lastReply().locator('.lab-card[data-lab-id="e2981021"] .pg1-action').count(), 1);
   await page.waitForTimeout(400); // the buttons' entrance animation
   mkdirSync(SHOTS_DIR, { recursive: true });
   await page.screenshot({ path: join(SHOTS_DIR, 'reply-actions-412-dark.png') });
 
-  const stop = actions.nth(1);
+  const stop = actions.nth(2);
   const sentBefore = log.prompts.length;
   await stop.click();
   assert.equal(await stop.textContent(), 'Tap again to confirm');

@@ -157,7 +157,7 @@ async function api(body, creds = OPERATOR, handler = watchesApi) {
 function finishLab(gh, result, runId = 950) {
   const id = gh.dispatches[gh.dispatches.length - 1].inputs.experiment_id;
   gh.runs.set(runId, { id: runId, name: `lab ${id}`, display_title: `lab ${id}`, status: 'completed', conclusion: 'success', html_url: `https://github.com/${REPO}/actions/runs/${runId}`, updated_at: new Date().toISOString() });
-  gh.artifacts.set(runId, { name: `lab-result-${id}`, zip: makeZip({ 'result.json': JSON.stringify({ id, status: 'done', spent_usd: 0.37, calls: 3, report_markdown: '## Findings\nNVD allows commercial reuse of CVE records.', ...result }) }) });
+  gh.artifacts.set(runId, { name: `lab-result-${id}`, zip: makeZip({ 'result.json': JSON.stringify({ id, status: 'done', spent_usd: 0.37, calls: 3, report_markdown: '## Findings\nNVD allows commercial reuse of CVE records.\n\n## Sources and licences\nNVD: public domain (https://nvd.nist.gov/general/faq).', ...result }) }) });
   return { id, runId, run: gh.runs.get(runId) };
 }
 
@@ -253,7 +253,14 @@ test('lab: /lab start is watched for its thread; the workflow_run webhook syncs 
   assert.match(report.body, /\*\*Result\*\*: done\. NVD allows commercial reuse of CVE records\./);
   assert.match(report.body, /\*\*Cost\*\*: \$0\.37 of its \$2\.00 budget\./);
   assert.match(report.body, /\*\*Next step\*\*: Read the report\./);
-  assert.deepEqual(report.actions, [{ label: `Lab report ${id.slice(0, 8)}`, command: `/lab report ${id.slice(0, 8)}`, confirm: false, kind: 'command' }]);
+  assert.deepEqual(report.actions.filter((a) => a.kind !== 'lab_card'), [{ label: `Lab report ${id.slice(0, 8)}`, command: `/lab report ${id.slice(0, 8)}`, confirm: false, kind: 'command' }]);
+  // The report carries the server's card: its goal, and stages that agree
+  // with "done" (the page never guesses them from the report's words).
+  const card = report.actions.find((a) => a.kind === 'lab_card').card;
+  assert.equal(card.id8, id.slice(0, 8));
+  assert.equal(card.goal, 'check NVD licence terms');
+  assert.equal(card.status, 'done');
+  assert.deepEqual(card.stages.map((x) => x.state), ['done', 'skipped', 'skipped', 'skipped']);
   const [closed] = await rows(w.db, 'select status, last_state from public.pg1_watches');
   assert.deepEqual(closed, { status: 'done', last_state: 'done' });
   assert.equal(w.pushes.length, 1);
@@ -442,11 +449,17 @@ test('reports: every type says what happened, the result, the cost and the next 
     const r = composeReport(watch, snap);
     for (const part of ['What happened', 'Result', 'Cost', 'Next step']) assert.match(r.body, new RegExp(`\\*\\*${part}\\*\\*: \\S`), `${watch.target_type}: ${part}`);
     assert.ok(r.title.length <= 120);
-    for (const a of r.actions) assert.ok((a.kind === 'link' && /^https:\/\/github\.com\//.test(a.url)) || (a.command && a.command.startsWith('/')), JSON.stringify(a));
+    for (const a of r.actions) assert.ok((a.kind === 'link' && /^https:\/\/github\.com\//.test(a.url)) || (a.command && a.command.startsWith('/')) || (a.kind === 'lab_card' && watch.target_type === 'lab' && a.card.id8 === watch.target_id.slice(0, 8)), JSON.stringify(a));
   }
   const failed = composeReport(...cases[0]);
   assert.match(failed.body, /\*\*Cost\*\*: \$1\.20 of its \$2\.00 budget\./);
   assert.match(failed.body, /\*\*Result\*\*: failed\. tests failed/);
+  assert.equal(failed.actions.at(-1).kind, 'lab_card');
+  // A stop under the budget is reported as "near budget", never "over".
+  const near = composeReport(cases[0][0], { state: 'over_budget', info: { exp: { kind: 'research', goal: 'g', spent_usd: 1.94, budget_usd: 2 } } });
+  assert.match(near.body, /stopped near its budget/);
+  assert.equal(near.push.title, 'Lab 11111111: near budget');
+  assert.equal(near.actions.at(-1).card.label, 'near budget');
 });
 
 test('sources: events and CI read as states', () => {

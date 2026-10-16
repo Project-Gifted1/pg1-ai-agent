@@ -82,7 +82,12 @@ export function pgRest(db, { calls = [], base = 'https://supabase.test', passthr
       const types = await columnTypes(db, path);
       if (!types.size) return json({ code: '42P01', message: `relation "public.${path}" does not exist` }, 404);
       const vals = [];
-      const select = (u.searchParams.get('select') || '*').split(',').map((c) => c.trim()).filter((c) => c === '*' || types.has(c)).join(', ') || '*';
+      // Columns, plus PostgREST's json path form alias:column->key.
+      const select = (u.searchParams.get('select') || '*').split(',').map((c) => c.trim()).map((c) => {
+        const m = /^([a-z_][a-z0-9_]*):([a-z_][a-z0-9_]*)->([a-z_][a-z0-9_]*)$/.exec(c);
+        if (m) return types.get(m[2]) === 'jsonb' ? `${m[2]} -> '${m[3]}' as ${m[1]}` : null;
+        return c === '*' || types.has(c) ? c : null;
+      }).filter(Boolean).join(', ') || '*';
       const where = parseFilters(u.searchParams, types, vals);
       const w = where.length ? ` where ${where.join(' and ')}` : '';
       const enc = (k, v) => (v === null || v === undefined ? null : types.get(k) === 'jsonb' ? JSON.stringify(v) : v);
