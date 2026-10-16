@@ -108,7 +108,8 @@ function engineRoutes(trace, st) {
       return n === 2 ? '{"pass":false,"score":3,"issues":[{"type":"composition","detail":"framed too wide for a medium close-up"}],"description":"x"}' : '{"pass":true,"score":8,"issues":[],"description":"ok"}';
     }
     const n = trace.filter((t) => t.step === 'dailies').length;
-    return n === 1 ? '{"pass":false,"score":3,"issues":[{"type":"faces_hands","detail":"six fingers on the left hand"}],"best_start_s":0,"description":"x"}' : '{"pass":true,"score":8,"issues":[],"best_start_s":0.5,"description":"as intended"}';
+    // The critic names engines and models in its own words; PG1 strips them where the verdict is read.
+    return n === 1 ? '{"pass":false,"score":3,"issues":[{"type":"faces_hands","detail":"six fingers on the left hand, a typical Kling artefact from kwaivgi/kling-v2.1"}],"best_start_s":0,"description":"x"}' : '{"pass":true,"score":8,"issues":[],"best_start_s":0.5,"description":"as intended; Gemini Omni (gemini-omni-1.1-flash) held the framing, unlike claude-opus-5-5 suggested"}';
   };
   return [
     ['api.github.com', (u, o, body) => { trace.push({ step: 'dispatch', body }); return new Response(null, { status: 204 }); }],
@@ -276,7 +277,14 @@ describe('Director Mode, end to end', () => {
     for (const v of [pdf.getTitle(), pdf.getAuthor(), pdf.getSubject(), pdf.getCreator(), pdf.getProducer(), pdf.getKeywords()]) assert.doesNotMatch(String(v || ''), BANNED, String(v));
     assert.doesNotMatch(Buffer.from(pdfBytes).toString('latin1'), BANNED, 'no provider or model name anywhere in the file');
     assert.doesNotMatch(JSON.stringify(directorNotesBlocks({ project: r.film, director: r.film.director, timeline: r.film.timeline, qcReport: r.film.qc_report, plan: { segments: [], joins: [], totalS: 0 } })), BANNED);
-    // The film's report and card, and the push at the end (film, cost, shots made again).
+    // The dailies critic named engines and models; its words are kept without them.
+    const clipsQc = assets.filter((a) => a.kind === 'clip' && a.meta && a.meta.qc);
+    assert.ok(clipsQc.length, 'clips carry their verdicts');
+    assert.ok(clipsQc.some((a) => /as intended/.test(a.meta.qc.description || '')), 'the critic\'s description is kept');
+    const regen = r.film.director.regenerated.find((x) => x.what === 'clip');
+    assert.match(regen.reason, /six fingers on the left hand/);
+    assert.doesNotMatch(regen.reason, BANNED, regen.reason);
+        // The film's report and card, and the push at the end (film, cost, shots made again).
     assert.doesNotMatch(JSON.stringify(r.film.qc_report), BANNED);
     assert.doesNotMatch(JSON.stringify(r.film.director), BANNED);
     assert.doesNotMatch(JSON.stringify(await filmCard(store, r.film)), BANNED);

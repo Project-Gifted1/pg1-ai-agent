@@ -150,11 +150,9 @@
           ]
         }
       ],
-      "licence": "unclear",
+      "licence": "commercial_ok",
       "licenceConditions": [],
-      "review": [
-        "R1"
-      ],
+      "review": [],
       "unitCost": {
         "usd": 0.067,
         "unit": "still",
@@ -236,11 +234,9 @@
           ]
         }
       ],
-      "licence": "unclear",
+      "licence": "commercial_ok",
       "licenceConditions": [],
-      "review": [
-        "R1"
-      ],
+      "review": [],
       "unitCost": {
         "usd": 0.067,
         "unit": "still",
@@ -1163,8 +1159,8 @@
       ]
     },
     "T1": {
-      "question": "Text engines other than Google (Anthropic Claude, OpenRouter, the AI gateway, OpenAI): may their output go into a client deliverable?",
-      "detail": "Only Google (G1, G2) and ElevenLabs (E1) output has an operator answer for client work. Until this one is answered, a client job's text (storyboards, scripts, checks) runs on the paid Gemini key alone; the operator's own films keep the whole text chain.",
+      "question": "OpenRouter, the AI gateway and OpenAI: may their output go into a client deliverable?",
+      "detail": "Google (G1, G2), ElevenLabs (E1) and Claude (cleared by the operator on 2026-10-16) have an answer for client work. Until this one is answered, a client job's text (storyboards, scripts, checks) runs on Claude, then the paid Gemini key; the operator's own films keep the whole text chain.",
       "answered": null,
       "sources": []
     },

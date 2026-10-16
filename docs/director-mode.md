@@ -63,13 +63,17 @@ One classifier, `failureClass(status, text, { refused })` in
 
 A call made for a client film (`client` set on the project) or a client
 track (`/music … --client`) uses only steps whose registry licence is
-`commercial_ok`. Only Google (G1, G2) and ElevenLabs (E1) output is
-`commercial_ok`; every other engine is `unclear` until the operator answers
-its licence question: FLUX Kontext Pro, FLUX schnell and Kling on Replicate
-(R1), Cartesia (C1), and Claude, OpenRouter, the AI gateway and OpenAI (T1).
-So a client film's text runs on the paid Gemini key, its stills on Gemini
-image, its clips on Gemini Omni and its voice, dialogue and SFX on
-ElevenLabs. ElevenLabs Music is never used for a client (`clientExcluded`:
+`commercial_ok`. Google (G1, G2), ElevenLabs (E1) and Claude (cleared by
+the operator for client text) are `commercial_ok`; every other engine is
+`unclear` until the operator answers its licence question: FLUX Kontext Pro,
+FLUX schnell and Kling on Replicate (R1), Cartesia (C1), and OpenRouter, the
+AI gateway and OpenAI (T1). FLUX Kontext Pro is also `deliverable: false`:
+its stills become the keyframes clips are made from, so a client film skips
+it whatever its licence. So a client film's text runs on Claude, then the
+paid Gemini key, its stills on Gemini image, its clips on Gemini Omni and
+its voice, dialogue and SFX on ElevenLabs. `planRoute` applies the same rule
+(`clientWork`), so OpenRouter, the AI gateway and OpenAI are never planned
+for client work. ElevenLabs Music is never used for a client (`clientExcluded`:
 its licence excludes film, TV and radio), on `/music` or in a film; the
 operator's own tracks keep it. When no cleared engine is left, the stage
 stops with a clear message instead of using an unlicensed engine.
@@ -195,6 +199,6 @@ craft terms, with a note).
   request's text chain (Claude first) is applied to storyboards, checks and
   heavy chat. Moving every light reply to Claude would multiply chat cost;
   one line in `ROUTING_CHAINS` changes it.
-- T1: may output from Claude, OpenRouter, the AI gateway or OpenAI go into
-  a client deliverable? Until answered, a client film's text runs on the
-  paid Gemini key alone (one line in `ROUTING_CHAINS` changes it).
+- T1: may output from OpenRouter, the AI gateway or OpenAI go into a client
+  deliverable? Until answered, a client film's text runs on Claude, then the
+  paid Gemini key (one line in `ROUTING_CHAINS` changes it).

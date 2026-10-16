@@ -1,17 +1,20 @@
 // Client work and the registry's licences and prices (PR 324 follow-up):
-//  - every engine in ROUTING_CHAINS with its licence; only Google and
-//    ElevenLabs are commercial_ok, everything else is unclear;
+//  - every engine in ROUTING_CHAINS with its licence; Google, ElevenLabs
+//    and Claude (cleared by the operator for client text) are
+//    commercial_ok, everything else is unclear;
 //  - a client job can never reach a non-commercial_ok engine in any chain
 //    (text, stills, clips, voice, dialogue, sfx, music, /music), nor
-//    ElevenLabs Music (its licence excludes film, TV and radio);
+//    ElevenLabs Music (its licence excludes film, TV and radio), nor FLUX
+//    (deliverable: false: its stills become the keyframes clips are made
+//    from), whether planned by chainPlan or by planRoute;
 //  - the ledger records each engine's registry price, never a worst case;
 //  - the Lyria clip model is called through the Gemini API, not Replicate.
 
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { ROUTING_CHAINS, stepLicence, capability, ENGINE_UNIT_COSTS, engineCostUsd } from '../lib/capabilities/registry.mjs';
+import { ROUTING_CHAINS, stepLicence, stepDeliverable, clientAllowedStep, capability, ENGINE_UNIT_COSTS, engineCostUsd } from '../lib/capabilities/registry.mjs';
 import { chainPlan, CHAIN_IDS } from '../lib/router/chains.mjs';
-import { MEDIA_UNIT_USD, recordUsage, CARTESIA_USD_PER_MCHAR, ELEVENLABS_TTS_USD_PER_MCHAR, __resetRouterState } from '../lib/aiRouter.mjs';
+import { MEDIA_UNIT_USD, recordUsage, CARTESIA_USD_PER_MCHAR, ELEVENLABS_TTS_USD_PER_MCHAR, __resetRouterState, planRoute, TASKS, DATA } from '../lib/aiRouter.mjs';
 import { filmTextPlan, filmMediaPlan, createFilmVoice, soundEffect, createFilmDialogue, EngineError } from '../lib/film/providers.mjs';
 import { musicPlan, filmMusicPlan, musicClipPlan, generateMusic } from '../lib/music/engines.mjs';
 import { parseMusicFlags } from '../lib/music/text.mjs';
@@ -24,18 +27,18 @@ const ALL_KEYS = {
   REPLICATE_API_TOKEN: 'r8_licence_0123456789abcdef', CARTESIA_API_KEY: 'sk_car_licence_0123456789', ELEVENLABS_API_KEY: 'sk_el_licence_0123456789',
   PG1_ELEVENLABS_FILM_RIGHTS: '1'
 };
-const GOOGLE_OR_ELEVENLABS = new Set(['gemini_paid', 'gemini_free', 'elevenlabs']);
+const CLEARED_SOURCES = new Set(['gemini_paid', 'gemini_free', 'elevenlabs', 'anthropic']);
 
 beforeEach(() => __resetRouterState());
 
 describe('licences in ROUTING_CHAINS', () => {
-  test('every engine and its licence: only Google and ElevenLabs are commercial_ok', () => {
+  test('every engine and its licence: only Google, ElevenLabs and Claude are commercial_ok', () => {
     const table = [];
     for (const [id, steps] of Object.entries(ROUTING_CHAINS)) for (const s of steps) table.push(`${id}:${s.provider}${s.model ? `:${s.model}` : s.slot ? `:${s.slot}` : ''}=${stepLicence(s)}`);
     assert.deepEqual(table, [
-      'text:anthropic=unclear', 'text:gemini_paid=commercial_ok', 'text:gemini_free=unclear', 'text:openrouter=unclear', 'text:gateway=unclear', 'text:openai=unclear',
-      'chat_light:gemini_free=unclear', 'chat_light:gemini_paid=commercial_ok', 'chat_light:anthropic=unclear', 'chat_light:gateway=unclear', 'chat_light:openrouter=unclear', 'chat_light:openai=unclear',
-      'research:gemini_paid=commercial_ok', 'research:anthropic=unclear',
+      'text:anthropic=commercial_ok', 'text:gemini_paid=commercial_ok', 'text:gemini_free=unclear', 'text:openrouter=unclear', 'text:gateway=unclear', 'text:openai=unclear',
+      'chat_light:gemini_free=unclear', 'chat_light:gemini_paid=commercial_ok', 'chat_light:anthropic=commercial_ok', 'chat_light:gateway=unclear', 'chat_light:openrouter=unclear', 'chat_light:openai=unclear',
+      'research:gemini_paid=commercial_ok', 'research:anthropic=commercial_ok',
       'speech:gemini_free=unclear', 'speech:cartesia:sonic-3.6=unclear',
       'stills:replicate:black-forest-labs/flux-kontext-pro=unclear', 'stills:gemini_paid:gemini-3.1-flash-image=commercial_ok',
       'clips:gemini_paid:gemini-omni-1.1-flash=commercial_ok', 'clips:replicate:kwaivgi/kling-v2.1=unclear',
@@ -47,7 +50,15 @@ describe('licences in ROUTING_CHAINS', () => {
       'music:gemini_paid:lyria-3.5=commercial_ok', 'music:gemini_paid:lyria-3-clip-preview=commercial_ok', 'music:elevenlabs:Eleven Music=commercial_ok'
     ]);
     for (const [, steps] of Object.entries(ROUTING_CHAINS)) {
-      for (const s of steps) if (stepLicence(s) === 'commercial_ok') assert.ok(GOOGLE_OR_ELEVENLABS.has(s.provider), `${s.provider} is commercial_ok only if Google or ElevenLabs`);
+      for (const s of steps) if (stepLicence(s) === 'commercial_ok') assert.ok(CLEARED_SOURCES.has(s.provider), `${s.provider} is commercial_ok only if Google, ElevenLabs or Claude`);
+    }
+    // FLUX Kontext Pro is never a client deliverable; every other step may be.
+    assert.deepEqual(Object.values(ROUTING_CHAINS).flat().filter((s) => !stepDeliverable(s)).map((s) => s.model), ['black-forest-labs/flux-kontext-pro']);
+    for (const f of ['storyboard_keyframes', 'scene_character_consistency']) {
+      const flux = capability(f).models.find((m) => m.model === 'black-forest-labs/flux-kontext-pro');
+      assert.equal(flux.deliverable, false, f);
+      assert.equal(flux.licence, 'unclear', `${f}: FLUX stays under R1`);
+      assert.equal(capability(f).licence, 'commercial_ok', `${f}: its deliverables come from Gemini image alone`);
     }
     // ElevenLabs Music is commercial_ok for the operator's own tracks, but never for a client.
     assert.ok(ROUTING_CHAINS.music.find((s) => s.provider === 'elevenlabs').clientExcluded);
@@ -80,17 +91,48 @@ describe('a client job never reaches an engine not cleared for client work', () 
         assert.ok(!s.clientExcluded, `${id}: ${s.provider} is excluded for clients`);
         assert.ok(!s.operatorOnly, `${id}: ${s.provider} is operator only`);
       }
-      for (const s of plan.skipped) assert.ok(['licence', 'client_excluded', 'operator_only'].includes(s.reason), `${id}: ${s.provider} skipped as ${s.reason}`);
+      for (const s of plan.skipped) assert.ok(['licence', 'client_excluded', 'operator_only', 'not_deliverable'].includes(s.reason), `${id}: ${s.provider} skipped as ${s.reason}`);
+      for (const s of plan.steps) assert.ok(clientAllowedStep(s), `${id}: ${s.provider}`);
     }
   });
 
-  test('text: a client film\'s text runs on the paid Gemini key alone; the operator keeps Claude first', () => {
-    assert.deepEqual(filmTextPlan(ALL_KEYS, { clientWork: true }).map((c) => c.provider), ['gemini_paid']);
+  test('planRoute walks every chain it plans and never plans OpenRouter, the AI gateway, OpenAI or Replicate for a client', () => {
+    const NOT_FOR_CLIENTS = new Set(['openrouter', 'gateway', 'openai', 'replicate', 'gemini_free', 'cartesia']);
+    // Every task planRoute serves, and the chain behind it.
+    const TASK_CHAINS = { [TASKS.LIGHT]: 'chat_light', [TASKS.HEAVY]: 'text', [TASKS.TTS]: 'speech', [TASKS.MUSIC]: 'music', [TASKS.MEDIA]: null };
+    assert.deepEqual(Object.keys(TASK_CHAINS).sort(), Object.values(TASKS).sort(), 'every task is walked');
+    for (const [task, chain] of Object.entries(TASK_CHAINS)) {
+      for (const dataClass of [DATA.OPERATOR, DATA.CUSTOMER]) {
+        const client = planRoute(task, { env: ALL_KEYS, dataClass, clientWork: true });
+        for (const c of client) assert.ok(!NOT_FOR_CLIENTS.has(c.provider), `${task}/${dataClass}: ${c.provider} planned for a client`);
+        if (chain) {
+          const allowed = new Set(ROUTING_CHAINS[chain].filter(clientAllowedStep).map((s) => s.provider));
+          for (const c of client) assert.ok(allowed.has(c.provider), `${task}: ${c.provider} is not cleared in ${chain}`);
+        }
+      }
+    }
+    // What each task plans for a client, in order.
+    const providers = (task) => [...new Set(planRoute(task, { env: ALL_KEYS, dataClass: DATA.OPERATOR, clientWork: true }).map((c) => c.provider))];
+    assert.deepEqual(providers(TASKS.HEAVY), ['anthropic', 'gemini_paid']);
+    assert.deepEqual(providers(TASKS.LIGHT), ['gemini_paid', 'anthropic']);
+    assert.deepEqual(providers(TASKS.MUSIC), ['gemini_paid']);
+    assert.deepEqual(providers(TASKS.MEDIA), ['gemini_paid']);
+    assert.deepEqual(providers(TASKS.TTS), []);
+    // The operator's own work keeps every engine.
+    assert.ok(planRoute(TASKS.HEAVY, { env: ALL_KEYS, dataClass: DATA.OPERATOR }).some((c) => c.provider === 'openrouter'));
+    assert.ok(planRoute(TASKS.MEDIA, { env: ALL_KEYS, dataClass: DATA.OPERATOR }).some((c) => c.provider === 'replicate'));
+  });
+
+  test('text: a client film\'s text runs on Claude, then the paid Gemini key (never OpenRouter); the operator keeps the whole chain', () => {
+    assert.deepEqual(filmTextPlan(ALL_KEYS, { clientWork: true }).map((c) => c.provider), ['anthropic', 'gemini_paid']);
+    assert.ok(filmTextPlan(ALL_KEYS).some((c) => c.provider === 'openrouter'));
     assert.deepEqual(filmTextPlan(ALL_KEYS).map((c) => c.provider)[0], 'anthropic');
   });
 
   test('stills and clips: Gemini only for a client film (no FLUX Kontext Pro, no Kling)', () => {
     assert.deepEqual(filmMediaPlan(ALL_KEYS, { kind: 'still', clientWork: true }).map((s) => `${s.provider}:${s.model}`), ['gemini_paid:gemini-3.1-flash-image']);
+    // FLUX is skipped for not being a deliverable, before its licence is even read.
+    assert.deepEqual(chainPlan('stills', { env: ALL_KEYS, clientWork: true }).skipped.map((s) => `${s.model}:${s.reason}`), ['black-forest-labs/flux-kontext-pro:not_deliverable']);
     assert.deepEqual(filmMediaPlan(ALL_KEYS, { kind: 'clip', clientWork: true }).map((s) => `${s.provider}:${s.model}`), ['gemini_paid:gemini-omni-1.1-flash']);
     assert.deepEqual(filmMediaPlan(ALL_KEYS, { kind: 'still' }).map((s) => s.provider), ['replicate', 'gemini_paid'], 'the operator\'s own films keep FLUX first');
   });

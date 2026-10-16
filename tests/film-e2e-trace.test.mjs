@@ -313,6 +313,11 @@ describe('one film end to end on the real engines', () => {
     let r = await runStage(p, 'preview', 'preview_queued', { clientWork: true });
     assert.equal(r.code, 0, r.logs.join('\n'));
     assert.ok(trace.filter((t) => t.step === 'voice').every((t) => t.provider === 'elevenlabs'), 'never Cartesia for a client film (C1)');
+    // Stills become the keyframes clips are made from: a client film's come from Gemini image alone, never FLUX.
+    const stills = trace.filter((t) => t.step === 'still');
+    assert.ok(stills.length >= 2, `${stills.length} stills`);
+    assert.ok(stills.every((t) => t.provider === 'gemini_paid'), stills.map((t) => `${t.provider}:${t.model}`).join(', '));
+    assert.ok(!trace.some((t) => t.provider === 'replicate'), 'no Replicate call at all for a client film');
     st.omni = () => new Response('{"error":{"code":402,"message":"billing: insufficient credit"}}', { status: 402 });
     trace.length = 0;
     r = await runStage(p, 'full', 'full_queued', { clientWork: true });
