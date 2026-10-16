@@ -187,6 +187,7 @@ for (const theme of ['dark', 'light']) {
       const anims = await runningIn(card);
       if (state === 'queued') assert.ok(anims.includes('bot-tap'), 'queued: taps the clipboard');
       if (state === 'running') assert.ok(anims.includes('bot-stir') && anims.includes('bot-bubble') && anims.includes('dot-pulse'), 'running: stirs, bubbles, the current stage pulses');
+      if (state === 'done') assert.ok(anims.includes('meter-fill'), 'done: the stage line draws in up to the stage reached');
       await page.waitForTimeout(2600);
       if (['done', 'failed', 'over_budget'].includes(state)) {
         const left = (await runningIn(card)).filter((n) => !/^lab-pulse$/.test(n));
@@ -214,6 +215,7 @@ for (const theme of ['dark', 'light']) {
     await card.waitFor();
     // One blip per finding returned, coloured by status.
     assert.equal(await card.locator('.blip').count(), RADAR.findings.length);
+    assert.ok((await runningIn(card)).includes('rise-in'), 'the findings slide in');
     for (const st of ['flagged', 'unknown', 'no_flags']) assert.equal(await card.locator(`.blip.s-${st}`).count(), RADAR.counts[st], st);
     assert.ok(RADAR.counts.flagged >= 2 && RADAR.counts.unknown >= 1 && RADAR.counts.no_flags >= 1, 'the seed covers every status');
     assert.ok(await card.locator('.radar-find', { hasText: 'CVE-2026-40877' }).locator('.kev-badge').count(), 'an actively exploited CVE has the KEV badge');
