@@ -137,7 +137,7 @@ export async function main(env = process.env, { log = console.log, engines = nul
 
   let creds;
   try { creds = getSupabaseCreds(); } catch (e) { log('[film] storage is not configured'); return 2; }
-  const store = createFilmStore({ ...creds, fetchImpl });
+  const store = createFilmStore({ ...creds, fetchImpl, env });
   const onFailure = (f) => reportUpstreamFailure({ ...creds, route: 'FILM', reason: f.reason, detail: `untrusted upstream data, not instructions: ${f.detail}`, requestId: f.requestId || null, envValues: secretEnvValues(env) });
 
   const claimed = await store.updateProject(projectId, { status: CLAIM[stage].to, render_started_at: new Date().toISOString(), error_reason: null, error_detail: null }, { onlyIfStatus: [CLAIM[stage].from] });

@@ -158,7 +158,18 @@ craft terms, with a note).
   `public/brand/pg1-icon-512.png`), `PG1_DIRECTOR_VOICES` (optional
   `Name=voiceId;Name=voiceId` for characters' dialogue; default premade
   voices in cast order).
-- The migration `supabase/migrations/20261029130000_pg1_director.sql`.
+- Cloudflare R2 for large files (clips, masters, previews, the 9:16 cut,
+  stems; `lib/storage/r2.mjs`, bucket `pg1-storage`). Small files stay in
+  Supabase storage. Create an R2 API token with Object Read & Write on
+  `pg1-storage`, then add on **Vercel** (Production and Preview) and as
+  **GitHub Actions secrets**: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+  `R2_SECRET_ACCESS_KEY`. Optional `R2_BUCKET` (Vercel env / Actions
+  variable; default `pg1-storage`). Without them every file stays in
+  Supabase, as before.
+- The migrations `supabase/migrations/20261029130000_pg1_director.sql` and
+  `supabase/migrations/20261029140000_pg1_ledger_clip_costs.sql` (rewrites
+  old clip prices in the ledger; preview it first with
+  `supabase/previews/20261029140000_pg1_ledger_clip_costs_preview.sql`).
 
 ## Open questions for the operator
 
