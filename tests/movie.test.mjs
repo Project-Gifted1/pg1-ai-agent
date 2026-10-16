@@ -592,6 +592,9 @@ describe('render worker: movie stages', () => {
     const fetchImpl = routedFetch(filmDbRoutes(db));
     const store = createFilmStore({ supUrl: SUP, supKey: 'k', fetchImpl });
     const saved = { ...process.env };
+    const savedFetch = globalThis.fetch;
+    // The worker reports engine trouble to pg1_errors with the global fetch.
+    globalThis.fetch = fetchImpl;
     process.env.SUPABASE_URL = SUP;
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'k';
     try {
@@ -620,6 +623,7 @@ describe('render worker: movie stages', () => {
       assert.match(movieFailureMessage(stopped), /no picture engine that can show characters speaking/);
     } finally {
       process.env = saved;
+      globalThis.fetch = savedFetch;
     }
   });
 });
