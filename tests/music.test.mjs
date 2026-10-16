@@ -223,7 +223,7 @@ describe('router: the music tier', () => {
     assert.equal(musicCallUsd('gemini_paid', 'short'), 0.08, 'lyria-3.5 keeps its price');
     assert.equal(estimateMusic(full, 'preview'), 0.08, 'two clips');
     assert.equal(estimateMusic(full, 'final', 'short'), 0.04, 'a short final is a clip');
-    assert.equal(estimateMusic(full, 'final', 'full'), 0.8, 'a full final keeps the full tier');
+    assert.equal(estimateMusic(full, 'final', 'full'), 0.38, 'a full final keeps the full tier (150 s at 0.15 USD a minute, to the cent)');
     assert.equal(estimateMusic({ REPLICATE_API_TOKEN: REPLICATE }, 'preview'), 0, 'Replicate alone is no music engine now');
 
     // A call on the clip plan: the clip model's URL, its unit and price in the usage row.
