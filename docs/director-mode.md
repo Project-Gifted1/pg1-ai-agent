@@ -62,10 +62,22 @@ One classifier, `failureClass(status, text, { refused })` in
 ### A3. Licence for client work
 
 A call made for a client film (`client` set on the project) uses only steps
-whose registry model licence is `commercial_ok`. As the registry stands:
-Kling (R1) and Cartesia (C1) are `unclear`, so a client film's clips run on
-Gemini Omni alone and its voice on ElevenLabs alone; when those are out, the
-stage stops with a clear message instead of using an unlicensed engine.
+whose registry model licence is `commercial_ok`. As the registry stands,
+only Google (G1), ElevenLabs (E1) and Claude are `commercial_ok`; Kling
+(R1), Cartesia (C1), FLUX Kontext Pro and FLUX schnell, OpenRouter, the AI
+gateway and OpenAI (F1) are `unclear`. So a client film's text runs on
+Claude and the paid Gemini key, its stills on Gemini image, its clips on
+Gemini Omni and its voice on ElevenLabs; when those are out, the stage stops
+with a clear message instead of using an unlicensed engine. The router's own
+plans (`planRoute(..., { clientWork })`) apply the same filter.
+
+`/music --client` marks a track as client work: it is made on Lyria (Gemini
+API) only, never ElevenLabs Music (its Creator licence excludes film, TV
+and radio; the step is `clientOk: false`). Operator tracks may still fall
+through to ElevenLabs.
+
+ElevenLabs is never asked for `pcm_44100` or `pcm_48000` (Pro tier): voice
+and dialogue use `pcm_24000`, SFX `mp3_44100_128`, music `mp3_44100_192`.
 
 ### A4. One engine per stage
 
@@ -115,8 +127,9 @@ the 1.5x floor), `--credit on|off` (the PG1 credit lines on a client film).
 Images attached to the message are the client's or the operator's brand
 assets, as for `/film`.
 
-One approval at the start (the budget and cap, as every PG1 spend; status
-`awaiting_director_approval`), then the worker runs every stage alone
+The operator's own film starts at once (`PG1_DIRECTOR_START_APPROVAL=1`
+asks for the budget approval first, status `awaiting_director_approval`); a
+client film always waits for that approval. Then the worker runs every stage alone
 (`director_queued`, `directing`, then `done` or, for a client film,
 `awaiting_delivery_approval`). It stops only when the cap or price floor
 would be passed, a safety filter refuses, or, for a client film, before
@@ -177,5 +190,6 @@ craft terms, with a note).
   request's text chain (Claude first) is applied to storyboards, checks and
   heavy chat. Moving every light reply to Claude would multiply chat cost;
   one line in `ROUTING_CHAINS` changes it.
-- The single approval at the start of a Director run (budget and cap) is
-  kept, as for every PG1 spend; `PG1_DIRECTOR_START_APPROVAL=0` removes it.
+- `PG1_DIRECTOR_START_APPROVAL` (default off): the operator's own Director
+  films start without a budget approval and stop only for the cap or a
+  safety refusal. Client films always ask first.

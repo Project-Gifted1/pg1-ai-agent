@@ -136,8 +136,8 @@
         {
           "provider": "replicate",
           "model": "black-forest-labs/flux-kontext-pro",
-          "role": "primary (reference and keyframes)",
-          "licence": "commercial_ok"
+          "role": "primary (reference and keyframes); operator films only",
+          "licence": "unclear"
         },
         {
           "provider": "google",
@@ -177,7 +177,7 @@
           "does": "image editing and generation from a reference image",
           "max": "one image per run",
           "price": "0.04 USD per image",
-          "licence": "commercial_ok: outputs generated on Replicate may be used commercially",
+          "licence": "unclear (F1): not cleared by the operator for client work; only Google and ElevenLabs are",
           "sources": [
             "https://replicate.com/black-forest-labs/flux-kontext-pro",
             "https://replicate.com/blog/flux-kontext",
@@ -220,8 +220,8 @@
         {
           "provider": "replicate",
           "model": "black-forest-labs/flux-kontext-pro",
-          "role": "primary stills",
-          "licence": "commercial_ok"
+          "role": "primary stills; operator films only",
+          "licence": "unclear"
         },
         {
           "provider": "google",
@@ -261,7 +261,7 @@
           "does": "keyframes that keep the reference",
           "max": "one image per run",
           "price": "0.04 USD per image",
-          "licence": "commercial_ok",
+          "licence": "unclear (F1)",
           "sources": [
             "https://replicate.com/black-forest-labs/flux-kontext-pro",
             "https://bfl.ai/pricing"
@@ -1156,6 +1156,16 @@
       "sources": [
         "https://elevenlabs.io/blog/eleven-v3",
         "https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform"
+      ]
+    },
+    "F1": {
+      "question": "FLUX Kontext Pro and FLUX schnell on Replicate, and the OpenRouter, AI gateway and OpenAI text backups: may their output be delivered to clients?",
+      "detail": "Asked 2026-10-15 by the operator: only Google and ElevenLabs output is cleared for client work so far. Until these are reviewed they are unclear, so a client job never reaches them (stills run on Gemini image; text on Claude and paid Gemini).",
+      "answered": null,
+      "sources": [
+        "https://replicate.com/terms",
+        "https://replicate.com/black-forest-labs/flux-kontext-pro",
+        "https://bfl.ai/pricing"
       ]
     },
     "C1": {

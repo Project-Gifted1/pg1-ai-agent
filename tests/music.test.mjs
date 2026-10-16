@@ -143,8 +143,8 @@ describe('router: the music tier', () => {
     out = await generateMusic({ env, spec: spec({ length: 'full' }), fetchImpl: routedFetch(engineRoutes(state)), sleep: noSleep, log: quiet, ledger });
     assert.equal(out.provider, 'elevenlabs');
     assert.deepEqual(state.seen.map((s) => s.engine), ['lyria', 'elevenlabs']);
-    // ElevenLabs is asked for lossless PCM.
-    assert.match(state.seen[1].url, /\?output_format=pcm_44100$/);
+    // ElevenLabs is asked for MP3 at 44.1 kHz: PCM at 44.1 kHz needs the Pro tier.
+    assert.match(state.seen[1].url, /\?output_format=mp3_44100_192$/);
     assert.equal(state.seen[1].key, ELEVEN);
     assert.equal(state.seen[1].body.force_instrumental, true);
     assert.equal(state.seen[1].body.music_length_ms, 150000);

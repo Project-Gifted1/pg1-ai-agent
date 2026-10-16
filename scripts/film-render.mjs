@@ -101,7 +101,7 @@ export function realEngines(env, { fetchImpl = globalThis.fetch, log = console.l
     },
     sfx: ({ text, seconds }) => soundEffect({ env, text, seconds, fetchImpl }),
     // Claude, then the paid Gemini key, then OpenRouter (lib/film/providers.mjs).
-    think: ({ system, content, effort, maxTokens, validate, purpose }) => filmThink({ env, system, content, effort, maxTokens, validate, purpose, fetchImpl, log, alert }),
+    think: ({ system, content, effort, maxTokens, validate, purpose }) => filmThink({ env, system, content, effort, maxTokens, validate, purpose, fetchImpl, log, alert, clientWork }),
     image: (bytes) => imageBlock(bytes),
     transcribe: ({ audio }) => transcribe({ env, audio, fetchImpl })
   };

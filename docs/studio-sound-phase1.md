@@ -11,8 +11,8 @@ Registry version 2026-10-14. Generated from `lib/capabilities/registry.mjs` and 
 | Feature | Status | Chosen model(s) | Licence | Unit cost | Min price (1.5x) | Offer rule |
 |---|---|---|---|---|---|---|
 | Text- and image-to-video clips | standard | gemini-omni-1.1-flash (google, primary); kwaivgi/kling-v2.1 (replicate, fallback (needs a start image)) | **unclear** (R1) | 0.1 USD per second of 720p video (official) | 0.15 USD per second of 720p video | not offered (licence review) |
-| Scene and character consistency | standard | black-forest-labs/flux-kontext-pro (replicate, primary (reference and keyframes)); gemini-3.1-flash-image (google, fallback stills) | commercial_ok | 0.067 USD per still (official) | 0.1005 USD per still | may be offered |
-| Storyboard and keyframe images | standard | black-forest-labs/flux-kontext-pro (replicate, primary stills); gemini-3.1-flash-image (google, fallback stills) | commercial_ok | 0.067 USD per still (official) | 0.1005 USD per still | may be offered |
+| Scene and character consistency | standard | black-forest-labs/flux-kontext-pro (replicate, primary (reference and keyframes); operator films only); gemini-3.1-flash-image (google, fallback stills) | commercial_ok | 0.067 USD per still (official) | 0.1005 USD per still | may be offered |
+| Storyboard and keyframe images | standard | black-forest-labs/flux-kontext-pro (replicate, primary stills; operator films only); gemini-3.1-flash-image (google, fallback stills) | commercial_ok | 0.067 USD per still (official) | 0.1005 USD per still | may be offered |
 | Video upscaling to 4K | custom | topazlabs/video-upscale (replicate, chosen) | **unclear** (R1) | unknown per second of output video | after a priced test | not offered (licence review) |
 | Video upscaling to 8K | unavailable | - | **unclear** (no provider) | unknown per second of output video | after a priced test | never offered |
 | Frame interpolation (smoother motion, higher frame rate) | custom | ffmpeg minterpolate (motion-compensated) (pg1, chosen, on PG1's render runner) | commercial_ok | 0.06 USD per minute of output video (PG1 estimate) | 0.09 USD per minute of output video | custom, on request |
@@ -52,7 +52,7 @@ Unit cost: Kontext Pro 0.04 USD per image; the Gemini fallback about 0.067 USD p
 
 | Provider | Model | What it does | Max resolution / length | Price | Licence, resale | Sources |
 |---|---|---|---|---|---|---|
-| replicate | black-forest-labs/flux-kontext-pro | image editing and generation from a reference image | one image per run | 0.04 USD per image | commercial_ok: outputs generated on Replicate may be used commercially | [1](https://replicate.com/black-forest-labs/flux-kontext-pro) [2](https://replicate.com/blog/flux-kontext) [3](https://bfl.ai/pricing) |
+| replicate | black-forest-labs/flux-kontext-pro | image editing and generation from a reference image | one image per run | 0.04 USD per image | unclear (F1): not cleared by the operator for client work; only Google and ElevenLabs are | [1](https://replicate.com/black-forest-labs/flux-kontext-pro) [2](https://replicate.com/blog/flux-kontext) [3](https://bfl.ai/pricing) |
 | google | gemini-omni-1.1-flash (references) | images and up to 3 video references (3 s each) guide the clip | as text_image_to_video | as text_image_to_video | commercial_ok: operator accepted Google's generated-content terms; operator responsible for use (G1) | [1](https://ai.google.dev/gemini-api/docs/omni) [2](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/video/generate-videos-from-references) |
 | google | veo-3.1 (reference images) | up to 3 reference images per clip | 8 s | as Veo above | commercial_ok: operator accepted Google's generated-content terms; operator responsible for use (G1) | [1](https://ai.google.dev/gemini-api/docs/veo) |
 
@@ -64,7 +64,7 @@ Unit cost: Dearest path (the Gemini fallback). Writing the storyboard itself is 
 
 | Provider | Model | What it does | Max resolution / length | Price | Licence, resale | Sources |
 |---|---|---|---|---|---|---|
-| replicate | black-forest-labs/flux-kontext-pro | keyframes that keep the reference | one image per run | 0.04 USD per image | commercial_ok | [1](https://replicate.com/black-forest-labs/flux-kontext-pro) [2](https://bfl.ai/pricing) |
+| replicate | black-forest-labs/flux-kontext-pro | keyframes that keep the reference | one image per run | 0.04 USD per image | unclear (F1) | [1](https://replicate.com/black-forest-labs/flux-kontext-pro) [2](https://bfl.ai/pricing) |
 | google | gemini-3.1-flash-image | image generation and editing | up to 4K images | about 0.045 (0.5K), 0.067 (1K), 0.101 (2K), 0.151 (4K) USD per image | commercial_ok: operator accepted Google's generated-content terms; operator responsible for use (G1) | [1](https://ai.google.dev/gemini-api/docs/pricing) |
 | google | imagen-4 | text to image | - | - | commercial_ok: operator accepted Google's generated-content terms; operator responsible for use (G1); Shut down on 2026-08-17 per Google's model page | [1](https://ai.google.dev/gemini-api/docs/models/imagen) |
 
@@ -209,6 +209,7 @@ Consent and verification by provider:
 Every feature marked **unclear** is treated as not commercial: PG1 does not offer it to clients until the question is answered and the registry is changed.
 
 - **R1. Replicate-hosted video and upscaling models (Kling, Topaz, FILM): what does each model's own licence allow?** Replicate grants its rights in outputs, including commercial use, "subject to any third-party terms" of the model used. The model pages' licence tabs could not be loaded, so each model's terms are unconfirmed. Blocks: Text- and image-to-video clips; Video upscaling to 4K. [1](https://replicate.com/terms) [2](https://replicate.com/kwaivgi/kling-v2.1) [3](https://replicate.com/topazlabs/video-upscale/api/learn-more) [4](https://replicate.com/google-research/frame-interpolation)
+- **F1. FLUX Kontext Pro and FLUX schnell on Replicate, and the OpenRouter, AI gateway and OpenAI text backups: may their output be delivered to clients?** Asked 2026-10-15 by the operator: only Google and ElevenLabs output is cleared for client work so far. Until these are reviewed they are unclear, so a client job never reaches them (stills run on Gemini image; text on Claude and paid Gemini). Blocks: none. [1](https://replicate.com/terms) [2](https://replicate.com/black-forest-labs/flux-kontext-pro) [3](https://bfl.ai/pricing)
 - **C1. Cartesia (the voice PG1 Studio uses now for voice-over): do its terms allow resale of output?** Cartesia was outside this phase's providers (Replicate, Google, ElevenLabs), so its terms were not reviewed. Blocks: Voice-over (one voice). 
 
 Answered:

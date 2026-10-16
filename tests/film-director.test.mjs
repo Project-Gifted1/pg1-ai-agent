@@ -32,7 +32,7 @@ import { handleFilmCommand, handleFilmApproval, filmCard } from '../lib/film/cha
 import { main as workerMain, realEngines } from '../scripts/film-render.mjs';
 import { createCapacityAlerts, __resetAlerts } from '../lib/router/alerts.mjs';
 import { UPSTREAM_BRAND_RE } from '../lib/upstreamFailure.mjs';
-import { namesProvider } from '../lib/whiteLabel.mjs';
+import { namesProvider, PROVIDER_NAME_RE } from '../lib/whiteLabel.mjs';
 import * as realFf from '../lib/film/ffmpeg.mjs';
 import { makeFilmDb, filmDbRoutes, routedFetch, json } from './helpers/filmDb.mjs';
 
@@ -110,7 +110,8 @@ function engineRoutes(trace, st) {
         text = n === 2 ? '{"pass":false,"score":3,"issues":[{"type":"composition","detail":"framed too wide for a medium close-up"}],"description":"x"}' : '{"pass":true,"score":8,"issues":[],"description":"ok"}';
       } else {
         const n = trace.filter((t) => t.step === 'dailies').length;
-        text = n === 1 ? '{"pass":false,"score":3,"issues":[{"type":"faces_hands","detail":"six fingers on the left hand"}],"best_start_s":0,"description":"x"}' : '{"pass":true,"score":8,"issues":[],"best_start_s":0.5,"description":"as intended"}';
+        const six = st.poison ? 'six fingers on the left hand, a Kling motion artefact; Veo or gemini-omni-1.1-flash would not do this' : 'six fingers on the left hand';
+        text = n === 1 ? JSON.stringify({ pass: false, score: 3, issues: [{ type: 'faces_hands', detail: six }], best_start_s: 0, description: st.poison ? 'made on Replicate by kwaivgi/kling-v2.1' : 'x' }) : '{"pass":true,"score":8,"issues":[],"best_start_s":0.5,"description":"as intended"}';
       }
       return json({ model: body.model, content: [{ type: 'text', text }], stop_reason: 'end_turn', usage: { input_tokens: 800, output_tokens: 400 } });
     }],
@@ -233,6 +234,83 @@ describe('Director Mode, end to end', () => {
     assert.ok(r.logs.some((l) => /director done/.test(l)));
   });
 
+  test('white label: credits, the director\'s notes, deliverables, file names, metadata, messages and push name no provider or model', async () => {
+    // Every provider and model name: the brand list, plus every model id the
+    // routing chains and the price table name.
+    const { ROUTING_CHAINS, ENGINE_UNIT_COSTS } = await import('../lib/capabilities/registry.mjs');
+    const modelIds = [...new Set([...Object.values(ROUTING_CHAINS).flat().map((x) => x.model), ...Object.values(ENGINE_UNIT_COSTS).map((x) => x.model)].filter(Boolean))];
+    const escape = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const MODEL_RE = new RegExp(`${modelIds.map((m) => escape(m.split(' ')[0])).join('|')}|eleven_\\w+|music_v\\d|claude-|gpt-\\d|omni-|kontext`, 'i');
+    const named = (x) => UPSTREAM_BRAND_RE.test(x) || namesProvider(x) || MODEL_RE.test(x);
+    const NAMES = ['ElevenLabs', 'Google', 'Gemini', 'Veo', 'Lyria', 'Replicate', 'Kling', 'Cartesia', 'FLUX', 'OpenRouter', 'OpenAI'];
+    for (const n of NAMES) assert.ok(named(n), `the check catches ${n}`);
+    for (const m of modelIds) assert.ok(named(m), `the check catches ${m}`);
+
+    // Credits, exactly, with no copyright line.
+    assert.deepEqual([...DIRECTOR_CREDIT_LINES], ['Directed by PG1 Studio', 'Music and sound by PG1 Sound', 'A Project-Gifted1™ production']);
+    for (const lines of [creditLines({ title: 'X' }), creditLines({ title: 'X', client: { name: 'Acme', credit: true } })]) {
+      assert.deepEqual(lines.slice(-3), [...DIRECTOR_CREDIT_LINES]);
+      assert.ok(!lines.some((l) => /©|\(c\)|copyright/i.test(l) || named(l)), lines.join(' | '));
+    }
+
+    // A full run whose critic and engines speak in provider and model names.
+    st.poison = true;
+    const elUrls = [];
+    const inner = fetchImpl;
+    fetchImpl = async (u, o) => { if (/elevenlabs\.io/.test(String(u))) elUrls.push(String(u)); return inner(u, o); };
+    const p = await newDirectorFilm();
+    const r = await runDirectorStage(p);
+    assert.equal(r.code, 0, r.logs.join('\n'));
+    // ElevenLabs: voice-over, dialogue and SFX, never in a Pro-tier format.
+    for (const what of ['text-to-speech', 'text-to-dialogue', 'sound-generation']) assert.ok(elUrls.some((u) => u.includes(what)), `${what} was called`);
+    for (const u of elUrls) assert.doesNotMatch(u, /output_format=pcm_(?:44100|48000)/, u);
+    const crawl = asses.at(-1);
+    assert.ok(!named(crawl) && !/©|copyright/i.test(crawl), crawl);
+    const DL = DIRECTOR_CREDIT_LINES.map((l) => crawl.indexOf(l));
+    assert.ok(DL.every((i, k) => i >= 0 && (k === 0 || i > DL[k - 1])), 'the three credit lines, in order');
+    assert.equal(segments.filter((s) => s.kind === 'image').at(-1).img, DEFAULT_LOGO_FILE, 'then the logo end card');
+
+    // The director's notes: what goes into the PDF.
+    const blocks = directorNotesBlocks({ project: r.film, director: r.film.director, timeline: r.film.timeline, qcReport: r.film.qc_report, plan: null });
+    assert.ok(!named(JSON.stringify(blocks)), JSON.stringify(blocks).slice(0, 400));
+    assert.ok(JSON.stringify(blocks).includes('six fingers'), 'the critic\'s reason is kept, its engine names are not');
+
+    // Deliverables: file names, descriptions and metadata on every asset row.
+    const assets = await store.listAssets(p.id);
+    for (const a of assets.filter((x) => ['final', 'social', 'stem', 'notes', 'clip', 'music', 'voice', 'sfx', 'dialogue'].includes(x.kind))) {
+      assert.ok(!named(`${a.storage_path} ${a.thumb_path || ''} ${a.description || ''} ${JSON.stringify(a.meta || {})}`), `${a.kind}: ${a.storage_path} ${a.description} ${JSON.stringify(a.meta)}`);
+    }
+    // The film the operator and client see: card, director record, QC.
+    { const c = JSON.stringify(await filmCard(store, r.film)).replace(/https:\/\/[^"]+/g, "<link>"); const m = [UPSTREAM_BRAND_RE.exec(c), MODEL_RE.exec(c), PROVIDER_NAME_RE.exec(c)].filter(Boolean)[0]; assert.ok(!named(c), `${m && m[0]} in ${m ? c.slice(Math.max(0, m.index - 120), m.index + 80) : c.slice(0, 200)}`); }
+    assert.ok(!named(JSON.stringify(r.film.qc_report)), JSON.stringify(r.film.qc_report).slice(0, 300));
+    assert.ok(!named(JSON.stringify(r.film.director.regenerated)), JSON.stringify(r.film.director.regenerated));
+
+    // File metadata: the encoder strips the sources' tags and writes PG1's own.
+    const ffSrc = (await import('node:fs')).readFileSync(new URL('../lib/film/ffmpeg.mjs', import.meta.url), 'utf8');
+    const metaArgs = [...ffSrc.matchAll(/'-metadata(?::s:[av]:0)?', ['`]([^'`]+)/g)].map((m) => m[1]);
+    assert.ok(metaArgs.length >= 4 && metaArgs.every((m) => !named(m)), metaArgs.join(' | '));
+    assert.equal((ffSrc.match(/'-map_metadata', '-1'/g) || []).length >= 2, true, 'master and 9:16 cut both drop the sources\' metadata');
+
+    // Error messages: every failure the operator or a client can see.
+    const { filmFailureMessage, FILM_FAILURE_TEXT } = await import('../lib/film/text.mjs');
+    const { ENGINE_LABELS } = await import('../lib/aiRouter.mjs');
+    for (const reason of [...Object.keys(FILM_FAILURE_TEXT), 'throttled', 'out_of_credit', 'budget']) {
+      for (const failure of [{}, { step: 'clips', engine: ENGINE_LABELS.replicate, fallback: { engine: ENGINE_LABELS.gemini_paid, outcome: 'failed' } }, { licence: true, fallback: { engine: ENGINE_LABELS.gemini_paid, outcome: 'not_configured' } }]) {
+        const msg = filmFailureMessage({ id: p.id, error_reason: reason, failure, mode: 'director' });
+        assert.ok(!named(msg), `${reason}: ${msg}`);
+      }
+    }
+
+    // Push: the end-of-film notice, through the real push path.
+    const { pushToOperator } = await import('../lib/watches/push.mjs');
+    const sent = [];
+    const webpushImpl = { setVapidDetails() {}, sendNotification: async (sub, payload) => { sent.push(JSON.parse(payload)); } };
+    const env = { VAPID_PUBLIC_KEY: 'BPub', VAPID_PRIVATE_KEY: 'priv', VAPID_SUBJECT: 'mailto:x@example.com' };
+    await pushToOperator({ env, title: `PG1 Studio: "${r.film.timeline.title}" is ready`, body: 'For Acme: approve delivery. 3.10 USD spent, 1 shot(s) made again (Kling artefact; remade on gemini-omni-1.1-flash via Replicate).', webpushImpl, devices: [{ endpoint: 'https://push.example/1', keys: {} }] });
+    assert.equal(sent.length, 1, "the push is sent");
+    for (const m of sent) assert.ok(!named(`${m.title} ${m.body}`), JSON.stringify(m));
+  });
+
   test('a client film: licensed engines only, the client credited, approval before delivery', async () => {
     const p = await newDirectorFilm({ brief: 'A 20s spot for a bakery', client: { name: 'Acme Bakery', credit: false } });
     const r = await runDirectorStage(p, { clientWork: true });
@@ -306,6 +384,38 @@ describe('Director Mode, end to end', () => {
     assert.match(ok.reply, /Director Mode is directing the film/);
     assert.equal(trace.filter((t) => t.step === 'dispatch').at(-1).body.inputs.stage, 'director');
     assert.equal((await store.getProject(film.id)).status, 'director_queued');
+  });
+
+  test('/film director: the operator\'s own film starts at once; PG1_DIRECTOR_START_APPROVAL=1 asks first; a client film always asks', async () => {
+    const env = { ...process.env, ...KEYS, PG1_VIDEO_ENABLED: '1', PG1_VIDEO_RENDER_SECRET: SECRET, GITHUB_TOKEN: 'gh' };
+    delete env.PG1_DIRECTOR_START_APPROVAL;
+    const cmdOpts = { env, supUrl: SUP_URL, supKey: 'service-key', fetchImpl };
+    const { startApprovalNeeded } = await import('../lib/film/director.mjs');
+    assert.equal(startApprovalNeeded({}), false);
+    assert.equal(startApprovalNeeded({ PG1_DIRECTOR_START_APPROVAL: '1' }), true);
+    assert.equal(startApprovalNeeded({ PG1_DIRECTOR_START_APPROVAL: '0' }, { client: { name: 'Acme' } }), true, 'a client film always asks');
+
+    const before = trace.filter((t) => t.step === 'dispatch').length;
+    const out = await handleFilmCommand({ ...cmdOpts, text: '/film director a 20s film about a harbour at dawn --seconds 20', isOperator: true });
+    assert.equal(out.pendingApproval, undefined, 'no approval asked');
+    assert.match(out.reply, /Director Mode is directing the film now/);
+    assert.doesNotMatch(out.reply, UPSTREAM_BRAND_RE);
+    const d = trace.filter((t) => t.step === 'dispatch');
+    assert.equal(d.length, before + 1);
+    assert.equal(d.at(-1).body.inputs.stage, 'director');
+    assert.equal((await store.getProject(out.filmProject.id)).status, 'director_queued');
+
+    const asked = await handleFilmCommand({ ...cmdOpts, env: { ...env, PG1_DIRECTOR_START_APPROVAL: '1' }, text: '/film director a harbour at dawn --seconds 20', isOperator: true });
+    assert.ok(asked.pendingApproval && asked.pendingApproval.token);
+    assert.equal(trace.filter((t) => t.step === 'dispatch').length, before + 1, 'nothing started');
+
+    const client = await handleFilmCommand({ ...cmdOpts, env: { ...env, PG1_DIRECTOR_START_APPROVAL: '0' }, text: '/film director a harbour at dawn --client "Acme"', isOperator: true });
+    assert.ok(client.pendingApproval && client.pendingApproval.token, 'a client film waits for approval');
+    assert.equal(trace.filter((t) => t.step === 'dispatch').length, before + 1);
+
+    const tooDear = await handleFilmCommand({ ...cmdOpts, env: { ...env, PG1_FILM_MAX_USD: '1' }, text: '/film director a harbour at dawn --seconds 300', isOperator: true });
+    assert.match(tooDear.reply, /more than this film's cap of 1\.00 USD, so it was not started/);
+    assert.equal(trace.filter((t) => t.step === 'dispatch').length, before + 1);
   });
 });
 
