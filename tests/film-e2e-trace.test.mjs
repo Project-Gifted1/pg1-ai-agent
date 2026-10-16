@@ -5,17 +5,23 @@
  * outbound call recorded and each step's engine checked against the
  * capability registry (lib/capabilities/registry.mjs).
  *
- * Also: the voiceover never fails a film on its own (Cartesia is sent once
- * more on a timeout, then ElevenLabs takes the rest of the stage, and the
- * lines Cartesia made are recorded again so the film has one voice), and a
- * Lyria 429 leaves the film finished without music, with a note.
+ * Also: the voiceover never fails a film on its own (the ElevenLabs brand
+ * voice is sent once more on a timeout, then Cartesia takes the rest of the
+ * stage, and the lines made before are recorded again so the film has one
+ * voice); a clip engine that runs out mid-stage hands the rest to the next
+ * one and the earlier clips are made again (one clip style); a client film
+ * uses licensed engines only; a Lyria 429 leaves the film finished without
+ * music, with a note.
  *
  * Run with: node --test tests/film-e2e-trace.test.mjs
  */
 import { test, describe, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
-import { __resetRouterState, ENGINE_LABELS } from '../lib/aiRouter.mjs';
+import { __resetRouterState, ENGINE_LABELS, memoryLedger, utcDay } from '../lib/aiRouter.mjs';
+import { INTERACTIONS_URL } from '../lib/videoJobs.mjs';
+import { clipCostOnUsd } from '../lib/film/cost.mjs';
+import { createCapacityAlerts, __resetAlerts } from '../lib/router/alerts.mjs';
 import { capability } from '../lib/capabilities/registry.mjs';
 import {
   REPLICATE_API, GEMINI_API, ANTHROPIC_URL, CARTESIA_TTS_SSE_URL, CARTESIA_STT_URL, ELEVENLABS_TTS_URL,
@@ -42,7 +48,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 const KEYS = {
   REPLICATE_API_TOKEN: 'r8_trace_stub_0123456789abcdef', GEMINI_API_KEY_PAID: 'AQ.trace-paid-0123456789', GEMINI_API_KEY_FREE: 'AIza-trace-free-0123456789',
   ANTHROPIC_API_KEY: 'sk-ant-trace-0123456789', CARTESIA_API_KEY: 'sk_car_trace_0123456789', ELEVENLABS_API_KEY: 'sk_el_trace_0123456789',
-  PG1_VIDEO_MODEL_REPLICATE_IMAGE: 'kwaivgi/kling-v2.1', PG1_FILM_VOICE_TIMEOUT_MS: '40'
+  PG1_VIDEO_MODEL_REPLICATE_IMAGE: 'kwaivgi/kling-v2.1', PG1_FILM_VOICE_TIMEOUT_MS: '40', PG1_FILM_VOICE_ID: 'brandVoice0123456789'
 };
 
 // A 20-second film: two scenes, four 5-second shots, three voiceover lines.
@@ -113,12 +119,25 @@ function engineRoutes(trace, st) {
       return json({ id: `pred-${trace.length}`, status: 'succeeded', output: `https://replicate.delivery/out-${trace.length}.${video ? 'mp4' : 'png'}` }, 201);
     }],
     ['https://replicate.delivery/', () => new Response(Buffer.from('media-bytes'), { status: 200 })],
-    [`${GEMINI_API}/`, (u) => {
+    [INTERACTIONS_URL, (u, o, body) => {
+      trace.push({ step: 'clip', provider: 'gemini_paid', model: body.model });
+      if (st.omni) { const r = st.omni(trace.filter((t) => t.step === 'clip' && t.provider === 'gemini_paid').length); if (r) return r; }
+      return json({ id: 'int-1', status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'video', data: Buffer.from('omni-mp4').toString('base64'), mime_type: 'video/mp4' }] }] });
+    }],
+    [`${GEMINI_API}/`, (u, o, body) => {
       const model = decodeURIComponent(u.split('/models/')[1].split(':')[0]);
       if (/lyria/.test(model)) {
-        trace.push({ step: 'music', provider: 'gemini_paid', model });
+        trace.push({ step: 'music', provider: 'gemini_paid', model, prompt: body.contents[0].parts[0].text });
         if (st.lyria) { const r = st.lyria(model); if (r) return r; }
         return json({ candidates: [{ content: { parts: [{ text: 'instrumental' }, { inlineData: { mimeType: 'audio/mpeg', data: Buffer.from('lyria-mp3').toString('base64') } }] } }] });
+      }
+      // Text on the paid key (a client film's text runs here alone, T1).
+      if (!/image/.test(model)) {
+        const sys = body.systemInstruction && body.systemInstruction.parts ? body.systemInstruction.parts.map((x) => x.text).join('') : '';
+        const qc = sys === QC_SYSTEM;
+        trace.push({ step: qc ? 'shot check' : 'storyboard', provider: 'gemini_paid', model });
+        const text = qc ? '{"pass":true,"score":8,"issues":[],"best_start_s":0.5,"description":"as described"}' : JSON.stringify(storyboardJson());
+        return json({ candidates: [{ content: { parts: [{ text }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 500 } });
       }
       trace.push({ step: 'still', provider: 'gemini_paid', model });
       return json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: PNG.toString('base64') } }] } }] });
@@ -135,7 +154,8 @@ function engineRoutes(trace, st) {
     }],
     [CARTESIA_STT_URL, () => { trace.push({ step: 'transcript', provider: 'cartesia', model: 'ink-whisper' }); return json({ text: heard() }); }],
     [`${ELEVENLABS_TTS_URL}/`, (u, o, body) => {
-      trace.push({ step: 'voice', provider: 'elevenlabs', model: body.model_id, text: body.text, format: new URL(u).searchParams.get('output_format') });
+      trace.push({ step: 'voice', provider: 'elevenlabs', model: body.model_id, text: body.text, format: new URL(u).searchParams.get('output_format'), voiceId: decodeURIComponent(new URL(u).pathname.split('/')[3]) });
+      if (st.elevenlabs) { const r = st.elevenlabs(body.text, o); if (r) return r; }
       const chars = [...body.text];
       return json({ audio_base64: Buffer.alloc(2400 * 2).toString('base64'), alignment: { characters: chars, character_start_times_seconds: chars.map((c, i) => i * 0.05), character_end_times_seconds: chars.map((c, i) => i * 0.05 + 0.04) } });
     }]
@@ -149,7 +169,7 @@ const registryModel = (feature, provider, role = null) => {
   return m ? m.model : null;
 };
 
-beforeEach(() => { __resetRouterState(); mixes = []; });
+beforeEach(() => { __resetRouterState(); __resetAlerts(); mixes = []; });
 after(() => { process.env = { ...ORIGINAL_ENV }; globalThis.fetch = ORIGINAL_FETCH; });
 
 describe('one film end to end on the real engines', () => {
@@ -168,20 +188,21 @@ describe('one film end to end on the real engines', () => {
     globalThis.fetch = fetchImpl;
   });
 
-  const runStage = async (p, stage, queued) => {
+  const runStage = async (p, stage, queued, { clientWork = false } = {}) => {
     await store.updateProject(p.id, { status: queued });
     const env = { ...process.env, ...KEYS, PG1_VIDEO_RENDER_SECRET: SECRET, FILM_PROJECT_ID: p.id, FILM_STAGE: stage };
     env.FILM_TOKEN = signFilmToken(p.id, env);
     const logs = [];
-    const engines = realEngines(env, { fetchImpl, log: (l) => logs.push(l), sleep: async () => {} });
+    const alert = createCapacityAlerts({ env, store: null, log: (l) => logs.push(l) });
+    const engines = realEngines(env, { fetchImpl, log: (l) => logs.push(l), sleep: async () => {}, clientWork, alert });
     const code = await workerMain(env, { engines, fetchImpl, ffImpl: fakeFf(), log: (l) => logs.push(l) });
     return { code, logs, film: await store.getProject(p.id) };
   };
 
-  test('storyboard -> stills -> clips -> voiceover -> music -> render: each step on the engine the registry names; Cartesia timing out never fails the film', async () => {
+  test('storyboard -> stills -> clips -> voiceover -> music -> render: each step on the engine the registry names; the brand voice timing out never fails the film', async () => {
     const p = await store.createProject({ request: 'A cafe opening at dawn, 20 seconds', capUsd: 20, status: 'storyboard_queued' });
-    // The second line times out on Cartesia twice: one retry, then ElevenLabs.
-    st.cartesia = (text, o) => (text === LINES[1] ? hang(o) : null);
+    // The second line times out on ElevenLabs twice: one retry, then Cartesia.
+    st.elevenlabs = (text, o) => (text === LINES[1] ? hang(o) : null);
 
     // 1. Storyboard.
     let r = await runStage(p, 'storyboard', 'storyboard_queued');
@@ -200,28 +221,33 @@ describe('one film end to end on the real engines', () => {
     assert.ok(stills.every((t) => t.provider === 'replicate' && t.model === registryModel('storyboard_keyframes', 'replicate', 'primary')), 'stills: the registry\'s primary (flux-kontext-pro on Replicate)');
     const voice = trace.filter((t) => t.step === 'voice');
     assert.deepEqual(voice.map((t) => `${t.provider}:${LINES.indexOf(t.text)}`), [
-      'cartesia:0', // line 1 on Cartesia
-      'cartesia:1', 'cartesia:1', // line 2 times out, is sent once more, times out again
-      'elevenlabs:1', 'elevenlabs:2', // ElevenLabs from then on
-      'elevenlabs:0' // line 1 recorded again, so the film has one voice
+      'elevenlabs:0', // line 1 in the brand voice
+      'elevenlabs:1', 'elevenlabs:1', // line 2 times out, is sent once more, times out again
+      'cartesia:1', 'cartesia:2', // Cartesia from then on
+      'cartesia:0' // line 1 recorded again, so the film has one voice
     ]);
-    assert.equal(voice[0].model, registryModel('voiceover_single', 'cartesia', 'primary'));
-    assert.ok(voice.filter((t) => t.provider === 'elevenlabs').every((t) => t.model === registryModel('voiceover_single', 'elevenlabs', 'fallback') && t.format === 'pcm_24000'));
+    assert.equal(voice[0].model, registryModel('voiceover_single', 'elevenlabs', 'primary'));
+    assert.equal(voice[0].voiceId, KEYS.PG1_FILM_VOICE_ID, 'the brand voice (PG1_FILM_VOICE_ID)');
+    assert.ok(voice.filter((t) => t.provider === 'elevenlabs').every((t) => t.format === 'pcm_24000'));
+    assert.ok(voice.filter((t) => t.provider === 'cartesia').every((t) => t.model === registryModel('voiceover_single', 'cartesia', 'fallback')));
     const music = trace.filter((t) => t.step === 'music');
     assert.deepEqual(music.map((t) => t.model), [registryModel('film_music', 'gemini_paid', 'primary'), registryModel('film_music', 'gemini_paid', 'primary')], 'one Lyria 3.5 bed per scene, on the paid Gemini key');
+    // Each cue is scored to its scene, never a loop.
+    assert.ok(music.every((t) => /Exactly \d+ seconds long: a cue scored to that length[^\n]*Not a loop\./.test(t.prompt)), music.map((t) => t.prompt).join(' | '));
     assert.ok(!trace.some((t) => t.provider === 'replicate' && /lyria|music/.test(t.model)), 'never Replicate\'s Lyria for a film');
     assert.ok(!trace.some((t) => t.step === 'clip'), 'no clips in the preview');
 
     let assets = await store.listAssets(p.id);
     const lines = assets.filter((a) => a.kind === 'voice' && a.status === 'ok');
     assert.equal(lines.length, 3);
-    assert.ok(lines.every((a) => a.meta.engine === VOICE_LABELS.elevenlabs), 'one voice throughout');
+    assert.ok(lines.every((a) => a.meta.engine === VOICE_LABELS.cartesia), 'one voice throughout');
     assert.ok(lines.every((a) => a.meta.words.length > 0), 'word timings for captions');
     const replaced = await store.listAssets(p.id, { kinds: ['voice'], status: 'superseded' });
-    assert.deepEqual(replaced.map((a) => a.meta.engine), [VOICE_LABELS.cartesia], 'the Cartesia take of line 1 is replaced, never reused');
-    assert.deepEqual(r.film.qc_report.voice, { engine: VOICE_LABELS.elevenlabs, retries: 1, rerecorded: 1, fallback: { from: VOICE_LABELS.cartesia, to: VOICE_LABELS.elevenlabs, reason: 'timeout' } });
+    assert.deepEqual(replaced.map((a) => a.meta.engine), [VOICE_LABELS.elevenlabs], 'the first take of line 1 is replaced, never reused');
+    assert.deepEqual(r.film.qc_report.voice, { engine: VOICE_LABELS.cartesia, retries: 1, rerecorded: 1, fallback: { from: VOICE_LABELS.elevenlabs, to: VOICE_LABELS.cartesia, reason: 'timeout' } });
+    assert.deepEqual(r.film.qc_report.regenerated.map((x) => `${x.what}:${x.shotId}`), ['voice:s1-sh1']);
     assert.equal(r.film.qc_report.music.unavailable, false);
-    assert.ok(r.logs.some((l) => /voiceover: cartesia failed \(timeout/.test(l)));
+    assert.ok(r.logs.some((l) => /voiceover: elevenlabs failed \(timeout/.test(l)));
 
     // 3. Full: clips, checks, edit, mix, transcript.
     trace.length = 0;
@@ -230,16 +256,17 @@ describe('one film end to end on the real engines', () => {
     assert.equal(r.film.status, 'done');
     const clips = trace.filter((t) => t.step === 'clip');
     assert.equal(clips.length, 4, 'one clip per shot, every one passing its check');
-    // The registry lists this model for clips, but as the fallback: film
-    // shots go to Replicate first (lib/film/providers.mjs FILM_MEDIA_ENGINES),
-    // the paid Gemini key only when Replicate is out of credit or throttled.
-    assert.ok(clips.every((t) => t.provider === 'replicate' && t.model === registryModel('text_image_to_video', 'replicate')));
+    assert.ok(clips.every((t) => t.provider === 'gemini_paid' && t.model === registryModel('text_image_to_video', 'gemini_paid', 'primary')), 'clips: Gemini Omni first');
+    // The usage ledger records each clip at its real price, not the worst case.
+    const clipRows = memoryLedger.rows(utcDay()).filter((x) => x.unit === 'video_gemini' && x.ok);
+    assert.ok(clipRows.length >= 4);
+    assert.ok(clipRows.every((x) => x.cost_usd === clipCostOnUsd('gemini_paid', 'standard', 5)), JSON.stringify(clipRows.map((x) => x.cost_usd)));
     assert.equal(trace.filter((t) => t.step === 'shot check').length, 4);
     assert.ok(trace.filter((t) => t.step === 'shot check').every((t) => t.provider === 'anthropic'));
     assert.ok(!trace.some((t) => t.step === 'voice' || t.step === 'music' || t.step === 'still'), 'voice, music and stills reused from the preview');
     assert.deepEqual(trace.filter((t) => t.step === 'transcript').map((t) => t.provider), ['cartesia']);
     assert.equal(r.film.qc_report.audio.ok, true, 'the voiceover was heard as written');
-    assert.equal(r.film.qc_report.voice.engine, VOICE_LABELS.elevenlabs, 'the full render keeps the preview\'s voice');
+    assert.equal(r.film.qc_report.voice.engine, VOICE_LABELS.cartesia, 'the full render keeps the preview\'s voice');
     assert.equal(mixes.at(-1).music.length, 2, 'both music beds in the final mix');
     assert.equal(mixes.at(-1).voice.length, 3);
 
@@ -251,6 +278,72 @@ describe('one film end to end on the real engines', () => {
     const assetUsd = assets.reduce((s, a) => s + Number(a.cost_usd || 0), 0);
     assert.ok(Number(r.film.spent_usd) >= assetUsd - 0.005, 'nothing made without being charged');
     assert.ok(Number(r.film.spent_usd) > 0 && Number(r.film.spent_usd) <= 20);
+  });
+
+  test('Gemini Omni out of credit at the third clip: Kling makes the rest, and the first two are made again on Kling (one clip style); one alert per engine', async () => {
+    const p = await store.createProject({ request: 'A cafe opening at dawn', capUsd: 20, status: 'storyboard_queued' });
+    assert.equal((await runStage(p, 'storyboard', 'storyboard_queued')).code, 0);
+    assert.equal((await runStage(p, 'preview', 'preview_queued')).code, 0);
+    st.omni = (n) => (n >= 3 ? new Response(JSON.stringify({ error: { code: 429, message: 'Your prepayment credits are depleted. Please go to AI Studio to manage your project and billing.', status: 'RESOURCE_EXHAUSTED' } }), { status: 429 }) : null);
+    trace.length = 0;
+    const r = await runStage(p, 'full', 'full_queued');
+    assert.equal(r.code, 0, r.logs.join('\n'));
+    assert.equal(r.film.status, 'done');
+    const clips = trace.filter((t) => t.step === 'clip');
+    // Omni: shots 1 and 2, then refused for credit (once: no retry on a credit
+    // failure); Kling: shots 3 and 4, then 1 and 2 again.
+    assert.deepEqual(clips.map((t) => t.provider), ['gemini_paid', 'gemini_paid', 'gemini_paid', 'replicate', 'replicate', 'replicate', 'replicate']);
+    assert.ok(clips.filter((t) => t.provider === 'replicate').every((t) => t.model === registryModel('text_image_to_video', 'replicate')));
+    const ok = await store.listAssets(p.id, { kinds: ['clip'] });
+    assert.equal(ok.length, 4);
+    assert.ok(ok.every((a) => a.meta.engine === ENGINE_LABELS.replicate), 'every clip in the film from one engine');
+    assert.equal((await store.listAssets(p.id, { kinds: ['clip'], status: 'superseded' })).length, 2, 'the Omni clips are replaced, never reused');
+    assert.deepEqual(r.film.qc_report.regenerated.filter((x) => x.what === 'clip').map((x) => x.shotId).sort(), ['s1-sh1', 's1-sh2']);
+    assert.deepEqual(r.film.qc_report.media.fallback, { from: ENGINE_LABELS.gemini_paid, to: ENGINE_LABELS.replicate, reason: 'billing', at: 'clip' });
+    assert.ok(r.logs.some((l) => /\[router\] alert: PG1 router: Gemini \(paid key\) is out of credit \(429\); clips moved to Replicate\./.test(l)), r.logs.filter((l) => /router/.test(l)).join('\n'));
+  });
+
+  test('a client film uses licensed engines only: no Kling, no Cartesia; Omni out of credit stops it with a clear message', async () => {
+    const p = await store.createProject({ request: 'A cafe opening at dawn', capUsd: 20, status: 'storyboard_queued' });
+    await store.updateProject(p.id, { client: { name: 'Acme Coffee', credit: false } });
+    assert.equal((await runStage(p, 'storyboard', 'storyboard_queued', { clientWork: true })).code, 0);
+    // Even with the brand voice timing out, Cartesia is never used for a client.
+    st.elevenlabs = (text, o) => (text === LINES[1] && !st.once ? ((st.once = true), new Response('{"detail":"internal"}', { status: 500 })) : null);
+    trace.length = 0;
+    let r = await runStage(p, 'preview', 'preview_queued', { clientWork: true });
+    assert.equal(r.code, 0, r.logs.join('\n'));
+    assert.ok(trace.filter((t) => t.step === 'voice').every((t) => t.provider === 'elevenlabs'), 'never Cartesia for a client film (C1)');
+    // Stills become the keyframes clips are made from: a client film's come from Gemini image alone, never FLUX.
+    const stills = trace.filter((t) => t.step === 'still');
+    assert.ok(stills.length >= 2, `${stills.length} stills`);
+    assert.ok(stills.every((t) => t.provider === 'gemini_paid'), stills.map((t) => `${t.provider}:${t.model}`).join(', '));
+    assert.ok(!trace.some((t) => t.provider === 'replicate'), 'no Replicate call at all for a client film');
+    st.omni = () => new Response('{"error":{"code":402,"message":"billing: insufficient credit"}}', { status: 402 });
+    trace.length = 0;
+    r = await runStage(p, 'full', 'full_queued', { clientWork: true });
+    assert.equal(r.code, 1);
+    assert.equal(r.film.status, 'failed');
+    assert.equal(r.film.error_reason, 'out_of_credit');
+    assert.ok(!trace.some((t) => t.provider === 'replicate' && t.step === 'clip'), 'Kling (R1) is never asked for a client film');
+    const card = await filmCard(store, r.film);
+    assert.match(card.message, /no other engine cleared for client work can take over/);
+    assert.doesNotMatch(card.message, UPSTREAM_BRAND_RE);
+  });
+
+  test('a priced client film keeps the 1.5x floor: a fallback that would pass price / 1.5 stops with a clear message', async () => {
+    const p = await store.createProject({ request: 'A cafe opening at dawn', capUsd: 20, status: 'storyboard_queued' });
+    // A 1.20 USD package: spend may not pass 0.80 USD; the storyboard and the
+    // preview fit, the clips do not.
+    await store.updateProject(p.id, { price_usd: 1.2 });
+    assert.equal((await runStage(p, 'storyboard', 'storyboard_queued')).code, 0);
+    assert.equal((await runStage(p, 'preview', 'preview_queued')).code, 0);
+    trace.length = 0;
+    const r = await runStage(p, 'full', 'full_queued');
+    assert.equal(r.code, 1);
+    assert.equal(r.film.error_reason, 'price_floor');
+    assert.ok(Number(r.film.spent_usd) <= 0.8 + 1e-9, `spent ${r.film.spent_usd}`);
+    const card = await filmCard(store, r.film);
+    assert.match(card.message, /no engine fits the budget: the next step would take spend past the package price \/ 1\.5/);
   });
 
   test('a still job that fails reading its reference from storage (run 17) is made once more, and the preview finishes', async () => {
@@ -306,51 +399,82 @@ describe('the voiceover engine', () => {
     await assert.rejects(synthesizeLine({ env, text: 'x', timeoutMs: 20, fetchImpl: (u, o) => hang(o) }), (e) => e instanceof EngineError && e.kind === 'timeout' && e.engine === 'cartesia');
   });
 
-  test('one retry on a timeout or 5xx; a bad key goes straight to ElevenLabs', () => {
+  test('one retry on a timeout, a network error or a 5xx; a bad key goes straight to the next engine', () => {
     assert.equal(isVoiceRetryable(new EngineError('timeout', 'x')), true);
+    assert.equal(isVoiceRetryable(new EngineError('network', 'x')), true);
     assert.equal(isVoiceRetryable(new EngineError('engine', 'x', { status: 503 })), true);
     assert.equal(isVoiceRetryable(new EngineError('engine', 'x', { status: 429 })), true);
     assert.equal(isVoiceRetryable(new EngineError('engine', 'x', { status: 401 })), false);
     assert.equal(isVoiceRetryable(new EngineError('engine', 'x', { status: 402 })), false);
   });
 
-  test('a timeout then success stays on Cartesia', async () => {
+  test('ROUTING_CHAINS.voice: the brand voice first; a timeout then success stays on it', async () => {
     let n = 0;
     const calls = [];
-    const voice = createFilmVoice({ env, timeoutMs: 20, sleep: async () => {}, log: () => {}, fetchImpl: (u, o) => { calls.push(engineOf(u)); return ++n === 1 ? hang(o) : cartesiaOk(); } });
+    const voice = createFilmVoice({ env, timeoutMs: 20, sleep: async () => {}, log: () => {}, fetchImpl: (u, o) => { calls.push(engineOf(u)); return ++n === 1 ? hang(o) : elOk('hello'); } });
     const stage = newVoiceStage();
     const line = await voice({ text: 'hello', stage });
-    assert.equal(line.engine, 'cartesia');
-    assert.deepEqual(calls, ['cartesia', 'cartesia']);
-    assert.deepEqual(stage, { engine: 'cartesia', retries: 1, switched: null });
+    assert.equal(line.engine, 'elevenlabs');
+    assert.deepEqual(calls, ['elevenlabs', 'elevenlabs']);
+    assert.deepEqual(stage, { engine: 'elevenlabs', retries: 1, switched: null });
   });
 
-  test('Cartesia down: ElevenLabs takes this line and the rest of the stage', async () => {
+  test('the brand voice down: Cartesia takes this line and the rest of the stage; a bad key is not retried', async () => {
     const calls = [];
-    const voice = createFilmVoice({ env, sleep: async () => {}, log: () => {}, fetchImpl: (u) => { calls.push(engineOf(u)); return engineOf(u) === 'cartesia' ? new Response('down', { status: 503 }) : elOk(); } });
+    const alerts = [];
+    const voice = createFilmVoice({ env, sleep: async () => {}, log: () => {}, alert: async (a) => { alerts.push(a); }, fetchImpl: (u) => { calls.push(engineOf(u)); return engineOf(u) === 'elevenlabs' ? new Response('down', { status: 503 }) : cartesiaOk(); } });
     const stage = newVoiceStage();
-    assert.equal((await voice({ text: 'hi there', stage })).engine, 'elevenlabs');
-    assert.equal((await voice({ text: 'hi there', stage })).engine, 'elevenlabs');
-    assert.deepEqual(calls, ['cartesia', 'cartesia', 'elevenlabs', 'elevenlabs'], 'Cartesia is not asked again this stage');
-    assert.equal(stage.switched.from, 'cartesia');
+    assert.equal((await voice({ text: 'hi there', stage })).engine, 'cartesia');
+    assert.equal((await voice({ text: 'hi there', stage })).engine, 'cartesia');
+    assert.deepEqual(calls, ['elevenlabs', 'elevenlabs', 'cartesia', 'cartesia'], 'ElevenLabs is not asked again this stage');
+    assert.deepEqual([stage.switched.from, stage.switched.to], ['elevenlabs', 'cartesia']);
+    assert.deepEqual(alerts.map((a) => [a.engine, a.next]), [['elevenlabs', 'cartesia']], 'the capacity alert names the engine and what took over');
     const r401 = [];
-    const v2 = createFilmVoice({ env, sleep: async () => {}, log: () => {}, fetchImpl: (u) => { r401.push(engineOf(u)); return engineOf(u) === 'cartesia' ? new Response('bad key', { status: 401 }) : elOk(); } });
+    const v2 = createFilmVoice({ env, sleep: async () => {}, log: () => {}, fetchImpl: (u) => { r401.push(engineOf(u)); return engineOf(u) === 'elevenlabs' ? new Response('bad key', { status: 401 }) : cartesiaOk(); } });
     await v2({ text: 'hi there' });
-    assert.deepEqual(r401, ['cartesia', 'elevenlabs'], 'no retry on a bad key');
+    assert.deepEqual(r401, ['elevenlabs', 'cartesia'], 'no retry on a bad key');
   });
 
-  test('a stage on ElevenLabs falls back to Cartesia when ElevenLabs fails', async () => {
-    const voice = createFilmVoice({ env, sleep: async () => {}, log: () => {}, fetchImpl: (u) => (engineOf(u) === 'cartesia' ? cartesiaOk() : new Response('quota', { status: 429 })) });
-    const stage = { ...newVoiceStage(), engine: 'elevenlabs' };
-    assert.equal((await voice({ text: 'x', stage })).engine, 'cartesia');
-    assert.deepEqual(stage.switched && [stage.switched.from, stage.switched.to], ['elevenlabs', 'cartesia']);
+  test('a refusal stops: the other voice engine is never asked', async () => {
+    const calls = [];
+    const voice = createFilmVoice({ env, sleep: async () => {}, log: () => {}, fetchImpl: (u) => { calls.push(engineOf(u)); return new Response('{"detail":{"status":"content_policy_violation","message":"blocked by safety filter"}}', { status: 400 }); } });
+    await assert.rejects(voice({ text: 'x' }));
+    assert.deepEqual(calls, ['elevenlabs']);
   });
 
-  test('both down, or no backup key: a clear error naming the fallback', async () => {
+  test('a stage on Cartesia (stored lines) stays there; Cartesia failing falls back to the brand voice', async () => {
+    const voice = createFilmVoice({ env, sleep: async () => {}, log: () => {}, fetchImpl: (u) => (engineOf(u) === 'elevenlabs' ? elOk('x') : new Response('quota', { status: 429 })) });
+    const stage = { ...newVoiceStage(), engine: 'cartesia' };
+    assert.equal((await voice({ text: 'x', stage })).engine, 'elevenlabs');
+    assert.deepEqual(stage.switched && [stage.switched.from, stage.switched.to], ['cartesia', 'elevenlabs']);
+  });
+
+  test('both down, no key at all, or a client film without the brand voice: a clear error', async () => {
     const both = createFilmVoice({ env, sleep: async () => {}, log: () => {}, fetchImpl: () => new Response('down', { status: 503 }) });
-    await assert.rejects(both({ text: 'x' }), (e) => e.engine === 'cartesia' && e.fallback.engine === 'elevenlabs' && e.fallback.outcome === 'failed');
-    const alone = createFilmVoice({ env: { CARTESIA_API_KEY: 'c' }, sleep: async () => {}, log: () => {}, fetchImpl: () => new Response('down', { status: 503 }) });
+    await assert.rejects(both({ text: 'x' }), (e) => e.engine === 'elevenlabs' && e.fallback.engine === 'cartesia' && e.fallback.outcome === 'failed');
+    const alone = createFilmVoice({ env: { ELEVENLABS_API_KEY: 'e' }, sleep: async () => {}, log: () => {}, fetchImpl: () => new Response('down', { status: 503 }) });
     await assert.rejects(alone({ text: 'x' }), (e) => e.fallback.outcome === 'not_configured');
+    const client = createFilmVoice({ env: { CARTESIA_API_KEY: 'c' }, clientWork: true, log: () => {}, fetchImpl: () => cartesiaOk() });
+    await assert.rejects(client({ text: 'x' }), (e) => e.kind === 'not_configured' && e.licence && /Cartesia is not cleared for client work/.test(e.detail));
+  });
+
+  test('the voice check: one line in the brand voice, a WAV and a one-line verdict; no film, no database', async () => {
+    const { voiceCheck, VOICE_CHECK_LINE } = await import('../scripts/film-render.mjs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const { readFile } = await import('node:fs/promises');
+    const out = path.join(os.tmpdir(), `voice-check-${Date.now()}.wav`);
+    const calls = [];
+    const logs = [];
+    const code = await voiceCheck({ ELEVENLABS_API_KEY: 'e', PG1_FILM_VOICE_ID: 'brand123', VOICE_CHECK_OUT: out, FILM_STAGE: 'voice_check' }, { fetchImpl: (u, o) => { calls.push({ u, body: JSON.parse(o.body) }); return elOk(VOICE_CHECK_LINE); }, log: (l) => logs.push(l) });
+    assert.equal(code, 0);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].u, /\/text-to-speech\/brand123\/with-timestamps\?output_format=pcm_24000$/);
+    assert.equal(calls[0].body.text, VOICE_CHECK_LINE);
+    assert.equal((await readFile(out)).toString('ascii', 0, 4), 'RIFF');
+    assert.match(logs[0], /^\[voice-check\] ok: the brand voice \(PG1_FILM_VOICE_ID\); model eleven_multilingual_v2; 24000 Hz/);
+    assert.equal(await voiceCheck({}, { log: (l) => logs.push(l) }), 2, 'no key: a clear failure');
+    assert.match(logs.at(-1), /ELEVENLABS_API_KEY is not set/);
   });
 
   test('ElevenLabs character timings become words', () => {

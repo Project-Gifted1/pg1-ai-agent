@@ -155,12 +155,12 @@ test('item 5: figures in no cited source are labelled PG1\'s estimate; market fi
 
 test('item 5: PG1\'s own price maths is never presented as an industry benchmark', () => {
   const own = ownPriceAmounts([{ key: 'creator', label: 'Creator', value: '$45/month' }]);
-  assert.ok(own.includes(19.35) && own.includes(45), 'package minimums and the thread\'s own prices');
-  assert.deepEqual(ownMathAsBenchmark('A 1-minute film at $19.35 is the industry benchmark.', own), ['$19.35']);
+  assert.ok(own.includes(19.44) && own.includes(45), 'package minimums and the thread\'s own prices');
+  assert.deepEqual(ownMathAsBenchmark('A 1-minute film at $19.44 is the industry benchmark.', own), ['$19.44']);
   assert.deepEqual(ownMathAsBenchmark('Creator at $45/month is in line with the market rate.', own), ['$45']);
   assert.deepEqual(ownMathAsBenchmark('Creator: $45/month.', own), [], 'just stating PG1\'s price is fine');
   assert.deepEqual(ownMathAsBenchmark('The market rate is $2,000 (https://a.example/rates).', own), [], 'a cited market figure is not PG1\'s maths');
-  assert.match(sourcesNote({ text: 'Our $19.35 film is the industry benchmark.', sources: [], ownAmounts: own }), /\*\*Note:\*\* \$19\.35 is PG1's own price calculation, not an industry benchmark\./);
+  assert.match(sourcesNote({ text: 'Our $19.44 film is the industry benchmark.', sources: [], ownAmounts: own }), /\*\*Note:\*\* \$19\.44 is PG1's own price calculation, not an industry benchmark\./);
 });
 
 // --- item 6 -----------------------------------------------------------------------

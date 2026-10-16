@@ -9,7 +9,7 @@
       "area": "studio",
       "status": "standard",
       "gatedUntil": null,
-      "wired": "lib/videoJobs.mjs (PG1 Motion), lib/film/providers.mjs (film shots): Gemini Omni first, Kling on Replicate as the start-frame fallback",
+      "wired": "lib/videoJobs.mjs (PG1 Motion), lib/film/providers.mjs (film shots, ROUTING_CHAINS.clips): Gemini Omni first, Kling on Replicate as the start-frame fallback (never for client films: R1)",
       "chosen": [
         {
           "provider": "google",
@@ -136,8 +136,8 @@
         {
           "provider": "replicate",
           "model": "black-forest-labs/flux-kontext-pro",
-          "role": "primary (reference and keyframes)",
-          "licence": "commercial_ok"
+          "role": "primary (reference and keyframes); never for client films",
+          "licence": "unclear"
         },
         {
           "provider": "google",
@@ -177,7 +177,7 @@
           "does": "image editing and generation from a reference image",
           "max": "one image per run",
           "price": "0.04 USD per image",
-          "licence": "commercial_ok: outputs generated on Replicate may be used commercially",
+          "licence": "unclear (R1: Replicate-hosted; Replicate's page says outputs may be used commercially, but the operator has not cleared it for client work)",
           "sources": [
             "https://replicate.com/black-forest-labs/flux-kontext-pro",
             "https://replicate.com/blog/flux-kontext",
@@ -220,8 +220,8 @@
         {
           "provider": "replicate",
           "model": "black-forest-labs/flux-kontext-pro",
-          "role": "primary stills",
-          "licence": "commercial_ok"
+          "role": "primary stills; never for client films",
+          "licence": "unclear"
         },
         {
           "provider": "google",
@@ -261,7 +261,7 @@
           "does": "keyframes that keep the reference",
           "max": "one image per run",
           "price": "0.04 USD per image",
-          "licence": "commercial_ok",
+          "licence": "unclear (R1)",
           "sources": [
             "https://replicate.com/black-forest-labs/flux-kontext-pro",
             "https://bfl.ai/pricing"
@@ -486,23 +486,23 @@
       "area": "studio",
       "status": "standard",
       "gatedUntil": null,
-      "wired": "lib/film/providers.mjs (createFilmVoice): Cartesia sonic, sent once more on a timeout or outage, then ElevenLabs TTS for the rest of the stage; one voice per film",
+      "wired": "lib/film/providers.mjs (createFilmVoice, ROUTING_CHAINS.voice): the ElevenLabs brand voice (PG1_FILM_VOICE_ID), then Cartesia sonic (sent once more on a timeout); one voice per film, never Cartesia for client films (C1)",
       "chosen": [
-        {
-          "provider": "cartesia",
-          "model": "sonic-3.6",
-          "role": "primary",
-          "licence": "unclear"
-        },
         {
           "provider": "elevenlabs",
           "model": "eleven_multilingual_v2",
-          "role": "fallback (Cartesia timed out or down)",
+          "role": "primary (brand voice)",
           "licence": "commercial_ok",
           "licenceNote": "the paid ElevenLabs plan (E1, Creator)",
           "licenceSources": [
             "https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform"
           ]
+        },
+        {
+          "provider": "cartesia",
+          "model": "sonic-3.6",
+          "role": "fallback",
+          "licence": "unclear"
         }
       ],
       "licence": "unclear",
@@ -684,24 +684,12 @@
       "area": "sound",
       "status": "standard",
       "gatedUntil": null,
-      "wired": "lib/music/engines.mjs: ElevenLabs Music, then Lyria 3.5 (paid Gemini key), the Lyria 3 clip model, then google/lyria-2 on Replicate",
+      "wired": "lib/music/engines.mjs (ROUTING_CHAINS.music): Lyria 3.5 (paid Gemini key), the Lyria 3 clip model, then ElevenLabs Music; Replicate's Lyria 2 is no longer used (R1)",
       "chosen": [
-        {
-          "provider": "elevenlabs",
-          "model": "Eleven Music",
-          "role": "primary",
-          "licence": "commercial_ok",
-          "excludes": [
-            "film",
-            "TV",
-            "radio",
-            "large studio games"
-          ]
-        },
         {
           "provider": "google",
           "model": "lyria-3.5",
-          "role": "fallback",
+          "role": "primary",
           "licence": "commercial_ok",
           "licenceNote": "operator accepted Google's generated-content terms; operator responsible for use",
           "licenceSources": [
@@ -719,20 +707,24 @@
           ]
         },
         {
-          "provider": "replicate",
-          "model": "google/lyria-2",
-          "role": "last fallback",
-          "licence": "unclear"
+          "provider": "elevenlabs",
+          "model": "Eleven Music",
+          "role": "last fallback (not for film)",
+          "licence": "commercial_ok",
+          "excludes": [
+            "film",
+            "TV",
+            "radio",
+            "large studio games"
+          ]
         }
       ],
-      "licence": "unclear",
+      "licence": "commercial_ok",
       "licenceConditions": [
         "ElevenLabs Music is commercial_ok on the paid plan (E1, Creator plan) except film, TV, radio and large studio games, which the plan excludes (Enterprise only). Music for a film is the film_music feature.",
-        "Lyria through the Gemini API is commercial_ok (G2, answered); the last fallback, Lyria 2 on Replicate, keeps this feature unclear (R1) until it is settled or left out of client tracks."
+        "Lyria through the Gemini API is commercial_ok (G2, answered). Lyria 2 on Replicate (R1) is no longer in the chain."
       ],
-      "review": [
-        "R1"
-      ],
+      "review": [],
       "unitCost": {
         "usd": 0.15,
         "unit": "minute of music",
@@ -841,7 +833,7 @@
         "unit": "music bed",
         "basis": "official",
         "verified": false,
-        "note": "Lyria 3.5 at 0.08 USD per song; the clip model is 0.04 USD per 30 s. PG1 Studio's own film estimate is lower (lib/film/cost.mjs, 0.06 USD per bed).",
+        "note": "Lyria 3.5 at 0.08 USD per song; the clip model is 0.04 USD per 30 s. PG1 Studio's film estimate is the same 0.08 USD per bed (lib/film/cost.mjs).",
         "sources": [
           "https://ai.google.dev/gemini-api/docs/pricing"
         ]
@@ -1137,7 +1129,7 @@
       ]
     },
     "R1": {
-      "question": "Replicate-hosted video and upscaling models (Kling, Topaz, FILM): what does each model's own licence allow?",
+      "question": "Replicate-hosted models (Kling, FLUX Kontext Pro, FLUX schnell, Topaz, FILM): what does each model's own licence allow?",
       "detail": "Replicate grants its rights in outputs, including commercial use, \"subject to any third-party terms\" of the model used. The model pages' licence tabs could not be loaded, so each model's terms are unconfirmed.",
       "answered": null,
       "sources": [
@@ -1165,6 +1157,12 @@
         "https://elevenlabs.io/blog/eleven-v3",
         "https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform"
       ]
+    },
+    "T1": {
+      "question": "OpenRouter, the AI gateway and OpenAI: may their output go into a client deliverable?",
+      "detail": "Google (G1, G2), ElevenLabs (E1) and Claude (cleared by the operator on 2026-10-16) have an answer for client work. Until this one is answered, a client job's text (storyboards, scripts, checks) runs on Claude, then the paid Gemini key; the operator's own films keep the whole text chain.",
+      "answered": null,
+      "sources": []
     },
     "C1": {
       "question": "Cartesia (the voice PG1 Studio uses now for voice-over): do its terms allow resale of output?",

@@ -6,6 +6,9 @@ name: PG1 Studio render
 # function. The worker (scripts/film-render.mjs) refuses a run whose token
 # does not verify against PG1_VIDEO_RENDER_SECRET, and only claims a film
 # that is queued for this stage, so a stray or repeated run spends nothing.
+# Two more stages: director (Director Mode runs every stage of one film
+# alone, docs/director-mode.md) and voice_check (one fixed test line in the
+# ElevenLabs brand voice, kept as the run's artifact; no film, no database).
 
 on:
   workflow_dispatch:
@@ -15,10 +18,10 @@ on:
         required: true
         type: string
       stage:
-        description: storyboard, preview or full
+        description: storyboard, preview, full, director, or voice_check (one test line in the brand voice; no film)
         required: true
         type: choice
-        options: [storyboard, preview, full]
+        options: [storyboard, preview, full, director, voice_check]
       token:
         description: Signed render token (set by PG1)
         required: true
@@ -35,7 +38,7 @@ jobs:
   render:
     name: render ${{ inputs.stage }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 240
     steps:
       - name: Mask the render token
         env:
@@ -84,6 +87,7 @@ jobs:
           CARTESIA_VOICE_ID: ${{ vars.CARTESIA_VOICE_ID }}
           CARTESIA_MODEL_ID: ${{ vars.CARTESIA_MODEL_ID }}
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          PG1_FILM_VOICE_ID: ${{ vars.PG1_FILM_VOICE_ID }}
           PG1_FILM_ELEVENLABS_VOICE_ID: ${{ vars.PG1_FILM_ELEVENLABS_VOICE_ID }}
           PG1_FILM_ELEVENLABS_TTS_MODEL: ${{ vars.PG1_FILM_ELEVENLABS_TTS_MODEL }}
           PG1_FILM_VOICE_TIMEOUT_MS: ${{ vars.PG1_FILM_VOICE_TIMEOUT_MS }}
@@ -94,4 +98,24 @@ jobs:
           PG1_FILM_MUSIC_MODEL: ${{ vars.PG1_FILM_MUSIC_MODEL }}
           PG1_FILM_CLAUDE_MODEL: ${{ vars.PG1_FILM_CLAUDE_MODEL }}
           PG1_FILM_CONCURRENCY: ${{ vars.PG1_FILM_CONCURRENCY }}
+          # Capacity alerts and the end-of-film push to the operator's devices.
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT: ${{ vars.VAPID_SUBJECT }}
+          PG1_DIRECTOR_CLIENT_APPROVAL: ${{ vars.PG1_DIRECTOR_CLIENT_APPROVAL }}
+          PG1_STUDIO_LOGO_PATH: ${{ vars.PG1_STUDIO_LOGO_PATH }}
+          # Large files (clips, masters, the 9:16 cut, stems) on Cloudflare R2;
+          # without these they stay in Supabase Storage (lib/storage/r2.mjs).
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          VOICE_CHECK_OUT: ${{ runner.temp }}/voice-check.wav
         run: node scripts/film-render.mjs
+      - name: Keep the voice check line
+        if: inputs.stage == 'voice_check'
+        uses: actions/upload-artifact@v4
+        with:
+          name: voice-check
+          path: ${{ runner.temp }}/voice-check.wav
+          retention-days: 7

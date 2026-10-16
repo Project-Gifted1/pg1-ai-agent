@@ -11,15 +11,15 @@ Registry version 2026-10-14. Generated from `lib/capabilities/registry.mjs` and 
 | Feature | Status | Chosen model(s) | Licence | Unit cost | Min price (1.5x) | Offer rule |
 |---|---|---|---|---|---|---|
 | Text- and image-to-video clips | standard | gemini-omni-1.1-flash (google, primary); kwaivgi/kling-v2.1 (replicate, fallback (needs a start image)) | **unclear** (R1) | 0.1 USD per second of 720p video (official) | 0.15 USD per second of 720p video | not offered (licence review) |
-| Scene and character consistency | standard | black-forest-labs/flux-kontext-pro (replicate, primary (reference and keyframes)); gemini-3.1-flash-image (google, fallback stills) | commercial_ok | 0.067 USD per still (official) | 0.1005 USD per still | may be offered |
-| Storyboard and keyframe images | standard | black-forest-labs/flux-kontext-pro (replicate, primary stills); gemini-3.1-flash-image (google, fallback stills) | commercial_ok | 0.067 USD per still (official) | 0.1005 USD per still | may be offered |
+| Scene and character consistency | standard | black-forest-labs/flux-kontext-pro (replicate, primary (reference and keyframes); never for client films); gemini-3.1-flash-image (google, fallback stills) | commercial_ok | 0.067 USD per still (official) | 0.1005 USD per still | may be offered |
+| Storyboard and keyframe images | standard | black-forest-labs/flux-kontext-pro (replicate, primary stills; never for client films); gemini-3.1-flash-image (google, fallback stills) | commercial_ok | 0.067 USD per still (official) | 0.1005 USD per still | may be offered |
 | Video upscaling to 4K | custom | topazlabs/video-upscale (replicate, chosen) | **unclear** (R1) | unknown per second of output video | after a priced test | not offered (licence review) |
 | Video upscaling to 8K | unavailable | - | **unclear** (no provider) | unknown per second of output video | after a priced test | never offered |
 | Frame interpolation (smoother motion, higher frame rate) | custom | ffmpeg minterpolate (motion-compensated) (pg1, chosen, on PG1's render runner) | commercial_ok | 0.06 USD per minute of output video (PG1 estimate) | 0.09 USD per minute of output video | custom, on request |
-| Voice-over (one voice) | standard | sonic-3.6 (cartesia, primary); eleven_multilingual_v2 (elevenlabs, fallback (Cartesia timed out or down)) | **unclear** (C1) | 0.05 USD per 1,000 characters (PG1 estimate) | 0.075 USD per 1,000 characters | not offered (licence review) |
+| Voice-over (one voice) | standard | eleven_multilingual_v2 (elevenlabs, primary (brand voice)); sonic-3.6 (cartesia, fallback) | **unclear** (C1) | 0.05 USD per 1,000 characters (PG1 estimate) | 0.075 USD per 1,000 characters | not offered (licence review) |
 | Dialogue text-to-speech (several voices) | custom | eleven_v3 (Text to Dialogue) (elevenlabs, chosen) | commercial_ok | 0.1 USD per 1,000 characters (official) | 0.15 USD per 1,000 characters | custom, on request |
 | Sound effects and Foley | custom | eleven_text_to_sound_v2 (elevenlabs, chosen) | commercial_ok | 0.12 USD per minute of audio (official) | 0.18 USD per minute of audio | custom, on request |
-| Music (PG1 Sound tracks) | standard | Eleven Music (elevenlabs, primary); lyria-3.5 (google, fallback); lyria-3-clip-preview (google, fallback (30 s)); google/lyria-2 (replicate, last fallback) | **unclear** (R1) | 0.15 USD per minute of music (official) | 0.225 USD per minute of music | not offered (licence review) |
+| Music (PG1 Sound tracks) | standard | lyria-3.5 (google, primary); lyria-3-clip-preview (google, fallback (30 s)); Eleven Music (elevenlabs, last fallback (not for film)) | commercial_ok | 0.15 USD per minute of music (official) | 0.225 USD per minute of music | may be offered |
 | Music for films (score beds) | standard | lyria-3.5 (google, primary (Gemini API)); lyria-3-clip-preview (google, fallback (Gemini API, 30 s)) | commercial_ok | 0.08 USD per music bed (official) | 0.12 USD per music bed | may be offered |
 | Stem separation | standard | demucs htdemucs (MIT) (pg1, primary, on PG1's runner) | commercial_ok | 0.03 USD per track (about 3 minutes) (PG1 estimate) | 0.045 USD per track (about 3 minutes) | may be offered |
 | 5.1 and 7.1 surround mixes | custom | ffmpeg surround / pan from stems (pg1, chosen, on PG1's runner) | commercial_ok | 0.01 USD per track (PG1 estimate) | 0.015 USD per track | custom, on request |
@@ -31,7 +31,7 @@ Never offered in this phase: client accounts or seats, an account manager, dedic
 
 ### Text- and image-to-video clips
 
-Wired now: lib/videoJobs.mjs (PG1 Motion), lib/film/providers.mjs (film shots): Gemini Omni first, Kling on Replicate as the start-frame fallback.
+Wired now: lib/videoJobs.mjs (PG1 Motion), lib/film/providers.mjs (film shots, ROUTING_CHAINS.clips): Gemini Omni first, Kling on Replicate as the start-frame fallback (never for client films: R1).
 
 Unit cost: Gemini Omni 1.1 Flash at 720p; Kling standard is a PG1 estimate of 0.30 USD per 5 s clip (0.06 USD per second).
 
@@ -52,7 +52,7 @@ Unit cost: Kontext Pro 0.04 USD per image; the Gemini fallback about 0.067 USD p
 
 | Provider | Model | What it does | Max resolution / length | Price | Licence, resale | Sources |
 |---|---|---|---|---|---|---|
-| replicate | black-forest-labs/flux-kontext-pro | image editing and generation from a reference image | one image per run | 0.04 USD per image | commercial_ok: outputs generated on Replicate may be used commercially | [1](https://replicate.com/black-forest-labs/flux-kontext-pro) [2](https://replicate.com/blog/flux-kontext) [3](https://bfl.ai/pricing) |
+| replicate | black-forest-labs/flux-kontext-pro | image editing and generation from a reference image | one image per run | 0.04 USD per image | unclear (R1: Replicate-hosted; Replicate's page says outputs may be used commercially, but the operator has not cleared it for client work) | [1](https://replicate.com/black-forest-labs/flux-kontext-pro) [2](https://replicate.com/blog/flux-kontext) [3](https://bfl.ai/pricing) |
 | google | gemini-omni-1.1-flash (references) | images and up to 3 video references (3 s each) guide the clip | as text_image_to_video | as text_image_to_video | commercial_ok: operator accepted Google's generated-content terms; operator responsible for use (G1) | [1](https://ai.google.dev/gemini-api/docs/omni) [2](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/video/generate-videos-from-references) |
 | google | veo-3.1 (reference images) | up to 3 reference images per clip | 8 s | as Veo above | commercial_ok: operator accepted Google's generated-content terms; operator responsible for use (G1) | [1](https://ai.google.dev/gemini-api/docs/veo) |
 
@@ -64,7 +64,7 @@ Unit cost: Dearest path (the Gemini fallback). Writing the storyboard itself is 
 
 | Provider | Model | What it does | Max resolution / length | Price | Licence, resale | Sources |
 |---|---|---|---|---|---|---|
-| replicate | black-forest-labs/flux-kontext-pro | keyframes that keep the reference | one image per run | 0.04 USD per image | commercial_ok | [1](https://replicate.com/black-forest-labs/flux-kontext-pro) [2](https://bfl.ai/pricing) |
+| replicate | black-forest-labs/flux-kontext-pro | keyframes that keep the reference | one image per run | 0.04 USD per image | unclear (R1) | [1](https://replicate.com/black-forest-labs/flux-kontext-pro) [2](https://bfl.ai/pricing) |
 | google | gemini-3.1-flash-image | image generation and editing | up to 4K images | about 0.045 (0.5K), 0.067 (1K), 0.101 (2K), 0.151 (4K) USD per image | commercial_ok: operator accepted Google's generated-content terms; operator responsible for use (G1) | [1](https://ai.google.dev/gemini-api/docs/pricing) |
 | google | imagen-4 | text to image | - | - | commercial_ok: operator accepted Google's generated-content terms; operator responsible for use (G1); Shut down on 2026-08-17 per Google's model page | [1](https://ai.google.dev/gemini-api/docs/models/imagen) |
 
@@ -100,7 +100,7 @@ Licence conditions: FFmpeg's licence (LGPL/GPL) covers the software, not the fra
 
 ### Voice-over (one voice)
 
-Wired now: lib/film/providers.mjs (createFilmVoice): Cartesia sonic, sent once more on a timeout or outage, then ElevenLabs TTS for the rest of the stage; one voice per film.
+Wired now: lib/film/providers.mjs (createFilmVoice, ROUTING_CHAINS.voice): the ElevenLabs brand voice (PG1_FILM_VOICE_ID), then Cartesia sonic (sent once more on a timeout); one voice per film, never Cartesia for client films (C1).
 
 Unit cost: PG1's film estimate (lib/film/cost.mjs voicePerCharUsd).
 
@@ -133,11 +133,11 @@ Licence conditions: The paid ElevenLabs plan (E1, Creator plan); not a Beta Serv
 
 ### Music (PG1 Sound tracks)
 
-Wired now: lib/music/engines.mjs: ElevenLabs Music, then Lyria 3.5 (paid Gemini key), the Lyria 3 clip model, then google/lyria-2 on Replicate.
+Wired now: lib/music/engines.mjs (ROUTING_CHAINS.music): Lyria 3.5 (paid Gemini key), the Lyria 3 clip model, then ElevenLabs Music; Replicate's Lyria 2 is no longer used (R1).
 
 Unit cost: Eleven Music. Lyria 3.5 is 0.08 USD per song and the Lyria 3 clip 0.04 USD per 30 s request.
 
-Licence conditions: ElevenLabs Music is commercial_ok on the paid plan (E1, Creator plan) except film, TV, radio and large studio games, which the plan excludes (Enterprise only). Music for a film is the film_music feature. Lyria through the Gemini API is commercial_ok (G2, answered); the last fallback, Lyria 2 on Replicate, keeps this feature unclear (R1) until it is settled or left out of client tracks.
+Licence conditions: ElevenLabs Music is commercial_ok on the paid plan (E1, Creator plan) except film, TV, radio and large studio games, which the plan excludes (Enterprise only). Music for a film is the film_music feature. Lyria through the Gemini API is commercial_ok (G2, answered). Lyria 2 on Replicate (R1) is no longer in the chain.
 
 | Provider | Model | What it does | Max resolution / length | Price | Licence, resale | Sources |
 |---|---|---|---|---|---|---|
@@ -150,7 +150,7 @@ Licence conditions: ElevenLabs Music is commercial_ok on the paid plan (E1, Crea
 
 Wired now: lib/film/providers.mjs (filmMusicExclude) and lib/music/engines.mjs (filmMusicPlan): Lyria 3.5 on the paid Gemini key, then the Lyria clip model; ElevenLabs only with PG1_ELEVENLABS_FILM_RIGHTS=1, never Replicate. A bed none can make is left out and the film finishes without it (music unavailable).
 
-Unit cost: Lyria 3.5 at 0.08 USD per song; the clip model is 0.04 USD per 30 s. PG1 Studio's own film estimate is lower (lib/film/cost.mjs, 0.06 USD per bed).
+Unit cost: Lyria 3.5 at 0.08 USD per song; the clip model is 0.04 USD per 30 s. PG1 Studio's film estimate is the same 0.08 USD per bed (lib/film/cost.mjs).
 
 Licence conditions: Lyria through the Gemini API: operator accepted Google's generated-content terms; operator responsible for use (G2, answered). ElevenLabs Music is not used: the Creator plan excludes film, TV and radio. Set PG1_ELEVENLABS_FILM_RIGHTS=1 only if the plan covers film (Enterprise). Replicate's Lyria 2 is never used for film beds (R1).
 
@@ -208,7 +208,8 @@ Consent and verification by provider:
 
 Every feature marked **unclear** is treated as not commercial: PG1 does not offer it to clients until the question is answered and the registry is changed.
 
-- **R1. Replicate-hosted video and upscaling models (Kling, Topaz, FILM): what does each model's own licence allow?** Replicate grants its rights in outputs, including commercial use, "subject to any third-party terms" of the model used. The model pages' licence tabs could not be loaded, so each model's terms are unconfirmed. Blocks: Text- and image-to-video clips; Video upscaling to 4K; Music (PG1 Sound tracks). [1](https://replicate.com/terms) [2](https://replicate.com/kwaivgi/kling-v2.1) [3](https://replicate.com/topazlabs/video-upscale/api/learn-more) [4](https://replicate.com/google-research/frame-interpolation)
+- **R1. Replicate-hosted models (Kling, FLUX Kontext Pro, FLUX schnell, Topaz, FILM): what does each model's own licence allow?** Replicate grants its rights in outputs, including commercial use, "subject to any third-party terms" of the model used. The model pages' licence tabs could not be loaded, so each model's terms are unconfirmed. Blocks: Text- and image-to-video clips; Video upscaling to 4K. [1](https://replicate.com/terms) [2](https://replicate.com/kwaivgi/kling-v2.1) [3](https://replicate.com/topazlabs/video-upscale/api/learn-more) [4](https://replicate.com/google-research/frame-interpolation)
+- **T1. OpenRouter, the AI gateway and OpenAI: may their output go into a client deliverable?** Google (G1, G2), ElevenLabs (E1) and Claude (cleared by the operator on 2026-10-16) have an answer for client work. Until this one is answered, a client job's text (storyboards, scripts, checks) runs on Claude, then the paid Gemini key; the operator's own films keep the whole text chain. Blocks: none. 
 - **C1. Cartesia (the voice PG1 Studio uses now for voice-over): do its terms allow resale of output?** Cartesia was outside this phase's providers (Replicate, Google, ElevenLabs), so its terms were not reviewed. Blocks: Voice-over (one voice). 
 
 Answered:
@@ -224,12 +225,12 @@ Assumptions: 5-second shots, 4 shots a scene, 900 voice-over characters a minute
 
 | Film | Resolution | Shots | Clips | Everything else | Expected cost | Min price (1.5x) | One film in today's pipeline? |
 |---|---|---|---|---|---|---|---|
-| 1 min | 1080p | 12 | 11.49 USD | 1.41 USD | 12.90 USD | 19.35 USD | yes |
-| 1 min | 4k | 12 | 22.74 USD | 1.45 USD | 24.19 USD | 36.29 USD | yes |
-| 3 min | 1080p | 36 | 34.47 USD | 3.84 USD | 38.31 USD | 57.47 USD | yes |
-| 3 min | 4k | 36 | 68.22 USD | 3.97 USD | 72.19 USD | 108.29 USD | yes |
-| 10 min | 1080p | 120 | 114.90 USD | 12.34 USD | 127.24 USD | 190.86 USD | no: over 300 s (30 shots of at most 10 s) |
-| 10 min | 4k | 120 | 227.40 USD | 12.76 USD | 240.16 USD | 360.24 USD | no: over 300 s (30 shots of at most 10 s) |
+| 1 min | 1080p | 12 | 11.49 USD | 1.47 USD | 12.96 USD | 19.44 USD | yes |
+| 1 min | 4k | 12 | 22.74 USD | 1.51 USD | 24.25 USD | 36.38 USD | yes |
+| 3 min | 1080p | 36 | 34.47 USD | 4.02 USD | 38.49 USD | 57.74 USD | yes |
+| 3 min | 4k | 36 | 68.22 USD | 4.15 USD | 72.37 USD | 108.56 USD | yes |
+| 10 min | 1080p | 120 | 114.90 USD | 12.94 USD | 127.84 USD | 191.76 USD | no: over 300 s (30 shots of at most 10 s) |
+| 10 min | 4k | 120 | 227.40 USD | 13.36 USD | 240.76 USD | 361.14 USD | no: over 300 s (30 shots of at most 10 s) |
 
 Clips (with retries) are 89-95% of every package's cost, so the clip rate decides the price. A 3-minute film fits today only with longer shots (18 shots of 10 s); its estimate above uses 5-second shots, which is the dearer case.
 

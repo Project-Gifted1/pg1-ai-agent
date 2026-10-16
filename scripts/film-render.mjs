@@ -28,19 +28,24 @@
 
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { sharedLedger } from '../lib/aiRouter.mjs';
 import { reportUpstreamFailure } from '../lib/upstreamFailure.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { createFilmStore } from '../lib/film/store.mjs';
+import { createCapacityAlerts } from '../lib/router/alerts.mjs';
+import { createWatchStore } from '../lib/watches/store.mjs';
+import { pushToOperator } from '../lib/watches/push.mjs';
+import { runDirector } from '../lib/film/director.mjs';
 import { listFilmAttachments } from '../lib/film/attachments.mjs';
 import { runStoryboard, runRender, proposeFullRender, CapReached, engineLabel } from '../lib/film/pipeline.mjs';
 import { verifyFilmToken, FILM_STAGES } from '../lib/film/dispatch.mjs';
 import * as ff from '../lib/film/ffmpeg.mjs';
 import {
-  missingFilmConfig, createFilmMedia, createFilmVoice, filmThink, imageBlock, pcmToWav, transcribe, cartesiaConfig
+  missingFilmConfig, createFilmMedia, createFilmVoice, filmThink, imageBlock, pcmToWav, transcribe, cartesiaConfig,
+  elevenLabsVoiceConfig, synthesizeLineElevenLabs, createFilmDialogue, soundEffect
 } from '../lib/film/providers.mjs';
 
 // error_reason for the engine trouble that stops a stage.
@@ -53,26 +58,32 @@ export function failureOf(e, media) {
   if (e && e.fallback) out.fallback = { engine: engineLabel(e.fallback.engine), outcome: e.fallback.outcome };
   if (media && media.switched) out.switched = { from: engineLabel(media.switched.from), to: engineLabel(media.switched.to), reason: media.switched.kind };
   if (media && media.throttles) out.throttles = media.throttles;
+  // A client film whose next engine is not cleared for client work.
+  if (e && e.licence) out.licence = true;
   return out;
 }
 
 const CLAIM = {
   storyboard: { from: 'storyboard_queued', to: 'storyboarding' },
   preview: { from: 'preview_queued', to: 'preview_rendering' },
-  full: { from: 'full_queued', to: 'full_rendering' }
+  full: { from: 'full_queued', to: 'full_rendering' },
+  director: { from: 'director_queued', to: 'directing' }
 };
 
 // The real engines, behind the neutral names the pipeline uses. Stills,
 // clips and music go through the AI router's media route: Replicate, then
 // the paid Gemini key for the rest of the stage (createFilmMedia).
-export function realEngines(env, { fetchImpl = globalThis.fetch, log = console.log, sleep } = {}) {
+//   clientWork  a client film: commercial_ok engines only (lib/router/chains.mjs)
+//   alert       the capacity alert (lib/router/alerts.mjs)
+export function realEngines(env, { fetchImpl = globalThis.fetch, log = console.log, sleep, clientWork = false, alert = async () => {} } = {}) {
   // Music calls write their usage rows to pg1_ai_usage (the shared ledger).
   let ledger = null;
   try { ledger = sharedLedger({ ...getSupabaseCreds(), fetchImpl }); } catch (e) { ledger = null; }
-  const media = createFilmMedia({ env, fetchImpl, log, ledger, ...(sleep ? { sleep } : {}) });
+  const media = createFilmMedia({ env, fetchImpl, log, ledger, clientWork, alert, ...(sleep ? { sleep } : {}) });
   // One voiceover line's time limit (default 60 s), PG1_FILM_VOICE_TIMEOUT_MS.
   const voiceTimeoutMs = Math.min(300000, Math.max(1, Number(env.PG1_FILM_VOICE_TIMEOUT_MS) || 60000));
-  const voice = createFilmVoice({ env, fetchImpl, log, timeoutMs: voiceTimeoutMs, ...(sleep ? { sleep } : {}) });
+  const voice = createFilmVoice({ env, fetchImpl, log, timeoutMs: voiceTimeoutMs, clientWork, alert, ...(sleep ? { sleep } : {}) });
+  const dialogue = createFilmDialogue({ env, fetchImpl, log, alert, clientWork });
   return {
     still: media.still,
     clip: media.clip,
@@ -83,16 +94,44 @@ export function realEngines(env, { fetchImpl = globalThis.fetch, log = console.l
       const line = await voice({ text, stage });
       return { wav: pcmToWav(line.pcm, line.sampleRate), durationS: line.durationS, words: line.words, engine: line.engine };
     },
+    // Director Mode: dialogue in the characters' voices, and SFX cues.
+    async dialogue({ lines, stage, characters }) {
+      const line = await dialogue({ lines, stage, characters });
+      return { wav: pcmToWav(line.pcm, line.sampleRate), durationS: line.durationS, words: line.words, engine: line.engine };
+    },
+    sfx: ({ text, seconds }) => soundEffect({ env, text, seconds, fetchImpl, clientWork }),
     // Claude, then the paid Gemini key, then OpenRouter (lib/film/providers.mjs).
-    think: ({ system, content, effort, maxTokens, validate, purpose }) => filmThink({ env, system, content, effort, maxTokens, validate, purpose, fetchImpl, log }),
+    think: ({ system, content, effort, maxTokens, validate, purpose }) => filmThink({ env, system, content, effort, maxTokens, validate, purpose, fetchImpl, log, alert, clientWork }),
     image: (bytes) => imageBlock(bytes),
     transcribe: ({ audio }) => transcribe({ env, audio, fetchImpl })
   };
 }
 
-export async function main(env = process.env, { log = console.log, engines = null, fetchImpl = globalThis.fetch, ffImpl = ff } = {}) {
+// FILM_STAGE=voice_check: one fixed line in the ElevenLabs brand voice
+// (PG1_FILM_VOICE_ID), written to VOICE_CHECK_OUT as a WAV for the run's
+// artifact. No film, no database, no token: one line costs well under a
+// cent, and the run's log says only whether it worked and in which voice.
+export const VOICE_CHECK_LINE = 'This is PG1 Studio. Every film is directed, produced and edited by PG1.';
+export async function voiceCheck(env = process.env, { fetchImpl = globalThis.fetch, log = console.log } = {}) {
+  const cfg = elevenLabsVoiceConfig(env);
+  if (!cfg.apiKey) { log('[voice-check] failed: ELEVENLABS_API_KEY is not set for this job'); return 2; }
+  try {
+    const line = await synthesizeLineElevenLabs({ env, text: VOICE_CHECK_LINE, fetchImpl, timeoutMs: 60000 });
+    const out = String(env.VOICE_CHECK_OUT || '').trim() || path.join(os.tmpdir(), 'voice-check.wav');
+    await writeFile(out, pcmToWav(line.pcm, line.sampleRate));
+    log(`[voice-check] ok: ${cfg.brandVoice ? 'the brand voice (PG1_FILM_VOICE_ID)' : 'PG1_FILM_VOICE_ID is NOT set, so a premade default voice'}; model ${cfg.modelId}; ${line.sampleRate} Hz; ${line.durationS.toFixed(2)} s; ${line.words.length} words timed`);
+    return 0;
+  } catch (e) {
+    log(`[voice-check] failed: ${e && e.kind ? `${e.kind} ` : ''}${e && (e.detail || e.message)}`);
+    return 1;
+  }
+}
+
+// notify: the end-of-film push (tests read it; the real one is pushToOperator).
+export async function main(env = process.env, { log = console.log, engines = null, fetchImpl = globalThis.fetch, ffImpl = ff, notify: notifyImpl = null } = {}) {
   const projectId = String(env.FILM_PROJECT_ID || '').trim().toLowerCase();
   const stage = String(env.FILM_STAGE || '').trim();
+  if (stage === 'voice_check') return voiceCheck(env, { fetchImpl, log });
   if (!/^[0-9a-f-]{36}$/.test(projectId) || !FILM_STAGES.includes(stage)) { log('[film] bad project id or stage'); return 2; }
   const verdict = verifyFilmToken(String(env.FILM_TOKEN || ''), projectId, env);
   if (!verdict.ok) { log(`[film] token refused: ${verdict.reason}`); return 2; }
@@ -121,7 +160,9 @@ export async function main(env = process.env, { log = console.log, engines = nul
     onFailure({ reason: 'film_not_configured', detail: `missing ${missing.join(', ')}`, requestId: project.request_id });
     return fail('not_configured', `missing ${missing.join(', ')}`);
   }
-  const eng = engines || realEngines(env, { fetchImpl, log });
+  // Capacity alerts to the operator's devices, once per engine per hour.
+  const alert = createCapacityAlerts({ env, store: createWatchStore({ ...creds, fetchImpl }), ...creds, fetchImpl, log });
+  const eng = engines || realEngines(env, { fetchImpl, log, clientWork: !!project.client, alert });
   const voice = cartesiaConfig(env);
   const voiceKey = `${voice.voiceId}|${voice.modelId}`;
   const workdir = await mkdtemp(path.join(os.tmpdir(), `film-${projectId.slice(0, 8)}-`));
@@ -134,7 +175,15 @@ export async function main(env = process.env, { log = console.log, engines = nul
       log(`[film] ${projectId} storyboard ready`);
       return 0;
     }
-    media = { engine: null, throttled: false, throttles: 0, switched: null };
+    media = { engine: null, throttled: false, throttles: 0, switched: null, kinds: {} };
+    if (stage === 'director') {
+      // Director Mode: every stage alone; the operator hears at the end.
+      const watchStore = createWatchStore({ ...creds, fetchImpl });
+      const notify = notifyImpl || (({ title, body }) => pushToOperator({ store: watchStore, env, title, body, url: '/', tag: `pg1-film-${projectId.slice(0, 8)}` }).catch(() => 0));
+      const out = await runDirector({ project, store, engines: eng, ff: ffImpl, workdir, env, log, onFailure, voiceKey, media, notify });
+      log(`[film] ${projectId} director ${out.status}`);
+      return 0;
+    }
     const r = await runRender({ project, stage, store, engines: eng, ff: ffImpl, workdir, env, log, onFailure, voiceKey, media });
     if (stage === 'preview') {
       const fresh = await store.getProject(projectId);
@@ -153,7 +202,7 @@ export async function main(env = process.env, { log = console.log, engines = nul
     return 0;
   } catch (e) {
     const failure = failureOf(e, media);
-    if (e instanceof CapReached) return fail('cap_reached', `spent ${e.spentUsd} of ${e.capUsd}`, failure);
+    if (e instanceof CapReached) return fail(e.floor ? 'price_floor' : 'cap_reached', e.floor ? `spent ${e.spentUsd}; the package price allows ${e.capUsd} (price / 1.5)` : `spent ${e.spentUsd} of ${e.capUsd}`, failure);
     if (e && e.refused) return fail('refused', e.detail, failure);
     onFailure({ reason: `film_${stage}_failed`, detail: e && (e.detail || e.stack || e.message), requestId: project.request_id });
     const reason = e && (e.code === 'storyboard_failed' || e.code === 'attachment_missing') ? e.code : FAILURE_REASONS[e && e.kind] || 'engine_error';

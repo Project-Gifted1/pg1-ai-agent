@@ -68,6 +68,30 @@ test('whiteLabel: provider and model names become PG1 Studio or PG1 Sound; the c
   assert.equal(isOfferRequest('which engine made that clip?'), false);
 });
 
+test('whiteLabel: text model ids, OpenRouter and ElevenLabs music ids are replaced whole and cleanly', () => {
+  // Never a fragment such as "the provider-opus-5-5".
+  assert.equal(whiteLabel('Written by claude-opus-5-5 overnight.'), 'Written by PG1 overnight.');
+  assert.equal(whiteLabel('Made by claude-opus-5-5.'), 'Made by PG1.', 'a full stop after an id stays');
+  assert.equal(whiteLabel('Tried claude-sonnet-5-5 and claude-haiku-4-5-20251001.'), 'Tried PG1.');
+  assert.equal(whiteLabel('The anthropic/claude-opus-5-5 model'), 'The PG1 model');
+  assert.equal(whiteLabel('Claude Opus 5.5 wrote the script'), 'PG1 wrote the script');
+  assert.equal(whiteLabel("claude-opus-5-5's reply"), "PG1's reply");
+  assert.equal(whiteLabel('Routed via OpenRouter and openrouter/auto.'), 'Routed via PG1.');
+  assert.equal(whiteLabel('openai/gpt-5-mini wrote it'), 'PG1 wrote it');
+  assert.equal(whiteLabel('Used gpt-5-mini.'), 'Used PG1.');
+  assert.equal(whiteLabel('Track by music_v2_5.'), 'Track by PG1 Sound.');
+  assert.equal(whiteLabel('ElevenLabs music_v2_5 track'), 'PG1 Sound track');
+  assert.equal(whiteLabel('Ran gemini-3.6-flash.'), 'Ran PG1 Studio.');
+  for (const t of ['claude-opus-5-5', 'anthropic/claude-opus-5-5', 'openrouter/auto', 'OpenRouter', 'music_v2_5', 'gpt-5', 'Claude Sonnet 5']) {
+    const out = whiteLabel(`x ${t} y`);
+    assert.equal(namesProvider(out), false, `${t} -> ${out}`);
+    assert.doesNotMatch(out, /provider-|-\d-\d|_v\d/, `${t} -> ${out}: no fragment left`);
+  }
+  // Media slugs keep their own labels.
+  assert.equal(whiteLabel('The google/lyria-2 model'), 'The PG1 Sound model');
+  assert.equal(whiteLabel('A still from google/imagen-4'), 'A still from PG1 Studio');
+});
+
 test('the wording that reaches clients is generic: offers, rights, safety, notes', () => {
   assertClean(RIGHTS_WORDING, 'the rights wording');
   assert.match(RIGHTS_WORDING, /subject to provider terms/);

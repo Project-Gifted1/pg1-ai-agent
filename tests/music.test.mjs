@@ -1,8 +1,8 @@
 /**
  * PG1 Sound (/music: lib/music/*, scripts/music-render.mjs, api/chat.mjs):
  *
- *  - the AI router's music tier: ElevenLabs (only with its key) -> Lyria on
- *    the paid Gemini key -> Replicate; out of credit, still throttled after
+ *  - the AI router's music tier: Lyria on the paid Gemini key -> ElevenLabs
+ *    (only with its key); out of credit, still throttled after
  *    the waits, down, or a bad key moves on; a content refusal stops; the
  *    free Gemini key never; every call is a pg1_ai_usage row;
  *  - the safety pre-filter: artist and band names, "in the voice/style of",
@@ -96,31 +96,32 @@ after(() => { process.env = { ...ORIGINAL_ENV }; globalThis.fetch = ORIGINAL_FET
 // --- 1. the router's music tier ----------------------------------------------------------
 
 describe('router: the music tier', () => {
-  test('order: ElevenLabs (only with its key) -> Lyria on the paid Gemini key -> Replicate; never the free key', () => {
+  test('order (ROUTING_CHAINS.music): Lyria on the paid Gemini key -> ElevenLabs (only with its key); never Replicate, never the free key', () => {
     const full = { ELEVENLABS_API_KEY: ELEVEN, GEMINI_API_KEY_PAID: PAID, GEMINI_API_KEY_FREE: FREE, REPLICATE_API_TOKEN: REPLICATE };
     const plan = planRoute(TASKS.MUSIC, { env: full, dataClass: DATA.OPERATOR });
-    assert.deepEqual(plan.map((c) => c.provider), ['elevenlabs', 'gemini_paid', 'replicate']);
-    assert.deepEqual(plan.map((c) => c.family), ['elevenlabs_music', 'lyria', 'replicate_music']);
-    assert.equal(plan[1].key, PAID);
-    assert.deepEqual(plan[1].models, ['lyria-3.5']);
-    assert.deepEqual(plan[0].models, ['music_v2_5'], 'ElevenLabs default model');
+    assert.deepEqual(plan.map((c) => c.provider), ['gemini_paid', 'elevenlabs']);
+    assert.deepEqual(plan.map((c) => c.family), ['lyria', 'elevenlabs_music']);
+    assert.equal(plan[0].key, PAID);
+    assert.deepEqual(plan[0].models, ['lyria-3.5']);
+    assert.deepEqual(plan[1].models, ['music_v2_5'], 'ElevenLabs default model');
     assert.ok(plan.every((c) => c.key !== FREE), 'the free Gemini key is never in the music plan, even for the operator');
+    assert.ok(plan.every((c) => c.provider !== 'replicate'), 'Replicate\'s Lyria 2 is out of the chain (R1)');
     assert.equal(resolveKeys(full).elevenlabs, ELEVEN);
     assert.equal(ENGINE_LABELS.elevenlabs, 'PG1 music engine');
 
-    assert.deepEqual(planRoute(TASKS.MUSIC, { env: { ...full, ELEVENLABS_API_KEY: '' } }).map((c) => c.provider), ['gemini_paid', 'replicate'], 'no ElevenLabs without its key');
-    assert.deepEqual(musicPlan({ GEMINI_API_KEY_PAID: FREE, GEMINI_API_KEY_FREE: FREE, REPLICATE_API_TOKEN: REPLICATE }).map((c) => c.provider), ['replicate'], 'a paid key that holds the free key is not used');
-    assert.deepEqual(musicPlan({ GEMINI_API_KEY: PAID, REPLICATE_API_TOKEN: REPLICATE }).map((c) => c.provider), ['replicate'], 'old Gemini names are never used for music');
-    assert.deepEqual(musicPlan({ ...full, PG1_MUSIC_LYRIA_MODEL: 'lyria-3.6' })[1].models, ['lyria-3.6']);
-    assert.deepEqual(musicPlan(full, { exclude: ['elevenlabs'] }).map((c) => c.provider), ['gemini_paid', 'replicate'], 'previews leave ElevenLabs out');
-    assert.deepEqual(musicPlan({ ...full, PG1_DAILY_BUDGET_ELEVENLABS_USD: '0' }).map((c) => c.provider), ['gemini_paid', 'replicate'], 'over its daily budget');
+    assert.deepEqual(planRoute(TASKS.MUSIC, { env: { ...full, ELEVENLABS_API_KEY: '' } }).map((c) => c.provider), ['gemini_paid'], 'no ElevenLabs without its key');
+    assert.deepEqual(musicPlan({ GEMINI_API_KEY_PAID: FREE, GEMINI_API_KEY_FREE: FREE, ELEVENLABS_API_KEY: ELEVEN }).map((c) => c.provider), ['elevenlabs'], 'a paid key that holds the free key is not used');
+    assert.deepEqual(musicPlan({ GEMINI_API_KEY: PAID, ELEVENLABS_API_KEY: ELEVEN }).map((c) => c.provider), ['elevenlabs'], 'old Gemini names are never used for music');
+    assert.deepEqual(musicPlan({ ...full, PG1_MUSIC_LYRIA_MODEL: 'lyria-3.6' })[0].models, ['lyria-3.6']);
+    assert.deepEqual(musicPlan(full, { exclude: ['elevenlabs'] }).map((c) => c.provider), ['gemini_paid'], 'previews leave ElevenLabs out');
+    assert.deepEqual(musicPlan({ ...full, PG1_DAILY_BUDGET_GEMINI_PAID_USD: '0' }).map((c) => c.provider), ['elevenlabs'], 'over its daily budget');
   });
 
-  test('ElevenLabs out of credit -> Lyria makes it; every call is a usage row', async () => {
-    const state = { elevenlabs: () => new Response('{"detail":{"status":"quota_exceeded","message":"You have insufficient credits for this request"}}', { status: 401 }) };
-    const ledger = memLedger();
+  test('Lyria makes the track; Lyria out of credit -> ElevenLabs; every call is a usage row', async () => {
+    let state = {};
+    let ledger = memLedger();
     const env = { ELEVENLABS_API_KEY: ELEVEN, GEMINI_API_KEY_PAID: PAID, REPLICATE_API_TOKEN: REPLICATE };
-    const out = await generateMusic({ env, spec: spec({ length: 'full' }), fetchImpl: routedFetch(engineRoutes(state)), sleep: noSleep, log: quiet, ledger });
+    let out = await generateMusic({ env, spec: spec({ length: 'full' }), fetchImpl: routedFetch(engineRoutes(state)), sleep: noSleep, log: quiet, ledger });
     assert.equal(out.ok, true);
     assert.equal(out.provider, 'gemini_paid');
     assert.equal(out.model, 'lyria-3.5');
@@ -130,20 +131,26 @@ describe('router: the music tier', () => {
     assert.equal(out.licenceNote, LICENCE_NOTES.gemini_paid);
     assert.match(out.licenceNote, /SynthID watermarked; commercial use under Gemini API terms; source MP3/);
     assert.equal(out.lyricsText, '[Verse] original words');
-    assert.deepEqual(state.seen.map((s) => s.engine), ['elevenlabs', 'lyria']);
-    // ElevenLabs was asked for lossless PCM; Lyria for audio and text.
-    assert.match(state.seen[0].url, /\?output_format=pcm_44100$/);
-    assert.equal(state.seen[0].key, ELEVEN);
-    assert.equal(state.seen[0].body.force_instrumental, true);
-    assert.equal(state.seen[0].body.music_length_ms, 150000);
-    assert.deepEqual(state.seen[1].body.generationConfig, { responseModalities: ['AUDIO', 'TEXT'] });
-    assert.equal(state.seen[1].key, PAID);
-    assert.match(state.seen[1].url, /\/lyria-3\.5:generateContent$/);
-    // Usage: the failed call and the track, task music, never content.
-    assert.deepEqual(ledger.rows.map((r) => [r.provider, r.task, r.ok, r.unit]), [['elevenlabs', 'music', false, 'music_elevenlabs'], ['gemini_paid', 'music', true, 'music_lyria']]);
-    assert.equal(ledger.rows[1].cost_usd, 0.08);
+    assert.deepEqual(state.seen[0].body.generationConfig, { responseModalities: ['AUDIO', 'TEXT'] });
+    assert.equal(state.seen[0].key, PAID);
+    assert.match(state.seen[0].url, /\/lyria-3\.5:generateContent$/);
+    assert.equal(ledger.rows[0].cost_usd, 0.08);
     assert.ok(!JSON.stringify(ledger.rows).includes('boom-bap'), 'no prompt in the usage rows');
-    assert.ok(isTripped('elevenlabs'), 'the drained key waits out the breaker');
+
+    __resetRouterState();
+    state = { lyria: () => new Response(NO_CREDIT, { status: 402 }) };
+    ledger = memLedger();
+    out = await generateMusic({ env, spec: spec({ length: 'full' }), fetchImpl: routedFetch(engineRoutes(state)), sleep: noSleep, log: quiet, ledger });
+    assert.equal(out.provider, 'elevenlabs');
+    assert.deepEqual(state.seen.map((s) => s.engine), ['lyria', 'elevenlabs']);
+    // ElevenLabs is asked for lossless PCM.
+    assert.match(state.seen[1].url, /\?output_format=mp3_44100_192$/);
+    assert.equal(state.seen[1].key, ELEVEN);
+    assert.equal(state.seen[1].body.force_instrumental, true);
+    assert.equal(state.seen[1].body.music_length_ms, 150000);
+    assert.deepEqual(ledger.rows.map((r) => [r.provider, r.task, r.ok, r.unit]), [['gemini_paid', 'music', false, 'music_lyria'], ['elevenlabs', 'music', true, 'music_elevenlabs']]);
+    assert.ok(isTripped('gemini_paid#1'), 'the drained key waits out the breaker');
+    assert.equal(state.n.replicate, 0);
   });
 
   test('throttled: the same request is sent again; still throttled after the waits -> the next engine', async () => {
@@ -152,60 +159,55 @@ describe('router: the music tier', () => {
     let state = { lyria: (n) => (n <= 2 ? throttle() : undefined) };
     const waits = [];
     const ledger = memLedger();
-    let out = await generateMusic({ env: { GEMINI_API_KEY_PAID: PAID, REPLICATE_API_TOKEN: REPLICATE }, spec: spec(), fetchImpl: routedFetch(engineRoutes(state)), sleep: async (ms) => { waits.push(ms); }, log: quiet, ledger });
+    let out = await generateMusic({ env: { GEMINI_API_KEY_PAID: PAID, ELEVENLABS_API_KEY: ELEVEN }, spec: spec(), fetchImpl: routedFetch(engineRoutes(state)), sleep: async (ms) => { waits.push(ms); }, log: quiet, ledger });
     assert.equal(out.provider, 'gemini_paid');
     assert.equal(state.n.lyria, 3);
-    assert.equal(state.n.replicate, 0);
+    assert.equal(state.n.elevenlabs, 0);
     assert.deepEqual(waits, [5000, 5000], 'waits as the engine says');
     assert.equal(ledger.rows.filter((r) => r.status === 429).length, 2, 'each throttled send is logged');
-    // Throttled to the end: Replicate makes it.
+    // Throttled to the end: ElevenLabs makes it.
     __resetRouterState();
     state = { lyria: () => throttle() };
-    out = await generateMusic({ env: { GEMINI_API_KEY_PAID: PAID, REPLICATE_API_TOKEN: REPLICATE }, spec: spec(), fetchImpl: routedFetch(engineRoutes(state)), sleep: noSleep, log: quiet });
+    out = await generateMusic({ env: { GEMINI_API_KEY_PAID: PAID, ELEVENLABS_API_KEY: ELEVEN }, spec: spec(), fetchImpl: routedFetch(engineRoutes(state)), sleep: noSleep, log: quiet });
     assert.equal(out.ok, true);
-    assert.equal(out.provider, 'replicate');
+    assert.equal(out.provider, 'elevenlabs');
     assert.equal(out.fallbacks, 1);
     assert.equal(state.n.lyria, 4, 'MUSIC_THROTTLE_POLICY: four sends');
-    assert.equal(out.licenceNote, LICENCE_NOTES.replicate);
-    assert.match(JSON.stringify(state.seen.find((s) => s.engine === 'replicate').body.input), /Instrumental only/);
+    assert.equal(out.licenceNote, LICENCE_NOTES.elevenlabs);
   });
 
-  test('Lyria out of credit -> Replicate; everything out of credit -> a clear billing failure', async () => {
-    let state = { lyria: () => new Response('{"error":{"code":429,"message":"Your prepayment credits are depleted. Please go to AI Studio to manage your project and billing.","status":"RESOURCE_EXHAUSTED"}}', { status: 429 }) };
-    let out = await generateMusic({ env: { GEMINI_API_KEY_PAID: PAID, REPLICATE_API_TOKEN: REPLICATE }, spec: spec(), fetchImpl: routedFetch(engineRoutes(state)), sleep: noSleep, log: quiet });
-    assert.equal(out.provider, 'replicate');
+  test('everything out of credit -> a clear billing failure', async () => {
+    const state = { lyria: () => new Response('{"error":{"code":429,"message":"Your prepayment credits are depleted. Please go to AI Studio to manage your project and billing.","status":"RESOURCE_EXHAUSTED"}}', { status: 429 }), elevenlabs: () => new Response('{"detail":{"status":"quota_exceeded","message":"You have insufficient credits for this request"}}', { status: 401 }) };
+    const out = await generateMusic({ env: { GEMINI_API_KEY_PAID: PAID, ELEVENLABS_API_KEY: ELEVEN }, spec: spec(), fetchImpl: routedFetch(engineRoutes(state)), sleep: noSleep, log: quiet });
     assert.equal(state.n.lyria, 1, 'a credit failure is not retried');
-    __resetRouterState();
-    state = { lyria: () => new Response(NO_CREDIT, { status: 402 }), replicate: () => new Response(NO_CREDIT, { status: 402 }) };
-    out = await generateMusic({ env: { GEMINI_API_KEY_PAID: PAID, REPLICATE_API_TOKEN: REPLICATE }, spec: spec(), fetchImpl: routedFetch(engineRoutes(state)), sleep: noSleep, log: quiet });
     assert.equal(out.ok, false);
     assert.equal(out.kind, 'billing');
     assert.equal(out.refused, false);
-    assert.deepEqual(out.failures.map((f) => f.provider), ['gemini_paid', 'replicate']);
+    assert.deepEqual(out.failures.map((f) => f.provider), ['gemini_paid', 'elevenlabs']);
   });
 
   test('a 5xx or a bad key moves on; a content refusal stops the route', async () => {
-    let state = { elevenlabs: () => new Response('upstream error', { status: 503 }) };
+    let state = { lyria: () => new Response('upstream error', { status: 503 }) };
     let out = await generateMusic({ env: { ELEVENLABS_API_KEY: ELEVEN, GEMINI_API_KEY_PAID: PAID }, spec: spec(), fetchImpl: routedFetch(engineRoutes(state)), sleep: noSleep, log: quiet });
-    assert.equal(out.provider, 'gemini_paid');
+    assert.equal(out.provider, 'elevenlabs');
     __resetRouterState();
     state = { lyria: () => json({ promptFeedback: { blockReason: 'SAFETY' } }) };
-    out = await generateMusic({ env: { GEMINI_API_KEY_PAID: PAID, REPLICATE_API_TOKEN: REPLICATE }, spec: spec(), fetchImpl: routedFetch(engineRoutes(state)), sleep: noSleep, log: quiet });
+    out = await generateMusic({ env: { GEMINI_API_KEY_PAID: PAID, ELEVENLABS_API_KEY: ELEVEN }, spec: spec(), fetchImpl: routedFetch(engineRoutes(state)), sleep: noSleep, log: quiet });
     assert.equal(out.ok, false);
     assert.equal(out.refused, true);
     assert.equal(out.kind, 'refused');
-    assert.equal(state.n.replicate, 0, 'a refusal is never routed round');
+    assert.equal(state.n.elevenlabs, 0, 'a refusal is never routed round');
     __resetRouterState();
     state = { lyria: () => json({ candidates: [{ finishReason: 'RECITATION', content: { parts: [] } }] }) };
-    out = await generateMusic({ env: { GEMINI_API_KEY_PAID: PAID, REPLICATE_API_TOKEN: REPLICATE }, spec: spec(), fetchImpl: routedFetch(engineRoutes(state)), sleep: noSleep, log: quiet });
+    out = await generateMusic({ env: { GEMINI_API_KEY_PAID: PAID, ELEVENLABS_API_KEY: ELEVEN }, spec: spec(), fetchImpl: routedFetch(engineRoutes(state)), sleep: noSleep, log: quiet });
     assert.equal(out.kind, 'refused');
+    assert.equal(state.n.elevenlabs, 0);
     __resetRouterState();
-    state = { elevenlabs: () => new Response('{"detail":{"status":"bad_prompt","message":"The prompt contains copyrighted material"}}', { status: 400 }) };
+    state = { lyria: () => new Response('upstream error', { status: 503 }), elevenlabs: () => new Response('{"detail":{"status":"bad_prompt","message":"The prompt contains copyrighted material"}}', { status: 400 }) };
     out = await generateMusic({ env: { ELEVENLABS_API_KEY: ELEVEN, GEMINI_API_KEY_PAID: PAID }, spec: spec(), fetchImpl: routedFetch(engineRoutes(state)), sleep: noSleep, log: quiet });
     assert.equal(out.kind, 'refused');
-    assert.equal(state.n.lyria, 0);
-    out = await generateMusic({ env: {}, spec: spec(), fetchImpl: routedFetch([]), log: quiet });
-    assert.equal(out.kind, 'not_configured');
+    out = await generateMusic({ env: { REPLICATE_API_TOKEN: REPLICATE }, spec: spec(), fetchImpl: routedFetch([]), log: quiet });
+    assert.equal(out.kind, 'not_configured', 'Replicate alone is no music engine now');
   });
 
   test('the Lyria 30-second clip model: its own plan, model id and price; estimates use it for previews and short tracks', async () => {
@@ -215,14 +217,14 @@ describe('router: the music tier', () => {
     assert.equal(lyriaClipModel({ PG1_MUSIC_LYRIA_CLIP_MODEL: 'bad model id!' }), 'lyria-3-clip-preview', 'a malformed override is ignored');
     const clip = musicClipPlan(full);
     assert.deepEqual(clip.map((c) => [c.provider, c.family, c.key, c.models, c.clip]), [['gemini_paid', 'lyria', PAID, ['lyria-3-clip-preview'], true]], 'the paid Gemini key only');
-    assert.notEqual(clip[0].keyId, musicPlan(full)[1].keyId, 'its own breaker: a failing clip model never holds back lyria-3.5');
+    assert.notEqual(clip[0].keyId, musicPlan(full)[0].keyId, 'its own breaker: a failing clip model never holds back lyria-3.5');
     assert.deepEqual(musicClipPlan({ REPLICATE_API_TOKEN: REPLICATE, GEMINI_API_KEY_FREE: FREE }), [], 'no paid key, no clip (never the free key)');
     assert.equal(musicCallUsd('gemini_paid', 'short', { clip: true }), 0.04);
     assert.equal(musicCallUsd('gemini_paid', 'short'), 0.08, 'lyria-3.5 keeps its price');
     assert.equal(estimateMusic(full, 'preview'), 0.08, 'two clips');
     assert.equal(estimateMusic(full, 'final', 'short'), 0.04, 'a short final is a clip');
-    assert.equal(estimateMusic(full, 'final', 'full'), 0.8, 'a full final keeps the full tier');
-    assert.equal(estimateMusic({ REPLICATE_API_TOKEN: REPLICATE }, 'preview'), 0.12, 'no paid key: the tier as before');
+    assert.equal(estimateMusic(full, 'final', 'full'), 0.75, 'a full final keeps the full tier (5 minutes at 0.15 USD per minute, the registry price)');
+    assert.equal(estimateMusic({ REPLICATE_API_TOKEN: REPLICATE }, 'preview'), 0, 'Replicate alone is no music engine now');
 
     // A call on the clip plan: the clip model's URL, its unit and price in the usage row.
     const state = {};
