@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
-const FILM_MIGRATION = ['20261011120000_pg1_film.sql', '20261013120000_pg1_film_resume.sql', '20261030120000_pg1_director.sql']
+const FILM_MIGRATION = ['20261011120000_pg1_film.sql', '20261013120000_pg1_film_resume.sql', '20261029130000_pg1_director.sql']
   .map((f) => readFileSync(new URL(`../../supabase/migrations/${f}`, import.meta.url), 'utf8')).join('\n');
 
 export const json = (v, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'Content-Type': 'application/json' } });

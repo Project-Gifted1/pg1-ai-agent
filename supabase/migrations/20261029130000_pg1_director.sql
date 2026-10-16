@@ -26,25 +26,36 @@ alter table public.pg1_film_projects add column if not exists price_usd numeric(
 
 -- The status and kind checks were created unnamed by the first film
 -- migration; they are found by their definition, so their generated names
--- never need spelling out.
+-- never need spelling out. Only check constraints that reference the
+-- column status or mode (pg1_film_projects) or kind (pg1_film_assets) by
+-- name are dropped (the column list of the constraint, not a text match),
+-- and each one is printed.
 do $$
 declare
   c record;
 begin
   for c in
-    select t.relname as tbl, k.conname as name
+    select t.relname as tbl, k.conname as name, pg_get_constraintdef(k.oid) as def
       from pg_constraint k
       join pg_class t on t.oid = k.conrelid
       join pg_namespace n on n.oid = t.relnamespace
      where n.nspname = 'public' and k.contype = 'c'
-       and ((t.relname = 'pg1_film_projects' and (pg_get_constraintdef(k.oid) like '%status%' or pg_get_constraintdef(k.oid) like '%mode%'))
-         or (t.relname = 'pg1_film_assets' and pg_get_constraintdef(k.oid) like '%kind%'))
+       and k.conname not in ('pg1_film_mode_ok', 'pg1_film_status_ok', 'pg1_film_asset_kind_ok')
+       and exists (
+         select 1 from pg_attribute a
+          where a.attrelid = k.conrelid and a.attnum = any (k.conkey)
+            and ((t.relname = 'pg1_film_projects' and a.attname in ('status', 'mode'))
+              or (t.relname = 'pg1_film_assets' and a.attname = 'kind')))
   loop
+    raise notice 'pg1_director: dropping check % on %: %', c.name, c.tbl, c.def;
     execute format('alter table public.%I drop constraint %I', c.tbl, c.name);
   end loop;
 end;
 $$;
 
+alter table public.pg1_film_projects drop constraint if exists pg1_film_mode_ok;
+alter table public.pg1_film_projects drop constraint if exists pg1_film_status_ok;
+alter table public.pg1_film_assets drop constraint if exists pg1_film_asset_kind_ok;
 alter table public.pg1_film_projects add constraint pg1_film_mode_ok check (mode in ('standard', 'director'));
 alter table public.pg1_film_projects add constraint pg1_film_status_ok check (status in (
   'storyboard_queued', 'storyboarding', 'awaiting_preview_approval',
