@@ -376,7 +376,7 @@ test('a hung upstream times out per call: the row fails, the card says failed wi
   // Context lookups with Supabase configured.
   globalThis.fetch = ((inner) => async (url, options) => {
     const u = String(url);
-    if (u.includes('/rest/v1/messages') || u.includes('/storage/v1/object/list') || u.includes('/rest/v1/threat_indicators')) return new Response('[]');
+    if (u.includes('/rest/v1/messages') || u.includes('/storage/v1/object/list') || u.includes('/rest/v1/threat_ioc_telemetry')) return new Response('[]');
     if (u.includes('/rest/v1/pg1_errors?')) return new Response('[]');
     return inner(url, options);
   })(globalThis.fetch);

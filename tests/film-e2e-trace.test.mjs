@@ -135,7 +135,8 @@ function engineRoutes(trace, st) {
       if (!/image/.test(model)) {
         const sys = body.systemInstruction && body.systemInstruction.parts ? body.systemInstruction.parts.map((x) => x.text).join('') : '';
         const qc = sys === QC_SYSTEM;
-        trace.push({ step: qc ? 'shot check' : 'storyboard', provider: 'gemini_paid', model });
+        const freeKey = o && o.headers && o.headers['x-goog-api-key'] === KEYS.GEMINI_API_KEY_FREE;
+        trace.push({ step: qc ? 'shot check' : 'storyboard', provider: freeKey ? 'gemini_free' : 'gemini_paid', model });
         const text = qc ? '{"pass":true,"score":8,"issues":[],"best_start_s":0.5,"description":"as described"}' : JSON.stringify(storyboardJson());
         return json({ candidates: [{ content: { parts: [{ text }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 500 } });
       }
@@ -209,7 +210,9 @@ describe('one film end to end on the real engines', () => {
     assert.equal(r.code, 0, r.logs.join('\n'));
     assert.equal(r.film.status, 'awaiting_preview_approval');
     const sb = trace.filter((t) => t.step === 'storyboard');
-    assert.deepEqual(sb.map((t) => `${t.provider}/${t.model}`), [`anthropic/${filmModels({}).claude}`], 'the heavy route: Claude first, on the paid key');
+    // Routing policy: an operator film's writing goes to the free engines
+    // first (here the free Gemini key, the only free key this job has).
+    assert.deepEqual(sb.map((t) => t.provider), ['gemini_free'], 'the writing stage: free first');
 
     // 2. Preview: reference + stills, voiceover, music, animatic.
     trace.length = 0;
@@ -270,8 +273,10 @@ describe('one film end to end on the real engines', () => {
     assert.equal(mixes.at(-1).music.length, 2, 'both music beds in the final mix');
     assert.equal(mixes.at(-1).voice.length, 3);
 
-    // Never the free Gemini key, on any step.
-    assert.ok(!fetchImpl.calls.some((c) => JSON.stringify(c.headers).includes(KEYS.GEMINI_API_KEY_FREE)));
+    // The free Gemini key: the storyboard only, never a check, a still, a
+    // clip or music.
+    assert.ok(!fetchImpl.calls.some((c) => JSON.stringify(c.headers).includes(KEYS.GEMINI_API_KEY_FREE) && (/image|lyria|omni|interactions/i.test(c.url) || !c.url.includes('generativelanguage'))), 'no media call on the free key');
+    assert.ok(trace.filter((t) => t.provider === 'gemini_free').every((t) => t.step === 'storyboard'));
     assets = await store.listAssets(p.id);
     assert.ok(assets.some((a) => a.kind === 'final'));
     // Every charge is an asset's cost, except the storyboard and the audio check.
