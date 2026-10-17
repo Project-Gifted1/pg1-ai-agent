@@ -503,7 +503,7 @@ test('a model stream that breaks after some text ends with a partial error, not 
   assert.equal(events.find((e) => e.type === 'step_done' && e.id === 'model').failed, true);
 });
 
-test('a model failure before any text is an error event, retried across models first', async () => {
+test('a model failure before any text is an error event, retried across models first (a 429 waited out first)', async () => {
   const calls = installFetch([['streamGenerateContent', () => new Response('quota', { status: 429 })]]);
   const res = makeRes();
   await chatHandler(makeReq(authed({ prompt: 'hello', stream: true })), res);
@@ -511,7 +511,9 @@ test('a model failure before any text is an error event, retried across models f
   assert.equal(last.type, 'error');
   assert.equal(last.partial, false);
   assert.match(last.message, /Execution failed/);
-  assert.equal(calls.filter((c) => c.url.includes('streamGenerateContent')).length, 2);
+  // Both models in one send, then the 429 waited out three times (2 s, 5 s,
+  // 10 s: instant under the test runner) before giving up: 4 sends of 2.
+  assert.equal(calls.filter((c) => c.url.includes('streamGenerateContent')).length, 8);
 });
 
 test('fallback: without stream: true the reply is the same JSON as before', async () => {

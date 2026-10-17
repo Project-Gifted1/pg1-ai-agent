@@ -34,6 +34,7 @@
   <!-- Conversation mode (hands-free voice): turn tracking, echo guard and
        wake-word clean-up. The speech detector's runtime loads on demand. -->
   <script src="/voice/conversation.js"></script>
+  <script src="/camera/frame-gate.js"></script>
   <link rel="preload" href="/fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
   <!-- REPLY TYPE: Source Serif 4 (SIL OFL) from Google Fonts, for PG1's
        replies only. Loaded without blocking the first paint; until it
@@ -2482,6 +2483,23 @@
       box-shadow: var(--shadow-2);
       pointer-events: none;
     }
+    /* CAMERA LIVE ANALYSIS: the latest description, or why it is paused. */
+    #vision-caption {
+      position: absolute;
+      top: calc(var(--header-h) + var(--safe-top) + var(--sp-3) + 156px);
+      right: max(var(--sp-4), var(--safe-right));
+      max-width: min(240px, calc(100vw - 2 * var(--sp-4)));
+      padding: var(--sp-2) var(--sp-3);
+      background: var(--surface-1);
+      color: var(--text-1);
+      border: 1px solid var(--gold-line);
+      border-radius: var(--r-md);
+      font-size: 12px;
+      line-height: 1.4;
+      z-index: 50;
+      box-shadow: var(--shadow-2);
+    }
+    #vision-caption.is-paused { color: var(--danger-text); border-color: var(--danger-text); }
   </style>
 </head>
 <body>
@@ -2535,6 +2553,7 @@
   </svg>
 
   <video id="vision-pip" autoplay playsinline muted></video>
+  <div id="vision-caption" role="status" aria-live="polite" hidden></div>
 
   <div id="auth-modal" class="matrix-modal gate" role="dialog" aria-modal="true" aria-labelledby="auth-title">
     <!-- SECURITY GATE: method="post" with no action, and handleAuthSubmit()
@@ -3687,12 +3706,95 @@
       document.getElementById('vision-modal').style.display = 'flex';
     }
 
+    // CAMERA LIVE ANALYSIS (public/camera/frame-gate.js): while the Vision
+    // feed is on and the operator is signed in, a small frame is checked
+    // every 2 s and sent for a short description only when the gate allows
+    // it (at most one every 10 s, changed frames only, paused after a rate
+    // limit or when no AI engine is left). The server logs each session
+    // start, stop and error, and each frame by size; never the image.
+    const CAMERA_TICK_MS = 2000;
+    const cameraGate = window.PG1Camera ? window.PG1Camera.createFrameGate(window.PG1_CAMERA_OPTIONS || {}) : null;
+    let cameraTimer = null;
+    let cameraSource = null;
+
+    function cameraEvent(event, extra = {}) {
+      if (!sessionUser || !sessionPass) return;
+      fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cameraEvent: event, source: cameraSource || 'camera', user: sessionUser, pass: sessionPass, ...extra }) }).catch(() => {});
+    }
+
+    function cameraErrorCode(err) {
+      const name = err && err.name;
+      return name === 'NotAllowedError' || name === 'SecurityError' ? 'permission_denied'
+        : name === 'NotFoundError' ? 'not_found'
+        : name === 'NotReadableError' ? 'not_readable'
+        : name === 'OverconstrainedError' ? 'overconstrained'
+        : 'other';
+    }
+
+    function showCameraCaption(text, paused) {
+      const el = document.getElementById('vision-caption');
+      if (!el) return;
+      el.textContent = text || '';
+      el.classList.toggle('is-paused', !!paused);
+      el.hidden = !text;
+    }
+
+    async function cameraTick() {
+      const videoEl = document.getElementById('vision-pip');
+      if (!activeVisionStream || !cameraGate || !sessionUser || !sessionPass || document.hidden || !videoEl.videoWidth) return;
+      try {
+        const thumb = document.createElement('canvas');
+        thumb.width = 64; thumb.height = 48;
+        const tctx = thumb.getContext('2d', { willReadFrequently: true });
+        tctx.drawImage(videoEl, 0, 0, 64, 48);
+        const sig = window.PG1Camera.signature(tctx.getImageData(0, 0, 64, 48).data, 64, 48);
+        const decision = cameraGate.decide(sig);
+        if (decision !== 'send') return;
+        const fit = fitWithin(videoEl.videoWidth, videoEl.videoHeight, 768);
+        const canvas = document.createElement('canvas');
+        canvas.width = fit.width; canvas.height = fit.height;
+        canvas.getContext('2d').drawImage(videoEl, 0, 0, fit.width, fit.height);
+        const data = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+        if (!data) return;
+        cameraGate.sent(sig);
+        let status = 0;
+        let body = {};
+        try {
+          const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cameraAnalyze: true, source: cameraSource || 'camera', frame: { inlineData: { mimeType: 'image/jpeg', data } }, user: sessionUser, pass: sessionPass }) });
+          status = res.status;
+          body = await res.json().catch(() => ({}));
+        } catch (e) {
+          status = 0;
+        }
+        const shown = cameraGate.result({ ok: status === 200 && body.ok, status: body.throttled ? 429 : status, reason: body.reason || null, retryAfterMs: body.retryAfterMs || null });
+        if (status === 200 && body.ok) showCameraCaption(body.caption, false);
+        else if (shown.paused) showCameraCaption(shown.text, true);
+      } catch (e) {
+        cameraEvent('error', { code: 'frame_failed' });
+      }
+    }
+
+    function startCameraAnalysis(source) {
+      cameraSource = source;
+      if (cameraGate) cameraGate.reset();
+      showCameraCaption('', false);
+      cameraEvent('start');
+      if (cameraTimer) clearInterval(cameraTimer);
+      cameraTimer = setInterval(cameraTick, CAMERA_TICK_MS);
+    }
+
+    function stopCameraAnalysis() {
+      if (cameraTimer) { clearInterval(cameraTimer); cameraTimer = null; cameraEvent('stop'); }
+      showCameraCaption('', false);
+    }
+
     async function setVisionSource(source) {
       const videoEl = document.getElementById('vision-pip');
 
       if (activeVisionStream) {
         activeVisionStream.getTracks().forEach(track => track.stop());
         activeVisionStream = null;
+        stopCameraAnalysis();
       }
 
       if (source === 'off') {
@@ -3724,8 +3826,11 @@
         stream.getVideoTracks()[0].onended = () => {
           setVisionSource('off');
         };
+        startCameraAnalysis(source);
 
       } catch (err) {
+        cameraSource = source;
+        cameraEvent('error', { code: cameraErrorCode(err) });
         alert('Vision Matrix Access Denied: ' + err.message);
       }
     }
@@ -7384,7 +7489,11 @@
           else if (ev.type === 'audio_end') { if (voice) voice.end(ev); }
           else if (ev.type === 'tool_result') { if (ev.tool) toolResults.push(ev); }
           else if (ev.type === 'done') outcome = { data: Object.assign({}, ev.result || {}, { reply: text, searchEntryPoint: ev.searchEntryPoint || (ev.result && ev.result.searchEntryPoint) || null, spokenSummary: ev.spokenSummary || null, toolResults: toolResults.slice(), traceId: ev.request_id }) };
-          else if (ev.type === 'error') outcome = { failed: 'error', message: String(ev.message || 'The request failed.'), status: ev.status };
+          else if (ev.type === 'error') {
+            outcome = { failed: 'error', message: String(ev.message || 'The request failed.'), status: ev.status };
+            // Every AI engine was out: say so on the camera feed too.
+            if (ev.reason === 'ai_unavailable' && activeVisionStream && window.PG1Camera) showCameraCaption(window.PG1Camera.PAUSED_TEXT, true);
+          }
         });
       } catch (err) {
         if (!outcome) outcome = { failed: signal && signal.aborted ? 'aborted' : 'dropped' };
@@ -7653,6 +7762,7 @@
         }
         
         absorbTurnResult(data, agentBubble);
+        if (data && data.reason === 'ai_unavailable' && activeVisionStream && window.PG1Camera) showCameraCaption(window.PG1Camera.PAUSED_TEXT, true);
         triggerHaptic([30, 50, 30]); 
         const finalTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         

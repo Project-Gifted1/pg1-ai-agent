@@ -1,6 +1,7 @@
 // A small PostgREST stand-in over a real Postgres (PGlite), for the tables
 // the PG1 upgrade adds. Handles what lib/* sends: select=, column filters
-// (eq, neq, in, gt, gte, lt, lte, is, and or=(...) of those), order= (with
+// (eq, neq, in, gt, gte, lt, lte, is, and or=(...) of those; col->>field
+// eq/neq on a jsonb column), order= (with
 // nullsfirst/nullslast), limit=, POST (object or
 // array, Prefer: return=representation|minimal), PATCH and DELETE with the
 // same filters, and rpc/<fn> with named arguments. jsonb columns are sent
@@ -36,6 +37,15 @@ function parseFilters(params, types, vals) {
       const parts = String(v).replace(/^\(|\)$/g, '').match(/[a-z_]+\.[a-z]+\.(?:"[^"]*"|[^,]*)/g) || [];
       const sub = parts.map((p) => { const i = p.indexOf('.'); return parseFilters([[p.slice(0, i), p.slice(i + 1).replace(/^([a-z]+)\."(.*)"$/s, '$1.$2')]], types, vals)[0]; });
       if (sub.length) where.push(`(${sub.join(' or ')})`);
+      continue;
+    }
+    // A jsonb field as text: result->>ai_summary=eq.pending.
+    const jf = /^([a-z_]+)->>([a-z_]+)$/.exec(k);
+    if (jf && types.get(jf[1]) === 'jsonb') {
+      const m = /^(eq|neq)\.(.*)$/s.exec(v);
+      if (!m) throw new Error(`unsupported filter ${k}=${v}`);
+      vals.push(m[2]);
+      where.push(`(${jf[1]}->>'${jf[2]}') ${m[1] === 'eq' ? '=' : '<>'} $${vals.length}`);
       continue;
     }
     if (!/^[a-z_]+$/.test(k) || !types.has(k)) throw new Error(`unsupported filter column ${k}`);
