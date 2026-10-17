@@ -56,7 +56,7 @@ describe('chains as built', () => {
   test('a missing key, a provider over budget and the free key for customers are left out, with the reason', () => {
     const p = chainPlan('text', { env: { GEMINI_API_KEY_PAID: 'p', GEMINI_API_KEY_FREE: 'f', PG1_DAILY_BUDGET_GEMINI_PAID_USD: '0' } });
     assert.deepEqual(order(p), []);
-    assert.deepEqual(Object.fromEntries(p.skipped.map((s) => [s.provider, s.reason])), { anthropic: 'no_key', gemini_paid: 'budget', gemini_free: 'operator_only', openrouter: 'no_key', gateway: 'no_key', openai: 'no_key' });
+    assert.deepEqual(Object.fromEntries(p.skipped.map((s) => [s.provider, s.reason])), { anthropic: 'no_key', gemini_paid: 'budget', gemini_free: 'operator_only', groq: 'operator_only', mistral: 'operator_only', github_models: 'operator_only', cloudflare: 'operator_only', openrouter: 'no_key', gateway: 'no_key', openai: 'no_key' });
     assert.match(emptyPlanReason(p), /over today's budget/);
     assert.deepEqual(order(chainPlan('text', { env: { GEMINI_API_KEY_FREE: 'f' }, operator: true })), ['gemini_free'], 'the operator\'s own text may use the free key');
   });
