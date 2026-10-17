@@ -9,8 +9,8 @@
  *   - under prefers-reduced-motion the calm 2D drawing shows instead and
  *     three.js is never fetched;
  *   - closing the screen tears the scene down.
- * Writes docs/screenshots/living-lab-412-dark.png and
- * living-lab-reduced-412-dark.png. Skipped (not failed) when Playwright or
+ * Writes docs/screenshots/living-lab-360-dark.png and
+ * living-lab-reduced-360-dark.png. Skipped (not failed) when Playwright or
  * its Chromium is not installed.
  */
 
@@ -83,8 +83,11 @@ function startStubServer() {
   return new Promise((r) => server.listen(0, '127.0.0.1', () => r({ server, log, origin: `http://127.0.0.1:${server.address().port}` })));
 }
 
+// The 3D scene renders in software (SwiftShader) on CI, alongside other
+// browser test files: a small phone at pixel ratio 1 keeps its CPU use low,
+// so timing-sensitive tests running at the same time are not starved.
 async function openPhone(browser, origin, { reducedMotion = 'no-preference' } = {}) {
-  const context = await browser.newContext({ viewport: { width: 412, height: 915 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: 'dark', reducedMotion });
+  const context = await browser.newContext({ viewport: { width: 360, height: 740 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true, colorScheme: 'dark', reducedMotion });
   await routeReplyFont(context);
   await context.addInitScript(() => { try { localStorage.setItem('pg1_theme', 'dark'); } catch (e) {} });
   const page = await context.newPage();
@@ -132,7 +135,7 @@ test('living lab: three.js only on the lab screen and only from the app; the 3D 
   assert.deepEqual(offOrigin(requests.slice(before), origin), [], 'the lab fetches nothing from any other host');
   // The canvas draws something other than the background.
   mkdirSync(SHOTS_DIR, { recursive: true });
-  const shot = await page.screenshot({ path: join(SHOTS_DIR, 'living-lab-412-dark.png') });
+  const shot = await page.screenshot({ path: join(SHOTS_DIR, 'living-lab-360-dark.png') });
   assert.ok(shot.length > 20000, 'a drawn scene, not an empty screen');
   // The page underneath stays usable: closing tears the scene down.
   await page.click('#lab-screen [data-dialog-close]');
@@ -156,7 +159,7 @@ test('living lab: under prefers-reduced-motion the calm 2D drawing shows and thr
   assert.deepEqual(offOrigin(requests.slice(before), origin), [], 'the lab fetches nothing from any other host');
   assert.equal(await page.locator('#lab-mode').innerText(), 'Running');
   mkdirSync(SHOTS_DIR, { recursive: true });
-  await page.screenshot({ path: join(SHOTS_DIR, 'living-lab-reduced-412-dark.png') });
+  await page.screenshot({ path: join(SHOTS_DIR, 'living-lab-reduced-360-dark.png') });
   assert.deepEqual(problems, [], 'no page or console errors');
   assert.deepEqual(log.missing, []);
 });
