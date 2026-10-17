@@ -1113,12 +1113,48 @@ test('check_wallet_age: a partial (internal transfers not checked in time) old w
   assert.equal(partialDelegated.status, 'unknown');
   assert.deepEqual(partialDelegated.reasons.map((r) => r.code), ['WALLET_AGE_PARTIAL', 'WALLET_DELEGATED']);
 
-  // No history plus partial: WALLET_NO_HISTORY is a genuine warning, so flagged.
+  // No history plus partial: "no history" is unproven, so it is the timeout
+  // tool error (as documented), never found:false or "flagged".
   global.fetch = makeFetchMock({ code: DELEGATED_CODE, hangInternal: true });
-  const { parsed: partialNew } = await callParsed({ address: ADDRESS, chain: 'base' });
-  assert.equal(partialNew.found, false);
-  assert.equal(partialNew.status, 'flagged');
-  assert.deepEqual(partialNew.reasons.map((r) => r.code), ['WALLET_NO_HISTORY', 'WALLET_AGE_PARTIAL', 'WALLET_DELEGATED']);
+  const { res: partialNewRes, parsed: partialNew } = await callParsed({ address: ADDRESS, chain: 'base' });
+  assert.equal(partialNewRes.body.result.isError, true);
+  assert.equal(partialNew.code, 'upstream_unavailable');
+  assert.equal(partialNew.status, 'unknown');
+  assert.equal(partialNew.found, undefined);
+});
+
+// found:false only for a fully completed lookup: an internal-transfers
+// timeout with an empty plain lookup is the case-4 timeout result, uncached.
+test('check_wallet_age: internal timeout + plain lookup empty is isError upstream_unavailable, never found:false, nothing cached', async (t) => {
+  withAlchemyEnv(t);
+  withSupabaseEnv(t);
+  const originalFetch = global.fetch;
+  let wroteToCache = false;
+  const alchemyMock = makeFetchMock({ outTransfers: [], inTransfers: [], code: '0x', hangInternal: true });
+  global.fetch = async (url, options = {}) => {
+    if (String(url).includes('/rest/v1/wallet_first_seen')) {
+      if (options.method === 'POST') wroteToCache = true;
+      return { ok: true, json: async () => [] };
+    }
+    return alchemyMock(url, options);
+  };
+  t.after(() => { global.fetch = originalFetch; });
+
+  for (const chain of ['ethereum', 'polygon', 'base']) {
+    const res = await callTool({ address: ADDRESS, chain });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.result.isError, true, chain);
+    const parsed = JSON.parse(res.body.result.content[0].text);
+    assert.equal(parsed.error, true);
+    assert.equal(parsed.code, 'upstream_unavailable');
+    assert.match(parsed.message, /^Wallet age lookup timed out after \d+ms\.$/);
+    assert.equal(parsed.status, 'unknown');
+    assert.equal(parsed.found, undefined);
+    assert.notEqual(parsed.found, false);
+    for (const k of ['first_seen', 'age_days', 'first_seen_block', 'first_direction']) assert.equal(k in parsed, false, k);
+    assert.deepEqual(parsed.checks.map((c) => c.result), ['timeout']);
+  }
+  assert.equal(wroteToCache, false, 'a timeout must never be cached');
 });
 
 test('computeStatus: informational reason codes never flag on their own', () => {

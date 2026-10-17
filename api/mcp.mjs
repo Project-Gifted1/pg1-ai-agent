@@ -2715,12 +2715,17 @@ export async function handleCheckWalletAge(args, identifier, licenseKey, { licen
   }
 
   if (!earliest) {
-    if (!skipCache) {
-      await setWalletAgeCache(address, chain, { first_seen: null, first_seen_block: null, first_direction: null, is_contract: isContract });
+    // found:false only for a fully completed lookup. If the internal-transfers
+    // lookup didn't complete, "no history" is unproven: report the outage
+    // (upstream_unavailable, nothing cached), never found:false.
+    if (skipCache) {
+      const internalTimedOut = internalSettled.reason && internalSettled.reason.name === 'AbortError';
+      throw new WalletAgeUpstreamError(internalTimedOut
+        ? `Wallet age lookup timed out after ${effectiveTimeoutMs}ms.`
+        : 'Wallet age lookup failed: upstream on-chain data source unavailable.');
     }
-    const result = buildWalletAgeNotFoundResult(address, chain, isContract, false, skipCache, delegation);
-    if (note) result.note = note;
-    return result;
+    await setWalletAgeCache(address, chain, { first_seen: null, first_seen_block: null, first_direction: null, is_contract: isContract });
+    return buildWalletAgeNotFoundResult(address, chain, isContract, false, false, delegation);
   }
 
   const row = {
