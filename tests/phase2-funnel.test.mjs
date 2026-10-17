@@ -199,7 +199,7 @@ test('no paid route reads threat_indicators', async () => {
   assert.equal(state.threatIndicatorReads, 0);
 });
 
-test('threat_indicators is read only by operator-only code (operator chat context, diagnostics)', () => {
+test('threat_indicators is read only by operator-only code (diagnostics); the chat reads the feed through the source policy, operator only', () => {
   const hits = [];
   const walk = (dir) => {
     for (const entry of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
@@ -209,10 +209,14 @@ test('threat_indicators is read only by operator-only code (operator chat contex
     }
   };
   for (const dir of ['api', 'lib']) walk(dir);
-  assert.deepEqual(hits.sort(), ['api/chat.mjs', 'api/diagnostics/system-status-check.js']);
+  assert.deepEqual(hits.sort(), ['api/diagnostics/system-status-check.js']);
+  // The chat's threat context now comes from threat_ioc_telemetry through
+  // lib/sourcePolicy.mjs (lib/chatThreatFeed.mjs), still only in the
+  // operator-only block.
   const chat = fs.readFileSync(path.join(ROOT, 'api/chat.mjs'), 'utf8');
-  const at = chat.indexOf('/rest/v1/threat_indicators');
-  assert.ok(chat.lastIndexOf('if (isOperator && supabaseUrl && supabaseKey)', at) > 0, 'the chat reads it only inside the operator-only block');
+  const at = chat.indexOf('loadChatThreatFeed({');
+  assert.ok(at > 0 && chat.lastIndexOf('if (isOperator && supabaseUrl && supabaseKey)', at) > 0, 'the chat reads it only inside the operator-only block');
+  assert.match(fs.readFileSync(path.join(ROOT, 'lib/chatThreatFeed.mjs'), 'utf8'), /fetchThreatTelemetry\(/);
 });
 
 // ---------------------------------------------------------------------

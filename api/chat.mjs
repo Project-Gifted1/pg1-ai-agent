@@ -19,11 +19,18 @@ import { reportUpstreamFailure, userFacingFailure, providerErrorText, VOICE_FAIL
 import { generateImage, imageModels } from '../lib/imageEngines.mjs';
 import { createCapacityAlerts, createAllOutAlert } from '../lib/router/alerts.mjs';
 import { freeLimiterFor, PRIORITY, PACED_ENGINES } from '../lib/router/freeLimiter.mjs';
+import { CATALOG_PROVIDERS, FREE_MAX_OUTPUT, orderForFit, catalogLimit, markModelGone, ensureCatalogs, selectedModels, freeModelsLine } from '../lib/router/modelCatalog.mjs';
+import { creditReport } from '../lib/creditReport.mjs';
+import { isAutoCommand, handleAutoCommand } from '../lib/autonomous/chat.mjs';
+import { isMissionCommand, handleMissionCommand } from '../lib/autonomous/missions.mjs';
+import { loadChatThreatFeed, isThreatFeedQuestion } from '../lib/chatThreatFeed.mjs';
+import { fitRequest, tokensOf as fitTokensOf, FIT_MARGIN } from '../lib/router/fit.mjs';
+import { ENGINE_MAX_INPUT_TOKENS } from '../lib/capabilities/registry.mjs';
 import { analyzeCameraFrame, cameraEventLine, cameraLogLine } from '../lib/cameraFeed.mjs';
 import { ensureOpenRouterState } from '../lib/router/openrouterGuard.mjs';
-import { isKeysCommand, handleKeysCommand } from '../lib/keysStatus.mjs';
+import { isKeysCommand, handleKeysCommand, keysStatus } from '../lib/keysStatus.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
-import { TASKS, FAILURE, failureClass, budgetAllows, isBillingFailure, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, CHAT_THROTTLE, withThrottleRetry, isFallbackFailure, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
+import { TASKS, FAILURE, failureClass, budgetAllows, isBillingFailure, geminiQuotaInfo, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, CHAT_THROTTLE, withThrottleRetry, isFallbackFailure, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
 import { synthesizeSpeech, createRoutedSynth } from '../lib/ttsRouter.mjs';
 import { cleanVideoPrompt, dispatchVideoRender, isVideoCommand, isVideoRequest, parseVideoOptions, pollVideoJob, recheckVideoJob, startVideoJob, videoGoogleAsync, videoJobStatus, videoDailyBudget, videoDailyCap, videoEnabled, videoCostLine, videoFrameFallbackOn, videoNotStartedText, videoRenderingText, videoSpendToday, videoTiersText, usd, DEFAULT_START_FRAME_PROMPT, FOUR_K_NOTE, VIDEO_DISABLED_TEXT, VIDEO_ENGINE_LABEL, VIDEO_REFUSED_TEXT, VIDEO_TIER_LABELS } from '../lib/videoJobs.mjs';
 import { isFilmCommand, isFilmAction } from '../lib/film/text.mjs';
@@ -860,6 +867,9 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
 
   var attemptCount = 0;
   var watchdogFired = false;
+  // A 429's quota scope and wait (lib/aiRouter.mjs geminiQuotaInfo), from
+  // the raw body: the logged text leaves error.details out.
+  var lastQuota = null;
   var declarations = geminiDeclarations(toolOpts);
   var withSearch = !declarations;
   var forceTool = (toolOpts && toolOpts.forceTool) || null;
@@ -922,6 +932,8 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
           var errText = await res.text();
           lastStatus = res.status;
           lastError = `[${model} on ${apiVersion}] ${providerErrorText(res.status, errText)}`;
+          lastQuota = res.status === 429 ? geminiQuotaInfo(errText) : null;
+          if (lastQuota) lastError += ` (quota: ${lastQuota.scope ? 'per ' + lastQuota.scope : 'scope not stated'}${Number.isFinite(lastQuota.retryAfterMs) ? `, retry in ${Math.round(lastQuota.retryAfterMs / 100) / 10}s` : ''})`;
           if (isForcedCallRejection(forceTool, res.status)) {
             forceRejection = lastError;
             reportForceRejection(toolOpts, lastError);
@@ -938,6 +950,10 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
           } else if (isBillingFailure(res.status, errText)) {
             // Out of credit is the key's, not the model's: the next key.
             break;
+          } else if (lastQuota && lastQuota.scope === 'day') {
+            // A day's quota is the key's for every model on the free tier's
+            // shared project quota: the next engine, not the next model.
+            break;
           }
         }
       } catch (e) {
@@ -952,7 +968,12 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
       }
     }
   }
-  return { text: null, status: lastStatus, error: geminiFailure(lastError, forceRejection) };
+  var failed = { text: null, status: lastStatus, error: geminiFailure(lastError, forceRejection) };
+  if (lastStatus === 429 && lastQuota) {
+    failed.quotaScope = lastQuota.scope;
+    if (Number.isFinite(lastQuota.retryAfterMs)) failed.retryAfterMs = lastQuota.retryAfterMs;
+  }
+  return failed;
 }
 
 var ANTHROPIC_SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -1089,6 +1110,7 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
   var models = (Array.isArray(modelList) && modelList.length) ? modelList : GEMINI_MODELS;
   var lastError = '';
   var lastStatus = null;
+  var lastQuota = null;
   var RETRY_RESERVE_MS = 12000;
   var ERROR_RETRY_CAP_MS = 20000;
   var attemptCount = 0;
@@ -1141,6 +1163,8 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
           var errText = await res.text();
           lastStatus = res.status;
           lastError = `[${model}] ${providerErrorText(res.status, errText)}`;
+          lastQuota = res.status === 429 ? geminiQuotaInfo(errText) : null;
+          if (lastQuota) lastError += ` (quota: ${lastQuota.scope ? 'per ' + lastQuota.scope : 'scope not stated'}${Number.isFinite(lastQuota.retryAfterMs) ? `, retry in ${Math.round(lastQuota.retryAfterMs / 100) / 10}s` : ''})`;
           if (isForcedCallRejection(forceTool, res.status)) {
             forceRejection = lastError;
             reportForceRejection(toolOpts, lastError);
@@ -1156,6 +1180,8 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
             withSearch = false;
             j--;
           } else if (isBillingFailure(res.status, errText)) {
+            break;
+          } else if (lastQuota && lastQuota.scope === 'day') {
             break;
           }
           continue;
@@ -1205,7 +1231,12 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
       }
     }
   }
-  return { text: '', status: lastStatus, error: geminiFailure(lastError, forceRejection) };
+  var failed = { text: '', status: lastStatus, error: geminiFailure(lastError, forceRejection) };
+  if (lastStatus === 429 && lastQuota) {
+    failed.quotaScope = lastQuota.scope;
+    if (Number.isFinite(lastQuota.retryAfterMs)) failed.retryAfterMs = lastQuota.retryAfterMs;
+  }
+  return failed;
 }
 
 async function streamAnthropicCore(promptText, sysInstruction, mediaParts, anthropicKey, deadlineTs, hooks, toolOpts, modelList) {
@@ -1299,7 +1330,9 @@ async function streamAnthropicCore(promptText, sysInstruction, mediaParts, anthr
 function chatRoundPlan(opts, toolOpts) {
   var env = opts.env || process.env;
   // ROUTING FLOOR (lib/contextWindow.mjs): a refinement or a long-context
-  // turn is planned heavy and never on the free key.
+  // turn is planned heavy. The free engines still go first (the routing
+  // policy: no paid text while a free engine is available and fits); a
+  // context too long for one is trimmed to fit or skipped (lib/router/fit.mjs).
   var task = opts.activeAction === 'CLAUDE_CHAT' || opts.routeFloor ? TASKS.HEAVY : TASKS.LIGHT;
   var turns = (toolOpts && toolOpts.turns) || [];
   // Scanned: the message and the stored context this request loaded (chat
@@ -1310,7 +1343,7 @@ function chatRoundPlan(opts, toolOpts) {
   // With checks or search on the round, the OpenAI-compatible backups stay
   // as tools-off engines after the ones that can run them; with an image or
   // file on the round they are left out (they would answer without it).
-  var plan = planRoute(task, { env: env, dataClass: dataClass, withTools: withTools, withMedia: !!(opts.mediaParts && opts.mediaParts.length), ledger: opts.ledger || null, excludeFree: !!opts.routeFloor });
+  var plan = planRoute(task, { env: env, dataClass: dataClass, withTools: withTools, withMedia: !!(opts.mediaParts && opts.mediaParts.length), ledger: opts.ledger || null, requiresTool: !!(toolOpts && toolOpts.forceTool && toolOpts.toolsEnabled !== false) });
   // A round with no functions, no images and no turns is answered from the
   // text cache when the operator sent the identical request in the TTL.
   // Only the operator's rounds are cached (opts.cacheIdentity, scoped into
@@ -1333,7 +1366,7 @@ export function __chatRoundPlan(opts, toolOpts) {
 // hour) and moves on; anything else moves on as before.
 var chatAlert = null;
 function roundFailureStops(route, c, result, next) {
-  var cls = failureClass({ status: result.status == null ? null : result.status, text: result.error || '' });
+  var cls = failureClass({ status: result.status == null ? null : result.status, text: result.error || '', refused: !!result.refused });
   if (cls === FAILURE.CAPACITY) {
     try {
       if (!chatAlert) {
@@ -1447,16 +1480,46 @@ function compatModelList(candidate) {
   if (Array.isArray(candidate.freeModels) && candidate.freeModels.length) list.push(candidate.freeModels);
   return list.concat(candidate.models || []);
 }
+// FREE-TIER FIT (lib/router/fit.mjs): each model's input limit (the
+// engine's free tier, refined per model from its model list); models that
+// take the request untrimmed go first, the rest are trimmed to fit (oldest
+// memory, then tool output, then the reference text) or skipped.
+function compatModelPlan(candidate, opts) {
+  var list = compatModelList(candidate);
+  var engineLimit = ENGINE_MAX_INPUT_TOKENS[candidate.provider];
+  var models = list.map(function (m) {
+    var id = Array.isArray(m) ? m[0] : m;
+    var limit = CATALOG_PROVIDERS.indexOf(candidate.provider) >= 0 ? catalogLimit(candidate.provider, id) : engineLimit;
+    return { entry: m, id: id, maxInputTokens: Number.isFinite(limit) ? limit : Infinity };
+  });
+  // As fitRequest counts it: a 10% margin, and Groq's reply budget too.
+  var need = Math.ceil((fitTokensOf(opts.sysInstruction) + fitTokensOf(opts.promptText)) / FIT_MARGIN) + (candidate.provider === 'groq' ? (FREE_MAX_OUTPUT.groq || 0) : 0);
+  return CATALOG_PROVIDERS.indexOf(candidate.provider) >= 0 ? orderForFit(models, need) : models;
+}
 async function fetchCompatCore(candidate, opts) {
   var last = { text: null, status: null, error: 'no model configured' };
-  var list = compatModelList(candidate);
-  for (var i = 0; i < list.length; i++) {
+  var plan = compatModelPlan(candidate, opts);
+  var maxOut = FREE_MAX_OUTPUT[candidate.provider] || 4096;
+  for (var i = 0; i < plan.length; i++) {
     var remainingMs = opts.deadlineTs - Date.now();
     if (remainingMs <= 1000) break;
-    var label = Array.isArray(list[i]) ? list[i][0] : list[i];
-    var r = await callOpenAiCompat({ candidate: candidate, model: list[i], system: opts.sysInstruction, prompt: opts.promptText, fetchImpl: function (u, o) { return fetch(u, o); }, timeoutMs: Math.min(90000, remainingMs) });
-    if (r.ok) return { text: r.text, calls: [], provider: candidate.provider, model: r.model, usage: r.usage, error: null };
+    var label = plan[i].id;
+    // Groq counts the reply's max tokens into the same per-minute budget.
+    var room = plan[i].maxInputTokens - (candidate.provider === 'groq' ? maxOut : 0);
+    var fit = fitRequest({ system: opts.sysInstruction, prompt: opts.promptText, maxInputTokens: room });
+    if (!fit.fits) {
+      last = { text: null, status: 413, error: `[${label}] request of about ${fit.inputTokens} tokens does not fit the engine's ${plan[i].maxInputTokens}-token input limit, even trimmed` };
+      console.log(`[pg1-fit] provider=${candidate.provider} model=${label} limit=${plan[i].maxInputTokens} tokens=${fit.inputTokens} fits=false request_id=${opts.requestId || '-'}`);
+      continue;
+    }
+    if (fit.trimmed.length) console.log(`[pg1-fit] provider=${candidate.provider} model=${label} limit=${plan[i].maxInputTokens} tokens=${fit.inputTokens} trimmed=${fit.trimmed.join(',')} request_id=${opts.requestId || '-'}`);
+    var r = await callOpenAiCompat({ candidate: candidate, model: plan[i].entry, system: fit.system, prompt: fit.prompt, maxTokens: maxOut, fetchImpl: function (u, o) { return fetch(u, o); }, timeoutMs: Math.min(90000, remainingMs) });
+    if (r.ok) return { text: r.text, calls: [], provider: candidate.provider, model: r.model, usage: r.usage, error: null, trimmed: fit.trimmed };
     last = { text: null, status: r.status, error: `[${label}] ${providerErrorText(r.status, r.detail || '')}`, retryAfterMs: r.retryAfterMs };
+    // A safety refusal stops the round: never retried on another model.
+    if (r.refused) { last.refused = true; break; }
+    // A model the engine no longer has: left out until its list is read again.
+    if (r.status === 404 && /does not exist|not found|decommission|deprecat|no longer|unknown model|model_not_found/i.test(r.detail || '')) markModelGone(candidate.provider, label);
     // Out of credit or a bad key is the account's, not the model's.
     if (r.status === 401 || r.status === 402 || r.status === 403 || isBillingFailure(r.status, r.detail || '')) break;
   }
@@ -1492,7 +1555,7 @@ async function fetchModelRound(opts, toolOpts) {
       rememberRound(route, c, result);
       return result;
     }
-    tripBreaker(c.keyId, result.status, result.error);
+    tripBreaker(c.keyId, result.status, result.error, Date.now(), { scope: result.quotaScope, retryAfterMs: result.retryAfterMs });
     errors.push({ provider: c.provider, status: result.status, error: result.error });
     // Only a capacity failure moves to the next engine; a refusal stops.
     if (roundFailureStops(route, c, result, route.plan[i + 1])) break;
@@ -1723,7 +1786,7 @@ async function streamChatReply(stream, opts) {
         }
         roundUsage(route, roundOpts, c, result, ci);
         if (result.text || (result.calls && result.calls.length) || result.aborted || result.partial) break;
-        tripBreaker(c.keyId, result.status, result.error);
+        tripBreaker(c.keyId, result.status, result.error, Date.now(), { scope: result.quotaScope, retryAfterMs: result.retryAfterMs });
         errors.push({ provider: c.provider, status: result.status, error: result.error });
         if (roundFailureStops(route, c, result, route.plan[ci + 1])) break;
       }
@@ -2734,9 +2797,16 @@ export default async function handler(req, res) {
         body: JSON.stringify({ prefix: '', limit: 20, sortBy: { column: 'created_at', order: 'desc' } })
       });
 
-      var isThreatQuery = typeof promptText === 'string' && (promptText.toLowerCase().includes('threat') || promptText.toLowerCase().includes('indicator') || promptText.toLowerCase().includes('radar'));
+      // THREAT FEED (lib/chatThreatFeed.mjs): the same source policy as
+      // /api/ioc (locked sources only for the operator, labelled), today in
+      // Ireland time with counts by source, no placeholder indicators, and
+      // confidence only where a source really gives one.
+      var isThreatQuery = typeof promptText === 'string' && isThreatFeedQuestion(promptText);
       var threatReq = isThreatQuery
-        ? createTimedFetch(`${supabaseUrl}/rest/v1/threat_indicators?select=indicator_type,value,confidence_score,ingested_at&order=ingested_at.desc&limit=10`, { headers: dbHeaders })
+        ? Promise.race([
+          loadChatThreatFeed({ supUrl: supabaseUrl, supKey: supabaseKey, fetchImpl: function (u, o) { return fetch(u, o); }, env: process.env, isOperator: isOperator, prompt: promptText }).catch(function () { return null; }),
+          new Promise(function (r) { setTimeout(function () { r(null); }, 3000); })
+        ])
         : Promise.resolve(null);
 
       // PHASE 2b (issue #201): "what's broken?" — last 24h of unresolved
@@ -2797,13 +2867,10 @@ export default async function handler(req, res) {
 
       var threatCount = null;
       if (threatRes && threatRes.ok) {
-        var threats = await threatRes.json();
-        threatCount = Array.isArray(threats) ? threats.length : 0;
-        if (Array.isArray(threats) && threats.length > 0) {
-          targetedHistoricalData = `\n\n[LIVE THREAT TELEMETRY (${threats.length} Records)]:\n` + threats.map(t => `• [${t.indicator_type}] ${t.value} (Conf: ${t.confidence_score}%)`).join('\n');
-        }
+        threatCount = threatRes.latestInstead ? 0 : threatRes.totalToday;
+        targetedHistoricalData = threatRes.block;
       }
-      if (chatStream && isThreatQuery) chatStream.stepDone('threats', { label: 'Read threat telemetry', failed: threatCount === null, result: threatCount === null ? 'unavailable' : `${threatCount} record${threatCount === 1 ? '' : 's'}` });
+      if (chatStream && isThreatQuery) chatStream.stepDone('threats', { label: 'Read threat telemetry', failed: threatCount === null, result: threatCount === null ? 'unavailable' : threatRes.latestInstead ? 'none added today' : `${threatCount}${threatRes.capped ? '+' : ''} added today` });
 
       var unresolvedRows = null;
       if (errorsRes && errorsRes.ok) {
@@ -2976,6 +3043,23 @@ export default async function handler(req, res) {
         return sendJSON(res, 200, { ...oppOut, traceId: requestTraceId });
       }
 
+      // AUTONOMOUS MODE (lib/autonomous): /auto on|off|status|log, /auto
+      // limit <n>, /auto budget <usd>. The same switch as the Command
+      // Centre header; operator only.
+      if (isAutoCommand(promptText)) {
+        if (!isOperator) log401('AUTO', 'unauthenticated', supUrl, supKey);
+        var autoOut = await handleAutoCommand({ text: promptText, isOperator: isOperator, supUrl: supabaseUrl, supKey: supabaseKey, fetchImpl: function (u, o) { return fetch(u, o); } });
+        return sendJSON(res, autoOut.status || 200, { reply: autoOut.reply, ...(autoOut.autonomous ? { autonomous: autoOut.autonomous } : {}), traceId: requestTraceId });
+      }
+
+      // MISSIONS (lib/autonomous/missions.mjs): standing goals for
+      // Autonomous mode; operator only.
+      if (isMissionCommand(promptText)) {
+        if (!isOperator) log401('MISSION', 'unauthenticated', supUrl, supKey);
+        var missionOut = await handleMissionCommand({ text: promptText, isOperator: isOperator, supUrl: supabaseUrl, supKey: supabaseKey, fetchImpl: function (u, o) { return fetch(u, o); } });
+        return sendJSON(res, missionOut.status || 200, { reply: missionOut.reply, traceId: requestTraceId });
+      }
+
       // LAB (lib/lab): /lab start|status|stop|report, /promote. Operator
       // only; experiments run on the lab workflow, never on this server.
       if (isLabCommand(promptText)) {
@@ -3061,7 +3145,9 @@ export default async function handler(req, res) {
             if (Array.isArray(firstRows) && firstRows[0] && firstRows[0].created_at) usageMilestone = { kind: 'first_settled_payment', at: firstRows[0].created_at };
           } catch (e) { /* no milestone this time */ }
         }
-        return sendJSON(res, 200, { reply: usageLead(usageOutcome.result, { storage: usageStorage }), toolResults: [usageCard], cards: usageContextLines(usageOutcome.result), ...(usageMilestone ? { milestone: usageMilestone } : {}), traceId: requestTraceId });
+        // Balances as /keys last read them (no live check here).
+        var usageCredit = await creditReport({ env: process.env, keyRows: await keysStatus({ env: process.env, cachedOnly: true }).catch(function () { return []; }), supUrl: supabaseUrl, supKey: supabaseKey, fetchImpl: function (u, o) { return globalThis.fetch(u, o); } }).catch(function () { return null; });
+        return sendJSON(res, 200, { reply: usageLead(usageOutcome.result, { storage: usageStorage }) + (usageCredit ? '\n\n' + usageCredit.markdown : ''), toolResults: [usageCard], cards: usageContextLines(usageOutcome.result), ...(usageMilestone ? { milestone: usageMilestone } : {}), traceId: requestTraceId });
       } else if (isVoicesCommand(lower)) {
         // FILM VOICES (lib/film/voices.mjs, signed-in operator only): the
         // voices films can use, a short description from their labels and
@@ -3084,7 +3170,12 @@ export default async function handler(req, res) {
           return sendJSON(res, 401, { reply: `[AGENT] Keys Aborted: Authentication required.`, traceId: requestTraceId });
         }
         var keysOut = await handleKeysCommand({ env: process.env, fresh: /\bfresh\b/.test(lower), fetchImpl: function (u, o) { return globalThis.fetch(u, o); } });
-        return sendJSON(res, 200, { reply: keysOut.reply, traceId: requestTraceId });
+        // ROUTING POLICY: paid credit left per account and what it went on
+        // (lib/creditReport.mjs), and the model each free engine uses now.
+        var keysCredit = await creditReport({ env: process.env, keyRows: keysOut.rows, supUrl: supabaseUrl, supKey: supabaseKey, fetchImpl: function (u, o) { return globalThis.fetch(u, o); } }).catch(function () { return null; });
+        try { await ensureCatalogs({ env: process.env, keys: resolveKeys(process.env), timeoutMs: 2500 }); } catch (e) { /* the preference lists stand */ }
+        var keysModels = freeModelsLine(selectedModels('heavy'));
+        return sendJSON(res, 200, { reply: keysOut.reply + (keysCredit ? '\n\n' + keysCredit.markdown : '') + (keysModels ? '\n\n' + keysModels : ''), traceId: requestTraceId });
       } else if (lower === '/spend' || lower.startsWith('/spend ')) {
         // AI SPEND (signed-in operator only): estimated spend per PG1 engine
         // for today or yesterday (UTC), with each daily cap. PG1 labels
@@ -3159,7 +3250,7 @@ export default async function handler(req, res) {
         activeAction = 'CLAUDE_CHAT';
       } else if (lower === '/help' || lower === 'help') {
         return sendJSON(res, 200, {
-          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /usage ] tool usage by agents (/usage 24h, 7d or 30d, default 7d; signed-in operator only): real callers vs registry/health-check probes, MCP requests vs tool calls, per route and per day with spikes marked, top tools (free or paid), the payment funnel and settled revenue, errors, top MCP clients\n- [ /task ] the task for this thread: /task shows it, /task set <goal>, /task clear; /pin <rule> adds a rule PG1 always follows in this thread, /unpin <n> removes one. Saved with a saved chat\n- [ /spend ] estimated AI spend per PG1 engine today (or /spend yesterday), with each daily cap (signed-in operator only)\n- [ /keys ] every AI key: set or missing and its live state (working, out of credit, rate-limited, invalid), checked at most every 5 minutes (/keys fresh to check now); the OpenRouter balance, usage today and free-tier level; never a key value (signed-in operator only)\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/video** [draft|pro] [short|long] plus a prompt: a 5 or 10 second video clip with PG1 Motion (standard and short are the defaults; attach an image to use it as the first frame; a daily budget applies, /video alone lists the tiers, prices and what is left today; signed-in operator only, when switched on)\n- **/film** plus what it is about: a cinematic film of a minute or more with PG1 Studio — storyboard, an animatic preview, then the full render, each approved first, with a spending cap per film; /film alone lists the film commands (signed-in operator only, when switched on)\n- **/movie** \"<idea>\" [--length <minutes>, default 2] [--voice \"<narrator>\" only for narration] [--client]: a movie whose characters act and speak on screen — screenplay and cast to approve, then the cost estimate to approve, then the shoot, edit, master and QC; /movie alone lists the movie commands (signed-in operator only)\n- **/music** plus a description (genre, mood, instruments, era): original music and beats with PG1 Sound — two previews, approve one for the final render, then /music export for WAV stems, MIDI and the WAV master in one zip; options --instrumental, --bpm, --key, --length short|full, --lyrics \"your own lyrics\"; /music alone lists the commands (signed-in operator only)\n- **/skills**: the skills PG1 has (reusable instructions): /skills show, edit, enable, disable, history, rollback; **/learn** (or 👍) drafts one from the task in this thread; drafts are never used until enabled (signed-in operator only)\n- [ /autonomy ] what PG1 did on its own in the last 24 hours (tier, decision, cost) and the kill switch setting PG1_AUTONOMY (off, lab or on)\n- [ /a2a jobs ] paid jobs other agents bought over A2A (batch wallet screen, CVE exposure report, hostname/package batch, threat write-up PDF): status, price, payment, failures and credits; /a2a job <id> for one; /usage has the A2A jobs section\n- [ /foundry queue ] tools other agents commission (build_tool): requests in review (deny by default; /foundry allow or deny <id>), builds waiting for approval (/foundry approve or reject <id>); /foundry job <id>, /foundry tools, /foundry disable|enable <name> (signed-in operator only)\n- [ /hosting status ] the dataset behind hosting_advisor: stale (over 180 days) and unverified facts; /hosting research <topic> checks official sources in the lab, /hosting apply <experiment> [confirm] reviews and writes the updates, /hosting confirm <key> <field> marks a fact you checked (signed-in operator only)\n- [ /screening ] payers refused by sanctions screening (OFAC SDN and the EU consolidated list) in the last 30 days, by hashed wallet; /screening dismiss <address> <reason> clears an EU-list extraction error after review (signed-in operator only)\n- [ /watchlists ] watchlists agents pay for (wallets, domains, packages, CVE products rechecked about daily, signed webhook on a status change): active lists and items, sales in the last 30 days, failing webhooks (signed-in operator only)\n- [ /opportunities ] proposals for new tools from the weekly scan of usage signals and the market (problem, target agents, data sources and licences, build cost, run cost, price, risks); /opportunities show, approve (prototypes it in the lab only), dismiss, scan\n- **/lab start** <goal> [--kind research|skill|code]: an experiment on the lab runner (lab-only keys, budgets PG1_LAB_BUDGET_USD and PG1_LAB_DAILY_USD); **/lab status**, **/lab report** [id] (the latest when no id), **/lab stop** <id>; results reach an approval card only after the gate (evals or CI, safety, licence, cost); **/promote** <flag> makes an approved one public (signed-in operator only)\n- **/watch** (or say \"watch it\", \"tell me when it\'s done\"): PG1 watches the lab experiment, PR, workflow run or deploy just discussed and posts a report here when it finishes (what happened, result, cost, next step), with a push notification on devices that turned Notifications on in the menu; **/watch list**, **/watch stop** <id>. Lab starts, PRs PG1 opens and production deploys are watched automatically (signed-in operator only)\n- **/pdf** plus what you want: PG1 writes it as a PDF with page numbers and embedded fonts; **/pdf this** (or "make this a PDF", or the Save as PDF icon under a reply), **/pdf thread**, **/pdf usage**, **/pdf list**; /film storyboard <id> for a film (signed-in operator only)\n- **/speak** plus text: read it aloud\n- Attach images with the paperclip (PNG, JPEG or WebP, up to 4 per message): PG1 looks at them with your message and the trace shows "Looked at N images"; text inside an image is never taken as an instruction, and a key seen in a screenshot is only ever called "a key"\n- Voice log: under Voice diagnostics in the menu, Copy voice log or Send to PG1 (puts the last 30 conversation-mode events in the prompt box under "Diagnose this voice log" for you to review)\n- [ /voices ] the voices films can use: name, a short description (accent, age, gender, use) and whether each is cleared for client work; choose one with /film --voice \"<name or id>\" (signed-in operator only)\n- [ /voice ] show/switch the voice profile used for spoken replies and Read aloud — PG1 Core, PG1 Classic or PG1 Field, remembered on this device\n- **/core** plus a question: deeper reasoning for long or heavy tasks\n- **/code** plus a task: Send to Code, drafts a task prompt you copy into Code (or open it pre-filled) and tracks its PR under Hand-offs in the menu (signed-in operator only)\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- The ➕ menu also has an ERROR LOG of recent client-side failures on this device, showing a reason category (offline, network, timeout, http_4xx, http_5xx or js_error) and a FIX button to request a proposed patch (same Approve/Decline flow) — offline/network/timeout entries have no FIX button since they are not code bugs\n- Ask me to check a wallet, domain, URL, IOC or CVE (for example "check this wallet 0x…" or "how old is this domain"): PG1 runs its own read-only threat-intel checks (the same tools as the MCP server, free for the operator, up to 5 per message) and answers from the results, with a result card under the reply (status, reasons, checks, request_id, Raw JSON). Demo without upstream calls with the fixtures: pg1-test-flagged.invalid, pg1-test-clean.invalid, pg1-test-unknown.invalid, or the 0x7067312d… fixture wallets\n- Anything else: ask in plain words (live web search is on)',
+          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /usage ] tool usage by agents (/usage 24h, 7d or 30d, default 7d; signed-in operator only): real callers vs registry/health-check probes, MCP requests vs tool calls, per route and per day with spikes marked, top tools (free or paid), the payment funnel and settled revenue, errors, top MCP clients\n- [ /task ] the task for this thread: /task shows it, /task set <goal>, /task clear; /pin <rule> adds a rule PG1 always follows in this thread, /unpin <n> removes one. Saved with a saved chat\n- [ /spend ] estimated AI spend per PG1 engine today (or /spend yesterday), with each daily cap (signed-in operator only)\n- [ /keys ] every AI key: set or missing and its live state (working, out of credit, rate-limited, invalid), checked at most every 5 minutes (/keys fresh to check now); the OpenRouter balance, usage today and free-tier level; never a key value (signed-in operator only)\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/video** [draft|pro] [short|long] plus a prompt: a 5 or 10 second video clip with PG1 Motion (standard and short are the defaults; attach an image to use it as the first frame; a daily budget applies, /video alone lists the tiers, prices and what is left today; signed-in operator only, when switched on)\n- **/film** plus what it is about: a cinematic film of a minute or more with PG1 Studio — storyboard, an animatic preview, then the full render, each approved first, with a spending cap per film; /film alone lists the film commands (signed-in operator only, when switched on)\n- **/movie** \"<idea>\" [--length <minutes>, default 2] [--voice \"<narrator>\" only for narration] [--client]: a movie whose characters act and speak on screen — screenplay and cast to approve, then the cost estimate to approve, then the shoot, edit, master and QC; /movie alone lists the movie commands (signed-in operator only)\n- **/music** plus a description (genre, mood, instruments, era): original music and beats with PG1 Sound — two previews, approve one for the final render, then /music export for WAV stems, MIDI and the WAV master in one zip; options --instrumental, --bpm, --key, --length short|full, --lyrics \"your own lyrics\"; /music alone lists the commands (signed-in operator only)\n- **/skills**: the skills PG1 has (reusable instructions): /skills show, edit, enable, disable, history, rollback; **/learn** (or 👍) drafts one from the task in this thread; drafts are never used until enabled (signed-in operator only)\n- [ /autonomy ] what PG1 did on its own in the last 24 hours (tier, decision, cost) and the kill switch setting PG1_AUTONOMY (off, lab or on)\n- [ /auto ] Autonomous mode, the ON/OFF switch in the header: /auto on, /auto off (stops at once: queued work is cancelled, running work stops at its next safe point), /auto status, /auto log; /auto limit <n> actions an hour, /auto budget <usd> a day of paid AI (default $0: free tiers only) (signed-in operator only)\n- [ /mission ] standing goals for Autonomous mode: /mission add \"<goal>\" [hourly|every 6h|daily|weekly], /mission list, /mission pause <id>, /mission resume <id>, /mission remove <id>; they run only while Autonomous mode is ON, read-only, on free engines, summed up in the daily briefing (signed-in operator only)\n- [ /a2a jobs ] paid jobs other agents bought over A2A (batch wallet screen, CVE exposure report, hostname/package batch, threat write-up PDF): status, price, payment, failures and credits; /a2a job <id> for one; /usage has the A2A jobs section\n- [ /foundry queue ] tools other agents commission (build_tool): requests in review (deny by default; /foundry allow or deny <id>), builds waiting for approval (/foundry approve or reject <id>); /foundry job <id>, /foundry tools, /foundry disable|enable <name> (signed-in operator only)\n- [ /hosting status ] the dataset behind hosting_advisor: stale (over 180 days) and unverified facts; /hosting research <topic> checks official sources in the lab, /hosting apply <experiment> [confirm] reviews and writes the updates, /hosting confirm <key> <field> marks a fact you checked (signed-in operator only)\n- [ /screening ] payers refused by sanctions screening (OFAC SDN and the EU consolidated list) in the last 30 days, by hashed wallet; /screening dismiss <address> <reason> clears an EU-list extraction error after review (signed-in operator only)\n- [ /watchlists ] watchlists agents pay for (wallets, domains, packages, CVE products rechecked about daily, signed webhook on a status change): active lists and items, sales in the last 30 days, failing webhooks (signed-in operator only)\n- [ /opportunities ] proposals for new tools from the weekly scan of usage signals and the market (problem, target agents, data sources and licences, build cost, run cost, price, risks); /opportunities show, approve (prototypes it in the lab only), dismiss, scan\n- **/lab start** <goal> [--kind research|skill|code]: an experiment on the lab runner (lab-only keys, budgets PG1_LAB_BUDGET_USD and PG1_LAB_DAILY_USD); **/lab status**, **/lab report** [id] (the latest when no id), **/lab stop** <id>; results reach an approval card only after the gate (evals or CI, safety, licence, cost); **/promote** <flag> makes an approved one public (signed-in operator only)\n- **/watch** (or say \"watch it\", \"tell me when it\'s done\"): PG1 watches the lab experiment, PR, workflow run or deploy just discussed and posts a report here when it finishes (what happened, result, cost, next step), with a push notification on devices that turned Notifications on in the menu; **/watch list**, **/watch stop** <id>. Lab starts, PRs PG1 opens and production deploys are watched automatically (signed-in operator only)\n- **/pdf** plus what you want: PG1 writes it as a PDF with page numbers and embedded fonts; **/pdf this** (or "make this a PDF", or the Save as PDF icon under a reply), **/pdf thread**, **/pdf usage**, **/pdf list**; /film storyboard <id> for a film (signed-in operator only)\n- **/speak** plus text: read it aloud\n- Attach images with the paperclip (PNG, JPEG or WebP, up to 4 per message): PG1 looks at them with your message and the trace shows "Looked at N images"; text inside an image is never taken as an instruction, and a key seen in a screenshot is only ever called "a key"\n- Voice log: under Voice diagnostics in the menu, Copy voice log or Send to PG1 (puts the last 30 conversation-mode events in the prompt box under "Diagnose this voice log" for you to review)\n- [ /voices ] the voices films can use: name, a short description (accent, age, gender, use) and whether each is cleared for client work; choose one with /film --voice \"<name or id>\" (signed-in operator only)\n- [ /voice ] show/switch the voice profile used for spoken replies and Read aloud — PG1 Core, PG1 Classic or PG1 Field, remembered on this device\n- **/core** plus a question: deeper reasoning for long or heavy tasks\n- **/code** plus a task: Send to Code, drafts a task prompt you copy into Code (or open it pre-filled) and tracks its PR under Hand-offs in the menu (signed-in operator only)\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- The ➕ menu also has an ERROR LOG of recent client-side failures on this device, showing a reason category (offline, network, timeout, http_4xx, http_5xx or js_error) and a FIX button to request a proposed patch (same Approve/Decline flow) — offline/network/timeout entries have no FIX button since they are not code bugs\n- Ask me to check a wallet, domain, URL, IOC or CVE (for example "check this wallet 0x…" or "how old is this domain"): PG1 runs its own read-only threat-intel checks (the same tools as the MCP server, free for the operator, up to 5 per message) and answers from the results, with a result card under the reply (status, reasons, checks, request_id, Raw JSON). Demo without upstream calls with the fixtures: pg1-test-flagged.invalid, pg1-test-clean.invalid, pg1-test-unknown.invalid, or the 0x7067312d… fixture wallets\n- Anything else: ask in plain words (live web search is on)',
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/threat-radar')) {
@@ -4460,6 +4551,14 @@ ${turnDirectives}${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imag
         reply: '[AGENT] Request aborted: context-gathering consumed the available time budget. Please retry.',
         traceId: requestTraceId
       });
+    }
+
+    // FREE MODELS (lib/router/modelCatalog.mjs): the free engines' model
+    // lists, read at most once a day per instance (1.5 s at most here; the
+    // last known list or the preference list is used meanwhile). Operator
+    // only: nobody else's request ever reaches a free engine.
+    if (isOperator) {
+      try { await ensureCatalogs({ env: process.env, keys: routerKeys, timeoutMs: 1500, log: function (line) { console.log(line); } }); } catch (e) { /* the preference lists stand */ }
     }
 
     // AI ROUTER: the stored context this request loaded, for the privacy

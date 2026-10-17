@@ -141,10 +141,10 @@ test('/keys in the chat: operator only, and the reply carries no key value', asy
 
 // --- the no-card free engines ------------------------------------------------------------
 
-test('the free engines: after the free Gemini key, operator content only, skipped when their key is missing', () => {
+test('the free engines: after the free Gemini key and before every paid engine, operator content only, skipped when their key is missing', () => {
   const env = { ...KEYS };
   const heavy = planRoute(TASKS.HEAVY, { env, dataClass: DATA.OPERATOR }).map((c) => c.provider);
-  assert.deepEqual(heavy, ['anthropic', 'gemini_paid', 'gemini_free', 'groq', 'mistral', 'github_models', 'cloudflare', 'openrouter', 'gateway', 'openai']);
+  assert.deepEqual(heavy, ['gemini_free', 'groq', 'mistral', 'github_models', 'cloudflare', 'anthropic', 'gemini_paid', 'openrouter', 'gateway', 'openai']);
   const light = planRoute(TASKS.LIGHT, { env, dataClass: DATA.OPERATOR }).map((c) => c.provider);
   assert.deepEqual(light.slice(0, 5), ['gemini_free', 'groq', 'mistral', 'github_models', 'cloudflare']);
   for (const task of Object.values(TASKS)) {

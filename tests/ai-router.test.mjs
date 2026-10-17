@@ -73,11 +73,12 @@ test('light: free Gemini key first for operator content, then the paid key, then
   assert.deepEqual(plan[3].url, 'https://ai-gateway.vercel.sh/v1/chat/completions');
 });
 
-test('heavy: the strongest reasoning model first, then the main core', () => {
+test('heavy: operator content tries the free key first (routing policy), then the strongest reasoning model, then the main core; customer data the paid order', () => {
   const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
   const plan = planRoute(TASKS.HEAVY, { env, dataClass: DATA.OPERATOR });
-  assert.deepEqual(plan.map((c) => c.provider), ['anthropic', 'gemini_paid', 'gemini_free']);
-  assert.equal(plan[0].models[0], 'claude-opus-5-5');
+  assert.deepEqual(plan.map((c) => c.provider), ['gemini_free', 'anthropic', 'gemini_paid']);
+  assert.equal(plan[1].models[0], 'claude-opus-5-5');
+  assert.deepEqual(planRoute(TASKS.HEAVY, { env, dataClass: DATA.CUSTOMER }).map((c) => c.provider), ['anthropic', 'gemini_paid']);
 });
 
 test('a round with functions keeps the OpenAI-compatible backups as tools-off engines, last; a round with an image leaves them out', () => {
