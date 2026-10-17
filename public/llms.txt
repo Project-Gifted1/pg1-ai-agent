@@ -4,6 +4,10 @@
 
 Start with the free point checks. When you want one decision before acting, use preflight_check.
 
+Try the paid path free today: every caller gets 5 paid calls a day (preflight_check, the CVE tools, get_threat_actor_profile, hosting_advisor) with no key, no account and no payment. Before paying, read `free_tier_calls_remaining_today` from the free get_usage_status tool, or the `X-Free-Tier-Remaining` response header.
+
+Use the free checks for single signals. Use preflight_check when you need one fail-closed decision: it runs every check the action needs (pay a wallet: sanctions and on-chain age; open a link: hostname reputation and domain age; patch: the CVE lookup for the product) and replaces your merge and timeout logic with one signed `decision`.
+
 ## Free point checks
 
 - [check_wallet_sanctions](https://pg1-ai-agent.vercel.app/api/mcp): Checks a cryptocurrency wallet address against the OFAC SDN sanctions list; informational only, never phrased as "safe" or "clean".
@@ -36,11 +40,15 @@ Public keys (JWKS): https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key.
 
 ## Watchlists
 
-`POST https://pg1-ai-agent.vercel.app/api/watchlists` with `{"items":[{"kind":"wallet","target":"0x..."}],"webhook_url":"https://..."}`: wallets, domains, packages and CVE products rechecked about every 24 hours, with an HMAC-signed webhook (X-PG1-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, "<t>.<body>")>) when an item's status changes. 0.05 USD per item per 30 days via x402. Webhook URLs must be public https.
+`POST https://pg1-ai-agent.vercel.app/api/watchlists` with `{"items":[{"kind":"wallet","target":"0x..."}],"webhook_url":"https://..."}`: wallets, domains, packages and CVE products rechecked about every 24 hours, with an HMAC-signed webhook (X-PG1-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, "<t>.<body>")>) when an item's status changes. 0.05 USD per item per 30 days via x402 (no free tier): four items cost 0.20 USD for 30 days. Webhook URLs must be public https. The first POST returns the 402 payment request; pay and resend to get `201 {id, secret, expires_at, items}` (the secret is shown once; it verifies webhooks and authenticates GET/DELETE `/api/watchlists?id=<id>`). Each delivery is a `watchlist.status_changed` event with the item, `previous_status`, `status` and `reasons`.
+
+```
+{"webhook_url":"https://agent.example.com/pg1","items":[{"kind":"wallet","target":"0x..."},{"kind":"domain","target":"pay.example.com"},{"kind":"package","target":"left-pad","ecosystem":"npm"},{"kind":"cve_product","target":"openssl openssl 3.0"}]}
+```
 
 ## Hosting advisor
 
-`hosting_advisor` (MCP tool, A2A skill, REST `POST https://pg1-ai-agent.vercel.app/api/hosting-advisor`): give `workload_type`, `latency_regions` and optionally `data_residency`, `privacy_priority`, `uptime_target`, `budget_usd_month`, `requirements`; get ranked regions and providers with cited reasons (data-protection regime, published government data-access frameworks, provider acceptable-use fit, sanctions and export controls, estimated latency), a redundancy and resilience plan, and privacy-by-design guidance. Every fact has a source URL and date; stale (over 180 days) or unverified facts are flagged. Paid like the CVE tools. Not legal advice; lawful use only.
+`hosting_advisor` (MCP tool, A2A skill, REST `POST https://pg1-ai-agent.vercel.app/api/hosting-advisor`): give `workload_type`, `latency_regions` and optionally `data_residency`, `privacy_priority`, `uptime_target`, `budget_usd_month`, `requirements`; get ranked regions and providers with cited reasons (data-protection regime, published government data-access frameworks, provider acceptable-use fit, sanctions and export controls, estimated latency), a redundancy and resilience plan, and privacy-by-design guidance. Every fact has a source URL and date; stale (over 180 days) or unverified facts are flagged. Paid like the CVE tools. A planning tool, not a pre-action check. Not legal advice; lawful use only.
 
 ## Tool Foundry
 
@@ -90,7 +98,8 @@ curl -X POST "https://pg1-ai-agent.vercel.app/api/a2a?A2A-Version=1.0" -H "Conte
 
 - About to act (pay, open, install, patch, trust an agent) and want one decision: preflight_check, one call
 - One IP, domain, URL or file hash: get_ioc_context (free when found: false; PG1's licensed records hold only NVD CVE ids today, so these return found: false), several: get_ioc_batch; for a domain or hostname also run the hostname checks below
-- CVE id: get_cve_details (several: get_cve_batch); vendor + product: get_cve_by_product
+- CVE id: get_cve_details (several: get_cve_batch); vendor + product: get_cve_by_product. To decide whether to patch now, read `cisa_kev.is_known_exploited` (reason CVE_KNOWN_EXPLOITED_KEV): known exploited means patch first
+- Want to know when a wallet, domain, package or CVE product changes: a watchlist (see Watchlists above), instead of re-checking
 - An x402 endpoint you will pay: check_x402_endpoint; another agent: check_agent_card
 - Wallet you will pay or trust: check_wallet_sanctions and check_wallet_age
 - Link, hostname or possible phishing: check_hostname_reputation and check_domain_age

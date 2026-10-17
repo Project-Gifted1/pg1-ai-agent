@@ -10,6 +10,8 @@ Threat intelligence API and MCP server for AI agents and security tooling.
 
 Start with the free point checks. When you want one decision before acting, use `preflight_check`.
 
+**Try the paid path free today:** every caller gets 5 paid calls a day with no key, no account and no payment. Before you pay, read `free_tier_calls_remaining_today` from the free `get_usage_status` tool (or the `X-Free-Tier-Remaining` response header).
+
 ### Why agents use PG1
 
 An autonomous agent acts on things it has never seen before: it pays a wallet, opens a link, installs a package, patches a CVE. PG1 checks that thing first and answers in one machine-readable shape, `reasons` + `status` + `checks`, so the agent can decide on its own and a person can audit why.
@@ -58,6 +60,31 @@ A2A agents use `https://pg1-ai-agent.vercel.app/api/a2a` (agent card at `/.well-
 | The CVE list to ingest | `get_threat_indicators` | STIX 2.1 bundle of CVE records from NVD: CVE id and an NVD reference, no scores, no IP/domain/URL/hash indicators. REST: `GET /api/ioc`. Free while it holds no current data (`PG1_FEED_PAID` off): no payment, no licence key, and it does not use the 5 free calls a day. |
 | Your remaining free calls | `get_usage_status` | Always free. |
 | An indicator you observed and want to report | `submit_indicator` | Licence key only (`X-API-KEY`); not sold per call. Submissions are reviewed before use. |
+
+### When a paid call is worth 0.01 USD
+
+Use the free checks for single signals. Pay when you need something they do not give you:
+
+| You need | Call | What the 0.01 USD buys |
+|---|---|---|
+| One signal (is this wallet sanctioned, is this domain new) | the free `check_*` tools | Nothing to pay: always free. |
+| One fail-closed decision before you act | `preflight_check` | Every check the action needs (`pay` a wallet: sanctions and on-chain age; `open` a link: hostname reputation and domain age; `patch`: the CVE lookup for the product), run in parallel and merged into one signed `decision` with every reason and per-check result. A check that does not finish makes it `unknown`, so you never write the merge or timeout logic yourself. |
+| Whether to patch a CVE now | `get_cve_details` (or `get_cve_batch`, `get_cve_by_product`) | `cisa_kev.is_known_exploited` and the KEV `required_action`, CVSS, and `reasons` with `CVE_KNOWN_EXPLOITED_KEV` to match on: known exploited means patch first. |
+| Context on an IP, domain, URL or hash | `get_ioc_context` | Today PG1's licensed records are NVD CVE ids only, so these return `found: false` and cost nothing. Use the free hostname, domain and wallet checks for those signals. |
+| To know when something changes | a watchlist (below) | A daily recheck and a signed webhook, so you stop re-checking by hand. |
+| Where to host a workload | `hosting_advisor` | A planning tool, not a pre-action check: ranked regions and providers with cited sources. |
+
+### Watch it instead of re-checking
+
+The four targets below cost 4 x 0.05 = 0.20 USD for 30 days, paid once via x402 (watchlists have no free tier). PG1 rechecks each item about every 24 hours with the same checks `preflight_check` runs and POSTs to your webhook only when an item's `status` changes.
+
+```bash
+curl -X POST https://pg1-ai-agent.vercel.app/api/watchlists \
+  -H "Content-Type: application/json" \
+  -d '{"webhook_url":"https://agent.example.com/pg1","items":[{"kind":"wallet","target":"0x..."},{"kind":"domain","target":"pay.example.com"},{"kind":"package","target":"left-pad","ecosystem":"npm"},{"kind":"cve_product","target":"openssl openssl 3.0"}]}'
+```
+
+The first response is the 402 payment request; pay it and resend to get `201 { id, secret, expires_at, items }`. Keep `secret`: it is shown once, verifies each webhook's `X-PG1-Signature` and authenticates `GET`/`DELETE /api/watchlists?id=<id>`. Each delivery is a `watchlist.status_changed` event with the item, `previous_status`, `status` and `reasons`.
 
 ### One `preflight_check`, three actions
 
