@@ -86,16 +86,30 @@ test('a streamed reply plays without gaps, ramps in from silence and keeps the s
   for (const sc of SCENARIOS) {
     const plan = arrivals(sc);
     const r = await page.evaluate(async ({ code, plan }) => {
-      const api = new Function(`${code}\nreturn { createVoicePlayer };`)();
       const sr = 48000;
       const end = plan[plan.length - 1].at;
       const ctx = new OfflineAudioContext(1, Math.ceil((end + 3) * sr), sr);
-      const player = api.createVoicePlayer(ctx, () => {});
       const q = 128 / sr;
+      // Everything runs on the render clock: chunk arrivals and the player's
+      // own timers (the prebuffer's max wait) are suspend points, so a slow
+      // runner can't fire a timer early in audio time.
+      const points = new Map();
+      const at = (time, fn) => {
+        const t = Math.ceil(time / q) * q;
+        if (points.has(t)) { points.get(t).push(fn); return; }
+        points.set(t, [fn]);
+        ctx.suspend(t).then(() => { for (const f of points.get(t)) f(); ctx.resume(); });
+      };
+      let timerId = 0;
+      const live = new Set();
+      const renderSetTimeout = (fn, ms) => { const id = ++timerId; live.add(id); at(ctx.currentTime + (Number(ms) || 0) / 1000 + q, () => { if (live.delete(id)) fn(); }); return id; };
+      const renderClearTimeout = (id) => { live.delete(id); };
+      const api = new Function('setTimeout', 'clearTimeout', `${code}\nreturn { createVoicePlayer };`)(renderSetTimeout, renderClearTimeout);
+      const player = api.createVoicePlayer(ctx, () => {});
       const groups = new Map();
-      plan.forEach((c, seq) => { const at = Math.ceil(c.at / q) * q; if (!groups.has(at)) groups.set(at, []); groups.get(at).push({ seq, sentence: 0, data: c.data, sample_rate: 24000 }); });
+      plan.forEach((c, seq) => { const t = Math.ceil(c.at / q) * q; if (!groups.has(t)) groups.set(t, []); groups.get(t).push({ seq, sentence: 0, data: c.data, sample_rate: 24000 }); });
       const lastAt = Math.max(...groups.keys());
-      for (const [at, evs] of groups) ctx.suspend(at).then(() => { evs.forEach((e) => player.push(e)); if (at === lastAt) player.end({ ok: true }); ctx.resume(); });
+      for (const [t, evs] of groups) at(t, () => { evs.forEach((e) => player.push(e)); if (t === lastAt) player.end({ ok: true }); });
       const out = (await ctx.startRendering()).getChannelData(0);
       const on = out.findIndex((v) => v !== 0);
       let last = out.length - 1;
