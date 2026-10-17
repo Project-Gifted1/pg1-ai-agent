@@ -140,6 +140,20 @@ PG1_DAILY_BUDGET_ANTHROPIC_USD=5
 PG1_DAILY_BUDGET_CARTESIA_USD=1
 PG1_DAILY_BUDGET_REPLICATE_USD=3
 # also _GATEWAY_, _OPENROUTER_, _OPENAI_ (and _GEMINI_FREE_, which costs 0)
+# Rate limits: a 429 is waited out on the same engine (Retry-After or
+# Gemini's retryDelay, else 2 s, 5 s, 10 s; at most 20 s for chat, 2 minutes
+# for background jobs), then the call falls through to the next engine. A
+# 402 or an out-of-credit error falls through at once. With checks on, the
+# OpenAI-compatible backups answer without tools as the last resort, and the
+# reply says live search was unavailable. Every engine out: one push per
+# hour to the operator naming each empty account.
+# The free key's per-minute pace, shared by every instance (chat, camera,
+# background calls); run supabase/migrations/20261102120000_pg1_rate_windows.sql
+# (without it the count is per instance). Background work may only use
+# RPM minus the chat reserve, so chat always goes first.
+# PG1_GEMINI_FREE_RPM=10
+# PG1_GEMINI_FREE_CHAT_RESERVE=2
+# PG1_FREE_LIMITER=0   # turn the limiter off
 # Optional: model lists (comma-separated, tried in order) and switches.
 # PG1_LIGHT_GEMINI_MODELS=gemini-3.8-flash,gemini-3.6-flash
 # PG1_HEAVY_ANTHROPIC_MODELS=claude-opus-5-5,claude-sonnet-5-5

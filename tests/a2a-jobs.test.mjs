@@ -22,7 +22,7 @@ import { readFileSync } from 'node:fs';
 import { makeDb, pgRest } from './helpers/pgrest.mjs';
 
 const { JOB_TYPES, quoteFor, catalogue, mediaJobsEnabled, assertCataloguePricing, agentCardJobSkills, FREE_TIER_JOB_MAX_USD } = await import('../lib/a2aJobs/catalogue.mjs');
-const { runAcceptedJob, createJobStore, payerHash, maxJobs, jobsPerHour } = await import('../lib/a2aJobs/jobs.mjs');
+const { runAcceptedJob, createJobStore, payerHash, maxJobs, jobsPerHour, backfillPendingWriteups } = await import('../lib/a2aJobs/jobs.mjs');
 const { executeJob, WRITEUP_SYSTEM } = await import('../lib/a2aJobs/execute.mjs');
 const { a2aJobsSummary, a2aJobsSection, handleA2aCommand } = await import('../lib/a2aJobs/admin.mjs');
 const { priceCoversCost } = await import('../lib/pricing.mjs');
@@ -349,4 +349,50 @@ test('operator views: /a2a jobs, /a2a job <id>, the A2A jobs section of /usage',
   assert.match(one.reply, /worst-case cost \$0\.0038/);
   assert.match((await handleA2aCommand({ text: '/a2a jobs', isOperator: false })).reply, /operator only/);
   void w;
+});
+
+// --- with no AI engine available ---------------------------------------------------------
+
+test('a write-up completes with AI unavailable: checks collected, deduped and stored, ai_summary "pending", filled in later', async () => {
+  const w = await world({ writeModel: async () => null });
+  const q = await submit('threat_writeup_pdf', { subjects: [{ type: 'domain', value: 'pg1-test-flagged.invalid' }, { type: 'domain', value: 'PG1-TEST-FLAGGED.invalid' }, { type: 'wallet', value: PAYER }], title: 'Weekly check' });
+  await pay(q.body.result.id, { from: PAYER });
+  await Promise.all(w.runs);
+  const done = (await getTask(q.body.result.id)).body.result;
+  assert.equal(done.status.state, 'completed', 'the job finishes without a model');
+  const data = done.artifacts[0].parts[0].data;
+  assert.equal(data.ai_summary, 'pending');
+  assert.equal(data.results.length, 2, 'the duplicate subject was checked once');
+  assert.equal(data.results[0].status, 'flagged');
+  assert.match(data.writeup_markdown, /The written analysis is pending/);
+  assert.match(data.writeup_markdown, /no flags found/);
+  assert.doesNotMatch(data.writeup_markdown, /\bsafe\b/i);
+  assert.equal(w.alerts.length, 0, 'not a failure: nothing flagged to the operator');
+
+  // An engine is back: the hourly sweep writes the analysis and replaces the result.
+  const store = createJobStore({ ...SUP, fetchImpl: pgRest(w.db) });
+  const pdfs = [];
+  const out = await backfillPendingWriteups({
+    store,
+    execDeps: { guard: (t) => t, makePdf: async (doc) => { pdfs.push(doc); return { kind: 'pdf', path: 'documents/new.pdf', name: 'report.pdf', mime_type: 'application/pdf', pages: 2 }; }, writeModel: async () => '## Summary\nOne domain is flagged.\n\nNot legal advice.' },
+    storeOutputs: async (job, o) => [{ kind: 'json', path: `a2a/${job.id}/result.json`, name: 'result.json', mime_type: 'application/json' }, o.pdf]
+  });
+  assert.deepEqual(out, { checked: 1, filled: 1 });
+  assert.equal(pdfs.length, 1);
+  const row = await store.get(q.body.result.id);
+  assert.equal(row.result.ai_summary, 'done');
+  assert.match(row.result.writeup_markdown, /One domain is flagged/);
+  assert.equal(row.result.results.length, 2, 'the stored results are kept');
+  assert.deepEqual(await backfillPendingWriteups({ store, execDeps: { writeModel: async () => 'x', makePdf: async () => null }, storeOutputs: async () => [] }), { checked: 0, filled: 0 }, 'nothing left pending');
+});
+
+test('a pending write-up stays pending while still no engine is available', async () => {
+  const w = await world({ writeModel: async () => null });
+  const q = await submit('threat_writeup_pdf', { subjects: [{ type: 'domain', value: 'pg1-test-flagged.invalid' }], title: 'Still down' });
+  await pay(q.body.result.id, { from: PAYER });
+  await Promise.all(w.runs);
+  const store = createJobStore({ ...SUP, fetchImpl: pgRest(w.db) });
+  const out = await backfillPendingWriteups({ store, execDeps: { guard: (t) => t, makePdf: async () => { throw new Error('not called'); }, writeModel: async () => null }, storeOutputs: async () => [] });
+  assert.deepEqual(out, { checked: 1, filled: 0 });
+  assert.equal((await store.get(q.body.result.id)).result.ai_summary, 'pending');
 });

@@ -17,9 +17,11 @@ import { searchHistory } from '../lib/historySearch.mjs';
 import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } from '../lib/voiceStream.mjs';
 import { reportUpstreamFailure, userFacingFailure, providerErrorText, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 import { generateImage, imageModels } from '../lib/imageEngines.mjs';
-import { createCapacityAlerts } from '../lib/router/alerts.mjs';
+import { createCapacityAlerts, createAllOutAlert } from '../lib/router/alerts.mjs';
+import { freeLimiterFor, PRIORITY } from '../lib/router/freeLimiter.mjs';
+import { analyzeCameraFrame, cameraEventLine, cameraLogLine } from '../lib/cameraFeed.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
-import { TASKS, FAILURE, failureClass, budgetAllows, isBillingFailure, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
+import { TASKS, FAILURE, failureClass, budgetAllows, isBillingFailure, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, CHAT_THROTTLE, withThrottleRetry, isFallbackFailure, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
 import { synthesizeSpeech, createRoutedSynth } from '../lib/ttsRouter.mjs';
 import { cleanVideoPrompt, dispatchVideoRender, isVideoCommand, isVideoRequest, parseVideoOptions, pollVideoJob, recheckVideoJob, startVideoJob, videoGoogleAsync, videoJobStatus, videoDailyBudget, videoDailyCap, videoEnabled, videoCostLine, videoFrameFallbackOn, videoNotStartedText, videoRenderingText, videoSpendToday, videoTiersText, usd, DEFAULT_START_FRAME_PROMPT, FOUR_K_NOTE, VIDEO_DISABLED_TEXT, VIDEO_ENGINE_LABEL, VIDEO_REFUSED_TEXT, VIDEO_TIER_LABELS } from '../lib/videoJobs.mjs';
 import { isFilmCommand, isFilmAction } from '../lib/film/text.mjs';
@@ -1303,7 +1305,10 @@ function chatRoundPlan(opts, toolOpts) {
   // round's turns; not the fixed prompt text, which describes the tools.
   var dataClass = dataClassFor({ isOperator: opts.isOperator === true, texts: [opts.promptText, opts.contextText || ''], turns: turns });
   var withTools = !!((toolOpts && toolOpts.tools && toolOpts.tools.length) || turns.length);
-  var plan = planRoute(task, { env: env, dataClass: dataClass, withTools: withTools || !!(opts.mediaParts && opts.mediaParts.length), ledger: opts.ledger || null, excludeFree: !!opts.routeFloor });
+  // With checks or search on the round, the OpenAI-compatible backups stay
+  // as tools-off engines after the ones that can run them; with an image or
+  // file on the round they are left out (they would answer without it).
+  var plan = planRoute(task, { env: env, dataClass: dataClass, withTools: withTools, withMedia: !!(opts.mediaParts && opts.mediaParts.length), ledger: opts.ledger || null, excludeFree: !!opts.routeFloor });
   // A round with no functions, no images and no turns is answered from the
   // text cache when the operator sent the identical request in the TTL.
   // Only the operator's rounds are cached (opts.cacheIdentity, scoped into
@@ -1338,6 +1343,57 @@ function roundFailureStops(route, c, result, next) {
     } catch (e) { /* an alert never breaks a reply */ }
   }
   return cls === FAILURE.REFUSED;
+}
+
+// AI ROUTER: one engine's call in a chat round. The free key first takes a
+// slot in the minute it shares with every caller (lib/router/freeLimiter.mjs,
+// chat ahead of background work: a burst waits for the next minute instead
+// of failing); a rate-limited engine is waited for as it asks, else 2 s,
+// 5 s, 10 s, at most 20 s in all and never past the request deadline, then
+// the round moves on to the next engine (lib/aiRouter.mjs withThrottleRetry).
+var chatLimiter = null;
+function chatFreeLimiter() {
+  if (!chatLimiter) {
+    var creds = null;
+    try { creds = getSupabaseCreds(); } catch (e) { creds = null; }
+    chatLimiter = freeLimiterFor({ env: process.env, ...(creds || {}) });
+  }
+  return chatLimiter;
+}
+var FREE_LIMIT_ERROR = 'free key: per-minute limit reached (PG1 limiter)';
+async function callWithPace(c, opts, call) {
+  var paced = async function () {
+    if (c.provider === 'gemini_free') {
+      var slot = await chatFreeLimiter().acquire({ priority: PRIORITY.CHAT, maxWaitMs: Math.max(0, Math.min(CHAT_THROTTLE.maxTotalWaitMs, opts.deadlineTs - Date.now() - 5000)) });
+      if (!slot.granted) return { text: null, status: 429, error: FREE_LIMIT_ERROR };
+    }
+    return call();
+  };
+  return (await withThrottleRetry(paced, { policy: CHAT_THROTTLE, deadlineTs: opts.deadlineTs, reserveMs: 5000 })).result;
+}
+
+// The note under a reply a tools-off backup wrote: it had no live search
+// and could not run checks. PG1 words only, never an engine's name.
+export var TOOLS_OFF_NOTE = '_Live search was unavailable for this answer._';
+
+// Every engine of the round failed on capacity (out of credit, rate
+// limited, down, no usable key): one operator push per hour naming the
+// accounts (lib/router/alerts.mjs createAllOutAlert).
+var chatAllOut = null;
+function everyEngineOut(route, errors) {
+  return errors.length > 0 && errors.length === route.plan.length && errors.every(function (f) { return isFallbackFailure(f.status == null ? null : f.status, f.error || ''); });
+}
+function alertAllOut(route, errors) {
+  if (!everyEngineOut(route, errors)) return false;
+  try {
+    if (!chatAllOut) {
+      var creds = null;
+      try { creds = getSupabaseCreds(); } catch (e) { creds = null; }
+      chatAllOut = createAllOutAlert({ env: process.env, store: creds ? createWatchStore(creds) : null, ...(creds || {}), log: function (line) { console.warn(line); } });
+    }
+    chatAllOut(errors.map(function (f) { return { provider: f.provider, status: f.status == null ? null : f.status, detail: f.error || '' }; }), { what: 'chat replies' }).catch(function () {});
+  } catch (e) { /* an alert never breaks a reply */ }
+  return true;
 }
 
 // The error-log text for a round where every candidate failed (operator
@@ -1404,23 +1460,29 @@ async function fetchModelRound(opts, toolOpts) {
   for (var i = 0; i < route.plan.length; i++) {
     if (i > 0 && Date.now() >= opts.deadlineTs - 1000) break;
     var c = route.plan[i];
-    var result = c.family === 'gemini'
-      ? await fetchGeminiCore(opts.promptText, opts.sysInstruction, opts.mediaParts, '', [c.key], opts.deadlineTs, toolOpts, c.models)
-      : c.family === 'anthropic'
-        ? await fetchAnthropicCore(opts.promptText, opts.sysInstruction, opts.mediaParts, '', c.key, opts.deadlineTs, toolOpts, c.models)
-        : await fetchCompatCore(c, opts);
+    var result = await callWithPace(c, opts, function () {
+      return c.family === 'gemini'
+        ? fetchGeminiCore(opts.promptText, opts.sysInstruction, opts.mediaParts, '', [c.key], opts.deadlineTs, toolOpts, c.models)
+        : c.family === 'anthropic'
+          ? fetchAnthropicCore(opts.promptText, opts.sysInstruction, opts.mediaParts, '', c.key, opts.deadlineTs, toolOpts, c.models)
+          : fetchCompatCore(c, opts);
+    });
     roundUsage(route, opts, c, result, i);
     if (result.text || (result.calls && result.calls.length)) {
       result.error = null;
+      if (c.family === 'openai_compat' && result.text) {
+        result.text += '\n\n' + TOOLS_OFF_NOTE;
+        result.toolsOff = true;
+      }
       rememberRound(route, c, result);
       return result;
     }
     tripBreaker(c.keyId, result.status, result.error);
-    errors.push({ provider: c.provider, error: result.error });
+    errors.push({ provider: c.provider, status: result.status, error: result.error });
     // Only a capacity failure moves to the next engine; a refusal stops.
     if (roundFailureStops(route, c, result, route.plan[i + 1])) break;
   }
-  return { text: null, error: roundFailureText(errors) };
+  return { text: null, error: roundFailureText(errors), aiUnavailable: alertAllOut(route, errors) || !route.plan.length };
 }
 
 // CHAT TOOLS: the per-call timeout is the role's, capped so the final model
@@ -1632,24 +1694,31 @@ async function streamChatReply(stream, opts) {
           stream.step(modelStep, `${label} on the ${name}`);
         }
         core = name;
-        result = c.family === 'gemini'
-          ? await streamGeminiCore(opts.promptText, sysInstruction, opts.mediaParts, [c.key], opts.deadlineTs, hooks, toolOpts, c.models)
-          : c.family === 'anthropic'
-            ? await streamAnthropicCore(opts.promptText, sysInstruction, opts.mediaParts, c.key, opts.deadlineTs, hooks, toolOpts, c.models)
-            : await fetchCompatCore(c, roundOpts);
-        if (c.family === 'openai_compat' && result.text) hooks.onText(result.text);
+        result = await callWithPace(c, opts, function () {
+          return c.family === 'gemini'
+            ? streamGeminiCore(opts.promptText, sysInstruction, opts.mediaParts, [c.key], opts.deadlineTs, hooks, toolOpts, c.models)
+            : c.family === 'anthropic'
+              ? streamAnthropicCore(opts.promptText, sysInstruction, opts.mediaParts, c.key, opts.deadlineTs, hooks, toolOpts, c.models)
+              : fetchCompatCore(c, roundOpts);
+        });
+        if (c.family === 'openai_compat' && result.text) {
+          result.text += '\n\n' + TOOLS_OFF_NOTE;
+          result.toolsOff = true;
+          hooks.onText(result.text);
+        }
         roundUsage(route, roundOpts, c, result, ci);
         if (result.text || (result.calls && result.calls.length) || result.aborted || result.partial) break;
         tripBreaker(c.keyId, result.status, result.error);
-        errors.push({ provider: c.provider, error: result.error });
+        errors.push({ provider: c.provider, status: result.status, error: result.error });
         if (roundFailureStops(route, c, result, route.plan[ci + 1])) break;
       }
       if (!result) {
         modelStep = `model${suffix}`;
         stream.step(modelStep, label);
-        result = { text: '', error: 'No AI engine is configured or within its daily budget.' };
+        result = { text: '', error: 'No AI engine is configured or within its daily budget.', aiUnavailable: true };
       } else if (!result.text && !(result.calls && result.calls.length) && !result.aborted) {
         result.error = errors.length ? roundFailureText(errors) : result.error;
+        result.aiUnavailable = alertAllOut(route, errors);
       } else if (!result.partial && !result.aborted) {
         result.error = null;
         rememberRound(route, route.plan[ci], result);
@@ -1727,7 +1796,9 @@ async function streamChatReply(stream, opts) {
     // to the error log under this request ID; the operator sees one
     // neutral sentence and the ID (lib/upstreamFailure.mjs).
     if (opts.reportFailure) opts.reportFailure('model_failed', result.error);
-    stream.error(userFacingFailure(stream.requestId, 'reply'));
+    if (opts.onModelFailed) opts.onModelFailed(result);
+    // ai_unavailable: every engine was out (the camera shows "paused").
+    stream.error(userFacingFailure(stream.requestId, 'reply'), result.aiUnavailable ? { reason: 'ai_unavailable' } : {});
     return;
   }
   closeVision(true);
@@ -2241,6 +2312,33 @@ export default async function handler(req, res) {
       }
     }
 
+    // CAMERA LIVE ANALYSIS (lib/cameraFeed.mjs, public/camera/frame-gate.js):
+    // the page's session events and the frames it sends for a short
+    // description. Signed-in operator only; logged by event and size, never
+    // the image or the description.
+    if (reqBody.cameraEvent || reqBody.cameraAnalyze) {
+      if (!isOperator) return sendJSON(res, 401, { ok: false, error: 'Sign in to use the camera.' });
+      if (reqBody.cameraEvent) {
+        console.log(cameraEventLine({ event: String(reqBody.cameraEvent), source: reqBody.source, code: reqBody.code, requestId: requestTraceId }));
+        return sendJSON(res, 200, { ok: true });
+      }
+      var frameIn = collectImageInputs([reqBody.frame || {}]);
+      var frameImage = frameIn.images[0] && frameIn.images[0].inlineData;
+      if (!frameImage) return sendJSON(res, 400, { ok: false, error: 'No usable frame.' });
+      console.log(cameraLogLine('frame', { request_id: requestTraceId, source: reqBody.source === 'screen' ? 'screen' : 'camera', bytes: Math.round(String(frameImage.data || '').length * 0.75) }));
+      var cameraCreds = null;
+      try { cameraCreds = getSupabaseCreds(); } catch (e) { cameraCreds = null; }
+      var cameraOut = await analyzeCameraFrame({
+        image: frameImage, env: process.env, isOperator: true, limiter: chatFreeLimiter(), requestId: requestTraceId,
+        ledger: cameraCreds ? sharedLedger({ supUrl: cameraCreds.supUrl, supKey: cameraCreds.supKey }) : null,
+        onAllOut: function (failures) { return alertAllOut({ plan: failures }, failures.map(function (f) { return { provider: f.provider, status: f.status, error: f.detail }; })); }
+      });
+      if (cameraOut.ok) return sendJSON(res, 200, { ok: true, caption: whiteLabel(cameraOut.caption) });
+      // A handled outcome, so 200 (a 4xx/5xx every few seconds would fill the
+      // phone's console): throttled (back off and retry) or ai_unavailable.
+      return sendJSON(res, 200, { ok: false, throttled: cameraOut.status === 429, reason: cameraOut.reason || null, retryAfterMs: cameraOut.retryAfterMs || null });
+    }
+
     // PG1 MOTION STATUS (lib/videoJobs.mjs): the client's poll for a clip
     // that is rendering. Signed-in operator only; answered before any of the
     // chat's context is loaded, so a poll stays short. By default the clip
@@ -2402,7 +2500,7 @@ export default async function handler(req, res) {
     // work; with PG1_AUTONOMY=off only the deterministic updates run.
     var cheapCall = !authorize('context:task_update', { actor: 'pg1', mode: autonomyMode(process.env) }).allowed ? null : cheapModelCaller({
       env: process.env, isOperator: isOperator, keys: routerKeys, budgetAllows: budgetAllows, recordUsage: recordUsage, ledger: aiLedger, requestId: requestTraceId,
-      fetchImpl: function (u, o) { return globalThis.fetch(u, o); }
+      fetchImpl: function (u, o) { return globalThis.fetch(u, o); }, limiter: chatFreeLimiter()
     });
     // A slash command updates the state itself; any other message first
     // folds the last exchange into the state and older turns into the
@@ -4471,6 +4569,8 @@ ${turnDirectives}${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imag
       telemetry: { supabaseStatus: supabaseStatus, executionTimeMs: Date.now() - startTime }
     };
     if (jsonSuggestions.length) jsonReply.suggestions = jsonSuggestions;
+    // Every engine was out: the camera shows "paused" instead of failing.
+    if (modelFailed && modelFetchResult.aiUnavailable) jsonReply.reason = 'ai_unavailable';
     if (jsonHonesty && jsonHonesty.actions.length) jsonReply.honestActions = jsonHonesty.actions;
     if (jsonToolOutcomes.length) {
       // CHAT TOOLS: the cards, and what the voice says instead of the reply

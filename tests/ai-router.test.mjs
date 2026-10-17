@@ -80,9 +80,12 @@ test('heavy: the strongest reasoning model first, then the main core', () => {
   assert.equal(plan[0].models[0], 'claude-opus-5-5');
 });
 
-test('a round with functions leaves out the OpenAI-compatible backups (they are called without functions)', () => {
-  const env = { GEMINI_API_KEY_PAID: PAID, OPENROUTER_API_KEY: 'or' };
-  assert.deepEqual(planRoute(TASKS.LIGHT, { env, dataClass: DATA.OPERATOR, withTools: true }).map((c) => c.provider), ['gemini_paid']);
+test('a round with functions keeps the OpenAI-compatible backups as tools-off engines, last; a round with an image leaves them out', () => {
+  const env = { GEMINI_API_KEY_PAID: PAID, VERCEL_AI_API_KEY: 'vck_x', OPENAI_API_KEY: 'sk-x' };
+  const withTools = planRoute(TASKS.LIGHT, { env, dataClass: DATA.OPERATOR, withTools: true });
+  assert.deepEqual(withTools.map((c) => c.provider), ['gemini_paid', 'gateway', 'openai']);
+  assert.deepEqual(withTools.map((c) => !!c.toolsOff), [false, true, true]);
+  assert.deepEqual(planRoute(TASKS.LIGHT, { env, dataClass: DATA.OPERATOR, withTools: true, withMedia: true }).map((c) => c.provider), ['gemini_paid']);
 });
 
 test('tts: Cartesia only by default, even for operator content with the free key set', () => {
@@ -244,7 +247,9 @@ test('runRoute: walks the plan on quota, billing and 5xx errors and records each
   });
   assert.equal(r.ok, true);
   assert.equal(r.value, 'answer');
-  assert.deepEqual(tried, ['gemini_free', 'gemini_paid', 'anthropic']);
+  // The free key's 429 is waited out (three more sends, instant under the
+  // test runner) before the route moves on; the 402 moves on at once.
+  assert.deepEqual(tried, ['gemini_free', 'gemini_free', 'gemini_free', 'gemini_free', 'gemini_paid', 'anthropic']);
   assert.equal(r.failures.length, 2);
   assert.equal(lines.length, 3, 'one usage line per attempt');
   assert.match(lines[2], /"provider":"anthropic".*"fallback":2/);

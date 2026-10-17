@@ -48,6 +48,7 @@ import { startVideoJob, renderVideoJob } from '../lib/videoJobs.mjs';
 import { synthesizeSpeech } from '../lib/ttsRouter.mjs';
 import worker from '../index.js';
 import { filmThink, imageBlock, geminiStill, geminiClip } from '../lib/film/providers.mjs';
+import { analyzeCameraFrame } from '../lib/cameraFeed.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ORIGINAL_ENV = { ...process.env };
@@ -364,6 +365,14 @@ test('PG1 Studio media fallback stills and clips on the paid key send no samplin
   assertClean(stub, 'film media', 2);
 });
 
+// CAMERA LIVE ANALYSIS (lib/cameraFeed.mjs): one frame on the free key.
+test('a camera frame carries no sampling parameter', async () => {
+  const stub = geminiStub(() => Response.json(text('A desk.')));
+  const out = await analyzeCameraFrame({ image: { mimeType: 'image/jpeg', data: '/9j/' + 'A'.repeat(64) }, env: { GEMINI_API_KEY_FREE: 'AIzaStubFreeKeyForCameraTests000000000000' }, isOperator: true, fetchImpl: stub.fetch, log: () => {} });
+  assert.equal(out.ok, true);
+  assertClean(stub, 'camera frame', 1);
+});
+
 // --- every call site is covered ------------------------------------------------------
 
 function sourceFiles(dir) {
@@ -382,7 +391,7 @@ test('every source file that calls Gemini is one these tests drive', () => {
     .filter((f) => readFileSync(f, 'utf8').includes(GEMINI_HOST))
     .map((f) => f.slice(ROOT.length + 1))
     .sort();
-  assert.deepEqual(callers, ['api/chat.mjs', 'api/lib/gemini-client.js', 'index.js', 'lib/a2aJobs/service.mjs', 'lib/contextWindow.mjs', 'lib/film/providers.mjs', 'lib/imageEngines.mjs', 'lib/lab/policy.mjs', 'lib/lab/runner.mjs', 'lib/ttsRouter.mjs', 'lib/videoJobs.mjs'],
+  assert.deepEqual(callers, ['api/chat.mjs', 'api/lib/gemini-client.js', 'index.js', 'lib/a2aJobs/service.mjs', 'lib/cameraFeed.mjs', 'lib/contextWindow.mjs', 'lib/film/providers.mjs', 'lib/imageEngines.mjs', 'lib/lab/policy.mjs', 'lib/lab/runner.mjs', 'lib/ttsRouter.mjs', 'lib/videoJobs.mjs'],
     'a new Gemini call site: drive it through geminiStub above');
 });
 

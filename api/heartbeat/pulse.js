@@ -14,6 +14,27 @@ export async function logDailySpend(now = Date.now(), log = console.log) {
   return summary;
 }
 
+// WRITE-UPS: A2A threat write-ups that completed while no AI engine was
+// available get their analysis now (lib/a2aJobs/jobs.mjs
+// backfillPendingWriteups), a few per pulse. Customer data: paid engines
+// only, never the free key. Without storage it does nothing.
+export async function backfillWriteups({ env = process.env, limit = 3, load = null } = {}) {
+  const supUrl = (env.SUPABASE_URL || '').replace(/\s+/g, '');
+  const supKey = (env.SUPABASEAPI_KEY || env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLEKEY || '').replace(/\s+/g, '');
+  if (!supUrl || !supKey) return null;
+  const { jobs, svc } = load ? await load() : { jobs: await import('../../lib/a2aJobs/jobs.mjs'), svc: await import('../../lib/a2aJobs/service.mjs') };
+  const store = jobs.createJobStore({ supUrl, supKey });
+  const outputs = svc.outputStorage({ supUrl, supKey, env });
+  const model = svc.jobModel({ env });
+  return jobs.backfillPendingWriteups({
+    store, limit,
+    execDeps: { guard: svc.jobGuard(env), makePdf: (doc) => outputs.makePdf(doc), writeModel: (m) => model.write(m) },
+    storeOutputs: (j, out) => outputs.storeOutputs(j, out)
+  });
+}
+
+export const config = { maxDuration: 120 };
+
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -28,6 +49,10 @@ export default async function handler(req, res) {
     const timestamp = new Date().toISOString();
     console.log(`[PG1-AGENT:HEARTBEAT] Pulse logged at ${timestamp}`);
     try { await logDailySpend(); } catch (e) { /* the summary never fails the pulse */ }
+    try {
+      const filled = await backfillWriteups();
+      if (filled && filled.checked) console.log(`[PG1-AGENT:WRITEUPS] ${filled.filled} of ${filled.checked} pending write-ups filled`);
+    } catch (e) { /* a backfill never fails the pulse */ }
 
     return res.status(200).json({ 
       status: 'HEARTBEAT_ACTIVE',
