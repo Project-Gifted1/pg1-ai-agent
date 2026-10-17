@@ -154,6 +154,24 @@ PG1_DAILY_BUDGET_REPLICATE_USD=3
 # PG1_GEMINI_FREE_RPM=10
 # PG1_GEMINI_FREE_CHAT_RESERVE=2
 # PG1_FREE_LIMITER=0   # turn the limiter off
+# No-card free engines (operator content only, never client work or
+# customer data; tried after the free Gemini key, each with its own
+# per-minute pace, PG1_<ENGINE>_RPM). Unset = skipped.
+# GROQ_API_KEY=            # https://console.groq.com/keys (30/min default)
+# MISTRAL_API_KEY=         # https://admin.mistral.ai/organization/api-keys (Experiment plan; free-plan data may be used for training unless you opt out in Admin > Privacy)
+# GITHUB_MODELS_TOKEN=     # https://github.com/settings/personal-access-tokens (fine-grained, "Models: read")
+# CLOUDFLARE_AI_TOKEN=     # https://dash.cloudflare.com/profile/api-tokens ("Workers AI: Read" and "Edit")
+# CLOUDFLARE_ACCOUNT_ID=   # the account id in the dashboard URL (Workers AI needs both)
+# OpenRouter guard: its balance is read at most every 10 minutes. At $0 or
+# below OpenRouter is skipped (it refuses even :free models then); up to $2
+# only :free models (one push a day says so); paid models above $2, never
+# for background jobs. Free models first: PG1_OPENROUTER_FREE_MODELS (2-3
+# :free ids, default DeepSeek/Qwen); PG1_OPENROUTER_IGNORE adds hosts to the
+# ignore list (first-party Chinese hosts are always ignored).
+# PG1_OPENROUTER_GUARD=0   # turn the guard off
+# OpenAI-compatible calls stream: no token within 20 s moves on; a reply
+# that is arriving may run up to 90 s. Each call logs the provider's
+# generation id ("[pg1-compat] ... id=").
 # Optional: model lists (comma-separated, tried in order) and switches.
 # PG1_LIGHT_GEMINI_MODELS=gemini-3.8-flash,gemini-3.6-flash
 # PG1_HEAVY_ANTHROPIC_MODELS=claude-opus-5-5,claude-sonnet-5-5

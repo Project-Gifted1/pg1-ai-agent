@@ -25,8 +25,12 @@ const ALL_KEYS = {
   ANTHROPIC_API_KEY: 'sk-ant-licence-0123456789', GEMINI_API_KEY_PAID: 'AQ.licence-paid-0123456789', GEMINI_API_KEY_FREE: 'AIza-licence-free-0123',
   OPENROUTER_API_KEY: 'sk-or-licence-0123456789', AI_GATEWAY_API_KEY: 'gw-licence-0123456789', OPENAI_API_KEY: 'sk-licence-0123456789',
   REPLICATE_API_TOKEN: 'r8_licence_0123456789abcdef', CARTESIA_API_KEY: 'sk_car_licence_0123456789', ELEVENLABS_API_KEY: 'sk_el_licence_0123456789',
+  GROQ_API_KEY: 'gsk_licence_0123456789', MISTRAL_API_KEY: 'mistral-licence-0123456789', GITHUB_MODELS_TOKEN: 'github_pat_licence_0123456789',
+  CLOUDFLARE_AI_TOKEN: 'cf-licence-0123456789', CLOUDFLARE_ACCOUNT_ID: 'f4ca340d9bcbeeab89bba95915dd072e',
   PG1_ELEVENLABS_FILM_RIGHTS: '1'
 };
+// The no-card free engines (Step 3): unclear for client work, operator only.
+const FREE_ENGINES = ['groq', 'mistral', 'github_models', 'cloudflare'];
 const CLEARED_SOURCES = new Set(['gemini_paid', 'gemini_free', 'elevenlabs', 'anthropic']);
 
 beforeEach(() => __resetRouterState());
@@ -36,8 +40,9 @@ describe('licences in ROUTING_CHAINS', () => {
     const table = [];
     for (const [id, steps] of Object.entries(ROUTING_CHAINS)) for (const s of steps) table.push(`${id}:${s.provider}${s.model ? `:${s.model}` : s.slot ? `:${s.slot}` : ''}=${stepLicence(s)}`);
     assert.deepEqual(table, [
-      'text:anthropic=commercial_ok', 'text:gemini_paid=commercial_ok', 'text:gemini_free=unclear', 'text:openrouter=unclear', 'text:gateway=unclear', 'text:openai=unclear',
-      'chat_light:gemini_free=unclear', 'chat_light:gemini_paid=commercial_ok', 'chat_light:anthropic=commercial_ok', 'chat_light:gateway=unclear', 'chat_light:openrouter=unclear', 'chat_light:openai=unclear',
+      'text:anthropic=commercial_ok', 'text:gemini_paid=commercial_ok', 'text:gemini_free=unclear',
+      'text:groq=unclear', 'text:mistral=unclear', 'text:github_models=unclear', 'text:cloudflare=unclear', 'text:openrouter=unclear', 'text:gateway=unclear', 'text:openai=unclear',
+      'chat_light:gemini_free=unclear', 'chat_light:groq=unclear', 'chat_light:mistral=unclear', 'chat_light:github_models=unclear', 'chat_light:cloudflare=unclear', 'chat_light:gemini_paid=commercial_ok', 'chat_light:anthropic=commercial_ok', 'chat_light:gateway=unclear', 'chat_light:openrouter=unclear', 'chat_light:openai=unclear',
       'research:gemini_paid=commercial_ok', 'research:anthropic=commercial_ok',
       'speech:gemini_free=unclear', 'speech:cartesia:sonic-3.6=unclear',
       'stills:replicate:black-forest-labs/flux-kontext-pro=unclear', 'stills:gemini_paid:gemini-3.1-flash-image=commercial_ok',
@@ -52,6 +57,13 @@ describe('licences in ROUTING_CHAINS', () => {
     ]);
     for (const [, steps] of Object.entries(ROUTING_CHAINS)) {
       for (const s of steps) if (stepLicence(s) === 'commercial_ok') assert.ok(CLEARED_SOURCES.has(s.provider), `${s.provider} is commercial_ok only if Google, ElevenLabs or Claude`);
+    }
+    // The no-card free engines are unclear and operator only in every chain.
+    for (const [id, steps] of Object.entries(ROUTING_CHAINS)) {
+      for (const s of steps.filter((x) => FREE_ENGINES.includes(x.provider))) {
+        assert.equal(stepLicence(s), 'unclear', `${id}:${s.provider}`);
+        assert.equal(s.operatorOnly, true, `${id}:${s.provider} is operator only`);
+      }
     }
     // FLUX Kontext Pro is never a client deliverable; every other step may be.
     assert.deepEqual(Object.values(ROUTING_CHAINS).flat().filter((s) => !stepDeliverable(s)).map((s) => s.model), ['black-forest-labs/flux-kontext-pro']);
@@ -98,7 +110,7 @@ describe('a client job never reaches an engine not cleared for client work', () 
   });
 
   test('planRoute walks every chain it plans and never plans OpenRouter, the AI gateway, OpenAI or Replicate for a client', () => {
-    const NOT_FOR_CLIENTS = new Set(['openrouter', 'gateway', 'openai', 'replicate', 'gemini_free', 'cartesia']);
+    const NOT_FOR_CLIENTS = new Set(['openrouter', 'gateway', 'openai', 'replicate', 'gemini_free', 'cartesia', ...FREE_ENGINES]);
     // Every task planRoute serves, and the chain behind it.
     const TASK_CHAINS = { [TASKS.LIGHT]: 'chat_light', [TASKS.HEAVY]: 'text', [TASKS.TTS]: 'speech', [TASKS.MUSIC]: 'music', [TASKS.MEDIA]: null };
     assert.deepEqual(Object.keys(TASK_CHAINS).sort(), Object.values(TASKS).sort(), 'every task is walked');
@@ -119,6 +131,16 @@ describe('a client job never reaches an engine not cleared for client work', () 
     assert.deepEqual(providers(TASKS.MUSIC), ['gemini_paid']);
     assert.deepEqual(providers(TASKS.MEDIA), ['gemini_paid']);
     assert.deepEqual(providers(TASKS.TTS), []);
+    // Customer data never reaches a free engine either, client work or not.
+    for (const task of Object.values(TASKS)) {
+      for (const c of planRoute(task, { env: ALL_KEYS, dataClass: DATA.CUSTOMER })) assert.ok(!FREE_ENGINES.includes(c.provider), `${task}: ${c.provider} got customer data`);
+    }
+    // OpenRouter's free DeepSeek and Qwen models are its own (unclear) step's,
+    // with first-party Chinese hosts ignored.
+    const or = planRoute(TASKS.HEAVY, { env: ALL_KEYS, dataClass: DATA.OPERATOR }).find((c) => c.provider === 'openrouter');
+    assert.ok(or.freeModels.every((m) => /:free$/.test(m) && /^(?:deepseek|qwen)\//.test(m)), or.freeModels.join());
+    assert.ok(or.ignoreProviders.includes('DeepSeek') && or.ignoreProviders.includes('Alibaba'));
+    assert.equal(stepLicence(ROUTING_CHAINS.text.find((s) => s.provider === 'openrouter')), 'unclear');
     // The operator's own work keeps every engine.
     assert.ok(planRoute(TASKS.HEAVY, { env: ALL_KEYS, dataClass: DATA.OPERATOR }).some((c) => c.provider === 'openrouter'));
     assert.ok(planRoute(TASKS.MEDIA, { env: ALL_KEYS, dataClass: DATA.OPERATOR }).some((c) => c.provider === 'replicate'));
