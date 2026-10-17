@@ -418,6 +418,18 @@
     .auto-tl-body { margin: 4px 0 0; color: var(--text-2); font-size: var(--fs-xs, 0.8rem); overflow-wrap: anywhere; }
     .auto-tl-body a { color: var(--gold); }
     .auto-empty { color: var(--text-3); padding: 12px 4px; }
+    /* Approval cards (Part 3): what Autonomous mode proposes and waits on. */
+    .auto-approvals { display: grid; gap: 10px; margin: 0 0 14px; }
+    .auto-approvals:empty { display: none; }
+    .auto-card { border: 1px solid var(--gold-line); border-radius: var(--r-md, 12px); background: var(--gold-soft); padding: 12px; }
+    .auto-card h3 { margin: 0 0 4px; font-size: var(--fs-sm, 0.9rem); color: var(--text); }
+    .auto-card p { margin: 0 0 8px; color: var(--text-2); font-size: var(--fs-xs, 0.8rem); }
+    .auto-card pre { margin: 0 0 8px; max-height: 140px; overflow: auto; padding: 8px; border-radius: 8px; background: var(--surface-2); font: 0.72rem/1.4 var(--font-mono, monospace); white-space: pre-wrap; }
+    .auto-card-actions { display: flex; gap: 8px; }
+    .auto-card-actions button { min-height: 36px; padding: 0 14px; border-radius: var(--r-full); border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text); font: 600 0.8rem/1 var(--font-sans, inherit); cursor: pointer; }
+    .auto-card-actions button[data-decision="approve"] { background: var(--gold-fill); border-color: var(--gold-fill); color: #0a0a0b; }
+    .auto-card-actions button:disabled { opacity: 0.5; cursor: default; }
+    .auto-count[data-approvals]:not([data-approvals="0"])::after { content: attr(data-approvals); display: inline-block; margin-left: 4px; min-width: 16px; padding: 0 4px; border-radius: var(--r-full); background: var(--gold-fill); color: #0a0a0b; font-size: 0.62rem; line-height: 16px; }
     @media (prefers-reduced-motion: reduce) { .auto-toggle[aria-checked="true"] .auto-dot { animation: none; } }
     /* save: outline bookmark; once the chat is saved, a filled gold one */
     #save-thread-btn[aria-pressed="true"] { color: var(--gold); }
@@ -2646,6 +2658,7 @@
         <p class="modal-note" id="auto-note">Every action PG1 took on its own, newest first.</p>
       </div>
       <button type="button" class="icon-btn modal-close" aria-label="Close" data-dialog-close onclick="triggerHaptic(40); closeAutoTimeline()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+      <div class="auto-approvals" id="auto-approvals" role="group" aria-label="Waiting for your approval"></div>
       <ol class="auto-timeline" id="auto-timeline" aria-live="polite"></ol>
     </div>
   </div>
@@ -3291,6 +3304,7 @@
       const n = Number(autoState.todayCount) || 0;
       count.hidden = !on;
       count.textContent = String(n);
+      count.dataset.approvals = String(Number(autoState.pendingApprovals) || 0);
       count.setAttribute('aria-label', `Autonomous actions today: ${n}${autoState.pendingApprovals ? `, ${autoState.pendingApprovals} waiting for approval` : ''}. Open the timeline`);
       btn.title = on ? `Autonomous mode is ON (${n} today). Tap to switch it off at once.` : (autoState.changedBy === 'auto_off' && autoState.reason ? `Switched off for safety: ${autoState.reason}` : 'Autonomous mode is OFF. Tap to switch it on.');
     }
@@ -3299,6 +3313,7 @@
       try {
         const data = await watchesRequest({ op: 'auto_state' });
         if (data && data.autonomous) renderAutonomous(data.autonomous);
+        if (autoState.enabled) pollAutoInbox();
       } catch (e) { /* the switch keeps its last known state */ }
     }
     function showAutonomousSwitch() {
@@ -3346,6 +3361,7 @@
       if (!modal || !list) return;
       modal.style.display = 'flex';
       list.innerHTML = '<li class="auto-empty">Loading…</li>';
+      loadAutoApprovals();
       try {
         const data = await watchesRequest({ op: 'auto_log', limit: 50 });
         const rows = data && Array.isArray(data.actions) ? data.actions : [];
@@ -3353,6 +3369,57 @@
       } catch (e) {
         list.innerHTML = '<li class="auto-empty">The timeline could not be loaded right now.</li>';
       }
+    }
+    function autoApprovalHtml(c) {
+      return `<section class="auto-card" data-id="${escapeHTML(String(c.id))}"><h3>${escapeHTML(String(c.title || c.label || 'Proposal'))}</h3>`
+        + (c.detail ? `<p>${escapeHTML(String(c.detail))}</p>` : '')
+        + (c.sql ? `<pre>${escapeHTML(String(c.sql))}</pre>` : '')
+        + `<div class="auto-card-actions"><button type="button" data-decision="approve" onclick="decideAutoCard(this)">Approve</button><button type="button" data-decision="reject" onclick="decideAutoCard(this)">Reject</button></div></section>`;
+    }
+    async function loadAutoApprovals() {
+      const box = document.getElementById('auto-approvals');
+      if (!box) return;
+      try {
+        const data = await watchesRequest({ op: 'auto_approvals' });
+        const cards = data && Array.isArray(data.approvals) ? data.approvals : [];
+        box.innerHTML = cards.map(autoApprovalHtml).join('');
+      } catch (e) { box.innerHTML = ''; }
+    }
+    async function decideAutoCard(btn) {
+      const card = btn.closest('.auto-card');
+      if (!card) return;
+      card.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+      try {
+        const data = await watchesRequest({ op: 'auto_decide', id: card.dataset.id, decision: btn.dataset.decision });
+        card.querySelector('.auto-card-actions').outerHTML = `<p>${escapeHTML(String((data && data.message) || 'Recorded.'))}</p>`;
+        refreshAutonomous();
+        // A promotion: the lab's own approval, in the operator's own chat.
+        if (data && typeof data.command === 'string' && /^\/lab report [0-9a-f]{8}$/.test(data.command)) { closeAutoTimeline(); sendCommand(data.command); }
+      } catch (e) {
+        card.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+        alert(e && e.message ? e.message : 'That decision could not be saved right now.');
+      }
+    }
+    var shownBriefings = new Set();
+    async function pollAutoInbox() {
+      if (!sessionUser || !sessionPass) return;
+      try {
+        const data = await watchesRequest({ op: 'auto_inbox' });
+        const reports = data && Array.isArray(data.reports) ? data.reports : [];
+        const shown = [];
+        for (const r of reports) {
+          if (shownBriefings.has(r.id)) continue;
+          shownBriefings.add(r.id);
+          const chat = document.getElementById('chat-container');
+          if (!chat) continue;
+          const el = document.createElement('div');
+          el.className = 'message-bubble is-report';
+          el.innerHTML = `<span class="msg-timestamp">${escapeHTML(new Date(r.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}</span>${markdownBlock(String(r.body || r.title || '').replace(/^([^\n]+)/, '**$1**'))}`;
+          chat.appendChild(el);
+          shown.push(r.id);
+        }
+        if (shown.length) await watchesRequest({ op: 'auto_ack', ids: shown });
+      } catch (e) { /* the next poll tries again */ }
     }
     function closeAutoTimeline() {
       const modal = document.getElementById('auto-modal');
