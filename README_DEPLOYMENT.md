@@ -160,6 +160,10 @@ PG1_DAILY_BUDGET_REPLICATE_USD=3
 # GROQ_API_KEY=            # https://console.groq.com/keys (30/min default)
 # MISTRAL_API_KEY=         # https://admin.mistral.ai/organization/api-keys (Experiment plan; free-plan data may be used for training unless you opt out in Admin > Privacy)
 # GITHUB_MODELS_TOKEN=     # https://github.com/settings/personal-access-tokens (fine-grained, "Models: read")
+#   (Vercel only. The film render workflow needs no Actions secret for it:
+#   it has "models: read" and uses the built-in Actions token. GitHub
+#   refuses secret names starting with GITHUB_; to override the built-in
+#   token there, add an optional Actions secret named PG1_MODELS_TOKEN.)
 # CLOUDFLARE_AI_TOKEN=     # https://dash.cloudflare.com/profile/api-tokens ("Workers AI: Read" and "Edit")
 # CLOUDFLARE_ACCOUNT_ID=   # the account id in the dashboard URL (Workers AI needs both)
 # OpenRouter guard: its balance is read at most every 10 minutes. At $0 or
@@ -231,9 +235,13 @@ PG1_DAILY_BUDGET_REPLICATE_USD=3
 # skipped when not set). It reads those exact names only
 # (OPEN_ROUTER_KEY is not copied: set OPENROUTER_API_KEY here, or add the
 # secret in GitHub). ANTHROPIC_API_KEY is never synced; add it in GitHub
-# by hand. The free Gemini key (GEMINI_API_KEY_FREE) is never given to the
-# worker, and GEMINI_API_KEY_PAID is skipped if it holds the same value:
-# film content may go to paid providers only.
+# by hand. The free Gemini key (GEMINI_API_KEY_FREE) is never synced, and
+# GEMINI_API_KEY_PAID is skipped if it holds the same value.
+# The free engines, used only for an operator film's writing stages (never
+# client films or checks), are optional Actions secrets added by hand: GEMINI_API_KEY_FREE, GROQ_API_KEY,
+# MISTRAL_API_KEY, CLOUDFLARE_AI_TOKEN, CLOUDFLARE_ACCOUNT_ID. GitHub
+# Models needs no secret (the job's built-in token, "models: read");
+# PG1_MODELS_TOKEN is the optional override.
 #
 # The master spec (every /film and /movie delivery, lib/film/ffmpeg.mjs
 # MASTER): 1920x1080 when the sources deliver it, else their own frame and
