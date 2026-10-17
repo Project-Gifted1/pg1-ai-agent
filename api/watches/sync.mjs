@@ -7,6 +7,7 @@
 
 import { getSupabaseCreds } from '../../lib/supabase.mjs';
 import { checkCronAuth } from '../../lib/cronAuth.mjs';
+import { refreshAutonomousSnapshot } from '../../lib/autonomous/state.mjs';
 import { resyncWatches } from '../../lib/watches/engine.mjs';
 
 export const config = { maxDuration: 60 };
@@ -21,6 +22,8 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(503).json({ error: 'Storage not configured on this deployment.' });
   }
+  // AUTONOMOUS MODE: the operator's switch is read before PG1 acts on its own.
+  await refreshAutonomousSnapshot(creds).catch(() => false);
   const out = await resyncWatches({ supUrl: creds.supUrl, supKey: creds.supKey });
   return res.status(200).json({ ok: true, checked: out.length, watches: out });
 }
