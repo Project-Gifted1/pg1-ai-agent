@@ -390,6 +390,35 @@
 
     .header-btn-wrap { position: relative; display: inline-flex; }
     .header-actions { display: inline-flex; align-items: center; gap: 0; }
+    /* AUTONOMOUS MODE (lib/autonomous): the operator's ON/OFF switch, always
+       in the header once signed in. ON: a pulsing dot and today's count of
+       autonomous actions (tap the count for the timeline). The pulse is a
+       slow 2 s fade, never a flash; reduced motion keeps it still. */
+    .auto-wrap { display: inline-flex; align-items: center; gap: 2px; margin-right: 2px; }
+    .auto-wrap[hidden] { display: none; }
+    .auto-toggle { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px 0 8px; border: 1px solid var(--border-strong); border-radius: var(--r-full); background: var(--surface-2); color: var(--text-2); font: 600 0.72rem/1 var(--font-sans, inherit); letter-spacing: 0.06em; cursor: pointer; }
+    .auto-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+    .auto-toggle .auto-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
+    .auto-toggle[aria-checked="true"] { border-color: var(--gold-line); color: var(--text); background: var(--gold-soft); }
+    .auto-toggle[aria-checked="true"] .auto-dot { background: var(--gold-fill); box-shadow: 0 0 0 0 var(--gold-line); animation: auto-pulse 2s ease-in-out infinite; }
+    .auto-toggle[data-busy="1"] { opacity: 0.6; }
+    @keyframes auto-pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--gold-line); opacity: 1; } 50% { box-shadow: 0 0 0 5px rgba(243, 198, 35, 0); opacity: 0.75; } }
+    .auto-count { min-width: 28px; min-height: 28px; padding: 0 7px; border: 0; border-radius: var(--r-full); background: transparent; color: var(--text-2); font: 600 0.72rem/1 var(--font-sans, inherit); font-variant-numeric: tabular-nums; cursor: pointer; }
+    .auto-count:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+    .auto-count[hidden] { display: none; }
+    .auto-timeline { list-style: none; margin: 0; padding: 0; max-height: min(62vh, 520px); overflow-y: auto; overscroll-behavior: contain; }
+    .auto-timeline li { position: relative; padding: 10px 4px 10px 22px; border-left: 2px solid var(--border); margin-left: 6px; }
+    .auto-timeline li::before { content: ''; position: absolute; left: -6px; top: 15px; width: 10px; height: 10px; border-radius: 50%; background: var(--surface-2); border: 2px solid var(--text-3); }
+    .auto-timeline li[data-status="done"]::before { border-color: var(--ok); }
+    .auto-timeline li[data-status="failed"]::before, .auto-timeline li[data-status="refused"]::before { border-color: var(--danger); }
+    .auto-timeline li[data-status="running"]::before, .auto-timeline li[data-status="needs_approval"]::before { border-color: var(--gold-fill); }
+    .auto-tl-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: var(--fs-sm, 0.85rem); }
+    .auto-tl-head strong { color: var(--text); }
+    .auto-tl-meta { color: var(--text-3); font-size: var(--fs-2xs, 0.72rem); font-variant-numeric: tabular-nums; }
+    .auto-tl-body { margin: 4px 0 0; color: var(--text-2); font-size: var(--fs-xs, 0.8rem); overflow-wrap: anywhere; }
+    .auto-tl-body a { color: var(--gold); }
+    .auto-empty { color: var(--text-3); padding: 12px 4px; }
+    @media (prefers-reduced-motion: reduce) { .auto-toggle[aria-checked="true"] .auto-dot { animation: none; } }
     /* save: outline bookmark; once the chat is saved, a filled gold one */
     #save-thread-btn[aria-pressed="true"] { color: var(--gold); }
     #save-thread-btn[aria-pressed="true"] .icon { fill: currentColor; }
@@ -2610,6 +2639,17 @@
     </div>
   </div>
 
+  <div id="auto-modal" class="matrix-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="auto-title">
+    <div class="matrix-card">
+      <div class="modal-head">
+        <h2 id="auto-title">Autonomous timeline</h2>
+        <p class="modal-note" id="auto-note">Every action PG1 took on its own, newest first.</p>
+      </div>
+      <button type="button" class="icon-btn modal-close" aria-label="Close" data-dialog-close onclick="triggerHaptic(40); closeAutoTimeline()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+      <ol class="auto-timeline" id="auto-timeline" aria-live="polite"></ol>
+    </div>
+  </div>
+
   <header class="app-header">
     <button type="button" id="drawer-btn" class="icon-btn" onclick="triggerHaptic(); toggleDrawer()" aria-label="Open menu" aria-expanded="false" aria-controls="app-drawer"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
     <div class="brand-wrap">
@@ -2617,6 +2657,13 @@
       <span id="header-status-dot" class="status-dot-mini" role="img" aria-label="Status: ACTIVE | API LINKED" data-state="green"></span>
     </div>
     <div class="header-actions">
+      <!-- AUTONOMOUS MODE: the operator's ON/OFF switch (lib/autonomous),
+           shown once signed in. The count is today's autonomous actions;
+           tapping it opens the timeline. -->
+      <div class="auto-wrap" id="auto-wrap" hidden>
+        <button type="button" id="auto-toggle" class="auto-toggle" role="switch" aria-checked="false" aria-label="Autonomous mode" title="Autonomous mode" onclick="triggerHaptic(40); toggleAutonomous()"><span class="auto-dot" aria-hidden="true"></span><span class="auto-word" id="auto-word">AUTO OFF</span></button>
+        <button type="button" id="auto-count" class="auto-count" hidden onclick="triggerHaptic(); openAutoTimeline()" aria-label="Autonomous actions today: 0. Open the timeline">0</button>
+      </div>
       <!-- SAVE CHAT: saves this conversation as a thread (Session threads in
            the menu); once saved it shows filled and later messages update
            the same thread. Signed-in operator only. -->
@@ -2667,6 +2714,7 @@
 
     <nav class="drawer-section" aria-label="Session">
       <span class="drawer-label">Session</span>
+      <button type="button" class="drawer-item" id="auto-drawer-item" hidden onclick="triggerHaptic(); closeDrawer(); openAutoTimeline()"><svg class="icon" aria-hidden="true"><use href="#i-threads"/></svg>Autonomous timeline</button>
       <button type="button" class="drawer-item" onclick="triggerHaptic(); closeDrawer(); openThreadsModal()"><svg class="icon" aria-hidden="true"><use href="#i-threads"/></svg>Session threads</button>
       <button type="button" class="drawer-item" onclick="triggerHaptic(); closeDrawer(); openVisionMatrix()"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg>Vision matrix</button>
       <button type="button" class="drawer-item" onclick="triggerHaptic(); closeDrawer(); requestVaultExport()"><svg class="icon" aria-hidden="true"><use href="#i-export"/></svg>Export transcript</button>
@@ -3225,6 +3273,92 @@
     // After sign-in: show the section and, when this device already has a
     // subscription, store it again (an upsert) so a device the server lost
     // is back without touching the switch.
+    // AUTONOMOUS MODE (lib/autonomous, /api/watches auto_* ops): the header
+    // switch, today's count and the timeline. The state lives on the server,
+    // shared by every device; this page only shows it and asks to change it.
+    var autoState = { enabled: false, todayCount: 0 };
+    var autoPollTimer = null;
+    function renderAutonomous(a) {
+      if (!a || typeof a !== 'object') return;
+      autoState = { ...autoState, ...a };
+      const on = autoState.enabled === true;
+      const btn = document.getElementById('auto-toggle');
+      const word = document.getElementById('auto-word');
+      const count = document.getElementById('auto-count');
+      if (!btn || !word || !count) return;
+      btn.setAttribute('aria-checked', on ? 'true' : 'false');
+      word.textContent = on ? 'AUTO ON' : 'AUTO OFF';
+      const n = Number(autoState.todayCount) || 0;
+      count.hidden = !on;
+      count.textContent = String(n);
+      count.setAttribute('aria-label', `Autonomous actions today: ${n}${autoState.pendingApprovals ? `, ${autoState.pendingApprovals} waiting for approval` : ''}. Open the timeline`);
+      btn.title = on ? `Autonomous mode is ON (${n} today). Tap to switch it off at once.` : (autoState.changedBy === 'auto_off' && autoState.reason ? `Switched off for safety: ${autoState.reason}` : 'Autonomous mode is OFF. Tap to switch it on.');
+    }
+    async function refreshAutonomous() {
+      if (!sessionUser || !sessionPass) return;
+      try {
+        const data = await watchesRequest({ op: 'auto_state' });
+        if (data && data.autonomous) renderAutonomous(data.autonomous);
+      } catch (e) { /* the switch keeps its last known state */ }
+    }
+    function showAutonomousSwitch() {
+      if (!sessionUser || !sessionPass) return;
+      const wrap = document.getElementById('auto-wrap');
+      const item = document.getElementById('auto-drawer-item');
+      if (wrap) wrap.hidden = false;
+      if (item) item.hidden = false;
+      refreshAutonomous();
+      if (!autoPollTimer) autoPollTimer = setInterval(function () { if (!document.hidden) refreshAutonomous(); }, 60000);
+    }
+    async function toggleAutonomous() {
+      const btn = document.getElementById('auto-toggle');
+      if (!btn || btn.dataset.busy === '1') return;
+      const next = !(autoState.enabled === true);
+      btn.dataset.busy = '1';
+      // OFF shows at once (the kill switch); the server confirms either way.
+      if (!next) renderAutonomous({ enabled: false });
+      try {
+        const data = await watchesRequest({ op: 'auto_set', enabled: next });
+        if (data && data.autonomous) renderAutonomous(data.autonomous);
+        await refreshAutonomous();
+      } catch (e) {
+        renderAutonomous({ enabled: next ? false : autoState.enabled });
+        alert(e && e.message ? e.message : 'Autonomous mode could not be changed right now.');
+      } finally {
+        delete btn.dataset.busy;
+      }
+    }
+    const AUTO_STATUS_WORDS = { queued: 'queued', running: 'running', done: 'done', failed: 'failed', cancelled: 'cancelled', stopped: 'stopped', refused: 'refused', needs_approval: 'needs approval', approved: 'approved', rejected: 'rejected' };
+    function autoTimelineItem(r) {
+      const when = r.at ? new Date(r.at).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+      const status = Object.hasOwn(AUTO_STATUS_WORDS, r.status) ? r.status : 'done';
+      const link = typeof r.link === 'string' && /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(r.link) ? ` · <a href="${escapeHTML(r.link)}" target="_blank" rel="noopener">pull request</a>` : '';
+      const cost = Number(r.cost_usd) ? ` · $${Number(r.cost_usd).toFixed(2)}` : '';
+      return `<li data-status="${status}"><div class="auto-tl-head"><strong>${escapeHTML(String(r.label || r.type || ''))}</strong><span class="auto-tl-meta">${escapeHTML(when)} · ${AUTO_STATUS_WORDS[status]}${cost}</span></div>`
+        + (r.reason ? `<p class="auto-tl-body">Why: ${escapeHTML(String(r.reason))}</p>` : '')
+        + (r.inputs_summary ? `<p class="auto-tl-body">Inputs: ${escapeHTML(String(r.inputs_summary))}</p>` : '')
+        + (r.result || link ? `<p class="auto-tl-body">${escapeHTML(String(r.result || ''))}${link}</p>` : '')
+        + '</li>';
+    }
+    async function openAutoTimeline() {
+      const modal = document.getElementById('auto-modal');
+      const list = document.getElementById('auto-timeline');
+      if (!modal || !list) return;
+      modal.style.display = 'flex';
+      list.innerHTML = '<li class="auto-empty">Loading…</li>';
+      try {
+        const data = await watchesRequest({ op: 'auto_log', limit: 50 });
+        const rows = data && Array.isArray(data.actions) ? data.actions : [];
+        list.innerHTML = rows.length ? rows.map(autoTimelineItem).join('') : '<li class="auto-empty">No autonomous actions yet.</li>';
+      } catch (e) {
+        list.innerHTML = '<li class="auto-empty">The timeline could not be loaded right now.</li>';
+      }
+    }
+    function closeAutoTimeline() {
+      const modal = document.getElementById('auto-modal');
+      if (modal) modal.style.display = 'none';
+    }
+
     async function showOperatorPushPanel() {
       const panel = document.getElementById('push-panel');
       if (!panel || !sessionUser || !sessionPass) return;
@@ -4804,6 +4938,7 @@
           syncErrorLogToServer().then(updateErrorLogBadge);
           pollReportsSoon(500);
           showOperatorPushPanel();
+          showAutonomousSwitch();
         } else {
           alert('Access Denied: Invalid Credentials.');
         }
@@ -7839,6 +7974,8 @@
         if (data.labCards) dedupeLabCards();
         startCountUps(agentBubble);
         if (data.milestone) celebrateMilestone(data.milestone);
+        // /auto on|off from chat: the header switch follows at once.
+        if (data.autonomous && typeof data.autonomous.enabled === 'boolean') { renderAutonomous(data.autonomous); refreshAutonomous(); }
 
         // /speak and /tts responses carry audio/audioStatus directly on this
         // same reply (activeAction === 'SPEAK' server-side) — play/report it

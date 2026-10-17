@@ -20,12 +20,21 @@
 //                                      test notification to it only;
 //                                      answers { sent: 0 | 1 }
 //
+//   { op: 'auto_state' }               Autonomous mode: { enabled,
+//                                      todayCount, pendingApprovals,
+//                                      changedBy, reason } (the header)
+//   { op: 'auto_set', enabled }        switches it ON or OFF (OFF cancels
+//                                      queued actions; running ones stop at
+//                                      their next safe checkpoint)
+//   { op: 'auto_log', before?, limit? } the audit timeline, newest first
+//
 // Failures are neutral: no Supabase detail reaches the page.
 
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { resolveOperatorSession } from '../lib/operatorSession.mjs';
 import { createWatchStore } from '../lib/watches/store.mjs';
 import { vapidKeys, pushToOperator } from '../lib/watches/push.mjs';
+import { createAutonomousStore, switchOn, switchOff, todaySummary, ACTION_TYPES } from '../lib/autonomous/state.mjs';
 
 export const config = { maxDuration: 15 };
 
@@ -71,6 +80,36 @@ export function cleanSubscription(sub) {
 const TEST_TITLE = 'PG1 test notification';
 const TEST_BODY = 'Notifications work on this device.';
 
+// AUTONOMOUS MODE (lib/autonomous/state.mjs): the header switch and its
+// timeline. Rows go out as stored (already scrubbed); never a Supabase detail.
+const TIMELINE_FIELDS = ['id', 'at', 'type', 'reason', 'inputs_summary', 'status', 'result', 'cost_usd', 'link', 'finished_at'];
+export function timelineRow(r) {
+  const out = {};
+  for (const k of TIMELINE_FIELDS) out[k] = r[k] ?? null;
+  out.label = ACTION_TYPES[r.type] || r.type;
+  return out;
+}
+async function autonomousOp(body, res, store) {
+  if (body.op === 'auto_state') {
+    const state = await store.getState();
+    const today = state.error ? { count: 0, pendingApprovals: 0, costUsd: 0 } : await todaySummary(store);
+    return res.status(200).json({ ok: true, autonomous: { enabled: state.enabled === true, available: !state.error, todayCount: today.count, pendingApprovals: today.pendingApprovals, costUsd: Math.round(today.costUsd * 100) / 100, changedBy: state.changed_by, changedAt: state.changed_at, reason: state.reason, maxPerHour: state.max_actions_per_hour, dailyBudgetUsd: Number(state.daily_budget_usd) || 0 } });
+  }
+  if (body.op === 'auto_set') {
+    if (typeof body.enabled !== 'boolean') return res.status(400).json({ error: 'bad_request', message: 'enabled must be true or false' });
+    if (body.enabled) await switchOn(store); else await switchOff(store, { by: 'operator', reason: 'Switched off by the operator' });
+    const state = await store.getState();
+    if (body.enabled && !state.enabled) return res.status(503).json({ error: 'unavailable', message: 'Autonomous mode is not set up on this deployment yet, so it stays OFF.' });
+    return res.status(200).json({ ok: true, autonomous: { enabled: state.enabled === true } });
+  }
+  if (body.op === 'auto_log') {
+    const before = typeof body.before === 'string' && !Number.isNaN(Date.parse(body.before)) ? new Date(body.before).toISOString() : null;
+    const rows = await store.listActions({ limit: Math.max(1, Math.min(100, Number(body.limit) || 50)), before });
+    return res.status(200).json({ ok: true, actions: rows.map(timelineRow) });
+  }
+  return res.status(400).json({ error: 'bad_request', message: 'Unknown autonomous op' });
+}
+
 // webpushImpl is for tests; the deployment loads web-push itself.
 export function createWatchesHandler({ webpushImpl = null } = {}) {
   return async function handler(req, res) {
@@ -105,6 +144,10 @@ export function createWatchesHandler({ webpushImpl = null } = {}) {
     }
 
     try {
+      if (typeof body.op === 'string' && body.op.startsWith('auto_')) {
+        const { supUrl, supKey } = getSupabaseCreds();
+        return await autonomousOp(body, res, createAutonomousStore({ supUrl, supKey }));
+      }
       if (body.op === 'inbox') {
         const reports = await store.inbox(Array.isArray(body.threadKeys) ? body.threadKeys : []);
         return res.status(200).json({ ok: true, reports });
