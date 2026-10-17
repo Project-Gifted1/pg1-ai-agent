@@ -27,6 +27,17 @@
 //                                      queued actions; running ones stop at
 //                                      their next safe checkpoint)
 //   { op: 'auto_log', before?, limit? } the audit timeline, newest first
+//   { op: 'auto_approvals' }           action cards waiting for the operator
+//   { op: 'auto_decide', id, decision } approve or reject one card; an
+//                                      approved card never applies anything
+//                                      itself: it records the decision and,
+//                                      for a promotion, hands back the chat
+//                                      command for the operator's own session
+//   { op: 'lab_scene' }                the living lab's state (lib/labScene.mjs):
+//                                      { mode, experiments, events }
+//   { op: 'auto_inbox' }               reports for the chat not shown yet
+//                                      (the daily briefing); { op:
+//                                      'auto_ack', ids } marks them shown
 //
 // Failures are neutral: no Supabase detail reaches the page.
 
@@ -34,6 +45,7 @@ import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { resolveOperatorSession } from '../lib/operatorSession.mjs';
 import { createWatchStore } from '../lib/watches/store.mjs';
 import { vapidKeys, pushToOperator } from '../lib/watches/push.mjs';
+import { labSceneState } from '../lib/labScene.mjs';
 import { createAutonomousStore, switchOn, switchOff, todaySummary, ACTION_TYPES } from '../lib/autonomous/state.mjs';
 
 export const config = { maxDuration: 15 };
@@ -89,6 +101,13 @@ export function timelineRow(r) {
   out.label = ACTION_TYPES[r.type] || r.type;
   return out;
 }
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// An approval card as the page shows it: what PG1 proposes, the dry run's
+// result (SQL text, a command) and nothing else.
+export function approvalCard(r) {
+  const a = r.approval && typeof r.approval === 'object' ? r.approval : {};
+  return { id: r.id, at: r.at, type: r.type, label: ACTION_TYPES[r.type] || r.type, title: String(a.title || r.result || '').slice(0, 200), detail: String(a.detail || '').slice(0, 400), kind: ['sql_proposal', 'promote'].includes(a.kind) ? a.kind : 'other', sql: a.kind === 'sql_proposal' ? String(a.sql || '').slice(0, 1500) : null, link: r.link || null };
+}
 async function autonomousOp(body, res, store) {
   if (body.op === 'auto_state') {
     const state = await store.getState();
@@ -101,6 +120,30 @@ async function autonomousOp(body, res, store) {
     const state = await store.getState();
     if (body.enabled && !state.enabled) return res.status(503).json({ error: 'unavailable', message: 'Autonomous mode is not set up on this deployment yet, so it stays OFF.' });
     return res.status(200).json({ ok: true, autonomous: { enabled: state.enabled === true } });
+  }
+  if (body.op === 'auto_approvals') {
+    const rows = await store.listActions({ statuses: ['needs_approval'], limit: 20 });
+    return res.status(200).json({ ok: true, approvals: rows.map(approvalCard) });
+  }
+  if (body.op === 'auto_decide') {
+    const id = typeof body.id === 'string' ? body.id.trim() : '';
+    if (!UUID_RE.test(id) || !['approve', 'reject'].includes(body.decision)) return res.status(400).json({ error: 'bad_request', message: 'id and decision (approve or reject) are required' });
+    const row = await store.getAction(id);
+    if (!row || row.status !== 'needs_approval') return res.status(404).json({ error: 'not_found', message: 'That card is not waiting for a decision.' });
+    const approved = body.decision === 'approve';
+    await store.updateAction(id, { status: approved ? 'approved' : 'rejected', finished_at: new Date().toISOString() });
+    const a = row.approval || {};
+    const command = approved && a.kind === 'promote' && /^\/lab report [0-9a-f]{8}$/.test(String(a.command || '')) ? a.command : null;
+    return res.status(200).json({ ok: true, decision: approved ? 'approved' : 'rejected', ...(command ? { command } : {}), message: approved ? (a.kind === 'sql_proposal' ? 'Recorded. PG1 changes no data: run the SQL yourself in the Supabase SQL editor.' : command ? 'Opening the lab\'s own approval in chat.' : 'Recorded.') : 'Rejected. Nothing was changed.' });
+  }
+  if (body.op === 'auto_inbox') {
+    const rows = await store.listActions({ type: 'daily_briefing', limit: 5 });
+    return res.status(200).json({ ok: true, reports: rows.filter((r) => r.body && !r.delivered_at && r.status === 'done').map((r) => ({ id: r.id, at: r.at, title: 'PG1 daily briefing', body: r.body })) });
+  }
+  if (body.op === 'auto_ack') {
+    const ids = (Array.isArray(body.ids) ? body.ids : []).filter((x) => UUID_RE.test(String(x))).slice(0, 10);
+    for (const id of ids) await store.updateAction(id, { delivered_at: new Date().toISOString() });
+    return res.status(200).json({ ok: true, acknowledged: ids.length });
   }
   if (body.op === 'auto_log') {
     const before = typeof body.before === 'string' && !Number.isNaN(Date.parse(body.before)) ? new Date(body.before).toISOString() : null;
@@ -144,6 +187,10 @@ export function createWatchesHandler({ webpushImpl = null } = {}) {
     }
 
     try {
+      if (body.op === 'lab_scene') {
+        const { supUrl, supKey } = getSupabaseCreds();
+        return res.status(200).json({ ok: true, scene: await labSceneState({ supUrl, supKey }) });
+      }
       if (typeof body.op === 'string' && body.op.startsWith('auto_')) {
         const { supUrl, supKey } = getSupabaseCreds();
         return await autonomousOp(body, res, createAutonomousStore({ supUrl, supKey }));
