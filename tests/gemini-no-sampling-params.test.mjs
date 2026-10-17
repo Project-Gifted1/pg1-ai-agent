@@ -49,6 +49,7 @@ import { synthesizeSpeech } from '../lib/ttsRouter.mjs';
 import worker from '../index.js';
 import { filmThink, imageBlock, geminiStill, geminiClip } from '../lib/film/providers.mjs';
 import { analyzeCameraFrame } from '../lib/cameraFeed.mjs';
+import { keysStatus } from '../lib/keysStatus.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ORIGINAL_ENV = { ...process.env };
@@ -373,6 +374,14 @@ test('a camera frame carries no sampling parameter', async () => {
   assertClean(stub, 'camera frame', 1);
 });
 
+// /keys (lib/keysStatus.mjs): the one-token check on each Gemini key.
+test('the /keys Gemini check carries no sampling parameter', async () => {
+  const stub = geminiStub(() => Response.json(text('.')));
+  const rows = await keysStatus({ env: { GEMINI_API_KEY_PAID: 'AQ.StubPaidKeyForKeysTests0000000000', GEMINI_API_KEY_FREE: 'AIzaStubFreeKeyForKeysTests00000000000' }, fetchImpl: stub.fetch, fresh: true });
+  assert.equal(rows.find((r) => r.engine === 'gemini_paid').state, 'working');
+  assertClean(stub, '/keys', 2);
+});
+
 // --- every call site is covered ------------------------------------------------------
 
 function sourceFiles(dir) {
@@ -391,7 +400,7 @@ test('every source file that calls Gemini is one these tests drive', () => {
     .filter((f) => readFileSync(f, 'utf8').includes(GEMINI_HOST))
     .map((f) => f.slice(ROOT.length + 1))
     .sort();
-  assert.deepEqual(callers, ['api/chat.mjs', 'api/lib/gemini-client.js', 'index.js', 'lib/a2aJobs/service.mjs', 'lib/cameraFeed.mjs', 'lib/contextWindow.mjs', 'lib/film/providers.mjs', 'lib/imageEngines.mjs', 'lib/lab/policy.mjs', 'lib/lab/runner.mjs', 'lib/ttsRouter.mjs', 'lib/videoJobs.mjs'],
+  assert.deepEqual(callers, ['api/chat.mjs', 'api/lib/gemini-client.js', 'index.js', 'lib/a2aJobs/service.mjs', 'lib/cameraFeed.mjs', 'lib/contextWindow.mjs', 'lib/film/providers.mjs', 'lib/imageEngines.mjs', 'lib/keysStatus.mjs', 'lib/lab/policy.mjs', 'lib/lab/runner.mjs', 'lib/ttsRouter.mjs', 'lib/videoJobs.mjs'],
     'a new Gemini call site: drive it through geminiStub above');
 });
 

@@ -147,9 +147,14 @@ describe('filmThink', () => {
     assert.deepEqual(e.engines(), ['anthropic', 'anthropic', 'gemini', 'gemini', 'openrouter']);
     assert.equal(r.provider, 'openrouter');
     assert.equal(e.seen[4].key, `Bearer ${OPENROUTER}`);
-    assert.equal(e.seen[4].body.model, 'openai/gpt-5');
+    // A render is a background job: OpenRouter's free models only (one
+    // request with the :free list), never its paid ones, and never on a
+    // first-party Chinese host.
+    assert.equal(e.seen[4].body.model, 'deepseek/deepseek-chat-v3.1:free');
+    assert.deepEqual(e.seen[4].body.models, ['deepseek/deepseek-chat-v3.1:free', 'qwen/qwen3-235b-a22b:free', 'qwen/qwen3-coder:free']);
+    assert.ok(e.seen[4].body.provider.ignore.includes('DeepSeek'));
     assert.deepEqual(r.value, validateStoryboard(JSON.stringify(STORYBOARD)));
-    assert.ok(lines.some((l) => /storyboard written by openrouter \(openai\/gpt-5\) after anthropic, gemini_paid failed/.test(l)));
+    assert.ok(lines.some((l) => /storyboard written by openrouter \(deepseek\/deepseek-chat-v3\.1:free\) after anthropic, gemini_paid failed/.test(l)));
     assert.equal(isTripped('anthropic'), false, 'a bad reply is not a billing failure');
   });
 

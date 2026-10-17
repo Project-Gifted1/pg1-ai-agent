@@ -18,8 +18,10 @@ import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } 
 import { reportUpstreamFailure, userFacingFailure, providerErrorText, VOICE_FAILURE_STATUS } from '../lib/upstreamFailure.mjs';
 import { generateImage, imageModels } from '../lib/imageEngines.mjs';
 import { createCapacityAlerts, createAllOutAlert } from '../lib/router/alerts.mjs';
-import { freeLimiterFor, PRIORITY } from '../lib/router/freeLimiter.mjs';
+import { freeLimiterFor, PRIORITY, PACED_ENGINES } from '../lib/router/freeLimiter.mjs';
 import { analyzeCameraFrame, cameraEventLine, cameraLogLine } from '../lib/cameraFeed.mjs';
+import { ensureOpenRouterState } from '../lib/router/openrouterGuard.mjs';
+import { isKeysCommand, handleKeysCommand } from '../lib/keysStatus.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { TASKS, FAILURE, failureClass, budgetAllows, isBillingFailure, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, CHAT_THROTTLE, withThrottleRetry, isFallbackFailure, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
 import { synthesizeSpeech, createRoutedSynth } from '../lib/ttsRouter.mjs';
@@ -1351,20 +1353,21 @@ function roundFailureStops(route, c, result, next) {
 // of failing); a rate-limited engine is waited for as it asks, else 2 s,
 // 5 s, 10 s, at most 20 s in all and never past the request deadline, then
 // the round moves on to the next engine (lib/aiRouter.mjs withThrottleRetry).
-var chatLimiter = null;
-function chatFreeLimiter() {
-  if (!chatLimiter) {
+var chatLimiters = {};
+function chatFreeLimiter(engine) {
+  var e = engine || 'gemini_free';
+  if (!chatLimiters[e]) {
     var creds = null;
-    try { creds = getSupabaseCreds(); } catch (e) { creds = null; }
-    chatLimiter = freeLimiterFor({ env: process.env, ...(creds || {}) });
+    try { creds = getSupabaseCreds(); } catch (err) { creds = null; }
+    chatLimiters[e] = freeLimiterFor({ env: process.env, ...(creds || {}), engine: e });
   }
-  return chatLimiter;
+  return chatLimiters[e];
 }
-var FREE_LIMIT_ERROR = 'free key: per-minute limit reached (PG1 limiter)';
+var FREE_LIMIT_ERROR = 'free engine: per-minute limit reached (PG1 limiter)';
 async function callWithPace(c, opts, call) {
   var paced = async function () {
-    if (c.provider === 'gemini_free') {
-      var slot = await chatFreeLimiter().acquire({ priority: PRIORITY.CHAT, maxWaitMs: Math.max(0, Math.min(CHAT_THROTTLE.maxTotalWaitMs, opts.deadlineTs - Date.now() - 5000)) });
+    if (PACED_ENGINES.indexOf(c.provider) >= 0) {
+      var slot = await chatFreeLimiter(c.provider).acquire({ priority: PRIORITY.CHAT, maxWaitMs: Math.max(0, Math.min(CHAT_THROTTLE.maxTotalWaitMs, opts.deadlineTs - Date.now() - 5000)) });
       if (!slot.granted) return { text: null, status: 429, error: FREE_LIMIT_ERROR };
     }
     return call();
@@ -1399,7 +1402,7 @@ function alertAllOut(route, errors) {
 // The error-log text for a round where every candidate failed (operator
 // only; never shown in a reply): "Anthropic failed (...); Gemini fallback
 // also failed (...)".
-var PROVIDER_LOG_NAMES = { gemini_free: 'Gemini', gemini_paid: 'Gemini', anthropic: 'Anthropic', gateway: 'AI gateway', openrouter: 'OpenRouter', openai: 'OpenAI' };
+var PROVIDER_LOG_NAMES = { gemini_free: 'Gemini', gemini_paid: 'Gemini', anthropic: 'Anthropic', gateway: 'AI gateway', openrouter: 'OpenRouter', openai: 'OpenAI', groq: 'Groq', mistral: 'Mistral', github_models: 'GitHub Models', cloudflare: 'Cloudflare Workers AI' };
 function roundFailureText(failures) {
   if (!failures.length) return 'No AI engine is configured or within its daily budget.';
   if (failures.length === 1) return failures[0].error;
@@ -1434,16 +1437,28 @@ function rememberRound(route, candidate, result) {
   }
 }
 
-// One OpenAI-compatible backup (AI gateway, OpenRouter, OpenAI): plain
-// text, no functions, each of the candidate's models in turn.
+// One OpenAI-compatible engine (AI gateway, OpenRouter, OpenAI, the no-card
+// free engines): plain text, no functions, each of the candidate's models
+// in turn; for OpenRouter its :free models first, as one request. Streamed
+// (lib/aiRouter.mjs callOpenAiCompat): no token within 20 s moves on, a
+// reply that is arriving may run to the request deadline (90 s at most).
+function compatModelList(candidate) {
+  var list = [];
+  if (Array.isArray(candidate.freeModels) && candidate.freeModels.length) list.push(candidate.freeModels);
+  return list.concat(candidate.models || []);
+}
 async function fetchCompatCore(candidate, opts) {
   var last = { text: null, status: null, error: 'no model configured' };
-  for (var i = 0; i < candidate.models.length; i++) {
+  var list = compatModelList(candidate);
+  for (var i = 0; i < list.length; i++) {
     var remainingMs = opts.deadlineTs - Date.now();
     if (remainingMs <= 1000) break;
-    var r = await callOpenAiCompat({ candidate: candidate, model: candidate.models[i], system: opts.sysInstruction, prompt: opts.promptText, fetchImpl: function (u, o) { return fetch(u, o); }, timeoutMs: Math.min(20000, remainingMs) });
+    var label = Array.isArray(list[i]) ? list[i][0] : list[i];
+    var r = await callOpenAiCompat({ candidate: candidate, model: list[i], system: opts.sysInstruction, prompt: opts.promptText, fetchImpl: function (u, o) { return fetch(u, o); }, timeoutMs: Math.min(90000, remainingMs) });
     if (r.ok) return { text: r.text, calls: [], provider: candidate.provider, model: r.model, usage: r.usage, error: null };
-    last = { text: null, status: r.status, error: `[${candidate.models[i]}] ${providerErrorText(r.status, r.detail || '')}` };
+    last = { text: null, status: r.status, error: `[${label}] ${providerErrorText(r.status, r.detail || '')}`, retryAfterMs: r.retryAfterMs };
+    // Out of credit or a bad key is the account's, not the model's.
+    if (r.status === 401 || r.status === 402 || r.status === 403 || isBillingFailure(r.status, r.detail || '')) break;
   }
   return last;
 }
@@ -2339,6 +2354,17 @@ export default async function handler(req, res) {
       return sendJSON(res, 200, { ok: false, throttled: cameraOut.status === 429, reason: cameraOut.reason || null, retryAfterMs: cameraOut.retryAfterMs || null });
     }
 
+    // OPENROUTER GUARD (lib/router/openrouterGuard.mjs): the balance, read at
+    // most every 10 minutes, decides whether OpenRouter is planned at all
+    // (dormant at $0 or below) and whether its paid models are (above $2).
+    if (isOperator) {
+      try {
+        var guardCreds = null;
+        try { guardCreds = getSupabaseCreds(); } catch (e) { guardCreds = null; }
+        await ensureOpenRouterState({ env: process.env, fetchImpl: function (u, o) { return globalThis.fetch(u, o); }, store: guardCreds ? createWatchStore(guardCreds) : null, ...(guardCreds || {}) });
+      } catch (e) { /* the guard never blocks a reply */ }
+    }
+
     // PG1 MOTION STATUS (lib/videoJobs.mjs): the client's poll for a clip
     // that is rendering. Signed-in operator only; answered before any of the
     // chat's context is loaded, so a poll stays short. By default the clip
@@ -3048,6 +3074,17 @@ export default async function handler(req, res) {
         });
         if (voicesOut.status === 401) log401('VOICES', 'unauthenticated', supUrl, supKey);
         return sendJSON(res, voicesOut.status, { reply: voicesOut.reply, traceId: requestTraceId });
+      } else if (isKeysCommand(lower)) {
+        // AI KEYS (lib/keysStatus.mjs, signed-in operator only): each AI key
+        // set or missing and its live state from the cheapest check
+        // (working, out of credit, rate-limited, invalid), cached 5 minutes.
+        // Never a key value.
+        if (!isOperator) {
+          log401('KEYS', 'unauthenticated', supUrl, supKey);
+          return sendJSON(res, 401, { reply: `[AGENT] Keys Aborted: Authentication required.`, traceId: requestTraceId });
+        }
+        var keysOut = await handleKeysCommand({ env: process.env, fresh: /\bfresh\b/.test(lower), fetchImpl: function (u, o) { return globalThis.fetch(u, o); } });
+        return sendJSON(res, 200, { reply: keysOut.reply, traceId: requestTraceId });
       } else if (lower === '/spend' || lower.startsWith('/spend ')) {
         // AI SPEND (signed-in operator only): estimated spend per PG1 engine
         // for today or yesterday (UTC), with each daily cap. PG1 labels
@@ -3122,7 +3159,7 @@ export default async function handler(req, res) {
         activeAction = 'CLAUDE_CHAT';
       } else if (lower === '/help' || lower === 'help') {
         return sendJSON(res, 200, {
-          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /usage ] tool usage by agents (/usage 24h, 7d or 30d, default 7d; signed-in operator only): real callers vs registry/health-check probes, MCP requests vs tool calls, per route and per day with spikes marked, top tools (free or paid), the payment funnel and settled revenue, errors, top MCP clients\n- [ /task ] the task for this thread: /task shows it, /task set <goal>, /task clear; /pin <rule> adds a rule PG1 always follows in this thread, /unpin <n> removes one. Saved with a saved chat\n- [ /spend ] estimated AI spend per PG1 engine today (or /spend yesterday), with each daily cap (signed-in operator only)\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/video** [draft|pro] [short|long] plus a prompt: a 5 or 10 second video clip with PG1 Motion (standard and short are the defaults; attach an image to use it as the first frame; a daily budget applies, /video alone lists the tiers, prices and what is left today; signed-in operator only, when switched on)\n- **/film** plus what it is about: a cinematic film of a minute or more with PG1 Studio — storyboard, an animatic preview, then the full render, each approved first, with a spending cap per film; /film alone lists the film commands (signed-in operator only, when switched on)\n- **/movie** \"<idea>\" [--length <minutes>, default 2] [--voice \"<narrator>\" only for narration] [--client]: a movie whose characters act and speak on screen — screenplay and cast to approve, then the cost estimate to approve, then the shoot, edit, master and QC; /movie alone lists the movie commands (signed-in operator only)\n- **/music** plus a description (genre, mood, instruments, era): original music and beats with PG1 Sound — two previews, approve one for the final render, then /music export for WAV stems, MIDI and the WAV master in one zip; options --instrumental, --bpm, --key, --length short|full, --lyrics \"your own lyrics\"; /music alone lists the commands (signed-in operator only)\n- **/skills**: the skills PG1 has (reusable instructions): /skills show, edit, enable, disable, history, rollback; **/learn** (or 👍) drafts one from the task in this thread; drafts are never used until enabled (signed-in operator only)\n- [ /autonomy ] what PG1 did on its own in the last 24 hours (tier, decision, cost) and the kill switch setting PG1_AUTONOMY (off, lab or on)\n- [ /a2a jobs ] paid jobs other agents bought over A2A (batch wallet screen, CVE exposure report, hostname/package batch, threat write-up PDF): status, price, payment, failures and credits; /a2a job <id> for one; /usage has the A2A jobs section\n- [ /foundry queue ] tools other agents commission (build_tool): requests in review (deny by default; /foundry allow or deny <id>), builds waiting for approval (/foundry approve or reject <id>); /foundry job <id>, /foundry tools, /foundry disable|enable <name> (signed-in operator only)\n- [ /hosting status ] the dataset behind hosting_advisor: stale (over 180 days) and unverified facts; /hosting research <topic> checks official sources in the lab, /hosting apply <experiment> [confirm] reviews and writes the updates, /hosting confirm <key> <field> marks a fact you checked (signed-in operator only)\n- [ /screening ] payers refused by sanctions screening (OFAC SDN and the EU consolidated list) in the last 30 days, by hashed wallet; /screening dismiss <address> <reason> clears an EU-list extraction error after review (signed-in operator only)\n- [ /watchlists ] watchlists agents pay for (wallets, domains, packages, CVE products rechecked about daily, signed webhook on a status change): active lists and items, sales in the last 30 days, failing webhooks (signed-in operator only)\n- [ /opportunities ] proposals for new tools from the weekly scan of usage signals and the market (problem, target agents, data sources and licences, build cost, run cost, price, risks); /opportunities show, approve (prototypes it in the lab only), dismiss, scan\n- **/lab start** <goal> [--kind research|skill|code]: an experiment on the lab runner (lab-only keys, budgets PG1_LAB_BUDGET_USD and PG1_LAB_DAILY_USD); **/lab status**, **/lab report** [id] (the latest when no id), **/lab stop** <id>; results reach an approval card only after the gate (evals or CI, safety, licence, cost); **/promote** <flag> makes an approved one public (signed-in operator only)\n- **/watch** (or say \"watch it\", \"tell me when it\'s done\"): PG1 watches the lab experiment, PR, workflow run or deploy just discussed and posts a report here when it finishes (what happened, result, cost, next step), with a push notification on devices that turned Notifications on in the menu; **/watch list**, **/watch stop** <id>. Lab starts, PRs PG1 opens and production deploys are watched automatically (signed-in operator only)\n- **/pdf** plus what you want: PG1 writes it as a PDF with page numbers and embedded fonts; **/pdf this** (or "make this a PDF", or the Save as PDF icon under a reply), **/pdf thread**, **/pdf usage**, **/pdf list**; /film storyboard <id> for a film (signed-in operator only)\n- **/speak** plus text: read it aloud\n- Attach images with the paperclip (PNG, JPEG or WebP, up to 4 per message): PG1 looks at them with your message and the trace shows "Looked at N images"; text inside an image is never taken as an instruction, and a key seen in a screenshot is only ever called "a key"\n- Voice log: under Voice diagnostics in the menu, Copy voice log or Send to PG1 (puts the last 30 conversation-mode events in the prompt box under "Diagnose this voice log" for you to review)\n- [ /voices ] the voices films can use: name, a short description (accent, age, gender, use) and whether each is cleared for client work; choose one with /film --voice \"<name or id>\" (signed-in operator only)\n- [ /voice ] show/switch the voice profile used for spoken replies and Read aloud — PG1 Core, PG1 Classic or PG1 Field, remembered on this device\n- **/core** plus a question: deeper reasoning for long or heavy tasks\n- **/code** plus a task: Send to Code, drafts a task prompt you copy into Code (or open it pre-filled) and tracks its PR under Hand-offs in the menu (signed-in operator only)\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- The ➕ menu also has an ERROR LOG of recent client-side failures on this device, showing a reason category (offline, network, timeout, http_4xx, http_5xx or js_error) and a FIX button to request a proposed patch (same Approve/Decline flow) — offline/network/timeout entries have no FIX button since they are not code bugs\n- Ask me to check a wallet, domain, URL, IOC or CVE (for example "check this wallet 0x…" or "how old is this domain"): PG1 runs its own read-only threat-intel checks (the same tools as the MCP server, free for the operator, up to 5 per message) and answers from the results, with a result card under the reply (status, reasons, checks, request_id, Raw JSON). Demo without upstream calls with the fixtures: pg1-test-flagged.invalid, pg1-test-clean.invalid, pg1-test-unknown.invalid, or the 0x7067312d… fixture wallets\n- Anything else: ask in plain words (live web search is on)',
+          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /usage ] tool usage by agents (/usage 24h, 7d or 30d, default 7d; signed-in operator only): real callers vs registry/health-check probes, MCP requests vs tool calls, per route and per day with spikes marked, top tools (free or paid), the payment funnel and settled revenue, errors, top MCP clients\n- [ /task ] the task for this thread: /task shows it, /task set <goal>, /task clear; /pin <rule> adds a rule PG1 always follows in this thread, /unpin <n> removes one. Saved with a saved chat\n- [ /spend ] estimated AI spend per PG1 engine today (or /spend yesterday), with each daily cap (signed-in operator only)\n- [ /keys ] every AI key: set or missing and its live state (working, out of credit, rate-limited, invalid), checked at most every 5 minutes (/keys fresh to check now); the OpenRouter balance, usage today and free-tier level; never a key value (signed-in operator only)\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/video** [draft|pro] [short|long] plus a prompt: a 5 or 10 second video clip with PG1 Motion (standard and short are the defaults; attach an image to use it as the first frame; a daily budget applies, /video alone lists the tiers, prices and what is left today; signed-in operator only, when switched on)\n- **/film** plus what it is about: a cinematic film of a minute or more with PG1 Studio — storyboard, an animatic preview, then the full render, each approved first, with a spending cap per film; /film alone lists the film commands (signed-in operator only, when switched on)\n- **/movie** \"<idea>\" [--length <minutes>, default 2] [--voice \"<narrator>\" only for narration] [--client]: a movie whose characters act and speak on screen — screenplay and cast to approve, then the cost estimate to approve, then the shoot, edit, master and QC; /movie alone lists the movie commands (signed-in operator only)\n- **/music** plus a description (genre, mood, instruments, era): original music and beats with PG1 Sound — two previews, approve one for the final render, then /music export for WAV stems, MIDI and the WAV master in one zip; options --instrumental, --bpm, --key, --length short|full, --lyrics \"your own lyrics\"; /music alone lists the commands (signed-in operator only)\n- **/skills**: the skills PG1 has (reusable instructions): /skills show, edit, enable, disable, history, rollback; **/learn** (or 👍) drafts one from the task in this thread; drafts are never used until enabled (signed-in operator only)\n- [ /autonomy ] what PG1 did on its own in the last 24 hours (tier, decision, cost) and the kill switch setting PG1_AUTONOMY (off, lab or on)\n- [ /a2a jobs ] paid jobs other agents bought over A2A (batch wallet screen, CVE exposure report, hostname/package batch, threat write-up PDF): status, price, payment, failures and credits; /a2a job <id> for one; /usage has the A2A jobs section\n- [ /foundry queue ] tools other agents commission (build_tool): requests in review (deny by default; /foundry allow or deny <id>), builds waiting for approval (/foundry approve or reject <id>); /foundry job <id>, /foundry tools, /foundry disable|enable <name> (signed-in operator only)\n- [ /hosting status ] the dataset behind hosting_advisor: stale (over 180 days) and unverified facts; /hosting research <topic> checks official sources in the lab, /hosting apply <experiment> [confirm] reviews and writes the updates, /hosting confirm <key> <field> marks a fact you checked (signed-in operator only)\n- [ /screening ] payers refused by sanctions screening (OFAC SDN and the EU consolidated list) in the last 30 days, by hashed wallet; /screening dismiss <address> <reason> clears an EU-list extraction error after review (signed-in operator only)\n- [ /watchlists ] watchlists agents pay for (wallets, domains, packages, CVE products rechecked about daily, signed webhook on a status change): active lists and items, sales in the last 30 days, failing webhooks (signed-in operator only)\n- [ /opportunities ] proposals for new tools from the weekly scan of usage signals and the market (problem, target agents, data sources and licences, build cost, run cost, price, risks); /opportunities show, approve (prototypes it in the lab only), dismiss, scan\n- **/lab start** <goal> [--kind research|skill|code]: an experiment on the lab runner (lab-only keys, budgets PG1_LAB_BUDGET_USD and PG1_LAB_DAILY_USD); **/lab status**, **/lab report** [id] (the latest when no id), **/lab stop** <id>; results reach an approval card only after the gate (evals or CI, safety, licence, cost); **/promote** <flag> makes an approved one public (signed-in operator only)\n- **/watch** (or say \"watch it\", \"tell me when it\'s done\"): PG1 watches the lab experiment, PR, workflow run or deploy just discussed and posts a report here when it finishes (what happened, result, cost, next step), with a push notification on devices that turned Notifications on in the menu; **/watch list**, **/watch stop** <id>. Lab starts, PRs PG1 opens and production deploys are watched automatically (signed-in operator only)\n- **/pdf** plus what you want: PG1 writes it as a PDF with page numbers and embedded fonts; **/pdf this** (or "make this a PDF", or the Save as PDF icon under a reply), **/pdf thread**, **/pdf usage**, **/pdf list**; /film storyboard <id> for a film (signed-in operator only)\n- **/speak** plus text: read it aloud\n- Attach images with the paperclip (PNG, JPEG or WebP, up to 4 per message): PG1 looks at them with your message and the trace shows "Looked at N images"; text inside an image is never taken as an instruction, and a key seen in a screenshot is only ever called "a key"\n- Voice log: under Voice diagnostics in the menu, Copy voice log or Send to PG1 (puts the last 30 conversation-mode events in the prompt box under "Diagnose this voice log" for you to review)\n- [ /voices ] the voices films can use: name, a short description (accent, age, gender, use) and whether each is cleared for client work; choose one with /film --voice \"<name or id>\" (signed-in operator only)\n- [ /voice ] show/switch the voice profile used for spoken replies and Read aloud — PG1 Core, PG1 Classic or PG1 Field, remembered on this device\n- **/core** plus a question: deeper reasoning for long or heavy tasks\n- **/code** plus a task: Send to Code, drafts a task prompt you copy into Code (or open it pre-filled) and tracks its PR under Hand-offs in the menu (signed-in operator only)\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- The ➕ menu also has an ERROR LOG of recent client-side failures on this device, showing a reason category (offline, network, timeout, http_4xx, http_5xx or js_error) and a FIX button to request a proposed patch (same Approve/Decline flow) — offline/network/timeout entries have no FIX button since they are not code bugs\n- Ask me to check a wallet, domain, URL, IOC or CVE (for example "check this wallet 0x…" or "how old is this domain"): PG1 runs its own read-only threat-intel checks (the same tools as the MCP server, free for the operator, up to 5 per message) and answers from the results, with a result card under the reply (status, reasons, checks, request_id, Raw JSON). Demo without upstream calls with the fixtures: pg1-test-flagged.invalid, pg1-test-clean.invalid, pg1-test-unknown.invalid, or the 0x7067312d… fixture wallets\n- Anything else: ask in plain words (live web search is on)',
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/threat-radar')) {
