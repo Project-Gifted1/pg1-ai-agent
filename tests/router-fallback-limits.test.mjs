@@ -145,14 +145,20 @@ test('runRoute: 429 retried then answered; 429 exhausted falls through; 402 and 
 
 test('with checks on, the OpenAI-compatible backups stay (tools off) after every engine that can run them; with an image they are left out', () => {
   const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC, VERCEL_AI_API_KEY: GATEWAY, OPENROUTER_API_KEY: 'sk-or-stub', OPENAI_API_KEY: 'sk-stub' };
+  // Routing policy: operator content tries the free key first.
   const heavy = planRoute(TASKS.HEAVY, { env, dataClass: DATA.OPERATOR, withTools: true });
-  assert.deepEqual(heavy.map((c) => c.provider), ['anthropic', 'gemini_paid', 'gemini_free', 'openrouter', 'gateway', 'openai']);
+  assert.deepEqual(heavy.map((c) => c.provider), ['gemini_free', 'anthropic', 'gemini_paid', 'openrouter', 'gateway', 'openai']);
   assert.deepEqual(heavy.filter((c) => c.toolsOff).map((c) => c.provider), ['openrouter', 'gateway', 'openai']);
   const media = planRoute(TASKS.HEAVY, { env, dataClass: DATA.OPERATOR, withTools: true, withMedia: true });
-  assert.deepEqual(media.map((c) => c.provider), ['anthropic', 'gemini_paid', 'gemini_free']);
+  assert.deepEqual(media.map((c) => c.provider), ['gemini_free', 'anthropic', 'gemini_paid']);
   // The chat's own plan for a tools round, heavy (/core).
   const route = __chatRoundPlan({ env, isOperator: true, activeAction: 'CLAUDE_CHAT', promptText: 'check this domain' }, { tools: [{ name: 'check_domain_age' }], turns: [] });
-  assert.deepEqual(route.plan.map((c) => c.provider), ['anthropic', 'gemini_paid', 'gemini_free', 'openrouter', 'gateway', 'openai']);
+  assert.deepEqual(route.plan.map((c) => c.provider), ['gemini_free', 'anthropic', 'gemini_paid', 'openrouter', 'gateway', 'openai']);
+  // A free tools-off engine goes before the paid engines, unless the round
+  // must run a check (a forced tool): then it cannot fit the round.
+  const withGroq = { ...env, GROQ_API_KEY: 'gsk_stub' };
+  assert.deepEqual(planRoute(TASKS.HEAVY, { env: withGroq, dataClass: DATA.OPERATOR, withTools: true }).map((c) => c.provider), ['gemini_free', 'groq', 'anthropic', 'gemini_paid', 'openrouter', 'gateway', 'openai']);
+  assert.deepEqual(planRoute(TASKS.HEAVY, { env: withGroq, dataClass: DATA.OPERATOR, withTools: true, requiresTool: true }).map((c) => c.provider), ['gemini_free', 'anthropic', 'gemini_paid', 'groq', 'openrouter', 'gateway', 'openai']);
 });
 
 let ipSeq = 0;
