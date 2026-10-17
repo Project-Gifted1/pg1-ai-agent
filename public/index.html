@@ -418,6 +418,27 @@
     .auto-tl-body { margin: 4px 0 0; color: var(--text-2); font-size: var(--fs-xs, 0.8rem); overflow-wrap: anywhere; }
     .auto-tl-body a { color: var(--gold); }
     .auto-empty { color: var(--text-3); padding: 12px 4px; }
+    /* THE LIVING LAB (public/lab/living-lab.js): a full-screen view of the
+       lab, loaded only when opened. The scene sits behind the header and
+       the legend; it takes pointer input only to turn the view. */
+    .lab-screen { position: fixed; inset: 0; z-index: 60; display: none; flex-direction: column; background: #0a0a0b; color: #ececee; }
+    .lab-screen.is-open { display: flex; }
+    .lab-screen-head { position: relative; z-index: 2; display: flex; align-items: center; gap: 10px; padding: calc(var(--safe-top) + 8px) max(12px, var(--safe-right)) 8px max(12px, var(--safe-left)); background: linear-gradient(#0a0a0b, rgba(10, 10, 11, 0)); }
+    .lab-screen-head h2 { margin: 0; font-size: 1rem; font-weight: 600; letter-spacing: 0.02em; flex: 1; display: flex; align-items: center; gap: 8px; }
+    .lab-screen-head h2 svg { width: 18px; height: 22px; }
+    .lab-screen-head .icon-btn { color: #ececee; }
+    .living-lab { position: absolute; inset: 0; }
+    .living-lab-canvas { display: block; width: 100%; height: 100%; }
+    .lab-legend { position: relative; z-index: 2; margin-top: auto; display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 10px max(14px, var(--safe-left)) calc(var(--safe-bottom, 0px) + 14px); background: linear-gradient(rgba(10, 10, 11, 0), #0a0a0b 60%); font-size: 0.78rem; color: #b8b8c0; pointer-events: none; }
+    .lab-legend strong { color: #ececee; font-weight: 600; }
+    .lab-legend .sw { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+    .lab-mode { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; border: 1px solid rgba(243, 198, 35, 0.45); font-size: 0.75rem; font-weight: 600; }
+    .lab-mode[data-mode="error"] { border-color: rgba(255, 92, 92, 0.6); }
+    .lab-mode[data-mode="success"] { border-color: rgba(61, 220, 132, 0.6); }
+    .lab-mode[data-mode="thinking"] { border-color: rgba(143, 134, 255, 0.6); }
+    .lab-mode[data-mode="running"] { border-color: rgba(54, 209, 196, 0.6); }
+    .lab-bot-open { all: unset; cursor: pointer; display: block; border-radius: 12px; }
+    .lab-bot-open:focus-visible { box-shadow: var(--focus-ring); }
     /* Approval cards (Part 3): what Autonomous mode proposes and waits on. */
     .auto-approvals { display: grid; gap: 10px; margin: 0 0 14px; }
     .auto-approvals:empty { display: none; }
@@ -2663,6 +2684,29 @@
     </div>
   </div>
 
+  <!-- THE LIVING LAB: opened from the menu or a lab card's mascot. The scene
+       (public/lab/living-lab.js, three.js from /vendor/three/) is loaded
+       only here; it follows /api/watches op lab_scene, real state only. -->
+  <section id="lab-screen" class="lab-screen" role="dialog" aria-modal="true" aria-labelledby="lab-screen-title" aria-describedby="lab-screen-summary">
+    <div class="lab-screen-head">
+      <h2 id="lab-screen-title"><svg aria-hidden="true" focusable="false"><use href="#pg1-shield"/></svg>PG1 Living Lab</h2>
+      <span class="lab-mode" id="lab-mode" data-mode="idle">Idle</span>
+      <button type="button" class="icon-btn" aria-label="Close the lab" data-dialog-close onclick="triggerHaptic(40); closeLabScreen()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="living-lab" id="living-lab"></div>
+    <p class="sr-only" id="lab-screen-summary" aria-live="polite">The lab is idle.</p>
+    <div class="lab-legend" aria-hidden="true">
+      <span><span class="sw" style="background:#36d1c4"></span>running</span>
+      <span><span class="sw" style="background:#b08d1e"></span>queued</span>
+      <span><span class="sw" style="background:#3ddc84"></span>done</span>
+      <span><span class="sw" style="background:#ff5c5c"></span>failed</span>
+      <span><span class="sw" style="background:#f3c623"></span>webhook</span>
+      <span><span class="sw" style="background:#36d1c4"></span>scan</span>
+      <span><span class="sw" style="background:#8f86ff"></span>feed</span>
+      <span id="lab-legend-counts"><strong>0</strong> experiments</span>
+    </div>
+  </section>
+
   <header class="app-header">
     <button type="button" id="drawer-btn" class="icon-btn" onclick="triggerHaptic(); toggleDrawer()" aria-label="Open menu" aria-expanded="false" aria-controls="app-drawer"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
     <div class="brand-wrap">
@@ -2727,6 +2771,7 @@
 
     <nav class="drawer-section" aria-label="Session">
       <span class="drawer-label">Session</span>
+      <button type="button" class="drawer-item" id="lab-drawer-item" hidden onclick="triggerHaptic(); closeDrawer(); openLabScreen()"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg>Living lab</button>
       <button type="button" class="drawer-item" id="auto-drawer-item" hidden onclick="triggerHaptic(); closeDrawer(); openAutoTimeline()"><svg class="icon" aria-hidden="true"><use href="#i-threads"/></svg>Autonomous timeline</button>
       <button type="button" class="drawer-item" onclick="triggerHaptic(); closeDrawer(); openThreadsModal()"><svg class="icon" aria-hidden="true"><use href="#i-threads"/></svg>Session threads</button>
       <button type="button" class="drawer-item" onclick="triggerHaptic(); closeDrawer(); openVisionMatrix()"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg>Vision matrix</button>
@@ -3320,8 +3365,10 @@
       if (!sessionUser || !sessionPass) return;
       const wrap = document.getElementById('auto-wrap');
       const item = document.getElementById('auto-drawer-item');
+      const labItem = document.getElementById('lab-drawer-item');
       if (wrap) wrap.hidden = false;
       if (item) item.hidden = false;
+      if (labItem) labItem.hidden = false;
       refreshAutonomous();
       if (!autoPollTimer) autoPollTimer = setInterval(function () { if (!document.hidden) refreshAutonomous(); }, 60000);
     }
@@ -3421,6 +3468,53 @@
         if (shown.length) await watchesRequest({ op: 'auto_ack', ids: shown });
       } catch (e) { /* the next poll tries again */ }
     }
+    // THE LIVING LAB: the scene is created when the screen opens and torn
+    // down when it closes; its state is polled every 8 s while open.
+    var labScene = null;
+    var labScenePoll = null;
+    const LAB_MODE_WORDS = { idle: 'Idle', thinking: 'Thinking', running: 'Running', success: 'Done', error: 'Needs attention' };
+    function labSceneLabel(s) {
+      const mode = document.getElementById('lab-mode');
+      const summary = document.getElementById('lab-screen-summary');
+      const counts = document.getElementById('lab-legend-counts');
+      if (mode) { mode.dataset.mode = s.mode; mode.textContent = LAB_MODE_WORDS[s.mode] || 'Idle'; }
+      const running = s.experiments.filter((e) => e.status === 'running' || e.status === 'queued').length;
+      if (counts) counts.innerHTML = `<strong>${s.experiments.length}</strong> experiment${s.experiments.length === 1 ? '' : 's'} · <strong>${s.events.length}</strong> events in 2 h`;
+      if (summary) summary.textContent = `The lab is ${(LAB_MODE_WORDS[s.mode] || 'idle').toLowerCase()}: ${running} experiment${running === 1 ? '' : 's'} queued or running, ${s.events.length} events in the last two hours.`;
+    }
+    async function fetchLabScene() {
+      try {
+        const data = await watchesRequest({ op: 'lab_scene' });
+        return data && data.scene ? data.scene : null;
+      } catch (e) { return null; }
+    }
+    async function openLabScreen() {
+      const screen = document.getElementById('lab-screen');
+      const holder = document.getElementById('living-lab');
+      if (!screen || !holder) return;
+      screen.classList.add('is-open');
+      if (!labScene) {
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const coarse = window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 768;
+        try {
+          const mod = await import('/lab/living-lab.js');
+          labScene = await mod.createLivingLab(holder, { reducedMotion: reduced, coarse, label: labSceneLabel });
+        } catch (e) { labScene = null; }
+      }
+      const tick = async () => { const s = await fetchLabScene(); if (labScene && s) labScene.update(s); };
+      if (labScene) labScene.update({ mode: 'idle', experiments: [], events: [] });
+      await tick();
+      clearInterval(labScenePoll);
+      labScenePoll = setInterval(() => { if (!document.hidden) tick(); }, 8000);
+    }
+    function closeLabScreen() {
+      const screen = document.getElementById('lab-screen');
+      if (screen) screen.classList.remove('is-open');
+      clearInterval(labScenePoll);
+      labScenePoll = null;
+      if (labScene) { labScene.destroy(); labScene = null; }
+    }
+
     function closeAutoTimeline() {
       const modal = document.getElementById('auto-modal');
       if (modal) modal.style.display = 'none';
@@ -4262,7 +4356,7 @@
       const buttons = (Array.isArray(v.actions) ? v.actions : []).filter((a) => a && typeof a.label === 'string' && LAB_CARD_ACTION_RE.test(String(a.command || ''))).slice(0, 2);
       const actions = buttons.length ? `<div class="pg1-actions lab-card-actions" role="group" aria-label="Lab ${id8} actions">${buttons.map((a) => `<button type="button" class="pg1-action" data-command="${escapeHTML(a.command)}" data-confirm="${a.confirm ? '1' : '0'}" data-label="${escapeHTML(a.label)}" onclick="runReplyAction(this)"><svg class="icon" aria-hidden="true"><use href="#i-${a.confirm ? 'stop' : 'arrow-right'}"/></svg><span>${escapeHTML(a.label)}</span></button>`).join('')}</div>` : '';
       return `<section class="lab-card${live ? ' is-live' : ''}" data-lab-id="${id8}" data-pose="${pose}" data-status="${status}" aria-label="Lab experiment ${id8}: ${escapeHTML(label === 'near budget' ? 'stopped near its budget' : LAB_POSE_WORDS[pose])}">`
-        + '<div class="lab-card-top">' + LAB_BOT_SVG
+        + '<div class="lab-card-top">' + `<button type="button" class="lab-bot-open" aria-label="Open the living lab" onclick="openLabScreen()">${LAB_BOT_SVG}</button>`
         + `<div class="lab-card-main"><div class="lab-card-head"><span class="lab-card-id">Lab ${id8}</span><span class="lab-state" data-state="${escapeHTML(chip)}">${escapeHTML(label)}</span></div>`
         + (v.goal ? `<p class="lab-card-goal">${escapeHTML(String(v.goal))}</p>` : '')
         + `<p class="lab-card-kind">${escapeHTML(String(v.kind || 'lab'))} experiment${threshold !== null ? ` · stopped at its ${labMoney(threshold)} threshold` : ''}</p></div>`

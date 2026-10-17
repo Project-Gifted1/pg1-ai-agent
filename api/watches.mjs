@@ -33,6 +33,8 @@
 //                                      itself: it records the decision and,
 //                                      for a promotion, hands back the chat
 //                                      command for the operator's own session
+//   { op: 'lab_scene' }                the living lab's state (lib/labScene.mjs):
+//                                      { mode, experiments, events }
 //   { op: 'auto_inbox' }               reports for the chat not shown yet
 //                                      (the daily briefing); { op:
 //                                      'auto_ack', ids } marks them shown
@@ -43,6 +45,7 @@ import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { resolveOperatorSession } from '../lib/operatorSession.mjs';
 import { createWatchStore } from '../lib/watches/store.mjs';
 import { vapidKeys, pushToOperator } from '../lib/watches/push.mjs';
+import { labSceneState } from '../lib/labScene.mjs';
 import { createAutonomousStore, switchOn, switchOff, todaySummary, ACTION_TYPES } from '../lib/autonomous/state.mjs';
 
 export const config = { maxDuration: 15 };
@@ -184,6 +187,10 @@ export function createWatchesHandler({ webpushImpl = null } = {}) {
     }
 
     try {
+      if (body.op === 'lab_scene') {
+        const { supUrl, supKey } = getSupabaseCreds();
+        return res.status(200).json({ ok: true, scene: await labSceneState({ supUrl, supKey }) });
+      }
       if (typeof body.op === 'string' && body.op.startsWith('auto_')) {
         const { supUrl, supKey } = getSupabaseCreds();
         return await autonomousOp(body, res, createAutonomousStore({ supUrl, supKey }));
