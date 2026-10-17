@@ -25,6 +25,7 @@
  *   - the root index.js worker;
  *   - PG1 Studio's film text calls on the paid key (lib/film/providers.mjs
  *     filmThink): the storyboard and a shot check with images;
+ *   - Autonomous mode's text on the free key (lib/autonomous/freeText.mjs);
  *   - PG1 Studio's media fallback on the paid key (geminiStill, geminiClip):
  *     a still and an image-to-video clip with the reference and the
  *     previous shot's last frame.
@@ -50,6 +51,7 @@ import worker from '../index.js';
 import { filmThink, imageBlock, geminiStill, geminiClip } from '../lib/film/providers.mjs';
 import { analyzeCameraFrame } from '../lib/cameraFeed.mjs';
 import { keysStatus } from '../lib/keysStatus.mjs';
+import { autonomousText } from '../lib/autonomous/freeText.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ORIGINAL_ENV = { ...process.env };
@@ -382,6 +384,16 @@ test('the /keys Gemini check carries no sampling parameter', async () => {
   assertClean(stub, '/keys', 2);
 });
 
+// AUTONOMOUS MODE (lib/autonomous/freeText.mjs): diagnoses, mission plans and
+// the daily briefing on the free key.
+test('autonomous text on the free key carries no sampling parameter', async () => {
+  const stub = geminiStub(() => Response.json(text('A plan.')));
+  const out = await autonomousText({ env: { GEMINI_API_KEY_FREE: 'AIzaStubFreeKeyForAutonomousTests000000000' }, system: 'plan', prompt: 'a mission', fetchImpl: stub.fetch });
+  assert.equal(out.ok, true);
+  assert.equal(out.text, 'A plan.');
+  assertClean(stub, 'autonomous text', 1);
+});
+
 // --- every call site is covered ------------------------------------------------------
 
 function sourceFiles(dir) {
@@ -400,7 +412,7 @@ test('every source file that calls Gemini is one these tests drive', () => {
     .filter((f) => readFileSync(f, 'utf8').includes(GEMINI_HOST))
     .map((f) => f.slice(ROOT.length + 1))
     .sort();
-  assert.deepEqual(callers, ['api/chat.mjs', 'api/lib/gemini-client.js', 'index.js', 'lib/a2aJobs/service.mjs', 'lib/cameraFeed.mjs', 'lib/contextWindow.mjs', 'lib/film/providers.mjs', 'lib/imageEngines.mjs', 'lib/keysStatus.mjs', 'lib/lab/policy.mjs', 'lib/lab/runner.mjs', 'lib/ttsRouter.mjs', 'lib/videoJobs.mjs'],
+  assert.deepEqual(callers, ['api/chat.mjs', 'api/lib/gemini-client.js', 'index.js', 'lib/a2aJobs/service.mjs', 'lib/autonomous/freeText.mjs', 'lib/cameraFeed.mjs', 'lib/contextWindow.mjs', 'lib/film/providers.mjs', 'lib/imageEngines.mjs', 'lib/keysStatus.mjs', 'lib/lab/policy.mjs', 'lib/lab/runner.mjs', 'lib/ttsRouter.mjs', 'lib/videoJobs.mjs'],
     'a new Gemini call site: drive it through geminiStub above');
 });
 
