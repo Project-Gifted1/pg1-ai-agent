@@ -366,7 +366,7 @@ test('chat: /task set returns the state; the next message has [TASK STATE] at th
   assert.equal(res.jsonBody.taskState.turn, 3);
 });
 
-test('chat: a refinement never goes to the free key; an ordinary message may', async () => {
+test('chat: a refinement is planned heavy and, like every operator message, tries the free key first (routing policy)', async () => {
   const calls = geminiRecorder();
   process.env.GEMINI_API_KEY_FREE = 'AIzaFreeKeyForTaskStateTests000000000000';
   process.env.GEMINI_API_KEY_PAID = 'AIzaPaidKeyForTaskStateTests000000000000';
@@ -375,7 +375,7 @@ test('chat: a refinement never goes to the free key; an ordinary message may', a
   await chat({ prompt: 'make it shorter', history: history.concat({ role: 'user', text: 'make it shorter' }) });
   const reply = calls.filter((c) => /^You are PG1|\[SELF-CHECK\]/.test(c.system) && !/^You (?:keep|maintain)/.test(c.system));
   assert.ok(reply.length >= 1);
-  assert.ok(reply.every((c) => c.key === process.env.GEMINI_API_KEY_PAID), 'the refinement used the paid key only');
+  assert.equal(reply[0].key, process.env.GEMINI_API_KEY_FREE, 'no paid credit while a free engine is available');
   calls.length = 0;
   await chat({ prompt: 'hello there' });
   assert.equal(calls[0].key, process.env.GEMINI_API_KEY_FREE, 'a first, ordinary message may use the free key');

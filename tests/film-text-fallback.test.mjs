@@ -110,9 +110,11 @@ describe('filmThink', () => {
   test('Claude out of credit (400 invalid_request_error): the paid Gemini key writes the storyboard, checked the same way', async () => {
     const lines = [];
     const e = engines({ anthropic: () => new Response(CREDIT_TOO_LOW, { status: 400 }), gemini: () => JSON.stringify(STORYBOARD) });
-    const r = await filmThink({ env: { ...ENV, GEMINI_API_KEY_FREE: FREE }, system: STORYBOARD_SYSTEM, content: 'a film', validate: validateStoryboard, purpose: 'storyboard', fetchImpl: e.fetchImpl, log: (l) => lines.push(l) });
+    // The paid fallback chain (an operator film's writing would try a free
+    // key first: tests/free-chain-policy.test.mjs; this job has none).
+    const r = await filmThink({ env: { ...ENV }, system: STORYBOARD_SYSTEM, content: 'a film', validate: validateStoryboard, purpose: 'storyboard', fetchImpl: e.fetchImpl, log: (l) => lines.push(l) });
     assert.deepEqual(e.engines(), ['anthropic', 'gemini']);
-    assert.equal(e.seen[1].key, PAID, 'the paid key, never the free one');
+    assert.equal(e.seen[1].key, PAID, 'the paid key');
     assert.equal(e.seen[1].body.generationConfig.responseMimeType, 'application/json');
     assert.equal(r.provider, 'gemini_paid');
     assert.deepEqual(r.value, validateStoryboard(JSON.stringify(STORYBOARD)));
@@ -224,7 +226,7 @@ describe('the film pipeline on the real engines', () => {
     const p = await store.createProject({ request: 'A fisher at dawn', capUsd: 10, status: 'storyboarding' });
     const e = engines({ anthropic: () => new Response(CREDIT_TOO_LOW, { status: 400 }), gemini: (n) => (n === 1 ? '{"title":' : JSON.stringify(STORYBOARD)) });
     const lines = [];
-    const eng = realEngines({ ...ENV, GEMINI_API_KEY_FREE: FREE }, { fetchImpl: e.fetchImpl, log: (l) => lines.push(l) });
+    const eng = realEngines({ ...ENV }, { fetchImpl: e.fetchImpl, log: (l) => lines.push(l) });
     const sb = await runStoryboard({ project: p, store, engines: eng, ff: {}, workdir: workdir(), log: (l) => lines.push(l) });
     assert.deepEqual(e.engines(), ['anthropic', 'gemini', 'gemini'], 'one retry on the bad JSON, on the same engine');
     assert.ok(e.seen.every((s) => s.key !== FREE));
@@ -239,7 +241,7 @@ describe('the film pipeline on the real engines', () => {
     const p = await store.createProject({ request: 'x', capUsd: 10 });
     const e = engines({ anthropic: () => new Response(CREDIT_TOO_LOW, { status: 400 }), gemini: () => '{"ops":[{"op":"trim","shot":"1.1","duration_s":4}]}' });
     const timeline = validateStoryboard(JSON.stringify(STORYBOARD));
-    const out = await editOpsFrom('trim the drone shot to 4 seconds', timeline, { env: { ...ENV, GEMINI_API_KEY_FREE: FREE }, fetchImpl: e.fetchImpl, store, projectId: p.id });
+    const out = await editOpsFrom('trim the drone shot to 4 seconds', timeline, { env: { ...ENV }, fetchImpl: e.fetchImpl, store, projectId: p.id });
     assert.deepEqual(out, { ops: [{ op: 'trim', shot: '1.1', duration_s: 4 }], interpreted: true });
     assert.deepEqual(e.engines(), ['anthropic', 'gemini']);
     assert.equal(e.seen[1].key, PAID);

@@ -117,7 +117,7 @@ const supabaseRoutes = (overrides = {}) => [
   ['/rest/v1/messages?select=role', () => new Response(JSON.stringify(overrides.memory || []))],
   ['/rest/v1/messages', () => new Response('[]', { status: 201 })],
   ['/storage/v1/object/list/pg1-vault', () => new Response(JSON.stringify(overrides.vault || []))],
-  ['/rest/v1/threat_indicators', () => new Response(JSON.stringify(overrides.threats || []))],
+  ['/rest/v1/threat_ioc_telemetry', () => new Response(JSON.stringify(overrides.threats || []))],
   ['/rest/v1/pg1_errors', () => new Response(JSON.stringify(overrides.errors || []))]
 ];
 
@@ -128,7 +128,8 @@ const STEP_EVIDENCE = {
   db: (c) => c.url.includes('/rest/v1/messages?select=id'),
   memory: (c) => c.url.includes('/rest/v1/messages?select=role'),
   vault: (c) => c.url.includes('/storage/v1/object/list/pg1-vault'),
-  threats: (c) => c.url.includes('/rest/v1/threat_indicators'),
+  // The source-policy read (lib/chatThreatFeed.mjs, as /api/ioc reads it).
+  threats: (c) => c.url.includes('/rest/v1/threat_ioc_telemetry'),
   errors: (c) => c.url.includes('/rest/v1/pg1_errors'),
   'vault-upload': (c) => c.url.includes('/storage/v1/object/pg1-vault/') && c.method === 'POST',
   // "Looking at N images": the model call that carried the images (an
@@ -259,14 +260,14 @@ test('a plain chat streams the context steps that ran, the model step, text and 
 
 test('the threat step appears only when the threat table is actually queried', async () => {
   useSupabase();
-  const calls = installFetch([...supabaseRoutes({ threats: [{ indicator_type: 'IPv4', value: '198.51.100.7', confidence_score: 80 }] }),
+  const calls = installFetch([...supabaseRoutes({ threats: [{ indicator_type: 'cve', value: 'CVE-2026-4242', verification_source: 'NVD-CVE-API', confidence_score: 80, ingested_at: new Date().toISOString() }] }),
     geminiRoute([geminiChunk('Two indicators.')])]);
   const res = makeRes();
   await chatHandler(makeReq(authed({ prompt: 'any new threat indicators today?', stream: true })), res);
   const events = eventsOf(res);
   assertOnlyRealSteps(events, calls);
   assert.ok(stepIds(events).includes('threats'));
-  assert.equal(events.find((e) => e.type === 'step_done' && e.id === 'threats').result, '1 record');
+  assert.equal(events.find((e) => e.type === 'step_done' && e.id === 'threats').result, '1 added today');
 });
 
 test('without Supabase there are no context steps, only the model step', async () => {

@@ -493,7 +493,8 @@ test('/usage for the signed-in operator answers with the report and the card', a
   const res = makeRes();
   await chatHandler(chatReq({ prompt: '/usage 30d', user: 'test-operator', pass: 'test-secret-pass' }), res);
   assert.equal(res.statusCode, 200);
-  assert.match(res.jsonBody.reply, /^\*\*Usage, last 30 days:\*\* \d+ real tool calls? from about 5 distinct callers, \$0\.01 settled\. The full breakdown is in the card below\.$/);
+  assert.match(res.jsonBody.reply, /^\*\*Usage, last 30 days:\*\* \d+ real tool calls? from about 5 distinct callers, \$0\.01 settled\. The full breakdown is in the card below\.\n\n### Paid AI credit\n/);
+  assert.match(res.jsonBody.reply, /Spent on text \| Spent on media/, 'paid credit by account, text vs media (lib/creditReport.mjs)');
   assert.equal(res.jsonBody.toolResults.length, 1);
   assert.equal(res.jsonBody.cards.length, 5, 'the figures as [card] lines for the history, then the card line');
   assert.ok(res.jsonBody.cards.slice(0, 4).every((c) => /^\[card\] Usage/.test(c) && c.length < 200));
