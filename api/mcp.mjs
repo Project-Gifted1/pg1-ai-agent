@@ -3,7 +3,10 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.20.1 — DOCS: preflight_check positioned as the one decision
+ * Version: 1.20.2 — listing text only. The STIX feed (get_threat_indicators,
+ *   /api/ioc) is free with CVE records from NIST NVD and does not use the 5
+ *   free paid calls a day. No tool, input or response changes.
+ * 1.20.1 — DOCS: preflight_check positioned as the one decision
  *   after the free point checks (llms.txt, /docs/agents); tool descriptions
  *   say no_flags means no flags found, never "safe"
  *   (tests/no-safe-wording.test.mjs).

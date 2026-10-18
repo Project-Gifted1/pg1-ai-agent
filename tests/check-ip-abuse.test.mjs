@@ -846,17 +846,17 @@ test('CORS: X-AbuseIPDB-Key is allowed on /api/mcp and /api/a2a only', async () 
 test('version 1.17.0 (check_package, after check_ip_abuse shipped in 1.16.0) on /api/mcp (GET + serverInfo), /api/a2a GET, server.json, agent card, openapi', async () => {
   const get = makeRes();
   await mcpHandler({ method: 'GET', headers: {} }, get);
-  assert.equal(get.body.version, '1.20.1');
+  assert.equal(get.body.version, '1.20.2');
   const init = makeRes();
   await mcpHandler({ method: 'POST', headers: {}, body: { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} } }, init);
-  assert.equal(init.body.result.serverInfo.version, '1.20.1');
+  assert.equal(init.body.result.serverInfo.version, '1.20.2');
   const a2aGet = makeRes();
   await a2aHandler({ method: 'GET', headers: {}, query: {} }, a2aGet);
-  assert.equal(a2aGet.body.version, '1.20.1');
+  assert.equal(a2aGet.body.version, '1.20.2');
   const read = (rel) => JSON.parse(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
-  assert.equal(read('server.json').version, '1.20.1');
-  assert.equal(read('public/.well-known/agent-card.json').version, '1.20.1');
-  assert.equal(read('public/openapi.json').info.version, '1.20.1');
+  assert.equal(read('server.json').version, '1.20.2');
+  assert.equal(read('public/.well-known/agent-card.json').version, '1.20.2');
+  assert.equal(read('public/openapi.json').info.version, '1.20.2');
 });
 
 test('docs: agent card skill, llms.txt and README carry the bring-your-own-key section with a header curl example', () => {
