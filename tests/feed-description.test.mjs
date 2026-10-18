@@ -29,7 +29,7 @@ const tool = (name) => TOOLS.find((t) => t.name === name).description;
 // The claim each description must not make while only NVD is served.
 const INDICATOR_FEED = /indicator feed|IOC feed|bundle of (verified )?threat indicators|\(IPs, domains, URLs, file hashes/i;
 const SAYS_CVE_FROM_NVD = /CVE records from (NIST )?NVD/;
-const SAYS_FREE = /free while (this feed|the feed|it) holds no current data/i;
+const SAYS_FREE = /free \(CVE records from NIST NVD\); does not use the 5 free paid calls a day/i;
 
 test('the premise: NVD is the only source served by default', () => {
   assert.deepEqual(THREAT_SOURCES.filter((s) => isSourceEnabled(s.id, {})).map((s) => s.id), ['nvd']);

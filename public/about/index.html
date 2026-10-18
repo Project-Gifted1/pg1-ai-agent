@@ -125,7 +125,7 @@
 
   <section aria-labelledby="ioc">
     <h2 id="ioc">CVE feed: /api/ioc</h2>
-    <p><code>GET /api/ioc</code> returns a STIX 2.1 bundle (<code>application/stix+json</code>) of CVE records from NIST NVD, the only source PG1 may currently redistribute commercially: vulnerability objects with the CVE id and an NVD reference, no scores. It holds no IP, domain, URL or file-hash indicators yet. Filterable by <code>since</code>, <code>type</code>, <code>min_score</code> and <code>limit</code>. It is free while it holds no current data: no payment, no licence key, and it does not use the 5 free calls a day. The operator's <code>PG1_FEED_PAID</code> switch makes it paid again once the pipeline fetches recent CVEs.</p>
+    <p><code>GET /api/ioc</code> returns a STIX 2.1 bundle (<code>application/stix+json</code>) of CVE records from NIST NVD, the only source PG1 may currently redistribute commercially: vulnerability objects with the CVE id and an NVD reference, no scores. It holds no IP, domain, URL or file-hash indicators yet. Filterable by <code>since</code>, <code>type</code>, <code>min_score</code> and <code>limit</code>. It is free (CVE records from NIST NVD); does not use the 5 free paid calls a day; no payment, no licence key. The operator's <code>PG1_FEED_PAID</code> switch can make it paid.</p>
     <p>When paid, it is paid per call with x402: a request without payment gets HTTP 402 and an x402 v2 payment challenge for $0.01 in USDC on Base (<code>eip155:8453</code>), and a licence key is also accepted. The MCP server's paid tools (CVE enrichment with scores, threat-actor profiles) are on those terms today.</p>
   </section>
 

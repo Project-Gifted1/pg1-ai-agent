@@ -203,7 +203,7 @@ test('the 14 pre-existing MCP tools are byte-identical to the snapshot (names, d
   assert.equal(LEGACY_TOOLS[15].name, 'check_package');
   assert.equal(new Set(TOOLS.map((t) => t.name)).size, TOOLS.length, 'no name clash');
   const sha = crypto.createHash('sha256').update(JSON.stringify(LEGACY_TOOLS.slice(0, 14))).digest('hex');
-  assert.equal(sha, '206a7a24b7e82a2b077b432a032b4f50161cc6128ae12e50da7fc132a10cf200');
+  assert.equal(sha, '5c06eafdfaaac4464ed1a498998d692a1747d7abbcaafb26347b66c1607a8f0a');
 });
 
 test('the 5 pre-existing A2A skills are unchanged; check_ip_abuse is added as the 6th, with the MCP definition', () => {

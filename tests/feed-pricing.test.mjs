@@ -180,13 +180,13 @@ test('licenceKeyHash: salted, domain-separated from the IP hash, none without a 
 
 test('tool description: get_threat_indicators says FREE by default and carries the payment sentence only when paid at start', () => {
   const free = TOOLS.find((t) => t.name === 'get_threat_indicators').description;
-  assert.match(free, /FREE while this feed holds no current data: no payment, no licence key, and it does not use the 5 free calls a day/);
+  assert.match(free, /FREE \(CVE records from NIST NVD\); does not use the 5 free paid calls a day; no payment, no licence key \(the operator's PG1_FEED_PAID switch can make it paid\)/);
   assert.doesNotMatch(free, /Payment required/);
   const paid = execFileSync(process.execPath, ['--input-type=module', '-e',
     "const { TOOLS } = await import('./api/mcp.mjs'); process.stdout.write(TOOLS.find((t) => t.name === 'get_threat_indicators').description);"
   ], { cwd: ROOT, env: { ...process.env, PG1_FEED_PAID: 'true', X402_PAY_TO_ADDRESS: '' }, encoding: 'utf8' });
   assert.match(paid, /Payment required: \$0\.01 via x402/);
-  assert.doesNotMatch(paid, /FREE while this feed/);
+  assert.doesNotMatch(paid, /FREE \(CVE records/);
 });
 
 test('discovery and docs: the feed is not advertised as paid, and every doc says it is free', () => {
@@ -197,10 +197,10 @@ test('discovery and docs: the feed is not advertised as paid, and every doc says
     const op = openapi.paths['/api/ioc'][method];
     assert.equal(op['x-payment-info'], undefined, method);
     assert.deepEqual(op.security, [], method);
-    assert.match(op.description, /FREE while the feed holds no current data/, method);
+    assert.match(op.description, /FREE \(CVE records from NIST NVD\); does not use the 5 free paid calls a day/, method);
   }
   for (const rel of ['README.md', 'public/llms.txt', 'public/docs/agents/index.html', 'public/about/index.html', 'docs/payment-test-plan.md']) {
     assert.match(read(rel), /PG1_FEED_PAID/, `${rel} names the switch`);
-    assert.match(read(rel), /free while (it|the feed) holds no current data/i, `${rel} says the feed is free`);
+    assert.match(read(rel), /free \(CVE records from NIST NVD\); does not use the 5 free paid calls a day/i, `${rel} says the feed is free`);
   }
 });
