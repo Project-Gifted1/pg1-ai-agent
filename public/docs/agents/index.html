@@ -34,6 +34,8 @@
     <ul>
       <li><a href="#why-agents-use-pg1">Why agents use PG1</a></li>
       <li><a href="#which-tool-to-call">Which tool to call</a></li>
+      <li><a href="#when-a-paid-call-is-worth-001-usd">When a paid call is worth 0.01 USD</a></li>
+      <li><a href="#watch-it-instead-of-re-checking">Watch it instead of re-checking</a></li>
       <li><a href="#one-preflight_check-three-actions">One <code>preflight_check</code>, three actions</a></li>
       <li><a href="#what-status-means">What <code>status</code> means</a></li>
       <li><a href="#verify-a-result">Verify a result</a></li>
@@ -43,6 +45,7 @@
 
   <article class="doc">
 <p>Start with the free point checks. When you want one decision before acting, use <code>preflight_check</code>.</p>
+<p><strong>Try the paid path free today:</strong> every caller gets 5 paid calls a day with no key, no account and no payment. Before you pay, read <code>free_tier_calls_remaining_today</code> from the free <code>get_usage_status</code> tool (or the <code>X-Free-Tier-Remaining</code> response header).</p>
 <h2 id="why-agents-use-pg1">Why agents use PG1</h2>
 <p>An autonomous agent acts on things it has never seen before: it pays a wallet, opens a link, installs a package, patches a CVE. PG1 checks that thing first and answers in one machine-readable shape, <code>reasons</code> + <code>status</code> + <code>checks</code>, so the agent can decide on its own and a person can audit why.</p>
 <ul>
@@ -85,6 +88,26 @@
 <tr><td>An indicator you observed and want to report</td><td><code>submit_indicator</code></td><td>Licence key only (<code>X-API-KEY</code>); not sold per call. Submissions are reviewed before use.</td></tr>
 </tbody>
 </table></div>
+<h2 id="when-a-paid-call-is-worth-001-usd">When a paid call is worth 0.01 USD</h2>
+<p>Use the free checks for single signals. Pay when you need something they do not give you:</p>
+<div class="table-wrap" tabindex="0"><table>
+<thead><tr><th scope="col">You need</th><th scope="col">Call</th><th scope="col">What the 0.01 USD buys</th></tr></thead>
+<tbody>
+<tr><td>One signal (is this wallet sanctioned, is this domain new)</td><td>the free <code>check_*</code> tools</td><td>Nothing to pay: always free.</td></tr>
+<tr><td>One fail-closed decision before you act</td><td><code>preflight_check</code></td><td>Every check the action needs (<code>pay</code> a wallet: sanctions and on-chain age; <code>open</code> a link: hostname reputation and domain age; <code>patch</code>: the CVE lookup for the product), run in parallel and merged into one signed <code>decision</code> with every reason and per-check result. A check that does not finish makes it <code>unknown</code>, so you never write the merge or timeout logic yourself.</td></tr>
+<tr><td>Whether to patch a CVE now</td><td><code>get_cve_details</code> (or <code>get_cve_batch</code>, <code>get_cve_by_product</code>)</td><td><code>cisa_kev.is_known_exploited</code> and the KEV <code>required_action</code>, CVSS, and <code>reasons</code> with <code>CVE_KNOWN_EXPLOITED_KEV</code> to match on: known exploited means patch first.</td></tr>
+<tr><td>Context on an IP, domain, URL or hash</td><td><code>get_ioc_context</code></td><td>Today PG1&#39;s licensed records are NVD CVE ids only, so these return <code>found: false</code> and cost nothing. Use the free hostname, domain and wallet checks for those signals.</td></tr>
+<tr><td>To know when something changes</td><td>a watchlist (below)</td><td>A daily recheck and a signed webhook, so you stop re-checking by hand.</td></tr>
+<tr><td>Where to host a workload</td><td><code>hosting_advisor</code></td><td>A planning tool, not a pre-action check: ranked regions and providers with cited sources.</td></tr>
+</tbody>
+</table></div>
+<h2 id="watch-it-instead-of-re-checking">Watch it instead of re-checking</h2>
+<p>The four targets below cost 4 x 0.05 = 0.20 USD for 30 days, paid once via x402 (watchlists have no free tier). PG1 rechecks each item about every 24 hours with the same checks <code>preflight_check</code> runs and POSTs to your webhook only when an item&#39;s <code>status</code> changes.</p>
+<div class="code"><div class="code-bar"><span class="code-lang">bash</span><button type="button" class="copy" data-copy hidden>Copy</button></div><pre tabindex="0"><code class="language-bash">curl -X POST https://pg1-ai-agent.vercel.app/api/watchlists \
+  -H &quot;Content-Type: application/json&quot; \
+  -d &#39;{&quot;webhook_url&quot;:&quot;https://agent.example.com/pg1&quot;,&quot;items&quot;:[{&quot;kind&quot;:&quot;wallet&quot;,&quot;target&quot;:&quot;0x...&quot;},{&quot;kind&quot;:&quot;domain&quot;,&quot;target&quot;:&quot;pay.example.com&quot;},{&quot;kind&quot;:&quot;package&quot;,&quot;target&quot;:&quot;left-pad&quot;,&quot;ecosystem&quot;:&quot;npm&quot;},{&quot;kind&quot;:&quot;cve_product&quot;,&quot;target&quot;:&quot;openssl openssl 3.0&quot;}]}&#39;
+</code></pre></div>
+<p>The first response is the 402 payment request; pay it and resend to get <code>201 { id, secret, expires_at, items }</code>. Keep <code>secret</code>: it is shown once, verifies each webhook&#39;s <code>X-PG1-Signature</code> and authenticates <code>GET</code>/<code>DELETE /api/watchlists?id=&lt;id&gt;</code>. Each delivery is a <code>watchlist.status_changed</code> event with the item, <code>previous_status</code>, <code>status</code> and <code>reasons</code>.</p>
 <h2 id="one-preflight_check-three-actions">One <code>preflight_check</code>, three actions</h2>
 <p>Each call returns one <code>decision</code>. These targets are PG1&#39;s test fixtures (<a href="https://pg1-ai-agent.vercel.app/docs/testing">/docs/testing</a>), so the checks inside make no upstream lookup and the answers are fixed; each <code>preflight_check</code> call still counts against the 5 free calls a day.</p>
 <div class="code"><div class="code-bar"><span class="code-lang">json</span><button type="button" class="copy" data-copy hidden>Copy</button></div><pre tabindex="0"><code class="language-json">{&quot;action&quot;:&quot;open&quot;,&quot;target&quot;:&quot;https://pg1-test-flagged.invalid/login&quot;}
