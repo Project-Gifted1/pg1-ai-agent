@@ -13,9 +13,8 @@ Paid surfaces (all 0.01 USD a call, USDC on Base, `eip155:8453`):
 | `POST /api/a2a` `SendMessage` / `message/send` | `get_cve_details`, `get_cve_batch`, `get_cve_by_product`, `get_threat_actor_profile` | x402 (a2a-x402: `message.metadata["x402.payment.payload"]`, or the header), licence key, free tier |
 
 The STIX feed (`GET`/`POST /api/ioc`, the `/api/feeds/ioc` alias, and MCP
-`get_threat_indicators`) is FREE while it holds no current data: no 402, no
-licence key, and it does not use the free tier. `PG1_FEED_PAID=true` makes it
-paid again (x402, licence key, free tier, as before); then add `/api/ioc`
+`get_threat_indicators`) is free (CVE records from NIST NVD); does not use the 5 free paid calls a day:
+no 402, no licence key. `PG1_FEED_PAID=true` makes it paid (x402, licence key, free tier, as before); then add `/api/ioc`
 back to `/.well-known/x402` and `x-payment-info` to its OpenAPI operations.
 
 The free tier is one 5/day counter per caller (a salted hash of the IP) across

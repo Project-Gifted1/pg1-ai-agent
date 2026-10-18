@@ -68,8 +68,8 @@ test('the cheat sheet states the limits and price the code enforces', () => {
   for (const free of cfg.FREE_MCP_TOOLS) assert.match(row(free), /Always free/, free);
   // The STIX feed is free (and uses none of the free calls) while PG1_FEED_PAID is off.
   assert.equal(cfg.isFeedPaid({}), false);
-  assert.match(row('get_threat_indicators'), /Free while the feed holds no current data \(`PG1_FEED_PAID` off\)/);
-  assert.match(row('get_threat_indicators'), /does not use the 5 free calls a day/);
+  assert.match(row('get_threat_indicators'), /Free \(CVE records from NIST NVD\); does not use the 5 free paid calls a day \(the operator's `PG1_FEED_PAID` switch can make it paid\)/);
+  assert.match(row('get_threat_indicators'), /does not use the 5 free paid calls a day/);
   assert.match(row('get_threat_indicators'), /`GET \/api\/ioc`/);
   assert.doesNotMatch(row('get_cve_details'), /get_threat_indicators/);
   for (const name of TOOL_NAMES.filter((n) => !LICENCE_ONLY.includes(n))) assert.ok(row(name), `${name} missing from the cheat sheet`);

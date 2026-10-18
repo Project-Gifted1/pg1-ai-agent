@@ -506,7 +506,7 @@ const EPSS_DESCRIPTION_EDITS = [
 // Two edits on the same tool, so two lists; applied first when reverting.
 const PAYMENT_SENTENCE = 'Payment required: $0.01 via x402, sent in params._meta["x402/payment"] (the PAYMENT-SIGNATURE header is also accepted), or a valid Gumroad license key (X-API-KEY header). ';
 const FREE_FEED_EDITS = [
-  ['get_threat_indicators', PAYMENT_SENTENCE, 'FREE while this feed holds no current data: no payment, no licence key, and it does not use the 5 free calls a day. ']
+  ['get_threat_indicators', PAYMENT_SENTENCE, 'FREE (CVE records from NIST NVD); does not use the 5 free paid calls a day; no payment, no licence key (the operator\'s PG1_FEED_PAID switch can make it paid). ']
 ];
 const FREE_FEED_BEHAVIOR_EDITS = [
   ['get_threat_indicators', 'Pagination is handled via the limit parameter (max 1000). If payment is missing or fails, returns a normal tool result with isError: true, the x402 v2 PaymentRequired object in structuredContent and the same JSON in content[0].text; on success the settlement receipt is in result._meta["x402/payment-response"].', 'Pagination is handled via the limit parameter (max 1000).']

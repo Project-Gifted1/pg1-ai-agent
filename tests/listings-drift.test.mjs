@@ -130,11 +130,11 @@ test('while the feed is free, every listing says so and names NVD as its only so
   assert.equal(isFeedPaid({}), false, 'the default deployment serves the feed free');
   const feedDescription = listedTools({}).find((t) => t.name === 'get_threat_indicators').description;
   assert.match(feedDescription, /NVD/);
-  assert.match(feedDescription, /FREE while/);
+  assert.match(feedDescription, /FREE \(CVE records from NIST NVD\); does not use the 5 free paid calls a day/);
   const outsideSourceSwitches = README.replace(section(README, 'All Available MCP Tools').split('### Data source switches')[1].split('\n## ')[0], '');
   for (const [name, text] of Object.entries({ ...LISTINGS, 'README.md': outsideSourceSwitches, 'agent card': CARD.description })) {
     assert.match(text, /NVD/, `${name} names NVD`);
-    assert.match(text, /free while (?:it|the feed) holds no current data/i, `${name} says the feed is free`);
+    assert.match(text, /free \(CVE records from NIST NVD\); does not use the 5 free paid calls a day/i, `${name} says the feed is free`);
     assert.doesNotMatch(text, /402 paywall|ThreatFox|URLhaus|AlienVault|\bOTX\b|abuse\.ch/, `${name} describes a paid or non-NVD feed`);
   }
 });

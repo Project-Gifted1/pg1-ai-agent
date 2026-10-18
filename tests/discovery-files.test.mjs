@@ -104,7 +104,7 @@ for (const [route, method] of FREE_FEED_OPERATIONS) {
     assert.match(op.operationId || '', /^[A-Za-z][A-Za-z0-9_]*$/);
     const ok = op.responses['200'];
     assert.ok(Object.values(ok.content || {}).every((c) => c.schema && c.schema.type === 'object' && c.schema.properties));
-    assert.match(op.description, /FREE while the feed holds no current data/);
+    assert.match(op.description, /FREE \(CVE records from NIST NVD\); does not use the 5 free paid calls a day/);
     assert.match(op.responses['402'].description, /PG1_FEED_PAID/, 'a 402 is documented only for the paid switch');
   });
 }

@@ -7,7 +7,7 @@
       "email": "gikewun@gmail.com"
     },
     "description": "REST endpoints for PG1 Sovereign Threat Intelligence. This document only covers the plain HTTP endpoints below (GET/POST /api/ioc and GET /api/health); the full tool catalog is also available over two JSON-RPC transports, which are not representable as REST paths:\n\n- MCP (Model Context Protocol, Streamable HTTP JSON-RPC): https://pg1-ai-agent.vercel.app/api/mcp \n- A2A (Agent2Agent, JSON-RPC 2.0): https://pg1-ai-agent.vercel.app/api/a2a — agent card at https://pg1-ai-agent.vercel.app/.well-known/agent-card.json \n\n/api/ioc is gated by one of: a Gumroad licence key (x-api-key header), a per-call x402 v2 micropayment (PAYMENT-SIGNATURE header), or the free tier (automatic, 5 calls/day per IP shared with the paid MCP tools and A2A skills, spent before any 402; send x-free-tier: 0 to skip it).",
-    "x-guidance": "GET /api/ioc (optional query parameters since, type, min_score, limit) returns a STIX 2.1 bundle (application/stix+json) of CVE records from NIST NVD: STIX vulnerability objects with the CVE id and an NVD reference, no IP, domain, URL or file-hash indicators yet. It is free while the feed holds no current data. The paid tools (CVE enrichment, threat actor profiles) are on the MCP server at /api/mcp: 0.01 USD per call in USDC on Base (eip155:8453) via x402, after 5 free paid calls a day. GET /api/health is free."
+    "x-guidance": "GET /api/ioc (optional query parameters since, type, min_score, limit) returns a STIX 2.1 bundle (application/stix+json) of CVE records from NIST NVD: STIX vulnerability objects with the CVE id and an NVD reference, no IP, domain, URL or file-hash indicators yet. It is free (CVE records from NIST NVD); does not use the 5 free paid calls a day (the operator's PG1_FEED_PAID switch can make it paid). The paid tools (CVE enrichment, threat actor profiles) are on the MCP server at /api/mcp: 0.01 USD per call in USDC on Base (eip155:8453) via x402, after 5 free paid calls a day. GET /api/health is free."
   },
   "externalDocs": {
     "description": "Integration guide: an alert bot that screens wallets with PG1's free checks.",
@@ -23,7 +23,7 @@
       "get": {
         "operationId": "getThreatIndicators",
         "summary": "STIX 2.1 CVE feed (NVD)",
-        "description": "Returns a STIX 2.1 bundle of CVE records from NIST NVD, the only source PG1 may currently redistribute commercially: vulnerability objects with the CVE id and an NVD reference, no scores. It holds no IP, domain, URL or file-hash indicators yet. FREE while the feed holds no current data: no licence key, no payment, and it does not use the 5 free calls a day.",
+        "description": "Returns a STIX 2.1 bundle of CVE records from NIST NVD, the only source PG1 may currently redistribute commercially: vulnerability objects with the CVE id and an NVD reference, no scores. It holds no IP, domain, URL or file-hash indicators yet. FREE (CVE records from NIST NVD); does not use the 5 free paid calls a day; no licence key, no payment (the operator's PG1_FEED_PAID switch can make it paid).",
         "parameters": [
           {
             "name": "since",
@@ -435,7 +435,7 @@
       "post": {
         "operationId": "postThreatIndicators",
         "summary": "STIX 2.1 CVE feed (NVD) (POST alias of GET)",
-        "description": "Identical to GET /api/ioc: same optional query parameters (no request body is read), same gate and price, same STIX 2.1 bundle response. Documented because the endpoint answers POST with the same x402 challenge. FREE while the feed holds no current data: no licence key, no payment, and it does not use the 5 free calls a day.",
+        "description": "Identical to GET /api/ioc: same optional query parameters (no request body is read), same gate and price, same STIX 2.1 bundle response. Documented because the endpoint answers POST with the same x402 challenge. FREE (CVE records from NIST NVD); does not use the 5 free paid calls a day; no licence key, no payment (the operator's PG1_FEED_PAID switch can make it paid).",
         "parameters": [
           {
             "name": "since",

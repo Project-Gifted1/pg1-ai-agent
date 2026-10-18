@@ -295,7 +295,7 @@ test('tool definitions are hash-identical to before the limit (name, description
   // check_package (1.17.0) is left out the same way. Moved again by the
   // paid-source licensing gate (the same three descriptions).
   const added = new Set(['check_ip_abuse', 'check_package', 'preflight_check', 'check_x402_endpoint', 'check_agent_card', 'verify_result', 'hosting_advisor']);
-  assert.equal(sha(TOOLS.filter((t) => !added.has(t.name))), '206a7a24b7e82a2b077b432a032b4f50161cc6128ae12e50da7fc132a10cf200');
+  assert.equal(sha(TOOLS.filter((t) => !added.has(t.name))), '5c06eafdfaaac4464ed1a498998d692a1747d7abbcaafb26347b66c1607a8f0a');
   // Phase 2 moved it again (the three CVE descriptions, EPSS switch) and
   // added the paid A2A skills, which are left out like the additions.
   assert.equal(sha(A2A_SKILL_TOOLS.filter((t) => !added.has(t.name) && !A2A_PAID_SKILL_NAMES.includes(t.name))), '188ab4f12daf429bd01e91689d29d682307afb6e27aae596a0e7324dbb6a2c3d');
