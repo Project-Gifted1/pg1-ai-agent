@@ -30,7 +30,7 @@ import { analyzeCameraFrame, cameraEventLine, cameraLogLine } from '../lib/camer
 import { ensureOpenRouterState } from '../lib/router/openrouterGuard.mjs';
 import { isKeysCommand, handleKeysCommand, keysStatus } from '../lib/keysStatus.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
-import { TASKS, FAILURE, failureClass, budgetAllows, isBillingFailure, geminiQuotaInfo, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, CHAT_THROTTLE, withThrottleRetry, isFallbackFailure, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
+import { TASKS, FAILURE, failureClass, budgetAllows, isSpendCapFailure, SPEND_CAP_CODE, isBillingFailure, geminiQuotaInfo, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, CHAT_THROTTLE, withThrottleRetry, isFallbackFailure, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
 import { synthesizeSpeech, createRoutedSynth } from '../lib/ttsRouter.mjs';
 import { cleanVideoPrompt, dispatchVideoRender, isVideoCommand, isVideoRequest, parseVideoOptions, pollVideoJob, recheckVideoJob, startVideoJob, videoGoogleAsync, videoJobStatus, videoDailyBudget, videoDailyCap, videoEnabled, videoCostLine, videoFrameFallbackOn, videoNotStartedText, videoRenderingText, videoSpendToday, videoTiersText, usd, DEFAULT_START_FRAME_PROMPT, FOUR_K_NOTE, VIDEO_DISABLED_TEXT, VIDEO_ENGINE_LABEL, VIDEO_REFUSED_TEXT, VIDEO_TIER_LABELS } from '../lib/videoJobs.mjs';
 import { isFilmCommand, isFilmAction } from '../lib/film/text.mjs';
@@ -934,7 +934,10 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
           var errText = await res.text();
           lastStatus = res.status;
           lastError = `[${model} on ${apiVersion}] ${providerErrorText(res.status, errText)}`;
-          lastQuota = res.status === 429 ? geminiQuotaInfo(errText) : null;
+          lastQuota = res.status === 429 && !isSpendCapFailure(res.status, errText) ? geminiQuotaInfo(errText) : null;
+          // SPEND CAP: its own code in the error log, never "rate limited"
+          // or "out of credit" (lib/aiRouter.mjs isSpendCapFailure).
+          if (isSpendCapFailure(res.status, errText)) lastError = `${SPEND_CAP_CODE}: ${lastError}`;
           if (lastQuota) lastError += ` (quota: ${lastQuota.scope ? 'per ' + lastQuota.scope : 'scope not stated'}${Number.isFinite(lastQuota.retryAfterMs) ? `, retry in ${Math.round(lastQuota.retryAfterMs / 100) / 10}s` : ''})`;
           if (isForcedCallRejection(forceTool, res.status)) {
             forceRejection = lastError;
@@ -1166,7 +1169,10 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
           var errText = await res.text();
           lastStatus = res.status;
           lastError = `[${model}] ${providerErrorText(res.status, errText)}`;
-          lastQuota = res.status === 429 ? geminiQuotaInfo(errText) : null;
+          lastQuota = res.status === 429 && !isSpendCapFailure(res.status, errText) ? geminiQuotaInfo(errText) : null;
+          // SPEND CAP: its own code in the error log, never "rate limited"
+          // or "out of credit" (lib/aiRouter.mjs isSpendCapFailure).
+          if (isSpendCapFailure(res.status, errText)) lastError = `${SPEND_CAP_CODE}: ${lastError}`;
           if (lastQuota) lastError += ` (quota: ${lastQuota.scope ? 'per ' + lastQuota.scope : 'scope not stated'}${Number.isFinite(lastQuota.retryAfterMs) ? `, retry in ${Math.round(lastQuota.retryAfterMs / 100) / 10}s` : ''})`;
           if (isForcedCallRejection(forceTool, res.status)) {
             forceRejection = lastError;
@@ -1377,7 +1383,7 @@ function roundFailureStops(route, c, result, next) {
         try { creds = getSupabaseCreds(); } catch (e) { creds = null; }
         chatAlert = createCapacityAlerts({ env: process.env, store: creds ? createWatchStore(creds) : null, ...(creds || {}) });
       }
-      chatAlert({ engine: c.provider, status: result.status == null ? null : result.status, what: 'chat replies', next: next ? next.provider : null }).catch(function () {});
+      chatAlert({ engine: c.provider, status: result.status == null ? null : result.status, what: 'chat replies', next: next ? next.provider : null, detail: result.error || '' }).catch(function () {});
     } catch (e) { /* an alert never breaks a reply */ }
   }
   return cls === FAILURE.REFUSED;

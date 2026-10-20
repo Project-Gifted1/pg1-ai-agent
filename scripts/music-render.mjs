@@ -39,7 +39,7 @@ import { runPreviews, runFinal, runExportStage, MusicCapReached, MusicStageError
 import { StorageLimitError } from '../lib/music/export.mjs';
 import { MUSIC_STAGES, STAGE_QUEUED, STAGE_RUNNING } from '../lib/music/text.mjs';
 
-const FAILURE_REASONS = { throttled: 'throttled', billing: 'out_of_credit', not_configured: 'not_configured', refused: 'refused', timeout: 'timeout' };
+const FAILURE_REASONS = { throttled: 'throttled', billing: 'out_of_credit', spend_cap: 'spend_cap_reached', not_configured: 'not_configured', refused: 'refused', timeout: 'timeout' };
 
 export async function main(env = process.env, { log = console.log, fetchImpl = globalThis.fetch, sleep = undefined, run = undefined, probe = probeDuration } = {}) {
   const trackId = String(env.MUSIC_TRACK_ID || '').trim().toLowerCase();
