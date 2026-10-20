@@ -18,7 +18,7 @@ import { ROUTING_CHAINS, stepLicence, capability } from '../lib/capabilities/reg
 import { chainPlan, runChain, failureClass, FAILURE, CHAIN_IDS, emptyPlanReason } from '../lib/router/chains.mjs';
 import { createCapacityAlerts, alertText, __resetAlerts, ALERT_WINDOW_MS } from '../lib/router/alerts.mjs';
 import { notificationText } from '../lib/watches/push.mjs';
-import { planRoute, TASKS, DATA, __resetRouterState, isTripped } from '../lib/aiRouter.mjs';
+import { planRoute, TASKS, DATA, __resetRouterState, isTripped, isOutOfCredit, CREDIT_RECHECK_MS } from '../lib/aiRouter.mjs';
 import { EngineError } from '../lib/film/providers.mjs';
 import { makeFilmDb, filmDbRoutes, routedFetch } from './helpers/filmDb.mjs';
 
@@ -117,8 +117,10 @@ describe('what falls through and what stops', () => {
     }
     __resetRouterState();
     await runChain({ plan: plan(), attempt: async (s) => (s.provider === 'gemini_paid' ? { ok: false, status: 402, detail: 'out of credit' } : { ok: true }) });
-    assert.ok(isTripped('gemini_paid'), 'a drained engine goes to the back of the next plan');
-    assert.deepEqual(order(plan()), ['replicate', 'gemini_paid']);
+    assert.ok(isTripped('gemini_paid'));
+    assert.ok(isOutOfCredit('gemini_paid'), 'a drained engine is known to be out of credit');
+    assert.deepEqual(order(plan()), ['replicate'], 'and left out of the next plans for an hour');
+    assert.deepEqual(order(chainPlan('clips', { env: ALL_KEYS, now: Date.now() + CREDIT_RECHECK_MS + 1000 })), ['gemini_paid', 'replicate'], 'checked again after an hour');
   });
 
   test('a safety refusal STOPS: the next engine is never asked (an EngineError or a result)', async () => {

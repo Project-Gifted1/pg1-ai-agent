@@ -6213,9 +6213,9 @@
     // Approve/Decline markup wired to the same resolveApproval() call.
     // labels: { approve, decline } for a proposal that names its own buttons
     // (a movie budget: Confirm / Cancel); only those two words are allowed.
-    const APPROVAL_LABEL_WORDS = new Set(['Approve', 'Decline', 'Confirm', 'Cancel']);
     function approvalLabels(labels) {
-      const pick = (v, d) => (typeof v === 'string' && APPROVAL_LABEL_WORDS.has(v) ? v : d);
+      const words = ['Approve', 'Decline', 'Confirm', 'Cancel'];
+      const pick = (v, d) => (typeof v === 'string' && words.includes(v) ? v : d);
       return { approve: pick(labels && labels.approve, 'Approve'), decline: pick(labels && labels.decline, 'Decline') };
     }
     function renderApprovalActionsHtml(token, labels = null) {
