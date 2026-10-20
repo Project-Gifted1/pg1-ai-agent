@@ -512,9 +512,10 @@ test('a model failure before any text is an error event, retried across models f
   assert.equal(last.type, 'error');
   assert.equal(last.partial, false);
   assert.match(last.message, /Execution failed/);
-  // Both models in one send, then the 429 waited out three times (2 s, 5 s,
-  // 10 s: instant under the test runner) before giving up: 4 sends of 2.
-  assert.equal(calls.filter((c) => c.url.includes('streamGenerateContent')).length, 8);
+  // Both models in one send, then the 429 waited out twice (2 s, 3 s: at
+  // most 5 s in all, instant under the test runner) before giving up: 3
+  // sends of 2.
+  assert.equal(calls.filter((c) => c.url.includes('streamGenerateContent')).length, 6);
 });
 
 test('fallback: without stream: true the reply is the same JSON as before', async () => {
