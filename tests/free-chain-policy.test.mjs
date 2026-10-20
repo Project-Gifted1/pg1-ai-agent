@@ -428,7 +428,12 @@ test('chat: the free key\'s daily quota falls through at once to the next free e
   const res = await chat('summarise what an x402 facilitator does');
   assert.match(res.jsonBody.reply, /Second free answer\./);
   const engines = calls.filter((c) => c !== 'groq:models');
-  assert.equal(engines.filter((c) => c === 'gemini_free').length, 1, 'a day\'s quota is not asked again');
+  // The free tier's daily quota is per model (PerProjectPerModel): each
+  // model is asked once, cools until its reset, and is not asked again.
+  assert.equal(engines.filter((c) => c === 'gemini_free').length, 2, 'each free model once, never retried');
+  const again = sjvEngines({ free: () => { throw new Error('a cooling model is not called'); } });
+  await chat('and what does a resource server do?');
+  assert.ok(!again.includes('gemini_free'), 'cooling until the quota resets');
   assert.ok(!engines.includes('anthropic') && !engines.includes('gemini_paid'), 'no paid credit while a free engine answers');
   assert.ok(!engines.includes('groq:qwen/qwen3-32b'));
   assert.doesNotMatch(res.jsonBody.reply, /groq|gemini|google|anthropic|claude/i);

@@ -70,10 +70,11 @@ test('a 429 is a throttle; a 402, a credit error or a daily quota is not', () =>
   assert.equal(isThrottle(400, ANTHROPIC_CREDIT), false);
 });
 
-test('the wait is the engine\'s own (Retry-After, retryDelay, "retry in"), else 2 s, 5 s, 10 s', () => {
+test('the wait is the engine\'s own (Retry-After, retryDelay, "retry in"), else 2 s, then 3 s for chat', () => {
   assert.equal(retryAfterMs({ text: GEMINI_429(7) }), 7000, 'Gemini RetryInfo');
   assert.equal(retryAfterMs({ headers: { 'retry-after': '4' } }), 4000, 'Retry-After header');
-  assert.deepEqual([1, 2, 3, 4].map((n) => textThrottleWaitMs(n, null, CHAT_THROTTLE)), [2000, 5000, 10000, 10000]);
+  assert.deepEqual([1, 2, 3, 4].map((n) => textThrottleWaitMs(n, null, CHAT_THROTTLE)), [2000, 3000, 3000, 3000]);
+  assert.deepEqual([1, 2, 3, 4].map((n) => textThrottleWaitMs(n, null, BACKGROUND_THROTTLE)), [2000, 5000, 10000, 10000]);
   assert.equal(textThrottleWaitMs(1, 3000, CHAT_THROTTLE), 3000);
 });
 
@@ -86,12 +87,15 @@ test('429 then success: the same engine is asked again after the wait', async ()
   assert.deepEqual(waits, [2000]);
 });
 
-test('429 exhausted: at most 20 s of waiting for chat, then the call falls through', async () => {
+test('429 exhausted: at most 5 s of waiting for chat, then the call falls through', async () => {
   const waits = [];
   const out = await withThrottleRetry(async () => ({ ok: false, status: 429, detail: 'Too Many Requests' }), { policy: CHAT_THROTTLE, sleep: async (ms) => { waits.push(ms); } });
   assert.equal(out.result.status, 429);
-  assert.deepEqual(waits, [2000, 5000, 10000], '17 s waited; another 10 s would pass the 20 s cap');
-  assert.ok(waits.reduce((a, b) => a + b, 0) <= 20000);
+  assert.deepEqual(waits, [2000, 3000], '5 s waited; another 3 s would pass the 5 s cap');
+  assert.ok(waits.reduce((a, b) => a + b, 0) <= 5000);
+  const hinted = [];
+  await withThrottleRetry(async () => ({ ok: false, status: 429, detail: GEMINI_429(6) }), { policy: CHAT_THROTTLE, sleep: async (ms) => { hinted.push(ms); } });
+  assert.deepEqual(hinted, [], 'a 6 s retry hint is over chat\'s 5 s: no wait at all');
 });
 
 test('background jobs wait up to 2 minutes; an engine asking for longer than the cap is not waited for', async () => {
@@ -110,8 +114,8 @@ test('background jobs wait up to 2 minutes; an engine asking for longer than the
 test('the wait never runs past the caller\'s deadline', async () => {
   const waits = [];
   const t0 = 1_000_000;
-  await withThrottleRetry(async () => ({ ok: false, status: 429, detail: 'Too Many Requests' }), { deadlineTs: t0 + 6000, reserveMs: 3000, now: () => t0, sleep: async (ms) => { waits.push(ms); } });
-  assert.deepEqual(waits, [2000], 'a 5 s wait would leave less than the reserve');
+  await withThrottleRetry(async () => ({ ok: false, status: 429, detail: 'Too Many Requests' }), { deadlineTs: t0 + 5500, reserveMs: 3000, now: () => t0, sleep: async (ms) => { waits.push(ms); } });
+  assert.deepEqual(waits, [2000], 'a 3 s wait would leave less than the reserve');
 });
 
 test('runRoute: 429 retried then answered; 429 exhausted falls through; 402 and a 400 credit error fall through at once', async () => {
@@ -135,8 +139,8 @@ test('runRoute: 429 retried then answered; 429 exhausted falls through; 402 and 
     attempt: async (c) => { tried.push(c.provider); if (c.provider === 'gemini_free') return { ok: false, status: 429, detail: 'Too Many Requests' }; if (c.provider === 'gemini_paid') return { ok: false, status: 402, detail: GEMINI_402 }; if (c.provider === 'anthropic') return { ok: false, status: 400, detail: ANTHROPIC_CREDIT }; return { ok: true, value: 'x' }; }
   });
   assert.equal(r.ok, false);
-  assert.deepEqual(tried, ['gemini_free', 'gemini_free', 'gemini_free', 'gemini_free', 'gemini_paid', 'anthropic'], 'the free key four times (three waits), the 402 and the credit error once each');
-  assert.deepEqual(sleeps, [2000, 5000, 10000]);
+  assert.deepEqual(tried, ['gemini_free', 'gemini_free', 'gemini_free', 'gemini_paid', 'anthropic'], 'the free key three times (two waits within 5 s), the 402 and the credit error once each');
+  assert.deepEqual(sleeps, [2000, 3000]);
   assert.equal(failureClass({ status: 402, text: GEMINI_402 }), FAILURE.CAPACITY);
   assert.equal(failureClass({ status: 400, text: ANTHROPIC_CREDIT }), FAILURE.CAPACITY);
 });
@@ -262,7 +266,7 @@ test('plain chat (small talk): no search request and never the footer, even from
 test('the limiter queues a burst into the next minute instead of failing, chat ahead of background', async () => {
   let t = 10 * WINDOW_MS + 5000;
   const sleeps = [];
-  const limiter = createFreeLimiter({ env: { PG1_GEMINI_FREE_RPM: '3', PG1_GEMINI_FREE_CHAT_RESERVE: '1' }, now: () => t, sleep: async (ms) => { sleeps.push(ms); t += ms; } });
+  const limiter = createFreeLimiter({ env: { PG1_GEMINI_FREE_RPM: '3', PG1_GEMINI_FREE_CHAT_RESERVE: '1', PG1_FREE_BACKGROUND_SHARE: '1' }, now: () => t, sleep: async (ms) => { sleeps.push(ms); t += ms; } });
   assert.deepEqual(freeLimits({ PG1_GEMINI_FREE_RPM: '3', PG1_GEMINI_FREE_CHAT_RESERVE: '1' }), { rpm: 3, reserve: 1 });
   // Background may take 2 of the minute's 3 slots; the third is chat's.
   assert.equal((await limiter.acquire({ priority: PRIORITY.BACKGROUND, maxWaitMs: 0 })).granted, true);
@@ -273,13 +277,19 @@ test('the limiter queues a burst into the next minute instead of failing, chat a
   const queued = await limiter.acquire({ priority: PRIORITY.CHAT, maxWaitMs: 60000 });
   assert.equal(queued.granted, true);
   assert.equal(queued.waitedMs, 55000, 'waited for the next minute');
-  // A waiting background caller lets chat in first when the minute turns.
+  // While chat is active on the engine, background work yields at once;
+  // once chat has been quiet for two minutes, a waiting background caller
+  // still lets chat in first when the minute turns.
   t = 20 * WINDOW_MS + 50000;
   const bgSleeps = [];
-  const two = createFreeLimiter({ env: { PG1_GEMINI_FREE_RPM: '2', PG1_GEMINI_FREE_CHAT_RESERVE: '0' }, now: () => t, sleep: async (ms) => { bgSleeps.push(ms); t += ms; } });
+  const two = createFreeLimiter({ env: { PG1_GEMINI_FREE_RPM: '2', PG1_GEMINI_FREE_CHAT_RESERVE: '0', PG1_FREE_BACKGROUND_SHARE: '1' }, now: () => t, sleep: async (ms) => { bgSleeps.push(ms); t += ms; } });
   await two.acquire({ priority: PRIORITY.CHAT, maxWaitMs: 0 });
   await two.acquire({ priority: PRIORITY.CHAT, maxWaitMs: 0 });
-  const bg = await two.acquire({ priority: PRIORITY.BACKGROUND, maxWaitMs: 120000 });
+  assert.deepEqual(await two.acquire({ priority: PRIORITY.BACKGROUND, maxWaitMs: 120000 }), { granted: false, waitedMs: 0, reason: 'chat_active' });
+  t = 30 * WINDOW_MS + 50000;
+  const three = createFreeLimiter({ env: { PG1_GEMINI_FREE_RPM: '1', PG1_GEMINI_FREE_CHAT_RESERVE: '0', PG1_FREE_BACKGROUND_SHARE: '1' }, now: () => t, sleep: async (ms) => { bgSleeps.push(ms); t += ms; } });
+  assert.equal((await three.acquire({ priority: PRIORITY.BACKGROUND, maxWaitMs: 0 })).granted, true);
+  const bg = await three.acquire({ priority: PRIORITY.BACKGROUND, maxWaitMs: 120000 });
   assert.equal(bg.granted, true);
   assert.deepEqual(bgSleeps, [10000 + 1500], 'the rest of the minute plus a head start for chat');
 });
