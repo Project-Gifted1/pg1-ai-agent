@@ -953,6 +953,26 @@
     .cmd-chip:hover { background: var(--gold-hover); }
     .cmd-chip:active { transform: scale(0.97); }
     .cmd-chip:focus-visible { border-radius: var(--r-full); }
+    /* THE COMMAND PANEL (lib/commands/registry.mjs, public/commands.json):
+       a button for every command, grouped by area. */
+    .cmd-panel-search { width: 100%; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2); color: var(--text); font: inherit; }
+    .cmd-panel-list { display: flex; flex-direction: column; gap: var(--sp-4); }
+    .cmd-area h3 { margin: 0 0 var(--sp-2); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+    .cmd-area-items { display: flex; flex-wrap: wrap; gap: 6px; }
+    .cmd-btn { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; max-width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); color: var(--text); font: inherit; font-size: var(--fs-sm); text-align: left; cursor: pointer; }
+    .cmd-btn code { font-weight: 600; color: var(--text-strong); }
+    .cmd-btn small { color: var(--text-3); font-size: var(--fs-xs); }
+    .cmd-btn[data-dangerous="1"] code::after { content: ' ⚠'; color: var(--danger); }
+    .cmd-btn.armed { border-color: var(--danger-line); background: var(--danger-soft); }
+    .cmd-form { display: flex; flex-direction: column; gap: var(--sp-3); }
+    .cmd-form label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); color: var(--text-2); }
+    .cmd-form input { padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2); color: var(--text); font: inherit; }
+    .cmd-form-actions { display: flex; gap: var(--sp-2); justify-content: flex-end; }
+    .cmd-form-warn { margin: 0; color: var(--danger); font-size: var(--fs-sm); }
+    /* FAILURE CARD: Retry, Fix it, Dismiss under a failed reply. */
+    .failure-card { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .failure-card.is-dismissed .failure-actions { display: none; }
+    .failure-actions { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 
     /* message actions: icon-only outline buttons, 44px tap area */
     .message-actions {
@@ -2712,6 +2732,20 @@
     </div>
   </div>
 
+  <div id="cmd-modal" class="matrix-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="cmd-title">
+    <div class="matrix-card">
+      <div class="modal-head">
+        <h2 id="cmd-title">Commands</h2>
+        <p class="modal-note">Every command PG1 has. Tap one to run it; one that needs details opens a short form, and one marked ⚠ asks you to confirm.</p>
+      </div>
+      <button type="button" class="icon-btn modal-close" aria-label="Close" data-dialog-close onclick="triggerHaptic(40); closeCommandPanel()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+      <label class="sr-only" for="cmd-search">Find a command</label>
+      <input id="cmd-search" class="cmd-panel-search" type="search" placeholder="Find a command" autocomplete="off" oninput="renderCommandPanel(this.value)">
+      <div id="cmd-form" class="cmd-form" hidden></div>
+      <div id="cmd-panel-list" class="cmd-panel-list" aria-live="polite"></div>
+    </div>
+  </div>
+
   <div id="auto-modal" class="matrix-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="auto-title">
     <div class="matrix-card">
       <div class="modal-head">
@@ -2899,6 +2933,7 @@
     <button type="button" role="menuitem" class="quick-chip" onclick="runQuick('/sync-vault')"><svg class="icon" aria-hidden="true"><use href="#i-vault"/></svg>Vault<span class="cmd" aria-hidden="true">/sync-vault</span></button>
     <button type="button" role="menuitem" class="quick-chip" onclick="toggleQuickMenu(); triggerVaultSync();"><svg class="icon" aria-hidden="true"><use href="#i-sync"/></svg>Vault sync</button>
     <button type="button" role="menuitem" class="quick-chip" onclick="runQuick('/voice')"><svg class="icon" aria-hidden="true"><use href="#i-wave"/></svg>Voice profiles<span class="cmd" aria-hidden="true">/voice</span></button>
+    <button type="button" role="menuitem" class="quick-chip" id="cmd-menu-item" onclick="toggleQuickMenu(); openCommandPanel()"><svg class="icon" aria-hidden="true"><use href="#i-help"/></svg>All commands<span class="cmd" aria-hidden="true">/</span></button>
     <button type="button" role="menuitem" class="quick-chip" onclick="runQuick('/help')"><svg class="icon" aria-hidden="true"><use href="#i-help"/></svg>Help<span class="cmd" aria-hidden="true">/help</span></button>
     <div class="menu-divider" role="separator"></div>
     <button type="button" role="menuitem" class="quick-chip" onclick="toggleQuickMenu(); openErrorLog();"><svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg>Error log<span id="menu-error-count" class="menu-count" hidden></span></button>
@@ -2962,6 +2997,7 @@
         <button type="button" id="mic-btn" class="icon-btn" title="Voice input" aria-label="Voice input" onclick="triggerHaptic(); toggleRecording()"><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg></button>
         <button type="button" id="converse-btn" class="icon-btn" role="switch" aria-checked="false" title="Conversation mode" aria-label="Conversation mode" aria-describedby="converse-hint" onclick="triggerHaptic(); toggleConversation()"><svg class="icon" aria-hidden="true"><use href="#i-converse"/></svg></button>
         <span id="converse-hint" class="sr-only">Hands-free: PG1 listens, replies aloud and listens again. Off by default; switches off after two minutes of silence.</span>
+        <button type="button" id="cmd-panel-btn" class="icon-btn" title="Commands" aria-label="Commands" aria-haspopup="dialog" onclick="triggerHaptic(); openCommandPanel()"><span aria-hidden="true" style="font-weight:700;font-size:1.05rem;line-height:1">/</span></button>
         <span class="spacer"></span>
         <button type="button" class="execute-btn" onclick="triggerHaptic(80); onExecuteClick()" aria-label="Execute" title="Execute"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg></button>
       </div>
@@ -4256,9 +4292,13 @@
       // [ /cmd ] chips run the whole command, arguments included
       // ("[ /lab report e2981021 ]"); the command rides in data-command and
       // runs through runCommandChip(), never as inline script text.
+      // THE COMMAND REGISTRY: a chip only for a command that exists
+      // (registryCommand), running exactly that text; anything else stays
+      // as written, so an invented "/key fresh" is never a button.
       escaped = escaped.replace(/\[\s*((?:[^\]]*?\s)?(\/[a-zA-Z0-9_-]+)(?![\w.\/-])[^\]]*?)\s*\]/g, function(match, fullInner, cmdCode) {
         const whole = /^\/[a-zA-Z0-9_-]+(?: [a-zA-Z0-9:_-]+){0,3}$/.test(fullInner.trim()) ? fullInner.trim() : cmdCode;
-        return `<button type="button" class="cmd-chip" data-command="${whole}" onclick="runCommandChip(this)">${fullInner}</button>`;
+        const cmd = registryCommand(whole) || registryCommand(cmdCode);
+        return cmd ? commandChipHtml(cmd, fullInner) : match;
       });
 
       // Images only from http(s) or an inline data:image URL - anything else
@@ -4266,7 +4306,16 @@
       escaped = escaped.replace(/!\[([^\]]*)\]\(((?:https?:\/\/|data:image\/)[^)\s]+)\)/g, '</div><div class="media-preview-container"><img src="$2" alt="$1" loading="lazy" /></div><div class="message-text">');
       escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
       // A command in backticks (`/lab report e2981021`) is a button too.
-      escaped = escaped.replace(/`(\/[a-z][a-z0-9-]*(?: [a-z0-9:_-]+){0,3})`/g, '<button type="button" class="cmd-chip" data-command="$1" onclick="runCommandChip(this)">$1</button>');
+      escaped = escaped.replace(/`(\/[a-z][a-z0-9-]*(?: [a-z0-9:_-]+){0,3})`/g, function (match, text) {
+        const cmd = registryCommand(text);
+        return cmd ? commandChipHtml(cmd, text) : match;
+      });
+      // A command mentioned in plain words is a chip too.
+      escaped = escaped.replace(/(^|[\s(])(\/[a-z][a-z0-9-]*(?: [a-z0-9:_-]+){0,2})(?=[\s.,;:!?)]|$)/gm, function (match, lead, text) {
+        const cmd = registryCommand(text, { prefix: true });
+        if (!cmd || text.slice(0, cmd.length).toLowerCase() !== cmd.toLowerCase()) return match;
+        return `${lead}${commandChipHtml(cmd, text.slice(0, cmd.length))}${text.slice(cmd.length)}`;
+      });
       escaped = escaped.replace(/`([^`]+)`/g, '<span class="md-code-inline">$1</span>');
 
       escaped = escaped.replace(/(?<!src=")https?:\/\/[^\s<]+?(?=&quot;|&#39;|[.,)]?(?:\s|<|$))/g, function (url) { return '<a class="md-link" href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>'; });
@@ -7399,6 +7448,15 @@
       sendCommand(command);
     }
     function runCommandChip(el) {
+      // A dangerous command (it spends or changes production) asks for a
+      // second tap, like the buttons under a reply.
+      if (el.getAttribute('data-confirm') === '1' && !el.classList.contains('armed')) {
+        triggerHaptic(20);
+        el.classList.add('armed');
+        el.textContent = 'Tap again to confirm';
+        setTimeout(() => { if (el.isConnected && el.classList.contains('armed')) { el.classList.remove('armed'); el.textContent = el.getAttribute('data-label') || el.getAttribute('data-command'); } }, 4000);
+        return;
+      }
       triggerHaptic(30);
       sendCommand(el.getAttribute('data-command') || '');
     }
@@ -7885,7 +7943,7 @@
           else if (ev.type === 'tool_result') { if (ev.tool) toolResults.push(ev); }
           else if (ev.type === 'done') outcome = { data: Object.assign({}, ev.result || {}, { reply: text, searchEntryPoint: ev.searchEntryPoint || (ev.result && ev.result.searchEntryPoint) || null, spokenSummary: ev.spokenSummary || null, toolResults: toolResults.slice(), traceId: ev.request_id }) };
           else if (ev.type === 'error') {
-            outcome = { failed: 'error', message: String(ev.message || 'The request failed.'), status: ev.status };
+            outcome = { failed: 'error', message: String(ev.message || 'The request failed.'), status: ev.status, requestId: typeof ev.request_id === 'string' ? ev.request_id : null, reason: ev.reason || null };
             // Every AI engine was out: say so on the camera feed too.
             if (ev.reason === 'ai_unavailable' && activeVisionStream && window.PG1Camera) showCameraCaption(window.PG1Camera.PAUSED_TEXT, true);
           }
@@ -7936,6 +7994,175 @@
     function interruptDirectives() {
       stopVoicePlayback();
       inFlightDirectives.forEach((stop) => stop('interrupted'));
+    }
+
+    // THE COMMAND REGISTRY on the page (public/commands.json, built from
+    // lib/commands/registry.mjs). Until it loads, nothing is a chip.
+    var commandRegistry = null;
+    async function loadCommandRegistry() {
+      try {
+        const res = await fetch('/commands.json', { cache: 'no-cache' });
+        if (res.ok) {
+          const j = await res.json();
+          if (j && Array.isArray(j.commands)) commandRegistry = j;
+        }
+      } catch (e) { /* no registry: commands stay plain text */ }
+      return commandRegistry;
+    }
+    loadCommandRegistry();
+    function registryEntry(text, { prefix = false } = {}) {
+      if (!commandRegistry) return null;
+      const t = String(text || '').trim().replace(/\s+/g, ' ').toLowerCase();
+      let best = null;
+      for (const c of commandRegistry.commands) {
+        if (c.client) continue;
+        const hit = t === c.command || ((prefix || c.args.length) && t.startsWith(c.command + ' '));
+        if (hit && (!best || c.command.length > best.command.length)) best = c;
+      }
+      return best;
+    }
+    // The exact text a chip runs: the command and, when it takes them, the
+    // arguments that follow; null for anything that is not a command, or a
+    // command missing a required argument.
+    function registryCommand(text, { prefix = false } = {}) {
+      const c = registryEntry(text, { prefix });
+      if (!c) return null;
+      const t = String(text || '').trim().replace(/\s+/g, ' ');
+      const rest = t.slice(c.command.length).trim();
+      const required = c.args.some((g) => g.required);
+      if (prefix) {
+        // In plain words only an id-like word after the command is taken
+        // as its argument ("/lab report e2981021"); "/keys fresh to check"
+        // is /keys fresh.
+        const first = rest.split(' ')[0] || '';
+        const idLike = /^[0-9a-f]{6,40}$/i.test(first) || /^[a-z0-9_-]*\d[a-z0-9_-]*$/i.test(first);
+        if (c.args.length && idLike) return `${c.command} ${first}`;
+        return required ? null : c.command;
+      }
+      if (!rest && required) return null;
+      return rest && c.args.length ? `${c.command} ${rest}` : c.command;
+    }
+    function commandChipHtml(command, label) {
+      const c = registryEntry(command);
+      const danger = c && c.dangerous ? '1' : '0';
+      return `<button type="button" class="cmd-chip" data-command="${escapeHTML(command)}" data-confirm="${danger}" data-label="${escapeHTML(String(label))}" onclick="runCommandChip(this)">${label}</button>`;
+    }
+    // A command a retry may resend on its own: words, or a command that is
+    // not marked dangerous (nothing that spends or changes production).
+    const AUTO_RETRY_BACKOFF_MS = 1500;
+    function autoRetrySafe(prompt) {
+      const t = String(prompt || '').trim();
+      if (!t.startsWith('/')) return true;
+      const c = registryEntry(t, { prefix: true });
+      return !!c && !c.dangerous;
+    }
+    function isTransientStreamFailure(streamed, abortReason) {
+      if (streamed.failed === 'dropped') return true;
+      if (streamed.failed === 'aborted') return abortReason === 'timeout';
+      if (streamed.failed === 'error') return streamed.status === 429 || streamed.status >= 500 || streamed.reason === 'ai_unavailable';
+      return false;
+    }
+    function failureCardHtml(prompt, { fallback = false, requestId = null } = {}) {
+      const fix = requestId && /^[a-z0-9]{6,40}$/i.test(requestId) ? `<button type="button" class="retry-btn" data-command="/fix ${escapeHTML(requestId)}" onclick="triggerHaptic(40); runFixIt(this)"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>Fix it</button>` : '';
+      return `<span class="failure-card"><span class="failure-actions">${retryButtonHtml(prompt, fallback)}${fix}<button type="button" class="retry-btn" onclick="triggerHaptic(20); dismissFailure(this)"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg>Dismiss</button></span></span>`;
+    }
+    // Fix it: /fix <request id>, which only proposes (an approval card).
+    function runFixIt(btn) {
+      btn.disabled = true;
+      sendCommand(btn.getAttribute('data-command') || '');
+    }
+    function dismissFailure(btn) {
+      const card = btn.closest('.failure-card');
+      if (card) card.classList.add('is-dismissed');
+      saveState();
+    }
+
+    // THE COMMAND PANEL: every command by area; no arguments runs on a tap,
+    // arguments open a short form, a dangerous one asks to confirm.
+    async function openCommandPanel() {
+      const modal = document.getElementById('cmd-modal');
+      if (!modal) return;
+      modal.style.display = 'flex';
+      if (!commandRegistry) await loadCommandRegistry();
+      const search = document.getElementById('cmd-search');
+      if (search) search.value = '';
+      closeCommandForm();
+      renderCommandPanel('');
+    }
+    function closeCommandPanel() {
+      const modal = document.getElementById('cmd-modal');
+      if (modal) modal.style.display = 'none';
+    }
+    function panelCommands() {
+      if (!commandRegistry) return [];
+      const signedIn = !!(typeof sessionUser !== 'undefined' && sessionUser);
+      return commandRegistry.commands.filter((c) => signedIn || !c.operatorOnly);
+    }
+    function renderCommandPanel(query) {
+      const list = document.getElementById('cmd-panel-list');
+      if (!list) return;
+      if (!commandRegistry) { list.innerHTML = '<p class="modal-note">The command list could not be loaded. /help lists every command.</p>'; return; }
+      const q = String(query || '').trim().toLowerCase();
+      const shown = panelCommands().filter((c) => !q || c.command.includes(q) || c.description.toLowerCase().includes(q) || c.area.toLowerCase().includes(q));
+      list.innerHTML = commandRegistry.areas.map((area) => {
+        const items = shown.filter((c) => c.area === area);
+        if (!items.length) return '';
+        return `<section class="cmd-area" aria-label="${escapeHTML(area)}"><h3>${escapeHTML(area)}</h3><div class="cmd-area-items">${items.map((c) => `<button type="button" class="cmd-btn" data-command="${escapeHTML(c.command)}" data-dangerous="${c.dangerous ? '1' : '0'}" onclick="runPanelCommand(this)"><code>${escapeHTML(c.command)}${c.args.length ? ' …' : ''}</code><small>${escapeHTML(c.description)}</small></button>`).join('')}</div></section>`;
+      }).join('') || '<p class="modal-note">No command matches.</p>';
+    }
+    function runPanelCommand(btn) {
+      const c = commandRegistry && commandRegistry.commands.find((x) => x.command === btn.getAttribute('data-command'));
+      if (!c) return;
+      if (c.args.length) { openCommandForm(c); return; }
+      if (c.dangerous && !btn.classList.contains('armed')) {
+        triggerHaptic(20);
+        btn.classList.add('armed');
+        btn.querySelector('small').textContent = 'Tap again to confirm';
+        setTimeout(() => { if (btn.isConnected && btn.classList.contains('armed')) { btn.classList.remove('armed'); btn.querySelector('small').textContent = c.description; } }, 4000);
+        return;
+      }
+      closeCommandPanel();
+      runRegistryCommand(c.command, c);
+    }
+    function runRegistryCommand(command, c) {
+      // Page-only commands run here, never as a server request.
+      if (c && c.client && command === '/voice') { runQuick('/voice'); return; }
+      sendCommand(command);
+    }
+    function openCommandForm(c) {
+      const form = document.getElementById('cmd-form');
+      if (!form) return;
+      form.hidden = false;
+      form.dataset.command = c.command;
+      form.innerHTML = `<strong><code>${escapeHTML(c.command)}</code></strong><span class="modal-note">${escapeHTML(c.description)}</span>`
+        + c.args.map((g, i) => `<label>${escapeHTML(g.name)}${g.required ? '' : ' (optional)'}<input type="text" data-arg="${i}" placeholder="${escapeHTML(g.placeholder || '')}" ${g.required ? 'required' : ''} autocomplete="off"></label>`).join('')
+        + (c.dangerous ? '<p class="cmd-form-warn">This spends money or changes something: Run asks you to confirm.</p>' : '')
+        + `<div class="cmd-form-actions"><button type="button" class="retry-btn" onclick="closeCommandForm()">Cancel</button><button type="button" class="retry-btn" id="cmd-form-run" data-dangerous="${c.dangerous ? '1' : '0'}" onclick="submitCommandForm(this)">Run</button></div>`;
+      const first = form.querySelector('input');
+      if (first) first.focus();
+    }
+    function closeCommandForm() {
+      const form = document.getElementById('cmd-form');
+      if (form) { form.hidden = true; form.innerHTML = ''; }
+    }
+    function submitCommandForm(btn) {
+      const form = document.getElementById('cmd-form');
+      const c = commandRegistry && commandRegistry.commands.find((x) => x.command === form.dataset.command);
+      if (!c) return;
+      const values = Array.from(form.querySelectorAll('input[data-arg]')).map((el) => el.value.trim());
+      const missing = c.args.findIndex((g, i) => g.required && !values[i]);
+      if (missing >= 0) { form.querySelectorAll('input[data-arg]')[missing].focus(); return; }
+      if (btn.getAttribute('data-dangerous') === '1' && !btn.classList.contains('armed')) {
+        triggerHaptic(20);
+        btn.classList.add('armed');
+        btn.textContent = 'Tap again to confirm';
+        return;
+      }
+      const command = [c.command, ...values.filter(Boolean)].join(' ');
+      closeCommandPanel();
+      closeCommandForm();
+      if (c.client && c.command === '/code') { const input = document.getElementById('prompt-input'); input.value = command; autoResize(input); submitDirective(); return; }
+      sendCommand(command);
     }
 
     function retryButtonHtml(prompt, fallback) {
@@ -8151,6 +8378,14 @@
           // No more audio can arrive for this reply.
           if (voicePlayer && !voicePlayer.endInfo) voicePlayer.end({ ok: false });
           if (streamed.failed) {
+            // FAILURE -> RETRY: a transient failure (dropped stream, 429,
+            // 5xx, every engine busy, a timeout) is sent once more on its
+            // own after a short back-off; a second failure shows the card.
+            if (!options.autoRetried && !streamed.text && isTransientStreamFailure(streamed, abortReason) && autoRetrySafe(text)) {
+              renderStreamFailure(agentBubble, streamed, text, abortReason, { retrying: true });
+              setTimeout(() => submitDirective({ retryText: text, noStream: streamed.failed === 'dropped', autoRetried: true }), AUTO_RETRY_BACKOFF_MS);
+              return;
+            }
             renderStreamFailure(agentBubble, streamed, text, abortReason);
             return;
           }
@@ -8305,7 +8540,14 @@
         agentBubble.classList.remove('pending');
         agentBubble.classList.add('error');
         if (display.category === 'offline' || display.category === 'network') agentBubble.classList.add('offline');
-        agentBubble.innerHTML = `<span class="msg-timestamp">${errTime}</span><div class="message-text">${display.prefixed ? 'Exception: ' : ''}${escapeHTML(display.text)}</div>`;
+        const transient = display.category === 'timeout' || display.category === 'network' || display.category === 'http_5xx' || responseStatus === 429;
+        if (!options.autoRetried && transient && display.category !== 'offline' && autoRetrySafe(text)) {
+          agentBubble.innerHTML = `<span class="msg-timestamp">${errTime}</span><div class="message-text">${escapeHTML(display.text)}</div><div class="stream-note" role="status"><span class="stream-note-text">Trying once more…</span></div>`;
+          saveState();
+          setTimeout(() => submitDirective({ retryText: text, noStream: true, autoRetried: true }), AUTO_RETRY_BACKOFF_MS);
+          return;
+        }
+        agentBubble.innerHTML = `<span class="msg-timestamp">${errTime}</span><div class="message-text">${display.prefixed ? 'Exception: ' : ''}${escapeHTML(display.text)}</div>${display.category === 'offline' ? '' : failureCardHtml(text, { fallback: true })}`;
         saveState();
       } finally {
         clearTimeout(timeoutId);
@@ -8318,7 +8560,7 @@
     // A streamed reply that didn't finish: keep the steps and whatever text
     // arrived, say plainly what happened, and offer a retry (Stop gets a
     // quiet note instead of an error).
-    function renderStreamFailure(bubble, streamed, prompt, abortReason) {
+    function renderStreamFailure(bubble, streamed, prompt, abortReason, { retrying = false } = {}) {
       const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const stopped = streamed.failed === 'aborted' && (abortReason === 'stopped' || abortReason === 'interrupted');
       let note;
@@ -8346,7 +8588,10 @@
       if (category && !streamed.text) bubble.classList.add('error');
       if (category === 'offline' || category === 'network') bubble.classList.add('offline');
       const textHtml = streamed.text ? markdownBlock(streamed.text) : '';
-      const retry = prompt ? retryButtonHtml(prompt, streamed.failed === 'dropped') : '';
+      // The failure card: Retry, Fix it (a logged failure with a request ID)
+      // and Dismiss. Stop gets the plain Retry only; an automatic retry in
+      // flight says so instead.
+      const retry = !prompt ? '' : retrying ? '<span class="stream-note-text">Trying once more…</span>' : stopped ? retryButtonHtml(prompt, streamed.failed === 'dropped') : failureCardHtml(prompt, { fallback: streamed.failed === 'dropped', requestId: streamed.requestId });
       bubble.innerHTML = `${agentTimestampHtml(time, streamed.tracePill)}${streamed.traceHtml || ''}${textHtml}${toolCardsHtml(streamed.toolResults)}<div class="stream-note" role="status"><span class="stream-note-text">${escapeHTML(note)}</span>${retry}</div>${streamed.text ? messageActionsHtml('agent') : ''}`;
       saveState();
       syncVoiceWave();
