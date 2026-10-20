@@ -48,7 +48,8 @@ const FUNCS = [
   'readChatStream', 'formatStepDuration', 'stepDurationMs', 'traceRowHtml', 'traceRunningRowHtml', 'stepCountText', 'agentTimestampHtml',
   'toggleTraceDetails', 'createTraceView', 'consumeDirectiveStream', 'syncExecuteButton',
   'onExecuteClick', 'stopDirectives', 'retryButtonHtml', 'retryDirective', 'renderStreamFailure',
-  'toolStatusLabel', 'toolDateText', 'toolCardHtml', 'toolCardsHtml', 'markdownBlock'
+  'toolStatusLabel', 'toolDateText', 'toolCardHtml', 'toolCardsHtml', 'markdownBlock',
+  'registryEntry', 'registryCommand', 'commandChipHtml', 'failureCardHtml'
 ];
 const SOURCE = [
   html.match(/const TRACE_EVENT_TYPES = [^\n]*;/)[0],
@@ -57,6 +58,8 @@ const SOURCE = [
   'var traceSeq = 0;',
   'var inFlightDirectives = new Set();',
   'var REQUEST_TIMEOUT_MS = 75000;',
+  // The command registry (public/commands.json): not loaded here, so no chip.
+  'var commandRegistry = null;',
   ...FUNCS.map(extractFunction)
 ].join('\n').replace(/^const TRACE/m, 'var TRACE');
 

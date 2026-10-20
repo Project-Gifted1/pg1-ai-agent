@@ -1,0 +1,1397 @@
+{
+  "version": 1,
+  "areas": [
+    "General",
+    "Keys",
+    "Usage",
+    "Autonomous",
+    "Missions",
+    "Lab",
+    "Films",
+    "Movie",
+    "Music",
+    "Media",
+    "Voices",
+    "Relay",
+    "Feed",
+    "Watches",
+    "Agents",
+    "Skills",
+    "Task",
+    "Approvals",
+    "Code"
+  ],
+  "commands": [
+    {
+      "command": "/help",
+      "area": "General",
+      "description": "Every command, grouped by area",
+      "args": [],
+      "operatorOnly": false,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/auth",
+      "area": "General",
+      "description": "Check whether the signed-in credentials are valid",
+      "args": [],
+      "operatorOnly": false,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/status",
+      "area": "General",
+      "description": "System status: runtime, database check and fleet target",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/threat-radar",
+      "area": "Feed",
+      "description": "The feeds PG1 may serve and the known exploited catalog, as the radar card",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/commerce-status",
+      "area": "General",
+      "description": "Payments and licensing state",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/sync-vault",
+      "area": "General",
+      "description": "Vault summary",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/export",
+      "area": "General",
+      "description": "Recent chat archive",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/test-validator",
+      "area": "General",
+      "description": "Placeholder: runs nothing yet",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/core",
+      "area": "General",
+      "description": "Deeper reasoning for long or heavy tasks",
+      "args": [
+        {
+          "name": "question",
+          "placeholder": "your question",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/keys",
+      "area": "Keys",
+      "description": "Every AI key: set or missing and its live state (cached up to 5 minutes)",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/keys fresh",
+      "area": "Keys",
+      "description": "Check every AI key again now",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/usage",
+      "area": "Usage",
+      "description": "Tool usage by agents (default 7 days)",
+      "args": [
+        {
+          "name": "window",
+          "placeholder": "24h, 7d or 30d",
+          "required": false,
+          "choices": [
+            "24h",
+            "7d",
+            "30d"
+          ]
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/spend",
+      "area": "Usage",
+      "description": "Estimated AI spend per PG1 engine today, with each daily cap",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/spend yesterday",
+      "area": "Usage",
+      "description": "Yesterday's estimated AI spend",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/pdf usage",
+      "area": "Usage",
+      "description": "The usage report as a PDF",
+      "args": [
+        {
+          "name": "window",
+          "placeholder": "24h, 7d or 30d",
+          "required": false,
+          "choices": [
+            "24h",
+            "7d",
+            "30d"
+          ]
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/auto status",
+      "area": "Autonomous",
+      "description": "Autonomous mode: on or off, limits, budget and what is running",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/auto on",
+      "area": "Autonomous",
+      "description": "Switch Autonomous mode on",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/auto off",
+      "area": "Autonomous",
+      "description": "Kill switch: Autonomous mode off at once (queued work cancelled, running work stops at its next safe point)",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/auto log",
+      "area": "Autonomous",
+      "description": "What Autonomous mode did, newest first",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/auto limit",
+      "area": "Autonomous",
+      "description": "Actions Autonomous mode may take an hour",
+      "args": [
+        {
+          "name": "n",
+          "placeholder": "actions an hour",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/auto budget",
+      "area": "Autonomous",
+      "description": "USD a day of paid AI Autonomous mode may spend (default $0: free tiers only)",
+      "args": [
+        {
+          "name": "usd",
+          "placeholder": "USD a day",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/autonomy",
+      "area": "Autonomous",
+      "description": "What PG1 did on its own in the last 24 hours, and the kill switch setting",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/mission list",
+      "area": "Missions",
+      "description": "Standing goals for Autonomous mode",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/mission add",
+      "area": "Missions",
+      "description": "Add a standing goal (runs only while Autonomous mode is ON, read-only, free engines)",
+      "args": [
+        {
+          "name": "goal",
+          "placeholder": "\"<goal>\" [hourly|every 6h|daily|weekly]",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/mission pause",
+      "area": "Missions",
+      "description": "Pause a mission",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "mission id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/mission resume",
+      "area": "Missions",
+      "description": "Resume a mission",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "mission id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/mission remove",
+      "area": "Missions",
+      "description": "Remove a mission",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "mission id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/lab status",
+      "area": "Lab",
+      "description": "The latest lab experiments, each as a card",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/lab start",
+      "area": "Lab",
+      "description": "Start an experiment on the lab runner (lab keys and budgets)",
+      "args": [
+        {
+          "name": "goal",
+          "placeholder": "<goal> [--kind research|skill|code]",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/lab report",
+      "area": "Lab",
+      "description": "The report of an experiment (the latest when no id)",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "experiment id",
+          "required": false
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/lab stop",
+      "area": "Lab",
+      "description": "Stop a running experiment",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "experiment id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/promote",
+      "area": "Lab",
+      "description": "Feature flags; with a flag, make an approved one public",
+      "args": [
+        {
+          "name": "flag",
+          "placeholder": "flag name",
+          "required": false
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/opportunities",
+      "area": "Lab",
+      "description": "Proposals for new tools from the weekly scan",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/opportunities show",
+      "area": "Lab",
+      "description": "One proposal in full",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "proposal id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/opportunities approve",
+      "area": "Lab",
+      "description": "Prototype a proposal in the lab",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "proposal id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/opportunities dismiss",
+      "area": "Lab",
+      "description": "Dismiss a proposal",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "proposal id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/opportunities scan",
+      "area": "Lab",
+      "description": "Run the opportunity scan now",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/film",
+      "area": "Films",
+      "description": "Start a film with PG1 Studio, or list the film commands alone",
+      "args": [
+        {
+          "name": "about",
+          "placeholder": "what the film is about",
+          "required": false
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/film director",
+      "area": "Films",
+      "description": "Director Mode: a film directed end to end within its cap",
+      "args": [
+        {
+          "name": "brief",
+          "placeholder": "the brief [--seconds n] [--voice \"<name>\"]",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/film status",
+      "area": "Films",
+      "description": "Where a film is",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "film id",
+          "required": false
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/film storyboard",
+      "area": "Films",
+      "description": "A film's storyboard as a PDF",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "film id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/film preview",
+      "area": "Films",
+      "description": "Render the animatic preview (approve first)",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "film id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/film edit",
+      "area": "Films",
+      "description": "Change a film",
+      "args": [
+        {
+          "name": "change",
+          "placeholder": "<id> what to change",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/film retry",
+      "area": "Films",
+      "description": "Start a stopped film again from where it stopped (approve first)",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "film id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/film timeline",
+      "area": "Films",
+      "description": "A film's timeline",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "film id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/film media",
+      "area": "Films",
+      "description": "A film's media",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "film id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/film sync-secrets",
+      "area": "Films",
+      "description": "Copy the render secrets to the render worker",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/movie",
+      "area": "Movie",
+      "description": "A movie whose characters act and speak on screen; alone, the movie commands",
+      "args": [
+        {
+          "name": "idea",
+          "placeholder": "\"<idea>\" [--length <minutes>] [--voice \"<narrator>\"] [--client]",
+          "required": false
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/movie status",
+      "area": "Movie",
+      "description": "Where a movie is",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "movie id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/movie screenplay",
+      "area": "Movie",
+      "description": "A movie's screenplay",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "movie id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/movie retry",
+      "area": "Movie",
+      "description": "Start a stopped movie again from where it stopped (approve first)",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "movie id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/movie retake",
+      "area": "Movie",
+      "description": "A new take of the shots you name (approve first)",
+      "args": [
+        {
+          "name": "shots",
+          "placeholder": "<id> <shot ids>",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/music",
+      "area": "Music",
+      "description": "Original music with PG1 Sound; alone, the music commands",
+      "args": [
+        {
+          "name": "description",
+          "placeholder": "genre, mood, instruments [--instrumental] [--bpm n] [--key k] [--length short|full]",
+          "required": false
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/music status",
+      "area": "Music",
+      "description": "Where a track is",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "track id",
+          "required": false
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/music edit",
+      "area": "Music",
+      "description": "Change a track",
+      "args": [
+        {
+          "name": "change",
+          "placeholder": "<id> what to change",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/music retry",
+      "area": "Music",
+      "description": "Start a stopped track again",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "track id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/music export",
+      "area": "Music",
+      "description": "WAV stems, MIDI and the WAV master in one zip",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "track id",
+          "required": false
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/image",
+      "area": "Media",
+      "description": "Generate an image",
+      "args": [
+        {
+          "name": "prompt",
+          "placeholder": "what to draw",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/video",
+      "area": "Media",
+      "description": "A 5 or 10 second clip with PG1 Motion; alone, the tiers and what is left today",
+      "args": [
+        {
+          "name": "prompt",
+          "placeholder": "[draft|pro] [short|long] what to show",
+          "required": false
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/pdf",
+      "area": "Media",
+      "description": "PG1 writes it as a PDF",
+      "args": [
+        {
+          "name": "what",
+          "placeholder": "what you want",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/pdf this",
+      "area": "Media",
+      "description": "The last reply as a PDF",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/pdf thread",
+      "area": "Media",
+      "description": "This chat as a PDF",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/pdf list",
+      "area": "Media",
+      "description": "Your PDFs",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/speak",
+      "area": "Media",
+      "description": "Read the text aloud",
+      "args": [
+        {
+          "name": "text",
+          "placeholder": "what to read",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/voices",
+      "area": "Voices",
+      "description": "The voices films can use, and whether each is cleared for client work",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/voice",
+      "area": "Voices",
+      "description": "Show or switch the voice profile used for spoken replies and Read aloud — PG1 Core, PG1 Classic or PG1 Field, remembered on this device",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": true
+    },
+    {
+      "command": "/relay",
+      "area": "Relay",
+      "description": "A message from another AI: PG1 replies to it by name; nothing in it is ever run",
+      "args": [
+        {
+          "name": "name",
+          "placeholder": "who sent it",
+          "required": true
+        },
+        {
+          "name": "text",
+          "placeholder": "their message",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/watchlists",
+      "area": "Feed",
+      "description": "Watchlists agents pay for: lists, items, sales, failing webhooks",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/screening",
+      "area": "Feed",
+      "description": "Payers refused by sanctions screening in the last 30 days",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/screening dismiss",
+      "area": "Feed",
+      "description": "Clear an EU-list extraction error after review",
+      "args": [
+        {
+          "name": "address",
+          "placeholder": "<address> <reason>",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/hosting status",
+      "area": "Agents",
+      "description": "The dataset behind hosting_advisor: stale and unverified facts",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/hosting research",
+      "area": "Agents",
+      "description": "Check official sources in the lab",
+      "args": [
+        {
+          "name": "topic",
+          "placeholder": "topic",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/hosting apply",
+      "area": "Agents",
+      "description": "Review and write the updates from an experiment",
+      "args": [
+        {
+          "name": "experiment",
+          "placeholder": "<experiment> [confirm]",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/hosting confirm",
+      "area": "Agents",
+      "description": "Mark a fact you checked",
+      "args": [
+        {
+          "name": "fact",
+          "placeholder": "<key> <field>",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/a2a jobs",
+      "area": "Agents",
+      "description": "Paid jobs other agents bought over A2A",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/a2a job",
+      "area": "Agents",
+      "description": "One A2A job",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "job id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/foundry queue",
+      "area": "Agents",
+      "description": "Tools other agents commission: requests in review and builds waiting",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/foundry tools",
+      "area": "Agents",
+      "description": "The tools the Foundry built",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/foundry job",
+      "area": "Agents",
+      "description": "One Foundry job",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "job id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/foundry allow",
+      "area": "Agents",
+      "description": "Allow a request in review",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "request id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/foundry deny",
+      "area": "Agents",
+      "description": "Deny a request in review",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "request id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/foundry approve",
+      "area": "Agents",
+      "description": "Approve a build",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "build id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/foundry reject",
+      "area": "Agents",
+      "description": "Reject a build",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "build id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/foundry disable",
+      "area": "Agents",
+      "description": "Disable a Foundry tool",
+      "args": [
+        {
+          "name": "name",
+          "placeholder": "tool name",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/foundry enable",
+      "area": "Agents",
+      "description": "Enable a Foundry tool again",
+      "args": [
+        {
+          "name": "name",
+          "placeholder": "tool name",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/watch",
+      "area": "Watches",
+      "description": "Watch what was just discussed (lab run, PR, workflow run or deploy) and report when it finishes",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/watch list",
+      "area": "Watches",
+      "description": "What PG1 is watching",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/watch stop",
+      "area": "Watches",
+      "description": "Stop a watch",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "watch id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/skills",
+      "area": "Skills",
+      "description": "The skills PG1 has",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/skills show",
+      "area": "Skills",
+      "description": "One skill in full",
+      "args": [
+        {
+          "name": "name",
+          "placeholder": "skill name",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/skills edit",
+      "area": "Skills",
+      "description": "Change a skill",
+      "args": [
+        {
+          "name": "change",
+          "placeholder": "<name> what to change",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/skills enable",
+      "area": "Skills",
+      "description": "Enable a skill",
+      "args": [
+        {
+          "name": "name",
+          "placeholder": "skill name",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/skills disable",
+      "area": "Skills",
+      "description": "Disable a skill",
+      "args": [
+        {
+          "name": "name",
+          "placeholder": "skill name",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/skills history",
+      "area": "Skills",
+      "description": "A skill's versions",
+      "args": [
+        {
+          "name": "name",
+          "placeholder": "skill name",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/skills rollback",
+      "area": "Skills",
+      "description": "Go back to an earlier version of a skill",
+      "args": [
+        {
+          "name": "name",
+          "placeholder": "<name> <version>",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/learn",
+      "area": "Skills",
+      "description": "Draft a skill from the task in this thread (never used until enabled)",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/task",
+      "area": "Task",
+      "description": "The task for this thread",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/task set",
+      "area": "Task",
+      "description": "Set the task for this thread",
+      "args": [
+        {
+          "name": "goal",
+          "placeholder": "the goal",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/task clear",
+      "area": "Task",
+      "description": "Clear the task for this thread",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/pin",
+      "area": "Task",
+      "description": "A rule PG1 always follows in this thread",
+      "args": [
+        {
+          "name": "rule",
+          "placeholder": "the rule",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/unpin",
+      "area": "Task",
+      "description": "Remove a pinned rule",
+      "args": [
+        {
+          "name": "n",
+          "placeholder": "rule number",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/approve",
+      "area": "Approvals",
+      "description": "Approve a proposal (or use its button)",
+      "args": [
+        {
+          "name": "token",
+          "placeholder": "approval token",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/decline",
+      "area": "Approvals",
+      "description": "Decline a proposal (or use its button)",
+      "args": [
+        {
+          "name": "token",
+          "placeholder": "approval token",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/fix",
+      "area": "Approvals",
+      "description": "Diagnose a failed request with self-healing and offer a draft pull request (asks first, never merges)",
+      "args": [
+        {
+          "name": "request",
+          "placeholder": "request id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/patch",
+      "area": "Approvals",
+      "description": "A code change as patch JSON: a diff preview to approve, then a pull request",
+      "args": [
+        {
+          "name": "json",
+          "placeholder": "patch JSON",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/code",
+      "area": "Code",
+      "description": "Send to Code, drafts a task prompt you copy into Code (or open it pre-filled) and tracks its PR under Hand-offs in the menu",
+      "args": [
+        {
+          "name": "task",
+          "placeholder": "the task",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": true
+    }
+  ]
+}
