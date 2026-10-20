@@ -85,6 +85,23 @@ for (const motion of ['no-preference', 'reduce']) {
     await page.locator('#radar-screen [data-dialog-close]').click();
     await screen.waitFor({ state: 'hidden' });
     assert.equal(await page.locator('#radar-scene canvas').count(), 0);
+    // After a reload the card comes back from the saved chat, and its Open
+    // still works from the card's own data.
+    await page.reload({ waitUntil: 'load' });
+    if (await page.locator('#auth-modal').isVisible()) {
+      await page.fill('#auth-user', 'operator');
+      await page.fill('#auth-pass', 'passkey');
+      await page.press('#auth-pass', 'Enter');
+      await page.waitForSelector('#auth-modal', { state: 'hidden' });
+    }
+    const restored = page.locator('#chat-container .radar-card .radar-open').last();
+    await restored.waitFor({ state: 'visible' });
+    await restored.click();
+    await screen.waitFor({ state: 'visible' });
+    await page.waitForFunction(() => Number(document.querySelector('#radar-scene').dataset.blips) > 0);
+    assert.equal(Number(await holder.getAttribute('data-blips')), expected, 'the restored card opens with the same findings');
+    assert.equal(await page.locator('#radar-mode').innerText(), 'Flagged findings');
+    await page.locator('#radar-screen [data-dialog-close]').click();
     assert.deepEqual(errors, []);
   });
 }
