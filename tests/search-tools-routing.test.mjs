@@ -39,6 +39,7 @@ function resetEnv() {
   process.env.USER_API_KEY = 'test-operator';
   process.env.USER_API_PASS = 'test-secret-pass';
   process.env.GEMINI_API_KEY = 'stub-gemini-key';
+  process.env.PG1_DAILY_SPEND_CAP_USD = '5'; // paid search grounding on (api/chat.mjs paidGroundingAllowed)
   for (const k of ['USER_API_USER', 'USER_API_PASSS', 'ANTHROPIC_API_KEY', 'ANTROPIC_API_KEY', 'SUPABASE_URL',
     'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASEAPI_KEY', 'CARTESIA_API_KEY', 'GITHUB_TOKEN', 'GITHUB_OWNER_KEY', 'PG1_CHAT_TOOL_TIMEOUT_MS', 'ALCHEMY_API_KEY']) delete process.env[k];
 }
@@ -176,10 +177,17 @@ test('the router: checks for domains, hostnames, URLs, IPs, wallets, ENS names a
     ['check CVE-2024-3094', 'check_request']
   ];
   for (const [msg, reason] of tools) assert.deepEqual(chooseChatRoute(msg), { route: CHAT_ROUTES.TOOLS, reason }, msg);
-  const search = ['latest news on EIP-7702', 'what is the price of ETH today?', 'who is Vitalik Buterin', 'hello', 'Node.js vs Next.js',
-    'fix the bug in README.md and api/chat.mjs', 'version 1.2.3 is out', 'latest on CVE-2024-3094'];
-  for (const msg of search) assert.deepEqual(chooseChatRoute(msg), { route: CHAT_ROUTES.SEARCH, reason: 'default' }, msg);
-  assert.equal(chooseChatRoute(`check ${WALLET.CLEAN}`, { hasTools: false }).route, CHAT_ROUTES.SEARCH, 'no checks for the role, always search');
+  // Search only when the message needs current or external information.
+  const search = [['latest news on EIP-7702', 'needs_current_info'], ['what is the price of ETH today?', 'needs_current_info'],
+    ['latest on CVE-2024-3094', 'needs_current_info'], ['what is the current version of Next.js?', 'needs_current_info'],
+    ['search the web for x402 facilitators', 'explicit_search'], ['can you look that up?', 'explicit_search']];
+  for (const [msg, reason] of search) assert.deepEqual(chooseChatRoute(msg), { route: CHAT_ROUTES.SEARCH, reason }, msg);
+  // Everything else is plain chat: no search request, no footer.
+  const plain = ['hello', 'how are you today', 'who is Vitalik Buterin', 'Node.js vs Next.js', 'fix the bug in README.md and api/chat.mjs',
+    'version 1.2.3 is out', 'thanks!', 'update the README please', 'tell me a joke'];
+  for (const msg of plain) assert.deepEqual(chooseChatRoute(msg), { route: CHAT_ROUTES.CHAT, reason: 'no_current_info' }, msg);
+  assert.equal(chooseChatRoute(`check ${WALLET.CLEAN}`, { hasTools: false }).route, CHAT_ROUTES.CHAT, 'no checks for the role: a wallet alone is not a search');
+  assert.deepEqual(chooseChatRoute('what is on https://example.com/page', { hasTools: false }), { route: CHAT_ROUTES.SEARCH, reason: 'url' }, 'no checks: a URL is searched');
 
   assert.equal(wantsCurrentInfo('what is the latest news about vitalik.eth'), true);
   assert.equal(wantsCurrentInfo('check CVE-2024-3094'), false, 'a year inside a CVE id is not a date');
@@ -324,7 +332,7 @@ test('a refused search is logged to pg1_errors with the request ID, the reply st
   const first = eventsOf(await run(authed({ prompt: 'latest news on EIP-7702' })));
   const done1 = first[first.length - 1];
   assert.equal(done1.type, 'done');
-  assert.equal(textOf(first), 'From what I know, EIP-7702 adds delegation.', 'answered without search');
+  assert.equal(textOf(first), 'From what I know, EIP-7702 adds delegation.' + '\n\n_Live search was unavailable for this answer._', 'answered without search, with the footer once');
   assert.equal(done1.searchEntryPoint, null);
   const failedRow = first.find((e) => e.type === 'step_done' && e.id === 'search-failed');
   assert.deepEqual({ label: failedRow.label, result: failedRow.result, failed: failedRow.failed }, { label: 'Web search unavailable', result: 'answering without it', failed: true });
@@ -365,7 +373,7 @@ test('every refusal is logged, message after message; search is asked for each t
   ]);
   for (let i = 0; i < 3; i++) {
     const res = await run(authed({ prompt: 'what happened in crypto today?', stream: false }));
-    assert.equal(res.jsonBody.reply, 'Answer.');
+    assert.equal(res.jsonBody.reply, 'Answer.' + '\n\n_Live search was unavailable for this answer._', 'the footer once: search failed');
   }
   const searchAsks = geminiRequests(calls).filter((g) => hasSearch(g.body));
   assert.equal(searchAsks.length, 3, 'each message asked for search');

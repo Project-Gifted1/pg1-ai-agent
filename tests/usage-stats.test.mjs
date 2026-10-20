@@ -463,7 +463,7 @@ test('a failed stats read is a neutral error with the request_id and no figures'
 test('usage questions go the tools route so the operator\'s model gets get_usage_stats', () => {
   assert.equal(chooseChatRoute('how many agents used our tools this week?').reason, 'usage_stats');
   assert.equal(chooseChatRoute('show me tool usage for the last 30 days').route, 'tools');
-  assert.equal(chooseChatRoute('how many people live in Paris?').route, 'search');
+  assert.equal(chooseChatRoute('how many people live in Paris?').route, 'chat');
 });
 
 // --- /usage command ----------------------------------------------------------

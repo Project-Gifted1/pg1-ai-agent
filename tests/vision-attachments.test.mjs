@@ -405,7 +405,7 @@ test('a key the model repeats from a screenshot is "a key" plus a warning, on th
   const text = chunks.join('');
   assert.ok(!text.includes(FAKE.anthropicKey) && !text.includes(FAKE.supabaseJwt), 'neither key is in the reply');
   assert.ok(!text.includes('sk-ant') && !text.includes('eyJ'), 'not even a prefix of one');
-  assert.match(text, /The image shows an Anthropic key: a key and a Supabase JWT a key in the settings panel\./);
+  assert.match(text, /The image shows an Anthropic key: a key and the database JWT a key in the settings panel\./);
   assert.ok(text.endsWith('\n\n' + SECRET_WARNING), 'the warning closes the reply');
   assert.match(SECRET_WARNING, /replaced with "a key"/);
   assert.match(SECRET_WARNING, /rotate it/);
@@ -425,7 +425,7 @@ test('the same on the JSON path; a clean reply gets no warning; without images t
   // secret guard on every reply (lib/secretGuard.mjs) still withholds a
   // secret-shaped string, with its own note rather than the image warning.
   const noImage = await send(authed({ prompt: 'is this a valid token format?' }), { reply: `Yes, ${FAKE.githubPat} has the GitHub token shape.` });
-  assert.equal(noImage.res.jsonBody.reply, `Yes, ${SECRET_WITHHELD} has the GitHub token shape.\n\n${SECRET_WITHHELD_NOTE}`);
+  assert.equal(noImage.res.jsonBody.reply, `Yes, ${SECRET_WITHHELD} has the code repository token shape.\n\n${SECRET_WITHHELD_NOTE}`);
 });
 
 test('the memory save keeps the redacted reply, never the key', async () => {

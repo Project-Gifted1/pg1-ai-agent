@@ -15,6 +15,7 @@
 
 import { getSupabaseCreds } from '../../lib/supabase.mjs';
 import { lookupIocContext } from '../../lib/iocContext.mjs';
+import { queryOf } from '../../lib/requestQuery.mjs';
 import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, freeTierWanted, setFreeTierHeaders } from '../../lib/freeTier.mjs';
 import { verifyGumroadLicense, ensureExpressCompat, mirrorPaymentRequiredIntoJsonBody, createX402Gate } from '../../lib/paymentGate.mjs';
 
@@ -49,8 +50,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed. Use GET.' });
   }
 
-  const parsedUrl = new URL(req.url || '/', 'http://localhost');
-  const value = String(req.query?.value ?? parsedUrl.searchParams.get('value') ?? '').trim();
+  const value = String(queryOf(req).value ?? '').trim();
   if (!value) {
     return res.status(400).json({ error: 'value query parameter is required.' });
   }
