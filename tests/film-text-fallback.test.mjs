@@ -1,8 +1,9 @@
 /**
  * PG1 Studio text calls through the AI router (lib/film/providers.mjs
  * filmThink): the storyboard, timeline edits and shot checks fall back
- * Claude -> the paid Gemini key -> OpenRouter when an engine is out of
- * credit, rate limited or down; a refusal never moves on. The storyboard
+ * Claude -> the paid Gemini key (commercial_ok engines only, never
+ * OpenRouter) when an engine is out of credit, rate limited or down; a
+ * refusal never moves on; a key out of credit is left out for an hour. The storyboard
  * passes the same checks (normaliseTimeline) whichever engine writes it,
  * an unusable reply is asked for once more from the same engine before the
  * next one, and the worker log names the engine that wrote it. Film content
@@ -14,7 +15,7 @@ import { test, describe, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { __resetRouterState, isTripped } from '../lib/aiRouter.mjs';
+import { __resetRouterState, isTripped, isOutOfCredit } from '../lib/aiRouter.mjs';
 import { filmThink, filmTextPlan, filmTextKeys, missingFilmConfig, imageBlock, ANTHROPIC_URL, GEMINI_API, OPENROUTER_URL } from '../lib/film/providers.mjs';
 import { normaliseTimeline, extractJsonObject, STORYBOARD_SYSTEM } from '../lib/film/storyboard.mjs';
 import { QC_SYSTEM } from '../lib/film/qc.mjs';
@@ -80,11 +81,11 @@ beforeEach(() => { __resetRouterState(); });
 after(() => { process.env = { ...ORIGINAL_ENV }; });
 
 describe('the film text plan', () => {
-  test('Claude, then the paid Gemini key, then OpenRouter; never the free key or an old Gemini name', () => {
+  test('Claude, then the paid Gemini key; never OpenRouter, the free key or an old Gemini name', () => {
     const env = { ...ENV, GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY: OLD, GEMINI_API_KEY1: OLD, OPENAI_API_KEY: 'sk-openai', VERCEL_AI_API_KEY: 'gw' };
     const plan = filmTextPlan(env);
-    assert.deepEqual(plan.map((c) => c.provider), ['anthropic', 'gemini_paid', 'openrouter']);
-    assert.deepEqual(plan.map((c) => c.key), [ANTHROPIC, PAID, OPENROUTER]);
+    assert.deepEqual(plan.map((c) => c.provider), ['anthropic', 'gemini_paid']);
+    assert.deepEqual(plan.map((c) => c.key), [ANTHROPIC, PAID]);
     assert.deepEqual(plan[0].models, ['claude-opus-5-5']);
     assert.deepEqual(filmTextPlan({ ...env, PG1_FILM_CLAUDE_MODEL: 'claude-sonnet-5-5' })[0].models, ['claude-sonnet-5-5']);
   });
@@ -97,12 +98,13 @@ describe('the film text plan', () => {
 
   test('the worker is ready with any one paid text engine, and never with the free key alone', () => {
     const base = { REPLICATE_API_TOKEN: 'r8', CARTESIA_API_KEY: 'car', PG1_VIDEO_MODEL_REPLICATE_IMAGE: 'kwaivgi/kling-v2.1' };
-    for (const k of ['ANTHROPIC_API_KEY', 'GEMINI_API_KEY_PAID', 'OPENROUTER_API_KEY']) assert.deepEqual(missingFilmConfig({ ...base, [k]: 'x' }), [], k);
-    assert.deepEqual(missingFilmConfig({ ...base, GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY: OLD }), ['ANTHROPIC_API_KEY, GEMINI_API_KEY_PAID or OPENROUTER_API_KEY']);
+    for (const k of ['ANTHROPIC_API_KEY', 'GEMINI_API_KEY_PAID']) assert.deepEqual(missingFilmConfig({ ...base, [k]: 'x' }), [], k);
+    assert.deepEqual(missingFilmConfig({ ...base, GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY: OLD }), ['ANTHROPIC_API_KEY or GEMINI_API_KEY_PAID']);
+    assert.deepEqual(missingFilmConfig({ ...base, OPENROUTER_API_KEY: 'x' }), ['ANTHROPIC_API_KEY or GEMINI_API_KEY_PAID'], 'OpenRouter is not a film text engine');
   });
 
-  test('budgets and the breaker apply: an engine over budget is left out, a drained one goes last', () => {
-    assert.deepEqual(filmTextPlan({ ...ENV, PG1_DAILY_BUDGET_ANTHROPIC_USD: '0' }).map((c) => c.provider), ['gemini_paid', 'openrouter']);
+  test('budgets apply: an engine over budget is left out', () => {
+    assert.deepEqual(filmTextPlan({ ...ENV, PG1_DAILY_BUDGET_ANTHROPIC_USD: '0' }).map((c) => c.provider), ['gemini_paid']);
   });
 });
 
@@ -122,8 +124,9 @@ describe('filmThink', () => {
     assert.ok(lines.some((l) => /\[film\] storyboard written by gemini_paid \(gemini-3\.8-flash\) after anthropic failed/.test(l)), lines.join('\n'));
     assert.ok(lines.some((l) => /\[pg1-ai-usage\].*"provider":"anthropic".*"ok":false.*"status":400/.test(l)));
     assert.ok(lines.every((l) => !l.includes(ANTHROPIC) && !l.includes(PAID)), 'no key in the log');
-    assert.ok(isTripped('anthropic'), 'the drained account goes to the back of the next plan');
-    assert.deepEqual(filmTextPlan(ENV).map((c) => c.provider), ['gemini_paid', 'openrouter', 'anthropic']);
+    assert.ok(isOutOfCredit('anthropic'), 'the drained account is known to be out of credit');
+    assert.deepEqual(filmTextPlan(ENV).map((c) => c.provider), ['gemini_paid'], 'and left out of the next plans for an hour');
+    assert.deepEqual(filmTextPlan(ENV, { now: Date.now() + 61 * 60 * 1000 }).map((c) => c.provider), ['anthropic', 'gemini_paid'], 'checked again after an hour');
   });
 
   test('an unusable storyboard is asked for once more from the same engine, with the reason, before any fallback', async () => {
@@ -142,25 +145,18 @@ describe('filmThink', () => {
     const lines = [];
     const e = engines({
       anthropic: () => '{"title":"x","scenes":[]}',
-      gemini: () => 'not json',
-      openrouter: () => '```json\n' + JSON.stringify(STORYBOARD) + '\n```'
+      gemini: () => '```json\n' + JSON.stringify(STORYBOARD) + '\n```',
+      openrouter: () => { throw new Error('OpenRouter is never a film text engine'); }
     });
     const r = await filmThink({ env: ENV, system: STORYBOARD_SYSTEM, content: 'a film', validate: validateStoryboard, purpose: 'storyboard', fetchImpl: e.fetchImpl, log: (l) => lines.push(l) });
-    assert.deepEqual(e.engines(), ['anthropic', 'anthropic', 'gemini', 'gemini', 'openrouter']);
-    assert.equal(r.provider, 'openrouter');
-    assert.equal(e.seen[4].key, `Bearer ${OPENROUTER}`);
-    // A render is a background job: OpenRouter's free models only (one
-    // request with the :free list), never its paid ones, and never on a
-    // first-party Chinese host.
-    assert.equal(e.seen[4].body.model, 'deepseek/deepseek-chat-v3.1:free');
-    assert.deepEqual(e.seen[4].body.models, ['deepseek/deepseek-chat-v3.1:free', 'qwen/qwen3-235b-a22b:free', 'qwen/qwen3-coder:free']);
-    assert.ok(e.seen[4].body.provider.ignore.includes('DeepSeek'));
+    assert.deepEqual(e.engines(), ['anthropic', 'anthropic', 'gemini']);
+    assert.equal(r.provider, 'gemini_paid');
     assert.deepEqual(r.value, validateStoryboard(JSON.stringify(STORYBOARD)));
-    assert.ok(lines.some((l) => /storyboard written by openrouter \(deepseek\/deepseek-chat-v3\.1:free\) after anthropic, gemini_paid failed/.test(l)));
+    assert.ok(lines.some((l) => /storyboard written by gemini_paid \(gemini-3\.8-flash\) after anthropic failed/.test(l)));
     assert.equal(isTripped('anthropic'), false, 'a bad reply is not a billing failure');
   });
 
-  test('out-of-credit answers from every engine move on: Gemini prepayment 429, OpenRouter 402', async () => {
+  test('out-of-credit answers from every commercial_ok engine stop: never OpenRouter, and the next call stops before any engine', async () => {
     const e = engines({
       anthropic: () => new Response(CREDIT_TOO_LOW, { status: 400 }),
       gemini: () => new Response(JSON.stringify({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'Your prepayment credits are depleted. Please go to AI Studio to manage your project and billing.' } }), { status: 429 }),
@@ -171,11 +167,18 @@ describe('filmThink', () => {
       assert.equal(err.refused, false);
       assert.match(err.detail, /anthropic: messages claude-opus-5-5 400 invalid_request_error: Your credit balance is too low/);
       assert.match(err.detail, /gemini_paid: .*429 RESOURCE_EXHAUSTED: Your prepayment credits are depleted/);
-      assert.match(err.detail, /openrouter: .*402: Insufficient credits/);
+      assert.doesNotMatch(err.detail, /openrouter/);
       return true;
     });
-    assert.deepEqual(e.engines(), ['anthropic', 'gemini', 'openrouter'], 'a drained Gemini key is not retried on its second model');
-    for (const k of ['anthropic', 'gemini_paid#1', 'openrouter']) assert.ok(isTripped(k), k);
+    assert.deepEqual(e.engines(), ['anthropic', 'gemini'], 'a drained Gemini key is not retried on its second model; OpenRouter is never asked');
+    for (const k of ['anthropic', 'gemini_paid#1']) assert.ok(isOutOfCredit(k), k);
+    // Both known to be out of credit: the next call stops at once and says so.
+    await assert.rejects(filmThink({ env: ENV, system: 's', content: 'c', validate: JSON.parse, fetchImpl: e.fetchImpl, log: quietLog }), (err) => {
+      assert.equal(err.kind, 'billing');
+      assert.match(err.detail, /out of credit/);
+      return true;
+    });
+    assert.deepEqual(e.engines(), ['anthropic', 'gemini'], 'no engine called again');
   });
 
   test('a refusal never moves on to another engine', async () => {
@@ -199,8 +202,7 @@ describe('filmThink', () => {
     const verdict = '{"pass":true,"score":8,"issues":[],"best_start_s":1,"description":"a harbour"}';
     const e = engines({
       anthropic: () => new Response(CREDIT_TOO_LOW, { status: 400 }),
-      gemini: () => new Response('{"error":{"code":503,"status":"UNAVAILABLE"}}', { status: 503 }),
-      openrouter: () => verdict
+      gemini: (n) => (n === 1 ? new Response('{"error":{"code":503,"status":"UNAVAILABLE"}}', { status: 503 }) : verdict)
     });
     const r = await filmThink({ env: ENV, system: QC_SYSTEM, content, maxTokens: 4000, effort: 'low', fetchImpl: e.fetchImpl, log: quietLog });
     assert.equal(r.text, verdict);
@@ -208,8 +210,7 @@ describe('filmThink', () => {
     const gParts = e.seen[1].body.contents[0].parts;
     assert.deepEqual(gParts[1], { inlineData: { mimeType: 'image/jpeg', data: Buffer.from('jpeg-bytes').toString('base64') } });
     assert.deepEqual(e.seen.filter((s) => s.engine === 'gemini').map((s) => s.url.split('/').pop()), ['gemini-3.8-flash:generateContent', 'gemini-3.6-flash:generateContent'], 'a 503 tries the next model');
-    const oParts = e.seen.at(-1).body.messages[1].content;
-    assert.deepEqual(oParts[1], { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${Buffer.from('jpeg-bytes').toString('base64')}` } });
+    assert.ok(!e.engines().includes('openrouter'));
   });
 });
 

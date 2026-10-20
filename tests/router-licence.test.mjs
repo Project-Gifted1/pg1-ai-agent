@@ -138,7 +138,8 @@ describe('a client job never reaches an engine not cleared for client work', () 
     // OpenRouter's free DeepSeek and Qwen models are its own (unclear) step's,
     // with first-party Chinese hosts ignored.
     const or = planRoute(TASKS.HEAVY, { env: ALL_KEYS, dataClass: DATA.OPERATOR }).find((c) => c.provider === 'openrouter');
-    assert.ok(or.freeModels.every((m) => /:free$/.test(m) && /^(?:deepseek|qwen)\//.test(m)), or.freeModels.join());
+    assert.ok(or.freeModels.every((m) => /:free$/.test(m) && /^qwen\//.test(m)), or.freeModels.join());
+    assert.ok(or.freeModels.every((m) => !/deepseek/i.test(m)), 'no DeepSeek model, ever');
     assert.ok(or.ignoreProviders.includes('DeepSeek') && or.ignoreProviders.includes('Alibaba'));
     assert.equal(stepLicence(ROUTING_CHAINS.text.find((s) => s.provider === 'openrouter')), 'unclear');
     // The operator's own work keeps every engine.
@@ -146,10 +147,9 @@ describe('a client job never reaches an engine not cleared for client work', () 
     assert.ok(planRoute(TASKS.MEDIA, { env: ALL_KEYS, dataClass: DATA.OPERATOR }).some((c) => c.provider === 'replicate'));
   });
 
-  test('text: a client film\'s text runs on Claude, then the paid Gemini key (never OpenRouter); the operator keeps the whole chain', () => {
+  test('text: film text runs on Claude, then the paid Gemini key (never OpenRouter), client or not', () => {
     assert.deepEqual(filmTextPlan(ALL_KEYS, { clientWork: true }).map((c) => c.provider), ['anthropic', 'gemini_paid']);
-    assert.ok(filmTextPlan(ALL_KEYS).some((c) => c.provider === 'openrouter'));
-    assert.deepEqual(filmTextPlan(ALL_KEYS).map((c) => c.provider)[0], 'anthropic');
+    assert.deepEqual(filmTextPlan(ALL_KEYS).map((c) => c.provider), ['anthropic', 'gemini_paid'], 'customer data: commercial_ok engines only');
   });
 
   test('stills and clips: Gemini only for a client film (no FLUX Kontext Pro, no Kling)', () => {

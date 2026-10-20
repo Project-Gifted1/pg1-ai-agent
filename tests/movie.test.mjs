@@ -158,7 +158,7 @@ describe('cost estimate', () => {
     const saved = { refs: new Set(allRefs(bibles).map((r) => r.key)), takes: new Set(shots.map((s) => s.id)), voiced: new Set(shots.map((s) => s.id)), ambience: new Set(['s1', 's2', 's3']), effects: new Set(shots.map((s) => s.id)), score: new Set(['s1', 's2', 's3']) };
     assert.equal(estimateMovie({ screenplay: SP, bibles, shots, saved }).expectedUsd, 0, 'a fully saved movie costs nothing to re-cut');
     const text = estimateMovieText(est, { capUsd: 60, spentUsd: 0.15 });
-    assert.match(text, /Total: about \d+\.\d\d USD \(up to \d+\.\d\d USD/);
+    assert.match(text, /Total: about \d+\.\d\d USD; worst case \d+\.\d\d USD if every shot needs its retake/);
     assertWhite(text, 'the estimate');
   });
 });
@@ -312,7 +312,7 @@ describe('/movie in the chat', () => {
 
   test('parsing: idea, --length, --voice (narration only then), --client', () => {
     assert.ok(isMovieCommand('/movie "x"') && !isMovieCommand('/movies'));
-    assert.deepEqual(parseMovieCommand('/movie "two bakers share an oven" --length 1'), { sub: 'new', id: null, rest: '', idea: 'two bakers share an oven', minutes: 1, voice: null, client: null });
+    assert.deepEqual(parseMovieCommand('/movie "two bakers share an oven" --length 1'), { sub: 'new', id: null, rest: '', idea: 'two bakers share an oven', minutes: 1, voice: null, budgetUsd: null, client: null });
     const p = parseMovieCommand('/movie "a heist" --voice "George" --client "Acme Films"');
     assert.equal(p.minutes, 2, 'two minutes by default');
     assert.equal(p.voice, 'George');
@@ -365,7 +365,7 @@ describe('/movie in the chat', () => {
     // Checkpoint (a) approved: priced here, no engine call, no dispatch.
     const a = await decide(await pending(MOVIE_ACTIONS.script));
     assertWhite(a.reply, 'MOVIE_BUDGET');
-    assert.match(a.reply, /Approve it to start the shoot; nothing is spent before you do/);
+    assert.match(a.reply, /Confirm it to start the shoot; nothing is spent before you do/);
     assert.match(a.reply, /Shots with on-screen speech, 1080p/);
     assert.equal(dispatched.length, 1, 'still nothing queued');
     p = await store.getProject(id);

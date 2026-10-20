@@ -19,7 +19,7 @@ import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   TASKS, DATA, ENGINE_LABELS, resolveKeys, mediaGeminiKeys, classifyTask, dataClassFor, containsCustomerData, planRoute, runRoute,
-  isFallbackFailure, isBillingFailure, tripBreaker, isTripped, recordUsage, dailyBudgetUsd, budgetAllows, estimateCost, createLruCache, cacheKey, cacheIdentity,
+  isFallbackFailure, isBillingFailure, tripBreaker, isTripped, isOutOfCredit, CREDIT_RECHECK_MS, recordUsage, dailyBudgetUsd, budgetAllows, estimateCost, createLruCache, cacheKey, cacheIdentity,
   textCache, ttsCache, spendSummary, memoryLedger, utcDay, routeModels, __resetRouterState, RATE_LIMIT_WINDOW_MS, BREAKER_WINDOW_MS
 } from '../lib/aiRouter.mjs';
 import { synthesizeSpeech, createRoutedSynth, geminiVoiceName } from '../lib/ttsRouter.mjs';
@@ -214,7 +214,7 @@ test('out of credit is a billing failure from any provider, whatever the status:
   assert.equal(isFallbackFailure(400, 'Requests blocked: your credit balance is too low'), true);
 });
 
-test('runRoute: the reasoning core out of credit (400 invalid_request_error) falls back to the paid main core and goes last after that', async () => {
+test('runRoute: the reasoning core out of credit (400 invalid_request_error) falls back to the paid main core and is left out for an hour after that', async () => {
   const env = { GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
   const tried = [];
   const r = await runRoute({
@@ -225,7 +225,9 @@ test('runRoute: the reasoning core out of credit (400 invalid_request_error) fal
   assert.equal(r.value, 'from gemini');
   assert.deepEqual(tried, ['anthropic', 'gemini_paid']);
   assert.ok(isTripped('anthropic'));
-  assert.deepEqual(planRoute(TASKS.HEAVY, { env }).map((c) => c.provider), ['gemini_paid', 'anthropic']);
+  assert.ok(isOutOfCredit('anthropic'));
+  assert.deepEqual(planRoute(TASKS.HEAVY, { env }).map((c) => c.provider), ['gemini_paid'], 'not called again while known to be out of credit');
+  assert.deepEqual(planRoute(TASKS.HEAVY, { env, now: Date.now() + CREDIT_RECHECK_MS + 1000 }).map((c) => c.provider), ['anthropic', 'gemini_paid'], 're-checked after an hour');
 });
 
 test('runRoute: an answer that fails the caller\'s own check (invalid) moves on without opening the breaker', async () => {
@@ -266,13 +268,15 @@ test('runRoute: stops on a refusal and on a plain 400 instead of routing round i
   }
 });
 
-test('the breaker: a drained prepaid key goes to the back for 15 minutes, a rate-limited one for a minute, and is still tried last', () => {
+test('the breaker: a drained prepaid key is left out for an hour, a rate-limited one goes to the back for a minute and is still tried last', () => {
   const env = { GEMINI_API_KEY_PAID: PAID, REPLICATE_API_TOKEN: 'r8' };
   const now = Date.now();
   assert.equal(tripBreaker('gemini_paid#1', 429, 'RESOURCE_EXHAUSTED: quota exceeded for your prepaid credits', now), true);
   assert.ok(isTripped('gemini_paid#1', now + BREAKER_WINDOW_MS - 1000));
-  assert.deepEqual(planRoute(TASKS.MEDIA, { env, now: now + 1000 }).map((c) => c.provider), ['replicate', 'gemini_paid']);
+  assert.deepEqual(planRoute(TASKS.MEDIA, { env, now: now + 1000 }).map((c) => c.provider), ['replicate'], 'out of credit: not planned');
   assert.equal(isTripped('gemini_paid#1', now + BREAKER_WINDOW_MS + 1), false);
+  assert.deepEqual(planRoute(TASKS.MEDIA, { env, now: now + CREDIT_RECHECK_MS - 1000 }).map((c) => c.provider), ['replicate']);
+  assert.deepEqual(planRoute(TASKS.MEDIA, { env, now: now + CREDIT_RECHECK_MS + 1 }).map((c) => c.provider), ['gemini_paid', 'replicate'], 'checked again after an hour');
   tripBreaker('anthropic', 429, 'rate limited', now);
   assert.ok(isTripped('anthropic', now + RATE_LIMIT_WINDOW_MS - 1));
   assert.equal(isTripped('anthropic', now + RATE_LIMIT_WINDOW_MS + 1), false);
