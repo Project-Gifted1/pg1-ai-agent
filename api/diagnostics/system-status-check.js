@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { filterServableRows } from '../../lib/sourcePolicy.mjs';
 import { resolveOperatorSession } from '../../lib/operatorSession.mjs';
+import { queryOf } from '../../lib/requestQuery.mjs';
 
 export const config = {
   maxDuration: 60,
@@ -69,7 +70,7 @@ export default async function handler(req, res) {
     const hasOtxApiKey = Boolean(process.env.OTX_API_KEY);
     const hasNvdApi = Boolean(process.env.NVD_API);
 
-    const params = req.method === 'POST' ? requestBody(req) : (req.query || {});
+    const params = req.method === 'POST' ? requestBody(req) : queryOf(req);
     const { table, metric = 'summary', limit = '10' } = params;
 
     const diagnosticPayload = {

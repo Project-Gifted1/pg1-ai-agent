@@ -696,7 +696,7 @@ test('the request match is narrow: "animate" alone and talk about videos are not
   assert.equal(cleanVideoPrompt('animate this photo'), '');
   // A message that only mentions a clip goes the tools way when the tool is on offer.
   assert.equal(chooseChatRoute('could you show me a little clip of waves?', { videoTool: true }).reason, 'video');
-  assert.equal(chooseChatRoute('could you show me a little clip of waves?', { videoTool: false }).route, 'search');
+  assert.equal(chooseChatRoute('could you show me a little clip of waves?', { videoTool: false }).route, 'chat');
 });
 
 test('reading the finished interaction: steps[] model_output video, inline or by link', () => {

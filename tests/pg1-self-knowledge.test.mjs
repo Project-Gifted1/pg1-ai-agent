@@ -119,9 +119,9 @@ test('PG1 is told its name is PG1 and its only version is the one in server.json
   assert.match(serverJson.version, /^\d+\.\d+\.\d+$/);
   const { prompt } = await promptFor({ prompt: 'who are you?' });
   assert.match(prompt, /^You are PG1, /, 'the prompt opens with the plain name');
-  assert.ok(prompt.includes(`Your public version is ${serverJson.version} (from server.json); that is the only version number you have.`));
+  assert.ok(prompt.includes(`Your public version is ${serverJson.version} (the live server version, the one GET /api/mcp reports); that is the only version number you have.`));
   assert.ok(prompt.includes(`your answer to that question must be exactly this, word for word: "${PG1_IDENTITY_REPLY}"`));
-  assert.equal(PG1_IDENTITY_REPLY, `I'm PG1, powered by the PG1 Sovereign Core engine v${serverJson.version}.`);
+  assert.equal(PG1_IDENTITY_REPLY, `I'm PG1, an autonomous AI agent built by Project-Gifted1™, powered by the PG1 Autonomous Sovereign Core engine v${serverJson.version}.`);
   assert.ok(prompt.includes('never add a title, tier, codename, edition or version of your own'));
 });
 
@@ -154,7 +154,7 @@ test('no invented title or version survives anywhere PG1 describes itself', asyn
 test('when server.json cannot be read the directive says the version is unknown instead of inventing one', () => {
   assert.equal(describeVersion(null), 'You cannot confirm your version here; say so if asked.');
   assert.doesNotMatch(identityDirective(null), /\d+\.\d+\.\d+/, 'no version number at all');
-  assert.match(identityDirective('2.0.0'), /Your public version is 2\.0\.0 \(from server\.json\)/);
+  assert.match(identityDirective('2.0.0'), /Your public version is 2\.0\.0 \(the live server version, the one GET \/api\/mcp reports\)/);
 });
 
 // --- 2. capabilities match the current app -------------------------------------------

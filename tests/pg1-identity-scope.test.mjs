@@ -108,7 +108,7 @@ test('through /api/chat: "do you know Gemini" and "what is ChatGPT" get the mode
 test('through /api/chat: identity questions still get the branded reply', async () => {
   for (const prompt of ['Are you powered by Claude or Gemini or chat gpt', 'Do any of these models power you', 'are you Gemini?']) {
     const { reply } = await ask(prompt, 'I am Gemini.');
-    assert.match(reply, /^I'm PG1, powered by the PG1 Sovereign Core engine/, `${JSON.stringify(prompt)} must get the identity reply`);
+    assert.match(reply, /^I'm PG1, an autonomous AI agent built by Project-Gifted1™, powered by the PG1 Autonomous Sovereign Core engine/, `${JSON.stringify(prompt)} must get the identity reply`);
   }
 });
 
