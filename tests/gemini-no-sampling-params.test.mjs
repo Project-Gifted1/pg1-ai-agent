@@ -202,7 +202,11 @@ for (const stream of [false, true]) {
       return reply(u, 200, text('Hello from the stub.'));
     });
     globalThis.fetch = stub.fetch;
-    const res = await chat({ prompt: 'hello there', ...(stream ? { stream: true } : {}) });
+    // A search-route message (small talk is plain chat, no search), with
+    // paid search grounding allowed (api/chat.mjs paidGroundingAllowed).
+    process.env.PG1_DAILY_SPEND_CAP_USD = '5';
+    const res = await chat({ prompt: 'latest news on the x402 spec', ...(stream ? { stream: true } : {}) });
+    delete process.env.PG1_DAILY_SPEND_CAP_USD;
     assert.match(replyOf(res, stream), /Hello from the stub/);
     assert.ok(stub.requests.some((r) => hasSearch(r.body)) && stub.requests.some((r) => !hasSearch(r.body)), 'the search request and its retry without search');
     assert.ok(stub.requests.every((r) => r.body.generationConfig && r.body.generationConfig.maxOutputTokens === 4096), 'maxOutputTokens is still sent');
