@@ -78,12 +78,18 @@ describe('/music in the chat', () => {
     assert.equal(calls.filter((c) => c.url.includes('pg1_music') || c.url.includes('api.github.com')).length, 0);
   });
 
-  test('/music queues the previews, says only PG1 Sound, and the card polls MUSIC_STATUS', async () => {
-    const res = await chat(authed({ prompt: '/music dreamy synthwave, neon, analog pads --instrumental --bpm 104' }));
+  test('/music asks to confirm its budget, then queues the previews, says only PG1 Sound, and the card polls MUSIC_STATUS', async () => {
+    const proposal = await chat(authed({ prompt: '/music dreamy synthwave, neon, analog pads --instrumental --bpm 104 --budget 2' }));
+    assert.equal(proposal.statusCode, 200);
+    assert.match(proposal.jsonBody.reply, /PG1 Sound: confirm the budget for this track\. Nothing is spent before you do\./);
+    assert.doesNotMatch(proposal.jsonBody.reply, UPSTREAM_BRAND_RE);
+    assert.deepEqual(proposal.jsonBody.pendingApproval.labels, { approve: 'Confirm', decline: 'Cancel' });
+    assert.equal(calls.filter((c) => c.url.includes('api.github.com')).length, 0, 'nothing dispatched before Confirm');
+    const res = await chat(authed({ prompt: `/approve ${proposal.jsonBody.pendingApproval.token}` }));
     assert.equal(res.statusCode, 200);
     const body = res.jsonBody;
     assert.match(body.reply, /PG1 Sound is making 2 previews/);
-    assert.match(body.reply, /Spending cap for this track: 2\.00 USD/);
+    assert.match(body.reply, /Confirmed budget for this track: 2\.00 USD/);
     assert.doesNotMatch(body.reply, UPSTREAM_BRAND_RE);
     assert.equal(body.musicTrack.status, 'preview_queued');
     assert.equal(body.musicTrack.active, true);

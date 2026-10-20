@@ -85,19 +85,17 @@ describe('PG1_DAILY_SPEND_CAP_USD unset is $0', () => {
     });
   });
 
-  test('the lab starts nothing and its runner calls no engine', async () => {
+  test('the lab runs on the free engines only: no paid engine is called, $0 is recorded (tests/spend-gaps.test.mjs)', async () => {
     assert.equal(labPaidOff({}), true);
     assert.equal(labPaidOff({ PG1_DAILY_SPEND_CAP_USD: '1' }), false);
     const calls = [];
     const r = await runExperiment({ id: '0d1a7e5f-9b2c-4c3d-8e4f-5a6b7c8d9e0f', kind: 'research', goal: 'x', env: { PG1_LAB_ANTHROPIC_API_KEY: 'k', PG1_LAB_GEMINI_API_KEY: 'g' }, budgetUsd: 1, fetchImpl: async (u) => { calls.push(String(u)); return new Response('{}'); } });
+    // No free engine key here: the run fails for that, having spent nothing
+    // and called no paid engine.
     assert.equal(r.status, 'failed');
-    assert.match(r.error, /PG1_DAILY_SPEND_CAP_USD is \$0/);
+    assert.match(r.error, /free engines/);
     assert.equal(r.spent_usd, 0);
-    assert.deepEqual(calls, []);
-    const s = await startLabExperiment({ env: { PG1_AUTONOMY: 'on', PG1_LAB_DISPATCH_SECRET: 's' }, supUrl: SUP, supKey: 'k', fetchImpl: async (u) => { calls.push(String(u)); return new Response('[]', { status: 200 }); }, kind: 'research', goal: 'x' });
-    assert.equal(s.ok, false);
-    assert.match(s.reply, /Not started: paid AI is off/);
-    assert.ok(!calls.some((u) => u.includes('api.github.com')), 'nothing dispatched');
+    assert.ok(!calls.some((u) => /api\.anthropic\.com|generativelanguage/.test(u)), calls.join(', '));
   });
 
   test('Director Mode waits for Confirm at $0, even for the operator\'s own film', () => {

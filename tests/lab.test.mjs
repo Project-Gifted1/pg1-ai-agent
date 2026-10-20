@@ -243,7 +243,8 @@ test('lab.yml: lab environment, lab-scoped secrets only, fresh runners, tests wi
   const yml = readFileSync(path.join(ROOT, '.github/workflows/lab.yml'), 'utf8');
   const secrets = [...yml.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((m) => m[1]);
   assert.ok(secrets.length >= 4);
-  assert.deepEqual([...new Set(secrets)].sort(), ['ANTHROPIC_API_KEY', 'GEMINI_API_KEY_PAID', 'PG1_LAB_ANTHROPIC_API_KEY', 'PG1_LAB_DISPATCH_SECRET', 'PG1_LAB_GEMINI_API_KEY', 'PG1_LAB_GITHUB_TOKEN']);
+  // The free engines' keys too: a $0 run uses them (lib/lab/runner.mjs labFreeCall).
+  assert.deepEqual([...new Set(secrets)].sort(), ['ANTHROPIC_API_KEY', 'GEMINI_API_KEY_FREE', 'GEMINI_API_KEY_PAID', 'GROQ_API_KEY', 'MISTRAL_API_KEY', 'PG1_LAB_ANTHROPIC_API_KEY', 'PG1_LAB_DISPATCH_SECRET', 'PG1_LAB_GEMINI_API_KEY', 'PG1_LAB_GITHUB_TOKEN', 'PG1_MODELS_TOKEN']);
   const code = yml.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
   assert.doesNotMatch(code, /SUPABASE|SERVICE_ROLE|X402|CDP_|WALLET|PRIVATE_KEY|\bGITHUB_TOKEN\b/);
   assert.match(yml, /^permissions:\n  contents: read$/m);
