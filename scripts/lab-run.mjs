@@ -9,6 +9,10 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { runExperiment } from '../lib/lab/runner.mjs';
 import { verifyLabToken } from '../lib/lab/token.mjs';
 import { LAB_KINDS, labMaxMinutes } from '../lib/lab/policy.mjs';
+// The run's one log line lives in a dependency-free file (the verdict job
+// installs no npm packages); re-exported here for existing callers.
+import { verdictLine } from './lab-verdict-line.mjs';
+export { verdictLine };
 
 const HARD_BUDGET_CEILING_USD = 10;
 
@@ -42,13 +46,6 @@ export async function main(env = process.env, { fetchImpl = globalThis.fetch, ou
   // red and self-healing picks it up (until 20 Oct this returned 0 either
   // way and every failed experiment ran green).
   return result.status === 'done' ? 0 : 1;
-}
-
-// "[lab] id=aef41455 status=failed stage=build error=..." (and the kind).
-export function verdictLine(r) {
-  const e = r || {};
-  const m = /^(research|build|test|gate): ([\s\S]*)$/.exec(String(e.error || ''));
-  return `[lab] id=${String(e.id || '').slice(0, 8)} kind=${e.kind || '-'} status=${e.status || 'unknown'}${e.status === 'done' ? '' : ` stage=${m ? m[1] : '-'} error=${String(m ? m[2] : e.error || '-').replace(/\s+/g, ' ').slice(0, 300)}`} spent_usd=${Number(e.spent_usd) || 0}`;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
