@@ -3,10 +3,19 @@
 // lab's own test run in code.tests) and exits 1 when the experiment did not
 // end done or its tests failed, so a failed lab run shows red on GitHub and
 // self-healing picks it up. Prints one line saying why. Reads files only:
-// no network, no secret.
+// no network, no secret, and no npm package: the verdict job runs without
+// npm install, so this file imports node: built-ins only (20 Oct, self-heal
+// #352: it imported lab-run.mjs, which loads the lab runner and @x402/evm,
+// and failed with ERR_MODULE_NOT_FOUND).
 
 import { readFileSync } from 'node:fs';
-import { verdictLine } from './lab-run.mjs';
+
+// "[lab] id=aef41455 status=failed stage=build error=..." (and the kind).
+export function verdictLine(r) {
+  const e = r || {};
+  const m = /^(research|build|test|gate): ([\s\S]*)$/.exec(String(e.error || ''));
+  return `[lab] id=${String(e.id || '').slice(0, 8)} kind=${e.kind || '-'} status=${e.status || 'unknown'}${e.status === 'done' ? '' : ` stage=${m ? m[1] : '-'} error=${String(m ? m[2] : e.error || '-').replace(/\s+/g, ' ').slice(0, 300)}`} spent_usd=${Number(e.spent_usd) || 0}`;
+}
 
 // { ok, line } for one result object (null: the run uploaded none).
 export function labVerdict(result) {

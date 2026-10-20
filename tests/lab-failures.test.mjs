@@ -20,7 +20,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, readFileSync as read } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, readFileSync as read } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { runExperiment, labRefusalReason } from '../lib/lab/runner.mjs';
@@ -123,6 +124,24 @@ test('lab.yml: a verdict job runs last whatever happened and fails the run from 
   assert.doesNotMatch(verdict, /secrets\./);
   assert.doesNotMatch(verdict, /continue-on-error: true\n\s+run: node scripts\/lab-verdict/, 'the verdict step itself may fail the run');
   assert.doesNotMatch(readFileSync(path.join(ROOT, 'scripts/lab-run.mjs'), 'utf8'), /\? 0 : 0/);
+});
+
+test('the verdict job runs with no npm install: lab-verdict.mjs imports node: built-ins only and runs on its own (#352)', () => {
+  const src = readFileSync(path.join(ROOT, 'scripts/lab-verdict.mjs'), 'utf8');
+  const specifiers = [...src.matchAll(/^import\s[^'"]*['"]([^'"]+)['"]/gm)].map((m) => m[1]);
+  assert.ok(specifiers.length > 0);
+  assert.deepEqual(specifiers.filter((s) => !s.startsWith('node:')), [], 'only node: built-ins');
+  // The exact failure on GitHub: the script alone, with no node_modules and
+  // no other repo file next to it.
+  const dir = mkdtempSync(path.join(tmpdir(), 'lab-verdict-'));
+  writeFileSync(path.join(dir, 'lab-verdict.mjs'), src);
+  writeFileSync(path.join(dir, 'result.json'), JSON.stringify({ id: ID, kind: 'skill', status: 'failed', spent_usd: 0, error: 'build: model call failed (anthropic 400 out of credit)' }));
+  const r = spawnSync(process.execPath, [path.join(dir, 'lab-verdict.mjs'), path.join(dir, 'result.json')], { cwd: dir, encoding: 'utf8', env: { PATH: process.env.PATH } });
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stdout, /\[lab\] id=aef41455 kind=skill status=failed stage=build error=model call failed/);
+  assert.doesNotMatch(r.stderr, /ERR_MODULE_NOT_FOUND/);
+  writeFileSync(path.join(dir, 'result.json'), JSON.stringify({ id: ID, kind: 'skill', status: 'done', spent_usd: 0.4 }));
+  assert.equal(spawnSync(process.execPath, [path.join(dir, 'lab-verdict.mjs'), path.join(dir, 'result.json')], { cwd: dir, encoding: 'utf8', env: { PATH: process.env.PATH } }).status, 0);
 });
 
 // --- the status display -----------------------------------------------------------------
