@@ -239,8 +239,10 @@ test('5: operator films\' writing stages go free first; checks and client films 
   assert.ok(!filmTextPlan(ALL_KEYS, { writing: false }).some((c) => FREE_SET.has(c.provider)), 'a shot check keeps the paid order');
   assert.ok(!filmTextPlan(ALL_KEYS, { writing: true, clientWork: true }).some((c) => FREE_SET.has(c.provider)), 'never a client film');
   assert.deepEqual(filmTextPlan(ALL_KEYS, { writing: true, withMedia: true }).map((c) => c.provider).slice(0, 1), ['gemini_free'], 'images: only engines that can see them');
-  for (const p of ['storyboard', 'director: treatment and script', 'director: shot list', 'dailies s1', 'movie: screenplay', 'movie dailies s2']) assert.equal(isWritingPurpose(p), true, p);
-  for (const p of ['shot check s1', 'storyboard check s1']) assert.equal(isWritingPurpose(p), false, p);
+  for (const p of ['storyboard', 'director: treatment and script', 'director: shot list', 'movie: screenplay']) assert.equal(isWritingPurpose(p), true, p);
+  // The dailies are a check on the cheapest commercial_ok engine, never a
+  // writing stage (so never a free engine).
+  for (const p of ['shot check s1', 'storyboard check s1', 'dailies s1', 'movie dailies s2']) assert.equal(isWritingPurpose(p), false, p);
 });
 
 test('6: client work stays on commercial_ok engines (Claude, the paid Gemini key); with neither, the job stops with a message', async () => {

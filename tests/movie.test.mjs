@@ -7,8 +7,9 @@
  *  - bibles: fixed reference images per character and location, passed to
  *    every shot; coverage (establishing, OTS, reverse, close-ups, reactions,
  *    cut on action, 2–4 s average, no long static shot);
- *  - takes: the dailies critic, automatic retakes (at most 2), the best take
- *    kept and flagged; speech-to-speech into the cast voice keeps the line's
+ *  - takes: the dailies critic once per take, automatic retakes (at most
+ *    PG1_MOVIE_MAX_RETAKES, default 1), the better take kept and flagged,
+ *    never looped (the QC gate adds no take past the cap); speech-to-speech into the cast voice keeps the line's
  *    timing; the cast is reused on retry;
  *  - the edit never holds a frame, J and L cuts, audio covering the runtime,
  *    the master spec and the QC gate (ffprobe, freezedetect, silencedetect,
@@ -448,9 +449,10 @@ describe('a movie end to end (real edit, mix, master and QC gate)', { skip: NO_F
   let id;
   let out;
   let pushes;
-  // s1-d3 fails its first take; s2-a2 fails all three takes (kept, flagged),
-  // then passes on the QC gate's one extra take.
-  const failPlan = { 's1-d3': ['fail', 'pass'], 's2-a2': ['fail', 'fail', 'fail', 'pass'] };
+  // s1-d3 fails its first take and passes its retake; s2-a2 fails both its
+  // takes: the better one is kept and flagged, and the QC gate re-renders
+  // without retaking it (its takes are used up).
+  const failPlan = { 's1-d3': ['fail', 'pass'], 's2-a2': ['fail', 'fail', 'pass', 'pass'] };
 
   before(async () => {
     __resetRouterState();
@@ -492,23 +494,24 @@ describe('a movie end to end (real edit, mix, master and QC gate)', { skip: NO_F
     }
   });
 
-  test('retake loop: a failing shot is retaken, at most twice, then the best take is kept and flagged; the gate fixes it once', () => {
+  test('retake loop: a failing shot is retaken at most once, then the better take is kept and flagged; the gate never adds a take', () => {
     const takes = (s) => calls.filter((c) => c.step === 'clip' && c.shot === s).length;
+    assert.equal(MAX_RETAKES, 1);
     assert.equal(takes('s1-d3'), 2, 'one retake, then it passed');
-    assert.equal(takes('s2-a2'), 1 + MAX_RETAKES + 1, 'two retakes, flagged, then the QC gate\'s one extra take');
+    assert.equal(takes('s2-a2'), 1 + MAX_RETAKES, 'one retake, flagged, never a third take');
     assert.equal(takes('s1-w1'), 1);
     assert.deepEqual(out.report.gate.firstProblems, ['shot s2-a2 still flagged by the dailies']);
-    assert.equal(out.report.gate.fixedOnce, true);
-    assert.deepEqual(out.report.flagged, []);
+    assert.equal(out.report.gate.fixedOnce, true, 'the edit is re-rendered once');
+    assert.deepEqual(out.report.flagged, ['s2-a2'], 'kept and flagged for the operator');
     // Each line in its character's cast voice.
     const sts = calls.filter((c) => c.step === 'sts');
     assert.ok(sts.length >= 6);
     assert.ok(sts.every((c) => ['voice-mara', 'voice-tom'].includes(c.voiceId)));
   });
 
-  test('the master meets the spec; no freeze; no silence; -14 LUFS; the critic passed', () => {
+  test('the master meets the spec; no freeze; no silence; -14 LUFS; the critic flags only the shot out of takes', () => {
     const g = out.gate;
-    assert.equal(g.pass, true, JSON.stringify(g.problems));
+    assert.deepEqual(g.problems.map((p) => p.check), ['consistency'], JSON.stringify(g.problems));
     assert.match(g.probeLine, /^h264 \(High\) 640x360 24 fps \d+ kb\/s; aac \d+ kb\/s 48000 Hz stereo/);
     assert.equal(g.probe.width, 640, 'the takes\' own frame, never lower');
     assert.ok(g.probe.videoKbps >= ff.minVideoKbps({ width: 640, height: 360 }));
@@ -516,7 +519,7 @@ describe('a movie end to end (real edit, mix, master and QC gate)', { skip: NO_F
     assert.deepEqual(g.silences, []);
     assert.ok(Math.abs(g.loudness.integrated - -14) <= 1, `${g.loudness.integrated}`);
     assert.ok(g.loudness.truePeak <= -1);
-    assert.equal(g.consistency.pass, true);
+    assert.deepEqual(g.consistency.flagged, ['s2-a2']);
     assert.ok(noPadding(out.plan));
     assert.ok(out.plan.jl.length >= 1, 'J and L cuts on dialogue');
     assertWhite(out.report.gate.text, 'gate text');
@@ -550,7 +553,7 @@ describe('a movie end to end (real edit, mix, master and QC gate)', { skip: NO_F
     assert.deepEqual(newCalls.filter((c) => c.step === 'think' && c.purpose === 'movie: screenplay'), [], 'the screenplay is reused');
     assert.ok(newCalls.filter((c) => c.step === 'cast').every((c) => c.reused), 'the cast is reused');
     assert.deepEqual(newCalls.filter((c) => ['still', 'clip', 'sts', 'sfx', 'music'].includes(c.step)), [], 'nothing approved is made again');
-    assert.equal(again.gate.pass, true);
+    assert.deepEqual(again.gate.consistency.flagged, ['s2-a2'], 'the flagged shot is not retaken past its cap on a re-cut');
     const sets = savedSets((await store.getProject(id)).director);
     assert.equal(sets.takes.size, (await store.getProject(id)).director.shots.length);
   });

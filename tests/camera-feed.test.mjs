@@ -240,6 +240,11 @@ test('/api/chat camera branch: no engine left answers ai_unavailable; an answer 
   assert.ok(cap.lines.some((l) => /^\[camera\] frame request_id=\w+ source=camera bytes=\d+$/.test(l)));
   assert.ok(cap.lines.every((l) => !l.includes(FRAME)), 'the image is never logged');
 
+  // Both keys answered "out of credit": they are left out for an hour.
+  const skipped = await post({ cameraAnalyze: true, frame: { inlineData: { mimeType: 'image/jpeg', data: FRAME } } });
+  assert.equal(skipped.jsonBody.reason, 'ai_unavailable', 'not called again within the hour');
+  // An hour later (or topped up and the worker restarted) they are tried again.
+  __resetRouterState();
   globalThis.fetch = async (url) => (String(url).includes('generativelanguage') ? Response.json({ candidates: [{ content: { parts: [{ text: 'A phone showing an error page.' }] } }] }) : new Response('', { status: 500 }));
   res = await post({ cameraAnalyze: true, frame: { inlineData: { mimeType: 'image/jpeg', data: FRAME } } });
   assert.equal(res.statusCode, 200);

@@ -216,7 +216,8 @@ test('OpenRouter: dormant at a balance of 0 or below, back on its own above 0, c
   assert.equal(s2.balanceUsd, 5);
   const c = planRoute(TASKS.HEAVY, { env, dataClass: DATA.OPERATOR }).find((x) => x.provider === 'openrouter');
   assert.ok(c, 're-enabled');
-  assert.equal(c.freeModels.length, 3);
+  assert.equal(c.freeModels.length, 2);
+  assert.ok(c.freeModels.every((m) => !/deepseek/i.test(m)), 'never a DeepSeek model');
   assert.ok(c.freeModels.every((m) => m.endsWith(':free')));
   assert.deepEqual(c.models, ['openai/gpt-5'], 'paid models above $2');
 });
@@ -229,7 +230,7 @@ test('OpenRouter paid models: blocked below $2 (one push per day) and never for 
   await ensureOpenRouterState({ env, fetchImpl: openRouterAt(1.5).fetchImpl, now: () => t, store: {}, push });
   const c = planRoute(TASKS.HEAVY, { env, dataClass: DATA.OPERATOR }).find((x) => x.provider === 'openrouter');
   assert.deepEqual(c.models, [], 'no paid models at $1.50');
-  assert.equal(c.freeModels.length, 3, 'free models still used');
+  assert.equal(c.freeModels.length, 2, 'free models still used');
   assert.equal(pushes.length, 1);
   assert.match(pushes[0].body, /balance is \$1\.50: paid models are off until it is above \$2/);
   t += GUARD_TTL_MS + 1;

@@ -259,6 +259,44 @@ describe('resume never pays twice', () => {
     assert.match(done.reply, /not paused/);
   });
 
+  test('Rerun: a failed movie\'s card has the button; /movie rerun continues from the step it failed at, after Confirm, with a cap for what is left', async () => {
+    const db = await makeFilmDb();
+    const dispatched = [];
+    const fetchImpl = routedFetch([...filmDbRoutes(db), ['api.github.com', (u, o, body) => { dispatched.push(body); return new Response(null, { status: 204 }); }]]);
+    const store = createFilmStore({ supUrl: SUP, supKey: 'k', fetchImpl });
+    const env = { PG1_VIDEO_RENDER_SECRET: 'movie-secret-0123456789abcdef', GITHUB_TOKEN: 'gh-token' };
+    const p = await store.createProject({ request: 'two bakers', capUsd: 6, status: 'directing' });
+    const planned = planMovie({ screenplay: SP });
+    const [first, second] = planned.shots;
+    const d = { kind: 'movie', minutes: 0.5, screenplay: SP, bibles: planned.bibles, shots: planned.shots, approvals: { script: 'x', budget: 'y' }, takes: { [first.id]: { attempts: [{ attempt: 1 }], accepted: { attempt: 1, clip: 'c' } }, [second.id]: { attempts: [{ attempt: 1, error: 'engine_error' }] } } };
+    // The 20 Oct movie: stopped out of credit at the shots.
+    await store.updateProject(p.id, { mode: 'director', status: 'failed', error_reason: 'cap_reached', spent_usd: 6, failure: { stage: 'movie', step: 'shots' }, director: d });
+    const card = await movieCard(store, await store.getProject(p.id));
+    assert.equal(card.rerunCommand, `/movie rerun ${p.id.slice(0, 8)}`);
+    assert.equal(card.resumeCommand, undefined);
+    assert.match(card.message, /\/movie rerun [0-9a-f]{8} \(or the Rerun button\) continues from there/);
+    assertWhite(JSON.stringify({ ...card, previewUrl: null, finalUrl: null, posterUrl: null }), 'failed card');
+    assert.equal(parseMovieCommand(`/movie rerun ${p.id.slice(0, 8)}`).sub, 'rerun');
+
+    const r = await handleMovieCommand({ text: `/movie rerun ${p.id.slice(0, 8)}`, env, supUrl: SUP, supKey: 'k', isOperator: true, fetchImpl });
+    assertWhite(r.reply, 'rerun');
+    assert.match(r.reply, new RegExp(`1 of ${planned.shots.length} shots are saved; the rerun continues from shot ${second.id}`));
+    assert.match(r.reply, /Confirm to rerun; nothing is spent before you do/);
+    assert.deepEqual(r.pendingApproval.labels, { approve: 'Confirm', decline: 'Cancel' });
+    assert.equal(dispatched.length, 0, 'nothing queued before Confirm');
+    const row = (await db.query('select * from pending_actions where action_type = $1 order by created_at desc limit 1', [MOVIE_ACTIONS.retry])).rows[0];
+    assert.ok(row.plan.capUsd > 6, 'a movie stopped by its cap gets room for what is left');
+    const ok = await handleMovieApproval({ row, decision: 'approve', env, supUrl: SUP, supKey: 'k', isOperator: true, fetchImpl });
+    assertWhite(ok.reply, 'rerun approved');
+    assert.equal(dispatched.length, 1);
+    assert.equal(dispatched[0].inputs.stage, 'movie');
+    const q = await store.getProject(p.id);
+    assert.equal(q.status, 'director_queued');
+    assert.equal(Number(q.cap_usd), row.plan.capUsd);
+    assert.deepEqual(q.director.takes[first.id].accepted, { attempt: 1, clip: 'c' }, 'the saved shot is kept');
+    assert.equal(q.director.takes[second.id].attempts.length, 1, 'the failed shot keeps its count: its cap still holds');
+  });
+
   test('the paused_budget status itself (after the migration) is read the same way', async () => {
     const db = await makeFilmDb();
     const store = createFilmStore({ supUrl: SUP, supKey: 'k', fetchImpl: routedFetch(filmDbRoutes(db)) });

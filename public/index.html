@@ -7278,8 +7278,12 @@
       }
       // A paused movie: Resume runs /movie resume <id>, which asks to confirm
       // the budget for what is left before anything is spent.
-      if (!active && typeof film.resumeCommand === 'string' && /^\/movie resume [0-9a-f]{8}$/.test(film.resumeCommand)) {
-        parts.push(`<div class="pg1-actions" role="group" aria-label="Movie actions"><button type="button" class="pg1-action" data-command="${escapeHTML(film.resumeCommand)}" data-confirm="0" data-label="Resume" onclick="runReplyAction(this)"><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg><span>Resume</span></button></div>`);
+      // A failed movie: Rerun runs /movie rerun <id>, which continues from the
+      // step it failed at, also after a Confirm.
+      const movieAction = !active && typeof film.resumeCommand === 'string' && /^\/movie resume [0-9a-f]{8}$/.test(film.resumeCommand) ? { command: film.resumeCommand, label: 'Resume' }
+        : !active && typeof film.rerunCommand === 'string' && /^\/movie rerun [0-9a-f]{8}$/.test(film.rerunCommand) ? { command: film.rerunCommand, label: 'Rerun' } : null;
+      if (movieAction) {
+        parts.push(`<div class="pg1-actions" role="group" aria-label="Movie actions"><button type="button" class="pg1-action movie-rerun" data-command="${escapeHTML(movieAction.command)}" data-confirm="0" data-label="${movieAction.label}" onclick="runReplyAction(this)"><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg><span>${movieAction.label}</span></button></div>`);
       }
       return `<div class="film-card" data-film-id="${escapeHTML(film.id)}" data-film-active="${active ? '1' : '0'}">${parts.join('')}</div>`;
     }
