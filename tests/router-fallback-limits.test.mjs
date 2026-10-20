@@ -195,7 +195,7 @@ function installEngines({ gateway = () => Response.json({ choices: [{ message: {
   return calls;
 }
 
-test('heavy chat with checks: past the free key\'s 429 to the tools-off backup, with the live-search note and no provider name (JSON and streamed)', async () => {
+test('heavy chat with checks: past the free key\'s 429 to the tools-off backup; no live-search footer on a tools-route reply, no provider name (JSON and streamed)', async () => {
   process.env.GEMINI_API_KEY_FREE = FREE;
   process.env.GEMINI_API_KEY_PAID = PAID;
   process.env.ANTHROPIC_API_KEY = ANTHROPIC;
@@ -207,11 +207,53 @@ test('heavy chat with checks: past the free key\'s 429 to the tools-off backup, 
     const res = await chat({ prompt: '/core is evil-example.invalid malicious?', ...(stream ? { stream: true } : {}) });
     const body = stream ? res.chunks.join('') : res.jsonBody.reply;
     assert.match(body, /Backup answer\./, stream ? 'streamed' : 'JSON');
-    assert.ok(body.includes('Live search was unavailable for this answer.'), 'the note');
+    assert.ok(!body.includes('Live search was unavailable'), 'the footer is for search-route replies only');
     assert.ok(calls.includes('gateway'), 'the backup was reached');
     assert.ok(calls.indexOf('gateway') > calls.lastIndexOf('gemini_free'), 'after the free key');
     assert.ok(calls.filter((c) => c === 'gemini_free').length >= 2, 'the free key was asked again after its 429');
-    assert.doesNotMatch(body.replace(/Backup answer\.|Live search was unavailable for this answer\./g, ''), /credit balance|RESOURCE_EXHAUSTED|anthropic|claude|gemini|openai|gateway/i);
+    assert.doesNotMatch(body.replace(/Backup answer\./g, ''), /credit balance|RESOURCE_EXHAUSTED|anthropic|claude|gemini|openai|gateway/i);
+  }
+});
+
+test('search route, free key rate limited: at most ~5 s of waiting, then the backup answers with the footer exactly once (JSON and streamed)', async () => {
+  process.env.GEMINI_API_KEY_FREE = FREE;
+  process.env.VERCEL_AI_API_KEY = GATEWAY;
+  for (const stream of [false, true]) {
+    __resetRouterState();
+    const calls = [];
+    globalThis.fetch = async (url, options = {}) => {
+      const u = String(url);
+      if (u.includes('generativelanguage.googleapis.com')) { calls.push('gemini_free'); return new Response(GEMINI_429(30), { status: 429 }); }
+      if (u.includes('ai-gateway.vercel.sh')) { calls.push('gateway'); return Response.json({ choices: [{ message: { content: 'Backup answer.' } }] }); }
+      throw new Error('Unexpected network call in test: ' + u);
+    };
+    const res = await chat({ prompt: 'latest news on EIP-7702', ...(stream ? { stream: true } : {}) });
+    const body = stream ? res.chunks.join('') : res.jsonBody.reply;
+    assert.match(body, /Backup answer\./);
+    assert.equal(body.split('Live search was unavailable for this answer.').length - 1, 1, 'the footer once');
+    // A 30 s retry hint is longer than the search route's 5 s cap: no wait,
+    // straight to the backup (one ask per Gemini model, no wait-and-retry).
+    assert.ok(calls.filter((c) => c === 'gemini_free').length <= 2, 'no retry after the wait');
+  }
+});
+
+test('plain chat (small talk): no search request and never the footer, even from a backup engine', async () => {
+  process.env.GEMINI_API_KEY_FREE = FREE;
+  process.env.VERCEL_AI_API_KEY = GATEWAY;
+  for (const stream of [false, true]) {
+    __resetRouterState();
+    const bodies = [];
+    globalThis.fetch = async (url, options = {}) => {
+      const u = String(url);
+      if (u.includes('generativelanguage.googleapis.com')) { bodies.push(JSON.parse(options.body)); return new Response(GEMINI_429(30), { status: 429 }); }
+      if (u.includes('ai-gateway.vercel.sh')) return Response.json({ choices: [{ message: { content: 'Hi! All good here.' } }] });
+      throw new Error('Unexpected network call in test: ' + u);
+    };
+    const res = await chat({ prompt: 'hello, how are you today?', ...(stream ? { stream: true } : {}) });
+    const body = stream ? res.chunks.join('') : res.jsonBody.reply;
+    assert.match(body, /All good here/);
+    assert.ok(!body.includes('Live search was unavailable'), 'no footer on a chat-route reply');
+    assert.ok(bodies.length >= 1 && bodies.every((b) => b.tools === undefined), 'no search asked for');
   }
 });
 

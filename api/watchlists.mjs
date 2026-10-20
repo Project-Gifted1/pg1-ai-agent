@@ -18,6 +18,7 @@ import { createWatchlistStore, createWatchlist, authorizeWatchlist, watchlistVie
 import { payerHash } from '../lib/a2aJobs/jobs.mjs';
 import { payerScreen } from '../lib/screening.mjs';
 import { notifyOperator } from '../lib/notify.mjs';
+import { queryOf } from '../lib/requestQuery.mjs';
 
 export const config = { maxDuration: 20 };
 
@@ -65,7 +66,7 @@ export default async function handler(req, res) {
       if (out.settled) res.setHeader('PAYMENT-RESPONSE', encodePaymentResponseHeader(out.settled));
       return res.status(201).json({ ...out.body, request_id: requestId });
     }
-    const id = String((req.query && req.query.id) || '');
+    const id = String(queryOf(req).id || '');
     const w = await authorizeWatchlist(store, id, bearer(req));
     if (req.method === 'DELETE') return res.status(200).json({ ...(await cancelWatchlist(store, w)), request_id: requestId });
     return res.status(200).json({ ...(await watchlistView(store, w)), request_id: requestId });
