@@ -31,7 +31,7 @@ import path from 'node:path';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
-import { sharedLedger } from '../lib/aiRouter.mjs';
+import { sharedLedger, useProcessLedger, asBackgroundJob, grantSpendAllowance } from '../lib/aiRouter.mjs';
 import { reportUpstreamFailure } from '../lib/upstreamFailure.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { createFilmStore } from '../lib/film/store.mjs';
@@ -42,16 +42,16 @@ import { pushToOperator } from '../lib/watches/push.mjs';
 import { runDirector } from '../lib/film/director.mjs';
 import { listFilmAttachments } from '../lib/film/attachments.mjs';
 import { runStoryboard, runRender, proposeFullRender, CapReached, engineLabel } from '../lib/film/pipeline.mjs';
-import { verifyFilmToken, FILM_STAGES } from '../lib/film/dispatch.mjs';
+import { verifyFilmToken, FILM_STAGES, confirmedAllowanceUsd } from '../lib/film/dispatch.mjs';
 import * as ff from '../lib/film/ffmpeg.mjs';
 import {
   missingFilmConfig, createFilmMedia, createFilmVoice, filmThink, imageBlock, pcmToWav, transcribe, cartesiaConfig,
   elevenLabsVoiceConfig, synthesizeLineElevenLabs, createFilmDialogue, soundEffect
 } from '../lib/film/providers.mjs';
 import { prepareFilmVoices, castVoiceFor, listAccountVoices, fallbackVoice, voicesListText } from '../lib/film/voices.mjs';
-import { runMovieScript, runMovie } from '../lib/movie/pipeline.mjs';
-import { dialogueClip, speechToSpeech } from '../lib/movie/engines.mjs';
-import { MOVIE_STAGES, sayMovie } from '../lib/movie/text.mjs';
+import { runMovieScript, runMovie, MoviePaused } from '../lib/movie/pipeline.mjs';
+import { dialogueClip, speechToSpeech, movieCreditOk } from '../lib/movie/engines.mjs';
+import { MOVIE_STAGES, sayMovie, moviePausedText, MOVIE_PAUSED_STATUS } from '../lib/movie/text.mjs';
 
 // error_reason for the engine trouble that stops a stage.
 const FAILURE_REASONS = { throttled: 'throttled', billing: 'out_of_credit', spend_cap: 'spend_cap_reached', not_configured: 'not_configured', budget: 'budget', timeout: 'timeout' };
@@ -129,7 +129,9 @@ export function realEngines(env, { fetchImpl = globalThis.fetch, log = console.l
     // bible's references; and a take's line into the cast voice.
     dialogueClip: ({ prompt, seconds, refs }) => dialogueClip({ env, prompt, seconds, refs, clientWork, fetchImpl, ...(sleep ? { sleep } : {}) }),
     sts: ({ audio, voiceId, seconds }) => speechToSpeech({ env, audio, voiceId, seconds, clientWork, fetchImpl }),
-    // Claude, then the paid Gemini key, then OpenRouter (lib/film/providers.mjs).
+    // The cheap credit probe before each movie shot (no paid call).
+    creditOk: () => movieCreditOk({ env, clientWork, fetchImpl }),
+    // Claude, then the paid Gemini key: commercial_ok only (lib/film/providers.mjs).
     think: ({ system, content, effort, maxTokens, validate, purpose }) => filmThink({ env, system, content, effort, maxTokens, validate, purpose, fetchImpl, log, alert, clientWork }),
     image: (bytes) => imageBlock(bytes),
     transcribe: ({ audio }) => transcribe({ env, audio, fetchImpl })
@@ -162,7 +164,13 @@ export async function voiceCheck(env = process.env, { fetchImpl = globalThis.fet
 }
 
 // notify: the end-of-film push (tests read it; the real one is pushToOperator).
-export async function main(env = process.env, { log = console.log, engines = null, fetchImpl = globalThis.fetch, ffImpl = ff, notify: notifyImpl = null } = {}) {
+// A background job (lib/aiRouter.mjs asBackgroundJob): paid engines only
+// for a stage the operator confirmed, up to its budget (runStage).
+export function main(env = process.env, opts = {}) {
+  return asBackgroundJob(() => runStage(env, opts));
+}
+
+async function runStage(env, { log = console.log, engines = null, fetchImpl = globalThis.fetch, ffImpl = ff, notify: notifyImpl = null } = {}) {
   const projectId = String(env.FILM_PROJECT_ID || '').trim().toLowerCase();
   const stage = String(env.FILM_STAGE || '').trim();
   if (stage === 'voice_check') return voiceCheck(env, { fetchImpl, log });
@@ -178,6 +186,16 @@ export async function main(env = process.env, { log = console.log, engines = nul
   const claimed = await store.updateProject(projectId, { status: CLAIM[stage].to, render_started_at: new Date().toISOString(), error_reason: null, error_detail: null }, { onlyIfStatus: [CLAIM[stage].from] });
   if (!claimed.length) { log(`[film] ${projectId} is not queued for ${stage}; nothing to do`); return 0; }
   const project = claimed[0];
+  // Every budget check in this job reads the shared ledger, so the daily
+  // caps count what Vercel spent today too.
+  try { useProcessLedger(sharedLedger({ ...creds, fetchImpl })); } catch (e) { /* the in-memory figures stay in charge */ }
+  // PG1_DAILY_SPEND_CAP_USD is $0 unless set: paid engines only for a stage
+  // the operator confirmed (lib/film/dispatch.mjs spendConfirmation), and
+  // only up to what is left of that budget. Without one the stage stays on
+  // the free engines.
+  const allowanceUsd = confirmedAllowanceUsd(project, stage);
+  if (allowanceUsd > 0) grantSpendAllowance({ job: projectId, capUsd: allowanceUsd });
+  log(`[film] ${projectId} ${stage}: ${allowanceUsd > 0 ? `confirmed budget, up to ${allowanceUsd} USD of paid AI` : 'no confirmed budget: free engines only unless PG1_DAILY_SPEND_CAP_USD is set'}`);
 
   const fail = async (reason, detail, failure = {}) => {
     const patch = { status: 'failed', error_reason: reason, error_detail: String(detail || '').slice(0, 500), progress: null };
@@ -188,6 +206,27 @@ export async function main(env = process.env, { log = console.log, engines = nul
       .catch(() => {});
     log(`[film] ${projectId} ${stage} failed: ${reason}${failure.step ? ` at ${failure.step}` : ''}`);
     return 1;
+  };
+  const pause = async (e) => {
+    const info = { reason: e.reason, needUsd: e.needUsd, worstUsd: e.worstUsd, spentUsd: e.spentUsd, capUsd: e.capUsd, step: e.step, shotsDone: e.shotsDone, shotsTotal: e.shotsTotal, at: new Date().toISOString() };
+    const fresh = await store.getProject(projectId).catch(() => null);
+    const director = { ...((fresh && fresh.director) || project.director || {}), pause: info };
+    const patch = { error_reason: 'paused_budget', error_detail: String(e.detail || '').slice(0, 500), progress: null, director };
+    // paused_budget needs its migration (20261108120000); before that the
+    // movie is stored as failed with error_reason paused_budget, which the
+    // card, /movie status and /movie resume read the same way.
+    const rows = await store.updateProject(projectId, { ...patch, status: MOVIE_PAUSED_STATUS }, { onlyIfStatus: [CLAIM[stage].to] })
+      .catch(() => store.updateProject(projectId, { ...patch, status: 'failed', failure: { stage, step: e.step || 'shots', kind: 'paused_budget' } }, { onlyIfStatus: [CLAIM[stage].to] }))
+      .catch(() => []);
+    if (e.detail) onFailure({ reason: 'movie_paused_budget', detail: e.detail, requestId: project.request_id });
+    log(`[film] ${projectId} ${stage} paused: ${e.reason}; ${e.shotsDone}/${e.shotsTotal} shots saved; needs about ${e.needUsd} USD (at most ${e.worstUsd})`);
+    try {
+      const watchStore = createWatchStore({ ...creds, fetchImpl });
+      const send = notifyImpl || (({ title, body }) => pushToOperator({ store: watchStore, env, title, body, url: '/', tag: `pg1-movie-${projectId.slice(0, 8)}` }).catch(() => 0));
+      const text = moviePausedText({ id: projectId, director });
+      await send({ title: sayMovie('PG1 Studio: movie paused before spending more'), body: text });
+    } catch (err) { /* a notice never changes the outcome */ }
+    return rows && rows.length ? 0 : 1;
   };
   // Masters, previews, cuts, clips and stems go to R2, never the vault
   // (lib/storage/largeMedia.mjs): a stage that makes them does not start
@@ -260,6 +299,9 @@ export async function main(env = process.env, { log = console.log, engines = nul
     return 0;
   } catch (e) {
     const failure = failureOf(e, media);
+    // A movie that stopped before spending more (its budget, or an engine
+    // out of credit) is paused, not failed: /movie resume continues it.
+    if (e instanceof MoviePaused) return pause(e);
     if (e instanceof CapReached) return fail(e.floor ? 'price_floor' : 'cap_reached', e.floor ? `spent ${e.spentUsd}; the package price allows ${e.capUsd} (price / 1.5)` : `spent ${e.spentUsd} of ${e.capUsd}`, failure);
     if (e && e.refused) return fail('refused', e.detail, failure);
     onFailure({ reason: `film_${stage}_failed`, detail: e && (e.detail || e.stack || e.message), requestId: project.request_id });

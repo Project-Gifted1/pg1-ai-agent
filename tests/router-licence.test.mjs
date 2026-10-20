@@ -22,7 +22,7 @@ import { trackSpec } from '../lib/music/pipeline.mjs';
 import { clipCostOnUsd, stillCostOnUsd } from '../lib/film/cost.mjs';
 
 const ALL_KEYS = {
-  ANTHROPIC_API_KEY: 'sk-ant-licence-0123456789', GEMINI_API_KEY_PAID: 'AQ.licence-paid-0123456789', GEMINI_API_KEY_FREE: 'AIza-licence-free-0123',
+  PG1_DAILY_SPEND_CAP_USD: '1000', ANTHROPIC_API_KEY: 'sk-ant-licence-0123456789', GEMINI_API_KEY_PAID: 'AQ.licence-paid-0123456789', GEMINI_API_KEY_FREE: 'AIza-licence-free-0123',
   OPENROUTER_API_KEY: 'sk-or-licence-0123456789', AI_GATEWAY_API_KEY: 'gw-licence-0123456789', OPENAI_API_KEY: 'sk-licence-0123456789',
   REPLICATE_API_TOKEN: 'r8_licence_0123456789abcdef', CARTESIA_API_KEY: 'sk_car_licence_0123456789', ELEVENLABS_API_KEY: 'sk_el_licence_0123456789',
   GROQ_API_KEY: 'gsk_licence_0123456789', MISTRAL_API_KEY: 'mistral-licence-0123456789', GITHUB_MODELS_TOKEN: 'github_pat_licence_0123456789',
@@ -138,7 +138,8 @@ describe('a client job never reaches an engine not cleared for client work', () 
     // OpenRouter's free DeepSeek and Qwen models are its own (unclear) step's,
     // with first-party Chinese hosts ignored.
     const or = planRoute(TASKS.HEAVY, { env: ALL_KEYS, dataClass: DATA.OPERATOR }).find((c) => c.provider === 'openrouter');
-    assert.ok(or.freeModels.every((m) => /:free$/.test(m) && /^(?:deepseek|qwen)\//.test(m)), or.freeModels.join());
+    assert.ok(or.freeModels.every((m) => /:free$/.test(m) && /^qwen\//.test(m)), or.freeModels.join());
+    assert.ok(or.freeModels.every((m) => !/deepseek/i.test(m)), 'no DeepSeek model, ever');
     assert.ok(or.ignoreProviders.includes('DeepSeek') && or.ignoreProviders.includes('Alibaba'));
     assert.equal(stepLicence(ROUTING_CHAINS.text.find((s) => s.provider === 'openrouter')), 'unclear');
     // The operator's own work keeps every engine.
@@ -146,10 +147,9 @@ describe('a client job never reaches an engine not cleared for client work', () 
     assert.ok(planRoute(TASKS.MEDIA, { env: ALL_KEYS, dataClass: DATA.OPERATOR }).some((c) => c.provider === 'replicate'));
   });
 
-  test('text: a client film\'s text runs on Claude, then the paid Gemini key (never OpenRouter); the operator keeps the whole chain', () => {
+  test('text: film text runs on Claude, then the paid Gemini key (never OpenRouter), client or not', () => {
     assert.deepEqual(filmTextPlan(ALL_KEYS, { clientWork: true }).map((c) => c.provider), ['anthropic', 'gemini_paid']);
-    assert.ok(filmTextPlan(ALL_KEYS).some((c) => c.provider === 'openrouter'));
-    assert.deepEqual(filmTextPlan(ALL_KEYS).map((c) => c.provider)[0], 'anthropic');
+    assert.deepEqual(filmTextPlan(ALL_KEYS).map((c) => c.provider), ['anthropic', 'gemini_paid'], 'customer data: commercial_ok engines only');
   });
 
   test('stills and clips: Gemini only for a client film (no FLUX Kontext Pro, no Kling)', () => {
@@ -161,7 +161,7 @@ describe('a client job never reaches an engine not cleared for client work', () 
   });
 
   test('voice, dialogue and sfx: ElevenLabs only (never Cartesia); with no ElevenLabs key a client film stops clearly', async () => {
-    const noEl = { ...ALL_KEYS, ELEVENLABS_API_KEY: '' };
+    const noEl = { ...ALL_KEYS, PG1_DAILY_SPEND_CAP_USD: '1000', ELEVENLABS_API_KEY: '' };
     assert.deepEqual(chainPlan('voice', { env: ALL_KEYS, clientWork: true }).steps.map((s) => s.provider), ['elevenlabs']);
     const voice = createFilmVoice({ env: noEl, clientWork: true, fetchImpl: async () => { throw new Error('no call expected'); } });
     await assert.rejects(voice({ text: 'x' }), (e) => e instanceof EngineError && e.kind === 'not_configured' && e.licence);

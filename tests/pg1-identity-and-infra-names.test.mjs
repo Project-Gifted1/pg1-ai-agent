@@ -28,7 +28,7 @@ const BANNED = /\b(?:vercel|supabase|github|cloudflare|google|gemini|groq|openro
 
 beforeEach(() => {
   __clearAuthRateLimitState();
-  for (const k of Object.keys(process.env)) if (/^(GEMINI_|ANTHROPIC|SUPABASE|GROQ|OPENAI|OPENROUTER|VERCEL_AI|PG1_|CARTESIA|GITHUB)/.test(k)) delete process.env[k];
+  for (const k of Object.keys(process.env)) if (/^(GEMINI_|ANTHROPIC|SUPABASE|GROQ|OPENAI|OPENROUTER|VERCEL_AI|PG1_|CARTESIA|GITHUB)/.test(k) && k !== 'PG1_DAILY_SPEND_CAP_USD') delete process.env[k];
   process.env.USER_API_KEY = 'test-operator';
   process.env.USER_API_PASS = 'test-secret-pass';
   process.env.GEMINI_API_KEY_FREE = 'AIzaStub-identity-infra-0123456789';

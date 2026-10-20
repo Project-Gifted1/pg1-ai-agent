@@ -131,6 +131,20 @@ GEMINI_API_KEY_PAID=<Tier 1 prepaid>   # everything paid; media
 # Duplicate names, first one wins: OPENROUTER_API_KEY / OPEN_ROUTER_KEY,
 # REPLICATE_API_TOKEN / REPLICATE_KEY, VERCEL_AI_API_KEY / AI_GATEWAY_API_KEY,
 # ANTHROPIC_API_KEY / ANTROPIC_API_KEY.
+# The all-paid daily cap. UNSET MEANS $0: no paid AI call runs on its own
+# (chat, autonomy, missions, background jobs and the lab stay on the free
+# engines; customer chat and the lab then have no engine). The only paid
+# spending at $0 is a budget the operator confirms for one /movie or /film
+# stage, up to that amount. Set it in Vercel AND as a GitHub Actions
+# repository variable (the render, music and lab workers read it there).
+# Background work stops at 25% of it. Speech (Cartesia) is on its own plan.
+PG1_DAILY_SPEND_CAP_USD=0
+# Per-provider daily caps on the shared ledger (Vercel and GitHub Actions
+# count the same spend); background work stops at 25% of each. Set and
+# unreadable = $0. Also repository variables for the workers.
+PG1_DAILY_CAP_ANTHROPIC_USD=5
+PG1_DAILY_CAP_GEMINI_USD=3
+PG1_DAILY_CAP_OPENROUTER_USD=1
 # Daily budgets (estimated USD per UTC day; unset = no cap). A provider over
 # its cap is left out until 00:00 UTC. Run
 # supabase/migrations/20261012120000_pg1_ai_usage.sql so every instance

@@ -42,7 +42,7 @@ beforeEach(() => {
   __resetModelCatalog();
   __resetKeysCache();
   __clearAuthRateLimitState();
-  for (const k of Object.keys(process.env)) if (/^(GEMINI_|ANTHROPIC|ANTROPIC|OPENAI|OPENROUTER|OPEN_ROUTER|VERCEL_AI|AI_GATEWAY|GROQ|MISTRAL|GITHUB|CLOUDFLARE|SUPABASE|PG1_|CARTESIA|REPLICATE|ELEVENLABS)/.test(k)) delete process.env[k];
+  for (const k of Object.keys(process.env)) if (/^(GEMINI_|ANTHROPIC|ANTROPIC|OPENAI|OPENROUTER|OPEN_ROUTER|VERCEL_AI|AI_GATEWAY|GROQ|MISTRAL|GITHUB|CLOUDFLARE|SUPABASE|PG1_|CARTESIA|REPLICATE|ELEVENLABS)/.test(k) && k !== 'PG1_DAILY_SPEND_CAP_USD') delete process.env[k];
   process.env.USER_API_KEY = 'test-operator';
   process.env.USER_API_PASS = 'test-secret-pass';
 });
@@ -149,9 +149,11 @@ test('paid search grounding runs only when PG1_DAILY_SPEND_CAP_USD allows it (un
   process.env.GEMINI_API_KEY_PAID = PAID;
   const bodies = [];
   globalThis.fetch = async (url, o = {}) => { bodies.push(JSON.parse(o.body)); return geminiText('From what I know.'); };
-  const out = await chat({ prompt: 'latest news on EIP-7702' });
-  assert.ok(bodies.length && bodies.every((b) => b.tools === undefined), 'the paid key was asked without search');
-  assert.equal(out.split(FOOTER).length - 1, 1, 'search withheld: footer once');
+  // Unset is $0 for all paid AI now (lib/aiRouter.mjs dailySpendCapUsd):
+  // the paid key is not asked at all, grounded or not.
+  delete process.env.PG1_DAILY_SPEND_CAP_USD;
+  await chat({ prompt: 'latest news on EIP-7702' });
+  assert.equal(bodies.length, 0, 'unset: the paid key is not asked');
   process.env.PG1_DAILY_SPEND_CAP_USD = '3';
   bodies.length = 0;
   const out2 = await chat({ prompt: 'latest news on EIP-7702 please' });

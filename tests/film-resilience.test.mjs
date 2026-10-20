@@ -224,7 +224,7 @@ describe('throttling: wait, then the same request on the same engine', () => {
         : n === 2 ? new Response(THROTTLED(5), { status: 429 }) : undefined)
     };
     const fetchImpl = routedFetch(mediaRoutes(state));
-    const r = await replicateRun({ env: { REPLICATE_API_TOKEN: REPLICATE }, model: 'black-forest-labs/flux-kontext-pro', input: { prompt: 'a harbour' }, fetchImpl, sleep: async (ms) => waits.push(ms), onThrottle: (t) => heard.push(t.attempt) });
+    const r = await replicateRun({ env: { PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: REPLICATE }, model: 'black-forest-labs/flux-kontext-pro', input: { prompt: 'a harbour' }, fetchImpl, sleep: async (ms) => waits.push(ms), onThrottle: (t) => heard.push(t.attempt) });
     assert.match(r.url, /out-3\.png$/);
     assert.deepEqual(waits, [3000, 5000], 'Retry-After first, then the reset time in the message');
     assert.deepEqual(heard, [1, 2]);
@@ -236,7 +236,7 @@ describe('throttling: wait, then the same request on the same engine', () => {
   test('still throttled after 5 sends: a throttled error, marked as never started (nothing billed)', async () => {
     const waits = [];
     const state = { replicate: () => new Response('Too Many Requests', { status: 429 }) };
-    const err = await replicateRun({ env: { REPLICATE_API_TOKEN: REPLICATE }, model: 'a/b', input: {}, fetchImpl: routedFetch(mediaRoutes(state)), sleep: async (ms) => waits.push(ms) }).catch((e) => e);
+    const err = await replicateRun({ env: { PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: REPLICATE }, model: 'a/b', input: {}, fetchImpl: routedFetch(mediaRoutes(state)), sleep: async (ms) => waits.push(ms) }).catch((e) => e);
     assert.ok(err instanceof EngineError);
     assert.equal(err.kind, 'throttled');
     assert.equal(err.notStarted, true);
@@ -244,7 +244,7 @@ describe('throttling: wait, then the same request on the same engine', () => {
     assert.equal(state.n.replicate, 5);
     // Out of credit is not waited on.
     const s2 = { replicate: () => new Response(NO_CREDIT, { status: 402 }) };
-    const e2 = await replicateRun({ env: { REPLICATE_API_TOKEN: REPLICATE }, model: 'a/b', input: {}, fetchImpl: routedFetch(mediaRoutes(s2)), sleep: async () => assert.fail('no wait on a credit failure') }).catch((e) => e);
+    const e2 = await replicateRun({ env: { PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: REPLICATE }, model: 'a/b', input: {}, fetchImpl: routedFetch(mediaRoutes(s2)), sleep: async () => assert.fail('no wait on a credit failure') }).catch((e) => e);
     assert.equal(e2.kind, 'billing');
     assert.equal(e2.notStarted, true);
     assert.equal(s2.n.replicate, 1);
@@ -254,15 +254,15 @@ describe('throttling: wait, then the same request on the same engine', () => {
 // --- 3. the stage-level Gemini fallback (engines) -----------------------------------------------
 
 describe('media fallback: the rest of the stage on the paid Gemini key', () => {
-  const env = { REPLICATE_API_TOKEN: REPLICATE, GEMINI_API_KEY_PAID: PAID, GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY: OLD };
+  const env = { PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: REPLICATE, GEMINI_API_KEY_PAID: PAID, GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY: OLD };
   const links = { referenceUrl: `${SUP_URL}/storage/v1/object/sign/pg1-vault/ref.png?token=t`, prevFrameUrl: `${SUP_URL}/storage/v1/object/sign/pg1-vault/prev.jpg?token=t` };
   const signed = ['/storage/v1/object/sign/pg1-vault/', () => new Response(PNG, { status: 200 })];
 
   test('each kind has its own chain (ROUTING_CHAINS): stills Replicate then the paid key; clips the paid key (Omni) then Replicate (Kling); never the free key', () => {
     assert.deepEqual(filmMediaPlan(env).map((c) => [c.provider, c.key]), [['replicate', REPLICATE], ['gemini_paid', PAID]]);
     assert.deepEqual(filmMediaPlan(env, { kind: 'clip' }).map((c) => [c.provider, c.model]), [['gemini_paid', 'gemini-omni-1.1-flash'], ['replicate', 'kwaivgi/kling-v2.1']]);
-    assert.deepEqual(filmMediaPlan({ REPLICATE_API_TOKEN: REPLICATE, GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY: OLD }).map((c) => c.provider), ['replicate'], 'never the free key or an old Gemini name');
-    assert.deepEqual(filmMediaPlan({ REPLICATE_API_TOKEN: REPLICATE, GEMINI_API_KEY_PAID: FREE, GEMINI_API_KEY_FREE: FREE }).map((c) => c.provider), ['replicate'], 'a paid key that is the free key is not used');
+    assert.deepEqual(filmMediaPlan({ PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: REPLICATE, GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY: OLD }).map((c) => c.provider), ['replicate'], 'never the free key or an old Gemini name');
+    assert.deepEqual(filmMediaPlan({ PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: REPLICATE, GEMINI_API_KEY_PAID: FREE, GEMINI_API_KEY_FREE: FREE }).map((c) => c.provider), ['replicate'], 'a paid key that is the free key is not used');
     assert.deepEqual(filmMediaPlan(env, { kind: 'clip', clientWork: true }).map((c) => c.provider), ['gemini_paid'], 'Kling (R1) is never used for a client film');
   });
 
@@ -324,7 +324,7 @@ describe('media fallback: the rest of the stage on the paid Gemini key', () => {
     assert.equal(stage.kinds.clip.engine, 'replicate');
 
     const s2 = { replicate: () => new Response(NO_CREDIT, { status: 402 }) };
-    const lone = createFilmMedia({ env: { REPLICATE_API_TOKEN: REPLICATE, GEMINI_API_KEY_FREE: FREE }, fetchImpl: routedFetch([signed, ...mediaRoutes(s2)]), log: () => {} });
+    const lone = createFilmMedia({ env: { PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: REPLICATE, GEMINI_API_KEY_FREE: FREE }, fetchImpl: routedFetch([signed, ...mediaRoutes(s2)]), log: () => {} });
     await assert.rejects(lone.still({ prompt: 'x', ...links, stage: newMediaStage() }), (e) => e.kind === 'billing' && e.fallback.outcome === 'not_configured');
     assert.equal(s2.seen.filter((s) => s.engine !== 'replicate').length, 0, 'the free key is never used');
   });
@@ -349,7 +349,7 @@ describe('render stages under engine trouble', () => {
   let fetchImpl;
   let store;
   let state;
-  const env0 = { REPLICATE_API_TOKEN: REPLICATE, GEMINI_API_KEY_PAID: PAID, GEMINI_API_KEY_FREE: FREE };
+  const env0 = { PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: REPLICATE, GEMINI_API_KEY_PAID: PAID, GEMINI_API_KEY_FREE: FREE };
   beforeEach(async () => {
     db = await makeFilmDb();
     state = {};

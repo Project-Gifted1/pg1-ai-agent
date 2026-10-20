@@ -15,7 +15,7 @@ import { voiceCheck } from '../scripts/film-render.mjs';
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PRO_ONLY = /pcm_(?:44100|48000)/;
 const ALLOWED = new Set(['pcm_16000', 'pcm_22050', 'pcm_24000', 'mp3_44100_128', 'mp3_44100_192']);
-const ENV = { ELEVENLABS_API_KEY: 'sk_el_format_0123456789', PG1_FILM_VOICE_ID: 'brandvoice0123', PG1_ELEVENLABS_FILM_RIGHTS: '1' };
+const ENV = { PG1_DAILY_SPEND_CAP_USD: '1000', ELEVENLABS_API_KEY: 'sk_el_format_0123456789', PG1_FILM_VOICE_ID: 'brandvoice0123', PG1_ELEVENLABS_FILM_RIGHTS: '1' };
 
 // Every ElevenLabs request, answered with something each caller accepts.
 function capture() {

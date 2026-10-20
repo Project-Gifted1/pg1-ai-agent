@@ -192,7 +192,7 @@ test('the routing floor: refinements and long context never go to the free or li
   for (const t of ['what is the capital of France?', 'hello', '/task']) assert.equal(needsRoutingFloor(t, { hasHistory: true }).floor, false, t);
   assert.equal(needsRoutingFloor('make it shorter', { hasHistory: false }).floor, false, 'a first message is not a refinement');
   assert.deepEqual(needsRoutingFloor('hello', { hasHistory: true, contextTokens: 5000 }), { floor: true, reason: 'long_context' });
-  const env = { GEMINI_API_KEY_FREE: 'free-key', GEMINI_API_KEY_PAID: 'paid-key' };
+  const env = { GEMINI_API_KEY_FREE: 'free-key', PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: 'paid-key' };
   assert.equal(planRoute(TASKS.LIGHT, { env, dataClass: DATA.OPERATOR })[0].provider, 'gemini_free');
   const floored = planRoute(TASKS.HEAVY, { env, dataClass: DATA.OPERATOR, excludeFree: true });
   assert.ok(floored.length && floored.every((c) => c.provider !== 'gemini_free'));

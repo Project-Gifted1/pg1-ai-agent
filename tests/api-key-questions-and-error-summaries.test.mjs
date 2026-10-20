@@ -45,7 +45,7 @@ const OPERATOR = { user: 'test-operator', pass: 'test-secret-pass' };
 // The deployment's secrets for these tests: fake values in the real
 // credential shapes, under the env var names the server really reads.
 const SECRETS = {
-  GEMINI_API_KEY: FAKE.googleKey,
+  PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY: FAKE.googleKey,
   GEMINI_API_KEY1: FAKE.googleKey.replace('PG1', 'PG2'),
   CARTESIA_API_KEY: FAKE.longToken,
   REPLICATE_API_TOKEN: FAKE.envSecretValue + '-replicate-0001',
@@ -57,7 +57,7 @@ const SECRETS = {
 function resetEnv() {
   process.env = { ...ORIGINAL_ENV };
   for (const k of Object.keys(process.env)) {
-    if (/^(GEMINI|CARTESIA|REPLICATE|ANTHROPIC|ANTROPIC|OPENAI|GITHUB|SUPABASE|USER_API|VERCEL|PG1_)/.test(k)) delete process.env[k];
+    if (/^(GEMINI|CARTESIA|REPLICATE|ANTHROPIC|ANTROPIC|OPENAI|GITHUB|SUPABASE|USER_API|VERCEL|PG1_)/.test(k) && k !== 'PG1_DAILY_SPEND_CAP_USD') delete process.env[k];
   }
   process.env.USER_API_KEY = OPERATOR.user;
   process.env.USER_API_PASS = OPERATOR.pass;

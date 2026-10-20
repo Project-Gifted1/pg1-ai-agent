@@ -119,7 +119,7 @@ test('the wait never runs past the caller\'s deadline', async () => {
 });
 
 test('runRoute: 429 retried then answered; 429 exhausted falls through; 402 and a 400 credit error fall through at once', async () => {
-  const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
+  const env = { GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
   const sleeps = [];
   const sleep = async (ms) => { sleeps.push(ms); };
 
@@ -148,7 +148,7 @@ test('runRoute: 429 retried then answered; 429 exhausted falls through; 402 and 
 // --- 2. the heavy chain keeps its tools-off backups ----------------------------------
 
 test('with checks on, the OpenAI-compatible backups stay (tools off) after every engine that can run them; with an image they are left out', () => {
-  const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC, VERCEL_AI_API_KEY: GATEWAY, OPENROUTER_API_KEY: 'sk-or-stub', OPENAI_API_KEY: 'sk-stub' };
+  const env = { GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC, VERCEL_AI_API_KEY: GATEWAY, OPENROUTER_API_KEY: 'sk-or-stub', OPENAI_API_KEY: 'sk-stub' };
   // Routing policy: operator content tries the free key first.
   const heavy = planRoute(TASKS.HEAVY, { env, dataClass: DATA.OPERATOR, withTools: true });
   assert.deepEqual(heavy.map((c) => c.provider), ['gemini_free', 'anthropic', 'gemini_paid', 'openrouter', 'gateway', 'openai']);
@@ -333,7 +333,7 @@ test('the limiter in the chat: a burst over the free key\'s minute waits instead
 // --- 4. the free key never gets client work or customer data ----------------------------------
 
 test('the free key is operator data only: never customer data, never client work, in any task', () => {
-  const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC, VERCEL_AI_API_KEY: GATEWAY };
+  const env = { GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC, VERCEL_AI_API_KEY: GATEWAY };
   for (const task of Object.values(TASKS)) {
     for (const opts of [{ dataClass: DATA.CUSTOMER }, { dataClass: DATA.OPERATOR, clientWork: true }, { dataClass: DATA.CUSTOMER, withTools: true }, { dataClass: DATA.CUSTOMER, withMedia: true }]) {
       const plan = planRoute(task, { env, ...opts });
@@ -369,7 +369,7 @@ test('every engine out: the operator gets one push per hour naming each AI accou
 });
 
 test('runRoute calls onAllOut only when every engine failed on capacity, not on a refusal', async () => {
-  const env = { GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
+  const env = { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
   const seen = [];
   await runRoute({ task: TASKS.LIGHT, env, dataClass: DATA.CUSTOMER, log: quiet, sleep: async () => {}, onAllOut: (f) => seen.push(f.map((x) => x.provider)), attempt: async (c) => ({ ok: false, status: c.provider === 'anthropic' ? 400 : 402, detail: c.provider === 'anthropic' ? ANTHROPIC_CREDIT : GEMINI_402 }) });
   await new Promise((r) => setImmediate(r));

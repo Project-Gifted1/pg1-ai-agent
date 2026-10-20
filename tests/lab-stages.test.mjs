@@ -89,7 +89,7 @@ test('the real e2981021 result: research ran (one grounded call, 10 sources); as
 });
 
 const SUP = { supUrl: 'https://supabase.test', supKey: 'k' };
-const ENV = { PG1_LAB_DISPATCH_SECRET: 'x'.repeat(40), GITHUB_TOKEN: 'ghp_x', PG1_AUTONOMY: 'lab', PG1_LAB_DAILY_USD: '20' };
+const ENV = { PG1_DAILY_SPEND_CAP_USD: '1000', PG1_LAB_DISPATCH_SECRET: 'x'.repeat(40), GITHUB_TOKEN: 'ghp_x', PG1_AUTONOMY: 'lab', PG1_LAB_DAILY_USD: '20' };
 const MIGRATIONS = ['20261019120000_pg1_skills.sql', '20261020120000_pg1_lab_and_flags.sql', '20261021120000_pg1_autonomy_log.sql'];
 const codeResult = (pr) => ({ kind: 'code', spent_usd: 0.3, calls: 2, report_markdown: `## Research\n${FINDINGS}\n\n## Code change\nadds it`, stages: { research: { ok: true, chars: 120, sources: 2, calls: 1 }, build: { ok: true, files: 2 } }, code: { branch: 'lab/x', title: 't', summary: 's', files: ['lib/delegation.mjs', 'tests/delegation.test.mjs'], tests: { passed: true, summary: '# pass 2' }, pr_number: pr, pr_url: `https://github.com/Project-Gifted1/pg1-ai-agent/pull/${pr}` } });
 

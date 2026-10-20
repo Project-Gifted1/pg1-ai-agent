@@ -7,8 +7,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --test 'tests/*.test.mjs' 'tests/browser/*.test.mjs'",
-    "test:browser": "node --test 'tests/browser/*.test.mjs'",
+    "test": "node --import ./tests/helpers/spend-cap.mjs --test 'tests/*.test.mjs' 'tests/browser/*.test.mjs'",
+    "test:browser": "node --import ./tests/helpers/spend-cap.mjs --test 'tests/browser/*.test.mjs'",
     "docs:build": "node scripts/build-docs.mjs",
     "commands:build": "node scripts/build-commands.mjs"
   },

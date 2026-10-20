@@ -155,7 +155,7 @@ function page() {
   vm.createContext(ctx);
   vm.runInContext([
     html.match(/const VIDEO_JOB_ID_RE = [^\n]*;/)[0].replace(/^const/, 'var'),
-    ...['escapeHTML', 'filmMoney', 'renderApprovalActionsHtml', 'musicSafeUrl', 'musicSeconds', 'musicAudioHtml', 'musicDownloadsHtml', 'musicTakeHtml', 'musicTakesHtml', 'musicCardHtml', 'musicLibraryHtml'].map(extractFunction)
+    ...['escapeHTML', 'filmMoney', 'approvalLabels', 'renderApprovalActionsHtml', 'musicSafeUrl', 'musicSeconds', 'musicAudioHtml', 'musicDownloadsHtml', 'musicTakeHtml', 'musicTakesHtml', 'musicCardHtml', 'musicLibraryHtml'].map(extractFunction)
   ].join('\n'), ctx);
   return ctx;
 }

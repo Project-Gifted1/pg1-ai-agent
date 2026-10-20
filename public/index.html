@@ -6260,11 +6260,19 @@
     // Shared by the normal pendingApproval reply path and the Suggest Fix
     // flow (requestSuggestedPatchApproval) so both render the exact same
     // Approve/Decline markup wired to the same resolveApproval() call.
-    function renderApprovalActionsHtml(token) {
+    // labels: { approve, decline } for a proposal that names its own buttons
+    // (a movie budget: Confirm / Cancel); only those two words are allowed.
+    function approvalLabels(labels) {
+      const words = ['Approve', 'Decline', 'Confirm', 'Cancel'];
+      const pick = (v, d) => (typeof v === 'string' && words.includes(v) ? v : d);
+      return { approve: pick(labels && labels.approve, 'Approve'), decline: pick(labels && labels.decline, 'Decline') };
+    }
+    function renderApprovalActionsHtml(token, labels = null) {
+      const l = approvalLabels(labels);
       return `
             <div class="approval-actions">
-              <button type="button" class="approval-btn approve" onclick="resolveApproval('${token}', 'approve', this)"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><span class="approval-label">Approve</span></button>
-              <button type="button" class="approval-btn decline" onclick="resolveApproval('${token}', 'decline', this)"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg><span class="approval-label">Decline</span></button>
+              <button type="button" class="approval-btn approve" data-label="${l.approve}" onclick="resolveApproval('${token}', 'approve', this)"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><span class="approval-label">${l.approve}</span></button>
+              <button type="button" class="approval-btn decline" data-label="${l.decline}" onclick="resolveApproval('${token}', 'decline', this)"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg><span class="approval-label">${l.decline}</span></button>
             </div>`;
     }
 
@@ -6332,7 +6340,7 @@
           const extra = document.createElement('div');
           extra.innerHTML = (data.filmProject ? filmCardHtml(data.filmProject, { approvals: !data.pendingApproval }) : '')
             + (data.musicTrack ? musicCardHtml(data.musicTrack) : '')
-            + (data.pendingApproval && data.pendingApproval.token ? renderApprovalActionsHtml(data.pendingApproval.token) : '');
+            + (data.pendingApproval && data.pendingApproval.token ? renderApprovalActionsHtml(data.pendingApproval.token, data.pendingApproval.labels) : '');
           const actionsEl = bubble.querySelector('.message-actions');
           Array.from(extra.childNodes).forEach((n) => (actionsEl ? bubble.insertBefore(n, actionsEl) : bubble.appendChild(n)));
           pollFilmCardsSoon(2000);
@@ -6345,7 +6353,7 @@
         if (actionsRow) {
           actionsRow.querySelectorAll('button').forEach(b => b.disabled = false);
         }
-        (btnEl.querySelector('.approval-label') || btnEl).textContent = decision === 'approve' ? 'Approve' : 'Decline';
+        (btnEl.querySelector('.approval-label') || btnEl).textContent = btnEl.getAttribute('data-label') || (decision === 'approve' ? 'Approve' : 'Decline');
       }
     }
 
@@ -6411,7 +6419,7 @@
         }
         if (data.pendingApproval && data.pendingApproval.token) {
           const wrapper = document.createElement('div');
-          wrapper.innerHTML = renderApprovalActionsHtml(data.pendingApproval.token);
+          wrapper.innerHTML = renderApprovalActionsHtml(data.pendingApproval.token, data.pendingApproval.labels);
           const actionsNode = wrapper.firstElementChild;
           const messageActions = agentBubble.querySelector('.message-actions');
           agentBubble.insertBefore(actionsNode, messageActions);
@@ -7315,7 +7323,16 @@
         if (typeof c.engines === 'string' && c.engines) parts.push(`<p class="film-card-meta">Made by: ${escapeHTML(c.engines)}${typeof c.fallback === 'string' && c.fallback ? ` · the ${escapeHTML(c.fallback)}` : ''}</p>`);
       }
       if (approvals && !active && film.pendingApproval && typeof film.pendingApproval.token === 'string' && /^[0-9a-f-]{36}$/i.test(film.pendingApproval.token)) {
-        parts.push(renderApprovalActionsHtml(film.pendingApproval.token));
+        parts.push(renderApprovalActionsHtml(film.pendingApproval.token, film.pendingApproval.labels));
+      }
+      // A paused movie: Resume runs /movie resume <id>, which asks to confirm
+      // the budget for what is left before anything is spent.
+      // A failed movie: Rerun runs /movie rerun <id>, which continues from the
+      // step it failed at, also after a Confirm.
+      const movieAction = !active && typeof film.resumeCommand === 'string' && /^\/movie resume [0-9a-f]{8}$/.test(film.resumeCommand) ? { command: film.resumeCommand, label: 'Resume' }
+        : !active && typeof film.rerunCommand === 'string' && /^\/movie rerun [0-9a-f]{8}$/.test(film.rerunCommand) ? { command: film.rerunCommand, label: 'Rerun' } : null;
+      if (movieAction) {
+        parts.push(`<div class="pg1-actions" role="group" aria-label="Movie actions"><button type="button" class="pg1-action movie-rerun" data-command="${escapeHTML(movieAction.command)}" data-confirm="0" data-label="${movieAction.label}" onclick="runReplyAction(this)"><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg><span>${movieAction.label}</span></button></div>`);
       }
       return `<div class="film-card" data-film-id="${escapeHTML(film.id)}" data-film-active="${active ? '1' : '0'}">${parts.join('')}</div>`;
     }
@@ -8458,7 +8475,7 @@
         if (Array.isArray(data.musicLibrary)) contentHtml += musicLibraryHtml(data.musicLibrary);
 
         if (data.pendingApproval && data.pendingApproval.token) {
-          contentHtml += renderApprovalActionsHtml(data.pendingApproval.token);
+          contentHtml += renderApprovalActionsHtml(data.pendingApproval.token, data.pendingApproval.labels);
         }
 
         // SEND TO CODE: offer a hand-off under a reply to what looks like a

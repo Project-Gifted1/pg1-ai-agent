@@ -214,7 +214,7 @@ test('chat: [OFFERS] is in every prompt and a reply offering what PG1 may not ge
   const saved = { ...process.env };
   const savedFetch = globalThis.fetch;
   try {
-    Object.assign(process.env, { USER_API_KEY: 'test-operator', USER_API_PASS: 'test-secret-pass', GEMINI_API_KEY: 'stub-gemini-key' });
+    Object.assign(process.env, { USER_API_KEY: 'test-operator', USER_API_PASS: 'test-secret-pass', PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY: 'stub-gemini-key' });
     for (const k of ['ANTHROPIC_API_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'CARTESIA_API_KEY']) delete process.env[k];
     __clearAuthRateLimitState();
     const REPLY = '## Packages\n| Tier | Price |\n|---|---|\n| Studio | $500/month | 20 video clips |\n\nStudio includes 3 seats and full IP indemnification.';
@@ -319,7 +319,7 @@ test('E1 answered: the plan\'s film, TV and radio exclusion is recorded and film
 
   const { filmMusicExclude } = await import('../lib/film/providers.mjs');
   const { musicPlan } = await import('../lib/music/engines.mjs');
-  const env = { ELEVENLABS_API_KEY: 'el-test', GEMINI_API_KEY_PAID: 'paid-test', REPLICATE_API_TOKEN: 'r8-test' };
+  const env = { PG1_DAILY_SPEND_CAP_USD: '1000', ELEVENLABS_API_KEY: 'el-test', GEMINI_API_KEY_PAID: 'paid-test', REPLICATE_API_TOKEN: 'r8-test' };
   assert.deepEqual(filmMusicExclude(env), ['elevenlabs', 'replicate']);
   assert.deepEqual([...new Set(musicPlan(env, { exclude: filmMusicExclude(env) }).map((c) => c.provider))], ['gemini_paid'], 'a film bed is planned on the Gemini API only');
   assert.deepEqual(musicPlan(env).map((c) => c.provider), ['gemini_paid', 'elevenlabs'], 'PG1 Sound tracks: Lyria first, ElevenLabs as the fallback (ROUTING_CHAINS.music)');

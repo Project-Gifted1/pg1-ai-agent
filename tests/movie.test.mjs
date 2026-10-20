@@ -7,8 +7,9 @@
  *  - bibles: fixed reference images per character and location, passed to
  *    every shot; coverage (establishing, OTS, reverse, close-ups, reactions,
  *    cut on action, 2–4 s average, no long static shot);
- *  - takes: the dailies critic, automatic retakes (at most 2), the best take
- *    kept and flagged; speech-to-speech into the cast voice keeps the line's
+ *  - takes: the dailies critic once per take, automatic retakes (at most
+ *    PG1_MOVIE_MAX_RETAKES, default 1), the better take kept and flagged,
+ *    never looped (the QC gate adds no take past the cap); speech-to-speech into the cast voice keeps the line's
  *    timing; the cast is reused on retry;
  *  - the edit never holds a frame, J and L cuts, audio covering the runtime,
  *    the master spec and the QC gate (ffprobe, freezedetect, silencedetect,
@@ -158,7 +159,7 @@ describe('cost estimate', () => {
     const saved = { refs: new Set(allRefs(bibles).map((r) => r.key)), takes: new Set(shots.map((s) => s.id)), voiced: new Set(shots.map((s) => s.id)), ambience: new Set(['s1', 's2', 's3']), effects: new Set(shots.map((s) => s.id)), score: new Set(['s1', 's2', 's3']) };
     assert.equal(estimateMovie({ screenplay: SP, bibles, shots, saved }).expectedUsd, 0, 'a fully saved movie costs nothing to re-cut');
     const text = estimateMovieText(est, { capUsd: 60, spentUsd: 0.15 });
-    assert.match(text, /Total: about \d+\.\d\d USD \(up to \d+\.\d\d USD/);
+    assert.match(text, /Total: about \d+\.\d\d USD; worst case \d+\.\d\d USD if every shot needs its retake/);
     assertWhite(text, 'the estimate');
   });
 });
@@ -246,14 +247,14 @@ describe('takes and the critic', () => {
 // --- engines: client licences, references, speech-to-speech ---------------------------------
 
 describe('engines', () => {
-  const ENV = { GEMINI_API_KEY_PAID: 'AQ.paid-0123456789', ELEVENLABS_API_KEY: 'sk_el_0123456789', REPLICATE_API_TOKEN: 'r8_0123456789' };
+  const ENV = { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: 'AQ.paid-0123456789', ELEVENLABS_API_KEY: 'sk_el_0123456789', REPLICATE_API_TOKEN: 'r8_0123456789' };
 
   test('client movies only use commercial_ok engines; no speech engine means no movie, never a silent one', () => {
     __resetRouterState();
     const plan = moviePlan(ENV, { clientWork: true });
     assert.deepEqual(plan.clips.map((s) => [s.provider, s.licence]), [['gemini_paid', 'commercial_ok']]);
     assert.deepEqual(plan.sts.map((s) => [s.provider, s.licence]), [['elevenlabs', 'commercial_ok']]);
-    assert.equal(moviePlan({ REPLICATE_API_TOKEN: 'r8_x' }, { clientWork: false }).clips.length, 0, 'the silent clip engine is never a movie engine');
+    assert.equal(moviePlan({ PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: 'r8_x' }, { clientWork: false }).clips.length, 0, 'the silent clip engine is never a movie engine');
   });
 
   test('the shot request: 1080p, the prompt and length, each bible reference after its label', async () => {
@@ -272,7 +273,7 @@ describe('engines', () => {
     assert.equal(out.bytes.toString(), 'mp4');
     const sent = calls.find((c) => c.url === INTERACTIONS_URL).body;
     assert.equal(sent.input.filter((x) => x.type === 'image').length, 1);
-    await assert.rejects(dialogueClip({ env: { REPLICATE_API_TOKEN: 'r8' }, prompt: 'x', seconds: 3, fetchImpl }), (e) => e.code === 'no_speech_engine');
+    await assert.rejects(dialogueClip({ env: { PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: 'r8' }, prompt: 'x', seconds: 3, fetchImpl }), (e) => e.code === 'no_speech_engine');
   });
 
   test('speech-to-speech: the cast voice, the take\'s audio, the plan\'s speech format', async () => {
@@ -295,7 +296,7 @@ describe('/movie in the chat', () => {
   let store;
   let fetchImpl;
   let dispatched;
-  const ENV = { PG1_VIDEO_RENDER_SECRET: 'movie-secret-0123456789abcdef', GITHUB_TOKEN: 'gh-token', ELEVENLABS_API_KEY: 'sk_el_0123456789' };
+  const ENV = { PG1_VIDEO_RENDER_SECRET: 'movie-secret-0123456789abcdef', GITHUB_TOKEN: 'gh-token', PG1_DAILY_SPEND_CAP_USD: '1000', ELEVENLABS_API_KEY: 'sk_el_0123456789' };
   const VOICES = { voices: [
     { voice_id: 'premade1', name: 'George', category: 'premade', labels: { gender: 'male', accent: 'british' } },
     { voice_id: 'lib1', name: 'Library Lou', category: 'professional', sharing: { status: 'copied', original_voice_id: 'zzz' } }
@@ -312,7 +313,7 @@ describe('/movie in the chat', () => {
 
   test('parsing: idea, --length, --voice (narration only then), --client', () => {
     assert.ok(isMovieCommand('/movie "x"') && !isMovieCommand('/movies'));
-    assert.deepEqual(parseMovieCommand('/movie "two bakers share an oven" --length 1'), { sub: 'new', id: null, rest: '', idea: 'two bakers share an oven', minutes: 1, voice: null, client: null });
+    assert.deepEqual(parseMovieCommand('/movie "two bakers share an oven" --length 1'), { sub: 'new', id: null, rest: '', idea: 'two bakers share an oven', minutes: 1, voice: null, budgetUsd: null, client: null });
     const p = parseMovieCommand('/movie "a heist" --voice "George" --client "Acme Films"');
     assert.equal(p.minutes, 2, 'two minutes by default');
     assert.equal(p.voice, 'George');
@@ -365,7 +366,7 @@ describe('/movie in the chat', () => {
     // Checkpoint (a) approved: priced here, no engine call, no dispatch.
     const a = await decide(await pending(MOVIE_ACTIONS.script));
     assertWhite(a.reply, 'MOVIE_BUDGET');
-    assert.match(a.reply, /Approve it to start the shoot; nothing is spent before you do/);
+    assert.match(a.reply, /Confirm it to start the shoot; nothing is spent before you do/);
     assert.match(a.reply, /Shots with on-screen speech, 1080p/);
     assert.equal(dispatched.length, 1, 'still nothing queued');
     p = await store.getProject(id);
@@ -448,9 +449,10 @@ describe('a movie end to end (real edit, mix, master and QC gate)', { skip: NO_F
   let id;
   let out;
   let pushes;
-  // s1-d3 fails its first take; s2-a2 fails all three takes (kept, flagged),
-  // then passes on the QC gate's one extra take.
-  const failPlan = { 's1-d3': ['fail', 'pass'], 's2-a2': ['fail', 'fail', 'fail', 'pass'] };
+  // s1-d3 fails its first take and passes its retake; s2-a2 fails both its
+  // takes: the better one is kept and flagged, and the QC gate re-renders
+  // without retaking it (its takes are used up).
+  const failPlan = { 's1-d3': ['fail', 'pass'], 's2-a2': ['fail', 'fail', 'pass', 'pass'] };
 
   before(async () => {
     __resetRouterState();
@@ -492,23 +494,24 @@ describe('a movie end to end (real edit, mix, master and QC gate)', { skip: NO_F
     }
   });
 
-  test('retake loop: a failing shot is retaken, at most twice, then the best take is kept and flagged; the gate fixes it once', () => {
+  test('retake loop: a failing shot is retaken at most once, then the better take is kept and flagged; the gate never adds a take', () => {
     const takes = (s) => calls.filter((c) => c.step === 'clip' && c.shot === s).length;
+    assert.equal(MAX_RETAKES, 1);
     assert.equal(takes('s1-d3'), 2, 'one retake, then it passed');
-    assert.equal(takes('s2-a2'), 1 + MAX_RETAKES + 1, 'two retakes, flagged, then the QC gate\'s one extra take');
+    assert.equal(takes('s2-a2'), 1 + MAX_RETAKES, 'one retake, flagged, never a third take');
     assert.equal(takes('s1-w1'), 1);
     assert.deepEqual(out.report.gate.firstProblems, ['shot s2-a2 still flagged by the dailies']);
-    assert.equal(out.report.gate.fixedOnce, true);
-    assert.deepEqual(out.report.flagged, []);
+    assert.equal(out.report.gate.fixedOnce, true, 'the edit is re-rendered once');
+    assert.deepEqual(out.report.flagged, ['s2-a2'], 'kept and flagged for the operator');
     // Each line in its character's cast voice.
     const sts = calls.filter((c) => c.step === 'sts');
     assert.ok(sts.length >= 6);
     assert.ok(sts.every((c) => ['voice-mara', 'voice-tom'].includes(c.voiceId)));
   });
 
-  test('the master meets the spec; no freeze; no silence; -14 LUFS; the critic passed', () => {
+  test('the master meets the spec; no freeze; no silence; -14 LUFS; the critic flags only the shot out of takes', () => {
     const g = out.gate;
-    assert.equal(g.pass, true, JSON.stringify(g.problems));
+    assert.deepEqual(g.problems.map((p) => p.check), ['consistency'], JSON.stringify(g.problems));
     assert.match(g.probeLine, /^h264 \(High\) 640x360 24 fps \d+ kb\/s; aac \d+ kb\/s 48000 Hz stereo/);
     assert.equal(g.probe.width, 640, 'the takes\' own frame, never lower');
     assert.ok(g.probe.videoKbps >= ff.minVideoKbps({ width: 640, height: 360 }));
@@ -516,7 +519,7 @@ describe('a movie end to end (real edit, mix, master and QC gate)', { skip: NO_F
     assert.deepEqual(g.silences, []);
     assert.ok(Math.abs(g.loudness.integrated - -14) <= 1, `${g.loudness.integrated}`);
     assert.ok(g.loudness.truePeak <= -1);
-    assert.equal(g.consistency.pass, true);
+    assert.deepEqual(g.consistency.flagged, ['s2-a2']);
     assert.ok(noPadding(out.plan));
     assert.ok(out.plan.jl.length >= 1, 'J and L cuts on dialogue');
     assertWhite(out.report.gate.text, 'gate text');
@@ -550,7 +553,7 @@ describe('a movie end to end (real edit, mix, master and QC gate)', { skip: NO_F
     assert.deepEqual(newCalls.filter((c) => c.step === 'think' && c.purpose === 'movie: screenplay'), [], 'the screenplay is reused');
     assert.ok(newCalls.filter((c) => c.step === 'cast').every((c) => c.reused), 'the cast is reused');
     assert.deepEqual(newCalls.filter((c) => ['still', 'clip', 'sts', 'sfx', 'music'].includes(c.step)), [], 'nothing approved is made again');
-    assert.equal(again.gate.pass, true);
+    assert.deepEqual(again.gate.consistency.flagged, ['s2-a2'], 'the flagged shot is not retaken past its cap on a re-cut');
     const sets = savedSets((await store.getProject(id)).director);
     assert.equal(sets.takes.size, (await store.getProject(id)).director.shots.length);
   });
@@ -614,7 +617,7 @@ describe('render worker: movie stages', () => {
       // The shoot, approved, on a deployment whose only clip engine makes no sound.
       await store.updateProject(p.id, { status: 'director_queued', director: { ...after1.director, approvals: { script: 'x', budget: 'y' } } });
       const env2 = { ...env, FILM_STAGE: 'movie' };
-      const silent = { ...engines, dialogueClip: async () => { const { dialogueClip: real } = await import('../lib/movie/engines.mjs'); return real({ env: { REPLICATE_API_TOKEN: 'r8' }, prompt: 'x', seconds: 3, fetchImpl }); } };
+      const silent = { ...engines, dialogueClip: async () => { const { dialogueClip: real } = await import('../lib/movie/engines.mjs'); return real({ env: { PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: 'r8' }, prompt: 'x', seconds: 3, fetchImpl }); } };
       assert.equal(await workerMain(env2, { engines: silent, fetchImpl, ffImpl: ff, log: (l) => logs.push(l), notify: async () => {} }), 1);
       const stopped = await store.getProject(p.id);
       assert.equal(stopped.status, 'failed');
