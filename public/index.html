@@ -681,6 +681,42 @@
       padding: 10px var(--sp-4);
     }
 
+    /* RELAY MODE: a message from another AI, relayed by the operator, and
+       PG1's reply to it (lib/relay.mjs). An info-blue dashed bubble, so it
+       never reads as the operator's own message. */
+    .relay-label {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sp-1);
+      font-size: var(--fs-2xs);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--info);
+      margin-bottom: var(--sp-1);
+    }
+    .message-bubble.user.relay > .message-text {
+      background: transparent;
+      border: 1px dashed var(--info);
+      border-radius: 20px 20px 20px 6px;
+    }
+    .message-bubble.user.relay { align-self: flex-start; align-items: flex-start; }
+    .relay-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
+    .relay-copy {
+      min-height: var(--tap);
+      padding: 0 var(--sp-3);
+      border: 1px solid var(--info);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--info);
+      font: inherit;
+      font-size: var(--fs-sm);
+      cursor: pointer;
+    }
+    .relay-copy:hover { color: var(--info-hover); border-color: var(--info-hover); }
+    .relay-copy:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+    .relay-not-run { font-size: var(--fs-2xs); color: var(--text-3); }
+
     .msg-timestamp {
       display: flex;
       align-items: center;
@@ -3683,7 +3719,10 @@
           .trim();
         if (!text) return;
         const cards = bubbleCards(el);
-        out.push(Object.assign({ role: el.classList.contains('user') ? 'user' : 'assistant', text, at: el.dataset.at || null }, cards.length ? { cards } : {}));
+        const isUser = el.classList.contains('user');
+        const relayName = el.dataset.relayName || '';
+        const relayed = !relayName ? {} : isUser ? (el.dataset.speaker === 'relay' ? { speaker: 'relay', relay_name: relayName } : {}) : { relay_name: relayName };
+        out.push(Object.assign({ role: isUser ? 'user' : 'assistant', text, at: el.dataset.at || null }, relayed, cards.length ? { cards } : {}));
       });
       return out;
     }
@@ -3815,7 +3854,10 @@
 
     function threadBubbleHtml(m) {
       const time = m.at ? new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-      return `<span class="msg-timestamp">${escapeHTML(time)}</span>${markdownBlock(m.text)}${messageActionsHtml(m.role === 'user' ? 'user' : 'agent')}`;
+      const relayName = typeof m.relay_name === 'string' && RELAY_NAME_RE.test(m.relay_name) ? m.relay_name : '';
+      const relayedIn = relayName && m.role === 'user' && m.speaker === 'relay';
+      const relayOut = relayName && m.role !== 'user';
+      return `<span class="msg-timestamp">${escapeHTML(time)}</span>${relayedIn ? relayLabelHtml(relayName) : ''}${markdownBlock(m.text)}${relayOut ? relayToolsHtml(relayName) : ''}${messageActionsHtml(m.role === 'user' ? 'user' : 'agent')}`;
     }
 
     // Load: the saved conversation replaces the one on screen and carries on
@@ -3833,6 +3875,10 @@
           const el = document.createElement('div');
           el.className = m.role === 'user' ? 'message-bubble user' : 'message-bubble';
           if (m.at) el.dataset.at = m.at;
+          if (typeof m.relay_name === 'string' && RELAY_NAME_RE.test(m.relay_name)) {
+            if (m.role === 'user' && m.speaker === 'relay') { el.classList.add('relay'); el.dataset.speaker = 'relay'; el.dataset.relayName = m.relay_name; }
+            else if (m.role !== 'user') { el.classList.add('relay-reply'); el.dataset.relayName = m.relay_name; }
+          }
           if (Array.isArray(m.cards) && m.cards.length) el.dataset.cards = JSON.stringify(m.cards);
           el.innerHTML = threadBubbleHtml(m);
           chat.appendChild(el);
@@ -5194,7 +5240,9 @@
         const text = Array.from(el.querySelectorAll('.message-text')).map((t) => t.textContent || '').join('\n').trim();
         if (!text) return;
         const cards = bubbleCards(el);
-        out.push(Object.assign({ role: el.classList.contains('user') ? 'user' : 'model', text: text.slice(0, THREAD_HISTORY_MAX_CHARS) }, cards.length ? { cards } : {}));
+        // RELAY MODE: the server wraps a relayed message in its envelope.
+        const relayed = el.classList.contains('user') && el.dataset.speaker === 'relay' && el.dataset.relayName ? { speaker: 'relay', relay_name: el.dataset.relayName } : {};
+        out.push(Object.assign({ role: el.classList.contains('user') ? 'user' : 'model', text: text.slice(0, THREAD_HISTORY_MAX_CHARS) }, relayed, cards.length ? { cards } : {}));
       });
       return out.slice(-THREAD_HISTORY_MAX_MESSAGES);
     }
@@ -5536,6 +5584,8 @@
       const input = document.getElementById('prompt-input');
       
       let originalText = textEl.innerText.replace(/ \[\d+ File\(s\) Attached\]$/, '').replace(/ \[\d+ image\(s\) attached\]$/, '').replace(/ \[File Payload Only\]$/, '').replace(/ \[Live Vision Frame Captured\]$/, '');
+      // RELAY MODE: an edited relayed message is still relayed.
+      if (bubble.dataset.speaker === 'relay' && bubble.dataset.relayName) originalText = `/relay ${bubble.dataset.relayName}\n${originalText}`;
       input.value = originalText;
       autoResize(input);
       
@@ -6579,6 +6629,46 @@
     function parseCodeCommand(text) {
       const m = String(text || '').match(/^\/code(?:\s+([\s\S]*))?$/i);
       return m ? (m[1] || '').trim() : null;
+    }
+
+    // RELAY MODE (lib/relay.mjs parseRelayCommand, the same rules): /relay
+    // <name> <text>, or /relay <name> with a multi-line paste below it.
+    // { name, text }, { error } without a name or text, null otherwise. The
+    // server parses the prompt again and decides; this is only for the
+    // bubble on screen.
+    const RELAY_NAME_RE = /^[A-Za-z][A-Za-z0-9_.-]{0,31}$/;
+    function parseRelayInput(text) {
+      const raw = String(text || '');
+      if (!/^\s*\/relay(?:\s|$)/i.test(raw)) return null;
+      const m = /^\s*\/relay[ \t]*([^\s]*)([\s\S]*)$/i.exec(raw);
+      const name = m && RELAY_NAME_RE.test(m[1]) ? m[1] : '';
+      const body = name ? String(m[2] || '').replace(/^[ \t]*\r?\n/, '').trim() : '';
+      if (!name || !body) return { error: true };
+      return { name, text: body };
+    }
+    function relayLabelHtml(name) {
+      return `<div class="relay-label">Relayed from ${escapeHTML(name)}</div>`;
+    }
+    // Under PG1's reply to a relayed message: Copy for <name>, and which
+    // commands in the relayed text were not run.
+    function relayToolsHtml(name, notRun) {
+      const list = Array.isArray(notRun) ? notRun.filter((c) => typeof c === 'string').slice(0, 10) : [];
+      const note = list.length ? `<span class="relay-not-run">Not run (relayed text): ${list.map(escapeHTML).join(', ')}</span>` : '';
+      return `<div class="relay-tools"><button type="button" class="relay-copy" onclick="triggerHaptic(40); copyForRelay(this)" data-relay-name="${escapeHTML(name)}">Copy for ${escapeHTML(name)}</button>${note}</div>`;
+    }
+    function relayCopyText(reply) {
+      return `Message from PG1 (Gift's threat-intel agent): ${String(reply || '').trim()}`;
+    }
+    function copyForRelay(btn) {
+      const bubble = btn.closest('.message-bubble');
+      const textEl = bubble && bubble.querySelector('.message-text');
+      if (!textEl) return;
+      const reply = textEl.dataset.raw != null ? textEl.dataset.raw : innerTextWithoutDiffSr(textEl);
+      const label = btn.textContent;
+      navigator.clipboard.writeText(relayCopyText(reply)).then(() => {
+        btn.textContent = 'Copied';
+        setTimeout(() => { btn.textContent = label; }, 1500);
+      }).catch(() => flashStatus('Could not copy. Select the reply and copy it instead.', false));
     }
 
     // Narrow on purpose: an imperative change verb plus something that is
@@ -7877,9 +7967,19 @@
         return;
       }
 
+      // RELAY MODE: a message from another AI. Its bubble shows the relayed
+      // text under "Relayed from <name>"; no camera frame or attachment
+      // goes with it (attachments wait for the next message).
+      const relay = parseRelayInput(text);
+      if (relay && relay.error) {
+        appendLocalExchange(text, 'Usage: `/relay <name> <text>`, for example `/relay grok Appreciate that...`, or `/relay <name>` with the message pasted on the lines below it.');
+        if (!isRetry) { input.value = ''; input.style.height = 'auto'; }
+        return;
+      }
+
       let visionFrameCaptured = false;
 
-      if (activeVisionStream) {
+      if (activeVisionStream && !relay) {
         try {
           const videoEl = document.getElementById('vision-pip');
           const canvas = document.createElement('canvas');
@@ -7921,18 +8021,21 @@
       
       let statusText = '';
       if (visionFrameCaptured) statusText += ' [Live Vision Frame Captured]';
-      const imageCount = attachedImages;
-      const fileCount = attachedFilesPayload.length - imageCount - (visionFrameCaptured ? 1 : 0);
+      const sendsFiles = !relay && attachedFilesPayload.length > 0;
+      const imageCount = sendsFiles ? attachedImages : 0;
+      const fileCount = sendsFiles ? attachedFilesPayload.length - imageCount - (visionFrameCaptured ? 1 : 0) : 0;
       if (imageCount > 0) statusText += ` [${imageCount} image(s) attached]`;
       if (fileCount > 0) statusText += ` [${fileCount} File(s) Attached]`;
 
       const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
       const userBubble = document.createElement('div');
-      userBubble.className = 'message-bubble user';
+      userBubble.className = relay ? 'message-bubble user relay' : 'message-bubble user';
+      if (relay) { userBubble.dataset.speaker = 'relay'; userBubble.dataset.relayName = relay.name; }
       userBubble.innerHTML = `
         <span class="msg-timestamp">${currentTime}</span>
-        ${markdownBlock(text || '[Vision Data Transmitted]', statusText)}
+        ${relay ? relayLabelHtml(relay.name) : ''}
+        ${markdownBlock(relay ? relay.text : (text || '[Vision Data Transmitted]'), statusText)}
         ${messageActionsHtml('user')}`;
       chatContainer.appendChild(userBubble);
       
@@ -8011,7 +8114,7 @@
         // either way and keeps a spoken answer short.
         else if (voiceActive) payload.speak = true;
 
-        if (attachedFilesPayload.length > 0) {
+        if (sendsFiles) {
           payload.multiFiles = [...attachedFilesPayload];
           attachedFilesPayload = [];
           attachedFileNames = [];
@@ -8118,6 +8221,14 @@
         // code-change request (operator only, never alongside an approval).
         if (!data.pendingApproval && !isSuggestFixRequest && sessionUser && sessionPass && isLikelyCodeChangeRequest(text)) {
           contentHtml += renderHandoffOfferHtml(text);
+        }
+
+        // RELAY MODE: PG1's reply to another AI, with Copy for <name>.
+        const relayReply = data && data.relay && typeof data.relay.name === 'string' && RELAY_NAME_RE.test(data.relay.name) ? data.relay : null;
+        if (relayReply) {
+          contentHtml += relayToolsHtml(relayReply.name, relayReply.notRun);
+          agentBubble.classList.add('relay-reply');
+          agentBubble.dataset.relayName = relayReply.name;
         }
 
         contentHtml += messageActionsHtml('agent');
