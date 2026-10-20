@@ -1,7 +1,7 @@
 {
   "name": "PG1",
   "short_name": "PG1",
-  "description": "Project-Gifted1 threat-intelligence agent",
+  "description": "Project-Gifted1™ threat-intelligence agent",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

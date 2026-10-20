@@ -30,7 +30,7 @@ name: PG1 lab
 #               lab/<id>, pushes, and opens a DRAFT pull request. PG1 never
 #               merges it.
 #   notify      always: one signed result notice to PG1
-#               (/api/hooks/lab, needs the PG1_URL variable) so the
+#               (/api/hooks/lab at PG1_URL, default the production URL) so the
 #               experiment is synced and reported at once
 #   verdict     always, last: fails the run (red) when the experiment did
 #               not end done or the lab's test run failed
@@ -224,9 +224,11 @@ jobs:
     # of waiting for the webhook or the re-sync cron. Signed with the lab's own
     # PG1_LAB_DISPATCH_SECRET over "<timestamp>.<body>"; carries only the
     # experiment id, this run's id and the experiment job's result, never the
-    # findings. No checkout, no npm, no write permission. Set the repository
-    # (or "lab" environment) variable PG1_URL to PG1's address to turn it on;
-    # unset, the step does nothing. A failed notice never fails the run.
+    # findings. No checkout, no npm, no write permission. It goes to the
+    # repository (or "lab" environment) variable PG1_URL, or to
+    # https://pg1-ai-agent.vercel.app when that variable is not set; without
+    # the dispatch secret the step does nothing. A failed notice never fails
+    # the run.
     needs: [experiment, test, pull]
     if: always()
     runs-on: ubuntu-latest
@@ -240,7 +242,7 @@ jobs:
         continue-on-error: true
         env:
           PG1_LAB_DISPATCH_SECRET: ${{ secrets.PG1_LAB_DISPATCH_SECRET }}
-          PG1_URL: ${{ vars.PG1_URL }}
+          PG1_URL: ${{ vars.PG1_URL || 'https://pg1-ai-agent.vercel.app' }}
           LAB_ID: ${{ inputs.experiment_id }}
           RUN_ID: ${{ github.run_id }}
           EXPERIMENT_RESULT: ${{ needs.experiment.result }}
