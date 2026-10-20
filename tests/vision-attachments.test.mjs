@@ -355,7 +355,8 @@ test('an image goes only as image input: its bytes never enter the prompt text, 
 });
 
 test('without images the prompt carries no image block, and the capability text still describes image understanding', async () => {
-  const { seen } = await send(authed({ prompt: 'hello', stream: true }));
+  // A question about images (small talk gets the compact prompt).
+  const { seen } = await send(authed({ prompt: 'can you read a screenshot if I attach one?', stream: true }));
   const { system } = geminiParts(seen.gemini[0]);
   assert.ok(!system.includes('[ATTACHED IMAGES]:'), 'no image block (the capability text only mentions it by name)');
   assert.equal(imageInputDirective(0), '');

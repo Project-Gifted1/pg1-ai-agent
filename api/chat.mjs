@@ -4632,7 +4632,10 @@ export default async function handler(req, res) {
     // gets the compact prompt; other turns drop the blocks they do not need
     // (the offers rules, PDF, relay, the full identity rules, the
     // capability lines about voice, attachments, code and checks).
-    var turnNeed = turnNeeds(typeof promptText === 'string' ? promptText : '', { imageCount: imageCount, relay: !!relayTurn, offer: offerTurn, keyQuestion: keyQuestion, route: chatRoute.route === CHAT_ROUTES.TOOLS && chatRoute.reason === 'history' ? 'history' : chatRoute.route });
+    // The relay rules stay whenever a relayed message is in the context (it
+    // is untrusted data, whatever the new message says).
+    var contextHasRelay = /<relayed_message\b/.test(String(turnConversation || formattedArchive || ''));
+    var turnNeed = turnNeeds(typeof promptText === 'string' ? promptText : '', { imageCount: imageCount, relay: !!relayTurn || contextHasRelay, offer: offerTurn, keyQuestion: keyQuestion, route: chatRoute.route === CHAT_ROUTES.TOOLS && chatRoute.reason === 'history' ? 'history' : chatRoute.route });
     if (turnNeed.smallTalk && turnRecent.length > RECENT_TURNS_SMALL_TALK) turnConversation = renderConversation({ summary: null, recent: turnRecent.slice(-RECENT_TURNS_SMALL_TALK) });
     var turnDirectives = PG1_VOICE_DIRECTIVE + '\n' + SELF_CHECK_DIRECTIVE + '\n' + (turnNeed.smallTalk ? '' : SOURCED_FIGURES_DIRECTIVE + '\n') + (turnNeed.offers ? offersDirective() + '\n' : '') + (turnNeed.pdf ? PDF_CHAT_DIRECTIVE + '\n' : '') + (turnNeed.smallTalk ? '' : COMMAND_FORMS_DIRECTIVE + '\n' + HONEST_ACTIONS_DIRECTIVE + '\n') + (turnNeed.relay ? RELAY_DIRECTIVE + '\n' : '') + (relayTurn ? relayTurnDirective(relayTurn, relayTurn.found) + '\n' : '') + (referenceLine(turnReference) ? referenceLine(turnReference) + '\n' : '') + (skillsOn ? skillsIndexBlock(turnSkills) + '\n' : '');
     var sysInstruction = `${turnPreamble}You are PG1, the chat assistant of Project-Gifted1's threat-intelligence app, running on Vercel.
