@@ -90,6 +90,13 @@ test('a streamed reply plays without gaps, ramps in from silence and keeps the s
       const end = plan[plan.length - 1].at;
       const ctx = new OfflineAudioContext(1, Math.ceil((end + 3) * sr), sr);
       const q = 128 / sr;
+      // Only this harness resumes rendering. The player resumes a context
+      // it finds suspended (right on a live device); here that would restart
+      // the render thread in the middle of a group of chunks, so the rest of
+      // the group was scheduled late and a gap appeared now and then (seen
+      // on CI runs of PR 4 and PR 5).
+      const resumeRender = ctx.resume.bind(ctx);
+      ctx.resume = () => Promise.resolve();
       // Everything runs on the render clock: chunk arrivals and the player's
       // own timers (the prebuffer's max wait) are suspend points, so a slow
       // runner can't fire a timer early in audio time.
@@ -98,7 +105,7 @@ test('a streamed reply plays without gaps, ramps in from silence and keeps the s
         const t = Math.ceil(time / q) * q;
         if (points.has(t)) { points.get(t).push(fn); return; }
         points.set(t, [fn]);
-        ctx.suspend(t).then(() => { for (const f of points.get(t)) f(); ctx.resume(); });
+        ctx.suspend(t).then(() => { for (const f of points.get(t)) f(); resumeRender(); });
       };
       let timerId = 0;
       const live = new Set();

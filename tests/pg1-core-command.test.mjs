@@ -62,7 +62,7 @@ function makeRes() {
 test('/help lists /core, described as deeper reasoning for long or heavy tasks, and never mentions /claude', async () => {
   const res = makeRes();
   await chatHandler(makeReq(authed({ prompt: '/help' })), res);
-  assert.match(res.jsonBody.reply, /\/core\*\* plus a question: deeper reasoning for long or heavy tasks/);
+  assert.match(res.jsonBody.reply, /- `\/core` <question>: Deeper reasoning for long or heavy tasks/);
   assert.doesNotMatch(res.jsonBody.reply, /\/claude/);
 });
 
