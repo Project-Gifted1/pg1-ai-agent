@@ -297,7 +297,9 @@ test('lab notice: the notify job\'s own script signs a notice that /api/hooks/la
   assert.deepEqual(await pending, { status: 'done', reported: true });
   assert.equal((await rows(w.db, `select status from public.pg1_lab_experiments where id = '${id}'`))[0].status, 'done');
   assert.equal((await rows(w.db, 'select count(*)::int as n from public.pg1_watch_reports'))[0].n, 1);
-  // Unset PG1_URL: the step sends nothing.
+  // PG1_URL defaults to the production address when the variable is unset.
+  assert.match(notify, /PG1_URL: \$\{\{ vars\.PG1_URL \|\| 'https:\/\/pg1-ai-agent\.vercel\.app' \}\}/);
+  // An empty address (or no secret): the step sends nothing.
   sent = null;
   assert.throws(() => new Function('require', 'process', 'fetch', 'console', script)(() => crypto, { ...fakeProcess, env: { ...fakeProcess.env, PG1_URL: '' } }, fakeFetch, { log() {} }), /exited/);
   assert.equal(sent, null);
