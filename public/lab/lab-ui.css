@@ -1,0 +1,163 @@
+/* THE LIVING LAB STYLE, shared (PR A): the colours, type, spacing, card
+   borders, glow and status colours of the Living lab (public/lab/
+   living-lab.js and the lab cards in public/index.html) as CSS variables
+   and a few components, so every Command Centre surface is built from the
+   same parts instead of one-off styles. Used by the command panel (/help),
+   the error log, the threat check card and the Core State views.
+
+   Tokens come from the page's design tokens (public/index.html :root), so
+   the light theme follows; the dark theme is the Living lab's own. The
+   status colours are the lab's: running teal, thinking violet, done green,
+   failed red, over budget coral, queued/idle gold.
+
+   prefers-reduced-motion: every animation and transition here is off, the
+   layout is the same. */
+
+:root {
+  --lx-bg: var(--bg, #0a0a0b);
+  --lx-card: var(--surface-1, #121214);
+  --lx-card-2: var(--surface-2, #1a1a1d);
+  --lx-card-3: var(--surface-3, #232327);
+  --lx-line: var(--border, #26262b);
+  --lx-line-strong: var(--border-strong, #36363c);
+  --lx-text: var(--text, #ececee);
+  --lx-text-strong: var(--text-strong, #fff);
+  --lx-muted: var(--text-2, #a8a8b0);
+  --lx-faint: var(--text-3, #8a8a93);
+  --lx-gold: var(--gold-fill, #f3c623);
+  --lx-gold-text: var(--gold, #f3c623);
+  --lx-ok: var(--ok, #3ddc84);
+  --lx-run: #36d1c4;
+  --lx-think: #8f86ff;
+  --lx-warn: var(--warn, #ffb300);
+  --lx-err: var(--danger, #ff5c5c);
+  --lx-over: #ff9b7a;
+  --lx-info: var(--info, #7cc4ff);
+  --lx-idle: #8a8a92;
+  --lx-radius: var(--r-lg, 16px);
+  --lx-radius-sm: var(--r-md, 10px);
+  --lx-gap: var(--sp-3, 12px);
+  --lx-pad: var(--sp-3, 12px) var(--sp-4, 16px);
+  --lx-font: var(--font-sans, system-ui, sans-serif);
+  --lx-mono: var(--font-mono, ui-monospace, monospace);
+  --lx-ease: var(--ease-out, cubic-bezier(0.2, 0.8, 0.2, 1));
+  --lx-dur: var(--dur-3, 320ms);
+  --lx-tap: 40px;
+}
+:root[data-theme="light"] {
+  --lx-run: #0f7a71;
+  --lx-think: #5a4fd6;
+  --lx-over: #b4452b;
+  --lx-idle: #63636b;
+}
+
+/* A tone sets --lx-tone (the accent) on any component below; a pill,
+   badge or dot without one takes its card's tone, or grey. */
+[data-tone="ok"] { --lx-tone: var(--lx-ok); }
+[data-tone="run"] { --lx-tone: var(--lx-run); }
+[data-tone="think"] { --lx-tone: var(--lx-think); }
+[data-tone="warn"] { --lx-tone: var(--lx-warn); }
+[data-tone="err"] { --lx-tone: var(--lx-err); }
+[data-tone="over"] { --lx-tone: var(--lx-over); }
+[data-tone="info"] { --lx-tone: var(--lx-info); }
+[data-tone="gold"] { --lx-tone: var(--lx-gold); }
+[data-tone="idle"] { --lx-tone: var(--lx-idle); }
+
+@keyframes lx-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes lx-pulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--lx-tone, var(--lx-gold)) 55%, transparent); } 50% { opacity: 0.6; box-shadow: 0 0 0 4px transparent; } }
+
+/* Card: the lab card's surface, border and radius; a tone adds the glow
+   edge the Living lab uses for its state. */
+.lx-card { position: relative; display: flex; flex-direction: column; gap: var(--lx-gap); min-width: 0; padding: var(--lx-pad); background: var(--lx-card); border: 1px solid var(--lx-line); border-radius: var(--lx-radius); color: var(--lx-muted); font-family: var(--lx-font); font-size: var(--fs-sm, 0.875rem); line-height: 1.4; }
+.lx-card[data-tone] { border-color: color-mix(in srgb, var(--lx-tone) 38%, var(--lx-line)); box-shadow: inset 3px 0 0 var(--lx-tone), 0 0 0 1px color-mix(in srgb, var(--lx-tone) 8%, transparent), 0 6px 22px -14px color-mix(in srgb, var(--lx-tone) 70%, transparent); }
+.lx-card.is-live { animation: lx-rise var(--lx-dur) var(--lx-ease) both; }
+.lx-card.is-muted { opacity: 0.6; }
+.lx-head { display: flex; align-items: center; gap: var(--sp-2, 8px); min-width: 0; flex-wrap: wrap; }
+.lx-title { margin: 0; flex: 1 1 auto; min-width: 0; color: var(--lx-text-strong); font-size: var(--fs-sm, 0.875rem); font-weight: 600; overflow-wrap: anywhere; }
+.lx-title code, code.lx-cmd { font-family: var(--lx-mono); font-weight: 600; color: var(--lx-text-strong); }
+.lx-sub { margin: 0; color: var(--lx-muted); overflow-wrap: anywhere; }
+.lx-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; color: var(--lx-faint); font-size: var(--fs-2xs, 0.6875rem); font-variant-numeric: tabular-nums; }
+.lx-meta code { font-family: var(--lx-mono); color: var(--lx-muted); overflow-wrap: anywhere; }
+.lx-section-h { margin: 0; font-size: var(--fs-2xs, 0.6875rem); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--lx-faint); }
+
+/* Pill: the lab state pill, a dot and a word; is-lg is the large status
+   badge; is-live makes the dot pulse (running work). */
+.lx-pill { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid color-mix(in srgb, var(--lx-tone, var(--lx-idle)) 60%, transparent); border-radius: var(--r-full, 999px); background: color-mix(in srgb, var(--lx-tone, var(--lx-idle)) 12%, transparent); color: var(--lx-text); font: 600 0.72rem/1.7 var(--lx-font); white-space: nowrap; }
+.lx-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--lx-tone, var(--lx-idle)); flex: none; }
+.lx-pill.is-live::before { animation: lx-pulse 1.6s ease-in-out infinite; }
+.lx-pill.is-lg { gap: 8px; padding: 4px 14px; font-size: 0.9rem; line-height: 1.4; }
+.lx-pill.is-lg::before { width: 10px; height: 10px; box-shadow: 0 0 10px var(--lx-tone, var(--lx-idle)); }
+
+/* Badge: a small label (operator only, dangerous, test fixture). */
+.lx-badge { display: inline-flex; align-items: center; padding: 0 6px; border-radius: var(--r-sm, 6px); border: 1px solid color-mix(in srgb, var(--lx-tone, var(--lx-idle)) 50%, transparent); color: color-mix(in srgb, var(--lx-tone, var(--lx-idle)) 80%, var(--lx-text)); font: 600 0.625rem/1.6 var(--lx-font); letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; }
+
+/* Chip: a reason code, a link to its documentation. */
+.lx-chip { display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border-radius: var(--r-full, 999px); border: 1px solid var(--chip-border, var(--lx-line-strong)); background: var(--chip-bg, var(--lx-card-2)); color: var(--chip-text, var(--lx-info)); font: 500 0.72rem/1.4 var(--lx-mono); text-decoration: none; white-space: nowrap; }
+a.lx-chip:hover { border-color: var(--lx-info); }
+
+/* Buttons: 40 px tall on a phone; primary is gold, danger asks for a
+   second tap (armed). */
+.lx-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.lx-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--lx-tap); padding: 0 14px; border: 1px solid var(--lx-line-strong); border-radius: var(--r-full, 999px); background: var(--lx-card-2); color: var(--lx-text); font: 600 0.8rem/1 var(--lx-font); cursor: pointer; transition: background-color var(--dur-1, 120ms) var(--lx-ease), border-color var(--dur-1, 120ms) var(--lx-ease), transform var(--dur-1, 120ms) var(--lx-ease); }
+.lx-btn:hover { border-color: var(--lx-gold); }
+.lx-btn:active { transform: scale(0.97); }
+.lx-btn:focus-visible { outline: none; box-shadow: var(--focus-ring, 0 0 0 2px var(--lx-gold)); }
+.lx-btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+.lx-btn .icon { width: 16px; height: 16px; }
+.lx-btn.is-primary { background: var(--lx-gold); border-color: var(--lx-gold); color: var(--on-gold, #0a0a0b); }
+.lx-btn.is-danger { border-color: color-mix(in srgb, var(--lx-err) 55%, transparent); color: var(--danger-text, var(--lx-err)); }
+.lx-btn.armed { background: color-mix(in srgb, var(--lx-err) 16%, transparent); border-color: var(--lx-err); color: var(--lx-text-strong); }
+.lx-btn.is-sm { min-height: 32px; padding: 0 10px; font-size: 0.74rem; }
+
+/* Search box and filter row. */
+.lx-search { width: 100%; min-height: 44px; padding: 0 var(--sp-3, 12px); border: 1px solid var(--lx-line-strong); border-radius: var(--lx-radius-sm); background: var(--lx-card-2); color: var(--lx-text); font: inherit; font-size: 1rem; }
+.lx-search:focus { outline: none; border-color: var(--lx-gold); box-shadow: 0 0 0 3px color-mix(in srgb, var(--lx-gold) 20%, transparent); }
+.lx-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+.lx-filter button { min-height: 32px; padding: 0 12px; border-radius: var(--r-full, 999px); border: 1px solid var(--lx-line-strong); background: transparent; color: var(--lx-muted); font: 600 0.75rem/1 var(--lx-font); cursor: pointer; }
+.lx-filter button[aria-pressed="true"] { background: color-mix(in srgb, var(--lx-gold) 14%, transparent); border-color: var(--lx-gold); color: var(--lx-text-strong); }
+
+/* Group: a collapsible section (details/summary) with a count. */
+.lx-group { border: 1px solid var(--lx-line); border-radius: var(--lx-radius); background: color-mix(in srgb, var(--lx-card) 60%, transparent); }
+.lx-group > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 var(--sp-3, 12px); cursor: pointer; list-style: none; color: var(--lx-text); font: 600 0.82rem/1.2 var(--lx-font); letter-spacing: 0.02em; }
+.lx-group > summary::-webkit-details-marker { display: none; }
+.lx-group > summary::after { content: ""; margin-left: auto; width: 16px; height: 16px; background: var(--chevron) center / 16px no-repeat; transition: transform var(--dur-2, 200ms) var(--lx-ease); }
+.lx-group[open] > summary::after { transform: rotate(180deg); }
+.lx-group > summary .lx-count { color: var(--lx-faint); font-weight: 500; font-variant-numeric: tabular-nums; }
+.lx-group-body { display: grid; gap: 8px; padding: 0 var(--sp-2, 8px) var(--sp-2, 8px); }
+
+/* Grid: cards side by side when there is room, one column on a phone. */
+.lx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); gap: 8px; }
+
+/* Rows: label, value, a small status dot, a timing. */
+.lx-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--lx-line); border-radius: var(--lx-radius-sm); overflow: hidden; }
+.lx-row { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: start; gap: 2px 10px; padding: 8px 10px; background: var(--lx-card-2); }
+.lx-row + .lx-row { border-top: 1px solid var(--lx-line); }
+.lx-row-main { min-width: 0; color: var(--lx-text); overflow-wrap: anywhere; }
+.lx-row-sub { grid-column: 2 / 4; color: var(--lx-faint); font-size: var(--fs-2xs, 0.6875rem); overflow-wrap: anywhere; }
+.lx-row-end { color: var(--lx-faint); font-size: var(--fs-2xs, 0.6875rem); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lx-dot { width: 10px; height: 10px; margin-top: 4px; border-radius: 50%; background: var(--lx-tone, var(--lx-idle)); box-shadow: 0 0 6px color-mix(in srgb, var(--lx-tone, var(--lx-idle)) 70%, transparent); }
+
+/* Details: an expander with a monospace, copyable block. */
+.lx-details > summary { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; cursor: pointer; list-style: none; color: var(--lx-muted); font: 600 0.75rem/1 var(--lx-font); }
+.lx-details > summary::-webkit-details-marker { display: none; }
+.lx-details > summary::before { content: ""; width: 14px; height: 14px; background: var(--chevron) center / 14px no-repeat; transform: rotate(-90deg); transition: transform var(--dur-2, 200ms) var(--lx-ease); }
+.lx-details[open] > summary::before { transform: none; }
+.lx-mono { position: relative; margin: 6px 0 0; max-height: 280px; overflow: auto; padding: 10px 12px; border: 1px solid var(--lx-line); border-radius: var(--lx-radius-sm); background: var(--lx-bg); color: var(--lx-text); font: 0.72rem/1.5 var(--lx-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Copy: a small button next to an id or a block. */
+.lx-copy { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 8px; border: 1px solid var(--lx-line-strong); border-radius: var(--r-full, 999px); background: transparent; color: var(--lx-muted); font: 600 0.68rem/1 var(--lx-font); cursor: pointer; }
+.lx-copy .icon { width: 13px; height: 13px; }
+.lx-copy.is-done { border-color: var(--lx-ok); color: var(--lx-ok); }
+
+/* Timeline: cards on a line, each with its tone's dot. */
+.lx-timeline { position: relative; list-style: none; margin: 0; padding: 0 0 0 18px; display: flex; flex-direction: column; gap: 10px; }
+.lx-timeline::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: 6px; width: 2px; background: var(--lx-line-strong); border-radius: 1px; }
+.lx-timeline > li { position: relative; }
+.lx-timeline > li::before { content: ""; position: absolute; left: -18px; top: 16px; width: 12px; height: 12px; border-radius: 50%; background: var(--lx-tone, var(--lx-idle)); box-shadow: 0 0 0 3px var(--lx-bg), 0 0 8px color-mix(in srgb, var(--lx-tone, var(--lx-idle)) 70%, transparent); }
+
+.lx-empty { margin: 0; padding: var(--sp-4, 16px); text-align: center; color: var(--lx-faint); border: 1px dashed var(--lx-line-strong); border-radius: var(--lx-radius); }
+
+@media (prefers-reduced-motion: reduce) {
+  .lx-card, .lx-card *, .lx-pill, .lx-pill::before, .lx-btn, .lx-group > summary::after, .lx-details > summary::before { animation: none !important; transition: none !important; }
+  .lx-btn:active { transform: none; }
+}

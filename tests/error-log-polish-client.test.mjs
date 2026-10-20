@@ -314,26 +314,35 @@ test('handleVisibilityChange does an immediate health check and resumes polling 
   assert.equal(intervalCalls[0].ms, 120000);
 });
 
-// --- ERROR LOG modal: unresolved-only default, "Show resolved" toggle, FIX/RESOLVE gating ---
+// --- ERROR LOG timeline (PR A): open problems first, dismissed ones muted,
+// FIX gating, grouping of repeats, the filter row, no secret on screen ---
+
+function makeStore() {
+  const m = new Map();
+  return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)); }, removeItem: (k) => { m.delete(k); } };
+}
 
 function loadErrorLogRows() {
-  const escapeHTMLSource = extractFunction(html, 'escapeHTML');
-  const connectivitySetDecl = extractDeclaration(html, 'const', 'CONNECTIVITY_ERROR_CATEGORIES');
-  const currentEntriesDecl = extractDeclaration(html, 'let', 'currentErrorLogEntries');
-  const allEntriesDecl = extractDeclaration(html, 'let', 'allErrorLogEntries');
-  const showResolvedDecl = extractDeclaration(html, 'let', 'showResolvedErrors');
-  const renderRowsSource = extractFunction(html, 'renderErrorLogRows');
-  const applyFilterSource = extractFunction(html, 'applyErrorLogFilter');
-  const toggleSource = extractFunction(html, 'toggleShowResolvedErrors');
-
+  const fns = ['escapeHTML', 'errorSeverity', 'errorArea', 'scrubErrorText', 'errorSummary', 'errorKey', 'readErrorSet', 'writeErrorSet', 'groupErrorEntries', 'errorRepeatText', 'errorTimeText', 'errorFixable', 'applyErrorLogFilter', 'renderErrorLogRows', 'errorDetailsText'];
+  const decls = [
+    extractDeclaration(html, 'const', 'CONNECTIVITY_ERROR_CATEGORIES'),
+    extractDeclaration(html, 'const', 'ERROR_DISMISSED_KEY'),
+    extractDeclaration(html, 'const', 'ERROR_CLEARED_KEY'),
+    extractDeclaration(html, 'const', 'ERROR_SEVERITY'),
+    extractDeclaration(html, 'const', 'ERROR_TONE'),
+    extractDeclaration(html, 'let', 'errorLogFilter'),
+    extractDeclaration(html, 'let', 'currentErrorLogEntries'),
+    extractDeclaration(html, 'let', 'allErrorLogEntries')
+  ];
   const factory = new Function(
-    'document',
-    `${connectivitySetDecl}\n${currentEntriesDecl}\n${allEntriesDecl}\n${showResolvedDecl}\n${escapeHTMLSource}\n${renderRowsSource}\n${applyFilterSource}\n${toggleSource}\n` +
-    `return { applyErrorLogFilter, toggleShowResolvedErrors, setAllEntries: (e) => { allErrorLogEntries = e; }, getCurrentEntries: () => currentErrorLogEntries };`
+    'document', 'localStorage',
+    `${decls.join('\n')}\n${fns.map((f) => extractFunction(html, f)).join('\n')}\n` +
+    `return { applyErrorLogFilter, errorDetailsText, errorRepeatText, groupErrorEntries, setFilter: (f) => { errorLogFilter = f; }, setAllEntries: (e) => { allErrorLogEntries = e; }, getCurrentEntries: () => currentErrorLogEntries };`
   );
   const fakeContainer = { innerHTML: '' };
   const fakeDocument = { getElementById: (id) => (id === 'error-log-list' ? fakeContainer : null) };
-  return { ...factory(fakeDocument), container: fakeContainer };
+  const store = makeStore();
+  return { ...factory(fakeDocument, store), container: fakeContainer, store };
 }
 
 function sampleEntries() {
@@ -344,46 +353,67 @@ function sampleEntries() {
   ];
 }
 
-test('ERROR LOG shows only unresolved entries by default', () => {
-  const { applyErrorLogFilter, setAllEntries, getCurrentEntries } = loadErrorLogRows();
+const cardsOf = (htmlText) => htmlText.split('<li data-tone=').slice(1);
+
+test('ERROR LOG: open entries first, newest first; a resolved one is shown muted as Dismissed, with no FIX', () => {
+  const { applyErrorLogFilter, setAllEntries, getCurrentEntries, container } = loadErrorLogRows();
   setAllEntries(sampleEntries());
   applyErrorLogFilter();
-
-  const visible = getCurrentEntries();
-  assert.equal(visible.length, 2);
-  assert.ok(visible.every((e) => !e.resolved));
-});
-
-test('"Show resolved" toggle reveals the resolved entry too', () => {
-  const { applyErrorLogFilter, toggleShowResolvedErrors, setAllEntries, getCurrentEntries, container } = loadErrorLogRows();
-  setAllEntries(sampleEntries());
-  applyErrorLogFilter();
-  assert.equal(getCurrentEntries().length, 2);
-
-  toggleShowResolvedErrors();
-  assert.equal(getCurrentEntries().length, 3);
-  assert.match(container.innerHTML, /RESOLVED/);
+  assert.deepEqual(getCurrentEntries().map((e) => e.id), ['row-1', 'row-2', 'row-3']);
+  const cards = cardsOf(container.innerHTML);
+  assert.match(cards[2], /is-muted/);
+  assert.match(cards[2], />Dismissed</);
+  assert.ok(!cards[2].includes('>FIX<'), 'a resolved entry never shows FIX');
 });
 
 test('FIX is hidden for offline/network/timeout entries, shown for a real code-bug category', () => {
   const { applyErrorLogFilter, setAllEntries, container } = loadErrorLogRows();
   setAllEntries([
-    { message: 'a', context: 'submitDirective', category: 'offline', time: '2026-09-30T05:06:00.000Z', count: 1, id: 'row-1', resolved: false },
-    { message: 'b', context: 'submitDirective', category: 'network', time: '2026-09-30T05:06:00.000Z', count: 1, id: 'row-2', resolved: false },
-    { message: 'c', context: 'submitDirective', category: 'timeout', time: '2026-09-30T05:06:00.000Z', count: 1, id: 'row-3', resolved: false },
-    { message: 'd', context: 'CHAT', category: 'http_5xx', time: '2026-09-30T05:06:00.000Z', count: 1, id: 'row-4', resolved: false }
+    { message: 'a', context: 'submitDirective', category: 'offline', time: '2026-09-30T05:06:04.000Z', count: 1, id: 'row-1', resolved: false },
+    { message: 'b', context: 'submitDirective', category: 'network', time: '2026-09-30T05:06:03.000Z', count: 1, id: 'row-2', resolved: false },
+    { message: 'c', context: 'submitDirective', category: 'timeout', time: '2026-09-30T05:06:02.000Z', count: 1, id: 'row-3', resolved: false },
+    { message: 'd', context: 'CHAT', category: 'http_5xx', time: '2026-09-30T05:06:01.000Z', count: 1, id: 'row-4', resolved: false }
   ]);
   applyErrorLogFilter();
-
-  // Split the rendered list into per-entry chunks so a FIX button elsewhere
-  // in the markup can't accidentally satisfy an assertion about a different
-  // entry.
-  const items = container.innerHTML.split('<div class="thread-item">').slice(1);
+  const items = cardsOf(container.innerHTML);
   assert.equal(items.length, 4);
   assert.ok(!items[0].includes('>FIX<'), 'offline entry must not show FIX');
   assert.ok(!items[1].includes('>FIX<'), 'network entry must not show FIX');
   assert.ok(!items[2].includes('>FIX<'), 'timeout entry must not show FIX');
   assert.ok(items[3].includes('>FIX<'), 'a real http_5xx code-bug entry must still show FIX');
+  for (const item of items) assert.match(item, /Copy details/);
+});
+
+test('repeats of one failure are one card with their count; the filter row narrows the list', () => {
+  const { applyErrorLogFilter, setAllEntries, setFilter, getCurrentEntries, errorRepeatText } = loadErrorLogRows();
+  const now = Date.now();
+  const at = (m) => new Date(now - m * 60000).toISOString();
+  setAllEntries([
+    ...Array.from({ length: 12 }, (_, i) => ({ message: 'TypeError: x is undefined', context: 'promise', category: 'js_error', time: at(i * 4), count: 1, id: null, resolved: false })),
+    { message: 'upstream down', context: 'tool', route: '/api/mcp:check_domain_age', category: 'upstream', time: at(3), count: 1, id: 'u1', resolved: false }
+  ]);
+  applyErrorLogFilter();
+  const list = getCurrentEntries();
+  assert.equal(list.length, 2);
+  const grouped = list.find((e) => e.category === 'js_error');
+  assert.equal(grouped.count, 12);
+  assert.equal(errorRepeatText(grouped, now), '×12 in the last hour');
+  setFilter('warnings'); applyErrorLogFilter();
+  assert.deepEqual(getCurrentEntries().map((e) => e.category), ['upstream']);
+  setFilter('errors'); applyErrorLogFilter();
+  assert.deepEqual(getCurrentEntries().map((e) => e.category), ['js_error']);
+  setFilter('fixable'); applyErrorLogFilter();
+  assert.deepEqual(getCurrentEntries().map((e) => e.category), ['js_error'], 'an upstream outage is not fixable');
+});
+
+test('no key, token or password reaches the card or Copy details', () => {
+  const { applyErrorLogFilter, setAllEntries, container, errorDetailsText, getCurrentEntries } = loadErrorLogRows();
+  setAllEntries([{ message: 'call failed: Authorization: Bearer abcdefghijklmnop123 key=AIzaSyA1234567890abcdefghijk ghp_abcdefghijklmnopqrstuvwxyz012345 password=hunter22', context: 'CHAT', category: 'http_5xx', time: '2026-09-30T05:06:00.000Z', count: 1, id: 'r', resolved: false, requestId: 'req123' }]);
+  applyErrorLogFilter();
+  const text = container.innerHTML + errorDetailsText(getCurrentEntries()[0]);
+  for (const secret of ['abcdefghijklmnop123', 'AIzaSyA', 'ghp_abc', 'hunter22']) assert.ok(!text.includes(secret), secret);
+  assert.match(text, /\[secret withheld\]/);
+  assert.match(errorDetailsText(getCurrentEntries()[0]), /request_id: req123/);
 });
 
 // --- syncErrorLogToServer: sends the real client-side occurrence time and
@@ -445,73 +475,3 @@ test('syncErrorLogToServer does nothing when not logged in (no user/pass)', asyn
   assert.equal(called, false);
 });
 
-// --- RESOLVE ALL (renamed from CLEAR LOG): resolves listed entries on the
-// server, clears the local cache, and always refreshes the list + badge so
-// the count updates immediately (issue #201 error-log polish items 7 & 8).
-
-function loadResolveAllErrors({ confirmResult, currentErrorLogEntries }) {
-  const source = extractFunction(html, 'resolveAllErrors');
-  const factory = new Function(
-    'localStorage', 'fetch', 'confirm', 'sessionUser', 'sessionPass', 'currentErrorLogEntries',
-    'ERROR_LOG_KEY', 'ERROR_LOG_SYNCED_KEY', 'renderErrorLogList', 'updateErrorLogBadge',
-    `${source}\nreturn resolveAllErrors;`
-  );
-
-  const localStorageCalls = [];
-  const fakeLocalStorage = { removeItem: (k) => localStorageCalls.push(k) };
-  const fetchCalls = [];
-  const fakeFetch = async (url, options) => { fetchCalls.push({ url, body: JSON.parse(options.body) }); return { ok: true, json: async () => ({}) }; };
-  let renderCalls = 0;
-  let badgeCalls = 0;
-  const resolveAllErrors = factory(
-    fakeLocalStorage, fakeFetch, () => confirmResult, 'op-user', 'op-pass', currentErrorLogEntries,
-    'pg1_error_log', 'pg1_error_log_synced_until',
-    async () => { renderCalls++; }, async () => { badgeCalls++; }
-  );
-  return { resolveAllErrors, localStorageCalls, fetchCalls, getRenderCalls: () => renderCalls, getBadgeCalls: () => badgeCalls };
-}
-
-test('RESOLVE ALL resolves every unresolved listed entry on the server, then clears the local cache and refreshes', async () => {
-  const entries = [
-    { id: 'row-1', resolved: false },
-    { id: 'row-2', resolved: false },
-    { id: 'row-3', resolved: true }, // already resolved - must not be re-resolved
-    { id: null, resolved: false }    // never synced (no server id) - nothing to resolve server-side
-  ];
-  const { resolveAllErrors, localStorageCalls, fetchCalls, getRenderCalls, getBadgeCalls } =
-    loadResolveAllErrors({ confirmResult: true, currentErrorLogEntries: entries });
-
-  await resolveAllErrors();
-
-  assert.equal(fetchCalls.length, 2, 'only the two unresolved entries with a real server id should be resolved');
-  assert.deepEqual(fetchCalls.map((c) => c.body.id).sort(), ['row-1', 'row-2']);
-  assert.ok(fetchCalls.every((c) => c.body.op === 'resolve'));
-  assert.deepEqual(localStorageCalls.sort(), ['pg1_error_log', 'pg1_error_log_synced_until']);
-  assert.equal(getRenderCalls(), 1);
-  assert.equal(getBadgeCalls(), 1, 'the badge must refresh immediately after RESOLVE ALL');
-});
-
-test('RESOLVE ALL does nothing if the operator cancels the confirmation', async () => {
-  const entries = [{ id: 'row-1', resolved: false }];
-  const { resolveAllErrors, localStorageCalls, fetchCalls, getRenderCalls, getBadgeCalls } =
-    loadResolveAllErrors({ confirmResult: false, currentErrorLogEntries: entries });
-
-  await resolveAllErrors();
-
-  assert.equal(fetchCalls.length, 0);
-  assert.equal(localStorageCalls.length, 0);
-  assert.equal(getRenderCalls(), 0);
-  assert.equal(getBadgeCalls(), 0);
-});
-
-test('a resolved entry never shows FIX or RESOLVE, even if it would otherwise qualify for FIX', () => {
-  const { applyErrorLogFilter, toggleShowResolvedErrors, setAllEntries, container } = loadErrorLogRows();
-  setAllEntries([
-    { message: 'a', context: 'CHAT', category: 'http_5xx', time: '2026-09-30T05:06:00.000Z', count: 1, id: 'row-1', resolved: true }
-  ]);
-  toggleShowResolvedErrors(); // reveal resolved entries
-  applyErrorLogFilter();
-
-  assert.ok(!container.innerHTML.includes('>FIX<'));
-  assert.ok(!container.innerHTML.includes('>RESOLVE<'));
-});

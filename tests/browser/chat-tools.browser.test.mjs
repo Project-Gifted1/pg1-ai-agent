@@ -53,6 +53,10 @@ const MIME = {
 };
 
 const WALLET = FIXTURE_VALUES.wallet;
+// The large status badge's words (public/index.html CHECK_STATUS_VIEW).
+const STATUS_WORD = (card) => (card.status === 'failed' && /unavailable|upstream|timeout|timed out|rate.?limit|busy/i.test(`${card.error && card.error.code} ${card.error && card.error.message}`)
+  ? 'Upstream unavailable'
+  : { no_flags: 'No flags found', flagged: 'Flagged', unknown: 'Unknown', failed: 'Check failed', report: 'Report' }[card.status]);
 const DOMAIN = FIXTURE_VALUES.domain;
 
 // What the server streams for each demo: built from the real outcomes.
@@ -156,7 +160,13 @@ function contrast(a, b) {
   const [l1, l2] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return (l1 + 0.05) / (l2 + 0.05);
 }
-const parseRgb = (s) => { const m = String(s).match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/); return m ? [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === undefined ? 1 : Number(m[4])] : null; };
+// rgb()/rgba(), or color(srgb r g b / a) as a color-mix() computes to.
+const parseRgb = (s) => {
+  const m = String(s).match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/);
+  if (m) return [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === undefined ? 1 : Number(m[4])];
+  const c = String(s).match(/color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)/);
+  return c ? [Number(c[1]) * 255, Number(c[2]) * 255, Number(c[3]) * 255, c[4] === undefined ? 1 : Number(c[4])] : null;
+};
 // Composites a translucent chip background over the card surface.
 function over(fg, bg) {
   const a = fg[3];
@@ -218,14 +228,18 @@ for (const theme of ['light', 'dark']) {
         assert.ok(/took 0\.[34]s|0\.[34]s/.test(row.text), `the server duration is shown: ${row.text}`);
       }
 
-      // The cards.
+      // The cards: two checks are a stacked list; each item opens to its card.
+      const items = bubble.locator('.chk-stack .chk-item');
+      assert.equal(await items.count(), 2, 'a stacked list');
+      for (let k = 0; k < 2; k++) await items.nth(k).locator('summary').click();
       const cards = bubble.locator('.tool-card');
       assert.equal(await cards.count(), 2);
       for (const [i, outcome] of scenario.outcomes.entries()) {
         const expected = summarizeOutcome(outcome);
         const card = cards.nth(i);
-        assert.match(await card.locator('.tool-card-title').textContent(), new RegExp(`^${expected.title} · ${expected.subject_short.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
-        assert.equal(await card.locator('.tool-chip').textContent(), expected.status_label);
+        assert.equal(await card.locator('.tool-card-title').textContent(), expected.title);
+        assert.equal(await card.locator('.tool-card-subject').textContent(), expected.subject_short);
+        assert.equal(await card.locator('.chk-status').textContent(), STATUS_WORD(expected));
         const raw = card.locator('.tool-raw');
         assert.equal(await raw.isHidden(), true, 'raw JSON collapsed');
         await card.locator('.tool-raw-toggle').click();
@@ -235,7 +249,7 @@ for (const theme of ['light', 'dark']) {
         assert.equal(await card.locator('.tool-copy').count(), 1);
         if (i === 1 || which === 'wallet') await card.locator('.tool-raw-toggle').click();
         // Chip contrast: text over the composited chip background, AA (4.5:1).
-        const colours = await card.locator('.tool-chip').evaluate((el) => {
+        const colours = await card.locator('.chk-status').evaluate((el) => {
           const cs = getComputedStyle(el);
           const surface = getComputedStyle(el.closest('.tool-card')).backgroundColor;
           return { color: cs.color, background: cs.backgroundColor, surface };
@@ -243,7 +257,7 @@ for (const theme of ['light', 'dark']) {
         const fg = parseRgb(colours.color);
         const bg = over(parseRgb(colours.background), parseRgb(colours.surface));
         const ratio = contrast(fg.slice(0, 3), bg);
-        assert.ok(ratio >= 4.5, `${theme} ${expected.status_label} chip contrast ${ratio.toFixed(2)}:1`);
+        assert.ok(ratio >= 4.5, `${theme} ${STATUS_WORD(expected)} badge contrast ${ratio.toFixed(2)}:1`);
       }
       // (The first card's raw JSON stays open on the domain shot, closed on the wallet shot.)
 

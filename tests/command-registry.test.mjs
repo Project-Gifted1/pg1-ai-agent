@@ -92,7 +92,7 @@ test('/help, the system prompt and public/commands.json are generated from the r
 test('the chat system prompt carries the registry block', () => {
   const src = readFileSync(path.join(ROOT, 'api/chat.mjs'), 'utf8');
   assert.match(src, /COMMAND_FORMS_DIRECTIVE \+ '\\n' \+ commandRegistryDirective\(\)/);
-  assert.match(src, /reply: helpText\(\)/, '/help comes from the registry');
+  assert.match(src, /reply: helpLead\(\), commandPanel: true, helpText: helpText\(\)/, '/help comes from the registry: the panel, with the text list for other clients');
 });
 
 // --- unknown commands ------------------------------------------------------------------

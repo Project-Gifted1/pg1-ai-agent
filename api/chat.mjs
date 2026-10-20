@@ -51,7 +51,7 @@ import { fetchThreatTelemetry } from '../lib/sourcePolicy.mjs';
 import { pg1Paywall } from '../lib/paywallPage.mjs';
 import { resolveWriteRepo, checkWritePath, checkWritePaths, agentBranchName, createAgentBranch } from '../lib/githubWriteGuard.mjs';
 import { isPdfRequest, handlePdfCommand, PDF_WRITE_SYSTEM, PDF_CHAT_DIRECTIVE } from '../lib/pdf/chat.mjs';
-import { helpText, isKnownCommandWord, unknownCommandReply, commandRegistryDirective } from '../lib/commands/registry.mjs';
+import { helpText, helpLead, isKnownCommandWord, unknownCommandReply, commandRegistryDirective } from '../lib/commands/registry.mjs';
 import { isFixCommand, handleFixCommand, isFixAction, handleFixApproval, FIX_ACTION } from '../lib/commands/fixIt.mjs';
 import { retryOnce, isTransientFailure } from '../lib/commands/retry.mjs';
 import { replyActions } from '../lib/replyActions.mjs';
@@ -3447,7 +3447,10 @@ export default async function handler(req, res) {
       } else if (lower === '/help' || lower === 'help') {
         // THE COMMAND REGISTRY (lib/commands/registry.mjs): /help is
         // generated from it, so it lists exactly the commands that exist.
-        return sendJSON(res, 200, { reply: helpText(), traceId: requestTraceId });
+        // The page draws the command panel under a short lead
+        // (commandPanel); helpText is the same list as text, for a client
+        // that does not draw the panel.
+        return sendJSON(res, 200, { reply: helpLead(), commandPanel: true, helpText: helpText(), traceId: requestTraceId });
       } else if (lower.startsWith('/threat-radar')) {
         // THREAT RADAR (lib/threatRadar.mjs): the feeds PG1 may serve (last
         // 7 days, per day) and the known exploited catalog, read live; the
