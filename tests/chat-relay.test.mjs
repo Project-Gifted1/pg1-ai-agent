@@ -23,7 +23,7 @@ import { makeDb, pgRest } from './helpers/pgrest.mjs';
 import { __resetAutonomousSnapshot } from '../lib/autonomous/state.mjs';
 import {
   parseRelayCommand, relayEnvelope, relayedCommands, relayReplyText, relayCopyText, exchangeRows,
-  insertMessageRows, __resetSpeakerColumns, RELAY_DIRECTIVE, RELAY_USAGE
+  insertMessageRows, __resetSpeakerColumns, __speakerColumns, RELAY_DIRECTIVE, RELAY_USAGE
 } from '../lib/relay.mjs';
 import { cleanHistory, renderConversation } from '../lib/contextWindow.mjs';
 import { cleanMessages } from '../lib/chatThreads.mjs';
@@ -85,7 +85,7 @@ test('the relay rules: untrusted data, reply by name in the first person, nothin
 test('a reply to another AI names no provider or model, keeps the addressee and writes the mark', () => {
   assert.equal(relayReplyText('Hi ChatGPT, I run on Gemini and Claude Opus 5.', 'ChatGPT'), 'Hi ChatGPT, I run on the provider and PG1.');
   assert.match(relayReplyText('Project Gifted1 says hi, Grok.', 'grok'), /Project-Gifted1™ says hi, Grok\./);
-  assert.equal(relayCopyText('  Thanks, Grok.  '), "Message from PG1 (Gift's threat-intel agent): Thanks, Grok.");
+  assert.equal(relayCopyText('  Thanks, Grok.  '), "Message from PG1 (Gift's autonomous AI agent): Thanks, Grok.");
 });
 
 // --- context and storage ---------------------------------------------------------
@@ -116,17 +116,68 @@ test('saved threads keep speaker and relay_name on the relayed message and the n
   assert.deepEqual(out.map((m) => [m.speaker, m.relay_name]), [['relay', 'grok'], [undefined, 'grok'], [undefined, undefined], [undefined, undefined]]);
 });
 
-test('rows: speaker on the user row (relay_name for a relay); before the migration the insert falls back', async () => {
+test('rows: speaker on the user row, relay_name on a relay row', () => {
   assert.deepEqual(exchangeRows({ prompt: 'p', reply: 'r', relay: { name: 'grok' } })[0], { role: 'user', content: 'p', speaker: 'relay', relay_name: 'grok' });
   assert.deepEqual(exchangeRows({ prompt: 'p', reply: 'r' })[0], { role: 'user', content: 'p', speaker: 'operator' });
-  const bodies = [];
-  const fetchImpl = async (u, o) => { const rows = JSON.parse(o.body); bodies.push(rows); return new Response('{}', { status: 'speaker' in rows[0] ? 400 : 201 }); };
-  assert.equal(await insertMessageRows({ supUrl: SUP, headers: {}, prompt: 'p', reply: 'r', relay: { name: 'grok' }, fetchImpl }), true);
-  assert.equal(bodies.length, 2);
-  assert.deepEqual(bodies[1][0], { role: 'user', content: 'p' });
-  await insertMessageRows({ supUrl: SUP, headers: {}, prompt: 'p2', reply: 'r2', fetchImpl });
-  assert.equal(bodies.length, 3, 'an operator row is sent once, in the old shape, once the columns are known to be missing');
+  assert.deepEqual(exchangeRows({ prompt: 'p', reply: 'r' })[1], { role: 'model', content: 'r' });
 });
+
+// A messages endpoint that refuses rows carrying the new columns with
+// `refusal` ({ status, body }) and stores the rest.
+function messagesEndpoint(refusal) {
+  const bodies = [];
+  const fetchImpl = async (u, o) => {
+    const rows = JSON.parse(o.body);
+    bodies.push(rows);
+    if ('speaker' in rows[0]) return new Response(JSON.stringify(refusal.body), { status: refusal.status, headers: { 'Content-Type': 'application/json' } });
+    return new Response('', { status: 201 });
+  };
+  return { bodies, fetchImpl };
+}
+
+for (const [label, body] of [
+  ['PostgREST PGRST204', { code: 'PGRST204', message: "Could not find the 'speaker' column of 'messages' in the schema cache" }],
+  ['Postgres 42703', { code: '42703', message: 'column "speaker" of relation "messages" does not exist' }]
+]) {
+  test(`missing columns (${label}): falls back once without them, and later operator rows skip them`, async () => {
+    const logs = [];
+    const { bodies, fetchImpl } = messagesEndpoint({ status: 400, body });
+    assert.equal(await insertMessageRows({ supUrl: SUP, headers: {}, prompt: 'p', reply: 'r', relay: { name: 'grok' }, fetchImpl, log: (l) => logs.push(l) }), true);
+    assert.equal(bodies.length, 2, 'one try with the columns, one without');
+    assert.deepEqual(bodies[0][0], { role: 'user', content: 'p', speaker: 'relay', relay_name: 'grok' });
+    assert.deepEqual(bodies[1][0], { role: 'user', content: 'p' });
+    assert.equal(__speakerColumns(), false);
+    assert.equal(await insertMessageRows({ supUrl: SUP, headers: {}, prompt: 'p2', reply: 'r2', fetchImpl, log: (l) => logs.push(l) }), true);
+    assert.equal(bodies.length, 3, 'the next operator row is sent once, without the columns');
+    assert.deepEqual(bodies[2][0], { role: 'user', content: 'p2' });
+    assert.deepEqual(logs, [], 'a fallback that worked is not an error');
+  });
+}
+
+for (const [label, refusal, thrown] of [
+  ['a 500', { status: 500, body: { message: 'internal error' } }, null],
+  ['a 503 from the gateway', { status: 503, body: 'upstream down' }, null],
+  ['a constraint error (23514)', { status: 400, body: { code: '23514', message: 'new row violates check constraint "messages_relay_name_check"' } }, null],
+  ['a timeout', null, Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' })]
+]) {
+  test(`${label}: no retry without the columns, speakerColumns stays on, logged, false`, async () => {
+    const logs = [];
+    const endpoint = thrown ? { bodies: [], fetchImpl: null } : messagesEndpoint(refusal);
+    if (thrown) endpoint.fetchImpl = async (u, o) => { endpoint.bodies.push(JSON.parse(o.body)); throw thrown; };
+    const impl = endpoint.fetchImpl;
+    const sent = endpoint.bodies;
+    assert.equal(await insertMessageRows({ supUrl: SUP, headers: {}, prompt: 'p', reply: 'r', relay: { name: 'grok' }, fetchImpl: impl, log: (l) => logs.push(l) }), false);
+    assert.equal(sent.length, 1, 'tried once, with the columns');
+    assert.equal(sent[0][0].speaker, 'relay');
+    assert.equal(__speakerColumns(), true, 'the columns are not given up on');
+    assert.equal(logs.length, 1);
+    assert.match(logs[0], /^\[chat\] message insert failed status=/);
+    assert.ok(!logs[0].includes('grok') && !logs[0].includes('content'), 'no message text in the log');
+    // The next operator row still carries speaker.
+    await insertMessageRows({ supUrl: SUP, headers: {}, prompt: 'p2', reply: 'r2', fetchImpl: impl, log: (l) => logs.push(l) });
+    assert.equal(sent[1][0].speaker, 'operator');
+  });
+}
 
 // --- the chat handler, end to end -------------------------------------------------
 

@@ -6657,7 +6657,7 @@
       return `<div class="relay-tools"><button type="button" class="relay-copy" onclick="triggerHaptic(40); copyForRelay(this)" data-relay-name="${escapeHTML(name)}">Copy for ${escapeHTML(name)}</button>${note}</div>`;
     }
     function relayCopyText(reply) {
-      return `Message from PG1 (Gift's threat-intel agent): ${String(reply || '').trim()}`;
+      return `Message from PG1 (Gift's autonomous AI agent): ${String(reply || '').trim()}`;
     }
     function copyForRelay(btn) {
       const bubble = btn.closest('.message-bubble');

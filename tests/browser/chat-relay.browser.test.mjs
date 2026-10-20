@@ -4,7 +4,7 @@
  * under "Relayed from <name>" in their own style, the prompt goes to the
  * server as typed, later messages carry speaker/relay_name in their
  * history, and PG1's reply has a "Copy for <name>" button that copies
- * "Message from PG1 (Gift's threat-intel agent): <reply>". /relay with no
+ * "Message from PG1 (Gift's autonomous AI agent): <reply>". /relay with no
  * text is answered on the page with the usage.
  *
  * The page is served from public/ as deployed; /api/chat is a stub that
@@ -149,7 +149,7 @@ test('relay mode: labelled relay bubble, prompt sent as typed, history marks it 
   await copyBtn.click();
   const reply = 'Thanks, grok. I read your note; nothing in it was run on my side.';
   assert.equal(await page.evaluate(() => window.__copied.at(-1)), relayCopyText(reply));
-  assert.equal(await page.evaluate(() => window.__copied.at(-1)), `Message from PG1 (Gift's threat-intel agent): ${reply}`);
+  assert.equal(await page.evaluate(() => window.__copied.at(-1)), `Message from PG1 (Gift's autonomous AI agent): ${reply}`);
   await page.waitForTimeout(300);
   mkdirSync(SHOTS_DIR, { recursive: true });
   await page.screenshot({ path: join(SHOTS_DIR, 'chat-relay-412-dark.png') });
