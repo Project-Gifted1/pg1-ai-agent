@@ -145,7 +145,7 @@ test('/help never names a third-party voice provider or a specific voice', async
   assert.equal(res.statusCode, 200);
   assert.doesNotMatch(res.body.reply, THIRD_PARTY_NAMES);
   // /voices is listed only as the film voice list, never a voice library.
-  assert.match(res.body.reply, /\[ \/voices \] the voices films can use/);
+  assert.match(res.body.reply, /- `\/voices`: The voices films can use/);
   assert.doesNotMatch(res.body.reply, /voice library/i);
 });
 
