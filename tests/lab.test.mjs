@@ -690,7 +690,7 @@ test('runner: a refused model call (401, out of credit) bills nothing and says w
   const fetchImpl = async () => new Response(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }), { status: 401 });
   const r = await runExperiment({ id: '0b0b0b0b-1111-2222-3333-444444444444', kind: 'skill', goal: 'g', env: { PG1_LAB_ANTHROPIC_API_KEY: 'k' }, budgetUsd: 2, fetchImpl });
   assert.equal(r.status, 'failed');
-  assert.equal(r.error, 'build: model call failed (anthropic 401 authentication_error)', 'the stage it stopped in leads the error');
+  assert.equal(r.error, 'build: model call failed (anthropic 401 key not accepted)', 'the stage it stopped in leads the error, and why the engine refused');
   assert.equal(r.spent_usd, 0);
   assert.equal(r.calls, 1);
 });

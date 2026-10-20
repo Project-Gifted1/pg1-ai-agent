@@ -54,7 +54,7 @@ import { dialogueClip, speechToSpeech } from '../lib/movie/engines.mjs';
 import { MOVIE_STAGES, sayMovie } from '../lib/movie/text.mjs';
 
 // error_reason for the engine trouble that stops a stage.
-const FAILURE_REASONS = { throttled: 'throttled', billing: 'out_of_credit', not_configured: 'not_configured', budget: 'budget', timeout: 'timeout' };
+const FAILURE_REASONS = { throttled: 'throttled', billing: 'out_of_credit', spend_cap: 'spend_cap_reached', not_configured: 'not_configured', budget: 'budget', timeout: 'timeout' };
 // Codes a movie stage stops with, kept as its error_reason.
 const MOVIE_CODES = new Set(['screenplay_failed', 'no_speech_engine']);
 
