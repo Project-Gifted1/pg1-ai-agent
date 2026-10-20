@@ -184,7 +184,8 @@ test('/help names the three PG1 voice profiles and the error log FIX flow', asyn
   await chatHandler(req, res);
 
   assert.equal(res.statusCode, 200);
-  assert.match(res.body.reply, /PG1 Core, PG1 Classic or PG1 Field/);
-  assert.match(res.body.reply, /ERROR LOG/);
-  assert.doesNotMatch(res.body.reply, /cartesia/i);
+  // The text list beside the command panel (api/chat.mjs /help).
+  assert.match(res.body.helpText, /PG1 Core, PG1 Classic or PG1 Field/);
+  assert.match(res.body.helpText, /ERROR LOG/);
+  assert.doesNotMatch(res.body.helpText + res.body.reply, /cartesia/i);
 });

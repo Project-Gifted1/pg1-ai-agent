@@ -235,3 +235,17 @@ test('"Fix it" asks first (an approval card), and approving opens a draft PR onl
   assert.match(caps, /draft: true/, 'self-healing only ever opens a draft');
   assert.doesNotMatch(caps, /\/merge['"`]/, 'and never merges');
 });
+
+// Operator videos, 20 Oct: "/threat-radar" read as a heavy task (its words
+// mention threats), so with the reasoning core's key set it went to the
+// model, which typed out a table of feed records under a radar card stuck
+// on "Reading the feeds…". A slash command never goes to the model.
+test('/threat-radar with the reasoning core configured: the radar card, never a model call', async () => {
+  process.env.ANTHROPIC_API_KEY = 'sk-ant-test-not-real';
+  const calls = [];
+  globalThis.fetch = async (u) => { calls.push(String(u)); return new Response('unavailable', { status: 503 }); };
+  const res = await chat({ prompt: '/threat-radar' });
+  assert.equal(res.statusCode, 200);
+  assert.ok(res.jsonBody.threatRadar && typeof res.jsonBody.threatRadar === 'object', 'the radar card data');
+  assert.ok(!calls.some((u) => /api\.anthropic\.com|generativelanguage|openrouter|api\.groq/.test(u)), `no model call: ${calls.join(', ')}`);
+});

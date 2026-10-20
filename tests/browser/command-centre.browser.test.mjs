@@ -28,7 +28,7 @@ import { existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { routeReplyFont } from '../helpers/replyFont.mjs';
-import { startCommandCentreServer, openPhonePage, sendAndSettle, checkCards, errorRows } from '../helpers/commandCentre.mjs';
+import { startCommandCentreServer, openPhonePage, sendAndSettle, checkCards, errorRows, radarView } from '../helpers/commandCentre.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PUBLIC_DIR = join(ROOT, 'public');
@@ -45,7 +45,7 @@ try {
 if (chromium && !existsSync(chromium.executablePath())) skip = `Chromium is not installed at ${chromium.executablePath()}`;
 
 test('Command Centre: /help panel, error log timeline and check result card at 380 px', { skip, timeout: 240000 }, async (t) => {
-  const { server, log, origin } = await startCommandCentreServer({ publicDir: PUBLIC_DIR, cards: await checkCards(), errors: errorRows() });
+  const { server, log, origin } = await startCommandCentreServer({ publicDir: PUBLIC_DIR, cards: await checkCards(), errors: errorRows(), radar: await radarView() });
   const browser = await chromium.launch();
   t.after(async () => { await browser.close(); await new Promise((r) => server.close(r)); });
   const { page, errors } = await openPhonePage(browser, origin, { routeReplyFont });
@@ -258,6 +258,23 @@ test('Command Centre: /help panel, error log timeline and check result card at 3
   await card.locator('.chk-recheck').click();
   await page.waitForFunction((k) => document.querySelectorAll('#chat-container .message-bubble:not(.user)').length > k && !document.querySelector('#chat-container .message-bubble.pending'), 6);
   assert.match(log.prompts[before], /^Check 0x7067312d/);
+
+  // --- 4. The threat radar (operator videos, 20 Oct) -----------------------------
+  // The radar card in the lab style: its tone, status pills; never stuck on
+  // "Reading the feeds…".
+  const radarReply = await sendAndSettle(page, '/threat-radar');
+  const radar = radarReply.locator('.radar-card');
+  assert.equal(await radar.count(), 1, 'the radar card, not a typed-out table');
+  assert.equal(await radarReply.locator('.radar-card.is-loading').count(), 0, 'not stuck loading');
+  assert.ok(await radar.evaluate((el) => el.classList.contains('lx-card')), 'built from the shared lab components');
+  assert.equal(await radar.getAttribute('data-tone'), 'err', 'actively exploited findings: the red edge');
+  assert.ok((await radar.locator('.radar-status[data-tone="err"]').count()) >= 1);
+  // The whole card in one shot: the viewport grown, then back to the phone.
+  await page.setViewportSize({ width: 380, height: 1700 });
+  await radarReply.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await page.waitForTimeout(800);
+  await radar.screenshot({ path: join(SHOTS_DIR, 'cc-threat-radar-380-dark.png') });
+  await page.setViewportSize({ width: 380, height: 844 });
 
   // Never the word "safe" on any of the three surfaces.
   const words = await page.evaluate(() => [document.querySelector('#chat-container').innerText, document.querySelector('#cmd-modal').innerText, document.querySelector('#error-log-modal').innerText].join('\n'));

@@ -3442,7 +3442,11 @@ export default async function handler(req, res) {
         activeAction = 'CLAUDE_CHAT';
         var strippedClaudePrompt = promptText.replace(/^\/(core|claude)/i, '').trim();
         promptText = strippedClaudePrompt || "The user switched to your deeper reasoning core without typing a message. Greet them briefly and ask what they'd like help with.";
-      } else if (isHeavyTask && anthropicKey) {
+      } else if (isHeavyTask && anthropicKey && !lower.startsWith('/')) {
+        // A slash command is never sent to the reasoning core here, however
+        // heavy its words look: "/threat-radar" read as a heavy task, so the
+        // model wrote a table of feed records instead of the radar card
+        // (operator videos, 20 Oct). Commands go to their own handlers below.
         activeAction = 'CLAUDE_CHAT';
       } else if (lower === '/help' || lower === 'help') {
         // THE COMMAND REGISTRY (lib/commands/registry.mjs): /help is

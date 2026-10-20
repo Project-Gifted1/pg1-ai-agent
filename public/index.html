@@ -1719,7 +1719,7 @@
 @keyframes new-pulse{from{transform:scale(.8);opacity:.8}to{transform:scale(2.2);opacity:0}}
 .radar-counts{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 14px;margin:0;padding:0;list-style:none;font-size:var(--fs-xs)}
 .radar-counts li{display:inline-flex;align-items:center;gap:6px;color:var(--text-2)}
-.radar-counts li::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--text-3)}
+.radar-counts li::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--lx-tone,var(--text-3));box-shadow:0 0 6px var(--lx-tone,transparent)}
 .radar-counts li.s-flagged::before{background:var(--danger)}
 .radar-counts li.s-unknown::before{background:var(--warn)}
 .radar-counts .n{font-weight:600;color:var(--text-strong);font-variant-numeric:tabular-nums}
@@ -4556,6 +4556,8 @@
 
     const RADAR_LAST_VISIT = 'pg1_radar_last_visit';
     const RADAR_STATUS_WORD = { flagged: 'Flagged', unknown: 'Unknown', no_flags: 'No flags' };
+    // The Living lab status tones (public/lab/lab-ui.css) per radar status.
+    const RADAR_TONE = { flagged: 'err', unknown: 'warn', no_flags: 'ok' };
     const KEV_BADGE = '<span class="kev-badge" title="On the CISA Known Exploited Vulnerabilities catalog: actively exploited"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.5 20h19z"/><path d="M12 10v4M12 17h.01"/></svg>KEV<span class="sr-only"> actively exploited</span></span>';
     let radarSeq = 0;
     function radarLastVisit() {
@@ -4592,7 +4594,7 @@
       }).join('');
       const id = `radar-${Date.now().toString(36)}-${(radarSeq++).toString(36)}`;
       const scope = radarScopeHtml(blips, `role="img" aria-label="Radar of ${findings.length} recent findings; distance from the centre is age, up to 7 days"`);
-      const countList = ['flagged', 'unknown', 'no_flags'].map((k) => `<li class="s-${k}"><span class="n js-count" data-count="${Math.max(0, Number(counts[k]) || 0)}">${Math.max(0, Number(counts[k]) || 0)}</span>${RADAR_STATUS_WORD[k]}</li>`).join('');
+      const countList = ['flagged', 'unknown', 'no_flags'].map((k) => `<li class="s-${k}" data-tone="${RADAR_TONE[k]}"><span class="n js-count" data-count="${Math.max(0, Number(counts[k]) || 0)}">${Math.max(0, Number(counts[k]) || 0)}</span>${RADAR_STATUS_WORD[k]}</li>`).join('');
       const feedRows = feeds.map((f) => {
         if (f.error || f.total == null) return `<li class="radar-feed is-error"><span class="radar-feed-name">${escapeHTML(String(f.label || f.id))}</span><span></span><span class="radar-feed-num">${escapeHTML(String(f.error || 'could not be read'))}</span></li>`;
         return `<li class="radar-feed"><span class="radar-feed-name">${escapeHTML(String(f.label || f.id))}</span>${sparkHtml(f.per_day)}<span class="radar-feed-num"><span class="n js-count" data-count="${Math.max(0, Number(f.total) || 0)}">${Math.max(0, Number(f.total) || 0)}</span><small>new in 7 days</small></span></li>`;
@@ -4600,7 +4602,7 @@
       const findRow = (f, i) => {
         const st = RADAR_STATUS_WORD[f.status] ? f.status : 'unknown';
         const fresh = isNew(f);
-        return `<li class="radar-find${fresh ? ' is-new' : ''}" style="--i: ${i}"><span class="radar-find-id">${fresh ? '<span class="new-dot" aria-hidden="true"></span>' : ''}${escapeHTML(String(f.value || ''))}${f.kev ? KEV_BADGE : ''}${fresh ? '<span class="new-tag">new</span>' : ''}</span><span class="tool-chip ${TOOL_STATUS_CLASS[st] || ''}">${RADAR_STATUS_WORD[st]}</span>`
+        return `<li class="radar-find${fresh ? ' is-new' : ''}" style="--i: ${i}"><span class="radar-find-id">${fresh ? '<span class="new-dot" aria-hidden="true"></span>' : ''}${escapeHTML(String(f.value || ''))}${f.kev ? KEV_BADGE : ''}${fresh ? '<span class="new-tag">new</span>' : ''}</span><span class="lx-pill radar-status" data-tone="${RADAR_TONE[st]}">${RADAR_STATUS_WORD[st]}</span>`
           + `<span class="radar-find-meta">${escapeHTML(String(f.type || ''))} · ${escapeHTML(String(f.source || ''))} · seen ${escapeHTML(radarDayText(f.seen_at))}</span></li>`;
       };
       const shown = findings.slice(0, 4).map(findRow).join('');
@@ -4608,13 +4610,16 @@
       const findsHtml = findings.length
         ? `<ul class="radar-finds">${shown}</ul>` + (more ? `<ul class="radar-finds" id="${id}-more" hidden>${more}</ul><button type="button" class="usage-more" aria-expanded="false" aria-controls="${id}-more" data-more="Show ${findings.length - 4} more" onclick="toggleUsageMore(this)">Show ${findings.length - 4} more</button>` : '')
         : '<p class="radar-note">Nothing new in the last 7 days from the feeds PG1 serves.</p>';
-      return `<section class="radar-card${live ? ' is-live' : ''}${fresh ? ' is-fresh' : ''}" id="${id}" aria-label="Threat radar" data-fetched="${Number(view.fetched_ms) || ''}">`
-        + `<div class="radar-head"><span class="radar-title">Threat radar</span><button type="button" class="radar-refresh" onclick="refreshThreatRadar(this)"><svg class="icon" aria-hidden="true"><use href="#i-sync"/></svg>Refresh</button></div>`
+      // The card's tone (the Living lab's glow edge): red with a flagged
+      // finding, amber when a feed or the catalog could not be read.
+      const tone = Number(counts.flagged) > 0 ? 'err' : (feeds.some((f) => f.error || f.total == null) || view.kev === 'error' || Number(counts.unknown) > 0) ? 'warn' : 'ok';
+      return `<section class="radar-card lx-card${live ? ' is-live' : ''}${fresh ? ' is-fresh' : ''}" id="${id}" data-tone="${tone}" aria-label="Threat radar" data-fetched="${Number(view.fetched_ms) || ''}">`
+        + `<div class="radar-head"><span class="radar-title">Threat radar</span><button type="button" class="radar-refresh lx-btn is-sm" onclick="refreshThreatRadar(this)"><svg class="icon" aria-hidden="true"><use href="#i-sync"/></svg>Refresh</button></div>`
         + `<p class="radar-asof">Data as of <strong>${escapeHTML(String(view.as_of || ''))}</strong> (Ireland time)</p>`
         + (note ? `<p class="radar-note is-warn" role="status">${escapeHTML(note)}</p>` : '')
         + `<div class="radar-body">${scope}<ul class="radar-counts" aria-label="Findings by status">${countList}</ul></div>`
-        + `<div class="radar-sec"><p class="radar-h">Feeds, new items per day</p><ul class="radar-feeds">${feedRows}</ul>${typeof view.tally_text === 'string' && view.tally_text ? `<p class="radar-note radar-tally">${escapeHTML(view.tally_text)}</p>` : ''}</div>`
-        + `<div class="radar-sec"><p class="radar-h">Recent findings</p>${findsHtml}</div>`
+        + `<div class="radar-sec"><p class="radar-h lx-section-h">Feeds, new items per day</p><ul class="radar-feeds">${feedRows}</ul>${typeof view.tally_text === 'string' && view.tally_text ? `<p class="radar-note radar-tally">${escapeHTML(view.tally_text)}</p>` : ''}</div>`
+        + `<div class="radar-sec"><p class="radar-h lx-section-h">Recent findings</p>${findsHtml}</div>`
         + (view.kev === 'error' ? '<p class="radar-note is-warn">The known exploited catalog could not be read, so CVEs show as unknown.</p>' : '')
         + '</section>';
     }
@@ -4624,7 +4629,7 @@
         + `<g class="r-sweep"><path class="r-wedge" d="M0 0-47-81.4A94 94 0 0 1 0-94Z"/><path class="r-edge" d="M0 0V-94"/></g>${blips}</svg></div>`;
     }
     function radarLoadingHtml() {
-      return '<section class="radar-card is-live is-loading" aria-label="Threat radar, loading" aria-busy="true"><div class="radar-head"><span class="radar-title">Threat radar</span></div>'
+      return '<section class="radar-card lx-card is-live is-loading" data-tone="run" aria-label="Threat radar, loading" aria-busy="true"><div class="radar-head"><span class="radar-title">Threat radar</span></div>'
         + `<p class="radar-asof">Reading the feeds…</p><div class="radar-body">${radarScopeHtml('', 'aria-hidden="true"')}</div>`
         + '<span class="shimmer" style="width: 70%"></span><span class="shimmer" style="width: 45%"></span></section>';
     }

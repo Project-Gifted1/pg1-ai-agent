@@ -680,8 +680,9 @@ test('the stream event list and the help text know about the checks', async () =
   assert.ok(STREAM_EVENT_TYPES.includes('tool_result'));
   installFetch([]);
   const res = await run({ user: 'test-operator', pass: 'test-secret-pass', prompt: '/help' });
-  assert.match(res.jsonBody.reply, /Ask me to check a wallet, domain, URL, IOC or CVE/);
-  assert.match(res.jsonBody.reply, /pg1-test-flagged\.invalid/);
+  // The text list beside the command panel (api/chat.mjs /help).
+  assert.match(res.jsonBody.helpText, /Ask me to check a wallet, domain, URL, IOC or CVE/);
+  assert.match(res.jsonBody.helpText, /pg1-test-flagged\.invalid/);
 });
 
 test('shortenAddress keeps short values and shortens long hex to first 6 and last 4', () => {

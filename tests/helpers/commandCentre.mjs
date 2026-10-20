@@ -9,6 +9,7 @@ import { extname, join, normalize } from 'node:path';
 import { helpLead, helpText } from '../../lib/commands/registry.mjs';
 import { createToolExecutor, summarizeOutcome } from '../../lib/chatTools.mjs';
 import { FIXTURE_VALUES } from '../../lib/fixtures.mjs';
+import { buildThreatRadar, threatRadarLead, KEV_URL } from '../../lib/threatRadar.mjs';
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.css': 'text/css; charset=utf-8' };
 
@@ -28,6 +29,22 @@ export async function checkCards() {
   };
 }
 
+// The threat radar from seeded feed rows (NVD) and the known exploited
+// catalog: two actively exploited CVEs, the rest with no flags.
+export async function radarView(now = Date.now()) {
+  const iso = (h) => new Date(now - h * 3600e3).toISOString();
+  const rows = [['CVE-2026-41001', 2], ['CVE-2026-40877', 9], ['CVE-2026-40512', 31], ['CVE-2026-39990', 53], ['CVE-2026-39101', 84], ['CVE-2026-38420', 98], ['CVE-2026-37007', 134]]
+    .map(([value, h]) => ({ value, indicator_type: 'CVE', verification_source: 'NVD', ingested_at: iso(h) }));
+  const kev = { vulnerabilities: [{ cveID: 'CVE-2026-40877', dateAdded: '2026-10-15' }, { cveID: 'CVE-2026-38420', dateAdded: '2026-10-12' }] };
+  const fetchImpl = async (url) => {
+    const u = String(url);
+    if (u === KEV_URL) return new Response(JSON.stringify(kev), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (u.includes('/rest/v1/threat_ioc_telemetry')) return new Response(JSON.stringify(rows), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return new Response('[]', { status: 404 });
+  };
+  return buildThreatRadar({ supUrl: 'https://db.test', supKey: 'k', fetchImpl, env: {}, now });
+}
+
 // Server error rows as /api/errors lists them (newest first).
 export function errorRows(now = Date.now()) {
   const iso = (msAgo) => new Date(now - msAgo).toISOString();
@@ -41,7 +58,7 @@ export function errorRows(now = Date.now()) {
 
 // legacyHelp: /help answers as before PR A (the bullet list), for the
 // before screenshots.
-export function startCommandCentreServer({ publicDir, cards = { single: [], many: [] }, errors = [], legacyHelp = false } = {}) {
+export function startCommandCentreServer({ publicDir, cards = { single: [], many: [] }, errors = [], legacyHelp = false, radar = null } = {}) {
   const log = { prompts: [], resolved: [] };
   const rows = errors.map((r) => ({ ...r }));
   const server = http.createServer((req, res) => {
@@ -68,6 +85,7 @@ export function startCommandCentreServer({ publicDir, cards = { single: [], many
           const prompt = String((parsed && parsed.prompt) || '');
           log.prompts.push(prompt);
           if (prompt === '/help') return json(200, legacyHelp ? { reply: helpText() } : { reply: helpLead(), commandPanel: true, helpText: helpText() });
+          if (prompt === '/threat-radar' && radar) return json(200, { reply: threatRadarLead(radar), threatRadar: radar });
           if (prompt === 'check that wallet') return json(200, { reply: 'One wallet checked: it is on a sanctions list.', toolResults: cards.single });
           if (prompt === 'check these three') return json(200, { reply: 'Three checks ran. One hostname is flagged; one domain could not be checked.', toolResults: cards.many });
           return json(200, { reply: `Ran ${prompt}.` });
