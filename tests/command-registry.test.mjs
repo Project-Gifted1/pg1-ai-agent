@@ -32,7 +32,7 @@ const ORIGINAL_FETCH = globalThis.fetch;
 
 beforeEach(() => {
   __clearAuthRateLimitState();
-  for (const k of Object.keys(process.env)) if (/^(GEMINI_|ANTHROPIC|SUPABASE|GROQ|OPENAI|OPENROUTER|VERCEL_AI|PG1_)/.test(k)) delete process.env[k];
+  for (const k of Object.keys(process.env)) if (/^(GEMINI_|ANTHROPIC|SUPABASE|GROQ|OPENAI|OPENROUTER|VERCEL_AI|PG1_)/.test(k) && k !== 'PG1_DAILY_SPEND_CAP_USD') delete process.env[k];
   process.env.USER_API_KEY = 'test-operator';
   process.env.USER_API_PASS = 'test-secret-pass';
 });

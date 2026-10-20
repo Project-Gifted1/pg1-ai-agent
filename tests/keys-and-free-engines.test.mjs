@@ -27,7 +27,7 @@ const KEYS = {
   CLOUDFLARE_AI_TOKEN: 'cf-keys-SECRET-0123456789', CLOUDFLARE_ACCOUNT_ID: 'f4ca340d9bcbeeab89bba95915dd072e',
   ELEVENLABS_API_KEY: 'sk_el_keys_SECRET_0123456789', CARTESIA_API_KEY: 'sk_car_keys_SECRET_0123456789', REPLICATE_API_TOKEN: 'r8_keys_SECRET_0123456789'
 };
-const SECRET_VALUES = Object.entries(KEYS).filter(([k]) => k !== 'CLOUDFLARE_ACCOUNT_ID').map(([, v]) => v);
+const SECRET_VALUES = Object.entries(KEYS).filter(([k]) => k !== 'CLOUDFLARE_ACCOUNT_ID' && k !== 'PG1_DAILY_SPEND_CAP_USD').map(([, v]) => v);
 const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } });
 
 beforeEach(() => {
