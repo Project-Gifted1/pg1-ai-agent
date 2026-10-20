@@ -172,9 +172,12 @@ describe('a confirmed movie or film budget', () => {
     const db = await makeFilmDb();
     const fetchImpl = routedFetch(filmDbRoutes(db));
     const store = createFilmStore({ supUrl: SUP, supKey: 'k', fetchImpl });
-    const saved = { url: process.env.SUPABASE_URL, key: process.env.SUPABASE_SERVICE_ROLE_KEY };
+    const saved = { url: process.env.SUPABASE_URL, key: process.env.SUPABASE_SERVICE_ROLE_KEY, fetch: globalThis.fetch };
     process.env.SUPABASE_URL = SUP;
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'k';
+    // The worker's failure report and alerts use the global fetch: the
+    // stand-in database answers them too (no network).
+    globalThis.fetch = fetchImpl;
     try {
       const seen = [];
       // Stand-in engines: the first model call reads the budget and stops
@@ -201,6 +204,7 @@ describe('a confirmed movie or film budget', () => {
       assert.equal(seen[2].paid, false, 'a confirmation for another stage does not count');
       assert.equal(budgetAllows(KEYS, 'anthropic'), false, 'the worker\'s allowance ends with its job');
     } finally {
+      globalThis.fetch = saved.fetch;
       process.env.SUPABASE_URL = saved.url;
       process.env.SUPABASE_SERVICE_ROLE_KEY = saved.key;
       if (saved.url === undefined) delete process.env.SUPABASE_URL;
