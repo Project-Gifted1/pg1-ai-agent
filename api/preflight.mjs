@@ -18,13 +18,14 @@ import { signResult } from '../lib/signing.mjs';
 import { recordTelemetry } from '../lib/telemetry.mjs';
 import { callerKindOf } from '../lib/ownTraffic.mjs';
 import { X402_PRICE, x402PriceUsd } from '../lib/x402Config.mjs';
+import { queryOf } from '../lib/requestQuery.mjs';
 
 export const config = { maxDuration: 20 };
 
 const ALLOW_HEADERS = 'Content-Type, Accept, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier';
 
 function preflightArgs(req) {
-  const src = req.method === 'GET' ? (req.query || {}) : (req.body && typeof req.body === 'object' ? req.body : {});
+  const src = req.method === 'GET' ? queryOf(req) : (req.body && typeof req.body === 'object' ? req.body : {});
   const pick = (k) => (typeof src[k] === 'string' ? src[k] : undefined);
   const out = { action: pick('action'), target: pick('target') };
   if (pick('chain')) out.chain = pick('chain');

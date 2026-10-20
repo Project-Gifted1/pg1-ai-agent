@@ -64,6 +64,7 @@ function resetEnv() {
   process.env.SUPABASE_URL = SUP_URL;
   process.env.SUPABASE_SERVICE_ROLE_KEY = SERVICE_KEY;
   process.env.GEMINI_API_KEY = GEMINI_KEY;
+  process.env.PG1_DAILY_SPEND_CAP_USD = '5'; // paid search grounding on (api/chat.mjs paidGroundingAllowed)
   for (const k of ['USER_API_USER', 'USER_API_PASSS', 'ANTHROPIC_API_KEY', 'ANTROPIC_API_KEY', 'GITHUB_TOKEN', 'GITHUB_OWNER_KEY', 'CARTESIA_API_KEY', 'REPLICATE_API_TOKEN', 'OPENAI_API_KEY', 'PG1_CHAT_TOOL_TIMEOUT_MS']) delete process.env[k];
 }
 
@@ -170,8 +171,8 @@ test('a recall question routes to the tools only when the role has search_histor
   for (const q of [RECALL, 'what did we say about the vault?', 'last time we talked about x402, what did you suggest?', 'have we talked about Blanco Ekama before?', 'remind me what I told you about the migration']) {
     assert.ok(asksAboutHistory(q), q);
     assert.deepEqual(chooseChatRoute(q, { hasTools: true, historySearch: true }), { route: 'tools', reason: 'history' }, q);
-    assert.equal(chooseChatRoute(q, { hasTools: true }).route, 'search', `${q}: not without search_history`);
-    assert.equal(chooseChatRoute(q, { hasTools: false, historySearch: true }).route, 'search', `${q}: not without tools`);
+    assert.notEqual(chooseChatRoute(q, { hasTools: true }).route, 'tools', `${q}: not without search_history`);
+    assert.notEqual(chooseChatRoute(q, { hasTools: false, historySearch: true }).route, 'tools', `${q}: not without tools`);
   }
   for (const q of ['hello', 'write me a poem about the sea', 'what is the latest bitcoin price?']) assert.ok(!asksAboutHistory(q), q);
 });

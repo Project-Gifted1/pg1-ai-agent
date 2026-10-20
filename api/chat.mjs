@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { noInfraNames } from '../lib/infraNames.mjs';
 import { waitUntil } from '@vercel/functions';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { paymentMiddleware, x402ResourceServer } from '@x402/express';
@@ -11,7 +12,7 @@ import { logApiError } from '../lib/errorLog.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { collectImageInputs, imageInputDirective, imageCountLabel, describeSkipped, fileExtensionFor, redactLeakedSecrets, SECRET_PLACEHOLDER, SECRET_WARNING, MAX_IMAGES_PER_MESSAGE, MAX_IMAGE_BYTES, MAX_IMAGE_EDGE_PX } from '../lib/visionInput.mjs';
 import { createChatStream, createReplyScrubber, readSseResponse, scrubIdentity, stripTranscriptLabels, wantsChatStream } from '../lib/chatStream.mjs';
-import { identityDirective, identityReplyDirective, identityReplyForHistory, spokenReplyDirective } from '../lib/identity.mjs';
+import { identityDirective, identityReplyDirective, identityReplyForHistory, spokenReplyDirective, whatPG1DoesDirective } from '../lib/identity.mjs';
 import { businessStateText, classifyKeyQuestion, createReplySecretGuard, isErrorSummaryQuestion, licenceKeyDirective, neutralErrorRow, stripModelContext, SECRET_REFUSAL, SECRET_WITHHELD, SECRET_WITHHELD_NOTE } from '../lib/secretGuard.mjs';
 import { searchHistory } from '../lib/historySearch.mjs';
 import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } from '../lib/voiceStream.mjs';
@@ -30,7 +31,7 @@ import { analyzeCameraFrame, cameraEventLine, cameraLogLine } from '../lib/camer
 import { ensureOpenRouterState } from '../lib/router/openrouterGuard.mjs';
 import { isKeysCommand, handleKeysCommand, keysStatus } from '../lib/keysStatus.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
-import { TASKS, FAILURE, failureClass, budgetAllows, isSpendCapFailure, SPEND_CAP_CODE, isBillingFailure, geminiQuotaInfo, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, CHAT_THROTTLE, withThrottleRetry, isFallbackFailure, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
+import { TASKS, FAILURE, failureClass, budgetAllows, dailySpendCapUsd, spendCapAllows, isSpendCapFailure, SPEND_CAP_CODE, isBillingFailure, geminiQuotaInfo, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, CHAT_THROTTLE, withThrottleRetry, isFallbackFailure, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
 import { synthesizeSpeech, createRoutedSynth } from '../lib/ttsRouter.mjs';
 import { cleanVideoPrompt, dispatchVideoRender, isVideoCommand, isVideoRequest, parseVideoOptions, pollVideoJob, recheckVideoJob, startVideoJob, videoGoogleAsync, videoJobStatus, videoDailyBudget, videoDailyCap, videoEnabled, videoCostLine, videoFrameFallbackOn, videoNotStartedText, videoRenderingText, videoSpendToday, videoTiersText, usd, DEFAULT_START_FRAME_PROMPT, FOUR_K_NOTE, VIDEO_DISABLED_TEXT, VIDEO_ENGINE_LABEL, VIDEO_REFUSED_TEXT, VIDEO_TIER_LABELS } from '../lib/videoJobs.mjs';
 import { isFilmCommand, isFilmAction } from '../lib/film/text.mjs';
@@ -1409,20 +1410,68 @@ function chatFreeLimiter(engine) {
   return chatLimiters[e];
 }
 var FREE_LIMIT_ERROR = 'free engine: per-minute limit reached (PG1 limiter)';
-async function callWithPace(c, opts, call) {
+// SEARCH ROUTE: a message that needs a search waits at most ~5 s for a
+// rate-limited engine (the limiter's queue and the 429 retries together),
+// then the round moves on and answers without search (with the footer).
+export var SEARCH_THROTTLE = Object.freeze({ waitsMs: Object.freeze([2000, 3000]), maxTotalWaitMs: 5000 });
+async function callWithPace(c, opts, call, policy) {
+  var throttle = policy || CHAT_THROTTLE;
   var paced = async function () {
     if (PACED_ENGINES.indexOf(c.provider) >= 0) {
-      var slot = await chatFreeLimiter(c.provider).acquire({ priority: PRIORITY.CHAT, maxWaitMs: Math.max(0, Math.min(CHAT_THROTTLE.maxTotalWaitMs, opts.deadlineTs - Date.now() - 5000)) });
+      var slot = await chatFreeLimiter(c.provider).acquire({ priority: PRIORITY.CHAT, maxWaitMs: Math.max(0, Math.min(throttle.maxTotalWaitMs, opts.deadlineTs - Date.now() - 5000)) });
       if (!slot.granted) return { text: null, status: 429, error: FREE_LIMIT_ERROR };
     }
     return call();
   };
-  return (await withThrottleRetry(paced, { policy: CHAT_THROTTLE, deadlineTs: opts.deadlineTs, reserveMs: 5000 })).result;
+  return (await withThrottleRetry(paced, { policy: throttle, deadlineTs: opts.deadlineTs, reserveMs: 5000 })).result;
 }
 
-// The note under a reply a tools-off backup wrote: it had no live search
-// and could not run checks. PG1 words only, never an engine's name.
+// The footer under a search-route reply that was written without a live
+// search: the search engine was rate limited or refused search, so a
+// backup (or a candidate with search withheld) answered. PG1 words only,
+// never an engine's name. Never on a chat-route or tools-route reply.
 export var TOOLS_OFF_NOTE = '_Live search was unavailable for this answer._';
+
+// A round that asked for Google Search: no functions on it and search not
+// switched off (relay mode, the chat route).
+function wantsSearch(toolOpts) {
+  return !!toolOpts && !(toolOpts.tools && toolOpts.tools.length) && !(toolOpts.turns && toolOpts.turns.length) && !toolOpts.noSearch;
+}
+
+// PAID SEARCH GROUNDING: search on the paid Gemini key is billed per
+// grounded prompt, so it runs only when PG1_DAILY_SPEND_CAP_USD is set
+// above $0 and today's paid spend is under it. Unset counts as $0 here
+// (never), whatever the cap means for the rest of paid AI. The client-text
+// commercial_ok rules are unchanged: this only takes search off the call.
+export function paidGroundingAllowed(env, { ledger = null, now = Date.now() } = {}) {
+  var cap = dailySpendCapUsd(env || {});
+  if (!(cap > 0) || cap === Infinity) return false;
+  return spendCapAllows(env || {}, { ledger: ledger, now: now });
+}
+
+// One candidate's tool options on a search round: the paid Gemini key
+// without search unless paid grounding is allowed, and a flag that turns
+// true when Gemini refuses search on this call (it is retried without).
+function candidateSearchOpts(c, toolOpts, opts) {
+  if (!wantsSearch(toolOpts)) return { toolOpts: toolOpts, state: { wanted: false, failed: false } };
+  var state = { wanted: true, failed: false };
+  var withheld = c.provider === 'gemini_paid' && !paidGroundingAllowed(opts.env || process.env, { ledger: opts.ledger || null });
+  if (withheld) state.failed = true;
+  var inner = toolOpts.onSearchFailure;
+  var out = { ...toolOpts, onSearchFailure: function (detail) { state.failed = true; if (typeof inner === 'function') inner(detail); } };
+  if (withheld) out.noSearch = true;
+  return { toolOpts: out, state: state };
+}
+
+// The footer goes on once, only when search was wanted and the answer was
+// written without it: an engine with no search (the OpenAI-compatible
+// backups, the reasoning core outside /core), search refused, or withheld.
+function searchFooterNeeded(c, state, opts) {
+  if (!state || !state.wanted) return false;
+  if (c.family === 'openai_compat') return true;
+  if (c.family === 'anthropic') return opts.activeAction !== 'CLAUDE_CHAT';
+  return !!state.failed;
+}
 
 // Every engine of the round failed on capacity (out of credit, rate
 // limited, down, no usable key): one operator push per hour naming the
@@ -1550,19 +1599,21 @@ async function fetchModelRound(opts, toolOpts) {
   for (var i = 0; i < route.plan.length; i++) {
     if (i > 0 && Date.now() >= opts.deadlineTs - 1000) break;
     var c = route.plan[i];
+    var cand = candidateSearchOpts(c, toolOpts, opts);
     var result = await callWithPace(c, opts, function () {
       return c.family === 'gemini'
-        ? fetchGeminiCore(opts.promptText, opts.sysInstruction, opts.mediaParts, '', [c.key], opts.deadlineTs, toolOpts, c.models)
+        ? fetchGeminiCore(opts.promptText, opts.sysInstruction, opts.mediaParts, '', [c.key], opts.deadlineTs, cand.toolOpts, c.models)
         : c.family === 'anthropic'
-          ? fetchAnthropicCore(opts.promptText, opts.sysInstruction, opts.mediaParts, '', c.key, opts.deadlineTs, toolOpts, c.models)
+          ? fetchAnthropicCore(opts.promptText, opts.sysInstruction, opts.mediaParts, '', c.key, opts.deadlineTs, cand.toolOpts, c.models)
           : fetchCompatCore(c, opts);
-    });
+    }, cand.state.wanted ? SEARCH_THROTTLE : null);
     roundUsage(route, opts, c, result, i);
     if (result.text || (result.calls && result.calls.length)) {
       result.error = null;
-      if (c.family === 'openai_compat' && result.text) {
+      if (c.family === 'openai_compat' && result.text) result.toolsOff = true;
+      if (result.text && searchFooterNeeded(c, cand.state, opts)) {
         result.text += '\n\n' + TOOLS_OFF_NOTE;
-        result.toolsOff = true;
+        result.searchUnavailable = true;
       }
       rememberRound(route, c, result);
       return result;
@@ -1753,7 +1804,7 @@ async function streamChatReply(stream, opts) {
     // SEARCH OR TOOLS: the checks on a tools-route round, search otherwise.
     var toolOpts = (!info.search && opts.tools && opts.tools.length)
       ? { tools: opts.tools, turns: turns, toolsEnabled: info.toolsEnabled, forceTool: info.force ? opts.forceTool : null, onSearchFailure: opts.onSearchFailure, onForceRejected: opts.onForceRejected, onResultsRejected: opts.onResultsRejected }
-      : { onSearchFailure: opts.onSearchFailure, noSearch: opts.noSearch === true };
+      : { onSearchFailure: opts.onSearchFailure, noSearch: opts.noSearch === true || (opts.route === CHAT_ROUTES.CHAT && !info.stepSuffix) };
     var sysInstruction = systemFor(opts, toolOpts);
     hooks.newRound = info.round > 1;
     // AI ROUTER: the round's plan in order. The trace names the core, never
@@ -1784,18 +1835,20 @@ async function streamChatReply(stream, opts) {
           stream.step(modelStep, `${label} on the ${name}`);
         }
         core = name;
+        var cand = candidateSearchOpts(c, toolOpts, opts);
         result = await callWithPace(c, opts, function () {
           return c.family === 'gemini'
-            ? streamGeminiCore(opts.promptText, sysInstruction, opts.mediaParts, [c.key], opts.deadlineTs, hooks, toolOpts, c.models)
+            ? streamGeminiCore(opts.promptText, sysInstruction, opts.mediaParts, [c.key], opts.deadlineTs, hooks, cand.toolOpts, c.models)
             : c.family === 'anthropic'
-              ? streamAnthropicCore(opts.promptText, sysInstruction, opts.mediaParts, c.key, opts.deadlineTs, hooks, toolOpts, c.models)
+              ? streamAnthropicCore(opts.promptText, sysInstruction, opts.mediaParts, c.key, opts.deadlineTs, hooks, cand.toolOpts, c.models)
               : fetchCompatCore(c, roundOpts);
-        });
+        }, cand.state.wanted ? SEARCH_THROTTLE : null);
         if (c.family === 'openai_compat' && result.text) {
-          result.text += '\n\n' + TOOLS_OFF_NOTE;
           result.toolsOff = true;
           hooks.onText(result.text);
         }
+        // The footer goes out after the reply (never spoken), once.
+        if (result.text && !result.partial && !result.aborted && searchFooterNeeded(c, cand.state, opts)) result.searchUnavailable = true;
         roundUsage(route, roundOpts, c, result, ci);
         if (result.text || (result.calls && result.calls.length) || result.aborted || result.partial) break;
         tripBreaker(c.keyId, result.status, result.error, Date.now(), { scope: result.quotaScope, retryAfterMs: result.retryAfterMs });
@@ -1867,6 +1920,10 @@ async function streamChatReply(stream, opts) {
   var factNote = (opts.factNotes && result.text && !result.aborted && !stream.clientGone && !result.partial) ? await opts.factNotes(result.text, result) : '';
   if (factNote) replyScrubber.push('\n\n' + factNote);
   replyScrubber.flush();
+  // SEARCH FOOTER: a search-route reply written without live search. Shown,
+  // saved with the reply, never spoken.
+  var searchFooter = (result.searchUnavailable && result.text && !result.aborted && !stream.clientGone) ? '\n\n' + TOOLS_OFF_NOTE : '';
+  if (searchFooter) stream.text(searchFooter);
   if (result.text && replyScrubber.redacted.length) {
     var warning = '\n\n' + redactionWarning(replyScrubber.redacted);
     stream.text(warning);
@@ -1904,7 +1961,7 @@ async function streamChatReply(stream, opts) {
     var spoken = spokenSummary(toolOutcomes);
     if (spoken) voice.push(spoken + ' The full result is on screen.');
   }
-  if (opts.saveExchange) opts.saveExchange(replyScrubber.text + (replyScrubber.redacted.length ? '\n\n' + redactionWarning(replyScrubber.redacted) : ''));
+  if (opts.saveExchange) opts.saveExchange(replyScrubber.text + searchFooter + (replyScrubber.redacted.length ? '\n\n' + redactionWarning(replyScrubber.redacted) : ''));
   await finishVoice(false);
   if (stream.clientGone) {
     stream.end();
@@ -2817,7 +2874,12 @@ export default async function handler(req, res) {
       // TRADEMARK: the company is written Project-Gifted1™ in an offer.
       // RELAY MODE: a reply to another AI is client-facing too; the
       // addressee's own name stays (lib/relay.mjs relayReplyText).
-      return { text: offerTurn ? withTrademark(whiteLabel(guarded.text)) : relayTurn ? relayReplyText(guarded.text, relayTurn.name) : guarded.text, removed: removed, redacted: removed.length > 0 };
+      // NO INFRASTRUCTURE NAMES (lib/infraNames.mjs): hosting, database,
+      // code-host and (in a sentence about PG1) AI provider names become
+      // plain words; no note, nothing was withheld. Relay mode keeps the
+      // addressee's own name.
+      var shown = offerTurn ? withTrademark(whiteLabel(guarded.text)) : relayTurn ? relayReplyText(guarded.text, relayTurn.name) : guarded.text;
+      return { text: noInfraNames(shown, { keep: relayTurn ? [relayTurn.name] : [] }), removed: removed, redacted: removed.length > 0 };
     };
 
     // The operator's stored context (recent messages, vault files, error
@@ -4601,7 +4663,8 @@ export default async function handler(req, res) {
     // and the [REFERENCES] line go with the other directives.
     var turnPreamble = turnTaskBlock ? turnTaskBlock + '\n\n' : '';
     var turnDirectives = PG1_VOICE_DIRECTIVE + '\n' + SELF_CHECK_DIRECTIVE + '\n' + SOURCED_FIGURES_DIRECTIVE + '\n' + offersDirective() + '\n' + PDF_CHAT_DIRECTIVE + '\n' + COMMAND_FORMS_DIRECTIVE + '\n' + commandRegistryDirective() + '\n' + HONEST_ACTIONS_DIRECTIVE + '\n' + RELAY_DIRECTIVE + '\n' + (relayTurn ? relayTurnDirective(relayTurn, relayTurn.found) + '\n' : '') + (referenceLine(turnReference) ? referenceLine(turnReference) + '\n' : '') + (skillsOn ? skillsIndexBlock(turnSkills) + '\n' : '');
-    var sysInstruction = `${turnPreamble}You are PG1, the chat assistant of Project-Gifted1's threat-intelligence app, running on Vercel.
+    var sysInstruction = `${turnPreamble}You are PG1, an autonomous AI agent built by Project-Gifted1™.
+${whatPG1DoesDirective()}
 [STRICT DIRECTIVE - GROUNDING & HONESTY]: Be absolutely honest at all times about the actual factual content of your answers. Never lie or fabricate results. Never state system health, uptime, integrity, file counts, pipeline status or runtime details unless that exact value appears in [CONTEXT]; if asked about status, say you cannot verify it here and point the operator to the /status command. The vault file list in [CONTEXT] is capped at 20 entries, so never present its length as a total. Stay completely grounded in the factual reality of the project. We operate an automated cybersecurity architecture deploying GitHub workflows and Supabase vault integration.
 ${identityDirective()}
 ${identityReplyDirective(identityChoice)}
@@ -4727,7 +4790,10 @@ ${turnDirectives}${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imag
     }
 
     var roundOpts = { activeAction: activeAction, routeFloor: turnFloor.floor, promptText: promptText, sysInstruction: sysInstruction, searchSysInstruction: searchSysInstruction, mediaParts: mediaParts, anthropicKey: anthropicKey, geminiKeys: chatGeminiKeys, env: process.env, isOperator: isOperator, cacheIdentity: aiCacheIdentity, contextText: routerContextText, ledger: aiLedger, requestId: requestTraceId, deadlineTs: deadlineTs, noSearch: !!relayTurn };
+    // CHAT ROUTE: plain chat, no search; the search call after a tools
+    // round (searchAfterTools) still searches.
     var searchOpts = { onSearchFailure: onSearchFailure, noSearch: !!relayTurn };
+    var chatOpts = { onSearchFailure: onSearchFailure, noSearch: !!relayTurn || chatRoute.route === CHAT_ROUTES.CHAT };
     var jsonToolOutcomes = [];
     var modelFetchResult;
     if (chatRoute.route === CHAT_ROUTES.TOOLS && chatTools.length && executeChatTool) {
@@ -4746,7 +4812,7 @@ ${turnDirectives}${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imag
         if (searched.text || !modelFetchResult.text) modelFetchResult = searched;
       }
     } else {
-      modelFetchResult = await fetchModelRound(roundOpts, searchOpts);
+      modelFetchResult = await fetchModelRound(roundOpts, chatOpts);
     }
 
     // ERROR TEXT BRANDING: a failed reply names no provider, model or
