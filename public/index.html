@@ -1686,6 +1686,9 @@
 .radar-card.is-live{animation:rise-in var(--dur-3) var(--ease-out) both}
 .radar-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2)}
 .radar-title{font-weight:600;font-size:var(--fs-base);color:var(--text-strong)}
+.radar-actions{display:inline-flex;gap:6px}
+.radar-open{display:inline-flex;align-items:center;gap:6px}
+.radar-open .icon{width:16px;height:16px}
 .radar-refresh{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 12px;border:1px solid var(--border-strong);border-radius:var(--r-full);background:var(--surface-2);color:var(--text);font-size:var(--fs-xs);font-weight:600;cursor:pointer}
 .radar-refresh .icon{width:16px;height:16px}
 .radar-refresh:disabled{opacity:.6;cursor:default}
@@ -1708,7 +1711,7 @@
 .blip{transform-box:fill-box;transform-origin:center;opacity:.85}
 .blip.s-flagged{fill:var(--danger);opacity:1}
 .blip.s-unknown{fill:var(--warn)}
-.blip.s-no_flags{fill:var(--text-3)}
+.blip.s-no_flags{fill:var(--ok)}
 .is-loading .blip{opacity:.25}
 .is-fresh:not(.is-loading) .blip{animation:blip-ping 2.4s var(--ease-out) var(--d,0ms) both}
 .is-fresh:not(.is-loading) .blip.s-flagged{animation-name:blip-ping-hot}
@@ -1720,7 +1723,7 @@
 .radar-counts{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 14px;margin:0;padding:0;list-style:none;font-size:var(--fs-xs)}
 .radar-counts li{display:inline-flex;align-items:center;gap:6px;color:var(--text-2)}
 .radar-counts li::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--lx-tone,var(--text-3));box-shadow:0 0 6px var(--lx-tone,transparent)}
-.radar-counts li.s-flagged::before{background:var(--danger)}
+
 .radar-counts li.s-unknown::before{background:var(--warn)}
 .radar-counts .n{font-weight:600;color:var(--text-strong);font-variant-numeric:tabular-nums}
 .radar-h{margin:0 0 6px;font-size:var(--fs-xs);font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3)}
@@ -2821,6 +2824,26 @@
     </div>
   </section>
 
+  <!-- THE THREAT RADAR, full screen: the radar card's data as a scene in the
+       Living Lab's style (public/lab/threat-radar-scene.js, three.js from
+       /vendor/three/), opened from the card. Loaded only here. -->
+  <section id="radar-screen" class="lab-screen" role="dialog" aria-modal="true" aria-labelledby="radar-screen-title" aria-describedby="radar-screen-summary">
+    <div class="lab-screen-head">
+      <h2 id="radar-screen-title"><svg aria-hidden="true" focusable="false"><use href="#pg1-shield"/></svg>PG1 Threat Radar</h2>
+      <span class="lab-mode" id="radar-mode" data-mode="idle">Nothing new</span>
+      <button type="button" class="icon-btn" aria-label="Close the radar" data-dialog-close onclick="triggerHaptic(40); closeRadarScreen()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="living-lab" id="radar-scene"></div>
+    <p class="sr-only" id="radar-screen-summary" aria-live="polite">The radar shows nothing new.</p>
+    <div class="lab-legend" aria-hidden="true">
+      <span><span class="sw" style="background:#ff5c5c"></span>flagged</span>
+      <span><span class="sw" style="background:#ffb300"></span>unknown</span>
+      <span><span class="sw" style="background:#3ddc84"></span>no flags</span>
+      <span>rings: <strong>2</strong>, <strong>5</strong>, <strong>7</strong> days old</span>
+      <span id="radar-legend-counts"><strong>0</strong> findings</span>
+    </div>
+  </section>
+
   <header class="app-header">
     <button type="button" id="drawer-btn" class="icon-btn" onclick="triggerHaptic(); toggleDrawer()" aria-label="Open menu" aria-expanded="false" aria-controls="app-drawer"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
     <div class="brand-wrap">
@@ -3642,6 +3665,46 @@
       clearInterval(labScenePoll);
       labScenePoll = null;
       if (labScene) { labScene.destroy(); labScene = null; }
+    }
+
+    // THE THREAT RADAR, full screen (public/lab/threat-radar-scene.js): the
+    // card's data as a scene in the Living Lab's style. Created when the
+    // screen opens, torn down when it closes; the card's Refresh fetches
+    // new data, the screen shows what the card shows.
+    var radarScene = null;
+    const RADAR_MODE = { alert: { mode: 'error', word: 'Flagged findings' }, watch: { mode: 'thinking', word: 'Unknowns to check' }, clear: { mode: 'success', word: 'No flags found' }, empty: { mode: 'idle', word: 'Nothing new' } };
+    function radarSceneLabel(d) {
+      const m = RADAR_MODE[d.state] || RADAR_MODE.empty;
+      const mode = document.getElementById('radar-mode');
+      if (mode) { mode.dataset.mode = m.mode; mode.textContent = m.word; }
+      const counts = document.getElementById('radar-legend-counts');
+      if (counts) counts.innerHTML = `<strong>${d.findings.length}</strong> finding${d.findings.length === 1 ? '' : 's'} · <strong>${d.counts.flagged}</strong> flagged${d.kev ? ` · <strong>${d.kev}</strong> actively exploited` : ''}`;
+      const summary = document.getElementById('radar-screen-summary');
+      if (summary) summary.textContent = `${m.word}: ${d.findings.length} recent findings, ${d.counts.flagged} flagged, ${d.counts.unknown} unknown, ${d.counts.no_flags} with no flags${d.as_of ? `, data as of ${d.as_of} Ireland time` : ''}.`;
+    }
+    async function openRadarScreen(btn) {
+      const card = btn && btn.closest('.radar-card');
+      let data = null;
+      try { data = card ? JSON.parse(card.getAttribute('data-scene') || 'null') : null; } catch (e) { data = null; }
+      const screen = document.getElementById('radar-screen');
+      const holder = document.getElementById('radar-scene');
+      if (!screen || !holder) return;
+      triggerHaptic(30);
+      screen.classList.add('is-open');
+      if (!radarScene) {
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const coarse = window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 768;
+        try {
+          const mod = await import('/lab/threat-radar-scene.js');
+          radarScene = await mod.createThreatRadarScene(holder, { reducedMotion: reduced, coarse, label: radarSceneLabel });
+        } catch (e) { radarScene = null; }
+      }
+      if (radarScene) radarScene.update(data || {});
+    }
+    function closeRadarScreen() {
+      const screen = document.getElementById('radar-screen');
+      if (screen) screen.classList.remove('is-open');
+      if (radarScene) { radarScene.destroy(); radarScene = null; }
     }
 
     function closeAutoTimeline() {
@@ -4613,8 +4676,11 @@
       // The card's tone (the Living lab's glow edge): red with a flagged
       // finding, amber when a feed or the catalog could not be read.
       const tone = Number(counts.flagged) > 0 ? 'err' : (feeds.some((f) => f.error || f.total == null) || view.kev === 'error' || Number(counts.unknown) > 0) ? 'warn' : 'ok';
-      return `<section class="radar-card lx-card${live ? ' is-live' : ''}${fresh ? ' is-fresh' : ''}" id="${id}" data-tone="${tone}" aria-label="Threat radar" data-fetched="${Number(view.fetched_ms) || ''}">`
-        + `<div class="radar-head"><span class="radar-title">Threat radar</span><button type="button" class="radar-refresh lx-btn is-sm" onclick="refreshThreatRadar(this)"><svg class="icon" aria-hidden="true"><use href="#i-sync"/></svg>Refresh</button></div>`
+      // The full-screen radar reads the card's own data (data-scene), so a
+      // card restored from a saved chat opens too.
+      const sceneData = JSON.stringify({ as_of: view.as_of, counts, findings: findings.slice(0, 60).map((f) => ({ value: f.value, status: f.status, kev: !!f.kev, ring: f.ring, angle: f.angle })) });
+      return `<section class="radar-card lx-card${live ? ' is-live' : ''}${fresh ? ' is-fresh' : ''}" id="${id}" data-tone="${tone}" aria-label="Threat radar" data-fetched="${Number(view.fetched_ms) || ''}" data-scene="${escapeHTML(sceneData)}">`
+        + `<div class="radar-head"><span class="radar-title">Threat radar</span><span class="radar-actions"><button type="button" class="radar-open lx-btn is-sm" onclick="openRadarScreen(this)" aria-label="Open the radar full screen"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg>Open</button><button type="button" class="radar-refresh lx-btn is-sm" onclick="refreshThreatRadar(this)"><svg class="icon" aria-hidden="true"><use href="#i-sync"/></svg>Refresh</button></span></div>`
         + `<p class="radar-asof">Data as of <strong>${escapeHTML(String(view.as_of || ''))}</strong> (Ireland time)</p>`
         + (note ? `<p class="radar-note is-warn" role="status">${escapeHTML(note)}</p>` : '')
         + `<div class="radar-body">${scope}<ul class="radar-counts" aria-label="Findings by status">${countList}</ul></div>`

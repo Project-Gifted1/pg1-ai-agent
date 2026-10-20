@@ -59,10 +59,11 @@ export function errorRows(now = Date.now()) {
 // legacyHelp: /help answers as before PR A (the bullet list), for the
 // before screenshots.
 export function startCommandCentreServer({ publicDir, cards = { single: [], many: [] }, errors = [], legacyHelp = false, radar = null } = {}) {
-  const log = { prompts: [], resolved: [] };
+  const log = { prompts: [], resolved: [], paths: [] };
   const rows = errors.map((r) => ({ ...r }));
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost');
+    log.paths.push(url.pathname);
     let body = '';
     req.on('data', (c) => { body += c; });
     req.on('end', () => {
