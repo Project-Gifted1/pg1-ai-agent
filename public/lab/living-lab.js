@@ -37,7 +37,7 @@ export function normalizeState(s) {
   return {
     mode: MODES.includes(st.mode) ? st.mode : 'idle',
     experiments: (Array.isArray(st.experiments) ? st.experiments : []).filter((e) => e && typeof e.id8 === 'string').slice(0, MAX_RINGS)
-      .map((e) => ({ id8: e.id8.slice(0, 8), status: Object.hasOwn(RING_COLOR, e.status) ? e.status : 'queued' })),
+      .map((e) => ({ id8: e.id8.slice(0, 8), status: Object.hasOwn(RING_COLOR, e.status) ? e.status : 'queued', ...(typeof e.stage === 'string' && /^(research|build|test|gate)$/.test(e.stage) ? { stage: e.stage, error: String(e.error || '').slice(0, 160) } : {}) })),
     events: (Array.isArray(st.events) ? st.events : []).filter((e) => e && e.id && Object.hasOwn(EVENT_COLOR, e.kind)).slice(-50)
   };
 }

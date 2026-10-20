@@ -8,6 +8,7 @@
  *     (/api/watches op lab_scene): its mode, one ring per experiment;
  *   - under prefers-reduced-motion the calm 2D drawing shows instead and
  *     three.js is never fetched;
+ *   - a stopped experiment shows the stage it failed at and why;
  *   - closing the screen tears the scene down.
  * Writes docs/screenshots/living-lab-360-dark.png and
  * living-lab-reduced-360-dark.png. Skipped (not failed) when Playwright or
@@ -39,7 +40,8 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
 
 const SCENE = {
   mode: 'running',
-  experiments: [{ id8: 'a1b2c3d4', status: 'running' }, { id8: 'e5f6a7b8', status: 'queued' }, { id8: 'c9d0e1f2', status: 'done' }],
+  experiments: [{ id8: 'a1b2c3d4', status: 'running' }, { id8: 'e5f6a7b8', status: 'queued' }, { id8: 'c9d0e1f2', status: 'done' },
+    { id8: 'aef41455', status: 'failed', stage: 'build', error: 'model call failed (anthropic 400 out of credit); (gemini 429 monthly spending cap reached)' }],
   events: [{ id: 'w-1', kind: 'webhook', at: new Date().toISOString() }, { id: 'a-1', kind: 'scan', at: new Date().toISOString() }, { id: 'f-1', kind: 'feed', at: new Date().toISOString() }]
 };
 
@@ -129,7 +131,7 @@ test('living lab: three.js only on the lab screen and only from the app; the 3D 
   await page.waitForFunction(() => document.getElementById('living-lab').dataset.labMode === 'running');
   await page.waitForFunction(() => Number(document.getElementById('living-lab').dataset.frames || 0) > 5, null, { timeout: 30000 });
   assert.equal(await page.locator('#lab-mode').innerText(), 'Running');
-  assert.match(await page.locator('#lab-legend-counts').innerText(), /3 experiments · 3 events in 2 h/);
+  assert.match(await page.locator('#lab-legend-counts').innerText(), /4 experiments · 3 events in 2 h/);
   assert.match(await page.locator('#lab-screen-summary').textContent(), /2 experiments queued or running/);
   assert.ok(requests.some((u) => u === `${origin}/vendor/three/three.module.min.js`), 'three.js from the app itself');
   assert.deepEqual(offOrigin(requests.slice(before), origin), [], 'the lab fetches nothing from any other host');
@@ -158,6 +160,9 @@ test('living lab: under prefers-reduced-motion the calm 2D drawing shows and thr
   assert.ok(!requests.some((u) => u.includes('/vendor/three/')), 'three.js is not loaded under reduced motion');
   assert.deepEqual(offOrigin(requests.slice(before), origin), [], 'the lab fetches nothing from any other host');
   assert.equal(await page.locator('#lab-mode').innerText(), 'Running');
+  // A stopped experiment says where and why, on the screen itself.
+  assert.equal(await page.locator('#lab-failures li').count(), 1);
+  assert.equal(await page.locator('#lab-failures li').innerText(), 'Lab aef41455 stopped at build: model call failed (anthropic 400 out of credit); (gemini 429 monthly spending cap reached)');
   mkdirSync(SHOTS_DIR, { recursive: true });
   await page.screenshot({ path: join(SHOTS_DIR, 'living-lab-reduced-360-dark.png') });
   assert.deepEqual(problems, [], 'no page or console errors');

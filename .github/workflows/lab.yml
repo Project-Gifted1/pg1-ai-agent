@@ -29,9 +29,14 @@ name: PG1 lab
 #               fresh checkout commits exactly the proposed files to
 #               lab/<id>, pushes, and opens a DRAFT pull request. PG1 never
 #               merges it.
-#   notify      always, last: one signed result notice to PG1
+#   notify      always: one signed result notice to PG1
 #               (/api/hooks/lab, needs the PG1_URL variable) so the
 #               experiment is synced and reported at once
+#   verdict     always, last: fails the run (red) when the experiment did
+#               not end done or the lab's test run failed
+#               (scripts/lab-verdict.mjs), so self-healing picks it up.
+#               The experiment job also exits 1 on a failed run
+#               (scripts/lab-run.mjs); test and pull are then skipped.
 # Hard limits: the runner stops at the signed budget and
 # PG1_LAB_MAX_MINUTES; each job has its own timeout.
 
@@ -188,6 +193,28 @@ jobs:
           path: lab-out/result.json
           retention-days: 14
           overwrite: true
+
+  verdict:
+    # Red when the experiment failed: reads the final result artifact only
+    # (no secret, no npm, no network).
+    needs: [experiment, test, pull, notify]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: lab-result-${{ inputs.experiment_id }}
+          path: lab-out
+      - name: Fail the run when the experiment failed
+        run: node scripts/lab-verdict.mjs lab-out/result.json
 
   notify:
     # The result notice: when every other job is done (passed, failed or
