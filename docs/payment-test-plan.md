@@ -9,8 +9,8 @@ Paid surfaces (all 0.01 USD a call, USDC on Base, `eip155:8453`):
 
 | Route | Paid calls | Ways to pay |
 |---|---|---|
-| `POST /api/mcp` `tools/call` | `get_cve_details`, `get_cve_batch`, `get_cve_by_product`, `get_threat_actor_profile`; `get_ioc_context` / `get_ioc_batch` when something is found | x402 (`params._meta["x402/payment"]` or the header), licence key, free tier |
-| `POST /api/a2a` `SendMessage` / `message/send` | `get_cve_details`, `get_cve_batch`, `get_cve_by_product`, `get_threat_actor_profile` | x402 (a2a-x402: `message.metadata["x402.payment.payload"]`, or the header), licence key, free tier |
+| `POST /api/mcp` `tools/call` | `preflight_check`, `hosting_advisor`, `get_cve_details`, `get_cve_batch`, `get_cve_by_product`, `get_threat_actor_profile`; `get_ioc_context` / `get_ioc_batch` when something is found | x402 (`params._meta["x402/payment"]` or the header), licence key, free tier |
+| `POST /api/a2a` `SendMessage` / `message/send` | `preflight_check`, `hosting_advisor`, `get_cve_details`, `get_cve_batch`, `get_cve_by_product`, `get_threat_actor_profile` | x402 (a2a-x402: `message.metadata["x402.payment.payload"]`, or the header), licence key, free tier |
 
 The STIX feed (`GET`/`POST /api/ioc`, the `/api/feeds/ioc` alias, and MCP
 `get_threat_indicators`) is free (CVE records from NIST NVD); does not use the 5 free paid calls a day:
