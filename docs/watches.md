@@ -127,10 +127,10 @@ opens PRs in):
 
 ### Lab notice
 
-Repository **Settings → Secrets and variables → Actions → Variables** (or
-the `lab` environment's variables): `PG1_URL` =
-`https://pg1-ai-agent.vercel.app`. `PG1_LAB_DISPATCH_SECRET` is already in
-the `lab` environment.
+The notice goes to `https://pg1-ai-agent.vercel.app` unless the repository
+variable `PG1_URL` (**Settings → Secrets and variables → Actions →
+Variables**, or the `lab` environment's variables) names another address.
+`PG1_LAB_DISPATCH_SECRET` is already in the `lab` environment.
 
 ### Vercel webhook
 
