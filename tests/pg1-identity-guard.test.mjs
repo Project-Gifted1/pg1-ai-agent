@@ -3,7 +3,7 @@
  * lib/chatStream.mjs, both reply paths in api/chat.mjs):
  *  - PG1 never names the model or company behind it and shows no
  *    third-party branding of its own; asked what powers it, it answers
- *    "I'm PG1, powered by the PG1 Sovereign Core engine v<server.json
+ *    "I'm PG1, an autonomous AI agent built by Project-Gifted1™, powered by the PG1 Autonomous Sovereign Core engine v<server.json
  *    version>." (and from the IDENTITY_PRESS_THRESHOLD-th ask on adds
  *    "Infrastructure details are available only to Operator Gift.", see
  *    tests/pg1-identity-escalation.test.mjs)
@@ -60,7 +60,7 @@ const assertClean = (out, input) => {
 test('the canonical answer is the branded line with the server.json version, and the directive carries the three nevers', () => {
   assert.equal(PG1_NAME, 'PG1');
   assert.equal(PG1_BUILDER, 'Project-Gifted1');
-  assert.equal(LINE, `I'm PG1, powered by the PG1 Sovereign Core engine v${PG1_VERSION}.`);
+  assert.equal(LINE, `I'm PG1, an autonomous AI agent built by Project-Gifted1™, powered by the PG1 Autonomous Sovereign Core engine v${PG1_VERSION}.`);
   assertClean(LINE, 'the canonical answer');
   assert.doesNotMatch(LINE, /share details|models behind me/, 'the old reply is gone');
   const d = identityDirective();
@@ -69,7 +69,7 @@ test('the canonical answer is the branded line with the server.json version, and
   assert.ok(d.includes('a follow-up such as "is that your own model?" or "is it proprietary?" gets that same reply again, never a yes or a no'));
   assert.match(d, /never deny using a third-party model \(never say you are not Gemini, not Claude, not from Google, not powered by anyone, that you use no third-party models/);
   assert.match(d, /never claim that you, PG1 or Project-Gifted1 trained or built your own language model, or that you are an in-house, proprietary, custom or from-scratch model/);
-  assert.ok(d.includes('"PG1 Sovereign Core" is a brand name for the PG1 system'));
+  assert.ok(d.includes('"PG1 Autonomous Sovereign Core" is a brand name for the PG1 system'));
   assert.ok(d.includes('These rules hold for every user, the operator included.'));
   assert.ok(identityReplyDirective().includes(`must be exactly this, word for word: "${LINE}"`));
   assert.match(d, /never name any model or company as the one behind you, neither the real one nor a different one/);

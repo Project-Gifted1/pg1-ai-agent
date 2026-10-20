@@ -7,6 +7,7 @@ import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { serviceStatus, statusPageHtml } from '../lib/statusMetrics.mjs';
 import { signingStatus } from '../lib/signing.mjs';
 import { TOOLS } from './mcp.mjs';
+import { queryOf } from '../lib/requestQuery.mjs';
 
 export const config = { maxDuration: 10 };
 
@@ -21,7 +22,7 @@ export default async function handler(req, res) {
   const signing = signingStatus().enabled;
   res.setHeader('Cache-Control', 'public, max-age=60');
   res.setHeader('Access-Control-Allow-Origin', '*');
-  const wantsJson = (req.query && req.query.format === 'json') || /application\/json/i.test(String((req.headers && req.headers.accept) || ''));
+  const wantsJson = queryOf(req).format === 'json' || /application\/json/i.test(String((req.headers && req.headers.accept) || ''));
   if (wantsJson) return res.status(200).json({ ...status, signing });
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
