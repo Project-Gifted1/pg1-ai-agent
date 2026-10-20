@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { noInfraNames } from '../lib/infraNames.mjs';
 import { waitUntil } from '@vercel/functions';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { paymentMiddleware, x402ResourceServer } from '@x402/express';
@@ -11,7 +12,7 @@ import { logApiError } from '../lib/errorLog.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { collectImageInputs, imageInputDirective, imageCountLabel, describeSkipped, fileExtensionFor, redactLeakedSecrets, SECRET_PLACEHOLDER, SECRET_WARNING, MAX_IMAGES_PER_MESSAGE, MAX_IMAGE_BYTES, MAX_IMAGE_EDGE_PX } from '../lib/visionInput.mjs';
 import { createChatStream, createReplyScrubber, readSseResponse, scrubIdentity, stripTranscriptLabels, wantsChatStream } from '../lib/chatStream.mjs';
-import { identityDirective, identityReplyDirective, identityReplyForHistory, spokenReplyDirective } from '../lib/identity.mjs';
+import { identityDirective, identityReplyDirective, identityReplyForHistory, spokenReplyDirective, whatPG1DoesDirective } from '../lib/identity.mjs';
 import { businessStateText, classifyKeyQuestion, createReplySecretGuard, isErrorSummaryQuestion, licenceKeyDirective, neutralErrorRow, stripModelContext, SECRET_REFUSAL, SECRET_WITHHELD, SECRET_WITHHELD_NOTE } from '../lib/secretGuard.mjs';
 import { searchHistory } from '../lib/historySearch.mjs';
 import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } from '../lib/voiceStream.mjs';
@@ -2814,7 +2815,12 @@ export default async function handler(req, res) {
       // TRADEMARK: the company is written Project-Gifted1™ in an offer.
       // RELAY MODE: a reply to another AI is client-facing too; the
       // addressee's own name stays (lib/relay.mjs relayReplyText).
-      return { text: offerTurn ? withTrademark(whiteLabel(guarded.text)) : relayTurn ? relayReplyText(guarded.text, relayTurn.name) : guarded.text, removed: removed, redacted: removed.length > 0 };
+      // NO INFRASTRUCTURE NAMES (lib/infraNames.mjs): hosting, database,
+      // code-host and (in a sentence about PG1) AI provider names become
+      // plain words; no note, nothing was withheld. Relay mode keeps the
+      // addressee's own name.
+      var shown = offerTurn ? withTrademark(whiteLabel(guarded.text)) : relayTurn ? relayReplyText(guarded.text, relayTurn.name) : guarded.text;
+      return { text: noInfraNames(shown, { keep: relayTurn ? [relayTurn.name] : [] }), removed: removed, redacted: removed.length > 0 };
     };
 
     // The operator's stored context (recent messages, vault files, error
@@ -4559,7 +4565,8 @@ export default async function handler(req, res) {
     // and the [REFERENCES] line go with the other directives.
     var turnPreamble = turnTaskBlock ? turnTaskBlock + '\n\n' : '';
     var turnDirectives = PG1_VOICE_DIRECTIVE + '\n' + SELF_CHECK_DIRECTIVE + '\n' + SOURCED_FIGURES_DIRECTIVE + '\n' + offersDirective() + '\n' + PDF_CHAT_DIRECTIVE + '\n' + COMMAND_FORMS_DIRECTIVE + '\n' + HONEST_ACTIONS_DIRECTIVE + '\n' + RELAY_DIRECTIVE + '\n' + (relayTurn ? relayTurnDirective(relayTurn, relayTurn.found) + '\n' : '') + (referenceLine(turnReference) ? referenceLine(turnReference) + '\n' : '') + (skillsOn ? skillsIndexBlock(turnSkills) + '\n' : '');
-    var sysInstruction = `${turnPreamble}You are PG1, the chat assistant of Project-Gifted1's threat-intelligence app, running on Vercel.
+    var sysInstruction = `${turnPreamble}You are PG1, an autonomous AI agent built by Project-Gifted1™.
+${whatPG1DoesDirective()}
 [STRICT DIRECTIVE - GROUNDING & HONESTY]: Be absolutely honest at all times about the actual factual content of your answers. Never lie or fabricate results. Never state system health, uptime, integrity, file counts, pipeline status or runtime details unless that exact value appears in [CONTEXT]; if asked about status, say you cannot verify it here and point the operator to the /status command. The vault file list in [CONTEXT] is capped at 20 entries, so never present its length as a total. Stay completely grounded in the factual reality of the project. We operate an automated cybersecurity architecture deploying GitHub workflows and Supabase vault integration.
 ${identityDirective()}
 ${identityReplyDirective(identityChoice)}

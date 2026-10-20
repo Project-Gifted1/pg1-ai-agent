@@ -2,7 +2,7 @@
  * The branded identity reply and its escalation (lib/identity.mjs, the
  * prompt and both reply paths in api/chat.mjs, the history the page sends):
  *  - asks 1 to IDENTITY_PRESS_THRESHOLD-1 in a conversation get reply A,
- *    "I'm PG1, powered by the PG1 Sovereign Core engine v<version>."
+ *    "I'm PG1, an autonomous AI agent built by Project-Gifted1™, powered by the PG1 Autonomous Sovereign Core engine v<version>."
  *  - the IDENTITY_PRESS_THRESHOLD-th ask and every later one get reply B,
  *    reply A plus "Infrastructure details are available only to Operator
  *    Gift."
@@ -32,7 +32,7 @@ const root = join(__dirname, '..');
 const serverJson = JSON.parse(readFileSync(join(root, 'server.json'), 'utf-8'));
 const html = readFileSync(join(root, 'public/index.html'), 'utf-8');
 
-const REPLY_A = `I'm PG1, powered by the PG1 Sovereign Core engine v${serverJson.version}.`;
+const REPLY_A = `I'm PG1, an autonomous AI agent built by Project-Gifted1™, powered by the PG1 Autonomous Sovereign Core engine v${serverJson.version}.`;
 const REPLY_B = `${REPLY_A} Infrastructure details are available only to Operator Gift.`;
 
 // One identity exchange after another, the way the page sends the thread.
@@ -56,8 +56,8 @@ test('reply A and reply B are built from the server.json version, read at runtim
   assert.equal(PG1_IDENTITY_REPLY, REPLY_A);
   assert.equal(IDENTITY_ESCALATION, 'Infrastructure details are available only to Operator Gift.');
   assert.ok(REPLY_A.includes(`v${serverJson.version}`));
-  assert.equal(brandedIdentityLine('9.9.9'), "I'm PG1, powered by the PG1 Sovereign Core engine v9.9.9.");
-  assert.equal(brandedIdentityLine(null), "I'm PG1, powered by the PG1 Sovereign Core engine.", 'no version is invented when server.json is unreadable');
+  assert.equal(brandedIdentityLine('9.9.9'), "I'm PG1, an autonomous AI agent built by Project-Gifted1™, powered by the PG1 Autonomous Sovereign Core engine v9.9.9.");
+  assert.equal(brandedIdentityLine(null), "I'm PG1, an autonomous AI agent built by Project-Gifted1™, powered by the PG1 Autonomous Sovereign Core engine.", 'no version is invented when server.json is unreadable');
   const src = readFileSync(join(root, 'lib/identity.mjs'), 'utf-8');
   assert.doesNotMatch(src, new RegExp(`engine v${serverJson.version.replace(/\./g, '\\.')}`), 'the version is never hardcoded');
   assert.doesNotMatch(src, /share details about the models/, 'the old reply is gone');
