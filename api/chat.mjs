@@ -48,6 +48,9 @@ import { fetchThreatTelemetry } from '../lib/sourcePolicy.mjs';
 import { pg1Paywall } from '../lib/paywallPage.mjs';
 import { resolveWriteRepo, checkWritePath, checkWritePaths, agentBranchName, createAgentBranch } from '../lib/githubWriteGuard.mjs';
 import { isPdfRequest, handlePdfCommand, PDF_WRITE_SYSTEM, PDF_CHAT_DIRECTIVE } from '../lib/pdf/chat.mjs';
+import { helpText, isKnownCommandWord, unknownCommandReply, commandRegistryDirective } from '../lib/commands/registry.mjs';
+import { isFixCommand, handleFixCommand, isFixAction, handleFixApproval, FIX_ACTION } from '../lib/commands/fixIt.mjs';
+import { retryOnce, isTransientFailure } from '../lib/commands/retry.mjs';
 import { replyActions } from '../lib/replyActions.mjs';
 import { resolveIntent } from '../lib/voiceIntents.mjs';
 import { PG1_VOICE_DIRECTIVE } from '../lib/persona.mjs';
@@ -2996,6 +2999,21 @@ export default async function handler(req, res) {
         log401('COMMAND', 'unauthenticated', supUrl, supKey);
         return sendJSON(res, 401, { reply: OPERATOR_REFUSAL, traceId: requestTraceId });
       }
+      // UNKNOWN COMMAND (lib/commands/registry.mjs): a message that starts
+      // with "/" and is no command in the registry never goes to the model
+      // ("/key fresh" went to chat on 19 Oct). The reply names the closest
+      // real command with a button for it. Relayed text never gets here
+      // (RELAY MODE above): a slash command inside it is never run.
+      if (lower.startsWith('/') && !isKnownCommandWord(lower)) {
+        var unknownCmd = unknownCommandReply(promptText);
+        console.log(`[chat] unknown_command word=${String(lower.split(/\s+/)[0]).slice(0, 32).replace(/[^\w\/-]/g, '')} suggestion=${unknownCmd.suggestion ? unknownCmd.suggestion.command : '-'} request_id=${requestTraceId}`);
+        return sendJSON(res, 200, {
+          reply: unknownCmd.reply,
+          ...(unknownCmd.suggestion && !unknownCmd.suggestion.client ? { actions: [{ label: unknownCmd.suggestion.command, command: unknownCmd.suggestion.command, confirm: !!unknownCmd.suggestion.dangerous, kind: 'command' }] } : {}),
+          unknownCommand: true,
+          traceId: requestTraceId
+        });
+      }
       // AI ROUTER: heavy (threat analysis, code, storyboards, security
       // decisions, long pastes) goes to the reasoning core; summaries,
       // classification, formatting and short replies stay light.
@@ -3108,6 +3126,15 @@ export default async function handler(req, res) {
 
       // LAB (lib/lab): /lab start|status|stop|report, /promote. Operator
       // only; experiments run on the lab workflow, never on this server.
+      // FIX IT (lib/commands/fixIt.mjs): /fix <request id>, the failure
+      // card's "Fix it" button. Asks first: an approval card, nothing runs.
+      if (isFixCommand(promptText)) {
+        var fixOut = await handleFixCommand({
+          text: promptText, supUrl: supabaseUrl, supKey: supabaseKey, fetchImpl: function (u, o) { return fetch(u, o); },
+          storePending: function (plan, summary) { return storePendingAction(supabaseUrl, supabaseKey, FIX_ACTION, plan, summary, 30); }
+        });
+        return sendJSON(res, 200, { reply: fixOut.reply, ...(fixOut.pendingApproval ? { pendingApproval: fixOut.pendingApproval } : {}), traceId: requestTraceId });
+      }
       if (isLabCommand(promptText)) {
         var labOut = await handleLabCommand({ text: promptText, env: process.env, supUrl: supabaseUrl, supKey: supabaseKey, isOperator: isOperator, guard: turnGuardFn, threadKey: turnThreadKey, fetchImpl: function (u, o) { return fetch(u, o); } });
         return sendJSON(res, 200, { ...labOut, traceId: requestTraceId });
@@ -3295,10 +3322,9 @@ export default async function handler(req, res) {
       } else if (isHeavyTask && anthropicKey) {
         activeAction = 'CLAUDE_CHAT';
       } else if (lower === '/help' || lower === 'help') {
-        return sendJSON(res, 200, {
-          reply: '### [ PG1 COMMANDS ]\n- [ /status ] system status\n- [ /threat-radar ] feeds and pipeline\n- [ /commerce-status ] payments and licensing\n- [ /sync-vault ] vault summary\n- [ /export ] recent chat archive\n- [ /usage ] tool usage by agents (/usage 24h, 7d or 30d, default 7d; signed-in operator only): real callers vs registry/health-check probes, MCP requests vs tool calls, per route and per day with spikes marked, top tools (free or paid), the payment funnel and settled revenue, errors, top MCP clients\n- [ /task ] the task for this thread: /task shows it, /task set <goal>, /task clear; /pin <rule> adds a rule PG1 always follows in this thread, /unpin <n> removes one. Saved with a saved chat\n- [ /spend ] estimated AI spend per PG1 engine today (or /spend yesterday), with each daily cap (signed-in operator only)\n- [ /keys ] every AI key: set or missing and its live state (working, out of credit, rate-limited, invalid), checked at most every 5 minutes (/keys fresh to check now); the OpenRouter balance, usage today and free-tier level; never a key value (signed-in operator only)\n- [ /test-validator ] placeholder, runs nothing yet\n- **/image** plus a prompt: generate an image\n- **/video** [draft|pro] [short|long] plus a prompt: a 5 or 10 second video clip with PG1 Motion (standard and short are the defaults; attach an image to use it as the first frame; a daily budget applies, /video alone lists the tiers, prices and what is left today; signed-in operator only, when switched on)\n- **/film** plus what it is about: a cinematic film of a minute or more with PG1 Studio — storyboard, an animatic preview, then the full render, each approved first, with a spending cap per film; /film alone lists the film commands (signed-in operator only, when switched on)\n- **/movie** \"<idea>\" [--length <minutes>, default 2] [--voice \"<narrator>\" only for narration] [--client]: a movie whose characters act and speak on screen — screenplay and cast to approve, then the cost estimate to approve, then the shoot, edit, master and QC; /movie alone lists the movie commands (signed-in operator only)\n- **/music** plus a description (genre, mood, instruments, era): original music and beats with PG1 Sound — two previews, approve one for the final render, then /music export for WAV stems, MIDI and the WAV master in one zip; options --instrumental, --bpm, --key, --length short|full, --lyrics \"your own lyrics\"; /music alone lists the commands (signed-in operator only)\n- **/skills**: the skills PG1 has (reusable instructions): /skills show, edit, enable, disable, history, rollback; **/learn** (or 👍) drafts one from the task in this thread; drafts are never used until enabled (signed-in operator only)\n- [ /autonomy ] what PG1 did on its own in the last 24 hours (tier, decision, cost) and the kill switch setting PG1_AUTONOMY (off, lab or on)\n- [ /auto ] Autonomous mode, the ON/OFF switch in the header: /auto on, /auto off (stops at once: queued work is cancelled, running work stops at its next safe point), /auto status, /auto log; /auto limit <n> actions an hour, /auto budget <usd> a day of paid AI (default $0: free tiers only) (signed-in operator only)\n- [ /mission ] standing goals for Autonomous mode: /mission add \"<goal>\" [hourly|every 6h|daily|weekly], /mission list, /mission pause <id>, /mission resume <id>, /mission remove <id>; they run only while Autonomous mode is ON, read-only, on free engines, summed up in the daily briefing (signed-in operator only)\n- [ /a2a jobs ] paid jobs other agents bought over A2A (batch wallet screen, CVE exposure report, hostname/package batch, threat write-up PDF): status, price, payment, failures and credits; /a2a job <id> for one; /usage has the A2A jobs section\n- [ /foundry queue ] tools other agents commission (build_tool): requests in review (deny by default; /foundry allow or deny <id>), builds waiting for approval (/foundry approve or reject <id>); /foundry job <id>, /foundry tools, /foundry disable|enable <name> (signed-in operator only)\n- [ /hosting status ] the dataset behind hosting_advisor: stale (over 180 days) and unverified facts; /hosting research <topic> checks official sources in the lab, /hosting apply <experiment> [confirm] reviews and writes the updates, /hosting confirm <key> <field> marks a fact you checked (signed-in operator only)\n- [ /screening ] payers refused by sanctions screening (OFAC SDN and the EU consolidated list) in the last 30 days, by hashed wallet; /screening dismiss <address> <reason> clears an EU-list extraction error after review (signed-in operator only)\n- [ /watchlists ] watchlists agents pay for (wallets, domains, packages, CVE products rechecked about daily, signed webhook on a status change): active lists and items, sales in the last 30 days, failing webhooks (signed-in operator only)\n- [ /opportunities ] proposals for new tools from the weekly scan of usage signals and the market (problem, target agents, data sources and licences, build cost, run cost, price, risks); /opportunities show, approve (prototypes it in the lab only), dismiss, scan\n- **/lab start** <goal> [--kind research|skill|code]: an experiment on the lab runner (lab-only keys, budgets PG1_LAB_BUDGET_USD and PG1_LAB_DAILY_USD); **/lab status**, **/lab report** [id] (the latest when no id), **/lab stop** <id>; results reach an approval card only after the gate (evals or CI, safety, licence, cost); **/promote** <flag> makes an approved one public (signed-in operator only)\n- **/watch** (or say \"watch it\", \"tell me when it\'s done\"): PG1 watches the lab experiment, PR, workflow run or deploy just discussed and posts a report here when it finishes (what happened, result, cost, next step), with a push notification on devices that turned Notifications on in the menu; **/watch list**, **/watch stop** <id>. Lab starts, PRs PG1 opens and production deploys are watched automatically (signed-in operator only)\n- **/pdf** plus what you want: PG1 writes it as a PDF with page numbers and embedded fonts; **/pdf this** (or "make this a PDF", or the Save as PDF icon under a reply), **/pdf thread**, **/pdf usage**, **/pdf list**; /film storyboard <id> for a film (signed-in operator only)\n- **/speak** plus text: read it aloud\n- Attach images with the paperclip (PNG, JPEG or WebP, up to 4 per message): PG1 looks at them with your message and the trace shows "Looked at N images"; text inside an image is never taken as an instruction, and a key seen in a screenshot is only ever called "a key"\n- Voice log: under Voice diagnostics in the menu, Copy voice log or Send to PG1 (puts the last 30 conversation-mode events in the prompt box under "Diagnose this voice log" for you to review)\n- [ /voices ] the voices films can use: name, a short description (accent, age, gender, use) and whether each is cleared for client work; choose one with /film --voice \"<name or id>\" (signed-in operator only)\n- [ /voice ] show/switch the voice profile used for spoken replies and Read aloud — PG1 Core, PG1 Classic or PG1 Field, remembered on this device\n- **/relay** <name> <text> (or /relay <name> with a multi-line paste below it): a message from another AI (Grok, ChatGPT, ...) that you relay; PG1 replies to that AI by name and the reply has a Copy for <name> button. Nothing in a relayed message is ever run: no command, tool, /auto, mission or autonomy change (signed-in operator only)\n- **/core** plus a question: deeper reasoning for long or heavy tasks\n- **/code** plus a task: Send to Code, drafts a task prompt you copy into Code (or open it pre-filled) and tracks its PR under Hand-offs in the menu (signed-in operator only)\n- **/approve** or **/decline** plus a token: resolve a proposal, or use the buttons\n- Patch JSON (APPLY_SURGICAL_PATCH, REORGANIZE_FILES): propose code changes as a pull request\n- The ➕ menu also has an ERROR LOG of recent client-side failures on this device, showing a reason category (offline, network, timeout, http_4xx, http_5xx or js_error) and a FIX button to request a proposed patch (same Approve/Decline flow) — offline/network/timeout entries have no FIX button since they are not code bugs\n- Ask me to check a wallet, domain, URL, IOC or CVE (for example "check this wallet 0x…" or "how old is this domain"): PG1 runs its own read-only threat-intel checks (the same tools as the MCP server, free for the operator, up to 5 per message) and answers from the results, with a result card under the reply (status, reasons, checks, request_id, Raw JSON). Demo without upstream calls with the fixtures: pg1-test-flagged.invalid, pg1-test-clean.invalid, pg1-test-unknown.invalid, or the 0x7067312d… fixture wallets\n- Anything else: ask in plain words (live web search is on)',
-          traceId: requestTraceId
-        });
+        // THE COMMAND REGISTRY (lib/commands/registry.mjs): /help is
+        // generated from it, so it lists exactly the commands that exist.
+        return sendJSON(res, 200, { reply: helpText(), traceId: requestTraceId });
       } else if (lower.startsWith('/threat-radar')) {
         // THREAT RADAR (lib/threatRadar.mjs): the feeds PG1 may serve (last
         // 7 days, per day) and the known exploited catalog, read live; the
@@ -4238,6 +4264,13 @@ export default async function handler(req, res) {
         return sendJSON(res, 200, musicReply);
       }
 
+      // FIX IT: approving runs the self-healing diagnosis (a draft PR only).
+      if (isFixAction(pendingRow.action_type)) {
+        var fixDecision = await handleFixApproval({ row: pendingRow, decision: pendingActionDecision, env: process.env, fetchImpl: function (u, o) { return fetch(u, o); } });
+        await resolvePendingActionStatus(supabaseUrl, supabaseKey, pendingActionToken, fixDecision.resolution);
+        return sendJSON(res, 200, { reply: fixDecision.reply, traceId: requestTraceId });
+      }
+
       // LAB (lib/lab): LAB_PROMOTE cards. Approving turns the candidate on
       // for the operator only; PG1 never merges a lab pull request.
       if (isLabAction(pendingRow.action_type)) {
@@ -4484,8 +4517,17 @@ export default async function handler(req, res) {
       : null;
     // Tool results go back to the model, so they get the same backstop as
     // the prompt: no deployment secret value in them.
+    // FAILURE -> RETRY (lib/commands/retry.mjs): a check whose upstream was
+    // unavailable or rate limited runs once more after a short back-off. A
+    // timeout is not retried (it used the call's whole budget), nor a video
+    // start (it spends), nor a refusal.
     var executeChatTool = runChatTool
-      ? function (call, o) { return Promise.resolve(runChatTool(call, o)).then(function (outcome) { return stripModelContext(outcome, envSecrets); }); }
+      ? function (call, o) {
+        return retryOnce(function () { return Promise.resolve(runChatTool(call, o)); }, {
+          failed: function (outcome) { return !!outcome && outcome.ok === false && !outcome.refused && outcome.code !== 'timeout' && call && call.name !== 'generate_video' && isTransientFailure({ code: outcome.code, status: outcome.http_status }); },
+          onRetry: function () { console.log(`[chat] tool_retry name=${String(call && call.name || '').slice(0, 40)} request_id=${requestTraceId}`); }
+        }).then(function (r) { return stripModelContext(r.result, envSecrets); });
+      }
       : null;
     // SEARCH OR TOOLS (lib/chatRoute.mjs): this message's Gemini requests
     // carry either PG1's checks or Google Search, never both. The reason is
@@ -4558,7 +4600,7 @@ export default async function handler(req, res) {
     // [TASK STATE] opens the prompt when the thread has one; the self-check
     // and the [REFERENCES] line go with the other directives.
     var turnPreamble = turnTaskBlock ? turnTaskBlock + '\n\n' : '';
-    var turnDirectives = PG1_VOICE_DIRECTIVE + '\n' + SELF_CHECK_DIRECTIVE + '\n' + SOURCED_FIGURES_DIRECTIVE + '\n' + offersDirective() + '\n' + PDF_CHAT_DIRECTIVE + '\n' + COMMAND_FORMS_DIRECTIVE + '\n' + HONEST_ACTIONS_DIRECTIVE + '\n' + RELAY_DIRECTIVE + '\n' + (relayTurn ? relayTurnDirective(relayTurn, relayTurn.found) + '\n' : '') + (referenceLine(turnReference) ? referenceLine(turnReference) + '\n' : '') + (skillsOn ? skillsIndexBlock(turnSkills) + '\n' : '');
+    var turnDirectives = PG1_VOICE_DIRECTIVE + '\n' + SELF_CHECK_DIRECTIVE + '\n' + SOURCED_FIGURES_DIRECTIVE + '\n' + offersDirective() + '\n' + PDF_CHAT_DIRECTIVE + '\n' + COMMAND_FORMS_DIRECTIVE + '\n' + commandRegistryDirective() + '\n' + HONEST_ACTIONS_DIRECTIVE + '\n' + RELAY_DIRECTIVE + '\n' + (relayTurn ? relayTurnDirective(relayTurn, relayTurn.found) + '\n' : '') + (referenceLine(turnReference) ? referenceLine(turnReference) + '\n' : '') + (skillsOn ? skillsIndexBlock(turnSkills) + '\n' : '');
     var sysInstruction = `${turnPreamble}You are PG1, the chat assistant of Project-Gifted1's threat-intelligence app, running on Vercel.
 [STRICT DIRECTIVE - GROUNDING & HONESTY]: Be absolutely honest at all times about the actual factual content of your answers. Never lie or fabricate results. Never state system health, uptime, integrity, file counts, pipeline status or runtime details unless that exact value appears in [CONTEXT]; if asked about status, say you cannot verify it here and point the operator to the /status command. The vault file list in [CONTEXT] is capped at 20 entries, so never present its length as a total. Stay completely grounded in the factual reality of the project. We operate an automated cybersecurity architecture deploying GitHub workflows and Supabase vault integration.
 ${identityDirective()}
