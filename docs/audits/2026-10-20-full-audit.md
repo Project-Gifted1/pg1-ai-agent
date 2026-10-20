@@ -14,11 +14,11 @@ Audited `main` at `dac730f` (PR 2 and PR 3 merged; PR 1, 4, 5 and 6 open).
 
 Anything that needs production is under [Needs Gift](#needs-gift), with the exact command, URL or read-only SQL.
 
-**Result: 44 pass, 24 fail, 8 need a live check (76 checks).**
-- 9 of the 24 failures are fixed in the focused PRs linked in the table: #351 (merged), #353, #354, and #356 (5 failures).
+**Result: 45 pass, 24 fail, 8 need a live check (77 checks).**
+- 10 of the 24 failures are fixed in the focused PRs linked in the table: #351 (merged), #354, #356 (6 failures, the spend-cap default among them) and #358.
 - 4 are covered by PRs 1 (#344, merged), 4 (#348), 5 (#349, merged) and 6 (#350).
 - One more fix came out of the audit: #355, the intermittent voice-playback test.
-- The other 11 are recommendations below the table. Three of them need a decision from Gift: the spend-cap default, the `/help` provider names, and the client-facing docs.
+- The other 10 are recommendations below the table. Two of them need a decision from Gift: the `/help` provider names and the client-facing docs. Gift decided the spend-cap default ($0 when unset); it is in #356.
 
 | # | Area | Check | Result | Evidence | Fix PR |
 |---|---|---|---|---|---|
@@ -61,7 +61,7 @@ Anything that needs production is under [Needs Gift](#needs-gift), with the exac
 | 37 | Router | Free engines kept off client work | pass | `clientAllowedStep` (`lib/aiRouter.mjs:997`, `registry.mjs:671-672`), `chains.mjs:63-64` | — |
 | 38 | Router | Customer data only on commercial_ok engines | fail | Without `clientWork`, customer data could plan OpenRouter, the AI gateway and OpenAI (licence "unclear", T1). Film text listed OpenRouter, and the A2A `jobModel` (`lib/a2aJobs/service.mjs:66`) did not pass `clientWork` | Fixed: #356 (`planRoute` limits customer data to commercial_ok engines) |
 | 39 | Router | An engine out of credit is not called again and again | fail | A billing failure only moved the key to the back for 15 minutes, so it was still tried. On 20 Oct a Claude key with no credit was called on every movie shot | Fixed: #356 (left out for 1 hour) |
-| 40 | Router | `PG1_DAILY_SPEND_CAP_USD` defaults to $0 | fail | Unset, empty or invalid returns `Infinity` (no cap, fail-open, `lib/aiRouter.mjs:751-756`); per-engine budgets also default to Infinity (`:645-650`) | Recommendation R6 (Gift decides) |
+| 40 | Router | `PG1_DAILY_SPEND_CAP_USD` defaults to $0 | fail | Unset, empty or invalid returns `Infinity` (no cap, fail-open, `lib/aiRouter.mjs:751-756`); per-engine budgets also default to Infinity (`:645-650`) | Fixed: #356 (Gift's decision: unset or invalid is $0; only a confirmed /movie or /film budget may spend) |
 | 41 | Router | Tests | pass | ai-router, router-*, free-*, keys-and-free-engines, compat-reasoning-effort: 164/164 | — |
 | 42 | Command Centre | Every handled command is listed in /help | fail | Not listed: `/auth`, `/smoke`, `/vault`, `/patch`, `/deploy-cron`, `/build-validator`, the `/tts` alias, "/status update" (`api/chat.mjs:3297-3299`) | Open PR #348 (one command registry; /help generated from it) |
 | 43 | Command Centre | `/smoke` matches only the command | fail | `api/chat.mjs:2553` uses `includes('/smoke')`, so any operator message that mentions it makes a live call to the onrender API | Recommendation R7 |
@@ -71,7 +71,7 @@ Anything that needs production is under [Needs Gift](#needs-gift), with the exac
 | 47 | Autonomous | A paid budget above $0 is counted | fail | Self-heal and missions report no cost (`runner.mjs:129,172,183`), so `state.mjs:253-255` never counts their spend | Recommendation R8 |
 | 48 | Autonomous | Tests | pass | 4 suites + 2 browser files: 42/42 | — |
 | 49 | Living lab | Failures shown; red workflow on a failed run | pass | `scripts/lab-verdict.mjs:12-20`; `lab.yml` verdict job `if: always()`; 51/51 | — |
-| 50 | Living lab | `lab.yml` `PG1_URL` defaults to production when unset | fail | The notify step read `vars.PG1_URL` only; unset, no result notice was sent | Fixed: #353 |
+| 50 | Living lab | `lab.yml` `PG1_URL` reaches production | pass | `PG1_URL` is set as a repository variable: dry-run lab run 39440712775's notify step had `PG1_URL: https://pg1-ai-agent.vercel.app`, and PG1 answered 202. #353 adds the same URL as a default in case the variable is ever removed | #353 (safeguard) |
 | 51 | Living lab | Lab keys separate from production | fail | `lab.yml:110-111` falls back to the production `ANTHROPIC_API_KEY` and `GEMINI_API_KEY_PAID` when the lab-only secrets are missing | Recommendation R9 |
 | 52 | Studio | Film: credit check before anything is created; cap on approval | pass | `lib/film/chat.mjs:272,459,628` | — |
 | 53 | Studio | Movie: worst-case budget confirmed, retakes capped, pauses before overspend | fail | 20 Oct, movie 6da446ca: 27 clips (~18.60 USD) in 16 minutes for ~12 shots. Six shots were rendered three times (`MAX_RETAKES = 2`, plus the QC gate's extra take), and the movie then failed out of credit | Fixed: #356 |
@@ -98,16 +98,18 @@ Anything that needs production is under [Needs Gift](#needs-gift), with the exac
 | 74 | Chat | Default route and search footer | fail | Production logged `route=search reason=default` on every chat; the footer was on every reply | Fixed: #344, merged |
 | 75 | Chat | Rate-limited free keys held replies ~19 s | fail | Chat limiter `maxWaitMs` 20 s and a breaker per instance | Fixed: #350 |
 | 76 | CI | Cloudflare "Workers Builds: pg1-ai-agent" check | needs live check | Fails on every PR, including #343 from before this audit. The build runs in the Cloudflare project, outside the repo | [Needs Gift](#needs-gift) 14 |
+| 77 | Living lab | The verdict job runs without npm packages | fail | Lab run c2cac715 (Actions run 39430515185): the verdict job crashed with `ERR_MODULE_NOT_FOUND` for `@x402/evm`, through `lab-verdict.mjs` → `lab-run.mjs` → the runner → `api/mcp.mjs` (self-heal draft #352) | Fixed: #358 |
 
 ## Fix PRs
 
 | PR | What |
 |---|---|
 | #351 (merged) | Query strings read with WHATWG `URL`, not `url.parse()` (DEP0169) |
-| #353 | Living lab: the verdict job runs without npm packages (self-heal #352, found during the audit); `PG1_URL` defaults to https://pg1-ai-agent.vercel.app |
+| #353 | Living lab: `PG1_URL` defaults to https://pg1-ai-agent.vercel.app when the repository variable is unset (a safeguard; the variable is set) |
 | #354 | Payment test plan paid-call rows; Project-Gifted1™ on the about page and manifest; the feed comment |
 | #355 | The `voice-playback` browser test's harness race (an intermittent "no silent gap" failure seen on PR 4 and PR 5) |
-| #356 | Movie spending: confirmed worst-case budget, 1 retake per shot, `paused_budget`, resume and Rerun, customer data on commercial_ok engines only, no DeepSeek, out-of-credit engines left out for an hour, cheapest dailies once per take |
+| #356 | Movie spending: confirmed worst-case budget, 1 retake per shot, `paused_budget`, resume and Rerun, customer data on commercial_ok engines only, no DeepSeek, out-of-credit engines left out for an hour, cheapest dailies once per take; `PG1_DAILY_SPEND_CAP_USD` unset is $0, per-provider daily caps, background work at most 25% |
+| #358 | Living lab: the verdict job's `verdictLine` moved to a dependency-free module, with an import-graph guard test (self-heal #352) |
 | #350 | PR 6, rate limits on the AI keys |
 
 ## Recommendations (bigger than a focused fix)
@@ -120,7 +122,7 @@ Anything that needs production is under [Needs Gift](#needs-gift), with the exac
   - An unauthenticated `/help` should show only the public commands, with no provider names. PR #348 generates /help from the registry, which is the natural place to filter by `operatorOnly`.
   - Decide whether `docs/director-mode.md` and `docs/studio-sound-phase1.md` should stay in a public repo. They name providers.
   - Decide whether `README.md:152` "Best for Claude, MCP-compatible agents" counts as naming a provider. It names a client, not an engine PG1 uses.
-- **R6. Spend cap (Gift decides):** the spec says `PG1_DAILY_SPEND_CAP_USD` defaults to $0, but the code treats unset as "no cap". Changing the default to $0 (and invalid values to $0) stops every paid engine until Gift sets a cap. Production currently relies on the paid keys for chat, so set the variable in Vercel first, then change the default. PR 1 already treats "unset" as $0 for paid search grounding.
+- **R6. Spend cap:** done in #356 (Gift's decision). `PG1_DAILY_SPEND_CAP_USD` unset or invalid is $0, and only a budget the operator confirms for a /movie or /film stage may spend. Set the variable in Vercel and as a GitHub Actions repository variable before merging #356, or paid chat stops.
 - **R7. `/smoke`:** match `^/smoke(\s|$)` only.
 - **R8. Autonomous spend:** return each paid call's cost from `autonomousText` into `costUsd`, and pass a worst-case `estimateUsd` when `allowPaid` is on, so the daily budget stops self-heal and missions.
 - **R9. Lab keys:** remove the `lab.yml` fallback to production keys, or document it in /help.
