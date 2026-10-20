@@ -107,4 +107,10 @@ jobs:
           PG1_DAILY_BUDGET_ELEVENLABS_USD: ${{ vars.PG1_DAILY_BUDGET_ELEVENLABS_USD }}
           PG1_DAILY_BUDGET_GEMINI_PAID_USD: ${{ vars.PG1_DAILY_BUDGET_GEMINI_PAID_USD }}
           PG1_DAILY_BUDGET_REPLICATE_USD: ${{ vars.PG1_DAILY_BUDGET_REPLICATE_USD }}
+          # Daily caps (lib/aiRouter.mjs), the same values as on Vercel and
+          # read against the same ledger: unset PG1_DAILY_SPEND_CAP_USD is $0.
+          PG1_DAILY_SPEND_CAP_USD: ${{ vars.PG1_DAILY_SPEND_CAP_USD }}
+          PG1_DAILY_CAP_ANTHROPIC_USD: ${{ vars.PG1_DAILY_CAP_ANTHROPIC_USD }}
+          PG1_DAILY_CAP_GEMINI_USD: ${{ vars.PG1_DAILY_CAP_GEMINI_USD }}
+          PG1_DAILY_CAP_OPENROUTER_USD: ${{ vars.PG1_DAILY_CAP_OPENROUTER_USD }}
         run: node scripts/music-render.mjs

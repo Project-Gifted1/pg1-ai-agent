@@ -42,7 +42,7 @@ const ROUTER_ENV = ['GEMINI_API_KEY_FREE', 'GEMINI_API_KEY_PAID', 'GEMINI_API_KE
 beforeEach(() => {
   __resetRouterState();
   __clearAuthRateLimitState();
-  for (const k of Object.keys(process.env)) if (/^PG1_DAILY_BUDGET_/.test(k)) delete process.env[k];
+  for (const k of Object.keys(process.env)) if (/^PG1_DAILY_BUDGET_/.test(k) && k !== 'PG1_DAILY_SPEND_CAP_USD') delete process.env[k];
   for (const k of ROUTER_ENV) delete process.env[k];
   process.env.USER_API_KEY = 'test-operator';
   process.env.USER_API_PASS = 'test-secret-pass';
@@ -65,7 +65,7 @@ const GUEST_ID = cacheIdentity({ isOperator: false });
 // --- 1. routing ------------------------------------------------------------------------
 
 test('light: free Gemini key first for operator content, then the paid key, then the reasoning core and the backups', () => {
-  const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC, VERCEL_AI_API_KEY: 'vck', OPENROUTER_API_KEY: 'or', OPENAI_API_KEY: 'oa' };
+  const env = { GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC, VERCEL_AI_API_KEY: 'vck', OPENROUTER_API_KEY: 'or', OPENAI_API_KEY: 'oa' };
   const plan = planRoute(TASKS.LIGHT, { env, dataClass: DATA.OPERATOR });
   assert.deepEqual(plan.map((c) => c.provider), ['gemini_free', 'gemini_paid', 'anthropic', 'gateway', 'openrouter', 'openai']);
   assert.equal(plan[0].key, FREE);
@@ -74,7 +74,7 @@ test('light: free Gemini key first for operator content, then the paid key, then
 });
 
 test('heavy: operator content tries the free key first (routing policy), then the strongest reasoning model, then the main core; customer data the paid order', () => {
-  const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
+  const env = { GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
   const plan = planRoute(TASKS.HEAVY, { env, dataClass: DATA.OPERATOR });
   assert.deepEqual(plan.map((c) => c.provider), ['gemini_free', 'anthropic', 'gemini_paid']);
   assert.equal(plan[1].models[0], 'claude-opus-5-5');
@@ -82,7 +82,7 @@ test('heavy: operator content tries the free key first (routing policy), then th
 });
 
 test('a round with functions keeps the OpenAI-compatible backups as tools-off engines, last; a round with an image leaves them out', () => {
-  const env = { GEMINI_API_KEY_PAID: PAID, VERCEL_AI_API_KEY: 'vck_x', OPENAI_API_KEY: 'sk-x' };
+  const env = { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, VERCEL_AI_API_KEY: 'vck_x', OPENAI_API_KEY: 'sk-x' };
   const withTools = planRoute(TASKS.LIGHT, { env, dataClass: DATA.OPERATOR, withTools: true });
   assert.deepEqual(withTools.map((c) => c.provider), ['gemini_paid', 'gateway', 'openai']);
   assert.deepEqual(withTools.map((c) => !!c.toolsOff), [false, true, true]);
@@ -90,7 +90,7 @@ test('a round with functions keeps the OpenAI-compatible backups as tools-off en
 });
 
 test('tts: Cartesia only by default, even for operator content with the free key set', () => {
-  const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, CARTESIA_API_KEY: 'cart' };
+  const env = { GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, CARTESIA_API_KEY: 'cart' };
   assert.deepEqual(planRoute(TASKS.TTS, { env, dataClass: DATA.OPERATOR }).map((c) => c.family), ['cartesia']);
   assert.deepEqual(planRoute(TASKS.TTS, { env, dataClass: DATA.CUSTOMER }).map((c) => c.family), ['cartesia']);
   assert.equal(resolveKeys(env).ttsGemini, '');
@@ -113,12 +113,12 @@ test('tts: no default Gemini voice (Kore is gone): the flag without PG1_TTS_GEMI
 });
 
 test('tts never uses an old Gemini name: without GEMINI_API_KEY_FREE the voice stays on Cartesia as before', () => {
-  const env = { GEMINI_API_KEY1: OLD1, CARTESIA_API_KEY: 'cart', ...TTS_FREE };
+  const env = { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY1: OLD1, CARTESIA_API_KEY: 'cart', ...TTS_FREE };
   assert.deepEqual(planRoute(TASKS.TTS, { env, dataClass: DATA.OPERATOR }).map((c) => c.family), ['cartesia']);
 });
 
 test('media: paid keys only (never the free one), with Replicate as the fallback', () => {
-  const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, REPLICATE_API_TOKEN: 'r8' };
+  const env = { GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, REPLICATE_API_TOKEN: 'r8' };
   const plan = planRoute(TASKS.MEDIA, { env, dataClass: DATA.OPERATOR });
   assert.deepEqual(ids(plan), [`gemini_paid:${PAID}`, 'replicate:r8']);
   assert.deepEqual(mediaGeminiKeys(env), [PAID]);
@@ -141,37 +141,37 @@ test('classifyTask: security, code and analysis are heavy; summaries, formatting
 // --- 2. keys by role and old names ---------------------------------------------------------------
 
 test('old names are fallbacks only: with neither new name set, chat and media use GEMINI_API_KEY1/2 as paid keys', () => {
-  const k = resolveKeys({ GEMINI_API_KEY1: OLD1, GEMINI_API_KEY2: OLD2 });
+  const k = resolveKeys({ PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY1: OLD1, GEMINI_API_KEY2: OLD2 });
   assert.deepEqual(k.geminiFree, [], 'an old key is never assumed to be free');
   assert.deepEqual(k.geminiPaid, [OLD1, OLD2]);
   assert.equal(k.ttsGemini, '');
 });
 
 test('the new names win: GEMINI_API_KEY_PAID replaces the old keys, GEMINI_API_KEY_FREE fills the free role', () => {
-  const k = resolveKeys({ GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, GEMINI_API_KEY1: OLD1, GEMINI_API_KEY2: OLD2 });
+  const k = resolveKeys({ GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, GEMINI_API_KEY1: OLD1, GEMINI_API_KEY2: OLD2 });
   assert.deepEqual(k.geminiFree, [FREE]);
   assert.deepEqual(k.geminiPaid, [PAID]);
 });
 
 test('only the free key set: the old keys still serve the paid role', () => {
-  const k = resolveKeys({ GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY1: OLD1 });
+  const k = resolveKeys({ GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY1: OLD1 });
   assert.deepEqual(k.geminiPaid, [OLD1]);
 });
 
 test('an old key that holds the free key value is never used as a paid key', () => {
-  const k = resolveKeys({ GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY1: FREE, GEMINI_API_KEY2: OLD2 });
+  const k = resolveKeys({ GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY1: FREE, GEMINI_API_KEY2: OLD2 });
   assert.deepEqual(k.geminiPaid, [OLD2]);
 });
 
 test('duplicate names: OPENROUTER_API_KEY before OPEN_ROUTER_KEY, REPLICATE_API_TOKEN before REPLICATE_KEY, and the rest', () => {
   assert.equal(resolveKeys({ OPEN_ROUTER_KEY: 'b' }).openrouter, 'b');
-  assert.equal(resolveKeys({ OPENROUTER_API_KEY: 'a', OPEN_ROUTER_KEY: 'b' }).openrouter, 'a');
-  assert.equal(resolveKeys({ REPLICATE_KEY: 'b' }).replicate, 'b');
-  assert.equal(resolveKeys({ REPLICATE_API_TOKEN: 'a', REPLICATE_KEY: 'b' }).replicate, 'a');
-  assert.equal(resolveKeys({ AI_GATEWAY_API_KEY: 'b' }).gateway, 'b');
-  assert.equal(resolveKeys({ VERCEL_AI_API_KEY: 'a', AI_GATEWAY_API_KEY: 'b' }).gateway, 'a');
-  assert.equal(resolveKeys({ ANTROPIC_API_KEY: 'b' }).anthropic, 'b');
-  assert.equal(resolveKeys({ GEMINI_API_KEY_PAID: ' AQ.with spaces ' }).geminiPaid[0], 'AQ.withspaces', 'whitespace is stripped as before');
+  assert.equal(resolveKeys({ PG1_DAILY_SPEND_CAP_USD: '1000', OPENROUTER_API_KEY: 'a', OPEN_ROUTER_KEY: 'b' }).openrouter, 'a');
+  assert.equal(resolveKeys({ PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_KEY: 'b' }).replicate, 'b');
+  assert.equal(resolveKeys({ PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: 'a', REPLICATE_KEY: 'b' }).replicate, 'a');
+  assert.equal(resolveKeys({ PG1_DAILY_SPEND_CAP_USD: '1000', AI_GATEWAY_API_KEY: 'b' }).gateway, 'b');
+  assert.equal(resolveKeys({ PG1_DAILY_SPEND_CAP_USD: '1000', VERCEL_AI_API_KEY: 'a', AI_GATEWAY_API_KEY: 'b' }).gateway, 'a');
+  assert.equal(resolveKeys({ PG1_DAILY_SPEND_CAP_USD: '1000', ANTROPIC_API_KEY: 'b' }).anthropic, 'b');
+  assert.equal(resolveKeys({ PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: ' AQ.with spaces ' }).geminiPaid[0], 'AQ.withspaces', 'whitespace is stripped as before');
 });
 
 // --- 3. fallbacks ---------------------------------------------------------------------------------
@@ -215,7 +215,7 @@ test('out of credit is a billing failure from any provider, whatever the status:
 });
 
 test('runRoute: the reasoning core out of credit (400 invalid_request_error) falls back to the paid main core and is left out for an hour after that', async () => {
-  const env = { GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
+  const env = { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
   const tried = [];
   const r = await runRoute({
     task: TASKS.HEAVY, env, dataClass: DATA.CUSTOMER, log: quiet,
@@ -231,7 +231,7 @@ test('runRoute: the reasoning core out of credit (400 invalid_request_error) fal
 });
 
 test('runRoute: an answer that fails the caller\'s own check (invalid) moves on without opening the breaker', async () => {
-  const env = { GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
+  const env = { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
   const tried = [];
   const r = await runRoute({ task: TASKS.HEAVY, env, log: quiet, attempt: async (c) => { tried.push(c.provider); return c.provider === 'anthropic' ? { ok: false, status: 200, invalid: true, detail: 'no JSON' } : { ok: true, value: 'ok' }; } });
   assert.equal(r.ok, true);
@@ -240,7 +240,7 @@ test('runRoute: an answer that fails the caller\'s own check (invalid) moves on 
 });
 
 test('runRoute: walks the plan on quota, billing and 5xx errors and records each attempt', async () => {
-  const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
+  const env = { GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
   const tried = [];
   const lines = [];
   const answers = { gemini_free: { ok: false, status: 429, detail: 'RESOURCE_EXHAUSTED' }, gemini_paid: { ok: false, status: 402, detail: 'prepaid credit exhausted' } };
@@ -259,7 +259,7 @@ test('runRoute: walks the plan on quota, billing and 5xx errors and records each
 });
 
 test('runRoute: stops on a refusal and on a plain 400 instead of routing round it', async () => {
-  const env = { GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
+  const env = { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
   for (const answer of [{ ok: false, status: 200, refused: true, detail: 'SAFETY' }, { ok: false, status: 400, detail: 'Invalid argument' }]) {
     const tried = [];
     const r = await runRoute({ task: TASKS.LIGHT, env, dataClass: DATA.CUSTOMER, log: quiet, attempt: async (c) => { tried.push(c.provider); return answer; } });
@@ -269,7 +269,7 @@ test('runRoute: stops on a refusal and on a plain 400 instead of routing round i
 });
 
 test('the breaker: a drained prepaid key is left out for an hour, a rate-limited one goes to the back for a minute and is still tried last', () => {
-  const env = { GEMINI_API_KEY_PAID: PAID, REPLICATE_API_TOKEN: 'r8' };
+  const env = { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, REPLICATE_API_TOKEN: 'r8' };
   const now = Date.now();
   assert.equal(tripBreaker('gemini_paid#1', 429, 'RESOURCE_EXHAUSTED: quota exceeded for your prepaid credits', now), true);
   assert.ok(isTripped('gemini_paid#1', now + BREAKER_WINDOW_MS - 1000));
@@ -304,7 +304,7 @@ test('a guest or customer session is customer data regardless of content; only i
   for (const flag of [undefined, null, 1, 'true', 'operator', {}]) {
     assert.equal(dataClassFor({ isOperator: flag, texts: ['hello'] }), DATA.CUSTOMER, `isOperator=${JSON.stringify(flag)}`);
   }
-  const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC, CARTESIA_API_KEY: 'cart', ...TTS_FREE };
+  const env = { GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC, CARTESIA_API_KEY: 'cart', ...TTS_FREE };
   for (const task of Object.values(TASKS)) {
     const plan = planRoute(task, { env, dataClass: dataClassFor({ isOperator: false, texts: ['hello'] }) });
     assert.ok(plan.every((c) => c.key !== FREE && c.provider !== 'gemini_free'), `${task}: paid only for a guest`);
@@ -312,7 +312,7 @@ test('a guest or customer session is customer data regardless of content; only i
 });
 
 test('customer data never gets the free key, in any task', () => {
-  const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, GEMINI_API_KEY1: OLD1, ANTHROPIC_API_KEY: ANTHROPIC, CARTESIA_API_KEY: 'cart', REPLICATE_API_TOKEN: 'r8' };
+  const env = { GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, GEMINI_API_KEY1: OLD1, ANTHROPIC_API_KEY: ANTHROPIC, CARTESIA_API_KEY: 'cart', REPLICATE_API_TOKEN: 'r8' };
   for (const task of Object.values(TASKS)) {
     for (const c of planRoute(task, { env, dataClass: DATA.CUSTOMER })) {
       assert.notEqual(c.key, FREE, `${task}: ${c.provider}`);
@@ -324,7 +324,7 @@ test('customer data never gets the free key, in any task', () => {
 // --- 5. budgets and the usage log ---------------------------------------------------------------------
 
 test('a provider over its daily budget is left out of every plan until the day turns', () => {
-  const env = { GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC, PG1_DAILY_BUDGET_ANTHROPIC_USD: '0.50' };
+  const env = { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC, PG1_DAILY_BUDGET_ANTHROPIC_USD: '0.50' };
   assert.equal(dailyBudgetUsd(env, 'anthropic'), 0.5);
   assert.equal(dailyBudgetUsd(env, 'openai'), Infinity, 'unset: no cap');
   assert.equal(dailyBudgetUsd({ PG1_DAILY_BUDGET_OPENAI_USD: 'lots' }, 'openai'), Infinity, 'unreadable: no cap');
@@ -392,7 +392,7 @@ test('/spend summary: PG1 engine labels only, with caps and the total', async ()
 // --- 6. caching ---------------------------------------------------------------------------------------
 
 test('runRoute answers an identical request from the cache, without calling a provider', async () => {
-  const env = { GEMINI_API_KEY_PAID: PAID };
+  const env = { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID };
   const cache = createLruCache();
   let calls = 0;
   const lines = [];
@@ -422,7 +422,7 @@ test('only the operator is ever cached: a guest has no cache identity, and no id
   // stores nothing.
   let calls = 0;
   const cache = createLruCache();
-  for (let i = 0; i < 2; i++) await runRoute({ task: TASKS.LIGHT, env: { GEMINI_API_KEY_PAID: PAID, PG1_AI_CACHE: '1' }, cache, key: cacheKey(GUEST_ID, 'p'), log: quiet, attempt: async (c) => { calls++; return { ok: true, value: 'v', model: c.models[0] }; } });
+  for (let i = 0; i < 2; i++) await runRoute({ task: TASKS.LIGHT, env: { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, PG1_AI_CACHE: '1' }, cache, key: cacheKey(GUEST_ID, 'p'), log: quiet, attempt: async (c) => { calls++; return { ok: true, value: 'v', model: c.models[0] }; } });
   assert.equal(calls, 2);
   assert.equal(cache.size, 0);
 });
@@ -639,7 +639,7 @@ test('chat privacy: a guest session never reaches a model on /api/chat (JSON and
 });
 
 test('chat privacy: a guest round is planned on paid providers only, whatever it says, with or without tools', () => {
-  const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC, OPENAI_API_KEY: 'sk-stub' };
+  const env = { GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC, OPENAI_API_KEY: 'sk-stub' };
   const prompts = ['good morning', 'what is a honeypot?', 'summarize this', 'check this wallet 0x7067312d00000000000000000000000000000000'];
   for (const isOperator of [false, undefined, 'true', 1]) {
     for (const activeAction of ['CHAT', 'CLAUDE_CHAT']) {

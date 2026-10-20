@@ -129,7 +129,7 @@ function engines({ free = 'A desk with a laptop.', paid = () => new Response(GEM
 }
 
 test('a frame goes to the free key when the paid key is out of credit, for the operator, with no tools and no search', async () => {
-  const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
+  const env = { GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
   const { calls, fetchImpl } = engines({ paid: () => new Response(GEMINI_402, { status: 402 }) });
   const lines = [];
   // The paid key first for this test (the free key normally leads the light chain).
@@ -145,11 +145,11 @@ test('a frame goes to the free key when the paid key is out of credit, for the o
 });
 
 test('the free key is skipped for a guest; with the free key rate limited the camera backs off (429)', async () => {
-  const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID };
+  const env = { GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID };
   const guest = await analyzeCameraFrame({ image: { mimeType: 'image/jpeg', data: FRAME }, env, isOperator: false, fetchImpl: async () => { throw new Error('no call'); } });
   assert.equal(guest.status, 401);
   const { fetchImpl } = engines({ free: () => new Response('{"error":{"code":429,"message":"Please retry in 30s."}}', { status: 429 }), paid: () => new Response('{"error":{"code":429,"message":"Too many requests"}}', { status: 429 }) });
-  const out = await analyzeCameraFrame({ image: { mimeType: 'image/jpeg', data: FRAME }, env: { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID }, isOperator: true, fetchImpl, log: () => {}, sleep: async () => {} });
+  const out = await analyzeCameraFrame({ image: { mimeType: 'image/jpeg', data: FRAME }, env: { GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID }, isOperator: true, fetchImpl, log: () => {}, sleep: async () => {} });
   assert.equal(out.ok, false);
   assert.equal(out.status, 429);
   assert.equal(out.reason, undefined, 'a rate limit is a pause, not "no credit"');
@@ -157,7 +157,7 @@ test('the free key is skipped for a guest; with the free key rate limited the ca
 });
 
 test('every engine out: ai_unavailable, the all-out alert, and a failure log line', async () => {
-  const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
+  const env = { GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC };
   const { fetchImpl } = engines({ free: () => new Response(GEMINI_402, { status: 402 }) });
   const lines = [];
   const alerted = [];

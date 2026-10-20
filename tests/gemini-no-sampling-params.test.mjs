@@ -204,9 +204,10 @@ for (const stream of [false, true]) {
     globalThis.fetch = stub.fetch;
     // A search-route message (small talk is plain chat, no search), with
     // paid search grounding allowed (api/chat.mjs paidGroundingAllowed).
+    const cap = process.env.PG1_DAILY_SPEND_CAP_USD;
     process.env.PG1_DAILY_SPEND_CAP_USD = '5';
     const res = await chat({ prompt: 'latest news on the x402 spec', ...(stream ? { stream: true } : {}) });
-    delete process.env.PG1_DAILY_SPEND_CAP_USD;
+    process.env.PG1_DAILY_SPEND_CAP_USD = cap;
     assert.match(replyOf(res, stream), /Hello from the stub/);
     assert.ok(stub.requests.some((r) => hasSearch(r.body)) && stub.requests.some((r) => !hasSearch(r.body)), 'the search request and its retry without search');
     assert.ok(stub.requests.every((r) => r.body.generationConfig && r.body.generationConfig.maxOutputTokens === 4096), 'maxOutputTokens is still sent');
@@ -344,14 +345,14 @@ test("SelfHealingEngine's three recovery attempts send no sampling parameters", 
 test('the root index.js worker sends no sampling parameters', async () => {
   const stub = geminiStub(() => Response.json(text('worker ok')));
   globalThis.fetch = stub.fetch;
-  const res = await worker.fetch(new Request('https://worker.test/', { method: 'POST', body: JSON.stringify({ command: 'hi' }) }), { GEMINI_API_KEY: KEY2 });
+  const res = await worker.fetch(new Request('https://worker.test/', { method: 'POST', body: JSON.stringify({ command: 'hi' }) }), { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY: KEY2 });
   assert.equal((await res.json()).response, 'worker ok');
   assertClean(stub, 'index.js worker');
 });
 
 test('PG1 Studio text calls on the paid key send only maxOutputTokens and responseMimeType in generationConfig', async () => {
   const stub = geminiStub(() => Response.json(text('{"ok":true}')));
-  const env = { GEMINI_API_KEY_PAID: KEY2 };
+  const env = { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: KEY2 };
   const r = await filmThink({ env, system: 'storyboard', content: 'a film', validate: JSON.parse, fetchImpl: stub.fetch, log: () => {} });
   assert.deepEqual(r.value, { ok: true });
   await filmThink({ env, system: 'check', content: [{ type: 'text', text: 'Frame:' }, imageBlock(Buffer.from('jpeg'))], maxTokens: 4000, fetchImpl: stub.fetch, log: () => {} });
@@ -365,7 +366,7 @@ test('PG1 Studio media fallback stills and clips on the paid key send no samplin
     ? Response.json({ id: 'int-1', status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'video', data: Buffer.from('mp4').toString('base64'), mime_type: 'video/mp4' }] }] })
     : Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: PNG_1X1 } }] } }] })),
   (u) => (u.startsWith(`${SUP_URL}/`) ? new Response(frame, { status: 200 }) : Promise.reject(new Error('Unexpected network call in test: ' + u))));
-  const env = { GEMINI_API_KEY_PAID: KEY2 };
+  const env = { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: KEY2 };
   const links = { referenceUrl: `${SUP_URL}/ref.png`, prevFrameUrl: `${SUP_URL}/prev.jpg` };
   await geminiStill({ env, key: KEY2, prompt: 'a harbour at dawn', ...links, fetchImpl: stub.fetch, sleep: async () => {} });
   await geminiClip({ env, key: KEY2, prompt: 'the boat leaves', startImageUrl: `${SUP_URL}/start.png`, ...links, fetchImpl: stub.fetch, sleep: async () => {} });
@@ -383,7 +384,7 @@ test('a camera frame carries no sampling parameter', async () => {
 // /keys (lib/keysStatus.mjs): the one-token check on each Gemini key.
 test('the /keys Gemini check carries no sampling parameter', async () => {
   const stub = geminiStub(() => Response.json(text('.')));
-  const rows = await keysStatus({ env: { GEMINI_API_KEY_PAID: 'AQ.StubPaidKeyForKeysTests0000000000', GEMINI_API_KEY_FREE: 'AIzaStubFreeKeyForKeysTests00000000000' }, fetchImpl: stub.fetch, fresh: true });
+  const rows = await keysStatus({ env: { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: 'AQ.StubPaidKeyForKeysTests0000000000', GEMINI_API_KEY_FREE: 'AIzaStubFreeKeyForKeysTests00000000000' }, fetchImpl: stub.fetch, fresh: true });
   assert.equal(rows.find((r) => r.engine === 'gemini_paid').state, 'working');
   assertClean(stub, '/keys', 2);
 });

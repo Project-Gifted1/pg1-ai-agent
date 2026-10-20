@@ -64,7 +64,7 @@ const IOC_REPLY = [
 function resetEnv() {
   process.env = { ...ORIGINAL_ENV };
   for (const k of Object.keys(process.env)) {
-    if (/^(GEMINI|CARTESIA|REPLICATE|ANTHROPIC|ANTROPIC|OPENAI|GITHUB|SUPABASE|USER_API|VERCEL|PG1_|ALCHEMY|X402)/.test(k)) delete process.env[k];
+    if (/^(GEMINI|CARTESIA|REPLICATE|ANTHROPIC|ANTROPIC|OPENAI|GITHUB|SUPABASE|USER_API|VERCEL|PG1_|ALCHEMY|X402)/.test(k) && k !== 'PG1_DAILY_SPEND_CAP_USD') delete process.env[k];
   }
   process.env.USER_API_KEY = 'test-operator';
   process.env.USER_API_PASS = 'test-secret-pass';

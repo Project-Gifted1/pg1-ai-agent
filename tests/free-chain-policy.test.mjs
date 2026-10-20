@@ -207,7 +207,7 @@ test('4: trimming drops the oldest memory first, then tool output; the operator\
 // --- 5 and 6. routing policy ----------------------------------------------------------------
 
 const ALL_KEYS = {
-  GEMINI_API_KEY_FREE: 'AIza-free-0123456789', GEMINI_API_KEY_PAID: 'AQ.paid-0123456789', ANTHROPIC_API_KEY: 'sk-ant-0123456789',
+  PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_FREE: 'AIza-free-0123456789', GEMINI_API_KEY_PAID: 'AQ.paid-0123456789', ANTHROPIC_API_KEY: 'sk-ant-0123456789',
   OPENROUTER_API_KEY: 'sk-or-0123456789', VERCEL_AI_API_KEY: 'vck_0123456789', OPENAI_API_KEY: 'sk-0123456789',
   GROQ_API_KEY: 'gsk_0123456789', MISTRAL_API_KEY: 'mis_0123456789', GITHUB_MODELS_TOKEN: 'github_pat_0123456789',
   CLOUDFLARE_AI_TOKEN: 'cf_0123456789', CLOUDFLARE_ACCOUNT_ID: 'f4ca340d9bcbeeab89bba95915dd072e'
@@ -250,7 +250,7 @@ test('6: client work stays on commercial_ok engines (Claude, the paid Gemini key
     const plan = planRoute(task, { env: ALL_KEYS, dataClass: DATA.OPERATOR, clientWork: true }).map((c) => c.provider);
     assert.deepEqual([...plan].sort(), ['anthropic', 'gemini_paid'], `${task}: ${plan}`);
   }
-  const freeOnly = { GEMINI_API_KEY_FREE: ALL_KEYS.GEMINI_API_KEY_FREE, GROQ_API_KEY: ALL_KEYS.GROQ_API_KEY, OPENROUTER_API_KEY: ALL_KEYS.OPENROUTER_API_KEY };
+  const freeOnly = { GEMINI_API_KEY_FREE: ALL_KEYS.GEMINI_API_KEY_FREE, GROQ_API_KEY: ALL_KEYS.GROQ_API_KEY, PG1_DAILY_SPEND_CAP_USD: '1000', OPENROUTER_API_KEY: ALL_KEYS.OPENROUTER_API_KEY };
   assert.deepEqual(filmTextPlan(freeOnly, { writing: true, clientWork: true }), []);
   await assert.rejects(filmThink({ env: freeOnly, system: 's', content: 'c', clientWork: true, purpose: 'storyboard', fetchImpl: async () => { throw new Error('no call may be made'); } }), (e) => e.kind === 'not_configured' && /client film/.test(e.detail));
 });
@@ -295,7 +295,7 @@ test('7: credit left per account (live balance, estimate from a top-up, or unkno
 // --- 8. film media credit ---------------------------------------------------------------------
 
 test('8: a film whose clips engines are all out of credit stops before anything is spent, naming them in PG1 words', async () => {
-  const env = { GEMINI_API_KEY_PAID: 'AQ.paid-0123456789', REPLICATE_API_TOKEN: 'r8_0123456789' };
+  const env = { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: 'AQ.paid-0123456789', REPLICATE_API_TOKEN: 'r8_0123456789' };
   const rows = [{ engine: 'gemini_paid', set: true, state: STATES.NO_CREDIT }, { engine: 'replicate', set: true, state: STATES.INVALID }];
   const check = await filmMediaCredit({ env, rows });
   assert.equal(check.ok, false);
@@ -396,7 +396,7 @@ async function chat(prompt) {
 }
 function sjvEngines({ free }) {
   for (const k of ROUTER_ENV) delete process.env[k];
-  Object.assign(process.env, { USER_API_KEY: 'test-operator', USER_API_PASS: 'test-secret-pass', GEMINI_API_KEY_FREE: 'AIza-free-sjv-0123456789', GEMINI_API_KEY_PAID: 'AQ.paid-sjv-0123456789', ANTHROPIC_API_KEY: 'sk-ant-sjv-0123456789', GROQ_API_KEY: 'gsk_sjv_0123456789' });
+  Object.assign(process.env, { USER_API_KEY: 'test-operator', USER_API_PASS: 'test-secret-pass', GEMINI_API_KEY_FREE: 'AIza-free-sjv-0123456789', PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: 'AQ.paid-sjv-0123456789', ANTHROPIC_API_KEY: 'sk-ant-sjv-0123456789', GROQ_API_KEY: 'gsk_sjv_0123456789' });
   const calls = [];
   let freeN = 0;
   globalThis.fetch = async (url, options = {}) => {

@@ -26,7 +26,7 @@ const { default: weekly } = await import('../api/opportunities/weekly.mjs');
 const { default: chatHandler, __clearAuthRateLimitState } = await import('../api/chat.mjs');
 
 const SUP = { supUrl: 'https://supabase.test', supKey: 'k' };
-const ENV = { PG1_LAB_DISPATCH_SECRET: 'x'.repeat(40), GITHUB_TOKEN: 'ghp_x', PG1_AUTONOMY: 'lab' };
+const ENV = { PG1_DAILY_SPEND_CAP_USD: '1000', PG1_LAB_DISPATCH_SECRET: 'x'.repeat(40), GITHUB_TOKEN: 'ghp_x', PG1_AUTONOMY: 'lab' };
 const MIGRATIONS = ['20261019120000_pg1_skills.sql', '20261020120000_pg1_lab_and_flags.sql', '20261021120000_pg1_autonomy_log.sql', '20261022120000_pg1_opportunities.sql'];
 
 const STATS = {
@@ -78,7 +78,7 @@ test('the runner scan: signals as untrusted data, 1-3 proposals, search on the m
     assert.match(body.contents[0].parts[0].text, /<usage_signals untrusted="true">/);
     return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ summary: 'One idea.', proposals: [PROPOSAL, PROPOSAL, PROPOSAL, PROPOSAL] }) }] } }], usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 100 } });
   };
-  const r = await runExperiment({ id: 'abababab-0000-0000-0000-000000000000', kind: 'research', goal: SCAN_GOAL, input: { task: 'opportunities', signals: opportunitySignals(STATS) }, env: { PG1_LAB_GEMINI_API_KEY: 'g' }, budgetUsd: 2, fetchImpl });
+  const r = await runExperiment({ id: 'abababab-0000-0000-0000-000000000000', kind: 'research', goal: SCAN_GOAL, input: { task: 'opportunities', signals: opportunitySignals(STATS) }, env: { PG1_DAILY_SPEND_CAP_USD: '1000', PG1_LAB_GEMINI_API_KEY: 'g' }, budgetUsd: 2, fetchImpl });
   assert.equal(r.status, 'done');
   assert.equal(r.proposals.length, 3);
   assert.match(r.report_markdown, /## Opportunity scan/);

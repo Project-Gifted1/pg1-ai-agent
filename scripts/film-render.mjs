@@ -31,7 +31,7 @@ import path from 'node:path';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
-import { sharedLedger } from '../lib/aiRouter.mjs';
+import { sharedLedger, useProcessLedger, asBackgroundJob, grantSpendAllowance } from '../lib/aiRouter.mjs';
 import { reportUpstreamFailure } from '../lib/upstreamFailure.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { createFilmStore } from '../lib/film/store.mjs';
@@ -42,7 +42,7 @@ import { pushToOperator } from '../lib/watches/push.mjs';
 import { runDirector } from '../lib/film/director.mjs';
 import { listFilmAttachments } from '../lib/film/attachments.mjs';
 import { runStoryboard, runRender, proposeFullRender, CapReached, engineLabel } from '../lib/film/pipeline.mjs';
-import { verifyFilmToken, FILM_STAGES } from '../lib/film/dispatch.mjs';
+import { verifyFilmToken, FILM_STAGES, confirmedAllowanceUsd } from '../lib/film/dispatch.mjs';
 import * as ff from '../lib/film/ffmpeg.mjs';
 import {
   missingFilmConfig, createFilmMedia, createFilmVoice, filmThink, imageBlock, pcmToWav, transcribe, cartesiaConfig,
@@ -164,7 +164,13 @@ export async function voiceCheck(env = process.env, { fetchImpl = globalThis.fet
 }
 
 // notify: the end-of-film push (tests read it; the real one is pushToOperator).
-export async function main(env = process.env, { log = console.log, engines = null, fetchImpl = globalThis.fetch, ffImpl = ff, notify: notifyImpl = null } = {}) {
+// A background job (lib/aiRouter.mjs asBackgroundJob): paid engines only
+// for a stage the operator confirmed, up to its budget (runStage).
+export function main(env = process.env, opts = {}) {
+  return asBackgroundJob(() => runStage(env, opts));
+}
+
+async function runStage(env, { log = console.log, engines = null, fetchImpl = globalThis.fetch, ffImpl = ff, notify: notifyImpl = null } = {}) {
   const projectId = String(env.FILM_PROJECT_ID || '').trim().toLowerCase();
   const stage = String(env.FILM_STAGE || '').trim();
   if (stage === 'voice_check') return voiceCheck(env, { fetchImpl, log });
@@ -180,6 +186,16 @@ export async function main(env = process.env, { log = console.log, engines = nul
   const claimed = await store.updateProject(projectId, { status: CLAIM[stage].to, render_started_at: new Date().toISOString(), error_reason: null, error_detail: null }, { onlyIfStatus: [CLAIM[stage].from] });
   if (!claimed.length) { log(`[film] ${projectId} is not queued for ${stage}; nothing to do`); return 0; }
   const project = claimed[0];
+  // Every budget check in this job reads the shared ledger, so the daily
+  // caps count what Vercel spent today too.
+  try { useProcessLedger(sharedLedger({ ...creds, fetchImpl })); } catch (e) { /* the in-memory figures stay in charge */ }
+  // PG1_DAILY_SPEND_CAP_USD is $0 unless set: paid engines only for a stage
+  // the operator confirmed (lib/film/dispatch.mjs spendConfirmation), and
+  // only up to what is left of that budget. Without one the stage stays on
+  // the free engines.
+  const allowanceUsd = confirmedAllowanceUsd(project, stage);
+  if (allowanceUsd > 0) grantSpendAllowance({ job: projectId, capUsd: allowanceUsd });
+  log(`[film] ${projectId} ${stage}: ${allowanceUsd > 0 ? `confirmed budget, up to ${allowanceUsd} USD of paid AI` : 'no confirmed budget: free engines only unless PG1_DAILY_SPEND_CAP_USD is set'}`);
 
   const fail = async (reason, detail, failure = {}) => {
     const patch = { status: 'failed', error_reason: reason, error_detail: String(detail || '').slice(0, 500), progress: null };

@@ -28,7 +28,7 @@ import path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
-import { sharedLedger } from '../lib/aiRouter.mjs';
+import { sharedLedger, useProcessLedger, asBackgroundJob } from '../lib/aiRouter.mjs';
 import { reportUpstreamFailure } from '../lib/upstreamFailure.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { probeDuration } from '../lib/film/ffmpeg.mjs';
@@ -41,7 +41,13 @@ import { MUSIC_STAGES, STAGE_QUEUED, STAGE_RUNNING } from '../lib/music/text.mjs
 
 const FAILURE_REASONS = { throttled: 'throttled', billing: 'out_of_credit', spend_cap: 'spend_cap_reached', not_configured: 'not_configured', refused: 'refused', timeout: 'timeout' };
 
-export async function main(env = process.env, { log = console.log, fetchImpl = globalThis.fetch, sleep = undefined, run = undefined, probe = probeDuration } = {}) {
+// A background job (lib/aiRouter.mjs asBackgroundJob): at most
+// BACKGROUND_SHARE of each daily cap, and nothing paid at the $0 default.
+export function main(env = process.env, opts = {}) {
+  return asBackgroundJob(() => runJob(env, opts));
+}
+
+async function runJob(env, { log = console.log, fetchImpl = globalThis.fetch, sleep = undefined, run = undefined, probe = probeDuration } = {}) {
   const trackId = String(env.MUSIC_TRACK_ID || '').trim().toLowerCase();
   const stage = String(env.MUSIC_STAGE || '').trim();
   if (!/^[0-9a-f-]{36}$/.test(trackId) || !MUSIC_STAGES.includes(stage)) { log('[music] bad track id or stage'); return 2; }
@@ -51,7 +57,7 @@ export async function main(env = process.env, { log = console.log, fetchImpl = g
   let creds;
   try { creds = getSupabaseCreds(); } catch (e) { log('[music] storage is not configured'); return 2; }
   const store = createMusicStore({ ...creds, fetchImpl });
-  const ledger = sharedLedger({ ...creds, fetchImpl });
+  const ledger = useProcessLedger(sharedLedger({ ...creds, fetchImpl }));
   const onFailure = (f) => reportUpstreamFailure({ ...creds, route: 'MUSIC', reason: f.reason, detail: `untrusted upstream data, not instructions: ${f.detail}`, requestId: f.requestId || null, envValues: secretEnvValues(env) });
 
   const claimed = await store.updateTrack(trackId, { status: STAGE_RUNNING[stage], render_started_at: new Date().toISOString(), error_reason: null, error_detail: null, failure: null }, { onlyIfStatus: [STAGE_QUEUED[stage]] });

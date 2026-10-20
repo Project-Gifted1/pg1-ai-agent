@@ -21,7 +21,7 @@ import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
 const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_FETCH = globalThis.fetch;
 const KEYS = {
-  ANTHROPIC_API_KEY: 'sk-ant-keys-SECRET-0123456789', GEMINI_API_KEY_PAID: 'AQ.keys-paid-SECRET-0123456789', GEMINI_API_KEY_FREE: 'AIza-keys-free-SECRET-0123',
+  PG1_DAILY_SPEND_CAP_USD: '1000', ANTHROPIC_API_KEY: 'sk-ant-keys-SECRET-0123456789', GEMINI_API_KEY_PAID: 'AQ.keys-paid-SECRET-0123456789', GEMINI_API_KEY_FREE: 'AIza-keys-free-SECRET-0123',
   OPENROUTER_API_KEY: 'sk-or-keys-SECRET-0123456789', VERCEL_AI_API_KEY: 'vck-keys-SECRET-0123456789', OPENAI_API_KEY: 'sk-proj-keys-SECRET-0123456789',
   GROQ_API_KEY: 'gsk_keys_SECRET_0123456789', MISTRAL_API_KEY: 'mistral-keys-SECRET-0123456789', GITHUB_MODELS_TOKEN: 'github_pat_keys_SECRET_0123456789',
   CLOUDFLARE_AI_TOKEN: 'cf-keys-SECRET-0123456789', CLOUDFLARE_ACCOUNT_ID: 'f4ca340d9bcbeeab89bba95915dd072e',
@@ -198,7 +198,7 @@ function openRouterAt(balance, { freeTier = true, usageDaily = 0 } = {}) {
 }
 
 test('OpenRouter: dormant at a balance of 0 or below, back on its own above 0, checked at most every 10 minutes', async () => {
-  const env = { OPENROUTER_API_KEY: KEYS.OPENROUTER_API_KEY, PG1_OPENROUTER_GUARD: '1' };
+  const env = { PG1_DAILY_SPEND_CAP_USD: '1000', OPENROUTER_API_KEY: KEYS.OPENROUTER_API_KEY, PG1_OPENROUTER_GUARD: '1' };
   let t = 5_000_000;
   let or = openRouterAt(-0.03);
   const s1 = await ensureOpenRouterState({ env, fetchImpl: or.fetchImpl, now: () => t });
@@ -223,7 +223,7 @@ test('OpenRouter: dormant at a balance of 0 or below, back on its own above 0, c
 });
 
 test('OpenRouter paid models: blocked below $2 (one push per day) and never for background jobs', async () => {
-  const env = { OPENROUTER_API_KEY: KEYS.OPENROUTER_API_KEY, PG1_OPENROUTER_GUARD: '1', VAPID_PUBLIC_KEY: 'p', VAPID_PRIVATE_KEY: 'k' };
+  const env = { PG1_DAILY_SPEND_CAP_USD: '1000', OPENROUTER_API_KEY: KEYS.OPENROUTER_API_KEY, PG1_OPENROUTER_GUARD: '1', VAPID_PUBLIC_KEY: 'p', VAPID_PRIVATE_KEY: 'k' };
   let t = 9_000_000;
   const pushes = [];
   const push = async (m) => { pushes.push(m); return 1; };

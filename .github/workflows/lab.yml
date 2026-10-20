@@ -110,6 +110,8 @@ jobs:
           PG1_LAB_ANTHROPIC_API_KEY: ${{ secrets.PG1_LAB_ANTHROPIC_API_KEY || secrets.ANTHROPIC_API_KEY }}
           PG1_LAB_GEMINI_API_KEY: ${{ secrets.PG1_LAB_GEMINI_API_KEY || secrets.GEMINI_API_KEY_PAID }}
           PG1_LAB_MAX_MINUTES: '15'
+          # Unset is $0 (lib/aiRouter.mjs): the runner then calls no engine.
+          PG1_DAILY_SPEND_CAP_USD: ${{ vars.PG1_DAILY_SPEND_CAP_USD }}
         run: node scripts/lab-run.mjs
       - uses: actions/upload-artifact@v4
         if: always()

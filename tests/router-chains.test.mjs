@@ -23,7 +23,7 @@ import { EngineError } from '../lib/film/providers.mjs';
 import { makeFilmDb, filmDbRoutes, routedFetch } from './helpers/filmDb.mjs';
 
 const ALL_KEYS = {
-  ANTHROPIC_API_KEY: 'sk-ant-x', GEMINI_API_KEY_PAID: 'paid-x', GEMINI_API_KEY_FREE: 'free-x', OPENROUTER_API_KEY: 'or-x',
+  PG1_DAILY_SPEND_CAP_USD: '1000', ANTHROPIC_API_KEY: 'sk-ant-x', GEMINI_API_KEY_PAID: 'paid-x', GEMINI_API_KEY_FREE: 'free-x', OPENROUTER_API_KEY: 'or-x',
   REPLICATE_API_TOKEN: 'r8-x', CARTESIA_API_KEY: 'car-x', ELEVENLABS_API_KEY: 'el-x'
 };
 const order = (plan) => plan.steps.map((s) => `${s.provider}${s.slot ? `:${s.slot}` : ''}`);
@@ -54,7 +54,7 @@ describe('chains as built', () => {
   });
 
   test('a missing key, a provider over budget and the free key for customers are left out, with the reason', () => {
-    const p = chainPlan('text', { env: { GEMINI_API_KEY_PAID: 'p', GEMINI_API_KEY_FREE: 'f', PG1_DAILY_BUDGET_GEMINI_PAID_USD: '0' } });
+    const p = chainPlan('text', { env: { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: 'p', GEMINI_API_KEY_FREE: 'f', PG1_DAILY_BUDGET_GEMINI_PAID_USD: '0' } });
     assert.deepEqual(order(p), []);
     assert.deepEqual(Object.fromEntries(p.skipped.map((s) => [s.provider, s.reason])), { anthropic: 'no_key', gemini_paid: 'budget', gemini_free: 'operator_only', groq: 'operator_only', mistral: 'operator_only', github_models: 'operator_only', cloudflare: 'operator_only', openrouter: 'no_key', gateway: 'no_key', openai: 'no_key' });
     assert.match(emptyPlanReason(p), /over today's budget/);
@@ -72,11 +72,11 @@ describe('licence: client work uses commercial_ok engines only', () => {
     assert.deepEqual(order(chainPlan('voice', { env: ALL_KEYS, clientWork: true })), ['elevenlabs']);
     assert.ok(chainPlan('text', { env: ALL_KEYS, clientWork: true, operator: true }).steps.every((s) => s.provider !== 'gemini_free'), 'never the free tier for a client');
     // With only the unlicensed engine configured: an empty plan and why.
-    const kling = chainPlan('clips', { env: { REPLICATE_API_TOKEN: 'r8' }, clientWork: true });
+    const kling = chainPlan('clips', { env: { PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: 'r8' }, clientWork: true });
     assert.equal(kling.steps.length, 0);
     assert.match(emptyPlanReason(kling, { clientWork: true }), /settled commercial licence/);
     // The operator's own film may use them.
-    assert.deepEqual(chainPlan('clips', { env: { REPLICATE_API_TOKEN: 'r8' } }).steps.map((s) => s.provider), ['replicate']);
+    assert.deepEqual(chainPlan('clips', { env: { PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: 'r8' } }).steps.map((s) => s.provider), ['replicate']);
     // Every chain step's licence is the registry's own where it names a model.
     for (const [id, steps] of Object.entries(ROUTING_CHAINS)) for (const s of steps) if (s.feature) assert.ok(capability(s.feature).models.some((m) => m.model === s.model), `${id}: ${s.model} is in the registry`);
   });

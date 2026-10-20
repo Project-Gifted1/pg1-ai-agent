@@ -36,7 +36,7 @@ const ID = 'aef41455-207c-4a26-960f-5d28111fafe9';
 const CLAUDE_CREDIT = () => new Response(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.' } }), { status: 400 });
 const GEMINI_CAP = () => new Response(JSON.stringify({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'Your project has exceeded its monthly spending cap. Please go to AI Studio at https://ai.studio/spend.' } }), { status: 429 });
 const gemini = (text) => Response.json({ candidates: [{ content: { parts: [{ text }] } }], usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 50 } });
-const ENV = { PG1_LAB_ANTHROPIC_API_KEY: 'sk-ant-lab', PG1_LAB_GEMINI_API_KEY: 'AQ.lab' };
+const ENV = { PG1_DAILY_SPEND_CAP_USD: '1000', PG1_LAB_ANTHROPIC_API_KEY: 'sk-ant-lab', PG1_LAB_GEMINI_API_KEY: 'AQ.lab' };
 const lookup = async () => [{ address: '93.184.216.34', family: 4 }];
 
 // --- the root cause ---------------------------------------------------------------------

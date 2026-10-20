@@ -22,7 +22,7 @@ import { trackSpec } from '../lib/music/pipeline.mjs';
 import { clipCostOnUsd, stillCostOnUsd } from '../lib/film/cost.mjs';
 
 const ALL_KEYS = {
-  ANTHROPIC_API_KEY: 'sk-ant-licence-0123456789', GEMINI_API_KEY_PAID: 'AQ.licence-paid-0123456789', GEMINI_API_KEY_FREE: 'AIza-licence-free-0123',
+  PG1_DAILY_SPEND_CAP_USD: '1000', ANTHROPIC_API_KEY: 'sk-ant-licence-0123456789', GEMINI_API_KEY_PAID: 'AQ.licence-paid-0123456789', GEMINI_API_KEY_FREE: 'AIza-licence-free-0123',
   OPENROUTER_API_KEY: 'sk-or-licence-0123456789', AI_GATEWAY_API_KEY: 'gw-licence-0123456789', OPENAI_API_KEY: 'sk-licence-0123456789',
   REPLICATE_API_TOKEN: 'r8_licence_0123456789abcdef', CARTESIA_API_KEY: 'sk_car_licence_0123456789', ELEVENLABS_API_KEY: 'sk_el_licence_0123456789',
   GROQ_API_KEY: 'gsk_licence_0123456789', MISTRAL_API_KEY: 'mistral-licence-0123456789', GITHUB_MODELS_TOKEN: 'github_pat_licence_0123456789',
@@ -161,7 +161,7 @@ describe('a client job never reaches an engine not cleared for client work', () 
   });
 
   test('voice, dialogue and sfx: ElevenLabs only (never Cartesia); with no ElevenLabs key a client film stops clearly', async () => {
-    const noEl = { ...ALL_KEYS, ELEVENLABS_API_KEY: '' };
+    const noEl = { ...ALL_KEYS, PG1_DAILY_SPEND_CAP_USD: '1000', ELEVENLABS_API_KEY: '' };
     assert.deepEqual(chainPlan('voice', { env: ALL_KEYS, clientWork: true }).steps.map((s) => s.provider), ['elevenlabs']);
     const voice = createFilmVoice({ env: noEl, clientWork: true, fetchImpl: async () => { throw new Error('no call expected'); } });
     await assert.rejects(voice({ text: 'x' }), (e) => e instanceof EngineError && e.kind === 'not_configured' && e.licence);

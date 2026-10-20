@@ -73,6 +73,12 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          # Daily caps (lib/aiRouter.mjs), the same values as on Vercel and
+          # read against the same ledger: unset PG1_DAILY_SPEND_CAP_USD is $0.
+          PG1_DAILY_SPEND_CAP_USD: ${{ vars.PG1_DAILY_SPEND_CAP_USD }}
+          PG1_DAILY_CAP_ANTHROPIC_USD: ${{ vars.PG1_DAILY_CAP_ANTHROPIC_USD }}
+          PG1_DAILY_CAP_GEMINI_USD: ${{ vars.PG1_DAILY_CAP_GEMINI_USD }}
+          PG1_DAILY_CAP_OPENROUTER_USD: ${{ vars.PG1_DAILY_CAP_OPENROUTER_USD }}
           # Text engines (lib/film/providers.mjs filmTextPlan). The writing
           # stages of an operator's own film try the free engines first
           # (routing policy: no paid text while a free engine fits); a client

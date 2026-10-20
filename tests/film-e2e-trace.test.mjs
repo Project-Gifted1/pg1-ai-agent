@@ -395,7 +395,7 @@ describe('one film end to end on the real engines', () => {
 });
 
 describe('the voiceover engine', () => {
-  const env = { CARTESIA_API_KEY: 'c', ELEVENLABS_API_KEY: 'e' };
+  const env = { CARTESIA_API_KEY: 'c', PG1_DAILY_SPEND_CAP_USD: '1000', ELEVENLABS_API_KEY: 'e' };
   const cartesiaOk = () => sse([{ type: 'chunk', data: Buffer.alloc(100).toString('base64') }, { type: 'done' }]);
   const elOk = (text = 'hi there') => json({ audio_base64: Buffer.alloc(48).toString('base64'), alignment: { characters: [...text], character_start_times_seconds: [...text].map((c, i) => i / 10), character_end_times_seconds: [...text].map((c, i) => i / 10 + 0.05) } });
   const engineOf = (u) => (u.startsWith(CARTESIA_TTS_SSE_URL) ? 'cartesia' : 'elevenlabs');
@@ -457,7 +457,7 @@ describe('the voiceover engine', () => {
   test('both down, no key at all, or a client film without the brand voice: a clear error', async () => {
     const both = createFilmVoice({ env, sleep: async () => {}, log: () => {}, fetchImpl: () => new Response('down', { status: 503 }) });
     await assert.rejects(both({ text: 'x' }), (e) => e.engine === 'elevenlabs' && e.fallback.engine === 'cartesia' && e.fallback.outcome === 'failed');
-    const alone = createFilmVoice({ env: { ELEVENLABS_API_KEY: 'e' }, sleep: async () => {}, log: () => {}, fetchImpl: () => new Response('down', { status: 503 }) });
+    const alone = createFilmVoice({ env: { PG1_DAILY_SPEND_CAP_USD: '1000', ELEVENLABS_API_KEY: 'e' }, sleep: async () => {}, log: () => {}, fetchImpl: () => new Response('down', { status: 503 }) });
     await assert.rejects(alone({ text: 'x' }), (e) => e.fallback.outcome === 'not_configured');
     const client = createFilmVoice({ env: { CARTESIA_API_KEY: 'c' }, clientWork: true, log: () => {}, fetchImpl: () => cartesiaOk() });
     await assert.rejects(client({ text: 'x' }), (e) => e.kind === 'not_configured' && e.licence && /Cartesia is not cleared for client work/.test(e.detail));
@@ -471,7 +471,7 @@ describe('the voiceover engine', () => {
     const out = path.join(os.tmpdir(), `voice-check-${Date.now()}.wav`);
     const calls = [];
     const logs = [];
-    const code = await voiceCheck({ ELEVENLABS_API_KEY: 'e', PG1_FILM_VOICE_ID: 'brand123', VOICE_CHECK_OUT: out, FILM_STAGE: 'voice_check' }, { fetchImpl: (u, o) => { calls.push({ u, body: JSON.parse(o.body) }); return elOk(VOICE_CHECK_LINE); }, log: (l) => logs.push(l) });
+    const code = await voiceCheck({ PG1_DAILY_SPEND_CAP_USD: '1000', ELEVENLABS_API_KEY: 'e', PG1_FILM_VOICE_ID: 'brand123', VOICE_CHECK_OUT: out, FILM_STAGE: 'voice_check' }, { fetchImpl: (u, o) => { calls.push({ u, body: JSON.parse(o.body) }); return elOk(VOICE_CHECK_LINE); }, log: (l) => logs.push(l) });
     assert.equal(code, 0);
     assert.equal(calls.length, 1);
     assert.match(calls[0].u, /\/text-to-speech\/brand123\/with-timestamps\?output_format=pcm_24000$/);
@@ -490,7 +490,7 @@ describe('the voiceover engine', () => {
   });
 
   test('film beds: Lyria 3.5, then the clip model; never ElevenLabs or Replicate without film rights', () => {
-    const plan = filmMusicPlan({ GEMINI_API_KEY_PAID: 'p', ELEVENLABS_API_KEY: 'e', REPLICATE_API_TOKEN: 'r' }, { exclude: filmMusicExclude({}) });
+    const plan = filmMusicPlan({ PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: 'p', ELEVENLABS_API_KEY: 'e', REPLICATE_API_TOKEN: 'r' }, { exclude: filmMusicExclude({}) });
     assert.deepEqual(plan.map((c) => `${c.provider}:${c.models[0]}${c.clip ? ':clip' : ''}`), ['gemini_paid:lyria-3.5', 'gemini_paid:lyria-3-clip-preview:clip']);
     assert.deepEqual(plan.map((c) => c.models[0]), capability('film_music').models.map((m) => m.model), 'the registry\'s film_music order');
   });

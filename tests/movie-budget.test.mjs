@@ -190,7 +190,7 @@ describe('the budget pauses the shoot before it overspends', () => {
   });
 
   test('the credit probe: a picture engine known to be out of credit is a no, with no paid call', async () => {
-    const env = { GEMINI_API_KEY_PAID: 'AQ.paid-0123456789', ELEVENLABS_API_KEY: 'sk_el_0123456789' };
+    const env = { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: 'AQ.paid-0123456789', ELEVENLABS_API_KEY: 'sk_el_0123456789' };
     assert.deepEqual(await movieCreditOk({ env, fetchImpl: async () => { throw new Error('no call'); } }), { ok: true });
     tripBreaker('gemini_paid', 402, 'Your prepayment credits are depleted');
     const r = await movieCreditOk({ env, fetchImpl: async () => { throw new Error('no call'); } });
@@ -342,7 +342,7 @@ describe('the budget checkpoint', () => {
 });
 
 describe('customer data only reaches commercial_ok engines', () => {
-  const ALL = { ANTHROPIC_API_KEY: 'sk-ant-x0123456789', GEMINI_API_KEY_PAID: 'AQ.paid-0123456789', GEMINI_API_KEY_FREE: 'AIza-free-0123456789', OPENROUTER_API_KEY: 'sk-or-0123456789', OPENAI_API_KEY: 'sk-openai-0123', VERCEL_AI_API_KEY: 'gw-0123', GROQ_API_KEY: 'gsk_0123', MISTRAL_API_KEY: 'mis_0123', GITHUB_MODELS_TOKEN: 'ghm_0123' };
+  const ALL = { PG1_DAILY_SPEND_CAP_USD: '1000', ANTHROPIC_API_KEY: 'sk-ant-x0123456789', GEMINI_API_KEY_PAID: 'AQ.paid-0123456789', GEMINI_API_KEY_FREE: 'AIza-free-0123456789', OPENROUTER_API_KEY: 'sk-or-0123456789', OPENAI_API_KEY: 'sk-openai-0123', VERCEL_AI_API_KEY: 'gw-0123', GROQ_API_KEY: 'gsk_0123', MISTRAL_API_KEY: 'mis_0123', GITHUB_MODELS_TOKEN: 'ghm_0123' };
 
   test('never OpenRouter, a free engine or DeepSeek; with no commercial_ok engine left the plan is empty', () => {
     for (const task of [TASKS.LIGHT, TASKS.HEAVY]) {
@@ -350,7 +350,7 @@ describe('customer data only reaches commercial_ok engines', () => {
       assert.deepEqual([...new Set(plan.map((c) => c.provider))].sort(), ['anthropic', 'gemini_paid'], task);
       assert.ok(plan.every((c) => c.models.every((m) => !/deepseek/i.test(m))));
     }
-    assert.deepEqual(planRoute(TASKS.HEAVY, { env: { OPENROUTER_API_KEY: 'sk-or-0123456789', GROQ_API_KEY: 'gsk_0123' }, dataClass: DATA.CUSTOMER }), []);
+    assert.deepEqual(planRoute(TASKS.HEAVY, { env: { PG1_DAILY_SPEND_CAP_USD: '1000', OPENROUTER_API_KEY: 'sk-or-0123456789', GROQ_API_KEY: 'gsk_0123' }, dataClass: DATA.CUSTOMER }), []);
     for (const purpose of ['movie dailies s1-w1', 'storyboard check', 'movie: screenplay']) {
       const plan = filmTextPlan(ALL, { writing: false });
       assert.ok(plan.every((c) => ['anthropic', 'gemini_paid'].includes(c.provider)), purpose);
@@ -364,7 +364,7 @@ describe('customer data only reaches commercial_ok engines', () => {
   });
 
   test('a key known to be out of credit is skipped (not called every shot), and checked again after an hour', async () => {
-    const env = { ANTHROPIC_API_KEY: 'sk-ant-x0123456789', GEMINI_API_KEY_PAID: 'AQ.paid-0123456789' };
+    const env = { PG1_DAILY_SPEND_CAP_USD: '1000', ANTHROPIC_API_KEY: 'sk-ant-x0123456789', GEMINI_API_KEY_PAID: 'AQ.paid-0123456789' };
     const seen = [];
     const credit = JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API.' } });
     const verdict = '{"pass":true,"score":8,"issues":[],"best_start_s":0.2,"description":"ok"}';
@@ -381,7 +381,7 @@ describe('customer data only reaches commercial_ok engines', () => {
   });
 
   test('the dailies: the cheapest commercial_ok model first, and one review per take (an unusable verdict is not asked again)', async () => {
-    const env = { ANTHROPIC_API_KEY: 'sk-ant-x0123456789', GEMINI_API_KEY_PAID: 'AQ.paid-0123456789' };
+    const env = { PG1_DAILY_SPEND_CAP_USD: '1000', ANTHROPIC_API_KEY: 'sk-ant-x0123456789', GEMINI_API_KEY_PAID: 'AQ.paid-0123456789' };
     const plan = filmTextPlan(env, { cheapest: true });
     assert.equal(plan[0].provider, 'anthropic');
     assert.deepEqual(plan[0].models, ['claude-haiku-5-5']);

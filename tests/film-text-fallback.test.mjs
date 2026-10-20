@@ -32,7 +32,7 @@ const PAID = 'AQ.film-paid-stub-0123456789abcdef';
 const FREE = 'AIza-film-free-stub-0123456789abcdef';
 const OLD = 'AIza-film-old-name-stub-0123456789';
 const OPENROUTER = 'sk-or-film-stub-0123456789abcdef';
-const ENV = { ANTHROPIC_API_KEY: ANTHROPIC, GEMINI_API_KEY_PAID: PAID, OPENROUTER_API_KEY: OPENROUTER };
+const ENV = { PG1_DAILY_SPEND_CAP_USD: '1000', ANTHROPIC_API_KEY: ANTHROPIC, GEMINI_API_KEY_PAID: PAID, OPENROUTER_API_KEY: OPENROUTER };
 
 // Anthropic's exact answer for an account with no credit left.
 const CREDIT_TOO_LOW = JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.' }, request_id: 'req_011CSHoEeqs5C35K2UUqR7Fy' });
@@ -82,7 +82,7 @@ after(() => { process.env = { ...ORIGINAL_ENV }; });
 
 describe('the film text plan', () => {
   test('Claude, then the paid Gemini key; never OpenRouter, the free key or an old Gemini name', () => {
-    const env = { ...ENV, GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY: OLD, GEMINI_API_KEY1: OLD, OPENAI_API_KEY: 'sk-openai', VERCEL_AI_API_KEY: 'gw' };
+    const env = { ...ENV, GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY: OLD, GEMINI_API_KEY1: OLD, OPENAI_API_KEY: 'sk-openai', VERCEL_AI_API_KEY: 'gw' };
     const plan = filmTextPlan(env);
     assert.deepEqual(plan.map((c) => c.provider), ['anthropic', 'gemini_paid']);
     assert.deepEqual(plan.map((c) => c.key), [ANTHROPIC, PAID]);
@@ -91,16 +91,16 @@ describe('the film text plan', () => {
   });
 
   test('a GEMINI_API_KEY_PAID that holds the free key is never used, and old names do not stand in for it', () => {
-    assert.equal(filmTextKeys({ GEMINI_API_KEY_PAID: FREE, GEMINI_API_KEY_FREE: FREE }).geminiPaid, '');
-    assert.deepEqual(filmTextPlan({ GEMINI_API_KEY_PAID: FREE, GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY1: OLD }), []);
+    assert.equal(filmTextKeys({ PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: FREE, GEMINI_API_KEY_FREE: FREE }).geminiPaid, '');
+    assert.deepEqual(filmTextPlan({ PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: FREE, GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY1: OLD }), []);
     assert.deepEqual(filmTextPlan({ GEMINI_API_KEY_FREE: FREE }), []);
   });
 
   test('the worker is ready with any one paid text engine, and never with the free key alone', () => {
-    const base = { REPLICATE_API_TOKEN: 'r8', CARTESIA_API_KEY: 'car', PG1_VIDEO_MODEL_REPLICATE_IMAGE: 'kwaivgi/kling-v2.1' };
+    const base = { PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: 'r8', CARTESIA_API_KEY: 'car', PG1_VIDEO_MODEL_REPLICATE_IMAGE: 'kwaivgi/kling-v2.1' };
     for (const k of ['ANTHROPIC_API_KEY', 'GEMINI_API_KEY_PAID']) assert.deepEqual(missingFilmConfig({ ...base, [k]: 'x' }), [], k);
-    assert.deepEqual(missingFilmConfig({ ...base, GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY: OLD }), ['ANTHROPIC_API_KEY or GEMINI_API_KEY_PAID']);
-    assert.deepEqual(missingFilmConfig({ ...base, OPENROUTER_API_KEY: 'x' }), ['ANTHROPIC_API_KEY or GEMINI_API_KEY_PAID'], 'OpenRouter is not a film text engine');
+    assert.deepEqual(missingFilmConfig({ ...base, GEMINI_API_KEY_FREE: FREE, PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY: OLD }), ['ANTHROPIC_API_KEY or GEMINI_API_KEY_PAID']);
+    assert.deepEqual(missingFilmConfig({ ...base, PG1_DAILY_SPEND_CAP_USD: '1000', OPENROUTER_API_KEY: 'x' }), ['ANTHROPIC_API_KEY or GEMINI_API_KEY_PAID'], 'OpenRouter is not a film text engine');
   });
 
   test('budgets apply: an engine over budget is left out', () => {

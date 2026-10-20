@@ -224,7 +224,7 @@ describe('voice clearance and resolution', () => {
     let calls = 0;
     let t = 1000;
     const fetchImpl = async (u) => { calls++; assert.equal(u, VOICES_URL); return json({ voices: ALL }); };
-    const env = { ELEVENLABS_API_KEY: 'k' };
+    const env = { PG1_DAILY_SPEND_CAP_USD: '1000', ELEVENLABS_API_KEY: 'k' };
     assert.equal((await listAccountVoices({ env, fetchImpl, now: () => t })).voices.length, ALL.length);
     t += VOICE_LIST_TTL_MS - 1;
     await listAccountVoices({ env, fetchImpl, now: () => t });
@@ -304,7 +304,7 @@ describe('Director casting', () => {
 
 describe('/voices', () => {
   test('lists every usable voice with a short description and whether it is cleared; no provider names', async () => {
-    const out = await handleVoicesCommand({ env: { ELEVENLABS_API_KEY: 'k' }, isOperator: true, fetchImpl: async () => json({ voices: ALL }) });
+    const out = await handleVoicesCommand({ env: { PG1_DAILY_SPEND_CAP_USD: '1000', ELEVENLABS_API_KEY: 'k' }, isOperator: true, fetchImpl: async () => json({ voices: ALL }) });
     assert.equal(out.status, 200);
     assert.match(out.reply, /^### \[ PG1 VOICES \]/);
     assert.match(out.reply, /\*\*George\*\* · british · middle aged · male · narration · warm · client work: yes · `premadeGeorge0001`/);
@@ -315,7 +315,7 @@ describe('/voices', () => {
   });
   test('refuses anyone but the signed-in operator, with the same refusal as other operator commands', async () => {
     let called = false;
-    const out = await handleVoicesCommand({ env: { ELEVENLABS_API_KEY: 'k' }, isOperator: false, fetchImpl: async () => { called = true; return json({ voices: ALL }); } });
+    const out = await handleVoicesCommand({ env: { PG1_DAILY_SPEND_CAP_USD: '1000', ELEVENLABS_API_KEY: 'k' }, isOperator: false, fetchImpl: async () => { called = true; return json({ voices: ALL }); } });
     assert.deepEqual(out, { status: 401, reply: OPERATOR_REFUSAL });
     assert.equal(OPERATOR_REFUSAL, '[AGENT] Command Aborted: Authentication required.');
     assert.equal(called, false, 'nothing is fetched for a guest');
@@ -325,7 +325,7 @@ describe('/voices', () => {
   });
   test('a provider error becomes PG1 wording; the detail goes to the server log only', async () => {
     const failures = [];
-    const out = await handleVoicesCommand({ env: { ELEVENLABS_API_KEY: 'k' }, isOperator: true, onFailure: (f) => failures.push(f), fetchImpl: async () => new Response('{"detail":{"status":"quota_exceeded","message":"ElevenLabs quota exceeded"}}', { status: 429 }) });
+    const out = await handleVoicesCommand({ env: { PG1_DAILY_SPEND_CAP_USD: '1000', ELEVENLABS_API_KEY: 'k' }, isOperator: true, onFailure: (f) => failures.push(f), fetchImpl: async () => new Response('{"detail":{"status":"quota_exceeded","message":"ElevenLabs quota exceeded"}}', { status: 429 }) });
     assert.equal(out.reply, VOICE_TEXT.listUnavailable);
     assert.doesNotMatch(out.reply, BANNED);
     assert.match(failures[0].detail, /elevenlabs voices 429/, 'the server log keeps the provider detail');
@@ -528,14 +528,14 @@ describe('voice engine rules', () => {
   const elOk = (text) => json({ audio_base64: Buffer.alloc(480).toString('base64'), alignment: { characters: [...text], character_start_times_seconds: [...text].map((c, i) => i * 0.05), character_end_times_seconds: [...text].map((c, i) => i * 0.05 + 0.04) } });
   test('the film voice is the one passed in; pcm_24000 is kept', async () => {
     const urls = [];
-    const voice = createFilmVoice({ env: { ELEVENLABS_API_KEY: 'k' }, voiceId: () => 'filmVoice00001', log: () => {}, fetchImpl: async (u) => { urls.push(u); return elOk('hi'); } });
+    const voice = createFilmVoice({ env: { PG1_DAILY_SPEND_CAP_USD: '1000', ELEVENLABS_API_KEY: 'k' }, voiceId: () => 'filmVoice00001', log: () => {}, fetchImpl: async (u) => { urls.push(u); return elOk('hi'); } });
     const line = await voice({ text: 'hi', stage: newVoiceStage() });
     assert.equal(line.voiceId, 'filmVoice00001');
     assert.match(urls[0], /\/filmVoice00001\/with-timestamps\?output_format=pcm_24000$/);
   });
   test('a client film\'s voice never reaches the second engine', async () => {
     const hosts = [];
-    const voice = createFilmVoice({ env: { ELEVENLABS_API_KEY: 'k', CARTESIA_API_KEY: 'c' }, clientWork: true, sleep: async () => {}, log: () => {}, fetchImpl: async (u) => { hosts.push(new URL(u).hostname); return new Response('down', { status: 503 }); } });
+    const voice = createFilmVoice({ env: { PG1_DAILY_SPEND_CAP_USD: '1000', ELEVENLABS_API_KEY: 'k', CARTESIA_API_KEY: 'c' }, clientWork: true, sleep: async () => {}, log: () => {}, fetchImpl: async (u) => { hosts.push(new URL(u).hostname); return new Response('down', { status: 503 }); } });
     await assert.rejects(voice({ text: 'hi', stage: newVoiceStage() }), (e) => { assert.doesNotMatch(e.message, BANNED); return true; });
     assert.deepEqual(hosts, ['api.elevenlabs.io', 'api.elevenlabs.io'], 'retried on the primary engine, never anywhere else');
   });

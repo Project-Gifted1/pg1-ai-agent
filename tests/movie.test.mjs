@@ -247,14 +247,14 @@ describe('takes and the critic', () => {
 // --- engines: client licences, references, speech-to-speech ---------------------------------
 
 describe('engines', () => {
-  const ENV = { GEMINI_API_KEY_PAID: 'AQ.paid-0123456789', ELEVENLABS_API_KEY: 'sk_el_0123456789', REPLICATE_API_TOKEN: 'r8_0123456789' };
+  const ENV = { PG1_DAILY_SPEND_CAP_USD: '1000', GEMINI_API_KEY_PAID: 'AQ.paid-0123456789', ELEVENLABS_API_KEY: 'sk_el_0123456789', REPLICATE_API_TOKEN: 'r8_0123456789' };
 
   test('client movies only use commercial_ok engines; no speech engine means no movie, never a silent one', () => {
     __resetRouterState();
     const plan = moviePlan(ENV, { clientWork: true });
     assert.deepEqual(plan.clips.map((s) => [s.provider, s.licence]), [['gemini_paid', 'commercial_ok']]);
     assert.deepEqual(plan.sts.map((s) => [s.provider, s.licence]), [['elevenlabs', 'commercial_ok']]);
-    assert.equal(moviePlan({ REPLICATE_API_TOKEN: 'r8_x' }, { clientWork: false }).clips.length, 0, 'the silent clip engine is never a movie engine');
+    assert.equal(moviePlan({ PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: 'r8_x' }, { clientWork: false }).clips.length, 0, 'the silent clip engine is never a movie engine');
   });
 
   test('the shot request: 1080p, the prompt and length, each bible reference after its label', async () => {
@@ -273,7 +273,7 @@ describe('engines', () => {
     assert.equal(out.bytes.toString(), 'mp4');
     const sent = calls.find((c) => c.url === INTERACTIONS_URL).body;
     assert.equal(sent.input.filter((x) => x.type === 'image').length, 1);
-    await assert.rejects(dialogueClip({ env: { REPLICATE_API_TOKEN: 'r8' }, prompt: 'x', seconds: 3, fetchImpl }), (e) => e.code === 'no_speech_engine');
+    await assert.rejects(dialogueClip({ env: { PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: 'r8' }, prompt: 'x', seconds: 3, fetchImpl }), (e) => e.code === 'no_speech_engine');
   });
 
   test('speech-to-speech: the cast voice, the take\'s audio, the plan\'s speech format', async () => {
@@ -296,7 +296,7 @@ describe('/movie in the chat', () => {
   let store;
   let fetchImpl;
   let dispatched;
-  const ENV = { PG1_VIDEO_RENDER_SECRET: 'movie-secret-0123456789abcdef', GITHUB_TOKEN: 'gh-token', ELEVENLABS_API_KEY: 'sk_el_0123456789' };
+  const ENV = { PG1_VIDEO_RENDER_SECRET: 'movie-secret-0123456789abcdef', GITHUB_TOKEN: 'gh-token', PG1_DAILY_SPEND_CAP_USD: '1000', ELEVENLABS_API_KEY: 'sk_el_0123456789' };
   const VOICES = { voices: [
     { voice_id: 'premade1', name: 'George', category: 'premade', labels: { gender: 'male', accent: 'british' } },
     { voice_id: 'lib1', name: 'Library Lou', category: 'professional', sharing: { status: 'copied', original_voice_id: 'zzz' } }
@@ -617,7 +617,7 @@ describe('render worker: movie stages', () => {
       // The shoot, approved, on a deployment whose only clip engine makes no sound.
       await store.updateProject(p.id, { status: 'director_queued', director: { ...after1.director, approvals: { script: 'x', budget: 'y' } } });
       const env2 = { ...env, FILM_STAGE: 'movie' };
-      const silent = { ...engines, dialogueClip: async () => { const { dialogueClip: real } = await import('../lib/movie/engines.mjs'); return real({ env: { REPLICATE_API_TOKEN: 'r8' }, prompt: 'x', seconds: 3, fetchImpl }); } };
+      const silent = { ...engines, dialogueClip: async () => { const { dialogueClip: real } = await import('../lib/movie/engines.mjs'); return real({ env: { PG1_DAILY_SPEND_CAP_USD: '1000', REPLICATE_API_TOKEN: 'r8' }, prompt: 'x', seconds: 3, fetchImpl }); } };
       assert.equal(await workerMain(env2, { engines: silent, fetchImpl, ffImpl: ff, log: (l) => logs.push(l), notify: async () => {} }), 1);
       const stopped = await store.getProject(p.id);
       assert.equal(stopped.status, 'failed');
