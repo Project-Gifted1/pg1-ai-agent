@@ -41,6 +41,7 @@ beforeEach(() => {
   process.env.SUPABASE_URL = SUP_URL;
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-test-key-recall-0000';
   process.env.GEMINI_API_KEY = 'AIzaStubGeminiKeyForRecallTests00000000';
+  process.env.PG1_DAILY_SPEND_CAP_USD = '5'; // paid search grounding on (api/chat.mjs paidGroundingAllowed)
   for (const k of ['USER_API_USER', 'USER_API_PASSS', 'ANTHROPIC_API_KEY', 'ANTROPIC_API_KEY', 'GITHUB_TOKEN', 'GITHUB_OWNER_KEY', 'CARTESIA_API_KEY', 'REPLICATE_API_TOKEN', 'OPENAI_API_KEY', 'PG1_CHAT_TOOL_TIMEOUT_MS']) delete process.env[k];
   __clearAuthRateLimitState();
 });
@@ -89,21 +90,25 @@ test('guest: the same message never offers search_history and goes to web search
   assert.ok(!toolDirective(guestTools()).includes('[HISTORY SEARCH]'));
   for (const q of [RECALL, 'what did we say about Blanco Ekama?', 'did we talk about Blanco Ekama?']) {
     const route = routeFor(q, guestTools());
-    assert.deepEqual(route, { route: CHAT_ROUTES.SEARCH, reason: 'default' }, q);
+    assert.deepEqual(route, { route: CHAT_ROUTES.CHAT, reason: 'no_current_info' }, q);
     assert.equal(requiredFirstTool(route), null, q);
   }
-  // A role with no tools at all is always search.
-  assert.equal(chooseChatRoute(RECALL, { hasTools: false, historySearch: true }).route, CHAT_ROUTES.SEARCH);
+  // A role with no tools at all never gets the history route either.
+  assert.equal(chooseChatRoute(RECALL, { hasTools: false, historySearch: true }).route, CHAT_ROUTES.CHAT);
 });
 
-test('operator: ordinary news and people questions still go to web search', () => {
+test('operator: ordinary news questions still go to web search; people questions and small talk to plain chat', () => {
   for (const q of [
-    'what is the latest news about Bitcoin today?', 'who is Blanco Ekama?', 'who won the match yesterday?',
-    'any breaking headlines this week?', 'what is the weather in London right now?', 'tell me about Blanko Ekama the musician',
-    'remember to buy milk'
+    'what is the latest news about Bitcoin today?', 'who won the match yesterday?',
+    'any breaking headlines this week?', 'what is the weather in London right now?'
   ]) {
     const route = routeFor(q, operatorTools());
-    assert.deepEqual(route, { route: CHAT_ROUTES.SEARCH, reason: 'default' }, q);
+    assert.deepEqual(route, { route: CHAT_ROUTES.SEARCH, reason: 'needs_current_info' }, q);
+    assert.equal(requiredFirstTool(route), null, q);
+  }
+  for (const q of ['who is Blanco Ekama?', 'tell me about Blanko Ekama the musician', 'remember to buy milk']) {
+    const route = routeFor(q, operatorTools());
+    assert.deepEqual(route, { route: CHAT_ROUTES.CHAT, reason: 'no_current_info' }, q);
     assert.equal(requiredFirstTool(route), null, q);
   }
   // A non-recall tools-route message keeps its search call after a round
@@ -138,9 +143,9 @@ test('operator: references to something pasted, sent, shared or said earlier rou
     assert.ok(!asksAboutHistory(q), q);
     assert.notEqual(routeFor(q, operatorTools()).reason, HISTORY_ROUTE_REASON, q);
   }
-  assert.deepEqual(routeFor('latest news on X', operatorTools()), { route: CHAT_ROUTES.SEARCH, reason: 'default' });
+  assert.deepEqual(routeFor('latest news on X', operatorTools()), { route: CHAT_ROUTES.SEARCH, reason: 'needs_current_info' });
   // A guest still never gets the history route.
-  assert.equal(routeFor('the HTML snippet I pasted yesterday', guestTools()).route, CHAT_ROUTES.SEARCH);
+  assert.equal(routeFor('the HTML snippet I pasted yesterday', guestTools()).route, CHAT_ROUTES.CHAT);
 });
 
 test('the tool description and directive ask for the distinctive words, not a generic one', () => {
