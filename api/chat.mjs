@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import { turnNeeds, slimCapabilities, toolsForRoute, RECENT_TURNS_SMALL_TALK } from '../lib/promptBudget.mjs';
+import { classify429, coolDown, isCooling, coolingUntil, readyModels, noteRateHeaders, learnedLimits } from '../lib/router/quota.mjs';
 import { waitUntil } from '@vercel/functions';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { paymentMiddleware, x402ResourceServer } from '@x402/express';
@@ -11,7 +13,7 @@ import { logApiError } from '../lib/errorLog.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { collectImageInputs, imageInputDirective, imageCountLabel, describeSkipped, fileExtensionFor, redactLeakedSecrets, SECRET_PLACEHOLDER, SECRET_WARNING, MAX_IMAGES_PER_MESSAGE, MAX_IMAGE_BYTES, MAX_IMAGE_EDGE_PX } from '../lib/visionInput.mjs';
 import { createChatStream, createReplyScrubber, readSseResponse, scrubIdentity, stripTranscriptLabels, wantsChatStream } from '../lib/chatStream.mjs';
-import { identityDirective, identityReplyDirective, identityReplyForHistory, spokenReplyDirective } from '../lib/identity.mjs';
+import { identityDirective, compactIdentityDirective, identityReplyDirective, identityReplyForHistory, spokenReplyDirective } from '../lib/identity.mjs';
 import { businessStateText, classifyKeyQuestion, createReplySecretGuard, isErrorSummaryQuestion, licenceKeyDirective, neutralErrorRow, stripModelContext, SECRET_REFUSAL, SECRET_WITHHELD, SECRET_WITHHELD_NOTE } from '../lib/secretGuard.mjs';
 import { searchHistory } from '../lib/historySearch.mjs';
 import { createSseSynth, createVoiceStream, speechTextFor, stripAudioMetadata } from '../lib/voiceStream.mjs';
@@ -28,7 +30,7 @@ import { fitRequest, tokensOf as fitTokensOf, FIT_MARGIN } from '../lib/router/f
 import { ENGINE_MAX_INPUT_TOKENS } from '../lib/capabilities/registry.mjs';
 import { analyzeCameraFrame, cameraEventLine, cameraLogLine } from '../lib/cameraFeed.mjs';
 import { ensureOpenRouterState } from '../lib/router/openrouterGuard.mjs';
-import { isKeysCommand, handleKeysCommand, keysStatus } from '../lib/keysStatus.mjs';
+import { isKeysCommand, handleKeysCommand, keysStatus, quotaRows, quotaTable } from '../lib/keysStatus.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { TASKS, FAILURE, failureClass, budgetAllows, isSpendCapFailure, SPEND_CAP_CODE, isBillingFailure, geminiQuotaInfo, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, CHAT_THROTTLE, withThrottleRetry, isFallbackFailure, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
 import { synthesizeSpeech, createRoutedSynth } from '../lib/ttsRouter.mjs';
@@ -711,6 +713,20 @@ var ANTHROPIC_MODELS = ['claude-sonnet-5', 'claude-haiku-4-5-20251001'];
 // goes to the error log under this message's request ID
 // (toolOpts.onSearchFailure) and that one request is retried without search;
 // nothing is remembered, so the next message asks for search again.
+// QUOTA (lib/router/quota.mjs): which ledger name a Gemini key has, and
+// cooling one of its models down for what its 429 said.
+function geminiProviderFor(key) {
+  var k = resolveKeys(process.env);
+  return k.geminiFree.indexOf(key) >= 0 ? 'gemini_free' : 'gemini_paid';
+}
+function coolGeminiModel(key, model, status, errText) {
+  var provider = geminiProviderFor(key);
+  var info = classify429({ provider: provider, status: status, text: errText });
+  var row = coolDown(provider, model, info);
+  if (row) console.log(`[pg1-quota] provider=${provider} model=${model} scope=${row.scope}${row.metric ? ` metric=${row.metric}` : ''} cooling_until=${new Date(row.until).toISOString()}`);
+  return info;
+}
+
 function geminiDeclarations(toolOpts) {
   return (toolOpts && toolOpts.tools && toolOpts.tools.length) ? toGeminiFunctionDeclarations(toolOpts.tools) : null;
 }
@@ -900,6 +916,14 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
         : Math.min(ERROR_RETRY_CAP_MS, remainingMs);
 
       var model = models[j];
+      // QUOTA (lib/router/quota.mjs): a model whose daily quota is used up,
+      // or that asked for a long wait, is skipped at once.
+      if (isCooling(geminiProviderFor(currentKey), model)) {
+        lastStatus = 429;
+        lastError = `[${model}] skipped: ${geminiProviderFor(currentKey)} quota cooling down until ${new Date(coolingUntil(geminiProviderFor(currentKey), model)).toISOString()}`;
+        lastQuota = { scope: 'day' };
+        continue;
+      }
       var apiVersion = 'v1beta';
       var timedOut = false;
 
@@ -955,10 +979,11 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
           } else if (isBillingFailure(res.status, errText)) {
             // Out of credit is the key's, not the model's: the next key.
             break;
-          } else if (lastQuota && lastQuota.scope === 'day') {
-            // A day's quota is the key's for every model on the free tier's
-            // shared project quota: the next engine, not the next model.
-            break;
+          } else if (res.status === 429) {
+            // QUOTA: the free tier's quotas are per model, so a model whose
+            // daily quota is used up cools until its reset and the next
+            // model is tried at once; a long per-minute wait cools it too.
+            coolGeminiModel(currentKey, model, res.status, errText);
           }
         }
       } catch (e) {
@@ -1143,6 +1168,12 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
         : Math.min(ERROR_RETRY_CAP_MS, remainingMs);
       attemptCount++;
       var model = models[j];
+      if (isCooling(geminiProviderFor(geminiKeys[i]), model)) {
+        lastStatus = 429;
+        lastError = `[${model}] skipped: ${geminiProviderFor(geminiKeys[i])} quota cooling down until ${new Date(coolingUntil(geminiProviderFor(geminiKeys[i]), model)).toISOString()}`;
+        lastQuota = { scope: 'day' };
+        continue;
+      }
       var controller = new AbortController();
       var timedOut = false;
       var onClientAbort = function () { controller.abort(); };
@@ -1190,8 +1221,8 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
             j--;
           } else if (isBillingFailure(res.status, errText)) {
             break;
-          } else if (lastQuota && lastQuota.scope === 'day') {
-            break;
+          } else if (res.status === 429) {
+            coolGeminiModel(geminiKeys[i], model, res.status, errText);
           }
           continue;
         }
@@ -1406,11 +1437,24 @@ function chatFreeLimiter(engine) {
   return chatLimiters[e];
 }
 var FREE_LIMIT_ERROR = 'free engine: per-minute limit reached (PG1 limiter)';
+// QUOTA: an engine is skipped at once when every model it would try is
+// cooling down; the free engines also take the request's tokens from their
+// per-minute and per-day budgets first (lib/router/freeLimiter.mjs), so an
+// engine without room is passed over before it is called.
+function candidateModels(c) {
+  return c.family === 'gemini' ? ((c.models && c.models.length) ? c.models : GEMINI_MODELS) : compatModelList(c);
+}
+function requestTokens(c, opts) {
+  return estimateTokens(String(opts.sysInstruction || '') + String(opts.promptText || '')) + (FREE_MAX_OUTPUT[c.provider] || 1024);
+}
 async function callWithPace(c, opts, call) {
   var paced = async function () {
+    if (isCooling(c.provider, '*') || !readyModels(c.provider, candidateModels(c)).length) {
+      return { text: null, status: 429, error: `${c.provider}: every model's quota is cooling down (skipped)`, quotaScope: 'day' };
+    }
     if (PACED_ENGINES.indexOf(c.provider) >= 0) {
-      var slot = await chatFreeLimiter(c.provider).acquire({ priority: PRIORITY.CHAT, maxWaitMs: Math.max(0, Math.min(CHAT_THROTTLE.maxTotalWaitMs, opts.deadlineTs - Date.now() - 5000)) });
-      if (!slot.granted) return { text: null, status: 429, error: FREE_LIMIT_ERROR };
+      var slot = await chatFreeLimiter(c.provider).acquire({ priority: PRIORITY.CHAT, maxWaitMs: Math.max(0, Math.min(CHAT_THROTTLE.maxTotalWaitMs, opts.deadlineTs - Date.now() - 5000)), tokens: requestTokens(c, opts), learned: learnedLimits(c.provider) });
+      if (!slot.granted) return { text: null, status: 429, error: `${FREE_LIMIT_ERROR}${slot.reason ? ` (${slot.reason})` : ''}`, quotaScope: slot.reason === 'rpd' || slot.reason === 'tpd' || slot.reason === 'tpm' ? 'day' : 'minute' };
     }
     return call();
   };
@@ -1513,6 +1557,12 @@ async function fetchCompatCore(candidate, opts) {
     var remainingMs = opts.deadlineTs - Date.now();
     if (remainingMs <= 1000) break;
     var label = plan[i].id;
+    // QUOTA: a model cooling down (a used-up daily quota, a long wait) is
+    // skipped at once.
+    if (isCooling(candidate.provider, label)) {
+      last = { text: null, status: 429, error: `[${label}] skipped: quota cooling down until ${new Date(coolingUntil(candidate.provider, label)).toISOString()}`, quotaScope: 'day' };
+      continue;
+    }
     // Groq counts the reply's max tokens into the same per-minute budget.
     var room = plan[i].maxInputTokens - (candidate.provider === 'groq' ? maxOut : 0);
     var fit = fitRequest({ system: opts.sysInstruction, prompt: opts.promptText, maxInputTokens: room });
@@ -1523,8 +1573,18 @@ async function fetchCompatCore(candidate, opts) {
     }
     if (fit.trimmed.length) console.log(`[pg1-fit] provider=${candidate.provider} model=${label} limit=${plan[i].maxInputTokens} tokens=${fit.inputTokens} trimmed=${fit.trimmed.join(',')} request_id=${opts.requestId || '-'}`);
     var r = await callOpenAiCompat({ candidate: candidate, model: plan[i].entry, system: fit.system, prompt: fit.prompt, maxTokens: maxOut, fetchImpl: function (u, o) { return fetch(u, o); }, timeoutMs: Math.min(90000, remainingMs) });
+    // QUOTA: what the engine's headers say about its limits, and a 429's
+    // scope (Groq: "on tokens per minute (TPM): Limit 8000, Used 3769,
+    // Requested 4525. Please try again in 1.9s").
+    if (r.rateHeaders) noteRateHeaders(candidate.provider, r.rateHeaders);
+    if (r.status === 429) {
+      var q = classify429({ provider: candidate.provider, status: 429, text: r.detail || '', headers: r.rateHeaders || null });
+      var cooled = coolDown(candidate.provider, label, q);
+      if (cooled) console.log(`[pg1-quota] provider=${candidate.provider} model=${label} scope=${cooled.scope}${cooled.metric ? ` metric=${cooled.metric}` : ''} cooling_until=${new Date(cooled.until).toISOString()}`);
+      r.quotaScope = q.scope;
+    }
     if (r.ok) return { text: r.text, calls: [], provider: candidate.provider, model: r.model, usage: r.usage, error: null, trimmed: fit.trimmed };
-    last = { text: null, status: r.status, error: `[${label}] ${providerErrorText(r.status, r.detail || '')}`, retryAfterMs: r.retryAfterMs };
+    last = { text: null, status: r.status, error: `[${label}] ${providerErrorText(r.status, r.detail || '')}`, retryAfterMs: r.retryAfterMs, ...(r.quotaScope ? { quotaScope: r.quotaScope } : {}) };
     // A safety refusal stops the round: never retried on another model.
     if (r.refused) { last.refused = true; break; }
     // A model the engine no longer has: left out until its list is read again.
@@ -3193,7 +3253,8 @@ export default async function handler(req, res) {
         }
         // Balances as /keys last read them (no live check here).
         var usageCredit = await creditReport({ env: process.env, keyRows: await keysStatus({ env: process.env, cachedOnly: true }).catch(function () { return []; }), supUrl: supabaseUrl, supKey: supabaseKey, fetchImpl: function (u, o) { return globalThis.fetch(u, o); } }).catch(function () { return null; });
-        return sendJSON(res, 200, { reply: usageLead(usageOutcome.result, { storage: usageStorage }) + (usageCredit ? '\n\n' + usageCredit.markdown : ''), toolResults: [usageCard], cards: usageContextLines(usageOutcome.result), ...(usageMilestone ? { milestone: usageMilestone } : {}), traceId: requestTraceId });
+        // FREE QUOTAS: each free engine's state, what is left and its reset.
+        return sendJSON(res, 200, { reply: usageLead(usageOutcome.result, { storage: usageStorage }) + (usageCredit ? '\n\n' + usageCredit.markdown : '') + '\n\n' + quotaTable(quotaRows({ env: process.env })), toolResults: [usageCard], cards: usageContextLines(usageOutcome.result), ...(usageMilestone ? { milestone: usageMilestone } : {}), traceId: requestTraceId });
       } else if (isVoicesCommand(lower)) {
         // FILM VOICES (lib/film/voices.mjs, signed-in operator only): the
         // voices films can use, a short description from their labels and
@@ -4494,6 +4555,15 @@ export default async function handler(req, res) {
     // only for a role that has search_history (the operator).
     var chatRoute = chooseChatRoute(typeof promptText === 'string' ? promptText : '', { hasTools: !!executeChatTool, historySearch: chatTools.some(function (t) { return t.name === SEARCH_HISTORY_TOOL; }), videoTool: videoToolOn, skillMatch: skillsOn && matchSkills(typeof promptText === 'string' ? promptText : '', turnSkills).length > 0 });
     console.log(`[chat] route=${chatRoute.route} reason=${chatRoute.reason} request_id=${requestTraceId}`);
+    // PROMPT BUDGET (lib/promptBudget.mjs): the tools route offers only the
+    // function schemas its reason needs (a wallet: the wallet checks).
+    if (chatRoute.route === CHAT_ROUTES.TOOLS && chatTools.length) {
+      var routeTools = toolsForRoute(chatTools, chatRoute, typeof promptText === 'string' ? promptText : '');
+      if (routeTools.length !== chatTools.length) {
+        chatTools = routeTools;
+        toolDirectiveText = toolDirective(chatTools, { maxCalls: chatToolPolicyForRole.maxCalls }) + '\n';
+      }
+    }
     // A refused search is logged under this request ID every time it
     // happens; the next message asks for search again.
     var onSearchFailure = function (detail) { reportFailure('search_failed', detail); };
@@ -4558,10 +4628,16 @@ export default async function handler(req, res) {
     // [TASK STATE] opens the prompt when the thread has one; the self-check
     // and the [REFERENCES] line go with the other directives.
     var turnPreamble = turnTaskBlock ? turnTaskBlock + '\n\n' : '';
-    var turnDirectives = PG1_VOICE_DIRECTIVE + '\n' + SELF_CHECK_DIRECTIVE + '\n' + SOURCED_FIGURES_DIRECTIVE + '\n' + offersDirective() + '\n' + PDF_CHAT_DIRECTIVE + '\n' + COMMAND_FORMS_DIRECTIVE + '\n' + HONEST_ACTIONS_DIRECTIVE + '\n' + RELAY_DIRECTIVE + '\n' + (relayTurn ? relayTurnDirective(relayTurn, relayTurn.found) + '\n' : '') + (referenceLine(turnReference) ? referenceLine(turnReference) + '\n' : '') + (skillsOn ? skillsIndexBlock(turnSkills) + '\n' : '');
+    // PROMPT BUDGET (lib/promptBudget.mjs): what this turn needs. Small talk
+    // gets the compact prompt; other turns drop the blocks they do not need
+    // (the offers rules, PDF, relay, the full identity rules, the
+    // capability lines about voice, attachments, code and checks).
+    var turnNeed = turnNeeds(typeof promptText === 'string' ? promptText : '', { imageCount: imageCount, relay: !!relayTurn, offer: offerTurn, keyQuestion: keyQuestion, route: chatRoute.route === CHAT_ROUTES.TOOLS && chatRoute.reason === 'history' ? 'history' : chatRoute.route });
+    if (turnNeed.smallTalk && turnRecent.length > RECENT_TURNS_SMALL_TALK) turnConversation = renderConversation({ summary: null, recent: turnRecent.slice(-RECENT_TURNS_SMALL_TALK) });
+    var turnDirectives = PG1_VOICE_DIRECTIVE + '\n' + SELF_CHECK_DIRECTIVE + '\n' + (turnNeed.smallTalk ? '' : SOURCED_FIGURES_DIRECTIVE + '\n') + (turnNeed.offers ? offersDirective() + '\n' : '') + (turnNeed.pdf ? PDF_CHAT_DIRECTIVE + '\n' : '') + (turnNeed.smallTalk ? '' : COMMAND_FORMS_DIRECTIVE + '\n' + HONEST_ACTIONS_DIRECTIVE + '\n') + (turnNeed.relay ? RELAY_DIRECTIVE + '\n' : '') + (relayTurn ? relayTurnDirective(relayTurn, relayTurn.found) + '\n' : '') + (referenceLine(turnReference) ? referenceLine(turnReference) + '\n' : '') + (skillsOn ? skillsIndexBlock(turnSkills) + '\n' : '');
     var sysInstruction = `${turnPreamble}You are PG1, the chat assistant of Project-Gifted1's threat-intelligence app, running on Vercel.
 [STRICT DIRECTIVE - GROUNDING & HONESTY]: Be absolutely honest at all times about the actual factual content of your answers. Never lie or fabricate results. Never state system health, uptime, integrity, file counts, pipeline status or runtime details unless that exact value appears in [CONTEXT]; if asked about status, say you cannot verify it here and point the operator to the /status command. The vault file list in [CONTEXT] is capped at 20 entries, so never present its length as a total. Stay completely grounded in the factual reality of the project. We operate an automated cybersecurity architecture deploying GitHub workflows and Supabase vault integration.
-${identityDirective()}
+${turnNeed.identity ? identityDirective() : compactIdentityDirective()}
 ${identityReplyDirective(identityChoice)}
 [CAPABILITIES — what you can and cannot do]:
 - You are the operator command centre for Project-Gifted1 (PG1 Sovereign Threat Intelligence). The operator is Gift.
@@ -4587,7 +4663,8 @@ ${historyCapabilityText}- Slash commands and what they really do (describe them 
 - Integration test fixtures: fixed made-up inputs (e.g. hostname pg1-test-flagged.invalid, CVE-0000-0001, 0x7067312d… wallets, all listed in lib/fixtures.mjs and the README's "Test your integration" table) always return the same FLAGGED, CLEAN or UNKNOWN answer (plus a DELEGATED one for check_wallet_age) on /api/mcp (and the free check_* skills on /api/a2a), free for any caller, marked test_fixture: true — never on the REST /api/ioc endpoints, and never real threat data. The same fixtures work when you run a check from this chat (the card says "fixture"), so the operator can demo a check without any upstream call.
 
 ${turnDirectives}${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(imageCount, imageInput.skipped)}
-[CONTEXT]: The OPERATOR: and AGENT: lines below are the recent conversation, for background only. Never quote, repeat or continue them, and never begin a reply or a line with OPERATOR: or AGENT:; answer the operator's new message directly.\n${turnConversation || formattedArchive}${targetedHistoricalData}${supabaseFilesReport}${formatClientEnvironment(clientEnv)}${formatDeploymentContext()}${unresolvedErrorsReport}`;
+[CONTEXT]: The OPERATOR: and AGENT: lines below are the recent conversation, for background only. Never quote, repeat or continue them, and never begin a reply or a line with OPERATOR: or AGENT:; answer the operator's new message directly.\n${turnConversation || formattedArchive}${targetedHistoricalData}${turnNeed.vault ? supabaseFilesReport : ''}${formatClientEnvironment(clientEnv)}${formatDeploymentContext()}${turnNeed.errors ? unresolvedErrorsReport : ''}`;
+    sysInstruction = slimCapabilities(sysInstruction, turnNeed);
     // Backstop: no deployment secret value ever reaches a model, whichever
     // block of the prompt or [CONTEXT] it might have come in through.
     sysInstruction = stripModelContext(sysInstruction, envSecrets);
@@ -4596,6 +4673,10 @@ ${turnDirectives}${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imag
     var searchSysInstruction = toolDirectiveText ? sysInstruction.replace(stripModelContext(toolDirectiveText, envSecrets), '') : sysInstruction;
     // ... and the history capability line without the function's name.
     if (historyCapabilityText) searchSysInstruction = searchSysInstruction.replace(historyCapabilityText, HISTORY_CAPABILITY_SEARCH_TEXT + '\n');
+    // PROMPT BUDGET: the input tokens this turn sends, per route (the
+    // system prompt the route uses, the message and the tool schemas).
+    var sentTokens = estimateTokens((chatRoute.route === CHAT_ROUTES.TOOLS ? sysInstruction + JSON.stringify(chatTools) : searchSysInstruction) + (typeof promptText === 'string' ? promptText : ''));
+    console.log(`[chat] prompt route=${chatRoute.route} tier=${turnNeed.smallTalk ? 'small_talk' : 'chat'} input_tokens~${sentTokens} tools=${chatRoute.route === CHAT_ROUTES.TOOLS ? chatTools.length : 0} request_id=${requestTraceId}`);
 
     if (Date.now() >= deadlineTs - 1000) {
       return sendJSON(res, 200, {

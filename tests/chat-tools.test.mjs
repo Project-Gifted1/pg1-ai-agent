@@ -193,7 +193,9 @@ test('streamed: a function call runs the MCP handler path, the result is fed bac
   const gem = geminiRequests(calls);
   assert.equal(gem.length, 2, 'one round to choose the check, one to answer');
   const decls = gem[0].body.tools.find((t) => t.functionDeclarations).functionDeclarations;
-  assert.deepEqual(decls.map((d) => d.name), [...READ_ONLY_CHAT_TOOLS, ...OPERATOR_ONLY_CHAT_TOOLS], 'the model was offered the read-only MCP tools and the operator-only usage stats');
+  // PROMPT BUDGET (lib/promptBudget.mjs): a wallet message is offered the
+  // wallet checks, not every tool's schema.
+  assert.deepEqual(decls.map((d) => d.name), ['check_wallet_sanctions', 'check_wallet_age'], 'the model was offered the checks this route needs');
   assert.ok(!gem[0].body.tools.some((t) => t.google_search), 'a tools-route request never carries search');
   assert.equal(gem[0].body.tools.length, 1);
   assert.equal(gem[0].body.toolConfig.functionCallingConfig.mode, 'AUTO');
@@ -528,7 +530,7 @@ test('JSON path: the same loop runs, the reply carries toolResults and a spoken 
   const gem = geminiRequests(calls);
   assert.equal(gem.length, 2);
   assert.ok(gem.every((g) => /:generateContent$/.test(g.url)), 'the JSON path uses the non-streaming endpoint');
-  assert.equal(gem[0].body.tools.find((t) => t.functionDeclarations).functionDeclarations.length, READ_ONLY_CHAT_TOOLS.length + OPERATOR_ONLY_CHAT_TOOLS.length);
+  assert.equal(gem[0].body.tools.find((t) => t.functionDeclarations).functionDeclarations.length, 2, 'the wallet checks only');
   assert.equal(body.audio, undefined, 'still no audio on a JSON reply');
 });
 
@@ -573,7 +575,7 @@ test('reasoning core: tool_use blocks are accumulated from the stream, tool_resu
   assert.equal(events[events.length - 1].type, 'done');
   const anth = calls.filter((c) => c.url.includes('api.anthropic.com'));
   assert.equal(anth.length, 2);
-  assert.deepEqual(anth[0].body.tools.map((t) => t.name), [...READ_ONLY_CHAT_TOOLS, ...OPERATOR_ONLY_CHAT_TOOLS]);
+  assert.deepEqual(anth[0].body.tools.map((t) => t.name), ['check_wallet_sanctions', 'check_wallet_age'], 'the wallet checks only');
   assert.equal(anth[0].body.tool_choice, undefined);
   const assistant = anth[1].body.messages[1];
   assert.equal(assistant.role, 'assistant');
