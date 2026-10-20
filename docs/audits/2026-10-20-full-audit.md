@@ -14,9 +14,10 @@ Audited `main` at `dac730f` (PR 2 and PR 3 merged; PR 1, 4, 5 and 6 open).
 
 Anything that needs production is under [Needs Gift](#needs-gift), with the exact command, URL or read-only SQL.
 
-**Result: 44 pass, 24 fail, 7 need a live check (75 checks).**
-- 9 of the 24 failures are fixed in the focused PRs linked in the table: the WHATWG URL fix, the lab default, the docs fix, and the movie spending PR (5 failures).
-- 4 are covered by the open PRs 1, 4, 5 and 6.
+**Result: 44 pass, 24 fail, 8 need a live check (76 checks).**
+- 9 of the 24 failures are fixed in the focused PRs linked in the table: #351 (merged), #353, #354, and #356 (5 failures).
+- 4 are covered by PRs 1 (#344, merged), 4 (#348), 5 (#349, merged) and 6 (#350).
+- One more fix came out of the audit: #355, the intermittent voice-playback test.
 - The other 11 are recommendations below the table. Three of them need a decision from Gift: the spend-cap default, the `/help` provider names, and the client-facing docs.
 
 | # | Area | Check | Result | Evidence | Fix PR |
@@ -46,20 +47,20 @@ Anything that needs production is under [Needs Gift](#needs-gift), with the exac
 | 23 | Live x402 | 402 mirror and free-tier headers in production | needs live check | — | [Needs Gift](#needs-gift) 4, 5 |
 | 24 | Docs | ThreatFox described only as locked off | pass | Not fetched anywhere in `lib/` or `api/`; `README.md:294` says "always off (locked)" | — |
 | 25 | Docs | No claim of OTX data in paid responses | pass | `otx` locked, off by default (`lib/sourcePolicy.mjs:61`); `README.md:295` | — |
-| 26 | Docs | "Free while it holds no current data" | pass | Docs match the code (free unless `PG1_FEED_PAID`, `lib/x402Config.mjs:28-43`). A stale code comment remains: `lib/autonomous/capabilities.mjs:90` says "Free while the feed holds no data" | Comment fixed in `fix-docs-audit` |
+| 26 | Docs | "Free while it holds no current data" | pass | Docs match the code (free unless `PG1_FEED_PAID`, `lib/x402Config.mjs:28-43`). A stale code comment remains: `lib/autonomous/capabilities.mjs:90` says "Free while the feed holds no data" | Comment fixed in #354 |
 | 27 | Docs | Feed free in production (`PG1_FEED_PAID` unset) | needs live check | Docs last checked 2026-10-13 | [Needs Gift](#needs-gift) 3 |
-| 28 | Docs | Paid-call table in the payment test plan | fail | `docs/payment-test-plan.md:12,13` left out `preflight_check` and `hosting_advisor`, which are paid (`api/mcp.mjs:17-19`, `A2A_PAID_SKILL_NAMES`) | Fixed: `fix-docs-audit` (PR link below) |
+| 28 | Docs | Paid-call table in the payment test plan | fail | `docs/payment-test-plan.md:12,13` left out `preflight_check` and `hosting_advisor`, which are paid (`api/mcp.mjs:17-19`, `A2A_PAID_SKILL_NAMES`) | Fixed: #354 |
 | 29 | Docs | Never "safe" as a verdict | pass | `no-safe-wording` 6/6; every hit is a negation. The agent-card example prompt "Is it safe to pay …" is a user's question, not a verdict | — |
-| 30 | Docs | Company mark Project-Gifted1™, no © | fail | No © anywhere public (only a vendored third-party licence header). Missing ™: `public/about/index.html:102`, `public/manifest.webmanifest:4` | Fixed: `fix-docs-audit` |
+| 30 | Docs | Company mark Project-Gifted1™, no © | fail | No © anywhere public (only a vendored third-party licence header). Missing ™: `public/about/index.html:102`, `public/manifest.webmanifest:4` | Fixed: #354 |
 | 31 | Docs | Tool count, prices, free-tier limit and endpoints match the code | pass | 14 doc test files, 167/167 | — |
 | 32 | Wording | Client-facing output never names providers or models | fail | An unauthenticated `/help` lists the operator commands, including "the OpenRouter balance" and "(Grok, ChatGPT, ...)" (`api/chat.mjs:3299`). Note: the repo is public, and `docs/director-mode.md` and `docs/studio-sound-phase1.md` name providers | Recommendation R5 |
 | 33 | Wording | Movie and film output white-label (PG1 Studio) | pass | `sayMovie` / `whiteLabel` on every reply; `movie`, `white-label`, `error-text-branding` tests | — |
 | 34 | Hosts | Never call api.deepseek.com | pass | 0 hits in the repo; `keys-and-free-engines:160` | — |
-| 35 | Router | No DeepSeek model in any engine list | fail | `OPENROUTER_FREE_MODELS` started with `deepseek/deepseek-chat-v3.1:free` (`lib/aiRouter.mjs:913`). On 20 Oct movie dailies were sent to it (404, model gone) | Fixed: movie spending PR |
+| 35 | Router | No DeepSeek model in any engine list | fail | `OPENROUTER_FREE_MODELS` started with `deepseek/deepseek-chat-v3.1:free` (`lib/aiRouter.mjs:913`). On 20 Oct movie dailies were sent to it (404, model gone) | Fixed: #356 |
 | 36 | Router | Free-first for operator chat | pass | `freeFirst` (`lib/aiRouter.mjs:1038,1046`) | — |
 | 37 | Router | Free engines kept off client work | pass | `clientAllowedStep` (`lib/aiRouter.mjs:997`, `registry.mjs:671-672`), `chains.mjs:63-64` | — |
-| 38 | Router | Customer data only on commercial_ok engines | fail | Without `clientWork`, customer data could plan OpenRouter, the AI gateway and OpenAI (licence "unclear", T1). Film text listed OpenRouter, and the A2A `jobModel` (`lib/a2aJobs/service.mjs:66`) did not pass `clientWork` | Fixed: movie spending PR (`planRoute` limits customer data to commercial_ok engines) |
-| 39 | Router | An engine out of credit is not called again and again | fail | A billing failure only moved the key to the back for 15 minutes, so it was still tried. On 20 Oct a Claude key with no credit was called on every movie shot | Fixed: movie spending PR (left out for 1 hour) |
+| 38 | Router | Customer data only on commercial_ok engines | fail | Without `clientWork`, customer data could plan OpenRouter, the AI gateway and OpenAI (licence "unclear", T1). Film text listed OpenRouter, and the A2A `jobModel` (`lib/a2aJobs/service.mjs:66`) did not pass `clientWork` | Fixed: #356 (`planRoute` limits customer data to commercial_ok engines) |
+| 39 | Router | An engine out of credit is not called again and again | fail | A billing failure only moved the key to the back for 15 minutes, so it was still tried. On 20 Oct a Claude key with no credit was called on every movie shot | Fixed: #356 (left out for 1 hour) |
 | 40 | Router | `PG1_DAILY_SPEND_CAP_USD` defaults to $0 | fail | Unset, empty or invalid returns `Infinity` (no cap, fail-open, `lib/aiRouter.mjs:751-756`); per-engine budgets also default to Infinity (`:645-650`) | Recommendation R6 (Gift decides) |
 | 41 | Router | Tests | pass | ai-router, router-*, free-*, keys-and-free-engines, compat-reasoning-effort: 164/164 | — |
 | 42 | Command Centre | Every handled command is listed in /help | fail | Not listed: `/auth`, `/smoke`, `/vault`, `/patch`, `/deploy-cron`, `/build-validator`, the `/tts` alias, "/status update" (`api/chat.mjs:3297-3299`) | Open PR #348 (one command registry; /help generated from it) |
@@ -70,11 +71,11 @@ Anything that needs production is under [Needs Gift](#needs-gift), with the exac
 | 47 | Autonomous | A paid budget above $0 is counted | fail | Self-heal and missions report no cost (`runner.mjs:129,172,183`), so `state.mjs:253-255` never counts their spend | Recommendation R8 |
 | 48 | Autonomous | Tests | pass | 4 suites + 2 browser files: 42/42 | — |
 | 49 | Living lab | Failures shown; red workflow on a failed run | pass | `scripts/lab-verdict.mjs:12-20`; `lab.yml` verdict job `if: always()`; 51/51 | — |
-| 50 | Living lab | `lab.yml` `PG1_URL` defaults to production when unset | fail | The notify step read `vars.PG1_URL` only; unset, no result notice was sent | Fixed: `fix-lab-pg1-url` |
+| 50 | Living lab | `lab.yml` `PG1_URL` defaults to production when unset | fail | The notify step read `vars.PG1_URL` only; unset, no result notice was sent | Fixed: #353 |
 | 51 | Living lab | Lab keys separate from production | fail | `lab.yml:110-111` falls back to the production `ANTHROPIC_API_KEY` and `GEMINI_API_KEY_PAID` when the lab-only secrets are missing | Recommendation R9 |
 | 52 | Studio | Film: credit check before anything is created; cap on approval | pass | `lib/film/chat.mjs:272,459,628` | — |
-| 53 | Studio | Movie: worst-case budget confirmed, retakes capped, pauses before overspend | fail | 20 Oct, movie 6da446ca: 27 clips (~18.60 USD) in 16 minutes for ~12 shots. Six shots were rendered three times (`MAX_RETAKES = 2`, plus the QC gate's extra take), and the movie then failed out of credit | Fixed: movie spending PR |
-| 54 | Studio | Movie: resume and rerun without paying twice | fail | There was only `/movie retry`, which ran under the old cap: a movie stopped by its cap could not continue | Fixed: movie spending PR (`/movie resume`, Rerun button) |
+| 53 | Studio | Movie: worst-case budget confirmed, retakes capped, pauses before overspend | fail | 20 Oct, movie 6da446ca: 27 clips (~18.60 USD) in 16 minutes for ~12 shots. Six shots were rendered three times (`MAX_RETAKES = 2`, plus the QC gate's extra take), and the movie then failed out of credit | Fixed: #356 |
+| 54 | Studio | Movie: resume and rerun without paying twice | fail | There was only `/movie retry`, which ran under the old cap: a movie stopped by its cap could not continue | Fixed: #356 (`/movie resume`, Rerun button) |
 | 55 | Studio | `PG1_VIDEO_ENABLED` gates every video spend | fail | /video, `api/video-render.mjs:80` and /film are gated. /movie (`lib/movie/chat.mjs:73-122`) and film approvals (`lib/film/chat.mjs:583`) are not | Recommendation R10 |
 | 56 | Sound | Music: credit check before spending | fail | A per-track cap and per-engine budgets exist (`lib/music/chat.mjs:346-350`), but no credit probe before a render | Recommendation R10 |
 | 57 | Studio / Sound | Tests | pass | film-*, movie, music*, video-*, ledger-clip-costs, spend-cap, browser cards: 322/323. The film ffmpeg end-to-end test timed out under load and passes alone | — |
@@ -82,7 +83,7 @@ Anything that needs production is under [Needs Gift](#needs-gift), with the exac
 | 59 | Tool Foundry | No paid AI call before payment | fail | An unpaid `build_tool` submission runs the paid light classifier (`lib/foundry/jobs.mjs:82` → `lib/a2aJobs/service.mjs:97`) before the fee, with no limit per caller (`api/a2a.mjs:689`) | Recommendation R11 |
 | 60 | hosting_advisor | Free paths make no paid call | pass | Reads its dataset only; 54/54 with Foundry and playground | — |
 | 61 | Playground | Free paths make no paid call | pass | Guest tools only, no model call (`lib/chatTools.mjs:147`) | — |
-| 62 | Housekeeping | `url.parse()` (DEP0169) on /api/watchlists, /api/status, /api/preflight | fail | Vercel runtime errors, last 7 days: DEP0169 ×37 on `/api/watchlists`, `/api/status`, `/api/a2a`, `/api/preflight`. The Vercel helpers fill `req.query` lazily with `url.parse()` | Fixed: `fix-whatwg-url` (`lib/requestQuery.mjs`, WHATWG `URL`; also a2a, ioc/context, the system status check) |
+| 62 | Housekeeping | `url.parse()` (DEP0169) on /api/watchlists, /api/status, /api/preflight | fail | Vercel runtime errors, last 7 days: DEP0169 ×37 on `/api/watchlists`, `/api/status`, `/api/a2a`, `/api/preflight`. The Vercel helpers fill `req.query` lazily with `url.parse()` | Fixed: #351, merged (`lib/requestQuery.mjs`, WHATWG `URL`; also a2a, ioc/context, the system status check) |
 | 63 | Housekeeping | Old tests run in CI | fail | `tests/preflight.test.js` is CommonJS under `"type": "module"`, fails if run, and is outside the `npm test` glob | Recommendation R12 |
 | 64 | Housekeeping | `/api/ioc` query values encoded | pass | Hygiene note only: `since`, `type` and `min_score` go into the PostgREST query unencoded (`api/chat.mjs:2014-2021`), but the source allowlist and the row filter after the query still hold | — |
 | 65 | Production | Chat: `tool_results_rejected` (a function call on a round with tools off) | needs live check | Vercel, 14 and 16 Oct: `[gemini-3.8-flash] 200 with no usable text (function call search_history on a round with tools off)` ×2. PR 1 (#344) moves history questions to the history route | [Needs Gift](#needs-gift) 12 |
@@ -93,21 +94,21 @@ Anything that needs production is under [Needs Gift](#needs-gift), with the exac
 | 70 | Tests | Docs and discovery | pass | 14 files, 167/167 | — |
 | 71 | Tests | Command Centre, modes, Studio, router | pass | Every suite above, 0 failures except the load timeout (row 57) | — |
 | 72 | Branding | Movie and film errors name no engine | pass | `movie`: the help, status, failure and gate wording test | — |
-| 73 | Branding | Infrastructure names in conversation | fail | PG1 called itself "running on Vercel" and mentioned Supabase in ordinary replies | Fixed: PR 5 (#349) |
-| 74 | Chat | Default route and search footer | fail | Production logged `route=search reason=default` on every chat; the footer was on every reply | Fixed: PR 1 (#344) |
-| 75 | Chat | Rate-limited free keys held replies ~19 s | fail | Chat limiter `maxWaitMs` 20 s and a breaker per instance | Fixed: PR 6 (rate limits) |
-
-The "Fix PR" links for the focused PRs (`fix-whatwg-url`, `fix-lab-pg1-url`, `fix-docs-audit`, the movie spending PR and PR 6) are listed with their numbers in [Fix PRs](#fix-prs).
+| 73 | Branding | Infrastructure names in conversation | fail | PG1 called itself "running on Vercel" and mentioned Supabase in ordinary replies | Fixed: #349, merged |
+| 74 | Chat | Default route and search footer | fail | Production logged `route=search reason=default` on every chat; the footer was on every reply | Fixed: #344, merged |
+| 75 | Chat | Rate-limited free keys held replies ~19 s | fail | Chat limiter `maxWaitMs` 20 s and a breaker per instance | Fixed: #350 |
+| 76 | CI | Cloudflare "Workers Builds: pg1-ai-agent" check | needs live check | Fails on every PR, including #343 from before this audit. The build runs in the Cloudflare project, outside the repo | [Needs Gift](#needs-gift) 14 |
 
 ## Fix PRs
 
-| Branch | What | PR |
-|---|---|---|
-| `fix-whatwg-url` | Query strings read with WHATWG `URL`, not `url.parse()` (DEP0169) | see the PR list in this PR's description |
-| `fix-lab-pg1-url` | `lab.yml` `PG1_URL` defaults to https://pg1-ai-agent.vercel.app | see the PR list in this PR's description |
-| `fix-docs-audit` | Payment test plan paid-call rows; Project-Gifted1™ on the about page and manifest | see the PR list in this PR's description |
-| `pr-movie-budget` | Movie spending: confirmed worst-case budget, 1 retake, paused_budget, resume and Rerun, customer data on commercial_ok engines only, no DeepSeek, out-of-credit engines skipped for an hour, cheapest dailies once per take | see the PR list in this PR's description |
-| `pr6-rate-limits` | PR 6: rate limits on the AI keys | see the PR list in this PR's description |
+| PR | What |
+|---|---|
+| #351 (merged) | Query strings read with WHATWG `URL`, not `url.parse()` (DEP0169) |
+| #353 | Living lab: the verdict job runs without npm packages (self-heal #352, found during the audit); `PG1_URL` defaults to https://pg1-ai-agent.vercel.app |
+| #354 | Payment test plan paid-call rows; Project-Gifted1™ on the about page and manifest; the feed comment |
+| #355 | The `voice-playback` browser test's harness race (an intermittent "no silent gap" failure seen on PR 4 and PR 5) |
+| #356 | Movie spending: confirmed worst-case budget, 1 retake per shot, `paused_budget`, resume and Rerun, customer data on commercial_ok engines only, no DeepSeek, out-of-credit engines left out for an hour, cheapest dailies once per take |
+| #350 | PR 6, rate limits on the AI keys |
 
 ## Recommendations (bigger than a focused fix)
 
@@ -217,3 +218,5 @@ Every command below is free: GET, or a POST that only returns a 402 challenge or
     - `supabase/migrations/20261108120000_pg1_movie_paused_budget.sql` (movie spending PR)
 
     Both are safe to run more than once.
+
+14. **Cloudflare Workers build (row 76):** open the build log from any PR's "Workers Builds: pg1-ai-agent" check, for example https://dash.cloudflare.com/f4ca340d9bcbeeab89bba95915dd072e/workers/services/view/pg1-ai-agent/production. If PG1 does not deploy to Cloudflare Workers, disconnect the Git integration there (Settings → Build → Disconnect), so every PR stops carrying a red check. Otherwise fix the build command or the root directory it uses.
