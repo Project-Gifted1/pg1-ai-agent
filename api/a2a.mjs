@@ -109,6 +109,7 @@ import { formatFixIt, invalidInputMessage } from '../lib/invalidInput.mjs';
 import { ABUSEIPDB_KEY_HEADER, readCustomerKey } from '../lib/abuseIpdb.mjs';
 import { suggestToolName } from '../lib/toolNames.mjs';
 import { X402_PRICE, x402PriceUsd } from '../lib/x402Config.mjs';
+import { queryOf } from '../lib/requestQuery.mjs';
 
 // Generic (never vendor-named) `checks[].source` labels for the 6 skills
 // exposed here, keyed by skill name - same idea as api/mcp.mjs's
@@ -226,7 +227,7 @@ function jsonRpcError(res, status, code, message, id, data, pg1RequestId) {
 function resolveVersion(req) {
   let raw = req.headers && req.headers['a2a-version'];
   if (raw === undefined || raw === '') {
-    const query = req.query || {};
+    const query = queryOf(req);
     raw = query['A2A-Version'];
     if (raw === undefined || raw === '') raw = query['a2a-version'];
   }
