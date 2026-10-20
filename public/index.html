@@ -431,6 +431,9 @@
     .living-lab-canvas { display: block; width: 100%; height: 100%; }
     .lab-legend { position: relative; z-index: 2; margin-top: auto; display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 10px max(14px, var(--safe-left)) calc(var(--safe-bottom, 0px) + 14px); background: linear-gradient(rgba(10, 10, 11, 0), #0a0a0b 60%); font-size: 0.78rem; color: #b8b8c0; pointer-events: none; }
     .lab-legend strong { color: #ececee; font-weight: 600; }
+    .lab-failures { position: relative; z-index: 2; margin: 0; padding: 0 max(14px, var(--safe-left)); list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; color: #ffb4a8; }
+    .lab-failures:empty { display: none; }
+    .lab-failures strong { color: #ececee; font-weight: 600; }
     .lab-legend .sw { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
     .lab-mode { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; border: 1px solid rgba(243, 198, 35, 0.45); font-size: 0.75rem; font-weight: 600; }
     .lab-mode[data-mode="error"] { border-color: rgba(255, 92, 92, 0.6); }
@@ -1540,6 +1543,7 @@
 .lab-card-goal{margin:4px 0 0;color:var(--text);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .lab-card-kind{margin:2px 0 0;font-size:var(--fs-xs);color:var(--text-3)}
 .lab-card .lab-card-actions{margin:0}
+.lab-card-error{margin:0;padding:var(--sp-2) var(--sp-3);border-radius:var(--r-md);background:var(--danger-soft);color:var(--text);overflow-wrap:anywhere}
 .lab-bot{width:76px;height:72px;overflow:visible}
 .b-body{fill:var(--gold-fill);stroke:var(--on-gold);stroke-width:1.5}
 .b-limb,.b-line{fill:none;stroke:var(--text-2);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
@@ -2731,6 +2735,7 @@
     </div>
     <div class="living-lab" id="living-lab"></div>
     <p class="sr-only" id="lab-screen-summary" aria-live="polite">The lab is idle.</p>
+    <ul class="lab-failures" id="lab-failures" aria-label="Stopped experiments"></ul>
     <div class="lab-legend" aria-hidden="true">
       <span><span class="sw" style="background:#36d1c4"></span>running</span>
       <span><span class="sw" style="background:#b08d1e"></span>queued</span>
@@ -3517,6 +3522,9 @@
       const running = s.experiments.filter((e) => e.status === 'running' || e.status === 'queued').length;
       if (counts) counts.innerHTML = `<strong>${s.experiments.length}</strong> experiment${s.experiments.length === 1 ? '' : 's'} · <strong>${s.events.length}</strong> events in 2 h`;
       if (summary) summary.textContent = `The lab is ${(LAB_MODE_WORDS[s.mode] || 'idle').toLowerCase()}: ${running} experiment${running === 1 ? '' : 's'} queued or running, ${s.events.length} events in the last two hours.`;
+      // Each stopped experiment: the stage it failed at and why.
+      const failures = document.getElementById('lab-failures');
+      if (failures) failures.innerHTML = s.experiments.filter((e) => e.stage).map((e) => `<li><strong>Lab ${escapeHTML(e.id8)}</strong> stopped at <strong>${escapeHTML(e.stage)}</strong>: ${escapeHTML(e.error || 'no reason recorded')}</li>`).join('');
     }
     async function fetchLabScene() {
       try {
@@ -4409,6 +4417,7 @@
         + `<figure class="lab-beaker${high ? ' is-high' : ''}" aria-label="Budget: ${labMoney(v.spent_usd)} of ${labMoney(v.budget_usd)} spent, ${pct}%"><svg viewBox="6 0 34 50" aria-hidden="true"><path class="bk-cap" d="M8 6h26"/><rect class="bk-liquid" x="11.5" y="6" width="17" height="40" rx="1" style="--fill: ${fill.toFixed(3)}"/><path class="bk-glass" d="M9 3h22M10.5 3v40a5 5 0 0 0 5 5h9a5 5 0 0 0 5-5V3"/></svg>`
         + `<figcaption>${labMoney(v.spent_usd)}<br>of ${labMoney(v.budget_usd)}</figcaption></figure></div>`
         + (track ? `<ol class="lab-track" aria-label="Stage">${track}</ol>` : '')
+        + (v.failure && typeof v.failure === 'object' && v.failure.message ? `<p class="lab-card-error" role="note"><strong>Stopped at ${escapeHTML(String(v.failure.stage || ''))}:</strong> ${escapeHTML(String(v.failure.message).slice(0, 240))}</p>` : '')
         + actions
         + '</section>';
     }

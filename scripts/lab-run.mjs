@@ -35,7 +35,20 @@ export async function main(env = process.env, { fetchImpl = globalThis.fetch, ou
   const { patch, ...rest } = result;
   if (patch) writeFileSync(`${out}/patch.json`, JSON.stringify(patch));
   write(rest);
-  return result.status === 'done' ? 0 : 0;
+  // One line in the run log: the status and, for a run that did not end
+  // done, the stage and the reason (operator-only: the run log is on GitHub).
+  console.log(verdictLine(rest));
+  // A run that did not end done fails the job, so the workflow run shows
+  // red and self-healing picks it up (until 20 Oct this returned 0 either
+  // way and every failed experiment ran green).
+  return result.status === 'done' ? 0 : 1;
+}
+
+// "[lab] id=aef41455 status=failed stage=build error=..." (and the kind).
+export function verdictLine(r) {
+  const e = r || {};
+  const m = /^(research|build|test|gate): ([\s\S]*)$/.exec(String(e.error || ''));
+  return `[lab] id=${String(e.id || '').slice(0, 8)} kind=${e.kind || '-'} status=${e.status || 'unknown'}${e.status === 'done' ? '' : ` stage=${m ? m[1] : '-'} error=${String(m ? m[2] : e.error || '-').replace(/\s+/g, ' ').slice(0, 300)}`} spent_usd=${Number(e.spent_usd) || 0}`;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
