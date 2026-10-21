@@ -161,6 +161,10 @@ test('selfBlock: real state in at most 400 tokens, no engine or provider name', 
   assert.ok(estimateTokens(block) <= SELF_BLOCK_MAX_TOKENS, `${estimateTokens(block)} tokens`);
   assert.match(block, /^\[PG1 SELF-MODEL\]/);
   assert.doesNotMatch(block, PROVIDER_NAMES);
+  // The cap's amount is an env value: never in the prompt.
+  const capped = selfBlock(selfModel(stateWith([engine('gemini_free')]), { env: { PG1_DAILY_SPEND_CAP_USD: '1234' }, now: NOW }));
+  assert.ok(!capped.includes('1234'));
+  assert.match(capped, /a daily spend cap is set/);
 });
 
 test('before acting: films stop when the media engine is out of credit (and record it); a missing key is left to the module', async () => {
