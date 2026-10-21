@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path';
 import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
 import { __resetImageBreaker } from '../lib/imageEngines.mjs';
 import { FAKE } from './fixtures/fake-secrets.mjs';
+import { vaultFetch, withVault, withConfirm } from './helpers/mediaConfirm.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
@@ -135,6 +136,13 @@ test('the error log FIX button composes a /core prompt, not /claude', () => {
 
 // --- 3. image generation never names the real provider behind an engine ----------------
 
+async function confirmedImage(prompt) {
+  const inner = globalThis.fetch;
+  globalThis.fetch = vaultFetch(inner);
+  const run = async (body) => { const r = makeRes(); await chatHandler(makeReq(authed(body)), r); return r; };
+  try { return await withVault(() => withConfirm(run)({ prompt })); } finally { globalThis.fetch = inner; }
+}
+
 const IMAGE_PART = JSON.stringify({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: 'ZmFrZQ==' } }] } }] });
 
 test('GENERATE_IMAGE: the primary engine label never names Google or Gemini', async () => {
@@ -143,11 +151,12 @@ test('GENERATE_IMAGE: the primary engine label never names Google or Gemini', as
     if (u.includes('/models/gemini-3.1-flash-image:generateContent')) return new Response(IMAGE_PART);
     throw new Error('Unexpected network call in test: ' + u);
   };
-  const res = makeRes();
-  await chatHandler(makeReq(authed({ prompt: '/image a lighthouse' })), res);
+  // /image waits for a confirmed budget (lib/mediaBudget.mjs); Confirm runs it.
+  const res = await confirmedImage('/image a lighthouse');
   assert.equal(res.statusCode, 200);
   assert.equal(res.jsonBody.reply, 'Image ready.');
-  assert.match(res.jsonBody.image, /^data:image\/png;base64,/);
+  // Inline, or hosted in the vault the budget confirmation needs.
+  assert.match(res.jsonBody.image, /^data:image\/png;base64,|\/pg1-vault\/generated_img_\d+\.png$/);
   assert.doesNotMatch(res.jsonBody.reply, /Google|Gemini/);
 });
 
@@ -158,8 +167,8 @@ test('GENERATE_IMAGE: the secondary engine label never names Google or Gemini ei
     if (u.includes('/models/gemini-3-pro-image:generateContent')) return new Response(IMAGE_PART);
     throw new Error('Unexpected network call in test: ' + u);
   };
-  const res = makeRes();
-  await chatHandler(makeReq(authed({ prompt: '/image a lighthouse' })), res);
+  // /image waits for a confirmed budget (lib/mediaBudget.mjs); Confirm runs it.
+  const res = await confirmedImage('/image a lighthouse');
   assert.equal(res.statusCode, 200);
   assert.equal(res.jsonBody.reply, 'Image ready.');
   assert.equal(res.jsonBody.imageStatus, 'SUCCESS');

@@ -42,3 +42,29 @@ export function withConfirm(run) {
     return run({ ...rest, prompt: `/approve ${token}` });
   };
 }
+
+// For a test whose fetch stand-in knows no vault: the budget proposal needs
+// one. vaultFetch(inner) answers pending_actions from the in-memory table
+// and every other vault call with an empty success; anything else goes to
+// inner. withVault(fn) runs fn with the vault configured, then restores the
+// env.
+export const TEST_VAULT = 'https://supabase.test';
+export function vaultFetch(inner) {
+  const [needle, handler] = pendingActionsRoute();
+  return async (u, o = {}) => {
+    const s = String(u);
+    if (s.includes(needle)) return handler(s, o);
+    if (s.startsWith(TEST_VAULT)) return String(o.method || 'GET').toUpperCase() === 'GET' ? json([]) : json([], 201);
+    return inner(u, o);
+  };
+}
+export async function withVault(fn) {
+  const saved = { url: process.env.SUPABASE_URL, key: process.env.SUPABASE_SERVICE_ROLE_KEY };
+  process.env.SUPABASE_URL = TEST_VAULT;
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-media-confirm';
+  try {
+    return await fn();
+  } finally {
+    for (const [k, v] of [['SUPABASE_URL', saved.url], ['SUPABASE_SERVICE_ROLE_KEY', saved.key]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+}
