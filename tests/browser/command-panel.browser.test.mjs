@@ -1,7 +1,7 @@
 /**
  * The command registry in a real browser (Chromium via Playwright, phone
  * size): the command panel (the / button beside the message box) has a
- * button for every command in public/commands.json, grouped by area; a
+ * card with a Run button for every command in public/commands.json, by area; a
  * command without arguments runs on a tap, one with arguments opens a form,
  * a dangerous one asks to confirm; a command PG1 mentions is a chip that
  * runs exactly that command, and an invented one ("/key fresh") is not; a
@@ -113,25 +113,30 @@ test('command panel, registry chips and the failure card', { skip, timeout: 1800
     return b.length > k && !b[b.length - 1].classList.contains('pending');
   }, n);
 
-  // 1. The panel: one button per command, grouped by area.
+  // 1. The panel: one card per command, grouped by area (the full check of
+  // every card's Run button is tests/browser/command-centre.browser.test.mjs).
   await page.click('#cmd-panel-btn');
   await page.locator('#cmd-modal').waitFor({ state: 'visible' });
-  const buttons = await page.locator('#cmd-panel-list .cmd-btn').evaluateAll((els) => els.map((e) => e.getAttribute('data-command')));
-  assert.deepEqual(buttons.sort(), REGISTRY.commands.map((c) => c.command).sort(), 'a button for every command in the registry');
-  assert.deepEqual(await page.locator('#cmd-panel-list .cmd-area h3').allTextContents(), REGISTRY.areas, 'grouped by area, in order');
+  const buttons = await page.locator('#cmd-panel-list .cmd-card .cmd-run').evaluateAll((els) => els.map((e) => e.getAttribute('data-command')));
+  assert.deepEqual(buttons.sort(), REGISTRY.commands.map((c) => c.command).sort(), 'a Run button for every command in the registry');
+  assert.deepEqual(await page.locator('#cmd-panel-list .cmd-group').evaluateAll((els) => els.map((e) => e.getAttribute('data-area'))), REGISTRY.areas, 'grouped by area, in order');
   mkdirSync(SHOTS_DIR, { recursive: true });
   await page.waitForTimeout(700); // the sheet's slide-in
   await page.screenshot({ path: join(SHOTS_DIR, 'command-panel-412-dark.png') });
+  const runIn = async (command) => {
+    await page.locator('#cmd-panel-list .cmd-search').fill(command);
+    return page.locator(`#cmd-panel-list .cmd-card[data-command="${command}"] .cmd-run`);
+  };
 
   // 2. No arguments: runs on a tap.
   let n = await bubbles().count();
-  await page.click('#cmd-panel-list .cmd-btn[data-command="/keys fresh"]');
+  await (await runIn('/keys fresh')).click();
   await settled(n);
   assert.equal(log.prompts[log.prompts.length - 1], '/keys fresh');
 
   // 3. Dangerous: asks first, runs on the second tap.
   await page.click('#cmd-panel-btn');
-  const autoOn = page.locator('#cmd-panel-list .cmd-btn[data-command="/auto on"]');
+  const autoOn = await runIn('/auto on');
   await autoOn.click();
   assert.match(await autoOn.innerText(), /Tap again to confirm/);
   assert.notEqual(log.prompts[log.prompts.length - 1], '/auto on', 'not sent on the first tap');
@@ -142,12 +147,13 @@ test('command panel, registry chips and the failure card', { skip, timeout: 1800
 
   // 4. Arguments: a form, then the full command.
   await page.click('#cmd-panel-btn');
-  await page.click('#cmd-panel-list .cmd-btn[data-command="/relay"]');
-  await page.locator('#cmd-form').waitFor({ state: 'visible' });
-  await page.fill('#cmd-form input[data-arg="0"]', 'Grok');
-  await page.fill('#cmd-form input[data-arg="1"]', 'hello PG1');
+  await (await runIn('/relay')).click();
+  const form = page.locator('#cmd-panel-list .cmd-card[data-command="/relay"] .cmd-form');
+  await form.waitFor({ state: 'visible' });
+  await form.locator('[data-arg="0"]').fill('Grok');
+  await form.locator('[data-arg="1"]').fill('hello PG1');
   n = await bubbles().count();
-  await page.click('#cmd-form-run');
+  await form.locator('.cmd-form-run').click();
   await settled(n);
   assert.equal(log.prompts[log.prompts.length - 1], '/relay Grok hello PG1');
 

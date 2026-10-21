@@ -1,30 +1,22 @@
 {
   "version": 1,
   "areas": [
-    "General",
-    "Keys",
-    "Usage",
+    "Threat checks",
+    "Keys & usage",
     "Autonomous",
     "Missions",
     "Lab",
-    "Films",
-    "Movie",
-    "Music",
-    "Media",
-    "Voices",
+    "Films & movies",
+    "Music & voices",
     "Relay",
+    "Code & approvals",
     "Feed",
-    "Watches",
-    "Agents",
-    "Skills",
-    "Task",
-    "Approvals",
-    "Code"
+    "Help"
   ],
   "commands": [
     {
       "command": "/help",
-      "area": "General",
+      "area": "Help",
       "description": "Every command, grouped by area",
       "args": [],
       "operatorOnly": false,
@@ -33,7 +25,7 @@
     },
     {
       "command": "/auth",
-      "area": "General",
+      "area": "Help",
       "description": "Check whether the signed-in credentials are valid",
       "args": [],
       "operatorOnly": false,
@@ -42,7 +34,7 @@
     },
     {
       "command": "/status",
-      "area": "General",
+      "area": "Keys & usage",
       "description": "System status: runtime, database check and fleet target",
       "args": [],
       "operatorOnly": true,
@@ -51,7 +43,7 @@
     },
     {
       "command": "/threat-radar",
-      "area": "Feed",
+      "area": "Threat checks",
       "description": "The feeds PG1 may serve and the known exploited catalog, as the radar card",
       "args": [],
       "operatorOnly": true,
@@ -60,7 +52,7 @@
     },
     {
       "command": "/commerce-status",
-      "area": "General",
+      "area": "Keys & usage",
       "description": "Payments and licensing state",
       "args": [],
       "operatorOnly": true,
@@ -69,7 +61,7 @@
     },
     {
       "command": "/sync-vault",
-      "area": "General",
+      "area": "Help",
       "description": "Vault summary",
       "args": [],
       "operatorOnly": true,
@@ -78,7 +70,7 @@
     },
     {
       "command": "/export",
-      "area": "General",
+      "area": "Help",
       "description": "Recent chat archive",
       "args": [],
       "operatorOnly": true,
@@ -87,7 +79,7 @@
     },
     {
       "command": "/test-validator",
-      "area": "General",
+      "area": "Help",
       "description": "Placeholder: runs nothing yet",
       "args": [],
       "operatorOnly": true,
@@ -96,7 +88,7 @@
     },
     {
       "command": "/core",
-      "area": "General",
+      "area": "Help",
       "description": "Deeper reasoning for long or heavy tasks",
       "args": [
         {
@@ -111,7 +103,7 @@
     },
     {
       "command": "/keys",
-      "area": "Keys",
+      "area": "Keys & usage",
       "description": "Every AI key: set or missing and its live state (cached up to 5 minutes)",
       "args": [],
       "operatorOnly": true,
@@ -120,7 +112,7 @@
     },
     {
       "command": "/keys fresh",
-      "area": "Keys",
+      "area": "Keys & usage",
       "description": "Check every AI key again now",
       "args": [],
       "operatorOnly": true,
@@ -129,7 +121,7 @@
     },
     {
       "command": "/usage",
-      "area": "Usage",
+      "area": "Keys & usage",
       "description": "Tool usage by agents (default 7 days)",
       "args": [
         {
@@ -149,7 +141,7 @@
     },
     {
       "command": "/spend",
-      "area": "Usage",
+      "area": "Keys & usage",
       "description": "Estimated AI spend per PG1 engine today, with each daily cap",
       "args": [],
       "operatorOnly": true,
@@ -158,7 +150,7 @@
     },
     {
       "command": "/spend yesterday",
-      "area": "Usage",
+      "area": "Keys & usage",
       "description": "Yesterday's estimated AI spend",
       "args": [],
       "operatorOnly": true,
@@ -167,7 +159,7 @@
     },
     {
       "command": "/pdf usage",
-      "area": "Usage",
+      "area": "Keys & usage",
       "description": "The usage report as a PDF",
       "args": [
         {
@@ -206,7 +198,7 @@
     {
       "command": "/auto off",
       "area": "Autonomous",
-      "description": "Kill switch: Autonomous mode off at once (queued work cancelled, running work stops at its next safe point)",
+      "description": "Kill switch: Autonomous mode off at once (queued work cancelled, running work stops at its next checkpoint)",
       "args": [],
       "operatorOnly": true,
       "dangerous": true,
@@ -463,7 +455,7 @@
     },
     {
       "command": "/film",
-      "area": "Films",
+      "area": "Films & movies",
       "description": "Start a film with PG1 Studio, or list the film commands alone",
       "args": [
         {
@@ -478,7 +470,7 @@
     },
     {
       "command": "/film director",
-      "area": "Films",
+      "area": "Films & movies",
       "description": "Director Mode: a film directed end to end within its cap",
       "args": [
         {
@@ -493,7 +485,7 @@
     },
     {
       "command": "/film status",
-      "area": "Films",
+      "area": "Films & movies",
       "description": "Where a film is",
       "args": [
         {
@@ -508,7 +500,7 @@
     },
     {
       "command": "/film storyboard",
-      "area": "Films",
+      "area": "Films & movies",
       "description": "A film's storyboard as a PDF",
       "args": [
         {
@@ -523,7 +515,7 @@
     },
     {
       "command": "/film preview",
-      "area": "Films",
+      "area": "Films & movies",
       "description": "Render the animatic preview (approve first)",
       "args": [
         {
@@ -538,7 +530,7 @@
     },
     {
       "command": "/film edit",
-      "area": "Films",
+      "area": "Films & movies",
       "description": "Change a film",
       "args": [
         {
@@ -553,7 +545,7 @@
     },
     {
       "command": "/film retry",
-      "area": "Films",
+      "area": "Films & movies",
       "description": "Start a stopped film again from where it stopped (approve first)",
       "args": [
         {
@@ -568,7 +560,7 @@
     },
     {
       "command": "/film timeline",
-      "area": "Films",
+      "area": "Films & movies",
       "description": "A film's timeline",
       "args": [
         {
@@ -583,7 +575,7 @@
     },
     {
       "command": "/film media",
-      "area": "Films",
+      "area": "Films & movies",
       "description": "A film's media",
       "args": [
         {
@@ -598,7 +590,7 @@
     },
     {
       "command": "/film sync-secrets",
-      "area": "Films",
+      "area": "Films & movies",
       "description": "Copy the render secrets to the render worker",
       "args": [],
       "operatorOnly": true,
@@ -607,7 +599,7 @@
     },
     {
       "command": "/movie",
-      "area": "Movie",
+      "area": "Films & movies",
       "description": "A movie whose characters act and speak on screen; alone, the movie commands",
       "args": [
         {
@@ -622,7 +614,7 @@
     },
     {
       "command": "/movie status",
-      "area": "Movie",
+      "area": "Films & movies",
       "description": "Where a movie is",
       "args": [
         {
@@ -637,7 +629,7 @@
     },
     {
       "command": "/movie screenplay",
-      "area": "Movie",
+      "area": "Films & movies",
       "description": "A movie's screenplay",
       "args": [
         {
@@ -652,7 +644,7 @@
     },
     {
       "command": "/movie retry",
-      "area": "Movie",
+      "area": "Films & movies",
       "description": "Start a stopped movie again from where it stopped (approve first)",
       "args": [
         {
@@ -667,7 +659,7 @@
     },
     {
       "command": "/movie retake",
-      "area": "Movie",
+      "area": "Films & movies",
       "description": "A new take of the shots you name (approve first)",
       "args": [
         {
@@ -682,7 +674,7 @@
     },
     {
       "command": "/music",
-      "area": "Music",
+      "area": "Music & voices",
       "description": "Original music with PG1 Sound; alone, the music commands",
       "args": [
         {
@@ -697,7 +689,7 @@
     },
     {
       "command": "/music status",
-      "area": "Music",
+      "area": "Music & voices",
       "description": "Where a track is",
       "args": [
         {
@@ -712,7 +704,7 @@
     },
     {
       "command": "/music edit",
-      "area": "Music",
+      "area": "Music & voices",
       "description": "Change a track",
       "args": [
         {
@@ -727,7 +719,7 @@
     },
     {
       "command": "/music retry",
-      "area": "Music",
+      "area": "Music & voices",
       "description": "Start a stopped track again",
       "args": [
         {
@@ -742,7 +734,7 @@
     },
     {
       "command": "/music export",
-      "area": "Music",
+      "area": "Music & voices",
       "description": "WAV stems, MIDI and the WAV master in one zip",
       "args": [
         {
@@ -757,7 +749,7 @@
     },
     {
       "command": "/image",
-      "area": "Media",
+      "area": "Films & movies",
       "description": "Generate an image",
       "args": [
         {
@@ -772,7 +764,7 @@
     },
     {
       "command": "/video",
-      "area": "Media",
+      "area": "Films & movies",
       "description": "A 5 or 10 second clip with PG1 Motion; alone, the tiers and what is left today",
       "args": [
         {
@@ -787,7 +779,7 @@
     },
     {
       "command": "/pdf",
-      "area": "Media",
+      "area": "Help",
       "description": "PG1 writes it as a PDF",
       "args": [
         {
@@ -802,7 +794,7 @@
     },
     {
       "command": "/pdf this",
-      "area": "Media",
+      "area": "Help",
       "description": "The last reply as a PDF",
       "args": [],
       "operatorOnly": true,
@@ -811,7 +803,7 @@
     },
     {
       "command": "/pdf thread",
-      "area": "Media",
+      "area": "Help",
       "description": "This chat as a PDF",
       "args": [],
       "operatorOnly": true,
@@ -820,7 +812,7 @@
     },
     {
       "command": "/pdf list",
-      "area": "Media",
+      "area": "Help",
       "description": "Your PDFs",
       "args": [],
       "operatorOnly": true,
@@ -829,7 +821,7 @@
     },
     {
       "command": "/speak",
-      "area": "Media",
+      "area": "Music & voices",
       "description": "Read the text aloud",
       "args": [
         {
@@ -844,7 +836,7 @@
     },
     {
       "command": "/voices",
-      "area": "Voices",
+      "area": "Music & voices",
       "description": "The voices films can use, and whether each is cleared for client work",
       "args": [],
       "operatorOnly": true,
@@ -853,7 +845,7 @@
     },
     {
       "command": "/voice",
-      "area": "Voices",
+      "area": "Music & voices",
       "description": "Show or switch the voice profile used for spoken replies and Read aloud — PG1 Core, PG1 Classic or PG1 Field, remembered on this device",
       "args": [],
       "operatorOnly": true,
@@ -891,7 +883,7 @@
     },
     {
       "command": "/screening",
-      "area": "Feed",
+      "area": "Threat checks",
       "description": "Payers refused by sanctions screening in the last 30 days",
       "args": [],
       "operatorOnly": true,
@@ -900,7 +892,7 @@
     },
     {
       "command": "/screening dismiss",
-      "area": "Feed",
+      "area": "Threat checks",
       "description": "Clear an EU-list extraction error after review",
       "args": [
         {
@@ -915,7 +907,7 @@
     },
     {
       "command": "/hosting status",
-      "area": "Agents",
+      "area": "Feed",
       "description": "The dataset behind hosting_advisor: stale and unverified facts",
       "args": [],
       "operatorOnly": true,
@@ -924,7 +916,7 @@
     },
     {
       "command": "/hosting research",
-      "area": "Agents",
+      "area": "Feed",
       "description": "Check official sources in the lab",
       "args": [
         {
@@ -939,7 +931,7 @@
     },
     {
       "command": "/hosting apply",
-      "area": "Agents",
+      "area": "Feed",
       "description": "Review and write the updates from an experiment",
       "args": [
         {
@@ -954,7 +946,7 @@
     },
     {
       "command": "/hosting confirm",
-      "area": "Agents",
+      "area": "Feed",
       "description": "Mark a fact you checked",
       "args": [
         {
@@ -969,7 +961,7 @@
     },
     {
       "command": "/a2a jobs",
-      "area": "Agents",
+      "area": "Feed",
       "description": "Paid jobs other agents bought over A2A",
       "args": [],
       "operatorOnly": true,
@@ -978,7 +970,7 @@
     },
     {
       "command": "/a2a job",
-      "area": "Agents",
+      "area": "Feed",
       "description": "One A2A job",
       "args": [
         {
@@ -993,7 +985,7 @@
     },
     {
       "command": "/foundry queue",
-      "area": "Agents",
+      "area": "Code & approvals",
       "description": "Tools other agents commission: requests in review and builds waiting",
       "args": [],
       "operatorOnly": true,
@@ -1002,7 +994,7 @@
     },
     {
       "command": "/foundry tools",
-      "area": "Agents",
+      "area": "Code & approvals",
       "description": "The tools the Foundry built",
       "args": [],
       "operatorOnly": true,
@@ -1011,7 +1003,7 @@
     },
     {
       "command": "/foundry job",
-      "area": "Agents",
+      "area": "Code & approvals",
       "description": "One Foundry job",
       "args": [
         {
@@ -1026,7 +1018,7 @@
     },
     {
       "command": "/foundry allow",
-      "area": "Agents",
+      "area": "Code & approvals",
       "description": "Allow a request in review",
       "args": [
         {
@@ -1041,7 +1033,7 @@
     },
     {
       "command": "/foundry deny",
-      "area": "Agents",
+      "area": "Code & approvals",
       "description": "Deny a request in review",
       "args": [
         {
@@ -1056,7 +1048,7 @@
     },
     {
       "command": "/foundry approve",
-      "area": "Agents",
+      "area": "Code & approvals",
       "description": "Approve a build",
       "args": [
         {
@@ -1071,7 +1063,7 @@
     },
     {
       "command": "/foundry reject",
-      "area": "Agents",
+      "area": "Code & approvals",
       "description": "Reject a build",
       "args": [
         {
@@ -1086,7 +1078,7 @@
     },
     {
       "command": "/foundry disable",
-      "area": "Agents",
+      "area": "Code & approvals",
       "description": "Disable a Foundry tool",
       "args": [
         {
@@ -1101,7 +1093,7 @@
     },
     {
       "command": "/foundry enable",
-      "area": "Agents",
+      "area": "Code & approvals",
       "description": "Enable a Foundry tool again",
       "args": [
         {
@@ -1116,7 +1108,7 @@
     },
     {
       "command": "/watch",
-      "area": "Watches",
+      "area": "Code & approvals",
       "description": "Watch what was just discussed (lab run, PR, workflow run or deploy) and report when it finishes",
       "args": [],
       "operatorOnly": true,
@@ -1125,7 +1117,7 @@
     },
     {
       "command": "/watch list",
-      "area": "Watches",
+      "area": "Code & approvals",
       "description": "What PG1 is watching",
       "args": [],
       "operatorOnly": true,
@@ -1134,7 +1126,7 @@
     },
     {
       "command": "/watch stop",
-      "area": "Watches",
+      "area": "Code & approvals",
       "description": "Stop a watch",
       "args": [
         {
@@ -1149,7 +1141,7 @@
     },
     {
       "command": "/skills",
-      "area": "Skills",
+      "area": "Lab",
       "description": "The skills PG1 has",
       "args": [],
       "operatorOnly": true,
@@ -1158,7 +1150,7 @@
     },
     {
       "command": "/skills show",
-      "area": "Skills",
+      "area": "Lab",
       "description": "One skill in full",
       "args": [
         {
@@ -1173,7 +1165,7 @@
     },
     {
       "command": "/skills edit",
-      "area": "Skills",
+      "area": "Lab",
       "description": "Change a skill",
       "args": [
         {
@@ -1188,7 +1180,7 @@
     },
     {
       "command": "/skills enable",
-      "area": "Skills",
+      "area": "Lab",
       "description": "Enable a skill",
       "args": [
         {
@@ -1203,7 +1195,7 @@
     },
     {
       "command": "/skills disable",
-      "area": "Skills",
+      "area": "Lab",
       "description": "Disable a skill",
       "args": [
         {
@@ -1218,7 +1210,7 @@
     },
     {
       "command": "/skills history",
-      "area": "Skills",
+      "area": "Lab",
       "description": "A skill's versions",
       "args": [
         {
@@ -1233,7 +1225,7 @@
     },
     {
       "command": "/skills rollback",
-      "area": "Skills",
+      "area": "Lab",
       "description": "Go back to an earlier version of a skill",
       "args": [
         {
@@ -1248,7 +1240,7 @@
     },
     {
       "command": "/learn",
-      "area": "Skills",
+      "area": "Lab",
       "description": "Draft a skill from the task in this thread (never used until enabled)",
       "args": [],
       "operatorOnly": true,
@@ -1257,7 +1249,7 @@
     },
     {
       "command": "/task",
-      "area": "Task",
+      "area": "Missions",
       "description": "The task for this thread",
       "args": [],
       "operatorOnly": true,
@@ -1266,7 +1258,7 @@
     },
     {
       "command": "/task set",
-      "area": "Task",
+      "area": "Missions",
       "description": "Set the task for this thread",
       "args": [
         {
@@ -1281,7 +1273,7 @@
     },
     {
       "command": "/task clear",
-      "area": "Task",
+      "area": "Missions",
       "description": "Clear the task for this thread",
       "args": [],
       "operatorOnly": true,
@@ -1290,7 +1282,7 @@
     },
     {
       "command": "/pin",
-      "area": "Task",
+      "area": "Missions",
       "description": "A rule PG1 always follows in this thread",
       "args": [
         {
@@ -1305,7 +1297,7 @@
     },
     {
       "command": "/unpin",
-      "area": "Task",
+      "area": "Missions",
       "description": "Remove a pinned rule",
       "args": [
         {
@@ -1320,7 +1312,7 @@
     },
     {
       "command": "/approve",
-      "area": "Approvals",
+      "area": "Code & approvals",
       "description": "Approve a proposal (or use its button)",
       "args": [
         {
@@ -1335,7 +1327,7 @@
     },
     {
       "command": "/decline",
-      "area": "Approvals",
+      "area": "Code & approvals",
       "description": "Decline a proposal (or use its button)",
       "args": [
         {
@@ -1350,7 +1342,7 @@
     },
     {
       "command": "/fix",
-      "area": "Approvals",
+      "area": "Code & approvals",
       "description": "Diagnose a failed request with self-healing and offer a draft pull request (asks first, never merges)",
       "args": [
         {
@@ -1365,7 +1357,7 @@
     },
     {
       "command": "/patch",
-      "area": "Approvals",
+      "area": "Code & approvals",
       "description": "A code change as patch JSON: a diff preview to approve, then a pull request",
       "args": [
         {
@@ -1380,7 +1372,7 @@
     },
     {
       "command": "/code",
-      "area": "Code",
+      "area": "Code & approvals",
       "description": "Send to Code, drafts a task prompt you copy into Code (or open it pre-filled) and tracks its PR under Hand-offs in the menu",
       "args": [
         {

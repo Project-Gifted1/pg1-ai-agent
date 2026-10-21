@@ -62,8 +62,9 @@ function makeRes() {
 test('/help lists /core, described as deeper reasoning for long or heavy tasks, and never mentions /claude', async () => {
   const res = makeRes();
   await chatHandler(makeReq(authed({ prompt: '/help' })), res);
-  assert.match(res.jsonBody.reply, /- `\/core` <question>: Deeper reasoning for long or heavy tasks/);
-  assert.doesNotMatch(res.jsonBody.reply, /\/claude/);
+  // The text list beside the command panel (api/chat.mjs /help).
+  assert.match(res.jsonBody.helpText, /- `\/core` <question>: Deeper reasoning for long or heavy tasks/);
+  assert.doesNotMatch(res.jsonBody.helpText + res.jsonBody.reply, /\/claude/);
 });
 
 test('[CAPABILITIES] describes /core as deeper reasoning for long or heavy tasks, names no provider, and never shows /claude', async () => {
