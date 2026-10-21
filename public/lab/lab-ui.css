@@ -161,3 +161,4 @@ a.lx-chip:hover { border-color: var(--lx-info); }
   .lx-card, .lx-card *, .lx-pill, .lx-pill::before, .lx-btn, .lx-group > summary::after, .lx-details > summary::before { animation: none !important; transition: none !important; }
   .lx-btn:active { transform: none; }
 }
+.lx-row-sub .lx-actions { margin-top: 6px; }

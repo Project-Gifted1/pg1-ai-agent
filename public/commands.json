@@ -253,6 +253,63 @@
       "client": false
     },
     {
+      "command": "/state",
+      "area": "Autonomous",
+      "description": "PG1 Core State: what is available, degraded or unavailable and why, the focus, spend and open problems",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/lessons",
+      "area": "Autonomous",
+      "description": "Lessons PG1 proposed from its reflections: proposed, approved and retired",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/lessons approve",
+      "area": "Autonomous",
+      "description": "Approve a lesson: it acts from now on, as a hint only",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "lesson id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/lessons retire",
+      "area": "Autonomous",
+      "description": "Retire a lesson: it stops acting",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "lesson id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/lessons reflect",
+      "area": "Autonomous",
+      "description": "Reflect on the last 24 hours now and propose lessons (nothing acts until approved)",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
       "command": "/mission list",
       "area": "Missions",
       "description": "Standing goals for Autonomous mode",
