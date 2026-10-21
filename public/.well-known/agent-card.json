@@ -27,6 +27,17 @@
         "uri": "https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.1",
         "description": "x402 payments for the paid skills: an unpaid call returns an input-required task with x402.payment.status payment-required and the x402 v2 PaymentRequired object in x402.payment.required; send the PaymentPayload in message.metadata x402.payment.payload. Settled only after the skill succeeds; the receipt is in x402.payment.receipts.",
         "required": false
+      },
+      {
+        "uri": "https://pg1-ai-agent.vercel.app/docs/agents#verify-a-result",
+        "description": "Signed results: every completed task carries an Ed25519 signature in metadata[\"pg1.signature\"] ({alg, kid, request_hash, sources, timestamp, version, sig, jwks_url}). The public keys are a JWKS at params.jwks_url (also at params.jwks_alias_url); pick the key by kid. The exact signing input, a worked example and 10-line Node and Python verifiers are at the uri. The free verify_result skill checks one too.",
+        "required": false,
+        "params": {
+          "jwks_url": "https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key",
+          "jwks_alias_url": "https://pg1-ai-agent.vercel.app/.well-known/jwks.json",
+          "alg": "EdDSA",
+          "metadata_key": "pg1.signature"
+        }
       }
     ]
   },

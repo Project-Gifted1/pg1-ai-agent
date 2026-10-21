@@ -36,12 +36,15 @@ jobs:
           cache: npm
       - run: npm ci
       # The film tests (end-to-end render, image placement) skip without
-      # ffmpeg. Same packages as film-render.yml.
-      - name: Install ffmpeg and fonts
+      # ffmpeg. Same packages as film-render.yml. python3-cryptography: the
+      # Python offline verifier in /docs/agents is run by
+      # tests/signing-discovery.test.mjs, which fails in CI without it.
+      - name: Install ffmpeg, fonts and python3-cryptography
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core python3-cryptography
           ffmpeg -version | head -1
+          python3 -c "import cryptography; print('cryptography', cryptography.__version__)"
       # Chromium is not installed in this job, so tests/browser/ skip here
       # and run in the browser job below.
       - name: npm test (network blocked)

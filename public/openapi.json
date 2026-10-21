@@ -13,6 +13,13 @@
     "description": "Integration guide: an alert bot that screens wallets with PG1's free checks.",
     "url": "https://pg1-ai-agent.vercel.app/docs/crypto-alert-bot"
   },
+  "x-pg1-signing": {
+    "description": "PG1 results are signed with Ed25519 (MCP result._meta[\"pg1/signature\"], A2A metadata[\"pg1.signature\"], REST the top-level signature). Each signature block carries jwks_url, and each signed response has Link: <jwks_url>; rel=\"jwks\". Pick the key by kid. Signing input and offline verifiers: docs_url.",
+    "jwks_url": "https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key",
+    "jwks_alias_url": "https://pg1-ai-agent.vercel.app/.well-known/jwks.json",
+    "alg": "EdDSA",
+    "docs_url": "https://pg1-ai-agent.vercel.app/docs/agents#verify-a-result"
+  },
   "servers": [
     {
       "url": "https://pg1-ai-agent.vercel.app"

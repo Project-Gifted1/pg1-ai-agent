@@ -11,6 +11,7 @@
     { "source": "/docs/attributions", "destination": "/docs/attributions/index.html" },
     { "source": "/docs/screening", "destination": "/docs/screening/index.html" },
     { "source": "/.well-known/pg1-signing-key", "destination": "/api/signing-key" },
+    { "source": "/.well-known/jwks.json", "destination": "/api/signing-key" },
     { "source": "/status", "destination": "/api/status" }
   ],
   "crons": [

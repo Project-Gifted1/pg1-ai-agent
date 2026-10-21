@@ -14,7 +14,7 @@ import { resolvePaidAccess, STANDARD_TOOL_HANDLERS, recordToolError, requestCall
 import { encodePaymentRequiredHeader, encodePaymentResponseHeader } from '@x402/core/http';
 import { getRequestIdentifier, setFreeTierHeaders } from '../lib/freeTier.mjs';
 import { PREFLIGHT_TOOL } from '../lib/preflight.mjs';
-import { signResult } from '../lib/signing.mjs';
+import { signResult, addJwksLink } from '../lib/signing.mjs';
 import { recordTelemetry } from '../lib/telemetry.mjs';
 import { callerKindOf } from '../lib/ownTraffic.mjs';
 import { X402_PRICE, x402PriceUsd } from '../lib/x402Config.mjs';
@@ -43,7 +43,7 @@ export function makePaidRestHandler({ tool, endpoint, argsFrom, usage }) {
     res.setHeader('X-Request-Id', requestId);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', ALLOW_HEADERS);
-    res.setHeader('Access-Control-Expose-Headers', 'PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Free-Tier-Limit, X-Free-Tier-Remaining, X-Request-Id');
+    res.setHeader('Access-Control-Expose-Headers', 'PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Free-Tier-Limit, X-Free-Tier-Remaining, X-Request-Id, Link');
     if (req.method === 'OPTIONS') return res.status(204).end();
     if (req.method !== 'GET' && req.method !== 'POST') {
       res.setHeader('Allow', 'GET, POST, OPTIONS');
@@ -108,6 +108,7 @@ export function makePaidRestHandler({ tool, endpoint, argsFrom, usage }) {
       if (gate.consumeFreeTier) await gate.consumeFreeTier();
 
       const signature = signResult({ tool, args, result });
+      if (signature) addJwksLink(res);
       return res.status(200).json(signature ? { ...result, signature } : result);
     } catch (err) {
       console.error(`[${tool}] unhandled:`, err && err.message);
