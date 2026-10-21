@@ -37,7 +37,7 @@ import { buildZip, readZip, runExport, exportReadme, STEMS, MB, StorageLimitErro
 import { parseMusicCommand, parseMusicFlags, normaliseKey, musicCapUsd, MUSIC_ACTIONS, isMusicCommand } from '../lib/music/text.mjs';
 import { createMusicStore } from '../lib/music/store.mjs';
 import { signMusicToken, verifyMusicToken, MUSIC_WORKFLOW } from '../lib/music/dispatch.mjs';
-import { handleMusicCommand, handleMusicApproval, musicCard } from '../lib/music/chat.mjs';
+import { handleMusicCommand, handleMusicApproval, confirmMusicBudget, musicCard } from '../lib/music/chat.mjs';
 import { main as workerMain } from '../scripts/music-render.mjs';
 import { routedFetch, json } from './helpers/filmDb.mjs';
 import { makeMusicDb, musicDbRoutes } from './helpers/musicDb.mjs';
@@ -538,7 +538,18 @@ describe('/music end to end (real Postgres, stand-in engines and worker tools)',
     // stored in the stand-in vault here.
     PG1_LARGE_MEDIA_IN_VAULT: '1'
   };
-  const cmd = (text, extra = {}) => handleMusicCommand({ text, env, supUrl: SUP_URL, supKey: 'service-key', isOperator: true, requestId: 'req12345', fetchImpl, ...extra });
+  const cmdOnce = (text, extra = {}) => handleMusicCommand({ text, env, supUrl: SUP_URL, supKey: 'service-key', isOperator: true, requestId: 'req12345', fetchImpl, ...extra });
+  // A new track waits for Confirm on its budget (lib/mediaBudget.mjs;
+  // tests/spend-gaps.test.mjs checks that step). These tests confirm the
+  // per-track cap (PG1_MUSIC_TRACK_CAP, 2 USD by default) and go on.
+  const cmd = async (text, extra = {}) => {
+    const isNew = !/^\/music\s+(?:status|list|edit|retry|export|help)\b/i.test(text) && /^\/music\s+\S/i.test(text);
+    const out = await cmdOnce(isNew && !/--budget/.test(text) ? `${text} --budget ${musicCapUsd(extra.env || env)}` : text, extra);
+    if (!isNew || !out.mediaBudget) return out;
+    const row = (await db.query('select * from pending_actions where token = $1', [out.pendingApproval.token])).rows[0];
+    await db.query('delete from pending_actions where token = $1', [row.token]); // resolved by the chat's Confirm
+    return confirmMusicBudget({ plan: row.plan, env, supUrl: SUP_URL, supKey: 'service-key', requestId: 'req12345', fetchImpl, ...extra });
+  };
   const approve = async (token, decision = 'approve', extra = {}) => {
     const row = (await db.query('select * from pending_actions where token = $1', [token])).rows[0];
     return handleMusicApproval({ row, decision, env, supUrl: SUP_URL, supKey: 'service-key', isOperator: true, fetchImpl, ...extra });
@@ -569,11 +580,13 @@ describe('/music end to end (real Postgres, stand-in engines and worker tools)',
   test('previews -> approve a take -> final render with its licence -> export; charged and refunded against the cap', async () => {
     const out = await cmd('/music dusty boom-bap beat, vinyl crackle, jazzy piano --instrumental --bpm 88 --key Fm');
     assert.match(out.reply, /PG1 Sound is making 2 previews of "Dusty Boom-bap Beat Vinyl Crackle Jazzy" \([0-9a-f]{8}; instrumental · 88 BPM · F minor · about 30 s\), about 0\.08 USD/, 'two clips at 0.04 each');
-    assert.match(out.reply, /Spending cap for this track: 2\.00 USD/);
+    assert.match(out.reply, /Confirmed budget for this track: 2\.00 USD/);
     const id = out.musicTrack.id;
     let t = await track(id);
     assert.equal(t.status, 'preview_queued');
-    assert.deepEqual(t.options, { instrumental: true, bpm: 88, key: 'F minor', length: 'short', lyrics: '' });
+    const { spend_confirmed: confirmed, ...spec } = t.options;
+    assert.deepEqual(spec, { instrumental: true, bpm: 88, key: 'F minor', length: 'short', lyrics: '' });
+    assert.equal(confirmed.cap_usd, 2, 'the confirmed budget is on the track');
     assert.equal(github.length, 1);
     assert.match(github[0].url, new RegExp(`/actions/workflows/${MUSIC_WORKFLOW}/dispatches$`));
     assert.equal(github[0].body.inputs.stage, 'preview');

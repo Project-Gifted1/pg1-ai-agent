@@ -452,17 +452,21 @@ function jobDeps(req, { supUrl, supKey }) {
   const startRun = (job, { onSuccess = null } = {}) => {
     const run = loadJobService().then((svc) => {
       const model = svc.jobModel({});
-      return runAcceptedJob(job, {
+      // A paid job spends paid AI only from its own allowance (price / 1.5).
+      return svc.runWithJobAllowance(job, () => runAcceptedJob(job, {
         store, audit, onSuccess,
         execDeps: { runTool: svc.runJobTool, guard: svc.jobGuard(), makePdf: (doc) => outputs.makePdf(doc), writeModel: (m) => model.write(m), spentUsd: () => model.spent() },
         storeOutputs: (j, out) => outputs.storeOutputs(j, out)
-      });
+      }));
     }).catch((e) => console.error('[A2A_JOB] run failed:', e && e.message));
     try { waitUntil(run); } catch (e) { /* outside Vercel the promise still runs */ }
     return run;
   };
   return {
     store, outputs, audit, startRun, callerId: identifier,
+    // Before a paid job is quoted or charged: can it be done within its
+    // allowance on an engine cleared for customer data?
+    runnable: async (job) => (await loadJobService()).paidJobRunnable(job),
     freeTier: { wanted: freeTierWanted(req.headers), check: () => checkFreeTierAvailable(supUrl, supKey, identifier), consume: (avail) => consumeFreeTier(supUrl, supKey, identifier, avail) },
     gate: (job, payment) => runPricedX402Gate(req, { payment, priceUsd: Number(job.price_usd), description: `PG1 A2A job ${job.job_type} (${job.items} item${job.items === 1 ? '' : 's'})` }),
     // P11: the paying wallet is screened before anything is settled.

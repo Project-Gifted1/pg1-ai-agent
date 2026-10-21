@@ -29,7 +29,7 @@ import { Agent, fetch as undiciFetch } from 'undici';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { reportUpstreamFailure } from '../lib/upstreamFailure.mjs';
-import { mediaGeminiKeys } from '../lib/aiRouter.mjs';
+import { mediaGeminiKeys, withSpendAllowance, budgetAllows } from '../lib/aiRouter.mjs';
 import {
   claimVideoJob, renderVideoJob, verifyRenderToken, videoEnabled, videoRenderSecret,
   VIDEO_RENDER_MAX_DURATION_S, VIDEO_RENDER_TOKEN_HEADER
@@ -94,8 +94,14 @@ export function createVideoRenderHandler({ fetchImpl = longFetch, now = () => Da
     }
     if (!job) return send(res, 200, { claimed: false });
 
-    const work = renderVideoJob({
-      env, job, geminiKeys: geminiKeysFrom(env), supUrl, supKey, fetchImpl, now, sleep, log,
+    // A clip is queued only after the operator confirmed its budget
+    // (lib/mediaBudget.mjs); its reservation (est_cost_usd) is that budget.
+    // The render runs inside an allowance of it, and the per-provider caps
+    // still apply: an engine over its cap is left out.
+    const capUsd = Math.max(0, Number(job.est_cost_usd) || 0);
+    const work = withSpendAllowance({ job: `video:${job.id}`, capUsd }, () => renderVideoJob({
+      env: budgetAllows(env, 'replicate') ? env : { ...env, REPLICATE_API_TOKEN: '', REPLICATE_KEY: '' },
+      job, geminiKeys: budgetAllows(env, 'gemini_paid') ? geminiKeysFrom(env) : [], supUrl, supKey, fetchImpl, now, sleep, log,
       deadline: started + (VIDEO_RENDER_MAX_DURATION_S - 15) * 1000,
       onFailure: (f) => {
         reportUpstreamFailure({
@@ -104,7 +110,7 @@ export function createVideoRenderHandler({ fetchImpl = longFetch, now = () => Da
           requestId: f.requestId || null, envValues: secretEnvValues(env)
         });
       }
-    }).catch(() => ({ status: 'failed', reason: 'exception' }));
+    })).catch(() => ({ status: 'failed', reason: 'exception' }));
     keepAlive(work);
     send(res, 202, { claimed: true });
     return work;

@@ -26,6 +26,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
+import { pendingActionsRoute, resetPendingActions, withConfirm } from './helpers/mediaConfirm.mjs';
 import { createSseParser } from '../lib/chatStream.mjs';
 import { FAILURE_PREFIX, UPSTREAM_BRAND_RE } from '../lib/upstreamFailure.mjs';
 import { createReplySecretGuard, neutralErrorReason } from '../lib/secretGuard.mjs';
@@ -61,6 +62,7 @@ const GEMINI_SAFETY = JSON.stringify({ error: { code: 400, status: 'INVALID_ARGU
 const BRANDS_RE = /Gemini|Google|Veo|Omni|Anthropic|Claude|OpenAI|googleapis|interactions/i;
 
 function resetEnv() {
+  resetPendingActions();
   process.env.USER_API_KEY = 'test-operator';
   process.env.USER_API_PASS = 'test-secret-pass';
   process.env.GEMINI_API_KEY1 = KEY1;
@@ -121,11 +123,14 @@ function eventsOf(res) {
   return out;
 }
 
-async function run(body) {
+async function runOnce(body) {
   const res = makeRes();
   await chatHandler(makeReq(body), res);
   return res;
 }
+// /video waits for Confirm on its budget (lib/mediaBudget.mjs): these
+// tests are about what happens after it, so Confirm is pressed for them.
+const run = withConfirm(runOnce);
 
 const json = (v, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'Content-Type': 'application/json' } });
 
@@ -176,6 +181,7 @@ function dbRoutes(db) {
 
 // The chat's own Supabase reads before routing, the vault and the error log.
 const supabaseRoutes = () => [
+  pendingActionsRoute(),
   ['/rest/v1/messages', (u, o) => (o.method === 'POST' ? new Response('', { status: 201 }) : json([]))],
   ['/storage/v1/object/list/pg1-vault', () => json([])],
   ['/storage/v1/object/sign/pg1-vault/', (u) => json({ signedURL: `/object/sign/pg1-vault/${u.split('/pg1-vault/')[1]}?token=signed-token` })],
@@ -629,7 +635,7 @@ test('the final video request body carries only keys the Interactions API accept
   assert.equal(typeof buildVideoRequestBody({ model: 'm', prompt: 'p', image: { mimeType: 'image/gif', data: 'x' } }).input, 'string');
 });
 
-test('the chat request that offers generate_video carries no schema key Gemini rejects (#262), and the tool can start a clip', async () => {
+test('the chat request that offers generate_video carries no schema key Gemini rejects (#262); the tool never starts a clip without Confirm', async () => {
   const db = await makeDb();
   const sse = (objs) => objs.map((o) => `data: ${JSON.stringify(o)}\n\n`).join('');
   const first = { candidates: [{ content: { parts: [{ functionCall: { name: 'generate_video', args: { prompt: 'waves rolling onto a beach at sunset' } }, thoughtSignature: 'sig' }] } }] };
@@ -654,12 +660,14 @@ test('the chat request that offers generate_video carries no schema key Gemini r
   assert.ok(!JSON.stringify(chatReqs[0].body.tools).includes('additionalProperties'));
   assert.match(chatReqs[0].body.systemInstruction.parts[0].text, /\[VIDEO\]: generate_video starts one PG1 Motion clip/);
 
-  // The tool started a real job and the card carries it.
-  assert.equal(startCalls(calls).length, 1);
-  assert.equal(startCalls(calls)[0].body.input, 'waves rolling onto a beach at sunset\n\nClip length: 5 seconds.');
+  // The tool never starts a clip at the $0 default: a clip spends money, so
+  // it waits for the operator's Confirm on /video (lib/mediaBudget.mjs).
+  assert.equal(startCalls(calls).length, 0, 'nothing started or reserved');
   const card = eventsOf(res).find((e) => e.type === 'tool_result' && e.tool === 'generate_video');
-  assert.equal(card.video_job.status, 'rendering');
-  assert.match(card.video_job.id, /^[0-9a-f-]{36}$/);
+  assert.equal(card.status, 'failed');
+  assert.equal(card.error.code, 'needs_confirm');
+  assert.match(card.error.message, /only after the operator confirms its budget/);
+  assert.equal(card.video_job, undefined);
   const { id: callId, ...shown } = card; // the call id is internal, never displayed
   assert.doesNotMatch(JSON.stringify(shown), BRANDS_RE);
 
