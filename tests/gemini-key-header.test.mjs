@@ -24,6 +24,7 @@ import vm from 'node:vm';
 import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
 import { __resetImageBreaker } from '../lib/imageEngines.mjs';
 import worker from '../index.js';
+import { vaultFetch, withVault, withConfirm } from './helpers/mediaConfirm.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ORIGINAL_ENV = { ...process.env };
@@ -134,8 +135,9 @@ test('/core falling back to the main core, and /image: the key is in the header,
   delete process.env.ANTHROPIC_API_KEY;
 
   const img = geminiSpy(() => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: PNG_1X1 } }] } }] })));
-  globalThis.fetch = img.spy;
-  const image = await chat({ prompt: '/image a gold shield' });
+  globalThis.fetch = vaultFetch(img.spy);
+  // /image waits for a confirmed budget (lib/mediaBudget.mjs); Confirm runs it.
+  const image = await withVault(() => withConfirm(chat)({ prompt: '/image a gold shield' }));
   assert.equal(image.jsonBody.imageStatus, 'SUCCESS');
   assertHeaderKeys(img.seen, '/image');
 });

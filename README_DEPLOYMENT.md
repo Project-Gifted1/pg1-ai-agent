@@ -133,11 +133,23 @@ GEMINI_API_KEY_PAID=<Tier 1 prepaid>   # everything paid; media
 # ANTHROPIC_API_KEY / ANTROPIC_API_KEY.
 # The all-paid daily cap. UNSET MEANS $0: no paid AI call runs on its own
 # (chat, autonomy, missions, background jobs and the lab stay on the free
-# engines; customer chat and the lab then have no engine). The only paid
-# spending at $0 is a budget the operator confirms for one /movie or /film
-# stage, up to that amount. Set it in Vercel AND as a GitHub Actions
-# repository variable (the render, music and lab workers read it there).
-# Background work stops at 25% of it. Speech (Cartesia) is on its own plan.
+# engines; customer chat has no engine; the lab runs on the free engines,
+# records $0 and skips web search). Paid spending at $0 happens only inside
+# a confirmed, job-scoped budget: one the operator confirms for a /movie or
+# /film stage, an /image, a /video clip or a /music track (worst case shown
+# with Confirm / Cancel, optional --budget <usd>), or a paid A2A job's own
+# allowance (price / 1.5, commercial engines only; a job that cannot be done
+# within it is refused before payment). Set it in Vercel AND as a GitHub
+# Actions repository variable (the render, music and lab workers read it
+# there). Background work stops at 25% of it. Speech (Cartesia) is counted
+# and held to it like every paid engine. ElevenLabs is on its subscription:
+# its characters are counted at the plan's per-character rate and held to
+# this cap and to confirmed budgets like any paid engine (it is used only
+# inside film and movie stages), with PG1_DAILY_BUDGET_ELEVENLABS_USD as an
+# optional extra cap and the plan's own monthly character quota as the hard
+# limit at ElevenLabs.
+# The lab's free engines (GitHub Actions secrets, all optional):
+# GEMINI_API_KEY_FREE, GROQ_API_KEY, MISTRAL_API_KEY, PG1_MODELS_TOKEN.
 PG1_DAILY_SPEND_CAP_USD=0
 # Per-provider daily caps on the shared ledger (Vercel and GitHub Actions
 # count the same spend); background work stops at 25% of each. Set and

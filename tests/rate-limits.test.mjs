@@ -41,7 +41,7 @@ beforeEach(() => {
   __resetRouterState();
   __resetAlerts();
   __clearAuthRateLimitState();
-  for (const k of Object.keys(process.env)) if (/^(GEMINI_|ANTHROPIC|SUPABASE|GROQ|OPENAI|OPENROUTER|VERCEL_AI|AI_GATEWAY|PG1_|MISTRAL|GITHUB_MODELS|CLOUDFLARE)/.test(k)) delete process.env[k];
+  for (const k of Object.keys(process.env)) if (/^(GEMINI_|ANTHROPIC|SUPABASE|GROQ|OPENAI|OPENROUTER|VERCEL_AI|AI_GATEWAY|PG1_|MISTRAL|GITHUB_MODELS|CLOUDFLARE)/.test(k) && k !== 'PG1_DAILY_SPEND_CAP_USD') delete process.env[k];
   process.env.USER_API_KEY = 'test-operator';
   process.env.USER_API_PASS = 'test-secret-pass';
 });

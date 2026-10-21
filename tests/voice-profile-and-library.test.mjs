@@ -143,10 +143,13 @@ test('/help never names a third-party voice provider or a specific voice', async
   await chatHandler(req, res);
 
   assert.equal(res.statusCode, 200);
-  assert.doesNotMatch(res.body.reply, THIRD_PARTY_NAMES);
+  // The reply (the command panel's lead) and the text list beside it.
+  const help = `${res.body.reply}\n${res.body.helpText}`;
+  assert.equal(res.body.commandPanel, true);
+  assert.doesNotMatch(help, THIRD_PARTY_NAMES);
   // /voices is listed only as the film voice list, never a voice library.
-  assert.match(res.body.reply, /- `\/voices`: The voices films can use/);
-  assert.doesNotMatch(res.body.reply, /voice library/i);
+  assert.match(res.body.helpText, /- `\/voices`: The voices films can use/);
+  assert.doesNotMatch(help, /voice library/i);
 });
 
 test('unknown and not-configured voice-profile replies never name a third-party voice provider', async () => {
