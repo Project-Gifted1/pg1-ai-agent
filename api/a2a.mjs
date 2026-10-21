@@ -95,7 +95,7 @@ import { FOUNDRY_SKILL, submitBuild, payBuild, refreshBuild, foundryJobView, Fou
 import { isFoundryToolName, callFoundryTool, FoundryCallError, TOOL_KEY_HEADER } from '../lib/foundry/tools.mjs';
 import { createFoundryStore } from '../lib/foundry/store.mjs';
 import { payerHash } from '../lib/a2aJobs/jobs.mjs';
-import { signResult, A2A_SIGNATURE_META, pg1Version } from '../lib/signing.mjs';
+import { signResult, addJwksLink, A2A_SIGNATURE_META, pg1Version } from '../lib/signing.mjs';
 import { waitUntil } from '@vercel/functions';
 import { checkFreeTierAvailable, consumeFreeTier, freeTierWanted } from '../lib/freeTier.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
@@ -493,7 +493,15 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', `Content-Type, Authorization, x-api-key, A2A-Version, X-A2A-Extensions, X-Free-Tier, PAYMENT-SIGNATURE, X-Payment, ${ABUSEIPDB_KEY_HEADER}`);
-  res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id, Retry-After, X-Free-Tier-Limit, X-Free-Tier-Remaining');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id, Retry-After, X-Free-Tier-Limit, X-Free-Tier-Remaining, Link');
+  // A signed task (metadata["pg1.signature"]) says where its key is:
+  // Link: <.../.well-known/pg1-signing-key>; rel="jwks".
+  const sendJson = res.json.bind(res);
+  res.json = (out) => {
+    const meta = out && out.result && out.result.metadata;
+    if (meta && meta[A2A_SIGNATURE_META]) addJwksLink(res);
+    return sendJson(out);
+  };
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 

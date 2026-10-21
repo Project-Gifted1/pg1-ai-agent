@@ -144,7 +144,7 @@ import { ABUSEIPDB_KEY_HEADER, ABUSEIPDB_ATTRIBUTION_TEXT, ABUSEIPDB_TIMEOUT_MS,
 import { checkPackage, normalizePackageInput, buildPackageResult, packageCheckFailureReasons, PACKAGE_SOURCES } from '../lib/packageCheck.mjs';
 import { PREFLIGHT_DEF, PREFLIGHT_TOOL, runPreflight } from '../lib/preflight.mjs';
 import { checkX402Endpoint, checkAgentCard } from '../lib/agentChecks.mjs';
-import { signResult, verifySignedResult, publicJwks, MCP_SIGNATURE_META, pg1Version } from '../lib/signing.mjs';
+import { signResult, verifySignedResult, publicJwks, addJwksLink, MCP_SIGNATURE_META, pg1Version } from '../lib/signing.mjs';
 import { cachedCheck } from '../lib/resultCache.mjs';
 import { HOSTING_DEF, HOSTING_TOOL, hostingAdvice } from '../lib/hosting/advisor.mjs';
 import { loadHostingData } from '../lib/hosting/store.mjs';
@@ -3858,7 +3858,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', `Content-Type, Authorization, x-api-key, PAYMENT-SIGNATURE, X-Payment, X-Free-Tier, ${ABUSEIPDB_KEY_HEADER}`);
-  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Request-Id, Retry-After, X-Free-Tier-Limit, X-Free-Tier-Remaining');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Payment, Payment-Signature, x-free-tier, X-API-KEY, PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Request-Id, Retry-After, X-Free-Tier-Limit, X-Free-Tier-Remaining, Link');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
@@ -3973,7 +3973,7 @@ export default async function handler(req, res) {
           if (r && !r.isError && Array.isArray(r.content) && r.content[0] && typeof r.content[0].text === 'string') {
             const parsed = JSON.parse(r.content[0].text);
             const sig = signResult({ tool: toolName, args: toolArgs, result: parsed });
-            if (sig) r._meta = { ...(r._meta || {}), [MCP_SIGNATURE_META]: sig };
+            if (sig) { r._meta = { ...(r._meta || {}), [MCP_SIGNATURE_META]: sig }; addJwksLink(res); }
           }
         } catch (e) { /* an unparseable result is sent unsigned */ }
         return sendJson(out);

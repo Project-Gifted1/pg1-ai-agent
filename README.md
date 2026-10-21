@@ -114,13 +114,72 @@ Informational codes (`WALLET_DELEGATED`, `IP_TOR_EXIT_NODE`, `IP_WHITELISTED`, `
 
 ### Verify a result
 
-Every PG1 result is signed with Ed25519, so an agent can prove later, offline, that PG1 said it:
+Every PG1 result is signed with Ed25519, so an agent can prove later, offline, that PG1 said it.
 
-- **Where:** MCP `result._meta["pg1/signature"]`, A2A the task's `metadata["pg1.signature"]`, REST (`/api/preflight`) the top-level `signature`.
-- **What is signed:** the canonical JSON (keys sorted, no spaces) of `{ request_hash, result, sources, timestamp, version }`. `request_hash` is the SHA-256 of the canonical `{ tool, arguments }` you sent, so a signature cannot be moved to another request; `sources` is the result's `checks[].source` list.
-- **The block:** `{ alg: "EdDSA", kid, request_hash, sources, timestamp, version, sig }`, `sig` base64url.
-- **Keys:** [/.well-known/pg1-signing-key](https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key) (a JWKS; pick the key by `kid`). Old keys stay listed after a rotation, so old signatures keep verifying.
-- **How:** the free `verify_result` tool, or offline with the PG1 SDKs (`verifyResult` in JavaScript, `verify_result` in Python): rebuild the canonical payload from the result without its `signature` field and check `sig` with the key.
+- **Where:** MCP `result._meta["pg1/signature"]`, A2A the task's `metadata["pg1.signature"]`, REST (`/api/preflight`, `/api/hosting-advisor`) the top-level `signature`.
+- **The block:** `{ alg: "EdDSA", kid, request_hash, sources, timestamp, version, sig, jwks_url }`.
+- **Keys:** a JWKS (RFC 7517; Ed25519 keys as `OKP`, RFC 8037) at [/.well-known/pg1-signing-key](https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key), and the same document at [/.well-known/jwks.json](https://pg1-ai-agent.vercel.app/.well-known/jwks.json). Pick the key by `kid`; the production kid today is `a3f2fbf9d8188a3c`. Old keys stay listed after a rotation, so old signatures keep verifying; refetch the JWKS when you meet an unknown `kid`.
+- **Finding the key from a result:** every signature block carries `jwks_url`, and every response that carries a signature has the header `Link: <https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key>; rel="jwks"`. `jwks_url` is not part of what is signed: pin PG1's own URL in your verifier rather than trusting a URL that arrives in a message.
+- **How:** the free `verify_result` tool, offline with the PG1 SDKs (`verifyResult` in JavaScript, `verify_result` in Python), or with the 10-line snippets below.
+
+**The signing input, exactly.** `sig` is the Ed25519 signature (RFC 8032, pure Ed25519, no pre-hash) of the UTF-8 bytes of the canonical JSON of `{ request_hash, result, sources, timestamp, version }`, encoded as base64url without padding (RFC 4648 section 5):
+
+- `request_hash`: the lowercase hex SHA-256 of the UTF-8 canonical JSON of `{ "arguments": <the arguments you sent>, "tool": "<the tool name>" }`. The tool is the MCP tool name, the A2A skill name, or `preflight_check` / `hosting_advisor` for REST; missing arguments count as `{}`. Recompute it to check that a signature answers your request: it cannot be moved to another one.
+- `result`: the result object exactly as returned (MCP: the JSON in `content[0].text`; A2A: the artifact's data part; REST: the body) without its own `signature` field. `request_id` and `test_fixture` are part of it.
+- `sources`: the distinct `checks[].source` values of the result, in order of first appearance.
+- `timestamp`: when PG1 signed it, ISO 8601 UTC with milliseconds (`2026-10-21T12:00:00.000Z`).
+- `version`: PG1's public version (`server.json`).
+
+**Canonical JSON.** Object keys sorted by UTF-16 code units; no whitespace anywhere; arrays in their own order; strings and numbers written exactly as JavaScript's `JSON.stringify` writes them. Numbers take the shortest form that round-trips (`1e+30`, `0.002`, `1e-7`; integers without a fraction). Strings escape only `"`, the backslash and control characters (`\b \f \n \r \t`, the rest as lowercase `\u00xx`); every other character, non-ASCII included, is written as its UTF-8 bytes. For any I-JSON value this is RFC 8785 (JCS), and PG1's results are always I-JSON. The Python snippet below uses `json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=False)`, which gives the same bytes except for two cases. First, a non-zero number below 0.0001 in magnitude: Python writes `4e-05` where JavaScript writes `0.00004`. Second, an object key outside the Basic Multilingual Plane: Python sorts by code point. A result with either of these (a very small EPSS score, say) fails that snippet; use an RFC 8785 library (for example the `rfc8785` package), the PG1 Python SDK, or the free `verify_result` tool for it.
+
+**Worked example.** [signed-result-example.json](https://pg1-ai-agent.vercel.app/docs/signed-result-example.json) is a real fixture result (`check_wallet_sanctions` on the FLAGGED test wallet) with its signature. It is signed with the documentation example key (kid `pg1-docs-example`, public key at [signed-result-example-jwks.json](https://pg1-ai-agent.vercel.app/docs/signed-result-example-jwks.json)), never the production key. Its signature block:
+
+```json
+{
+  "alg": "EdDSA",
+  "kid": "pg1-docs-example",
+  "request_hash": "3b139e7fce1af42a65163e87c9c2c4914225a07c13069cf750b0d17fd8c7da73",
+  "sources": [
+    "fixture"
+  ],
+  "timestamp": "2026-10-21T12:00:00.000Z",
+  "version": "1.20.2",
+  "sig": "IUs2DSN_FxT8zIuH7m3VQAYxTfwszHMoGFmSfLjxqBq5KNYE-Yzwyq5Ls10_qXLnfmhUM_W6wRlWZTbhR4MJAg",
+  "jwks_url": "https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key"
+}
+```
+
+**Verify offline in Node** (18+, no dependencies; [verify-pg1.mjs](https://pg1-ai-agent.vercel.app/docs/verify-pg1.mjs)):
+
+```js
+import crypto from 'node:crypto';
+const canon = (v) => v === null || typeof v !== 'object' ? JSON.stringify(v) : Array.isArray(v) ? `[${v.map(canon)}]` : `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canon(v[k])}`)}}`;
+export async function verifyPg1(result, sig, jwksUrl = 'https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key') {
+  const { signature, ...clean } = result;
+  const jwk = (await (await fetch(jwksUrl)).json()).keys.find((k) => k.kid === sig.kid);
+  if (!jwk || sig.alg !== 'EdDSA') return false;
+  const signed = canon({ request_hash: sig.request_hash, result: clean, sources: sig.sources, timestamp: sig.timestamp, version: sig.version });
+  const key = crypto.createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: jwk.x }, format: 'jwk' });
+  return crypto.verify(null, Buffer.from(signed, 'utf8'), key, Buffer.from(sig.sig, 'base64url'));
+}
+```
+
+**Verify offline in Python** (3.8+, `pip install cryptography`; [verify_pg1.py](https://pg1-ai-agent.vercel.app/docs/verify_pg1.py)):
+
+```python
+import base64, json, urllib.request
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+def verify_pg1(result, sig, jwks_url="https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key"):
+    clean = {k: v for k, v in result.items() if k != "signature"}
+    jwk = next((k for k in json.load(urllib.request.urlopen(jwks_url))["keys"] if k["kid"] == sig["kid"]), None)
+    if jwk is None or sig["alg"] != "EdDSA": return False
+    signed = json.dumps({"request_hash": sig["request_hash"], "result": clean, "sources": sig["sources"], "timestamp": sig["timestamp"], "version": sig["version"]}, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    b64 = lambda s: base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+    try: Ed25519PublicKey.from_public_bytes(b64(jwk["x"])).verify(b64(sig["sig"]), signed.encode("utf-8")); return True
+    except Exception: return False
+```
+
+Call either with a result and its signature block. For the worked example, pass the example JWKS URL: `verifyPg1(example.result, example.signature, "https://pg1-ai-agent.vercel.app/docs/signed-result-example-jwks.json")` returns `true`; change any field of the result and it returns `false`.
 
 Watchlist webhooks are signed separately with HMAC-SHA256: `X-PG1-Signature: t=<unix>,v1=<hex HMAC(secret, "<t>.<body>")>`; reject a delivery older than 5 minutes.
 

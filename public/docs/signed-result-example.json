@@ -1,0 +1,56 @@
+{
+  "note": "Signed with the PG1 documentation example key (kid pg1-docs-example), not the production key. Its public key is at https://pg1-ai-agent.vercel.app/docs/signed-result-example-jwks.json. Production results verify against https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key.",
+  "request": {
+    "tool": "check_wallet_sanctions",
+    "arguments": {
+      "address": "0x7067312d746573742d6669787475726500000001"
+    }
+  },
+  "result": {
+    "address": "0x7067312d746573742d6669787475726500000001",
+    "address_normalized": "0x7067312d746573742d6669787475726500000001",
+    "source": "OFAC SDN List (US Treasury)",
+    "list_last_synced": "2026-01-01T00:00:00.000Z",
+    "listed": true,
+    "matches": [
+      {
+        "sdn_name": "PG1 TEST FIXTURE (not a real SDN entry)",
+        "currency": "ETH",
+        "programs": [
+          "PG1-TEST-FIXTURE"
+        ],
+        "sdn_uid": null
+      }
+    ],
+    "disclaimer": "Informational only; not legal or sanctions-compliance advice.",
+    "reasons": [
+      {
+        "code": "WALLET_SANCTIONED",
+        "message": "Address matches an entry on the sanctions list."
+      }
+    ],
+    "status": "flagged",
+    "checks": [
+      {
+        "source": "fixture",
+        "result": "ok",
+        "checked_at": "2026-10-21T12:00:00.000Z",
+        "data_as_of": "2026-10-21T12:00:00.000Z"
+      }
+    ],
+    "request_id": "00000000-0000-4000-8000-000000000001",
+    "test_fixture": true
+  },
+  "signature": {
+    "alg": "EdDSA",
+    "kid": "pg1-docs-example",
+    "request_hash": "3b139e7fce1af42a65163e87c9c2c4914225a07c13069cf750b0d17fd8c7da73",
+    "sources": [
+      "fixture"
+    ],
+    "timestamp": "2026-10-21T12:00:00.000Z",
+    "version": "1.20.2",
+    "sig": "IUs2DSN_FxT8zIuH7m3VQAYxTfwszHMoGFmSfLjxqBq5KNYE-Yzwyq5Ls10_qXLnfmhUM_W6wRlWZTbhR4MJAg",
+    "jwks_url": "https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key"
+  }
+}

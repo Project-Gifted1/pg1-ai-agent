@@ -36,7 +36,14 @@ Example, three actions on PG1's test fixtures (/docs/testing; each preflight_che
 ## Signed results
 
 Every PG1 result is signed with Ed25519 over {request_hash, result, sources, timestamp, version}: MCP `result._meta["pg1/signature"]`, A2A `metadata["pg1.signature"]`, REST `signature`.
-Public keys (JWKS): https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key. Verify offline with the SDKs, or call verify_result, which is always free. Guide: https://pg1-ai-agent.vercel.app/docs/agents
+Public keys (JWKS): https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key (the same document at https://pg1-ai-agent.vercel.app/.well-known/jwks.json). Pick the key by `kid`; the production kid is a3f2fbf9d8188a3c. Every signature block carries `jwks_url`, and every signed response has the header `Link: <https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key>; rel="jwks"`. Pin that URL in your verifier: `jwks_url` is not signed.
+Signature block: {alg: "EdDSA", kid, request_hash, sources, timestamp, version, sig, jwks_url}. `sig` = base64url (no padding) of the Ed25519 (RFC 8032) signature of the UTF-8 canonical JSON of {request_hash, result, sources, timestamp, version}.
+- request_hash: lowercase hex SHA-256 of the UTF-8 canonical JSON of {"arguments": <the arguments you sent, {} if none>, "tool": "<MCP tool or A2A skill name; preflight_check or hosting_advisor for REST>"}.
+- result: the result object as returned (MCP content[0].text parsed; A2A the artifact data part; REST the body) without its `signature` field.
+- sources: the distinct checks[].source values, in order of first appearance. timestamp: ISO 8601 UTC with milliseconds. version: PG1's public version.
+- Canonical JSON: keys sorted by UTF-16 code units, no whitespace, strings and numbers as JavaScript JSON.stringify writes them (shortest round-trip numbers, only ", backslash and control characters escaped, other characters as UTF-8). This is RFC 8785 (JCS) for any I-JSON value.
+Worked example (signed with the documentation example key, kid pg1-docs-example, never the production key): https://pg1-ai-agent.vercel.app/docs/signed-result-example.json, its key https://pg1-ai-agent.vercel.app/docs/signed-result-example-jwks.json. 10-line offline verifiers: https://pg1-ai-agent.vercel.app/docs/verify-pg1.mjs (Node 18+) and https://pg1-ai-agent.vercel.app/docs/verify_pg1.py (Python, `cryptography`).
+Or verify with the SDKs, or call verify_result, which is always free. Guide: https://pg1-ai-agent.vercel.app/docs/agents#verify-a-result
 
 ## Watchlists
 
