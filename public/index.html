@@ -719,6 +719,21 @@
     .relay-copy:hover { color: var(--info-hover); border-color: var(--info-hover); }
     .relay-copy:focus-visible { outline: none; box-shadow: var(--focus-ring); }
     .relay-not-run { font-size: var(--fs-2xs); color: var(--text-3); }
+    .msg-not-saved {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sp-1, 4px);
+      margin: 0 0 var(--sp-2);
+      padding: 2px 8px;
+      border: 1px solid var(--danger-line);
+      border-radius: 999px;
+      background: var(--danger-soft);
+      color: var(--danger-text);
+      font-size: var(--fs-2xs);
+      font-weight: 600;
+      line-height: 1.4;
+    }
+    .msg-not-saved::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--danger); }
 
     .msg-timestamp {
       display: flex;
@@ -7817,6 +7832,14 @@
     // The finished reply's header: "PG1 · 06:22 PM · N steps ›" when it has
     // a trace (the pill opens the list just below the header), else the
     // plain "PG1 06:22 PM" every other reply has.
+    // The server could not store this exchange (it is in the error log): the
+    // bubble says so, so a reply that will be gone after a reload is not a
+    // surprise.
+    function notSavedHtml(data) {
+      if (!data || data.messageSaved !== false) return '';
+      return '<span class="msg-not-saved" role="status" title="This message was not saved to your history. Details are in the error log.">Not saved</span>';
+    }
+
     function agentTimestampHtml(time, tracePill) {
       if (!tracePill) return `<span class="msg-timestamp">${time}</span>`;
       return `<span class="msg-timestamp has-trace"><span class="ts-sep" aria-hidden="true">·</span><span class="ts-time">${time}</span><span class="ts-sep" aria-hidden="true">·</span>${tracePill}</span>`;
@@ -7958,7 +7981,7 @@
           else if (ev.type === 'audio') { if (voice) voice.push(ev); }
           else if (ev.type === 'audio_end') { if (voice) voice.end(ev); }
           else if (ev.type === 'tool_result') { if (ev.tool) toolResults.push(ev); }
-          else if (ev.type === 'done') outcome = { data: Object.assign({}, ev.result || {}, { reply: text, searchEntryPoint: ev.searchEntryPoint || (ev.result && ev.result.searchEntryPoint) || null, spokenSummary: ev.spokenSummary || null, toolResults: toolResults.slice(), traceId: ev.request_id }) };
+          else if (ev.type === 'done') outcome = { data: Object.assign({}, ev.result || {}, { reply: text, searchEntryPoint: ev.searchEntryPoint || (ev.result && ev.result.searchEntryPoint) || null, spokenSummary: ev.spokenSummary || null, toolResults: toolResults.slice(), traceId: ev.request_id, messageSaved: ev.messageSaved === false ? false : undefined }) };
           else if (ev.type === 'error') {
             outcome = { failed: 'error', message: String(ev.message || 'The request failed.'), status: ev.status, requestId: typeof ev.request_id === 'string' ? ev.request_id : null, reason: ev.reason || null };
             // Every AI engine was out: say so on the camera feed too.
@@ -8426,7 +8449,7 @@
         triggerHaptic([30, 50, 30]); 
         const finalTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
-        let contentHtml = `${agentTimestampHtml(finalTime, tracePill)}${traceHtml}${markdownBlock(data.reply || 'Execution complete.')}${toolCardsHtml(data.toolResults)}${labCardsHtml(data.labCards)}${data.threatRadar ? freshRadarHtml(data.threatRadar) : ''}`;
+        let contentHtml = `${agentTimestampHtml(finalTime, tracePill)}${notSavedHtml(data)}${traceHtml}${markdownBlock(data.reply || 'Execution complete.')}${toolCardsHtml(data.toolResults)}${labCardsHtml(data.labCards)}${data.threatRadar ? freshRadarHtml(data.threatRadar) : ''}`;
 
         if (data.searchEntryPoint) {
           contentHtml += '<div class="search-entry-point">' + data.searchEntryPoint + '</div>';

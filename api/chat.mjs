@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { turnNeeds, slimCapabilities, toolsForRoute, RECENT_TURNS_SMALL_TALK } from '../lib/promptBudget.mjs';
+import { turnNeeds, slimCapabilities, toolsForRoute, relayNeeds, RECENT_TURNS_SMALL_TALK } from '../lib/promptBudget.mjs';
 import { classify429, coolDown, isCooling, coolingUntil, readyModels, noteRateHeaders, learnedLimits } from '../lib/router/quota.mjs';
 import { noInfraNames } from '../lib/infraNames.mjs';
 import { waitUntil } from '@vercel/functions';
@@ -2021,8 +2021,11 @@ async function streamChatReply(stream, opts) {
     var spoken = spokenSummary(toolOutcomes);
     if (spoken) voice.push(spoken + ' The full result is on screen.');
   }
-  if (opts.saveExchange) opts.saveExchange(replyScrubber.text + searchFooter + (replyScrubber.redacted.length ? '\n\n' + redactionWarning(replyScrubber.redacted) : ''));
+  // Started before the voice finishes; awaited before "done" so the bubble
+  // can say when the exchange was not saved.
+  var saving = opts.saveExchange ? Promise.resolve(opts.saveExchange(replyScrubber.text + searchFooter + (replyScrubber.redacted.length ? '\n\n' + redactionWarning(replyScrubber.redacted) : ''))).catch(function () { return { ok: false }; }) : null;
   await finishVoice(false);
+  var saved = saving ? await saving : null;
   if (stream.clientGone) {
     stream.end();
     return;
@@ -2037,6 +2040,7 @@ async function streamChatReply(stream, opts) {
     searchEntryPoint: result.searchEntryPoint || null,
     spokenSummary: spokenForClient ? spokenForClient + ' The full result is on screen.' : null,
     telemetry: { supabaseStatus: opts.supabaseStatus, executionTimeMs: Date.now() - opts.startTime },
+    ...(saved && !saved.ok ? { messageSaved: false } : {}),
     ...(turnExtras ? { result: turnExtras } : {})
   });
 }
@@ -2851,6 +2855,20 @@ export default async function handler(req, res) {
     var supabaseFilesReport = '';
     var unresolvedErrorsReport = '';
     var dbHeaders = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
+    // Saves this turn's exchange. A refused insert goes to the error log
+    // (area chat: PostgREST's code and message, never the content) and the
+    // caller marks the bubble "not saved". Resolves, never throws.
+    var saveExchangeRows = function (replyText) {
+      return insertMessageRows({
+        supUrl: supabaseUrl, headers: dbHeaders, prompt: promptText, reply: replyText, relay: relayTurn, fetchImpl: fetch,
+        onFailure: function (f) {
+          logApiError(supabaseUrl, supabaseKey, {
+            source: 'server', route: '/api/chat', status: f.status || 500, reason: 'message_save_failed',
+            message: `messages insert ${f.code}${f.message ? ': ' + f.message : ''}`, category: 'chat', requestId: requestTraceId
+          }).catch(() => {});
+        }
+      });
+    };
 
     var payloadFiles = [];
     if (file) payloadFiles.push(file);
@@ -4740,8 +4758,10 @@ export default async function handler(req, res) {
     // is untrusted data, whatever the new message says).
     var contextHasRelay = /<relayed_message\b/.test(String(turnConversation || formattedArchive || ''));
     var turnNeed = turnNeeds(typeof promptText === 'string' ? promptText : '', { imageCount: imageCount, relay: !!relayTurn || contextHasRelay, offer: offerTurn, keyQuestion: keyQuestion, route: chatRoute.route === CHAT_ROUTES.TOOLS && chatRoute.reason === 'history' ? 'history' : chatRoute.route });
+    // A relay turn runs nothing: the relayed text does not decide the blocks.
+    if (relayTurn) turnNeed = relayNeeds(turnNeed);
     if (turnNeed.smallTalk && turnRecent.length > RECENT_TURNS_SMALL_TALK) turnConversation = renderConversation({ summary: null, recent: turnRecent.slice(-RECENT_TURNS_SMALL_TALK) });
-    var turnDirectives = PG1_VOICE_DIRECTIVE + '\n' + SELF_CHECK_DIRECTIVE + '\n' + (turnNeed.smallTalk ? '' : SOURCED_FIGURES_DIRECTIVE + '\n') + (turnNeed.offers ? offersDirective() + '\n' : '') + (turnNeed.pdf ? PDF_CHAT_DIRECTIVE + '\n' : '') + (turnNeed.smallTalk ? '' : COMMAND_FORMS_DIRECTIVE + '\n' + commandRegistryDirective() + '\n' + HONEST_ACTIONS_DIRECTIVE + '\n') + (turnNeed.relay ? RELAY_DIRECTIVE + '\n' : '') + (relayTurn ? relayTurnDirective(relayTurn, relayTurn.found) + '\n' : '') + (referenceLine(turnReference) ? referenceLine(turnReference) + '\n' : '') + (skillsOn ? skillsIndexBlock(turnSkills) + '\n' : '');
+    var turnDirectives = PG1_VOICE_DIRECTIVE + '\n' + SELF_CHECK_DIRECTIVE + '\n' + (turnNeed.smallTalk ? '' : SOURCED_FIGURES_DIRECTIVE + '\n') + (turnNeed.offers ? offersDirective() + '\n' : '') + (turnNeed.pdf ? PDF_CHAT_DIRECTIVE + '\n' : '') + (turnNeed.smallTalk || relayTurn ? '' : COMMAND_FORMS_DIRECTIVE + '\n' + commandRegistryDirective() + '\n' + HONEST_ACTIONS_DIRECTIVE + '\n') + (turnNeed.relay ? RELAY_DIRECTIVE + '\n' : '') + (relayTurn ? relayTurnDirective(relayTurn, relayTurn.found) + '\n' : '') + (referenceLine(turnReference) ? referenceLine(turnReference) + '\n' : '') + (skillsOn && !relayTurn ? skillsIndexBlock(turnSkills) + '\n' : '');
     var sysInstruction = `${turnPreamble}You are PG1, an autonomous AI agent built by Project-Gifted1™.
 ${whatPG1DoesDirective()}
 [STRICT DIRECTIVE - GROUNDING & HONESTY]: Be absolutely honest at all times about the actual factual content of your answers. Never lie or fabricate results. Never state system health, uptime, integrity, file counts, pipeline status or runtime details unless that exact value appears in [CONTEXT]; if asked about status, say you cannot verify it here and point the operator to the /status command. The vault file list in [CONTEXT] is capped at 20 entries, so never present its length as a total. Stay completely grounded in the factual reality of the project. We operate an automated cybersecurity architecture deploying GitHub workflows and Supabase vault integration.
@@ -4866,9 +4886,7 @@ ${turnDirectives}${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imag
           }
           : null,
         saveExchange: (supabaseUrl && supabaseKey && !isPdfExport)
-          ? function (replyText) {
-            insertMessageRows({ supUrl: supabaseUrl, headers: dbHeaders, prompt: promptText, reply: replyText, relay: relayTurn, fetchImpl: fetch }).catch(() => {});
-          }
+          ? function (replyText) { return saveExchangeRows(replyText); }
           : null
       });
     }
@@ -4921,9 +4939,7 @@ ${turnDirectives}${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imag
     var jsonFactNote = modelFailed ? '' : await turnFactNotes(replyText, modelFetchResult);
     if (jsonFactNote) replyText += '\n\n' + jsonFactNote;
 
-    if (supabaseUrl && supabaseKey && !modelFailed && !isPdfExport) {
-      insertMessageRows({ supUrl: supabaseUrl, headers: dbHeaders, prompt: promptText, reply: replyText, relay: relayTurn, fetchImpl: fetch }).catch(() => {});
-    }
+    var jsonSaved = (supabaseUrl && supabaseKey && !modelFailed && !isPdfExport) ? await saveExchangeRows(replyText) : null;
 
     // BUG FIX (issue #201): this reply never carries synthesized audio —
     // voice playback for it is a separate SPEAK round trip the client makes
@@ -4939,6 +4955,8 @@ ${turnDirectives}${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imag
       telemetry: { supabaseStatus: supabaseStatus, executionTimeMs: Date.now() - startTime }
     };
     if (jsonSuggestions.length) jsonReply.suggestions = jsonSuggestions;
+    // The exchange did not reach the database: the bubble says so.
+    if (jsonSaved && !jsonSaved.ok) jsonReply.messageSaved = false;
     // Every engine was out: the camera shows "paused" instead of failing.
     if (modelFailed && modelFetchResult.aiUnavailable) jsonReply.reason = 'ai_unavailable';
     if (jsonHonesty && jsonHonesty.actions.length) jsonReply.honestActions = jsonHonesty.actions;

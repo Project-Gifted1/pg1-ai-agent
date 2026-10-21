@@ -31,7 +31,7 @@ async function columnTypes(db, table) {
 function parseFilters(params, types, vals) {
   const where = [];
   for (const [k, v] of params) {
-    if (['select', 'order', 'limit', 'offset', 'on_conflict'].includes(k)) continue;
+    if (['select', 'order', 'limit', 'offset', 'on_conflict', 'columns'].includes(k)) continue;
     // or=(col.op.value,col.op."quoted value"): each part is one filter.
     if (k === 'or') {
       const parts = String(v).replace(/^\(|\)$/g, '').match(/[a-z_]+\.[a-z]+\.(?:"[^"]*"|[^,]*)/g) || [];
@@ -104,6 +104,13 @@ export function pgRest(db, { calls = [], base = 'https://supabase.test', passthr
       const ret = prefer.includes('return=representation') || method === 'GET';
       if (method === 'POST') {
         const rows = Array.isArray(body) ? body : [body];
+        // Like PostgREST: every object in a bulk insert has the same keys
+        // (unless ?columns= names them), else 400 PGRST102. Production,
+        // 20 Oct: the relay message rows were refused like this.
+        if (rows.length > 1 && !u.searchParams.get('columns')) {
+          const first = Object.keys(rows[0] || {}).sort().join(',');
+          if (rows.some((r) => Object.keys(r || {}).sort().join(',') !== first)) return json({ code: 'PGRST102', details: null, hint: null, message: 'All object keys must match' }, 400);
+        }
         const out = [];
         for (const row of rows) {
           const keys = Object.keys(row).filter((k) => types.has(k));
