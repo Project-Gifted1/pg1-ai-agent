@@ -118,8 +118,9 @@ test('saved threads keep speaker and relay_name on the relayed message and the n
 
 test('rows: speaker on the user row, relay_name on a relay row', () => {
   assert.deepEqual(exchangeRows({ prompt: 'p', reply: 'r', relay: { name: 'grok' } })[0], { role: 'user', content: 'p', speaker: 'relay', relay_name: 'grok' });
-  assert.deepEqual(exchangeRows({ prompt: 'p', reply: 'r' })[0], { role: 'user', content: 'p', speaker: 'operator' });
-  assert.deepEqual(exchangeRows({ prompt: 'p', reply: 'r' })[1], { role: 'model', content: 'r' });
+  assert.deepEqual(exchangeRows({ prompt: 'p', reply: 'r' })[0], { role: 'user', content: 'p', speaker: 'operator', relay_name: null });
+  assert.deepEqual(exchangeRows({ prompt: 'p', reply: 'r' })[1], { role: 'model', content: 'r', speaker: null, relay_name: null });
+  assert.deepEqual(exchangeRows({ prompt: 'p', reply: 'r', withSpeaker: false }), [{ role: 'user', content: 'p' }, { role: 'model', content: 'r' }]);
 });
 
 // A messages endpoint that refuses rows carrying the new columns with
@@ -142,12 +143,12 @@ for (const [label, body] of [
   test(`missing columns (${label}): falls back once without them, and later operator rows skip them`, async () => {
     const logs = [];
     const { bodies, fetchImpl } = messagesEndpoint({ status: 400, body });
-    assert.equal(await insertMessageRows({ supUrl: SUP, headers: {}, prompt: 'p', reply: 'r', relay: { name: 'grok' }, fetchImpl, log: (l) => logs.push(l) }), true);
+    assert.deepEqual(await insertMessageRows({ supUrl: SUP, headers: {}, prompt: 'p', reply: 'r', relay: { name: 'grok' }, fetchImpl, log: (l) => logs.push(l) }), { ok: true });
     assert.equal(bodies.length, 2, 'one try with the columns, one without');
     assert.deepEqual(bodies[0][0], { role: 'user', content: 'p', speaker: 'relay', relay_name: 'grok' });
     assert.deepEqual(bodies[1][0], { role: 'user', content: 'p' });
     assert.equal(__speakerColumns(), false);
-    assert.equal(await insertMessageRows({ supUrl: SUP, headers: {}, prompt: 'p2', reply: 'r2', fetchImpl, log: (l) => logs.push(l) }), true);
+    assert.deepEqual(await insertMessageRows({ supUrl: SUP, headers: {}, prompt: 'p2', reply: 'r2', fetchImpl, log: (l) => logs.push(l) }), { ok: true });
     assert.equal(bodies.length, 3, 'the next operator row is sent once, without the columns');
     assert.deepEqual(bodies[2][0], { role: 'user', content: 'p2' });
     assert.deepEqual(logs, [], 'a fallback that worked is not an error');
@@ -160,13 +161,17 @@ for (const [label, refusal, thrown] of [
   ['a constraint error (23514)', { status: 400, body: { code: '23514', message: 'new row violates check constraint "messages_relay_name_check"' } }, null],
   ['a timeout', null, Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' })]
 ]) {
-  test(`${label}: no retry without the columns, speakerColumns stays on, logged, false`, async () => {
+  test(`${label}: no retry without the columns, speakerColumns stays on, logged, reported`, async () => {
     const logs = [];
     const endpoint = thrown ? { bodies: [], fetchImpl: null } : messagesEndpoint(refusal);
     if (thrown) endpoint.fetchImpl = async (u, o) => { endpoint.bodies.push(JSON.parse(o.body)); throw thrown; };
     const impl = endpoint.fetchImpl;
     const sent = endpoint.bodies;
-    assert.equal(await insertMessageRows({ supUrl: SUP, headers: {}, prompt: 'p', reply: 'r', relay: { name: 'grok' }, fetchImpl: impl, log: (l) => logs.push(l) }), false);
+    const failures = [];
+    const out = await insertMessageRows({ supUrl: SUP, headers: {}, prompt: 'p', reply: 'r', relay: { name: 'grok' }, fetchImpl: impl, log: (l) => logs.push(l), onFailure: (f) => failures.push(f) });
+    assert.equal(out.ok, false);
+    assert.deepEqual(failures, [out], 'onFailure gets the same result');
+    assert.ok(!JSON.stringify(out).includes('grok'), 'no message text in the result');
     assert.equal(sent.length, 1, 'tried once, with the columns');
     assert.equal(sent[0][0].speaker, 'relay');
     assert.equal(__speakerColumns(), true, 'the columns are not given up on');
