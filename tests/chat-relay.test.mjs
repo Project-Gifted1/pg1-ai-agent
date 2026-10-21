@@ -317,7 +317,8 @@ test('the operator\'s next normal message sees the relayed one as relayed (envel
 test('/help lists /relay', async () => {
   await world();
   const res = await chat({ prompt: '/help' });
-  assert.match(res.jsonBody.reply, /- `\/relay` <name> <text>: A message from another AI/, 'generated from the command registry');
+  assert.equal(res.jsonBody.commandPanel, true, 'the page draws the command panel (a card for /relay)');
+  assert.match(res.jsonBody.helpText, /- `\/relay` <name> <text>: A message from another AI/, 'generated from the command registry');
 });
 
 test('control: the same "/auto on" typed by the operator does switch Autonomous mode on (so the relay checks above can fail)', async () => {

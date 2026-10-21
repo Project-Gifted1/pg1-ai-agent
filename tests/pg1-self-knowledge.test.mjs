@@ -189,9 +189,10 @@ test('no stale UI names: nothing tells PG1 about a SPEAK button or a VOICE toggl
   assert.doesNotMatch(prompt, stale);
   const res = makeRes();
   await chatHandler(makeReq(authed({ prompt: '/help' })), res);
-  assert.doesNotMatch(res.jsonBody.reply, /\bSPEAK\b/);
-  assert.match(res.jsonBody.reply, /voice profile used for spoken replies and Read aloud/);
-  assert.match(res.jsonBody.reply, /Send to Code, drafts a task prompt you copy into Code \(or open it pre-filled\) and tracks its PR under Hand-offs/);
+  // The text list beside the command panel (api/chat.mjs /help).
+  assert.doesNotMatch(res.jsonBody.helpText + res.jsonBody.reply, /\bSPEAK\b/);
+  assert.match(res.jsonBody.helpText, /voice profile used for spoken replies and Read aloud/);
+  assert.match(res.jsonBody.helpText, /Send to Code, drafts a task prompt you copy into Code \(or open it pre-filled\) and tracks its PR under Hand-offs/);
 });
 
 test('the prompt describes the page as shipped: Read aloud / Copy / Delete are icon-only, the waveform stops speech, the switch is "Spoken replies"', () => {

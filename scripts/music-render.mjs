@@ -28,7 +28,8 @@ import path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
-import { sharedLedger, useProcessLedger, asBackgroundJob } from '../lib/aiRouter.mjs';
+import { sharedLedger, useProcessLedger, asBackgroundJob, grantSpendAllowance } from '../lib/aiRouter.mjs';
+import { confirmedMediaAllowanceUsd } from '../lib/mediaBudget.mjs';
 import { reportUpstreamFailure } from '../lib/upstreamFailure.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { probeDuration } from '../lib/film/ffmpeg.mjs';
@@ -63,6 +64,12 @@ async function runJob(env, { log = console.log, fetchImpl = globalThis.fetch, sl
   const claimed = await store.updateTrack(trackId, { status: STAGE_RUNNING[stage], render_started_at: new Date().toISOString(), error_reason: null, error_detail: null, failure: null }, { onlyIfStatus: [STAGE_QUEUED[stage]] });
   if (!claimed.length) { log(`[music] ${trackId} is not queued for ${stage}; nothing to do`); return 0; }
   const track = claimed[0];
+  // Paid AI only inside the budget the operator confirmed for this track
+  // (lib/mediaBudget.mjs, /music Confirm), up to what is left of it. A
+  // track without one stays at the $0 default.
+  const allowanceUsd = confirmedMediaAllowanceUsd(track.options && track.options.spend_confirmed, track.spent_usd);
+  if (allowanceUsd > 0) grantSpendAllowance({ job: trackId, capUsd: allowanceUsd });
+  log(`[music] ${trackId} ${stage}: ${allowanceUsd > 0 ? `confirmed budget, up to ${allowanceUsd} USD of paid AI` : 'no confirmed budget: nothing paid unless PG1_DAILY_SPEND_CAP_USD is set'}`);
 
   const fail = async (reason, detail, kind = null) => {
     await store.updateTrack(trackId, { status: 'failed', error_reason: reason, error_detail: String(detail || '').slice(0, 500), progress: null, failure: { stage, kind } }, { onlyIfStatus: [STAGE_RUNNING[stage]] }).catch(() => {});

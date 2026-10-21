@@ -26,6 +26,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
+import { pendingActionsRoute, resetPendingActions, withConfirm } from './helpers/mediaConfirm.mjs';
 import { createVideoRenderHandler, config as renderConfig } from '../api/video-render.mjs';
 import { FAILURE_PREFIX } from '../lib/upstreamFailure.mjs';
 import {
@@ -53,6 +54,7 @@ const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPh
 const MULTI_CRED = JSON.stringify({ error: { code: 400, status: 'invalid_request', message: 'Multiple authentication credentials received. Please pass only one.' } });
 
 function resetEnv() {
+  resetPendingActions();
   process.env.USER_API_KEY = 'test-operator';
   process.env.USER_API_PASS = 'test-secret-pass';
   process.env.GEMINI_API_KEY1 = KEY1;
@@ -104,11 +106,14 @@ function makeRes() {
   };
 }
 
-async function chat(body) {
+async function chatOnce(body) {
   const res = makeRes();
   await chatHandler(makeReq(body), res);
   return res;
 }
+// /video waits for Confirm on its budget (lib/mediaBudget.mjs): these
+// tests are about what happens after it, so Confirm is pressed for them.
+const chat = withConfirm(chatOnce);
 
 const json = (v, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'Content-Type': 'application/json' } });
 
@@ -170,6 +175,7 @@ function dbRoutes(db) {
 // The vault (a Map of path -> bytes), the chat's own reads and the error log.
 function supabaseRoutes(vault) {
   return [
+    pendingActionsRoute(),
     ['/rest/v1/messages', (u, o) => (o.method === 'POST' ? new Response('', { status: 201 }) : json([]))],
     ['/storage/v1/object/list/pg1-vault', () => json([])],
     ['/storage/v1/object/sign/pg1-vault/', (u) => json({ signedURL: `/object/sign/pg1-vault/${u.split('/pg1-vault/')[1]}?token=signed-token` })],
@@ -526,7 +532,8 @@ test('a duplicate trigger never renders twice: two at once claim the job once, a
   let release;
   const gate = new Promise((r) => { release = r; });
   const calls2 = installFetch([renderRoute(renders2), ...googleRoutes({ post: async () => { await gate; return json({ id: 'int-x', status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'video', data: MP4.toString('base64') }] }] }); } }), ...dbRoutes(db2), ...supabaseRoutes(new Map())]);
-  await db2.query(`insert into public.pg1_video_jobs (id, prompt, status, provider, tier, duration_s) values ('77777777-7777-4777-8777-777777777777', 'a fox', 'queued', 'google', 'draft', 5)`);
+  // A queued clip carries its confirmed budget as its reservation (est_cost_usd).
+  await db2.query(`insert into public.pg1_video_jobs (id, prompt, status, provider, tier, duration_s, est_cost_usd) values ('77777777-7777-4777-8777-777777777777', 'a fox', 'queued', 'google', 'draft', 5, 0.5)`);
   const t2 = signRenderToken({ jobId: '77777777-7777-4777-8777-777777777777', secret: RENDER_SECRET });
   const race = await Promise.all([1, 2].map(() => globalThis.fetch(RENDER_URL, { method: 'POST', headers: { [VIDEO_RENDER_TOKEN_HEADER]: t2 } })));
   assert.deepEqual(race.map((r) => r.status).sort(), [200, 202]);
@@ -534,6 +541,23 @@ test('a duplicate trigger never renders twice: two at once claim the job once, a
   await Promise.all(renders2.map((r) => r.done));
   assert.equal(googlePosts(calls2).length, 1);
   assert.equal((await jobRow(db2))[0].status, 'done');
+
+  // A queued clip with no confirmed budget (nothing reserved) is never sent
+  // to an engine at the $0 default.
+  const prevCap = process.env.PG1_DAILY_SPEND_CAP_USD;
+  delete process.env.PG1_DAILY_SPEND_CAP_USD;
+  try {
+    const db3 = await makeDb();
+    const renders3 = [];
+    const calls3 = installFetch([renderRoute(renders3), ...googleRoutes(), ...dbRoutes(db3), ...supabaseRoutes(new Map())]);
+    await db3.query(`insert into public.pg1_video_jobs (id, prompt, status, provider, tier, duration_s) values ('88888888-8888-4888-8888-888888888888', 'a fox', 'queued', 'google', 'draft', 5)`);
+    const t3 = signRenderToken({ jobId: '88888888-8888-4888-8888-888888888888', secret: RENDER_SECRET });
+    await globalThis.fetch(RENDER_URL, { method: 'POST', headers: { [VIDEO_RENDER_TOKEN_HEADER]: t3 } });
+    await Promise.all(renders3.map((r) => r.done));
+    assert.equal(googlePosts(calls3).length, 0, 'no engine without a confirmed budget');
+  } finally {
+    process.env.PG1_DAILY_SPEND_CAP_USD = prevCap;
+  }
 });
 
 // --- 6. "Multiple authentication credentials" -----------------------------------------

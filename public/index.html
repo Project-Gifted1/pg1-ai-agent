@@ -31,6 +31,9 @@
   <link rel="icon" href="/brand/pg1-shield.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/brand/pg1-icon-192.png">
   <link rel="manifest" href="/manifest.webmanifest">
+  <!-- The Living lab style, shared by the Command Centre surfaces (the
+       command panel, the error log, the check result card). -->
+  <link rel="stylesheet" href="/lab/lab-ui.css">
   <!-- Conversation mode (hands-free voice): turn tracking, echo guard and
        wake-word clean-up. The speech detector's runtime loads on demand. -->
   <script src="/voice/conversation.js"></script>
@@ -969,21 +972,60 @@
     .cmd-chip:active { transform: scale(0.97); }
     .cmd-chip:focus-visible { border-radius: var(--r-full); }
     /* THE COMMAND PANEL (lib/commands/registry.mjs, public/commands.json):
-       a button for every command, grouped by area. */
-    .cmd-panel-search { width: 100%; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2); color: var(--text); font: inherit; }
-    .cmd-panel-list { display: flex; flex-direction: column; gap: var(--sp-4); }
-    .cmd-area h3 { margin: 0 0 var(--sp-2); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
-    .cmd-area-items { display: flex; flex-wrap: wrap; gap: 6px; }
-    .cmd-btn { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; max-width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); color: var(--text); font: inherit; font-size: var(--fs-sm); text-align: left; cursor: pointer; }
-    .cmd-btn code { font-weight: 600; color: var(--text-strong); }
-    .cmd-btn small { color: var(--text-3); font-size: var(--fs-xs); }
-    .cmd-btn[data-dangerous="1"] code::after { content: ' ⚠'; color: var(--danger); }
-    .cmd-btn.armed { border-color: var(--danger-line); background: var(--danger-soft); }
-    .cmd-form { display: flex; flex-direction: column; gap: var(--sp-3); }
-    .cmd-form label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); color: var(--text-2); }
-    .cmd-form input { padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2); color: var(--text); font: inherit; }
-    .cmd-form-actions { display: flex; gap: var(--sp-2); justify-content: flex-end; }
-    .cmd-form-warn { margin: 0; color: var(--danger); font-size: var(--fs-sm); }
+       a card for every command, grouped by area, built from the shared
+       Living lab components (public/lab/lab-ui.css). The /help reply and
+       the / sheet are the same panel. */
+    .cmd-panel { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+    .cmd-panel.is-inline { margin-top: var(--sp-3); font-family: var(--font-sans); }
+    #cmd-panel-list .cmd-search { position: sticky; top: 0; z-index: 1; }
+    .cmd-groups { display: flex; flex-direction: column; gap: var(--sp-2); }
+    .cmd-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--sp-2) var(--sp-3); padding: 10px 12px; }
+    .cmd-card[hidden], .cmd-group[hidden] { display: none; }
+    .cmd-card-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .cmd-card .lx-sub { font-size: var(--fs-xs); line-height: 1.35; }
+    .cmd-card .lx-cmd { font-size: var(--fs-sm); overflow-wrap: anywhere; }
+    .cmd-card .cmd-run { min-width: 64px; }
+    .cmd-card .cmd-run.armed, .cmd-form-run.armed { min-width: 0; max-width: 112px; white-space: normal; text-align: center; line-height: 1.2; padding: 4px 10px; }
+    .cmd-form { grid-column: 1 / -1; display: flex; flex-direction: column; gap: var(--sp-2); padding-top: var(--sp-2); border-top: 1px solid var(--border); }
+    .cmd-form[hidden] { display: none; }
+    .cmd-form label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); }
+    .cmd-form .cmd-opt { font-weight: 400; color: var(--text-3); }
+    .cmd-form input, .cmd-form select { min-height: 40px; padding: 0 var(--sp-3); border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2); color: var(--text); font: inherit; font-size: 1rem; }
+    .cmd-form-actions { justify-content: flex-end; }
+    .cmd-form-warn { margin: 0; color: var(--danger-text); font-size: var(--fs-xs); }
+    #cmd-modal .matrix-card { gap: var(--sp-3); }
+    /* THE ERROR LOG timeline. */
+    .err-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+    .err-timeline { margin-top: var(--sp-1); }
+    .err-card { gap: var(--sp-2); }
+    .err-card .lx-head { gap: 6px; }
+    .err-card .err-time { margin-left: auto; }
+    .err-card .err-summary { font-weight: 500; color: var(--text); }
+    .err-card .lx-pill { text-transform: capitalize; }
+    .err-card .err-repeat { text-transform: none; letter-spacing: 0; font-size: 0.68rem; }
+    /* THE CHECK RESULT CARD. */
+    .chk-card { gap: var(--sp-3); }
+    .chk-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--sp-2) var(--sp-3); }
+    .chk-id { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+    .chk-id .tool-card-title { color: var(--text-strong); font-weight: 600; font-size: var(--fs-sm); }
+    .chk-target { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+    .chk-target code { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text); overflow-wrap: anywhere; }
+    .chk-sec { display: flex; flex-direction: column; gap: 6px; }
+    .chk-card .tool-check-asof::before { content: none; }
+    .chk-card .lx-row { display: grid; gap: 2px 10px; color: var(--text); font-size: var(--fs-xs); }
+    .chk-card .lx-row-sub .lx-chip { margin-top: 4px; }
+    .chk-card .tool-meta { gap: 6px 10px; }
+    .chk-card .tool-raw-json { max-height: 320px; }
+    .chk-stack { display: flex; flex-direction: column; gap: 6px; }
+    .chk-item { border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-1); }
+    .chk-item > summary { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 6px 12px; cursor: pointer; list-style: none; }
+    .chk-item > summary::-webkit-details-marker { display: none; }
+    .chk-item > summary .lx-dot { margin-top: 0; flex: none; }
+    .chk-item-name { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+    .chk-item-target { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chk-item-tool { font-size: var(--fs-2xs); color: var(--text-3); }
+    .chk-item[open] > summary { border-bottom: 1px solid var(--border); }
+    .chk-item > .chk-card { border: 0; border-radius: 0 0 var(--r-lg) var(--r-lg); box-shadow: none; }
     /* FAILURE CARD: Retry, Fix it, Dismiss under a failed reply. */
     .failure-card { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
     .failure-card.is-dismissed .failure-actions { display: none; }
@@ -1659,6 +1701,9 @@
 .radar-card.is-live{animation:rise-in var(--dur-3) var(--ease-out) both}
 .radar-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2)}
 .radar-title{font-weight:600;font-size:var(--fs-base);color:var(--text-strong)}
+.radar-actions{display:inline-flex;gap:6px}
+.radar-open{display:inline-flex;align-items:center;gap:6px}
+.radar-open .icon{width:16px;height:16px}
 .radar-refresh{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 12px;border:1px solid var(--border-strong);border-radius:var(--r-full);background:var(--surface-2);color:var(--text);font-size:var(--fs-xs);font-weight:600;cursor:pointer}
 .radar-refresh .icon{width:16px;height:16px}
 .radar-refresh:disabled{opacity:.6;cursor:default}
@@ -1681,7 +1726,7 @@
 .blip{transform-box:fill-box;transform-origin:center;opacity:.85}
 .blip.s-flagged{fill:var(--danger);opacity:1}
 .blip.s-unknown{fill:var(--warn)}
-.blip.s-no_flags{fill:var(--text-3)}
+.blip.s-no_flags{fill:var(--ok)}
 .is-loading .blip{opacity:.25}
 .is-fresh:not(.is-loading) .blip{animation:blip-ping 2.4s var(--ease-out) var(--d,0ms) both}
 .is-fresh:not(.is-loading) .blip.s-flagged{animation-name:blip-ping-hot}
@@ -1692,8 +1737,8 @@
 @keyframes new-pulse{from{transform:scale(.8);opacity:.8}to{transform:scale(2.2);opacity:0}}
 .radar-counts{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 14px;margin:0;padding:0;list-style:none;font-size:var(--fs-xs)}
 .radar-counts li{display:inline-flex;align-items:center;gap:6px;color:var(--text-2)}
-.radar-counts li::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--text-3)}
-.radar-counts li.s-flagged::before{background:var(--danger)}
+.radar-counts li::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--lx-tone,var(--text-3));box-shadow:0 0 6px var(--lx-tone,transparent)}
+
 .radar-counts li.s-unknown::before{background:var(--warn)}
 .radar-counts .n{font-weight:600;color:var(--text-strong);font-variant-numeric:tabular-nums}
 .radar-h{margin:0 0 6px;font-size:var(--fs-xs);font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3)}
@@ -2751,13 +2796,10 @@
     <div class="matrix-card">
       <div class="modal-head">
         <h2 id="cmd-title">Commands</h2>
-        <p class="modal-note">Every command PG1 has. Tap one to run it; one that needs details opens a short form, and one marked ⚠ asks you to confirm.</p>
+        <p class="modal-note">Every command PG1 has, by area. Search, open an area, tap Run; a command that needs details opens a short form, and one that spends money or changes production asks you to confirm.</p>
       </div>
       <button type="button" class="icon-btn modal-close" aria-label="Close" data-dialog-close onclick="triggerHaptic(40); closeCommandPanel()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
-      <label class="sr-only" for="cmd-search">Find a command</label>
-      <input id="cmd-search" class="cmd-panel-search" type="search" placeholder="Find a command" autocomplete="off" oninput="renderCommandPanel(this.value)">
-      <div id="cmd-form" class="cmd-form" hidden></div>
-      <div id="cmd-panel-list" class="cmd-panel-list" aria-live="polite"></div>
+      <div id="cmd-panel-list" class="cmd-panel-list"></div>
     </div>
   </div>
 
@@ -2794,6 +2836,26 @@
       <span><span class="sw" style="background:#36d1c4"></span>scan</span>
       <span><span class="sw" style="background:#8f86ff"></span>feed</span>
       <span id="lab-legend-counts"><strong>0</strong> experiments</span>
+    </div>
+  </section>
+
+  <!-- THE THREAT RADAR, full screen: the radar card's data as a scene in the
+       Living Lab's style (public/lab/threat-radar-scene.js, three.js from
+       /vendor/three/), opened from the card. Loaded only here. -->
+  <section id="radar-screen" class="lab-screen" role="dialog" aria-modal="true" aria-labelledby="radar-screen-title" aria-describedby="radar-screen-summary">
+    <div class="lab-screen-head">
+      <h2 id="radar-screen-title"><svg aria-hidden="true" focusable="false"><use href="#pg1-shield"/></svg>PG1 Threat Radar</h2>
+      <span class="lab-mode" id="radar-mode" data-mode="idle">Nothing new</span>
+      <button type="button" class="icon-btn" aria-label="Close the radar" data-dialog-close onclick="triggerHaptic(40); closeRadarScreen()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="living-lab" id="radar-scene"></div>
+    <p class="sr-only" id="radar-screen-summary" aria-live="polite">The radar shows nothing new.</p>
+    <div class="lab-legend" aria-hidden="true">
+      <span><span class="sw" style="background:#ff5c5c"></span>flagged</span>
+      <span><span class="sw" style="background:#ffb300"></span>unknown</span>
+      <span><span class="sw" style="background:#3ddc84"></span>no flags</span>
+      <span>rings: <strong>2</strong>, <strong>5</strong>, <strong>7</strong> days old</span>
+      <span id="radar-legend-counts"><strong>0</strong> findings</span>
     </div>
   </section>
 
@@ -2962,11 +3024,16 @@
         <p class="modal-note">Failures from the server and this browser. Local entries share only their category, never the message, unless you tap Fix.</p>
       </div>
       <button type="button" class="icon-btn modal-close" aria-label="Close" data-dialog-close onclick="triggerHaptic(); closeErrorLog()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
-      <label class="toggle-row">
-        <input type="checkbox" id="show-resolved-toggle" onchange="triggerHaptic(20); toggleShowResolvedErrors()"> Show resolved
-      </label>
-      <div id="error-log-list" class="thread-list" aria-live="polite"></div>
-      <button type="button" class="matrix-submit btn-ghost btn-quiet-danger" onclick="triggerHaptic(); resolveAllErrors()">Resolve all</button>
+      <div class="err-tools">
+        <div class="lx-filter" id="error-log-filter" role="group" aria-label="Show">
+          <button type="button" data-filter="all" aria-pressed="true" onclick="triggerHaptic(20); setErrorLogFilter(this)">All</button>
+          <button type="button" data-filter="errors" aria-pressed="false" onclick="triggerHaptic(20); setErrorLogFilter(this)">Errors</button>
+          <button type="button" data-filter="warnings" aria-pressed="false" onclick="triggerHaptic(20); setErrorLogFilter(this)">Warnings</button>
+          <button type="button" data-filter="fixable" aria-pressed="false" onclick="triggerHaptic(20); setErrorLogFilter(this)">Fixable</button>
+        </div>
+        <button type="button" class="lx-btn is-sm" id="error-clear-dismissed" onclick="triggerHaptic(); clearDismissedErrors()">Clear dismissed</button>
+      </div>
+      <div id="error-log-list" class="error-log-list" aria-live="polite"></div>
     </div>
   </div>
 
@@ -3073,14 +3140,19 @@
     // 'js_error' - every call site that isn't a network-ish failure (a
     // thrown exception, a window error, a rejected promise) falls into that
     // bucket without needing to say so explicitly.
-    function logError(message, context, category) {
+    function logError(message, context, category, opts) {
+      const retryText = opts && opts.retryText;
       const log = getErrorLog();
-      log.unshift({
+      const entry = {
         time: new Date().toISOString(),
         message: String(message || 'Unknown error'),
         context: context || 'general',
         category: category || 'js_error'
-      });
+      };
+      // A failed message that may be resent as it is (autoRetrySafe): the
+      // ERROR LOG's Retry button. Stays on this device, never synced.
+      if (retryText && typeof autoRetrySafe === 'function' && autoRetrySafe(retryText)) entry.retryText = String(retryText).slice(0, 4000);
+      log.unshift(entry);
       if (log.length > MAX_ERROR_LOG_ENTRIES) log.length = MAX_ERROR_LOG_ENTRIES;
       try { localStorage.setItem(ERROR_LOG_KEY, JSON.stringify(log)); } catch (e) {}
       // A live test on Android Chrome found the status light stayed GREEN in
@@ -3608,6 +3680,46 @@
       clearInterval(labScenePoll);
       labScenePoll = null;
       if (labScene) { labScene.destroy(); labScene = null; }
+    }
+
+    // THE THREAT RADAR, full screen (public/lab/threat-radar-scene.js): the
+    // card's data as a scene in the Living Lab's style. Created when the
+    // screen opens, torn down when it closes; the card's Refresh fetches
+    // new data, the screen shows what the card shows.
+    var radarScene = null;
+    const RADAR_MODE = { alert: { mode: 'error', word: 'Flagged findings' }, watch: { mode: 'thinking', word: 'Unknowns to check' }, clear: { mode: 'success', word: 'No flags found' }, empty: { mode: 'idle', word: 'Nothing new' } };
+    function radarSceneLabel(d) {
+      const m = RADAR_MODE[d.state] || RADAR_MODE.empty;
+      const mode = document.getElementById('radar-mode');
+      if (mode) { mode.dataset.mode = m.mode; mode.textContent = m.word; }
+      const counts = document.getElementById('radar-legend-counts');
+      if (counts) counts.innerHTML = `<strong>${d.findings.length}</strong> finding${d.findings.length === 1 ? '' : 's'} · <strong>${d.counts.flagged}</strong> flagged${d.kev ? ` · <strong>${d.kev}</strong> actively exploited` : ''}`;
+      const summary = document.getElementById('radar-screen-summary');
+      if (summary) summary.textContent = `${m.word}: ${d.findings.length} recent findings, ${d.counts.flagged} flagged, ${d.counts.unknown} unknown, ${d.counts.no_flags} with no flags${d.as_of ? `, data as of ${d.as_of} Ireland time` : ''}.`;
+    }
+    async function openRadarScreen(btn) {
+      const card = btn && btn.closest('.radar-card');
+      let data = null;
+      try { data = card ? JSON.parse(card.getAttribute('data-scene') || 'null') : null; } catch (e) { data = null; }
+      const screen = document.getElementById('radar-screen');
+      const holder = document.getElementById('radar-scene');
+      if (!screen || !holder) return;
+      triggerHaptic(30);
+      screen.classList.add('is-open');
+      if (!radarScene) {
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const coarse = window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 768;
+        try {
+          const mod = await import('/lab/threat-radar-scene.js');
+          radarScene = await mod.createThreatRadarScene(holder, { reducedMotion: reduced, coarse, label: radarSceneLabel });
+        } catch (e) { radarScene = null; }
+      }
+      if (radarScene) radarScene.update(data || {});
+    }
+    function closeRadarScreen() {
+      const screen = document.getElementById('radar-screen');
+      if (screen) screen.classList.remove('is-open');
+      if (radarScene) { radarScene.destroy(); radarScene = null; }
     }
 
     function closeAutoTimeline() {
@@ -4522,6 +4634,8 @@
 
     const RADAR_LAST_VISIT = 'pg1_radar_last_visit';
     const RADAR_STATUS_WORD = { flagged: 'Flagged', unknown: 'Unknown', no_flags: 'No flags' };
+    // The Living lab status tones (public/lab/lab-ui.css) per radar status.
+    const RADAR_TONE = { flagged: 'err', unknown: 'warn', no_flags: 'ok' };
     const KEV_BADGE = '<span class="kev-badge" title="On the CISA Known Exploited Vulnerabilities catalog: actively exploited"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.5 20h19z"/><path d="M12 10v4M12 17h.01"/></svg>KEV<span class="sr-only"> actively exploited</span></span>';
     let radarSeq = 0;
     function radarLastVisit() {
@@ -4558,7 +4672,7 @@
       }).join('');
       const id = `radar-${Date.now().toString(36)}-${(radarSeq++).toString(36)}`;
       const scope = radarScopeHtml(blips, `role="img" aria-label="Radar of ${findings.length} recent findings; distance from the centre is age, up to 7 days"`);
-      const countList = ['flagged', 'unknown', 'no_flags'].map((k) => `<li class="s-${k}"><span class="n js-count" data-count="${Math.max(0, Number(counts[k]) || 0)}">${Math.max(0, Number(counts[k]) || 0)}</span>${RADAR_STATUS_WORD[k]}</li>`).join('');
+      const countList = ['flagged', 'unknown', 'no_flags'].map((k) => `<li class="s-${k}" data-tone="${RADAR_TONE[k]}"><span class="n js-count" data-count="${Math.max(0, Number(counts[k]) || 0)}">${Math.max(0, Number(counts[k]) || 0)}</span>${RADAR_STATUS_WORD[k]}</li>`).join('');
       const feedRows = feeds.map((f) => {
         if (f.error || f.total == null) return `<li class="radar-feed is-error"><span class="radar-feed-name">${escapeHTML(String(f.label || f.id))}</span><span></span><span class="radar-feed-num">${escapeHTML(String(f.error || 'could not be read'))}</span></li>`;
         return `<li class="radar-feed"><span class="radar-feed-name">${escapeHTML(String(f.label || f.id))}</span>${sparkHtml(f.per_day)}<span class="radar-feed-num"><span class="n js-count" data-count="${Math.max(0, Number(f.total) || 0)}">${Math.max(0, Number(f.total) || 0)}</span><small>new in 7 days</small></span></li>`;
@@ -4566,7 +4680,7 @@
       const findRow = (f, i) => {
         const st = RADAR_STATUS_WORD[f.status] ? f.status : 'unknown';
         const fresh = isNew(f);
-        return `<li class="radar-find${fresh ? ' is-new' : ''}" style="--i: ${i}"><span class="radar-find-id">${fresh ? '<span class="new-dot" aria-hidden="true"></span>' : ''}${escapeHTML(String(f.value || ''))}${f.kev ? KEV_BADGE : ''}${fresh ? '<span class="new-tag">new</span>' : ''}</span><span class="tool-chip ${TOOL_STATUS_CLASS[st] || ''}">${RADAR_STATUS_WORD[st]}</span>`
+        return `<li class="radar-find${fresh ? ' is-new' : ''}" style="--i: ${i}"><span class="radar-find-id">${fresh ? '<span class="new-dot" aria-hidden="true"></span>' : ''}${escapeHTML(String(f.value || ''))}${f.kev ? KEV_BADGE : ''}${fresh ? '<span class="new-tag">new</span>' : ''}</span><span class="lx-pill radar-status" data-tone="${RADAR_TONE[st]}">${RADAR_STATUS_WORD[st]}</span>`
           + `<span class="radar-find-meta">${escapeHTML(String(f.type || ''))} · ${escapeHTML(String(f.source || ''))} · seen ${escapeHTML(radarDayText(f.seen_at))}</span></li>`;
       };
       const shown = findings.slice(0, 4).map(findRow).join('');
@@ -4574,13 +4688,19 @@
       const findsHtml = findings.length
         ? `<ul class="radar-finds">${shown}</ul>` + (more ? `<ul class="radar-finds" id="${id}-more" hidden>${more}</ul><button type="button" class="usage-more" aria-expanded="false" aria-controls="${id}-more" data-more="Show ${findings.length - 4} more" onclick="toggleUsageMore(this)">Show ${findings.length - 4} more</button>` : '')
         : '<p class="radar-note">Nothing new in the last 7 days from the feeds PG1 serves.</p>';
-      return `<section class="radar-card${live ? ' is-live' : ''}${fresh ? ' is-fresh' : ''}" id="${id}" aria-label="Threat radar" data-fetched="${Number(view.fetched_ms) || ''}">`
-        + `<div class="radar-head"><span class="radar-title">Threat radar</span><button type="button" class="radar-refresh" onclick="refreshThreatRadar(this)"><svg class="icon" aria-hidden="true"><use href="#i-sync"/></svg>Refresh</button></div>`
+      // The card's tone (the Living lab's glow edge): red with a flagged
+      // finding, amber when a feed or the catalog could not be read.
+      const tone = Number(counts.flagged) > 0 ? 'err' : (feeds.some((f) => f.error || f.total == null) || view.kev === 'error' || Number(counts.unknown) > 0) ? 'warn' : 'ok';
+      // The full-screen radar reads the card's own data (data-scene), so a
+      // card restored from a saved chat opens too.
+      const sceneData = JSON.stringify({ as_of: view.as_of, counts, findings: findings.slice(0, 60).map((f) => ({ value: f.value, status: f.status, kev: !!f.kev, ring: f.ring, angle: f.angle })) });
+      return `<section class="radar-card lx-card${live ? ' is-live' : ''}${fresh ? ' is-fresh' : ''}" id="${id}" data-tone="${tone}" aria-label="Threat radar" data-fetched="${Number(view.fetched_ms) || ''}" data-scene="${escapeHTML(sceneData)}">`
+        + `<div class="radar-head"><span class="radar-title">Threat radar</span><span class="radar-actions"><button type="button" class="radar-open lx-btn is-sm" onclick="openRadarScreen(this)" aria-label="Open the radar full screen"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg>Open</button><button type="button" class="radar-refresh lx-btn is-sm" onclick="refreshThreatRadar(this)"><svg class="icon" aria-hidden="true"><use href="#i-sync"/></svg>Refresh</button></span></div>`
         + `<p class="radar-asof">Data as of <strong>${escapeHTML(String(view.as_of || ''))}</strong> (Ireland time)</p>`
         + (note ? `<p class="radar-note is-warn" role="status">${escapeHTML(note)}</p>` : '')
         + `<div class="radar-body">${scope}<ul class="radar-counts" aria-label="Findings by status">${countList}</ul></div>`
-        + `<div class="radar-sec"><p class="radar-h">Feeds, new items per day</p><ul class="radar-feeds">${feedRows}</ul>${typeof view.tally_text === 'string' && view.tally_text ? `<p class="radar-note radar-tally">${escapeHTML(view.tally_text)}</p>` : ''}</div>`
-        + `<div class="radar-sec"><p class="radar-h">Recent findings</p>${findsHtml}</div>`
+        + `<div class="radar-sec"><p class="radar-h lx-section-h">Feeds, new items per day</p><ul class="radar-feeds">${feedRows}</ul>${typeof view.tally_text === 'string' && view.tally_text ? `<p class="radar-note radar-tally">${escapeHTML(view.tally_text)}</p>` : ''}</div>`
+        + `<div class="radar-sec"><p class="radar-h lx-section-h">Recent findings</p>${findsHtml}</div>`
         + (view.kev === 'error' ? '<p class="radar-note is-warn">The known exploited catalog could not be read, so CVEs show as unknown.</p>' : '')
         + '</section>';
     }
@@ -4590,7 +4710,7 @@
         + `<g class="r-sweep"><path class="r-wedge" d="M0 0-47-81.4A94 94 0 0 1 0-94Z"/><path class="r-edge" d="M0 0V-94"/></g>${blips}</svg></div>`;
     }
     function radarLoadingHtml() {
-      return '<section class="radar-card is-live is-loading" aria-label="Threat radar, loading" aria-busy="true"><div class="radar-head"><span class="radar-title">Threat radar</span></div>'
+      return '<section class="radar-card lx-card is-live is-loading" data-tone="run" aria-label="Threat radar, loading" aria-busy="true"><div class="radar-head"><span class="radar-title">Threat radar</span></div>'
         + `<p class="radar-asof">Reading the feeds…</p><div class="radar-body">${radarScopeHtml('', 'aria-hidden="true"')}</div>`
         + '<span class="shimmer" style="width: 70%"></span><span class="shimmer" style="width: 45%"></span></section>';
     }
@@ -6561,106 +6681,226 @@
 
     function openErrorLog() {
       document.getElementById('error-log-modal').style.display = 'flex';
-      const toggle = document.getElementById('show-resolved-toggle');
-      if (toggle) toggle.checked = showResolvedErrors;
       renderErrorLogList();
     }
     function closeErrorLog() {
       document.getElementById('error-log-modal').style.display = 'none';
     }
 
-    // RESOLVE ALL (issue #201 error-log polish, renamed from CLEAR LOG):
-    // CLEAR LOG used to only clear the local cache, so synced server rows
-    // reappeared on the next reload/sync. This marks every currently-listed,
-    // still-unresolved entry resolved on the server first (the 30-day
-    // cleanup cron still owns actually deleting rows - this never does),
-    // then clears the local cache.
-    async function resolveAllErrors() {
-      if (!confirm('Mark all listed errors resolved? Server-logged entries are kept (not deleted) until the 30-day cleanup.')) return;
-      const idsToResolve = currentErrorLogEntries.filter((e) => e.id && !e.resolved).map((e) => e.id);
-      await Promise.all(idsToResolve.map((id) =>
-        fetch('/api/errors', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ op: 'resolve', user: sessionUser, pass: sessionPass, id })
-        }).catch(() => {})
-      ));
-      localStorage.removeItem(ERROR_LOG_KEY);
-      localStorage.removeItem(ERROR_LOG_SYNCED_KEY);
-      await renderErrorLogList();
-      await updateErrorLogBadge();
-    }
-
-    // All entries ever fetched for the modal (unfiltered) - `currentErrorLogEntries`
-    // is the currently *visible* subset, kept in sync with what's on screen so
-    // FIX/RESOLVE button indices and RESOLVE ALL's id list always match what
-    // the operator actually sees.
+    // All entries fetched for the modal (unfiltered); `currentErrorLogEntries`
+    // is the visible, grouped subset, kept in step with what is on screen so
+    // the FIX, Retry, Copy and Dismiss indices always match the cards.
     let allErrorLogEntries = [];
-    let showResolvedErrors = false;
 
-    function toggleShowResolvedErrors() {
-      showResolvedErrors = !showResolvedErrors;
+    // THE ERROR LOG as a timeline (PR A): one card per kind of failure, in
+    // the Living lab style. Each card: a severity colour (error, warning,
+    // info), the time, the area it came from (chat, film, movie, lab,
+    // mission, router, tool), a plain one-line summary, and details that
+    // expand (the upstream message or stack, the route, request_id with a
+    // copy button). Repeats of the same failure are one card ("×12 in the
+    // last hour"). Buttons: Retry (a failed message from this device that
+    // is safe to resend), FIX (the approve/decline patch flow; never on an
+    // offline, network or timeout entry, they are not code bugs), Copy
+    // details and Dismiss. Nothing that looks like a key, token or password
+    // is ever shown or copied (scrubErrorText).
+    const ERROR_DISMISSED_KEY = 'pg1_error_dismissed';
+    const ERROR_CLEARED_KEY = 'pg1_error_cleared';
+    const ERROR_SEVERITY = { js_error: 'error', http_5xx: 'error', http_4xx: 'warning', upstream: 'warning', timeout: 'warning', offline: 'info', network: 'info' };
+    const ERROR_TONE = { error: 'err', warning: 'warn', info: 'info' };
+    const ERROR_AREAS = ['chat', 'film', 'movie', 'lab', 'mission', 'router', 'tool'];
+    let errorLogFilter = 'all';
+    function errorSeverity(entry) {
+      return ERROR_SEVERITY[entry && entry.category] || 'error';
+    }
+    // Where a failure came from, in one word.
+    function errorArea(entry) {
+      const text = `${entry.route || ''} ${entry.context || ''} ${entry.message || ''}`.toLowerCase();
+      if (/\/api\/mcp|\/api\/a2a|\/api\/ioc|\/api\/preflight|check_|tool[:=]/.test(text)) return 'tool';
+      if (/\bmovie\b/.test(text)) return 'movie';
+      if (/\bfilm\b|studio|render/.test(text)) return 'film';
+      if (/\blab\b|experiment/.test(text)) return 'lab';
+      if (/mission|autonom/.test(text)) return 'mission';
+      if (/router|engine|ai_unavailable|quota|out of credit|rate.?limit/.test(text)) return 'router';
+      return 'chat';
+    }
+    // Keys, tokens and passwords never reach the screen or the clipboard.
+    function scrubErrorText(text) {
+      return String(text == null ? '' : text)
+        .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[secret withheld]')
+        .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, '$1 [secret withheld]')
+        .replace(/\b(sk|rk|pk)[-_](live|test|ant|proj)?[-_]?[A-Za-z0-9_-]{12,}/g, '[secret withheld]')
+        .replace(/\b(AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,})/g, '[secret withheld]')
+        .replace(/\b0x[0-9a-fA-F]{64}\b/g, '[secret withheld]')
+        .replace(/\b((?:api[_-]?key|key|token|secret|password|passwd|pass|authorization)\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s&,;]+)/gi, '$1[secret withheld]');
+    }
+    // The first line of the message, at most 140 characters.
+    function errorSummary(entry) {
+      const first = scrubErrorText(entry.message || entry.context || 'Unknown error').split('\n').map((l) => l.trim()).find(Boolean) || 'Unknown error';
+      return first.length > 140 ? `${first.slice(0, 139)}…` : first;
+    }
+    function errorKey(entry) {
+      return entry.id ? `id:${entry.id}` : `local:${errorArea(entry)}:${entry.category || ''}:${errorSummary(entry)}`;
+    }
+    function readErrorSet(key) {
+      try { const v = JSON.parse(localStorage.getItem(key) || '[]'); return new Set(Array.isArray(v) ? v : []); } catch (e) { return new Set(); }
+    }
+    function writeErrorSet(key, set) {
+      try { localStorage.setItem(key, JSON.stringify(Array.from(set).slice(-300))); } catch (e) { /* private mode */ }
+    }
+    // Repeats of one failure (same area, category and summary) become one
+    // entry with their count, newest time and earliest first_seen.
+    function groupErrorEntries(entries) {
+      const out = [];
+      const byKey = new Map();
+      for (const e of entries) {
+        const k = e.id ? `id:${e.id}` : `${errorArea(e)}|${e.category || ''}|${errorSummary(e)}`;
+        const prev = byKey.get(k);
+        if (!prev) { const g = { ...e, count: Math.max(1, Number(e.count) || 1), firstSeen: e.firstSeen || e.time }; byKey.set(k, g); out.push(g); continue; }
+        prev.count += Math.max(1, Number(e.count) || 1);
+        if (e.time > prev.time) prev.time = e.time;
+        if ((e.firstSeen || e.time) < prev.firstSeen) prev.firstSeen = e.firstSeen || e.time;
+        if (!prev.retryText && e.retryText) prev.retryText = e.retryText;
+      }
+      return out;
+    }
+    function errorRepeatText(entry, now = Date.now()) {
+      if (!(entry.count > 1)) return '';
+      const since = Date.parse(entry.firstSeen || entry.time);
+      const span = Number.isFinite(since) ? now - since : Infinity;
+      const when = span <= 3600000 ? 'in the last hour' : span <= 86400000 ? 'in the last day' : 'in all';
+      return `×${entry.count} ${when}`;
+    }
+    function errorTimeText(iso) {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return '';
+      const sameDay = d.toDateString() === new Date().toDateString();
+      return sameDay ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+    function errorDetailsText(entry) {
+      return [
+        `${errorSeverity(entry)} · ${errorArea(entry)}${entry.category ? ` · ${entry.category}` : ''}`,
+        `When: ${entry.time}${entry.count > 1 ? ` (${errorRepeatText(entry)})` : ''}`,
+        entry.route ? `Route: ${entry.route}` : '',
+        entry.requestId ? `request_id: ${entry.requestId}` : '',
+        '',
+        scrubErrorText(entry.message || '(no details)')
+      ].filter((l, i) => l || i === 4).join('\n');
+    }
+    function setErrorLogFilter(btn) {
+      errorLogFilter = btn.getAttribute('data-filter') || 'all';
+      document.querySelectorAll('#error-log-filter button').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
       applyErrorLogFilter();
     }
-
+    function errorFixable(entry) {
+      return !entry.resolved && !CONNECTIVITY_ERROR_CATEGORIES.has(entry.category);
+    }
     function applyErrorLogFilter() {
-      const visible = showResolvedErrors ? allErrorLogEntries : allErrorLogEntries.filter((e) => !e.resolved);
+      const dismissed = readErrorSet(ERROR_DISMISSED_KEY);
+      const cleared = readErrorSet(ERROR_CLEARED_KEY);
+      const visible = groupErrorEntries(allErrorLogEntries)
+        .map((e) => ({ ...e, dismissed: !!e.resolved || dismissed.has(errorKey(e)) }))
+        .filter((e) => !cleared.has(errorKey(e)))
+        .filter((e) => errorLogFilter === 'all'
+          || (errorLogFilter === 'errors' && errorSeverity(e) === 'error')
+          || (errorLogFilter === 'warnings' && errorSeverity(e) === 'warning')
+          || (errorLogFilter === 'fixable' && !e.dismissed && errorFixable(e)));
+      // Open problems first, newest first; dismissed ones after them.
+      visible.sort((a, b) => (a.dismissed - b.dismissed) || String(b.time).localeCompare(String(a.time)));
       renderErrorLogRows(visible);
     }
-
     function renderErrorLogRows(entries) {
       const container = document.getElementById('error-log-list');
       if (!container) return;
       currentErrorLogEntries = entries;
-
       if (entries.length === 0) {
-        const emptyLabel = showResolvedErrors ? 'No errors logged.' : 'No unresolved errors.';
-        container.innerHTML = `<div class="list-empty">${emptyLabel}</div>`;
+        const emptyLabel = errorLogFilter === 'all' ? 'No errors logged.' : 'Nothing here for this filter.';
+        container.innerHTML = `<p class="lx-empty">${emptyLabel}</p>`;
         return;
       }
-      container.innerHTML = entries.map((entry, index) => {
-        const countLabel = entry.count > 1 ? ` (x${entry.count})` : '';
-        const categoryLabel = entry.category
-          ? `<span class="err-cat">${escapeHTML(entry.category)}</span>`
+      container.innerHTML = `<ol class="lx-timeline err-timeline">${entries.map((entry, index) => {
+        const severity = errorSeverity(entry);
+        const tone = ERROR_TONE[severity];
+        const area = errorArea(entry);
+        const repeat = errorRepeatText(entry);
+        const uid = `err-${index}-${Date.now().toString(36)}`;
+        // Connectivity failures (offline/network/timeout) are not code bugs,
+        // so there is nothing for Suggest Fix to patch: no FIX button. A
+        // dismissed (or resolved) entry shows neither FIX nor Retry.
+        const fixBtn = !entry.dismissed && errorFixable(entry)
+          ? `<button type="button" class="lx-btn is-sm is-primary" onclick="triggerHaptic(30); suggestFixForError(${index})">FIX</button>`
           : '';
-        // Connectivity failures (offline/network/timeout) aren't code bugs,
-        // so there's nothing for Suggest Fix to patch - no FIX button. A
-        // resolved entry never shows FIX or RESOLVE either.
-        const isConnectivity = CONNECTIVITY_ERROR_CATEGORIES.has(entry.category);
-        const fixBtn = (!entry.resolved && !isConnectivity)
-          ? `<button type="button" class="thread-action-btn" onclick="triggerHaptic(30); suggestFixForError(${index})">FIX</button>`
+        const retryBtn = !entry.dismissed && entry.retryText
+          ? `<button type="button" class="lx-btn is-sm" onclick="triggerHaptic(30); retryErrorEntry(${index})"><svg class="icon" aria-hidden="true"><use href="#i-sync"/></svg>Retry</button>`
           : '';
-        const resolveBtn = (entry.id && !entry.resolved)
-          ? `<button type="button" class="thread-action-btn" onclick="triggerHaptic(30); markErrorResolved('${entry.id}')">RESOLVE</button>`
-          : (entry.resolved ? `<span class="err-resolved">RESOLVED</span>` : '');
-        // issue #215: the second line shows where the failure came from
-        // (the route, e.g. /api/mcp:check_wallet_age) instead of repeating
-        // the reason already shown in the title above it. request_id (also
-        // issue #215) is shown alongside it so a report can be matched back
-        // to this exact attempt; both are absent for older rows logged
-        // before the request_id column existed, or for the offline local
-        // fallback log, and simply don't render.
-        const routeLabel = entry.route
-          ? `<span class="err-route">${escapeHTML(entry.route)}</span>`
+        const dismissBtn = entry.dismissed
+          ? '<span class="lx-badge">Dismissed</span>'
+          : `<button type="button" class="lx-btn is-sm" onclick="triggerHaptic(20); dismissErrorEntry(${index})">Dismiss</button>`;
+        const reqId = entry.requestId
+          ? `<span>request_id <code>${escapeHTML(entry.requestId)}</code></span><button type="button" class="lx-copy" data-copy="${escapeHTML(entry.requestId)}" onclick="copyLabText(this)" aria-label="Copy request_id"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg>Copy</button>`
           : '';
-        const requestIdLabel = entry.requestId
-          ? `<span class="err-req">req: ${escapeHTML(entry.requestId)}</span>`
-          : '';
-        return `
-        <div class="thread-item">
-          <div class="thread-info">
-            <span class="thread-title">${escapeHTML(entry.context)}${countLabel}</span>
-            ${categoryLabel}
-            <span class="thread-date">${escapeHTML(new Date(entry.time).toLocaleString())}</span>
-            ${routeLabel}
-            ${requestIdLabel}
-          </div>
-          <div class="thread-actions">
-            ${fixBtn}
-            ${resolveBtn}
-          </div>
-        </div>`;
-      }).join('');
+        return `<li data-tone="${tone}"><article class="lx-card err-card${entry.dismissed ? ' is-muted' : ''}" data-tone="${tone}" data-severity="${severity}" data-area="${area}" data-category="${escapeHTML(entry.category || '')}">`
+          + `<div class="lx-head"><span class="lx-pill" data-tone="${tone}">${severity}</span><span class="lx-badge">${area}</span>${repeat ? `<span class="lx-badge err-repeat" data-tone="${tone}">${escapeHTML(repeat)}</span>` : ''}<span class="lx-meta err-time">${escapeHTML(errorTimeText(entry.time))}</span></div>`
+          + `<p class="lx-title err-summary">${escapeHTML(errorSummary(entry))}</p>`
+          + `<details class="lx-details err-details"><summary>Details</summary>`
+          + `<div class="lx-meta">${entry.category ? `<span>${escapeHTML(entry.category)}</span>` : ''}${entry.route ? `<span><code>${escapeHTML(entry.route)}</code></span>` : ''}${reqId}</div>`
+          + `<pre class="lx-mono" id="${uid}">${escapeHTML(scrubErrorText(entry.message || '(no details)'))}</pre></details>`
+          + `<div class="lx-actions">${retryBtn}${fixBtn}<button type="button" class="lx-btn is-sm" onclick="copyErrorDetails(this, ${index})"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg>Copy details</button>${dismissBtn}</div>`
+          + '</article></li>';
+      }).join('')}</ol>`;
+    }
+    function copyLabText(btn, text) {
+      const value = text != null ? String(text) : btn.getAttribute('data-copy') || '';
+      const label = btn.lastChild && btn.lastChild.nodeType === 3 ? btn.lastChild : null;
+      const done = (ok) => {
+        btn.classList.toggle('is-done', ok);
+        if (label) label.textContent = ok ? 'Copied' : 'Copy failed';
+        setTimeout(() => { btn.classList.remove('is-done'); if (label) label.textContent = 'Copy'; }, 1500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(value).then(() => done(true), () => done(false));
+      else done(false);
+    }
+    function copyErrorDetails(btn, index) {
+      const entry = currentErrorLogEntries[index];
+      if (!entry) return;
+      const done = (ok) => { const t = btn.lastChild; if (t && t.nodeType === 3) { t.textContent = ok ? 'Copied' : 'Copy failed'; setTimeout(() => { t.textContent = 'Copy details'; }, 1500); } };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(errorDetailsText(entry)).then(() => done(true), () => done(false));
+      else done(false);
+    }
+    // Dismiss: off the open list on this device; a server entry is also
+    // marked resolved (kept until the 30-day cleanup, never deleted here).
+    async function dismissErrorEntry(index) {
+      const entry = currentErrorLogEntries[index];
+      if (!entry) return;
+      const dismissed = readErrorSet(ERROR_DISMISSED_KEY);
+      dismissed.add(errorKey(entry));
+      writeErrorSet(ERROR_DISMISSED_KEY, dismissed);
+      if (entry.id) { await markErrorResolved(entry.id); return; }
+      applyErrorLogFilter();
+    }
+    // Clear dismissed: dismissed cards leave the list (local entries are
+    // deleted from this device; server rows stay resolved).
+    function clearDismissedErrors() {
+      const cleared = readErrorSet(ERROR_CLEARED_KEY);
+      const dismissed = readErrorSet(ERROR_DISMISSED_KEY);
+      const gone = groupErrorEntries(allErrorLogEntries).filter((e) => e.resolved || dismissed.has(errorKey(e)));
+      gone.forEach((e) => cleared.add(errorKey(e)));
+      writeErrorSet(ERROR_CLEARED_KEY, cleared);
+      const goneLocal = new Set(gone.filter((e) => !e.id).map(errorKey));
+      if (goneLocal.size) {
+        const keep = getErrorLog().filter((e) => !goneLocal.has(errorKey({ ...e, count: 1 })));
+        try { localStorage.setItem(ERROR_LOG_KEY, JSON.stringify(keep)); } catch (e) {}
+        allErrorLogEntries = allErrorLogEntries.filter((e) => e.id || !goneLocal.has(errorKey(e)));
+      }
+      applyErrorLogFilter();
+    }
+    // Retry: a message from this device that failed, sent again (only one
+    // a retry may resend on its own: words, or a command that is not
+    // dangerous, autoRetrySafe).
+    function retryErrorEntry(index) {
+      const entry = currentErrorLogEntries[index];
+      if (!entry || !entry.retryText || !autoRetrySafe(entry.retryText)) return;
+      closeErrorLog();
+      submitDirective({ retryText: entry.retryText });
     }
 
     async function renderErrorLogList() {
@@ -6679,6 +6919,7 @@
           category: r.category || null,
           time: r.last_seen,
           count: r.count || 1,
+          firstSeen: r.first_seen || r.last_seen,
           id: r.id,
           resolved: !!r.resolved,
           route: r.route || null,
@@ -6687,9 +6928,16 @@
       } else {
         // Offline fallback: not authenticated yet, or the server list
         // couldn't be reached - fall back to the raw local log.
-        entries = getErrorLog().map((e) => ({ message: e.message, context: e.context, category: e.category || null, time: e.time, count: 1, id: null, resolved: false }));
+        entries = getErrorLog().map((e) => ({ message: e.message, context: e.context, category: e.category || null, time: e.time, count: 1, id: null, resolved: false, retryText: e.retryText || null }));
       }
 
+      // A failed message from this device keeps its text here only (the
+      // server gets its category, never the text): it adds the Retry button.
+      if (Array.isArray(serverEntries)) {
+        const dayAgo = new Date(Date.now() - 86400000).toISOString();
+        const retryable = getErrorLog().filter((e) => e.retryText && e.time > dayAgo).slice(0, 5);
+        retryable.forEach((e) => entries.push({ message: e.message, context: e.context, category: e.category || null, time: e.time, count: 1, id: null, resolved: false, retryText: e.retryText }));
+      }
       allErrorLogEntries = entries;
       applyErrorLogFilter();
     }
@@ -7462,6 +7710,7 @@
       const input = document.getElementById('prompt-input');
       if (!input || !command) return;
       pendingConfirm = null;
+      countCommandUse(command);
       input.value = command;
       if (typeof autoResize === 'function') autoResize(input);
       submitDirective();
@@ -7749,39 +7998,92 @@
       btn.textContent = open ? 'Show less' : (btn.dataset.more || 'Show more');
     }
 
-    function toolCardHtml(card) {
+    // THE CHECK RESULT CARD (PR A) under a reply that ran a wallet, domain,
+    // URL, IOC or CVE check, in the Living lab style. Top: the target
+    // (shortened, with a copy button), the tool, and a large status badge:
+    // "No flags found", "Flagged", "Unknown" or "Upstream unavailable",
+    // never a safety verdict. Then key facts, the reasons (each with its
+    // reason-code chip, linking to /docs/reason-codes) and each sub-check as
+    // a row with its own status dot and timing. Footer: request_id (copy),
+    // whether the result is signed, with Verify (verify_result), Run
+    // preflight, Re-check, and the Raw JSON in a copyable monospace block.
+    // A fixture result (pg1-test-*.invalid, the fixture wallets) carries a
+    // "Test fixture" badge. Several checks in one reply are a compact
+    // stacked list; each one opens to its full card.
+    const CHECK_STATUS_VIEW = {
+      no_flags: { tone: 'ok', word: 'No flags found' },
+      flagged: { tone: 'err', word: 'Flagged' },
+      unknown: { tone: 'warn', word: 'Unknown' },
+      upstream_unavailable: { tone: 'warn', word: 'Upstream unavailable' },
+      failed: { tone: 'err', word: 'Check failed' },
+      report: { tone: 'info', word: 'Report' }
+    };
+    // The status the card shows: a check that failed because a source did
+    // not answer is upstream_unavailable, not a failure of the input.
+    function checkCardStatus(card) {
+      const status = TOOL_STATUS_CLASS[card.status] ? card.status : 'unknown';
+      if (status === 'failed' && card.error && /unavailable|upstream|timeout|timed out|rate.?limit|busy/i.test(`${card.error.code || ''} ${card.error.message || ''}`)) return 'upstream_unavailable';
+      return status;
+    }
+    function checkRowTone(result) {
+      const r = String(result || '').toLowerCase();
+      if (r === 'ok' || r === 'found' || r === 'not_found' || r === 'no_match' || r === 'clear') return 'ok';
+      if (r === 'flagged' || r === 'match' || r === 'hit') return 'err';
+      if (r === 'error' || r === 'failed') return 'err';
+      return 'warn';
+    }
+    function checkRawObject(card) {
+      if (card.raw && typeof card.raw === 'object') return card.raw;
+      try { return JSON.parse(card.raw); } catch (e) { return null; }
+    }
+    // The signature block a signed result carries (MCP, A2A, REST); a chat
+    // check carries none.
+    function checkSignature(card) {
+      const raw = checkRawObject(card);
+      const sig = raw && (raw.signature || (raw._meta && raw._meta['pg1/signature']));
+      return sig && typeof sig === 'object' && sig.sig ? sig : null;
+    }
+    function toolCardHtml(card, { live = true } = {}) {
       if (!card || typeof card !== 'object' || !card.tool) return '';
       if (card.usage && typeof card.usage === 'object') return usageCardHtml(card.usage);
       const uid = `tool-raw-${Date.now().toString(36)}-${(toolCardSeq++).toString(36)}`;
-      const status = TOOL_STATUS_CLASS[card.status] ? card.status : 'unknown';
+      const status = checkCardStatus(card);
+      const view = CHECK_STATUS_VIEW[status];
       const title = escapeHTML(card.title || String(card.tool).replace(/_/g, ' '));
       const subjectShort = card.subject_short || card.subject || '';
-      const subject = subjectShort ? `<span class="tool-card-subject" title="${escapeHTML(card.subject || subjectShort)}">${escapeHTML(subjectShort)}</span>` : '';
-      const chip = `<span class="tool-chip ${TOOL_STATUS_CLASS[status]}">${toolStatusLabel(status)}</span>`;
+      const target = subjectShort
+        ? `<div class="chk-target"><code class="tool-card-subject" title="${escapeHTML(card.subject || subjectShort)}">${escapeHTML(subjectShort)}</code><button type="button" class="lx-copy" data-copy="${escapeHTML(card.subject || subjectShort)}" onclick="copyLabText(this)" aria-label="Copy target"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg>Copy</button></div>`
+        : '';
+      const fixture = card.test_fixture ? '<span class="lx-badge tool-fixture" data-tone="think">Test fixture</span>' : '';
       const fields = Array.isArray(card.fields) ? card.fields.filter((f) => f && f.label && f.value !== undefined && f.value !== null && f.value !== '') : [];
       const fieldsHtml = fields.length
         ? `<dl class="tool-fields">${fields.map((f) => `<div class="tool-field"><dt>${escapeHTML(f.label)}</dt><dd>${escapeHTML(String(f.value))}</dd></div>`).join('')}</dl>`
         : '';
-      const errorHtml = card.error && card.error.message
-        ? `<p class="tool-error">${escapeHTML(card.error.message)}</p>`
-        : '';
+      const errorHtml = card.error && card.error.message ? `<p class="tool-error">${escapeHTML(card.error.message)}</p>` : '';
       const reasons = Array.isArray(card.reasons) ? card.reasons.filter((r) => r && r.code) : [];
       const reasonsHtml = reasons.length
-        ? `<ul class="tool-reasons" aria-label="Reasons">${reasons.map((r) => `<li><code>${escapeHTML(r.code)}</code> ${escapeHTML(r.message || '')}</li>`).join('')}</ul>`
-        : (status === 'no_flags' ? '<p class="tool-note">No reasons: nothing was flagged in the sources checked. That is not a safety verdict.</p>' : '');
+        ? `<div class="chk-sec"><h4 class="lx-section-h">Reasons</h4><ul class="lx-rows tool-reasons" aria-label="Reasons">${reasons.map((r) => `<li class="lx-row"><span class="lx-dot" data-tone="${status === 'flagged' ? 'err' : 'warn'}" aria-hidden="true"></span><span class="lx-row-main">${escapeHTML(r.message || r.code)}</span><span class="lx-row-end"></span><span class="lx-row-sub"><a class="lx-chip" href="/docs/reason-codes#${encodeURIComponent(r.code)}" target="_blank" rel="noopener"><code>${escapeHTML(r.code)}</code></a></span></li>`).join('')}</ul></div>`
+        : (status === 'no_flags' ? '<p class="tool-note">No reasons: nothing was flagged in the sources checked. That is not a guarantee about the target.</p>' : '');
       const checks = Array.isArray(card.checks) ? card.checks.filter((c) => c && c.source) : [];
       const checksHtml = checks.length
-        ? `<ul class="tool-checks" aria-label="Checks">${checks.map((c) => {
+        ? `<div class="chk-sec"><h4 class="lx-section-h">Checks</h4><ul class="lx-rows tool-checks" aria-label="Checks">${checks.map((c) => {
           const asOf = toolDateText(c.data_as_of);
-          return `<li class="${c.result === 'ok' ? '' : 'is-incomplete'}"><span class="tool-check-source">${escapeHTML(c.source)}</span><span class="tool-check-result">${escapeHTML(c.result || '')}</span>${asOf ? `<span class="tool-check-asof">data as of ${escapeHTML(asOf)}</span>` : ''}</li>`;
-        }).join('')}</ul>`
+          const ms = typeof c.ms === 'number' ? c.ms : (checks.length === 1 ? card.ms : null);
+          const dur = formatStepDuration(ms);
+          return `<li class="lx-row${c.result === 'ok' ? '' : ' is-incomplete'}"><span class="lx-dot" data-tone="${checkRowTone(c.result)}" aria-hidden="true"></span><span class="lx-row-main"><span class="tool-check-source">${escapeHTML(c.source)}</span> <span class="tool-check-result">${escapeHTML(c.result || '')}</span></span><span class="lx-row-end">${dur || ''}</span>${asOf ? `<span class="lx-row-sub tool-check-asof">data as of ${escapeHTML(asOf)}</span>` : ''}</li>`;
+        }).join('')}</ul></div>`
         : '';
-      const metaBits = [];
-      if (card.request_id) metaBits.push(`<span class="tool-meta-item">request_id <code>${escapeHTML(card.request_id)}</code></span>`);
+      const sig = checkSignature(card);
       const dur = formatStepDuration(card.ms);
-      if (dur) metaBits.push(`<span class="tool-meta-item">${dur}</span>`);
-      if (card.test_fixture) metaBits.push('<span class="tool-meta-item tool-fixture">fixture</span>');
-      const metaHtml = metaBits.length ? `<div class="tool-meta">${metaBits.join('<span class="tool-meta-sep" aria-hidden="true">·</span>')}</div>` : '';
+      const reqHtml = card.request_id
+        ? `<span class="tool-meta-item">request_id <code>${escapeHTML(card.request_id)}</code></span><button type="button" class="lx-copy" data-copy="${escapeHTML(card.request_id)}" onclick="copyLabText(this)" aria-label="Copy request_id"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg>Copy</button>`
+        : '';
+      const metaHtml = `<div class="lx-meta tool-meta">${reqHtml}${dur ? `<span class="tool-meta-item">${dur}</span>` : ''}<span class="lx-badge chk-signed" data-tone="${sig ? 'ok' : 'idle'}">${sig ? 'Signed' : 'Unsigned'}</span></div>`;
+      const subject = card.subject ? escapeHTML(card.subject) : '';
+      const actions = `<div class="lx-actions chk-actions">`
+        + `<button type="button" class="lx-btn is-sm chk-verify" onclick="verifyCheckCard(this)">Verify</button>`
+        + (subject ? `<button type="button" class="lx-btn is-sm chk-preflight" data-subject="${subject}" onclick="runCheckAction(this, 'preflight')">Run preflight</button><button type="button" class="lx-btn is-sm chk-recheck" data-subject="${subject}" data-tool="${title}" onclick="runCheckAction(this, 'recheck')">Re-check</button>` : '')
+        + '</div><p class="chk-verify-note lx-meta" hidden></p>';
       const raw = typeof card.raw === 'string' ? card.raw : JSON.stringify(card.raw || {}, null, 2);
       const input = card.input && typeof card.input === 'object' ? JSON.stringify(card.input) : '';
       const rawHtml = `<button type="button" class="tool-raw-toggle" aria-expanded="false" aria-controls="${uid}" onclick="toggleTraceDetails(this)">Raw JSON<svg class="icon trace-chevron" aria-hidden="true"><use href="#i-chevron"/></svg></button>`
@@ -7789,17 +8091,64 @@
         + (card.subject ? `<div class="tool-raw-line"><span class="tool-raw-key">Input</span><code class="tool-raw-full">${escapeHTML(card.subject)}</code></div>` : '')
         + (input ? `<div class="tool-raw-line"><span class="tool-raw-key">Arguments</span><code class="tool-raw-full">${escapeHTML(input)}</code></div>` : '')
         + `<div class="tool-raw-bar"><span class="tool-raw-key">Result</span><button type="button" class="tool-copy" onclick="copyToolRaw(this)" aria-label="Copy raw JSON"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg><span class="tool-copy-text">Copy</span></button></div>`
-        + `<pre class="tool-raw-json"><code>${escapeHTML(raw)}</code></pre></div>`;
-      return `<section class="tool-card ${TOOL_STATUS_CLASS[status]}" aria-label="${title} result">`
-        + `<div class="tool-card-head"><span class="tool-card-title">${title}${subject ? '<span class="tool-card-sep" aria-hidden="true"> · </span>' + subject : ''}</span>${chip}</div>`
-        + errorHtml + fieldsHtml + reasonsHtml + checksHtml + metaHtml + rawHtml
+        + `<pre class="tool-raw-json lx-mono"><code>${escapeHTML(raw)}</code></pre></div>`;
+      // The card keeps the data Verify needs (the raw result) in its Raw JSON.
+      return `<section class="lx-card tool-card chk-card ${TOOL_STATUS_CLASS[card.status] || 'is-unknown'}${live ? ' is-live' : ''}" data-tone="${view.tone}" data-status="${status}" aria-label="${title} result">`
+        + `<div class="chk-top"><div class="chk-id"><span class="tool-card-title">${title}</span>${fixture}${target}</div><span class="lx-pill is-lg chk-status" data-tone="${view.tone}">${view.word}</span></div>`
+        + errorHtml + fieldsHtml + reasonsHtml + checksHtml + metaHtml + actions + rawHtml
         + '</section>';
     }
 
+    // One card alone; several as a stacked list, each a summary line that
+    // opens to its card.
     function toolCardsHtml(results) {
       if (!Array.isArray(results) || !results.length) return '';
-      const cards = results.map(toolCardHtml).filter(Boolean);
-      return cards.length ? `<div class="tool-cards">${cards.join('')}</div>` : '';
+      const cards = results.filter((c) => c && typeof c === 'object' && c.tool);
+      if (!cards.length) return '';
+      if (cards.length === 1) return `<div class="tool-cards">${toolCardHtml(cards[0])}</div>`;
+      const usage = cards.filter((c) => c.usage && typeof c.usage === 'object').map((c) => toolCardHtml(c)).join('');
+      const items = cards.filter((c) => !(c.usage && typeof c.usage === 'object')).map((c) => {
+        const status = checkCardStatus(c);
+        const view = CHECK_STATUS_VIEW[status];
+        const title = escapeHTML(c.title || String(c.tool).replace(/_/g, ' '));
+        const subject = escapeHTML(c.subject_short || c.subject || '');
+        return `<details class="chk-item" data-status="${status}"><summary><span class="lx-dot" data-tone="${view.tone}" aria-hidden="true"></span><span class="chk-item-name"><span class="chk-item-target">${subject || title}</span><span class="chk-item-tool">${subject ? title : ''}</span></span>${c.test_fixture ? '<span class="lx-badge" data-tone="think">Fixture</span>' : ''}<span class="lx-pill" data-tone="${view.tone}">${view.word}</span></summary>${toolCardHtml(c, { live: false })}</details>`;
+      }).join('');
+      return `<div class="tool-cards">${usage}${items ? `<div class="chk-stack" aria-label="${cards.length} checks">${items}</div>` : ''}</div>`;
+    }
+
+    // Verify: asks verify_result (free, public) to check the result's
+    // signature. A chat check is not signed, so there is nothing to verify;
+    // the card says so instead of calling anything.
+    async function verifyCheckCard(btn) {
+      const cardEl = btn.closest('.chk-card');
+      const note = cardEl && cardEl.querySelector('.chk-verify-note');
+      if (!cardEl || !note) return;
+      const show = (text) => { note.hidden = false; note.textContent = text; };
+      let raw = null;
+      try { raw = JSON.parse(cardEl.querySelector('.tool-raw-json').textContent); } catch (e) { raw = null; }
+      const sig = raw && (raw.signature || (raw._meta && raw._meta['pg1/signature']));
+      if (!sig || !sig.sig) { show('Not signed: checks run in this chat are not signed. Results from MCP, A2A and REST carry a signature you can verify.'); return; }
+      btn.disabled = true;
+      show('Verifying…');
+      try {
+        const { signature, _meta, ...result } = raw;
+        const res = await fetch('/api/mcp', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'verify_result', arguments: { result, signature: sig } } }) });
+        const data = await res.json();
+        const out = data && data.result && (data.result.structuredContent || null);
+        show(out && out.valid === true ? 'Signature verified: this result came from PG1, unchanged.' : `Signature did not verify${out && out.reason ? `: ${out.reason}` : '.'}`);
+      } catch (e) {
+        show('Could not reach the verifier. Try again in a moment.');
+      } finally { btn.disabled = false; }
+    }
+    // Run preflight / Re-check: free read-only checks, sent as a message.
+    function runCheckAction(btn, kind) {
+      const subject = btn.getAttribute('data-subject') || '';
+      if (!subject) return;
+      triggerHaptic(30);
+      sendCommand(kind === 'preflight'
+        ? `Run a preflight on ${subject}: every relevant check before I act on it.`
+        : `Check ${subject} again (${btn.getAttribute('data-tool') || 'the same check'}).`);
     }
 
     function copyToolRaw(btn) {
@@ -8117,50 +8466,118 @@
       saveState();
     }
 
-    // THE COMMAND PANEL: every command by area; no arguments runs on a tap,
-    // arguments open a short form, a dangerous one asks to confirm.
-    async function openCommandPanel() {
-      const modal = document.getElementById('cmd-modal');
-      if (!modal) return;
-      modal.style.display = 'flex';
-      if (!commandRegistry) await loadCommandRegistry();
-      const search = document.getElementById('cmd-search');
-      if (search) search.value = '';
-      closeCommandForm();
-      renderCommandPanel('');
+    // THE COMMAND PANEL (PR A): every command in the registry as a card in
+    // the Living lab style (public/lab/lab-ui.css), grouped by area, with a
+    // search box at the top. The same panel is the /help reply (under it in
+    // the chat) and the sheet the / button and the ➕ menu open. A command
+    // without arguments runs on Run; one with arguments opens a small form
+    // in its card; a dangerous one (it spends money, changes production or
+    // switches autonomy) asks for a second tap. The groups fold; the area
+    // the operator runs most is first and open.
+    const CMD_USAGE_KEY = 'pg1_cmd_usage';
+    let commandPanelSeq = 0;
+    function commandAreaUsage() {
+      try {
+        const u = JSON.parse(localStorage.getItem(CMD_USAGE_KEY) || '{}');
+        return u && typeof u === 'object' && !Array.isArray(u) ? u : {};
+      } catch (e) { return {}; }
     }
-    function closeCommandPanel() {
-      const modal = document.getElementById('cmd-modal');
-      if (modal) modal.style.display = 'none';
+    function countCommandUse(command) {
+      const c = registryEntry(command, { prefix: true });
+      if (!c) return;
+      const u = commandAreaUsage();
+      u[c.area] = (Number(u[c.area]) || 0) + 1;
+      try { localStorage.setItem(CMD_USAGE_KEY, JSON.stringify(u)); } catch (e) { /* private mode: no ordering */ }
+    }
+    // The areas in panel order: the most used first (ties keep the
+    // registry's order); with no use yet, the registry's order.
+    function commandPanelAreas(areas, usage) {
+      const list = Array.isArray(areas) ? areas.slice() : [];
+      const u = usage || {};
+      const top = list.reduce((best, a) => ((Number(u[a]) || 0) > (Number(u[best]) || 0) ? a : best), list[0]);
+      return top ? [top, ...list.filter((a) => a !== top)] : list;
     }
     function panelCommands() {
       if (!commandRegistry) return [];
       const signedIn = !!(typeof sessionUser !== 'undefined' && sessionUser);
       return commandRegistry.commands.filter((c) => signedIn || !c.operatorOnly);
     }
-    function renderCommandPanel(query) {
+    function commandCardHtml(c) {
+      const badges = (c.operatorOnly ? '<span class="lx-badge" data-tone="gold">Operator</span>' : '')
+        + (c.dangerous ? '<span class="lx-badge" data-tone="err">Confirms</span>' : '');
+      const search = `${c.command} ${c.description}`.toLowerCase();
+      return `<article class="lx-card cmd-card" data-command="${escapeHTML(c.command)}" data-search="${escapeHTML(search)}"${c.dangerous ? ' data-tone="err"' : ''}>`
+        + `<div class="cmd-card-main"><div class="lx-head"><code class="lx-cmd">${escapeHTML(c.command)}</code>${badges}</div>`
+        + `<p class="lx-sub">${escapeHTML(c.description)}</p></div>`
+        + `<button type="button" class="lx-btn is-sm${c.dangerous ? ' is-danger' : ' is-primary'} cmd-run" data-command="${escapeHTML(c.command)}" data-dangerous="${c.dangerous ? '1' : '0'}" aria-label="Run ${escapeHTML(c.command)}" onclick="runPanelCommand(this)">${c.args.length ? 'Run…' : 'Run'}</button>`
+        + '<div class="cmd-form" hidden></div></article>';
+    }
+    // The panel's HTML from the registry: the first area (the most used)
+    // open, the rest folded.
+    function commandPanelHtml({ inline = false } = {}) {
+      if (!commandRegistry) return '<p class="lx-empty">The command list could not be loaded. Ask PG1 for /help again in a moment.</p>';
+      const cmds = panelCommands();
+      const areas = commandPanelAreas(commandRegistry.areas, commandAreaUsage()).filter((a) => cmds.some((c) => c.area === a));
+      const id = `cmd-panel-${Date.now().toString(36)}-${(commandPanelSeq++).toString(36)}`;
+      const groups = areas.map((area, i) => {
+        const items = cmds.filter((c) => c.area === area);
+        return `<details class="lx-group cmd-group" data-area="${escapeHTML(area)}"${i === 0 ? ' open' : ''}><summary><span>${escapeHTML(area)}</span><span class="lx-count">${items.length}</span></summary>`
+          + `<div class="lx-group-body">${items.map(commandCardHtml).join('')}</div></details>`;
+      }).join('');
+      return `<section class="cmd-panel${inline ? ' is-inline' : ''}" id="${id}" aria-label="Commands">`
+        + `<label class="sr-only" for="${id}-q">Search commands</label>`
+        + `<input id="${id}-q" class="lx-search cmd-search" type="search" placeholder="Search ${cmds.length} commands" autocomplete="off" enterkeyhint="search" oninput="filterCommandPanel(this)">`
+        + `<div class="cmd-groups">${groups}</div><p class="lx-empty cmd-none" hidden>No command matches.</p></section>`;
+    }
+    // Search: by name or description; matching groups open, the rest hide.
+    function filterCommandPanel(input) {
+      const panel = input.closest('.cmd-panel');
+      if (!panel) return;
+      const q = String(input.value || '').trim().toLowerCase();
+      let any = false;
+      panel.querySelectorAll('.cmd-group').forEach((g) => {
+        let n = 0;
+        g.querySelectorAll('.cmd-card').forEach((card) => {
+          const hit = !q || (card.getAttribute('data-search') || '').includes(q);
+          card.hidden = !hit;
+          if (hit) n++;
+        });
+        g.hidden = n === 0;
+        if (q && n) g.open = true;
+        const count = g.querySelector('.lx-count');
+        if (count) count.textContent = String(n);
+        if (n) any = true;
+      });
+      const none = panel.querySelector('.cmd-none');
+      if (none) none.hidden = any;
+    }
+    async function openCommandPanel() {
+      const modal = document.getElementById('cmd-modal');
+      if (!modal) return;
+      modal.style.display = 'flex';
+      if (!commandRegistry) await loadCommandRegistry();
       const list = document.getElementById('cmd-panel-list');
-      if (!list) return;
-      if (!commandRegistry) { list.innerHTML = '<p class="modal-note">The command list could not be loaded. /help lists every command.</p>'; return; }
-      const q = String(query || '').trim().toLowerCase();
-      const shown = panelCommands().filter((c) => !q || c.command.includes(q) || c.description.toLowerCase().includes(q) || c.area.toLowerCase().includes(q));
-      list.innerHTML = commandRegistry.areas.map((area) => {
-        const items = shown.filter((c) => c.area === area);
-        if (!items.length) return '';
-        return `<section class="cmd-area" aria-label="${escapeHTML(area)}"><h3>${escapeHTML(area)}</h3><div class="cmd-area-items">${items.map((c) => `<button type="button" class="cmd-btn" data-command="${escapeHTML(c.command)}" data-dangerous="${c.dangerous ? '1' : '0'}" onclick="runPanelCommand(this)"><code>${escapeHTML(c.command)}${c.args.length ? ' …' : ''}</code><small>${escapeHTML(c.description)}</small></button>`).join('')}</div></section>`;
-      }).join('') || '<p class="modal-note">No command matches.</p>';
+      if (list) list.innerHTML = commandPanelHtml();
+    }
+    function closeCommandPanel() {
+      const modal = document.getElementById('cmd-modal');
+      if (modal) modal.style.display = 'none';
+    }
+    // A dangerous button's first tap arms it ("Tap again to confirm"); it
+    // disarms on its own after 4 s. True when this tap should run.
+    function confirmTap(btn, label) {
+      if (btn.getAttribute('data-dangerous') !== '1' || btn.classList.contains('armed')) return true;
+      triggerHaptic(20);
+      btn.classList.add('armed');
+      btn.textContent = 'Tap again to confirm';
+      setTimeout(() => { if (btn.isConnected && btn.classList.contains('armed')) { btn.classList.remove('armed'); btn.textContent = label; } }, 4000);
+      return false;
     }
     function runPanelCommand(btn) {
       const c = commandRegistry && commandRegistry.commands.find((x) => x.command === btn.getAttribute('data-command'));
       if (!c) return;
-      if (c.args.length) { openCommandForm(c); return; }
-      if (c.dangerous && !btn.classList.contains('armed')) {
-        triggerHaptic(20);
-        btn.classList.add('armed');
-        btn.querySelector('small').textContent = 'Tap again to confirm';
-        setTimeout(() => { if (btn.isConnected && btn.classList.contains('armed')) { btn.classList.remove('armed'); btn.querySelector('small').textContent = c.description; } }, 4000);
-        return;
-      }
+      if (c.args.length) { openCommandForm(btn.closest('.cmd-card'), c); return; }
+      if (!confirmTap(btn, 'Run')) return;
       closeCommandPanel();
       runRegistryCommand(c.command, c);
     }
@@ -8169,38 +8586,39 @@
       if (c && c.client && command === '/voice') { runQuick('/voice'); return; }
       sendCommand(command);
     }
-    function openCommandForm(c) {
-      const form = document.getElementById('cmd-form');
+    function openCommandForm(card, c) {
+      const form = card && card.querySelector('.cmd-form');
       if (!form) return;
+      card.closest('.cmd-panel').querySelectorAll('.cmd-form:not([hidden])').forEach((f) => { if (f !== form) closeCommandForm(f); });
       form.hidden = false;
-      form.dataset.command = c.command;
-      form.innerHTML = `<strong><code>${escapeHTML(c.command)}</code></strong><span class="modal-note">${escapeHTML(c.description)}</span>`
-        + c.args.map((g, i) => `<label>${escapeHTML(g.name)}${g.required ? '' : ' (optional)'}<input type="text" data-arg="${i}" placeholder="${escapeHTML(g.placeholder || '')}" ${g.required ? 'required' : ''} autocomplete="off"></label>`).join('')
-        + (c.dangerous ? '<p class="cmd-form-warn">This spends money or changes something: Run asks you to confirm.</p>' : '')
-        + `<div class="cmd-form-actions"><button type="button" class="retry-btn" onclick="closeCommandForm()">Cancel</button><button type="button" class="retry-btn" id="cmd-form-run" data-dangerous="${c.dangerous ? '1' : '0'}" onclick="submitCommandForm(this)">Run</button></div>`;
-      const first = form.querySelector('input');
+      form.innerHTML = c.args.map((g, i) => {
+        const label = `${escapeHTML(g.name)}${g.required ? '' : ' <span class="cmd-opt">(optional)</span>'}`;
+        const field = Array.isArray(g.choices) && g.choices.length
+          ? `<select data-arg="${i}">${g.required ? '' : '<option value=""></option>'}${g.choices.map((v) => `<option>${escapeHTML(v)}</option>`).join('')}</select>`
+          : `<input type="text" data-arg="${i}" placeholder="${escapeHTML(g.placeholder || '')}" ${g.required ? 'required' : ''} autocomplete="off" autocapitalize="off" spellcheck="false">`;
+        return `<label>${label}${field}</label>`;
+      }).join('')
+        + (c.dangerous ? '<p class="cmd-form-warn">This spends money, changes production or switches autonomy: Run asks you to confirm.</p>' : '')
+        + `<div class="lx-actions cmd-form-actions"><button type="button" class="lx-btn is-sm" onclick="closeCommandForm(this.closest('.cmd-form'))">Cancel</button><button type="button" class="lx-btn is-sm${c.dangerous ? ' is-danger' : ' is-primary'} cmd-form-run" data-dangerous="${c.dangerous ? '1' : '0'}" onclick="submitCommandForm(this)">Run</button></div>`;
+      const first = form.querySelector('input, select');
       if (first) first.focus();
     }
-    function closeCommandForm() {
-      const form = document.getElementById('cmd-form');
+    function closeCommandForm(form) {
       if (form) { form.hidden = true; form.innerHTML = ''; }
     }
     function submitCommandForm(btn) {
-      const form = document.getElementById('cmd-form');
-      const c = commandRegistry && commandRegistry.commands.find((x) => x.command === form.dataset.command);
-      if (!c) return;
-      const values = Array.from(form.querySelectorAll('input[data-arg]')).map((el) => el.value.trim());
+      const card = btn.closest('.cmd-card');
+      const form = btn.closest('.cmd-form');
+      const c = card && commandRegistry && commandRegistry.commands.find((x) => x.command === card.getAttribute('data-command'));
+      if (!c || !form) return;
+      const fields = Array.from(form.querySelectorAll('[data-arg]'));
+      const values = fields.map((el) => el.value.trim());
       const missing = c.args.findIndex((g, i) => g.required && !values[i]);
-      if (missing >= 0) { form.querySelectorAll('input[data-arg]')[missing].focus(); return; }
-      if (btn.getAttribute('data-dangerous') === '1' && !btn.classList.contains('armed')) {
-        triggerHaptic(20);
-        btn.classList.add('armed');
-        btn.textContent = 'Tap again to confirm';
-        return;
-      }
+      if (missing >= 0) { fields[missing].focus(); return; }
+      if (!confirmTap(btn, 'Run')) return;
       const command = [c.command, ...values.filter(Boolean)].join(' ');
+      closeCommandForm(form);
       closeCommandPanel();
-      closeCommandForm();
       if (c.client && c.command === '/code') { const input = document.getElementById('prompt-input'); input.value = command; autoResize(input); submitDirective(); return; }
       sendCommand(command);
     }
@@ -8449,7 +8867,7 @@
         triggerHaptic([30, 50, 30]); 
         const finalTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
-        let contentHtml = `${agentTimestampHtml(finalTime, tracePill)}${notSavedHtml(data)}${traceHtml}${markdownBlock(data.reply || 'Execution complete.')}${toolCardsHtml(data.toolResults)}${labCardsHtml(data.labCards)}${data.threatRadar ? freshRadarHtml(data.threatRadar) : ''}`;
+        let contentHtml = `${agentTimestampHtml(finalTime, tracePill)}${notSavedHtml(data)}${traceHtml}${markdownBlock(data.reply || 'Execution complete.')}${toolCardsHtml(data.toolResults)}${labCardsHtml(data.labCards)}${data.threatRadar ? freshRadarHtml(data.threatRadar) : ''}${data.commandPanel ? commandPanelHtml({ inline: true }) : ''}`;
 
         if (data.searchEntryPoint) {
           contentHtml += '<div class="search-entry-point">' + data.searchEntryPoint + '</div>';
@@ -8576,7 +8994,7 @@
         triggerHaptic(200);
         const errTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const display = buildDirectiveErrorDisplay(err, responseStatus, REQUEST_TIMEOUT_MS / 1000);
-        logError(display.text, 'submitDirective', display.category);
+        logError(display.text, 'submitDirective', display.category, { retryText: text });
         agentBubble.classList.remove('pending');
         agentBubble.classList.add('error');
         if (display.category === 'offline' || display.category === 'network') agentBubble.classList.add('offline');
@@ -8622,7 +9040,7 @@
       }
       if (category) {
         triggerHaptic(200);
-        logError(streamed.failed === 'error' ? note : `Streamed reply ${streamed.failed}: ${note}`, 'submitDirective', category);
+        logError(streamed.failed === 'error' ? note : `Streamed reply ${streamed.failed}: ${note}`, 'submitDirective', category, { retryText: stopped ? null : prompt });
       }
       bubble.classList.remove('pending');
       if (category && !streamed.text) bubble.classList.add('error');

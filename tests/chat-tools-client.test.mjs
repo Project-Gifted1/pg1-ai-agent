@@ -43,11 +43,12 @@ function extractFunction(name) {
   return html.slice(start, i + 1);
 }
 
-const FUNCS = ['escapeHTML', 'formatStepDuration', 'toggleTraceDetails', 'toolStatusLabel', 'toolDateText', 'toolCardHtml', 'toolCardsHtml', 'copyToolRaw',
+const FUNCS = ['escapeHTML', 'formatStepDuration', 'toggleTraceDetails', 'toolStatusLabel', 'toolDateText', 'checkCardStatus', 'checkRowTone', 'checkRawObject', 'checkSignature', 'toolCardHtml', 'toolCardsHtml', 'copyToolRaw', 'copyLabText',
   'formatMarkdown', 'renderDiffBlock', 'formatStreamingMarkdown', 'parseSseBuffer', 'parseTraceEvent', 'readChatStream', 'stepDurationMs', 'traceRowHtml', 'traceRunningRowHtml', 'stepCountText', 'agentTimestampHtml', 'createTraceView', 'consumeDirectiveStream'];
 const SOURCE = [
   html.match(/const TRACE_EVENT_TYPES = [^\n]*;/)[0].replace(/^const/, 'var'),
   html.match(/const TOOL_STATUS_CLASS = [^\n]*;/)[0].replace(/^const/, 'var'),
+  html.match(/const CHECK_STATUS_VIEW = \{[\s\S]*?\n    \};/)[0].replace(/^const/, 'var'),
   'var toolCardSeq = 0;',
   'var traceSeq = 0;',
   ...FUNCS.map(extractFunction)
@@ -76,7 +77,7 @@ async function card(name, args) {
   return summarizeOutcome(await execute({ id: 'c', name, args }));
 }
 
-test('a flagged wallet card: plain name, shortened address in the title, chip, fields, reasons, checks, request_id, raw JSON with the full address', async () => {
+test('a flagged wallet card (Living lab style): the shortened target with copy, the large status badge, fields, reason chips, check rows, request_id, signed state, the actions, raw JSON with the full address', async () => {
   const doc = createDocument();
   const ctx = makeContext(doc);
   const data = await card('check_wallet_sanctions', { address: WALLET.FLAGGED });
@@ -86,25 +87,35 @@ test('a flagged wallet card: plain name, shortened address in the title, chip, f
   const section = el.querySelector('.tool-card');
   assert.ok(section, 'a card');
   assert.ok(section.classList.contains('is-flagged'));
+  assert.ok(section.classList.contains('lx-card'), 'built from the shared lab components');
+  assert.equal(section.getAttribute('data-tone'), 'err');
   assert.equal(section.getAttribute('aria-label'), 'Wallet sanctions result');
-  const title = section.querySelector('.tool-card-title');
-  assert.match(title.textContent, /^Wallet sanctions · 0x7067…0001$/);
-  assert.ok(!title.textContent.includes(WALLET.FLAGGED), 'the full address is not in the title');
-  assert.equal(section.querySelector('.tool-card-subject').getAttribute('title'), WALLET.FLAGGED, 'the full value is there for hover and screen readers');
-  const chip = section.querySelector('.tool-chip');
-  assert.equal(chip.textContent, 'Flagged');
-  assert.ok(chip.classList.contains('is-flagged'));
+  assert.equal(section.querySelector('.tool-card-title').textContent, 'Wallet sanctions');
+  const target = section.querySelector('.tool-card-subject');
+  assert.equal(target.textContent, '0x7067…0001', 'the target, shortened');
+  assert.equal(target.getAttribute('title'), WALLET.FLAGGED, 'the full value is there for hover and screen readers');
+  assert.equal(section.querySelector('.chk-target .lx-copy').getAttribute('data-copy'), WALLET.FLAGGED, 'Copy copies the full target');
+  const badge = section.querySelector('.chk-status');
+  assert.equal(badge.textContent, 'Flagged');
+  assert.ok(badge.classList.contains('is-lg'), 'a large status badge');
+  assert.match(section.querySelector('.tool-fixture').textContent, /Test fixture/);
   const fields = Array.from(section.querySelectorAll('.tool-field')).map((f) => [f.querySelector('dt').textContent, f.querySelector('dd').textContent]);
   assert.deepEqual(fields.slice(0, 2), [['Listed', 'yes'], ['Matches', '1']]);
-  assert.ok(fields.some(([k]) => k === 'List synced'));
-  const reasons = Array.from(section.querySelectorAll('.tool-reasons li')).map((li) => li.textContent);
-  assert.deepEqual(reasons, ['WALLET_SANCTIONED Address matches an entry on the sanctions list.']);
-  const checks = Array.from(section.querySelectorAll('.tool-checks li')).map((li) => li.textContent);
+  const reasons = Array.from(section.querySelectorAll('.tool-reasons li'));
+  assert.equal(reasons.length, 1);
+  assert.equal(reasons[0].querySelector('.lx-row-main').textContent, 'Address matches an entry on the sanctions list.');
+  const chip = reasons[0].querySelector('a.lx-chip');
+  assert.equal(chip.getAttribute('href'), '/docs/reason-codes#WALLET_SANCTIONED', 'the reason-code chip links to its documentation');
+  assert.equal(chip.textContent, 'WALLET_SANCTIONED');
+  const checks = Array.from(section.querySelectorAll('.tool-checks li'));
   assert.equal(checks.length, 1);
-  assert.match(checks[0], /^fixtureokdata as of \d{4}-\d{2}-\d{2}$/);
+  assert.ok(checks[0].querySelector('.lx-dot'), 'each check has its own status dot');
+  assert.match(checks[0].textContent, /fixture.*ok.*data as of \d{4}-\d{2}-\d{2}/);
   const meta = section.querySelector('.tool-meta').textContent;
   assert.ok(meta.includes(`request_id ${data.request_id}`));
-  assert.ok(/fixture/.test(meta), 'the fixture marker');
+  assert.ok(section.querySelector(`.tool-meta .lx-copy[data-copy="${data.request_id}"]`), 'request_id has a copy button');
+  assert.equal(section.querySelector('.chk-signed').textContent, 'Unsigned', 'a chat check carries no signature');
+  assert.deepEqual(Array.from(section.querySelectorAll('.chk-actions button')).map((b) => b.textContent), ['Verify', 'Run preflight', 'Re-check']);
   // The expander: collapsed, wired like the trace rows, full address inside, copy button.
   const toggle = section.querySelector('.tool-raw-toggle');
   assert.equal(toggle.getAttribute('aria-expanded'), 'false');
@@ -112,9 +123,8 @@ test('a flagged wallet card: plain name, shortened address in the title, chip, f
   const raw = doc.getElementById(toggle.getAttribute('aria-controls'));
   assert.ok(raw && raw.hidden, 'raw JSON hidden until asked');
   assert.equal(raw.querySelector('.tool-raw-full').textContent, WALLET.FLAGGED, 'the full address in the expander');
-  // (the mini DOM keeps entities as written, so look for the value itself)
   assert.ok(raw.querySelector('.tool-raw-json').textContent.includes(WALLET.FLAGGED), 'the full JSON result in the expander');
-  assert.ok(raw.querySelector('.tool-copy'), 'a copy button');
+  assert.ok(raw.querySelector('.tool-raw-json').classList.contains('lx-mono'), 'a monospace block');
   ctx.toggleTraceDetails(toggle);
   assert.equal(toggle.getAttribute('aria-expanded'), 'true');
   assert.equal(raw.hidden, false);
@@ -125,7 +135,7 @@ test('a flagged wallet card: plain name, shortened address in the title, chip, f
   assert.doesNotMatch(el.innerHTML, /\p{Extended_Pictographic}/u, 'no emoji');
 });
 
-test('a clear domain card says "No flags" with a note that it is not a safety verdict; an unknown and a failed card say so', async () => {
+test('several checks are a stacked list: "No flags found", "Unknown", "Upstream unavailable"; never the word safe', async () => {
   const doc = createDocument();
   const ctx = makeContext(doc);
   const el = doc.createElement('div');
@@ -134,22 +144,22 @@ test('a clear domain card says "No flags" with a note that it is not a safety ve
     await card('check_domain_age', { domain: DOMAIN.UNKNOWN }),
     await card('check_wallet_age', { address: WALLET.UNKNOWN })
   ]);
+  const items = el.querySelectorAll('.chk-stack .chk-item');
+  assert.equal(items.length, 3, 'a compact stacked list');
+  assert.deepEqual(Array.from(items).map((i) => i.getAttribute('data-status')), ['no_flags', 'unknown', 'upstream_unavailable']);
   const cards = el.querySelectorAll('.tool-card');
-  assert.equal(cards.length, 3);
-  assert.equal(cards[0].querySelector('.tool-chip').textContent, 'No flags');
+  assert.equal(cards.length, 3, 'each item opens to its full card');
+  assert.equal(cards[0].querySelector('.chk-status').textContent, 'No flags found');
   assert.ok(cards[0].classList.contains('is-clear'));
-  assert.match(cards[0].querySelector('.tool-card-title').textContent, /^Domain age · pg1-test-clean\.invalid$/);
-  assert.match(cards[0].querySelector('.tool-note').textContent, /not a safety verdict/);
-  assert.ok(Array.from(cards[0].querySelectorAll('.tool-field dt')).some((dt) => dt.textContent === 'Registered'));
-  assert.equal(cards[1].querySelector('.tool-chip').textContent, 'Unknown');
-  assert.ok(cards[1].classList.contains('is-unknown'));
+  assert.equal(cards[0].getAttribute('data-tone'), 'ok');
+  assert.match(cards[0].querySelector('.tool-note').textContent, /not a guarantee/);
+  assert.equal(cards[1].querySelector('.chk-status').textContent, 'Unknown');
   assert.ok(Array.from(cards[1].querySelectorAll('.tool-field')).some((f) => f.querySelector('dt').textContent === 'Reason' && /^timeout/.test(f.querySelector('dd').textContent)));
-  assert.equal(cards[2].querySelector('.tool-chip').textContent, 'Failed');
-  assert.ok(cards[2].classList.contains('is-failed'));
+  assert.equal(cards[2].querySelector('.chk-status').textContent, 'Upstream unavailable', 'a source that did not answer');
   assert.match(cards[2].querySelector('.tool-error').textContent, /timed out/);
   assert.ok(cards[2].querySelector('.tool-meta').textContent.includes('request_id'));
   assert.ok(cards[2].querySelector('.tool-checks li').classList.contains('is-incomplete'));
-  assert.doesNotMatch(el.innerHTML.replace(/not a safety verdict/g, ''), /\bsafe\b/i, 'no card ever says safe');
+  assert.doesNotMatch(el.innerHTML, /\bsafe\b/i, 'no card ever says safe');
 });
 
 test('everything in a card is escaped, and a malformed card is skipped', () => {

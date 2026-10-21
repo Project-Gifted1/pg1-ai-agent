@@ -96,8 +96,11 @@ test('tts: Cartesia only by default, even for operator content with the free key
   assert.equal(resolveKeys(env).ttsGemini, '');
 });
 
+// Speech (Cartesia) is a paid engine held to PG1_DAILY_SPEND_CAP_USD like
+// the others (tests/spend-gaps.test.mjs): the TTS tests below run as a
+// deployment with a cap set.
 test('tts: PG1_TTS_FREE_FIRST=1 with a named voice puts the free key first for operator content only', () => {
-  const env = { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', ...TTS_FREE };
+  const env = { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', PG1_DAILY_SPEND_CAP_USD: '1000', ...TTS_FREE };
   assert.deepEqual(planRoute(TASKS.TTS, { env, dataClass: DATA.OPERATOR }).map((c) => c.family), ['gemini_tts', 'cartesia']);
   assert.deepEqual(planRoute(TASKS.TTS, { env, dataClass: DATA.CUSTOMER }).map((c) => c.family), ['cartesia']);
   for (const v of ['0', 'true', 'yes', '']) {
@@ -106,7 +109,7 @@ test('tts: PG1_TTS_FREE_FIRST=1 with a named voice puts the free key first for o
 });
 
 test('tts: no default Gemini voice (Kore is gone): the flag without PG1_TTS_GEMINI_VOICE stays on Cartesia', () => {
-  const env = { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', PG1_TTS_FREE_FIRST: '1' };
+  const env = { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', PG1_DAILY_SPEND_CAP_USD: '1000', PG1_TTS_FREE_FIRST: '1' };
   assert.equal(geminiVoiceName(env), '');
   assert.equal(geminiVoiceName({ PG1_TTS_GEMINI_VOICE: 'Puck' }), 'Puck');
   assert.deepEqual(planRoute(TASKS.TTS, { env, dataClass: DATA.OPERATOR }).map((c) => c.family), ['cartesia']);
@@ -444,7 +447,7 @@ const pcmAnswer = (bytes = 9600) => Response.json({ candidates: [{ content: { pa
 test('TTS: /speak is Cartesia by default, even for the operator with the free key set', async () => {
   const seen = [];
   const fetchImpl = async (u) => { seen.push(new URL(u).hostname); return new Response(new Uint8Array([0xff, 0xfb, 1, 2])); };
-  const env = { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart' };
+  const env = { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', PG1_DAILY_SPEND_CAP_USD: '1000' };
   const a = await synthesizeSpeech({ env, text: 'Vault is green.', dataClass: DATA.OPERATOR, identity: OP_ID, cartesia: { voiceId: 'v' }, fetchImpl, log: quiet });
   assert.equal(a.ok, true);
   assert.equal(a.mimeType, 'audio/mp3');
@@ -454,7 +457,7 @@ test('TTS: /speak is Cartesia by default, even for the operator with the free ke
 test('TTS: with PG1_TTS_FREE_FIRST=1 /speak uses the free key and the named voice, then answers the same text from the cache', async () => {
   const seen = [];
   const fetchImpl = async (u, o) => { seen.push({ u, key: o.headers['x-goog-api-key'], voice: JSON.parse(o.body).generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName }); return pcmAnswer(); };
-  const env = { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', PG1_AI_CACHE: '1', ...TTS_FREE };
+  const env = { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', PG1_DAILY_SPEND_CAP_USD: '1000', PG1_AI_CACHE: '1', ...TTS_FREE };
   const a = await synthesizeSpeech({ env, text: 'Vault is green.', dataClass: DATA.OPERATOR, identity: OP_ID, cartesia: { voiceId: 'v' }, fetchImpl, log: quiet });
   assert.equal(a.ok, true);
   assert.equal(a.mimeType, 'audio/wav');
@@ -475,7 +478,7 @@ test('TTS: when the free key is out of quota, Cartesia speaks; customer content 
     if (u.includes('generativelanguage')) return new Response('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}', { status: 429 });
     return new Response(new Uint8Array([0xff, 0xfb, 1, 2]));
   };
-  const env = { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', ...TTS_FREE };
+  const env = { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', PG1_DAILY_SPEND_CAP_USD: '1000', ...TTS_FREE };
   const a = await synthesizeSpeech({ env, text: 'Quota test.', dataClass: DATA.OPERATOR, cartesia: { voiceId: 'v' }, fetchImpl, log: quiet });
   assert.equal(a.ok, true);
   assert.equal(a.mimeType, 'audio/mp3');
@@ -492,7 +495,7 @@ test('TTS streamed: sentences on the free key, cached repeats, a customer senten
     if (u.includes('generativelanguage')) return pcmAnswer(70000);
     return new Response(`data: ${JSON.stringify({ type: 'chunk', data: 'AAAA' })}\n\ndata: ${JSON.stringify({ type: 'done' })}\n\n`);
   };
-  const synth = createRoutedSynth({ env: { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', PG1_AI_CACHE: '1', ...TTS_FREE }, voiceId: 'v', modelId: 'sonic-3.6', dataClass: DATA.OPERATOR, identity: OP_ID, fetchImpl, log: quiet });
+  const synth = createRoutedSynth({ env: { GEMINI_API_KEY_FREE: FREE, CARTESIA_API_KEY: 'cart', PG1_DAILY_SPEND_CAP_USD: '1000', PG1_AI_CACHE: '1', ...TTS_FREE }, voiceId: 'v', modelId: 'sonic-3.6', dataClass: DATA.OPERATOR, identity: OP_ID, fetchImpl, log: quiet });
   const chunks = [];
   const r1 = await synth('First sentence.', { onChunk: (c) => chunks.push(c) });
   assert.equal(r1.ok, true);
@@ -508,7 +511,7 @@ test('TTS streamed: sentences on the free key, cached repeats, a customer senten
 test('TTS cache: the operator is cached; a guest is never cached and never gets the operator\'s audio', async () => {
   const seen = [];
   const fetchImpl = async (u) => { seen.push(new URL(u).hostname); return u.includes('/tts/bytes') ? new Response(new Uint8Array([0xff, 0xfb, 1, 2])) : new Response(`data: ${JSON.stringify({ type: 'chunk', data: 'AAAA' })}\n\ndata: ${JSON.stringify({ type: 'done' })}\n\n`); };
-  const env = { CARTESIA_API_KEY: 'cart', PG1_AI_CACHE: '1' };
+  const env = { CARTESIA_API_KEY: 'cart', PG1_DAILY_SPEND_CAP_USD: '1000', PG1_AI_CACHE: '1' };
   const speak = (identity, dataClass) => synthesizeSpeech({ env, text: 'Same words.', dataClass, identity, cartesia: { voiceId: 'v' }, fetchImpl, log: quiet });
   assert.equal((await speak(OP_ID, DATA.OPERATOR)).cached, false);
   assert.equal((await speak(OP_ID, DATA.OPERATOR)).cached, true, 'the operator\'s repeat is cached');

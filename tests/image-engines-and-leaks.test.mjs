@@ -21,6 +21,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { pendingActionsRoute, budgetToken, resetPendingActions } from './helpers/mediaConfirm.mjs';
 import chatHandler, { __clearAuthRateLimitState } from '../api/chat.mjs';
 import { createSseParser } from '../lib/chatStream.mjs';
 import { FAILURE_PREFIX } from '../lib/upstreamFailure.mjs';
@@ -185,10 +186,20 @@ function assertNoBrands(strings, what, { imagePath = false } = {}) {
   }
 }
 
+// /image waits for Confirm on its budget (lib/mediaBudget.mjs): the
+// proposal, then Confirm, which is what these tests are about.
 async function runImage(routes, { stream = true } = {}) {
-  const calls = installFetch(routes);
+  const hadVault = !!process.env.SUPABASE_URL;
+  if (!hadVault) useSupabase();
+  const calls = installFetch([pendingActionsRoute(), ...routes]);
+  const proposal = makeRes();
+  await chatHandler(makeReq(authed({ prompt: '/image a gold shield on a dark background', stream: false })), proposal);
+  const token = budgetToken(proposal);
+  assert.ok(token, 'the image waits for Confirm');
+  assert.ok(!calls.some((c) => /generativelanguage|replicate\.com/.test(c.url)), 'no engine before Confirm');
   const res = makeRes();
-  await chatHandler(makeReq(authed({ prompt: '/image a gold shield on a dark background', stream })), res);
+  await chatHandler(makeReq(authed({ prompt: `/approve ${token}`, stream })), res);
+  if (!hadVault) { delete process.env.SUPABASE_URL; delete process.env.SUPABASE_SERVICE_ROLE_KEY; }
   return { calls, res };
 }
 

@@ -52,6 +52,7 @@ import { filmThink, imageBlock, geminiStill, geminiClip } from '../lib/film/prov
 import { analyzeCameraFrame } from '../lib/cameraFeed.mjs';
 import { keysStatus } from '../lib/keysStatus.mjs';
 import { autonomousText } from '../lib/autonomous/freeText.mjs';
+import { vaultFetch, withVault, withConfirm } from './helpers/mediaConfirm.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ORIGINAL_ENV = { ...process.env };
@@ -268,8 +269,9 @@ test('/core falling back to the main core when Anthropic is down sends no sampli
 
 test('/image sends only responseModalities and imageConfig in generationConfig', async () => {
   const stub = geminiStub(() => Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: PNG_1X1 } }] } }] }));
-  globalThis.fetch = stub.fetch;
-  const res = await chat({ prompt: '/image a gold shield' });
+  globalThis.fetch = vaultFetch(stub.fetch);
+  // /image waits for a confirmed budget (lib/mediaBudget.mjs); Confirm runs it.
+  const res = await withVault(() => withConfirm(chat)({ prompt: '/image a gold shield' }));
   assert.equal(res.jsonBody.imageStatus, 'SUCCESS');
   for (const r of stub.requests) assert.deepEqual(Object.keys(r.body.generationConfig).sort(), ['imageConfig', 'responseModalities']);
   assertClean(stub, '/image');
