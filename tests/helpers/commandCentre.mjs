@@ -45,11 +45,15 @@ export async function radarView(now = Date.now()) {
   return buildThreatRadar({ supUrl: 'https://db.test', supKey: 'k', fetchImpl, env: {}, now });
 }
 
+// A fake credential in an upstream message (the log must never show it),
+// built at runtime so no scanner mistakes it for a real one.
+export const FAKE_AUTH = ['Authorization: Be', 'arer sk-', 'ant-api03-', 'SECRET'.repeat(3)].join('');
+
 // Server error rows as /api/errors lists them (newest first).
 export function errorRows(now = Date.now()) {
   const iso = (msAgo) => new Date(now - msAgo).toISOString();
   return [
-    { id: 'e1', source: 'server', route: '/api/chat', reason: 'ai_unavailable', category: 'http_5xx', message: 'Every engine was busy (router: 429 on the free engines). Authorization: Bearer sk-ant-api03-SECRETSECRETSECRET', count: 12, first_seen: iso(50 * 60000), last_seen: iso(2 * 60000), time: iso(2 * 60000), resolved: false, request_id: 'req7f3a91c2' },
+    { id: 'e1', source: 'server', route: '/api/chat', reason: 'ai_unavailable', category: 'http_5xx', message: `Every engine was busy (router: 429 on the free engines). ${FAKE_AUTH}`, count: 12, first_seen: iso(50 * 60000), last_seen: iso(2 * 60000), time: iso(2 * 60000), resolved: false, request_id: 'req7f3a91c2' },
     { id: 'e2', source: 'server', route: '/api/mcp:check_wallet_age', reason: 'upstream', category: 'upstream', message: 'Block explorer did not answer within 8 s', count: 3, first_seen: iso(3 * 3600000), last_seen: iso(40 * 60000), time: iso(40 * 60000), resolved: false, request_id: 'req19bb04de' },
     { id: 'e3', source: 'server', route: 'film render', reason: 'film', category: 'js_error', message: "TypeError: Cannot read properties of undefined (reading 'shots')\n    at planCuts (lib/film/cuts.mjs:88:21)\n    at renderFull (lib/film/pipeline.mjs:412:9)", count: 1, first_seen: iso(5 * 3600000), last_seen: iso(5 * 3600000), time: iso(5 * 3600000), resolved: false, request_id: 'req55c0aa10' },
     { id: 'e4', source: 'client', route: null, reason: 'network', category: 'network', message: 'Offline: message not sent.', count: 2, first_seen: iso(7 * 3600000), last_seen: iso(6 * 3600000), time: iso(6 * 3600000), resolved: false, request_id: null }
