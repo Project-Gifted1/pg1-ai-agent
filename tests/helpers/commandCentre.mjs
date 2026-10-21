@@ -58,7 +58,9 @@ export function errorRows(now = Date.now()) {
 
 // legacyHelp: /help answers as before PR A (the bullet list), for the
 // before screenshots.
-export function startCommandCentreServer({ publicDir, cards = { single: [], many: [] }, errors = [], legacyHelp = false, radar = null } = {}) {
+// answers(prompt): a reply object for a prompt this helper does not know
+// (async; null for the default "Ran <prompt>.").
+export function startCommandCentreServer({ publicDir, cards = { single: [], many: [] }, errors = [], legacyHelp = false, radar = null, answers = null } = {}) {
   const log = { prompts: [], resolved: [], paths: [] };
   const rows = errors.map((r) => ({ ...r }));
   const server = http.createServer((req, res) => {
@@ -66,7 +68,7 @@ export function startCommandCentreServer({ publicDir, cards = { single: [], many
     log.paths.push(url.pathname);
     let body = '';
     req.on('data', (c) => { body += c; });
-    req.on('end', () => {
+    req.on('end', async () => {
       let parsed = null;
       try { parsed = body ? JSON.parse(body) : null; } catch (e) { parsed = null; }
       const json = (status, b) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(b)); };
@@ -89,6 +91,8 @@ export function startCommandCentreServer({ publicDir, cards = { single: [], many
           if (prompt === '/threat-radar' && radar) return json(200, { reply: threatRadarLead(radar), threatRadar: radar });
           if (prompt === 'check that wallet') return json(200, { reply: 'One wallet checked: it is on a sanctions list.', toolResults: cards.single });
           if (prompt === 'check these three') return json(200, { reply: 'Three checks ran. One hostname is flagged; one domain could not be checked.', toolResults: cards.many });
+          const custom = answers ? await answers(prompt) : null;
+          if (custom) return json(200, custom);
           return json(200, { reply: `Ran ${prompt}.` });
         }
         return json(404, { error: 'not stubbed' });

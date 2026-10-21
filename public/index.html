@@ -4699,6 +4699,67 @@
         + `<p class="radar-asof">Reading the feeds…</p><div class="radar-body">${radarScopeHtml('', 'aria-hidden="true"')}</div>`
         + '<span class="shimmer" style="width: 70%"></span><span class="shimmer" style="width: 45%"></span></section>';
     }
+    // PG1 CORE STATE (/state): the self-model as a Living lab card. Every
+    // capability with its status, the reason and the fix; the focus, spend
+    // and open problems; the latest workspace events.
+    const CORE_TONE = { available: 'ok', degraded: 'warn', unavailable: 'err' };
+    const CORE_SEVERITY_TONE = { info: 'info', warning: 'warn', error: 'err' };
+    function coreStateCardHtml(cs) {
+      if (!cs || !Array.isArray(cs.capabilities)) return '';
+      const caps = cs.capabilities;
+      const count = (st) => caps.filter((c) => c.status === st).length;
+      const worst = count('unavailable') ? 'unavailable' : count('degraded') ? 'degraded' : 'available';
+      const headline = worst === 'available' ? 'Everything available' : `${count('unavailable')} unavailable · ${count('degraded')} degraded`;
+      const order = { unavailable: 0, degraded: 1, available: 2 };
+      const rows = caps.slice().sort((a, b) => order[a.status] - order[b.status]).map((c) => `<li class="lx-row" data-tone="${CORE_TONE[c.status] || 'idle'}" data-cap="${escapeHTML(c.id)}"><span class="lx-dot" aria-hidden="true"></span><span class="lx-row-main">${escapeHTML(c.label)}</span><span class="lx-badge" data-tone="${CORE_TONE[c.status] || 'idle'}">${escapeHTML(c.status)}</span>${c.reason ? `<span class="lx-row-sub">${escapeHTML(c.reason)}${c.fix ? ` · <strong>Fix:</strong> ${escapeHTML(c.fix)}` : ''}</span>` : ''}</li>`).join('');
+      const spend = cs.spend || {};
+      const usdText = (n) => `$${(Number(n) || 0).toFixed(2)}`;
+      const problems = Array.isArray(cs.problems) && cs.problems.length
+        ? `<p class="lx-section-h">Open problems</p><ul class="lx-rows core-problems">${cs.problems.slice(0, 5).map((p) => `<li class="lx-row" data-tone="warn"><span class="lx-dot" aria-hidden="true"></span><span class="lx-row-main">${escapeHTML(p.summary)}</span><span class="lx-row-end">${escapeHTML(p.area)}</span></li>`).join('')}</ul>`
+        : '';
+      const events = Array.isArray(cs.events) && cs.events.length
+        ? `<details class="lx-details"><summary>Latest events (${cs.events.length})</summary><ul class="lx-rows">${cs.events.map((e) => `<li class="lx-row" data-tone="${CORE_SEVERITY_TONE[e.severity] || 'idle'}"><span class="lx-dot" aria-hidden="true"></span><span class="lx-row-main">${escapeHTML(e.summary)}</span><span class="lx-row-end">${escapeHTML(e.area)}</span><span class="lx-row-sub">${escapeHTML(e.kind)}${e.at ? ' · ' + escapeHTML(new Date(e.at).toLocaleString([], { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })) : ''}</span></li>`).join('')}</ul></details>`
+        : '';
+      return `<section class="lx-card core-state-card" data-tone="${CORE_TONE[worst]}" aria-label="PG1 Core State">
+        <div class="lx-head"><h3 class="lx-title">PG1 Core State</h3><span class="lx-pill is-lg" data-tone="${CORE_TONE[worst]}">${escapeHTML(headline)}</span></div>
+        <p class="lx-sub core-focus">${escapeHTML(cs.focus || '')}</p>
+        <div class="lx-meta"><span>Spend today <code>${usdText(spend.today_usd)}</code> of <code>${usdText(spend.cap_usd)}</code> cap</span>${Number(spend.cap_usd) > 0 ? '' : '<span>paid AI only inside a confirmed budget</span>'}${cs.storage === 'memory' ? '<span>kept in memory: tables not set up yet</span>' : ''}</div>
+        <p class="lx-section-h">Capabilities</p>
+        <ul class="lx-rows core-caps">${rows}</ul>
+        ${problems}${events}
+        <div class="lx-actions"><button type="button" class="lx-btn is-sm" data-command="/state" onclick="sendCommand(this.dataset.command)">Refresh</button><button type="button" class="lx-btn is-sm" data-command="/lessons" onclick="sendCommand(this.dataset.command)">Lessons</button></div>
+      </section>`;
+    }
+
+    // /lessons: proposed lessons with Approve, approved ones with Retire.
+    // Only approved lessons act, as hints; none can change code, secrets,
+    // caps, rules or permissions.
+    const LESSON_TONE = { proposed: 'think', approved: 'ok', retired: 'idle' };
+    function coreLessonsCardHtml(cl) {
+      if (!cl || !Array.isArray(cl.items)) return '';
+      const groups = ['proposed', 'approved', 'retired'].map((st) => {
+        const list = cl.items.filter((l) => l.status === st);
+        if (!list.length) return '';
+        const items = list.map((l) => {
+          const id = escapeHTML(String(l.id));
+          const action = st === 'proposed'
+            ? `<button type="button" class="lx-btn is-sm is-primary" data-command="/lessons approve ${id}" onclick="sendCommand(this.dataset.command)">Approve</button><button type="button" class="lx-btn is-sm" data-command="/lessons retire ${id}" onclick="sendCommand(this.dataset.command)">Dismiss</button>`
+            : st === 'approved' ? `<button type="button" class="lx-btn is-sm is-danger" data-command="/lessons retire ${id}" onclick="sendCommand(this.dataset.command)">Retire</button>` : '';
+          return `<li class="lx-row core-lesson" data-tone="${LESSON_TONE[st]}" data-lesson="${id}"><span class="lx-dot" aria-hidden="true"></span><span class="lx-row-main">${escapeHTML(l.text)}</span><span class="lx-badge" data-tone="${LESSON_TONE[st]}">${escapeHTML(st)}</span><span class="lx-row-sub">${l.source ? escapeHTML(l.source) + ' · ' : ''}<code>${id.slice(0, 8)}</code>${action ? `<span class="lx-actions core-lesson-actions">${action}</span>` : ''}</span></li>`;
+        }).join('');
+        return `<p class="lx-section-h">${st} · ${list.length}</p><ul class="lx-rows">${items}</ul>`;
+      }).join('');
+      const reflections = Array.isArray(cl.reflections) && cl.reflections.length
+        ? `<details class="lx-details" open><summary>What PG1 reflected on (${cl.reflections.length})</summary><ul class="lx-rows">${cl.reflections.map((r) => `<li class="lx-row" data-tone="warn"><span class="lx-dot" aria-hidden="true"></span><span class="lx-row-main">${escapeHTML(r.what)}</span><span class="lx-row-sub">Why: ${escapeHTML(r.why)}</span></li>`).join('')}</ul></details>`
+        : '';
+      return `<section class="lx-card core-lessons-card" data-tone="info" aria-label="PG1 lessons">
+        <div class="lx-head"><h3 class="lx-title">PG1 lessons</h3><span class="lx-pill" data-tone="info">${cl.items.filter((l) => l.status === 'approved').length} acting</span></div>
+        <p class="lx-sub">Only approved lessons act, as hints. A lesson can never change code, secrets, caps, rules or permissions.</p>
+        ${reflections}${groups || '<div class="lx-empty">No lessons yet.</div>'}
+        <div class="lx-actions"><button type="button" class="lx-btn is-sm" data-command="/lessons reflect" onclick="sendCommand(this.dataset.command)">Reflect now</button></div>
+      </section>`;
+    }
+
     function freshRadarHtml(view, opts = {}) {
       const since = radarLastVisit();
       const html = threatRadarHtml(view, { ...opts, live: true, fresh: true, newSince: since });
@@ -8844,7 +8905,7 @@
         triggerHaptic([30, 50, 30]); 
         const finalTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
-        let contentHtml = `${agentTimestampHtml(finalTime, tracePill)}${traceHtml}${markdownBlock(data.reply || 'Execution complete.')}${toolCardsHtml(data.toolResults)}${labCardsHtml(data.labCards)}${data.threatRadar ? freshRadarHtml(data.threatRadar) : ''}${data.commandPanel ? commandPanelHtml({ inline: true }) : ''}`;
+        let contentHtml = `${agentTimestampHtml(finalTime, tracePill)}${traceHtml}${markdownBlock(data.reply || 'Execution complete.')}${toolCardsHtml(data.toolResults)}${labCardsHtml(data.labCards)}${data.threatRadar ? freshRadarHtml(data.threatRadar) : ''}${data.commandPanel ? commandPanelHtml({ inline: true }) : ''}${data.coreState ? coreStateCardHtml(data.coreState) : ''}${data.coreLessons ? coreLessonsCardHtml(data.coreLessons) : ''}`;
 
         if (data.searchEntryPoint) {
           contentHtml += '<div class="search-entry-point">' + data.searchEntryPoint + '</div>';

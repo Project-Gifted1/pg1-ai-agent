@@ -1,5 +1,6 @@
 import { checkCronAuth } from '../../lib/cronAuth.mjs';
 import { sharedLedger, spendSummary, utcDay } from '../../lib/aiRouter.mjs';
+import { corePulse } from '../../lib/core/chat.mjs';
 
 // AI SPEND: the first pulse of each UTC day logs yesterday's estimated
 // spend per PG1 engine (the operator's daily summary, also on demand with
@@ -53,6 +54,14 @@ export default async function handler(req, res) {
       const filled = await backfillWriteups();
       if (filled && filled.checked) console.log(`[PG1-AGENT:WRITEUPS] ${filled.filled} of ${filled.checked} pending write-ups filled`);
     } catch (e) { /* a backfill never fails the pulse */ }
+    // PG1 CORE STATE (lib/core): publish every area, prune events older
+    // than 30 days, reflect on the last 24 h and propose lessons.
+    try {
+      const supUrl = String(process.env.SUPABASE_URL || '').replace(/\s+/g, '');
+      const supKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').replace(/\s+/g, '');
+      const core = await corePulse({ env: process.env, supUrl: supUrl || null, supKey: supKey || null });
+      if (core.ok && core.proposed) console.log(`[PG1-AGENT:CORE] ${core.proposed} lesson(s) proposed`);
+    } catch (e) { /* the Core State never fails the pulse */ }
 
     return res.status(200).json({ 
       status: 'HEARTBEAT_ACTIVE',

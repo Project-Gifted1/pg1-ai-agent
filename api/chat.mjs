@@ -11,6 +11,10 @@ import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettl
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
 import { isFeedPaid, X402_NETWORK, X402_NETWORK_NAME, X402_PRICE, X402_SCHEME, x402PriceText } from '../lib/x402Config.mjs';
 import { logApiError } from '../lib/errorLog.mjs';
+import { markRelayTurn, withCoreScope } from '../lib/core/state.mjs';
+import { currentSelfModel } from '../lib/core/self.mjs';
+import { isConsciousnessQuestion, consciousnessReply, fixConsciousnessClaims } from '../lib/core/honesty.mjs';
+import { isStateCommand, isLessonsCommand, handleStateCommand, handleLessonsCommand, selfPromptBlock } from '../lib/core/chat.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { collectImageInputs, imageInputDirective, imageCountLabel, describeSkipped, fileExtensionFor, redactLeakedSecrets, SECRET_PLACEHOLDER, SECRET_WARNING, MAX_IMAGES_PER_MESSAGE, MAX_IMAGE_BYTES, MAX_IMAGE_EDGE_PX } from '../lib/visionInput.mjs';
 import { createChatStream, createReplyScrubber, readSseResponse, scrubIdentity, stripTranscriptLabels, wantsChatStream } from '../lib/chatStream.mjs';
@@ -2041,7 +2045,13 @@ async function streamChatReply(stream, opts) {
   });
 }
 
-export default async function handler(req, res) {
+// Each request runs in its own Core State scope, so a relayed turn marks
+// only itself read-only (lib/core/state.mjs).
+export default function handler(req, res) {
+  return withCoreScope(() => chatRequest(req, res));
+}
+
+async function chatRequest(req, res) {
   // LIVE TRACE: every fetch() in this handler goes through this binding.
   // It is the global fetch until a chat stream opens, then a wrapper that
   // opens a "Calling GitHub" step on the first real GitHub API request
@@ -2432,6 +2442,9 @@ export default async function handler(req, res) {
         threadKey: reqBody.threadKey, stream: reqBody.stream, speak: reqBody.speak
       };
       if (relayParsed.name && relayParsed.text) relayTurn = { name: relayParsed.name, text: relayParsed.text, found: relayedCommands(relayParsed.text) };
+      // CORE STATE: nothing in a relayed turn writes to PG1's workspace or
+      // lessons (lib/core/state.mjs).
+      if (relayTurn) markRelayTurn();
     }
 
     var promptText = relayTurn ? relayEnvelope(relayTurn.name, relayTurn.text) : (reqBody.prompt || '');
@@ -2939,6 +2952,9 @@ export default async function handler(req, res) {
       // plain words; no note, nothing was withheld. Relay mode keeps the
       // addressee's own name.
       var shown = offerTurn ? withTrademark(whiteLabel(guarded.text)) : relayTurn ? relayReplyText(guarded.text, relayTurn.name) : guarded.text;
+      // HONESTY (lib/core/honesty.mjs): a first-person claim to be
+      // conscious, alive or to have feelings becomes what is true.
+      shown = fixConsciousnessClaims(shown).text;
       return { text: noInfraNames(shown, { keep: relayTurn ? [relayTurn.name] : [] }), removed: removed, redacted: removed.length > 0 };
     };
 
@@ -3220,6 +3236,19 @@ export default async function handler(req, res) {
       if (isWatchlistsCommand(promptText)) {
         var wlOut = await handleWatchlistsCommand({ supUrl: supabaseUrl, supKey: supabaseKey, isOperator: isOperator, fetchImpl: function (u, o) { return fetch(u, o); } });
         return sendJSON(res, 200, { reply: wlOut.reply, traceId: requestTraceId });
+      }
+
+      // PG1 CORE STATE (lib/core): /state shows the self-model and the
+      // workspace; /lessons the lessons PG1 proposed. Operator only.
+      if (isStateCommand(promptText)) {
+        if (!isOperator) log401('STATE', 'unauthenticated', supUrl, supKey);
+        var stateOut = await handleStateCommand({ env: process.env, supUrl: supabaseUrl, supKey: supabaseKey, isOperator: isOperator, fetchImpl: function (u, o) { return fetch(u, o); } });
+        return sendJSON(res, stateOut.status || 200, { ...stateOut, traceId: requestTraceId });
+      }
+      if (isLessonsCommand(promptText)) {
+        if (!isOperator) log401('LESSONS', 'unauthenticated', supUrl, supKey);
+        var lessonsOut = await handleLessonsCommand({ text: promptText, supUrl: supabaseUrl, supKey: supabaseKey, isOperator: isOperator, fetchImpl: function (u, o) { return fetch(u, o); } });
+        return sendJSON(res, lessonsOut.status || 200, { ...lessonsOut, traceId: requestTraceId });
       }
 
       // OPPORTUNITIES (lib/opportunities.mjs): proposals from the weekly
@@ -4716,6 +4745,14 @@ export default async function handler(req, res) {
       return sendJSON(res, 200, { reply: identityChoice.reply, traceId: requestTraceId });
     }
     var keyDirectiveText = keyQuestion === 'licence' ? licenceKeyDirective() + '\n' : '';
+    // HONESTY: "are you conscious?" from the operator is answered here, from
+    // the self-model, with no model call (lib/core/honesty.mjs).
+    if (!relayTurn && typeof promptText === 'string' && isConsciousnessQuestion(promptText)) {
+      return sendJSON(res, 200, { reply: consciousnessReply(await currentSelfModel({ env: process.env })), traceId: requestTraceId });
+    }
+    // SELF-MODEL: the honesty rule, and on a self question ("how are you?",
+    // "why did X fail?") the self-model and the approved lessons.
+    var selfDirectiveText = await selfPromptBlock({ text: typeof promptText === 'string' ? promptText : '', env: process.env, supUrl: supabaseUrl, supKey: supabaseKey, fetchImpl: function (u, o) { return fetch(u, o); }, selfModelFor: function () { return currentSelfModel({ env: process.env }); } }) + '\n';
     // TASK STATE & CONTEXT: the state and summary updates started above
     // finish here; then the thread's conversation (recent turns verbatim,
     // older ones as the rolling summary), what "it" means, and whether this
@@ -4777,7 +4814,7 @@ ${historyCapabilityText}- Slash commands and what they really do (describe them 
 - check_wallet_age reports age per chain: first_seen and age_days describe the address's history on the requested chain only, so the same address can be old on one chain and new on another. Since 1.14.0 it also reports EIP-7702 delegation in two optional fields, checked live on every call and never cached (cached age answers included): delegated is true when the address's code on that chain is exactly 0xef0100 followed by a 20-byte delegate address, which is then given, lowercased, in delegate_address; false for any other code; null when the code check did not complete (never read null as false; the age is still returned). A delegated address carries reason code WALLET_DELEGATED, which states the fact only, not a judgement, and never changes status on its own (an old delegated wallet is status "no_flags"). is_contract is unchanged and is still true for a delegated address.
 - Integration test fixtures: fixed made-up inputs (e.g. hostname pg1-test-flagged.invalid, CVE-0000-0001, 0x7067312d… wallets, all listed in lib/fixtures.mjs and the README's "Test your integration" table) always return the same FLAGGED, CLEAN or UNKNOWN answer (plus a DELEGATED one for check_wallet_age) on /api/mcp (and the free check_* skills on /api/a2a), free for any caller, marked test_fixture: true — never on the REST /api/ioc endpoints, and never real threat data. The same fixtures work when you run a check from this chat (the card says "fixture"), so the operator can demo a check without any upstream call.
 
-${turnDirectives}${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(imageCount, imageInput.skipped)}
+${turnDirectives}${selfDirectiveText}${keyDirectiveText}${toolDirectiveText}${spokenDirective}${imageInputDirective(imageCount, imageInput.skipped)}
 [CONTEXT]: The OPERATOR: and AGENT: lines below are the recent conversation, for background only. Never quote, repeat or continue them, and never begin a reply or a line with OPERATOR: or AGENT:; answer the operator's new message directly.\n${turnConversation || formattedArchive}${targetedHistoricalData}${turnNeed.vault ? supabaseFilesReport : ''}${formatClientEnvironment(clientEnv)}${formatDeploymentContext()}${turnNeed.errors ? unresolvedErrorsReport : ''}`;
     sysInstruction = slimCapabilities(sysInstruction, turnNeed);
     // Backstop: no deployment secret value ever reaches a model, whichever
