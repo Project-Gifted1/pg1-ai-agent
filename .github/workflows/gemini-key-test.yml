@@ -16,8 +16,8 @@ jobs:
     steps:
       - name: Classify each key
         env:
-          KEY_1: ${{ secrets.GEMINI_API_KEY_1 }}
-          KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          KEY_1: ${{ secrets.GEMINI_API_KEY1 || secrets.GEMINI_API_KEY_1 }}
+          KEY_2: ${{ secrets.GEMINI_API_KEY2 || secrets.GEMINI_API_KEY_2 }}
         run: |
           node --input-type=module -e '
           const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent";
@@ -34,6 +34,6 @@ jobs:
             if (/api key not valid|API_KEY_INVALID/i.test(text)) return "invalid key";
             return "unclear (status " + status + ")";
           }
-          console.log("GEMINI_API_KEY_1: " + await classify(process.env.KEY_1));
-          console.log("GEMINI_API_KEY_2: " + await classify(process.env.KEY_2));
+          console.log("GEMINI_API_KEY1: " + await classify(process.env.KEY_1));
+          console.log("GEMINI_API_KEY2: " + await classify(process.env.KEY_2));
           '
