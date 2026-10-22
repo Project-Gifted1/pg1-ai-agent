@@ -249,7 +249,8 @@ test('lab.yml: lab environment, lab-scoped secrets only, fresh runners, tests wi
   const k = (...p) => p.join('_');
   const expected = [
     k('ANTHROPIC', 'API', 'KEY'), k('GEMINI', 'API', 'KEY', 'FREE'), k('GEMINI', 'API', 'KEY', 'PAID'), k('GROQ', 'API', 'KEY'), k('MISTRAL', 'API', 'KEY'),
-    k('PG1', 'LAB', 'ANTHROPIC', 'API', 'KEY'), k('PG1', 'LAB', 'DISPATCH', 'SECRET'), k('PG1', 'LAB', 'GEMINI', 'API', 'KEY'), k('PG1', 'LAB', 'GITHUB', 'TOKEN'), k('PG1', 'MODELS', 'TOKEN')
+    k('PG1', 'LAB', 'ANTHROPIC', 'API', 'KEY'), k('PG1', 'LAB', 'DISPATCH', 'SECRET'), k('PG1', 'LAB', 'GEMINI', 'API', 'KEY'), k('PG1', 'LAB', 'GITHUB', 'TOKEN'), k('PG1', 'MODELS', 'TOKEN'),
+    k('CLOUDFLARE', 'AI', 'TOKEN'), k('CLOUDFLARE', 'ACCOUNT', 'ID')
   ];
   assert.deepEqual([...new Set(secrets)].sort(), expected.sort());
   const code = yml.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
