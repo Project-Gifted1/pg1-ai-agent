@@ -86,7 +86,7 @@ jobs:
           # keep the paid order. The paid Gemini key is also the media
           # fallback when Replicate is out of credit or still throttled.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GEMINI_API_KEY_PAID: ${{ secrets.GEMINI_API_KEY_PAID }}
+          GEMINI_API_KEY_PAID: ${{ secrets.GEMINI_API_KEY_PAID || secrets.GEMINI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           # Free engines for operator films' writing stages only (optional).
           GEMINI_API_KEY_FREE: ${{ secrets.GEMINI_API_KEY_FREE || secrets.GEMINI_API_KEY2 }}

@@ -166,7 +166,7 @@ describe('syncFilmSecrets', () => {
 
   test('the render job is given the paid fallback keys, the free keys only under their own names, and no old Gemini name', () => {
     const yml = readFileSync(new URL('../.github/workflows/film-render.yml', import.meta.url), 'utf8');
-    assert.match(yml, /GEMINI_API_KEY_PAID: \$\{\{ secrets\.GEMINI_API_KEY_PAID \}\}/);
+    assert.match(yml, /GEMINI_API_KEY_PAID: \$\{\{ secrets\.GEMINI_API_KEY_PAID \|\| secrets\.GEMINI_API_KEY \}\}/);
     assert.match(yml, /OPENROUTER_API_KEY: \$\{\{ secrets\.OPENROUTER_API_KEY \}\}/);
     assert.match(yml, /ANTHROPIC_API_KEY: \$\{\{ secrets\.ANTHROPIC_API_KEY \}\}/);
     // Routing policy: an operator film's writing stages go free first; the
