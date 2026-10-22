@@ -37,7 +37,7 @@ import { analyzeCameraFrame, cameraEventLine, cameraLogLine } from '../lib/camer
 import { ensureOpenRouterState } from '../lib/router/openrouterGuard.mjs';
 import { isKeysCommand, handleKeysCommand, keysStatus, quotaRows, quotaTable } from '../lib/keysStatus.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
-import { TASKS, FAILURE, failureClass, budgetAllows, dailySpendCapUsd, spendCapAllows, withSpendAllowance, MEDIA_UNIT_USD, isSpendCapFailure, SPEND_CAP_CODE, isBillingFailure, geminiQuotaInfo, planRoute, classifyTask, dataClassFor, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, CHAT_THROTTLE, withThrottleRetry, isFallbackFailure, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
+import { TASKS, FAILURE, failureClass, budgetAllows, dailySpendCapUsd, spendCapAllows, withSpendAllowance, MEDIA_UNIT_USD, isSpendCapFailure, SPEND_CAP_CODE, isBillingFailure, geminiQuotaInfo, planRoute, classifyTask, dataClassFor, redactCustomerData, redactCustomerBlock, recordUsage, tripBreaker, textCache, cacheKey, cacheIdentity, cacheEnabled, callOpenAiCompat, estimateTokens, resolveKeys, CHAT_THROTTLE, withThrottleRetry, isFallbackFailure, mediaGeminiKeys, sharedLedger, spendSummary, utcDay } from '../lib/aiRouter.mjs';
 import { synthesizeSpeech, createRoutedSynth } from '../lib/ttsRouter.mjs';
 import { MEDIA_BUDGET_ACTION, isMediaBudgetAction, parseBudgetFlag, proposeMediaBudget, createPendingStore, cancelledReply } from '../lib/mediaBudget.mjs';
 import { cleanVideoPrompt, videoClipEstimate, dispatchVideoRender, isVideoCommand, isVideoRequest, parseVideoOptions, pollVideoJob, recheckVideoJob, startVideoJob, videoGoogleAsync, videoJobStatus, videoDailyBudget, videoDailyCap, videoEnabled, videoCostLine, videoFrameFallbackOn, videoNotStartedText, videoRenderingText, videoSpendToday, videoTiersText, usd, DEFAULT_START_FRAME_PROMPT, FOUR_K_NOTE, VIDEO_DISABLED_TEXT, VIDEO_ENGINE_LABEL, VIDEO_REFUSED_TEXT, VIDEO_TIER_LABELS } from '../lib/videoJobs.mjs';
@@ -2746,10 +2746,14 @@ async function chatRequest(req, res) {
     // guest's stay in that browser session.
     var turnGuardFn = createReplySecretGuard({ envValues: secretEnvValues(process.env), env: process.env });
     var turnGuard = function (t) { return turnGuardFn(String(t || '')).text; };
+    // The history and summary are stored context: masked here (emails,
+    // phone numbers, quoted usage reports; lib/aiRouter.mjs
+    // redactCustomerData) before the task-state and summary updates or the
+    // reply see them, so only the new message decides the data class.
     var turnCtx = {
       state: cleanTaskState(reqBody && reqBody.taskState, turnGuard),
-      history: cleanHistory(reqBody && reqBody.history, turnGuard),
-      summary: cleanSummary(reqBody && reqBody.contextSummary, turnGuard),
+      history: cleanHistory(reqBody && reqBody.history, function (t) { return redactCustomerData(turnGuard(t)); }),
+      summary: cleanSummary(reqBody && reqBody.contextSummary, function (t) { return redactCustomerData(turnGuard(t)); }),
       prompt: typeof promptText === 'string' ? promptText : ''
     };
     var turnSplit = splitHistory(turnCtx.history, { recentTokens: recentTokenBudget(process.env), summary: turnCtx.summary });
@@ -2865,6 +2869,10 @@ async function chatRequest(req, res) {
 
     var supabaseStatus = 'DISCONNECTED';
     var formattedArchive = 'No prior matrix context.';
+    // /export and /vault show the operator the saved messages as they are;
+    // what reaches an engine is formattedArchive, masked (lib/aiRouter.mjs
+    // redactCustomerData).
+    var rawArchive = '';
     var targetedHistoricalData = '';
     var supabaseFilesReport = '';
     var unresolvedErrorsReport = '';
@@ -3044,7 +3052,9 @@ async function chatRequest(req, res) {
         var recent = await msgRes.json();
         recentCount = Array.isArray(recent) ? recent.length : 0;
         if (Array.isArray(recent) && recent.length > 0) {
-          formattedArchive = recent.reverse().map(m => `${m.role === 'model' ? 'AGENT' : 'OPERATOR'}: ${m.content}`).join('\n');
+          recent.reverse();
+          rawArchive = recent.map(m => `${m.role === 'model' ? 'AGENT' : 'OPERATOR'}: ${m.content}`).join('\n');
+          formattedArchive = recent.map(m => `${m.role === 'model' ? 'AGENT' : 'OPERATOR'}: ${redactCustomerData(m.content)}`).join('\n');
         }
       }
       // Counts only: memory contents never go into a step.
@@ -3055,7 +3065,7 @@ async function chatRequest(req, res) {
         var files = await storageRes.json();
         vaultFileNames = Array.isArray(files) ? files.map(f => String((f && f.name) || '')) : [];
         if (Array.isArray(files) && files.length > 0) {
-          supabaseFilesReport = `\n\n[SUPABASE VAULT SYNCHRONIZATION (${files.length} Files Found)]:\n` + files.map(f => `• [FILE] ${f.name} (${(f.metadata && f.metadata.size) || 0} bytes)`).join('\n');
+          supabaseFilesReport = redactCustomerBlock(`\n\n[SUPABASE VAULT SYNCHRONIZATION (${files.length} Files Found)]:\n` + files.map(f => `• [FILE] ${f.name} (${(f.metadata && f.metadata.size) || 0} bytes)`).join('\n'));
         }
       }
       if (chatStream) {
@@ -3067,14 +3077,14 @@ async function chatRequest(req, res) {
       var threatCount = null;
       if (threatRes && threatRes.ok) {
         threatCount = threatRes.latestInstead ? 0 : threatRes.totalToday;
-        targetedHistoricalData = threatRes.block;
+        targetedHistoricalData = redactCustomerBlock(threatRes.block);
       }
       if (chatStream && isThreatQuery) chatStream.stepDone('threats', { label: 'Read threat telemetry', failed: threatCount === null, result: threatCount === null ? 'unavailable' : threatRes.latestInstead ? 'none added today' : `${threatCount}${threatRes.capped ? '+' : ''} added today` });
 
       var unresolvedRows = null;
       if (errorsRes && errorsRes.ok) {
         unresolvedRows = await errorsRes.json();
-        unresolvedErrorsReport = formatUnresolvedErrors(unresolvedRows);
+        unresolvedErrorsReport = redactCustomerBlock(formatUnresolvedErrors(unresolvedRows));
       }
       if (chatStream) {
         var errorRows = Array.isArray(unresolvedRows) ? unresolvedRows.slice(0, 5) : null;
@@ -3527,7 +3537,7 @@ async function chatRequest(req, res) {
         });
       } else if (lower.startsWith('/export')) {
         return sendJSON(res, 200, {
-          reply: `### [ VAULT CONTEXT EXPORT ]\n\n${formattedArchive || 'No prior matrix context.'}`,
+          reply: `### [ VAULT CONTEXT EXPORT ]\n\n${rawArchive || formattedArchive || 'No prior matrix context.'}`,
           traceId: requestTraceId
         });
       } else if (lower.startsWith('/auth')) {
@@ -3558,7 +3568,7 @@ async function chatRequest(req, res) {
         if (lower.includes('validator')) targetFile = 'threat_validator.py';
       } else if (lower.startsWith('/vault')) {
         return sendJSON(res, 200, {
-          reply: `**[SYSTEM] VAULT MATRIX SYNC COMPLETE:**\n\n${formattedArchive || 'No prior matrix context.'}`,
+          reply: `**[SYSTEM] VAULT MATRIX SYNC COMPLETE:**\n\n${rawArchive || formattedArchive || 'No prior matrix context.'}`,
           traceId: requestTraceId
         });
       }
@@ -4947,7 +4957,7 @@ ${turnDirectives}${selfDirectiveText}${keyDirectiveText}${toolDirectiveText}${sp
 
     // AI ROUTER: the stored context this request loaded, for the privacy
     // check (lib/aiRouter.mjs dataClassFor).
-    var routerContextText = [formattedArchive, targetedHistoricalData, supabaseFilesReport, unresolvedErrorsReport].join('\n');
+    var routerContextText = [formattedArchive, turnConversation, targetedHistoricalData, supabaseFilesReport, unresolvedErrorsReport].join('\n');
 
     if (chatStream) {
       return await streamChatReply(chatStream, {
