@@ -171,7 +171,9 @@ describe('syncFilmSecrets', () => {
     assert.match(yml, /ANTHROPIC_API_KEY: \$\{\{ secrets\.ANTHROPIC_API_KEY \}\}/);
     // Routing policy: an operator film's writing stages go free first; the
     // plan (filmTextPlan) keeps them off client films and checks.
-    assert.match(yml, /GEMINI_API_KEY_FREE: \$\{\{ secrets\.GEMINI_API_KEY_FREE \}\}/);
+    // The free key is saved on GitHub as GEMINI_API_KEY2 today; the free
+    // name wins when it is set. Either way it reaches the job as the free key.
+    assert.match(yml, /GEMINI_API_KEY_FREE: \$\{\{ secrets\.GEMINI_API_KEY_FREE \|\| secrets\.GEMINI_API_KEY2 \}\}/);
     assert.match(yml, /GROQ_API_KEY: \$\{\{ secrets\.GROQ_API_KEY \}\}/);
     assert.doesNotMatch(yml, /GEMINI_API_KEY[12]?:/, 'no old Gemini name in the job');
   });

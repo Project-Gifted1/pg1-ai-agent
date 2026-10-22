@@ -115,10 +115,13 @@ jobs:
           # operator's own); web search, which needs a paid engine, is
           # skipped and named in the report.
           PG1_DAILY_SPEND_CAP_USD: ${{ vars.PG1_DAILY_SPEND_CAP_USD }}
-          GEMINI_API_KEY_FREE: ${{ secrets.GEMINI_API_KEY_FREE }}
+          GEMINI_API_KEY_FREE: ${{ secrets.GEMINI_API_KEY_FREE || secrets.GEMINI_API_KEY2 }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           GITHUB_MODELS_TOKEN: ${{ secrets.PG1_MODELS_TOKEN }}
+          # The free Gemini key is saved on GitHub as GEMINI_API_KEY2 (a test
+          # call on 22 Oct: it answers while the paid key is out of credit);
+          # GEMINI_API_KEY_FREE, when set, wins.
           # Cloudflare Workers AI: a free engine the film and music renders
           # already use (lib/lab/policy.mjs allows api.cloudflare.com), so a
           # $0 run has another engine to fall back on when one is resting.
