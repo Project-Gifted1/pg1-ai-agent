@@ -166,12 +166,14 @@ describe('syncFilmSecrets', () => {
 
   test('the render job is given the paid fallback keys, the free keys only under their own names, and no old Gemini name', () => {
     const yml = readFileSync(new URL('../.github/workflows/film-render.yml', import.meta.url), 'utf8');
-    assert.match(yml, /GEMINI_API_KEY_PAID: \$\{\{ secrets\.GEMINI_API_KEY_PAID \}\}/);
+    assert.match(yml, /GEMINI_API_KEY_PAID: \$\{\{ secrets\.GEMINI_API_KEY_PAID \|\| secrets\.GEMINI_API_KEY \}\}/);
     assert.match(yml, /OPENROUTER_API_KEY: \$\{\{ secrets\.OPENROUTER_API_KEY \}\}/);
     assert.match(yml, /ANTHROPIC_API_KEY: \$\{\{ secrets\.ANTHROPIC_API_KEY \}\}/);
     // Routing policy: an operator film's writing stages go free first; the
     // plan (filmTextPlan) keeps them off client films and checks.
-    assert.match(yml, /GEMINI_API_KEY_FREE: \$\{\{ secrets\.GEMINI_API_KEY_FREE \}\}/);
+    // The free key is saved on GitHub as GEMINI_API_KEY2 today; the free
+    // name wins when it is set. Either way it reaches the job as the free key.
+    assert.match(yml, /GEMINI_API_KEY_FREE: \$\{\{ secrets\.GEMINI_API_KEY_FREE \|\| secrets\.GEMINI_API_KEY2 \}\}/);
     assert.match(yml, /GROQ_API_KEY: \$\{\{ secrets\.GROQ_API_KEY \}\}/);
     assert.doesNotMatch(yml, /GEMINI_API_KEY[12]?:/, 'no old Gemini name in the job');
   });

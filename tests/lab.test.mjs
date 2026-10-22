@@ -249,7 +249,8 @@ test('lab.yml: lab environment, lab-scoped secrets only, fresh runners, tests wi
   const k = (...p) => p.join('_');
   const expected = [
     k('ANTHROPIC', 'API', 'KEY'), k('GEMINI', 'API', 'KEY', 'FREE'), k('GEMINI', 'API', 'KEY', 'PAID'), k('GROQ', 'API', 'KEY'), k('MISTRAL', 'API', 'KEY'),
-    k('PG1', 'LAB', 'ANTHROPIC', 'API', 'KEY'), k('PG1', 'LAB', 'DISPATCH', 'SECRET'), k('PG1', 'LAB', 'GEMINI', 'API', 'KEY'), k('PG1', 'LAB', 'GITHUB', 'TOKEN'), k('PG1', 'MODELS', 'TOKEN')
+    k('PG1', 'LAB', 'ANTHROPIC', 'API', 'KEY'), k('PG1', 'LAB', 'DISPATCH', 'SECRET'), k('PG1', 'LAB', 'GEMINI', 'API', 'KEY'), k('PG1', 'LAB', 'GITHUB', 'TOKEN'), k('PG1', 'MODELS', 'TOKEN'),
+    k('CLOUDFLARE', 'AI', 'TOKEN'), k('CLOUDFLARE', 'ACCOUNT', 'ID'), k('GEMINI', 'API', 'KEY2'), k('GEMINI', 'API', 'KEY')
   ];
   assert.deepEqual([...new Set(secrets)].sort(), expected.sort());
   const code = yml.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
@@ -258,7 +259,7 @@ test('lab.yml: lab environment, lab-scoped secrets only, fresh runners, tests wi
   // Fallbacks: model keys to the existing repository keys, the PR token to
   // the built-in token; the dispatch secret has none.
   assert.match(code, /PG1_LAB_ANTHROPIC_API_KEY: \$\{\{ secrets\.PG1_LAB_ANTHROPIC_API_KEY \|\| secrets\.ANTHROPIC_API_KEY \}\}/);
-  assert.match(code, /PG1_LAB_GEMINI_API_KEY: \$\{\{ secrets\.PG1_LAB_GEMINI_API_KEY \|\| secrets\.GEMINI_API_KEY_PAID \}\}/);
+  assert.match(code, /PG1_LAB_GEMINI_API_KEY: \$\{\{ secrets\.PG1_LAB_GEMINI_API_KEY \|\| secrets\.GEMINI_API_KEY_PAID \|\| secrets\.GEMINI_API_KEY \}\}/);
   assert.match(code, /PG1_LAB_DISPATCH_SECRET: \$\{\{ secrets\.PG1_LAB_DISPATCH_SECRET \}\}\n/);
   assert.match(code, /PG1_LAB_GITHUB_TOKEN: \$\{\{ secrets\.PG1_LAB_GITHUB_TOKEN \|\| github\.token \}\}/);
   const experimentJob = yml.slice(yml.indexOf('\n  experiment:'), yml.indexOf('\n  test:'));

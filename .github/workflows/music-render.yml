@@ -94,7 +94,7 @@ jobs:
           # (optional, first when set), Lyria on the paid Gemini key, then
           # Replicate. The free Gemini key is never given to this job.
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
-          GEMINI_API_KEY_PAID: ${{ secrets.GEMINI_API_KEY_PAID }}
+          GEMINI_API_KEY_PAID: ${{ secrets.GEMINI_API_KEY_PAID || secrets.GEMINI_API_KEY }}
           REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
           PG1_MUSIC_LYRIA_MODEL: ${{ vars.PG1_MUSIC_LYRIA_MODEL }}
           # Previews and --length short: the Lyria 30-second clip model.

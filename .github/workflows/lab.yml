@@ -108,17 +108,25 @@ jobs:
           LAB_TOKEN: ${{ inputs.token }}
           PG1_LAB_DISPATCH_SECRET: ${{ secrets.PG1_LAB_DISPATCH_SECRET }}
           PG1_LAB_ANTHROPIC_API_KEY: ${{ secrets.PG1_LAB_ANTHROPIC_API_KEY || secrets.ANTHROPIC_API_KEY }}
-          PG1_LAB_GEMINI_API_KEY: ${{ secrets.PG1_LAB_GEMINI_API_KEY || secrets.GEMINI_API_KEY_PAID }}
+          PG1_LAB_GEMINI_API_KEY: ${{ secrets.PG1_LAB_GEMINI_API_KEY || secrets.GEMINI_API_KEY_PAID || secrets.GEMINI_API_KEY }}
           PG1_LAB_MAX_MINUTES: '15'
           # Unset is $0 (lib/aiRouter.mjs): the runner then calls no paid
           # engine and runs on the free engines below (lab data is the
           # operator's own); web search, which needs a paid engine, is
           # skipped and named in the report.
           PG1_DAILY_SPEND_CAP_USD: ${{ vars.PG1_DAILY_SPEND_CAP_USD }}
-          GEMINI_API_KEY_FREE: ${{ secrets.GEMINI_API_KEY_FREE }}
+          GEMINI_API_KEY_FREE: ${{ secrets.GEMINI_API_KEY_FREE || secrets.GEMINI_API_KEY2 }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           GITHUB_MODELS_TOKEN: ${{ secrets.PG1_MODELS_TOKEN }}
+          # The Gemini keys as saved on GitHub (a test call on 22 Oct per key):
+          # GEMINI_API_KEY2 is the free key; GEMINI_API_KEY and
+          # GEMINI_API_KEY_PAID are paid. The standard names win when set.
+          # Cloudflare Workers AI: a free engine the film and music renders
+          # already use (lib/lab/policy.mjs allows api.cloudflare.com), so a
+          # $0 run has another engine to fall back on when one is resting.
+          CLOUDFLARE_AI_TOKEN: ${{ secrets.CLOUDFLARE_AI_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: node scripts/lab-run.mjs
       - uses: actions/upload-artifact@v4
         if: always()
