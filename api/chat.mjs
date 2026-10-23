@@ -923,6 +923,8 @@ async function fetchGeminiCore(promptText, sysInstruction, mediaParts, contextDa
       var perAttemptTimeout = isFirstAttempt
         ? Math.max(remainingMs - RETRY_RESERVE_MS, Math.min(remainingMs, ERROR_RETRY_CAP_MS))
         : Math.min(ERROR_RETRY_CAP_MS, remainingMs);
+      // ENGINE SHARE: a whole non-streamed answer within CHAT_ENGINE_TOTAL_MS.
+      if (deadlineTs) perAttemptTimeout = Math.min(perAttemptTimeout, engineShareMs('TOTAL', CHAT_ENGINE_TOTAL_MS));
 
       var model = models[j];
       // QUOTA (lib/router/quota.mjs): a model whose daily quota is used up,
@@ -1172,9 +1174,12 @@ async function streamGeminiCore(promptText, sysInstruction, mediaParts, geminiKe
       if (hooks.signal && hooks.signal.aborted) return { text: '', error: 'Stopped by the client.', aborted: true };
       var remainingMs = deadlineTs - Date.now();
       if (remainingMs <= 1000) return { text: '', status: lastStatus, error: geminiFailure(lastError, forceRejection) || 'Aborted: model fetch time budget exhausted.' };
-      var firstByteTimeout = attemptCount === 0
+      // ENGINE SHARE: the first byte must come within CHAT_ENGINE_FIRST_BYTE_MS,
+      // so a stalled engine leaves the backups most of the budget (requests
+      // nl6x72uy, zl6i1wj5: a 38 s stall left the backups ~10 s and all failed).
+      var firstByteTimeout = Math.min(engineShareMs('FIRST_BYTE', CHAT_ENGINE_FIRST_BYTE_MS), attemptCount === 0
         ? Math.max(remainingMs - RETRY_RESERVE_MS, Math.min(remainingMs, ERROR_RETRY_CAP_MS))
-        : Math.min(ERROR_RETRY_CAP_MS, remainingMs);
+        : Math.min(ERROR_RETRY_CAP_MS, remainingMs));
       attemptCount++;
       var model = models[j];
       if (isCooling(geminiProviderFor(geminiKeys[i]), model)) {
@@ -1606,6 +1611,22 @@ function compatModelPlan(candidate, opts) {
   var need = Math.ceil((fitTokensOf(opts.sysInstruction) + fitTokensOf(opts.promptText)) / FIT_MARGIN) + (candidate.provider === 'groq' ? (FREE_MAX_OUTPUT.groq || 0) : 0);
   return CATALOG_PROVIDERS.indexOf(candidate.provider) >= 0 ? orderForFit(models, need) : models;
 }
+// ENGINE SHARE: how long one engine may keep a chat reply waiting before the
+// next engine is tried. The first byte (streamed) or the whole answer (JSON)
+// must arrive within these, so one stalled engine never uses up the budget
+// the backups need.
+export var CHAT_ENGINE_FIRST_BYTE_MS = 15000;
+export var CHAT_ENGINE_TOTAL_MS = 30000;
+// An engine that answers 200 with no usable body (GitHub Models answered a
+// bare "OK") is skipped for this long, not retried on every message.
+export var EMPTY_ANSWER_COOL_MS = 15 * 60 * 1000;
+// PG1_CHAT_ENGINE_FIRST_BYTE_MS / PG1_CHAT_ENGINE_TOTAL_MS can shorten or
+// lengthen the share (1 to 45 s).
+function engineShareMs(which, fallback) {
+  var v = Number(process.env['PG1_CHAT_ENGINE_' + which + '_MS']);
+  return Number.isFinite(v) && v >= 1 && v <= 45000 ? v : fallback;
+}
+
 async function fetchCompatCore(candidate, opts) {
   var last = { text: null, status: null, error: 'no model configured' };
   var plan = compatModelPlan(candidate, opts);
@@ -1629,7 +1650,7 @@ async function fetchCompatCore(candidate, opts) {
       continue;
     }
     if (fit.trimmed.length) console.log(`[pg1-fit] provider=${candidate.provider} model=${label} limit=${plan[i].maxInputTokens} tokens=${fit.inputTokens} trimmed=${fit.trimmed.join(',')} request_id=${opts.requestId || '-'}`);
-    var r = await callOpenAiCompat({ candidate: candidate, model: plan[i].entry, system: fit.system, prompt: fit.prompt, maxTokens: maxOut, fetchImpl: function (u, o) { return fetch(u, o); }, timeoutMs: Math.min(90000, remainingMs) });
+    var r = await callOpenAiCompat({ candidate: candidate, model: plan[i].entry, system: fit.system, prompt: fit.prompt, maxTokens: maxOut, fetchImpl: function (u, o) { return fetch(u, o); }, timeoutMs: Math.min(90000, remainingMs), firstTokenMs: Math.min(engineShareMs('FIRST_BYTE', 12000), remainingMs) });
     // QUOTA: what the engine's headers say about its limits, and a 429's
     // scope (Groq: "on tokens per minute (TPM): Limit 8000, Used 3769,
     // Requested 4525. Please try again in 1.9s").
@@ -1641,6 +1662,12 @@ async function fetchCompatCore(candidate, opts) {
       r.quotaScope = q.scope;
     }
     if (r.ok) return { text: r.text, calls: [], provider: candidate.provider, model: r.model, usage: r.usage, error: null, trimmed: fit.trimmed };
+    if (r.status === 200 && /no text in the answer/.test(r.detail || '')) {
+      var emptyCool = coolDown(candidate.provider, '*', { scope: 'minute', retryAfterMs: EMPTY_ANSWER_COOL_MS });
+      if (emptyCool) console.log(`[pg1-quota] provider=${candidate.provider} model=* scope=empty_answer cooling_until=${new Date(emptyCool.until).toISOString()}`);
+      last = { text: null, status: 502, error: `[${label}] ${r.detail}` };
+      break;
+    }
     last = { text: null, status: r.status, error: `[${label}] ${providerErrorText(r.status, r.detail || '')}`, retryAfterMs: r.retryAfterMs, ...(r.quotaScope ? { quotaScope: r.quotaScope } : {}) };
     // A safety refusal stops the round: never retried on another model.
     if (r.refused) { last.refused = true; break; }
