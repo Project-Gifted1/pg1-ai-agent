@@ -15,6 +15,8 @@ import { markRelayTurn, withCoreScope } from '../lib/core/state.mjs';
 import { currentSelfModel } from '../lib/core/self.mjs';
 import { isConsciousnessQuestion, consciousnessReply, fixConsciousnessClaims } from '../lib/core/honesty.mjs';
 import { isStateCommand, isLessonsCommand, handleStateCommand, handleLessonsCommand, selfPromptBlock } from '../lib/core/chat.mjs';
+import { isSandboxCommand, handleSandboxCommand } from '../lib/sandbox/chat.mjs';
+import { createSandboxStore } from '../lib/sandbox/store.mjs';
 import { secretEnvValues } from '../lib/handoff.mjs';
 import { collectImageInputs, imageInputDirective, imageCountLabel, describeSkipped, fileExtensionFor, redactLeakedSecrets, SECRET_PLACEHOLDER, SECRET_WARNING, MAX_IMAGES_PER_MESSAGE, MAX_IMAGE_BYTES, MAX_IMAGE_EDGE_PX } from '../lib/visionInput.mjs';
 import { createChatStream, createReplyScrubber, readSseResponse, scrubIdentity, stripTranscriptLabels, wantsChatStream } from '../lib/chatStream.mjs';
@@ -3265,6 +3267,14 @@ async function chatRequest(req, res) {
       if (isWatchlistsCommand(promptText)) {
         var wlOut = await handleWatchlistsCommand({ supUrl: supabaseUrl, supKey: supabaseKey, isOperator: isOperator, fetchImpl: function (u, o) { return fetch(u, o); } });
         return sendJSON(res, 200, { reply: wlOut.reply, traceId: requestTraceId });
+      }
+
+      // PG1 SANDBOX (lib/sandbox/chat.mjs): /sandbox, /world <id> and the
+      // operator's invite, consent and experiment commands. Simulations only.
+      if (isSandboxCommand(promptText)) {
+        if (!isOperator) log401('SANDBOX', 'unauthenticated', supUrl, supKey);
+        var sbOut = await handleSandboxCommand({ text: promptText, isOperator: isOperator, store: createSandboxStore(supabaseUrl && supabaseKey ? { supUrl: supabaseUrl, supKey: supabaseKey, fetchImpl: function (u, o) { return fetch(u, o); } } : {}) });
+        return sendJSON(res, sbOut.status || 200, { ...sbOut, traceId: requestTraceId });
       }
 
       // PG1 CORE STATE (lib/core): /state shows the self-model and the
