@@ -3900,9 +3900,24 @@
       const people = ents.filter((e) => ['person', 'child'].includes(e.kind));
       if (ppl) ppl.innerHTML = people.slice().sort((a, b) => (a.properties.country || '').localeCompare(b.properties.country || '') || (a.properties.family || '').localeCompare(b.properties.family || '') || (a.properties.name || '').localeCompare(b.properties.name || '')).slice(0, 150).map((e) => `<li class="lx-row" data-tone="${e.properties.jail_until ? 'err' : e.kind === 'child' ? 'info' : 'think'}"><span class="lx-dot"></span><span class="lx-row-main"><button type="button" class="lx-link" onclick="sandboxScene && sandboxScene.select('${escapeHTML(e.id)}'); showSandboxPanel('worlds')">${escapeHTML(named(e.id))}</button></span><span class="lx-row-end">${escapeHTML(`${Math.floor(e.properties.age || 0)}${e.properties.job ? ' · ' + e.properties.job : ''}${e.properties.country ? ' · ' + e.properties.country : ''}`)}</span><span class="lx-row-sub">${escapeHTML([e.properties.abroad ? `on holiday in ${e.properties.abroad}` : '', e.properties.partner ? `with ${named(e.properties.partner)}` : '', e.properties.saying ? `“${e.properties.saying}”` : ''].filter(Boolean).join(' · '))}</span></li>`).join('');
       if (talk) {
-        const lines = ((w && w.recent_events) || []).filter((e) => ['talk', 'election', 'birth', 'death', 'partners', 'crime', 'arrest', 'first_contact', 'colony', 'technology', 'currency', 'travel', 'show', 'expedition', 'discovery', 'hypothesis', 'proof', 'message_to_observer', 'sighting', 'dispute', 'standoff', 'treaty', 'alliance', 'war_declared', 'battle', 'armistice'].includes(e.kind)).slice(0, 25);
-        talk.innerHTML = lines.length ? lines.map((e) => `<li data-tone="${e.kind === 'talk' ? 'run' : ['crime', 'death', 'war_declared', 'battle'].includes(e.kind) ? 'err' : ['message_to_observer', 'hypothesis', 'first_contact'].includes(e.kind) ? 'gold' : 'ok'}"><div class="lx-card"><span class="lx-meta">step ${escapeHTML(String(e.tick))} · ${escapeHTML(e.kind.replace(/_/g, ' '))}</span><p class="lx-sub">${escapeHTML(e.summary)}</p></div></li>`).join('') : '<li data-tone="idle"><p class="lx-empty">Nothing said yet. Press Play.</p></li>';
+        const lines = ((w && w.recent_events) || []).filter((e) => ['talk', 'election', 'birth', 'death', 'partners', 'crime', 'arrest', 'first_contact', 'colony', 'technology', 'currency', 'travel', 'show', 'expedition', 'discovery', 'hypothesis', 'proof', 'message_to_observer', 'sighting', 'dispute', 'standoff', 'treaty', 'alliance', 'war_declared', 'battle', 'armistice', 'invention', 'accident'].includes(e.kind)).slice(0, 25);
+        talk.innerHTML = lines.length ? lines.map((e) => `<li data-tone="${e.kind === 'talk' ? 'run' : ['crime', 'death', 'war_declared', 'battle', 'accident'].includes(e.kind) ? 'err' : ['message_to_observer', 'hypothesis', 'first_contact'].includes(e.kind) ? 'gold' : 'ok'}"><div class="lx-card"><span class="lx-meta">step ${escapeHTML(String(e.tick))} · ${escapeHTML(e.kind.replace(/_/g, ' '))}</span><p class="lx-sub">${escapeHTML(e.summary)}</p></div></li>`).join('') : '<li data-tone="idle"><p class="lx-empty">Nothing said yet. Press Play.</p></li>';
       }
+    }
+    // Research and development (lib/sandbox/research.mjs): the discovery reached in each branch, and the next.
+    var SANDBOX_RD = {
+      energy: ['wood and fire', 'water wheels', 'coal and steam power', 'electricity', 'oil and gas', 'nuclear fission', 'solar and wind power', 'fusion power', 'antimatter power'],
+      industry: ['hand tools', 'workshops', 'factories', 'assembly lines', 'chemistry and plastics', 'automation', 'robotics', 'nanofabrication'],
+      weapons: ['spears and bows', 'swords and armour', 'gunpowder', 'rifles', 'artillery and armour', 'aircraft and warships', 'guided missiles', 'a nuclear deterrent', 'energy weapons', 'orbital defence'],
+      medicine: ['herbal remedies', 'sanitation', 'vaccines', 'antibiotics', 'surgery and imaging', 'genetics', 'gene therapy', 'regenerative medicine'],
+      computing: ['counting boards', 'the printing press', 'the telegraph', 'radio', 'computers', 'the network', 'thinking machines', 'quantum computing'],
+      materials: ['stone and wood', 'bronze', 'iron', 'steel', 'concrete', 'light alloys', 'composites', 'room-temperature superconductors']
+    };
+    function rdRows(soc, row) {
+      const rd = soc && soc.rd; if (!rd || !rd.level) return '';
+      const lines = Object.keys(SANDBOX_RD).map((b) => { const l = rd.level[b] || 0; const next = SANDBOX_RD[b][l + 1]; return `${b}: ${SANDBOX_RD[b][l]}${next ? ` → ${next}` : ''}`; });
+      const extra = [rd.pollution ? `pollution ${Math.round(rd.pollution)}` : '', rd.accidents ? `${rd.accidents} reactor accident${rd.accidents === 1 ? '' : 's'}` : '', rd.arms_spent ? `${Math.round(rd.arms_spent)} spent on arms` : ''].filter(Boolean).join('; ');
+      return `<li class="lx-row" data-tone="info"><span class="lx-dot"></span><span class="lx-row-main">Research and development</span><span class="lx-row-end">${escapeHTML(extra || 'no pollution yet')}</span><span class="lx-row-sub">${lines.map(escapeHTML).join('<br>')}</span></li>`;
     }
     function societyRows(code, soc, people, { row, named }) {
       const jobs = {}; for (const e of people) if (e.properties.job) jobs[e.properties.job] = (jobs[e.properties.job] || 0) + 1;
@@ -3914,6 +3929,7 @@
         + row('Army', `${people.filter((e) => e.properties.job === 'soldier').length} soldiers${soc.wars ? `; ${soc.wars} war${soc.wars === 1 ? '' : 's'}, ${soc.war_dead || 0} soldiers lost` : '; never been to war'}`, soc.wars ? 'over' : 'think')
         + row('Law and order', `${soc.crimes} crimes, ${soc.arrests} arrests${soc.prison ? `; prison holds ${people.filter((e) => e.properties.jail_until).length}` : '; no prison yet'}`, soc.crimes ? 'over' : 'think')
         + row('Technology', `${SANDBOX_TECH[soc.tech] || soc.tech} (level ${soc.tech}); research ${Math.round(soc.research)}`, 'info')
+        + rdRows(soc, row)
         + row('In space', `${soc.colonies} colon${soc.colonies === 1 ? 'y' : 'ies'}${soc.contacts && soc.contacts.length ? `; met ${soc.contacts.join(', ')}` : '; no contact with others yet'}`, soc.contacts && soc.contacts.length ? 'gold' : 'think')
         + row('Careers', Object.entries(jobs).sort((a, b) => b[1] - a[1]).map(([j, n]) => `${n} ${j}`).join(', ') || 'none yet')
         + row('Couples', `${Math.round(people.filter((e) => e.properties.partner).length / 2)}`);
