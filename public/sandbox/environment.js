@@ -6,8 +6,15 @@
 // every time. The scenery forests are drawn the same way: they are not
 // entities, nothing in the world can use them, and they stay clear of
 // everything that is.
+//
+// By quality tier (quality.js): a physically based sky (Preetham, three's
+// Sky) that fades into the black of space, cascaded soft shadows (three's
+// CSM) for the sun, a water shader on the sea and lakes (water.js, with a
+// generated normal map), and how dense the grass and woods are. Low keeps
+// the gradient sky, no shadows and the plain sea.
 
 import { Kit } from './kit.js';
+import { createWaterMaterial } from './water.js';
 
 const SKY_VERT = `
 varying vec3 vDir;
@@ -52,8 +59,29 @@ export function makeNoise(seed) {
   return (x, y, oct = 4) => { let t = 0; let amp = 0.5; let f = 1; for (let i = 0; i < oct; i++) { t += amp * n2(x * f, y * f); amp *= 0.5; f *= 2.03; } return t; };
 }
 
-export function createEnvironment(THREE, scene, { coarse = false } = {}) {
+// A tileable normal map for the water shader, from a sum of waves (no
+// download: the CSP allows only this site's scripts and images anyway).
+function waterNormals(THREE) {
+  const N = 256; const c = document.createElement('canvas'); c.width = c.height = N;
+  const g = c.getContext('2d'); const img = g.createImageData(N, N);
+  const waves = [[1, 0, 1.0], [0, 2, 0.7], [3, 1, 0.45], [-2, 3, 0.35], [5, -3, 0.2], [-6, -5, 0.15], [9, 4, 0.08]];
+  const h = (x, y) => waves.reduce((t, [a, b, k]) => t + k * Math.sin((a * x + b * y) * Math.PI * 2 / N + a * 1.3 + b * 0.7), 0);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const dx = h(x + 1, y) - h(x - 1, y); const dy = h(x, y + 1) - h(x, y - 1);
+    const nx = -dx * 2; const ny = -dy * 2; const nz = 1; const l = Math.hypot(nx, ny, nz);
+    const i = (y * N + x) * 4;
+    img.data[i] = Math.round((nx / l * 0.5 + 0.5) * 255); img.data[i + 1] = Math.round((ny / l * 0.5 + 0.5) * 255); img.data[i + 2] = Math.round((nz / l * 0.5 + 0.5) * 255); img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+export function createEnvironment(THREE, scene, { coarse = false, quality = null, addons = {}, camera = null } = {}) {
   const env = { THREE };
+  const qual = quality || { cascades: coarse ? 0 : 1, shadowMapSize: 2048, water: false, sky: 'gradient', grass: 1, forest: 1 };
+  env.quality = qual;
   // The sky dome.
   const skyU = {
     uTop: { value: new THREE.Color('#2a6fd6') }, uHorizon: { value: new THREE.Color('#bcd9f2') }, uGround: { value: new THREE.Color('#5b6b52') },
@@ -63,7 +91,28 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
   sky.frustumCulled = false;
   sky.renderOrder = -10;
   sky.scale.setScalar(1000);
+  sky.onBeforeRender = (r, sc, cam) => { sky.position.copy(cam.position); sky.updateMatrixWorld(); };
   scene.add(sky);
+
+  // The physically based sky (Preetham), fading into space like the gradient does.
+  let sky2 = null;
+  if (qual.sky === 'physical' && addons.Sky) {
+    sky2 = new addons.Sky();
+    sky2.material.uniforms.uSpace = { value: 0 };
+    sky2.material.fragmentShader = sky2.material.fragmentShader
+      .replace('uniform vec3 up;', 'uniform vec3 up;\nuniform float uSpace;')
+      .replace('gl_FragColor = vec4( retColor, 1.0 );', 'gl_FragColor = vec4( mix( retColor, vec3( 0.0, 0.0, 0.004 ), uSpace ), 1.0 );');
+    const u = sky2.material.uniforms;
+    u.turbidity.value = 2.6; u.rayleigh.value = 1.4; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.82;
+    sky2.material.depthWrite = false;
+    sky2.frustumCulled = false;
+    sky2.renderOrder = -10;
+    sky2.scale.setScalar(100000);
+    // Centred on whichever camera draws it (the water's reflection camera too).
+    sky2.onBeforeRender = (r, sc, cam) => { sky2.position.copy(cam.position); sky2.updateMatrixWorld(); };
+    scene.add(sky2);
+    sky.visible = false;
+  }
 
   // Stars: visible at night and in space.
   const starGeo = new THREE.BufferGeometry();
@@ -83,15 +132,24 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
   const stars = new THREE.Points(starGeo, starMat);
   stars.frustumCulled = false;
   stars.renderOrder = -9;
+  stars.onBeforeRender = (r, sc, cam) => { stars.position.copy(cam.position); stars.updateMatrixWorld(); };
   scene.add(stars);
 
   // Lights.
   const hemi = new THREE.HemisphereLight(0xcfe6ff, 0x4a5a3a, 0.6);
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff2d6, 2.4);
-  sun.castShadow = !coarse;
+  // Cascaded shadows replace the single shadow map where the tier allows.
+  let csm = null;
+  if (qual.cascades > 0 && addons.CSM && camera) {
+    csm = new addons.CSM({ camera, parent: scene, cascades: qual.cascades, maxFar: 3000, mode: 'practical', shadowMapSize: qual.shadowMapSize || 2048, shadowBias: -0.0002, lightDirection: new THREE.Vector3(-0.5, -1, -0.3).normalize(), lightIntensity: 2.4, lightNear: 1, lightFar: 8000, lightMargin: 600 });
+    for (const l of csm.lights) l.shadow.normalBias = 0.3;
+  }
+  env.csm = csm;
+  env.setupMaterial = (m) => { if (csm && m && !m.userData.csm) { csm.setupMaterial(m); m.userData.csm = true; } return m; };
+  sun.castShadow = !coarse && !csm && qual.cascades > 0;
   if (sun.castShadow) {
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(qual.shadowMapSize || 2048, qual.shadowMapSize || 2048);
     sun.shadow.bias = -0.0004;
     sun.shadow.normalBias = 0.4;
   }
@@ -101,7 +159,7 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
 
   scene.fog = new THREE.FogExp2(0xbcd9f2, 0.00012);
 
-  env.sky = sky; env.stars = stars; env.sun = sun; env.hemi = hemi; env.moonLight = moonLight; env.skyU = skyU;
+  env.sky = sky; env.sky2 = sky2; env.stars = stars; env.sun = sun; env.hemi = hemi; env.moonLight = moonLight; env.skyU = skyU;
   env.ground = null; env.lakes = []; env.clouds = null; env.grass = null; env.forest = null;
 
   // A tile of grass detail, multiplied over the ground's colours.
@@ -212,7 +270,7 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     g.setIndex(idx);
     g.computeVertexNormals();
-    const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: detail, roughness: 0.95, metalness: 0 });
+    const groundMat = env.setupMaterial(env.makeGroundMaterial ? env.makeGroundMaterial(detail) : new THREE.MeshStandardMaterial({ vertexColors: true, map: detail, roughness: 0.95, metalness: 0 }));
     const ground = new THREE.Mesh(g, groundMat);
     ground.receiveShadow = true;
     ground.position.y = isl0 ? -3 : -0.05;
@@ -255,9 +313,16 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
     if (islands.length) {
       const sg = new THREE.CircleGeometry(R * 0.6, 96);
       sg.rotateX(-Math.PI / 2);
-      const seaMesh = new THREE.Mesh(sg, new THREE.MeshStandardMaterial({ color: 0x1f6f9a, roughness: 0.12, metalness: 0.3, transparent: true, opacity: 0.88 }));
+      let seaMesh;
+      if (qual.water) {
+        // The water shader: waves, the sky's reflection, the sun's glitter, shallows and foam.
+        seaMesh = new THREE.Mesh(sg, createWaterMaterial(THREE, env.normals || (env.normals = waterNormals(THREE)), islands));
+        seaMesh.userData.water = true;
+      } else {
+        seaMesh = new THREE.Mesh(sg, env.setupMaterial(new THREE.MeshStandardMaterial({ color: 0x1f6f9a, roughness: 0.12, metalness: 0.3, transparent: true, opacity: 0.88 })));
+        seaMesh.receiveShadow = true;
+      }
       seaMesh.position.y = 0;
-      seaMesh.receiveShadow = true;
       seaMesh.userData.sea = true;
       scene.add(seaMesh);
       env.lakes.push(seaMesh);
@@ -267,19 +332,22 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
     for (const l of lakes) {
       const lg = new THREE.CircleGeometry(l.radius, coarse ? 48 : 96, 0, Math.PI * 2);
       lg.rotateX(-Math.PI / 2);
-      const water = new THREE.Mesh(lg, new THREE.MeshStandardMaterial({ color: 0x2f7fb0, roughness: 0.08, metalness: 0.35, transparent: true, opacity: 0.92 }));
+      const water = qual.water
+        ? new THREE.Mesh(lg, createWaterMaterial(THREE, env.normals || (env.normals = waterNormals(THREE)), [{ sx: l.sx, sz: l.sz, r: -l.radius }]))
+        : new THREE.Mesh(lg, env.setupMaterial(new THREE.MeshStandardMaterial({ color: 0x2f7fb0, roughness: 0.08, metalness: 0.35, transparent: true, opacity: 0.92 })));
       water.position.set(l.sx, 0.12, l.sz);
       water.receiveShadow = true;
+      if (qual.water) { water.userData.water = true; water.userData.sea = true; }
       water.userData.base = lg.attributes.position.array.slice();
       scene.add(water);
       env.lakes.push(water);
     }
 
     // Grass tufts, scattered over the world (not on roads or water).
-    const count = coarse ? 2500 : 7000;
+    const count = Math.round((coarse ? 2500 : 7000) * (qual.grass ?? 1));
     const tuft = new THREE.ConeGeometry(0.35, 1.1, 4);
     tuft.translate(0, 0.55, 0);
-    const grass = new THREE.InstancedMesh(tuft, new THREE.MeshStandardMaterial({ color: 0x6f9a3f, roughness: 1 }), count);
+    const grass = new THREE.InstancedMesh(tuft, env.setupMaterial(new THREE.MeshStandardMaterial({ color: 0x6f9a3f, roughness: 1 })), Math.max(1, count));
     const m = new THREE.Matrix4(); const q = new THREE.Quaternion(); const sc3 = new THREE.Vector3(); const p3 = new THREE.Vector3(); const e = new THREE.Euler();
     let placed = 0; let tries = 0; let ss = (world.seed || 1) * 7919;
     const rr2 = () => { ss = (Math.imul(ss, 1664525) + 1013904223) >>> 0; return ss / 4294967296; };
@@ -313,8 +381,8 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
     { const k = new Kit(THREE); k.cyl(0.25, 0.4, 3, 6, '#5d4037', 0, 1.5, 0); for (let i = 0; i < 4; i++) k.cone(2.6 - i * 0.55, 3, 8, '#1f4f2a', 0, 3 + i * 1.9, 0, { jitter: 0.3, ry: i }); kinds.push(k.build().body); }
     { const k = new Kit(THREE); k.cyl(0.3, 0.45, 3.5, 6, '#6d4c2f', 0, 1.75, 0); k.ico(2.4, 1, '#2f6b2a', 0, 4.6, 0, { jitter: 0.35 }); k.ico(1.8, 1, '#3c7a30', 0.8, 5.8, 0.4, { jitter: 0.35 }); k.ico(1.6, 1, '#356f2c', -0.7, 5.5, -0.5, { jitter: 0.35 }); kinds.push(k.build().body); }
     const forest = new THREE.Group();
-    const fm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
-    const per = coarse ? 900 : 2600;
+    const fm = env.setupMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }));
+    const per = Math.max(1, Math.round((coarse ? 900 : 2600) * (qual.forest ?? 1)));
     kinds.forEach((geo, ki) => {
       const inst = new THREE.InstancedMesh(geo, fm, per);
       let n = 0; let tries2 = 0;
@@ -333,7 +401,7 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
       }
       inst.count = n;
       inst.instanceMatrix.needsUpdate = true;
-      inst.castShadow = !coarse; inst.receiveShadow = !coarse;
+      inst.castShadow = !coarse && qual.cascades > 0; inst.receiveShadow = !coarse && qual.cascades > 0;
       forest.add(inst);
     });
     scene.add(forest);
@@ -381,6 +449,11 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
     skyU.uSunColor.value.setRGB(1, lerp(0.55, 0.95, day * (1 - dusk * 0.5)), lerp(0.3, 0.84, day * (1 - dusk * 0.6)));
     skyU.uSpace.value = sp;
     sky.position.copy(camera.position);
+    if (sky2) {
+      sky2.position.copy(camera.position);
+      sky2.material.uniforms.sunPosition.value.copy(sunDir).multiplyScalar(450000);
+      sky2.material.uniforms.uSpace.value = sp;
+    }
     stars.position.copy(camera.position);
     // Far beyond the terrain, so hills and the ground hide the stars behind them.
     stars.scale.setScalar(150000);
@@ -391,6 +464,12 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
     hemi.color.setRGB(lerp(0.25, 0.8, day), lerp(0.3, 0.9, day), lerp(0.6, 1, day));
     hemi.groundColor.setRGB(lerp(0.05, 0.29, day), lerp(0.06, 0.35, day), lerp(0.1, 0.23, day));
     moonLight.intensity = env.night * 0.3 * (1 - sp);
+    if (csm) {
+      // The cascades carry the sunlight; the plain sun stays dark.
+      csm.lightDirection.copy(sunDir).negate();
+      for (const l of csm.lights) { l.intensity = sun.intensity; l.color.copy(sun.color); }
+      sun.intensity = 0;
+    }
     moonLight.position.set(-sunDir.x, Math.abs(sunDir.y) + 0.4, -sunDir.z).multiplyScalar(1000).add(target);
     moonLight.target.position.copy(target);
     // The sun follows the camera's target so shadows stay sharp where you look.
@@ -402,13 +481,26 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
       cam.left = -span; cam.right = span; cam.top = span; cam.bottom = -span; cam.near = 1; cam.far = span * 7;
       cam.updateProjectionMatrix();
     }
+    if (csm) csm.update();
     if (scene.fog) {
       scene.fog.color.setRGB(lerp(0.04, 0.72, day) + dusk * 0.3, lerp(0.05, 0.82, day) + dusk * 0.1, lerp(0.09, 0.93, day));
-      scene.fog.density = 0.00011 * (1 - sp) * (1 - smooth(800, 4000, cameraAlt) * 0.8) + 0.0000004;
+      // Haze thins as the camera climbs (its real height: a high overview of
+      // the islands should read clearly, not through a wall of fog).
+      scene.fog.density = 0.00009 * (1 - sp) * (1 - smooth(300, 5000, Math.max(cameraAlt, camera.position.y)) * 0.85) + 0.0000004;
     }
     // Water ripples and drifting clouds.
     const t = performance.now() / 1000;
     for (const w of env.lakes) {
+      if (w.userData.water) {
+        const u = w.material.uniforms;
+        u.uTime.value = t;
+        u.uSunDir.value.copy(sunDir);
+        u.uSunColor.value.setRGB(lerp(0.05, 1, day), lerp(0.05, 0.95, day * (1 - dusk * 0.4)), lerp(0.08, 0.88, day * (1 - dusk * 0.6)));
+        u.uZenith.value.copy(skyU.uTop.value); u.uHorizon.value.copy(skyU.uHorizon.value);
+        u.uDeep.value.setRGB(lerp(0.005, 0.03, day), lerp(0.01, 0.17, day), lerp(0.03, 0.27, day));
+        u.uShallow.value.setRGB(lerp(0.01, 0.12, day), lerp(0.03, 0.58, day), lerp(0.05, 0.6, day));
+        continue;
+      }
       if (w.userData.sea) { w.material.color.setRGB(lerp(0.03, 0.12, day), lerp(0.07, 0.43, day), lerp(0.14, 0.62, day)); continue; }
       const p = w.geometry.attributes.position; const b = w.userData.base;
       for (let i = 0; i < p.count; i++) p.array[i * 3 + 1] = Math.sin(b[i * 3] * 0.05 + t * 1.3) * 0.12 + Math.cos(b[i * 3 + 2] * 0.07 + t) * 0.1;
@@ -425,6 +517,9 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
 
   env.dispose = () => {
     detail.dispose();
+    if (env.normals) env.normals.dispose();
+    if (csm) { csm.remove(); csm.dispose(); }
+    if (sky2) { sky2.geometry.dispose(); sky2.material.dispose(); }
     for (const o of [sky, stars, env.ground, env.grass, env.clouds, env.forest, ...env.lakes]) if (o) o.traverse((m) => { if (m.geometry) m.geometry.dispose(); if (m.material) [].concat(m.material).forEach((x) => x.dispose()); });
   };
   return env;

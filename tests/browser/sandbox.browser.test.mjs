@@ -22,7 +22,7 @@ import { existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { routeReplyFont } from '../helpers/replyFont.mjs';
-import { createSandboxStore } from '../../lib/sandbox/store.mjs';
+import { createSandboxStore, __resetSandboxMemory } from '../../lib/sandbox/store.mjs';
 import { createWorld, stepWorldFor, pg1Principal, resolveSandboxKey } from '../../lib/sandbox/worlds.mjs';
 import { startExperiment, takeTurn, openRun, finishRun } from '../../lib/sandbox/experiments.mjs';
 import sandboxViewer, { __setSandboxViewerStore } from '../../api/sandbox.mjs';
@@ -324,5 +324,53 @@ test('an invite key is shown once in a copy-only dialog: never in the chat, the 
   assert.ok(!everywhere.includes(key), 'not in the page or browser storage');
   assert.ok(!everywhere.includes(key.slice(6)), 'not even without its prefix');
   assert.ok(!log.bodies.some((b) => b.includes(key)), 'never sent back to the server (saved threads included)');
+  assert.deepEqual(errors, []);
+});
+
+test('quality tiers at 380 px: each tier draws the universe, the picker shows and changes it, and a choice is kept on this device', { skip, timeout: 420000 }, async (t) => {
+  __resetSandboxMemory(); // the earlier tests' worlds count against PG1's ten
+  const { store } = await fixtureStore();
+  const pg1 = pg1Principal();
+  const uni = await createWorld(store, pg1, { name: 'Pg1-Universe', template: 'universe' });
+  await stepWorldFor(store, pg1, { world_id: uni.id, steps: 40 });
+  const { server, origin } = await startServer(store);
+  const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  t.after(async () => { await browser.close(); await new Promise((r) => server.close(r)); __setSandboxViewerStore(null); });
+  for (const tier of ['low', 'medium', 'high', 'ultra']) {
+    const { page, errors, context } = await signedInPage(browser, origin);
+    await page.evaluate((v) => { localStorage.setItem('pg1_sandbox_quality', v); }, tier);
+    await page.evaluate((id) => openSandboxScreen(id), uni.id);
+    await page.waitForFunction(() => /^Step 40 · /.test(document.getElementById('sandbox-tick').textContent), null, { timeout: 60000 });
+    const view = page.locator('#sandbox-view');
+    if (await view.getAttribute('data-renderer') !== 'webgl') { await context.close(); continue; }
+    assert.equal(await view.getAttribute('data-tier'), tier);
+    assert.equal(await page.locator('#sandbox-quality').inputValue(), tier);
+    const f0 = Number(await view.getAttribute('data-frames')) || 0;
+    await page.waitForFunction((n) => Number(document.getElementById('sandbox-view').dataset.frames || 0) > n + 3, f0, { timeout: 120000 });
+    await page.evaluate(() => sandboxScene.setView('overview'));
+    await page.waitForTimeout(2500);
+    await page.screenshot({ path: join(SHOTS_DIR, `sandbox-tier-${tier}-380-dark.png`), clip: await view.boundingBox() });
+    // Close up in the town: shadows, materials and ambient occlusion show here.
+    await page.evaluate(() => { const e = sandboxState.world.entities.find((x) => x.kind === 'tower') || sandboxState.world.entities.find((x) => x.kind === 'house'); sandboxScene.select(e.id); });
+    await page.waitForTimeout(3500);
+    await page.screenshot({ path: join(SHOTS_DIR, `sandbox-tier-${tier}-town-380-dark.png`), clip: await view.boundingBox() });
+    assert.deepEqual(errors, [], `${tier}: no page errors`);
+    await context.close();
+  }
+  // The picker switches tiers in place and keeps the world.
+  const { page, errors } = await signedInPage(browser, origin);
+  await page.evaluate(() => localStorage.removeItem('pg1_sandbox_quality'));
+  await page.evaluate((id) => openSandboxScreen(id), uni.id);
+  await page.waitForFunction(() => /^Step 40 · /.test(document.getElementById('sandbox-tick').textContent), null, { timeout: 60000 });
+  if (await page.locator('#sandbox-view').getAttribute('data-renderer') === 'webgl') {
+    assert.match(await page.locator('#sandbox-quality option[value="auto"]').innerText(), /^Auto \((Ultra|High|Medium|Low)\)$/);
+    const markers = await page.locator('#sandbox-view').getAttribute('data-markers');
+    await page.selectOption('#sandbox-quality', 'low');
+    await page.waitForFunction(() => document.getElementById('sandbox-view').dataset.tier === 'low', null, { timeout: 60000 });
+    assert.equal(await page.evaluate(() => localStorage.getItem('pg1_sandbox_quality')), 'low');
+    assert.equal(await page.locator('#sandbox-view').getAttribute('data-markers'), markers, 'the same world after the switch');
+    await page.selectOption('#sandbox-quality', 'auto');
+    await page.waitForFunction(() => localStorage.getItem('pg1_sandbox_quality') === 'auto', null, { timeout: 60000 });
+  }
   assert.deepEqual(errors, []);
 });

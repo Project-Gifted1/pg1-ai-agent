@@ -477,6 +477,7 @@
     .lx-link { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
     .sandbox-views { align-items: center; }
     .sandbox-views .sandbox-full-btn { margin-left: auto; }
+    .sandbox-quality { min-height: var(--lx-tap); padding: 0 8px; border-radius: var(--lx-radius-sm); border: 1px solid var(--lx-line-strong); background: var(--lx-card-2); color: var(--lx-text); font: inherit; }
     .sandbox-full-exit { position: absolute; bottom: calc(12px + var(--safe-bottom, 0px)); right: 12px; z-index: 2; }
     .sandbox-inspect .lx-rows code { font-size: 0.72rem; }
     .sandbox-inspect[hidden] { display: none; }
@@ -2939,6 +2940,7 @@
           <button type="button" data-view="space" aria-pressed="false" onclick="setSandboxView('space')">Space</button>
           <button type="button" id="sandbox-names" aria-pressed="true" onclick="toggleSandboxNames()">Names</button>
           <button type="button" id="sandbox-xray" aria-pressed="false" onclick="toggleSandboxXray()">See inside</button>
+          <select class="sandbox-quality" id="sandbox-quality" aria-label="Quality" onchange="setSandboxQuality(this.value)"><option value="auto">Auto</option><option value="ultra">Ultra</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
           <button type="button" class="sandbox-full-btn" aria-pressed="false" id="sandbox-full" onclick="toggleSandboxFull()">Full screen</button>
         </div>
         <div class="sandbox-view" id="sandbox-view" aria-label="The world, drawn in 3D"></div>
@@ -3830,6 +3832,17 @@
     var sandboxSpeed = 1;
     function sandboxStepMs() { return Math.round(1200 / sandboxSpeed); }
     function setSandboxSpeed(v) { sandboxSpeed = [1, 2, 4].includes(Number(v)) ? Number(v) : 1; if (sandboxPlayTimer) { stopSandboxPlay(); toggleSandboxPlay(); } }
+    // Quality: Auto (from the device, lowered when frames run slow) or a tier kept on this device.
+    function markSandboxQuality(q) {
+      const sel = document.getElementById('sandbox-quality');
+      if (!sel) return;
+      sel.hidden = !q;
+      if (!q) return;
+      sel.value = q.auto ? 'auto' : q.tier;
+      const auto = sel.querySelector('option[value="auto"]');
+      if (auto) auto.textContent = q.auto ? `Auto (${q.tier[0].toUpperCase()}${q.tier.slice(1)})` : 'Auto';
+    }
+    async function setSandboxQuality(v) { if (sandboxScene && sandboxScene.setQuality) { await sandboxScene.setQuality(v); markSandboxQuality(sandboxScene.quality()); } }
     function markSandboxView(mode) { document.querySelectorAll('.sandbox-views [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === mode))); }
     function setSandboxView(mode) { if (!sandboxScene || !sandboxScene.setView) return; sandboxScene.setView(mode); markSandboxView(sandboxScene.view ? sandboxScene.view() : mode); }
     function toggleSandboxFull() {
@@ -4042,8 +4055,9 @@
         try {
           const mod = await import('/sandbox/sandbox-scene.js');
           window.__sandboxKinds = (w) => mod.kindsOf(mod.normalizeWorld(w));
-          sandboxScene = await mod.createSandboxScene(holder, { reducedMotion: reduced, coarse, onSelect: renderSandboxInspect });
+          sandboxScene = await mod.createSandboxScene(holder, { reducedMotion: reduced, coarse, onSelect: renderSandboxInspect, onQuality: markSandboxQuality });
           holder.onViewChange = markSandboxView;
+          markSandboxQuality(sandboxScene.quality ? sandboxScene.quality() : null);
         } catch (e) { sandboxScene = null; }
       }
       let list = null;
