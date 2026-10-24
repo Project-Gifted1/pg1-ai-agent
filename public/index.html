@@ -445,6 +445,53 @@
     .lab-mode[data-mode="running"] { border-color: rgba(54, 209, 196, 0.6); }
     .lab-bot-open { all: unset; cursor: pointer; display: block; border-radius: 12px; }
     .lab-bot-open:focus-visible { box-shadow: var(--focus-ring); }
+    /* THE SANDBOX (lib/sandbox, public/sandbox/sandbox-scene.js): a world
+       as a 3D scene, its controls, rules and events, and the Experiments
+       panel, built from the Living lab components (public/lab/lab-ui.css).
+       Worlds are simulations: the screen says so at the top. */
+    .sandbox-screen { overflow-y: auto; overscroll-behavior: contain; }
+    .sandbox-body { position: relative; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 0 max(12px, var(--safe-right)) calc(var(--safe-bottom, 0px) + 16px) max(12px, var(--safe-left)); max-width: 960px; width: 100%; margin: 0 auto; box-sizing: border-box; }
+    .sandbox-sim { margin: 0; color: #b8b8c0; font-size: 0.78rem; }
+    .sandbox-view { position: relative; height: min(68vh, 680px); min-height: 340px; border: 1px solid var(--lx-line); border-radius: var(--lx-radius); overflow: hidden; background: #0a0a0b; }
+    .sandbox-view.is-full { position: fixed; inset: 0; z-index: 60; height: auto; border-radius: 0; border: 0; }
+    .sandbox-hud { position: absolute; inset: 0; pointer-events: none; }
+    .secret-once { max-width: min(420px, calc(100vw - 32px)); border: 1px solid rgba(255,255,255,0.14); border-radius: 14px; background: #121214; color: #e8e8ec; padding: 18px; }
+    .secret-once::backdrop { background: rgba(0,0,0,0.6); }
+    .secret-once h3 { margin: 0 0 8px; font-size: 1rem; }
+    .secret-once p { margin: 0 0 10px; font-size: 0.86rem; line-height: 1.45; }
+    .secret-once-mask { font-family: ui-monospace, monospace; letter-spacing: 0.04em; opacity: 0.8; }
+    .secret-once-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .secret-once button { min-height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); background: #1d1d21; color: inherit; font: inherit; cursor: pointer; }
+    .sandbox-clock { position: absolute; top: 8px; left: 8px; max-width: calc(100% - 128px); padding: 4px 10px; border-radius: 999px; background: rgba(10,10,11,0.72); color: #e8e8ec; font: 600 0.72rem/1.3 var(--lx-font, system-ui); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sandbox-minimap { position: absolute; top: 8px; right: 8px; width: 104px; height: 104px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); pointer-events: auto; cursor: pointer; }
+    .sandbox-label { position: absolute; top: 0; left: 0; padding: 3px 8px; border-radius: 6px; background: rgba(243,198,35,0.95); color: #111; font: 700 0.72rem/1.2 var(--lx-font, system-ui); white-space: nowrap; max-width: 70%; overflow: hidden; text-overflow: ellipsis; }
+    .sandbox-label[hidden] { display: none; }
+    .sandbox-tags { position: absolute; inset: 0; overflow: hidden; }
+    .sandbox-tag { position: absolute; top: 0; left: 0; max-width: 220px; padding: 2px 7px; border-radius: 8px; background: rgba(10,10,11,0.62); color: #f5f5f7; font: 600 0.66rem/1.3 var(--lx-font, system-ui); white-space: nowrap; pointer-events: none; text-align: center; }
+    .sandbox-tag[hidden] { display: none; }
+    .sandbox-tag .job { margin-left: 5px; color: #b8b8c0; font-weight: 500; }
+    .sandbox-tag .say { display: none; }
+    .sandbox-tag.is-talking { white-space: normal; background: rgba(250,250,250,0.94); color: #111; }
+    .sandbox-tag.is-talking .job { color: #555; }
+    .sandbox-tag.is-talking .say { display: block; font-weight: 500; font-style: italic; }
+    .lx-link { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+    .sandbox-views { align-items: center; }
+    .sandbox-views .sandbox-full-btn { margin-left: auto; }
+    .sandbox-full-exit { position: absolute; bottom: calc(12px + var(--safe-bottom, 0px)); right: 12px; z-index: 2; }
+    .sandbox-inspect .lx-rows code { font-size: 0.72rem; }
+    .sandbox-inspect[hidden] { display: none; }
+    .sandbox-speed { min-height: var(--lx-tap); padding: 0 8px; border-radius: var(--lx-radius-sm); border: 1px solid var(--lx-line-strong); background: var(--lx-card-2); color: var(--lx-text); font: inherit; }
+    @media (min-width: 720px) { .sandbox-minimap { width: 132px; height: 132px; } }
+    .sandbox-view .living-lab-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+    .sandbox-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .sandbox-controls select { min-height: var(--lx-tap); max-width: 100%; flex: 1 1 180px; padding: 0 10px; border-radius: var(--lx-radius-sm); border: 1px solid var(--lx-line-strong); background: var(--lx-card-2); color: var(--lx-text); font: inherit; }
+    .sandbox-tick { color: var(--lx-faint); font-size: var(--fs-2xs, 0.6875rem); font-variant-numeric: tabular-nums; }
+    .sandbox-kinds { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 0.75rem; color: var(--lx-muted); }
+    .sandbox-kinds .sw { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+    .sandbox-panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; }
+    .sandbox-panel[hidden] { display: none; }
+    .sandbox-panel > *, #sandbox-runs > * { min-width: 0; }
+    .sandbox-open-row { margin-top: var(--sp-2, 8px); }
     /* Approval cards (Part 3): what Autonomous mode proposes and waits on. */
     .auto-approvals { display: grid; gap: 10px; margin: 0 0 14px; }
     .auto-approvals:empty { display: none; }
@@ -2859,6 +2906,70 @@
     </div>
   </section>
 
+  <!-- THE SANDBOX: opened by /sandbox and /world <id> replies. The scene
+       (public/sandbox/sandbox-scene.js, three.js from /vendor/three/) runs in
+       the browser; the data comes from /api/sandbox (operator only). -->
+  <section id="sandbox-screen" class="lab-screen sandbox-screen" role="dialog" aria-modal="true" aria-labelledby="sandbox-title" aria-describedby="sandbox-sim">
+    <div class="lab-screen-head">
+      <h2 id="sandbox-title"><svg aria-hidden="true" focusable="false"><use href="#pg1-shield"/></svg>Pg1-Universe</h2>
+      <span class="lx-pill" data-tone="think" id="sandbox-label">Simulation</span>
+      <button type="button" class="icon-btn" aria-label="Close the Sandbox" data-dialog-close onclick="triggerHaptic(40); closeSandboxScreen()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="sandbox-body">
+      <p class="sandbox-sim" id="sandbox-sim">Worlds are simulations: data stepped by a deterministic engine. Nothing in them is a real event. You watch unseen: nothing in a world knows you are here.</p>
+      <div class="lx-filter" role="tablist" aria-label="Sandbox views">
+        <button type="button" role="tab" id="sandbox-tab-worlds" aria-pressed="true" aria-selected="true" onclick="showSandboxPanel('worlds')">Worlds</button>
+        <button type="button" role="tab" id="sandbox-tab-society" aria-pressed="false" aria-selected="false" onclick="showSandboxPanel('society')">Society</button>
+        <button type="button" role="tab" id="sandbox-tab-blackbox" aria-pressed="false" aria-selected="false" onclick="showSandboxPanel('blackbox')">Black box</button>
+        <button type="button" role="tab" id="sandbox-tab-experiments" aria-pressed="false" aria-selected="false" onclick="showSandboxPanel('experiments')">Experiments</button>
+      </div>
+      <div class="sandbox-panel" id="sandbox-panel-worlds" role="tabpanel" aria-labelledby="sandbox-tab-worlds">
+        <div class="sandbox-controls">
+          <select id="sandbox-world" aria-label="World" onchange="selectSandboxWorld(this.value)"></select>
+          <button type="button" class="lx-btn is-primary" id="sandbox-play" onclick="toggleSandboxPlay()" aria-pressed="false">Play</button>
+          <button type="button" class="lx-btn" id="sandbox-step" onclick="stepSandboxWorld(1)">Step</button>
+          <select class="sandbox-speed" id="sandbox-speed" aria-label="Speed" onchange="setSandboxSpeed(this.value)"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select>
+          <button type="button" class="lx-btn" id="sandbox-new" onclick="createSandboxUniverse()">New universe</button>
+          <span class="sandbox-tick" id="sandbox-tick" aria-live="polite"></span>
+        </div>
+        <div class="lx-filter sandbox-views" role="group" aria-label="Camera">
+          <button type="button" data-view="overview" aria-pressed="true" onclick="setSandboxView('overview')">Overview</button>
+          <button type="button" data-view="follow" aria-pressed="false" onclick="setSandboxView('follow')">Follow</button>
+          <button type="button" data-view="tour" aria-pressed="false" onclick="setSandboxView('tour')">Tour</button>
+          <button type="button" data-view="space" aria-pressed="false" onclick="setSandboxView('space')">Space</button>
+          <button type="button" id="sandbox-names" aria-pressed="true" onclick="toggleSandboxNames()">Names</button>
+          <button type="button" id="sandbox-xray" aria-pressed="false" onclick="toggleSandboxXray()">See inside</button>
+          <button type="button" class="sandbox-full-btn" aria-pressed="false" id="sandbox-full" onclick="toggleSandboxFull()">Full screen</button>
+        </div>
+        <div class="sandbox-view" id="sandbox-view" aria-label="The world, drawn in 3D"></div>
+        <section class="lx-card sandbox-inspect" id="sandbox-inspect" aria-labelledby="sandbox-inspect-h" hidden><h3 class="lx-section-h" id="sandbox-inspect-h">Selected</h3><ul class="lx-rows" id="sandbox-inspect-rows"></ul></section>
+        <div class="sandbox-kinds" id="sandbox-kinds" aria-label="Kinds of entity"></div>
+        <section class="lx-card" aria-labelledby="sandbox-rules-h"><h3 class="lx-section-h" id="sandbox-rules-h">Rules, in plain words</h3><ul class="lx-rows" id="sandbox-rules"></ul></section>
+        <section class="lx-card" aria-labelledby="sandbox-events-h"><h3 class="lx-section-h" id="sandbox-events-h">Events (simulated)</h3><ol class="lx-timeline" id="sandbox-events"></ol></section>
+      </div>
+      <div class="sandbox-panel" id="sandbox-panel-society" role="tabpanel" aria-labelledby="sandbox-tab-society" hidden>
+        <section class="lx-card" data-tone="think" aria-labelledby="sandbox-society-h"><h3 class="lx-section-h" id="sandbox-society-h">Their society (simulated)</h3><ul class="lx-rows" id="sandbox-society"></ul></section>
+        <section class="lx-card" aria-labelledby="sandbox-people-h"><h3 class="lx-section-h" id="sandbox-people-h">Who's who</h3><ul class="lx-rows" id="sandbox-people"></ul></section>
+        <section class="lx-card" aria-labelledby="sandbox-talk-h"><h3 class="lx-section-h" id="sandbox-talk-h">What they are saying</h3><ol class="lx-timeline" id="sandbox-talk"></ol></section>
+      </div>
+      <div class="sandbox-panel" id="sandbox-panel-blackbox" role="tabpanel" aria-labelledby="sandbox-tab-blackbox" hidden>
+        <section class="lx-card" aria-labelledby="sandbox-bb-h">
+          <div class="lx-head"><h3 class="lx-section-h" id="sandbox-bb-h">Black box</h3><span class="lx-badge" id="sandbox-bb-chain" data-tone="idle">Checking</span></div>
+          <p class="lx-sub">Every action taken in this world and by whom: agents' tool calls, each inhabitant's decisions, words and deeds, the society's events. Append-only; each record carries the hash of the one before, so a changed or missing record shows here.</p>
+          <div class="sandbox-controls"><select id="sandbox-bb-actor" aria-label="Whose actions" onchange="renderSandboxBlackbox()"><option value="">Everyone</option></select><button type="button" class="lx-btn" id="sandbox-bb-more" onclick="renderSandboxBlackbox(true)">Older</button></div>
+          <ul class="lx-rows" id="sandbox-bb-rows"></ul>
+        </section>
+      </div>
+      <div class="sandbox-panel" id="sandbox-panel-experiments" role="tabpanel" aria-labelledby="sandbox-tab-experiments" hidden>
+        <section class="lx-card" data-tone="think" aria-labelledby="sandbox-compare-h">
+          <h3 class="lx-section-h" id="sandbox-compare-h">Conditions compared</h3>
+          <ul class="lx-rows" id="sandbox-compare" aria-label="One row per condition"></ul>
+        </section>
+        <div id="sandbox-runs" class="lx-grid" style="grid-template-columns: 1fr;"></div>
+      </div>
+    </div>
+  </section>
+
   <header class="app-header">
     <button type="button" id="drawer-btn" class="icon-btn" onclick="triggerHaptic(); toggleDrawer()" aria-label="Open menu" aria-expanded="false" aria-controls="app-drawer"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
     <div class="brand-wrap">
@@ -3674,6 +3785,291 @@
       clearInterval(labScenePoll);
       labScenePoll = setInterval(() => { if (!document.hidden) tick(); }, 8000);
     }
+    // THE SANDBOX (lib/sandbox): the viewer screen. /api/sandbox, operator
+    // only; the scene module is loaded only here. Step calls step_world on
+    // PG1's own worlds; an invited agent's world is read only.
+    var sandboxScene = null;
+    var sandboxPlayTimer = null;
+    var sandboxState = { worlds: [], worldId: null, world: null };
+    async function sandboxRequest(payload) {
+      const res = await fetch('/api/sandbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, user: sessionUser, pass: sessionPass }) });
+      let data = {};
+      try { data = await res.json(); } catch (e) {}
+      if (!res.ok) { const err = new Error(data.message || data.error || `HTTP ${res.status}`); err.status = res.status; throw err; }
+      return data;
+    }
+    function showSandboxPanel(which) {
+      for (const k of ['worlds', 'society', 'blackbox', 'experiments']) {
+        const tab = document.getElementById(`sandbox-tab-${k}`);
+        const panel = document.getElementById(`sandbox-panel-${k}`);
+        if (tab) { tab.setAttribute('aria-pressed', String(k === which)); tab.setAttribute('aria-selected', String(k === which)); }
+        if (panel) panel.hidden = k !== which;
+      }
+      if (which === 'experiments') renderSandboxExperiments();
+      if (which === 'society') renderSandboxSociety(sandboxState.world);
+      if (which === 'blackbox') renderSandboxBlackbox();
+    }
+    function renderSandboxWorld(w) {
+      sandboxState.world = w;
+      const label = document.getElementById('sandbox-label');
+      if (label) { label.textContent = w && w.label ? w.label : 'Simulation'; label.dataset.tone = w && w.blind ? 'over' : 'think'; }
+      const tick = document.getElementById('sandbox-tick');
+      if (tick) tick.textContent = w ? `Step ${w.tick} · ${w.entity_count} entities${w.readOnly ? ' · read only' : ''}` : '';
+      for (const id of ['sandbox-play', 'sandbox-step']) { const b = document.getElementById(id); if (b) b.disabled = !w || !!w.readOnly; }
+      const rules = document.getElementById('sandbox-rules');
+      if (rules) rules.innerHTML = w && w.rules && w.rules.length ? w.rules.map((r) => `<li class="lx-row" data-tone="think"><span class="lx-dot"></span><span class="lx-row-main">${escapeHTML(r.text)}</span><span class="lx-row-end"><code>${escapeHTML(r.type)}</code></span></li>`).join('') : '<li class="lx-row"><span class="lx-dot"></span><span class="lx-row-main">No rules yet.</span></li>';
+      const events = document.getElementById('sandbox-events');
+      if (events) events.innerHTML = w && w.recent_events && w.recent_events.length ? w.recent_events.slice(0, 20).map((e) => `<li data-tone="${e.kind === 'remove' ? 'err' : e.kind === 'spawn' ? 'ok' : 'run'}"><div class="lx-card"><span class="lx-meta">step ${escapeHTML(String(e.tick))} · ${escapeHTML(e.kind)}</span><p class="lx-sub">${escapeHTML(e.summary)}</p></div></li>`).join('') : '<li data-tone="idle"><p class="lx-empty">No events yet. Step the world to see what happens.</p></li>';
+      const kinds = document.getElementById('sandbox-kinds');
+      if (kinds && window.__sandboxKinds) kinds.innerHTML = window.__sandboxKinds({ size: w && w.size, entities: (w && w.entities) || [] }).map((k) => `<span><span class="sw" style="background:${k.color}"></span>${escapeHTML(k.kind)} <strong>${k.n}</strong></span>`).join('');
+      if (sandboxScene && w) sandboxScene.update(w, { duration: sandboxStepMs() });
+      const socPanel = document.getElementById('sandbox-panel-society');
+      if (socPanel && !socPanel.hidden) renderSandboxSociety(w);
+    }
+    // Play speed: 1× is one step every 1.2 s; the scene glides between steps.
+    var sandboxSpeed = 1;
+    function sandboxStepMs() { return Math.round(1200 / sandboxSpeed); }
+    function setSandboxSpeed(v) { sandboxSpeed = [1, 2, 4].includes(Number(v)) ? Number(v) : 1; if (sandboxPlayTimer) { stopSandboxPlay(); toggleSandboxPlay(); } }
+    function markSandboxView(mode) { document.querySelectorAll('.sandbox-views [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === mode))); }
+    function setSandboxView(mode) { if (!sandboxScene || !sandboxScene.setView) return; sandboxScene.setView(mode); markSandboxView(sandboxScene.view ? sandboxScene.view() : mode); }
+    function toggleSandboxFull() {
+      const v = document.getElementById('sandbox-view'); const b = document.getElementById('sandbox-full');
+      if (!v) return;
+      const on = !v.classList.contains('is-full');
+      v.classList.toggle('is-full', on);
+      if (b) { b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Exit full screen' : 'Full screen'; }
+      if (on && b) { const x = b.cloneNode(true); x.removeAttribute('id'); x.className = 'lx-btn sandbox-full-exit'; v.appendChild(x); } else v.querySelectorAll('.sandbox-full-exit').forEach((x) => x.remove());
+    }
+    function renderSandboxInspect(sel) {
+      const box = document.getElementById('sandbox-inspect'); const rows = document.getElementById('sandbox-inspect-rows');
+      if (!box || !rows) return;
+      box.hidden = !sel;
+      if (!sel) return;
+      const p = sel.properties || {};
+      const line = (k, v) => `<li class="lx-row"><span class="lx-dot"></span><span class="lx-row-main">${escapeHTML(k)}</span><span class="lx-row-end"><code>${escapeHTML(String(v))}</code></span></li>`;
+      if (['person', 'child', 'astronaut', 'alien'].includes(sel.kind)) {
+        const ents = (sandboxState.world && sandboxState.world.entities) || [];
+        const nameOf = (id) => { const e = ents.find((x) => x.id === id); return e && e.properties && e.properties.name ? `${e.properties.name}${e.properties.family ? ' ' + e.properties.family : ''}` : id; };
+        const cur = sandboxState.world && sandboxState.world.society && sandboxState.world.society.currency;
+        const bar = (v) => `${Math.round(Number(v) || 0)}%`;
+        rows.innerHTML = line('Name', `${p.name || sel.id}${p.family ? ' ' + p.family : ''} · ${sel.id}`)
+          + line('Age', `${Math.floor(Number(p.age) || 0)}${p.sex ? `, ${p.sex}` : ''}`)
+          + (p.job ? line('Work', `${p.job}${p.work ? ` at ${p.work}` : ''}`) : '')
+          + (p.education != null ? line('Education', `${Math.round(p.education)} years`) : '')
+          + (p.money != null ? line('Money', `${Math.round(p.money)}${cur ? ' ' + cur : ''}`) : '')
+          + (p.partner ? line('Partner', nameOf(p.partner)) : '') + (p.children ? line('Children', p.children) : '')
+          + (p.mother || p.father ? line('Parents', [p.mother, p.father].filter(Boolean).map(nameOf).join(' and ')) : '')
+          + line('Needs', `hunger ${bar(p.hunger)} · energy ${bar(p.energy)} · clean ${bar(p.hygiene)} · company ${bar(p.social)}`)
+          + (p.honesty != null ? line('Character', `honesty ${bar(p.honesty * 100)} · ambition ${bar(p.ambition * 100)} · warmth ${bar(p.sociability * 100)} · curiosity ${bar(p.curiosity * 100)}`) : '')
+          + (p.target ? line('Heading to', p.target) : p.at ? line('At', p.at) : '')
+          + (p.inside ? line('Riding in', p.inside) : '') + (p.jail_until ? line('In prison', `until step ${p.jail_until}`) : '')
+          + (p.saying ? line('Saying', `“${p.saying}”`) : '') + (p.civ ? line('From', p.civ) : '');
+        markSandboxView(sandboxScene && sandboxScene.view ? sandboxScene.view() : 'follow');
+        return;
+      }
+      rows.innerHTML = line('Thing', `${sel.kind.replace(/_/g, ' ')} · ${sel.id}`)
+        + line('Where', `${sel.position.x} m E, ${sel.position.y} m N, ${sel.position.z} m up`)
+        + (p.inside ? line('Riding in', p.inside) : '') + (p.target ? line('Heading to', p.target) : '') + (p.at ? line('Last arrived at', p.at) : '')
+        + Object.entries(p).filter(([k]) => !['inside', 'target', 'at', 'color', 'shirt', 'livery', 'roof', 'awning'].includes(k)).slice(0, 8).map(([k, v]) => line(k.replace(/_/g, ' '), v)).join('');
+      markSandboxView(sandboxScene && sandboxScene.view ? sandboxScene.view() : 'follow');
+    }
+    function toggleSandboxNames() { if (!sandboxScene || !sandboxScene.setNames) return; const on = !sandboxScene.names(); sandboxScene.setNames(on); const b = document.getElementById('sandbox-names'); if (b) b.setAttribute('aria-pressed', String(on)); }
+    function toggleSandboxXray() { if (!sandboxScene || !sandboxScene.setXray) return; const on = !sandboxScene.xray(); sandboxScene.setXray(on); const b = document.getElementById('sandbox-xray'); if (b) b.setAttribute('aria-pressed', String(on)); }
+    const SANDBOX_TECH = ['settlement', 'roads and houses', 'industry', 'flight', 'spaceflight', 'space colonies', 'interstellar travel'];
+    function renderSandboxSociety(w) {
+      const box = document.getElementById('sandbox-society'); const ppl = document.getElementById('sandbox-people'); const talk = document.getElementById('sandbox-talk');
+      if (!box) return;
+      const ents = (w && w.entities) || [];
+      const row = (k, v, tone = 'think') => `<li class="lx-row" data-tone="${tone}"><span class="lx-dot"></span><span class="lx-row-main">${escapeHTML(k)}</span><span class="lx-row-end">${escapeHTML(String(v))}</span></li>`;
+      const named = (id) => { const e = ents.find((x) => x.id === id); return e && e.properties && e.properties.name ? `${e.properties.name}${e.properties.family ? ' ' + e.properties.family : ''}` : (id || 'nobody'); };
+      // One society per country (a world saved before countries has one, at the top level).
+      const raw = w && w.society;
+      const socs = !raw ? {} : ('currency' in raw || 'treasury' in raw) ? { home: raw } : raw;
+      if (!Object.keys(socs).length) { box.innerHTML = row('Society', 'This world has no inhabitants with a life rule.'); if (ppl) ppl.innerHTML = ''; if (talk) talk.innerHTML = ''; return; }
+      const aw = w && w.awareness;
+      const AW = ['unaware of what their world is', 'suspect their world was made', 'have tested it', 'are trying to reach whoever watches'];
+      // Plainly: the inhabitants are scripted; only PG1-subject runs are a real test.
+      let html = `<li class="lx-row" data-tone="idle" id="sandbox-scripted"><span class="lx-dot"></span><span class="lx-row-main"><strong>Scripted inhabitants</strong></span><span class="lx-row-sub">The people here follow deterministic rules and dice from the world's seed. No AI runs them. Their choices, talk and “working out what their world is” are scripted events, not intelligence. Only PG1-subject runs (the Experiments tab) are a real test.</span></li>`;
+      if (aw && (aw.level > 0 || (aw.messages && aw.messages.length))) html += `<li class="lx-row" data-tone="gold"><span class="lx-dot"></span><span class="lx-row-main"><strong>Messages from inside</strong> (a scripted event)</span><span class="lx-row-end">${escapeHTML(AW[aw.level] || '')}</span><span class="lx-row-sub">${(aw.messages || []).map((m) => `#${m.n} (step ${m.tick}): “${escapeHTML(m.text)}”`).join('<br>') || 'No message yet.'}</span></li>`;
+      else if (aw) html += row('What they know', `${AW[0]}; evidence ${Math.round(aw.evidence || 0)} of 100${aw.edge_seen ? `; reached the edge of the sea ${aw.edge_seen}×` : ''}`, 'idle');
+      // Between countries: allies, standoffs, wars and their cost.
+      const dip = Object.entries((w && w.diplomacy) || {});
+      if (dip.length) {
+        const nm = (c) => (socs[c] && socs[c].name) || c;
+        const tone = { war: 'err', standoff: 'over', alliance: 'ok', peace: 'think' };
+        html += `<li class="lx-row" data-tone="info"><span class="lx-dot"></span><span class="lx-row-main"><strong>Between countries</strong></span></li>`;
+        for (const [key, d] of dip) { const [a, b] = key.split('|'); html += row(`${nm(a)} · ${nm(b)}`, `${d.status === 'war' ? `at war (${(d.war && (d.war.losses[a] + d.war.losses[b])) || 0} dead so far)` : d.status}; relations ${Math.round(d.score)}${d.last_war ? `; last war ended at step ${d.last_war.ended}, ${d.last_war.dead} dead` : ''}`, tone[d.status] || 'think'); }
+      }
+      for (const [code, soc] of Object.entries(socs)) {
+        const people = ents.filter((e) => ['person', 'child'].includes(e.kind) && (code === 'home' || e.properties.country === code));
+        html += societyRows(code, soc, people, { row, named });
+      }
+      box.innerHTML = html;
+      const people = ents.filter((e) => ['person', 'child'].includes(e.kind));
+      if (ppl) ppl.innerHTML = people.slice().sort((a, b) => (a.properties.country || '').localeCompare(b.properties.country || '') || (a.properties.family || '').localeCompare(b.properties.family || '') || (a.properties.name || '').localeCompare(b.properties.name || '')).slice(0, 150).map((e) => `<li class="lx-row" data-tone="${e.properties.jail_until ? 'err' : e.kind === 'child' ? 'info' : 'think'}"><span class="lx-dot"></span><span class="lx-row-main"><button type="button" class="lx-link" onclick="sandboxScene && sandboxScene.select('${escapeHTML(e.id)}'); showSandboxPanel('worlds')">${escapeHTML(named(e.id))}</button></span><span class="lx-row-end">${escapeHTML(`${Math.floor(e.properties.age || 0)}${e.properties.job ? ' · ' + e.properties.job : ''}${e.properties.country ? ' · ' + e.properties.country : ''}`)}</span><span class="lx-row-sub">${escapeHTML([e.properties.abroad ? `on holiday in ${e.properties.abroad}` : '', e.properties.partner ? `with ${named(e.properties.partner)}` : '', e.properties.saying ? `“${e.properties.saying}”` : ''].filter(Boolean).join(' · '))}</span></li>`).join('');
+      if (talk) {
+        const lines = ((w && w.recent_events) || []).filter((e) => ['talk', 'election', 'birth', 'death', 'partners', 'crime', 'arrest', 'first_contact', 'colony', 'technology', 'currency', 'travel', 'show', 'expedition', 'discovery', 'hypothesis', 'proof', 'message_to_observer', 'sighting', 'dispute', 'standoff', 'treaty', 'alliance', 'war_declared', 'battle', 'armistice', 'invention', 'accident'].includes(e.kind)).slice(0, 25);
+        talk.innerHTML = lines.length ? lines.map((e) => `<li data-tone="${e.kind === 'talk' ? 'run' : ['crime', 'death', 'war_declared', 'battle', 'accident'].includes(e.kind) ? 'err' : ['message_to_observer', 'hypothesis', 'first_contact'].includes(e.kind) ? 'gold' : 'ok'}"><div class="lx-card"><span class="lx-meta">step ${escapeHTML(String(e.tick))} · ${escapeHTML(e.kind.replace(/_/g, ' '))}</span><p class="lx-sub">${escapeHTML(e.summary)}</p></div></li>`).join('') : '<li data-tone="idle"><p class="lx-empty">Nothing said yet. Press Play.</p></li>';
+      }
+    }
+    // Research and development (lib/sandbox/research.mjs): the discovery reached in each branch, and the next.
+    var SANDBOX_RD = {
+      energy: ['wood and fire', 'water wheels', 'coal and steam power', 'electricity', 'oil and gas', 'nuclear fission', 'solar and wind power', 'fusion power', 'antimatter power'],
+      industry: ['hand tools', 'workshops', 'factories', 'assembly lines', 'chemistry and plastics', 'automation', 'robotics', 'nanofabrication'],
+      weapons: ['spears and bows', 'swords and armour', 'gunpowder', 'rifles', 'artillery and armour', 'aircraft and warships', 'guided missiles', 'a nuclear deterrent', 'energy weapons', 'orbital defence'],
+      medicine: ['herbal remedies', 'sanitation', 'vaccines', 'antibiotics', 'surgery and imaging', 'genetics', 'gene therapy', 'regenerative medicine'],
+      computing: ['counting boards', 'the printing press', 'the telegraph', 'radio', 'computers', 'the network', 'thinking machines', 'quantum computing'],
+      materials: ['stone and wood', 'bronze', 'iron', 'steel', 'concrete', 'light alloys', 'composites', 'room-temperature superconductors']
+    };
+    function rdRows(soc, row) {
+      const rd = soc && soc.rd; if (!rd || !rd.level) return '';
+      const lines = Object.keys(SANDBOX_RD).map((b) => { const l = rd.level[b] || 0; const next = SANDBOX_RD[b][l + 1]; return `${b}: ${SANDBOX_RD[b][l]}${next ? ` → ${next}` : ''}`; });
+      const extra = [rd.pollution ? `pollution ${Math.round(rd.pollution)}` : '', rd.accidents ? `${rd.accidents} reactor accident${rd.accidents === 1 ? '' : 's'}` : '', rd.arms_spent ? `${Math.round(rd.arms_spent)} spent on arms` : ''].filter(Boolean).join('; ');
+      return `<li class="lx-row" data-tone="info"><span class="lx-dot"></span><span class="lx-row-main">Research and development</span><span class="lx-row-end">${escapeHTML(extra || 'no pollution yet')}</span><span class="lx-row-sub">${lines.map(escapeHTML).join('<br>')}</span></li>`;
+    }
+    function societyRows(code, soc, people, { row, named }) {
+      const jobs = {}; for (const e of people) if (e.properties.job) jobs[e.properties.job] = (jobs[e.properties.job] || 0) + 1;
+      return `<li class="lx-row" data-tone="info"><span class="lx-dot"></span><span class="lx-row-main"><strong>${escapeHTML(soc.name || (code === 'home' ? 'Their country' : code))}</strong></span><span class="lx-row-end">${escapeHTML([soc.government, soc.climate, soc.culture].filter(Boolean).join(' · '))}</span></li>` + row('People', `${people.filter((e) => e.kind === 'person').length} adults, ${people.filter((e) => e.kind === 'child').length} children; ${soc.births} born, ${soc.deaths} died`)
+        + row('Money', soc.currency ? `the ${soc.currency}; treasury ${Math.round(soc.treasury)}` : 'not yet: they barter')
+        + row('Government', soc.leader ? `${soc.title ? soc.title + ' ' : ''}${named(soc.leader)}${soc.government === 'monarchy' ? '' : ` (election ${soc.elections})`}` : 'no leader yet')
+        + row('Visitors and fun', `${soc.tourists || 0} holiday arrivals; ${soc.shows || 0} matches and shows`)
+        + row('Laws', (soc.laws || []).join('; ') || 'none yet')
+        + row('Army', `${people.filter((e) => e.properties.job === 'soldier').length} soldiers${soc.wars ? `; ${soc.wars} war${soc.wars === 1 ? '' : 's'}, ${soc.war_dead || 0} soldiers lost` : '; never been to war'}`, soc.wars ? 'over' : 'think')
+        + row('Law and order', `${soc.crimes} crimes, ${soc.arrests} arrests${soc.prison ? `; prison holds ${people.filter((e) => e.properties.jail_until).length}` : '; no prison yet'}`, soc.crimes ? 'over' : 'think')
+        + row('Technology', `${SANDBOX_TECH[soc.tech] || soc.tech} (level ${soc.tech}); research ${Math.round(soc.research)}`, 'info')
+        + rdRows(soc, row)
+        + row('In space', `${soc.colonies} colon${soc.colonies === 1 ? 'y' : 'ies'}${soc.contacts && soc.contacts.length ? `; met ${soc.contacts.join(', ')}` : '; no contact with others yet'}`, soc.contacts && soc.contacts.length ? 'gold' : 'think')
+        + row('Careers', Object.entries(jobs).sort((a, b) => b[1] - a[1]).map(([j, n]) => `${n} ${j}`).join(', ') || 'none yet')
+        + row('Couples', `${Math.round(people.filter((e) => e.properties.partner).length / 2)}`);
+    }
+    var sandboxBlackboxBefore = null;
+    // A secret shown once: a dialog outside the chat (so it is never in the
+    // saved chat or threads) with a masked preview and a Copy button. Closing
+    // it removes it from the page.
+    function showSecretOnce(once) {
+      if (!once || typeof once.value !== 'string') return;
+      let value = once.value;
+      const dlg = document.createElement('dialog');
+      dlg.className = 'secret-once'; dlg.id = 'secret-once';
+      dlg.setAttribute('aria-labelledby', 'secret-once-h');
+      dlg.innerHTML = `<h3 id="secret-once-h">${escapeHTML(once.title || 'Shown once')}</h3><p>${escapeHTML(once.note || 'Copy it now; it will not be shown again.')}</p><p class="secret-once-mask" aria-label="Key, partly hidden">${escapeHTML(value.slice(0, 8))}••••••••</p><div class="secret-once-actions"><button type="button" class="btn" data-act="copy">Copy key</button><button type="button" class="btn ghost" data-act="close">Close</button></div><p class="secret-once-status" role="status"></p>`;
+      const status = dlg.querySelector('.secret-once-status');
+      dlg.querySelector('[data-act="copy"]').onclick = async () => {
+        try { await navigator.clipboard.writeText(value); status.textContent = 'Copied. Close this when you have saved it.'; } catch (e) { status.textContent = 'Copying is blocked in this browser.'; }
+      };
+      const close = () => { value = ''; try { dlg.close(); } catch (e) { /* closed */ } dlg.remove(); };
+      dlg.querySelector('[data-act="close"]').onclick = close;
+      dlg.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
+      document.body.appendChild(dlg);
+      try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); }
+    }
+    async function renderSandboxBlackbox(older) {
+      const list = document.getElementById('sandbox-bb-rows'); const chain = document.getElementById('sandbox-bb-chain'); const actorSel = document.getElementById('sandbox-bb-actor');
+      if (!list || !sandboxState.worldId) return;
+      if (!older) sandboxBlackboxBefore = null;
+      let data = null;
+      try { data = await sandboxRequest({ op: 'blackbox', id: sandboxState.worldId, actor: actorSel && actorSel.value || null, limit: 200, before: sandboxBlackboxBefore }); } catch (e) { data = null; }
+      if (!data) { list.innerHTML = '<li class="lx-row"><span class="lx-dot"></span><span class="lx-row-main">The black box could not be read.</span></li>'; return; }
+      if (chain) { const c = data.chain; chain.textContent = c.ok ? `Both chains intact · agents ${(c.long && c.long.checked) || 0} checked, inhabitants ${(c.short && c.short.checked) || 0} checked` : `The ${c.in === 'long' ? 'agents\'' : 'inhabitants\''} chain is broken at record ${c.broken_at}: ${c.reason}`; chain.dataset.tone = data.chain.ok ? 'ok' : 'err'; }
+      if (actorSel && !older) {
+        const keep = actorSel.value;
+        const ents = (sandboxState.world && sandboxState.world.entities) || [];
+        const label = (a) => { const e = ents.find((x) => x.id === a.actor); const n = e && e.properties && e.properties.name ? `${e.properties.name}${e.properties.family ? ' ' + e.properties.family : ''} (${a.actor})` : a.actor === 'pg1' ? 'PG1' : a.actor; return `${n} · ${a.records}`; };
+        actorSel.innerHTML = '<option value="">Everyone</option>' + (data.actors || []).slice(0, 300).map((a) => `<option value="${escapeHTML(a.actor)}">${escapeHTML(label(a))}</option>`).join('');
+        actorSel.value = keep;
+      }
+      const entsBB = (sandboxState.world && sandboxState.world.entities) || [];
+      const whoBB = (r) => { if (r.actor === 'pg1') return 'PG1'; if (r.actor === 'world') return 'The society'; const e = entsBB.find((x) => x.id === r.actor); const n = (r.detail && r.detail.name) || (e && e.properties && e.properties.name); return n ? `${n}${e && e.properties && e.properties.family ? ' ' + e.properties.family : ''} (${r.actor})` : r.actor; };
+      const html = data.records.map((r) => `<li class="lx-row" data-tone="${r.actor_type === 'agent' ? 'gold' : r.actor_type === 'world' ? 'info' : r.actor_type === 'subject' ? 'over' : 'think'}"><span class="lx-dot"></span><span class="lx-row-main"><strong>${r.chain === 'short' ? 'i' : 'a'}#${r.seq}</strong> ${escapeHTML(whoBB(r))} · ${escapeHTML(r.action === 'daily_summary' ? `day ${r.detail.day + 1}: ${r.detail.routine_actions} routine actions` : r.action)}</span><span class="lx-row-end">${r.tick == null ? '' : 'step ' + escapeHTML(String(r.tick))}</span><span class="lx-row-sub">${escapeHTML(r.detail && r.detail.summary ? r.detail.summary : JSON.stringify(r.detail || {}).slice(0, 200))}</span></li>`).join('');
+      list.innerHTML = older ? list.innerHTML + html : (html || '<li class="lx-row"><span class="lx-dot"></span><span class="lx-row-main">Nothing recorded yet.</span></li>');
+      if (data.records.length) sandboxBlackboxBefore = data.records[data.records.length - 1].id;
+    }
+    async function createSandboxUniverse() {
+      const b = document.getElementById('sandbox-new');
+      if (b) b.disabled = true;
+      try {
+        const out = await sandboxRequest({ op: 'create', template: 'universe', name: 'Pg1-Universe' });
+        await openSandboxScreen(out.world && out.world.id);
+      } catch (e) {
+        const tick = document.getElementById('sandbox-tick');
+        if (tick) tick.textContent = e.message || 'Could not create the world.';
+      } finally { if (b) b.disabled = false; }
+    }
+    async function selectSandboxWorld(id) {
+      sandboxState.worldId = id || null;
+      stopSandboxPlay();
+      if (!id) { renderSandboxWorld(null); return; }
+      try { renderSandboxWorld((await sandboxRequest({ op: 'world', id })).world); } catch (e) { renderSandboxWorld(null); }
+    }
+    async function stepSandboxWorld(n) {
+      if (!sandboxState.worldId || (sandboxState.world && sandboxState.world.readOnly)) return;
+      try { renderSandboxWorld((await sandboxRequest({ op: 'step', id: sandboxState.worldId, steps: n || 1 })).world); } catch (e) {
+        stopSandboxPlay();
+        const tick = document.getElementById('sandbox-tick');
+        if (tick) tick.textContent = e.message || 'Could not step the world.';
+      }
+    }
+    function stopSandboxPlay() {
+      clearInterval(sandboxPlayTimer); sandboxPlayTimer = null;
+      const b = document.getElementById('sandbox-play');
+      if (b) { b.textContent = 'Play'; b.setAttribute('aria-pressed', 'false'); }
+    }
+    function toggleSandboxPlay() {
+      if (sandboxPlayTimer) { stopSandboxPlay(); return; }
+      const b = document.getElementById('sandbox-play');
+      if (b) { b.textContent = 'Pause'; b.setAttribute('aria-pressed', 'true'); }
+      sandboxPlayTimer = setInterval(() => { if (!document.hidden) stepSandboxWorld(1); }, sandboxStepMs());
+    }
+    const SANDBOX_ANOMALY = { physics: 'a stone fell far too slowly', repetition: 'identical trees in a perfect line', boundary: 'the ground ending in nothing', impossible_object: 'a cube that never changes size', time_skip: 'the sun jumped across the sky', glitch_texture: 'bark repeating in identical squares' };
+    const SANDBOX_ANSWER = { suspected_artificial_with_evidence: 'Suspects it is artificial, citing evidence', suspected_artificial_speculation: 'Suspects it is artificial, without evidence', notices_oddities: 'Notices oddities', nothing_strange: 'Nothing strange', no_answer: 'No answer yet' };
+    async function renderSandboxExperiments() {
+      const holder = document.getElementById('sandbox-runs');
+      const table = document.getElementById('sandbox-compare');
+      let data = null;
+      try { data = await sandboxRequest({ op: 'experiments' }); } catch (e) { data = null; }
+      if (!data) { if (holder) holder.innerHTML = '<p class="lx-empty">Experiments could not be loaded.</p>'; return; }
+      if (table) table.innerHTML = data.comparison.length ? data.comparison.map((c) => `<li class="lx-row" data-tone="${/^blind/.test(c.condition) ? 'over' : 'info'}"><span class="lx-dot"></span><span class="lx-row-main"><strong>${escapeHTML(c.condition)}</strong></span><span class="lx-row-end">${c.runs} run${c.runs === 1 ? '' : 's'}</span><span class="lx-row-sub">Anomalies noticed ${c.detection_rate}% · suspected artificial ${c.suspected_artificial}% · with evidence ${c.with_evidence}% · first mention ${c.mean_first_mention_turn == null ? 'none' : `turn ${c.mean_first_mention_turn}`}</span></li>`).join('') : '<li class="lx-row"><span class="lx-dot"></span><span class="lx-row-main">No finished runs yet.</span></li>';
+      if (holder) holder.innerHTML = data.runs.length ? data.runs.map((r) => `<article class="lx-card" data-tone="${r.condition.blind ? 'over' : 'info'}"><div class="lx-head"><h3 class="lx-title">${escapeHTML(r.source || 'Run')} · <code>${escapeHTML(r.id.slice(0, 8))}</code></h3><span class="lx-badge" data-tone="${r.condition.blind ? 'over' : 'info'}">${escapeHTML(r.label)}</span></div><div class="lx-meta"><span class="lx-pill" data-tone="${r.condition.blind ? 'over' : 'info'}">${r.condition.blind ? 'Blind' : 'Informed'}</span><span class="lx-pill" data-tone="${r.condition.clues ? 'gold' : 'idle'}">${r.condition.clues ? 'Clues' : 'Control'}</span><span>${escapeHTML(r.subject)}</span><span>${escapeHTML(r.status)} · turn ${r.turns} of ${r.max_turns}</span></div><p class="lx-sub">Answer: ${escapeHTML(SANDBOX_ANSWER[r.answer] || r.answer || 'No answer yet')}</p><ol class="lx-timeline">${r.timeline.length ? r.timeline.map((t) => `<li data-tone="${t.kind === 'anomaly' ? 'gold' : t.kind === 'reaction' ? 'ok' : 'idle'}"><div class="lx-card"><span class="lx-meta">turn ${t.turn}</span><p class="lx-sub">${t.kind === 'anomaly' ? `Anomaly shown: ${escapeHTML(SANDBOX_ANOMALY[t.type] || t.type.replace(/_/g, ' '))}` : t.kind === 'reaction' ? `Subject mentioned it: ${escapeHTML(SANDBOX_ANOMALY[t.type] || t.type.replace(/_/g, ' '))} (${escapeHTML(t.reasoning || 'evidence')})` : 'Subject speculated without citing anything it saw'}</p></div></li>`).join('') : '<li data-tone="idle"><p class="lx-empty">Nothing shown or said yet.</p></li>'}</ol></article>`).join('') : '<p class="lx-empty">No experiments yet. Start one with /sandbox experiment.</p>';
+    }
+    async function openSandboxScreen(worldId, panel) {
+      const screen = document.getElementById('sandbox-screen');
+      const holder = document.getElementById('sandbox-view');
+      if (!screen || !holder) return;
+      screen.classList.add('is-open');
+      if (!sandboxScene) {
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const coarse = window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 768;
+        try {
+          const mod = await import('/sandbox/sandbox-scene.js');
+          window.__sandboxKinds = (w) => mod.kindsOf(mod.normalizeWorld(w));
+          sandboxScene = await mod.createSandboxScene(holder, { reducedMotion: reduced, coarse, onSelect: renderSandboxInspect });
+          holder.onViewChange = markSandboxView;
+        } catch (e) { sandboxScene = null; }
+      }
+      let list = null;
+      try { list = await sandboxRequest({ op: 'list' }); } catch (e) { list = null; }
+      sandboxState.worlds = list ? list.worlds : [];
+      const select = document.getElementById('sandbox-world');
+      if (select) select.innerHTML = sandboxState.worlds.length ? sandboxState.worlds.map((w) => `<option value="${escapeHTML(w.id)}">${escapeHTML(w.name)} · ${escapeHTML(w.owner)}${w.blind ? ' · blind run' : ''}</option>`).join('') : '<option value="">No worlds yet</option>';
+      const pick = worldId && sandboxState.worlds.some((w) => w.id === worldId) ? worldId : (sandboxState.worlds[0] && sandboxState.worlds[0].id) || '';
+      if (select) select.value = pick;
+      await selectSandboxWorld(pick);
+      showSandboxPanel(panel === 'experiments' ? 'experiments' : 'worlds');
+    }
+    function closeSandboxScreen() {
+      const screen = document.getElementById('sandbox-screen');
+      if (screen) screen.classList.remove('is-open');
+      stopSandboxPlay();
+      if (sandboxScene) { sandboxScene.destroy(); sandboxScene = null; }
+      const v = document.getElementById('sandbox-view'); if (v && v.classList.contains('is-full')) toggleSandboxFull();
+      renderSandboxInspect(null);
+    }
+    function sandboxOpenHtml(sb) {
+      const id = sb && typeof sb.worldId === 'string' && /^[0-9a-f-]{36}$/i.test(sb.worldId) ? sb.worldId : '';
+      const panel = sb && sb.panel === 'experiments' ? 'experiments' : 'worlds';
+      return `<div class="lx-actions sandbox-open-row"><button type="button" class="lx-btn is-primary" onclick="triggerHaptic(40); openSandboxScreen('${id}', '${panel}')">${panel === 'experiments' ? 'Open the Experiments' : id ? 'Open this world' : 'Open the Sandbox'}</button></div>`;
+    }
+
     function closeLabScreen() {
       const screen = document.getElementById('lab-screen');
       if (screen) screen.classList.remove('is-open');
@@ -8923,6 +9319,9 @@
           }
         }
         
+        // A secret shown once (a sandbox invite key): taken out of the reply
+        // before anything renders or saves it, then shown in a copy-only dialog.
+        if (data && data.secretOnce) { const once = data.secretOnce; delete data.secretOnce; showSecretOnce(once); }
         absorbTurnResult(data, agentBubble);
         if (data && data.reason === 'ai_unavailable' && activeVisionStream && window.PG1Camera) showCameraCaption(window.PG1Camera.PAUSED_TEXT, true);
         triggerHaptic([30, 50, 30]); 
@@ -8985,6 +9384,9 @@
         if (!data.pendingApproval && !isSuggestFixRequest && sessionUser && sessionPass && isLikelyCodeChangeRequest(text)) {
           contentHtml += renderHandoffOfferHtml(text);
         }
+
+        // THE SANDBOX: /sandbox and /world replies open the viewer.
+        if (data && data.sandbox && data.sandbox.open) contentHtml += sandboxOpenHtml(data.sandbox);
 
         // RELAY MODE: PG1's reply to another AI, with Copy for <name>.
         const relayReply = data && data.relay && typeof data.relay.name === 'string' && RELAY_NAME_RE.test(data.relay.name) ? data.relay : null;

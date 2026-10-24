@@ -4,11 +4,11 @@ One shared workspace that every module publishes to, so PG1, the operator and PG
 
 ## Pieces
 
-- **Workspace** (`lib/core/state.mjs`, `lib/core/collect.mjs`). It keeps one snapshot per area: router, spend, autonomy, missions, lab, feed, media, self_heal, errors, approvals and integrations. It also keeps an event log of the last 30 days.
+- **Workspace** (`lib/core/state.mjs`, `lib/core/collect.mjs`). It keeps one snapshot per area: router, spend, autonomy, missions, lab, feed, media, self_heal, errors, approvals, integrations and sandbox (worlds, steps today, quota use, world-mission errors and running experiments: counts only, labelled as simulation; see [sandbox.md](sandbox.md)). It also keeps an event log of the last 30 days.
   - It is stored in `pg1_core_state` / `pg1_core_events`. Until the migration runs, it is kept in each instance's memory.
   - It never holds secrets, client data or request content: those keys are dropped and the text is scrubbed.
   - A relayed message (`/relay`) can never write to it.
-- **Self-model** (`lib/core/self.mjs`). It gives each of 16 capabilities a status of `available`, `degraded` or `unavailable`, with a plain reason and a fix. It also gives the current focus, today's spend against the cap, and the open problems ranked by impact.
+- **Self-model** (`lib/core/self.mjs`). It gives each of 17 capabilities a status of `available`, `degraded` or `unavailable`, with a plain reason and a fix. It also gives the current focus, today's spend against the cap, and the open problems ranked by impact.
   - It is checked before missions, autonomy, films, movies, music and the lab start. A state known from live data stops the work at the start, with its reason: out of credit, a resting quota, or Autonomous mode off.
   - The "confirm a budget" step at the $0 default is the start flow's own Confirm, so the self-model never blocks it.
   - On a self question ("how are you?", "why did X fail?"), PG1's prompt gets a block of at most 400 tokens from it.

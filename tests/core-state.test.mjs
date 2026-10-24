@@ -28,7 +28,8 @@ beforeEach(() => { __resetCoreState(); __resetLessons(); __resetQuota(); __reset
 after(() => { process.env = { ...ORIGINAL_ENV }; globalThis.fetch = ORIGINAL_FETCH; });
 
 async function db() {
-  const d = await makeDb([MIGRATION]);
+  // The sandbox migration adds the 'sandbox' area to the tables.
+  const d = await makeDb([MIGRATION, '20261110120000_pg1_sandbox.sql']);
   const calls = [];
   return { d, calls, fetchImpl: pgRest(d, { calls }) };
 }
@@ -38,7 +39,9 @@ const rows = async (d, sql) => (await d.query(sql)).rows;
 
 test('migration: newest timestamp, three service-role tables with their checks, safe to run twice', async () => {
   const names = readdirSync(new URL('../supabase/migrations/', import.meta.url)).filter((f) => f.endsWith('.sql')).sort();
-  assert.equal(names.at(-1), MIGRATION, 'after every other migration');
+  // A later migration (the sandbox's) may follow it; its own timestamp is unique.
+  assert.ok(names.includes(MIGRATION));
+  assert.equal(names.filter((n) => n.slice(0, 14) === MIGRATION.slice(0, 14)).length, 1, 'a unique timestamp');
   assert.ok(MIGRATION.slice(0, 14) > '20261108120000');
   const sql = readFileSync(new URL(`../supabase/migrations/${MIGRATION}`, import.meta.url), 'utf8');
   const d = await makeDb([MIGRATION]);

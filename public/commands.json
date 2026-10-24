@@ -511,6 +511,125 @@
       "client": false
     },
     {
+      "command": "/sandbox",
+      "area": "Lab",
+      "description": "PG1 Sandbox: worlds (simulations), quota use and experiments, with the 3D viewer",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/universe",
+      "area": "Lab",
+      "description": "Pg1-Universe: the same as /sandbox, by its name",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/world",
+      "area": "Lab",
+      "description": "One sandbox world: its rules in plain words, opened in the viewer",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "world id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/sandbox create",
+      "area": "Lab",
+      "description": "Create a PG1 world (a simulation): universe (a living town and space), town, meadow or empty",
+      "args": [
+        {
+          "name": "name",
+          "placeholder": "\"<name>\"",
+          "required": true
+        },
+        {
+          "name": "template",
+          "placeholder": "template",
+          "required": false,
+          "choices": [
+            "universe",
+            "town",
+            "meadow",
+            "empty"
+          ]
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/sandbox invite",
+      "area": "Lab",
+      "description": "An access key for an agent you invite to the Sandbox (shown once)",
+      "args": [
+        {
+          "name": "name",
+          "placeholder": "agent name",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/sandbox consent",
+      "area": "Lab",
+      "description": "Record an invited agent's human operator's opt-in to blind experiments in a world",
+      "args": [
+        {
+          "name": "details",
+          "placeholder": "<agent> <world> \"<who agreed>\" [on YYYY-MM-DD]",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/sandbox experiment",
+      "area": "Lab",
+      "description": "Start an experiment run: blind or informed, clues or control",
+      "args": [
+        {
+          "name": "details",
+          "placeholder": "<world> [blind|informed] [clues|control] [anomalies] \"<situation>\"",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/sandbox stop",
+      "area": "Lab",
+      "description": "Stop an experiment run",
+      "args": [
+        {
+          "name": "run",
+          "placeholder": "run id",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
       "command": "/film",
       "area": "Films & movies",
       "description": "Start a film with PG1 Studio, or list the film commands alone",

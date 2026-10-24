@@ -68,7 +68,7 @@ test('/state and /lessons cards at 380 px: statuses with reasons and fixes, Appr
   assert.match(await card.locator('.core-focus').innerText(), /^Idle: waiting for your next request/);
   assert.match(await card.locator('.core-problems').innerText(), /Films unavailable: the media engine is out of credit/);
   assert.match(await card.locator('details.lx-details').innerText(), /Latest events \(2\)/);
-  assert.equal(await card.locator('.core-caps .lx-row').count(), 16);
+  assert.equal(await card.locator('.core-caps .lx-row').count(), 17);
   const text = await card.innerText();
   assert.doesNotMatch(text, /gemini|google|replicate|anthropic|openai|groq|mistral|cartesia|elevenlabs/i, 'no engine names');
   assert.doesNotMatch(text, /\bsafe\b/i);
