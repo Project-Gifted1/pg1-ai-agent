@@ -131,14 +131,29 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
     // A disc reaching far past the world: flat inside, hills and then a
     // curve like a planet's horizon beyond.
     const R = Math.max(60000, span * 12);
+    const isl0 = (world.islands || []).length > 0;
     const rings = coarse ? 90 : 150; const segs = coarse ? 96 : 160;
     const pos = []; const colr = []; const idx = []; const uvs = [];
     const c = new THREE.Color();
     const grassA = new THREE.Color('#4a6a30'); const grassB = new THREE.Color('#678742'); const dry = new THREE.Color('#7d7646'); const sand = new THREE.Color('#d8c690');
-    const rock = new THREE.Color('#7b7b70'); const snow = new THREE.Color('#f2f4f6'); const sea = new THREE.Color('#1d5d8c'); const far = new THREE.Color('#6f8f9f');
+    const rock = new THREE.Color('#7b7b70');
+    const tropical = new THREE.Color('#4f9a3a'); const coldGrass = new THREE.Color('#5f6f55'); const maritime = new THREE.Color('#567a45');
+    const pebbles = new THREE.Color('#9e9a90'); const seabed = new THREE.Color('#c9b98a'); const deep = new THREE.Color('#1c3d52'); const snow = new THREE.Color('#f2f4f6'); const sea = new THREE.Color('#1d5d8c'); const far = new THREE.Color('#6f8f9f');
     const half = span / 2;
     // The terrain's height: flat inside the world, hills beyond, then the curve.
+    // Islands (countries): land inside each, beaches at the shore, the sea
+    // everywhere else, deepening away from the coast.
+    const islands = world.islands || [];
+    const landEdge = (x, z) => { let best = -Infinity; let isl = null; for (const i of islands) { const e = i.r - Math.hypot(x - i.sx, z - i.sz); if (e > best) { best = e; isl = i; } } return { edge: best, isl }; };
     const heightAt = (x, z) => {
+      if (islands.length) {
+        const { edge } = landEdge(x, z);
+        const rr = Math.hypot(x, z);
+        const curve = (rr * rr) / (2 * 2.5e6) * smooth(span, span * 4, rr);
+        if (edge >= 60) return 0.2 - curve;   // flat where things stand
+        if (edge >= 0) return 0.2 * (edge / 60) - curve;
+        return Math.max(-14, edge * 0.08) - curve;
+      }
       const ox = Math.max(0, Math.abs(x) - W / 2); const oz = Math.max(0, Math.abs(z) - D / 2);
       const out = Math.hypot(ox, oz); const rr = Math.hypot(x, z);
       const hills = smooth(span * 0.05, span * 0.6, out);
@@ -164,8 +179,17 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
         c.copy(grassA).lerp(grassB, Math.min(1, Math.max(0, v + 0.5))).lerp(dry, Math.max(0, noise(x / 700, z / 700, 2)) * 0.6);
         if (y > 500) c.lerp(rock, smooth(500, 750, y));
         if (y > 800) c.lerp(snow, smooth(800, 950, y));
-        const seaMix = smooth(span * 2.2, span * 3.4, out);
+        const seaMix = islands.length ? 0 : smooth(span * 2.2, span * 3.4, out);
         if (seaMix > 0) c.lerp(sea, seaMix);
+        if (islands.length) {
+          const { edge, isl } = landEdge(x, z);
+          const cl = isl ? isl.climate : 'temperate';
+          if (cl === 'tropical') c.lerp(tropical, 0.55);
+          if (cl === 'cold') { c.lerp(coldGrass, 0.6); if (noise(x / 90, z / 90, 2) > 0.15) c.lerp(snow, 0.7); }
+          if (cl === 'maritime') c.lerp(maritime, 0.5);
+          if (edge < 45) c.copy(sand).lerp(cl === 'cold' ? pebbles : sand, 0.6);
+          if (edge < -2) c.copy(seabed).lerp(deep, Math.min(1, -edge / 400));
+        }
         c.lerp(far, smooth(span * 4, R, rr) * 0.7);
         for (const l of lakes) {
           const d = Math.hypot(x - l.sx, z - l.sz) - l.radius;
@@ -188,11 +212,56 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     g.setIndex(idx);
     g.computeVertexNormals();
-    const ground = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, map: detail, roughness: 0.95, metalness: 0 }));
+    const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: detail, roughness: 0.95, metalness: 0 });
+    const ground = new THREE.Mesh(g, groundMat);
     ground.receiveShadow = true;
-    ground.position.y = -0.05;
+    ground.position.y = isl0 ? -3 : -0.05;
     scene.add(ground);
     env.ground = ground;
+    // Island worlds: a fine, even grid over the world itself (about 40 m), so
+    // coasts, beaches and snow read cleanly; the disc above is the far sea.
+    if (isl0) {
+      const M = 600;
+      const nx = Math.min(coarse ? 220 : 380, Math.ceil((W + 2 * M) / 40)); const nz = Math.min(coarse ? 150 : 260, Math.ceil((D + 2 * M) / 40));
+      const pg = new THREE.PlaneGeometry(W + 2 * M, D + 2 * M, nx, nz);
+      pg.rotateX(-Math.PI / 2);
+      const pp = pg.attributes.position; const cols = new Float32Array(pp.count * 3); const uv2 = pg.attributes.uv;
+      const tmpC = new THREE.Color();
+      for (let i = 0; i < pp.count; i++) {
+        const x = pp.getX(i); const z = pp.getZ(i);
+        pp.setY(i, heightAt(x, z));
+        uv2.setXY(i, x / 7, z / 7);
+        const { edge, isl } = landEdge(x, z);
+        const v = noise(x / 160 + 30, z / 160, 3);
+        tmpC.copy(grassA).lerp(grassB, Math.min(1, Math.max(0, v + 0.5))).lerp(dry, Math.max(0, noise(x / 700, z / 700, 2)) * 0.6);
+        const cl = isl ? isl.climate : 'temperate';
+        if (cl === 'tropical') tmpC.lerp(tropical, 0.55);
+        if (cl === 'cold') { tmpC.lerp(coldGrass, 0.6); const n2 = noise(x / 140, z / 140, 3); if (n2 > 0.08) tmpC.lerp(snow, Math.min(0.85, (n2 - 0.08) * 5)); }
+        if (cl === 'maritime') tmpC.lerp(maritime, 0.5);
+        if (edge < 45) tmpC.copy(sand).lerp(cl === 'cold' ? pebbles : sand, 0.6);
+        if (edge < -2) tmpC.copy(seabed).lerp(deep, Math.min(1, -edge / 400));
+        for (const l of lakes) { const d = Math.hypot(x - l.sx, z - l.sz) - l.radius; if (d < 25) tmpC.lerp(sand, smooth(25, 2, d)); }
+        cols[i * 3] = tmpC.r; cols[i * 3 + 1] = tmpC.g; cols[i * 3 + 2] = tmpC.b;
+      }
+      pg.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+      pg.computeVertexNormals();
+      const fine = new THREE.Mesh(pg, groundMat);
+      fine.receiveShadow = true;
+      fine.position.y = -0.05;
+      ground.add(fine);
+      fine.position.y = 3 - 0.05;   // undo the disc's lowering
+    }
+    // The sea: one wide plane at sea level, over everything below it.
+    if (islands.length) {
+      const sg = new THREE.CircleGeometry(R * 0.6, 96);
+      sg.rotateX(-Math.PI / 2);
+      const seaMesh = new THREE.Mesh(sg, new THREE.MeshStandardMaterial({ color: 0x1f6f9a, roughness: 0.12, metalness: 0.3, transparent: true, opacity: 0.88 }));
+      seaMesh.position.y = 0;
+      seaMesh.receiveShadow = true;
+      seaMesh.userData.sea = true;
+      scene.add(seaMesh);
+      env.lakes.push(seaMesh);
+    }
 
     // Lakes: water with gentle waves.
     for (const l of lakes) {
@@ -218,11 +287,11 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
     while (placed < count && tries < count * 4) {
       tries++;
       const x = (rr2() - 0.5) * W; const z = (rr2() - 0.5) * D;
-      if (lakes.some((l) => Math.hypot(x - l.sx, z - l.sz) < l.radius + 6) || onRoad(x, z)) continue;
+      if (lakes.some((l) => Math.hypot(x - l.sx, z - l.sz) < l.radius + 6) || onRoad(x, z) || (islands.length && heightAt(x, z) < 0.1)) continue;
       e.set(0, rr2() * Math.PI, (rr2() - 0.5) * 0.3);
       q.setFromEuler(e);
       const k = 0.6 + rr2() * 1.2;
-      m.compose(p3.set(x, 0, z), q, sc3.set(k, k * (0.7 + rr2()), k));
+      m.compose(p3.set(x, islands.length ? heightAt(x, z) : 0, z), q, sc3.set(k, k * (0.7 + rr2()), k));
       grass.setMatrixAt(placed, m);
       grass.setColorAt(placed, new THREE.Color().setHSL(0.22 + rr2() * 0.06, 0.45, 0.28 + rr2() * 0.12));
       placed++;
@@ -255,7 +324,7 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
         const f = noise(x / 650 + 11, z / 650 - 7, 3) + (ki ? 0 : smooth(0, span * 0.5, Math.hypot(Math.max(0, Math.abs(x) - W / 2), Math.max(0, Math.abs(z) - D / 2))) * 0.25);
         if (f < 0.12) continue;
         const y = heightAt(x, z);
-        if (y > 620) continue;
+        if (y > 620 || (islands.length && (y < 0.15 || landEdge(x, z).edge < 70))) continue;
         if (lakes.some((l) => Math.hypot(x - l.sx, z - l.sz) < l.radius + 30) || onRoad(x, z) || near(x, z, 45)) continue;
         e.set(0, rr2() * Math.PI * 2, 0); q.setFromEuler(e);
         const k = 0.8 + rr2() * 0.9;
@@ -318,10 +387,10 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
     starMat.opacity = Math.max(sp, smooth(0.35, 0.85, env.night)) * 0.95;
     sun.intensity = lerp(0.0, 2.1, day) * (1 - dusk * 0.35) + sp * 1.6;
     sun.color.setRGB(1, lerp(0.6, 0.96, day), lerp(0.4, 0.88, day));
-    hemi.intensity = lerp(0.05, 0.62, day) + sp * 0.1;
+    hemi.intensity = lerp(0.12, 0.62, day) + sp * 0.1;
     hemi.color.setRGB(lerp(0.25, 0.8, day), lerp(0.3, 0.9, day), lerp(0.6, 1, day));
     hemi.groundColor.setRGB(lerp(0.05, 0.29, day), lerp(0.06, 0.35, day), lerp(0.1, 0.23, day));
-    moonLight.intensity = env.night * 0.16 * (1 - sp);
+    moonLight.intensity = env.night * 0.3 * (1 - sp);
     moonLight.position.set(-sunDir.x, Math.abs(sunDir.y) + 0.4, -sunDir.z).multiplyScalar(1000).add(target);
     moonLight.target.position.copy(target);
     // The sun follows the camera's target so shadows stay sharp where you look.
@@ -340,6 +409,7 @@ export function createEnvironment(THREE, scene, { coarse = false } = {}) {
     // Water ripples and drifting clouds.
     const t = performance.now() / 1000;
     for (const w of env.lakes) {
+      if (w.userData.sea) { w.material.color.setRGB(lerp(0.03, 0.12, day), lerp(0.07, 0.43, day), lerp(0.14, 0.62, day)); continue; }
       const p = w.geometry.attributes.position; const b = w.userData.base;
       for (let i = 0; i < p.count; i++) p.array[i * 3 + 1] = Math.sin(b[i * 3] * 0.05 + t * 1.3) * 0.12 + Math.cos(b[i * 3 + 2] * 0.07 + t) * 0.1;
       p.needsUpdate = true;

@@ -520,6 +520,15 @@
       "client": false
     },
     {
+      "command": "/universe",
+      "area": "Lab",
+      "description": "Pg1-Universe: the same as /sandbox, by its name",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
       "command": "/world",
       "area": "Lab",
       "description": "One sandbox world: its rules in plain words, opened in the viewer",

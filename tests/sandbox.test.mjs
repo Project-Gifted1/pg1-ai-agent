@@ -21,7 +21,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { stepWorld, validateSpec, initialState, SANDBOX_LIMITS, WorldError } from '../lib/sandbox/engine.mjs';
 import { rulesInWords } from '../lib/sandbox/describe.mjs';
 import { createSandboxStore, __resetSandboxMemory, hashKey } from '../lib/sandbox/store.mjs';
-import { createWorld, addEntity, setRule, stepWorldFor, observeWorld, listWorldsFor, inviteAgent, resolveSandboxKey, pg1Principal, SandboxError } from '../lib/sandbox/worlds.mjs';
+import { createWorld, addEntity, setRule, stepWorldFor, observeWorld, listWorldsFor, inviteAgent, resolveSandboxKey, pg1Principal, readBlackbox, deleteWorldFor, SandboxError } from '../lib/sandbox/worlds.mjs';
 import { SANDBOX_TOOL_NAMES } from '../lib/sandbox/mcp.mjs';
 import { runWorldMission, assertPg1World, parsePlan } from '../lib/sandbox/missions.mjs';
 import sandboxMcp, { __setSandboxStore } from '../api/sandbox/mcp.mjs';
@@ -96,7 +96,7 @@ test('every limit is enforced: entities, rules, steps a call, 256 KB, properties
   assert.doesNotThrow(() => stepWorld(SPEC, null, 100));
   const big = { entities: [{ id: 'x', kind: 'dot', properties: Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`p${i}`, 'y'.repeat(200)])) }], pad: 'z'.repeat(SANDBOX_LIMITS.specBytes) };
   assert.throws(() => validateSpec(big), /larger than 256 KB/);
-  assert.throws(() => validateSpec({ entities: [{ id: 'x', kind: 'dot', properties: Object.fromEntries(Array.from({ length: 21 }, (_, i) => [`p${i}`, 1])) }] }), /at most 20 properties/);
+  assert.throws(() => validateSpec({ entities: [{ id: 'x', kind: 'dot', properties: Object.fromEntries(Array.from({ length: SANDBOX_LIMITS.propertiesPerEntity + 1 }, (_, i) => [`p${i}`, 1])) }] }), new RegExp(`at most ${SANDBOX_LIMITS.propertiesPerEntity} properties`));
   assert.throws(() => validateSpec({ entities: [{ id: 'bad id!', kind: 'dot' }] }), /id must be/);
   assert.throws(() => validateSpec({ rules: [{ id: 'x', type: 'script', code: 'process.exit()' }] }), /type must be one of/);
   assert.throws(() => validateSpec({ entities: [{ id: 'x', kind: 'dot' }, { id: 'x', kind: 'dot' }] }), /used twice/);
@@ -163,7 +163,7 @@ test('a key without the sandbox scope is refused (no key, a licence key, another
   assert.equal((await store.listKeys()).some((k) => 'key_hash' in k), false, 'the hash is never listed');
   const ok = await mcp(store, inv.key, 'tools/list');
   assert.equal(ok.statusCode, 200);
-  assert.deepEqual(ok.body.result.tools.map((t) => t.name), ['create_world', 'add_entity', 'set_rule', 'step_world', 'observe_world', 'list_worlds', 'delete_world', 'update_entity', 'get_catalog']);
+  assert.deepEqual(ok.body.result.tools.map((t) => t.name), ['create_world', 'add_entity', 'set_rule', 'step_world', 'observe_world', 'list_worlds', 'delete_world', 'update_entity', 'get_catalog', 'read_blackbox']);
   assert.deepEqual(SANDBOX_TOOL_NAMES, ok.body.result.tools.map((t) => t.name));
   for (const t of ok.body.result.tools) assert.match(t.description, /simulation/i, `${t.name} says worlds are simulations`);
   await store.revokeKey(inv.id);
@@ -371,7 +371,7 @@ test('migration: a unique timestamp after every other, safe to run twice, servic
   assert.equal(names.at(-1), MIG);
   assert.equal(names.filter((n) => n.slice(0, 14) === MIG.slice(0, 14)).length, 1);
   const d = await makeDb(['20261105120000_pg1_missions.sql', '20261109120000_pg1_core_state.sql', MIG, MIG]);
-  const tables = ['pg1_worlds', 'pg1_world_events', 'pg1_sandbox_keys', 'pg1_sandbox_usage', 'pg1_sandbox_consents', 'pg1_experiment_runs', 'pg1_experiment_anomalies', 'pg1_experiment_log'];
+  const tables = ['pg1_worlds', 'pg1_world_events', 'pg1_sandbox_keys', 'pg1_sandbox_usage', 'pg1_sandbox_consents', 'pg1_experiment_runs', 'pg1_experiment_anomalies', 'pg1_experiment_log', 'pg1_world_blackbox'];
   for (const t of tables) {
     const rls = await d.query('select relrowsecurity from pg_class where relname = $1', [t]);
     assert.equal(rls.rows[0].relrowsecurity, true, `${t} has RLS on`);
@@ -403,4 +403,19 @@ test('migration: a unique timestamp after every other, safe to run twice, servic
   const n0 = (await d.query('select count(*)::int as n from pg1_world_events')).rows[0].n;
   await store.pruneEvents(new Date(Date.now() - 30 * 86400000).toISOString());
   assert.equal((await d.query('select count(*)::int as n from pg1_world_events')).rows[0].n, n0 - 1);
+  // The black box: every change above recorded, chained, append-only.
+  const bb = await readBlackbox(store, pg1Principal(), { world_id: v.id });
+  assert.deepEqual(bb.records.map((r) => r.action).filter((a) => ['create_world', 'step_world', 'add_entity', 'set_rule'].includes(a)).reverse(), ['create_world', 'step_world', 'add_entity', 'set_rule']);
+  assert.equal(bb.chain.ok, true);
+  assert.ok(bb.actors.some((a) => a.actor === 'pg1'));
+  await assert.rejects(d.query("update pg1_world_blackbox set action = 'nothing' where seq = 1"), /append-only/);
+  await assert.rejects(d.query('delete from pg1_world_blackbox where seq = 1'), /append-only/);
+  await d.query('alter table pg1_world_blackbox disable trigger pg1_world_blackbox_append_only');
+  await d.query("update pg1_world_blackbox set detail = '{\"name\":\"forged\"}' where seq = 1");
+  await d.query('alter table pg1_world_blackbox enable trigger pg1_world_blackbox_append_only');
+  const forged = await readBlackbox(store, pg1Principal(), { world_id: v.id });
+  assert.equal(forged.chain.ok, false, 'a changed record breaks the chain');
+  assert.equal(forged.chain.broken_at, 1);
+  await deleteWorldFor(store, pg1Principal(), { world_id: v.id });
+  assert.ok((await d.query('select count(*)::int as n from pg1_world_blackbox where world_id = $1', [v.id])).rows[0].n > 0, 'the black box outlives the world');
 });

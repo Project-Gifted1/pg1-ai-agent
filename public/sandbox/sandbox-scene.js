@@ -25,14 +25,14 @@
 // With prefers-reduced-motion, or no WebGL, a still 2D map instead, redrawn
 // only when the world changes.
 
-import { buildModel, modelKey, baseKind, classOf, FIXED_KINDS, AIR_KINDS, celestialSize } from './models.js';
+import { buildModel, modelKey, baseKind, classOf, FIXED_KINDS, AIR_KINDS, HOME_KINDS, celestialSize, furnitureFor } from './models.js';
 import { createEnvironment } from './environment.js';
 import { createControls } from './controls.js';
 
-const MAX_ENTITIES = 500;
+const MAX_ENTITIES = 1000;
 const CLASS_COLOR = { person: 0xf3c623, animal: 0xff9b7a, plant: 0x3ddc84, building: 0xcfd8dc, structure: 0x9e9e9e, vehicle: 0x36d1c4, space: 0x8f86ff, celestial: 0xd98cff, thing: 0x7cc4ff };
 const PALETTE = [0xf3c623, 0x36d1c4, 0x8f86ff, 0x3ddc84, 0xff9b7a, 0x7cc4ff, 0xffb300, 0xd98cff];
-const KEEP_PROPS = ['color', 'roof', 'floors', 'heading', 'length', 'width', 'radius', 'size', 'inside', 'target', 'at', 'name', 'rings', 'clouds', 'shirt', 'livery', 'awning', 'lattice', 'orbit_radius', 'orbits', 'orbit_altitude', 'stages', 'energy', 'mood', 'home'];
+const KEEP_PROPS = ['climate', 'culture', 'government', 'country', 'abroad', 'trip', 'text', 'color', 'roof', 'floors', 'heading', 'length', 'width', 'radius', 'size', 'inside', 'target', 'at', 'name', 'family', 'rings', 'clouds', 'shirt', 'livery', 'awning', 'lattice', 'orbit_radius', 'orbits', 'orbit_altitude', 'stages', 'energy', 'hunger', 'hygiene', 'social', 'mood', 'home', 'sex', 'age', 'job', 'work', 'education', 'money', 'partner', 'children', 'mother', 'father', 'saying', 'talking_to', 'built', 'furniture', 'owner', 'civ', 'jail_until', 'honesty', 'ambition', 'sociability', 'curiosity', 'crimes'];
 
 export function kindColor(kind) {
   const c = CLASS_COLOR[classOf(kind)];
@@ -60,7 +60,7 @@ export function normalizeWorld(w) {
     };
   });
   const spaceAlt = Number(world.space_altitude) > 0 ? Number(world.space_altitude) : (size.z >= 4000 ? 2000 : size.z / 2);
-  return { id: typeof world.id === 'string' ? world.id : '', size, entities, seed: Number(world.seed) || 1, tick: Number(world.tick) || 0, daySteps: Math.max(10, Number(world.day_steps) || 240), spaceAlt, name: world.name || '' };
+  return { id: typeof world.id === 'string' ? world.id : '', society: world.society && typeof world.society === 'object' ? world.society : null, size, entities, seed: Number(world.seed) || 1, tick: Number(world.tick) || 0, daySteps: Math.max(10, Number(world.day_steps) || 240), spaceAlt, name: world.name || '' };
 }
 
 export function kindsOf(world) {
@@ -101,15 +101,17 @@ function create2d(container, { onSelect } = {}) {
     const k = Math.min((w - 2 * pad) / world.size.x, (h - 2 * pad) / world.size.y);
     const ox = (w - world.size.x * k) / 2; const oy = (h - world.size.y * k) / 2;
     view = { k, ox, oy, dpr };
-    g.fillStyle = '#26402a'; g.fillRect(ox, oy, world.size.x * k, world.size.y * k);
     const X = (e) => ox + e.x * k; const Y = (e) => oy + (world.size.y - e.y) * k;
+    const isl = world.entities.filter((e) => e.base === 'island');
+    g.fillStyle = isl.length ? '#1f5f86' : '#26402a'; g.fillRect(ox, oy, world.size.x * k, world.size.y * k);
+    for (const e of isl) { g.fillStyle = e.props.climate === 'tropical' ? '#3f7d34' : e.props.climate === 'cold' ? '#7d8a7a' : '#2f5a2a'; g.beginPath(); g.arc(X(e), Y(e), (Number(e.props.radius) || 500) * k, 0, Math.PI * 2); g.fill(); }
     for (const e of world.entities) if (e.base === 'lake') { g.fillStyle = '#1d5d8c'; g.beginPath(); g.arc(X(e), Y(e), (Number(e.props.radius) || 50) * k, 0, Math.PI * 2); g.fill(); }
     for (const e of world.entities) if (e.base === 'road' || e.base === 'runway' || e.base === 'bridge') {
       const len = (Number(e.props.length) || 100) * k; const wd = Math.max(1.5 * dpr, (Number(e.props.width) || 12) * k);
       g.save(); g.translate(X(e), Y(e)); g.rotate(-(Number(e.props.heading) || 0) * Math.PI / 180); g.fillStyle = e.base === 'bridge' ? '#8d6e63' : '#45484e'; g.fillRect(-len / 2, -wd / 2, len, wd); g.restore();
     }
     for (const e of world.entities) {
-      if (['lake', 'road', 'runway', 'bridge'].includes(e.base)) continue;
+      if (['lake', 'island', 'road', 'runway', 'bridge'].includes(e.base)) continue;
       g.fillStyle = hex(kindColor(e.kind));
       if (e.cls === 'building') { const s = Math.max(2.5 * dpr, 14 * k); g.fillRect(X(e) - s / 2, Y(e) - s / 2, s, s); continue; }
       const rad = e.cls === 'plant' ? Math.max(1.5 * dpr, 3 * k) : Math.max(2.5 * dpr, Math.min(6 * dpr, 6 * k));
@@ -134,7 +136,7 @@ function create2d(container, { onSelect } = {}) {
   return {
     renderer: '2d',
     update(next) { world = normalizeWorld(next); container.dataset.markers = String(world.entities.length); draw(); },
-    setView() {}, select(id) { sel = id; draw(); }, selected: () => sel,
+    setView() {}, setXray() {}, setNames() {}, xray: () => false, names: () => false, select(id) { sel = id; draw(); }, selected: () => sel,
     clock: () => clockOf(world),
     destroy() { if (ro) ro.disconnect(); canvas.removeEventListener('click', onClick); canvas.remove(); }
   };
@@ -156,6 +158,9 @@ function planetTexture(THREE, base, kind, seed) {
   g.fillStyle = `#${col.getHexString()}`; g.fillRect(0, 0, 256, 128);
   if (kind === 'moon' || kind === 'asteroid') {
     for (let i = 0; i < 90; i++) { const x = r() * 256; const y = r() * 128; const rad = 1 + r() * 9; g.fillStyle = `rgba(0,0,0,${0.08 + r() * 0.15})`; g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2); g.fill(); g.strokeStyle = 'rgba(255,255,255,0.12)'; g.stroke(); }
+  } else if (kind === 'alien_world') {
+    for (let y = 0; y < 128; y += 2) { const k = col.clone().offsetHSL(0, 0, (Math.sin(y * 0.3) * 0.08)); g.fillStyle = `#${k.getHexString()}`; g.fillRect(0, y, 256, 2); }
+    for (let i = 0; i < 700; i++) { g.fillStyle = `rgba(255,${220 + r() * 35},${120 + r() * 80},${0.5 + r() * 0.5})`; g.fillRect(r() * 256, 16 + r() * 96, 1.5, 1.5); }
   } else if (kind === 'star') {
     for (let i = 0; i < 400; i++) { g.fillStyle = `rgba(255,${200 + r() * 55},${120 + r() * 80},${r() * 0.3})`; g.fillRect(r() * 256, r() * 128, 3, 3); }
   } else {
@@ -225,21 +230,76 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
   const matGlass = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.12, metalness: 0.75 });
   const matGlow = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
   const matFlame = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+  // Buildings have their own materials, so "See inside" can make them glass.
+  const matBuild = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.06 });
+  const matBuildGlass = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.12, metalness: 0.75 });
+  const matBuildGlow = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
+  const furnitureGroup = new THREE.Group();
+  furnitureGroup.visible = false;
+  let xray = false;
+  let showNames = true;
+
+  scene.add(furnitureGroup);
+  function setXray(on) {
+    xray = !!on;
+    for (const m of [matBuild, matBuildGlass]) { m.transparent = xray; m.opacity = xray ? 0.16 : 1; m.depthWrite = !xray; m.needsUpdate = true; }
+    matBuildGlow.transparent = xray; matBuildGlow.opacity = xray ? 0.3 : 1; matBuildGlow.needsUpdate = true;
+    furnitureGroup.visible = xray;
+    container.dataset.xray = String(xray);
+  }
 
   // Overlays: a clock, a minimap, a label for the picked thing.
   const hud = document.createElement('div');
   hud.className = 'sandbox-hud';
-  hud.innerHTML = '<span class="sandbox-clock" aria-live="off"></span><canvas class="sandbox-minimap" width="132" height="132" aria-label="Minimap: tap to move there"></canvas><div class="sandbox-label" hidden></div>';
+  hud.innerHTML = '<span class="sandbox-clock" aria-live="off"></span><canvas class="sandbox-minimap" width="132" height="132" aria-label="Minimap: tap to move there"></canvas><div class="sandbox-tags" aria-hidden="true"></div><div class="sandbox-label" hidden></div>';
   container.appendChild(hud);
   const clockEl = hud.querySelector('.sandbox-clock');
   const mini = hud.querySelector('.sandbox-minimap');
   const label = hud.querySelector('.sandbox-label');
+  // Names and what people are saying, over their heads (the nearest few).
+  const tagsEl = hud.querySelector('.sandbox-tags');
+  const TAG_MAX = coarse ? 8 : 16;
+  const tags = Array.from({ length: TAG_MAX }, () => { const d = document.createElement('div'); d.className = 'sandbox-tag'; d.hidden = true; d.innerHTML = '<b></b><span class="job"></span><span class="say"></span>'; tagsEl.appendChild(d); return d; });
+  let tagsAt = 0; let tagList = [];
+  const JOB_WORD = { soldier: 'soldier', leader: 'leader', farmer: 'farmer', shopkeeper: 'shopkeeper', driver: 'driver', builder: 'builder', teacher: 'teacher', police: 'police', engineer: 'engineer', doctor: 'doctor', scientist: 'scientist', pilot: 'pilot', astronaut: 'astronaut', retired: 'retired', unemployed: 'looking for work' };
+  function updateTags(now) {
+    if (!showNames) { for (const t of tags) t.hidden = true; return; }
+    if (now - tagsAt > 200) {
+      tagsAt = now;
+      tagList = [...movers.values()].filter((m) => m.e && m.e.cls === 'person' && m.group.visible && (!m.e.props.inside || movers.get(m.e.props.inside)?.seat))
+        .map((m) => ({ m, d: camera.position.distanceTo(m.group.position) })).filter((x) => x.d < 260).sort((a, b) => (b.m.e.props.saying ? 1 : 0) - (a.m.e.props.saying ? 1 : 0) || a.d - b.d).slice(0, TAG_MAX);
+    }
+    const r = container.getBoundingClientRect();
+    const placed = [];
+    tags.forEach((t, i) => {
+      const it = tagList[i];
+      if (!it || it.m.id === selectedId) { t.hidden = true; return; }
+      const e = it.m.e; const p = e.props;
+      proj.copy(it.m.group.position); proj.y += (e.base === 'child' ? 1.4 : 2.1);
+      proj.project(camera);
+      if (proj.z >= 1 || Math.abs(proj.x) > 1 || Math.abs(proj.y) > 1) { t.hidden = true; return; }
+      const sx = (proj.x * 0.5 + 0.5) * r.width; const sy = (-proj.y * 0.5 + 0.5) * r.height;
+      // No pile-ups: a tag too close to one already shown waits its turn.
+      if (placed.some(([px, py]) => Math.abs(px - sx) < 90 && Math.abs(py - sy) < 20)) { t.hidden = true; return; }
+      placed.push([sx, sy]);
+      t.hidden = false;
+      const name = `${p.name || e.id}${p.family ? ` ${p.family}` : ''}`;
+      if (t.children[0].textContent !== name) t.children[0].textContent = name;
+      const job = e.base === 'child' ? `${Math.floor(p.age || 0)}` : JOB_WORD[p.job] || (e.base === 'alien' ? 'visitor' : '');
+      if (t.children[1].textContent !== job) t.children[1].textContent = job;
+      const say = p.saying ? `“${p.saying}”` : '';
+      if (t.children[2].textContent !== say) t.children[2].textContent = say;
+      t.classList.toggle('is-talking', !!say);
+      t.style.transform = `translate(${Math.round((proj.x * 0.5 + 0.5) * r.width)}px, ${Math.round((-proj.y * 0.5 + 0.5) * r.height)}px) translate(-50%, -100%)`;
+    });
+  }
 
   let world = normalizeWorld(null);
   let groundSig = '';
   let staticSig = '';
   const staticGroup = new THREE.Group();
   scene.add(staticGroup);
+  // (furnitureGroup is added below, once the materials exist.)
   let staticBoxes = []; // [{ id, box }]
   const movers = new Map(); // id -> mover
   const geoCache = new Map();
@@ -265,9 +325,11 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
 
   // Things that never move: batched into three meshes.
   function rebuildStatic() {
-    for (const o of [...staticGroup.children]) { staticGroup.remove(o); o.geometry && o.geometry.dispose(); }
+    for (const o of [...staticGroup.children, ...furnitureGroup.children]) { o.parent.remove(o); o.geometry && o.geometry.dispose(); }
     staticBoxes = [];
     const layers = { body: [], glow: [], glass: [] };
+    const blayers = { body: [], glow: [], glass: [] };
+    const flayers = { body: [], glow: [], glass: [] };
     const m4 = new THREE.Matrix4(); const q = new THREE.Quaternion(); const p = new THREE.Vector3(); const one = new THREE.Vector3(1, 1, 1); const up = new THREE.Vector3(0, 1, 0);
     for (const e of world.entities) {
       if (!FIXED_KINDS.has(e.base)) continue;
@@ -276,12 +338,20 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
       q.setFromAxisAngle(up, yawFromHeading(e.props.heading));
       m4.compose(p, q, one);
       const box = new THREE.Box3();
+      const into = e.cls === 'building' ? blayers : layers;
       for (const name of ['body', 'glow', 'glass']) {
         if (!model[name]) continue;
-        const g = model[name].clone(); g.applyMatrix4(m4); layers[name].push(g);
+        const g = model[name].clone(); g.applyMatrix4(m4); into[name].push(g);
         g.computeBoundingBox(); box.union(g.boundingBox);
       }
       if (!box.isEmpty()) staticBoxes.push({ id: e.id, box });
+      // A finished home's furniture, for "See inside".
+      if (HOME_KINDS.has(e.base) && !(typeof e.props.built === 'number' && e.props.built < 100)) {
+        const fkey = `furniture|${e.base}|${Math.min(12, Number(e.props.furniture) || 0)}`;
+        let fm = geoCache.get(fkey);
+        if (!fm) { fm = { ...furnitureFor(THREE, e.base, Math.min(12, Number(e.props.furniture) || 0)), parts: [] }; geoCache.set(fkey, fm); }
+        for (const name of ['body', 'glow', 'glass']) if (fm[name]) { const g = fm[name].clone(); g.applyMatrix4(m4); flayers[name].push(g); }
+      }
     }
     const merge = (list) => {
       if (!list.length) return null;
@@ -294,10 +364,15 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
       m.computeBoundingSphere();
       return m;
     };
-    const b = merge(layers.body); const gl = merge(layers.glow); const gs = merge(layers.glass);
-    if (b) { const m = new THREE.Mesh(b, matBody); m.castShadow = !coarse; m.receiveShadow = !coarse; staticGroup.add(m); }
-    if (gs) { const m = new THREE.Mesh(gs, matGlass); m.castShadow = !coarse; m.receiveShadow = !coarse; staticGroup.add(m); }
-    if (gl) staticGroup.add(new THREE.Mesh(gl, matGlow));
+    const add = (group, ls, mats) => {
+      const b = merge(ls.body); const gl = merge(ls.glow); const gs = merge(ls.glass);
+      if (b) { const m = new THREE.Mesh(b, mats[0]); m.castShadow = !coarse; m.receiveShadow = !coarse; group.add(m); }
+      if (gs) { const m = new THREE.Mesh(gs, mats[1]); m.castShadow = !coarse; m.receiveShadow = !coarse; group.add(m); }
+      if (gl) group.add(new THREE.Mesh(gl, mats[2]));
+    };
+    add(staticGroup, layers, [matBody, matGlass, matGlow]);
+    add(staticGroup, blayers, [matBuild, matBuildGlass, matBuildGlow]);
+    add(furnitureGroup, flayers, [matBody, matGlass, matGlow]);
   }
 
   // A celestial body: a painted sphere (and a glow, rings, clouds, a light).
@@ -307,7 +382,7 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
     const color = typeof e.props.color === 'string' ? e.props.color : e.base === 'star' ? '#ffd27a' : e.base === 'moon' ? '#cfcfcf' : '#8fa8c9';
     let seed = 0; for (const ch of e.id) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
     const tex = planetTexture(THREE, color, e.base, seed);
-    const mat = e.base === 'star' ? new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, color: 0xffffff }) : new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, metalness: 0 });
+    const mat = e.base === 'star' || e.base === 'alien_world' ? new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, color: 0xffffff }) : new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, metalness: 0 });
     const sphere = new THREE.Mesh(new THREE.SphereGeometry(size, 48, 24), mat);
     g.add(sphere);
     if (e.base === 'star') {
@@ -356,7 +431,7 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
   function syncMovers(duration) {
     const seen = new Set();
     for (const e of world.entities) {
-      if (FIXED_KINDS.has(e.base) || e.base === 'lake') continue;
+      if (FIXED_KINDS.has(e.base) || e.base === 'lake' || e.base === 'island') continue;
       seen.add(e.id);
       let m = movers.get(e.id);
       const key = modelKey(e.kind, e.props, e.id);
@@ -478,14 +553,16 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
     g.fillStyle = 'rgba(10,10,11,0.78)'; g.fillRect(0, 0, W, H);
     const k = (W - 12) / Math.max(world.size.x, world.size.y);
     const ox = (W - world.size.x * k) / 2; const oy = (H - world.size.y * k) / 2;
-    g.fillStyle = '#25402a'; g.fillRect(ox, oy, world.size.x * k, world.size.y * k);
     const X = (e) => ox + e.x * k; const Y = (e) => oy + (world.size.y - e.y) * k;
+    const isl = world.entities.filter((e) => e.base === 'island');
+    g.fillStyle = isl.length ? '#1f5f86' : '#25402a'; g.fillRect(ox, oy, world.size.x * k, world.size.y * k);
+    for (const e of isl) { g.fillStyle = e.props.climate === 'tropical' ? '#3f7d34' : e.props.climate === 'cold' ? '#7d8a7a' : '#3a6a30'; g.beginPath(); g.arc(X(e), Y(e), (Number(e.props.radius) || 500) * k, 0, 7); g.fill(); }
     for (const e of world.entities) {
       if (e.base === 'lake') { g.fillStyle = '#2f7fb0'; g.beginPath(); g.arc(X(e), Y(e), (Number(e.props.radius) || 50) * k, 0, 7); g.fill(); }
       else if (e.base === 'road' || e.base === 'runway') { const L = (Number(e.props.length) || 100) * k; g.save(); g.translate(X(e), Y(e)); g.rotate(-(Number(e.props.heading) || 0) * Math.PI / 180); g.fillStyle = '#5a5d63'; g.fillRect(-L / 2, -1, L, 2); g.restore(); }
     }
     for (const e of world.entities) {
-      if (['lake', 'road', 'runway', 'bridge', 'grass', 'flower', 'lamp', 'fence', 'crop'].includes(e.base) || e.cls === 'plant') continue;
+      if (['lake', 'island', 'road', 'runway', 'bridge', 'grass', 'flower', 'lamp', 'fence', 'crop', 'beach'].includes(e.base) || e.cls === 'plant') continue;
       const m = movers.get(e.id);
       let x = X(e); let y = Y(e);
       if (m) { x = ox + (m.group.position.x + world.size.x / 2) * k; y = oy + (m.group.position.z + world.size.y / 2) * k; }
@@ -635,7 +712,9 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
     // Sky, light and fog from the time of day and the camera's height.
     const clk = clockOf(world, tickF);
     const camAlt = camera.position.y;
-    const envState = env.update({ dayFraction: clk.fraction, cameraAlt: camAlt, spaceAlt: world.spaceAlt, camera, target: controls.target, shadowSpan: controls.dist * 0.7, dt: step });
+    // Space when looking at space; a high overview of the ground keeps its sky.
+    const effAlt = controls.target.y > world.spaceAlt * 0.5 ? camAlt : Math.min(camAlt, world.spaceAlt * 0.4);
+    const envState = env.update({ dayFraction: clk.fraction, cameraAlt: effAlt, spaceAlt: world.spaceAlt, camera, target: controls.target, shadowSpan: controls.dist * 0.7, dt: step });
     // Windows read as dark glass by day and warm light at night.
     const nt = Math.min(1, envState.night + envState.space * 0.4);
     matGlow.color.setRGB(0.22 + nt * 1.2, 0.27 + nt * 1.0, 0.36 + nt * 0.6);
@@ -659,7 +738,8 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
       }
     } else label.hidden = true;
 
-    clockEl.textContent = `Simulation · day ${clk.day} · ${clk.hh}:${clk.mm}${camAlt > world.spaceAlt ? ' · in space' : ''}`;
+    clockEl.textContent = `Simulation · day ${clk.day} · ${clk.hh}:${clk.mm}${effAlt > world.spaceAlt ? ' · in space' : ''}`;
+    updateTags(now);
     if (now - miniAt > 250) { drawMini(); miniAt = now; }
     renderer.render(scene, camera);
     container.dataset.frames = String((Number(container.dataset.frames) || 0) + 1);
@@ -681,12 +761,13 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
         if (onSelect) onSelect(null);
         firstWorld = true;
       }
-      const gs = `${world.size.x}|${world.size.y}|${world.seed}|${world.entities.filter((e) => FIXED_KINDS.has(e.base) || e.base === 'lake').map((e) => `${e.id}:${Math.round(e.x)}:${Math.round(e.y)}:${e.props.radius || ''}`).join(',')}`;
+      const gs = `${world.size.x}|${world.size.y}|${world.seed}|${world.entities.filter((e) => FIXED_KINDS.has(e.base) || e.base === 'lake' || e.base === 'island').map((e) => `${e.id}:${Math.round(e.x)}:${Math.round(e.y)}:${e.props.radius || ''}`).join(',')}`;
       if (gs !== groundSig) {
         groundSig = gs;
         const lakeEntities = world.entities.filter((e) => e.base === 'lake' || e.base === 'road' || e.base === 'runway').map((e) => ({ ...e, sx: e.x - world.size.x / 2, sz: -(e.y - world.size.y / 2), radius: Number(e.props.radius) || 60, heading: -(Number(e.props.heading) || 0), length: Number(e.props.length) || 100, width: Number(e.props.width) || 12 }));
+        const islands = world.entities.filter((e) => e.base === 'island').map((e) => ({ sx: e.x - world.size.x / 2, sz: -(e.y - world.size.y / 2), r: Number(e.props.radius) || 500, climate: e.props.climate || 'temperate', name: e.props.name || e.id }));
         const avoid = world.entities.filter((e) => e.z < 5).map((e) => ({ x: e.x - world.size.x / 2, z: -(e.y - world.size.y / 2), r: e.base === 'lake' ? (Number(e.props.radius) || 60) : e.cls === 'building' ? 25 : 0 }));
-        env.buildGround({ size: world.size, seed: world.seed, entities: lakeEntities, avoid });
+        env.buildGround({ size: world.size, seed: world.seed, entities: lakeEntities, avoid, islands });
       }
       const ss = world.entities.filter((e) => FIXED_KINDS.has(e.base)).map((e) => `${e.id}:${modelKey(e.kind, e.props, e.id)}:${e.x}:${e.y}:${e.props.heading || 0}`).join(',');
       if (ss !== staticSig) { staticSig = ss; rebuildStatic(); }
@@ -705,6 +786,8 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
       schedule();
     },
     setView(m) { if (m === 'follow' && !selectedId) return; setMode(m); schedule(); },
+    setXray(on) { setXray(on); schedule(); }, xray: () => xray,
+    setNames(on) { showNames = !!on; schedule(); }, names: () => showNames,
     view: () => mode,
     select(id) { select(id); schedule(); },
     selected: () => selectedId,

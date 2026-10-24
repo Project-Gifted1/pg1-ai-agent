@@ -65,17 +65,46 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
   - cars, taxis, a police car, buses, trucks, bikes and motorbikes driving;
   - planes, a small plane, a helicopter, a balloon and a drone flying;
   - a rocket taking its crew of three to a station in orbit and back.
-- **universe:** the town, plus the space above it: a star, four planets (one ringed, one with clouds), two moons, an asteroid belt and a shuttle touring the station, planets and moons (365 things).
+- **universe (Pg1-Universe):** a 12 km × 8 km world of sea and four island countries, plus the space above it (626 things at the start):
+  - **Aurelia,** the town above on its island, with a harbour, a beach, a hotel, a cinema, a theatre, a bar, a stadium, an amusement park and an airport terminal;
+  - **Maravia** (tropical, ruled by a council, with an airstrip), **Nordheim** (cold, a monarchy, with an airstrip) and **Saltreach** (maritime, a democracy), each with its own houses, harbour, hotel, people, names and money;
+  - ferries (Sea Swallow, Northern Star, Coral Queen) and an airliner (Maravia Air 7) between them; army trucks and navy patrols;
+  - a star, four planets (one ringed, one with clouds), moons, an asteroid belt, a station and a shuttle;
+  - two far worlds of other civilisations (the Vel and the Oru) at the very edge of the sky, hard to reach.
 - **meadow:** the first starter world: grass, rabbits and a fox.
 
 **Hard limits:**
 
-- 500 entities;
+- 1,000 entities (about 500–600 people at most once the buildings are counted; a 20,000-step run of the universe stays near 950 entities at about 12 ms a step);
 - 50 rules;
 - 100 steps a call;
 - 256 KB of world JSON;
 - 10 worlds an owner;
-- 20 properties an entity.
+- 40 properties an entity;
+- 20 km across, 10 km high.
+
+## The people (the `life` rule)
+
+`lib/sandbox/society.mjs`. Deterministic from the seed; no AI engine. The inhabitants are not told what their world is, and nothing they say uses the words a blind subject must not see.
+
+- **Needs and free will:** hunger, energy, hygiene and company. Each step a person weighs what they could do (eat, shower, sleep, work, study, visit a friend, go out, go on holiday, steal) by need, character (curiosity, ambition, honesty, sociability) and money, and picks one, with chance in it.
+- **Lives:** names from their own culture; friendships, partners, homes together, children, growing up, school, careers (20 jobs, from farmer to scientist, soldier and pilot), retirement and death. Furniture is bought and kept in the house; the viewer's **See inside** shows it.
+- **Countries:** each island is a country with its own culture, government (democracy with elections, monarchy with a King or Queen, or a council with its Speaker), money (founded once trade grows), taxes, laws, treasury, pensions and building plans: houses on named roads, schools, a hospital, a police station, a prison, barracks, hangars, rockets and, at high technology, colonies.
+- **Law and order:** crime by the dishonest and the desperate; police arrests; prison terms; fines while there is no prison.
+- **Holidays:** by sea (harbour, ferry or ship, fare 15) and, once flight is known, by air (airport, plane, fare 40); hotel nights; coming home. No holidays to a country at war with, or standing off with, their own.
+- **Entertainment:** cinema, theatre, bar, stadium matches and shows, the beach and the amusement park; they cost a little and lift the mood.
+- **Technology:** research from scientists and schools, through seven levels (from tools to interstellar flight), unlocking cars, flight, rockets, colonies and deep-space expeditions.
+- **Between countries:** tourism and trade warm relations; ambitious, dishonest leaders and disputes strain them; good relations become alliances. At -60 the two stand off and their armies mobilise. Talks, an ally of both mediating, or the passing of a few days usually end it in a peace treaty. **War is possible but the last resort:** only when relations are at their worst (-85), the talks have run out, a leader is a hawk, both sides have soldiers, and a dice roll goes that way (half as likely where either side is a democracy). A war is a few clashes between soldiers: some die, both treasuries pay, tourism stops, and weariness grows until an armistice, after which the side that lost more pays reparations and relations stay cold. Civilians are not targeted. In a 20,000-step run of the universe there were three standoffs and no war.
+- **Other civilisations:** hard to meet. Contact needs an expedition to reach a far world (or, very rarely, at high technology, a visiting craft lands; the army goes to meet it, weapons lowered).
+- **Working out what their world is:** rare and slow. Evidence comes from reaching the edge of the sea and the roof of the sky, and from scientists' work. A hypothesis needs both seen, plenty of evidence and a very curious, well-educated scientist; a test needs interstellar technology. Then they leave a message for whoever watches (at most five), on a monument, the Listening Stone. The **Society** tab shows it under **Messages from inside**.
+
+## The black box
+
+`lib/sandbox/blackbox.mjs`, table `pg1_world_blackbox`. Every action, by whom: agents' tool calls, subjects' in-world actions, inhabitants' decisions (travel, talk, partners, births, crimes, deaths and more) and the world's (money, elections, technology, building, disputes, standoffs, treaties, wars, battles, armistices, contact). Each record carries the SHA-256 hash of the one before it in the same world, so a changed or missing record breaks the chain (`verifyChain`). The table refuses updates, and deletes of records younger than 180 days. Records outlive their world. Read it with `read_blackbox`, the viewer's **Black box** tab, or `GET /api/sandbox?op=blackbox`.
+
+## Projects: PG1 researches, builds and tests on its own
+
+`/mission add project "<goal>"`. Every tick (free engines only) the mission moves one stage: **research** (a brief), **build** (new files only, under `lib/projects/<slug>/`, `tests/projects/` and `docs/projects/`, on a branch, as a draft pull request), **test** (CI check runs on the head), **fix** (up to two rounds when tests fail), then **review**: one approval card, and the only notice. Generated code may not use the network, child processes, the environment or eval. PG1 never merges or deploys; Gift does.
 
 ## Access: by invitation only
 
@@ -239,12 +268,14 @@ Every blind run, its world and its outputs are labelled **"SIMULATION — blind 
 | `/sandbox experiment <world> [blind\|informed] [clues\|control] [anomalies] [--agent <name>] "<situation>"` | starts a run (PG1-subject by default) |
 | `/sandbox stop <run>` | stops a run |
 | `/mission add world "<goal>"` | a world mission |
+| `/mission add project "<goal>"` | a project: research, build, test, then one approval |
+| `/universe` | the same as `/sandbox` |
 
 ## Migration
 
 `supabase/migrations/20261110120000_pg1_sandbox.sql` is **not applied automatically**.
 
-- **New tables:** `pg1_worlds`, `pg1_world_events` (kept 30 days), `pg1_sandbox_keys`, `pg1_sandbox_usage`, `pg1_sandbox_consents`, `pg1_experiment_runs`, `pg1_experiment_anomalies` and `pg1_experiment_log`.
-- **Changes to existing tables:** `kind` and `world_id` are added to `pg1_missions`, and the `sandbox` area to the Core State tables. Each change is made only when that table exists.
+- **New tables:** `pg1_worlds`, `pg1_world_events` (kept 30 days), `pg1_sandbox_keys`, `pg1_sandbox_usage`, `pg1_sandbox_consents`, `pg1_experiment_runs`, `pg1_experiment_anomalies`, `pg1_experiment_log` and `pg1_world_blackbox` (append-only, hash-chained, kept 180 days), with the functions `pg1_blackbox_append_only` (its trigger) and `pg1_blackbox_actors`.
+- **Changes to existing tables:** `kind` (standard, world or project), `world_id`, `stage` and `project` are added to `pg1_missions`, and the `sandbox` area to the Core State tables. Each change is made only when that table exists.
 - **Safe to run:** more than once; it changes no existing data; service role only.
 - **Before it runs:** the sandbox works in each instance's memory, and world missions are refused with a clear message.

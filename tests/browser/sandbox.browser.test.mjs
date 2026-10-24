@@ -27,6 +27,9 @@ import { createWorld, stepWorldFor, pg1Principal } from '../../lib/sandbox/world
 import { startExperiment, takeTurn, openRun, finishRun } from '../../lib/sandbox/experiments.mjs';
 import sandboxViewer, { __setSandboxViewerStore } from '../../api/sandbox.mjs';
 import { handleSandboxCommand } from '../../lib/sandbox/chat.mjs';
+import { templateSpec } from '../../lib/sandbox/templates.mjs';
+
+const UNIVERSE_COUNT = templateSpec('universe').entities.length;
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PUBLIC_DIR = join(ROOT, 'public');
@@ -249,14 +252,14 @@ test('New universe at 380 px: a living town and the space above it in 3D, the ca
   await page.waitForFunction(() => /^Step \d+ · /.test(document.getElementById('sandbox-tick').textContent));
   const ops = log.sandboxOps.length;
   await page.click('#sandbox-new');
-  await page.waitForFunction(() => /^Step 0 · 365 entities/.test(document.getElementById('sandbox-tick').textContent), null, { timeout: 30000 });
+  await page.waitForFunction((n) => new RegExp(`^Step 0 · ${n} entities`).test(document.getElementById('sandbox-tick').textContent), UNIVERSE_COUNT, { timeout: 30000 });
   assert.ok(log.sandboxOps.slice(ops).includes('create'), 'New universe creates a world from the template');
   assert.equal((await page.locator('#sandbox-label').innerText()).trim(), 'Simulation');
   const kinds = await page.locator('#sandbox-kinds').innerText();
   for (const k of ['person', 'house', 'car', 'bike', 'bus', 'plane', 'helicopter', 'rocket', 'planet', 'space_station']) assert.match(kinds, new RegExp(`\\b${k}\\b`), `${k} is in the universe`);
   const renderer = await page.locator('#sandbox-view').getAttribute('data-renderer');
   assert.ok(['webgl', '2d'].includes(renderer));
-  await page.waitForFunction(() => Number(document.getElementById('sandbox-view').dataset.markers) === 365, null, { timeout: 30000 });
+  await page.waitForFunction((n) => Number(document.getElementById('sandbox-view').dataset.markers) === n, UNIVERSE_COUNT, { timeout: 30000 });
   if (renderer === 'webgl') {
     await page.waitForFunction(() => Number(document.getElementById('sandbox-view').dataset.frames || 0) > 3, null, { timeout: 60000 });
     assert.match(await page.locator('.sandbox-clock').innerText(), /^Simulation · day \d+ · \d\d:\d\d/);

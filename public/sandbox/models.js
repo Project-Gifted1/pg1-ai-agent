@@ -15,16 +15,22 @@ import { Kit } from './kit.js';
 
 // The viewer's copy of the catalogue's classes (lib/sandbox/catalog.mjs).
 export const KIND_CLASS = {
-  person: 'person', child: 'person', astronaut: 'person',
+  person: 'person', child: 'person', astronaut: 'person', alien: 'person',
   dog: 'animal', cat: 'animal', rabbit: 'animal', fox: 'animal', deer: 'animal', horse: 'animal', cow: 'animal', bird: 'animal', fish: 'animal',
   grass: 'plant', flower: 'plant', bush: 'plant', tree: 'plant', pine: 'plant', palm: 'plant', crop: 'plant',
+  police_station: 'building', prison: 'building', hotel: 'building', cinema: 'building', theatre: 'building', bar: 'building', stadium: 'building',
+  beach: 'structure', amusement: 'structure', port: 'structure', monument: 'structure', island: 'structure', ferry: 'vehicle',
+  terminal: 'building', barracks: 'building', army_truck: 'vehicle', patrol_boat: 'vehicle',
   house: 'building', cabin: 'building', apartment: 'building', tower: 'building', shop: 'building', cafe: 'building', school: 'building', hospital: 'building', factory: 'building', barn: 'building', hangar: 'building', station: 'building',
   road: 'structure', bridge: 'structure', runway: 'structure', launch_pad: 'structure', lake: 'structure', rock: 'structure', fence: 'structure', lamp: 'structure', fountain: 'structure',
   bike: 'vehicle', motorbike: 'vehicle', car: 'vehicle', taxi: 'vehicle', police_car: 'vehicle', bus: 'vehicle', truck: 'vehicle', tractor: 'vehicle', train: 'vehicle', boat: 'vehicle', ship: 'vehicle', plane: 'vehicle', small_plane: 'vehicle', jet: 'vehicle', helicopter: 'vehicle', drone: 'vehicle', hot_air_balloon: 'vehicle', rocket: 'vehicle', shuttle: 'vehicle',
-  space_station: 'space', satellite: 'space', star: 'celestial', planet: 'celestial', moon: 'celestial', asteroid: 'celestial'
+  space_station: 'space', satellite: 'space', colony: 'space', star: 'celestial', planet: 'celestial', moon: 'celestial', asteroid: 'celestial',
+  alien_world: 'celestial', alien_ship: 'vehicle'
 };
-export const FIXED_KINDS = new Set(['grass', 'flower', 'bush', 'tree', 'pine', 'palm', 'crop', 'house', 'cabin', 'apartment', 'tower', 'shop', 'cafe', 'school', 'hospital', 'factory', 'barn', 'hangar', 'station', 'road', 'bridge', 'runway', 'launch_pad', 'rock', 'fence', 'lamp', 'fountain']);
-export const AIR_KINDS = new Set(['bird', 'plane', 'small_plane', 'jet', 'helicopter', 'drone', 'hot_air_balloon', 'rocket', 'shuttle', 'space_station', 'satellite', 'star', 'planet', 'moon', 'asteroid']);
+export const FIXED_KINDS = new Set(['grass', 'flower', 'bush', 'tree', 'pine', 'palm', 'crop', 'house', 'cabin', 'apartment', 'tower', 'shop', 'cafe', 'school', 'hospital', 'factory', 'barn', 'hangar', 'station', 'police_station', 'prison', 'hotel', 'cinema', 'theatre', 'bar', 'stadium', 'beach', 'amusement', 'port', 'monument', 'terminal', 'barracks', 'road', 'bridge', 'runway', 'launch_pad', 'rock', 'fence', 'lamp', 'fountain']);
+export const AIR_KINDS = new Set(['bird', 'plane', 'small_plane', 'jet', 'helicopter', 'drone', 'hot_air_balloon', 'rocket', 'shuttle', 'space_station', 'satellite', 'colony', 'star', 'planet', 'moon', 'asteroid', 'alien_world', 'alien_ship']);
+// Homes whose insides the viewer furnishes (see furnitureFor).
+export const HOME_KINDS = new Set(['house', 'cabin', 'apartment']);
 
 // "car_red" and "house-2" are a car and a house.
 export function baseKind(kind) {
@@ -640,6 +646,241 @@ function asteroid(T, p, seed) {
   return out(k, { size: s * 2.6, spin: 0.4 });
 }
 
+// --- society: law and order, the visitors, space settlements ------------------------------
+
+function policeStation(T) {
+  const k = new Kit(T);
+  facadeBlock(k, 24, 16, 2, '#cfd8dc', { floorH: 4 });
+  k.box(25, 0.8, 17, '#1a237e', 0, 8.4, 0);
+  k.box(0.2, 1.4, 10, '#1a237e', 12.1, 6.6, 0);
+  k.box(0.22, 0.9, 7, '#fafafa', 12.15, 6.6, 0, { layer: 'glow' });
+  k.box(1.2, 0.6, 1.2, '#2979ff', 8, 9.2, 5, { layer: 'glow' });
+  for (let i = 0; i < 3; i++) k.box(5, 0.05, 2.6, '#fafafa', 16 + i * 0.1, 0.04, -5 + i * 4);   // parking
+  return out(k, { size: 30 });
+}
+
+function prison(T) {
+  const k = new Kit(T);
+  const W = 60; const D = 44;
+  for (const [x, z, w, d] of [[0, D / 2, W, 1], [0, -D / 2, W, 1], [W / 2, 0, 1, D], [-W / 2, 0, 1, D]]) k.box(w, 7, d, '#9e9e9e', x, 3.5, z);
+  for (const [x, z] of [[W / 2, D / 2], [-W / 2, D / 2], [W / 2, -D / 2], [-W / 2, -D / 2]]) { k.box(3, 12, 3, '#757575', x, 6, z); k.box(3.6, 0.6, 3.6, '#424242', x, 12.3, z); k.sphere(0.4, '#fff59d', x, 12.8, z, { layer: 'glow' }); }
+  facadeBlock(k, 34, 16, 3, '#bdbdbd', { floorH: 3.4 });
+  k.box(35, 0.8, 17, '#616161', 0, 10.6, 0);
+  k.box(16, 0.05, 10, '#8d8d8d', 0, 0.03, -14);                                  // the yard
+  k.box(4, 5, 1.2, '#455a64', W / 2 + 0.2, 2.5, 0);                             // the gate
+  return out(k, { size: 66 });
+}
+
+function colony(T) {
+  const k = new Kit(T);
+  k.cyl(14, 16, 2, 24, '#78909c', 0, 0, 0);
+  for (const [x, z, r] of [[0, 0, 7], [9, 4, 4.5], [-8, 5, 4], [3, -9, 5]]) { k.sphere(r, '#b3e5fc', x, 1, z, { layer: 'glass', sy: 0.7 }); k.cyl(r * 0.4, r * 0.4, r * 0.8, 10, '#eceff1', x, r * 0.5, z); }
+  k.cyl(0.6, 0.8, 16, 8, '#cfd8dc', -11, 8, -6);
+  for (let i = 0; i < 10; i++) k.sphere(0.35, '#ffe082', Math.cos(i) * 12, 1.6, Math.sin(i) * 12, { layer: 'glow', seg: 6, rings: 4 });
+  return out(k, { size: 36 });
+}
+
+function alienShip(T) {
+  const k = new Kit(T);
+  k.lathe([[0, -1.6], [6, -0.4], [12, 0], [6, 0.8], [3, 2.2], [0, 2.6]], 40, '#b0bec5', 0, 0, 0);
+  k.sphere(3.2, '#80deea', 0, 2, 0, { layer: 'glass', sy: 0.6 });
+  for (let i = 0; i < 12; i++) k.sphere(0.45, '#69f0ae', Math.cos(i * Math.PI / 6) * 10.5, 0.1, Math.sin(i * Math.PI / 6) * 10.5, { layer: 'glow', seg: 6, rings: 4 });
+  return out(k, { size: 26, spin: 0.6 });
+}
+
+function alienVisitor(T, p, seed) {
+  const k = new Kit(T);
+  const skin = pickBy(seed, ['#9ccc65', '#b39ddb', '#80cbc4']);
+  k.capsule(0.18, 1.1, '#cfd8dc', 0, 1.4, 0);
+  k.sphere(0.24, skin, 0, 2.3, 0, { sy: 1.35 });
+  k.sphere(0.07, '#111', 0.17, 2.36, 0.09, { sx: 0.6, sy: 1.4 }); k.sphere(0.07, '#111', 0.17, 2.36, -0.09, { sx: 0.6, sy: 1.4 });
+  const leg = (z) => partOf(T, (q) => q.cyl(0.06, 0.05, 1, 6, '#cfd8dc', 0, -0.5, 0), [0, 0.95, z], z > 0 ? 'legL' : 'legR');
+  const arm = (z) => partOf(T, (q) => q.cyl(0.04, 0.03, 0.95, 6, skin, 0, -0.45, 0), [0, 1.85, z], z > 0 ? 'armL' : 'armR');
+  return { ...k.build(), parts: [leg(0.09), leg(-0.09), arm(0.24), arm(-0.24)], size: 2.6 };
+}
+
+// A building going up: footings and scaffolding, rising with the work done.
+export function scaffold(T, kind, progress) {
+  const k = new Kit(T);
+  const size = { house: [11, 9, 4], prison: [40, 30, 10], police_station: [24, 16, 8], hospital: [34, 22, 16], school: [40, 14, 8], road: [200, 12, 0.2], cafe: [16, 12, 6], fountain: [14, 14, 3], hangar: [30, 40, 14] }[kind] || [14, 12, 8];
+  const [W, D, H] = size;
+  const h = Math.max(0.6, H * Math.min(1, progress / 100));
+  k.box(W + 2, 0.3, D + 2, '#9e9e9e', 0, 0.15, 0);
+  if (kind === 'road') { k.box(W * Math.min(1, progress / 100), 0.15, D, '#5d5d5d', -W / 2 + (W * Math.min(1, progress / 100)) / 2, 0.08, 0); return out(k, { size: W }); }
+  k.box(W * 0.9, h, D * 0.9, '#bcaaa4', 0, h / 2, 0, { jitter: 0.1 });
+  for (let x = -W / 2; x <= W / 2; x += W / 4) for (const z of [-D / 2 - 0.6, D / 2 + 0.6]) k.box(0.12, h + 1.5, 0.12, '#ffb300', x, (h + 1.5) / 2, z);
+  for (let y = 1.5; y < h + 1.5; y += 2) { k.box(W + 1.2, 0.1, 0.1, '#ffb300', 0, y, D / 2 + 0.6); k.box(W + 1.2, 0.1, 0.1, '#ffb300', 0, y, -D / 2 - 0.6); }
+  k.box(0.4, h + 8, 0.4, '#f9a825', W / 2 + 3, (h + 8) / 2, 0);                  // the crane
+  k.box(12, 0.4, 0.4, '#f9a825', W / 2 - 2, h + 8, 0);
+  return out(k, { size: Math.max(W, D) + 6 });
+}
+
+// The inside of a home: the basics every home has (a bed, a table, a
+// kitchen, a shower) and what its people bought (properties.furniture).
+// Drawn only with "See inside" on.
+export function furnitureFor(T, kind, count = 0) {
+  const k = new Kit(T);
+  const W = kind === 'cabin' ? 8 : kind === 'apartment' ? 20 : 11; const D = kind === 'cabin' ? 7 : kind === 'apartment' ? 14 : 9;
+  const y0 = 0.4;
+  k.box(W - 0.4, 0.05, D - 0.4, '#a1887f', 0, y0 + 0.03, 0);                     // floor
+  k.box(0.1, 2.6, D * 0.45, '#efebe9', -W * 0.1, y0 + 1.3, -D * 0.27);            // an inner wall
+  // Bedroom: the bed.
+  k.box(2.1, 0.45, 1.6, '#5d4037', -W / 2 + 1.4, y0 + 0.25, -D / 2 + 1.2); k.box(2, 0.2, 1.5, '#e3f2fd', -W / 2 + 1.4, y0 + 0.55, -D / 2 + 1.2); k.box(0.5, 0.15, 1.4, '#fafafa', -W / 2 + 0.6, y0 + 0.7, -D / 2 + 1.2);
+  // Bathroom: the shower, glass-walled.
+  k.box(1.1, 0.1, 1.1, '#eceff1', W / 2 - 0.8, y0 + 0.08, -D / 2 + 0.8); k.box(1.1, 2.2, 0.05, '#b3e5fc', W / 2 - 0.8, y0 + 1.1, -D / 2 + 1.35, { layer: 'glass' }); k.cyl(0.03, 0.03, 0.4, 6, '#9e9e9e', W / 2 - 0.8, y0 + 2.1, -D / 2 + 0.5, { rx: 1.2 });
+  // Kitchen: a counter, a stove, a fridge.
+  k.box(3, 0.9, 0.6, '#eceff1', W / 2 - 2.2, y0 + 0.45, D / 2 - 0.5); k.box(0.6, 0.05, 0.5, '#212121', W / 2 - 1.4, y0 + 0.92, D / 2 - 0.5); k.box(0.7, 1.8, 0.7, '#cfd8dc', W / 2 - 4.1, y0 + 0.9, D / 2 - 0.5);
+  // The table and chairs.
+  k.box(1.6, 0.06, 0.9, '#8d6e63', 0.8, y0 + 0.75, 0.6); for (const [x, z] of [[0.2, 0], [1.4, 0], [0.2, 1.2], [1.4, 1.2]]) k.box(0.4, 0.45, 0.4, '#6d4c41', x, y0 + 0.23, z);
+  // What they bought, in the order it came.
+  const extras = [
+    () => k.box(2.2, 0.5, 0.9, '#3949ab', -W / 2 + 1.5, y0 + 0.3, D / 2 - 0.7),                         // sofa
+    () => k.box(1.2, 2, 0.6, '#795548', -W / 2 + 0.4, y0 + 1, 0.4),                                      // wardrobe
+    () => k.box(0.3, 1.8, 1.2, '#6d4c41', W * 0.05, y0 + 0.9, -D / 2 + 0.3),                             // bookshelf
+    () => k.box(2.4, 0.02, 1.6, '#c62828', -1, y0 + 0.07, 1.6),                                          // rug
+    () => { k.cyl(0.03, 0.03, 1.5, 6, '#424242', -W / 2 + 2.9, y0 + 0.75, D / 2 - 0.5); k.cone(0.25, 0.3, 10, '#fff8e1', -W / 2 + 2.9, y0 + 1.55, D / 2 - 0.5, { layer: 'glow' }); },
+    () => { k.box(1.2, 0.05, 0.6, '#5d4037', -W * 0.05, y0 + 0.75, -D / 2 + 1.4); k.box(0.45, 0.45, 0.45, '#424242', -W * 0.05, y0 + 0.23, -D / 2 + 2); },  // desk
+    () => { k.box(1.4, 0.8, 0.06, '#111', -W / 2 + 1.5, y0 + 1.2, D / 2 - 0.1); k.box(1.3, 0.7, 0.02, '#37474f', -W / 2 + 1.5, y0 + 1.2, D / 2 - 0.15, { layer: 'glow' }); },  // television
+    () => k.box(2, 0.06, 1, '#a1887f', 2.6, y0 + 0.75, -1.4),                                            // dining set
+    () => { k.cyl(0.25, 0.2, 0.4, 8, '#8d6e63', W / 2 - 0.5, y0 + 0.2, 0.6); k.ico(0.45, 1, '#43a047', W / 2 - 0.5, y0 + 0.8, 0.6); },  // plant
+    () => k.box(0.05, 1.2, 0.6, '#b3e5fc', -W / 2 + 0.25, y0 + 1.3, -1.2, { layer: 'glass' })           // mirror
+  ];
+  for (let i = 0; i < Math.min(extras.length, Math.max(0, count)); i++) extras[i]();
+  return k.build();
+}
+
+// --- leisure, the coast ----------------------------------------------------------------------
+
+function hotel(T, p) {
+  const floors = Math.max(3, Math.min(16, Math.round(Number(p.floors) || 7)));
+  const k = new Kit(T);
+  const H = facadeBlock(k, 30, 16, floors, col(p.color, '#f5f0e6'));
+  for (let f = 1; f < floors; f++) for (const x of [-10, 0, 10]) k.box(5, 0.15, 1.6, '#eceff1', x, f * 3.2, 8.8);   // balconies
+  k.box(31, 0.8, 17, '#90a4ae', 0, H + 0.4, 0);
+  k.box(14, 2.2, 0.3, '#263238', 0, H + 2, 0); k.box(13, 1.6, 0.32, '#ffe082', 0, H + 2, 0.02, { layer: 'glow' });       // its sign
+  k.box(16, 0.4, 9, '#4fc3f7', 0, 0.25, 15, { layer: 'glass' }); k.box(17, 0.3, 10, '#eceff1', 0, 0.1, 15);              // the pool
+  for (const x of [-6, -2, 2, 6]) { k.cone(1.4, 0.8, 10, '#ff7043', x, 2.4, 20.5); k.cyl(0.04, 0.04, 2.2, 5, '#bdbdbd', x, 1.1, 20.5); }
+  return out(k, { size: 34 });
+}
+function cinema(T, p) {
+  const k = new Kit(T);
+  k.box(26, 11, 20, col(p.color, '#5c2a3d'), 0, 5.5, 0);
+  k.box(1.6, 3, 22, '#212121', 13.6, 7, 0); k.box(1.62, 2.4, 21, '#fff176', 13.62, 7, 0, { layer: 'glow' });             // the marquee
+  for (const z of [-6, 0, 6]) k.box(0.1, 3.4, 2.4, '#ef5350', 13.1, 3, z, { layer: 'glow' });                            // posters
+  k.box(0.1, 3, 6, '#ffd98a', 13.06, 1.6, 0, { layer: 'glow' });
+  return out(k, { size: 30 });
+}
+function theatre(T, p) {
+  const k = new Kit(T);
+  const c = col(p.color, '#e8dcc4');
+  k.box(28, 14, 22, c, -2, 7, 0);
+  k.box(6, 1, 22, c, 14, 0.5, 0);
+  for (let i = 0; i < 6; i++) k.cyl(0.6, 0.7, 10, 12, '#fafafa', 14, 6, -9 + i * 3.6);
+  k.prism([[-11.5, 0], [11.5, 0], [0, 4]], 6.5, c, 14, 11, 0, { ry: Math.PI / 2 });
+  k.box(0.1, 4, 8, '#ffd98a', 12.05, 2.4, 0, { layer: 'glow' });
+  return out(k, { size: 34 });
+}
+function bar(T, p) {
+  const k = new Kit(T);
+  k.box(12, 5, 10, col(p.color, '#6d4c41'), 0, 2.5, 0);
+  k.box(0.1, 2, 7, '#ffcc80', 6.05, 2, 0, { layer: 'glow' });
+  k.box(0.3, 1, 4, '#212121', 6.3, 4.4, 0); k.box(0.32, 0.7, 3.4, '#ff8a65', 6.35, 4.4, 0, { layer: 'glow' });
+  for (const z of [-3, 0, 3]) { k.cyl(0.5, 0.5, 0.05, 10, '#8d6e63', 8.5, 1, z); k.cyl(0.05, 0.05, 1, 5, '#424242', 8.5, 0.5, z); }
+  return out(k, { size: 14 });
+}
+function stadium(T) {
+  const k = new Kit(T);
+  k.lathe([[46, 0], [52, 0], [56, 14], [55, 14.5], [44, 2]], 48, '#b0bec5', 0, 0, 0, { sz: 0.7 });
+  k.cyl(44, 44, 0.3, 48, '#43a047', 0, 0.2, 0, { sz: 0.7 });
+  for (let i = -3; i <= 3; i++) k.box(0.3, 0.32, 60, '#fafafa', i * 12, 0.36, 0);
+  for (const [x, z] of [[50, 30], [-50, 30], [50, -30], [-50, -30]]) { k.cyl(0.4, 0.5, 30, 6, '#9e9e9e', x, 15, z); k.box(5, 2, 1, '#fffde7', x, 30, z, { layer: 'glow' }); }
+  return out(k, { size: 110 });
+}
+function beach(T, p, seed) {
+  const len = Math.max(40, Math.min(600, Number(p.length) || 220));
+  const k = new Kit(T);
+  k.box(len, 0.25, 34, '#f2e2b0', 0, 0.12, 0, { jitter: 0.05 });
+  const n = Math.round(len / 14);
+  for (let i = 0; i < n; i++) {
+    const x = -len / 2 + 7 + i * 14; const z = ((i * 7) % 3) * 6 - 6;
+    k.cyl(0.05, 0.05, 2.4, 5, '#eceff1', x, 1.2, z); k.cone(1.6, 0.7, 10, pickBy(seed + i, ['#e53935', '#1e88e5', '#fdd835', '#43a047', '#fb8c00']), x, 2.5, z);
+    k.box(1.8, 0.05, 0.9, pickBy(seed + i * 3, ['#f06292', '#4dd0e1', '#fff176']), x + 1.6, 0.27, z + 1);
+  }
+  k.box(1.6, 0.3, 1.6, '#d32f2f', len / 2 - 10, 3.5, -10); for (const [x, z] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) k.cyl(0.08, 0.08, 3.5, 5, '#fafafa', len / 2 - 10 + x, 1.75, -10 + z);
+  return out(k, { size: len, flat: true });
+}
+function amusement(T) {
+  const k = new Kit(T);
+  k.torus(14, 0.5, '#e91e63', 0, 16, 0, { rseg: 6, tseg: 40 });
+  for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; k.cyl(0.15, 0.15, 14, 5, '#f8bbd0', Math.cos(a) * 7, 16 + Math.sin(a) * 7, 0, { rz: a + Math.PI / 2 }); k.box(1.6, 1.4, 1.6, pickBy(i, ['#ffeb3b', '#03a9f4', '#8bc34a', '#ff5722']), Math.cos(a) * 14, 16 + Math.sin(a) * 14 - 1, 0); k.sphere(0.3, '#fff59d', Math.cos(a) * 14, 16 + Math.sin(a) * 14, 0.6, { layer: 'glow', seg: 6, rings: 4 }); }
+  k.box(1, 17, 1, '#9e9e9e', 0, 8, 2.5, { rz: 0.35 }); k.box(1, 17, 1, '#9e9e9e', 0, 8, 2.5, { rz: -0.35 });
+  k.cyl(7, 7, 0.6, 24, '#ffca28', 22, 0.3, 6); k.cone(8, 3, 24, '#e53935', 22, 5.5, 6); for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; k.box(0.8, 1.4, 1.6, '#fafafa', 22 + Math.cos(a) * 5, 1.4, 6 + Math.sin(a) * 5); }
+  return out(k, { size: 46 });
+}
+function port(T) {
+  const k = new Kit(T);
+  k.box(120, 1.6, 14, '#8d8d8d', 60, 0.6, 0);
+  for (let x = 6; x < 120; x += 12) { k.cyl(0.4, 0.4, 1.2, 6, '#424242', x, 1.9, 6.4); k.cyl(0.4, 0.4, 1.2, 6, '#424242', x, 1.9, -6.4); }
+  k.box(24, 10, 16, '#90a4ae', -14, 5, 0);
+  k.box(1, 26, 1, '#f9a825', 90, 13, -4); k.box(24, 1, 1, '#f9a825', 84, 25.5, -4);
+  k.sphere(0.6, '#ff5252', 120, 4, 0, { layer: 'glow' }); k.cyl(0.4, 0.4, 3, 6, '#fafafa', 120, 2.2, 0);
+  return out(k, { size: 130 });
+}
+function monument(T, p) {
+  const k = new Kit(T);
+  k.box(6, 1, 6, '#9e9e9e', 0, 0.5, 0);
+  k.prism([[-1.4, 0], [1.4, 0], [1, 14], [0, 16], [-1, 14]], 2.8, '#bcaaa4', 0, 1, 0);
+  for (let i = 0; i < 6; i++) k.box(2.4, 0.18, 2.9, '#80deea', 0, 3 + i * 1.6, 0, { layer: 'glow' });
+  return out(k, { size: 10 });
+}
+function ferry(T, p) {
+  const k = new Kit(T);
+  const c = col(p.color, '#ffffff');
+  k.prism([[-20, 5], [24, 5], [20, 0], [-19, 0]], 9, c, 0, -1.6, 0);
+  k.box(42, 0.6, 9.2, '#1565c0', 0, -1.2, 0);
+  k.box(28, 3.2, 8, '#fafafa', -2, 5, 0); windowsRow(k, 28, 8, 5.2, 1.2, 10);
+  k.box(18, 2.8, 7, '#fafafa', -4, 8, 0); windowsRow(k, 18, 7, 8.2, 1, 7);
+  k.cyl(1.1, 1.3, 4, 12, '#c62828', -12, 11, 0);
+  return out(k, { size: 46, wake: true });
+}
+
+function terminal(T) {
+  const k = new Kit(T);
+  k.box(60, 9, 24, '#cfd8dc', 0, 4.5, 0, { layer: 'glass' });
+  k.box(62, 1, 26, '#eceff1', 0, 9.5, 0);
+  for (let i = 0; i < 4; i++) { k.box(3, 4, 18, '#b0bec5', -22 + i * 15, 5, 22); k.box(3.2, 0.2, 18, '#78909c', -22 + i * 15, 7.1, 22); }   // jet bridges
+  k.cyl(2.2, 2.6, 30, 12, '#eceff1', 34, 15, -6);
+  k.cyl(5, 4, 4, 12, '#263238', 34, 32, -6, { layer: 'glass' });
+  k.sphere(0.6, '#ff5252', 34, 35, -6, { layer: 'glow' });
+  k.box(0.2, 1.6, 20, '#1565c0', 30.1, 7.6, 0); k.box(0.22, 1.2, 18, '#ffffff', 30.15, 7.6, 0, { layer: 'glow' });
+  return out(k, { size: 70 });
+}
+function barracks(T) {
+  const k = new Kit(T);
+  for (const z of [-10, 10]) { k.box(40, 6, 12, '#6b7d4e', 0, 3, z); k.prism([[-6.5, 0], [6.5, 0], [0, 3]], 41, '#3e4a2f', 0, 6, z, { ry: Math.PI / 2 }); windowsRow(k, 40, 12, 3.5, 1.2, 8, 'sides'); }
+  k.box(30, 0.05, 6, '#9e9e9e', 0, 0.03, 0);                                     // parade ground
+  for (const [x, z, w, d] of [[0, 24, 60, 0.3], [0, -24, 60, 0.3], [30, 0, 0.3, 48], [-30, 0, 0.3, 48]]) k.box(w, 2.4, d, '#9e9e9e', x, 1.2, z, { jitter: 0.2 });
+  k.cyl(0.12, 0.12, 12, 6, '#eceff1', 18, 6, 0); k.box(0.05, 1.6, 2.6, '#c62828', 18, 11, 1.3);
+  return out(k, { size: 66 });
+}
+function armyTruck(T) {
+  const k = new Kit(T);
+  k.box(2.4, 2.4, 2.5, '#556b2f', 3.3, 1.8, 0);
+  k.box(0.1, 0.9, 2.1, '#22313f', 4.52, 2.3, 0, { layer: 'glass' });
+  k.box(6.4, 2.6, 2.6, '#4b5d29', -1.3, 2.2, 0);
+  k.prism([[-1.3, 0], [1.3, 0], [1.1, 0.7], [-1.1, 0.7]], 6.4, '#3e4a22', -1.3, 3.5, 0, { ry: Math.PI / 2 });
+  k.box(9, 0.35, 2.3, '#263238', 0.3, 0.6, 0);
+  return { ...k.build(), parts: [wheelPair(T, 3.2, 0.55, 1.15, 0.55, 0.4), wheelPair(T, -2.8, 0.55, 1.15, 0.55, 0.4)], size: 10 };
+}
+function patrolBoat(T) {
+  const k = new Kit(T);
+  k.prism([[-9, 2.4], [11, 2.4], [9, 0], [-8.5, 0]], 4, '#78909c', 0, -0.8, 0);
+  k.box(6, 2.2, 3, '#90a4ae', -1, 2.7, 0); k.box(0.08, 0.8, 2.6, '#22313f', 2.05, 3.1, 0, { layer: 'glass', rz: -0.4 });
+  k.cyl(0.12, 0.12, 3.5, 5, '#b0bec5', -1, 5.4, 0); k.box(1.6, 0.6, 0.6, '#607d8b', 6, 2, 0);
+  k.box(0.3, 0.3, 1.2, '#1565c0', -1, 7.1, 0, { layer: 'glow' });
+  return out(k, { size: 20, wake: true });
+}
+
 function thing(T, kind, seed) {
   const k = new Kit(T);
   const c = ['#f3c623', '#36d1c4', '#8f86ff', '#3ddc84', '#ff9b7a'][seed % 5];
@@ -649,7 +890,7 @@ function thing(T, kind, seed) {
 
 // --- the factory ----------------------------------------------------------------------
 
-const PROP_KEYS = ['color', 'roof', 'floors', 'length', 'width', 'size', 'shirt', 'livery', 'awning', 'lattice'];
+const PROP_KEYS = ['color', 'roof', 'floors', 'length', 'width', 'size', 'shirt', 'livery', 'awning', 'lattice', 'built'];
 export function modelKey(kind, p, id) {
   const b = baseKind(kind);
   const c = classOf(kind);
@@ -662,6 +903,7 @@ export function modelKey(kind, p, id) {
 export function buildModel(T, kind, p = {}, id = '') {
   const b = baseKind(kind);
   const seed = hashOf(id || kind);
+  if (typeof p.built === 'number' && p.built < 100) return scaffold(T, b, p.built);
   switch (b) {
     case 'person': return person(T, p, seed);
     case 'child': return person(T, p, seed, { child: true });
@@ -724,6 +966,25 @@ export function buildModel(T, kind, p = {}, id = '') {
     case 'space_station': return spaceStation(T);
     case 'satellite': return satellite(T);
     case 'asteroid': return asteroid(T, p, seed);
+    case 'police_station': return policeStation(T);
+    case 'prison': return prison(T);
+    case 'colony': return colony(T);
+    case 'alien_ship': return alienShip(T);
+    case 'alien': return alienVisitor(T, p, seed);
+    case 'hotel': return hotel(T, p);
+    case 'cinema': return cinema(T, p);
+    case 'theatre': return theatre(T, p);
+    case 'bar': return bar(T, p);
+    case 'stadium': return stadium(T);
+    case 'beach': return beach(T, p, seed);
+    case 'amusement': return amusement(T);
+    case 'port': return port(T);
+    case 'monument': return monument(T, p);
+    case 'ferry': return ferry(T, p);
+    case 'terminal': return terminal(T);
+    case 'barracks': return barracks(T);
+    case 'army_truck': return armyTruck(T);
+    case 'patrol_boat': return patrolBoat(T);
     default: return thing(T, kind, seed);
   }
 }

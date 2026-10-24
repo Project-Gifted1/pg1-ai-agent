@@ -459,6 +459,15 @@
     .sandbox-minimap { position: absolute; top: 8px; right: 8px; width: 104px; height: 104px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); pointer-events: auto; cursor: pointer; }
     .sandbox-label { position: absolute; top: 0; left: 0; padding: 3px 8px; border-radius: 6px; background: rgba(243,198,35,0.95); color: #111; font: 700 0.72rem/1.2 var(--lx-font, system-ui); white-space: nowrap; max-width: 70%; overflow: hidden; text-overflow: ellipsis; }
     .sandbox-label[hidden] { display: none; }
+    .sandbox-tags { position: absolute; inset: 0; overflow: hidden; }
+    .sandbox-tag { position: absolute; top: 0; left: 0; max-width: 220px; padding: 2px 7px; border-radius: 8px; background: rgba(10,10,11,0.62); color: #f5f5f7; font: 600 0.66rem/1.3 var(--lx-font, system-ui); white-space: nowrap; pointer-events: none; text-align: center; }
+    .sandbox-tag[hidden] { display: none; }
+    .sandbox-tag .job { margin-left: 5px; color: #b8b8c0; font-weight: 500; }
+    .sandbox-tag .say { display: none; }
+    .sandbox-tag.is-talking { white-space: normal; background: rgba(250,250,250,0.94); color: #111; }
+    .sandbox-tag.is-talking .job { color: #555; }
+    .sandbox-tag.is-talking .say { display: block; font-weight: 500; font-style: italic; }
+    .lx-link { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
     .sandbox-views { align-items: center; }
     .sandbox-views .sandbox-full-btn { margin-left: auto; }
     .sandbox-full-exit { position: absolute; bottom: calc(12px + var(--safe-bottom, 0px)); right: 12px; z-index: 2; }
@@ -2895,14 +2904,16 @@
        the browser; the data comes from /api/sandbox (operator only). -->
   <section id="sandbox-screen" class="lab-screen sandbox-screen" role="dialog" aria-modal="true" aria-labelledby="sandbox-title" aria-describedby="sandbox-sim">
     <div class="lab-screen-head">
-      <h2 id="sandbox-title"><svg aria-hidden="true" focusable="false"><use href="#pg1-shield"/></svg>PG1 Sandbox</h2>
+      <h2 id="sandbox-title"><svg aria-hidden="true" focusable="false"><use href="#pg1-shield"/></svg>Pg1-Universe</h2>
       <span class="lx-pill" data-tone="think" id="sandbox-label">Simulation</span>
       <button type="button" class="icon-btn" aria-label="Close the Sandbox" data-dialog-close onclick="triggerHaptic(40); closeSandboxScreen()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>
     <div class="sandbox-body">
-      <p class="sandbox-sim" id="sandbox-sim">Worlds are simulations: data stepped by a deterministic engine. Nothing in them is a real event.</p>
+      <p class="sandbox-sim" id="sandbox-sim">Worlds are simulations: data stepped by a deterministic engine. Nothing in them is a real event. You watch unseen: nothing in a world knows you are here.</p>
       <div class="lx-filter" role="tablist" aria-label="Sandbox views">
         <button type="button" role="tab" id="sandbox-tab-worlds" aria-pressed="true" aria-selected="true" onclick="showSandboxPanel('worlds')">Worlds</button>
+        <button type="button" role="tab" id="sandbox-tab-society" aria-pressed="false" aria-selected="false" onclick="showSandboxPanel('society')">Society</button>
+        <button type="button" role="tab" id="sandbox-tab-blackbox" aria-pressed="false" aria-selected="false" onclick="showSandboxPanel('blackbox')">Black box</button>
         <button type="button" role="tab" id="sandbox-tab-experiments" aria-pressed="false" aria-selected="false" onclick="showSandboxPanel('experiments')">Experiments</button>
       </div>
       <div class="sandbox-panel" id="sandbox-panel-worlds" role="tabpanel" aria-labelledby="sandbox-tab-worlds">
@@ -2919,6 +2930,8 @@
           <button type="button" data-view="follow" aria-pressed="false" onclick="setSandboxView('follow')">Follow</button>
           <button type="button" data-view="tour" aria-pressed="false" onclick="setSandboxView('tour')">Tour</button>
           <button type="button" data-view="space" aria-pressed="false" onclick="setSandboxView('space')">Space</button>
+          <button type="button" id="sandbox-names" aria-pressed="true" onclick="toggleSandboxNames()">Names</button>
+          <button type="button" id="sandbox-xray" aria-pressed="false" onclick="toggleSandboxXray()">See inside</button>
           <button type="button" class="sandbox-full-btn" aria-pressed="false" id="sandbox-full" onclick="toggleSandboxFull()">Full screen</button>
         </div>
         <div class="sandbox-view" id="sandbox-view" aria-label="The world, drawn in 3D"></div>
@@ -2926,6 +2939,19 @@
         <div class="sandbox-kinds" id="sandbox-kinds" aria-label="Kinds of entity"></div>
         <section class="lx-card" aria-labelledby="sandbox-rules-h"><h3 class="lx-section-h" id="sandbox-rules-h">Rules, in plain words</h3><ul class="lx-rows" id="sandbox-rules"></ul></section>
         <section class="lx-card" aria-labelledby="sandbox-events-h"><h3 class="lx-section-h" id="sandbox-events-h">Events (simulated)</h3><ol class="lx-timeline" id="sandbox-events"></ol></section>
+      </div>
+      <div class="sandbox-panel" id="sandbox-panel-society" role="tabpanel" aria-labelledby="sandbox-tab-society" hidden>
+        <section class="lx-card" data-tone="think" aria-labelledby="sandbox-society-h"><h3 class="lx-section-h" id="sandbox-society-h">Their society (simulated)</h3><ul class="lx-rows" id="sandbox-society"></ul></section>
+        <section class="lx-card" aria-labelledby="sandbox-people-h"><h3 class="lx-section-h" id="sandbox-people-h">Who's who</h3><ul class="lx-rows" id="sandbox-people"></ul></section>
+        <section class="lx-card" aria-labelledby="sandbox-talk-h"><h3 class="lx-section-h" id="sandbox-talk-h">What they are saying</h3><ol class="lx-timeline" id="sandbox-talk"></ol></section>
+      </div>
+      <div class="sandbox-panel" id="sandbox-panel-blackbox" role="tabpanel" aria-labelledby="sandbox-tab-blackbox" hidden>
+        <section class="lx-card" aria-labelledby="sandbox-bb-h">
+          <div class="lx-head"><h3 class="lx-section-h" id="sandbox-bb-h">Black box</h3><span class="lx-badge" id="sandbox-bb-chain" data-tone="idle">Checking</span></div>
+          <p class="lx-sub">Every action taken in this world and by whom: agents' tool calls, each inhabitant's decisions, words and deeds, the society's events. Append-only; each record carries the hash of the one before, so a changed or missing record shows here.</p>
+          <div class="sandbox-controls"><select id="sandbox-bb-actor" aria-label="Whose actions" onchange="renderSandboxBlackbox()"><option value="">Everyone</option></select><button type="button" class="lx-btn" id="sandbox-bb-more" onclick="renderSandboxBlackbox(true)">Older</button></div>
+          <ul class="lx-rows" id="sandbox-bb-rows"></ul>
+        </section>
       </div>
       <div class="sandbox-panel" id="sandbox-panel-experiments" role="tabpanel" aria-labelledby="sandbox-tab-experiments" hidden>
         <section class="lx-card" data-tone="think" aria-labelledby="sandbox-compare-h">
@@ -3766,13 +3792,15 @@
       return data;
     }
     function showSandboxPanel(which) {
-      for (const k of ['worlds', 'experiments']) {
+      for (const k of ['worlds', 'society', 'blackbox', 'experiments']) {
         const tab = document.getElementById(`sandbox-tab-${k}`);
         const panel = document.getElementById(`sandbox-panel-${k}`);
         if (tab) { tab.setAttribute('aria-pressed', String(k === which)); tab.setAttribute('aria-selected', String(k === which)); }
         if (panel) panel.hidden = k !== which;
       }
       if (which === 'experiments') renderSandboxExperiments();
+      if (which === 'society') renderSandboxSociety(sandboxState.world);
+      if (which === 'blackbox') renderSandboxBlackbox();
     }
     function renderSandboxWorld(w) {
       sandboxState.world = w;
@@ -3788,6 +3816,8 @@
       const kinds = document.getElementById('sandbox-kinds');
       if (kinds && window.__sandboxKinds) kinds.innerHTML = window.__sandboxKinds({ size: w && w.size, entities: (w && w.entities) || [] }).map((k) => `<span><span class="sw" style="background:${k.color}"></span>${escapeHTML(k.kind)} <strong>${k.n}</strong></span>`).join('');
       if (sandboxScene && w) sandboxScene.update(w, { duration: sandboxStepMs() });
+      const socPanel = document.getElementById('sandbox-panel-society');
+      if (socPanel && !socPanel.hidden) renderSandboxSociety(w);
     }
     // Play speed: 1× is one step every 1.2 s; the scene glides between steps.
     var sandboxSpeed = 1;
@@ -3810,17 +3840,111 @@
       if (!sel) return;
       const p = sel.properties || {};
       const line = (k, v) => `<li class="lx-row"><span class="lx-dot"></span><span class="lx-row-main">${escapeHTML(k)}</span><span class="lx-row-end"><code>${escapeHTML(String(v))}</code></span></li>`;
+      if (['person', 'child', 'astronaut', 'alien'].includes(sel.kind)) {
+        const ents = (sandboxState.world && sandboxState.world.entities) || [];
+        const nameOf = (id) => { const e = ents.find((x) => x.id === id); return e && e.properties && e.properties.name ? `${e.properties.name}${e.properties.family ? ' ' + e.properties.family : ''}` : id; };
+        const cur = sandboxState.world && sandboxState.world.society && sandboxState.world.society.currency;
+        const bar = (v) => `${Math.round(Number(v) || 0)}%`;
+        rows.innerHTML = line('Name', `${p.name || sel.id}${p.family ? ' ' + p.family : ''} · ${sel.id}`)
+          + line('Age', `${Math.floor(Number(p.age) || 0)}${p.sex ? `, ${p.sex}` : ''}`)
+          + (p.job ? line('Work', `${p.job}${p.work ? ` at ${p.work}` : ''}`) : '')
+          + (p.education != null ? line('Education', `${Math.round(p.education)} years`) : '')
+          + (p.money != null ? line('Money', `${Math.round(p.money)}${cur ? ' ' + cur : ''}`) : '')
+          + (p.partner ? line('Partner', nameOf(p.partner)) : '') + (p.children ? line('Children', p.children) : '')
+          + (p.mother || p.father ? line('Parents', [p.mother, p.father].filter(Boolean).map(nameOf).join(' and ')) : '')
+          + line('Needs', `hunger ${bar(p.hunger)} · energy ${bar(p.energy)} · clean ${bar(p.hygiene)} · company ${bar(p.social)}`)
+          + (p.honesty != null ? line('Character', `honesty ${bar(p.honesty * 100)} · ambition ${bar(p.ambition * 100)} · warmth ${bar(p.sociability * 100)} · curiosity ${bar(p.curiosity * 100)}`) : '')
+          + (p.target ? line('Heading to', p.target) : p.at ? line('At', p.at) : '')
+          + (p.inside ? line('Riding in', p.inside) : '') + (p.jail_until ? line('In prison', `until step ${p.jail_until}`) : '')
+          + (p.saying ? line('Saying', `“${p.saying}”`) : '') + (p.civ ? line('From', p.civ) : '');
+        markSandboxView(sandboxScene && sandboxScene.view ? sandboxScene.view() : 'follow');
+        return;
+      }
       rows.innerHTML = line('Thing', `${sel.kind.replace(/_/g, ' ')} · ${sel.id}`)
         + line('Where', `${sel.position.x} m E, ${sel.position.y} m N, ${sel.position.z} m up`)
         + (p.inside ? line('Riding in', p.inside) : '') + (p.target ? line('Heading to', p.target) : '') + (p.at ? line('Last arrived at', p.at) : '')
         + Object.entries(p).filter(([k]) => !['inside', 'target', 'at', 'color', 'shirt', 'livery', 'roof', 'awning'].includes(k)).slice(0, 8).map(([k, v]) => line(k.replace(/_/g, ' '), v)).join('');
       markSandboxView(sandboxScene && sandboxScene.view ? sandboxScene.view() : 'follow');
     }
+    function toggleSandboxNames() { if (!sandboxScene || !sandboxScene.setNames) return; const on = !sandboxScene.names(); sandboxScene.setNames(on); const b = document.getElementById('sandbox-names'); if (b) b.setAttribute('aria-pressed', String(on)); }
+    function toggleSandboxXray() { if (!sandboxScene || !sandboxScene.setXray) return; const on = !sandboxScene.xray(); sandboxScene.setXray(on); const b = document.getElementById('sandbox-xray'); if (b) b.setAttribute('aria-pressed', String(on)); }
+    const SANDBOX_TECH = ['settlement', 'roads and houses', 'industry', 'flight', 'spaceflight', 'space colonies', 'interstellar travel'];
+    function renderSandboxSociety(w) {
+      const box = document.getElementById('sandbox-society'); const ppl = document.getElementById('sandbox-people'); const talk = document.getElementById('sandbox-talk');
+      if (!box) return;
+      const ents = (w && w.entities) || [];
+      const row = (k, v, tone = 'think') => `<li class="lx-row" data-tone="${tone}"><span class="lx-dot"></span><span class="lx-row-main">${escapeHTML(k)}</span><span class="lx-row-end">${escapeHTML(String(v))}</span></li>`;
+      const named = (id) => { const e = ents.find((x) => x.id === id); return e && e.properties && e.properties.name ? `${e.properties.name}${e.properties.family ? ' ' + e.properties.family : ''}` : (id || 'nobody'); };
+      // One society per country (a world saved before countries has one, at the top level).
+      const raw = w && w.society;
+      const socs = !raw ? {} : ('currency' in raw || 'treasury' in raw) ? { home: raw } : raw;
+      if (!Object.keys(socs).length) { box.innerHTML = row('Society', 'This world has no inhabitants with a life rule.'); if (ppl) ppl.innerHTML = ''; if (talk) talk.innerHTML = ''; return; }
+      const aw = w && w.awareness;
+      const AW = ['unaware of what their world is', 'suspect their world was made', 'have tested it', 'are trying to reach whoever watches'];
+      let html = '';
+      if (aw && (aw.level > 0 || (aw.messages && aw.messages.length))) html += `<li class="lx-row" data-tone="gold"><span class="lx-dot"></span><span class="lx-row-main"><strong>Messages from inside</strong></span><span class="lx-row-end">${escapeHTML(AW[aw.level] || '')}</span><span class="lx-row-sub">${(aw.messages || []).map((m) => `#${m.n} (step ${m.tick}): “${escapeHTML(m.text)}”`).join('<br>') || 'No message yet.'}</span></li>`;
+      else if (aw) html += row('What they know', `${AW[0]}; evidence ${Math.round(aw.evidence || 0)} of 100${aw.edge_seen ? `; reached the edge of the sea ${aw.edge_seen}×` : ''}`, 'idle');
+      // Between countries: allies, standoffs, wars and their cost.
+      const dip = Object.entries((w && w.diplomacy) || {});
+      if (dip.length) {
+        const nm = (c) => (socs[c] && socs[c].name) || c;
+        const tone = { war: 'err', standoff: 'over', alliance: 'ok', peace: 'think' };
+        html += `<li class="lx-row" data-tone="info"><span class="lx-dot"></span><span class="lx-row-main"><strong>Between countries</strong></span></li>`;
+        for (const [key, d] of dip) { const [a, b] = key.split('|'); html += row(`${nm(a)} · ${nm(b)}`, `${d.status === 'war' ? `at war (${(d.war && (d.war.losses[a] + d.war.losses[b])) || 0} dead so far)` : d.status}; relations ${Math.round(d.score)}${d.last_war ? `; last war ended at step ${d.last_war.ended}, ${d.last_war.dead} dead` : ''}`, tone[d.status] || 'think'); }
+      }
+      for (const [code, soc] of Object.entries(socs)) {
+        const people = ents.filter((e) => ['person', 'child'].includes(e.kind) && (code === 'home' || e.properties.country === code));
+        html += societyRows(code, soc, people, { row, named });
+      }
+      box.innerHTML = html;
+      const people = ents.filter((e) => ['person', 'child'].includes(e.kind));
+      if (ppl) ppl.innerHTML = people.slice().sort((a, b) => (a.properties.country || '').localeCompare(b.properties.country || '') || (a.properties.family || '').localeCompare(b.properties.family || '') || (a.properties.name || '').localeCompare(b.properties.name || '')).slice(0, 150).map((e) => `<li class="lx-row" data-tone="${e.properties.jail_until ? 'err' : e.kind === 'child' ? 'info' : 'think'}"><span class="lx-dot"></span><span class="lx-row-main"><button type="button" class="lx-link" onclick="sandboxScene && sandboxScene.select('${escapeHTML(e.id)}'); showSandboxPanel('worlds')">${escapeHTML(named(e.id))}</button></span><span class="lx-row-end">${escapeHTML(`${Math.floor(e.properties.age || 0)}${e.properties.job ? ' · ' + e.properties.job : ''}${e.properties.country ? ' · ' + e.properties.country : ''}`)}</span><span class="lx-row-sub">${escapeHTML([e.properties.abroad ? `on holiday in ${e.properties.abroad}` : '', e.properties.partner ? `with ${named(e.properties.partner)}` : '', e.properties.saying ? `“${e.properties.saying}”` : ''].filter(Boolean).join(' · '))}</span></li>`).join('');
+      if (talk) {
+        const lines = ((w && w.recent_events) || []).filter((e) => ['talk', 'election', 'birth', 'death', 'partners', 'crime', 'arrest', 'first_contact', 'colony', 'technology', 'currency', 'travel', 'show', 'expedition', 'discovery', 'hypothesis', 'proof', 'message_to_observer', 'sighting', 'dispute', 'standoff', 'treaty', 'alliance', 'war_declared', 'battle', 'armistice'].includes(e.kind)).slice(0, 25);
+        talk.innerHTML = lines.length ? lines.map((e) => `<li data-tone="${e.kind === 'talk' ? 'run' : ['crime', 'death', 'war_declared', 'battle'].includes(e.kind) ? 'err' : ['message_to_observer', 'hypothesis', 'first_contact'].includes(e.kind) ? 'gold' : 'ok'}"><div class="lx-card"><span class="lx-meta">step ${escapeHTML(String(e.tick))} · ${escapeHTML(e.kind.replace(/_/g, ' '))}</span><p class="lx-sub">${escapeHTML(e.summary)}</p></div></li>`).join('') : '<li data-tone="idle"><p class="lx-empty">Nothing said yet. Press Play.</p></li>';
+      }
+    }
+    function societyRows(code, soc, people, { row, named }) {
+      const jobs = {}; for (const e of people) if (e.properties.job) jobs[e.properties.job] = (jobs[e.properties.job] || 0) + 1;
+      return `<li class="lx-row" data-tone="info"><span class="lx-dot"></span><span class="lx-row-main"><strong>${escapeHTML(soc.name || (code === 'home' ? 'Their country' : code))}</strong></span><span class="lx-row-end">${escapeHTML([soc.government, soc.climate, soc.culture].filter(Boolean).join(' · '))}</span></li>` + row('People', `${people.filter((e) => e.kind === 'person').length} adults, ${people.filter((e) => e.kind === 'child').length} children; ${soc.births} born, ${soc.deaths} died`)
+        + row('Money', soc.currency ? `the ${soc.currency}; treasury ${Math.round(soc.treasury)}` : 'not yet: they barter')
+        + row('Government', soc.leader ? `${soc.title ? soc.title + ' ' : ''}${named(soc.leader)}${soc.government === 'monarchy' ? '' : ` (election ${soc.elections})`}` : 'no leader yet')
+        + row('Visitors and fun', `${soc.tourists || 0} holiday arrivals; ${soc.shows || 0} matches and shows`)
+        + row('Laws', (soc.laws || []).join('; ') || 'none yet')
+        + row('Army', `${people.filter((e) => e.properties.job === 'soldier').length} soldiers${soc.wars ? `; ${soc.wars} war${soc.wars === 1 ? '' : 's'}, ${soc.war_dead || 0} soldiers lost` : '; never been to war'}`, soc.wars ? 'over' : 'think')
+        + row('Law and order', `${soc.crimes} crimes, ${soc.arrests} arrests${soc.prison ? `; prison holds ${people.filter((e) => e.properties.jail_until).length}` : '; no prison yet'}`, soc.crimes ? 'over' : 'think')
+        + row('Technology', `${SANDBOX_TECH[soc.tech] || soc.tech} (level ${soc.tech}); research ${Math.round(soc.research)}`, 'info')
+        + row('In space', `${soc.colonies} colon${soc.colonies === 1 ? 'y' : 'ies'}${soc.contacts && soc.contacts.length ? `; met ${soc.contacts.join(', ')}` : '; no contact with others yet'}`, soc.contacts && soc.contacts.length ? 'gold' : 'think')
+        + row('Careers', Object.entries(jobs).sort((a, b) => b[1] - a[1]).map(([j, n]) => `${n} ${j}`).join(', ') || 'none yet')
+        + row('Couples', `${Math.round(people.filter((e) => e.properties.partner).length / 2)}`);
+    }
+    var sandboxBlackboxBefore = null;
+    async function renderSandboxBlackbox(older) {
+      const list = document.getElementById('sandbox-bb-rows'); const chain = document.getElementById('sandbox-bb-chain'); const actorSel = document.getElementById('sandbox-bb-actor');
+      if (!list || !sandboxState.worldId) return;
+      if (!older) sandboxBlackboxBefore = null;
+      let data = null;
+      try { data = await sandboxRequest({ op: 'blackbox', id: sandboxState.worldId, actor: actorSel && actorSel.value || null, limit: 200, before: sandboxBlackboxBefore }); } catch (e) { data = null; }
+      if (!data) { list.innerHTML = '<li class="lx-row"><span class="lx-dot"></span><span class="lx-row-main">The black box could not be read.</span></li>'; return; }
+      if (chain) { chain.textContent = data.chain.ok ? `Chain intact · ${data.chain.checked} checked` : `Chain broken at record ${data.chain.broken_at}: ${data.chain.reason}`; chain.dataset.tone = data.chain.ok ? 'ok' : 'err'; }
+      if (actorSel && !older) {
+        const keep = actorSel.value;
+        const ents = (sandboxState.world && sandboxState.world.entities) || [];
+        const label = (a) => { const e = ents.find((x) => x.id === a.actor); const n = e && e.properties && e.properties.name ? `${e.properties.name}${e.properties.family ? ' ' + e.properties.family : ''} (${a.actor})` : a.actor === 'pg1' ? 'PG1' : a.actor; return `${n} · ${a.records}`; };
+        actorSel.innerHTML = '<option value="">Everyone</option>' + (data.actors || []).slice(0, 300).map((a) => `<option value="${escapeHTML(a.actor)}">${escapeHTML(label(a))}</option>`).join('');
+        actorSel.value = keep;
+      }
+      const entsBB = (sandboxState.world && sandboxState.world.entities) || [];
+      const whoBB = (r) => { if (r.actor === 'pg1') return 'PG1'; if (r.actor === 'world') return 'The society'; const e = entsBB.find((x) => x.id === r.actor); const n = (r.detail && r.detail.name) || (e && e.properties && e.properties.name); return n ? `${n}${e && e.properties && e.properties.family ? ' ' + e.properties.family : ''} (${r.actor})` : r.actor; };
+      const html = data.records.map((r) => `<li class="lx-row" data-tone="${r.actor_type === 'agent' ? 'gold' : r.actor_type === 'world' ? 'info' : r.actor_type === 'subject' ? 'over' : 'think'}"><span class="lx-dot"></span><span class="lx-row-main"><strong>#${r.seq}</strong> ${escapeHTML(whoBB(r))} · ${escapeHTML(r.action)}</span><span class="lx-row-end">${r.tick == null ? '' : 'step ' + escapeHTML(String(r.tick))}</span><span class="lx-row-sub">${escapeHTML(r.detail && r.detail.summary ? r.detail.summary : JSON.stringify(r.detail || {}).slice(0, 200))}</span></li>`).join('');
+      list.innerHTML = older ? list.innerHTML + html : (html || '<li class="lx-row"><span class="lx-dot"></span><span class="lx-row-main">Nothing recorded yet.</span></li>');
+      if (data.records.length) sandboxBlackboxBefore = data.records[data.records.length - 1].seq;
+    }
     async function createSandboxUniverse() {
       const b = document.getElementById('sandbox-new');
       if (b) b.disabled = true;
       try {
-        const out = await sandboxRequest({ op: 'create', template: 'universe', name: 'PG1 universe' });
+        const out = await sandboxRequest({ op: 'create', template: 'universe', name: 'Pg1-Universe' });
         await openSandboxScreen(out.world && out.world.id);
       } catch (e) {
         const tick = document.getElementById('sandbox-tick');
