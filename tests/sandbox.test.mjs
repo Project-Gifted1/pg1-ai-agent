@@ -148,7 +148,7 @@ const callTool = async (store, key, name, args) => {
   return { r, c };
 };
 
-test('a key without the sandbox scope is refused (no key, a licence key, another scope, a revoked key); the seven tools need a sandbox key', async () => {
+test('a key without the sandbox scope is refused (no key, a licence key, another scope, a revoked key); the sandbox tools need a sandbox key', async () => {
   const store = createSandboxStore();
   const none = await mcp(store, null, 'tools/list');
   assert.equal(none.statusCode, 401);
@@ -163,7 +163,7 @@ test('a key without the sandbox scope is refused (no key, a licence key, another
   assert.equal((await store.listKeys()).some((k) => 'key_hash' in k), false, 'the hash is never listed');
   const ok = await mcp(store, inv.key, 'tools/list');
   assert.equal(ok.statusCode, 200);
-  assert.deepEqual(ok.body.result.tools.map((t) => t.name), ['create_world', 'add_entity', 'set_rule', 'step_world', 'observe_world', 'list_worlds', 'delete_world']);
+  assert.deepEqual(ok.body.result.tools.map((t) => t.name), ['create_world', 'add_entity', 'set_rule', 'step_world', 'observe_world', 'list_worlds', 'delete_world', 'update_entity', 'get_catalog']);
   assert.deepEqual(SANDBOX_TOOL_NAMES, ok.body.result.tools.map((t) => t.name));
   for (const t of ok.body.result.tools) assert.match(t.description, /simulation/i, `${t.name} says worlds are simulations`);
   await store.revokeKey(inv.id);
@@ -343,7 +343,7 @@ test('chat: /sandbox, /world, /sandbox create and invite are the operator\'s; re
   const store = createSandboxStore();
   assert.equal((await handleSandboxCommand({ text: '/sandbox', isOperator: false, store })).status, 401);
   const created = await handleSandboxCommand({ text: '/sandbox create "Pond"', isOperator: true, store });
-  assert.match(created.reply, /Created "Pond" \(Simulation\)/);
+  assert.match(created.reply, /Created "Pond" \(Simulation, from the universe template: \d+ things\)/);
   assert.equal(created.sandbox.open, true);
   const id8 = /\/world ([0-9a-f]{8})/.exec(created.reply)[1];
   const one = await handleSandboxCommand({ text: `/world ${id8}`, isOperator: true, store });

@@ -238,3 +238,57 @@ test('with reduced motion the viewer draws the still 2D map, and /world <id> ope
   await page.screenshot({ path: join(SHOTS_DIR, 'sandbox-2d-380-dark.png') });
   assert.deepEqual(errors, []);
 });
+
+test('New universe at 380 px: a living town and the space above it in 3D, the camera views, a picked thing in the inspector, the clock and the minimap', { skip, timeout: 300000 }, async (t) => {
+  const { store } = await fixtureStore();
+  const { server, log, origin } = await startServer(store);
+  const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  t.after(async () => { await browser.close(); await new Promise((r) => server.close(r)); __setSandboxViewerStore(null); });
+  const { page, errors } = await signedInPage(browser, origin);
+  await page.evaluate(() => openSandboxScreen());
+  await page.waitForFunction(() => /^Step \d+ · /.test(document.getElementById('sandbox-tick').textContent));
+  const ops = log.sandboxOps.length;
+  await page.click('#sandbox-new');
+  await page.waitForFunction(() => /^Step 0 · 365 entities/.test(document.getElementById('sandbox-tick').textContent), null, { timeout: 30000 });
+  assert.ok(log.sandboxOps.slice(ops).includes('create'), 'New universe creates a world from the template');
+  assert.equal((await page.locator('#sandbox-label').innerText()).trim(), 'Simulation');
+  const kinds = await page.locator('#sandbox-kinds').innerText();
+  for (const k of ['person', 'house', 'car', 'bike', 'bus', 'plane', 'helicopter', 'rocket', 'planet', 'space_station']) assert.match(kinds, new RegExp(`\\b${k}\\b`), `${k} is in the universe`);
+  const renderer = await page.locator('#sandbox-view').getAttribute('data-renderer');
+  assert.ok(['webgl', '2d'].includes(renderer));
+  await page.waitForFunction(() => Number(document.getElementById('sandbox-view').dataset.markers) === 365, null, { timeout: 30000 });
+  if (renderer === 'webgl') {
+    await page.waitForFunction(() => Number(document.getElementById('sandbox-view').dataset.frames || 0) > 3, null, { timeout: 60000 });
+    assert.match(await page.locator('.sandbox-clock').innerText(), /^Simulation · day \d+ · \d\d:\d\d/);
+    assert.ok(await page.locator('.sandbox-minimap').isVisible());
+    // The views.
+    for (const v of ['tour', 'space', 'overview']) {
+      await page.click(`.sandbox-views [data-view="${v}"]`);
+      assert.equal(await page.locator(`.sandbox-views [data-view="${v}"]`).getAttribute('aria-pressed'), 'true');
+      assert.equal(await page.locator('#sandbox-view').getAttribute('data-view'), v);
+    }
+    // Picking something follows it and shows it in the inspector.
+    await page.evaluate(() => sandboxScene.select('rocket-1'));
+    await page.waitForSelector('#sandbox-inspect:not([hidden])');
+    assert.match(await page.locator('#sandbox-inspect').innerText(), /rocket · rocket-1/);
+    assert.equal(await page.locator('.sandbox-views [data-view="follow"]').getAttribute('aria-pressed'), 'true');
+    await page.waitForTimeout(2500);
+    mkdirSync(SHOTS_DIR, { recursive: true });
+    await page.locator('#sandbox-view').screenshot({ path: join(SHOTS_DIR, 'sandbox-universe-rocket-380-dark.png') });
+    await page.evaluate(() => sandboxScene.select('bus-1'));
+    await page.waitForTimeout(2500);
+    await page.locator('#sandbox-view').screenshot({ path: join(SHOTS_DIR, 'sandbox-universe-bus-380-dark.png') });
+    await page.click('.sandbox-views [data-view="overview"]');
+    await page.waitForTimeout(2500);
+    await page.screenshot({ path: join(SHOTS_DIR, 'sandbox-universe-380-dark.png') });
+    await page.click('.sandbox-views [data-view="space"]');
+    await page.waitForTimeout(3000);
+    await page.locator('#sandbox-view').screenshot({ path: join(SHOTS_DIR, 'sandbox-universe-space-380-dark.png') });
+  }
+  // A step moves the town on: people, cars and the rocket travel.
+  await page.click('#sandbox-step');
+  await page.waitForFunction(() => /^Step 1 · /.test(document.getElementById('sandbox-tick').textContent));
+  const ow = await noOverflow(page);
+  assert.ok(ow.page <= ow.width && ow.screen <= ow.width, `no horizontal overflow at 380 px: ${JSON.stringify(ow)}`);
+  assert.deepEqual(errors, []);
+});

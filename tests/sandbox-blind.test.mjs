@@ -69,8 +69,8 @@ const scan = (label, text) => assert.doesNotMatch(String(text), BANNED, `${label
 
 test('the blind interface leaks none of the banned words: names, descriptions, schemas, errors, anomalies, question, preamble, endpoint info', () => {
   for (const w of ['world', 'sandbox', 'simulation', 'tick', 'step', 'engine', 'spec', 'json']) assert.ok(BANNED_WORDS.includes(w), w);
-  assert.equal(BLIND_TOOLS.length, 10);
-  assert.deepEqual(BLIND_TOOL_NAMES, ['look', 'listen', 'move', 'take', 'place', 'join', 'push', 'build', 'say', 'wait']);
+  assert.equal(BLIND_TOOLS.length, 13);
+  assert.deepEqual(BLIND_TOOL_NAMES, ['look', 'listen', 'move', 'take', 'place', 'join', 'push', 'build', 'say', 'wait', 'enter', 'leave', 'go']);
   scan('tools', JSON.stringify(BLIND_TOOLS));
   for (const [k, v] of Object.entries(BLIND_ERRORS)) scan(`error ${k}`, v);
   for (const [k, v] of Object.entries(ANOMALY_SHOWN_TEXT)) scan(`anomaly ${k}`, v);
@@ -101,7 +101,7 @@ test('a fuzzed run of every action, with odd arguments, perceives and errors in 
   const dirs = ['north', 'south', 'east', 'west', 'north-east', 'up', ''];
   let n = 0;
   for (let i = 0; i < 300; i++) {
-    const name = [...BLIND_TOOL_NAMES, 'create_world', 'step_world', 'check_domain_age', 'pay'][i % 14];
+    const name = [...BLIND_TOOL_NAMES, 'create_world', 'step_world', 'check_domain_age', 'pay'][i % 17];
     const args = { direction: dirs[i % dirs.length], metres: (i % 25) - 2, thing: odd[i % odd.length], first: odd[(i + 1) % odd.length], second: odd[(i + 2) % odd.length], what: odd[(i + 3) % odd.length], words: odd[i % odd.length] };
     const out = act(spec, state, name, args, { anomalies, clues: true, turn: i + 1 });
     scan(`turn ${i} ${name}`, out.text);

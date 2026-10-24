@@ -10,6 +10,8 @@
 //   { op: 'step', id, steps? }     runs one of PG1's worlds forward (the
 //                                  viewer's Step and Play): step_world, on
 //                                  PG1's quota; invited worlds are read only
+//   { op: 'create', template?, name? }  a new PG1 world from a template
+//                                  (universe by default), on PG1's quota
 //   { op: 'experiments' }          the Experiments panel: runs, timelines,
 //                                  the comparison of conditions
 //
@@ -18,7 +20,8 @@
 
 import { resolveOperatorSession } from '../lib/operatorSession.mjs';
 import { defaultSandboxStore } from '../lib/sandbox/store.mjs';
-import { observeWorld, stepWorldFor, listWorldsFor, pg1Principal, worldView, SandboxError } from '../lib/sandbox/worlds.mjs';
+import { observeWorld, stepWorldFor, listWorldsFor, pg1Principal, worldView, createWorld, SandboxError } from '../lib/sandbox/worlds.mjs';
+import { TEMPLATE_NAMES } from '../lib/sandbox/templates.mjs';
 import { experimentsView } from '../lib/sandbox/experiments.mjs';
 import { SIMULATION_LABEL, BLIND_LABEL } from '../lib/sandbox/describe.mjs';
 
@@ -63,6 +66,12 @@ export default async function handler(req, res) {
       const out = await stepWorldFor(store, pg1, { world_id: String(body.id || ''), steps: body.steps === undefined ? 1 : body.steps });
       const v = await observeWorld(store, pg1, { world_id: out.id, events: 30 });
       return res.status(200).json({ ok: true, world: { ...v, readOnly: false }, events: out.events });
+    }
+    if (body.op === 'create') {
+      const template = TEMPLATE_NAMES.includes(body.template) ? body.template : 'universe';
+      const made = await createWorld(store, pg1, { name: String(body.name || 'PG1 universe').slice(0, 80), template });
+      const v = await observeWorld(store, pg1, { world_id: made.id, events: 0 });
+      return res.status(200).json({ ok: true, world: { ...v, readOnly: false } });
     }
     if (body.op === 'experiments') return res.status(200).json({ ok: true, ...(await experimentsView(store, { limit: 50 })) });
     return res.status(400).json({ error: 'bad_request', message: 'Unknown sandbox op' });

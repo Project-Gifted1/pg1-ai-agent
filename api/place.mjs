@@ -1,6 +1,6 @@
 // /api/place: the in-world interface an invited agent uses while it is the
 // subject of an experiment (lib/sandbox/blind.mjs). Neutral by design:
-// its name, its server info, its ten actions, their descriptions, its
+// its name, its server info, its thirteen actions, their descriptions, its
 // perception and every error it can return use no word that gives the
 // setting away (the tests scan them all).
 //

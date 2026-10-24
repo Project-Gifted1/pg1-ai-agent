@@ -537,12 +537,23 @@
     {
       "command": "/sandbox create",
       "area": "Lab",
-      "description": "Create an empty PG1 world (a simulation)",
+      "description": "Create a PG1 world (a simulation): universe (a living town and space), town, meadow or empty",
       "args": [
         {
           "name": "name",
           "placeholder": "\"<name>\"",
           "required": true
+        },
+        {
+          "name": "template",
+          "placeholder": "template",
+          "required": false,
+          "choices": [
+            "universe",
+            "town",
+            "meadow",
+            "empty"
+          ]
         }
       ],
       "operatorOnly": true,

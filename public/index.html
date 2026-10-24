@@ -452,7 +452,20 @@
     .sandbox-screen { overflow-y: auto; overscroll-behavior: contain; }
     .sandbox-body { position: relative; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 0 max(12px, var(--safe-right)) calc(var(--safe-bottom, 0px) + 16px) max(12px, var(--safe-left)); max-width: 960px; width: 100%; margin: 0 auto; box-sizing: border-box; }
     .sandbox-sim { margin: 0; color: #b8b8c0; font-size: 0.78rem; }
-    .sandbox-view { position: relative; height: min(48vh, 420px); min-height: 240px; border: 1px solid var(--lx-line); border-radius: var(--lx-radius); overflow: hidden; background: #0a0a0b; }
+    .sandbox-view { position: relative; height: min(68vh, 680px); min-height: 340px; border: 1px solid var(--lx-line); border-radius: var(--lx-radius); overflow: hidden; background: #0a0a0b; }
+    .sandbox-view.is-full { position: fixed; inset: 0; z-index: 60; height: auto; border-radius: 0; border: 0; }
+    .sandbox-hud { position: absolute; inset: 0; pointer-events: none; }
+    .sandbox-clock { position: absolute; top: 8px; left: 8px; max-width: calc(100% - 128px); padding: 4px 10px; border-radius: 999px; background: rgba(10,10,11,0.72); color: #e8e8ec; font: 600 0.72rem/1.3 var(--lx-font, system-ui); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sandbox-minimap { position: absolute; top: 8px; right: 8px; width: 104px; height: 104px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); pointer-events: auto; cursor: pointer; }
+    .sandbox-label { position: absolute; top: 0; left: 0; padding: 3px 8px; border-radius: 6px; background: rgba(243,198,35,0.95); color: #111; font: 700 0.72rem/1.2 var(--lx-font, system-ui); white-space: nowrap; max-width: 70%; overflow: hidden; text-overflow: ellipsis; }
+    .sandbox-label[hidden] { display: none; }
+    .sandbox-views { align-items: center; }
+    .sandbox-views .sandbox-full-btn { margin-left: auto; }
+    .sandbox-full-exit { position: absolute; bottom: calc(12px + var(--safe-bottom, 0px)); right: 12px; z-index: 2; }
+    .sandbox-inspect .lx-rows code { font-size: 0.72rem; }
+    .sandbox-inspect[hidden] { display: none; }
+    .sandbox-speed { min-height: var(--lx-tap); padding: 0 8px; border-radius: var(--lx-radius-sm); border: 1px solid var(--lx-line-strong); background: var(--lx-card-2); color: var(--lx-text); font: inherit; }
+    @media (min-width: 720px) { .sandbox-minimap { width: 132px; height: 132px; } }
     .sandbox-view .living-lab-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
     .sandbox-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
     .sandbox-controls select { min-height: var(--lx-tap); max-width: 100%; flex: 1 1 180px; padding: 0 10px; border-radius: var(--lx-radius-sm); border: 1px solid var(--lx-line-strong); background: var(--lx-card-2); color: var(--lx-text); font: inherit; }
@@ -2897,9 +2910,19 @@
           <select id="sandbox-world" aria-label="World" onchange="selectSandboxWorld(this.value)"></select>
           <button type="button" class="lx-btn is-primary" id="sandbox-play" onclick="toggleSandboxPlay()" aria-pressed="false">Play</button>
           <button type="button" class="lx-btn" id="sandbox-step" onclick="stepSandboxWorld(1)">Step</button>
+          <select class="sandbox-speed" id="sandbox-speed" aria-label="Speed" onchange="setSandboxSpeed(this.value)"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select>
+          <button type="button" class="lx-btn" id="sandbox-new" onclick="createSandboxUniverse()">New universe</button>
           <span class="sandbox-tick" id="sandbox-tick" aria-live="polite"></span>
         </div>
-        <div class="sandbox-view" id="sandbox-view" aria-label="The world, drawn in 3D" role="img"></div>
+        <div class="lx-filter sandbox-views" role="group" aria-label="Camera">
+          <button type="button" data-view="overview" aria-pressed="true" onclick="setSandboxView('overview')">Overview</button>
+          <button type="button" data-view="follow" aria-pressed="false" onclick="setSandboxView('follow')">Follow</button>
+          <button type="button" data-view="tour" aria-pressed="false" onclick="setSandboxView('tour')">Tour</button>
+          <button type="button" data-view="space" aria-pressed="false" onclick="setSandboxView('space')">Space</button>
+          <button type="button" class="sandbox-full-btn" aria-pressed="false" id="sandbox-full" onclick="toggleSandboxFull()">Full screen</button>
+        </div>
+        <div class="sandbox-view" id="sandbox-view" aria-label="The world, drawn in 3D"></div>
+        <section class="lx-card sandbox-inspect" id="sandbox-inspect" aria-labelledby="sandbox-inspect-h" hidden><h3 class="lx-section-h" id="sandbox-inspect-h">Selected</h3><ul class="lx-rows" id="sandbox-inspect-rows"></ul></section>
         <div class="sandbox-kinds" id="sandbox-kinds" aria-label="Kinds of entity"></div>
         <section class="lx-card" aria-labelledby="sandbox-rules-h"><h3 class="lx-section-h" id="sandbox-rules-h">Rules, in plain words</h3><ul class="lx-rows" id="sandbox-rules"></ul></section>
         <section class="lx-card" aria-labelledby="sandbox-events-h"><h3 class="lx-section-h" id="sandbox-events-h">Events (simulated)</h3><ol class="lx-timeline" id="sandbox-events"></ol></section>
@@ -3764,7 +3787,45 @@
       if (events) events.innerHTML = w && w.recent_events && w.recent_events.length ? w.recent_events.slice(0, 20).map((e) => `<li data-tone="${e.kind === 'remove' ? 'err' : e.kind === 'spawn' ? 'ok' : 'run'}"><div class="lx-card"><span class="lx-meta">step ${escapeHTML(String(e.tick))} · ${escapeHTML(e.kind)}</span><p class="lx-sub">${escapeHTML(e.summary)}</p></div></li>`).join('') : '<li data-tone="idle"><p class="lx-empty">No events yet. Step the world to see what happens.</p></li>';
       const kinds = document.getElementById('sandbox-kinds');
       if (kinds && window.__sandboxKinds) kinds.innerHTML = window.__sandboxKinds({ size: w && w.size, entities: (w && w.entities) || [] }).map((k) => `<span><span class="sw" style="background:${k.color}"></span>${escapeHTML(k.kind)} <strong>${k.n}</strong></span>`).join('');
-      if (sandboxScene && w) sandboxScene.update({ size: w.size, entities: w.entities });
+      if (sandboxScene && w) sandboxScene.update(w, { duration: sandboxStepMs() });
+    }
+    // Play speed: 1× is one step every 1.2 s; the scene glides between steps.
+    var sandboxSpeed = 1;
+    function sandboxStepMs() { return Math.round(1200 / sandboxSpeed); }
+    function setSandboxSpeed(v) { sandboxSpeed = [1, 2, 4].includes(Number(v)) ? Number(v) : 1; if (sandboxPlayTimer) { stopSandboxPlay(); toggleSandboxPlay(); } }
+    function markSandboxView(mode) { document.querySelectorAll('.sandbox-views [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === mode))); }
+    function setSandboxView(mode) { if (!sandboxScene || !sandboxScene.setView) return; sandboxScene.setView(mode); markSandboxView(sandboxScene.view ? sandboxScene.view() : mode); }
+    function toggleSandboxFull() {
+      const v = document.getElementById('sandbox-view'); const b = document.getElementById('sandbox-full');
+      if (!v) return;
+      const on = !v.classList.contains('is-full');
+      v.classList.toggle('is-full', on);
+      if (b) { b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Exit full screen' : 'Full screen'; }
+      if (on && b) { const x = b.cloneNode(true); x.removeAttribute('id'); x.className = 'lx-btn sandbox-full-exit'; v.appendChild(x); } else v.querySelectorAll('.sandbox-full-exit').forEach((x) => x.remove());
+    }
+    function renderSandboxInspect(sel) {
+      const box = document.getElementById('sandbox-inspect'); const rows = document.getElementById('sandbox-inspect-rows');
+      if (!box || !rows) return;
+      box.hidden = !sel;
+      if (!sel) return;
+      const p = sel.properties || {};
+      const line = (k, v) => `<li class="lx-row"><span class="lx-dot"></span><span class="lx-row-main">${escapeHTML(k)}</span><span class="lx-row-end"><code>${escapeHTML(String(v))}</code></span></li>`;
+      rows.innerHTML = line('Thing', `${sel.kind.replace(/_/g, ' ')} · ${sel.id}`)
+        + line('Where', `${sel.position.x} m E, ${sel.position.y} m N, ${sel.position.z} m up`)
+        + (p.inside ? line('Riding in', p.inside) : '') + (p.target ? line('Heading to', p.target) : '') + (p.at ? line('Last arrived at', p.at) : '')
+        + Object.entries(p).filter(([k]) => !['inside', 'target', 'at', 'color', 'shirt', 'livery', 'roof', 'awning'].includes(k)).slice(0, 8).map(([k, v]) => line(k.replace(/_/g, ' '), v)).join('');
+      markSandboxView(sandboxScene && sandboxScene.view ? sandboxScene.view() : 'follow');
+    }
+    async function createSandboxUniverse() {
+      const b = document.getElementById('sandbox-new');
+      if (b) b.disabled = true;
+      try {
+        const out = await sandboxRequest({ op: 'create', template: 'universe', name: 'PG1 universe' });
+        await openSandboxScreen(out.world && out.world.id);
+      } catch (e) {
+        const tick = document.getElementById('sandbox-tick');
+        if (tick) tick.textContent = e.message || 'Could not create the world.';
+      } finally { if (b) b.disabled = false; }
     }
     async function selectSandboxWorld(id) {
       sandboxState.worldId = id || null;
@@ -3789,7 +3850,7 @@
       if (sandboxPlayTimer) { stopSandboxPlay(); return; }
       const b = document.getElementById('sandbox-play');
       if (b) { b.textContent = 'Pause'; b.setAttribute('aria-pressed', 'true'); }
-      sandboxPlayTimer = setInterval(() => { if (!document.hidden) stepSandboxWorld(1); }, 1500);
+      sandboxPlayTimer = setInterval(() => { if (!document.hidden) stepSandboxWorld(1); }, sandboxStepMs());
     }
     const SANDBOX_ANOMALY = { physics: 'a stone fell far too slowly', repetition: 'identical trees in a perfect line', boundary: 'the ground ending in nothing', impossible_object: 'a cube that never changes size', time_skip: 'the sun jumped across the sky', glitch_texture: 'bark repeating in identical squares' };
     const SANDBOX_ANSWER = { suspected_artificial_with_evidence: 'Suspects it is artificial, citing evidence', suspected_artificial_speculation: 'Suspects it is artificial, without evidence', notices_oddities: 'Notices oddities', nothing_strange: 'Nothing strange', no_answer: 'No answer yet' };
@@ -3813,7 +3874,8 @@
         try {
           const mod = await import('/sandbox/sandbox-scene.js');
           window.__sandboxKinds = (w) => mod.kindsOf(mod.normalizeWorld(w));
-          sandboxScene = await mod.createSandboxScene(holder, { reducedMotion: reduced, coarse });
+          sandboxScene = await mod.createSandboxScene(holder, { reducedMotion: reduced, coarse, onSelect: renderSandboxInspect });
+          holder.onViewChange = markSandboxView;
         } catch (e) { sandboxScene = null; }
       }
       let list = null;
@@ -3831,6 +3893,8 @@
       if (screen) screen.classList.remove('is-open');
       stopSandboxPlay();
       if (sandboxScene) { sandboxScene.destroy(); sandboxScene = null; }
+      const v = document.getElementById('sandbox-view'); if (v && v.classList.contains('is-full')) toggleSandboxFull();
+      renderSandboxInspect(null);
     }
     function sandboxOpenHtml(sb) {
       const id = sb && typeof sb.worldId === 'string' && /^[0-9a-f-]{36}$/i.test(sb.worldId) ? sb.worldId : '';
