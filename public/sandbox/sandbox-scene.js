@@ -24,10 +24,18 @@
 // put it, so a step of the simulation plays out over `duration` ms.
 // With prefers-reduced-motion, or no WebGL, a still 2D map instead, redrawn
 // only when the world changes.
+//
+// Quality (quality.js): Ultra, High, Medium or Low, from the device, lowered
+// automatically when frames run slow, or chosen by hand (setQuality). A
+// change of tier rebuilds the 3D view in place, keeping the world, the
+// camera and what is picked. Post-processing is post.js.
 
 import { buildModel, modelKey, baseKind, classOf, FIXED_KINDS, AIR_KINDS, HOME_KINDS, celestialSize, furnitureFor } from './models.js';
 import { createEnvironment } from './environment.js';
 import { createControls } from './controls.js';
+import { TIERS, TIER_SETTINGS, QUALITY_KEY, pickTier, createGovernor } from './quality.js';
+import { createPost } from './post.js';
+import { loadTextures, addSurfaceDetail } from './materials.js';
 
 const MAX_ENTITIES = 1000;
 const CLASS_COLOR = { person: 0xf3c623, animal: 0xff9b7a, plant: 0x3ddc84, building: 0xcfd8dc, structure: 0x9e9e9e, vehicle: 0x36d1c4, space: 0x8f86ff, celestial: 0xd98cff, thing: 0x7cc4ff };
@@ -205,25 +213,36 @@ function ringTexture(THREE, base) {
 
 // --- the 3D scene --------------------------------------------------------------------------------
 
-async function create3d(container, { coarse, threeUrl, onSelect }) {
+async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', onTierChange = null }) {
   const THREE = await import(threeUrl);
+  const settings = TIER_SETTINGS[tier] || TIER_SETTINGS.high;
+  const ADD = '/vendor/three/addons/';
+  const [skyMod, csmMod, textures] = await Promise.all([
+    settings.sky === 'physical' ? import(`${ADD}objects/Sky.js`).catch(() => null) : null,
+    settings.cascades > 0 ? import(`${ADD}csm/CSM.js`).catch(() => null) : null,
+    settings.textures ? loadTextures(THREE) : null
+  ]);
   const canvas = document.createElement('canvas');
   canvas.className = 'living-lab-canvas sandbox-canvas';
   canvas.setAttribute('aria-label', 'The world in 3D. Drag to turn, pinch or scroll to zoom, two fingers to move, tap something to follow it.');
   let renderer;
-  try { renderer = new THREE.WebGLRenderer({ canvas, antialias: !coarse, alpha: false, powerPreference: coarse ? 'low-power' : 'high-performance', logarithmicDepthBuffer: true }); } catch (e) { return null; }
+  // No logarithmic depth (ambient occlusion reads the depth buffer): the near
+  // plane follows the camera's distance instead, which keeps depth precise.
+  try { renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.aa === 'none' && !coarse, alpha: false, powerPreference: tier === 'low' ? 'low-power' : 'high-performance', preserveDrawingBuffer: false }); } catch (e) { return null; }
   container.appendChild(canvas);
   container.dataset.renderer = 'webgl';
-  const targetFps = coarse ? 30 : 60;
+  container.dataset.tier = tier;
+  const targetFps = coarse && tier === 'low' ? 30 : settings.targetFps;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.95;
-  renderer.shadowMap.enabled = !coarse;
+  renderer.shadowMap.enabled = settings.cascades > 0;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(55, 1, 0.3, 200000);
-  const env = createEnvironment(THREE, scene, { coarse });
+  const env = createEnvironment(THREE, scene, { coarse, quality: settings, camera, addons: { Sky: skyMod && skyMod.Sky, CSM: csmMod && csmMod.CSM } });
+  env.textures = textures;
   const glow = glowTexture(THREE);
 
   const matBody = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.06 });
@@ -234,6 +253,9 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
   const matBuild = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.06 });
   const matBuildGlass = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.12, metalness: 0.75 });
   const matBuildGlow = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
+  for (const m of [matBody, matGlass, matBuild, matBuildGlass]) env.setupMaterial(m);
+  // PBR surface detail (after the shadow setup, which replaces the compile hook).
+  if (textures) { addSurfaceDetail(matBody, textures); addSurfaceDetail(matBuild, textures, { strength: 0.6, scale: 3 }); }
   const furnitureGroup = new THREE.Group();
   furnitureGroup.visible = false;
   let xray = false;
@@ -588,16 +610,25 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
   mini.addEventListener('click', onMini);
 
   // --- sizing and the frame loop ---------------------------------------------------------
+  let post = null;
   function resize() {
     const r = container.getBoundingClientRect();
-    renderer.setPixelRatio(Math.min(coarse ? 1.5 : 2, window.devicePixelRatio || 1));
+    const pr = Math.min(settings.pixelRatio, window.devicePixelRatio || 1);
+    renderer.setPixelRatio(pr);
     renderer.setSize(Math.max(1, r.width), Math.max(1, r.height), false);
     camera.aspect = Math.max(1, r.width) / Math.max(1, r.height);
     camera.updateProjectionMatrix();
+    if (post) post.setSize(Math.max(1, r.width), Math.max(1, r.height), pr);
+    if (env.csm) env.csm.updateFrustums();
   }
   const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(resize) : null;
   if (ro) ro.observe(container);
   resize();
+  try { post = await createPost(THREE, renderer, scene, camera, settings); } catch (e) { post = null; if (typeof console !== 'undefined') console.warn('[sandbox] post-processing unavailable:', e && e.message); }
+  resize();
+  // The governor steps the tier down when frames keep running slow.
+  const governor = createGovernor({ tier, budgetMs: 1000 / targetFps, onChange: (t, info) => { if (onTierChange) onTierChange(t, info); } });
+  let lastRender = 0;
 
   let visible = true; let raf = 0; let last = performance.now(); let acc = 0;
   const io = typeof IntersectionObserver === 'function' ? new IntersectionObserver((entries) => { visible = entries.some((x) => x.isIntersecting); schedule(); }) : null;
@@ -687,6 +718,8 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
     schedule();
     if (acc < 1 / targetFps - 0.002) return;
     const step = acc; acc = 0;
+    if (lastRender && now - lastRender < 250) governor.sample(now - lastRender);
+    lastRender = now;
     const tickF = animate(step, now);
 
     // Camera modes.
@@ -708,6 +741,10 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
       tourNext = now + 9000;
     }
     controls.update(step);
+    // The near plane follows the camera's distance (2% of it): depth stays
+    // precise enough for a coast 20 cm above the sea seen from 10 km.
+    const near = Math.min(1000, Math.max(0.2, controls.dist * 0.02));
+    if (Math.abs(near - camera.near) / camera.near > 0.05) { camera.near = near; camera.updateProjectionMatrix(); }
 
     // Sky, light and fog from the time of day and the camera's height.
     const clk = clockOf(world, tickF);
@@ -719,6 +756,7 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
     const nt = Math.min(1, envState.night + envState.space * 0.4);
     matGlow.color.setRGB(0.22 + nt * 1.2, 0.27 + nt * 1.0, 0.36 + nt * 0.6);
     renderer.toneMappingExposure = 0.95 + envState.space * 0.15;
+    if (post) post.setNight(nt);
 
     // The marker and label over what is picked.
     if (selectedId && marker.visible) {
@@ -741,10 +779,12 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
     clockEl.textContent = `Simulation · day ${clk.day} · ${clk.hh}:${clk.mm}${effAlt > world.spaceAlt ? ' · in space' : ''}`;
     updateTags(now);
     if (now - miniAt > 250) { drawMini(); miniAt = now; }
-    renderer.render(scene, camera);
+    const still = controls.userActive <= 0 && !controls.autoRotate && t0done(now);
+    if (post) post.render(still); else renderer.render(scene, camera);
     container.dataset.frames = String((Number(container.dataset.frames) || 0) + 1);
   }
-  function schedule() { if (!raf && running()) { last = performance.now(); raf = requestAnimationFrame(frame); } }
+  function schedule() { if (!raf && running()) { last = performance.now(); lastRender = 0; raf = requestAnimationFrame(frame); } }
+  const t0done = (now) => now - stepStart >= stepDur;
 
   let firstWorld = true;
   return {
@@ -789,6 +829,10 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
     setXray(on) { setXray(on); schedule(); }, xray: () => xray,
     setNames(on) { showNames = !!on; schedule(); }, names: () => showNames,
     view: () => mode,
+    tier: () => governor.tier,
+    governor,
+    cameraState: () => ({ target: controls.target.clone(), dist: controls.dist, theta: controls.theta, phi: controls.phi, mode, selectedId }),
+    restoreCamera(st) { if (!st) return; controls.jumpTo({ target: st.target, dist: st.dist, theta: st.theta, phi: st.phi }); if (st.selectedId && world.entities.some((e) => e.id === st.selectedId)) { select(st.selectedId, { follow: false }); } setMode(st.mode === 'follow' && !selectedId ? 'free' : st.mode, { quiet: true }); schedule(); },
     select(id) { select(id); schedule(); },
     selected: () => selectedId,
     clock: () => clockOf(world),
@@ -801,6 +845,7 @@ async function create3d(container, { coarse, threeUrl, onSelect }) {
       env.dispose();
       scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); }); });
       for (const m of geoCache.values()) { for (const k of ['body', 'glow', 'glass']) m[k] && m[k].dispose(); for (const p of m.parts) for (const k of ['body', 'glow', 'glass']) p.geo[k] && p.geo[k].dispose(); }
+      if (post) post.dispose();
       glow.dispose(); renderer.dispose(); canvas.remove(); hud.remove();
     }
   };
@@ -810,9 +855,64 @@ function hasWebGL() {
   try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; }
 }
 
-export async function createSandboxScene(container, { reducedMotion = false, coarse = false, threeUrl = '/vendor/three/three.module.min.js', onSelect = null } = {}) {
-  if (!reducedMotion && hasWebGL()) {
-    try { const s = await create3d(container, { coarse, threeUrl, onSelect }); if (s) return s; } catch (e) { if (typeof console !== 'undefined') console.warn('[sandbox] 3D view unavailable:', e && e.message); }
+// The quality tier: a saved choice (this device), else from the device.
+function savedTier() { try { return localStorage.getItem(QUALITY_KEY); } catch (e) { return null; } }
+function saveTier(t) { try { if (t) localStorage.setItem(QUALITY_KEY, t); else localStorage.removeItem(QUALITY_KEY); } catch (e) { /* private mode */ } }
+
+export async function createSandboxScene(container, { reducedMotion = false, coarse = false, threeUrl = '/vendor/three/three.module.min.js', onSelect = null, tier = null, onQuality = null } = {}) {
+  if (reducedMotion || !hasWebGL()) return create2d(container, { onSelect });
+  const saved = savedTier();
+  let auto = !saved || saved === 'auto';
+  let current = tier || pickTier({ coarse, memory: (typeof navigator !== 'undefined' && navigator.deviceMemory) || 0, cores: (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 0, saved });
+  let inner = null; let lastWorld = null; let lastDuration = 1200; let busy = null; let destroyed = false;
+  const opts = () => ({ coarse, threeUrl, onSelect, tier: current, onTierChange: (t) => { if (auto) switchTo(t, { manual: false }); } });
+  async function build(state) {
+    const s = await create3d(container, opts());
+    if (!s) return null;
+    s.governor.setAuto(auto);
+    if (lastWorld) s.update(lastWorld, { duration: lastDuration });
+    if (state) s.restoreCamera(state);
+    return s;
   }
-  return create2d(container, { onSelect });
+  // Rebuild in place at another tier, keeping the world, the camera and the selection.
+  function switchTo(t, { manual }) {
+    if (!TIERS.includes(t) || destroyed) return busy;
+    if (t === current && inner) return busy;
+    current = t;
+    busy = (async () => {
+      const state = inner ? inner.cameraState() : null;
+      const xray = inner ? inner.xray() : false; const names = inner ? inner.names() : true;
+      if (inner) { inner.destroy(); inner = null; }
+      inner = await build(state);
+      if (inner) { inner.setXray(xray); inner.setNames(names); }
+      container.dataset.tier = current;
+      if (onQuality) onQuality({ tier: current, auto, manual });
+      return inner;
+    })();
+    return busy;
+  }
+  try { inner = await build(null); } catch (e) { if (typeof console !== 'undefined') console.warn('[sandbox] 3D view unavailable:', e && e.message); inner = null; }
+  if (!inner) return create2d(container, { onSelect });
+  const call = (name, ...a) => (inner && inner[name] ? inner[name](...a) : undefined);
+  return {
+    renderer: 'webgl',
+    update(next, o = {}) { lastWorld = next; lastDuration = o.duration || lastDuration; call('update', next, o); },
+    setView: (m) => call('setView', m), view: () => call('view'),
+    setXray: (on) => call('setXray', on), xray: () => !!call('xray'),
+    setNames: (on) => call('setNames', on), names: () => !!call('names'),
+    select: (id) => call('select', id), selected: () => call('selected'),
+    clock: () => call('clock'),
+    quality: () => ({ tier: current, auto, tiers: TIERS.slice() }),
+    // 'auto', or a tier to keep (remembered on this device).
+    async setQuality(t) {
+      if (t === 'auto') { auto = true; saveTier('auto'); const pick = pickTier({ coarse, memory: (typeof navigator !== 'undefined' && navigator.deviceMemory) || 0, cores: (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 0 }); await switchTo(pick, { manual: true }); if (inner) inner.governor.setAuto(true); if (onQuality) onQuality({ tier: current, auto, manual: true }); return; }
+      if (!TIERS.includes(t)) return;
+      auto = false; saveTier(t);
+      await switchTo(t, { manual: true });
+      if (inner) inner.governor.setAuto(false);
+      if (onQuality) onQuality({ tier: current, auto, manual: true });
+    },
+    get inner() { return inner; },
+    destroy() { destroyed = true; if (inner) inner.destroy(); inner = null; }
+  };
 }
