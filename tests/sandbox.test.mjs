@@ -372,7 +372,8 @@ test('the registry has /sandbox and /world with buttons; the commands file is bu
 test('migration: a unique timestamp after every other, safe to run twice, service role only, after or without missions and Core State', async () => {
   const MIG = '20261110120000_pg1_sandbox.sql';
   const names = readdirSync(new URL('supabase/migrations/', ROOT)).filter((f) => f.endsWith('.sql')).sort();
-  assert.equal(names.at(-1), MIG);
+  // Newest but for the projects migration, which runs after it.
+  assert.deepEqual(names.slice(-2), [MIG, '20261111120000_pg1_projects.sql']);
   assert.equal(names.filter((n) => n.slice(0, 14) === MIG.slice(0, 14)).length, 1);
   const d = await makeDb(['20261105120000_pg1_missions.sql', '20261109120000_pg1_core_state.sql', MIG, MIG]);
   const tables = ['pg1_worlds', 'pg1_world_events', 'pg1_sandbox_keys', 'pg1_sandbox_usage', 'pg1_sandbox_consents', 'pg1_experiment_runs', 'pg1_experiment_anomalies', 'pg1_experiment_log', 'pg1_world_blackbox'];
