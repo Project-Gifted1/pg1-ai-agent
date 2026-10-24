@@ -1,5 +1,5 @@
 -- PG1 Sandbox: worlds PG1 (and agents Gift invites) build and run, and blind
--- experiments in them (lib/sandbox). NOT APPLIED AUTOMATICALLY. Safe to run
+-- experiments in them (lib/sandbox). NOT APPLIED AUTOMATICALLY. Can be run
 -- more than once. Changes no existing data. Service role only.
 --
 -- Worlds are data, never code: a world's spec is JSON (entities, rules from

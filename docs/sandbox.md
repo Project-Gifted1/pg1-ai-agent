@@ -277,5 +277,5 @@ Every blind run, its world and its outputs are labelled **"SIMULATION — blind 
 
 - **New tables:** `pg1_worlds`, `pg1_world_events` (kept 30 days), `pg1_sandbox_keys`, `pg1_sandbox_usage`, `pg1_sandbox_consents`, `pg1_experiment_runs`, `pg1_experiment_anomalies`, `pg1_experiment_log` and `pg1_world_blackbox` (append-only, hash-chained, kept 180 days), with the functions `pg1_blackbox_append_only` (its trigger) and `pg1_blackbox_actors`.
 - **Changes to existing tables:** `kind` (standard, world or project), `world_id`, `stage` and `project` are added to `pg1_missions`, and the `sandbox` area to the Core State tables. Each change is made only when that table exists.
-- **Safe to run:** more than once; it changes no existing data; service role only.
+- **Can be run** more than once; it changes no existing data; service role only.
 - **Before it runs:** the sandbox works in each instance's memory, and world missions are refused with a clear message.
