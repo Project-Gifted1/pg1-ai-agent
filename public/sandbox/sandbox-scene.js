@@ -35,6 +35,7 @@ import { createEnvironment } from './environment.js';
 import { createControls } from './controls.js';
 import { TIERS, TIER_SETTINGS, QUALITY_KEY, pickTier, createGovernor } from './quality.js';
 import { createPost } from './post.js';
+import { loadTextures, addSurfaceDetail } from './materials.js';
 
 const MAX_ENTITIES = 1000;
 const CLASS_COLOR = { person: 0xf3c623, animal: 0xff9b7a, plant: 0x3ddc84, building: 0xcfd8dc, structure: 0x9e9e9e, vehicle: 0x36d1c4, space: 0x8f86ff, celestial: 0xd98cff, thing: 0x7cc4ff };
@@ -216,9 +217,10 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   const THREE = await import(threeUrl);
   const settings = TIER_SETTINGS[tier] || TIER_SETTINGS.high;
   const ADD = '/vendor/three/addons/';
-  const [skyMod, csmMod] = await Promise.all([
+  const [skyMod, csmMod, textures] = await Promise.all([
     settings.sky === 'physical' ? import(`${ADD}objects/Sky.js`).catch(() => null) : null,
-    settings.cascades > 0 ? import(`${ADD}csm/CSM.js`).catch(() => null) : null
+    settings.cascades > 0 ? import(`${ADD}csm/CSM.js`).catch(() => null) : null,
+    settings.textures ? loadTextures(THREE) : null
   ]);
   const canvas = document.createElement('canvas');
   canvas.className = 'living-lab-canvas sandbox-canvas';
@@ -240,6 +242,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(55, 1, 0.3, 200000);
   const env = createEnvironment(THREE, scene, { coarse, quality: settings, camera, addons: { Sky: skyMod && skyMod.Sky, CSM: csmMod && csmMod.CSM } });
+  env.textures = textures;
   const glow = glowTexture(THREE);
 
   const matBody = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.06 });
@@ -251,6 +254,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   const matBuildGlass = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.12, metalness: 0.75 });
   const matBuildGlow = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
   for (const m of [matBody, matGlass, matBuild, matBuildGlass]) env.setupMaterial(m);
+  // PBR surface detail (after the shadow setup, which replaces the compile hook).
+  if (textures) { addSurfaceDetail(matBody, textures); addSurfaceDetail(matBuild, textures, { strength: 0.6, scale: 3 }); }
   const furnitureGroup = new THREE.Group();
   furnitureGroup.visible = false;
   let xray = false;

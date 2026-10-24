@@ -15,6 +15,7 @@
 
 import { Kit } from './kit.js';
 import { createWaterMaterial } from './water.js';
+import { applyTerrain } from './materials.js';
 
 const SKY_VERT = `
 varying vec3 vDir;
@@ -221,6 +222,15 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
       return y;
     };
     env.heightAt = heightAt;
+    // Splat weights for the textured ground: grass, sand, rock, snow.
+    const splatOf = (x, z, y, edge, cl, snowAmt) => {
+      let ws = 0; let wr = smooth(500, 750, y); let wn = Math.max(smooth(800, 950, y), snowAmt);
+      if (edge !== null && edge < 45) { if (cl === 'cold') { wr = Math.max(wr, 0.6); ws = 0.4; } else ws = 1; wn = 0; }
+      for (const l of lakes) { const d = Math.hypot(x - l.sx, z - l.sz) - l.radius; if (d < 25) ws = Math.max(ws, smooth(25, 2, d)); }
+      ws = Math.min(1, ws); wr = Math.min(1 - ws, wr); wn = Math.min(1 - ws - wr, wn);
+      return [Math.max(0, 1 - ws - wr - wn), ws, wr, wn];
+    };
+    const splats = [];
     const ringR = (i) => (i === 0 ? 0 : half * 0.02 * Math.pow(R / (half * 0.02), i / rings));
     for (let i = 0; i <= rings; i++) {
       const rr = ringR(i);
@@ -239,11 +249,13 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
         if (y > 800) c.lerp(snow, smooth(800, 950, y));
         const seaMix = islands.length ? 0 : smooth(span * 2.2, span * 3.4, out);
         if (seaMix > 0) c.lerp(sea, seaMix);
+        let sEdge = null; let sCl = 'temperate'; let sSnow = 0;
         if (islands.length) {
           const { edge, isl } = landEdge(x, z);
           const cl = isl ? isl.climate : 'temperate';
+          sEdge = edge; sCl = cl;
           if (cl === 'tropical') c.lerp(tropical, 0.55);
-          if (cl === 'cold') { c.lerp(coldGrass, 0.6); if (noise(x / 90, z / 90, 2) > 0.15) c.lerp(snow, 0.7); }
+          if (cl === 'cold') { c.lerp(coldGrass, 0.6); if (noise(x / 90, z / 90, 2) > 0.15) { c.lerp(snow, 0.7); sSnow = 0.7; } }
           if (cl === 'maritime') c.lerp(maritime, 0.5);
           if (edge < 45) c.copy(sand).lerp(cl === 'cold' ? pebbles : sand, 0.6);
           if (edge < -2) c.copy(seabed).lerp(deep, Math.min(1, -edge / 400));
@@ -254,6 +266,7 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
           if (d < 25) c.lerp(sand, smooth(25, 2, d));
         }
         colr.push(c.r, c.g, c.b);
+        splats.push(...splatOf(x, z, y, sEdge, sCl, sSnow));
       }
     }
     for (let j = 0; j < segs; j++) idx.push(0, 1 + ((j + 1) % segs), 1 + j);
@@ -268,9 +281,13 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(colr, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    g.setAttribute('splat', new THREE.Float32BufferAttribute(splats, 4));
     g.setIndex(idx);
     g.computeVertexNormals();
-    const groundMat = env.setupMaterial(env.makeGroundMaterial ? env.makeGroundMaterial(detail) : new THREE.MeshStandardMaterial({ vertexColors: true, map: detail, roughness: 0.95, metalness: 0 }));
+    // With the PBR textures (Medium and up) the ground blends grass, sand,
+    // rock and snow by the splat weights below; without them, the old detail tile.
+    const groundMat = env.setupMaterial(new THREE.MeshStandardMaterial(env.textures ? { vertexColors: true, roughness: 1, metalness: 0 } : { vertexColors: true, map: detail, roughness: 0.95, metalness: 0 }));
+    if (env.textures) applyTerrain(groundMat, env.textures);
     const ground = new THREE.Mesh(g, groundMat);
     ground.receiveShadow = true;
     ground.position.y = isl0 ? -3 : -0.05;
@@ -283,7 +300,7 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
       const nx = Math.min(coarse ? 220 : 380, Math.ceil((W + 2 * M) / 40)); const nz = Math.min(coarse ? 150 : 260, Math.ceil((D + 2 * M) / 40));
       const pg = new THREE.PlaneGeometry(W + 2 * M, D + 2 * M, nx, nz);
       pg.rotateX(-Math.PI / 2);
-      const pp = pg.attributes.position; const cols = new Float32Array(pp.count * 3); const uv2 = pg.attributes.uv;
+      const pp = pg.attributes.position; const cols = new Float32Array(pp.count * 3); const uv2 = pg.attributes.uv; const spl = new Float32Array(pp.count * 4);
       const tmpC = new THREE.Color();
       for (let i = 0; i < pp.count; i++) {
         const x = pp.getX(i); const z = pp.getZ(i);
@@ -294,14 +311,17 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
         tmpC.copy(grassA).lerp(grassB, Math.min(1, Math.max(0, v + 0.5))).lerp(dry, Math.max(0, noise(x / 700, z / 700, 2)) * 0.6);
         const cl = isl ? isl.climate : 'temperate';
         if (cl === 'tropical') tmpC.lerp(tropical, 0.55);
-        if (cl === 'cold') { tmpC.lerp(coldGrass, 0.6); const n2 = noise(x / 140, z / 140, 3); if (n2 > 0.08) tmpC.lerp(snow, Math.min(0.85, (n2 - 0.08) * 5)); }
+        let sSnow = 0;
+        if (cl === 'cold') { tmpC.lerp(coldGrass, 0.6); const n2 = noise(x / 140, z / 140, 3); if (n2 > 0.08) { sSnow = Math.min(0.85, (n2 - 0.08) * 5); tmpC.lerp(snow, sSnow); } }
         if (cl === 'maritime') tmpC.lerp(maritime, 0.5);
         if (edge < 45) tmpC.copy(sand).lerp(cl === 'cold' ? pebbles : sand, 0.6);
         if (edge < -2) tmpC.copy(seabed).lerp(deep, Math.min(1, -edge / 400));
         for (const l of lakes) { const d = Math.hypot(x - l.sx, z - l.sz) - l.radius; if (d < 25) tmpC.lerp(sand, smooth(25, 2, d)); }
         cols[i * 3] = tmpC.r; cols[i * 3 + 1] = tmpC.g; cols[i * 3 + 2] = tmpC.b;
+        spl.set(splatOf(x, z, pp.getY(i), edge, cl, sSnow), i * 4);
       }
       pg.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+      pg.setAttribute('splat', new THREE.BufferAttribute(spl, 4));
       pg.computeVertexNormals();
       const fine = new THREE.Mesh(pg, groundMat);
       fine.receiveShadow = true;
@@ -319,7 +339,7 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
         seaMesh = new THREE.Mesh(sg, createWaterMaterial(THREE, env.normals || (env.normals = waterNormals(THREE)), islands));
         seaMesh.userData.water = true;
       } else {
-        seaMesh = new THREE.Mesh(sg, env.setupMaterial(new THREE.MeshStandardMaterial({ color: 0x1f6f9a, roughness: 0.12, metalness: 0.3, transparent: true, opacity: 0.88 })));
+        seaMesh = new THREE.Mesh(sg, env.setupMaterial(new THREE.MeshStandardMaterial({ color: 0x1f6f9a, roughness: 0.12, metalness: 0.3, transparent: true, opacity: 0.88, polygonOffset: true, polygonOffsetFactor: 4, polygonOffsetUnits: 8 })));
         seaMesh.receiveShadow = true;
       }
       seaMesh.position.y = 0;
@@ -333,7 +353,7 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
       const lg = new THREE.CircleGeometry(l.radius, coarse ? 48 : 96, 0, Math.PI * 2);
       lg.rotateX(-Math.PI / 2);
       const water = qual.water
-        ? new THREE.Mesh(lg, createWaterMaterial(THREE, env.normals || (env.normals = waterNormals(THREE)), [{ sx: l.sx, sz: l.sz, r: -l.radius }]))
+        ? new THREE.Mesh(lg, createWaterMaterial(THREE, env.normals || (env.normals = waterNormals(THREE)), [{ sx: l.sx, sz: l.sz, r: -l.radius }], { offset: false }))
         : new THREE.Mesh(lg, env.setupMaterial(new THREE.MeshStandardMaterial({ color: 0x2f7fb0, roughness: 0.08, metalness: 0.35, transparent: true, opacity: 0.92 })));
       water.position.set(l.sx, 0.12, l.sz);
       water.receiveShadow = true;

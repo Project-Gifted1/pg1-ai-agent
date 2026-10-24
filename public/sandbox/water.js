@@ -72,7 +72,8 @@ void main() {
 }`;
 
 // islands: [{ sx, sz, r }] in scene coordinates; a lake is one circle with r < 0.
-export function createWaterMaterial(THREE, normals, islands = []) {
+// offset: push it back in depth (the sea, so land just above it always wins); not for lakes, which lie on land.
+export function createWaterMaterial(THREE, normals, islands = [], { offset = true } = {}) {
   const flat = new Float32Array(MAX_ISLANDS * 3);
   islands.slice(0, MAX_ISLANDS).forEach((i, k) => { flat[k * 3] = i.sx; flat[k * 3 + 1] = i.sz; flat[k * 3 + 2] = i.r; });
   const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
@@ -83,7 +84,8 @@ export function createWaterMaterial(THREE, normals, islands = []) {
     uIslands: { value: Array.from(flat) }, uIslandCount: { value: Math.min(MAX_ISLANDS, islands.length) }, uFoam: { value: 1 }
   }]);
   uniforms.uNormals.value = normals;
-  const m = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: FRAG, uniforms, transparent: true, fog: true, depthWrite: true });
+  // Pushed back in depth a little, so land just above sea level always wins, even from far away.
+  const m = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: FRAG, uniforms, transparent: true, fog: true, depthWrite: true, polygonOffset: offset, polygonOffsetFactor: offset ? 4 : 0, polygonOffsetUnits: offset ? 8 : 0 });
   m.userData.water = true;
   return m;
 }
