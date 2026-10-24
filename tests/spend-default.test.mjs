@@ -60,7 +60,8 @@ describe('PG1_DAILY_SPEND_CAP_USD unset is $0', () => {
     assert.deepEqual(planRoute(TASKS.HEAVY, { env: KEYS, dataClass: DATA.CUSTOMER }), [], 'customer data never goes to a free engine, and paid is off');
     const op = planRoute(TASKS.HEAVY, { env: KEYS, dataClass: DATA.OPERATOR });
     assert.ok(op.length > 0);
-    assert.deepEqual([...new Set(op.map((c) => c.provider))], ['gemini_free'], 'free engines only');
+    assert.deepEqual([...new Set(op.map((c) => c.provider))], ['gemini_free', 'openrouter'], 'free engines only');
+    assert.ok(op.filter((c) => c.provider === 'openrouter').every((c) => c.freeOnly && !c.models.length), 'OpenRouter with its free models only');
     // runRoute on the customer plan: nothing is called.
     const tried = [];
     const out = await runRoute({ task: TASKS.HEAVY, env: KEYS, dataClass: DATA.CUSTOMER, plan: planRoute(TASKS.HEAVY, { env: KEYS, dataClass: DATA.CUSTOMER }), attempt: async (c) => { tried.push(c.provider); return { ok: true, text: 'x' }; }, log: () => {} });
