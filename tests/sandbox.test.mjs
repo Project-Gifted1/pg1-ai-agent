@@ -352,7 +352,11 @@ test('chat: /sandbox, /world, /sandbox create and invite are the operator\'s; re
   const all = await handleSandboxCommand({ text: '/sandbox', isOperator: true, store });
   assert.match(all.reply, /Simulation: nothing here is a real event/);
   const inv = await handleSandboxCommand({ text: '/sandbox invite Frits agent', isOperator: true, store });
-  assert.match(inv.reply, /shown once: `pg1sb_[A-Za-z0-9_-]+`/);
+  // The key is only in secretOnce (a copy-only dialog), never in the reply text the chat keeps.
+  assert.match(inv.secretOnce.value, /^pg1sb_[A-Za-z0-9_-]+$/);
+  assert.ok(!inv.reply.includes(inv.secretOnce.value) && !/pg1sb_/.test(inv.reply));
+  assert.match(inv.reply, /shown once, in a dialog/);
+  assert.equal((await resolveSandboxKey(store, inv.secretOnce.value)).key.label, 'Frits agent');
   assert.match(inv.reply, /never put in a blind experiment without its human operator's recorded opt-in/);
 });
 

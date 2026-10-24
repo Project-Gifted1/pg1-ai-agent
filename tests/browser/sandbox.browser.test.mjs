@@ -23,7 +23,7 @@ import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { routeReplyFont } from '../helpers/replyFont.mjs';
 import { createSandboxStore } from '../../lib/sandbox/store.mjs';
-import { createWorld, stepWorldFor, pg1Principal } from '../../lib/sandbox/worlds.mjs';
+import { createWorld, stepWorldFor, pg1Principal, resolveSandboxKey } from '../../lib/sandbox/worlds.mjs';
 import { startExperiment, takeTurn, openRun, finishRun } from '../../lib/sandbox/experiments.mjs';
 import sandboxViewer, { __setSandboxViewerStore } from '../../api/sandbox.mjs';
 import { handleSandboxCommand } from '../../lib/sandbox/chat.mjs';
@@ -75,7 +75,7 @@ async function fixtureStore() {
 }
 
 function startServer(store) {
-  const log = { sandboxOps: [], missing: [] };
+  const log = { sandboxOps: [], missing: [], bodies: [] };
   process.env.USER_API_KEY = 'operator';
   process.env.USER_API_PASS = 'passkey';
   __setSandboxViewerStore(() => store);
@@ -85,6 +85,7 @@ function startServer(store) {
     req.on('data', (c) => { body += c; });
     req.on('end', async () => {
       let parsed = null;
+      if (body) log.bodies.push(body);
       try { parsed = body ? JSON.parse(body) : null; } catch (e) { parsed = null; }
       const json = (status, b) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(b)); };
       if (url.pathname === '/api/sandbox') {
@@ -103,7 +104,7 @@ function startServer(store) {
           if (parsed && parsed.prompt === 'AUTH_VERIFY') return json(200, { authenticated: true });
           if (parsed && parsed.action === 'SPEAK') return json(200, { reply: 'ok' });
           const out = await handleSandboxCommand({ text: String(parsed && parsed.prompt || ''), isOperator: true, store });
-          return json(200, { reply: out.reply, ...(out.sandbox ? { sandbox: out.sandbox } : {}), actions: [] });
+          return json(200, { reply: out.reply, ...(out.sandbox ? { sandbox: out.sandbox } : {}), ...(out.secretOnce ? { secretOnce: out.secretOnce } : {}), actions: [] });
         }
         log.missing.push(url.pathname);
         return json(404, { error: 'not stubbed' });
@@ -293,5 +294,35 @@ test('New universe at 380 px: a living town and the space above it in 3D, the ca
   await page.waitForFunction(() => /^Step 1 · /.test(document.getElementById('sandbox-tick').textContent));
   const ow = await noOverflow(page);
   assert.ok(ow.page <= ow.width && ow.screen <= ow.width, `no horizontal overflow at 380 px: ${JSON.stringify(ow)}`);
+  assert.deepEqual(errors, []);
+});
+
+test('an invite key is shown once in a copy-only dialog: never in the chat, the saved chat, the saved threads or any request', { skip, timeout: 180000 }, async (t) => {
+  const { store } = await fixtureStore();
+  const { server, log, origin } = await startServer(store);
+  const browser = await chromium.launch();
+  t.after(async () => { await browser.close(); await new Promise((r) => server.close(r)); __setSandboxViewerStore(null); });
+  const { page, errors, context } = await signedInPage(browser, origin);
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
+  const before = await page.locator('#chat-container .message-bubble:not(.user)').count();
+  await page.fill('#prompt-input', '/sandbox invite Key test agent');
+  await page.click('.execute-btn');
+  await page.waitForSelector('dialog#secret-once[open]');
+  await page.waitForFunction((n) => { const b = document.querySelectorAll('#chat-container .message-bubble:not(.user)'); return b.length > n && !b[b.length - 1].classList.contains('pending'); }, before);
+  assert.match(await page.locator('#chat-container .message-bubble:not(.user)').last().innerText(), /shown once, in a dialog/);
+  assert.match(await page.locator('dialog#secret-once .secret-once-mask').innerText(), /^pg1sb_..••••••••$/);
+  await page.screenshot({ path: join(SHOTS_DIR, 'sandbox-invite-key-380-dark.png') });
+  await page.click('dialog#secret-once [data-act="copy"]');
+  await page.waitForFunction(() => /Copied/.test(document.querySelector('.secret-once-status').textContent));
+  const key = await page.evaluate(() => navigator.clipboard.readText());
+  assert.match(key, /^pg1sb_[A-Za-z0-9_-]{20,}$/);
+  assert.equal((await resolveSandboxKey(store, key)).key.label, 'Key test agent', 'the copied key works');
+  await page.click('dialog#secret-once [data-act="close"]');
+  assert.equal(await page.locator('#secret-once').count(), 0, 'closing removes it from the page');
+  // Nowhere else: the chat, the page, browser storage, or anything sent to the server.
+  const everywhere = await page.evaluate(() => [document.documentElement.outerHTML, JSON.stringify(Object.fromEntries(Object.keys(localStorage).map((k) => [k, localStorage.getItem(k)]))), JSON.stringify(Object.fromEntries(Object.keys(sessionStorage).map((k) => [k, sessionStorage.getItem(k)])))].join('\n'));
+  assert.ok(!everywhere.includes(key), 'not in the page or browser storage');
+  assert.ok(!everywhere.includes(key.slice(6)), 'not even without its prefix');
+  assert.ok(!log.bodies.some((b) => b.includes(key)), 'never sent back to the server (saved threads included)');
   assert.deepEqual(errors, []);
 });

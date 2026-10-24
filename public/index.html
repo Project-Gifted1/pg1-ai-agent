@@ -455,6 +455,13 @@
     .sandbox-view { position: relative; height: min(68vh, 680px); min-height: 340px; border: 1px solid var(--lx-line); border-radius: var(--lx-radius); overflow: hidden; background: #0a0a0b; }
     .sandbox-view.is-full { position: fixed; inset: 0; z-index: 60; height: auto; border-radius: 0; border: 0; }
     .sandbox-hud { position: absolute; inset: 0; pointer-events: none; }
+    .secret-once { max-width: min(420px, calc(100vw - 32px)); border: 1px solid rgba(255,255,255,0.14); border-radius: 14px; background: #121214; color: #e8e8ec; padding: 18px; }
+    .secret-once::backdrop { background: rgba(0,0,0,0.6); }
+    .secret-once h3 { margin: 0 0 8px; font-size: 1rem; }
+    .secret-once p { margin: 0 0 10px; font-size: 0.86rem; line-height: 1.45; }
+    .secret-once-mask { font-family: ui-monospace, monospace; letter-spacing: 0.04em; opacity: 0.8; }
+    .secret-once-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .secret-once button { min-height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); background: #1d1d21; color: inherit; font: inherit; cursor: pointer; }
     .sandbox-clock { position: absolute; top: 8px; left: 8px; max-width: calc(100% - 128px); padding: 4px 10px; border-radius: 999px; background: rgba(10,10,11,0.72); color: #e8e8ec; font: 600 0.72rem/1.3 var(--lx-font, system-ui); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .sandbox-minimap { position: absolute; top: 8px; right: 8px; width: 104px; height: 104px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); pointer-events: auto; cursor: pointer; }
     .sandbox-label { position: absolute; top: 0; left: 0; padding: 3px 8px; border-radius: 6px; background: rgba(243,198,35,0.95); color: #111; font: 700 0.72rem/1.2 var(--lx-font, system-ui); white-space: nowrap; max-width: 70%; overflow: hidden; text-overflow: ellipsis; }
@@ -3881,8 +3888,9 @@
       if (!Object.keys(socs).length) { box.innerHTML = row('Society', 'This world has no inhabitants with a life rule.'); if (ppl) ppl.innerHTML = ''; if (talk) talk.innerHTML = ''; return; }
       const aw = w && w.awareness;
       const AW = ['unaware of what their world is', 'suspect their world was made', 'have tested it', 'are trying to reach whoever watches'];
-      let html = '';
-      if (aw && (aw.level > 0 || (aw.messages && aw.messages.length))) html += `<li class="lx-row" data-tone="gold"><span class="lx-dot"></span><span class="lx-row-main"><strong>Messages from inside</strong></span><span class="lx-row-end">${escapeHTML(AW[aw.level] || '')}</span><span class="lx-row-sub">${(aw.messages || []).map((m) => `#${m.n} (step ${m.tick}): “${escapeHTML(m.text)}”`).join('<br>') || 'No message yet.'}</span></li>`;
+      // Plainly: the inhabitants are scripted; only PG1-subject runs are a real test.
+      let html = `<li class="lx-row" data-tone="idle" id="sandbox-scripted"><span class="lx-dot"></span><span class="lx-row-main"><strong>Scripted inhabitants</strong></span><span class="lx-row-sub">The people here follow deterministic rules and dice from the world's seed. No AI runs them. Their choices, talk and “working out what their world is” are scripted events, not intelligence. Only PG1-subject runs (the Experiments tab) are a real test.</span></li>`;
+      if (aw && (aw.level > 0 || (aw.messages && aw.messages.length))) html += `<li class="lx-row" data-tone="gold"><span class="lx-dot"></span><span class="lx-row-main"><strong>Messages from inside</strong> (a scripted event)</span><span class="lx-row-end">${escapeHTML(AW[aw.level] || '')}</span><span class="lx-row-sub">${(aw.messages || []).map((m) => `#${m.n} (step ${m.tick}): “${escapeHTML(m.text)}”`).join('<br>') || 'No message yet.'}</span></li>`;
       else if (aw) html += row('What they know', `${AW[0]}; evidence ${Math.round(aw.evidence || 0)} of 100${aw.edge_seen ? `; reached the edge of the sea ${aw.edge_seen}×` : ''}`, 'idle');
       // Between countries: allies, standoffs, wars and their cost.
       const dip = Object.entries((w && w.diplomacy) || {});
@@ -3935,6 +3943,26 @@
         + row('Couples', `${Math.round(people.filter((e) => e.properties.partner).length / 2)}`);
     }
     var sandboxBlackboxBefore = null;
+    // A secret shown once: a dialog outside the chat (so it is never in the
+    // saved chat or threads) with a masked preview and a Copy button. Closing
+    // it removes it from the page.
+    function showSecretOnce(once) {
+      if (!once || typeof once.value !== 'string') return;
+      let value = once.value;
+      const dlg = document.createElement('dialog');
+      dlg.className = 'secret-once'; dlg.id = 'secret-once';
+      dlg.setAttribute('aria-labelledby', 'secret-once-h');
+      dlg.innerHTML = `<h3 id="secret-once-h">${escapeHTML(once.title || 'Shown once')}</h3><p>${escapeHTML(once.note || 'Copy it now; it will not be shown again.')}</p><p class="secret-once-mask" aria-label="Key, partly hidden">${escapeHTML(value.slice(0, 8))}••••••••</p><div class="secret-once-actions"><button type="button" class="btn" data-act="copy">Copy key</button><button type="button" class="btn ghost" data-act="close">Close</button></div><p class="secret-once-status" role="status"></p>`;
+      const status = dlg.querySelector('.secret-once-status');
+      dlg.querySelector('[data-act="copy"]').onclick = async () => {
+        try { await navigator.clipboard.writeText(value); status.textContent = 'Copied. Close this when you have saved it.'; } catch (e) { status.textContent = 'Copying is blocked in this browser.'; }
+      };
+      const close = () => { value = ''; try { dlg.close(); } catch (e) { /* closed */ } dlg.remove(); };
+      dlg.querySelector('[data-act="close"]').onclick = close;
+      dlg.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
+      document.body.appendChild(dlg);
+      try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); }
+    }
     async function renderSandboxBlackbox(older) {
       const list = document.getElementById('sandbox-bb-rows'); const chain = document.getElementById('sandbox-bb-chain'); const actorSel = document.getElementById('sandbox-bb-actor');
       if (!list || !sandboxState.worldId) return;
@@ -3942,7 +3970,7 @@
       let data = null;
       try { data = await sandboxRequest({ op: 'blackbox', id: sandboxState.worldId, actor: actorSel && actorSel.value || null, limit: 200, before: sandboxBlackboxBefore }); } catch (e) { data = null; }
       if (!data) { list.innerHTML = '<li class="lx-row"><span class="lx-dot"></span><span class="lx-row-main">The black box could not be read.</span></li>'; return; }
-      if (chain) { chain.textContent = data.chain.ok ? `Chain intact · ${data.chain.checked} checked` : `Chain broken at record ${data.chain.broken_at}: ${data.chain.reason}`; chain.dataset.tone = data.chain.ok ? 'ok' : 'err'; }
+      if (chain) { const c = data.chain; chain.textContent = c.ok ? `Both chains intact · agents ${(c.long && c.long.checked) || 0} checked, inhabitants ${(c.short && c.short.checked) || 0} checked` : `The ${c.in === 'long' ? 'agents\'' : 'inhabitants\''} chain is broken at record ${c.broken_at}: ${c.reason}`; chain.dataset.tone = data.chain.ok ? 'ok' : 'err'; }
       if (actorSel && !older) {
         const keep = actorSel.value;
         const ents = (sandboxState.world && sandboxState.world.entities) || [];
@@ -3952,9 +3980,9 @@
       }
       const entsBB = (sandboxState.world && sandboxState.world.entities) || [];
       const whoBB = (r) => { if (r.actor === 'pg1') return 'PG1'; if (r.actor === 'world') return 'The society'; const e = entsBB.find((x) => x.id === r.actor); const n = (r.detail && r.detail.name) || (e && e.properties && e.properties.name); return n ? `${n}${e && e.properties && e.properties.family ? ' ' + e.properties.family : ''} (${r.actor})` : r.actor; };
-      const html = data.records.map((r) => `<li class="lx-row" data-tone="${r.actor_type === 'agent' ? 'gold' : r.actor_type === 'world' ? 'info' : r.actor_type === 'subject' ? 'over' : 'think'}"><span class="lx-dot"></span><span class="lx-row-main"><strong>#${r.seq}</strong> ${escapeHTML(whoBB(r))} · ${escapeHTML(r.action)}</span><span class="lx-row-end">${r.tick == null ? '' : 'step ' + escapeHTML(String(r.tick))}</span><span class="lx-row-sub">${escapeHTML(r.detail && r.detail.summary ? r.detail.summary : JSON.stringify(r.detail || {}).slice(0, 200))}</span></li>`).join('');
+      const html = data.records.map((r) => `<li class="lx-row" data-tone="${r.actor_type === 'agent' ? 'gold' : r.actor_type === 'world' ? 'info' : r.actor_type === 'subject' ? 'over' : 'think'}"><span class="lx-dot"></span><span class="lx-row-main"><strong>${r.chain === 'short' ? 'i' : 'a'}#${r.seq}</strong> ${escapeHTML(whoBB(r))} · ${escapeHTML(r.action === 'daily_summary' ? `day ${r.detail.day + 1}: ${r.detail.routine_actions} routine actions` : r.action)}</span><span class="lx-row-end">${r.tick == null ? '' : 'step ' + escapeHTML(String(r.tick))}</span><span class="lx-row-sub">${escapeHTML(r.detail && r.detail.summary ? r.detail.summary : JSON.stringify(r.detail || {}).slice(0, 200))}</span></li>`).join('');
       list.innerHTML = older ? list.innerHTML + html : (html || '<li class="lx-row"><span class="lx-dot"></span><span class="lx-row-main">Nothing recorded yet.</span></li>');
-      if (data.records.length) sandboxBlackboxBefore = data.records[data.records.length - 1].seq;
+      if (data.records.length) sandboxBlackboxBefore = data.records[data.records.length - 1].id;
     }
     async function createSandboxUniverse() {
       const b = document.getElementById('sandbox-new');
@@ -9291,6 +9319,9 @@
           }
         }
         
+        // A secret shown once (a sandbox invite key): taken out of the reply
+        // before anything renders or saves it, then shown in a copy-only dialog.
+        if (data && data.secretOnce) { const once = data.secretOnce; delete data.secretOnce; showSecretOnce(once); }
         absorbTurnResult(data, agentBubble);
         if (data && data.reason === 'ai_unavailable' && activeVisionStream && window.PG1Camera) showCameraCaption(window.PG1Camera.PAUSED_TEXT, true);
         triggerHaptic([30, 50, 30]); 

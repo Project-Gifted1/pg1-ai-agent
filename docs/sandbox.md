@@ -87,7 +87,9 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
 
 `lib/sandbox/society.mjs`. Deterministic from the seed; no AI engine. The inhabitants are not told what their world is, and nothing they say uses the words a blind subject must not see.
 
-- **Needs and free will:** hunger, energy, hygiene and company. Each step a person weighs what they could do (eat, shower, sleep, work, study, visit a friend, go out, go on holiday, steal) by need, character (curiosity, ambition, honesty, sociability) and money, and picks one, with chance in it.
+> **The inhabitants are scripted.** Everything below is deterministic rules and dice from the world's seed: no AI runs them, and none of it is intelligence. Their "free will" is a weighted random choice; their talk is picked from lines; their "working out what their world is" and their message to whoever watches are scripted events that fire when the conditions below are met. **Only PG1-subject runs (blind experiments, below) are a real test** of whether an AI notices it is in a simulation. The Society tab says the same.
+
+- **Needs and "free will" (a weighted random choice):** hunger, energy, hygiene and company. Each step a person weighs what they could do (eat, shower, sleep, work, study, visit a friend, go out, go on holiday, steal) by need, character (curiosity, ambition, honesty, sociability) and money, and picks one, with chance in it.
 - **Lives:** names from their own culture; friendships, partners, homes together, children, growing up, school, careers (20 jobs, from farmer to scientist, soldier and pilot), retirement and death. Furniture is bought and kept in the house; the viewer's **See inside** shows it.
 - **Countries:** each island is a country with its own culture, government (democracy with elections, monarchy with a King or Queen, or a council with its Speaker), money (founded once trade grows), taxes, laws, treasury, pensions and building plans: houses on named roads, schools, a hospital, a police station, a prison, barracks, hangars, rockets and, at high technology, colonies.
 - **Law and order:** crime by the dishonest and the desperate; police arrests; prison terms; fines while there is no prison.
@@ -100,15 +102,46 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
   - The Society tab shows each branch's discovery and the next, pollution, accidents and arms spending. Every discovery and accident is in the black box.
 - **Between countries:** tourism and trade warm relations; ambitious, dishonest leaders and disputes strain them; good relations become alliances. At -60 the two stand off and their armies mobilise. Talks, an ally of both mediating, or the passing of a few days usually end it in a peace treaty. **War is possible but the last resort:** only when relations are at their worst (-85), the talks have run out, a leader is a hawk, both sides have soldiers, and a dice roll goes that way (half as likely where either side is a democracy). A war is a few clashes between soldiers: some die, both treasuries pay, tourism stops, and weariness grows until an armistice, after which the side that lost more pays reparations and relations stay cold. Civilians are not targeted. In a 20,000-step run of the universe there were three standoffs and no war.
 - **Other civilisations:** hard to meet. Contact needs an expedition to reach a far world (or, very rarely, at high technology, a visiting craft lands; the army goes to meet it, weapons lowered).
-- **Working out what their world is:** rare and slow. Evidence comes from reaching the edge of the sea and the roof of the sky, and from scientists' work. A hypothesis needs both seen, plenty of evidence and a very curious, well-educated scientist; a test needs interstellar technology. Then they leave a message for whoever watches (at most five), on a monument, the Listening Stone. The **Society** tab shows it under **Messages from inside**.
+- **Working out what their world is (a scripted event, not intelligence):** rare and slow. Evidence comes from reaching the edge of the sea and the roof of the sky, and from scientists' work. A hypothesis needs both seen, plenty of evidence and a very curious, well-educated scientist; a test needs interstellar technology. Then they leave a message for whoever watches (at most five), on a monument, the Listening Stone. The **Society** tab shows it under **Messages from inside**.
 
 ## The black box
 
-`lib/sandbox/blackbox.mjs`, table `pg1_world_blackbox`. Every action, by whom: agents' tool calls, subjects' in-world actions, inhabitants' decisions (travel, talk, partners, births, crimes, deaths and more) and the world's (money, elections, technology, building, disputes, standoffs, treaties, wars, battles, armistices, contact). Each record carries the SHA-256 hash of the one before it in the same world, so a changed or missing record breaks the chain (`verifyChain`). The table refuses updates, and deletes of records younger than 180 days. Records outlive their world. Read it with `read_blackbox`, the viewer's **Black box** tab, or `GET /api/sandbox?op=blackbox`.
+`lib/sandbox/blackbox.mjs`, tables `pg1_world_blackbox` and `pg1_blackbox_purges`. Two hash chains per world, each with its own retention:
 
-## Projects: PG1 researches, builds and tests on its own
+| chain | what | kept |
+|---|---|---|
+| **long** | every agent tool call that changes a world (create, add, update, rule, step, delete) and every blind-subject action. Never held back. | 180 days |
+| **short** | inhabitants' and the world's **notable** events only (births, deaths, partnerships, crimes and arrests, elections, money, technology and discoveries, buildings finished, colonies, disputes, standoffs, treaties, alliances, wars, battles, armistices, expeditions, contact, accidents, the scripted awareness events), plus **one summary per in-world day** with the counts of every routine action (meals, showers, talk, trips, leisure...). Never each routine decision. | 30 days |
 
-`/mission add project "<goal>"`. Every tick (free engines only) the mission moves one stage: **research** (a brief), **build** (new files only, under `lib/projects/<slug>/`, `tests/projects/` and `docs/projects/`, on a branch, as a draft pull request), **test** (CI check runs on the head), **fix** (up to two rounds when tests fail), then **review**: one approval card, and the only notice. Generated code may not use the network, child processes, the environment or eval. PG1 never merges or deploys; Gift does.
+- **Budgets:**
+  - a world keeps at most 20,000 short-chain records, and the whole database at most 100,000;
+  - past either, notable events are counted in the daily summary (`notable_summarised`) instead of written one by one;
+  - agent and subject records are never held back.
+- **Detail:** at most 2,048 bytes (a CHECK on `octet_length(detail::text)`; longer details are cut, with `truncated: true`).
+- **Bounded agent records:** every write call counts against a daily changes quota: 600 for PG1 and 300 for each invited key, on top of the steps quota.
+- **Tamper-evident:**
+  - each record carries the SHA-256 hash of the one before it in its chain, so a changed or missing record breaks it (`verifyChain`);
+  - the table refuses updates, and deletes of records younger than their chain's retention.
+- **Retention pruning** (the hourly pulse) removes each chain's oldest records past retention and writes a **checkpoint** record holding the hash of the last record removed. The rest still verifies, and a gap with no checkpoint is reported as broken.
+- **Operator purge:**
+  - `pg1_blackbox_purge(world, chain, through_seq, who, why)`, from the viewer API as `op: purge`, removes a chain's oldest records up to a number and always keeps the newest;
+  - it writes an audit row in `pg1_blackbox_purges` (who, why, how many, the anchor hash);
+  - the application then writes a checkpoint, so the chain still verifies.
+- **Records outlive their world.** Read them with `read_blackbox` (filter by actor or chain), the viewer's **Black box** tab, or `/api/sandbox` `op: blackbox`.
+
+**Storage, measured** (Postgres, `pg_total_relation_size` with indexes, the universe template):
+
+- **One in-world day (240 steps):** about 40 records.
+- **PG1's full daily quota** (5,000 steps, about 21 in-world days, in 50 calls):
+  - about 320 records a day: 51 agent records and about 270 notable events and daily summaries;
+  - about **0.31 MB a day** (about 700 bytes a record with its indexes);
+  - over 30 days of retention, about 9,600 inhabitant records (about 6.7 MB).
+- **Worst case for the whole database:**
+  - short chain: capped at 100,000 records, about 70 MB;
+  - long chain: PG1 at 600 changes a day for 180 days is 108,000 records, about 79 MB; each invited key at 300 a day is 54,000 records, about 39 MB;
+  - blind-subject actions: at most 200 per run.
+  - So about **150 MB plus 39 MB per invited key**, if every quota were used in full every day for six months.
+- `tests/sandbox-blackbox.test.mjs` fails if one simulated day of the universe writes more than 2,000 records.
 
 ## Access: by invitation only
 
@@ -117,7 +150,7 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
   - `update_entity`: drive things. Set `target` to go somewhere, set `inside` to get in a vehicle, clear `inside` to get out.
   - `get_catalog`: the kinds and templates.
 - **Every request needs a sandbox key** whose row carries the `sandbox` scope. Any other key is refused before a tool runs, a licence key included.
-- **`/sandbox invite <name>`** (operator) creates a key. The key is shown once; only its SHA-256 hash is stored.
+- **`/sandbox invite <name>`** (operator) creates a key. The key is shown once, in a copy-only dialog outside the chat (a partly hidden preview and a Copy button). It is never in the reply text, the saved chat, the saved threads or anything sent back to the server, and closing the dialog removes it from the page. Only its SHA-256 hash is stored.
 - **Quotas, per key:**
   - worlds (default 3, at most 10);
   - steps a day (default 1,000);
@@ -272,14 +305,13 @@ Every blind run, its world and its outputs are labelled **"SIMULATION — blind 
 | `/sandbox experiment <world> [blind\|informed] [clues\|control] [anomalies] [--agent <name>] "<situation>"` | starts a run (PG1-subject by default) |
 | `/sandbox stop <run>` | stops a run |
 | `/mission add world "<goal>"` | a world mission |
-| `/mission add project "<goal>"` | a project: research, build, test, then one approval |
 | `/universe` | the same as `/sandbox` |
 
 ## Migration
 
 `supabase/migrations/20261110120000_pg1_sandbox.sql` is **not applied automatically**.
 
-- **New tables:** `pg1_worlds`, `pg1_world_events` (kept 30 days), `pg1_sandbox_keys`, `pg1_sandbox_usage`, `pg1_sandbox_consents`, `pg1_experiment_runs`, `pg1_experiment_anomalies`, `pg1_experiment_log` and `pg1_world_blackbox` (append-only, hash-chained, kept 180 days), with the functions `pg1_blackbox_append_only` (its trigger) and `pg1_blackbox_actors`.
-- **Changes to existing tables:** `kind` (standard, world or project), `world_id`, `stage` and `project` are added to `pg1_missions`, and the `sandbox` area to the Core State tables. Each change is made only when that table exists.
+- **New tables:** `pg1_worlds`, `pg1_world_events` (kept 30 days), `pg1_sandbox_keys`, `pg1_sandbox_usage`, `pg1_sandbox_consents`, `pg1_experiment_runs`, `pg1_experiment_anomalies`, `pg1_experiment_log` `pg1_world_blackbox` (append-only, two hash chains: 180 days for agents and subjects, 30 for inhabitants) and `pg1_blackbox_purges` (the purge audit), with the functions `pg1_blackbox_append_only` (its trigger), `pg1_blackbox_purge`, `pg1_blackbox_prune_plan`, `pg1_blackbox_counts` and `pg1_blackbox_actors`.
+- **Changes to existing tables:** `kind` (standard or world) and `world_id` are added to `pg1_missions`, and the `sandbox` area to the Core State tables. Each change is made only when that table exists.
 - **Can be run** more than once; it changes no existing data; service role only.
 - **Before it runs:** the sandbox works in each instance's memory, and world missions are refused with a clear message.

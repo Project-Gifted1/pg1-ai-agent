@@ -11,7 +11,7 @@
 -- pg1_world_events          what happened in a world, kept 30 days
 -- pg1_sandbox_keys          access keys for invited agents (hash only, a
 --                           "sandbox" scope required), with their quotas
--- pg1_sandbox_usage         steps per owner per day (the quota)
+-- pg1_sandbox_usage         steps and changes per owner per day (the quotas)
 -- pg1_sandbox_consents      a human operator's recorded opt-in for their
 --                           agent to be put in a blind experiment
 -- pg1_experiment_runs       one blind or informed run, with or without clues
@@ -21,13 +21,16 @@
 --                           tool calls; for an invited agent only its
 --                           in-world actions and what it said in-world
 -- pg1_world_blackbox        the black box: every action taken in a world,
---                           by whom (agents, inhabitants, the world),
---                           append-only and hash-chained; kept 180 days and
+--                           by whom, append-only and hash-chained in two
+--                           chains per world: long (agents and subjects,
+--                           kept 180 days) and short (inhabitants' notable
+--                           events and daily summaries, kept 30 days);
 --                           kept when the world is deleted
+-- pg1_blackbox_purges       the audit of every operator purge: who, why,
+--                           how many, and the hash the chain re-anchors to
 --
--- Also: pg1_missions gets kind ('standard' | 'world' | 'project'),
--- world_id, and a project's stage and notes; the Core State areas get
--- 'sandbox'.
+-- Also: pg1_missions gets kind ('standard' | 'world') and world_id; the
+-- Core State areas get 'sandbox'.
 
 create table if not exists public.pg1_worlds (
   id uuid primary key default gen_random_uuid(),
@@ -73,8 +76,10 @@ create table if not exists public.pg1_sandbox_usage (
   owner text not null check (char_length(owner) <= 64),
   day date not null,
   steps integer not null default 0 check (steps >= 0),
+  actions integer not null default 0 check (actions >= 0),
   primary key (owner, day)
 );
+alter table public.pg1_sandbox_usage add column if not exists actions integer not null default 0 check (actions >= 0);
 
 create table if not exists public.pg1_sandbox_consents (
   id uuid primary key default gen_random_uuid(),
@@ -132,20 +137,16 @@ create table if not exists public.pg1_experiment_log (
 create index if not exists pg1_experiment_log_run_idx on public.pg1_experiment_log (run_id, id);
 
 -- World missions: a mission of kind 'world' evolves one of PG1's own worlds.
--- Only when pg1_missions exists (20261105120000_pg1_missions.sql).
+-- Only when pg1_missions exists (20261105120000_pg1_missions.sql). The kind
+-- check is added only when missing, so a later migration may widen it.
 do $$
 begin
   if to_regclass('public.pg1_missions') is not null then
     alter table public.pg1_missions add column if not exists kind text not null default 'standard';
     alter table public.pg1_missions add column if not exists world_id uuid references public.pg1_worlds (id) on delete set null;
-    -- Projects (lib/autonomous/projects.mjs): the stage reached and its notes
-    -- (brief, branch, pull request, test result). No code or secrets.
-    alter table public.pg1_missions add column if not exists stage text;
-    alter table public.pg1_missions add column if not exists project jsonb not null default '{}'::jsonb;
-    alter table public.pg1_missions drop constraint if exists pg1_missions_stage_check;
-    alter table public.pg1_missions add constraint pg1_missions_stage_check check (stage is null or stage in ('research', 'build', 'test', 'fix', 'review', 'done', 'failed'));
-    alter table public.pg1_missions drop constraint if exists pg1_missions_kind_check;
-    alter table public.pg1_missions add constraint pg1_missions_kind_check check (kind in ('standard', 'world', 'project'));
+    if not exists (select 1 from pg_constraint where conname = 'pg1_missions_kind_check' and conrelid = 'public.pg1_missions'::regclass) then
+      alter table public.pg1_missions add constraint pg1_missions_kind_check check (kind in ('standard', 'world'));
+    end if;
   end if;
 end $$;
 
@@ -164,26 +165,51 @@ begin
 end $$;
 
 -- The black box (lib/sandbox/blackbox.mjs). No foreign key to pg1_worlds on
--- purpose: a world's record outlives the world. Each row's hash covers the
--- row and the hash before it (prev_hash), so a changed or missing row
--- breaks the chain. Updates are refused; deletes only of rows past the
--- 180-day retention.
+-- purpose: a world's record outlives the world. Two chains per world, each
+-- numbered from 1: long (agents, blind subjects) and short (inhabitants and
+-- the world: notable events and one summary per in-world day). Each row's
+-- hash covers the row and the hash before it in its chain (prev_hash), so a
+-- changed or missing row breaks the chain. A row's detail is at most
+-- 2,048 bytes. Updates are refused; deletes are allowed only past the
+-- chain's retention (short 30 days, long 180) or through the operator's
+-- purge function, which writes an audit row. Both remove a chain's oldest
+-- rows, and the application then writes a checkpoint row with the hash of
+-- the last one removed, so the rest still verifies.
 create table if not exists public.pg1_world_blackbox (
   id bigint generated always as identity primary key,
   world_id uuid not null,
+  chain text not null check (chain in ('long', 'short')),
   seq bigint not null check (seq > 0),
   actor text not null check (char_length(actor) between 1 and 80),
-  actor_type text not null check (actor_type in ('agent', 'subject', 'inhabitant', 'world')),
+  actor_type text not null check (actor_type in ('agent', 'subject', 'inhabitant', 'world', 'system')),
   action text not null check (char_length(action) between 1 and 40),
-  detail jsonb not null default '{}'::jsonb,
+  detail jsonb not null default '{}'::jsonb check (octet_length(detail::text) <= 2048),
   tick bigint,
   at timestamptz not null default now(),
   prev_hash text not null check (prev_hash ~ '^[0-9a-f]{64}$'),
   hash text not null check (hash ~ '^[0-9a-f]{64}$'),
-  unique (world_id, seq)
+  unique (world_id, chain, seq),
+  constraint pg1_world_blackbox_chain_actor check (
+    (chain = 'long' and actor_type in ('agent', 'subject', 'system'))
+    or (chain = 'short' and actor_type in ('inhabitant', 'world', 'system')))
 );
-create index if not exists pg1_world_blackbox_actor_idx on public.pg1_world_blackbox (world_id, actor, seq desc);
-create index if not exists pg1_world_blackbox_at_idx on public.pg1_world_blackbox (at);
+create index if not exists pg1_world_blackbox_world_idx on public.pg1_world_blackbox (world_id, id desc);
+create index if not exists pg1_world_blackbox_actor_idx on public.pg1_world_blackbox (world_id, actor, id desc);
+create index if not exists pg1_world_blackbox_chain_at_idx on public.pg1_world_blackbox (chain, at);
+
+-- Every operator purge: who, why, how many, and the hash the chain re-anchors to.
+create table if not exists public.pg1_blackbox_purges (
+  id bigint generated always as identity primary key,
+  world_id uuid not null,
+  chain text not null check (chain in ('long', 'short')),
+  through_seq bigint not null check (through_seq > 0),
+  anchor_hash text not null check (anchor_hash ~ '^[0-9a-f]{64}$'),
+  removed bigint not null check (removed >= 0),
+  who text not null check (char_length(who) between 1 and 80),
+  why text not null check (char_length(why) between 1 and 500),
+  at timestamptz not null default now()
+);
+create index if not exists pg1_blackbox_purges_world_idx on public.pg1_blackbox_purges (world_id, at desc);
 
 create or replace function public.pg1_blackbox_append_only() returns trigger
 language plpgsql set search_path = public as $$
@@ -191,14 +217,85 @@ begin
   if tg_op = 'UPDATE' then
     raise exception 'the black box is append-only: records cannot be changed';
   end if;
-  if tg_op = 'DELETE' and old.at > now() - interval '180 days' then
-    raise exception 'the black box is append-only: records are kept 180 days';
+  -- DELETE: the operator's purge (pg1_blackbox_purge), or past retention.
+  if coalesce(current_setting('pg1.blackbox_purge', true), '') = 'on' then
+    return old;
   end if;
-  return case when tg_op = 'DELETE' then old else new end;
+  if old.chain = 'short' and old.at <= now() - interval '30 days' then
+    return old;
+  end if;
+  if old.at <= now() - interval '180 days' then
+    return old;
+  end if;
+  raise exception 'the black box is append-only: records are kept 30 days (inhabitants) or 180 days (agents and subjects)';
 end $$;
 drop trigger if exists pg1_world_blackbox_append_only on public.pg1_world_blackbox;
 create trigger pg1_world_blackbox_append_only before update or delete on public.pg1_world_blackbox
   for each row execute function public.pg1_blackbox_append_only();
+
+-- Operator only: remove a chain's records up to p_through_seq (its oldest),
+-- keeping at least the newest, and write the audit row. Returns the audit
+-- row, or nothing when there is no such record.
+create or replace function public.pg1_blackbox_purge(p_world_id uuid, p_chain text, p_through_seq bigint, p_who text, p_why text)
+returns setof public.pg1_blackbox_purges
+language plpgsql set search_path = public as $$
+declare
+  v_hash text;
+  v_head bigint;
+  v_removed bigint;
+begin
+  if coalesce(btrim(p_who), '') = '' or coalesce(btrim(p_why), '') = '' then
+    raise exception 'a purge needs who and why';
+  end if;
+  select b.hash into v_hash from public.pg1_world_blackbox b
+    where b.world_id = p_world_id and b.chain = p_chain and b.seq = p_through_seq;
+  if v_hash is null then
+    return;
+  end if;
+  select max(b.seq) into v_head from public.pg1_world_blackbox b
+    where b.world_id = p_world_id and b.chain = p_chain;
+  if p_through_seq >= v_head then
+    raise exception 'a purge keeps at least the newest record of the chain';
+  end if;
+  perform set_config('pg1.blackbox_purge', 'on', true);
+  delete from public.pg1_world_blackbox b
+    where b.world_id = p_world_id and b.chain = p_chain and b.seq <= p_through_seq;
+  get diagnostics v_removed = row_count;
+  perform set_config('pg1.blackbox_purge', 'off', true);
+  return query insert into public.pg1_blackbox_purges (world_id, chain, through_seq, anchor_hash, removed, who, why)
+    values (p_world_id, p_chain, p_through_seq, v_hash, v_removed, left(btrim(p_who), 80), left(btrim(p_why), 500))
+    returning *;
+end $$;
+
+-- Retention: per world, the last record of a chain older than the cutoff
+-- (never the newest), its hash, and how many records go with it.
+create or replace function public.pg1_blackbox_prune_plan(p_chain text, p_cutoff timestamptz)
+returns table (world_id uuid, through_seq bigint, anchor_hash text, removed bigint)
+language sql stable set search_path = public as $$
+  with heads as (
+    select b.world_id, max(b.seq) as head from public.pg1_world_blackbox b
+    where b.chain = p_chain group by b.world_id
+  ), last as (
+    select b.world_id, max(b.seq) as through_seq from public.pg1_world_blackbox b
+    join heads h on h.world_id = b.world_id
+    where b.chain = p_chain and b.at < p_cutoff and b.seq < h.head
+    group by b.world_id
+  )
+  select l.world_id, l.through_seq, b.hash,
+    (select count(*) from public.pg1_world_blackbox c where c.world_id = l.world_id and c.chain = p_chain and c.seq <= l.through_seq)
+  from last l
+  join public.pg1_world_blackbox b on b.world_id = l.world_id and b.chain = p_chain and b.seq = l.through_seq
+  limit 500;
+$$;
+
+-- The short chain's size, for one world and in all: the budgets
+-- (lib/sandbox/blackbox.mjs BLACKBOX_BUDGETS).
+create or replace function public.pg1_blackbox_counts(p_world_id uuid)
+returns table (world_rows bigint, global_rows bigint)
+language sql stable set search_path = public as $$
+  select (select count(*) from public.pg1_world_blackbox where chain = 'short' and world_id = p_world_id),
+         (select count(*) from public.pg1_world_blackbox where chain = 'short');
+$$;
 
 -- Who acted in a world, and how many records each has (the viewer's filter).
 create or replace function public.pg1_blackbox_actors(p_world_id uuid)
@@ -208,6 +305,9 @@ language sql stable set search_path = public as $$
   where world_id = p_world_id group by actor order by count(*) desc limit 500;
 $$;
 revoke all on function public.pg1_blackbox_actors(uuid) from public, anon, authenticated;
+revoke all on function public.pg1_blackbox_counts(uuid) from public, anon, authenticated;
+revoke all on function public.pg1_blackbox_prune_plan(text, timestamptz) from public, anon, authenticated;
+revoke all on function public.pg1_blackbox_purge(uuid, text, bigint, text, text) from public, anon, authenticated;
 revoke all on function public.pg1_blackbox_append_only() from public, anon, authenticated;
 
 alter table public.pg1_worlds enable row level security;
@@ -227,4 +327,6 @@ revoke all on public.pg1_experiment_runs from anon, authenticated;
 revoke all on public.pg1_experiment_anomalies from anon, authenticated;
 revoke all on public.pg1_experiment_log from anon, authenticated;
 alter table public.pg1_world_blackbox enable row level security;
+alter table public.pg1_blackbox_purges enable row level security;
 revoke all on public.pg1_world_blackbox from anon, authenticated;
+revoke all on public.pg1_blackbox_purges from anon, authenticated;

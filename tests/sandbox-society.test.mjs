@@ -67,10 +67,12 @@ test('leisure, shows, police and prisons, and every inhabitant\'s words stay fre
   const kinds = new Set(LIVE.events.map((e) => e.kind));
   for (const k of ['leisure', 'election', 'currency', 'talk', 'birth', 'career']) assert.ok(kinds.has(k), k);
   for (const e of LIVE.events.filter((x) => ['talk', 'hypothesis', 'proof', 'message_to_observer'].includes(x.kind))) assert.equal(containsBanned(e.summary), false, e.summary);
-  // The black box records inhabitants' travel and leisure.
+  // The black box: births and deaths one by one; travel and leisure counted in the daily summaries.
   const byId = new Map(LIVE.state.entities.map((e) => [e.id, e]));
-  const recs = fromEvents(LIVE.events, byId);
-  assert.ok(recs.some((r) => r.action === 'travel' && r.actor_type === 'inhabitant'));
+  const { notable, routine } = fromEvents(LIVE.events, byId);
+  assert.ok(notable.some((r) => r.action === 'birth' && r.actor_type === 'inhabitant'));
+  assert.ok(!notable.some((r) => ['travel', 'leisure', 'talk', 'meal', 'shower'].includes(r.action)), 'routine actions are never records of their own');
+  assert.ok(Object.values(routine).some((c) => c.travel > 0 && c.leisure > 0));
 });
 
 test('countries are where their islands are', () => {

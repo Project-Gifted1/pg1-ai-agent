@@ -22,7 +22,7 @@
 
 import { resolveOperatorSession } from '../lib/operatorSession.mjs';
 import { defaultSandboxStore } from '../lib/sandbox/store.mjs';
-import { observeWorld, stepWorldFor, listWorldsFor, pg1Principal, worldView, createWorld, readBlackbox, SandboxError } from '../lib/sandbox/worlds.mjs';
+import { observeWorld, stepWorldFor, listWorldsFor, pg1Principal, worldView, createWorld, readBlackbox, purgeWorldBlackbox, SandboxError } from '../lib/sandbox/worlds.mjs';
 import { TEMPLATE_NAMES } from '../lib/sandbox/templates.mjs';
 import { experimentsView } from '../lib/sandbox/experiments.mjs';
 import { SIMULATION_LABEL, BLIND_LABEL } from '../lib/sandbox/describe.mjs';
@@ -78,7 +78,11 @@ export default async function handler(req, res) {
     if (body.op === 'blackbox') {
       const w = await store.getWorld(String(body.id || ''));
       if (!w) return res.status(404).json({ error: 'not_found', message: 'No such world.' });
-      return res.status(200).json({ ok: true, ...(await readBlackbox(store, { owner: w.owner, quota: pg1.quota }, { world_id: w.id, actor: body.actor || null, limit: body.limit || 300, before: body.before == null ? null : body.before })) });
+      return res.status(200).json({ ok: true, ...(await readBlackbox(store, { owner: w.owner, quota: pg1.quota }, { world_id: w.id, actor: body.actor || null, chain: body.chain || null, limit: body.limit || 300, before: body.before == null ? null : body.before })) });
+    }
+    // The operator's purge: a chain's oldest records, with an audit row and a checkpoint.
+    if (body.op === 'purge') {
+      return res.status(200).json({ ok: true, ...(await purgeWorldBlackbox(store, { world_id: String(body.id || ''), chain: body.chain, through_seq: body.through_seq, who: 'operator', why: body.why })) });
     }
     if (body.op === 'experiments') return res.status(200).json({ ok: true, ...(await experimentsView(store, { limit: 50 })) });
     return res.status(400).json({ error: 'bad_request', message: 'Unknown sandbox op' });

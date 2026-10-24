@@ -60,7 +60,7 @@ test('discoveries are announced (and kept in the black box); medicine lengthens 
   assert.ok(events.some((e) => e.kind === 'invention' && /mastered: electricity \(energy\)/.test(e.summary)));
   assert.ok(rdNow(s, 'energy') !== 'wood and fire' && rdNext(s, 'energy'));
   assert.ok(people[0].properties.lifespan > 70, 'medicine added years');
-  assert.ok(fromEvents(events, new Map()).some((r) => r.action === 'invention' && r.actor_type === 'world'));
+  assert.ok(fromEvents(events, new Map()).notable.some((r) => r.action === 'invention' && r.actor_type === 'world'));
   // Pollution: coal and oil (energy 2..5) add it; solar and wind take it away.
   const dirty = soc({ rd: { ...emptyRd(), level: { ...emptyRd().level, energy: 4 } } });
   for (let i = 0; i < 40; i++) researchStep({ soc: dirty, rand: quiet, emit });
