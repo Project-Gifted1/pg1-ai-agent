@@ -71,6 +71,41 @@ jobs:
             exit 1
           fi
 
+  # PG1's own projects (lib/autonomous/projects.mjs) put their code and its
+  # test in lib/projects/<slug>/. They run here alone: the network blocked
+  # (tests/ci/no-network.mjs), no secrets (this workflow references none),
+  # a read-only token that checkout does not keep, and no npm install
+  # scripts beyond the lockfile's.
+  projects:
+    name: project tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Project tests (network blocked, no secrets)
+        env:
+          PG1_NET_GUARD_LOG: ${{ runner.temp }}/network-violations.jsonl
+        run: |
+          shopt -s nullglob
+          files=(lib/projects/*/*.test.mjs)
+          if [ ${#files[@]} -eq 0 ]; then echo "No project tests."; exit 0; fi
+          env -i PATH="$PATH" HOME="$HOME" PG1_NET_GUARD_LOG="$PG1_NET_GUARD_LOG" node --import ./tests/ci/no-network.mjs --test "${files[@]}"
+      - name: Fail on any attempted network access
+        if: always()
+        env:
+          PG1_NET_GUARD_LOG: ${{ runner.temp }}/network-violations.jsonl
+        run: |
+          if [ -s "$PG1_NET_GUARD_LOG" ]; then
+            echo "::error::Project tests tried to reach hosts outside the runner:"
+            cat "$PG1_NET_GUARD_LOG"
+            exit 1
+          fi
+
   browser:
     name: browser tests
     runs-on: ubuntu-latest
