@@ -230,7 +230,12 @@ test('5: paid text counts against PG1_DAILY_SPEND_CAP_USD: at the cap every paid
   assert.equal(spendCapAllows(env), false);
   assert.equal(budgetAllows(env, 'replicate'), false, 'media counts against the same cap');
   assert.equal(budgetAllows(env, 'groq'), true);
-  assert.deepEqual(planRoute(TASKS.HEAVY, { env, dataClass: DATA.OPERATOR }).map((c) => c.provider), ['gemini_free', 'groq', 'mistral', 'github_models', 'cloudflare']);
+  const capped = planRoute(TASKS.HEAVY, { env, dataClass: DATA.OPERATOR });
+  // OpenRouter stays, with its free (:free) models only: they cost $0.
+  assert.deepEqual(capped.map((c) => c.provider), ['gemini_free', 'groq', 'mistral', 'github_models', 'cloudflare', 'openrouter']);
+  const or = capped.find((c) => c.provider === 'openrouter');
+  assert.equal(or.freeOnly, true);
+  assert.deepEqual(or.models, [], 'no paid OpenRouter model at the cap');
 });
 
 test('5: operator films\' writing stages go free first; checks and client films do not', () => {
