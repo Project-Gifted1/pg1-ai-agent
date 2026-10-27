@@ -53,6 +53,7 @@ A deterministic engine steps the world: the same world and seed always give the 
   - turn with a limited rate (and bank, in the viewer); join a straight final lined up with the destination runway; descend on a 3-degree glide path; touch down near the threshold (a `touchdown` event); roll out braking; taxi off to a stand beside the runway;
   - not lined up, too high or too long: a go-around, and another approach;
   - an approach starts inside the world: from the end of the runway whose approach fits, slowing near the approach fix so the plane can turn onto it rather than circle it, and turning back before the edge of the world;
+- **Rockets and shuttles** launch, they do not jump: from the pad straight up, speeding up (12 m a step, each step, up to 400 m a step), leaning over toward where they are going once 300 m up; they slow to arrive, dock within 60 m of a station and move with it, and stay 40 steps (fuelling on the pad, docked at the station) before going again. Coming down, they fly high over the pad and descend upright, slowing to a soft landing. Pad to station takes about 35 steps (on main it took one).
   - speed changes gradually; never steeper than 8% up or down.
   - Helicopters, drones and balloons climb and come down vertically, smoothly.
   - Every island country has a runway with a heading (Saltreach an airstrip).
