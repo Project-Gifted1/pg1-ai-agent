@@ -56,15 +56,17 @@ test('they take turns, nobody repeats a line within a conversation, and partners
     void a; void b;
   }
   assert.ok(turns > 100, `${turns} changes of speaker`);
-  // Nobody tells their own partner how they and their partner are doing.
+  // Nobody tells their own partner how they and their partner are doing
+  // (checked by who they are talking to, not by name: names repeat).
   let st = initialState(UNI);
-  for (let i = 0; i < 6; i++) {
-    const r = stepWorld(UNI, st, 100); st = r.state;
+  for (let t = 0; t < 600; t++) {
+    st = stepWorld(UNI, st, 1).state;
     const idx = new Map(st.entities.map((e) => [e.id, e]));
-    for (const ev of r.events.filter((x) => x.kind === 'talk')) {
-      const who = idx.get(ev.ref); if (!who || !who.properties.partner) continue;
-      const partner = idx.get(who.properties.partner); if (!partner) continue;
-      assert.ok(!ev.summary.includes(`to ${partner.properties.name} ${partner.properties.family || ''}`.trim() + `: "${partner.properties.name} and I`), ev.summary);
+    for (const e of st.entities) {
+      const q = e.properties;
+      if (!q.partner || q.talking_to !== q.partner) continue;
+      const partner = idx.get(q.partner);
+      if (partner && String(q.saying || '').startsWith(`${partner.properties.name} and I`)) assert.fail(`${e.id} to their partner ${partner.id}: ${q.saying}`);
     }
   }
 });
