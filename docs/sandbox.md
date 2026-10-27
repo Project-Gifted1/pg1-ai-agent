@@ -359,10 +359,16 @@ Every blind run, its world and its outputs are labelled **"SIMULATION — blind 
 
 - Without `confirm` it only describes what it would add.
 - With `confirm`, in place, it adds a connected road network to each island (its existing streets joined up, a ring road, a way in to every place) and a runway, with a heading, to each island country without one.
+- For a world made from a template (the universe or the town), it also adds what that template has gained since the world was made (`lib/sandbox/template-sync.mjs`), so an early world looks and behaves like a new one:
+  - every thing in the template that the world lacks, when the world has nothing of that kind (a fire station, lifeguard towers, kayaks), or when it is a fixture of the sky (another far world). Never a person or an animal: the inhabitants are the world's own;
+  - a new building that would stand where the world has built something since goes to the nearest clear spot on the same land, and what belongs to it moves with it. A thing whose beach, station or orbit the world lacks is left out;
+  - details the sky's fixtures lack (a far world's technology, a planet's radiation belt), never changing one they have;
+  - new rules, and the template's version of a travel rule that has changed (where helicopters may land).
+  The road network is planned again round everything, and every vehicle plans its route again. Running it again adds nothing.
 - It never removes, renames or moves a building, person or animal: a new road goes round an existing building instead. Vehicles that are not on a road are moved onto the nearest one (it says how many), since vehicles keep strictly to the roads.
 - It keeps the world id, tick, state, society, research, relations and treasuries, and writes one `upgrade_world` record on the black box long chain (who, when, what was added).
 - It must fit the world's entity and size limits; if it cannot, it refuses and says what to delete first.
-- `tests/sandbox-upgrade.test.mjs` upgrades a universe made by the earlier template (`tests/fixtures/sandbox-universe-v1.json`) after 1,200 ticks and checks that nothing else changed (only off-road vehicles moved, each onto a road), then that every vehicle position in 2,000 more steps is on a road.
+- `tests/sandbox-upgrade.test.mjs` upgrades a universe made by the earlier template (`tests/fixtures/sandbox-universe-v1.json`) after 1,200 ticks and checks that nothing else changed (only off-road vehicles moved, each onto a road), then that every vehicle position in 2,000 more steps is on a road. `tests/sandbox-template-sync.test.mjs` checks what a template adds.
 
 ## Commands (operator only)
 
