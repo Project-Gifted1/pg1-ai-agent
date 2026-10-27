@@ -466,7 +466,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     const sphere = new THREE.Mesh(new THREE.SphereGeometry(size, coarse ? 48 : 96, coarse ? 24 : 48), mat);
     g.add(sphere);
     // Air: a glowing rim round worlds with clouds, oceans or an alien sky.
-    if (e.base === 'alien_world' || (e.base === 'planet' && (e.props.clouds || new THREE.Color(color).b > new THREE.Color(color).r))) {
+    const airy = e.base === 'alien_world' || (e.base === 'planet' && (e.props.clouds || new THREE.Color(color).b > new THREE.Color(color).r));
+    if (airy) {
       const shell = new THREE.Mesh(new THREE.SphereGeometry(size * 1.05, 64, 32), new THREE.ShaderMaterial({ vertexShader: ATMO_VERT, fragmentShader: ATMO_FRAG, uniforms: { uColor: { value: new THREE.Color(e.base === 'alien_world' ? color : '#6fb6ff') } }, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
       g.add(shell);
     }
@@ -476,7 +477,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       g.add(halo);
       const light = new THREE.PointLight(color, 3, 0, 0);
       g.add(light);
-    } else {
+    } else if (!airy) {
+      // (Worlds with air have the rim glow instead: the two together wash a world out.)
       const atmo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: e.base === 'planet' ? color : 0x888888, transparent: true, opacity: e.base === 'planet' ? 0.35 : 0.12, blending: THREE.AdditiveBlending, depthWrite: false }));
       atmo.scale.setScalar(size * 3);
       g.add(atmo);
