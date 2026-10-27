@@ -184,7 +184,7 @@ Open it from the `/sandbox` or `/world <id>` reply. It is a full-screen view in 
   - boats rock;
   - rockets fire their engines on the way up;
   - the space station is built like a real one: a long truss with four pairs of solar wings and radiators, a line of modules joined by docking nodes, a docking port with lights, a windowed cupola, a dish, navigation lights, and a habitat ring on spokes that turns slowly; satellites have gold foil, solar wings and a dish; colonies have domes with gardens, tunnels, a solar farm, a landing pad and a rover;
-  - planets have painted surfaces, rings, clouds and orbit paths;
+  - planets and moons have surfaces painted from seeded noise (ocean worlds with continents and ice caps, gas giants in bands, cratered moons, cracked ice worlds), rings, clouds, a glowing rim of air on worlds that have it, and orbit paths; the world's asteroids are drawn among a belt of many more rocks where they orbit (scenery, like the woods);
   - riders sit on bikes and horses, and are out of sight inside cars, buses and rockets.
 - **What surrounds them** (`environment.js`):
   - a sky and sun on the world's day, with dawn, dusk and night, lit windows and stars;
