@@ -10,6 +10,8 @@
 // The add-ons are three.js r180's own (public/vendor/three/addons/, MIT).
 
 const ADDONS = '/vendor/three/addons/postprocessing/';
+// A glow, not a surface: sprites, and see-through things that write no depth.
+const isFlat = (o) => o.isSprite || o.isPoints || (o.material && !Array.isArray(o.material) && o.material.transparent && o.material.depthWrite === false);
 
 export async function createPost(THREE, renderer, scene, camera, settings) {
   if (!settings || (settings.aa === 'none' && !settings.gtao && !settings.bloom && !settings.dof)) return null;
@@ -38,6 +40,11 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     gtao.updateGtaoMaterial({ radius: 1.0, distanceExponent: 1.6, thickness: 0.8, scale: 1, samples: 12, distanceFallOff: 0.6, screenSpaceRadius: false });
     gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
     gtao.blendIntensity = 0.6;
+    // Glow sprites and see-through shells (halos, atmospheres, nebulae, lamp
+    // pools) are not surfaces: kept out of its depth and normals, or each
+    // would cast a square of shadow.
+    const hideFlat = gtao._overrideVisibility.bind(gtao);
+    gtao._overrideVisibility = function () { hideFlat(); scene.traverse((o) => { if (o.visible && isFlat(o)) { o.visible = false; this._visibilityCache.push(o); } }); };
     composer.addPass(gtao);
   }
   let bloom = null;
@@ -49,6 +56,9 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
   let bokeh = null;
   if (bokehMod) {
     bokeh = new bokehMod.BokehPass(scene, camera, { focus: 300, aperture: 0.00012, maxblur: 0.008 });
+    // Its depth render leaves out the same glows (they are not where things are).
+    const bokehRender = bokeh.render.bind(bokeh);
+    bokeh.render = (...a) => { const hidden = []; scene.traverse((o) => { if (o.visible && isFlat(o)) { o.visible = false; hidden.push(o); } }); try { bokehRender(...a); } finally { for (const o of hidden) o.visible = true; } };
     composer.addPass(bokeh);
   }
   let smaa = null;
