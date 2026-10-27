@@ -462,6 +462,10 @@
     .secret-once-mask { font-family: ui-monospace, monospace; letter-spacing: 0.04em; opacity: 0.8; }
     .secret-once-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .secret-once button { min-height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); background: #1d1d21; color: inherit; font: inherit; cursor: pointer; }
+    /* Which world this is, on the view itself (the world list's label). */
+    .sandbox-world-badge { position: absolute; left: 8px; bottom: 8px; z-index: 2; max-width: calc(100% - 16px); padding: 4px 10px; border-radius: 999px; background: rgba(10,10,11,0.72); color: #e8e8ec; font: 600 0.72rem/1.3 var(--lx-font, system-ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+    .sandbox-world-badge[hidden] { display: none; }
+    .sandbox-world-line { margin: 2px 0 6px; color: var(--lx-muted, #9a9aa3); font-size: 0.8rem; }
     .sandbox-clock { position: absolute; top: 8px; left: 8px; max-width: calc(100% - 128px); padding: 4px 10px; border-radius: 999px; background: rgba(10,10,11,0.72); color: #e8e8ec; font: 600 0.72rem/1.3 var(--lx-font, system-ui); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .sandbox-minimap { position: absolute; top: 8px; right: 8px; width: 104px; height: 104px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); pointer-events: auto; cursor: pointer; }
     .sandbox-label { position: absolute; top: 0; left: 0; padding: 3px 8px; border-radius: 6px; background: rgba(243,198,35,0.95); color: #111; font: 700 0.72rem/1.2 var(--lx-font, system-ui); white-space: nowrap; max-width: 70%; overflow: hidden; text-overflow: ellipsis; }
@@ -2933,6 +2937,7 @@
           <button type="button" class="lx-btn" id="sandbox-new" onclick="createSandboxUniverse()">New universe</button>
           <span class="sandbox-tick" id="sandbox-tick" aria-live="polite"></span>
         </div>
+        <p class="sandbox-world-line" id="sandbox-world-line"></p>
         <div class="lx-filter sandbox-views" role="group" aria-label="Camera">
           <button type="button" data-view="overview" aria-pressed="true" onclick="setSandboxView('overview')">Overview</button>
           <button type="button" data-view="follow" aria-pressed="false" onclick="setSandboxView('follow')">Follow</button>
@@ -3817,6 +3822,18 @@
       if (label) { label.textContent = w && w.label ? w.label : 'Simulation'; label.dataset.tone = w && w.blind ? 'over' : 'think'; }
       const tick = document.getElementById('sandbox-tick');
       if (tick) tick.textContent = w ? `Step ${w.tick} · ${w.entity_count} entities${w.readOnly ? ' · read only' : ''}` : '';
+      // Which world this is: on the view (a badge) and over it (a line), as in the world list.
+      const entry = w && (sandboxState.worlds || []).find((x) => x.id === w.id);
+      const which = entry ? sandboxWorldLabel(entry) : w ? `${w.name} · ${String(w.id).slice(0, 8)}` : '';
+      const line = document.getElementById('sandbox-world-line');
+      if (line) line.textContent = which;
+      const view = document.getElementById('sandbox-view');
+      if (view) {
+        let badge = view.querySelector('.sandbox-world-badge');
+        if (!badge) { badge = document.createElement('div'); badge.className = 'sandbox-world-badge'; badge.setAttribute('aria-hidden', 'true'); view.appendChild(badge); }
+        badge.textContent = entry ? [entry.name, entry.first ? 'your first universe' : '', entry.kind || ''].filter(Boolean).join(' · ') : which;
+        badge.hidden = !which;
+      }
       for (const id of ['sandbox-play', 'sandbox-step']) { const b = document.getElementById(id); if (b) b.disabled = !w || !!w.readOnly; }
       const rules = document.getElementById('sandbox-rules');
       if (rules) rules.innerHTML = w && w.rules && w.rules.length ? w.rules.map((r) => `<li class="lx-row" data-tone="think"><span class="lx-dot"></span><span class="lx-row-main">${escapeHTML(r.text)}</span><span class="lx-row-end"><code>${escapeHTML(r.type)}</code></span></li>`).join('') : '<li class="lx-row"><span class="lx-dot"></span><span class="lx-row-main">No rules yet.</span></li>';
@@ -3997,11 +4014,25 @@
       list.innerHTML = older ? list.innerHTML + html : (html || '<li class="lx-row"><span class="lx-dot"></span><span class="lx-row-main">Nothing recorded yet.</span></li>');
       if (data.records.length) sandboxBlackboxBefore = data.records[data.records.length - 1].id;
     }
+    // Which world is which: its name, then what it is, whose, when it began and
+    // the start of its id; the first universe says so.
+    function sandboxWorldLabel(w) {
+      const when = w.created_at ? new Date(w.created_at) : null;
+      const day = when && !isNaN(when) ? when.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+      return [w.name, w.first ? 'your first universe' : '', w.kind || '', w.owner, w.blind ? 'blind run' : '', day ? `started ${day}` : '', String(w.id || '').slice(0, 8)].filter(Boolean).join(' · ');
+    }
+    // A new universe gets a name no other world has: Pg1-Universe, Pg1-Universe 2, ...
+    function nextUniverseName() {
+      const names = new Set((sandboxState.worlds || []).map((w) => w.name));
+      if (!names.has('Pg1-Universe')) return 'Pg1-Universe';
+      let n = 2; while (names.has(`Pg1-Universe ${n}`)) n++;
+      return `Pg1-Universe ${n}`;
+    }
     async function createSandboxUniverse() {
       const b = document.getElementById('sandbox-new');
       if (b) b.disabled = true;
       try {
-        const out = await sandboxRequest({ op: 'create', template: 'universe', name: 'Pg1-Universe' });
+        const out = await sandboxRequest({ op: 'create', template: 'universe', name: nextUniverseName() });
         await openSandboxScreen(out.world && out.world.id);
       } catch (e) {
         const tick = document.getElementById('sandbox-tick');
@@ -4064,7 +4095,7 @@
       try { list = await sandboxRequest({ op: 'list' }); } catch (e) { list = null; }
       sandboxState.worlds = list ? list.worlds : [];
       const select = document.getElementById('sandbox-world');
-      if (select) select.innerHTML = sandboxState.worlds.length ? sandboxState.worlds.map((w) => `<option value="${escapeHTML(w.id)}">${escapeHTML(w.name)} · ${escapeHTML(w.owner)}${w.blind ? ' · blind run' : ''}</option>`).join('') : '<option value="">No worlds yet</option>';
+      if (select) select.innerHTML = sandboxState.worlds.length ? sandboxState.worlds.map((w) => `<option value="${escapeHTML(w.id)}">${escapeHTML(sandboxWorldLabel(w))}</option>`).join('') : '<option value="">No worlds yet</option>';
       const pick = worldId && sandboxState.worlds.some((w) => w.id === worldId) ? worldId : (sandboxState.worlds[0] && sandboxState.worlds[0].id) || '';
       if (select) select.value = pick;
       await selectSandboxWorld(pick);
