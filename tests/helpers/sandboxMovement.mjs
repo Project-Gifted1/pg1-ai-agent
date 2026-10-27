@@ -26,7 +26,7 @@ export function measureRun(spec, state, steps) {
       const inside = typeof e.properties.inside === 'string' && index.has(e.properties.inside);
       const z = e.position.z || 0;
       // (Someone swimming off a beach is in the water on purpose; anywhere else it is wrong.)
-      const swimming = e.properties.swimming === true && beaches.some((b) => Math.hypot(b.position.x - e.position.x, b.position.y - e.position.y) < 120);
+      const swimming = e.properties.swimming === true && beaches.some((b) => Math.hypot(b.position.x - e.position.x, b.position.y - e.position.y) < 200);   // (a beach is up to 200 m long; surfers go 45 m out)
       if (isGroundKind(e.kind) && !inside && z < 1 && !swimming && !mc.terrain.isLand(e.position.x, e.position.y)) out.groundOnWater.push([st.tick, e.id]);
       if (isWaterKind(e.kind) && mc.terrain.isLand(e.position.x, e.position.y)) out.waterOnLand.push([st.tick, e.id]);
       if (ROAD_VEHICLES.has(String(e.kind)) && !inside && mc.roads) { out.vehiclePositions++; if (onRoad(mc.roads, e.position.x, e.position.y, { paths: e.kind === 'bike' })) out.onRoadPositions++; }
