@@ -226,3 +226,14 @@ test('the walls of Benin: nine gates on the ring, each with a guard; village enc
   }
   assert.ok(readFileSync(new URL('../docs/sandbox-benin-warri.md', import.meta.url), 'utf8').includes('| B7 |'), 'the doc sources it');
 });
+
+test('landings stand at the water\'s edge and fishing villages beside the water, never in it', () => {
+  const T = buildTerrain(SPEC.entities, SPEC.size);
+  for (const e of SPEC.entities.filter((x) => x.kind === 'canoe_landing' || x.kind === 'fishing_village')) {
+    const { x, y } = e.position;
+    assert.equal(T.isLand(x, y), true, `${e.id} is on land`);
+    const w = T.nearestWater(x, y);
+    const d = Math.hypot(w.x - x, w.y - y);
+    assert.ok(d <= (e.kind === 'canoe_landing' ? 25 : 60), `${e.id} is ${Math.round(d)} m from the water`);
+  }
+});
