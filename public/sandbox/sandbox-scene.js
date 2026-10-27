@@ -723,9 +723,6 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   if (io) io.observe(container);
   const onVis = () => schedule();
   document.addEventListener('visibilitychange', onVis);
-  const running = () => visible && !document.hidden;
-  const tmpA = new THREE.Vector3(); const tmpB = new THREE.Vector3(); const proj = new THREE.Vector3(); const tmpT = new THREE.Vector3();
-
   function poseOf(m, e, now) {
     const q = e.props; const inn = m.inner;
     const arm = (role) => m.parts.find((x) => x.role === role);
@@ -741,6 +738,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     else if (q.activity === 'sandcastle') { inn.position.y = -0.45; inn.rotation.z = 0.25; }
     else if (q.activity === 'volleyball') { inn.position.y = Math.max(0, Math.sin(now / 260 + m.phase)) * 0.6; const a = arm('armR'); if (a) a.node.rotation.z = Math.PI * 0.8; }
   }
+  const running = () => visible && !document.hidden;
+  const tmpA = new THREE.Vector3(); const tmpB = new THREE.Vector3(); const proj = new THREE.Vector3(); const tmpT = new THREE.Vector3();
 
   function animate(dt, now) {
     const t = Math.min(1, (now - stepStart) / stepDur);
@@ -844,8 +843,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     const step = acc; acc = 0;
     if (lastRender && now - lastRender < 250) governor.sample(now - lastRender);
     lastRender = now;
-    const tickF = animate(step, now);
     animateFires(now);
+    const tickF = animate(step, now);
 
     // Camera modes.
     if ((mode === 'follow' || mode === 'tour') && selectedId) {
