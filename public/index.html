@@ -2936,6 +2936,7 @@
         <button type="button" role="tab" id="sandbox-tab-society" aria-pressed="false" aria-selected="false" onclick="showSandboxPanel('society')">Society</button>
         <button type="button" role="tab" id="sandbox-tab-blackbox" aria-pressed="false" aria-selected="false" onclick="showSandboxPanel('blackbox')">Black box</button>
         <button type="button" role="tab" id="sandbox-tab-experiments" aria-pressed="false" aria-selected="false" onclick="showSandboxPanel('experiments')">Experiments</button>
+        <button type="button" role="tab" id="sandbox-tab-history" aria-pressed="false" aria-selected="false" onclick="showSandboxPanel('history')" hidden>History</button>
       </div>
       <div class="sandbox-panel" id="sandbox-panel-worlds" role="tabpanel" aria-labelledby="sandbox-tab-worlds">
         <div class="sandbox-controls">
@@ -2943,6 +2944,7 @@
           <button type="button" class="lx-btn is-primary" id="sandbox-play" onclick="toggleSandboxPlay()" aria-pressed="false">Play</button>
           <button type="button" class="lx-btn" id="sandbox-step" onclick="stepSandboxWorld(1)">Step</button>
           <select class="sandbox-speed" id="sandbox-speed" aria-label="Speed" onchange="setSandboxSpeed(this.value)"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select>
+          <select class="sandbox-speed" id="sandbox-template" aria-label="Template for a new universe"><option value="universe">Pg1-Universe</option><option value="benin-warri">Benin–Warri c. 1610</option></select>
           <button type="button" class="lx-btn" id="sandbox-new" onclick="createSandboxUniverse()">New universe</button>
           <span class="sandbox-tick" id="sandbox-tick" aria-live="polite"></span>
         </div>
@@ -2977,6 +2979,14 @@
           <p class="lx-sub">Every action taken in this world and by whom: agents' tool calls, each inhabitant's decisions, words and deeds, the society's events. Append-only; each record carries the hash of the one before, so a changed or missing record shows here.</p>
           <div class="sandbox-controls"><select id="sandbox-bb-actor" aria-label="Whose actions" onchange="renderSandboxBlackbox()"><option value="">Everyone</option></select><button type="button" class="lx-btn" id="sandbox-bb-more" onclick="renderSandboxBlackbox(true)">Older</button></div>
           <ul class="lx-rows" id="sandbox-bb-rows"></ul>
+        </section>
+      </div>
+      <div class="sandbox-panel" id="sandbox-panel-history" role="tabpanel" aria-labelledby="sandbox-tab-history" hidden>
+        <section class="lx-card" data-tone="think" aria-labelledby="sandbox-history-h">
+          <div class="lx-head"><h3 class="lx-section-h" id="sandbox-history-h">History</h3><span class="lx-badge" data-tone="think" id="sandbox-history-label">Simulation inspired by history; inhabitants are fictional.</span></div>
+          <p class="lx-sub" id="sandbox-history-intro"></p>
+          <ol class="lx-timeline" id="sandbox-history-timeline"></ol>
+          <ul class="lx-rows" id="sandbox-history-notes"></ul>
         </section>
       </div>
       <div class="sandbox-panel" id="sandbox-panel-experiments" role="tabpanel" aria-labelledby="sandbox-tab-experiments" hidden>
@@ -3818,7 +3828,7 @@
       return data;
     }
     function showSandboxPanel(which) {
-      for (const k of ['worlds', 'society', 'blackbox', 'experiments']) {
+      for (const k of ['worlds', 'society', 'blackbox', 'experiments', 'history']) {
         const tab = document.getElementById(`sandbox-tab-${k}`);
         const panel = document.getElementById(`sandbox-panel-${k}`);
         if (tab) { tab.setAttribute('aria-pressed', String(k === which)); tab.setAttribute('aria-selected', String(k === which)); }
@@ -3827,6 +3837,21 @@
       if (which === 'experiments') renderSandboxExperiments();
       if (which === 'society') renderSandboxSociety(sandboxState.world);
       if (which === 'blackbox') renderSandboxBlackbox();
+      if (which === 'history') renderSandboxHistory(sandboxState.world);
+    }
+    // A world inspired by history (public/sandbox/history.js): its History tab, with the sources.
+    async function renderSandboxHistory(w) {
+      const tab = document.getElementById('sandbox-tab-history');
+      let h = null;
+      try { h = (await import('/sandbox/history.js')).historyOf(w); } catch (e) { h = null; }
+      if (tab) tab.hidden = !h;
+      if (!h) { const panel = document.getElementById('sandbox-panel-history'); if (panel && !panel.hidden) showSandboxPanel('worlds'); return; }
+      const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+      set('sandbox-history-h', `History · ${escapeHTML(h.title)} (Simulation)`);
+      set('sandbox-history-label', escapeHTML(h.label));
+      set('sandbox-history-intro', escapeHTML(h.intro));
+      set('sandbox-history-timeline', h.timeline.map((t) => `<li data-tone="think"><div class="lx-card"><span class="lx-meta">${escapeHTML(t.when)}</span><p class="lx-sub">${escapeHTML(t.text)}</p><p class="lx-sub"><small>Source: ${escapeHTML(t.sources)}</small></p></div></li>`).join(''));
+      set('sandbox-history-notes', h.notes.map((n) => `<li class="lx-row" data-tone="${n.head === 'The hard truth' ? 'over' : 'think'}"><span class="lx-dot"></span><span class="lx-row-main"><strong>${escapeHTML(n.head)}</strong></span><span class="lx-row-sub">${escapeHTML(n.text)}${n.sources ? ` <small>Source: ${escapeHTML(n.sources)}</small>` : ''}</span></li>`).join(''));
     }
     function renderSandboxWorld(w) {
       sandboxState.world = w;
@@ -3857,6 +3882,7 @@
       if (sandboxScene && sandboxScene.view && ['space', 'follow'].includes(sandboxScene.view())) renderSandboxSpace(w);
       const socPanel = document.getElementById('sandbox-panel-society');
       if (socPanel && !socPanel.hidden) renderSandboxSociety(w);
+      renderSandboxHistory(w);
     }
     // Play speed: 1× is one step every 1.2 s; the scene glides between steps.
     var sandboxSpeed = 1;
@@ -4099,6 +4125,18 @@
     async function createSandboxUniverse() {
       const b = document.getElementById('sandbox-new');
       if (b) b.disabled = true;
+      // The picker's other world: Benin–Warri c. 1610.
+      const sel = document.getElementById('sandbox-template');
+      if (sel && sel.value === 'benin-warri') {
+        try {
+          const out = await sandboxRequest({ op: 'create', template: 'benin-warri', name: 'Benin–Warri c. 1610' });
+          await openSandboxScreen(out.world && out.world.id);
+        } catch (e) {
+          const tick = document.getElementById('sandbox-tick');
+          if (tick) tick.textContent = e.message || 'Could not create the world.';
+        } finally { if (b) b.disabled = false; }
+        return;
+      }
       try {
         const out = await sandboxRequest({ op: 'create', template: 'universe', name: nextUniverseName() });
         await openSandboxScreen(out.world && out.world.id);
