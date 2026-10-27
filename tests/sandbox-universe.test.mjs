@@ -40,7 +40,7 @@ test('the catalogue: people, animals, plants, buildings, roads, vehicles from bi
   assert.ok(RULE_TYPES.includes('travel') && RULE_TYPES.includes('orbit'));
 });
 
-test('travel: a car drives on the ground to a house and stops at its door; a plane climbs to cruise and lands; arrival is recorded', () => {
+test('travel: a car drives on the ground to a house and stops at its door; a plane rolls, climbs and lands; arrival is recorded', () => {
   const spec = validateSpec({
     size: { x: 3000, y: 3000, z: 5000 },
     entities: [
@@ -53,7 +53,10 @@ test('travel: a car drives on the ground to a house and stops at its door; a pla
   });
   const first = stepWorld(spec, initialState(spec), 1).state;
   assert.equal(at(first, 'c1').position.z, 0, 'cars stay on the ground');
-  assert.ok(at(first, 'p1').position.z > 0, 'the plane climbs');
+  // Realistic flight (lib/sandbox/movement.mjs): no instant climb. The plane
+  // rolls along the ground first, then lifts off within a few steps.
+  assert.equal(at(first, 'p1').position.z, 0, 'the take-off roll is on the ground');
+  assert.ok(run(spec, 8).state.entities.find((e) => e.id === 'p1').position.z > 0, 'the plane climbs');
   const { state, events } = run(spec, 40);
   const car = at(state, 'c1');
   const d = Math.hypot(car.position.x - 1000, car.position.y - 1000);
