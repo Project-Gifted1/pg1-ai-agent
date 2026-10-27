@@ -430,12 +430,23 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     add(furnitureGroup, flayers, [matBody, matGlass, matGlow]);
   }
 
-  // A faint ring for the lens flare.
-  let ringT = null;
+  // The lens flare's textures: light on black (the flare adds its colour,
+  // so its edges must be black, not transparent white).
+  let ringT = null; let flareT = null;
+  function flareTex() {
+    if (flareT) return flareT;
+    const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+    g.fillStyle = '#000'; g.fillRect(0, 0, 128, 128);
+    const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, '#fff'); gr.addColorStop(0.2, '#777'); gr.addColorStop(0.6, '#111'); gr.addColorStop(1, '#000');
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    flareT = new THREE.CanvasTexture(c); flareT.colorSpace = THREE.SRGBColorSpace;
+    return flareT;
+  }
   function ringTex() {
     if (ringT) return ringT;
     const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
-    g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 6; g.beginPath(); g.arc(64, 64, 50, 0, 7); g.stroke();
+    g.fillStyle = '#000'; g.fillRect(0, 0, 128, 128);
+    g.strokeStyle = '#555'; g.lineWidth = 6; g.beginPath(); g.arc(64, 64, 50, 0, 7); g.stroke();
     ringT = new THREE.CanvasTexture(c); ringT.colorSpace = THREE.SRGBColorSpace;
     return ringT;
   }
@@ -460,9 +471,9 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       if (flareMod) {
         const lf = new flareMod.Lensflare();
         const c = new THREE.Color(color);
-        lf.addElement(new flareMod.LensflareElement(glow, 420, 0, c));
-        lf.addElement(new flareMod.LensflareElement(ringTex(), 160, 0.35, c));
-        for (const [sz, d] of [[60, 0.6], [90, 0.75], [140, 0.9], [70, 1.0]]) lf.addElement(new flareMod.LensflareElement(glow, sz, d, new THREE.Color(0x88aaff)));
+        lf.addElement(new flareMod.LensflareElement(flareTex(), 360, 0, c));
+        lf.addElement(new flareMod.LensflareElement(ringTex(), 160, 0.35, c.clone().multiplyScalar(0.5)));
+        for (const [sz, d] of [[60, 0.6], [90, 0.75], [140, 0.9], [70, 1.0]]) lf.addElement(new flareMod.LensflareElement(flareTex(), sz, d, new THREE.Color(0x3a4a80)));
         light.add(lf);
       }
     } else {
@@ -625,7 +636,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       const t = star ? toScene(star) : new THREE.Vector3(0, world.spaceAlt * 1.5, 0);
       controls.flyTo({ target: t, dist: star && star.base === 'star' ? 2900 : 900, phi: 1.36 });
     }
-    if (mode === 'follow' && selectedId) controls.flyTo({ dist: Math.max(14, sizeOf(selectedId) * 4.5), phi: 1.18 });
+    // Close enough to see it: a station or colony fills the view; a planet sits in it.
+    if (mode === 'follow' && selectedId) { const se = world.entities.find((x) => x.id === selectedId); const close = se && ['space_station', 'colony', 'satellite'].includes(se.base); controls.flyTo({ dist: Math.max(14, sizeOf(selectedId) * (close ? 1.3 : 4.5)), phi: close ? 1.05 : 1.18 }); }
     if (mode === 'tour') tourNext = 0;
     // Explore: down at eye height where the camera looks; drag to look
     // round, tap the ground to walk there, pinch to step back.
@@ -1068,7 +1080,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       if (post) post.dispose();
       for (const d of [streets, coast, foliage]) if (d) d.dispose();
       if (farMesh) farMesh.dispose(); farBox.dispose(); farMat.dispose();
-      if (ringT) ringT.dispose();
+      if (ringT) ringT.dispose(); if (flareT) flareT.dispose();
       glow.dispose(); renderer.dispose(); canvas.remove(); hud.remove();
     }
   };

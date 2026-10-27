@@ -3874,7 +3874,8 @@
       if (!box) return;
       const ents = (w && w.entities) || [];
       const KINDS = ['star', 'planet', 'moon', 'space_station', 'colony', 'satellite', 'shuttle', 'alien_world'];
-      const list = ents.filter((e) => KINDS.includes(String(e.kind).replace(/[_-][a-z0-9]+$/, '')) || KINDS.includes(e.kind));
+      const base = (e) => (KINDS.includes(e.kind) ? e.kind : String(e.kind).replace(/[_-][a-z0-9]+$/, ''));
+      const list = ents.filter((e) => KINDS.includes(base(e))).sort((a, b) => KINDS.indexOf(base(a)) - KINDS.indexOf(base(b)) || (a.id < b.id ? -1 : 1));
       const sel = sandboxScene && sandboxScene.selected ? sandboxScene.selected() : null;
       box.hidden = !list.length || !(mode === 'space' || (mode === 'follow' && list.some((e) => e.id === sel)));
       if (box.hidden) return;
