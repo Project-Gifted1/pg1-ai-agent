@@ -52,6 +52,7 @@ A deterministic engine steps the world: the same world and seed always give the 
   - climb out at about 7% (4 degrees) and cruise (airliners at 600 m, small planes 350 m, jets 1,200 m; always below the space altitude, and lower when the trip is short);
   - turn with a limited rate (and bank, in the viewer); join a straight final lined up with the destination runway; descend on a 3-degree glide path; touch down near the threshold (a `touchdown` event); roll out braking; taxi off to a stand beside the runway;
   - not lined up, too high or too long: a go-around, and another approach;
+  - an approach starts inside the world: from the end of the runway whose approach fits, slowing near the approach fix so the plane can turn onto it rather than circle it, and turning back before the edge of the world;
   - speed changes gradually; never steeper than 8% up or down.
   - Helicopters, drones and balloons climb and come down vertically, smoothly.
   - Every island country has a runway with a heading (Saltreach an airstrip).
