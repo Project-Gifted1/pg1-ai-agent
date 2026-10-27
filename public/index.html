@@ -4026,10 +4026,20 @@
     async function createSandboxUniverse() {
       const b = document.getElementById('sandbox-new');
       if (b) b.disabled = true;
+      // The picker's other world: Benin–Warri c. 1610.
+      const sel = document.getElementById('sandbox-template');
+      if (sel && sel.value === 'benin-warri') {
+        try {
+          const out = await sandboxRequest({ op: 'create', template: 'benin-warri', name: 'Benin–Warri c. 1610' });
+          await openSandboxScreen(out.world && out.world.id);
+        } catch (e) {
+          const tick = document.getElementById('sandbox-tick');
+          if (tick) tick.textContent = e.message || 'Could not create the world.';
+        } finally { if (b) b.disabled = false; }
+        return;
+      }
       try {
-        const sel = document.getElementById('sandbox-template');
-        const template = sel && sel.value === 'benin-warri' ? 'benin-warri' : 'universe';
-        const out = await sandboxRequest({ op: 'create', template, name: template === 'benin-warri' ? 'Benin–Warri c. 1610' : 'Pg1-Universe' });
+        const out = await sandboxRequest({ op: 'create', template: 'universe', name: 'Pg1-Universe' });
         await openSandboxScreen(out.world && out.world.id);
       } catch (e) {
         const tick = document.getElementById('sandbox-tick');

@@ -894,7 +894,7 @@ function thing(T, kind, seed) {
 
 // --- the factory ----------------------------------------------------------------------
 
-const PROP_KEYS = ['color', 'roof', 'floors', 'length', 'width', 'size', 'shirt', 'livery', 'awning', 'lattice', 'built', 'radius', 'gates', 'shape', 'small'];
+const PROP_KEYS = ['color', 'roof', 'floors', 'length', 'width', 'size', 'shirt', 'livery', 'awning', 'lattice', 'built'];
 export function modelKey(kind, p, id) {
   const b = baseKind(kind);
   const c = classOf(kind);
@@ -903,6 +903,8 @@ export function modelKey(kind, p, id) {
   const vary = c === 'person' || b === 'tree' || b === 'pine' || b === 'bush' || b === 'rock' || b === 'asteroid' ? (hashOf(id) % 6) : 0;
   return `${b}|${parts}|${vary}`;
 }
+// The benin-warri template's properties that change a model.
+PROP_KEYS.push('radius', 'gates', 'shape', 'small');
 
 export function buildModel(T, kind, p = {}, id = '') {
   const b = baseKind(kind);
