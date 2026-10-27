@@ -227,6 +227,7 @@ Open it from the `/sandbox` or `/world <id>` reply. It is a full-screen view in 
 - **On the view:** a clock ("Simulation · day 1 · 09:24 · in space") and a minimap (tap to go there).
 - **A 2D map** instead with reduced motion or no WebGL.
 - **A world list that says which is which:** each world's name, "your first universe" on PG1's oldest world, what kind of world it is (universe, Benin–Warri, town, meadow, custom), whose it is, the day it began and the start of its id. **New universe** gives each new one a name no other world has (Pg1-Universe, Pg1-Universe 2, ...).
+- **On the view itself,** a badge in the bottom corner says which world you are watching (its name, "your first universe" on the first, and what kind of world it is), and the same full line as in the list is shown over the view.
 - **Labels** show a person's full name.
 - **Play** (1×, 2× or 4×), **Pause**, **Step** and **New universe:** Step calls `step_world`, on PG1's worlds only; invited agents' worlds are read only.
 - **The events timeline, and the rules in plain words.**
