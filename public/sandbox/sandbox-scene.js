@@ -758,6 +758,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       if (e.base === 'hot_air_balloon' || e.base === 'drone') m.inner.position.y = Math.sin(now / 1300 + m.phase) * (e.base === 'drone' ? 0.15 : 0.8);
       if (m.spin) m.group.rotation.y += m.spin * dt;
       if (m.celestial) m.group.traverse((o) => { if (o.userData.spin) o.rotation.y += o.userData.spin * dt; });
+      // Listening: a slight lean in and a nod now and then.
+      if (e.cls === 'person' && !flyer) m.inner.rotation.z = partner && !e.props.saying ? -0.05 + Math.max(0, Math.sin(now / 520 + m.phase)) * 0.06 : 0;
       const dist = speed * dt;
       m.phase += dt * Math.min(12, 2 + speed * 1.6);
       for (const p of m.parts) {
@@ -780,8 +782,6 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
           default: break;
         }
       }
-      // Listening: a slight lean in and a nod now and then.
-      if (e.cls === 'person' && !flyer) m.inner.rotation.z = partner && !e.props.saying ? -0.05 + Math.max(0, Math.sin(now / 520 + m.phase)) * 0.06 : 0;
       // Far away, small things are not drawn (they would be under a pixel).
       // A crater waits for its meteorite (effects.js): not drawn until then.
       const camD = held.has(m.id) ? Infinity : camera.position.distanceTo(m.group.position);
