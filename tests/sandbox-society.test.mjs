@@ -72,7 +72,8 @@ test('leisure, shows, police and prisons, and every inhabitant\'s words stay fre
   const { notable, routine } = fromEvents(LIVE.events, byId);
   assert.ok(notable.some((r) => r.action === 'birth' && r.actor_type === 'inhabitant'));
   assert.ok(!notable.some((r) => ['travel', 'leisure', 'talk', 'meal', 'shower'].includes(r.action)), 'routine actions are never records of their own');
-  assert.ok(Object.values(routine).some((c) => c.travel > 0 && c.leisure > 0));
+  assert.ok(Object.values(routine).some((c) => c.travel > 0), 'travel counted');
+  assert.ok(Object.values(routine).some((c) => c.leisure > 0), 'leisure counted');
 });
 
 test('countries are where their islands are', () => {
