@@ -42,7 +42,7 @@ import { buildTerrain } from './terrain.js';
 const MAX_ENTITIES = 1000;
 const CLASS_COLOR = { person: 0xf3c623, animal: 0xff9b7a, plant: 0x3ddc84, building: 0xcfd8dc, structure: 0x9e9e9e, vehicle: 0x36d1c4, space: 0x8f86ff, celestial: 0xd98cff, thing: 0x7cc4ff };
 const PALETTE = [0xf3c623, 0x36d1c4, 0x8f86ff, 0x3ddc84, 0xff9b7a, 0x7cc4ff, 0xffb300, 0xd98cff];
-const KEEP_PROPS = ['to_x', 'to_y', 'fire', 'siren', 'emergency', 'activity', 'swimming', 'injured', 'in_trouble', 'rescuing', 'gates', 'small', 'history', 'climate', 'culture', 'government', 'country', 'abroad', 'trip', 'text', 'color', 'roof', 'floors', 'heading', 'length', 'width', 'radius', 'size', 'inside', 'target', 'at', 'name', 'family', 'rings', 'clouds', 'shirt', 'livery', 'awning', 'lattice', 'orbit_radius', 'orbits', 'orbit_altitude', 'stages', 'energy', 'hunger', 'hygiene', 'social', 'mood', 'home', 'sex', 'age', 'job', 'work', 'education', 'money', 'partner', 'children', 'mother', 'father', 'saying', 'talking_to', 'built', 'furniture', 'owner', 'civ', 'jail_until', 'honesty', 'ambition', 'sociability', 'curiosity', 'crimes'];
+const KEEP_PROPS = ['to_x', 'to_y', 'gates', 'small', 'history', 'climate', 'culture', 'government', 'country', 'abroad', 'trip', 'text', 'color', 'roof', 'floors', 'heading', 'length', 'width', 'radius', 'size', 'inside', 'target', 'at', 'name', 'family', 'rings', 'clouds', 'shirt', 'livery', 'awning', 'lattice', 'orbit_radius', 'orbits', 'orbit_altitude', 'stages', 'energy', 'hunger', 'hygiene', 'social', 'mood', 'home', 'sex', 'age', 'job', 'work', 'education', 'money', 'partner', 'children', 'mother', 'father', 'saying', 'talking_to', 'built', 'furniture', 'owner', 'civ', 'jail_until', 'honesty', 'ambition', 'sociability', 'curiosity', 'crimes'];
 
 export function kindColor(kind) {
   const c = CLASS_COLOR[classOf(kind)];
@@ -52,6 +52,8 @@ export function kindColor(kind) {
   return PALETTE[h % PALETTE.length];
 }
 const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
+// Fires, sirens and the beach (rescue-models.js) add to what the viewer keeps.
+KEEP_PROPS.push('fire', 'siren', 'emergency', 'activity', 'swimming', 'injured', 'in_trouble', 'rescuing');
 
 export function normalizeWorld(w) {
   const world = w && typeof w === 'object' ? w : {};
