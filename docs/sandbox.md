@@ -23,6 +23,7 @@ A deterministic engine steps the world: the same world and seed always give the 
 | `condition` | kind, `if {property, op, value}`, then? / remove? / emit? | when a rabbit's energy > 8, its mood becomes "happy" |
 | `travel` | kind, speed?, roam? (up to 12 kinds) | cars drive to their target at up to 90 m a step, then pick a house, shop or tower to go to next |
 | `orbit` | kind, around? | planets circle what their `orbits` property names |
+| `cosmos` | conflict? (false), hazards? (true) | other civilisations live their own lives, and crews in space meet radiation belts, flares and meteoroids (see **The wider cosmos**) |
 
 **Travel.** An entity with a `target` (another entity's id), or `target_x` / `target_y` / `target_z`, heads there at its speed. That is the rule's `speed`, else its own `speed` property, else the catalogue's.
 
@@ -65,12 +66,13 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
   - cars, taxis, a police car, buses, trucks, bikes and motorbikes driving;
   - planes, a small plane, a helicopter, a balloon and a drone flying;
   - a rocket taking its crew of three to a station in orbit and back.
-- **universe (Pg1-Universe):** a 12 km × 8 km world of sea and four island countries, plus the space above it (626 things at the start):
+- **universe (Pg1-Universe):** a 12 km × 8 km world of sea and four island countries, plus the space above it (628 things at the start):
   - **Aurelia,** the town above on its island, with a harbour, a beach, a hotel, a cinema, a theatre, a bar, a stadium, an amusement park and an airport terminal;
   - **Maravia** (tropical, ruled by a council, with an airstrip), **Nordheim** (cold, a monarchy, with an airstrip) and **Saltreach** (maritime, a democracy), each with its own houses, harbour, hotel, people, names and money;
   - ferries (Sea Swallow, Northern Star, Coral Queen) and an airliner (Maravia Air 7) between them; army trucks and navy patrols;
   - a star, four planets (one ringed, one with clouds), moons, an asteroid belt, a station and a shuttle;
-  - two far worlds of other civilisations (the Vel and the Oru) at the very edge of the sky, hard to reach.
+  - four far worlds of other civilisations at the very edge of the sky, hard to reach, from far beyond the inhabitants to far behind them: the Vel (far beyond interstellar travel), the Kesh (space colonies), the Oru (industry) and the Amaru (settlement);
+  - radiation belts round Thalassa and Zephyr, and round the home world above the space altitude.
 - **meadow:** the first starter world: grass, rabbits and a fox.
 
 **Hard limits:**
@@ -142,6 +144,25 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
   - blind-subject actions: at most 200 per run.
   - So about **150 MB plus 39 MB per invited key**, if every quota were used in full every day for six months.
 - `tests/sandbox-blackbox.test.mjs` fails if one simulated day of the universe writes more than 2,000 records.
+
+## The wider cosmos (the `cosmos` rule)
+
+`lib/sandbox/cosmos.mjs`. A simulation: rules and seeded dice, no AI engine; the same world and seed always give the same result.
+
+- **Other civilisations live lives of their own.** Each far world has a technology level on the inhabitants' own ladder, or beyond it (7, far beyond interstellar travel), set by the template or from the seed. They research and rise a level now and then (slowly: months of their days), and at space colonies found outposts of their own on unsettled worlds (two at most each). The events say "observed": the inhabitants do not know.
+- **They are met only when the inhabitants are ready** (`society.mjs`, unchanged here): by their own deep-space expedition, or by a visiting ship.
+- **After first contact, peaceful by default:** exchanges of goods, learning, music and stories, seeds and medicines; the less advanced side learns a little from the more advanced (research). Relations only warm.
+- **Conflict only by the world's own rule** (`conflict: true`, a per-world choice, off in every template): relations can also sour into disputes and standoffs, with envoys talking; at the very worst, and rarely, a clash between ships in orbit, far from anyone's home, that costs the treasury and ends in a truce. Never on the ground, never against civilians, and no one dies of it.
+- **The hazards of space** (`hazards: false` turns them off), for craft in space with people aboard:
+  - **radiation belts:** round the home world (a band above the space altitude) and round worlds with a belt (`belt_inner`, `belt_outer`, times the world's size);
+  - **solar flares:** every few days, for a while, a dose to everyone in space;
+  - **meteoroids:** in the asteroid field, damage to a craft.
+  Shielding grows with technology. A crew's dose past a limit means radiation sickness (ill for a few days, never fatal here) and the craft turns back; a craft damaged past a limit turns back too, and is repaired at home.
+- **What the inhabitants build** is unchanged: their countries grow, research and build by the life rule (homes, workplaces, roads, airfields, rockets, colonies), within the world's limits.
+- **Safety:** worlds stay data (rules and dice, no code, no agents); the hard limits hold (1,000 things, 256 KB, 100 steps a call), with outposts and every event capped; conflict is off unless a world turns it on; everything is on the events log and every view says "Simulation".
+- **In the viewer:** the belts are faint glowing bands round their worlds.
+- **Sound** (`public/sandbox/sound.js`, `sound-ui.js`): **Sound** turns on the sound of the world, made in the browser (Web Audio; no recordings, nothing downloaded): wind, the surge of the sea on island worlds, the rumble of a town (more with more traffic, less at night), birds by day and crickets at night, the deep hum of space. **Music** adds a slow ambient score, its chords from a scale chosen by the world's own seed. Off until the person turns it on (browsers allow sound only after a tap); quiet when the tab is hidden or the Sandbox is closed; the volume and the music choice are remembered on this device.
+- Tests: `tests/sandbox-cosmos.test.mjs`, `tests/sandbox-sound.test.mjs`.
 
 ## Access: by invitation only
 

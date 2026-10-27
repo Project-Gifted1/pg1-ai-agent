@@ -455,6 +455,7 @@
     .sandbox-view { position: relative; height: min(68vh, 680px); min-height: 340px; border: 1px solid var(--lx-line); border-radius: var(--lx-radius); overflow: hidden; background: #0a0a0b; }
     .sandbox-view.is-full { position: fixed; inset: 0; z-index: 60; height: auto; border-radius: 0; border: 0; }
     .sandbox-hud { position: absolute; inset: 0; pointer-events: none; }
+    .sandbox-volume { width: 88px; accent-color: #f3c623; }
     .secret-once { max-width: min(420px, calc(100vw - 32px)); border: 1px solid rgba(255,255,255,0.14); border-radius: 14px; background: #121214; color: #e8e8ec; padding: 18px; }
     .secret-once::backdrop { background: rgba(0,0,0,0.6); }
     .secret-once h3 { margin: 0 0 8px; font-size: 1rem; }
@@ -2939,6 +2940,9 @@
           <button type="button" data-view="tour" aria-pressed="false" onclick="setSandboxView('tour')">Tour</button>
           <button type="button" data-view="space" aria-pressed="false" onclick="setSandboxView('space')">Space</button>
           <button type="button" id="sandbox-names" aria-pressed="true" onclick="toggleSandboxNames()">Names</button>
+          <button type="button" id="sandbox-sound" aria-pressed="false" title="The sound of the world: wind, sea, town, birds and crickets, the hum of space (off until you turn it on)">Sound</button>
+          <button type="button" id="sandbox-music" aria-pressed="false" disabled title="A slow ambient score of the world's own">Music</button>
+          <input type="range" class="sandbox-volume" id="sandbox-volume" min="0" max="100" value="50" aria-label="Volume" disabled>
           <button type="button" id="sandbox-xray" aria-pressed="false" onclick="toggleSandboxXray()">See inside</button>
           <select class="sandbox-quality" id="sandbox-quality" aria-label="Quality" onchange="setSandboxQuality(this.value)"><option value="auto">Auto</option><option value="ultra">Ultra</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
           <button type="button" class="sandbox-full-btn" aria-pressed="false" id="sandbox-full" onclick="toggleSandboxFull()">Full screen</button>
@@ -9611,5 +9615,6 @@
     })();
     
   </script>
+  <script type="module" src="/sandbox/sound-ui.js"></script>
 </body>
 </html>

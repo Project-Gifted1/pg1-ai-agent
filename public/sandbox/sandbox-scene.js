@@ -419,6 +419,14 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       g.add(atmo);
     }
     if (e.props.clouds) { const cl = new THREE.Mesh(new THREE.SphereGeometry(size * 1.02, 40, 20), new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.25, roughness: 1, depthWrite: false })); cl.userData.spin = 0.05; g.add(cl); }
+    // A radiation belt (lib/sandbox/cosmos.mjs): a faint glowing band round the world's middle, where it is.
+    if (Number(e.props.belt_outer) > Number(e.props.belt_inner)) {
+      const ri = Number(e.props.belt_inner) * size; const ro = Number(e.props.belt_outer) * size;
+      const belt = new THREE.Mesh(new THREE.TorusGeometry((ri + ro) / 2, (ro - ri) / 2 * 0.55, 18, 96), new THREE.MeshBasicMaterial({ color: 0x7fd4ff, transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+      belt.rotation.x = Math.PI / 2;
+      belt.scale.set(1, 1, 0.45);
+      g.add(belt);
+    }
     if (e.props.rings) {
       const rg = new THREE.RingGeometry(size * 1.4, size * 2.4, 96, 1);
       const uv = rg.attributes.uv; const pp = rg.attributes.position; const v = new THREE.Vector3();
