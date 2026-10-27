@@ -177,18 +177,22 @@ Open it from the `/sandbox` or `/world <id>` reply. It is a full-screen view in 
 
 - **The world, in 3D:** three.js, rendered in the browser; the phone does the work.
 - **Every kind as a detailed model** (`public/sandbox/models.js`):
-  - people walk with swinging arms and legs;
+  - people walk with swinging arms and legs; each has a face (eyes, brows, nose, ears, mouth), one of six hair styles, and clothes with a collar, buttons and a belt; some wear a jacket, a skirt or a dress, some carry a bag (24 looks);
+  - cars come in seven body styles (saloon, hatchback, estate, SUV, pickup, van, sports) and nine colours, with shaped bodies cut away round the wheels, glass cabins with pillars, bumpers, grilles, head and tail lights, door lines, handles, mirrors and number plates; one bus in three is a double-decker; lorries carry a box body, a tank or a flatbed of crates; wheels have tyres, five-spoke rims and hub caps;
   - cars, buses and bikes roll on turning wheels;
   - planes bank and climb, helicopters and drones spin their rotors, propellers turn;
   - boats rock;
   - rockets fire their engines on the way up;
-  - the station turns, planets have painted surfaces, rings, clouds and orbit paths;
+  - the space station is built like a real one: a long truss with four pairs of solar wings and radiators, a line of modules joined by docking nodes, a docking port with lights, a windowed cupola, a dish, navigation lights, and a habitat ring on spokes that turns slowly; satellites have gold foil, solar wings and a dish; colonies have domes with gardens, tunnels, a solar farm, a landing pad and a rover;
+  - planets have painted surfaces, rings, clouds and orbit paths;
   - riders sit on bikes and horses, and are out of sight inside cars, buses and rockets.
 - **What surrounds them** (`environment.js`):
   - a sky and sun on the world's day, with dawn, dusk and night, lit windows and stars;
   - flat ground inside the world, hills, woods and the sea beyond, curving away like a planet;
   - lakes with ripples, drifting clouds;
-  - the black of space above the space altitude.
+  - the black of space above the space altitude, with the galaxy across it (a band of faint stars and glowing clouds of gas), and a lens flare looking towards the star (Medium and up).
+- **Buildings you can go into** (`interiors.js`): in **Explore**, tap a building to walk in at its front door. Its walls turn see-through and its rooms show: shelves and a till in a shop, tables and a counter in a café or bar, desks facing a board in a school, wards in a hospital, desks and screens in an office tower, rooms in a hotel, seats facing a screen or stage, benches and a departures board in a station or terminal, machines and crates in a factory or hangar, bunks in barracks, cells in a prison, and the furniture of a home. Every storey has a floor, a stair and a lift; **▲ ▼** change floors. Walk out (or pick another view) and it is a building again. Windows have frames and sills; houses have porches, gutters and door frames; shops have striped awnings and lit signs.
+- **Space, as far as they have reached:** the **Space** view lists every place up there (the star, planets, moons, the station, satellites, colonies, far worlds) and says whether the inhabitants have reached it with their technology: their sun; the station and satellites at spaceflight; planets visited by rocket at spaceflight, within reach at space colonies, or with a colony there; far worlds at interstellar travel. A tap flies the camera there. The viewer can always look; the inhabitants go only as far as their research takes them.
 - **The look, by quality tier** (`quality.js`; Low, Medium, High, Ultra, and Cinematic by hand only):
   - physically based materials lit by the sun and by **image-based light** from the sky (a prefiltered environment map, made again as the sun moves; Medium and up), ACES tone mapping, soft cascaded shadows, ambient occlusion and bloom on the higher tiers;
   - **streets in detail** (`streets.js`, Medium and up): asphalt with dashed centre lines and edge lines, kerbs and pavements, junctions, zebra crossings, and **street lamps** that come on at dusk with pools of light under them. From the world's road graph when it has one (`roads`), otherwise from its road strips. Low keeps the plain strips;

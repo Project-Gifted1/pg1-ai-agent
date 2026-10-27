@@ -223,11 +223,12 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   const THREE = await import(threeUrl);
   const settings = TIER_SETTINGS[tier] || TIER_SETTINGS.high;
   const ADD = '/vendor/three/addons/';
-  const [skyMod, csmMod, textures, reflMod] = await Promise.all([
+  const [skyMod, csmMod, textures, reflMod, flareMod] = await Promise.all([
     settings.sky === 'physical' ? import(`${ADD}objects/Sky.js`).catch(() => null) : null,
     settings.cascades > 0 ? import(`${ADD}csm/CSM.js`).catch(() => null) : null,
     settings.textures ? loadTextures(THREE) : null,
-    settings.reflect === 'planar' ? import(`${ADD}objects/Reflector.js`).catch(() => null) : null
+    settings.reflect === 'planar' ? import(`${ADD}objects/Reflector.js`).catch(() => null) : null,
+    settings.sky === 'physical' ? import(`${ADD}objects/Lensflare.js`).catch(() => null) : null
   ]);
   const canvas = document.createElement('canvas');
   canvas.className = 'living-lab-canvas sandbox-canvas';
@@ -255,7 +256,17 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   // Grass and flowers round the camera (foliage.js): not on water, roads or pavements, nor in space.
   const foliage = settings.foliage > 0 ? createFoliage(THREE, { density: Math.round(settings.foliage * (coarse ? 0.6 : 1)), radius: settings.foliageRadius, setupMaterial: env.setupMaterial, coarse }) : null;
   if (foliage) scene.add(foliage.group);
-  const blockedAt = (x, z) => (env.waterAt ? env.waterAt(x, z) : false) || (streets ? streets.covers(x, z) : false) || Math.abs(x) > world.size.x / 2 + 400 || Math.abs(z) > world.size.y / 2 + 400;
+  // Footprints of everything built (not plants or flat roads), for the grass to keep out of.
+  let footGrid = new Map();
+  function indexFootprints() {
+    footGrid = new Map();
+    for (const b of staticBoxes) {
+      if (!b.e || b.e.cls === 'plant' || ['road', 'runway', 'bridge', 'grass', 'flower', 'crop', 'beach'].includes(b.e.base)) continue;
+      for (let i = Math.floor(b.box.min.x / 20); i <= Math.floor(b.box.max.x / 20); i++) for (let j = Math.floor(b.box.min.z / 20); j <= Math.floor(b.box.max.z / 20); j++) { const k = `${i}|${j}`; if (!footGrid.has(k)) footGrid.set(k, []); footGrid.get(k).push(b.box); }
+    }
+  }
+  const onFootprint = (x, z) => { const l = footGrid.get(`${Math.floor(x / 20)}|${Math.floor(z / 20)}`); return !!l && l.some((b) => x > b.min.x - 1 && x < b.max.x + 1 && z > b.min.z - 1 && z < b.max.z + 1); };
+  const blockedAt = (x, z) => (env.waterAt ? env.waterAt(x, z) : false) || (streets ? streets.covers(x, z) : false) || onFootprint(x, z) || Math.abs(x) > world.size.x / 2 + 400 || Math.abs(z) > world.size.y / 2 + 400;
   env.textures = textures;
   const glow = glowTexture(THREE);
 
@@ -419,6 +430,16 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     add(furnitureGroup, flayers, [matBody, matGlass, matGlow]);
   }
 
+  // A faint ring for the lens flare.
+  let ringT = null;
+  function ringTex() {
+    if (ringT) return ringT;
+    const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+    g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 6; g.beginPath(); g.arc(64, 64, 50, 0, 7); g.stroke();
+    ringT = new THREE.CanvasTexture(c); ringT.colorSpace = THREE.SRGBColorSpace;
+    return ringT;
+  }
+
   // A celestial body: a painted sphere (and a glow, rings, clouds, a light).
   function celestial(e) {
     const g = new THREE.Group();
@@ -435,6 +456,15 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       g.add(halo);
       const light = new THREE.PointLight(color, 3, 0, 0);
       g.add(light);
+      // A lens flare when looking towards the star (Medium and up).
+      if (flareMod) {
+        const lf = new flareMod.Lensflare();
+        const c = new THREE.Color(color);
+        lf.addElement(new flareMod.LensflareElement(glow, 420, 0, c));
+        lf.addElement(new flareMod.LensflareElement(ringTex(), 160, 0.35, c));
+        for (const [sz, d] of [[60, 0.6], [90, 0.75], [140, 0.9], [70, 1.0]]) lf.addElement(new flareMod.LensflareElement(glow, sz, d, new THREE.Color(0x88aaff)));
+        light.add(lf);
+      }
     } else {
       const atmo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: e.base === 'planet' ? color : 0x888888, transparent: true, opacity: e.base === 'planet' ? 0.35 : 0.12, blending: THREE.AdditiveBlending, depthWrite: false }));
       atmo.scale.setScalar(size * 3);
@@ -678,7 +708,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   // Walked out of the building's footprint: outside again.
   function checkInside() {
     if (!inside) return;
-    const t = controls.target; const b = inside.box;
+    const t = controls.goalTarget; const b = inside.box;   // where the camera is going (it eases there)
     if (mode !== 'explore' || t.x < b.min.x - 3 || t.x > b.max.x + 3 || t.z < b.min.z - 3 || t.z > b.max.z + 3) leave();
   }
 
@@ -813,6 +843,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         switch (p.role) {
           case 'wheel': p.node.rotation.z -= moving ? dist / p.r : 0; break;
           case 'rotorY': p.node.rotation.y += dt * ((moving || e.z > 0.5) ? 30 : 4); break;
+          case 'ring': p.node.rotation.y += dt * 0.12; break;   // a station's habitat ring turns slowly
           case 'rotorZ': p.node.rotation.z += dt * ((moving || e.z > 0.5) ? 40 : 6); break;
           case 'propX': p.node.rotation.x += dt * ((moving || e.z > 0.5) ? 50 : 0); break;
           case 'legL': case 'legR': { const a = moving ? Math.sin(m.phase) * 0.55 : 0; p.node.rotation.z += ((p.role === 'legL' ? a : -a) - p.node.rotation.z) * Math.min(1, dt * 10); break; }
@@ -987,7 +1018,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         if (foliage) foliage.place({ cx: controls.target.x, cz: controls.target.z, heightAt, blocked: blockedAt, force: true });
       }
       const ss = world.entities.filter((e) => FIXED_KINDS.has(e.base)).map((e) => `${e.id}:${modelKey(e.kind, e.props, e.id)}:${e.x}:${e.y}:${e.props.heading || 0}`).join(',');
-      if (ss !== staticSig) { staticSig = ss; rebuildStatic(); }
+      if (ss !== staticSig) { staticSig = ss; rebuildStatic(); indexFootprints(); if (foliage) foliage.place({ cx: controls.target.x, cz: controls.target.z, heightAt: env.heightAt || (() => 0), blocked: blockedAt, force: true }); }
       tickFrom = firstWorld ? world.tick : prevTick; tickTo = world.tick;
       syncMovers(duration);
       syncOrbits();
@@ -1037,6 +1068,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       if (post) post.dispose();
       for (const d of [streets, coast, foliage]) if (d) d.dispose();
       if (farMesh) farMesh.dispose(); farBox.dispose(); farMat.dispose();
+      if (ringT) ringT.dispose();
       glow.dispose(); renderer.dispose(); canvas.remove(); hud.remove();
     }
   };

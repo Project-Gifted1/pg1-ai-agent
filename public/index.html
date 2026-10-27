@@ -455,6 +455,11 @@
     .sandbox-view { position: relative; height: min(68vh, 680px); min-height: 340px; border: 1px solid var(--lx-line); border-radius: var(--lx-radius); overflow: hidden; background: #0a0a0b; }
     .sandbox-view.is-full { position: fixed; inset: 0; z-index: 60; height: auto; border-radius: 0; border: 0; }
     .sandbox-hud { position: absolute; inset: 0; pointer-events: none; }
+    .sandbox-space { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 8px; scrollbar-width: none; }
+    .sandbox-space[hidden] { display: none; }
+    .sandbox-space button { flex: 0 0 auto; min-height: var(--lx-tap, 44px); padding: 4px 10px; border-radius: 999px; border: 1px solid var(--lx-line-strong); background: var(--lx-card-2); color: var(--lx-text); font: inherit; text-align: left; line-height: 1.15; }
+    .sandbox-space button small { display: block; color: var(--lx-text-dim, #9aa0a6); font-size: 0.68rem; }
+    .sandbox-space button[data-reached="true"] { border-color: #8f86ff; }
     .sandbox-floors { position: absolute; right: 8px; bottom: 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: auto; background: rgba(10,10,11,0.72); border-radius: 10px; padding: 4px; color: #fff; font: 600 0.72rem/1.2 var(--lx-font, system-ui); }
     .sandbox-floors button { min-width: var(--lx-tap, 44px); min-height: var(--lx-tap, 44px); border: 0; border-radius: 8px; background: rgba(255,255,255,0.12); color: #fff; font-size: 1rem; }
     .sandbox-floors[hidden] { display: none; }
@@ -2948,6 +2953,7 @@
           <button type="button" class="sandbox-full-btn" aria-pressed="false" id="sandbox-full" onclick="toggleSandboxFull()">Full screen</button>
           <button type="button" id="sandbox-shot" onclick="saveSandboxScreenshot()" hidden>Screenshot</button>
         </div>
+        <div class="sandbox-space" id="sandbox-space" role="group" aria-label="Places in space" hidden></div>
         <div class="sandbox-view" id="sandbox-view" aria-label="The world, drawn in 3D"></div>
         <section class="lx-card sandbox-inspect" id="sandbox-inspect" aria-labelledby="sandbox-inspect-h" hidden><h3 class="lx-section-h" id="sandbox-inspect-h">Selected</h3><ul class="lx-rows" id="sandbox-inspect-rows"></ul></section>
         <div class="sandbox-kinds" id="sandbox-kinds" aria-label="Kinds of entity"></div>
@@ -3830,6 +3836,7 @@
       const kinds = document.getElementById('sandbox-kinds');
       if (kinds && window.__sandboxKinds) kinds.innerHTML = window.__sandboxKinds({ size: w && w.size, entities: (w && w.entities) || [] }).map((k) => `<span><span class="sw" style="background:${k.color}"></span>${escapeHTML(k.kind)} <strong>${k.n}</strong></span>`).join('');
       if (sandboxScene && w) sandboxScene.update(w, { duration: sandboxStepMs() });
+      if (sandboxScene && sandboxScene.view && ['space', 'follow'].includes(sandboxScene.view())) renderSandboxSpace(w);
       const socPanel = document.getElementById('sandbox-panel-society');
       if (socPanel && !socPanel.hidden) renderSandboxSociety(w);
     }
@@ -3858,7 +3865,34 @@
       document.body.appendChild(a); a.click(); a.remove();
     }
     async function setSandboxQuality(v) { if (sandboxScene && sandboxScene.setQuality) { await sandboxScene.setQuality(v); markSandboxQuality(sandboxScene.quality()); } }
-    function markSandboxView(mode) { document.querySelectorAll('.sandbox-views [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === mode))); }
+    function markSandboxView(mode) { document.querySelectorAll('.sandbox-views [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === mode))); renderSandboxSpace(sandboxState.world, mode); }
+    // Places in space (the Space view): every body and craft up there, and
+    // whether the inhabitants have reached it with their technology yet. A
+    // tap flies the camera there; the viewer can always look, they cannot.
+    function renderSandboxSpace(w, mode = sandboxScene && sandboxScene.view ? sandboxScene.view() : null) {
+      const box = document.getElementById('sandbox-space');
+      if (!box) return;
+      const ents = (w && w.entities) || [];
+      const KINDS = ['star', 'planet', 'moon', 'space_station', 'colony', 'satellite', 'shuttle', 'alien_world'];
+      const list = ents.filter((e) => KINDS.includes(String(e.kind).replace(/[_-][a-z0-9]+$/, '')) || KINDS.includes(e.kind));
+      const sel = sandboxScene && sandboxScene.selected ? sandboxScene.selected() : null;
+      box.hidden = !list.length || !(mode === 'space' || (mode === 'follow' && list.some((e) => e.id === sel)));
+      if (box.hidden) return;
+      const raw = w && w.society; const socs = !raw ? {} : ('currency' in raw || 'treasury' in raw) ? { home: raw } : raw;
+      const tech = Math.max(0, ...Object.values(socs).map((s) => Number(s && s.tech) || 0));
+      const colonised = new Set(ents.filter((e) => e.kind === 'colony' && e.properties && e.properties.orbits).map((e) => e.properties.orbits));
+      const status = (e) => {
+        const k = e.kind;
+        if (k === 'star') return [true, 'their sun'];
+        if (k === 'colony') return [true, 'their colony'];
+        if (k === 'space_station' || k === 'satellite' || k === 'shuttle') return tech >= 4 ? [true, 'theirs, in orbit'] : [false, 'not theirs yet: needs spaceflight'];
+        if (k === 'alien_world') return tech >= 6 ? [true, 'within reach: interstellar'] : [false, 'out of reach: needs interstellar travel'];
+        if (colonised.has(e.id)) return [true, 'a colony there'];
+        return tech >= 5 ? [true, 'within reach'] : tech >= 4 ? [false, 'visited by rocket only'] : [false, 'out of reach: needs spaceflight'];
+      };
+      box.innerHTML = `<button type="button" disabled><strong>Their space age</strong><small>${escapeHTML(SANDBOX_TECH[tech] || 'settlement')} (level ${tech})</small></button>` + list.map((e) => { const [ok, why] = status(e); return `<button type="button" data-id="${escapeHTML(e.id)}" data-reached="${ok}" aria-pressed="${e.id === sel}">${escapeHTML((e.properties && e.properties.name) || e.kind.replace(/_/g, ' '))}<small>${escapeHTML(why)}</small></button>`; }).join('');
+      box.querySelectorAll('button[data-id]').forEach((b) => b.addEventListener('click', () => { if (sandboxScene && sandboxScene.select) sandboxScene.select(b.dataset.id); }));
+    }
     function setSandboxView(mode) { if (!sandboxScene || !sandboxScene.setView) return; sandboxScene.setView(mode); markSandboxView(sandboxScene.view ? sandboxScene.view() : mode); }
     function toggleSandboxFull() {
       const v = document.getElementById('sandbox-view'); const b = document.getElementById('sandbox-full');

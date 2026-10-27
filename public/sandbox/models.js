@@ -830,23 +830,73 @@ function shuttle(T, p) {
 
 // --- space ----------------------------------------------------------------------------
 
+// A space station, built the way real ones are: a long truss carrying four
+// pairs of solar wings (cells in a grid, on masts) and white radiators;
+// pressurised modules in a line across it, joined by docking nodes with
+// hatches, ending in a docking port with its lights and a windowed cupola;
+// a dish and antennas; red and green navigation lights; and a habitat ring
+// on four spokes that turns slowly (part 'ring'), its windows lit.
 function spaceStation(T) {
   const k = new Kit(T);
-  k.cyl(3, 3, 40, 16, '#eceff1', 0, 0, 0, { rz: Math.PI / 2 });
-  for (const x of [-12, 0, 12]) k.cyl(4, 4, 6, 16, '#cfd8dc', x, 0, 0, { rz: Math.PI / 2 });
-  k.cyl(2.5, 2.5, 26, 12, '#b0bec5', 0, 0, 0, { rx: Math.PI / 2 });
-  for (const z of [-22, -16, 16, 22]) { k.box(26, 0.3, 5.5, '#1a237e', 0, 0, z); for (let x = -12; x <= 12; x += 4) k.box(0.15, 0.32, 5.6, '#90a4ae', x, 0, z); }
-  k.torus(18, 1.2, '#eceff1', 0, 0, 0, { rx: Math.PI / 2, rseg: 8, tseg: 48 });
-  for (let i = 0; i < 4; i++) k.cyl(0.4, 0.4, 18, 6, '#b0bec5', Math.cos(i * Math.PI / 2) * 9, 0, Math.sin(i * Math.PI / 2) * 9, { rz: Math.PI / 2, ry: i * Math.PI / 2 });
-  for (let i = 0; i < 8; i++) k.box(0.6, 0.6, 0.6, '#fff59d', Math.cos(i * Math.PI / 4) * 18, 0, Math.sin(i * Math.PI / 4) * 18, { layer: 'glow' });
-  return out(k, { size: 60, spin: 0.05 });
+  const WHITE = '#eceff1'; const GREY = '#b0bec5'; const DARK = '#455a64'; const GOLD = '#c9a227'; const CELL = '#1a237e';
+  // The truss: four long rails with cross braces.
+  for (const [y, z] of [[-1.2, -1.2], [-1.2, 1.2], [1.2, -1.2], [1.2, 1.2]]) k.box(80, 0.25, 0.25, GREY, 0, y, z);
+  for (let x = -40; x <= 40; x += 4) { k.box(0.2, 2.6, 0.2, GREY, x, 0, 1.2); k.box(0.2, 2.6, 0.2, GREY, x, 0, -1.2); k.box(0.2, 0.2, 2.6, GREY, x, 1.2, 0); k.box(0.2, 0.2, 2.6, GREY, x, -1.2, 0); k.box(2.9, 0.12, 0.12, DARK, x + 2, 0, 1.2, { rz: 0.9 }); }
+  // Solar wings: four pairs on masts at the truss ends, cells in a grid, gold backing.
+  for (const x of [-34, -26, 26, 34]) for (const sz of [1, -1]) {
+    const zc = sz * 19;
+    k.cyl(0.2, 0.2, 34, 6, GREY, x, 0, zc - sz * 0.5, { rx: Math.PI / 2 });
+    for (const dx of [-2.6, 2.6]) {
+      k.box(4.6, 0.06, 32, GOLD, x + dx, -0.05, zc);
+      k.box(4.4, 0.08, 31.6, CELL, x + dx, 0.02, zc);
+      for (let i = 1; i < 16; i++) k.box(4.42, 0.1, 0.06, '#9fa8da', x + dx, 0.03, zc - 15.8 + i * 1.975);
+      k.box(0.06, 0.1, 31.6, '#9fa8da', x + dx, 0.03, zc);
+    }
+    k.box(1.2, 1.2, 1.2, DARK, x, 0, sz * 2);                                    // the rotary joint
+  }
+  // Radiators: white panels standing off the truss.
+  for (const x of [-14, 14]) for (const sz of [1, -1]) k.box(10, 0.1, 6, '#fafafa', x, -3.5, sz * 4.5, { rx: sz * 0.25 });
+  // Modules in a line across the truss (along z), joined by nodes with hatches.
+  const mod = (z, len, r = 2.1, c = WHITE) => { k.cyl(r, r, len, 20, c, 0, 3.6, z, { rx: Math.PI / 2 }); for (const dz of [-len / 2 + 0.5, len / 2 - 0.5]) k.cyl(r + 0.08, r + 0.08, 0.25, 20, GREY, 0, 3.6, z + dz, { rx: Math.PI / 2 }); for (let i = 0; i < Math.floor(len / 2); i++) k.box(0.5, 0.35, 0.06, '#ffe0a3', r * 0.72, 3.6 + r * 0.66, z - len / 2 + 1 + i * 2, { layer: 'glow' }); };
+  const node = (z) => { k.sphere(2.5, WHITE, 0, 3.6, z, { seg: 18, rings: 12 }); for (const [x, y] of [[2.5, 0], [-2.5, 0], [0, 2.5]]) { k.cyl(1.0, 1.0, 0.4, 14, GREY, x, 3.6 + y, z, { rz: x ? Math.PI / 2 : 0 }); k.cyl(0.7, 0.7, 0.42, 14, DARK, x * 1.01, 3.6 + y * 1.01, z, { rz: x ? Math.PI / 2 : 0 }); } };
+  k.cyl(1.4, 1.4, 3.4, 14, GREY, 0, 2.0, 0);                                     // the stand-off to the truss
+  node(0); mod(-7.5, 10); node(-15); mod(-21.5, 8, 2.0, '#f5f5f5'); mod(7.5, 10, 2.2); node(15); mod(21, 7, 1.9);
+  // The docking port at one end, with its ring and lights; the cupola at the other.
+  k.cyl(1.2, 1.4, 1.6, 16, GREY, 0, 3.6, 25.3, { rx: Math.PI / 2 }); k.torus(1.25, 0.12, '#ffeb3b', 0, 3.6, 26.15, { tseg: 24 });
+  for (let i = 0; i < 4; i++) k.sphere(0.12, '#fff59d', Math.cos(i * Math.PI / 2) * 1.5, 3.6 + Math.sin(i * Math.PI / 2) * 1.5, 26.2, { layer: 'glow', seg: 6, rings: 4 });
+  k.cyl(1.3, 1.6, 1.0, 7, GREY, 0, 3.6, -26.2, { rx: Math.PI / 2 });
+  for (let i = 0; i < 7; i++) { const a = (i / 7) * Math.PI * 2; k.box(0.8, 0.5, 0.05, '#90caf9', Math.cos(a) * 1.35, 3.6 + Math.sin(a) * 1.35, -26.75, { layer: 'glass', rz: a }); }
+  k.cyl(0.8, 0.8, 0.06, 14, '#90caf9', 0, 3.6, -26.75, { rx: Math.PI / 2, layer: 'glass' });
+  // A dish and antennas.
+  k.cyl(0.08, 0.08, 4, 6, GREY, 0, 7.6, -15); k.lathe([[0, 0], [1.6, 0.5], [1.8, 0.7]], 18, '#fafafa', 0, 9.4, -15, { rx: 0.6 });
+  for (const z of [-7, 7]) k.cyl(0.04, 0.04, 5, 4, '#cfd8dc', 0, 8, z);
+  // Navigation lights: red to port, green to starboard, white at the ends.
+  k.sphere(0.3, '#ff1744', 0, 0, -40, { layer: 'glow', seg: 6, rings: 4 }); k.sphere(0.3, '#00e676', 0, 0, 40, { layer: 'glow', seg: 6, rings: 4 });
+  for (const x of [-40, 40]) k.sphere(0.3, '#ffffff', x, 1.4, 0, { layer: 'glow', seg: 6, rings: 4 });
+  // The habitat ring on four spokes round a hub below the truss; it turns.
+  const ring = partOf(T, (q) => {
+    q.torus(24, 2.3, WHITE, 0, 0, 0, { rx: Math.PI / 2, rseg: 12, tseg: 72 });
+    for (let i = 0; i < 36; i++) { const a = (i / 36) * Math.PI * 2; q.box(1.2, 0.6, 0.06, '#ffe0a3', Math.cos(a) * 26.3, 0.6, Math.sin(a) * 26.3, { ry: -a + Math.PI / 2, layer: 'glow' }); }
+    for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2; q.cyl(0.6, 0.6, 22, 10, GREY, Math.cos(a) * 12, 0, Math.sin(a) * 12, { rz: Math.PI / 2, ry: -a }); }
+    q.cyl(3, 3, 3, 18, GREY, 0, 0, 0);
+  }, [0, -9, 0], 'ring');
+  k.cyl(1, 1, 7, 12, GREY, 0, -5, 0);                                           // the axle down to the ring's hub
+  return { ...k.build(), parts: [ring], size: 90 };
 }
+// A satellite: a gold-foiled body, two solar wings with cells, a dish, thrusters.
 function satellite(T) {
   const k = new Kit(T);
-  k.box(2, 2, 2, '#ffd54f', 0, 0, 0);
-  k.box(7, 0.08, 2, '#1a237e', 4.6, 0, 0); k.box(7, 0.08, 2, '#1a237e', -4.6, 0, 0);
-  k.cyl(0.05, 0.05, 1.6, 4, '#bdbdbd', 0, 1.6, 0); k.cone(0.9, 0.6, 12, '#eceff1', 0, -1.4, 0, { rx: Math.PI });
-  return out(k, { size: 16, spin: 0.3 });
+  k.box(2, 2.2, 2, '#c9a227', 0, 0, 0, { jitter: 0.02 });
+  k.box(2.05, 0.15, 2.05, '#9e9e9e', 0, 1.1, 0);
+  for (const s of [1, -1]) {
+    k.cyl(0.06, 0.06, 1.5, 6, '#bdbdbd', s * 1.75, 0, 0, { rz: Math.PI / 2 });
+    k.box(6.5, 0.06, 2.2, '#1a237e', s * 5.8, 0, 0);
+    for (let i = 1; i < 6; i++) k.box(0.05, 0.08, 2.2, '#9fa8da', s * (2.55 + i * 1.08), 0, 0);
+  }
+  k.cyl(0.05, 0.05, 1.2, 4, '#bdbdbd', 0, -1.6, 0); k.lathe([[0, 0], [0.9, 0.3], [1.0, 0.4]], 16, '#eceff1', 0, -2.4, 0, { rx: Math.PI });
+  for (const [x, z] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) k.cone(0.12, 0.3, 8, '#616161', x, 1.3, z);
+  k.sphere(0.12, '#ff1744', 0, 1.3, 0, { layer: 'glow', seg: 6, rings: 4 });
+  return out(k, { size: 16, spin: 0.15 });
 }
 
 // Planets, moons and stars are spheres with painted textures (see the scene).
@@ -893,7 +943,13 @@ function colony(T) {
   for (const [x, z, r] of [[0, 0, 7], [9, 4, 4.5], [-8, 5, 4], [3, -9, 5]]) { k.sphere(r, '#b3e5fc', x, 1, z, { layer: 'glass', sy: 0.7 }); k.cyl(r * 0.4, r * 0.4, r * 0.8, 10, '#eceff1', x, r * 0.5, z); }
   k.cyl(0.6, 0.8, 16, 8, '#cfd8dc', -11, 8, -6);
   for (let i = 0; i < 10; i++) k.sphere(0.35, '#ffe082', Math.cos(i) * 12, 1.6, Math.sin(i) * 12, { layer: 'glow', seg: 6, rings: 4 });
-  return out(k, { size: 36 });
+  // Gardens under the big dome, tunnels between domes, a solar farm, a landing pad, a rover.
+  for (let i = 0; i < 9; i++) k.ico(0.9, 0, '#43a047', Math.cos(i * 0.7) * 3.5, 1.8, Math.sin(i * 0.7) * 3.5, { jitter: 0.2 });
+  for (const [x, z] of [[9, 4], [-8, 5], [3, -9]]) { const L = Math.hypot(x, z) - 6; k.cyl(1.1, 1.1, L, 10, '#cfd8dc', x / 2, 1.4, z / 2, { rz: Math.PI / 2, ry: -Math.atan2(z, x) }); }
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 4; j++) k.box(2.4, 0.08, 1.4, '#1a237e', 18 + i * 2.7, 1.6, -8 + j * 1.8, { rz: -0.4 });
+  k.cyl(5, 5, 0.3, 24, '#9e9e9e', -20, 1.1, 8); k.torus(4, 0.15, '#ffeb3b', -20, 1.3, 8, { rx: Math.PI / 2, tseg: 32 });
+  k.box(2.4, 1, 1.5, '#eceff1', -14, 1.6, -14); for (const [x, z] of [[-13.2, -13.1], [-14.8, -13.1], [-13.2, -14.9], [-14.8, -14.9]]) k.cyl(0.35, 0.35, 0.3, 10, '#424242', x, 1.15, z, { rx: Math.PI / 2 });
+  return out(k, { size: 46 });
 }
 
 function alienShip(T) {

@@ -136,6 +136,44 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
   stars.onBeforeRender = (r, sc, cam) => { stars.position.copy(cam.position); stars.updateMatrixWorld(); };
   scene.add(stars);
 
+  // The galaxy: a band of many faint stars across the sky (tilted, like the
+  // Milky Way), with soft glowing clouds of dust and gas along it. Seen at
+  // night and in space, with the stars.
+  const galaxy = new THREE.Group();
+  {
+    const n = coarse ? 5000 : 12000;
+    const gp = new Float32Array(n * 3); const gc = new Float32Array(n * 3);
+    const tilt = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(1.05, 0.4, 0.2));
+    const v = new THREE.Vector3(); const col = new THREE.Color();
+    const gauss = () => (r() + r() + r() + r() - 2) / 2;
+    for (let i = 0; i < n; i++) {
+      const a = r() * Math.PI * 2; const lat = gauss() * (0.06 + 0.1 * Math.abs(Math.cos(a * 0.5)));   // fuller towards the centre
+      v.set(Math.cos(a) * Math.cos(lat), Math.sin(lat), Math.sin(a) * Math.cos(lat)).applyMatrix4(tilt);
+      gp[i * 3] = v.x; gp[i * 3 + 1] = v.y; gp[i * 3 + 2] = v.z;
+      col.setHSL(0.08 + r() * 0.55, 0.25 + r() * 0.25, 0.55 + r() * 0.35);
+      gc[i * 3] = col.r; gc[i * 3 + 1] = col.g; gc[i * 3 + 2] = col.b;
+    }
+    const gg = new THREE.BufferGeometry();
+    gg.setAttribute('position', new THREE.BufferAttribute(gp, 3)); gg.setAttribute('color', new THREE.BufferAttribute(gc, 3));
+    const band = new THREE.Points(gg, new THREE.PointsMaterial({ size: 1.1, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, fog: false }));
+    band.frustumCulled = false;
+    galaxy.add(band);
+    // Nebulae: soft sprites along the band.
+    const tex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.4, 'rgba(255,255,255,0.3)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+    const hues = ['#6a4cff', '#ff5ea8', '#4cc9ff', '#ffb35e', '#8affc1'];
+    for (let i = 0; i < 14; i++) {
+      const a = r() * Math.PI * 2;
+      v.set(Math.cos(a), gauss() * 0.08, Math.sin(a)).normalize().applyMatrix4(tilt);
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: hues[i % hues.length], transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+      sp.position.copy(v); sp.scale.setScalar(0.18 + r() * 0.3); sp.userData.k = 0.12 + r() * 0.12;
+      galaxy.add(sp);
+    }
+    galaxy.userData.tex = tex;
+  }
+  galaxy.renderOrder = -9;
+  scene.add(galaxy);
+  env.galaxy = galaxy;
+
   // Lights.
   const hemi = new THREE.HemisphereLight(0xcfe6ff, 0x4a5a3a, 0.6);
   scene.add(hemi);
@@ -256,8 +294,11 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     // everywhere else, deepening away from the coast.
     const islands = world.islands || [];
     const landEdge = (x, z) => { let best = -Infinity; let isl = null; for (const i of islands) { const e = i.r - Math.hypot(x - i.sx, z - i.sz); if (e > best) { best = e; isl = i; } } return { edge: best, isl }; };
-    // Lakes have a bed: the ground dips under the water (about 1.6 m, over the last 8 m of shore).
-    const lakeDip = (x, z) => { let dip = 0; for (const l of lakes) { const d = Math.hypot(x - l.sx, z - l.sz) - l.radius; if (d < 0) dip = Math.max(dip, smooth(0, -8, d) * 1.6); } return dip; };
+    // Lakes have a bed: the ground dips under the water over the last 8 m of
+    // shore. In island worlds only a little, so the bed stays above the sea's
+    // level and the sea never shows through the land round a lake.
+    const bedDepth = (world.islands || []).length ? 0.14 : 1.2;
+    const lakeDip = (x, z) => { let dip = 0; for (const l of lakes) { const d = Math.hypot(x - l.sx, z - l.sz) - l.radius; if (d < 0) dip = Math.max(dip, smooth(0, -8, d) * bedDepth); } return dip; };
     const heightAt = (x, z) => baseHeightAt(x, z) - (lakes.length ? lakeDip(x, z) : 0);
     const baseHeightAt = (x, z) => {
       if (islands.length) {
@@ -538,6 +579,9 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     // Far beyond the terrain, so hills and the ground hide the stars behind them.
     stars.scale.setScalar(150000);
     starMat.opacity = Math.max(sp, smooth(0.35, 0.85, env.night)) * 0.95;
+    galaxy.position.copy(camera.position); galaxy.scale.setScalar(140000);
+    for (const o of galaxy.children) o.material.opacity = starMat.opacity * (o.isPoints ? 0.85 : o.userData.k);
+    galaxy.visible = starMat.opacity > 0.01;
     sun.intensity = lerp(0.0, 2.1, day) * (1 - dusk * 0.35) + sp * 1.6;
     sun.color.setRGB(1, lerp(0.6, 0.96, day), lerp(0.4, 0.88, day));
     hemi.intensity = lerp(0.12, 0.62, day) + sp * 0.1;
@@ -605,7 +649,8 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     if (sky2) { sky2.geometry.dispose(); sky2.material.dispose(); }
     if (envRT) envRT.dispose(); if (pmrem) pmrem.dispose(); iblScene.traverse((m) => { if (m.geometry) m.geometry.dispose(); if (m.material) m.material.dispose(); }); scene.environment = null;
     if (reflector) reflector.dispose();
-    for (const o of [sky, stars, env.ground, env.grass, env.clouds, env.forest, ...env.lakes]) if (o) o.traverse((m) => { if (m.geometry) m.geometry.dispose(); if (m.material) [].concat(m.material).forEach((x) => x.dispose()); });
+    galaxy.userData.tex.dispose();
+    for (const o of [sky, stars, galaxy, env.ground, env.grass, env.clouds, env.forest, ...env.lakes]) if (o) o.traverse((m) => { if (m.geometry) m.geometry.dispose(); if (m.material) [].concat(m.material).forEach((x) => x.dispose()); });
   };
   return env;
 }
