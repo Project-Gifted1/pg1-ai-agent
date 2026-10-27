@@ -162,6 +162,15 @@ test('the Sandbox viewer at 380 px: world, label, rules, events, Step calls step
   await page.waitForFunction(() => /^Step \d+ · \d+ entities/.test(document.getElementById('sandbox-tick').textContent));
   const select = page.locator('#sandbox-world');
   await select.selectOption(garden.id);
+  // The world list says which is which: the oldest is the first universe; each says what it is and when it began.
+  const options = await select.locator('option').allInnerTexts();
+  const gardenText = await select.locator(`option[value="${garden.id}"]`).innerText();
+  assert.match(gardenText, /^Rabbit meadow · your first universe · meadow · PG1 · started .+ · [0-9a-f]{8}$/);
+  assert.ok(options.some((o) => /^River bank · custom world · PG1 · started /.test(o)), options.join(' | '));
+  assert.equal(options.filter((o) => /your first universe/.test(o)).length, 1);
+  // And on the view itself, and over it.
+  await page.waitForFunction(() => /^Rabbit meadow · your first universe · meadow$/.test((document.querySelector('#sandbox-view .sandbox-world-badge') || {}).textContent || ''));
+  assert.match(await page.locator('#sandbox-world-line').innerText(), /^Rabbit meadow · your first universe · meadow · PG1 · started /);
   await page.waitForFunction(() => /^Step 12 · /.test(document.getElementById('sandbox-tick').textContent));
   assert.equal((await page.locator('#sandbox-label').innerText()).trim(), 'Simulation');
   assert.match(await page.locator('#sandbox-sim').innerText(), /Nothing in them is a real event/);
