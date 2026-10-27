@@ -894,7 +894,7 @@ function thing(T, kind, seed) {
 
 // --- the factory ----------------------------------------------------------------------
 
-const PROP_KEYS = ['color', 'roof', 'floors', 'length', 'width', 'size', 'shirt', 'livery', 'awning', 'lattice', 'built'];
+const PROP_KEYS = ['color', 'roof', 'floors', 'length', 'width', 'size', 'shirt', 'livery', 'awning', 'lattice', 'built', 'radius', 'gates', 'shape', 'small'];
 export function modelKey(kind, p, id) {
   const b = baseKind(kind);
   const c = classOf(kind);
