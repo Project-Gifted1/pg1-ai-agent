@@ -10,7 +10,8 @@
     "test": "node --import ./tests/helpers/spend-cap.mjs --test 'tests/*.test.mjs' 'tests/browser/*.test.mjs'",
     "test:browser": "node --import ./tests/helpers/spend-cap.mjs --test 'tests/browser/*.test.mjs'",
     "docs:build": "node scripts/build-docs.mjs",
-    "commands:build": "node scripts/build-commands.mjs"
+    "commands:build": "node scripts/build-commands.mjs",
+    "sandbox:terrain": "node scripts/build-sandbox-terrain.mjs"
   },
   "dependencies": {
     "@ai-sdk/google": "4.0.76",

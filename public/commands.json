@@ -600,6 +600,29 @@
       "client": false
     },
     {
+      "command": "/sandbox upgrade",
+      "area": "Lab",
+      "description": "Add the road network and any missing runways to one of PG1's worlds, in place; without confirm it only describes what it would add",
+      "args": [
+        {
+          "name": "world",
+          "placeholder": "world id",
+          "required": true
+        },
+        {
+          "name": "confirm",
+          "placeholder": "confirm",
+          "required": false,
+          "choices": [
+            "confirm"
+          ]
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
       "command": "/sandbox experiment",
       "area": "Lab",
       "description": "Start an experiment run: blind or informed, clues or control",
@@ -627,6 +650,29 @@
       ],
       "operatorOnly": true,
       "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/sandbox delete",
+      "area": "Lab",
+      "description": "Delete one of PG1's worlds (not its first universe); without confirm it only shows what would go. Its black box is kept",
+      "args": [
+        {
+          "name": "world",
+          "placeholder": "world id",
+          "required": true
+        },
+        {
+          "name": "confirm",
+          "placeholder": "confirm",
+          "required": false,
+          "choices": [
+            "confirm"
+          ]
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
       "client": false
     },
     {
