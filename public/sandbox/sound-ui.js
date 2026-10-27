@@ -3,12 +3,14 @@
 // the choice and the volume are remembered on this device.
 //
 // Each second it reads where the camera is from the page (the view, the
-// clock: "in space", "on <world>"), the time of day from the clock, and
-// what the world holds (sea, a town, traffic) from the world on screen.
+// clock: "in space", "on <world>"), the time of day from the clock, what
+// the world holds (sea, a town or a village, traffic), and who is talking
+// near where the camera looks.
 
 import { createSound } from './sound.js';
 
 const KEY = 'pg1_sandbox_sound';
+const MOTOR = new Set(['car', 'bus', 'truck', 'taxi', 'motorbike', 'police_car', 'army_truck', 'tractor']);
 const $ = (id) => document.getElementById(id);
 let sound = null;
 
@@ -24,9 +26,11 @@ function placeOf() {
   if (/in space/.test(clock)) return 'space';
   const view = window.sandboxScene && window.sandboxScene.view ? window.sandboxScene.view() : 'overview';
   if (view === 'space') return 'space';
-  const town = ents.some((e) => ['house', 'apartment', 'shop', 'tower', 'compound'].includes(e.kind));
+  const motor = ents.some((e) => MOTOR.has(e.kind));
+  const homes = ents.some((e) => ['house', 'apartment', 'shop', 'tower', 'compound', 'fishing_village'].includes(e.kind));
   const sea = ents.some((e) => e.kind === 'island');
-  return town ? 'town' : sea ? 'sea' : 'land';
+  // A town has traffic; a village (no motor traffic: a period world) has none.
+  return homes ? (motor ? 'town' : 'village') : sea ? 'sea' : 'land';
 }
 function nightOf() {
   const m = /(\d\d):(\d\d)/.exec(((document.querySelector('#sandbox-view .sandbox-clock') || {}).textContent) || '');
@@ -34,12 +38,21 @@ function nightOf() {
   const h = Number(m[1]) + Number(m[2]) / 60;
   return h < 5 || h > 21 ? 1 : h < 7 ? (7 - h) / 2 : h > 19 ? (h - 19) / 2 : 0;
 }
+// People talking within 60 m of where the camera looks, and how far the camera is.
+function talkersNear(w) {
+  const inner = window.sandboxScene && window.sandboxScene.inner;
+  const cam = inner && inner.cameraState ? inner.cameraState() : null;
+  if (!w || !cam || !w.size) return { talkers: 0, distance: 1000 };
+  const x = cam.target.x + w.size.x / 2; const y = -cam.target.z + w.size.y / 2;
+  const talkers = (w.entities || []).filter((e) => e.properties && e.properties.saying && Math.hypot(e.position.x - x, e.position.y - y) < 60).length;
+  return { talkers, distance: cam.dist };
+}
 function tick() {
   if (!sound || !sound.playing) return;
   const w = window.sandboxState && window.sandboxState.world;
   const ents = (w && w.entities) || [];
   let seed = 0; for (const ch of String((w && w.id) || 'world')) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
-  sound.update({ place: placeOf(), night: nightOf(), seed, near: { traffic: ents.filter((e) => ['car', 'bus', 'truck', 'taxi', 'motorbike'].includes(e.kind)).length / 10 } });
+  sound.update({ place: placeOf(), night: nightOf(), seed, near: { traffic: ents.filter((e) => MOTOR.has(e.kind)).length / 10, ...talkersNear(w) } });
 }
 
 function mark() {

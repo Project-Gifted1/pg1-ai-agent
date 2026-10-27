@@ -32,7 +32,7 @@ export const AIR_KINDS = new Set(['bird', 'plane', 'small_plane', 'jet', 'helico
 // Homes whose insides the viewer furnishes (see furnitureFor).
 export const HOME_KINDS = new Set(['house', 'cabin', 'apartment']);
 // Where a meteorite struck (lib/sandbox/cosmos.mjs).
-KIND_CLASS.crater = 'structure'; FIXED_KINDS.add('crater');
+KIND_CLASS.crater = 'structure';   // drawn on its own (not batched), so a new one can wait for its meteorite
 
 // "car_red" and "house-2" are a car and a house.
 export function baseKind(kind) {

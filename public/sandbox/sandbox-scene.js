@@ -42,7 +42,7 @@ import { buildTerrain } from './terrain.js';
 const MAX_ENTITIES = 1000;
 const CLASS_COLOR = { person: 0xf3c623, animal: 0xff9b7a, plant: 0x3ddc84, building: 0xcfd8dc, structure: 0x9e9e9e, vehicle: 0x36d1c4, space: 0x8f86ff, celestial: 0xd98cff, thing: 0x7cc4ff };
 const PALETTE = [0xf3c623, 0x36d1c4, 0x8f86ff, 0x3ddc84, 0xff9b7a, 0x7cc4ff, 0xffb300, 0xd98cff];
-const KEEP_PROPS = ['to_x', 'to_y', 'sea', 'belt_inner', 'belt_outer', 'gates', 'small', 'history', 'climate', 'culture', 'government', 'country', 'abroad', 'trip', 'text', 'color', 'roof', 'floors', 'heading', 'length', 'width', 'radius', 'size', 'inside', 'target', 'at', 'name', 'family', 'rings', 'clouds', 'shirt', 'livery', 'awning', 'lattice', 'orbit_radius', 'orbits', 'orbit_altitude', 'stages', 'energy', 'hunger', 'hygiene', 'social', 'mood', 'home', 'sex', 'age', 'job', 'work', 'education', 'money', 'partner', 'children', 'mother', 'father', 'saying', 'talking_to', 'built', 'furniture', 'owner', 'civ', 'jail_until', 'honesty', 'ambition', 'sociability', 'curiosity', 'crimes'];
+const KEEP_PROPS = ['to_x', 'to_y', 'chat_with', 'sea', 'belt_inner', 'belt_outer', 'gates', 'small', 'history', 'climate', 'culture', 'government', 'country', 'abroad', 'trip', 'text', 'color', 'roof', 'floors', 'heading', 'length', 'width', 'radius', 'size', 'inside', 'target', 'at', 'name', 'family', 'rings', 'clouds', 'shirt', 'livery', 'awning', 'lattice', 'orbit_radius', 'orbits', 'orbit_altitude', 'stages', 'energy', 'hunger', 'hygiene', 'social', 'mood', 'home', 'sex', 'age', 'job', 'work', 'education', 'money', 'partner', 'children', 'mother', 'father', 'saying', 'talking_to', 'built', 'furniture', 'owner', 'civ', 'jail_until', 'honesty', 'ambition', 'sociability', 'curiosity', 'crimes'];
 
 export function kindColor(kind) {
   const c = CLASS_COLOR[classOf(kind)];
@@ -283,7 +283,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       if (m) return { pos: m.group.position.clone(), size: m.size || 4 };
       const p = entityPos(id); return p ? { pos: p, size: sizeOf(id) } : null;
     },
-    sky: () => centre().setY(world.spaceAlt * 1.25)
+    sky: () => centre().setY(world.spaceAlt * 1.25),
+    hold: (id, on) => { if (on) held.add(id); else held.delete(id); }
   });
 
   const matBody = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.06 });
@@ -326,10 +327,10 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   let tagsAt = 0; let tagList = [];
   const JOB_WORD = { soldier: 'soldier', leader: 'leader', farmer: 'farmer', shopkeeper: 'shopkeeper', driver: 'driver', builder: 'builder', teacher: 'teacher', police: 'police', engineer: 'engineer', doctor: 'doctor', scientist: 'scientist', pilot: 'pilot', astronaut: 'astronaut', retired: 'retired', unemployed: 'looking for work' };
   function updateTags(now) {
-    if (!showNames) { for (const t of tags) t.hidden = true; return; }
+    // With Names off, only what people are saying (speech bubbles).
     if (now - tagsAt > 200) {
       tagsAt = now;
-      tagList = [...movers.values()].filter((m) => m.e && m.e.cls === 'person' && m.group.visible && (!m.e.props.inside || movers.get(m.e.props.inside)?.seat))
+      tagList = [...movers.values()].filter((m) => m.e && m.e.cls === 'person' && m.group.visible && (showNames || m.e.props.saying) && (!m.e.props.inside || movers.get(m.e.props.inside)?.seat))
         .map((m) => ({ m, d: camera.position.distanceTo(m.group.position) })).filter((x) => x.d < 260).sort((a, b) => (b.m.e.props.saying ? 1 : 0) - (a.m.e.props.saying ? 1 : 0) || a.d - b.d).slice(0, TAG_MAX);
     }
     const r = container.getBoundingClientRect();
@@ -346,9 +347,9 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       if (placed.some(([px, py]) => Math.abs(px - sx) < 90 && Math.abs(py - sy) < 20)) { t.hidden = true; return; }
       placed.push([sx, sy]);
       t.hidden = false;
-      const name = `${p.name || e.id}${p.family ? ` ${p.family}` : ''}`;
+      const name = showNames ? `${p.name || e.id}${p.family ? ` ${p.family}` : ''}` : '';
       if (t.children[0].textContent !== name) t.children[0].textContent = name;
-      const job = e.base === 'child' ? `${Math.floor(p.age || 0)}` : JOB_WORD[p.job] || (e.base === 'alien' ? 'visitor' : '');
+      const job = !showNames ? '' : e.base === 'child' ? `${Math.floor(p.age || 0)}` : JOB_WORD[p.job] || (e.base === 'alien' ? 'visitor' : '');
       if (t.children[1].textContent !== job) t.children[1].textContent = job;
       const say = p.saying ? `“${p.saying}”` : '';
       if (t.children[2].textContent !== say) t.children[2].textContent = say;
@@ -365,6 +366,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   // (furnitureGroup is added below, once the materials exist.)
   let staticBoxes = []; // [{ id, box }]
   const movers = new Map(); // id -> mover
+  const held = new Set();   // ids kept out of sight for now (a crater until its meteorite lands)
   const geoCache = new Map();
   const orbitLines = new Map();
   let stepStart = performance.now(); let stepDur = 1200; let tickFrom = 0; let tickTo = 0;
@@ -710,7 +712,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         }
         continue;
       }
-      m.group.visible = true;
+      m.group.visible = !held.has(m.id);
       // Along a curve through the last steps (Catmull-Rom), not a straight
       // line between two of them: a car rounds a corner, a plane turns.
       const span0 = m.prev ? m.prev.distanceTo(m.from) : 0; const span1 = m.from.distanceTo(m.to);
@@ -729,6 +731,12 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         const step = d * (1 - Math.exp(-dt * 6));
         m.yaw += step;
         yawRate = dt > 0 ? step / dt : 0;
+      }
+      // In a conversation, standing: turned to face the other.
+      const partner = !moving && e.props.chat_with ? movers.get(e.props.chat_with) : null;
+      if (partner) {
+        let d = Math.atan2(-(partner.pos.z - m.pos.z), partner.pos.x - m.pos.x) - m.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+        m.yaw += d * (1 - Math.exp(-dt * 4));
       }
       m.group.position.copy(m.pos);
       if (!m.celestial) m.group.rotation.y = m.upright ? 0 : m.yaw;
@@ -757,15 +765,24 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
           case 'rotorZ': p.node.rotation.z += dt * ((moving || e.z > 0.5) ? 40 : 6); break;
           case 'propX': p.node.rotation.x += dt * ((moving || e.z > 0.5) ? 50 : 0); break;
           case 'legL': case 'legR': { const a = moving ? Math.sin(m.phase) * 0.55 : 0; p.node.rotation.z += ((p.role === 'legL' ? a : -a) - p.node.rotation.z) * Math.min(1, dt * 10); break; }
-          case 'armL': case 'armR': { const a = moving ? Math.sin(m.phase) * 0.45 : 0; p.node.rotation.z += ((p.role === 'armL' ? -a : a) - p.node.rotation.z) * Math.min(1, dt * 10); break; }
+          case 'armL': case 'armR': {
+            // Walking: arms swing. Speaking in a conversation: a hand raised and moving as they talk.
+            const talking = !moving && partner && e.props.saying;
+            const a = moving ? Math.sin(m.phase) * 0.45 : 0;
+            const goal = talking && p.role === 'armR' ? 0.9 + Math.sin(now / 260 + m.phase) * 0.35 : talking ? -0.15 : (p.role === 'armL' ? -a : a);
+            p.node.rotation.z += (goal - p.node.rotation.z) * Math.min(1, dt * 10);
+            break;
+          }
           case 'wingL': case 'wingR': { const a = Math.sin(m.phase * 2.5) * 0.7; p.node.rotation.x = p.role === 'wingL' ? a : -a; break; }
           case 'flame': { const on = moving && (dy > 0.5 || e.z > 1); p.node.visible = on; if (on) { const s = 1 + Math.sin(now / 160) * 0.08; p.node.scale.set(1, s, 1); } break; }
           default: break;
         }
       }
+      // Listening: a slight lean in and a nod now and then.
+      if (e.cls === 'person' && !flyer) m.inner.rotation.z = partner && !e.props.saying ? -0.05 + Math.max(0, Math.sin(now / 520 + m.phase)) * 0.06 : 0;
       // Far away, small things are not drawn (they would be under a pixel).
       const camD = camera.position.distanceTo(m.group.position);
-      if (!m.celestial) m.group.visible = camD < Math.max(600, (m.size || 2) * 420);
+      if (!m.celestial) m.group.visible = !held.has(m.id) && camD < Math.max(600, (m.size || 2) * 420);
     }
     // Orbit paths follow their centres.
     for (const l of orbitLines.values()) {

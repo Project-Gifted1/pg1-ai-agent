@@ -2,13 +2,17 @@
 // no recordings, nothing downloaded). Off until the person turns it on.
 //
 //   createSound() -> { on(), off(), music(on), volume(0..1), update(state), playing, musicOn }
-//   state: { place: 'town' | 'sea' | 'land' | 'space' | 'alien', night: 0..1,
-//            hour, seed, near: { traffic, people } }
+//   state: { place: 'town' | 'village' | 'sea' | 'land' | 'space' | 'alien', night: 0..1,
+//            hour, seed, near: { traffic, people, talkers, distance } }
 //
 // Beds, each faded in and out with where the camera is and the time of day:
 //   wind      brown noise through a low-pass, swelling and falling
 //   sea       waves: filtered noise in long, slow surges (coasts and islands)
-//   town      a low rumble of traffic and voices, quieter at night
+//   town      a low rumble of traffic, quieter at night (not in a village:
+//             a world without motor traffic, such as Benin–Warri c. 1610)
+//   voices    people talking near where the camera looks: short voiced
+//             syllables (a buzz through two vowel resonances) in the rhythm
+//             of speech, more with more talkers, fading with distance
 //   birds     short chirps by day; crickets at night
 //   space     a deep, slow drone with a faint shimmer
 //   alien     a stranger drone, and soft chimes
@@ -41,9 +45,9 @@ function noiseBuffer(ctx, kind = 'brown', seconds = 4) {
 
 export function createSound() {
   const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
-  let ctx = null; let master = null; let beds = null; let musicBus = null;
+  let ctx = null; let master = null; let beds = null; let musicBus = null; let voiceBus = null;
   let playing = false; let musicOn = false; let vol = 0.5; let chordN = 0; let nextChord = 0; let nextChirp = 0;
-  let state = { place: 'land', night: 0, seed: 1, near: { traffic: 0, people: 0 } };
+  let state = { place: 'land', night: 0, seed: 1, near: { traffic: 0, people: 0, talkers: 0, distance: 1000 } };
 
   function build() {
     ctx = new AC();
@@ -61,6 +65,7 @@ export function createSound() {
     };
     // The waves' surge and the wind's gusts: slow gain oscillators.
     for (const [b, rate, depth] of [[beds.sea, 0.12, 0.6], [beds.wind, 0.07, 0.4], [beds.crickets, 9, 0.8]]) { const l = ctx.createOscillator(); l.frequency.value = rate; const lg = ctx.createGain(); lg.gain.value = depth; l.connect(lg); const sum = ctx.createGain(); sum.gain.value = 1; b.g.disconnect(); b.g.connect(sum); sum.connect(master); lg.connect(sum.gain); l.start(); }
+    voiceBus = ctx.createGain(); voiceBus.gain.value = 0; voiceBus.connect(master);
     musicBus = ctx.createGain(); musicBus.gain.value = 0;
     const delay = ctx.createDelay(2); delay.delayTime.value = 0.55; const fb = ctx.createGain(); fb.gain.value = 0.35; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
     musicBus.connect(lp); lp.connect(master); lp.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(master);
@@ -73,18 +78,40 @@ export function createSound() {
   }
   function chirp(at) { const o = ctx.createOscillator(); o.type = 'sine'; const f0 = 2600 + Math.random() * 1800; o.frequency.setValueAtTime(f0, at); o.frequency.exponentialRampToValueAtTime(f0 * (1.3 + Math.random() * 0.5), at + 0.08); const g = ctx.createGain(); g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(0.025, at + 0.01); g.gain.linearRampToValueAtTime(0, at + 0.12); o.connect(g); g.connect(master); o.start(at); o.stop(at + 0.15); }
 
+  // One syllable of speech: a voiced buzz at a speaking pitch, gliding a
+  // little, through two vowel resonances (formants), with a short envelope.
+  const VOWELS = [[730, 1090], [530, 1840], [270, 2290], [570, 840], [300, 870], [660, 1720]];
+  function syllable(at) {
+    const f0 = Math.random() < 0.5 ? 100 + Math.random() * 40 : 180 + Math.random() * 60;
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f0, at); o.frequency.linearRampToValueAtTime(f0 * (0.9 + Math.random() * 0.25), at + 0.18);
+    const [f1, f2] = VOWELS[Math.floor(Math.random() * VOWELS.length)];
+    const g = ctx.createGain(); const dur = 0.08 + Math.random() * 0.16;
+    g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(0.05, at + 0.02); g.gain.linearRampToValueAtTime(0, at + dur);
+    for (const [f, q] of [[f1, 6], [f2, 9]]) { const b = ctx.createBiquadFilter(); b.type = 'bandpass'; b.frequency.value = f; b.Q.value = q; o.connect(b); b.connect(g); }
+    g.connect(voiceBus); o.start(at); o.stop(at + dur + 0.05);
+  }
+
   // Every half second: each bed towards its level for where the camera is.
   function mix() {
     if (!ctx || !playing) return;
     const { place, night } = state; const day = 1 - night;
-    const outdoors = place === 'town' || place === 'sea' || place === 'land';
+    const outdoors = place === 'town' || place === 'village' || place === 'sea' || place === 'land';
     ramp(beds.wind.g.gain, outdoors ? 0.18 : place === 'alien' ? 0.1 : 0);
-    ramp(beds.sea.g.gain, place === 'sea' ? 0.22 : place === 'town' ? 0.04 : 0);
+    ramp(beds.sea.g.gain, place === 'sea' ? 0.22 : place === 'town' ? 0.04 : place === 'village' ? 0.06 : 0);
     ramp(beds.town.g.gain, place === 'town' ? 0.1 + 0.15 * Math.min(1, state.near.traffic / 6) * (0.4 + 0.6 * day) : 0);
     ramp(beds.crickets.g.gain, outdoors ? 0.012 * night : 0);
     ramp(beds.space.g.gain, place === 'space' ? 0.35 : 0, 3);
     ramp(beds.alien.g.gain, place === 'alien' ? 0.25 : 0, 3);
     const t = ctx.currentTime;
+    // Voices: how many are talking near where the camera looks, and how close it is.
+    const talkers = Math.min(8, state.near.talkers || 0);
+    const close = Math.max(0, 1 - (state.near.distance || 1000) / 220);
+    ramp(voiceBus.gain, outdoors && talkers ? Math.min(1, 0.35 + talkers * 0.12) * close : 0, 0.6);
+    if (outdoors && talkers && close > 0.02) {
+      // Each talker speaks in bursts: a few syllables, a pause.
+      for (let k = 0; k < talkers; k++) if (Math.random() < 0.6) { let at = t + Math.random() * 0.3; const n = 2 + Math.floor(Math.random() * 4); for (let i = 0; i < n; i++) { syllable(at); at += 0.12 + Math.random() * 0.1; } }
+    }
     if (outdoors && day > 0.4 && t > nextChirp) { const k = 1 + Math.floor(Math.random() * 3); for (let i = 0; i < k; i++) chirp(t + i * 0.18); nextChirp = t + 2 + Math.random() * 6; }
     if (musicOn && t > nextChord) {
       const scale = scaleFor(state.seed); const ch = chordAt(scale, chordN++);

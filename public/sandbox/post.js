@@ -10,6 +10,8 @@
 
 const ADDONS = '/vendor/three/addons/postprocessing/';
 
+const isFlat = (o) => o.isSprite || o.isPoints || (o.material && !Array.isArray(o.material) && o.material.transparent && o.material.depthWrite === false);
+
 export async function createPost(THREE, renderer, scene, camera, settings) {
   if (!settings || (settings.aa === 'none' && !settings.gtao && !settings.bloom)) return null;
   const [{ EffectComposer }, { RenderPass }, { OutputPass }, { SMAAPass }, { UnrealBloomPass }, gtaoMod, taaMod] = await Promise.all([
@@ -36,6 +38,11 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     gtao.updateGtaoMaterial({ radius: 1.0, distanceExponent: 1.6, thickness: 0.8, scale: 1, samples: 12, distanceFallOff: 0.6, screenSpaceRadius: false });
     gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
     gtao.blendIntensity = 0.6;
+    // Glow sprites and see-through shells (halos, atmospheres, nebulae, lamp
+    // pools) are not surfaces: kept out of its depth and normals, or each
+    // would cast a square of shadow.
+    const hideFlat = gtao._overrideVisibility.bind(gtao);
+    gtao._overrideVisibility = function () { hideFlat(); scene.traverse((o) => { if (o.visible && isFlat(o)) { o.visible = false; this._visibilityCache.push(o); } }); };
     composer.addPass(gtao);
   }
   let bloom = null;

@@ -16,9 +16,10 @@
 //
 //   createEffects(THREE, scene, { where(id) -> { pos: Vector3, size } | null,
 //                                 sky(), coarse })
+//                                 hold(id, on): keep a thing out of sight (a crater until it is made)
 //     -> { onWorld(world), tick(dt, camera), dispose(), active }
 
-export function createEffects(THREE, scene, { where, sky = () => new THREE.Vector3(0, 3000, 0), coarse = false } = {}) {
+export function createEffects(THREE, scene, { where, sky = () => new THREE.Vector3(0, 3000, 0), coarse = false, hold = () => {} } = {}) {
   const live = [];
   const seen = new Set();
   let primed = false;
@@ -99,7 +100,10 @@ export function createEffects(THREE, scene, { where, sky = () => new THREE.Vecto
       if (!at) return;
       if (at.crater) {
         const p = at.pos.clone();
+        // The crater is there in the world already; it is shown when the meteorite lands.
+        hold(ev.ref, true);
         streak(p, () => {
+          hold(ev.ref, false);
           flash(p.clone().add(new THREE.Vector3(0, 8, 0)), 260, 0xfff6e0, 1.1);
           if (at.sea) { splash(p); return; }
           ring(p, 5, 260, 0xffe0b0, 2.4);
@@ -144,7 +148,10 @@ export function createEffects(THREE, scene, { where, sky = () => new THREE.Vecto
       if (seen.size > 2000) { const keep = [...seen].slice(-1000); seen.clear(); for (const k of keep) seen.add(k); }
     },
     reset() { primed = false; seen.clear(); },
-    tick(dt) {
+    tick(dt0) {
+      // At most a fifteenth of a second a frame: on a slow device the
+      // effect slows down rather than being skipped between two frames.
+      const dt = Math.min(dt0, 1 / 15);
       for (let i = live.length - 1; i >= 0; i--) {
         const it = live[i]; it.t += dt; const k = Math.min(1, it.t / it.life);
         it.update(dt, k);
