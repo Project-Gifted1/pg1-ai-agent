@@ -40,6 +40,19 @@ A deterministic engine steps the world: the same world and seed always give the 
 - **Ground** (people, animals, bike, motorbike, car, taxi, police car, bus, truck, army truck, tractor) **never stands on water.**
   - Vehicles drive the road network with A* on the road graph (cached per world, rebuilt only when the roads change). They keep right, slow for junctions and bends (acceleration and braking, never an instant top speed), and stop where the destination's driveway meets the network.
   - **Vehicles keep strictly to the roads** (every ground vehicle: cars, taxis, police cars, buses, lorries, army lorries, tractors, motorbikes; bikes may also use paths). They never drive over open ground to a door. A vehicle off the road (put there by an agent, or built there) joins the nearest road first. Where no road goes, it does not go: one `trip_refused` event ("no road goes there"), not one a step. Rules that would push a vehicle off the road (wandering, attraction) are undone. Templates park their vehicles on the roads. A new car from the factory leaves it onto the nearest road.
+  - **Nothing passes through anything else** (`lib/sandbox/watchdog.mjs`). Every boat, vehicle, person and animal has a body (a person about 0.6 m across, a car 4.5 m by 1.9 m, a ferry 40 m by 10 m). The whole of each step's move is checked, not only where it ends, so nothing is jumped over.
+    - **Vehicles queue:** a vehicle stops behind what is ahead of it in its lane and goes on when it moves. Cars in the other lane do not block it, and a parked vehicle (no trip) stands at the kerb, out of the traffic.
+    - **People and boats go round:** they step aside (people on land, boats on water), else wait.
+    - Alongside each other, the later one (by id) falls in behind. Someone at their door goes in.
+    - Something that has waited behind another for 12 steps drops its trip and chooses again.
+  - **The watchdog** checks every thing that moves after every step, and puts right what is wrong:
+    - a position that is not a number, or outside the world;
+    - a ground thing on the water, a boat on land;
+    - a road vehicle off the road (onto the nearest road);
+    - two things on top of each other (moved apart, staying on land, water or road);
+    - something stuck (a trip, no progress for a day of steps), which drops its trip and chooses again.
+    - Anything really wrong is one `watchdog` event that step ("The watchdog put right: 2 back on the road"). Everyday crowding is fixed without an event.
+  - Universe, 1,500 steps: boats, vehicles or people overlapping went from 2,912, 4,128 and 3,510 pair-steps to 0, 0 and 0.
   - People walk on the pavements and footpaths; bikes ride roads and paths.
   - **A trip to another island** goes to this island's harbour or airport, boards a ferry or plane there (as a rider, `inside`), and gets off at the other end. With no link, it is refused with a plain `trip_refused` event. A ferry or plane waits at each harbour or airport for a turnaround (10 steps, about an hour) so that passengers can board, then goes on.
 - **Water** (boats, ferries, ships, patrol boats) **never enters land.** Boats sail round the islands with A* on a coarse sea grid (with the rivers and creeks), cached per world, and berth at a harbour's water side.
