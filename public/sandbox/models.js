@@ -907,7 +907,7 @@ function thing(T, kind, seed) {
 
 // --- the factory ----------------------------------------------------------------------
 
-const PROP_KEYS = ['color', 'roof', 'floors', 'length', 'width', 'size', 'shirt', 'livery', 'awning', 'lattice', 'built', 'sea'];
+const PROP_KEYS = ['color', 'roof', 'floors', 'length', 'width', 'size', 'shirt', 'livery', 'awning', 'lattice', 'built'];
 export function modelKey(kind, p, id) {
   const b = baseKind(kind);
   const c = classOf(kind);
@@ -917,6 +917,8 @@ export function modelKey(kind, p, id) {
   return `${b}|${parts}|${vary}`;
 }
 
+// A crater at sea is drawn differently.
+PROP_KEYS.push('sea');
 export function buildModel(T, kind, p = {}, id = '') {
   const b = baseKind(kind);
   const seed = hashOf(id || kind);
