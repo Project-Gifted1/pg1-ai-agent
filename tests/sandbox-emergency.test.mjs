@@ -75,7 +75,8 @@ test('a day at the beach: people swim, sunbathe and play; swimmers are only ever
     st = stepWorld(spec, st, 100).state;
     for (const p of st.entities.filter((e) => e.properties.activity)) {
       seen.add(p.properties.activity);
-      const nearBeach = beaches.some((b) => Math.hypot(b.position.x - p.position.x, b.position.y - p.position.y) < 200);
+      // At the water's edge along a beach: within half its length (and the walk to the water) of its middle.
+      const nearBeach = beaches.some((b) => Math.hypot(b.position.x - p.position.x, b.position.y - p.position.y) < Math.max(200, (Number(b.properties.length) || 0) / 2 + 150));
       if (!nearBeach) wrong.push(`${p.id} ${p.properties.activity} far from a beach`);
       if (p.properties.swimming && T.isLand(p.position.x, p.position.y)) wrong.push(`${p.id} swimming on land`);
     }

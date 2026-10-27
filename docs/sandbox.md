@@ -76,7 +76,7 @@ Runs with the life rule, deterministically, with whatever a world has.
 - **A day at the beach:** someone near a beach (within 800 m: a holidaymaker in the beach hotels, or a local), in daylight and outside working hours, may go for the day. They walk straight across open ground to a beach, a fountain or a monument, and keep to the plan unless something urgent comes up. There they:
   - swim in the shallows (in the water on purpose, so the land and water rules leave them be);
   - surf, sunbathe on a towel under an umbrella, play beach volleyball, build a sandcastle (children) or stroll by the water.
-- **Rescues:** now and then a swimmer gets into trouble. A lifeguard (or, with none, someone on the beach) swims out and brings them back, and some need a check-up from the ambulance. With nobody to help, they struggle back to shore exhausted.
+- **Rescues:** now and then a swimmer gets into trouble. A lifeguard (or, with none, someone on the beach) swims out and brings them back, and some need a check-up from the ambulance. With nobody to help, they struggle back to shore exhausted. The rescuer is swimming only once in the water, stops whatever they were doing on the beach, and gives up after 60 steps if they cannot reach the swimmer (who then struggles in alone). Someone called away from the beach comes out of the water and the activity ends.
 - **On the water:** every beach in the universe has a lifeguard tower, and kayaks, a sailing boat and a jet ski off it; a yacht sails between Aurelia Harbour and the beaches.
 - **In a period world** (Benin–Warri): no fire engines, ambulances, umbrellas or jet skis. Fires are fought by neighbours; at the water people stroll or swim.
 - **Every fire, call-out, rescue and treatment** is an event, in the black box.
