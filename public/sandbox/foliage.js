@@ -21,7 +21,7 @@ function bladeTuft(THREE, rnd, blades = 6) {
   for (let b = 0; b < blades; b++) {
     const a = rnd() * Math.PI * 2; const r = rnd() * 0.25;
     const ox = Math.cos(a) * r; const oz = Math.sin(a) * r;
-    const h = 0.45 + rnd() * 0.55; const w = 0.035 + rnd() * 0.03;
+    const h = 0.22 + rnd() * 0.33; const w = 0.03 + rnd() * 0.025;
     const lean = (rnd() - 0.5) * 0.5; const dir = rnd() * Math.PI * 2;
     const dx = Math.cos(dir); const dz = Math.sin(dir);
     const start = pos.length / 3;
@@ -127,7 +127,7 @@ export function createFoliage(THREE, { density = 20000, radius = 90, setupMateri
         const lush = 0.35 + 0.65 * r();
         for (let k = 0; k < perCell; k++) {
           const x = (gx + r()) * CELL; const z = (gz + r()) * CELL;
-          const kind = Math.floor(r() * grass.length); const yaw = r() * Math.PI * 2; const sz = 0.7 + r() * 0.8; const flower = r() < 0.05;
+          const kind = Math.floor(r() * grass.length); const yaw = r() * Math.PI * 2; const sz = 0.75 + r() * 0.5; const flower = r() < 0.05;
           if (r() > lush) continue;
           const d = Math.hypot(x - cx, z - cz);
           if (d > radius) continue;

@@ -35,6 +35,8 @@ import { createEnvironment } from './environment.js';
 import { buildStreets } from './streets.js';
 import { buildCoast } from './coast.js';
 import { createFoliage } from './foliage.js';
+import { INTERIORS, interiorFor, storeysOf, doorOf } from './interiors.js';
+import { Kit } from './kit.js';
 import { createControls } from './controls.js';
 import { TIERS, TIER_SETTINGS, QUALITY_KEY, pickTier, createGovernor } from './quality.js';
 import { createPost } from './post.js';
@@ -285,11 +287,12 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   // Overlays: a clock, a minimap, a label for the picked thing.
   const hud = document.createElement('div');
   hud.className = 'sandbox-hud';
-  hud.innerHTML = '<span class="sandbox-clock" aria-live="off"></span><canvas class="sandbox-minimap" width="132" height="132" aria-label="Minimap: tap to move there"></canvas><div class="sandbox-tags" aria-hidden="true"></div><div class="sandbox-label" hidden></div>';
+  hud.innerHTML = '<span class="sandbox-clock" aria-live="off"></span><canvas class="sandbox-minimap" width="132" height="132" aria-label="Minimap: tap to move there"></canvas><div class="sandbox-tags" aria-hidden="true"></div><div class="sandbox-label" hidden></div><div class="sandbox-floors" hidden><button type="button" data-floor="1" aria-label="Up a floor">▲</button><span></span><button type="button" data-floor="-1" aria-label="Down a floor">▼</button></div>';
   container.appendChild(hud);
   const clockEl = hud.querySelector('.sandbox-clock');
   const mini = hud.querySelector('.sandbox-minimap');
   const label = hud.querySelector('.sandbox-label');
+  const floorsEl = hud.querySelector('.sandbox-floors');
   // Names and what people are saying, over their heads (the nearest few).
   const tagsEl = hud.querySelector('.sandbox-tags');
   const TAG_MAX = coarse ? 8 : 16;
@@ -378,13 +381,20 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         const g = model[name].clone(); g.applyMatrix4(m4); into[name].push(g);
         g.computeBoundingBox(); box.union(g.boundingBox);
       }
-      if (!box.isEmpty()) staticBoxes.push({ id: e.id, box });
+      if (!box.isEmpty()) staticBoxes.push({ id: e.id, box, e });
       // A finished home's furniture, for "See inside".
       if (HOME_KINDS.has(e.base) && !(typeof e.props.built === 'number' && e.props.built < 100)) {
         const fkey = `furniture|${e.base}|${Math.min(12, Number(e.props.furniture) || 0)}`;
         let fm = geoCache.get(fkey);
         if (!fm) { fm = { ...furnitureFor(THREE, e.base, Math.min(12, Number(e.props.furniture) || 0)), parts: [] }; geoCache.set(fkey, fm); }
         for (const name of ['body', 'glow', 'glass']) if (fm[name]) { const g = fm[name].clone(); g.applyMatrix4(m4); flayers[name].push(g); }
+      }
+      // Every other building's inside (interiors.js): shown when you go in, or with "See inside".
+      if (INTERIORS[e.base] && !(typeof e.props.built === 'number' && e.props.built < 100) && !(e.base === 'tower' && e.props.lattice)) {
+        const ikey = `interior|${e.base}|${storeysOf(e.base, e.props)}`;
+        let im = geoCache.get(ikey);
+        if (!im) { im = { ...(interiorFor(THREE, Kit, e.base, e.props) || {}), parts: [] }; geoCache.set(ikey, im); }
+        for (const name of ['body', 'glow', 'glass']) if (im[name]) { const g = im[name].clone(); g.applyMatrix4(m4); flayers[name].push(g); }
       }
     }
     const merge = (list) => {
@@ -576,7 +586,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   function setMode(next, { quiet = false } = {}) {
     mode = next;
     controls.autoRotate = mode === 'overview' ? 0.03 : mode === 'tour' ? 0.05 : mode === 'space' ? 0.02 : 0;
-    controls.minDist = mode === 'explore' ? 2 : 4;
+    controls.minDist = mode === 'explore' ? 1.5 : 4;
+    if (mode !== 'explore') leave();
     const span = Math.max(world.size.x, world.size.y);
     if (mode === 'overview') controls.flyTo({ target: centre(), dist: Math.min(span * 0.85, spread() * 2.6), phi: 0.95 });
     if (mode === 'space') {
@@ -612,16 +623,63 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     for (const h of hits) { let o = h.object; while (o && !o.userData.entityId) o = o.parent; if (o && h.distance < bd) { bd = h.distance; best = o.userData.entityId; } break; }
     const v = new THREE.Vector3();
     for (const b of staticBoxes) { if (ray.ray.intersectBox(b.box, v)) { const d = v.distanceTo(ray.ray.origin); if (d < bd) { bd = d; best = b.id; } } }
-    // Exploring: a tap on open ground (or water's edge) walks there.
+    // Exploring: a tap on a building goes in at its front door.
+    if (mode === 'explore' && best && enter(best)) return;
+    // Exploring: a tap on open ground (or water's edge, or the floor you are on) walks there.
     if (mode === 'explore' && !best) {
+      groundPlane.constant = -(inside ? floorY(inside) : 0);
       const hit = ray.ray.intersectPlane(groundPlane, v);
       if (hit && hit.distanceTo(ray.ray.origin) < 400) {
-        const y = Math.max(0, (env.heightAt || (() => 0))(hit.x, hit.z)) + 1.6;
+        const y = (inside ? floorY(inside) : Math.max(0, (env.heightAt || (() => 0))(hit.x, hit.z))) + 1.6;
         controls.flyTo({ target: new THREE.Vector3(hit.x, y, hit.z) });
         return;
       }
     }
     select(best);
+  }
+
+  // Going inside: the building's walls turn see-through, its rooms show,
+  // and ▲ ▼ change floors. Leaving (walking out, or another view) undoes it.
+  let inside = null; let autoXray = false;
+  const HOME_DOOR = { house: [11, 9], cabin: [8, 7], apartment: [20, 14] };
+  function floorY(st) { return 0.3 + st.storey * st.fh; }
+  function enter(id) {
+    const sb = staticBoxes.find((b) => b.id === id); if (!sb || sb.e.cls !== 'building') return false;
+    const e = sb.e; const home = HOME_DOOR[e.base];
+    const door = home ? { x: home[0] / 2 - 1.5, z: 0 } : doorOf(e.base);
+    if (!door) return false;
+    const yaw = yawFromHeading(e.props.heading);
+    const c = toScene(e, new THREE.Vector3());
+    const off = new THREE.Vector3(door.x, 0, door.z).applyAxisAngle(THREE.Object3D.DEFAULT_UP, yaw);
+    inside = { id, e, storey: 0, storeys: home ? 1 : storeysOf(e.base, e.props), fh: home ? 3.1 : INTERIORS[e.base].fh, base: c.y, box: sb.box };
+    // Look in, away from the door (the model's -x).
+    const theta = Math.PI - (Number(e.props.heading) || 0) * Math.PI / 180;
+    controls.flyTo({ target: new THREE.Vector3(c.x + off.x, floorY(inside) + 1.6, c.z + off.z), dist: 2.5, phi: 1.52, theta: theta + Math.PI });
+    if (!xray) { autoXray = true; setXray(true); }
+    showFloors();
+    return true;
+  }
+  function leave() {
+    if (!inside) return;
+    inside = null; floorsEl.hidden = true;
+    if (autoXray) { autoXray = false; setXray(false); }
+  }
+  function showFloors() {
+    floorsEl.hidden = !inside || inside.storeys < 2;
+    if (inside) floorsEl.querySelector('span').textContent = inside.storey === 0 ? 'Ground' : `Floor ${inside.storey}`;
+  }
+  floorsEl.addEventListener('click', (ev) => {
+    const b = ev.target.closest('button'); if (!b || !inside) return;
+    ev.stopPropagation();
+    inside.storey = Math.max(0, Math.min(inside.storeys - 1, inside.storey + Number(b.dataset.floor)));
+    controls.flyTo({ target: new THREE.Vector3(controls.goalTarget.x, floorY(inside) + 1.6, controls.goalTarget.z) });
+    showFloors(); schedule();
+  });
+  // Walked out of the building's footprint: outside again.
+  function checkInside() {
+    if (!inside) return;
+    const t = controls.target; const b = inside.box;
+    if (mode !== 'explore' || t.x < b.min.x - 3 || t.x > b.max.x + 3 || t.z < b.min.z - 3 || t.z > b.max.z + 3) leave();
   }
 
   // The marker over what is picked: a gold cone that bobs gently.
@@ -821,6 +879,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       tourNext = now + 9000;
     }
     controls.update(step);
+    checkInside();
     // The near plane follows the camera's distance (2% of it): depth stays
     // precise enough for a coast 20 cm above the sea seen from 10 km.
     const near = Math.min(1000, Math.max(0.2, controls.dist * 0.02));
@@ -944,6 +1003,10 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       schedule();
     },
     setView(m) { if (m === 'follow' && !selectedId) return; setMode(m); schedule(); },
+    // Go into a building (Explore, at its front door); false if it has no inside.
+    enter(id) { if (mode !== 'explore') setMode('explore', { quiet: true }); const ok = enter(id); schedule(); return ok; },
+    inside: () => (inside ? { id: inside.id, storey: inside.storey, storeys: inside.storeys } : null),
+    floor(d) { if (!inside) return; floorsEl.querySelector(`[data-floor="${d > 0 ? 1 : -1}"]`).click(); },
     // Explore from a place in the world (world metres), looking toward a heading (degrees, 0 = east).
     exploreAt(wx, wy, heading = 0) {
       const x = wx - world.size.x / 2; const z = -(wy - world.size.y / 2);
@@ -1027,6 +1090,7 @@ export async function createSandboxScene(container, { reducedMotion = false, coa
     update(next, o = {}) { lastWorld = next; lastDuration = o.duration || lastDuration; call('update', next, o); },
     setView: (m) => call('setView', m), view: () => call('view'),
     exploreAt: (x, y, h) => call('exploreAt', x, y, h),
+    enter: (id) => !!call('enter', id), inside: () => call('inside') || null, floor: (d) => call('floor', d),
     setXray: (on) => call('setXray', on), xray: () => !!call('xray'),
     setNames: (on) => call('setNames', on), names: () => !!call('names'),
     select: (id) => call('select', id), selected: () => call('selected'),

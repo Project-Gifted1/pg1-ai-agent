@@ -455,6 +455,9 @@
     .sandbox-view { position: relative; height: min(68vh, 680px); min-height: 340px; border: 1px solid var(--lx-line); border-radius: var(--lx-radius); overflow: hidden; background: #0a0a0b; }
     .sandbox-view.is-full { position: fixed; inset: 0; z-index: 60; height: auto; border-radius: 0; border: 0; }
     .sandbox-hud { position: absolute; inset: 0; pointer-events: none; }
+    .sandbox-floors { position: absolute; right: 8px; bottom: 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: auto; background: rgba(10,10,11,0.72); border-radius: 10px; padding: 4px; color: #fff; font: 600 0.72rem/1.2 var(--lx-font, system-ui); }
+    .sandbox-floors button { min-width: var(--lx-tap, 44px); min-height: var(--lx-tap, 44px); border: 0; border-radius: 8px; background: rgba(255,255,255,0.12); color: #fff; font-size: 1rem; }
+    .sandbox-floors[hidden] { display: none; }
     .secret-once { max-width: min(420px, calc(100vw - 32px)); border: 1px solid rgba(255,255,255,0.14); border-radius: 14px; background: #121214; color: #e8e8ec; padding: 18px; }
     .secret-once::backdrop { background: rgba(0,0,0,0.6); }
     .secret-once h3 { margin: 0 0 8px; font-size: 1rem; }
