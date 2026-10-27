@@ -32,6 +32,7 @@
 
 import { buildModel, modelKey, baseKind, classOf, FIXED_KINDS, AIR_KINDS, HOME_KINDS, celestialSize, furnitureFor } from './models.js';
 import { createEnvironment } from './environment.js';
+import { createEffects } from './effects.js';
 import { createControls } from './controls.js';
 import { TIERS, TIER_SETTINGS, QUALITY_KEY, pickTier, createGovernor } from './quality.js';
 import { createPost } from './post.js';
@@ -244,6 +245,20 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   const env = createEnvironment(THREE, scene, { coarse, quality: settings, camera, addons: { Sky: skyMod && skyMod.Sky, CSM: csmMod && csmMod.CSM } });
   env.textures = textures;
   const glow = glowTexture(THREE);
+  // What happens, seen where it happens (effects.js): meteorites, sparks, flares, battles in space.
+  const effects = createEffects(THREE, scene, {
+    coarse,
+    where: (id) => {
+      if (id === '@star') { const st = world.entities.find((e) => e.base === 'star'); const m = st && movers.get(st.id); return m ? { pos: m.group.position.clone(), size: m.size / 2 } : null; }
+      const e = world.entities.find((x) => x.id === id);
+      if (!e) return null;
+      if (e.base === 'crater') return { pos: toScene(e, new THREE.Vector3()).setY(0.3), size: Number(e.props.radius) || 10, crater: true, sea: !!e.props.sea };
+      const m = movers.get(id);
+      if (m) return { pos: m.group.position.clone(), size: m.size || 4 };
+      const p = entityPos(id); return p ? { pos: p, size: sizeOf(id) } : null;
+    },
+    sky: () => centre().setY(world.spaceAlt * 1.25)
+  });
 
   const matBody = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.06 });
   const matGlass = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.12, metalness: 0.75 });
@@ -729,6 +744,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     if (lastRender && now - lastRender < 250) governor.sample(now - lastRender);
     lastRender = now;
     const tickF = animate(step, now);
+    effects.tick(step);
+    container.dataset.effects = String(effects.active);
 
     // Camera modes.
     if ((mode === 'follow' || mode === 'tour') && selectedId) {
@@ -822,6 +839,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       tickFrom = firstWorld ? world.tick : prevTick; tickTo = world.tick;
       syncMovers(duration);
       syncOrbits();
+      if (world.id !== prevId) effects.reset();
+      effects.onWorld(next);
       if (firstWorld) {
         firstWorld = false;
         const span = Math.max(world.size.x, world.size.y);
@@ -854,6 +873,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); }); });
       for (const m of geoCache.values()) { for (const k of ['body', 'glow', 'glass']) m[k] && m[k].dispose(); for (const p of m.parts) for (const k of ['body', 'glow', 'glass']) p.geo[k] && p.geo[k].dispose(); }
       if (post) post.dispose();
+      effects.dispose();
       glow.dispose(); renderer.dispose(); canvas.remove(); hud.remove();
     }
   };
