@@ -264,7 +264,7 @@ test('PG1-subject: free engines only (even with a budget), its own empty memory,
   await setLimits(t.autoStore, { dailyBudgetUsd: 5 });
   const runA = await startExperiment(sandbox, { worldId: w.id, blind: true, clues: true, situation: SITUATION, anomalies: [{ type: 'physics', at_turn: 2 }], maxTurns: 30 });
   const pushes = [];
-  await autonomousTick({ env: t.env, supUrl: SUP, supKey: 'service', fetchImpl: t.db.fetch, deps: { ...noScheduled, notify: async (p) => pushes.push(p), sandboxStore: sandbox } });
+  await autonomousTick({ now: () => Date.parse("2026-10-27T09:00:00Z"), env: t.env, supUrl: SUP, supKey: 'service', fetchImpl: t.db.fetch, deps: { ...noScheduled, notify: async (p) => pushes.push(p), sandboxStore: sandbox } });
   const row = t.db.actions.find((r) => r.type === 'world_experiment');
   assert.ok(row, 'the run went through the autonomous guardrails');
   assert.equal(row.status, 'done', row.result);
@@ -294,7 +294,7 @@ test('PG1-subject: free engines only (even with a budget), its own empty memory,
   const before = prompts.length;
   replies.splice(0, replies.length, 'DO listen', 'DO wait');
   i = 0;
-  await autonomousTick({ env: t.env, supUrl: SUP, supKey: 'service', fetchImpl: t.db.fetch, deps: { ...noScheduled, notify: async (p) => pushes.push(p), sandboxStore: sandbox } });
+  await autonomousTick({ now: () => Date.parse("2026-10-27T09:00:00Z"), env: t.env, supUrl: SUP, supKey: 'service', fetchImpl: t.db.fetch, deps: { ...noScheduled, notify: async (p) => pushes.push(p), sandboxStore: sandbox } });
   for (const p of prompts.slice(before)) assert.doesNotMatch(p, /The stone fell far too slowly/, 'run B never sees run A');
   assert.ok((await sandbox.getRun(runB.id)).turns >= 1);
   // Humans see the truth: the briefing, the panel, /state and the logs.
@@ -315,12 +315,12 @@ test('PG1-subject stops at the kill switch, and Autonomous OFF runs nothing', as
   t = tickWorld({ onGemini: () => { n++; if (n === 2) t.db.state.enabled = false; return gemini('DO look'); } });
   await switchOn(t.autoStore);
   const run = await startExperiment(sandbox, { worldId: w.id, blind: true, clues: false, situation: SITUATION, maxTurns: 30 });
-  await autonomousTick({ env: t.env, supUrl: SUP, supKey: 'service', fetchImpl: t.db.fetch, deps: { ...noScheduled, notify: async () => {}, sandboxStore: sandbox } });
+  await autonomousTick({ now: () => Date.parse("2026-10-27T09:00:00Z"), env: t.env, supUrl: SUP, supKey: 'service', fetchImpl: t.db.fetch, deps: { ...noScheduled, notify: async () => {}, sandboxStore: sandbox } });
   const row = t.db.actions.find((r) => r.type === 'world_experiment');
   assert.equal(row.status, 'stopped');
   assert.equal((await sandbox.getRun(run.id)).turns, 2, 'stopped at the next checkpoint');
   const before = n;
-  await autonomousTick({ env: t.env, supUrl: SUP, supKey: 'service', fetchImpl: t.db.fetch, deps: { ...noScheduled, notify: async () => {}, sandboxStore: sandbox } });
+  await autonomousTick({ now: () => Date.parse("2026-10-27T09:00:00Z"), env: t.env, supUrl: SUP, supKey: 'service', fetchImpl: t.db.fetch, deps: { ...noScheduled, notify: async () => {}, sandboxStore: sandbox } });
   assert.equal(n, before, 'OFF: no further turn');
 });
 
