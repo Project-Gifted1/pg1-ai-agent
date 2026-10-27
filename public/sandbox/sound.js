@@ -3,13 +3,17 @@
 //
 //   createSound() -> { on(), off(), music(on), volume(0..1), update(state), playing, musicOn }
 //   state: { place: 'town' | 'village' | 'sea' | 'land' | 'space' | 'alien', night: 0..1,
-//            hour, seed, near: { traffic, people, talkers, distance } }
+//            hour, seed, near: { traffic, people, talkers, distance, sirens, fire, beach } }
 //
 // Beds, each faded in and out with where the camera is and the time of day:
 //   wind      brown noise through a low-pass, swelling and falling
 //   sea       waves: filtered noise in long, slow surges (coasts and islands)
 //   town      a low rumble of traffic, quieter at night (not in a village:
 //             a world without motor traffic, such as Benin–Warri c. 1610)
+//   siren     a fire engine or ambulance on a call near where the camera
+//             looks: a two-tone wail, louder the nearer
+//   fire      a fire nearby: crackling
+//   beach     the camera at a beach: the surf, louder
 //   voices    people talking near where the camera looks: short voiced
 //             syllables (a buzz through two vowel resonances) in the rhythm
 //             of speech, more with more talkers, fading with distance
@@ -45,9 +49,9 @@ function noiseBuffer(ctx, kind = 'brown', seconds = 4) {
 
 export function createSound() {
   const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
-  let ctx = null; let master = null; let beds = null; let musicBus = null; let voiceBus = null;
+  let ctx = null; let master = null; let beds = null; let musicBus = null; let voiceBus = null; let siren = null; let fireBus = null; let whiteBuf = null;
   let playing = false; let musicOn = false; let vol = 0.5; let chordN = 0; let nextChord = 0; let nextChirp = 0;
-  let state = { place: 'land', night: 0, seed: 1, near: { traffic: 0, people: 0, talkers: 0, distance: 1000 } };
+  let state = { place: 'land', night: 0, seed: 1, near: { traffic: 0, people: 0, talkers: 0, distance: 1000, sirens: 0, fire: 0, beach: 0 } };
 
   function build() {
     ctx = new AC();
@@ -66,6 +70,10 @@ export function createSound() {
     // The waves' surge and the wind's gusts: slow gain oscillators.
     for (const [b, rate, depth] of [[beds.sea, 0.12, 0.6], [beds.wind, 0.07, 0.4], [beds.crickets, 9, 0.8]]) { const l = ctx.createOscillator(); l.frequency.value = rate; const lg = ctx.createGain(); lg.gain.value = depth; l.connect(lg); const sum = ctx.createGain(); sum.gain.value = 1; b.g.disconnect(); b.g.connect(sum); sum.connect(master); lg.connect(sum.gain); l.start(); }
     voiceBus = ctx.createGain(); voiceBus.gain.value = 0; voiceBus.connect(master);
+    // The siren: two tones, a whole tone apart, alternating twice a second.
+    { const g = ctx.createGain(); g.gain.value = 0; g.connect(master); const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = 700; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200; const og = ctx.createGain(); og.gain.value = 0.18; o.connect(lp); lp.connect(og); og.connect(g); o.start(); siren = { g, o }; }
+    // Fire: crackling noise in short random bursts (scheduled in mix()).
+    fireBus = ctx.createGain(); fireBus.gain.value = 0; const fhp = ctx.createBiquadFilter(); fhp.type = 'highpass'; fhp.frequency.value = 1800; fireBus.connect(fhp); fhp.connect(master); whiteBuf = white;
     musicBus = ctx.createGain(); musicBus.gain.value = 0;
     const delay = ctx.createDelay(2); delay.delayTime.value = 0.55; const fb = ctx.createGain(); fb.gain.value = 0.35; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
     musicBus.connect(lp); lp.connect(master); lp.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(master);
@@ -104,6 +112,14 @@ export function createSound() {
     ramp(beds.space.g.gain, place === 'space' ? 0.35 : 0, 3);
     ramp(beds.alien.g.gain, place === 'alien' ? 0.25 : 0, 3);
     const t = ctx.currentTime;
+    // Sirens near where the camera looks (hi-lo, twice a second); a fire's crackle; the surf at a beach.
+    const sir = Math.min(1, state.near.sirens || 0);
+    ramp(siren.g.gain, sir * 0.25, 0.3);
+    if (sir > 0) { for (let i = 0; i < 4; i++) siren.o.frequency.setValueAtTime(i % 2 ? 960 : 700, t + i * 0.25 - (t % 0.5)); }
+    const fire = Math.min(1, state.near.fire || 0);
+    ramp(fireBus.gain, fire * 0.5, 0.5);
+    if (fire > 0) for (let i = 0; i < 6; i++) { const src = ctx.createBufferSource(); src.buffer = whiteBuf; const g = ctx.createGain(); const at = t + Math.random() * 0.5; const d = 0.01 + Math.random() * 0.04; g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(0.3 + Math.random() * 0.7, at + 0.003); g.gain.linearRampToValueAtTime(0, at + d); src.connect(g); g.connect(fireBus); src.start(at, Math.random()); src.stop(at + d + 0.01); }
+    if (state.near.beach) ramp(beds.sea.g.gain, 0.3 * state.near.beach, 1);
     // Voices: how many are talking near where the camera looks, and how close it is.
     const talkers = Math.min(8, state.near.talkers || 0);
     const close = Math.max(0, 1 - (state.near.distance || 1000) / 220);

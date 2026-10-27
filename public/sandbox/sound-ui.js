@@ -5,7 +5,7 @@
 // Each second it reads where the camera is from the page (the view, the
 // clock: "in space", "on <world>"), the time of day from the clock, what
 // the world holds (sea, a town or a village, traffic), and who is talking
-// near where the camera looks.
+// near where the camera looks; sirens, a fire or a beach nearby.
 
 import { createSound } from './sound.js';
 
@@ -42,10 +42,17 @@ function nightOf() {
 function talkersNear(w) {
   const inner = window.sandboxScene && window.sandboxScene.inner;
   const cam = inner && inner.cameraState ? inner.cameraState() : null;
-  if (!w || !cam || !w.size) return { talkers: 0, distance: 1000 };
+  if (!w || !cam || !w.size) return { talkers: 0, distance: 1000, sirens: 0, fire: 0, beach: 0 };
   const x = cam.target.x + w.size.x / 2; const y = -cam.target.z + w.size.y / 2;
-  const talkers = (w.entities || []).filter((e) => e.properties && e.properties.saying && Math.hypot(e.position.x - x, e.position.y - y) < 60).length;
-  return { talkers, distance: cam.dist };
+  const near = (e, r) => Math.hypot(e.position.x - x, e.position.y - y) < r;
+  const ents = w.entities || [];
+  const talkers = ents.filter((e) => e.properties && e.properties.saying && near(e, 60)).length;
+  // A siren on a call within 400 m (louder the nearer); a fire within 250 m; a beach within 150 m.
+  const sirenD = Math.min(...ents.filter((e) => e.properties && e.properties.siren).map((e) => Math.hypot(e.position.x - x, e.position.y - y) + cam.dist * 0.3), Infinity);
+  const sirens = sirenD < 400 ? 1 - sirenD / 400 : 0;
+  const fire = ents.some((e) => e.properties && e.properties.fire > 0 && near(e, 250)) ? Math.max(0.3, 1 - cam.dist / 400) : 0;
+  const beach = ents.some((e) => e.kind === 'beach' && near(e, 150)) ? Math.max(0.3, 1 - cam.dist / 300) : 0;
+  return { talkers, distance: cam.dist, sirens, fire, beach };
 }
 function tick() {
   if (!sound || !sound.playing) return;
