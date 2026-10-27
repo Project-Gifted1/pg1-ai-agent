@@ -821,7 +821,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         if (proj.z < 1 && Math.abs(proj.x) < 1.1 && Math.abs(proj.y) < 1.1) {
           const e = world.entities.find((x) => x.id === selectedId);
           label.hidden = false;
-          label.textContent = e ? `${e.props.name || e.kind.replace(/_/g, ' ')} · ${e.id}` : selectedId;
+          label.textContent = e ? `${e.props.name ? `${e.props.name}${e.props.family && !String(e.props.name).includes(e.props.family) ? ` ${e.props.family}` : ''}` : e.kind.replace(/_/g, ' ')} · ${e.id}` : selectedId;
           label.style.transform = `translate(${Math.round((proj.x * 0.5 + 0.5) * r.width)}px, ${Math.round((-proj.y * 0.5 + 0.5) * r.height) - 12}px) translate(-50%, -100%)`;
         } else label.hidden = true;
       }

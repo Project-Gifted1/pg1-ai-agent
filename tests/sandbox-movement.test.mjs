@@ -118,8 +118,8 @@ test('a ground trip to another island goes by the harbour and the ferry; with no
   const spec = validateSpec({ ...base, entities: [...base.entities, { id: 'ferry-1', kind: 'ferry', properties: { name: 'Gull' }, position: { x: 2200, y: 1500 } }], rules: [...base.rules, { id: 'sail', type: 'travel', kind: 'ferry', roam: ['port'] }] });
   const out = measureRun(spec, initialState(spec), 600);
   const kinds = out.events.filter((e) => e.ref === 'walker').map((e) => e.summary);
-  assert.ok(kinds.some((s) => /Ada boarded Gull at port-a/.test(s)), 'boards the ferry');
-  assert.ok(kinds.some((s) => /Ada got off Gull at port-b/.test(s)), 'gets off on the other island');
+  assert.ok(kinds.some((s) => /Ada boarded Gull at Port 1/.test(s)), 'boards the ferry');
+  assert.ok(kinds.some((s) => /Ada got off Gull at Port 2/.test(s)), 'gets off on the other island');
   assert.equal(out.state.entities.find((e) => e.id === 'walker').properties.at, 'inn', 'and walks on to the hotel');
   assert.deepEqual(out.groundOnWater, []);
   assert.deepEqual(out.waterOnLand, []);
