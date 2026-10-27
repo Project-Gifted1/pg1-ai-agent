@@ -140,7 +140,8 @@ test('emergencies and the beach: a fire and its engine, the helicopter on the ro
   await page.evaluate(() => sandboxScene.select(sandboxState.world.entities.find((e) => e.kind === 'lifeguard_tower' && e.properties.beach === 'beach-aurelia').id));
   await frames(page, 40);
   await shot(page, 'beach');
-  // An ambulance on a call: lights flashing.
+  // An ambulance on a call: lights flashing (buildings see-through, should one stand between).
+  await page.evaluate(() => sandboxScene.setXray(true));
   await page.evaluate(() => { const w = JSON.parse(JSON.stringify(sandboxState.world)); const a = w.entities.find((e) => e.kind === 'ambulance'); a.properties.siren = true; a.properties.emergency = 'medical'; sandboxState.world = w; sandboxScene.update(w, { duration: 50 }); sandboxScene.select(a.id); });
   await frames(page, 40);
   await shot(page, 'ambulance');
