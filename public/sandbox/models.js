@@ -581,6 +581,11 @@ function wheelPair(T, x, y, z, r, w, color = '#1a1a1a', rim = '#c7ccd1') {
       q.cyl(r * 0.58, r * 0.58, 0.02, 16, rim, 0, 0, s * (z + w / 2 + 0.005), { rx: Math.PI / 2 });     // the rim's face
       for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; q.box(r * 0.5, r * 0.11, 0.03, rim, Math.cos(a) * r * 0.27, Math.sin(a) * r * 0.27, s * (z + w / 2 + 0.02), { rz: a }); }
       q.cyl(r * 0.14, r * 0.14, 0.04, 10, '#9e9e9e', 0, 0, s * (z + w / 2 + 0.03), { rx: Math.PI / 2 });  // hub cap
+      if (DETAIL >= 2) {
+        for (let i = 0; i < 24; i++) { const a = (i / 24) * Math.PI * 2; q.box(r * 0.12, 0.03, w * 0.85, '#202020', Math.cos(a) * r, Math.sin(a) * r, s * z, { rz: a + Math.PI / 2 }); }   // tread blocks
+        q.cyl(r * 0.5, r * 0.5, 0.02, 16, '#8d8d8d', 0, 0, s * (z + w / 2 - 0.02), { rx: Math.PI / 2 });            // brake disc
+        q.box(r * 0.3, r * 0.22, 0.05, '#c62828', r * 0.3, r * 0.25, s * (z + w / 2 - 0.01));                       // calliper
+      }
     }
   }, [x, y, 0], 'wheel');
 }
@@ -651,6 +656,25 @@ function car(T, p, seed, variant = 'car') {
   k.box(0.02, 0.11, 0.5, '#fafafa', h + 0.11, bottom + 0.12, 0); k.box(0.02, 0.11, 0.5, '#ffeb3b', -h - 0.11, bottom + 0.12, 0);
   k.box(0.021, 0.04, 0.36, '#212121', h + 0.115, bottom + 0.12, 0); k.box(0.021, 0.04, 0.36, '#212121', -h - 0.115, bottom + 0.12, 0);
   k.cyl(0.006, 0.006, 0.5, 4, '#212121', roofA - 0.1, roofY + 0.2, 0.5);
+  if (DETAIL >= 2) {
+    // Inside, seen through the glass: seats, a steering wheel, the dashboard.
+    const beltY = c[0][1]; const seatY = beltY - 0.25; const dashX = c[3][0] - 0.3;
+    for (const x of [dashX - 0.9, dashX - 1.8 > c[0][0] + 0.3 && !S.bed ? dashX - 1.8 : null]) if (x !== null) for (const z of (x === dashX - 0.9 ? [0.4, -0.4] : [0])) { k.box(0.5, 0.12, z ? 0.5 : W - 0.5, '#3e3e3e', x, seatY, z); k.box(0.12, 0.6, z ? 0.5 : W - 0.5, '#3e3e3e', x - 0.25, seatY + 0.3, z, { rz: -0.15 }); k.box(0.1, 0.2, z ? 0.3 : 0.3, '#4a4a4a', x - 0.3, seatY + 0.7, z); }
+    k.box(0.4, 0.25, W - 0.3, '#2a2a2a', dashX + 0.1, beltY - 0.05, 0);
+    k.torus(0.17, 0.025, '#1a1a1a', dashX - 0.25, beltY + 0.1, 0.4, { ry: Math.PI / 2, rz: 0.4, tseg: 16 });
+    k.box(0.03, 0.06, 0.25, '#4fc3f7', dashX - 0.05, beltY + 0.12, -0.05, { layer: 'glow' });                    // the screen
+    // Wipers, an exhaust, a fuel cap, a fin aerial, side indicators, a badge.
+    for (const z of [0.25, -0.45]) k.box(0.03, 0.02, 0.6, '#111', c[3][0] - 0.05, c[3][1] + 0.03, z, { ry: 0.3 });
+    k.cyl(0.04, 0.045, 0.25, 8, '#9e9e9e', -h - 0.05, bottom + 0.02, W / 2 - 0.35, { rz: Math.PI / 2 });
+    k.cyl(0.09, 0.09, 0.02, 12, paint, xr + 0.55, c[0][1] - 0.2, -(W / 2 + 0.005), { rx: Math.PI / 2 });
+    k.box(0.25, 0.07, 0.07, '#111', roofA + 0.15, roofY + 0.07, 0);
+    for (const z of [W / 2 + 0.005, -(W / 2 + 0.005)]) k.box(0.1, 0.04, 0.02, '#ffa000', xf + r + 0.15, bottom + 0.42, z, { layer: 'glow' });
+    k.cyl(0.07, 0.07, 0.02, 12, chrome, h + 0.035, fy - 0.08, 0, { rz: Math.PI / 2 });
+    // Rear-window heater lines; roof bars on estates and SUVs; a sunroof on some.
+    for (let i = 0; i < 4; i++) k.box(0.01, 0.005, W - 0.5, '#5d4037', c[0][0] + (c[1][0] - c[0][0]) * (0.3 + i * 0.15) + 0.02, c[0][1] + (c[1][1] - c[0][1]) * (0.3 + i * 0.15), 0, { layer: 'glass' });
+    if (name === 'estate' || name === 'suv') for (const x of [roofA + 0.2, roofB - 0.2]) k.box(0.05, 0.05, W - 0.2, '#212121', x, roofY + 0.14, 0);
+    if (seed % 63 % 5 === 2 && name !== 'van' && name !== 'pickup') k.box(0.7, 0.012, 0.8, '#1d2733', (roofA + roofB) / 2 + 0.1, roofY + 0.06, 0, { layer: 'glass' });
+  }
   if (variant === 'taxi') { k.box(0.5, 0.18, 0.28, '#212121', (roofA + roofB) / 2, roofY + 0.12, 0); k.box(0.46, 0.14, 0.3, '#fff59d', (roofA + roofB) / 2, roofY + 0.13, 0, { layer: 'glow' }); k.box(2 * h - 0.2, 0.08, W + 0.03, '#212121', 0, c[0][1] - 0.18, 0); }
   if (variant === 'police') {
     k.box(2 * h * 0.58, 0.26, W + 0.03, '#1a237e', 0.1, c[0][1] - 0.32, 0);
@@ -686,6 +710,15 @@ function bus(T, p, seed = 0) {
   for (const z of [1.45, -1.45]) { k.box(0.05, 0.05, 0.4, '#212121', 6.0, 2.9, z * 0.9); k.box(0.08, 0.45, 0.2, '#212121', 6.1, 2.65, z); }
   for (let i = 0; i < 6; i++) k.box(1.3, 0.7, 0.05, '#ffe082', -4.5 + i * 1.8, 2.3, 1.27, { layer: 'glow' });
   if (seed % 7 % 3 !== 0) k.box(2.6, 0.35, 1.6, '#cfd8dc', -2.5, 3.2, 0);                             // roof unit
+  if (DETAIL >= 2) {
+    // Seats in pairs either side of the aisle, grab rails, wipers, a lit route number, an exhaust.
+    for (let i = 0; i < 9; i++) for (const z of [0.85, 0.4, -0.4, -0.85]) { const x = -5 + i * 1.1; k.box(0.45, 0.1, 0.42, '#1565c0', x, 1.15, z); k.box(0.1, 0.55, 0.42, '#1565c0', x - 0.2, 1.45, z); }
+    for (const z of [0.15, -0.15]) k.cyl(0.02, 0.02, 10, 6, '#bdbdbd', 0, 2.75, z, { rz: Math.PI / 2 });
+    for (let i = 0; i < 5; i++) k.cyl(0.02, 0.02, 1.6, 6, '#ffeb3b', -4 + i * 2, 1.85, 0.2);
+    for (const z of [0.5, -0.5]) k.box(0.03, 0.02, 0.9, '#111', 6.07, 1.5, z, { rx: 0.3 });
+    k.box(0.04, 0.24, 0.4, '#ff9800', 6.1, 3.15, -0.6, { layer: 'glow' }); k.box(0.04, 0.2, 0.4, '#ffe0b2', 6.1, 3.15, 0.6, { layer: 'glow' });
+    k.cyl(0.06, 0.06, 0.3, 8, '#757575', -6.25, 0.55, 0.9, { rz: Math.PI / 2 });
+  }
 
   return { ...k.build(), parts: [wheelPair(T, 4, 0.5, 1.12, 0.5, 0.32), wheelPair(T, -3.6, 0.5, 1.12, 0.5, 0.32)], size: 13 };
 }
@@ -720,6 +753,15 @@ function truck(T, p, seed = 0) {
   for (const z of [0.9, -0.9]) k.box(0.05, 0.25, 0.3, '#ff1744', -4.62, 0.9, z, { layer: 'glow' });
   k.box(9.4, 0.35, 2.2, '#263238', 0.3, 0.62, 0);
   k.cyl(0.32, 0.32, 1.2, 14, '#9e9e9e', 2.2, 0.85, 1.0, { rz: Math.PI / 2 });                        // fuel tank
+  if (DETAIL >= 2) {
+    // Exhaust stacks, air horns, a roof light bar, mud flaps, side guards, a sun visor.
+    for (const z of [1.15, -1.15]) { k.cyl(0.09, 0.09, 2.6, 10, '#bdbdbd', 2.15, 2.4, z); k.cyl(0.1, 0.09, 0.12, 10, '#424242', 2.15, 3.75, z); }
+    for (const z of [0.3, -0.3]) k.cone(0.07, 0.6, 10, '#cfd8dc', 3.6, 3.1, z, { rz: -Math.PI / 2 });
+    k.box(0.3, 0.12, 1.8, '#212121', 3.9, 3.08, 0); for (let i = 0; i < 5; i++) k.box(0.05, 0.08, 0.2, '#ffb300', 4.06, 3.08, -0.7 + i * 0.35, { layer: 'glow' });
+    k.box(0.35, 0.06, 2.3, cab, 4.55, 3.02, 0);
+    for (const z of [1.0, -1.0]) for (const x of [-4.55, 2.75]) k.box(0.03, 0.5, 0.45, '#111', x, 0.35, z);
+    for (const z of [1.18, -1.18]) for (let i = 0; i < 2; i++) k.box(4.2, 0.06, 0.04, '#9e9e9e', -0.9, 0.55 + i * 0.25, z);
+  }
   return { ...k.build(), parts: [wheelPair(T, 3.4, 0.5, 1.1, 0.5, 0.32), wheelPair(T, -2.4, 0.5, 1.1, 0.5, 0.32), wheelPair(T, -3.6, 0.5, 1.1, 0.5, 0.32)], size: 10 };
 }
 function tractor(T, p) {
@@ -742,6 +784,11 @@ function bike(T, p, seed, { motor = false } = {}) {
     k.cyl(0.05, 0.05, 0.75, 6, '#9e9e9e', 0.65, 0.75, 0, { rz: -0.4 });
     k.box(0.08, 0.06, 0.7, '#212121', 0.78, 1.12, 0);
     k.box(0.06, 0.12, 0.15, '#fff8e1', 0.85, 0.95, 0, { layer: 'glow' });
+    if (DETAIL >= 2) {
+      k.cyl(0.05, 0.06, 0.9, 8, '#bdbdbd', -0.45, 0.42, 0.2, { rz: Math.PI / 2 - 0.15 }); k.cyl(0.065, 0.065, 0.2, 8, '#757575', -0.92, 0.48, 0.2, { rz: Math.PI / 2 });   // exhaust
+      for (const z of [0.32, -0.32]) { k.cyl(0.01, 0.01, 0.25, 4, '#212121', 0.75, 1.25, z); k.box(0.02, 0.07, 0.1, '#90a4ae', 0.75, 1.38, z, { layer: 'glass' }); }   // mirrors
+      k.box(0.3, 0.2, 0.42, c, 0.62, 0.5, 0, { rz: 0.3 }); k.box(0.12, 0.08, 0.08, '#ff1744', -0.75, 0.9, 0, { layer: 'glow' }); k.box(0.2, 0.1, 0.42, '#212121', 0.05, 1.0, 0);   // fairing, tail light, tank cap
+    }
   } else {
     k.cyl(0.03, 0.03, 0.9, 6, c, 0.15, 0.62, 0, { rz: 1.0 });
     k.cyl(0.03, 0.03, 0.75, 6, c, -0.18, 0.6, 0, { rz: -0.45 });
@@ -749,9 +796,16 @@ function bike(T, p, seed, { motor = false } = {}) {
     k.box(0.25, 0.06, 0.12, '#212121', -0.33, 0.96, 0);
     k.cyl(0.025, 0.025, 0.5, 6, '#9e9e9e', 0.5, 0.85, 0, { rz: -0.3 });
     k.box(0.05, 0.04, 0.55, '#212121', 0.55, 1.08, 0);
+    if (DETAIL >= 2) {
+      k.torus(0.1, 0.015, '#9e9e9e', 0, 0.34, 0.04, { tseg: 16 }); for (const sz of [1, -1]) { k.box(0.16, 0.012, 0.012, '#757575', 0, 0.34, sz * 0.08, { rz: 0.8 }); k.box(0.12, 0.03, 0.06, '#212121', sz * 0.11, 0.34 - sz * 0.08, sz * 0.12); }   // chainring and pedals
+      k.box(0.56, 0.012, 0.012, '#424242', -0.27, 0.36, 0.04); k.box(0.56, 0.012, 0.012, '#424242', -0.27, 0.32, 0.04);   // the chain
+      k.box(0.05, 0.05, 0.08, '#fff8e1', 0.58, 0.98, 0, { layer: 'glow' }); k.box(0.03, 0.04, 0.06, '#ff1744', -0.48, 0.7, 0, { layer: 'glow' });
+      k.box(0.6, 0.02, 0.1, c, -0.42, 0.72, 0, { rz: 0.15 });                                                         // the rack
+    }
   }
   const r = motor ? 0.32 : 0.34;
-  const wheel = (x) => partOf(T, (q) => { q.torus(r, motor ? 0.08 : 0.03, '#1a1a1a', 0, 0, 0, { tseg: 18 }); q.cyl(0.04, 0.04, 0.06, 6, '#bdbdbd', 0, 0, 0, { rx: Math.PI / 2 }); if (!motor) for (let i = 0; i < 4; i++) q.box(0.01, r * 2, 0.01, '#bdbdbd', 0, 0, 0, { rz: i * Math.PI / 4 }); }, [x, r, 0], 'wheel');
+  const spokes = DETAIL >= 2 ? 12 : 4;
+  const wheel = (x) => partOf(T, (q) => { q.torus(r, motor ? 0.08 : 0.03, '#1a1a1a', 0, 0, 0, { tseg: DETAIL >= 2 ? 28 : 18 }); q.cyl(0.04, 0.04, 0.06, 6, '#bdbdbd', 0, 0, 0, { rx: Math.PI / 2 }); if (!motor) for (let i = 0; i < spokes; i++) q.box(0.006, r * 2, 0.006, '#bdbdbd', 0, 0, 0, { rz: i * Math.PI / spokes }); else if (DETAIL >= 2) { q.cyl(r * 0.6, r * 0.6, 0.06, 18, '#424242', 0, 0, 0, { rx: Math.PI / 2 }); for (let i = 0; i < 5; i++) q.box(r * 0.55, 0.04, 0.07, '#9e9e9e', 0, 0, 0, { rz: i * Math.PI / 5 }); q.cyl(r * 0.45, r * 0.45, 0.02, 16, '#8d8d8d', 0, 0, 0.05, { rx: Math.PI / 2 }); } }, [x, r, 0], 'wheel');
   return { ...k.build(), parts: [wheel(motor ? 0.7 : 0.55), wheel(motor ? -0.7 : -0.5)], size: 2, seat: [motor ? -0.3 : -0.33, motor ? 1.0 : 0.98, 0] };
 }
 
