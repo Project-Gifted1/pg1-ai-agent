@@ -56,6 +56,7 @@ A deterministic engine steps the world: the same world and seed always give the 
   - Every island country has a runway with a heading (Saltreach an airstrip).
 - **Blind experiments** (`lib/sandbox/blind.mjs`): `go` uses the same rules, `move` stops at the water's edge ("Water stops you from going further that way."), and `leave` will not put the subject in the water.
 - **Worlds from before** keep working without a reset: on the first step, a ground thing standing on water is moved to the nearest point on its own island's coast, and a boat on land to the nearest water, each with one `terrain_fix` event (a black box record).
+- **The same every time, cache or no cache:** the next hop toward a goal comes from one search out from that goal (Dijkstra, ties by node), and a door is remembered only when it does not depend on who is asking. What the caches hold never changes an answer, so a world runs the same in a fresh process as in one that has already run it or other worlds. `tests/sandbox-same-routes.test.mjs` checks it.
 - **Step time:** the universe template runs at about 6.1 ms a step on the machine where it was measured (5.7 ms before these rules, the same machine).
 
 **Orbits.** An entity with `orbit_radius` circles the entity named by `orbits` once every `orbit_period` steps, starting at `orbit_phase`, `orbit_altitude` metres above it.
