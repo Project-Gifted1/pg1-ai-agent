@@ -60,9 +60,11 @@ function partOf(THREE, fill, pivot, role) {
 // ears, mouth), one of several hair styles, clothes with a collar, buttons,
 // a belt and shoes with soles; some wear a jacket, a skirt or a dress, some
 // carry a bag. 24 looks per kind, from the id; arms and legs swing (parts).
-function person(T, p, seed, { child = false, astronaut = false } = {}) {
+function person(T, p, seed0, { child = false, astronaut = false } = {}) {
   const s = child ? 0.7 : 1;
-  const v = Math.imul(seed % 24 + 1, 2654435761) >>> 0;   // the look's own bits
+  // Everything about the look comes from one of 24 (as the model's cache key does).
+  const seed = Math.imul(seed0 % 24 + 7, 40503) >>> 0;
+  const v = Math.imul(seed0 % 24 + 1, 2654435761) >>> 0;   // the look's own bits
   const bit = (n, m) => (v >>> n) % m;
   const skin = pickBy(seed, SKIN); const hair = pickBy(seed >> 3, HAIR);
   const shirt = astronaut ? '#f4f4f4' : col(p.shirt, pickBy(seed >> 5, ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#ecf0f1', '#ff8a65', '#4db6ac']));
@@ -503,58 +505,94 @@ function wheelPair(T, x, y, z, r, w, color = '#1a1a1a', rim = '#c7ccd1') {
   }, [x, y, 0], 'wheel');
 }
 
-// A car: a shaped body (bonnet, sloped windscreen, roof, boot) from a side
-// profile, a glass cabin with pillars, wheel arches, bumpers, a grille,
-// head and tail lights, door lines and handles, mirrors, number plates, an
-// aerial; a taxi's roof sign or a police car's stripes and light bar.
+// Car body styles, from the side (x along the car, rear to front; y up):
+// the lower body's outline, the glass cabin, the axles and the wheel size.
+const CAR_STYLES = {
+  saloon:    { lower: [[-2.27, 0.92], [-2.05, 1.0], [-1.25, 1.04], [1.05, 1.04], [2.05, 0.93], [2.27, 0.76]], cabin: [[-1.28, 1.03], [-0.95, 1.44], [0.32, 1.44], [1.07, 1.03]], ax: [1.38, -1.38], r: 0.36, W: 1.78, half: 2.25 },
+  hatchback: { lower: [[-2.0, 0.95], [-1.95, 1.04], [0.95, 1.04], [1.85, 0.93], [2.02, 0.76]], cabin: [[-1.96, 1.03], [-1.8, 1.46], [0.25, 1.46], [0.98, 1.03]], ax: [1.25, -1.3], r: 0.34, W: 1.74, half: 2.0 },
+  estate:    { lower: [[-2.33, 0.95], [-2.25, 1.04], [1.05, 1.04], [2.05, 0.93], [2.3, 0.76]], cabin: [[-2.24, 1.03], [-2.18, 1.47], [0.32, 1.47], [1.07, 1.03]], ax: [1.42, -1.42], r: 0.36, W: 1.8, half: 2.3 },
+  suv:       { lower: [[-2.3, 1.12], [-2.22, 1.25], [1.05, 1.25], [2.05, 1.15], [2.3, 0.95]], cabin: [[-2.2, 1.24], [-2.1, 1.78], [0.4, 1.78], [1.1, 1.24]], ax: [1.45, -1.45], r: 0.44, W: 1.92, half: 2.3, clear: 0.48, rails: true },
+  pickup:    { lower: [[-2.6, 1.05], [-0.7, 1.1], [1.15, 1.12], [2.25, 1.02], [2.5, 0.85]], cabin: [[-0.68, 1.1], [-0.6, 1.66], [0.4, 1.66], [1.15, 1.1]], ax: [1.6, -1.65], r: 0.42, W: 1.9, half: 2.55, clear: 0.45, bed: true },
+  van:       { lower: [[-2.45, 1.0], [1.4, 1.0], [2.3, 0.95], [2.45, 0.78]], cabin: [[-2.42, 1.0], [-2.42, 2.05], [0.9, 2.05], [1.55, 1.0]], ax: [1.55, -1.6], r: 0.38, W: 1.95, half: 2.45, solid: true },
+  sports:    { lower: [[-2.2, 0.82], [-2.05, 0.88], [-1.0, 0.9], [0.9, 0.9], [2.1, 0.72], [2.3, 0.58]], cabin: [[-1.05, 0.89], [-0.55, 1.2], [0.15, 1.2], [0.95, 0.89]], ax: [1.42, -1.35], r: 0.35, W: 1.86, half: 2.25, clear: 0.24, spoiler: true }
+};
+const CAR_ORDER = ['saloon', 'hatchback', 'estate', 'suv', 'pickup', 'van', 'sports'];
+const STYLE_OF = { car: CAR_ORDER, taxi: ['saloon', 'estate', 'hatchback', 'suv'], police_car: ['saloon', 'estate', 'suv'] };
+export const carStyle = (variant, seed) => { const list = STYLE_OF[variant === 'taxi' ? 'taxi' : variant === 'police' ? 'police_car' : 'car']; return list[seed % 7 % list.length]; };
+
+// A car in one of seven body styles (saloon, hatchback, estate, SUV,
+// pickup, van, sports): a shaped body cut away round the wheels, a glass
+// cabin with pillars, bumpers, a grille, head and tail lights, door lines
+// and handles, mirrors, number plates, an aerial; roof rails, a load bed or
+// a spoiler where the style has them; a taxi's sign or a police car's
+// stripes and light bar.
 function car(T, p, seed, variant = 'car') {
   const k = new Kit(T);
-  const paint = variant === 'taxi' ? '#f6c90e' : variant === 'police' ? '#f5f5f5' : col(p.color, pickBy(seed, ['#c0392b', '#2c3e50', '#ecf0f1', '#2980b9', '#16a085', '#7f8c8d', '#8e44ad']));
-  const W = 1.78; const trim = '#2b2b2b'; const chrome = '#cfd8dc';
-  // The lower body, from the side (x along the car, y up), extruded across its width.
-  // Its underside is cut away round the wheels: the arches.
-  const arch = (cx) => Array.from({ length: 11 }, (_, i) => { const a = Math.PI - (i / 10) * Math.PI; return [cx + Math.cos(a) * 0.45, 0.36 + Math.sin(a) * 0.45]; });
-  k.prism([[-2.25, 0.32], [-1.83, 0.32], ...arch(-1.38), [0.93, 0.32], ...arch(1.38), [2.25, 0.32], [2.27, 0.76], [2.05, 0.93], [1.05, 1.04], [-1.25, 1.04], [-2.05, 1.0], [-2.27, 0.92]], W, paint, 0, 0, 0);
-  // The cabin: glass all round, then the roof and pillars over it.
-  k.prism([[-1.28, 1.03], [-0.95, 1.44], [0.32, 1.44], [1.07, 1.03]], W - 0.14, '#1d2733', 0, 0, 0, { layer: 'glass' });
-  k.box(1.32, 0.06, W - 0.1, paint, -0.31, 1.465, 0);                                                   // roof
+  const name = carStyle(variant, seed); const S = CAR_STYLES[name];
+  const paint = variant === 'taxi' ? '#f6c90e' : variant === 'police' ? '#f5f5f5' : col(p.color, pickBy(Math.floor((seed % 63) / 7), ['#c0392b', '#2c3e50', '#ecf0f1', '#2980b9', '#16a085', '#7f8c8d', '#8e44ad', '#d35400', '#1b1b1b']));
+  const W = S.W; const trim = '#2b2b2b'; const chrome = '#cfd8dc'; const h = S.half; const r = S.r; const ay = r; const bottom = S.clear || 0.32;
+  // The lower body, cut away round the wheels (the arches), extruded across the width.
+  const arch = (cx) => Array.from({ length: 11 }, (_, i) => { const a = Math.PI - (i / 10) * Math.PI; return [cx + Math.cos(a) * (r + 0.09), ay + Math.sin(a) * (r + 0.09)]; });
+  const [xf, xr] = S.ax;
+  const outline = [[-h, bottom], [xr - r - 0.09, bottom], ...arch(xr), [xf - r - 0.09, bottom], ...arch(xf), [h, bottom], ...S.lower.slice().reverse()];
+  k.prism(outline, W, paint, 0, 0, 0);
+  // The cabin: glass, then roof and pillars (a van's sides are painted, with a window strip).
+  const c = S.cabin; const roofY = c[1][1]; const roofA = c[1][0]; const roofB = c[2][0];
+  k.prism(c, W - 0.14, '#1d2733', 0, 0, 0, { layer: 'glass' });
+  if (S.solid) { k.prism([[c[0][0], c[0][1]], [c[1][0], c[1][1]], [roofB - 0.6, roofY], [roofB - 0.6, c[0][1]]], W - 0.1, paint, 0, 0, 0); k.box(1.6, 0.4, W - 0.08, '#1d2733', roofB - 2.3, roofY - 0.45, 0, { layer: 'glass' }); }
+  k.box(roofB - roofA + 0.04, 0.06, W - 0.1, paint, (roofA + roofB) / 2, roofY + 0.025, 0);
   for (const z of [W / 2 - 0.08, -(W / 2 - 0.08)]) {
-    k.box(0.85, 0.07, 0.06, paint, 0.69, 1.235, z, { rz: -Math.atan2(0.41, 0.75) });                   // A pillar
-    k.box(0.53, 0.08, 0.06, paint, -1.115, 1.235, z, { rz: Math.atan2(0.41, 0.33) });                  // C pillar
-    k.box(0.09, 0.42, 0.06, paint, -0.32, 1.24, z);                                                    // B pillar
-    // Doors: their lines and handles; a side skirt.
-    for (const x of [0.62, -0.32, -1.18]) k.box(0.012, 0.6, 0.01, '#1a1a1a', x, 0.72, z + Math.sign(z) * 0.08);
-    for (const x of [0.2, -0.75]) k.box(0.16, 0.035, 0.02, chrome, x, 0.92, z + Math.sign(z) * 0.09);
-    k.box(2.6, 0.07, 0.03, trim, -0.1, 0.38, z + Math.sign(z) * 0.08);
-    // Mirrors.
-    k.box(0.12, 0.1, 0.18, paint, 0.92, 1.08, z + Math.sign(z) * 0.14); k.box(0.02, 0.08, 0.14, '#90a4ae', 0.86, 1.08, z + Math.sign(z) * 0.15, { layer: 'glass' });
+    const sz = Math.sign(z);
+    const pil = (a, b, t = 0.07) => { const L = Math.hypot(b[0] - a[0], b[1] - a[1]); k.box(L, t, 0.06, paint, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, z, { rz: Math.atan2(b[1] - a[1], b[0] - a[0]) }); };
+    pil(c[3], c[2]); pil(c[0], c[1], 0.09);
+    const bx = (roofA + roofB) / 2 - 0.1;
+    k.box(0.09, roofY - c[0][1], 0.06, paint, bx, (roofY + c[0][1]) / 2, z);
+    const beltY = c[0][1];
+    for (const x of [c[3][0] - 0.45, bx, name === 'van' || name === 'pickup' || name === 'sports' ? null : c[0][0] + 0.1]) if (x !== null) k.box(0.012, beltY - bottom - 0.12, 0.01, '#1a1a1a', x, (beltY + bottom) / 2 + 0.03, z + sz * 0.08);
+    for (const x of [bx + 0.5, name === 'sports' || name === 'pickup' ? null : bx - 0.45]) if (x !== null) k.box(0.16, 0.035, 0.02, chrome, x, beltY - 0.12, z + sz * 0.09);
+    k.box(xf - xr - 2 * r - 0.3, 0.07, 0.03, trim, (xf + xr) / 2, bottom + 0.06, z + sz * 0.08);
+    k.box(0.12, 0.1, 0.18, paint, c[3][0] - 0.15, beltY + 0.05, z + sz * 0.14); k.box(0.02, 0.08, 0.14, '#90a4ae', c[3][0] - 0.21, beltY + 0.05, z + sz * 0.15, { layer: 'glass' });
+    if (S.rails) k.box(roofB - roofA - 0.2, 0.05, 0.05, '#212121', (roofA + roofB) / 2, roofY + 0.1, z - sz * 0.05);
   }
-  // Wheel arches (dark wells), round both axles.
-  for (const x of [1.38, -1.38]) k.box(0.9, 0.5, W - 0.56, '#141414', x, 0.58, 0);
-  // Front: bumper, grille, lights, plate. Back: bumper, lights, plate.
-  k.box(0.2, 0.2, W + 0.04, trim, 2.25, 0.42, 0); k.box(0.2, 0.2, W + 0.04, trim, -2.25, 0.42, 0);
-  k.box(0.03, 0.17, 0.78, '#111', 2.27, 0.66, 0); for (let i = 0; i < 4; i++) k.box(0.035, 0.012, 0.74, '#555', 2.275, 0.6 + i * 0.04, 0);
-  for (const z of [0.6, -0.6]) {
-    k.box(0.06, 0.13, 0.36, '#fff8e1', 2.24, 0.8, z, { layer: 'glow' }); k.box(0.05, 0.15, 0.4, '#cfd8dc', 2.26, 0.8, z, { layer: 'glass' });
-    k.box(0.06, 0.12, 0.34, '#ff1744', -2.27, 0.84, z, { layer: 'glow' });
-    k.box(0.05, 0.06, 0.12, '#ffa000', 2.25, 0.58, z * 1.3, { layer: 'glow' });                        // indicators
+  // Dark wheel wells behind the arches.
+  for (const x of S.ax) k.box(2 * r + 0.18, r + 0.14, W - 0.56, '#141414', x, ay + 0.2, 0);
+  // A pickup's open load bed.
+  if (S.bed) { k.box(1.85, 0.06, W - 0.1, '#3b3b3b', -1.65, 1.0, 0); for (const z of [W / 2 - 0.04, -(W / 2 - 0.04)]) k.box(1.9, 0.12, 0.05, paint, -1.65, 1.1, z); k.box(0.06, 0.4, W - 0.06, paint, -h + 0.04, 0.92, 0); }
+  if (S.spoiler) { k.box(0.35, 0.04, W - 0.2, '#111', -h + 0.2, 1.02, 0); for (const z of [0.6, -0.6]) k.box(0.06, 0.14, 0.04, '#111', -h + 0.22, 0.94, z); }
+  // Front and back: bumpers, grille, lights, indicators, plates.
+  const front = S.lower[S.lower.length - 1]; const fy = Math.max(bottom + 0.3, front[1]);
+  k.box(0.2, 0.2, W + 0.04, trim, h, bottom + 0.1, 0); k.box(0.2, 0.2, W + 0.04, trim, -h, bottom + 0.1, 0);
+  k.box(0.03, 0.17, 0.78, '#111', h + 0.02, fy - 0.08, 0); for (let i = 0; i < 4; i++) k.box(0.035, 0.012, 0.74, '#555', h + 0.025, fy - 0.14 + i * 0.04, 0);
+  for (const z of [W / 2 - 0.3, -(W / 2 - 0.3)]) {
+    k.box(0.06, 0.12, 0.34, '#fff8e1', h - 0.01, fy + 0.04, z, { layer: 'glow' }); k.box(0.05, 0.14, 0.38, '#cfd8dc', h + 0.01, fy + 0.04, z, { layer: 'glass' });
+    k.box(0.06, 0.12, 0.3, '#ff1744', -h - 0.02, S.lower[0][1] - 0.1, z, { layer: 'glow' });
+    k.box(0.05, 0.06, 0.12, '#ffa000', h, bottom + 0.26, z * 1.15, { layer: 'glow' });
   }
-  k.box(0.02, 0.11, 0.5, '#fafafa', 2.36, 0.44, 0); k.box(0.02, 0.11, 0.5, '#ffeb3b', -2.36, 0.44, 0);
-  k.box(0.021, 0.04, 0.36, '#212121', 2.365, 0.44, 0); k.box(0.021, 0.04, 0.36, '#212121', -2.365, 0.44, 0);
-  k.box(0.03, 0.03, 0.03, '#424242', -1.6, 1.03, 0.55); k.cyl(0.006, 0.006, 0.5, 4, '#212121', -1.6, 1.28, 0.55);  // aerial
-  if (variant === 'taxi') { k.box(0.5, 0.18, 0.28, '#212121', -0.3, 1.58, 0); k.box(0.46, 0.14, 0.3, '#fff59d', -0.3, 1.59, 0, { layer: 'glow' }); k.box(4.3, 0.08, W + 0.03, '#212121', 0, 0.86, 0); }
+  k.box(0.02, 0.11, 0.5, '#fafafa', h + 0.11, bottom + 0.12, 0); k.box(0.02, 0.11, 0.5, '#ffeb3b', -h - 0.11, bottom + 0.12, 0);
+  k.box(0.021, 0.04, 0.36, '#212121', h + 0.115, bottom + 0.12, 0); k.box(0.021, 0.04, 0.36, '#212121', -h - 0.115, bottom + 0.12, 0);
+  k.cyl(0.006, 0.006, 0.5, 4, '#212121', roofA - 0.1, roofY + 0.2, 0.5);
+  if (variant === 'taxi') { k.box(0.5, 0.18, 0.28, '#212121', (roofA + roofB) / 2, roofY + 0.12, 0); k.box(0.46, 0.14, 0.3, '#fff59d', (roofA + roofB) / 2, roofY + 0.13, 0, { layer: 'glow' }); k.box(2 * h - 0.2, 0.08, W + 0.03, '#212121', 0, c[0][1] - 0.18, 0); }
   if (variant === 'police') {
-    k.box(2.6, 0.26, W + 0.03, '#1a237e', 0.1, 0.72, 0);
-    k.box(0.3, 0.1, 1.2, '#212121', -0.3, 1.54, 0); k.box(0.26, 0.12, 0.5, '#ff1744', -0.3, 1.6, 0.3, { layer: 'glow' }); k.box(0.26, 0.12, 0.5, '#2979ff', -0.3, 1.6, -0.3, { layer: 'glow' });
+    k.box(2 * h * 0.58, 0.26, W + 0.03, '#1a237e', 0.1, c[0][1] - 0.32, 0);
+    k.box(0.3, 0.1, 1.2, '#212121', (roofA + roofB) / 2, roofY + 0.08, 0); k.box(0.26, 0.12, 0.5, '#ff1744', (roofA + roofB) / 2, roofY + 0.14, 0.3, { layer: 'glow' }); k.box(0.26, 0.12, 0.5, '#2979ff', (roofA + roofB) / 2, roofY + 0.14, -0.3, { layer: 'glow' });
   }
-  return { ...k.build(), parts: [wheelPair(T, 1.38, 0.36, 0.79, 0.36, 0.24), wheelPair(T, -1.38, 0.36, 0.79, 0.36, 0.24)], size: 5 };
+  return { ...k.build(), parts: [wheelPair(T, xf, ay, W / 2 - 0.1, r, 0.24), wheelPair(T, xr, ay, W / 2 - 0.1, r, 0.24)], size: 2 * h + 0.5, style: name };
 }
 
 // A bus: rounded front, windows in pillars, doors, a lit destination sign,
 // mirrors on arms, bumpers, wheel arches, a roof unit.
-function bus(T, p) {
+function bus(T, p, seed = 0) {
   const k = new Kit(T);
   const c = col(p.color, '#f1c40f');
+  // One bus in three is a double-decker: an upper deck with its own windows.
+  if (seed % 7 % 3 === 0) {
+    k.box(11.6, 1.9, 2.55, c, -0.2, 3.95, 0);
+    k.box(11.7, 0.85, 2.58, '#1d2733', -0.2, 4.1, 0, { layer: 'glass' });
+    for (let i = 0; i < 8; i++) for (const z of [1.3, -1.3]) k.box(0.12, 0.85, 0.03, c, -5.4 + i * 1.5, 4.1, z);
+    k.box(0.1, 0.9, 2.3, '#1d2733', 5.95, 4.15, 0, { layer: 'glass' });
+    k.box(11.4, 0.12, 2.4, '#eeeeee', -0.2, 4.95, 0);
+    for (let i = 0; i < 6; i++) k.box(1.3, 0.6, 0.05, '#ffe082', -4.5 + i * 1.8, 4.1, 1.27, { layer: 'glow' });
+  }
   k.box(11.6, 2.5, 2.55, c, -0.2, 1.8, 0);
   k.capsule(1.2, 0.1, c, 5.6, 1.8, 0, { rz: Math.PI / 2, sz: 1.06, sx: 0.32, sy: 1.0 });                // rounded nose
   k.box(11.7, 0.95, 2.58, '#1d2733', -0.2, 2.35, 0, { layer: 'glass' });
@@ -567,14 +605,16 @@ function bus(T, p) {
   for (const z of [0.9, -0.9]) { k.box(0.08, 0.2, 0.38, '#fff8e1', 6.12, 0.85, z, { layer: 'glow' }); k.box(0.08, 0.25, 0.3, '#ff1744', -6.32, 1.0, z, { layer: 'glow' }); }
   for (const z of [1.45, -1.45]) { k.box(0.05, 0.05, 0.4, '#212121', 6.0, 2.9, z * 0.9); k.box(0.08, 0.45, 0.2, '#212121', 6.1, 2.65, z); }
   for (let i = 0; i < 6; i++) k.box(1.3, 0.7, 0.05, '#ffe082', -4.5 + i * 1.8, 2.3, 1.27, { layer: 'glow' });
-  k.box(2.6, 0.35, 1.6, '#cfd8dc', -2.5, 3.2, 0);                                                     // roof unit
+  if (seed % 7 % 3 !== 0) k.box(2.6, 0.35, 1.6, '#cfd8dc', -2.5, 3.2, 0);                             // roof unit
 
   return { ...k.build(), parts: [wheelPair(T, 4, 0.5, 1.12, 0.5, 0.32), wheelPair(T, -3.6, 0.5, 1.12, 0.5, 0.32)], size: 13 };
 }
 // A lorry: a cab with a windscreen, grille, bumper, steps and mirrors; a
-// ribbed box body; a fuel tank; three axles.
-function truck(T, p) {
+// fuel tank; three axles; and one of three loads: a ribbed box body, a
+// tank, or a flatbed with crates.
+function truck(T, p, seed = 0) {
   const k = new Kit(T);
+  const load = ['box', 'tanker', 'flatbed'][seed % 7 % 3];
   const c = col(p.color, '#ecf0f1'); const cab = '#c62828';
   k.box(2.3, 2.3, 2.45, cab, 3.35, 1.85, 0);
   k.box(0.6, 0.9, 2.45, cab, 4.7, 1.2, 0);
@@ -584,8 +624,19 @@ function truck(T, p) {
   k.box(0.04, 0.6, 1.5, '#111', 5.01, 1.2, 0); for (let i = 0; i < 5; i++) k.box(0.05, 0.03, 1.45, '#616161', 5.03, 0.95 + i * 0.12, 0);
   k.box(0.25, 0.3, 2.5, '#424242', 5.05, 0.6, 0);
   for (const z of [0.95, -0.95]) k.box(0.06, 0.2, 0.36, '#fff8e1', 5.06, 0.82, z, { layer: 'glow' });
-  k.box(6.4, 2.9, 2.5, c, -1.4, 2.25, 0);
-  for (let i = 0; i < 11; i++) for (const z of [1.26, -1.26]) k.box(0.06, 2.8, 0.03, '#cfd8dc', -4.5 + i * 0.62, 2.25, z);   // ribs
+  if (load === 'box') {
+    k.box(6.4, 2.9, 2.5, c, -1.4, 2.25, 0);
+    for (let i = 0; i < 11; i++) for (const z of [1.26, -1.26]) k.box(0.06, 2.8, 0.03, '#cfd8dc', -4.5 + i * 0.62, 2.25, z);   // ribs
+  } else if (load === 'tanker') {
+    k.capsule(1.15, 5.2, '#b0bec5', -1.4, 2.05, 0, { rz: Math.PI / 2, rseg: 18 });
+    for (const x of [-3.6, -1.4, 0.8]) k.cyl(1.2, 1.2, 0.12, 18, '#78909c', x, 2.05, 0, { rz: Math.PI / 2 });
+    k.box(5.6, 0.06, 0.5, '#616161', -1.4, 3.25, 0); k.cyl(0.25, 0.25, 0.2, 10, '#616161', -1.4, 3.3, 0);
+    k.box(4, 0.4, 0.02, '#ff6f00', -1.4, 2.05, 1.16);
+  } else {
+    k.box(6.4, 0.15, 2.4, '#5d4037', -1.4, 0.95, 0);
+    for (let i = 0; i < 6; i++) k.box(1.6, 1.1 + (i % 2) * 0.4, 1.0, ['#a1887f', '#8d6e63', '#795548'][i % 3], -4 + (i % 3) * 2.2, 1.6 + (i % 2) * 0.2, i < 3 ? 0.6 : -0.6);
+    for (const z of [1.15, -1.15]) for (let i = 0; i < 5; i++) k.box(0.08, 0.6, 0.06, '#424242', -4.4 + i * 1.5, 1.3, z);
+  }
   for (const z of [0.9, -0.9]) k.box(0.05, 0.25, 0.3, '#ff1744', -4.62, 0.9, z, { layer: 'glow' });
   k.box(9.4, 0.35, 2.2, '#263238', 0.3, 0.62, 0);
   k.cyl(0.32, 0.32, 1.2, 14, '#9e9e9e', 2.2, 0.85, 1.0, { rz: Math.PI / 2 });                        // fuel tank
@@ -1061,7 +1112,7 @@ export function modelKey(kind, p, id) {
   const c = classOf(kind);
   const parts = PROP_KEYS.map((k) => (p && p[k] !== undefined ? `${k}=${p[k]}` : '')).join('|');
   // People and trees vary by id (skin, hair, greens), the rest by colours only.
-  const vary = c === 'person' ? (hashOf(id) % 24) : b === 'tree' || b === 'pine' || b === 'bush' || b === 'rock' || b === 'asteroid' ? (hashOf(id) % 6) : 0;
+  const vary = c === 'person' ? (hashOf(id) % 24) : b === 'car' ? (hashOf(id) % 63) : ['taxi', 'police_car', 'bus', 'truck'].includes(b) ? (hashOf(id) % 7) : b === 'tree' || b === 'pine' || b === 'bush' || b === 'rock' || b === 'asteroid' ? (hashOf(id) % 6) : 0;
   return `${b}|${parts}|${vary}`;
 }
 
@@ -1112,8 +1163,8 @@ export function buildModel(T, kind, p = {}, id = '') {
     case 'car': return car(T, p, seed);
     case 'taxi': return car(T, p, seed, 'taxi');
     case 'police_car': return car(T, p, seed, 'police');
-    case 'bus': return bus(T, p);
-    case 'truck': return truck(T, p);
+    case 'bus': return bus(T, p, seed);
+    case 'truck': return truck(T, p, seed);
     case 'tractor': return tractor(T, p);
     case 'train': return train(T);
     case 'bike': return bike(T, p, seed);
