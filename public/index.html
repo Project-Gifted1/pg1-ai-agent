@@ -460,6 +460,7 @@
     .sandbox-space button { flex: 0 0 auto; min-height: var(--lx-tap, 44px); padding: 4px 10px; border-radius: 999px; border: 1px solid var(--lx-line-strong); background: var(--lx-card-2); color: var(--lx-text); font: inherit; text-align: left; line-height: 1.15; }
     .sandbox-space button small { display: block; color: var(--lx-text-dim, #9aa0a6); font-size: 0.68rem; }
     .sandbox-space button[data-reached="true"] { border-color: #8f86ff; }
+    .sandbox-space .sandbox-land:not([disabled]) { border-color: #f3c623; }
     .sandbox-floors { position: absolute; right: 8px; bottom: 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: auto; background: rgba(10,10,11,0.72); border-radius: 10px; padding: 4px; color: #fff; font: 600 0.72rem/1.2 var(--lx-font, system-ui); }
     .sandbox-floors button { min-width: var(--lx-tap, 44px); min-height: var(--lx-tap, 44px); border: 0; border-radius: 8px; background: rgba(255,255,255,0.12); color: #fff; font-size: 1rem; }
     .sandbox-floors[hidden] { display: none; }
@@ -3892,6 +3893,23 @@
         return tech >= 5 ? [true, 'within reach'] : tech >= 4 ? [false, 'visited by rocket only'] : [false, 'out of reach: needs spaceflight'];
       };
       box.innerHTML = `<button type="button" disabled><strong>Their space age</strong><small>${escapeHTML(SANDBOX_TECH[tech] || 'settlement')} (level ${tech})</small></button>` + list.map((e) => { const [ok, why] = status(e); return `<button type="button" data-id="${escapeHTML(e.id)}" data-reached="${ok}" aria-pressed="${e.id === sel}">${escapeHTML((e.properties && e.properties.name) || e.kind.replace(/_/g, ' '))}<small>${escapeHTML(why)}</small></button>`; }).join('');
+      // Landing: only on a world they have reached (a colony there), or a far
+      // world they have met; otherwise it says what they still need.
+      const contacts = new Set(Object.values(socs).flatMap((x) => (x && x.contacts) || []));
+      const target = list.find((e) => e.id === sel) || null;
+      if (target && sandboxScene.surfaceKind) {
+        const kind = sandboxScene.surfaceKind(target.id);
+        const nm = escapeHTML((target.properties && target.properties.name) || target.kind.replace(/_/g, ' '));
+        const name = (target.properties && target.properties.name) || target.id;
+        let why = null;
+        if (!kind) why = 'not a world to walk on';
+        else if (kind === 'giant') why = 'a gas giant: no surface to stand on (try its moons)';
+        else if (kind === 'alien') why = contacts.has(name) ? null : 'they have not met its people yet: needs first contact (interstellar travel)';
+        else why = colonised.has(target.id) ? null : 'they have no colony there yet: needs space colonies (level 5) and a colony';
+        box.insertAdjacentHTML('beforeend', why ? `<button type="button" class="sandbox-land" disabled><strong>Land on ${nm}</strong><small>${escapeHTML(why)}</small></button>` : `<button type="button" class="sandbox-land" data-land="${escapeHTML(target.id)}"><strong>Land on ${nm}</strong><small>walk its surface</small></button>`);
+        const lb = box.querySelector('[data-land]');
+        if (lb) lb.addEventListener('click', () => { if (sandboxScene.land(lb.dataset.land, { contact: contacts.has(name) })) { box.hidden = true; markSandboxView('explore'); } });
+      }
       box.querySelectorAll('button[data-id]').forEach((b) => b.addEventListener('click', () => { if (sandboxScene && sandboxScene.select) sandboxScene.select(b.dataset.id); }));
     }
     function setSandboxView(mode) { if (!sandboxScene || !sandboxScene.setView) return; sandboxScene.setView(mode); markSandboxView(sandboxScene.view ? sandboxScene.view() : mode); }

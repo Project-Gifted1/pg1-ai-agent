@@ -698,7 +698,7 @@ function bus(T, p, seed = 0) {
     for (let i = 0; i < 6; i++) k.box(1.3, 0.6, 0.05, '#ffe082', -4.5 + i * 1.8, 4.1, 1.27, { layer: 'glow' });
   }
   k.box(11.6, 2.5, 2.55, c, -0.2, 1.8, 0);
-  k.capsule(1.2, 0.1, c, 5.6, 1.8, 0, { rz: Math.PI / 2, sz: 1.06, sx: 0.32, sy: 1.0 });                // rounded nose
+  for (const z of [1.2, -1.2]) k.cyl(0.08, 0.08, 2.5, 8, c, 5.95, 1.8, z);                                // rounded front corners
   k.box(11.7, 0.95, 2.58, '#1d2733', -0.2, 2.35, 0, { layer: 'glass' });
   for (let i = 0; i < 8; i++) for (const z of [1.3, -1.3]) k.box(0.12, 0.95, 0.03, c, -5.4 + i * 1.5, 2.35, z);   // window pillars
   k.box(0.1, 1.5, 2.3, '#1d2733', 6.0, 2.15, 0, { layer: 'glass' });

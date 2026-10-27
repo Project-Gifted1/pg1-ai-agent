@@ -73,6 +73,8 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     render(still) { if (taa) { taa.accumulate = !!still; } composer.render(); },
     // The distance in metres to keep sharp (the camera's target), eased.
     setFocus(d) { if (bokeh) { const u = bokeh.uniforms; u.focus.value += (Math.max(1, d) - u.focus.value) * 0.15; u.aperture.value = 0.004 / Math.max(10, d); } },
+    // Draw another scene (a world's surface) through the same passes.
+    setScene(sc) { for (const p of composer.passes) if ('scene' in p) p.scene = sc; },
     setSize(w, h, pr) { composer.setPixelRatio(pr); composer.setSize(w, h); if (gtao) gtao.setSize(w * pr, h * pr); },
     // Night makes the windows and lamps the brightest things on screen: a little more bloom.
     setNight(n) { if (bloom) { bloom.strength = 0.22 + n * 0.35; bloom.threshold = 0.95 - n * 0.2; } },

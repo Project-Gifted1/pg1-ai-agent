@@ -38,6 +38,7 @@ import { createFoliage } from './foliage.js';
 import { INTERIORS, interiorFor, storeysOf, doorOf } from './interiors.js';
 import { Kit } from './kit.js';
 import { setModelDetail } from './models.js';
+import { buildSurface, surfaceKind } from './surface.js';
 import { createControls } from './controls.js';
 import { TIERS, TIER_SETTINGS, QUALITY_KEY, pickTier, createGovernor } from './quality.js';
 import { createPost } from './post.js';
@@ -625,6 +626,39 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     scene.add(belt);
   }
 
+  // Landing on another world (surface.js): its own scene, walked at eye
+  // height; the page allows it only once the inhabitants have reached it.
+  let surface = null; let drawnScene = scene;
+  function closeSurface() {
+    if (!surface) return;
+    surface.dispose(); surface = null; delete container.dataset.surface;
+  }
+  function land(id, { contact = false } = {}) {
+    const e = world.entities.find((x) => x.id === id);
+    const kind = surfaceKind(e);
+    if (!kind || kind === 'giant') return false;
+    closeSurface();
+    const colony = world.entities.find((c) => c.base === 'colony' && c.props.orbits === id) || null;
+    const mats = { body: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.06 }), glass: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.12, metalness: 0.75 }), glow: new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }) };
+    const model = (k, props, mid) => {
+      const m = buildModel(THREE, k, props, mid); if (!m) return null;
+      const g = new THREE.Group();
+      const add = (geo, at) => { for (const name of ['body', 'glass', 'glow']) if (geo[name]) { const mesh = new THREE.Mesh(geo[name], mats[name]); mesh.castShadow = name !== 'glow' && !coarse; if (at) mesh.position.set(at[0], at[1], at[2]); g.add(mesh); } };
+      add(m); for (const p of m.parts || []) add(p.geo, p.pivot);
+      return g;
+    };
+    let seed = 0; for (const ch of id) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+    surface = buildSurface(THREE, { kind, name: e.props.name || e.kind.replace(/_/g, ' '), color: typeof e.props.color === 'string' ? e.props.color : '#8a8a8a', seed, colony, city: kind === 'alien' && contact ? (e.props.name || e.id) : null, model, coarse });
+    const own = surface.dispose; surface.dispose = () => { own(); for (const m of Object.values(mats)) m.dispose(); };
+    container.dataset.surface = kind;
+    mode = 'explore'; controls.autoRotate = 0; controls.minDist = 1.5; container.dataset.view = mode;
+    selectedId = null; marker.visible = false; if (onSelect) onSelect(null);
+    controls.jumpTo({ target: new THREE.Vector3(0, surface.heightAt(0, 70) + 1.6, 70), dist: 6, phi: 1.5, theta: Math.PI / 2 });
+    if (typeof container.onViewChange === 'function') container.onViewChange(mode);
+    schedule();
+    return true;
+  }
+
   // --- views ------------------------------------------------------------------------------
   let mode = 'overview'; let selectedId = null; let tourNext = 0;
   const controls = createControls(THREE, canvas, camera, { onTap: (x, y) => pick(x, y) });
@@ -660,7 +694,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     mode = next;
     controls.autoRotate = mode === 'overview' ? 0.03 : mode === 'tour' ? 0.05 : mode === 'space' ? 0.02 : 0;
     controls.minDist = mode === 'explore' ? 1.5 : 4;
-    if (mode !== 'explore') leave();
+    if (mode !== 'explore') { leave(); closeSurface(); }
     const span = Math.max(world.size.x, world.size.y);
     if (mode === 'overview') controls.flyTo({ target: centre(), dist: Math.min(span * 0.85, spread() * 2.6), phi: 0.95 });
     if (mode === 'space') {
@@ -669,7 +703,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       controls.flyTo({ target: t, dist: star && star.base === 'star' ? 2900 : 900, phi: 1.36 });
     }
     // Close enough to see it: a station or colony fills the view; a planet sits in it.
-    if (mode === 'follow' && selectedId) { const se = world.entities.find((x) => x.id === selectedId); const close = se && ['space_station', 'colony', 'satellite'].includes(se.base); const person = se && se.cls === 'person'; controls.flyTo({ dist: person ? 4.5 : Math.max(14, sizeOf(selectedId) * (close ? 1.3 : 4.5)), phi: person ? 1.38 : close ? 1.05 : 1.18 }); }
+    if (mode === 'follow' && selectedId) { const se = world.entities.find((x) => x.id === selectedId); const close = se && ['space_station', 'colony', 'satellite'].includes(se.base); const person = se && se.cls === 'person'; const vehicle = se && se.cls === 'vehicle' && !AIR_KINDS.has(se.base); controls.flyTo({ dist: person ? 4.5 : vehicle ? Math.max(7, sizeOf(selectedId) * 1.8) : Math.max(14, sizeOf(selectedId) * (close ? 1.3 : 4.5)), phi: person ? 1.38 : vehicle ? 1.2 : close ? 1.05 : 1.18 }); }
     if (mode === 'tour') tourNext = 0;
     // Explore: down at eye height where the camera looks; drag to look
     // round, tap the ground to walk there, pinch to step back.
@@ -697,6 +731,13 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     for (const h of hits) { let o = h.object; while (o && !o.userData.entityId) o = o.parent; if (o && h.distance < bd) { bd = h.distance; best = o.userData.entityId; } break; }
     const v = new THREE.Vector3();
     for (const b of staticBoxes) { if (ray.ray.intersectBox(b.box, v)) { const d = v.distanceTo(ray.ray.origin); if (d < bd) { bd = d; best = b.id; } } }
+    // On another world: a tap on the ground walks there.
+    if (surface) {
+      groundPlane.constant = -controls.target.y + 1.6;
+      const hit = ray.ray.intersectPlane(groundPlane, new THREE.Vector3());
+      if (hit && hit.distanceTo(ray.ray.origin) < 600) controls.flyTo({ target: new THREE.Vector3(hit.x, surface.heightAt(hit.x, hit.z) + 1.6, hit.z) });
+      return;
+    }
     // Exploring: a tap on a building goes in at its front door.
     if (mode === 'explore' && best && enter(best)) return;
     // Exploring: a tap on open ground (or water's edge, or the floor you are on) walks there.
@@ -999,14 +1040,21 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       }
     } else label.hidden = true;
 
-    clockEl.textContent = `Simulation · day ${clk.day} · ${clk.hh}:${clk.mm}${effAlt > world.spaceAlt ? ' · in space' : ''}`;
+    // Walking on another world, the ground follows its hills.
+    if (surface) { const h = surface.heightAt(controls.goalTarget.x, controls.goalTarget.z) + 1.6; if (Math.abs(controls.goalTarget.y - h) > 0.05) controls.goalTarget.y = h; }
+    clockEl.textContent = surface ? `Simulation · day ${clk.day} · ${clk.hh}:${clk.mm} · on ${surface.name}` : `Simulation · day ${clk.day} · ${clk.hh}:${clk.mm}${effAlt > world.spaceAlt ? ' · in space' : ''}`;
     updateTags(now);
     if (now - miniAt > 250) { drawMini(); miniAt = now; }
     const still = controls.userActive <= 0 && !controls.autoRotate && t0done(now);
     draw(still);
     container.dataset.frames = String((Number(container.dataset.frames) || 0) + 1);
   }
-  function draw(still) { env.beforeRender(camera); if (post) post.render(still); else renderer.render(scene, camera); }
+  function draw(still) {
+    const sc = surface ? surface.scene : scene;
+    if (sc !== drawnScene) { drawnScene = sc; if (post && post.setScene) post.setScene(sc); }
+    if (!surface) env.beforeRender(camera);
+    if (post) post.render(still); else renderer.render(sc, camera);
+  }
   // A still of the view (a PNG data URL), stamped "Simulation" with the day and time.
   function screenshot() {
     draw(true);
@@ -1081,12 +1129,17 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       schedule();
     },
     setView(m) { if (m === 'follow' && !selectedId) return; setMode(m); schedule(); },
+    // Land on a world (the page checks the inhabitants have reached it); false if it has no surface.
+    land(id, opts) { return land(id, opts); },
+    surfaceKind: (id) => surfaceKind(world.entities.find((x) => x.id === id)),
+    onSurface: () => (surface ? { kind: surface.kind, name: surface.name } : null),
     // Go into a building (Explore, at its front door); false if it has no inside.
-    enter(id) { if (mode !== 'explore') setMode('explore', { quiet: true }); const ok = enter(id); schedule(); return ok; },
+    enter(id) { closeSurface(); if (mode !== 'explore') setMode('explore', { quiet: true }); const ok = enter(id); schedule(); return ok; },
     inside: () => (inside ? { id: inside.id, storey: inside.storey, storeys: inside.storeys } : null),
     floor(d) { if (!inside) return; floorsEl.querySelector(`[data-floor="${d > 0 ? 1 : -1}"]`).click(); },
     // Explore from a place in the world (world metres), looking toward a heading (degrees, 0 = east).
     exploreAt(wx, wy, heading = 0) {
+      closeSurface();
       const x = wx - world.size.x / 2; const z = -(wy - world.size.y / 2);
       controls.jumpTo({ target: new THREE.Vector3(x, Math.max(0, (env.heightAt || (() => 0))(x, z)) + 1.6, z), dist: 6, phi: 1.5, theta: Math.PI - (Number(heading) || 0) * Math.PI / 180 });
       mode = 'explore'; controls.autoRotate = 0; controls.minDist = 2; container.dataset.view = mode;
@@ -1114,6 +1167,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       for (const m of geoCache.values()) { for (const k of ['body', 'glow', 'glass']) m[k] && m[k].dispose(); for (const p of m.parts) for (const k of ['body', 'glow', 'glass']) p.geo[k] && p.geo[k].dispose(); }
       if (post) post.dispose();
       for (const d of [streets, coast, foliage]) if (d) d.dispose();
+      closeSurface();
       if (farMesh) farMesh.dispose(); farBox.dispose(); farMat.dispose();
       glow.dispose(); renderer.dispose(); canvas.remove(); hud.remove();
     }
@@ -1168,6 +1222,7 @@ export async function createSandboxScene(container, { reducedMotion = false, coa
     update(next, o = {}) { lastWorld = next; lastDuration = o.duration || lastDuration; call('update', next, o); },
     setView: (m) => call('setView', m), view: () => call('view'),
     exploreAt: (x, y, h) => call('exploreAt', x, y, h),
+    land: (id, o) => !!call('land', id, o), surfaceKind: (id) => call('surfaceKind', id) || null, onSurface: () => call('onSurface') || null,
     enter: (id) => !!call('enter', id), inside: () => call('inside') || null, floor: (d) => call('floor', d),
     setXray: (on) => call('setXray', on), xray: () => !!call('xray'),
     setNames: (on) => call('setNames', on), names: () => !!call('names'),
