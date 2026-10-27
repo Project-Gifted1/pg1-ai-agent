@@ -22,7 +22,9 @@ import { handleSandboxCommand } from '../lib/sandbox/chat.mjs';
 import { planUpgrade } from '../lib/sandbox/upgrade.mjs';
 import { startExperiment } from '../lib/sandbox/experiments.mjs';
 import { SANDBOX_LIMITS } from '../lib/sandbox/engine.mjs';
-import { measureRun } from './helpers/sandboxMovement.mjs';
+import { measureRun, ROAD_VEHICLES } from './helpers/sandboxMovement.mjs';
+import { moveContext } from '../lib/sandbox/movement.mjs';
+import { onRoad } from '../lib/sandbox/roads.mjs';
 
 const V1 = JSON.parse(readFileSync(new URL('./fixtures/sandbox-universe-v1.json', import.meta.url), 'utf8'));
 const say = (store, text) => handleSandboxCommand({ text, isOperator: true, store });
@@ -55,9 +57,21 @@ test('a universe from before the roads, 1,200 ticks in: upgraded in place, its p
   const runway = after.state.entities.find((e) => e.id === 'runway-saltreach');
   assert.ok(runway && typeof runway.properties.heading === 'number', 'a runway with a heading for Saltreach');
   assert.equal(after.state.entities.length, before.state.entities.length + 1, 'only the runway is added');
-  // Nothing removed, renamed or moved; inhabitants, families, countries, treasuries, research identical.
+  // Nothing removed, renamed or moved, but for vehicles off the road, parked on
+  // the nearest one; inhabitants, families, countries, treasuries, research identical.
   const byId = new Map(after.state.entities.map((e) => [e.id, e]));
-  for (const e of before.state.entities) assert.deepEqual(byId.get(e.id), e, `${e.id} is exactly as it was`);
+  const g = moveContext(after.spec, after.state.entities).roads;
+  let parked = 0;
+  for (const e of before.state.entities) {
+    const a = byId.get(e.id);
+    if (a.position.x !== e.position.x || a.position.y !== e.position.y) {
+      assert.ok(ROAD_VEHICLES.has(e.kind), `${e.id} moved, and it is not a road vehicle`);
+      assert.ok(onRoad(g, a.position.x, a.position.y, { paths: e.kind === 'bike' }), `${e.id} was parked on a road`);
+      assert.deepEqual({ ...a, position: e.position }, e, `${e.id} is otherwise as it was`);
+      parked++;
+    } else assert.deepEqual(a, e, `${e.id} is exactly as it was`);
+  }
+  assert.ok(parked > 0, 'vehicles parked on the roads');
   const people = before.state.entities.filter((e) => LIVING.has(e.kind));
   assert.ok(people.length > 100);
   assert.deepEqual(after.state.society, before.state.society, 'countries, treasuries and research levels');
@@ -85,7 +99,7 @@ test('a universe from before the roads, 1,200 ticks in: upgraded in place, its p
   const run = measureRun(after.spec, after.state, 2000);
   assert.deepEqual(run.groundOnWater.slice(0, 5), []);
   assert.deepEqual(run.waterOnLand.slice(0, 5), []);
-  assert.ok(run.onRoad >= 0.95, `${(run.onRoad * 100).toFixed(1)}% of vehicle positions on a road`);
+  assert.equal(run.onRoad, 1, `${(run.onRoad * 100).toFixed(2)}% of vehicle positions on a road`);
   assert.deepEqual(run.steep.slice(0, 5), []);
   assert.ok(run.landings > 0);
   assert.deepEqual(run.offRunway, []);

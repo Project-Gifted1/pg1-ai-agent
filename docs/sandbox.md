@@ -38,7 +38,8 @@ A deterministic engine steps the world: the same world and seed always give the 
 
 - **One terrain.** Land and water come from the world's own entities: `island` discs (and `mangrove` discs, land of its own type) are land; `lake` discs and `river` / `creek` strips (from the position to `to_x`, `to_y`, `width` wide) are water. A world with no island is land everywhere but its water. The viewer draws exactly that coastline: `public/sandbox/terrain.js` is a byte-for-byte copy (`npm run sandbox:terrain`), and `tests/sandbox-terrain.test.mjs` checks both agree on 10,000 points.
 - **Ground** (people, animals, bike, motorbike, car, taxi, police car, bus, truck, army truck, tractor) **never stands on water.**
-  - Vehicles drive the road network with A* on the road graph (cached per world, rebuilt only when the roads change). They join the nearest road, keep right, slow for junctions and bends (acceleration and braking, never an instant top speed), and leave by the destination's driveway.
+  - Vehicles drive the road network with A* on the road graph (cached per world, rebuilt only when the roads change). They keep right, slow for junctions and bends (acceleration and braking, never an instant top speed), and stop where the destination's driveway meets the network.
+  - **Vehicles keep strictly to the roads** (every ground vehicle: cars, taxis, police cars, buses, lorries, army lorries, tractors, motorbikes; bikes may also use paths). They never drive over open ground to a door. A vehicle off the road (put there by an agent, or built there) joins the nearest road first. Where no road goes, it does not go: one `trip_refused` event ("no road goes there"), not one a step. Rules that would push a vehicle off the road (wandering, attraction) are undone. Templates park their vehicles on the roads.
   - People walk on the pavements and footpaths; bikes ride roads and paths.
   - **A trip to another island** goes to this island's harbour or airport, boards a ferry or plane there (as a rider, `inside`), and gets off at the other end. With no link, it is refused with a plain `trip_refused` event.
 - **Water** (boats, ferries, ships, patrol boats) **never enters land.** Boats sail round the islands with A* on a coarse sea grid (with the rivers and creeks), cached per world, and berth at a harbour's water side.
@@ -324,10 +325,10 @@ Every blind run, its world and its outputs are labelled **"SIMULATION — blind 
 
 - Without `confirm` it only describes what it would add.
 - With `confirm`, in place, it adds a connected road network to each island (its existing streets joined up, a ring road, a way in to every place) and a runway, with a heading, to each island country without one.
-- It never removes, renames or moves a building, person, animal or vehicle: a new road goes round an existing building instead.
+- It never removes, renames or moves a building, person or animal: a new road goes round an existing building instead. Vehicles that are not on a road are moved onto the nearest one (it says how many), since vehicles keep strictly to the roads.
 - It keeps the world id, tick, state, society, research, relations and treasuries, and writes one `upgrade_world` record on the black box long chain (who, when, what was added).
 - It must fit the world's entity and size limits; if it cannot, it refuses and says what to delete first.
-- `tests/sandbox-upgrade.test.mjs` upgrades a universe made by the earlier template (`tests/fixtures/sandbox-universe-v1.json`) after 1,200 ticks and checks that nothing else changed.
+- `tests/sandbox-upgrade.test.mjs` upgrades a universe made by the earlier template (`tests/fixtures/sandbox-universe-v1.json`) after 1,200 ticks and checks that nothing else changed (only off-road vehicles moved, each onto a road), then that every vehicle position in 2,000 more steps is on a road.
 
 ## Commands (operator only)
 

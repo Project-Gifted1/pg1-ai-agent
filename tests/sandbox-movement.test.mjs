@@ -34,9 +34,9 @@ test('2,000 steps of the universe: no ground thing on water, no boat on land', (
   assert.ok(!RUN.events.some((e) => e.kind === 'terrain_fix'), 'a new universe needs no corrections');
 });
 
-test('2,000 steps of the universe: at least 95% of ground-vehicle positions are on a road', () => {
+test('2,000 steps of the universe: every ground-vehicle position is on a road', () => {
   assert.ok(RUN.vehiclePositions > 50000, `${RUN.vehiclePositions} positions measured`);
-  assert.ok(RUN.onRoad >= 0.95, `${(RUN.onRoad * 100).toFixed(1)}% on a road`);
+  assert.equal(RUN.onRoad, 1, `${(RUN.onRoad * 100).toFixed(2)}% on a road`);
 });
 
 test('2,000 steps of the universe: aircraft climb and descend within the gradient, and land on runways', () => {
