@@ -108,13 +108,16 @@ function create2d(container, { onSelect } = {}) {
     g.fillStyle = '#0a0a0b'; g.fillRect(0, 0, w, h);
     const pad = 16 * dpr;
     const k = Math.min((w - 2 * pad) / world.size.x, (h - 2 * pad) / world.size.y);
+    if (!(k > 0)) return; // not laid out yet (a hidden or tiny view)
     const ox = (w - world.size.x * k) / 2; const oy = (h - world.size.y * k) / 2;
     view = { k, ox, oy, dpr };
     const X = (e) => ox + e.x * k; const Y = (e) => oy + (world.size.y - e.y) * k;
     const isl = world.entities.filter((e) => e.base === 'island' || e.base === 'forest' || e.base === 'mangrove');
     g.fillStyle = isl.length ? '#1f5f86' : '#26402a'; g.fillRect(ox, oy, world.size.x * k, world.size.y * k);
+    g.save(); g.beginPath(); g.rect(ox, oy, world.size.x * k, world.size.y * k); g.clip();
     for (const e of isl) { g.fillStyle = e.base === 'mangrove' ? '#2f4f2a' : e.base === 'forest' ? '#2f6b2a' : e.props.climate === 'tropical' ? '#3f7d34' : e.props.climate === 'cold' ? '#7d8a7a' : '#2f5a2a'; g.beginPath(); g.arc(X(e), Y(e), (Number(e.props.radius) || (e.base === 'forest' ? 1000 : e.base === 'mangrove' ? 200 : 500)) * k, 0, Math.PI * 2); g.fill(); }
     for (const e of world.entities) if (e.base === 'river' || e.base === 'creek') { g.strokeStyle = '#1f5f86'; g.lineWidth = Math.max(1.5 * dpr, (Number(e.props.width) || 20) * k); g.lineCap = 'round'; g.beginPath(); g.moveTo(X(e), Y(e)); g.lineTo(ox + (Number(e.props.to_x) || e.x) * k, oy + (world.size.y - (Number(e.props.to_y) || e.y)) * k); g.stroke(); }
+    g.restore();
     for (const e of world.entities) if (e.base === 'lake') { g.fillStyle = '#1d5d8c'; g.beginPath(); g.arc(X(e), Y(e), (Number(e.props.radius) || 50) * k, 0, Math.PI * 2); g.fill(); }
     for (const e of world.entities) if (e.base === 'road' || e.base === 'runway' || e.base === 'bridge') {
       const len = (Number(e.props.length) || 100) * k; const wd = Math.max(1.5 * dpr, (Number(e.props.width) || 12) * k);
