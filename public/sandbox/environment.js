@@ -256,7 +256,10 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     // everywhere else, deepening away from the coast.
     const islands = world.islands || [];
     const landEdge = (x, z) => { let best = -Infinity; let isl = null; for (const i of islands) { const e = i.r - Math.hypot(x - i.sx, z - i.sz); if (e > best) { best = e; isl = i; } } return { edge: best, isl }; };
-    const heightAt = (x, z) => {
+    // Lakes have a bed: the ground dips under the water (about 1.6 m, over the last 8 m of shore).
+    const lakeDip = (x, z) => { let dip = 0; for (const l of lakes) { const d = Math.hypot(x - l.sx, z - l.sz) - l.radius; if (d < 0) dip = Math.max(dip, smooth(0, -8, d) * 1.6); } return dip; };
+    const heightAt = (x, z) => baseHeightAt(x, z) - (lakes.length ? lakeDip(x, z) : 0);
+    const baseHeightAt = (x, z) => {
       if (islands.length) {
         const { edge } = landEdge(x, z);
         const rr = Math.hypot(x, z);

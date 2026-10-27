@@ -205,7 +205,7 @@ async function exploreShore(page) {
   await page.evaluate(() => {
     const lake = sandboxState.world.entities.find((x) => x.kind === 'lake');
     const r = Number(lake.properties.radius) || 100;
-    sandboxScene.exploreAt(lake.position.x - r - 10, lake.position.y - 6, 8);
+    sandboxScene.exploreAt(lake.position.x - r - 16, lake.position.y - 6, 8);
   });
   await frames(page, 25);
 }

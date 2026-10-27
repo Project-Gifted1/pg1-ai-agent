@@ -75,7 +75,7 @@ export function buildCoast(THREE, islands, { seed = 1, heightAt = () => 0, setup
     for (let i = 0; i < n; i++) {
       const a = rnd() * Math.PI * 2; const inward = rnd() * rnd() * Math.min(14, l.r * 0.4);
       const rr = l.r + 1.2 - inward;
-      pebbles.push([l.sx + Math.cos(a) * rr, l.sz + Math.sin(a) * rr, 0.25 + rnd() * rnd() * 0.9, rnd() * 6.28, rnd(), 0.02]);
+      pebbles.push([l.sx + Math.cos(a) * rr, l.sz + Math.sin(a) * rr, 0.25 + rnd() * rnd() * 0.9, rnd() * 6.28, rnd(), null]);
     }
   }
   for (const isl of islands) {
