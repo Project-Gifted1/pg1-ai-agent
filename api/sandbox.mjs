@@ -22,7 +22,8 @@
 
 import { resolveOperatorSession } from '../lib/operatorSession.mjs';
 import { defaultSandboxStore } from '../lib/sandbox/store.mjs';
-import { observeWorld, stepWorldFor, listWorldsFor, pg1Principal, worldView, createWorld, readBlackbox, purgeWorldBlackbox, SandboxError } from '../lib/sandbox/worlds.mjs';
+import { observeWorld, stepWorldFor, listWorldsFor, pg1Principal, worldView, worldKindOf, createWorld, readBlackbox, purgeWorldBlackbox, SandboxError } from '../lib/sandbox/worlds.mjs';
+import { oldestPg1World } from '../lib/sandbox/delete-command.mjs';
 import { TEMPLATE_NAMES } from '../lib/sandbox/templates.mjs';
 import { experimentsView } from '../lib/sandbox/experiments.mjs';
 import { SIMULATION_LABEL, BLIND_LABEL } from '../lib/sandbox/describe.mjs';
@@ -51,9 +52,11 @@ export default async function handler(req, res) {
       const mine = await listWorldsFor(store, pg1);
       const all = await store.listWorlds({});
       const ex = await experimentsView(store, { limit: 50 });
+      // PG1's first universe: its oldest world that is not a blind run (as /sandbox delete).
+      const first = await oldestPg1World(store);
       return res.status(200).json({
         ok: true, label: SIMULATION_LABEL,
-        worlds: all.map((w) => ({ ...worldView(w), owner: w.owner === 'pg1' ? 'PG1' : 'invited agent', readOnly: w.owner !== 'pg1', blind: !!w.blind })),
+        worlds: all.map((w) => ({ ...worldView(w), owner: w.owner === 'pg1' ? 'PG1' : 'invited agent', readOnly: w.owner !== 'pg1', blind: !!w.blind, kind: worldKindOf(w.spec), created_at: w.created_at || null, first: !!first && w.id === first.id })),
         quota: mine.quota,
         experiments: { label: BLIND_LABEL, running: ex.runs.filter((r) => r.status === 'running').length, total: ex.runs.length }
       });
