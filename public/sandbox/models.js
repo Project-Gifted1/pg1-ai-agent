@@ -13,6 +13,7 @@
 import { RESCUE_CLASS, RESCUE_FIXED, rescueModel } from './rescue-models.js';
 
 import { Kit } from './kit.js';
+import { PERIOD_CLASS, PERIOD_FIXED, periodModel } from './period-models.js';
 
 // The viewer's copy of the catalogue's classes (lib/sandbox/catalog.mjs).
 export const KIND_CLASS = {
@@ -30,6 +31,9 @@ export const KIND_CLASS = {
 };
 export const FIXED_KINDS = new Set(['grass', 'flower', 'bush', 'tree', 'pine', 'palm', 'crop', 'house', 'cabin', 'apartment', 'tower', 'shop', 'cafe', 'school', 'hospital', 'factory', 'barn', 'hangar', 'station', 'police_station', 'prison', 'hotel', 'cinema', 'theatre', 'bar', 'stadium', 'beach', 'amusement', 'port', 'monument', 'terminal', 'barracks', 'road', 'bridge', 'runway', 'launch_pad', 'rock', 'fence', 'lamp', 'fountain']);
 export const AIR_KINDS = new Set(['bird', 'plane', 'small_plane', 'jet', 'helicopter', 'drone', 'hot_air_balloon', 'rocket', 'shuttle', 'space_station', 'satellite', 'colony', 'star', 'planet', 'moon', 'asteroid', 'alien_world', 'alien_ship']);
+// The benin-warri template's kinds (period-models.js).
+Object.assign(KIND_CLASS, PERIOD_CLASS);
+for (const k of PERIOD_FIXED) FIXED_KINDS.add(k);
 // Homes whose insides the viewer furnishes (see furnitureFor).
 export const HOME_KINDS = new Set(['house', 'cabin', 'apartment']);
 
@@ -903,6 +907,8 @@ export function modelKey(kind, p, id) {
   const vary = c === 'person' || b === 'tree' || b === 'pine' || b === 'bush' || b === 'rock' || b === 'asteroid' ? (hashOf(id) % 6) : 0;
   return `${b}|${parts}|${vary}`;
 }
+// The benin-warri template's properties that change a model.
+PROP_KEYS.push('radius', 'gates', 'shape', 'small');
 
 export function buildModel(T, kind, p = {}, id = '') {
   const b = baseKind(kind);
@@ -910,6 +916,9 @@ export function buildModel(T, kind, p = {}, id = '') {
   if (!(typeof p.built === 'number' && p.built < 100)) { const rescue = rescueModel(T, Kit, b, p, hashOf(id || kind), { partOf, wheelPair }); if (rescue) return rescue; }
   const seed = hashOf(id || kind);
   if (typeof p.built === 'number' && p.built < 100) return scaffold(T, b, p.built);
+  if (b === 'porter' || b === 'visitor') return person(T, p, seed);
+  const period = PERIOD_CLASS[b] ? periodModel(T, Kit, b, p, seed) : null;
+  if (period) return period;
   switch (b) {
     case 'person': return person(T, p, seed);
     case 'child': return person(T, p, seed, { child: true });
