@@ -595,8 +595,9 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     for (const [id, l] of orbitLines) if (!want.has(id)) { scene.remove(l); l.geometry.dispose(); l.material.dispose(); orbitLines.delete(id); }
   }
 
-  // An asteroid belt round the star, in the widest gap between its planets'
-  // orbits: scenery drawn by the viewer (like the woods), not world data.
+  // An asteroid belt round the star, where its asteroids orbit (or, with
+  // none, in the widest gap between its planets' orbits): scenery drawn by
+  // the viewer round the world's own asteroids, like the woods.
   let belt = null; let beltKey = '';
   function syncBelt() {
     const star = world.entities.find((e) => e.base === 'star');
@@ -606,8 +607,11 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     beltKey = key;
     if (belt) { scene.remove(belt); belt.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); belt = null; }
     if (!key) return;
+    // Where the star's asteroids orbit, if it has any; else the widest gap.
     let gap = 0; let at = 0;
-    for (let i = 1; i < radii.length; i++) if (radii[i] - radii[i - 1] > gap) { gap = radii[i] - radii[i - 1]; at = (radii[i] + radii[i - 1]) / 2; }
+    const rocksR = world.entities.filter((e) => e.base === 'asteroid' && e.props.orbits === star.id).map((e) => Number(e.props.orbit_radius)).filter((x) => x > 0);
+    if (rocksR.length) { const lo = Math.min(...rocksR); const hi = Math.max(...rocksR); at = (lo + hi) / 2; gap = Math.max(200, (hi - lo + 120) / 0.36); }
+    else for (let i = 1; i < radii.length; i++) if (radii[i] - radii[i - 1] > gap) { gap = radii[i] - radii[i - 1]; at = (radii[i] + radii[i - 1]) / 2; }
     const n = coarse ? 260 : 900;
     const geo = new THREE.DodecahedronGeometry(1, 1);
     const pp = geo.attributes.position; for (let i = 0; i < pp.count; i++) { const k = 0.75 + ((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1 * 0.5; pp.setXYZ(i, pp.getX(i) * k, pp.getY(i) * k * 0.8, pp.getZ(i) * k); }
