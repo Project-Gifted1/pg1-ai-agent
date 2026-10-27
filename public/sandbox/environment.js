@@ -79,7 +79,7 @@ function waterNormals(THREE) {
   return t;
 }
 
-export function createEnvironment(THREE, scene, { coarse = false, quality = null, addons = {}, camera = null } = {}) {
+export function createEnvironment(THREE, scene, { coarse = false, quality = null, addons = {}, camera = null, renderer = null } = {}) {
   const env = { THREE };
   const qual = quality || { cascades: coarse ? 0 : 1, shadowMapSize: 2048, water: false, sky: 'gradient', grass: 1, forest: 1 };
   env.quality = qual;
@@ -160,6 +160,58 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
 
   scene.fog = new THREE.FogExp2(0xbcd9f2, 0.00012);
 
+  // Image-based light (Medium and up): the sky, prefiltered into an
+  // environment map that every PBR material reflects and is lit by. Made
+  // again when the sun has moved or the camera has gone up into space,
+  // at most once a second.
+  let pmrem = null; let envRT = null; let iblAt = -1e9; const iblSun = new THREE.Vector3(0, -2, 0); let iblSpace = -1;
+  const iblScene = new THREE.Scene();
+  if (qual.ibl && renderer) {
+    pmrem = new THREE.PMREMGenerator(renderer);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), new THREE.ShaderMaterial({ vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, uniforms: skyU, side: THREE.BackSide, depthWrite: false, depthTest: false }));
+    iblScene.add(dome);
+    scene.environmentIntensity = 0.55;
+  }
+  env.ibl = () => !!envRT;
+  const updateIbl = (sunDir, space) => {
+    if (!pmrem) return;
+    const now = performance.now();
+    if (envRT && now - iblAt < 1000) return;
+    if (envRT && iblSun.angleTo(sunDir) < 0.03 && Math.abs(space - iblSpace) < 0.05) return;
+    iblAt = now; iblSun.copy(sunDir); iblSpace = space;
+    const next = pmrem.fromScene(iblScene, 0, 0.1, 100, { size: coarse ? 64 : 128 });
+    if (envRT) envRT.dispose();
+    envRT = next;
+    scene.environment = envRT.texture;
+  };
+
+  // A true mirror in the water (Cinematic): the scene drawn once more from
+  // below the sea, half size, into a texture the water shader reads.
+  let reflector = null;
+  if (qual.reflect === 'planar' && addons.Reflector && renderer) {
+    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+    reflector = new addons.Reflector(new THREE.PlaneGeometry(1, 1), { textureWidth: Math.max(256, Math.round(size.x / 2)), textureHeight: Math.max(256, Math.round(size.y / 2)), clipBias: 0.02 });
+    reflector.rotation.x = -Math.PI / 2;
+    reflector.updateMatrixWorld();
+    reflector.forceUpdate = true;
+  }
+  const reflectInv = new THREE.Matrix4();
+  // Before each frame: the mirror image (only while some water is in use).
+  env.beforeRender = (cam) => {
+    if (!reflector) return;
+    const waters = env.lakes.filter((w) => w.userData.water);
+    if (!waters.length) return;
+    for (const w of waters) w.visible = false;
+    reflector.onBeforeRender(renderer, scene, cam);
+    for (const w of waters) w.visible = true;
+    reflectInv.copy(reflector.matrixWorld).invert();
+    for (const w of waters) {
+      const u = w.material.uniforms;
+      u.uReflect.value = 0.85; u.tReflect.value = reflector.getRenderTarget().texture;
+      u.uReflectMatrix.value.copy(reflector.material.uniforms.textureMatrix.value).multiply(reflectInv);
+    }
+  };
+
   env.sky = sky; env.sky2 = sky2; env.stars = stars; env.sun = sun; env.hemi = hemi; env.moonLight = moonLight; env.skyU = skyU;
   env.ground = null; env.lakes = []; env.clouds = null; env.grass = null; env.forest = null;
 
@@ -197,7 +249,7 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     const grassA = new THREE.Color('#4a6a30'); const grassB = new THREE.Color('#678742'); const dry = new THREE.Color('#7d7646'); const sand = new THREE.Color('#d8c690');
     const rock = new THREE.Color('#7b7b70');
     const tropical = new THREE.Color('#4f9a3a'); const coldGrass = new THREE.Color('#5f6f55'); const maritime = new THREE.Color('#567a45');
-    const pebbles = new THREE.Color('#9e9a90'); const seabed = new THREE.Color('#c9b98a'); const deep = new THREE.Color('#1c3d52'); const snow = new THREE.Color('#f2f4f6'); const sea = new THREE.Color('#1d5d8c'); const far = new THREE.Color('#6f8f9f');
+    const pebbles = new THREE.Color('#9e9a90'); const seabed = new THREE.Color('#c9b98a'); const deep = new THREE.Color('#1c3d52'); const snow = new THREE.Color('#f2f4f6'); const sea = new THREE.Color('#1d5d8c'); const wetSand = new THREE.Color('#8f7f58'); const far = new THREE.Color('#6f8f9f');
     const half = span / 2;
     // The terrain's height: flat inside the world, hills beyond, then the curve.
     // Islands (countries): land inside each, beaches at the shore, the sea
@@ -222,6 +274,9 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
       return y;
     };
     env.heightAt = heightAt;
+    // Water at (x, z): the sea round the islands, and the lakes.
+    env.waterAt = (x, z) => (islands.length > 0 && heightAt(x, z) < 0.12) || lakes.some((l) => Math.hypot(x - l.sx, z - l.sz) < l.radius + 1.5);
+    env.lakeList = lakes.map((l) => ({ sx: l.sx, sz: l.sz, r: l.radius }));
     // Splat weights for the textured ground: grass, sand, rock, snow.
     const splatOf = (x, z, y, edge, cl, snowAmt) => {
       let ws = 0; let wr = smooth(500, 750, y); let wn = Math.max(smooth(800, 950, y), snowAmt);
@@ -315,6 +370,8 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
         if (cl === 'cold') { tmpC.lerp(coldGrass, 0.6); const n2 = noise(x / 140, z / 140, 3); if (n2 > 0.08) { sSnow = Math.min(0.85, (n2 - 0.08) * 5); tmpC.lerp(snow, sSnow); } }
         if (cl === 'maritime') tmpC.lerp(maritime, 0.5);
         if (edge < 45) tmpC.copy(sand).lerp(cl === 'cold' ? pebbles : sand, 0.6);
+        // Wet sand at the waterline, darker where the waves reach.
+        if (edge < 7 && edge > -2) tmpC.lerp(wetSand, smooth(7, 0, edge) * 0.65);
         if (edge < -2) tmpC.copy(seabed).lerp(deep, Math.min(1, -edge / 400));
         for (const l of lakes) { const d = Math.hypot(x - l.sx, z - l.sz) - l.radius; if (d < 25) tmpC.lerp(sand, smooth(25, 2, d)); }
         cols[i * 3] = tmpC.r; cols[i * 3 + 1] = tmpC.g; cols[i * 3 + 2] = tmpC.b;
@@ -532,6 +589,9 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
       const cm = env.clouds.children[0] && env.clouds.children[0].children[0] && env.clouds.children[0].children[0].material;
       if (cm) { cm.color.setRGB(lerp(0.2, 1, day) + dusk * 0.2, lerp(0.22, 1, day), lerp(0.3, 1, day) - dusk * 0.1); cm.opacity = 0.9 * (1 - sp); }
     }
+    updateIbl(sunDir, sp);
+    // With the sky's own light in the materials, the flat fill light is halved.
+    if (envRT) hemi.intensity *= 0.5;
     return { day, night: env.night, space: sp, sunDir };
   };
 
@@ -540,6 +600,8 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     if (env.normals) env.normals.dispose();
     if (csm) { csm.remove(); csm.dispose(); }
     if (sky2) { sky2.geometry.dispose(); sky2.material.dispose(); }
+    if (envRT) envRT.dispose(); if (pmrem) pmrem.dispose(); iblScene.traverse((m) => { if (m.geometry) m.geometry.dispose(); if (m.material) m.material.dispose(); }); scene.environment = null;
+    if (reflector) reflector.dispose();
     for (const o of [sky, stars, env.ground, env.grass, env.clouds, env.forest, ...env.lakes]) if (o) o.traverse((m) => { if (m.geometry) m.geometry.dispose(); if (m.material) [].concat(m.material).forEach((x) => x.dispose()); });
   };
   return env;

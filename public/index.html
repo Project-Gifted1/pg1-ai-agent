@@ -2938,10 +2938,12 @@
           <button type="button" data-view="follow" aria-pressed="false" onclick="setSandboxView('follow')">Follow</button>
           <button type="button" data-view="tour" aria-pressed="false" onclick="setSandboxView('tour')">Tour</button>
           <button type="button" data-view="space" aria-pressed="false" onclick="setSandboxView('space')">Space</button>
+          <button type="button" data-view="explore" aria-pressed="false" onclick="setSandboxView('explore')" title="Walk at eye height: drag to look round, tap the ground to walk there">Explore</button>
           <button type="button" id="sandbox-names" aria-pressed="true" onclick="toggleSandboxNames()">Names</button>
           <button type="button" id="sandbox-xray" aria-pressed="false" onclick="toggleSandboxXray()">See inside</button>
-          <select class="sandbox-quality" id="sandbox-quality" aria-label="Quality" onchange="setSandboxQuality(this.value)"><option value="auto">Auto</option><option value="ultra">Ultra</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
+          <select class="sandbox-quality" id="sandbox-quality" aria-label="Quality" onchange="setSandboxQuality(this.value)"><option value="auto">Auto</option><option value="cinematic">Cinematic</option><option value="ultra">Ultra</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
           <button type="button" class="sandbox-full-btn" aria-pressed="false" id="sandbox-full" onclick="toggleSandboxFull()">Full screen</button>
+          <button type="button" id="sandbox-shot" onclick="saveSandboxScreenshot()" hidden>Screenshot</button>
         </div>
         <div class="sandbox-view" id="sandbox-view" aria-label="The world, drawn in 3D"></div>
         <section class="lx-card sandbox-inspect" id="sandbox-inspect" aria-labelledby="sandbox-inspect-h" hidden><h3 class="lx-section-h" id="sandbox-inspect-h">Selected</h3><ul class="lx-rows" id="sandbox-inspect-rows"></ul></section>
@@ -3839,8 +3841,18 @@
       sel.hidden = !q;
       if (!q) return;
       sel.value = q.auto ? 'auto' : q.tier;
+      const shot = document.getElementById('sandbox-shot');
+      if (shot) shot.hidden = !(sandboxScene && sandboxScene.screenshot);
       const auto = sel.querySelector('option[value="auto"]');
       if (auto) auto.textContent = q.auto ? `Auto (${q.tier[0].toUpperCase()}${q.tier.slice(1)})` : 'Auto';
+    }
+    // A still of the 3D view as a PNG, stamped "Simulation" with its day and time.
+    function saveSandboxScreenshot() {
+      const url = sandboxScene && sandboxScene.screenshot ? sandboxScene.screenshot() : null;
+      if (!url) return;
+      const a = document.createElement('a');
+      a.href = url; a.download = `simulation-${(sandboxState && sandboxState.world && sandboxState.world.id) || 'world'}-step-${(sandboxState && sandboxState.world && sandboxState.world.tick) || 0}.png`;
+      document.body.appendChild(a); a.click(); a.remove();
     }
     async function setSandboxQuality(v) { if (sandboxScene && sandboxScene.setQuality) { await sandboxScene.setQuality(v); markSandboxQuality(sandboxScene.quality()); } }
     function markSandboxView(mode) { document.querySelectorAll('.sandbox-views [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === mode))); }

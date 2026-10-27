@@ -189,14 +189,24 @@ Open it from the `/sandbox` or `/world <id>` reply. It is a full-screen view in 
   - flat ground inside the world, hills, woods and the sea beyond, curving away like a planet;
   - lakes with ripples, drifting clouds;
   - the black of space above the space altitude.
-- **Drawn by the viewer, not world data:** the ground, sky, water ripples, grass tufts, clouds and scenery woods. They come from the world's size and seed, stay clear of every entity, and nothing in the world can use them.
+- **The look, by quality tier** (`quality.js`; Low, Medium, High, Ultra, and Cinematic by hand only):
+  - physically based materials lit by the sun and by **image-based light** from the sky (a prefiltered environment map, made again as the sun moves; Medium and up), ACES tone mapping, soft cascaded shadows, ambient occlusion and bloom on the higher tiers;
+  - **streets in detail** (`streets.js`, Medium and up): asphalt with dashed centre lines and edge lines, kerbs and pavements, junctions, zebra crossings, and **street lamps** that come on at dusk with pools of light under them. From the world's road graph when it has one (`roads`), otherwise from its road strips. Low keeps the plain strips;
+  - **coasts** (`coast.js`): rocks where the land meets the sea, smooth stones round every lake and on the sea bed, wet sand at the waterline, and surf where the water shader is off;
+  - **water** (High and up): waves, the sky's reflection, the sun's glitter and glints, foam at the shore, and clear shallows where the stones show through. **Cinematic** adds a true mirror image of the scene in the water;
+  - **close-up grass and flowers** (`foliage.js`, Medium and up): tens of thousands of blades swaying in the wind round wherever the camera looks, never on water, roads or pavements;
+  - **distance detail:** moving things keep their full model up close; further away each becomes one block of its size and colour, all drawn together (one draw call);
+  - **Cinematic:** sharper and bigger shadows, temporal anti-aliasing, depth of field on what the camera looks at, a slower, eased camera, and a **Screenshot** button (a PNG stamped "Simulation · day · time"). It is for stills on a strong computer, not for a phone; Auto never picks it.
+  - Auto starts from the device and steps down a tier when frames keep running slow (30 fps on a mid-range phone at Medium). Reduced motion or no WebGL gives the 2D map.
+  - What a live browser view cannot do: the offline, path-traced look of a scene modelled and rendered in Blender. That takes minutes per frame on a desktop GPU; a phone browser has about 30 ms. This viewer gets as close as it can live.
+- **Drawn by the viewer, not world data:** the ground, sky, water ripples, grass tufts, close-up grass, stones and rocks, street markings and lamps, clouds and scenery woods. They come from the world's size and seed, stay clear of every entity, and nothing in the world can use them.
 - **Between steps,** everything glides from where it was to where the engine put it.
 - **The camera:**
   - drag to turn, pinch or scroll to zoom, two fingers or right-drag to move;
   - tap something to follow it; its details show under the view;
-  - **Overview** (the town), **Follow**, **Tour** (the camera visits what is moving: rockets, planes, buses), **Space** (the sky above);
+  - **Overview** (the town), **Follow**, **Tour** (the camera visits what is moving: rockets, planes, buses), **Space** (the sky above), **Explore** (at eye height where the camera looks: drag to look round, tap the ground to walk there, pinch to step back);
   - **Full screen**.
-- **On the view:** a clock ("Simulation · day 1 · 09:24 · in space") and a minimap (tap to go there).
+- **On the view:** a clock ("Simulation · day 1 · 09:24 · in space") and a minimap (tap to go there). Every view, and every screenshot, says "Simulation".
 - **A 2D map** instead with reduced motion or no WebGL.
 - **A world list.**
 - **Play** (1×, 2× or 4×), **Pause**, **Step** and **New universe:** Step calls `step_world`, on PG1's worlds only; invited agents' worlds are read only.

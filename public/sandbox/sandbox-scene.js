@@ -32,6 +32,9 @@
 
 import { buildModel, modelKey, baseKind, classOf, FIXED_KINDS, AIR_KINDS, HOME_KINDS, celestialSize, furnitureFor } from './models.js';
 import { createEnvironment } from './environment.js';
+import { buildStreets } from './streets.js';
+import { buildCoast } from './coast.js';
+import { createFoliage } from './foliage.js';
 import { createControls } from './controls.js';
 import { TIERS, TIER_SETTINGS, QUALITY_KEY, pickTier, createGovernor } from './quality.js';
 import { createPost } from './post.js';
@@ -146,6 +149,7 @@ function create2d(container, { onSelect } = {}) {
     update(next) { world = normalizeWorld(next); container.dataset.markers = String(world.entities.length); draw(); },
     setView() {}, setXray() {}, setNames() {}, xray: () => false, names: () => false, select(id) { sel = id; draw(); }, selected: () => sel,
     clock: () => clockOf(world),
+    screenshot,
     destroy() { if (ro) ro.disconnect(); canvas.removeEventListener('click', onClick); canvas.remove(); }
   };
 }
@@ -217,10 +221,11 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   const THREE = await import(threeUrl);
   const settings = TIER_SETTINGS[tier] || TIER_SETTINGS.high;
   const ADD = '/vendor/three/addons/';
-  const [skyMod, csmMod, textures] = await Promise.all([
+  const [skyMod, csmMod, textures, reflMod] = await Promise.all([
     settings.sky === 'physical' ? import(`${ADD}objects/Sky.js`).catch(() => null) : null,
     settings.cascades > 0 ? import(`${ADD}csm/CSM.js`).catch(() => null) : null,
-    settings.textures ? loadTextures(THREE) : null
+    settings.textures ? loadTextures(THREE) : null,
+    settings.reflect === 'planar' ? import(`${ADD}objects/Reflector.js`).catch(() => null) : null
   ]);
   const canvas = document.createElement('canvas');
   canvas.className = 'living-lab-canvas sandbox-canvas';
@@ -241,7 +246,14 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(55, 1, 0.3, 200000);
-  const env = createEnvironment(THREE, scene, { coarse, quality: settings, camera, addons: { Sky: skyMod && skyMod.Sky, CSM: csmMod && csmMod.CSM } });
+  const env = createEnvironment(THREE, scene, { coarse, quality: settings, camera, renderer, addons: { Sky: skyMod && skyMod.Sky, CSM: csmMod && csmMod.CSM, Reflector: reflMod && reflMod.Reflector } });
+  // Streets in detail (streets.js) replace the plain road strips, here and in the ground.
+  env.detailedRoads = !!settings.streets;
+  let streets = null; let coast = null; let detailSig = '';
+  // Grass and flowers round the camera (foliage.js): not on water, roads or pavements, nor in space.
+  const foliage = settings.foliage > 0 ? createFoliage(THREE, { density: Math.round(settings.foliage * (coarse ? 0.6 : 1)), radius: settings.foliageRadius, setupMaterial: env.setupMaterial, coarse }) : null;
+  if (foliage) scene.add(foliage.group);
+  const blockedAt = (x, z) => (env.waterAt ? env.waterAt(x, z) : false) || (streets ? streets.covers(x, z) : false) || Math.abs(x) > world.size.x / 2 + 400 || Math.abs(z) > world.size.y / 2 + 400;
   env.textures = textures;
   const glow = glowTexture(THREE);
 
@@ -354,7 +366,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     const flayers = { body: [], glow: [], glass: [] };
     const m4 = new THREE.Matrix4(); const q = new THREE.Quaternion(); const p = new THREE.Vector3(); const one = new THREE.Vector3(1, 1, 1); const up = new THREE.Vector3(0, 1, 0);
     for (const e of world.entities) {
-      if (!FIXED_KINDS.has(e.base)) continue;
+      if (!FIXED_KINDS.has(e.base) || (e.base === 'road' && settings.streets)) continue;
       const model = modelFor(e);
       toScene(e, p);
       q.setFromAxisAngle(up, yawFromHeading(e.props.heading));
@@ -447,7 +459,40 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       inner.add(holder);
       parts.push({ role: p.role, node: holder, r: Math.max(0.1, p.pivot[1]) });
     }
-    return { group, inner, parts, size: model.size || 4, upright: !!model.upright, spin: model.spin || 0, seat: model.seat || null };
+    return { group, inner, parts, size: model.size || 4, upright: !!model.upright, spin: model.spin || 0, seat: model.seat || null, far: farOf(e, model) };
+  }
+
+  // Far away, a moving thing is drawn as one block of its own size and
+  // colour: all of them together in one instanced mesh (one draw call).
+  const farCache = new Map();
+  function farOf(e, model) {
+    const key = modelKey(e.kind, e.props, e.id);
+    if (farCache.has(key)) return farCache.get(key);
+    const box = new THREE.Box3(); const c = new THREE.Color(0, 0, 0); let n = 0;
+    for (const name of ['body', 'glass']) {
+      const g = model[name]; if (!g) continue;
+      g.computeBoundingBox(); box.union(g.boundingBox);
+      const col = g.attributes.color;
+      if (col && name === 'body') for (let i = 0; i < col.count; i += 3) { c.r += col.getX(i); c.g += col.getY(i); c.b += col.getZ(i); n++; }
+    }
+    for (const p of model.parts) { const g = p.geo.body; if (g) { g.computeBoundingBox(); const b = g.boundingBox.clone().translate(new THREE.Vector3(...p.pivot)); box.union(b); } }
+    const f = box.isEmpty() ? null : { size: box.getSize(new THREE.Vector3()), centre: box.getCenter(new THREE.Vector3()), color: n ? c.multiplyScalar(1 / n) : new THREE.Color(0.5, 0.5, 0.5) };
+    farCache.set(key, f);
+    return f;
+  }
+  let farMesh = null;
+  const farBox = new THREE.BoxGeometry(1, 1, 1);
+  const farMat = new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0.05 });
+  env.setupMaterial(farMat);
+  function farCapacity(n) {
+    if (farMesh && farMesh.instanceMatrix.count >= n) return farMesh;
+    if (farMesh) { scene.remove(farMesh); farMesh.dispose(); }
+    farMesh = new THREE.InstancedMesh(farBox, farMat, Math.max(64, Math.ceil(n * 1.25)));
+    farMesh.frustumCulled = false;
+    farMesh.castShadow = false; farMesh.receiveShadow = !coarse;
+    farMesh.count = 0;
+    scene.add(farMesh);
+    return farMesh;
   }
 
   function syncMovers(duration) {
@@ -500,6 +545,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   // --- views ------------------------------------------------------------------------------
   let mode = 'overview'; let selectedId = null; let tourNext = 0;
   const controls = createControls(THREE, canvas, camera, { onTap: (x, y) => pick(x, y) });
+  controls.ease = settings.ease || 5;
   controls.onPan = () => { if (mode === 'follow' || mode === 'tour') setMode('free'); };
   // The overview frames where things are (the town), not the empty corners.
   const centre = () => {
@@ -530,6 +576,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   function setMode(next, { quiet = false } = {}) {
     mode = next;
     controls.autoRotate = mode === 'overview' ? 0.03 : mode === 'tour' ? 0.05 : mode === 'space' ? 0.02 : 0;
+    controls.minDist = mode === 'explore' ? 2 : 4;
     const span = Math.max(world.size.x, world.size.y);
     if (mode === 'overview') controls.flyTo({ target: centre(), dist: Math.min(span * 0.85, spread() * 2.6), phi: 0.95 });
     if (mode === 'space') {
@@ -539,6 +586,13 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     }
     if (mode === 'follow' && selectedId) controls.flyTo({ dist: Math.max(14, sizeOf(selectedId) * 4.5), phi: 1.18 });
     if (mode === 'tour') tourNext = 0;
+    // Explore: down at eye height where the camera looks; drag to look
+    // round, tap the ground to walk there, pinch to step back.
+    if (mode === 'explore') {
+      const at = controls.target.clone(); at.y = Math.max(0, (env.heightAt || (() => 0))(at.x, at.z)) + 1.6;
+      if (at.y > 60) at.set(centre().x, 1.6, centre().z);
+      controls.flyTo({ target: at, dist: 6, phi: 1.5 });
+    }
     container.dataset.view = mode;
     if (!quiet && typeof container.onViewChange === 'function') container.onViewChange(mode);
   }
@@ -550,6 +604,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     marker.visible = !!e;
   }
   const ray = new THREE.Raycaster();
+  const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   function pick(x, y) {
     ray.setFromCamera({ x, y }, camera);
     let best = null; let bd = Infinity;
@@ -557,6 +612,15 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     for (const h of hits) { let o = h.object; while (o && !o.userData.entityId) o = o.parent; if (o && h.distance < bd) { bd = h.distance; best = o.userData.entityId; } break; }
     const v = new THREE.Vector3();
     for (const b of staticBoxes) { if (ray.ray.intersectBox(b.box, v)) { const d = v.distanceTo(ray.ray.origin); if (d < bd) { bd = d; best = b.id; } } }
+    // Exploring: a tap on open ground (or water's edge) walks there.
+    if (mode === 'explore' && !best) {
+      const hit = ray.ray.intersectPlane(groundPlane, v);
+      if (hit && hit.distanceTo(ray.ray.origin) < 400) {
+        const y = Math.max(0, (env.heightAt || (() => 0))(hit.x, hit.z)) + 1.6;
+        controls.flyTo({ target: new THREE.Vector3(hit.x, y, hit.z) });
+        return;
+      }
+    }
     select(best);
   }
 
@@ -636,11 +700,14 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   const onVis = () => schedule();
   document.addEventListener('visibilitychange', onVis);
   const running = () => visible && !document.hidden;
-  const tmpA = new THREE.Vector3(); const tmpB = new THREE.Vector3(); const proj = new THREE.Vector3();
+  const tmpA = new THREE.Vector3(); const tmpB = new THREE.Vector3(); const proj = new THREE.Vector3(); const tmpM4 = new THREE.Matrix4();
 
+  const farM4 = new THREE.Matrix4(); const farS = new THREE.Vector3(); const farP = new THREE.Vector3();
   function animate(dt, now) {
     const t = Math.min(1, (now - stepStart) / stepDur);
     const tickF = tickFrom + (tickTo - tickFrom) * t;
+    const far = farCapacity(movers.size);
+    let farN = 0;
     for (const m of movers.values()) {
       const e = m.e;
       // Riders: on a bike, motorbike or horse they sit on it; otherwise inside, out of sight.
@@ -700,7 +767,20 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       // Far away, small things are not drawn (they would be under a pixel).
       const camD = camera.position.distanceTo(m.group.position);
       if (!m.celestial) m.group.visible = camD < Math.max(600, (m.size || 2) * 420);
+      // Beyond the tier's detail distance (never the followed thing): the block.
+      if (m.group.visible && m.far && !m.celestial && m.id !== selectedId && camD > Math.max(60, (m.size || 2) * settings.lod)) {
+        m.group.visible = false;
+        m.group.updateMatrix();
+        farP.copy(m.far.centre); farS.copy(m.far.size).max(tmpB.set(0.3, 0.3, 0.3));
+        farM4.makeTranslation(farP.x, farP.y, farP.z).premultiply(m.group.matrix);
+        farM4.multiply(tmpM4.makeScale(farS.x, farS.y, farS.z));
+        far.setMatrixAt(farN, farM4); far.setColorAt(farN, m.far.color);
+        farN++;
+      }
     }
+    far.count = farN;
+    far.instanceMatrix.needsUpdate = true;
+    if (far.instanceColor) far.instanceColor.needsUpdate = true;
     // Orbit paths follow their centres.
     for (const l of orbitLines.values()) {
       const c = entityPos(l.userData.center);
@@ -757,6 +837,13 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     matGlow.color.setRGB(0.22 + nt * 1.2, 0.27 + nt * 1.0, 0.36 + nt * 0.6);
     renderer.toneMappingExposure = 0.95 + envState.space * 0.15;
     if (post) post.setNight(nt);
+    if (streets) streets.update(envState.night);
+    if (coast) coast.update(now / 1000, envState.day);
+    if (foliage) {
+      if (controls.target.y < 50) foliage.place({ cx: controls.target.x, cz: controls.target.z, heightAt: env.heightAt || (() => 0), blocked: blockedAt });
+      foliage.update(now / 1000, controls.target.y < 50 ? controls.dist : Infinity);
+    }
+    if (post && post.setFocus) post.setFocus(controls.dist);
 
     // The marker and label over what is picked.
     if (selectedId && marker.visible) {
@@ -780,8 +867,25 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     updateTags(now);
     if (now - miniAt > 250) { drawMini(); miniAt = now; }
     const still = controls.userActive <= 0 && !controls.autoRotate && t0done(now);
-    if (post) post.render(still); else renderer.render(scene, camera);
+    draw(still);
     container.dataset.frames = String((Number(container.dataset.frames) || 0) + 1);
+  }
+  function draw(still) { env.beforeRender(camera); if (post) post.render(still); else renderer.render(scene, camera); }
+  // A still of the view (a PNG data URL), stamped "Simulation" with the day and time.
+  function screenshot() {
+    draw(true);
+    const src = renderer.domElement;
+    const c = document.createElement('canvas'); c.width = src.width; c.height = src.height;
+    const g = c.getContext('2d'); if (!g) return null;
+    g.drawImage(src, 0, 0);
+    const clk = clockOf(world);
+    const text = `Simulation · day ${clk.day} · ${clk.hh}:${clk.mm}`;
+    const fs = Math.max(12, Math.round(c.height / 36));
+    g.font = `600 ${fs}px system-ui, sans-serif`;
+    const w = g.measureText(text).width;
+    g.fillStyle = 'rgba(10,10,11,0.6)'; g.fillRect(fs * 0.6, c.height - fs * 2.4, w + fs * 1.2, fs * 1.8);
+    g.fillStyle = '#ffffff'; g.fillText(text, fs * 1.2, c.height - fs * 1.05);
+    return c.toDataURL('image/png');
   }
   function schedule() { if (!raf && running()) { last = performance.now(); lastRender = 0; raf = requestAnimationFrame(frame); } }
   const t0done = (now) => now - stepStart >= stepDur;
@@ -809,6 +913,20 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         const avoid = world.entities.filter((e) => e.z < 5).map((e) => ({ x: e.x - world.size.x / 2, z: -(e.y - world.size.y / 2), r: e.base === 'lake' ? (Number(e.props.radius) || 60) : e.cls === 'building' ? 25 : 0 }));
         env.buildGround({ size: world.size, seed: world.seed, entities: lakeEntities, avoid, islands });
       }
+      // Streets and coasts, when the ground or the road network changes.
+      const rd = world.roads || (next && next.roads) || null;
+      const ds = `${groundSig}|${rd && rd.nodes ? `${rd.nodes.length}/${rd.edges.length}` : ''}`;
+      if (ds !== detailSig) {
+        detailSig = ds;
+        for (const d of [streets, coast]) if (d) { scene.remove(d.group); d.dispose(); }
+        streets = null; coast = null;
+        const heightAt = env.heightAt || (() => 0);
+        if (settings.streets) { streets = buildStreets(THREE, { ...world, roads: rd }, { heightAt, setupMaterial: env.setupMaterial, coarse }); scene.add(streets.group); container.dataset.lamps = String(streets.stats.lamps); }
+        const isl = world.entities.filter((e) => e.base === 'island').map((e) => ({ sx: e.x - world.size.x / 2, sz: -(e.y - world.size.y / 2), r: Number(e.props.radius) || 500, climate: e.props.climate || 'temperate' }));
+        const lakes = env.lakeList || [];
+        if (settings.coast && (isl.length || lakes.length)) { coast = buildCoast(THREE, isl, { seed: world.seed, heightAt, setupMaterial: env.setupMaterial, coarse, surf: !settings.water, lakes }); scene.add(coast.group); }
+        if (foliage) foliage.place({ cx: controls.target.x, cz: controls.target.z, heightAt, blocked: blockedAt, force: true });
+      }
       const ss = world.entities.filter((e) => FIXED_KINDS.has(e.base)).map((e) => `${e.id}:${modelKey(e.kind, e.props, e.id)}:${e.x}:${e.y}:${e.props.heading || 0}`).join(',');
       if (ss !== staticSig) { staticSig = ss; rebuildStatic(); }
       tickFrom = firstWorld ? world.tick : prevTick; tickTo = world.tick;
@@ -826,6 +944,14 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       schedule();
     },
     setView(m) { if (m === 'follow' && !selectedId) return; setMode(m); schedule(); },
+    // Explore from a place in the world (world metres), looking toward a heading (degrees, 0 = east).
+    exploreAt(wx, wy, heading = 0) {
+      const x = wx - world.size.x / 2; const z = -(wy - world.size.y / 2);
+      controls.jumpTo({ target: new THREE.Vector3(x, Math.max(0, (env.heightAt || (() => 0))(x, z)) + 1.6, z), dist: 6, phi: 1.5, theta: Math.PI - (Number(heading) || 0) * Math.PI / 180 });
+      mode = 'explore'; controls.autoRotate = 0; controls.minDist = 2; container.dataset.view = mode;
+      if (typeof container.onViewChange === 'function') container.onViewChange(mode);
+      schedule();
+    },
     setXray(on) { setXray(on); schedule(); }, xray: () => xray,
     setNames(on) { showNames = !!on; schedule(); }, names: () => showNames,
     view: () => mode,
@@ -846,6 +972,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); }); });
       for (const m of geoCache.values()) { for (const k of ['body', 'glow', 'glass']) m[k] && m[k].dispose(); for (const p of m.parts) for (const k of ['body', 'glow', 'glass']) p.geo[k] && p.geo[k].dispose(); }
       if (post) post.dispose();
+      for (const d of [streets, coast, foliage]) if (d) d.dispose();
+      if (farMesh) farMesh.dispose(); farBox.dispose(); farMat.dispose();
       glow.dispose(); renderer.dispose(); canvas.remove(); hud.remove();
     }
   };
@@ -898,10 +1026,12 @@ export async function createSandboxScene(container, { reducedMotion = false, coa
     renderer: 'webgl',
     update(next, o = {}) { lastWorld = next; lastDuration = o.duration || lastDuration; call('update', next, o); },
     setView: (m) => call('setView', m), view: () => call('view'),
+    exploreAt: (x, y, h) => call('exploreAt', x, y, h),
     setXray: (on) => call('setXray', on), xray: () => !!call('xray'),
     setNames: (on) => call('setNames', on), names: () => !!call('names'),
     select: (id) => call('select', id), selected: () => call('selected'),
     clock: () => call('clock'),
+    screenshot: () => call('screenshot') || null,
     quality: () => ({ tier: current, auto, tiers: TIERS.slice() }),
     // 'auto', or a tier to keep (remembered on this device).
     async setQuality(t) {
