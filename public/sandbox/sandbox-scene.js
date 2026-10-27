@@ -37,6 +37,7 @@ import { buildCoast } from './coast.js';
 import { createFoliage } from './foliage.js';
 import { INTERIORS, interiorFor, storeysOf, doorOf } from './interiors.js';
 import { Kit } from './kit.js';
+import { setModelDetail } from './models.js';
 import { createControls } from './controls.js';
 import { TIERS, TIER_SETTINGS, QUALITY_KEY, pickTier, createGovernor } from './quality.js';
 import { createPost } from './post.js';
@@ -162,39 +163,61 @@ function describe(e) {
 
 // --- painted textures for planets, moons and stars ---------------------------------------------
 
+// A body's surface, painted on a canvas from seeded noise (512 x 256): rocky
+// worlds and moons mottled and cratered, ocean worlds with continents,
+// shallows and ice caps, gas giants in turbulent bands, ice worlds cracked,
+// stars granulated, far alien worlds glowing with lights.
 function planetTexture(THREE, base, kind, seed) {
-  const c = document.createElement('canvas');
-  c.width = 256; c.height = 128;
+  const W = 512; const H = 256;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d');
-  const col = new THREE.Color(base);
+  const col = new THREE.Color(base); const hsl = {}; col.getHSL(hsl);
   let s = seed || 7;
   const r = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
-  g.fillStyle = `#${col.getHexString()}`; g.fillRect(0, 0, 256, 128);
-  if (kind === 'moon' || kind === 'asteroid') {
-    for (let i = 0; i < 90; i++) { const x = r() * 256; const y = r() * 128; const rad = 1 + r() * 9; g.fillStyle = `rgba(0,0,0,${0.08 + r() * 0.15})`; g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2); g.fill(); g.strokeStyle = 'rgba(255,255,255,0.12)'; g.stroke(); }
-  } else if (kind === 'alien_world') {
-    for (let y = 0; y < 128; y += 2) { const k = col.clone().offsetHSL(0, 0, (Math.sin(y * 0.3) * 0.08)); g.fillStyle = `#${k.getHexString()}`; g.fillRect(0, y, 256, 2); }
-    for (let i = 0; i < 700; i++) { g.fillStyle = `rgba(255,${220 + r() * 35},${120 + r() * 80},${0.5 + r() * 0.5})`; g.fillRect(r() * 256, 16 + r() * 96, 1.5, 1.5); }
-  } else if (kind === 'star') {
-    for (let i = 0; i < 400; i++) { g.fillStyle = `rgba(255,${200 + r() * 55},${120 + r() * 80},${r() * 0.3})`; g.fillRect(r() * 256, r() * 128, 3, 3); }
-  } else {
-    // Bands, then land and clouds for the blue ones.
-    for (let y = 0; y < 128; y += 2) {
-      const t = Math.sin(y * 0.18 + r() * 0.6) * 0.5 + 0.5;
-      const k = col.clone().offsetHSL((r() - 0.5) * 0.03, (r() - 0.5) * 0.1, (t - 0.5) * 0.18);
-      g.fillStyle = `#${k.getHexString()}`; g.globalAlpha = 0.5; g.fillRect(0, y, 256, 2);
-    }
-    g.globalAlpha = 1;
-    if (col.b > col.r) {
-      for (let i = 0; i < 14; i++) { g.fillStyle = r() < 0.5 ? '#3f8f4a' : '#c2a46a'; g.beginPath(); g.ellipse(r() * 256, 20 + r() * 88, 10 + r() * 30, 6 + r() * 16, r() * 3, 0, Math.PI * 2); g.fill(); }
-      g.fillStyle = '#f5f7fa'; g.fillRect(0, 0, 256, 7); g.fillRect(0, 121, 256, 7);
-    }
+  // Value noise on a sphere-ish wrap (x wraps), a few octaves.
+  const P = 64; const grid = new Float32Array(P * P); for (let i = 0; i < grid.length; i++) grid[i] = r();
+  const vn = (x, y) => { const xi = Math.floor(x); const yi = Math.floor(y); const xf = x - xi; const yf = y - yi; const at = (a, b) => grid[(((b % P) + P) % P) * P + (((a % P) + P) % P)]; const u = xf * xf * (3 - 2 * xf); const v = yf * yf * (3 - 2 * yf); return (at(xi, yi) * (1 - u) + at(xi + 1, yi) * u) * (1 - v) + (at(xi, yi + 1) * (1 - u) + at(xi + 1, yi + 1) * u) * v; };
+  const fbm = (x, y) => { let t = 0; let a = 0.5; let f = 1; for (let o = 0; o < 5; o++) { t += a * vn(x * f, y * f); a *= 0.5; f *= 2; } return t; };
+  const img = g.createImageData(W, H); const d = img.data; const px = new THREE.Color();
+  const ocean = kind === 'planet' && col.b > col.r && col.b > col.g * 0.9;
+  const ice = kind === 'planet' && hsl.l > 0.6 && !ocean;
+  const giant = kind === 'planet' && !ocean && !ice && hsl.s < 0.55 && hsl.l > 0.45;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const u = (x / W) * P; const v = (y / H) * (P / 2);
+    const n = fbm(u * 0.25, v * 0.25); const lat = Math.abs(y / H - 0.5) * 2;
+    if (kind === 'star') px.copy(col).offsetHSL(0, 0, (n - 0.5) * 0.25 + (vn(u * 2, v * 2) - 0.5) * 0.15);
+    else if (ocean) {
+      const land = n > 0.53;
+      if (land) px.setRGB(0.25, 0.42, 0.2).lerp(new THREE.Color(0.6, 0.5, 0.33), Math.min(1, (n - 0.53) * 6)).offsetHSL(0, 0, (vn(u, v) - 0.5) * 0.1);
+      else px.copy(col).offsetHSL(0, 0, -0.12 + Math.max(0, n - 0.42) * 1.2);
+      if (lat > 0.82 - (n - 0.5) * 0.2) px.setRGB(0.93, 0.95, 0.97);
+    } else if (giant) {
+      const band = Math.sin((y / H) * Math.PI * 14 + (n - 0.5) * 6) * 0.5 + 0.5;
+      px.copy(col).offsetHSL((band - 0.5) * 0.03, (band - 0.5) * 0.1, (band - 0.5) * 0.22 + (vn(u * 3, v * 0.6) - 0.5) * 0.08);
+    } else if (ice) {
+      px.copy(col).offsetHSL(0, 0, (n - 0.5) * 0.15);
+      if (Math.abs(vn(u * 1.5, v * 1.5) - 0.5) < 0.012) px.offsetHSL(0, 0.1, -0.25);   // cracks
+    } else if (kind === 'alien_world') px.copy(col).offsetHSL((n - 0.5) * 0.08, 0, (n - 0.5) * 0.3);
+    else px.copy(col).offsetHSL(0, 0, (n - 0.5) * 0.35 + (vn(u * 4, v * 4) - 0.5) * 0.1);
+    const i = (y * W + x) * 4;
+    d[i] = Math.max(0, Math.min(255, px.r * 255)); d[i + 1] = Math.max(0, Math.min(255, px.g * 255)); d[i + 2] = Math.max(0, Math.min(255, px.b * 255)); d[i + 3] = 255;
   }
+  g.putImageData(img, 0, 0);
+  if (kind === 'moon' || kind === 'asteroid' || (kind === 'planet' && !ocean && !giant && !ice)) {
+    for (let i = 0; i < 160; i++) { const x = r() * W; const y = 10 + r() * (H - 20); const rad = 1 + r() * r() * 22; g.fillStyle = `rgba(0,0,0,${0.1 + r() * 0.2})`; g.beginPath(); g.ellipse(x, y, rad, rad * 0.9, 0, 0, Math.PI * 2); g.fill(); g.strokeStyle = `rgba(255,255,255,${0.08 + r() * 0.12})`; g.lineWidth = 1 + rad * 0.08; g.stroke(); }
+  }
+  if (kind === 'alien_world') for (let i = 0; i < 1400; i++) { g.fillStyle = `rgba(255,${220 + r() * 35},${120 + r() * 80},${0.5 + r() * 0.5})`; g.fillRect(r() * W, 32 + r() * (H - 64), 1.5, 1.5); }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = THREE.RepeatWrapping;
+  t.anisotropy = 4;
   return t;
 }
+// A glow round a world with air: brighter at its edge (a Fresnel shell).
+const ATMO_VERT = `varying vec3 vN; varying vec3 vV;
+void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`;
+const ATMO_FRAG = `uniform vec3 uColor; varying vec3 vN; varying vec3 vV;
+void main() { float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.6); gl_FragColor = vec4(uColor * f * 1.6, f); }`;
 function glowTexture(THREE) {
   const c = document.createElement('canvas');
   c.width = c.height = 128;
@@ -222,6 +245,8 @@ function ringTexture(THREE, base) {
 async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', onTierChange = null }) {
   const THREE = await import(threeUrl);
   const settings = TIER_SETTINGS[tier] || TIER_SETTINGS.high;
+  // Low draws the plain shapes; Medium and up the finer detail (models.js).
+  setModelDetail(tier === 'low' ? 1 : 2);
   const ADD = '/vendor/three/addons/';
   const [skyMod, csmMod, textures, reflMod, flareMod] = await Promise.all([
     settings.sky === 'physical' ? import(`${ADD}objects/Sky.js`).catch(() => null) : null,
@@ -458,9 +483,14 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     const color = typeof e.props.color === 'string' ? e.props.color : e.base === 'star' ? '#ffd27a' : e.base === 'moon' ? '#cfcfcf' : '#8fa8c9';
     let seed = 0; for (const ch of e.id) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
     const tex = planetTexture(THREE, color, e.base, seed);
-    const mat = e.base === 'star' || e.base === 'alien_world' ? new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, color: 0xffffff }) : new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, metalness: 0 });
-    const sphere = new THREE.Mesh(new THREE.SphereGeometry(size, 48, 24), mat);
+    const mat = e.base === 'star' || e.base === 'alien_world' ? new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, color: 0xffffff }) : new THREE.MeshStandardMaterial({ map: tex, bumpMap: tex, bumpScale: e.base === 'moon' || e.base === 'asteroid' ? 2.5 : 0.8, roughness: 0.9, metalness: 0 });
+    const sphere = new THREE.Mesh(new THREE.SphereGeometry(size, coarse ? 48 : 96, coarse ? 24 : 48), mat);
     g.add(sphere);
+    // Air: a glowing rim round worlds with clouds, oceans or an alien sky.
+    if (e.base === 'alien_world' || (e.base === 'planet' && (e.props.clouds || new THREE.Color(color).b > new THREE.Color(color).r))) {
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(size * 1.05, 64, 32), new THREE.ShaderMaterial({ vertexShader: ATMO_VERT, fragmentShader: ATMO_FRAG, uniforms: { uColor: { value: new THREE.Color(e.base === 'alien_world' ? color : '#6fb6ff') } }, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+      g.add(shell);
+    }
     if (e.base === 'star') {
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
       halo.scale.setScalar(size * 9);
@@ -591,6 +621,39 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       }
     }
     for (const [id, l] of orbitLines) if (!want.has(id)) { scene.remove(l); l.geometry.dispose(); l.material.dispose(); orbitLines.delete(id); }
+  }
+
+  // An asteroid belt round the star, in the widest gap between its planets'
+  // orbits: scenery drawn by the viewer (like the woods), not world data.
+  let belt = null; let beltKey = '';
+  function syncBelt() {
+    const star = world.entities.find((e) => e.base === 'star');
+    const radii = star ? world.entities.filter((e) => e.props.orbits === star.id && Number(e.props.orbit_radius) > 0).map((e) => Number(e.props.orbit_radius)).sort((a, b) => a - b) : [];
+    const key = star && radii.length >= 2 ? `${star.id}|${radii.join(',')}` : '';
+    if (key === beltKey) return;
+    beltKey = key;
+    if (belt) { scene.remove(belt); belt.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); belt = null; }
+    if (!key) return;
+    let gap = 0; let at = 0;
+    for (let i = 1; i < radii.length; i++) if (radii[i] - radii[i - 1] > gap) { gap = radii[i] - radii[i - 1]; at = (radii[i] + radii[i - 1]) / 2; }
+    const n = coarse ? 260 : 900;
+    const geo = new THREE.DodecahedronGeometry(1, 1);
+    const pp = geo.attributes.position; for (let i = 0; i < pp.count; i++) { const k = 0.75 + ((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1 * 0.5; pp.setXYZ(i, pp.getX(i) * k, pp.getY(i) * k * 0.8, pp.getZ(i) * k); }
+    geo.computeVertexNormals();
+    const rocks = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, flatShading: true }), n);
+    let q = 4242; const rnd = () => { q = (Math.imul(q, 1664525) + 1013904223) >>> 0; return q / 4294967296; };
+    const m4 = new THREE.Matrix4(); const qt = new THREE.Quaternion(); const e3 = new THREE.Euler(); const v = new THREE.Vector3(); const sc = new THREE.Vector3(); const c = new THREE.Color();
+    for (let i = 0; i < n; i++) {
+      const a = rnd() * Math.PI * 2; const rr = at + (rnd() + rnd() - 1) * gap * 0.18;
+      e3.set(rnd() * 6, rnd() * 6, rnd() * 6); qt.setFromEuler(e3);
+      const k = 1.5 + rnd() * rnd() * 11;
+      m4.compose(v.set(Math.cos(a) * rr, (rnd() - 0.5) * 30, Math.sin(a) * rr), qt, sc.set(k, k * (0.6 + rnd() * 0.5), k * (0.8 + rnd() * 0.4)));
+      rocks.setMatrixAt(i, m4); rocks.setColorAt(i, c.setHSL(0.07 + rnd() * 0.05, 0.12 + rnd() * 0.1, 0.25 + rnd() * 0.2));
+    }
+    rocks.instanceMatrix.needsUpdate = true; if (rocks.instanceColor) rocks.instanceColor.needsUpdate = true;
+    rocks.computeBoundingSphere();
+    belt = new THREE.Group(); belt.add(rocks); belt.userData.star = star.id;
+    scene.add(belt);
   }
 
   // --- views ------------------------------------------------------------------------------
@@ -882,6 +945,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     far.count = farN;
     far.instanceMatrix.needsUpdate = true;
     if (far.instanceColor) far.instanceColor.needsUpdate = true;
+    // The belt goes round with its star.
+    if (belt) { const c = entityPos(belt.userData.star); if (c) belt.position.copy(c); belt.rotation.y += dt * 0.004; belt.visible = !!c; }
     // Orbit paths follow their centres.
     for (const l of orbitLines.values()) {
       const c = entityPos(l.userData.center);
@@ -1034,6 +1099,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       tickFrom = firstWorld ? world.tick : prevTick; tickTo = world.tick;
       syncMovers(duration);
       syncOrbits();
+      syncBelt();
       if (firstWorld) {
         firstWorld = false;
         const span = Math.max(world.size.x, world.size.y);

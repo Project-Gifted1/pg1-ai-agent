@@ -501,9 +501,14 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     const kinds = [];
     { const k = new Kit(THREE); k.cyl(0.25, 0.4, 3, 6, '#5d4037', 0, 1.5, 0); for (let i = 0; i < 4; i++) k.cone(2.6 - i * 0.55, 3, 8, '#1f4f2a', 0, 3 + i * 1.9, 0, { jitter: 0.3, ry: i }); kinds.push(k.build().body); }
     { const k = new Kit(THREE); k.cyl(0.3, 0.45, 3.5, 6, '#6d4c2f', 0, 1.75, 0); k.ico(2.4, 1, '#2f6b2a', 0, 4.6, 0, { jitter: 0.35 }); k.ico(1.8, 1, '#3c7a30', 0.8, 5.8, 0.4, { jitter: 0.35 }); k.ico(1.6, 1, '#356f2c', -0.7, 5.5, -0.5, { jitter: 0.35 }); kinds.push(k.build().body); }
+    // Medium and up: birches (white bark, light leaves) and broad oaks.
+    if (!coarse && qual.textures) {
+      { const k = new Kit(THREE); k.cyl(0.14, 0.2, 7, 6, '#e8e4dc', 0, 3.5, 0); for (let i = 0; i < 5; i++) k.box(0.3, 0.05, 0.05, '#3e3e3e', 0.12, 1 + i * 1.2, 0, { ry: i }); for (const [x, y, z, r2] of [[0, 6.5, 0, 1.5], [0.7, 5.6, 0.4, 1.1], [-0.6, 5.2, -0.3, 1.0], [0.2, 7.6, 0.1, 1.0]]) k.ico(r2, 1, '#7cb342', x, y, z, { jitter: 0.3 }); kinds.push(k.build().body); }
+      { const k = new Kit(THREE); k.cyl(0.45, 0.7, 3, 7, '#5d4037', 0, 1.5, 0); for (const [x, z] of [[1, 0], [-0.8, 0.6], [0, -0.9]]) k.cyl(0.15, 0.25, 2.2, 5, '#5d4037', x * 0.6, 3.4, z * 0.6, { rz: -x * 0.5, rx: z * 0.5 }); for (const [x, y, z, r2] of [[0, 5.6, 0, 3.0], [1.8, 5.0, 0.8, 2.2], [-1.7, 5.2, -0.6, 2.2], [0.4, 6.8, -1.2, 2.0], [-0.5, 6.4, 1.4, 1.9]]) k.ico(r2, 1, '#2e5e1f', x, y, z, { jitter: 0.35 }); kinds.push(k.build().body); }
+    }
     const forest = new THREE.Group();
     const fm = env.setupMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }));
-    const per = Math.max(1, Math.round((coarse ? 900 : 2600) * (qual.forest ?? 1)));
+    const per = Math.max(1, Math.round(((coarse ? 900 : 2600) * 2 / kinds.length) * (qual.forest ?? 1)));   // the same number of trees, shared between the species
     kinds.forEach((geo, ki) => {
       const inst = new THREE.InstancedMesh(geo, fm, per);
       let n = 0; let tries2 = 0;

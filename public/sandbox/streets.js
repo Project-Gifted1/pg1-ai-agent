@@ -15,6 +15,9 @@
 //                    more roads
 //   street lamps     every ~36 m, alternating sides, instanced; their heads
 //                    and the pools of light under them come on at night
+//   street furniture benches and bins along the pavements, bus shelters on
+//                    the main roads, traffic lights on every arm of a
+//                    junction, a street-name post at each junction (instanced)
 //
 // Footpaths (narrower than 3.5 m) are drawn as paving only. Everything here
 // is geometry made in code (no downloaded assets).
@@ -23,6 +26,8 @@
 //   buildStreets(THREE, world, { heightAt, setupMaterial, coarse, lamps })
 //     -> { group, update(night), covers(x, z), dispose(), stats }
 //   covers(x, z): true on a road, kerb or pavement (scene metres)
+
+import { Kit } from './kit.js';
 
 export const FOOTPATH_WIDTH = 3.5;
 const PAVE = 2.2; const KERB = 0.25;
@@ -130,6 +135,8 @@ export function buildStreets(THREE, world, { heightAt = () => 0, setupMaterial =
   };
   const ground = new Batch(); const marks = new Batch();
   const lampSpots = [];
+  const furniture = { bench: [], bin: [], shelter: [], lights: [], sign: [] };   // [x, y, yaw] in world metres
+  const facing = (side, nx2, ny2) => Math.atan2(-ny2 * side, -nx2 * side);
   const Y_ROAD = 0.09; const Y_PAVE = 0.16; const Y_MARK = 0.11;
   for (const s of segs) {
     const dx = s.bx - s.ax; const dy = s.by - s.ay; const L = Math.hypot(dx, dy);
@@ -173,6 +180,15 @@ export function buildStreets(THREE, world, { heightAt = () => 0, setupMaterial =
           lampSpots.push([x, y, Math.atan2(-ny * side, -nx * side), s.w]);
         }
       }
+      // Benches and bins every ~70 m, bus shelters every ~320 m on the main roads.
+      const out = half + KERB + PAVE * 0.75;
+      let j = 0;
+      for (let t = t0 + 20; t < t1 - 10; t += 70) {
+        const side = j++ % 2 ? -1 : 1;
+        const at = (dt) => [s.ax + ux * (t + dt) + nx * side * out, s.ay + uy * (t + dt) + ny * side * out, facing(side, nx, ny)];
+        furniture.bench.push(at(0)); furniture.bin.push(at(2.2));
+      }
+      if (s.w >= 9) for (let t = t0 + 60; t < t1 - 20; t += 320) { const x = s.ax + ux * t - nx * out; const y = s.ay + uy * t - ny * out; furniture.shelter.push([x, y, facing(-1, nx, ny)]); }
     }
     // Zebra crossings on each arm of a junction of three or more roads.
     for (const [node, atA] of [[s.a, true], [s.b, false]]) {
@@ -181,10 +197,15 @@ export function buildStreets(THREE, world, { heightAt = () => 0, setupMaterial =
       const t = atA ? base : L - base - 3;
       if (t < 0 || t + 3 > L) continue;
       for (let o = -half + 0.6; o + 0.5 < half - 0.3; o += 1.1) strip(t, t + 3, o, o + 0.5, Y_MARK + 0.005, WHITE, marks);
+      // A traffic light on this arm, on the right as one drives in, facing the traffic.
+      // (Arriving at A, traffic runs along -u and its right is +n; at B, +u and -n.)
+      const dir = atA ? 1 : -1; const tl = atA ? base - 1 : L - base + 1; const side = dir;
+      furniture.lights.push([s.ax + ux * tl + nx * side * (half + KERB + 0.4), s.ay + uy * tl + ny * side * (half + KERB + 0.4), Math.atan2(uy * dir, ux * dir)]);
     }
   }
-  // Junction and joint discs.
+  // Junction and joint discs; a street-name post at each junction.
   for (const [n, d] of deg) {
+    if (d >= 3 && (widest.get(n) || 0) >= 6) { const [x, y] = pos.get(n); const o = (widest.get(n) || 0) / 2 + KERB + PAVE * 0.5; furniture.sign.push([x + o, y + o, Math.PI / 4]); }
     const [x, y] = pos.get(n); const w = widest.get(n);
     if (d >= 2 || w >= FOOTPATH_WIDTH) ground.disc(sx(x), groundY(x, y) + Y_ROAD - 0.004, sz(y), w / 2 + (d >= 3 ? 0.6 : 0), w < FOOTPATH_WIDTH ? PATH : ASPHALT, d >= 3 ? 20 : 12);
   }
@@ -196,6 +217,34 @@ export function buildStreets(THREE, world, { heightAt = () => 0, setupMaterial =
   const gg = ground.geometry(THREE); const mg = marks.geometry(THREE);
   if (gg) { const m = new THREE.Mesh(gg, surf); m.receiveShadow = !coarse; group.add(m); }
   if (mg) { const m = new THREE.Mesh(mg, paint); m.receiveShadow = !coarse; group.add(m); }
+
+  // Street furniture, each kind modelled once and instanced (all at the
+  // pavement's height, facing the road).
+  const kinds = {
+    bench: (k) => { k.box(0.45, 0.05, 1.8, '#8d6e63', 0, 0.45, 0); k.box(0.05, 0.4, 1.8, '#8d6e63', -0.22, 0.7, 0); for (const z of [-0.8, 0.8]) { k.box(0.4, 0.45, 0.06, '#37474f', 0, 0.22, z); } },
+    bin: (k) => { k.cyl(0.25, 0.22, 0.9, 10, '#2e7d32', 0, 0.45, 0); k.cyl(0.27, 0.27, 0.06, 10, '#1b5e20', 0, 0.92, 0); },
+    shelter: (k) => { k.box(1.4, 0.08, 3.6, '#455a64', -0.3, 2.5, 0); k.box(0.05, 2.4, 3.4, '#b3e5fc', -1.0, 1.25, 0, { layer: 'glass' }); for (const z of [-1.7, 1.7]) k.box(0.08, 2.5, 0.08, '#455a64', -1.0, 1.25, z); k.box(0.4, 0.05, 2.4, '#90a4ae', -0.7, 0.5, 0); k.box(0.05, 0.9, 0.6, '#ffe082', -0.98, 1.6, 1.3, { layer: 'glow' }); k.cyl(0.05, 0.05, 2.8, 6, '#9e9e9e', 0.6, 1.4, -2.2); k.box(0.05, 0.5, 0.5, '#1565c0', 0.6, 2.8, -2.2); },
+    lights: (k) => { k.cyl(0.08, 0.1, 3.2, 8, '#37474f', 0, 1.6, 0); k.box(0.3, 0.9, 0.3, '#212121', 0.05, 3.4, 0); k.sphere(0.09, '#ff1744', 0.21, 3.7, 0, { layer: 'glow', seg: 8, rings: 6 }); k.sphere(0.09, '#5d4037', 0.21, 3.4, 0, { seg: 8, rings: 6 }); k.sphere(0.09, '#00e676', 0.21, 3.1, 0, { layer: 'glow', seg: 8, rings: 6 }); k.box(0.12, 0.22, 0.1, '#212121', 0.08, 1.3, 0); },
+    sign: (k) => { k.cyl(0.05, 0.05, 2.8, 6, '#455a64', 0, 1.4, 0); k.box(0.05, 0.3, 1.3, '#1b5e20', 0, 2.6, 0); k.box(0.06, 0.24, 1.2, '#fafafa', 0, 2.6, 0); k.box(0.065, 0.06, 0.9, '#1b5e20', 0, 2.6, 0); }
+  };
+  const furnMats = { body: setupMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.2 })), glass: setupMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.5 })), glow: new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }) };
+  let furnitureCount = 0;
+  {
+    const m4 = new THREE.Matrix4(); const q = new THREE.Quaternion(); const p = new THREE.Vector3(); const one = new THREE.Vector3(1, 1, 1); const up = new THREE.Vector3(0, 1, 0);
+    for (const [name, fill] of Object.entries(kinds)) {
+      const spots = furniture[name].slice(0, 900); if (!spots.length) continue;
+      const k = new Kit(THREE); fill(k); const geo = k.build();
+      for (const layer of ['body', 'glass', 'glow']) {
+        if (!geo[layer]) continue;
+        const im = new THREE.InstancedMesh(geo[layer], furnMats[layer], spots.length);
+        spots.forEach(([x, y, yaw], i) => { q.setFromAxisAngle(up, yaw); m4.compose(p.set(sx(x), groundY(x, y) + Y_PAVE, sz(y)), q, one); im.setMatrixAt(i, m4); });
+        im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere();
+        im.castShadow = layer === 'body' && !coarse;
+        group.add(im);
+      }
+      furnitureCount += spots.length;
+    }
+  }
 
   // Street lamps: a pole and arm (lit), a head (glows at night), a pool of light on the road.
   let heads = null; let pools = null; let poles = null;
@@ -227,7 +276,7 @@ export function buildStreets(THREE, world, { heightAt = () => 0, setupMaterial =
   return {
     group,
     covers,
-    stats: { segments: segs.length, lamps: lampN, junctions: [...deg.values()].filter((d) => d >= 3).length },
+    stats: { segments: segs.length, lamps: lampN, furniture: furnitureCount, junctions: [...deg.values()].filter((d) => d >= 3).length },
     // 0 by day, 1 at night: the lamps come on at dusk.
     update(night) {
       if (!heads) return;
