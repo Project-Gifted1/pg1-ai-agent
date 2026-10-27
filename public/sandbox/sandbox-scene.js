@@ -36,11 +36,12 @@ import { createControls } from './controls.js';
 import { TIERS, TIER_SETTINGS, QUALITY_KEY, pickTier, createGovernor } from './quality.js';
 import { createPost } from './post.js';
 import { loadTextures, addSurfaceDetail } from './materials.js';
+import { buildTerrain } from './terrain.js';
 
 const MAX_ENTITIES = 1000;
 const CLASS_COLOR = { person: 0xf3c623, animal: 0xff9b7a, plant: 0x3ddc84, building: 0xcfd8dc, structure: 0x9e9e9e, vehicle: 0x36d1c4, space: 0x8f86ff, celestial: 0xd98cff, thing: 0x7cc4ff };
 const PALETTE = [0xf3c623, 0x36d1c4, 0x8f86ff, 0x3ddc84, 0xff9b7a, 0x7cc4ff, 0xffb300, 0xd98cff];
-const KEEP_PROPS = ['climate', 'culture', 'government', 'country', 'abroad', 'trip', 'text', 'color', 'roof', 'floors', 'heading', 'length', 'width', 'radius', 'size', 'inside', 'target', 'at', 'name', 'family', 'rings', 'clouds', 'shirt', 'livery', 'awning', 'lattice', 'orbit_radius', 'orbits', 'orbit_altitude', 'stages', 'energy', 'hunger', 'hygiene', 'social', 'mood', 'home', 'sex', 'age', 'job', 'work', 'education', 'money', 'partner', 'children', 'mother', 'father', 'saying', 'talking_to', 'built', 'furniture', 'owner', 'civ', 'jail_until', 'honesty', 'ambition', 'sociability', 'curiosity', 'crimes'];
+const KEEP_PROPS = ['to_x', 'to_y', 'gates', 'small', 'history', 'climate', 'culture', 'government', 'country', 'abroad', 'trip', 'text', 'color', 'roof', 'floors', 'heading', 'length', 'width', 'radius', 'size', 'inside', 'target', 'at', 'name', 'family', 'rings', 'clouds', 'shirt', 'livery', 'awning', 'lattice', 'orbit_radius', 'orbits', 'orbit_altitude', 'stages', 'energy', 'hunger', 'hygiene', 'social', 'mood', 'home', 'sex', 'age', 'job', 'work', 'education', 'money', 'partner', 'children', 'mother', 'father', 'saying', 'talking_to', 'built', 'furniture', 'owner', 'civ', 'jail_until', 'honesty', 'ambition', 'sociability', 'curiosity', 'crimes'];
 
 export function kindColor(kind) {
   const c = CLASS_COLOR[classOf(kind)];
@@ -68,7 +69,19 @@ export function normalizeWorld(w) {
     };
   });
   const spaceAlt = Number(world.space_altitude) > 0 ? Number(world.space_altitude) : (size.z >= 4000 ? 2000 : size.z / 2);
-  return { id: typeof world.id === 'string' ? world.id : '', society: world.society && typeof world.society === 'object' ? world.society : null, size, entities, seed: Number(world.seed) || 1, tick: Number(world.tick) || 0, daySteps: Math.max(10, Number(world.day_steps) || 240), spaceAlt, name: world.name || '' };
+  return { id: typeof world.id === 'string' ? world.id : '', society: world.society && typeof world.society === 'object' ? world.society : null, size, entities, seed: Number(world.seed) || 1, tick: Number(world.tick) || 0, daySteps: Math.max(10, Number(world.day_steps) || 240), spaceAlt, name: world.name || '', roads: normalizeRoads(world.roads, size) };
+}
+
+// The road network (lib/sandbox/roads.mjs), as numbers only.
+export function normalizeRoads(r, size) {
+  if (!r || typeof r !== 'object' || !Array.isArray(r.nodes) || !Array.isArray(r.edges)) return null;
+  const nodes = r.nodes.slice(0, 4000).map((n) => [Math.min(size.x, Math.max(0, Number(n && n[0]) || 0)), Math.min(size.y, Math.max(0, Number(n && n[1]) || 0))]);
+  const edges = r.edges.slice(0, 6000).filter((e) => Array.isArray(e) && Number.isInteger(e[0]) && Number.isInteger(e[1]) && e[0] >= 0 && e[1] >= 0 && e[0] < nodes.length && e[1] < nodes.length).map((e) => [e[0], e[1], Math.min(60, Math.max(1, Number(e[2]) || 8))]);
+  return edges.length ? { nodes, edges } : null;
+}
+// The world's terrain (terrain.js, the engine's own): where land and water are.
+export function terrainOfWorld(world) {
+  return buildTerrain(world.entities.map((e) => ({ id: e.id, kind: e.kind, properties: e.props, position: { x: e.x, y: e.y } })), world.size);
 }
 
 export function kindsOf(world) {
@@ -114,6 +127,7 @@ function create2d(container, { onSelect } = {}) {
     g.fillStyle = isl.length ? '#1f5f86' : '#26402a'; g.fillRect(ox, oy, world.size.x * k, world.size.y * k);
     for (const e of isl) { g.fillStyle = e.props.climate === 'tropical' ? '#3f7d34' : e.props.climate === 'cold' ? '#7d8a7a' : '#2f5a2a'; g.beginPath(); g.arc(X(e), Y(e), (Number(e.props.radius) || 500) * k, 0, Math.PI * 2); g.fill(); }
     for (const e of world.entities) if (e.base === 'lake') { g.fillStyle = '#1d5d8c'; g.beginPath(); g.arc(X(e), Y(e), (Number(e.props.radius) || 50) * k, 0, Math.PI * 2); g.fill(); }
+    if (world.roads) { g.strokeStyle = '#45484e'; g.lineCap = 'round'; for (const [a, b, wd] of world.roads.edges) { const A = world.roads.nodes[a]; const B = world.roads.nodes[b]; g.lineWidth = Math.max(1 * dpr, wd * k); g.beginPath(); g.moveTo(ox + A[0] * k, oy + (world.size.y - A[1]) * k); g.lineTo(ox + B[0] * k, oy + (world.size.y - B[1]) * k); g.stroke(); } }
     for (const e of world.entities) if (e.base === 'road' || e.base === 'runway' || e.base === 'bridge') {
       const len = (Number(e.props.length) || 100) * k; const wd = Math.max(1.5 * dpr, (Number(e.props.width) || 12) * k);
       g.save(); g.translate(X(e), Y(e)); g.rotate(-(Number(e.props.heading) || 0) * Math.PI / 180); g.fillStyle = e.base === 'bridge' ? '#8d6e63' : '#45484e'; g.fillRect(-len / 2, -wd / 2, len, wd); g.restore();
@@ -209,6 +223,18 @@ function ringTexture(THREE, base) {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
+}
+
+// A point (out) and the direction (tan) at t on the Catmull-Rom curve
+// through p0, p1, p2 between p1 and p2, with p3 carried on from p1 -> p2.
+export function catmull(p0, p1, p2, t, out, tan) {
+  const t2 = t * t; const t3 = t2 * t;
+  for (const k of ['x', 'y', 'z']) {
+    const a = p0[k]; const b = p1[k]; const c = p2[k]; const d = c + (c - b);
+    out[k] = 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+    if (tan) tan[k] = 0.5 * ((-a + c) + 2 * (2 * a - 5 * b + 4 * c - d) * t + 3 * (-a + 3 * b - 3 * c + d) * t2);
+  }
+  return out;
 }
 
 // --- the 3D scene --------------------------------------------------------------------------------
@@ -445,7 +471,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       const pm = p.role === 'flame' ? (() => { const gg = new THREE.Group(); if (p.geo.glow) gg.add(new THREE.Mesh(p.geo.glow, matFlame)); return gg; })() : meshesOf(p.geo);
       holder.add(pm);
       inner.add(holder);
-      parts.push({ role: p.role, node: holder, r: Math.max(0.1, p.pivot[1]) });
+      parts.push({ role: p.role, node: holder, r: Math.max(0.1, p.pivot[1]), front: p.pivot[0] > 0.05 });
     }
     return { group, inner, parts, size: model.size || 4, upright: !!model.upright, spin: model.spin || 0, seat: model.seat || null };
   }
@@ -469,6 +495,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         scene.add(m.group);
         movers.set(e.id, m);
       } else {
+        // The step before too, for a curved path through the steps (Catmull-Rom).
+        m.prev = m.from.clone();
         m.from = m.pos.clone();
         m.to = to;
       }
@@ -579,6 +607,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     const isl = world.entities.filter((e) => e.base === 'island');
     g.fillStyle = isl.length ? '#1f5f86' : '#25402a'; g.fillRect(ox, oy, world.size.x * k, world.size.y * k);
     for (const e of isl) { g.fillStyle = e.props.climate === 'tropical' ? '#3f7d34' : e.props.climate === 'cold' ? '#7d8a7a' : '#3a6a30'; g.beginPath(); g.arc(X(e), Y(e), (Number(e.props.radius) || 500) * k, 0, 7); g.fill(); }
+    if (world.roads) { g.strokeStyle = '#5a5d63'; g.lineWidth = 1; g.beginPath(); for (const [a, b, wd] of world.roads.edges) { if (wd < 6) continue; const A = world.roads.nodes[a]; const B = world.roads.nodes[b]; g.moveTo(ox + A[0] * k, oy + (world.size.y - A[1]) * k); g.lineTo(ox + B[0] * k, oy + (world.size.y - B[1]) * k); } g.stroke(); }
     for (const e of world.entities) {
       if (e.base === 'lake') { g.fillStyle = '#2f7fb0'; g.beginPath(); g.arc(X(e), Y(e), (Number(e.props.radius) || 50) * k, 0, 7); g.fill(); }
       else if (e.base === 'road' || e.base === 'runway') { const L = (Number(e.props.length) || 100) * k; g.save(); g.translate(X(e), Y(e)); g.rotate(-(Number(e.props.heading) || 0) * Math.PI / 180); g.fillStyle = '#5a5d63'; g.fillRect(-L / 2, -1, L, 2); g.restore(); }
@@ -636,7 +665,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   const onVis = () => schedule();
   document.addEventListener('visibilitychange', onVis);
   const running = () => visible && !document.hidden;
-  const tmpA = new THREE.Vector3(); const tmpB = new THREE.Vector3(); const proj = new THREE.Vector3();
+  const tmpA = new THREE.Vector3(); const tmpB = new THREE.Vector3(); const proj = new THREE.Vector3(); const tmpT = new THREE.Vector3();
 
   function animate(dt, now) {
     const t = Math.min(1, (now - stepStart) / stepDur);
@@ -659,15 +688,24 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         continue;
       }
       m.group.visible = true;
-      m.pos.lerpVectors(m.from, m.to, t);
-      const dx = m.to.x - m.from.x; const dz = m.to.z - m.from.z; const dy = m.to.y - m.from.y;
-      const dh = Math.hypot(dx, dz);
+      // Along a curve through the last steps (Catmull-Rom), not a straight
+      // line between two of them: a car rounds a corner, a plane turns.
+      const span0 = m.prev ? m.prev.distanceTo(m.from) : 0; const span1 = m.from.distanceTo(m.to);
+      const curve = m.prev && !m.celestial && span0 > 0.05 && span1 > 0.05 && span0 < span1 * 4 + 20 && span1 < span0 * 4 + 20;
+      if (curve) catmull(m.prev, m.from, m.to, t, m.pos, tmpT);
+      else { m.pos.lerpVectors(m.from, m.to, t); tmpT.subVectors(m.to, m.from); }
+      if (m.from.y < 0.05 && m.to.y < 0.05) m.pos.y = Math.max(0, Math.min(m.from.y, m.to.y));  // wheels stay on the ground
+      const dx = tmpT.x; const dz = tmpT.z; const dy = m.to.y - m.from.y;
+      const dh = Math.hypot(m.to.x - m.from.x, m.to.z - m.from.z);
       const moving = dh > 0.05 || Math.abs(dy) > 0.05;
       const speed = (Math.hypot(dh, dy) / (stepDur / 1000));
+      let yawRate = 0;
       if (dh > 0.05 && !m.celestial && !m.upright) {
         const goal = Math.atan2(-dz, dx);
         let d = goal - m.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
-        m.yaw += d * (1 - Math.exp(-dt * 6));
+        const step = d * (1 - Math.exp(-dt * 6));
+        m.yaw += step;
+        yawRate = dt > 0 ? step / dt : 0;
       }
       m.group.position.copy(m.pos);
       if (!m.celestial) m.group.rotation.y = m.upright ? 0 : m.yaw;
@@ -677,7 +715,12 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         const goalPitch = moving ? Math.atan2(dy, Math.max(dh, 0.01)) * 0.8 : 0;
         m.pitch += (goalPitch - m.pitch) * (1 - Math.exp(-dt * 3));
         m.inner.rotation.z = m.pitch;
+        // Bank into turns (never on the ground).
+        const goalRoll = e.z > 2 ? Math.max(-0.6, Math.min(0.6, -yawRate * 0.9)) : 0;
+        m.roll += (goalRoll - m.roll) * (1 - Math.exp(-dt * 3));
+        m.inner.rotation.x = m.roll;
       }
+      m.steer = (m.steer || 0) + (Math.max(-0.5, Math.min(0.5, yawRate * 0.35)) - (m.steer || 0)) * Math.min(1, dt * 8);
       if (e.base === 'boat' || e.base === 'ship') { m.inner.rotation.x = Math.sin(now / 900 + m.phase) * 0.03; m.inner.position.y = Math.sin(now / 700 + m.phase) * 0.15; }
       if (e.base === 'hot_air_balloon' || e.base === 'drone') m.inner.position.y = Math.sin(now / 1300 + m.phase) * (e.base === 'drone' ? 0.15 : 0.8);
       if (m.spin) m.group.rotation.y += m.spin * dt;
@@ -686,7 +729,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       m.phase += dt * Math.min(12, 2 + speed * 1.6);
       for (const p of m.parts) {
         switch (p.role) {
-          case 'wheel': p.node.rotation.z -= moving ? dist / p.r : 0; break;
+          case 'wheel': p.node.rotation.z -= moving ? dist / p.r : 0; if (p.front) p.node.rotation.y = m.steer; break;
           case 'rotorY': p.node.rotation.y += dt * ((moving || e.z > 0.5) ? 30 : 4); break;
           case 'rotorZ': p.node.rotation.z += dt * ((moving || e.z > 0.5) ? 40 : 6); break;
           case 'propX': p.node.rotation.x += dt * ((moving || e.z > 0.5) ? 50 : 0); break;
@@ -801,13 +844,13 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         if (onSelect) onSelect(null);
         firstWorld = true;
       }
-      const gs = `${world.size.x}|${world.size.y}|${world.seed}|${world.entities.filter((e) => FIXED_KINDS.has(e.base) || e.base === 'lake' || e.base === 'island').map((e) => `${e.id}:${Math.round(e.x)}:${Math.round(e.y)}:${e.props.radius || ''}`).join(',')}`;
+      const gs = `${world.size.x}|${world.size.y}|${world.seed}|${world.roads ? `${world.roads.nodes.length}/${world.roads.edges.length}` : ''}|${world.entities.filter((e) => FIXED_KINDS.has(e.base) || e.base === 'lake' || e.base === 'island').map((e) => `${e.id}:${Math.round(e.x)}:${Math.round(e.y)}:${e.props.radius || ''}`).join(',')}`;
       if (gs !== groundSig) {
         groundSig = gs;
         const lakeEntities = world.entities.filter((e) => e.base === 'lake' || e.base === 'road' || e.base === 'runway').map((e) => ({ ...e, sx: e.x - world.size.x / 2, sz: -(e.y - world.size.y / 2), radius: Number(e.props.radius) || 60, heading: -(Number(e.props.heading) || 0), length: Number(e.props.length) || 100, width: Number(e.props.width) || 12 }));
         const islands = world.entities.filter((e) => e.base === 'island').map((e) => ({ sx: e.x - world.size.x / 2, sz: -(e.y - world.size.y / 2), r: Number(e.props.radius) || 500, climate: e.props.climate || 'temperate', name: e.props.name || e.id }));
         const avoid = world.entities.filter((e) => e.z < 5).map((e) => ({ x: e.x - world.size.x / 2, z: -(e.y - world.size.y / 2), r: e.base === 'lake' ? (Number(e.props.radius) || 60) : e.cls === 'building' ? 25 : 0 }));
-        env.buildGround({ size: world.size, seed: world.seed, entities: lakeEntities, avoid, islands });
+        env.buildGround({ size: world.size, seed: world.seed, entities: lakeEntities, avoid, islands, terrain: terrainOfWorld(world), roads: world.roads });
       }
       const ss = world.entities.filter((e) => FIXED_KINDS.has(e.base)).map((e) => `${e.id}:${modelKey(e.kind, e.props, e.id)}:${e.x}:${e.y}:${e.props.heading || 0}`).join(',');
       if (ss !== staticSig) { staticSig = ss; rebuildStatic(); }

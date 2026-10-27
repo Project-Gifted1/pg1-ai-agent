@@ -26,11 +26,36 @@ A deterministic engine steps the world: the same world and seed always give the 
 
 **Travel.** An entity with a `target` (another entity's id), or `target_x` / `target_y` / `target_z`, heads there at its speed. That is the rule's `speed`, else its own `speed` property, else the catalogue's.
 
-- **It keeps to its domain:** cars, bikes and people on the ground; boats on the water; planes and helicopters below the space altitude, climbing to cruise on the way; rockets and shuttles anywhere, into space.
+- **It keeps to its domain** (see **Land, sea, roads and flight** below): people, animals and ground vehicles on land, by road; boats on the water; planes from runway to runway and helicopters below the space altitude; rockets and shuttles anywhere, into space.
 - **It stops at the target's edge:** a house's door, not its middle.
 - **On arrival:** the target is cleared, `at` names where it arrived, and an `arrive` event is recorded.
 - **With `roam`:** it then picks its next target among those kinds, at random from the seed, so a town keeps moving.
 - **Crossing the space altitude** records `space` (going up) or `reentry` (coming down). The space altitude is `space_altitude`, 2,000 m by default for a tall world.
+
+### Land, sea, roads and flight
+
+`lib/sandbox/terrain.mjs`, `roads.mjs`, `movement.mjs`.
+
+- **One terrain.** Land and water come from the world's own entities: `island` discs (and `mangrove` discs, land of its own type) are land; `lake` discs and `river` / `creek` strips (from the position to `to_x`, `to_y`, `width` wide) are water. A world with no island is land everywhere but its water. The viewer draws exactly that coastline: `public/sandbox/terrain.js` is a byte-for-byte copy (`npm run sandbox:terrain`), and `tests/sandbox-terrain.test.mjs` checks both agree on 10,000 points.
+- **Ground** (people, animals, bike, motorbike, car, taxi, police car, bus, truck, army truck, tractor) **never stands on water.**
+  - Vehicles drive the road network with A* on the road graph (cached per world, rebuilt only when the roads change). They keep right, slow for junctions and bends (acceleration and braking, never an instant top speed), and stop where the destination's driveway meets the network.
+  - **Vehicles keep strictly to the roads** (every ground vehicle: cars, taxis, police cars, buses, lorries, army lorries, tractors, motorbikes; bikes may also use paths). They never drive over open ground to a door. A vehicle off the road (put there by an agent, or built there) joins the nearest road first. Where no road goes, it does not go: one `trip_refused` event ("no road goes there"), not one a step. Rules that would push a vehicle off the road (wandering, attraction) are undone. Templates park their vehicles on the roads.
+  - People walk on the pavements and footpaths; bikes ride roads and paths.
+  - **A trip to another island** goes to this island's harbour or airport, boards a ferry or plane there (as a rider, `inside`), and gets off at the other end. With no link, it is refused with a plain `trip_refused` event.
+- **Water** (boats, ferries, ships, patrol boats) **never enters land.** Boats sail round the islands with A* on a coarse sea grid (with the rivers and creeks), cached per world, and berth at a harbour's water side.
+- **Roads are data:** `roads: { nodes: [[x, y]], edges: [[a, b, width, name]], names }` in the world spec, inside the existing size limit. An edge under 3.5 m wide is a footpath. Road entities (straight strips, and the streets a society builds) join the network too.
+  - The town and the universe have a connected network per island: a ring road, the town's street grid, and roads to the harbour, airport or airstrip, every house row, the school, hospital, factory and launch pad. Buildings face the roads, set back from them.
+- **Flight** (plane, small plane, jet):
+  - taxi from the stand to the runway's end, line up, roll along the runway accelerating to rotation speed;
+  - climb out at about 7% (4 degrees) and cruise (airliners at 600 m, small planes 350 m, jets 1,200 m; always below the space altitude, and lower when the trip is short);
+  - turn with a limited rate (and bank, in the viewer); join a straight final lined up with the destination runway; descend on a 3-degree glide path; touch down near the threshold (a `touchdown` event); roll out braking; taxi off to a stand beside the runway;
+  - not lined up, too high or too long: a go-around, and another approach;
+  - speed changes gradually; never steeper than 8% up or down.
+  - Helicopters, drones and balloons climb and come down vertically, smoothly.
+  - Every island country has a runway with a heading (Saltreach an airstrip).
+- **Blind experiments** (`lib/sandbox/blind.mjs`): `go` uses the same rules, `move` stops at the water's edge ("Water stops you from going further that way."), and `leave` will not put the subject in the water.
+- **Worlds from before** keep working without a reset: on the first step, a ground thing standing on water is moved to the nearest point on its own island's coast, and a boat on land to the nearest water, each with one `terrain_fix` event (a black box record).
+- **Step time:** the universe template runs at about 6.1 ms a step on the machine where it was measured (5.7 ms before these rules, the same machine).
 
 **Orbits.** An entity with `orbit_radius` circles the entity named by `orbits` once every `orbit_period` steps, starting at `orbit_phase`, `orbit_altitude` metres above it.
 
@@ -58,16 +83,16 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
 
 `/sandbox create "<name>" [universe|town|meadow|empty]` builds a world from a template, as does `create_world` with `template` or the viewer's **New universe**. Templates are plain JSON, built the same way every time.
 
-- **town:** a living town on a 4 km square, with 344 things:
-  - roads, 48 houses, apartments, glass towers, shops and cafés, a school, a hospital, a station and a factory;
+- **town:** a living town on a 4 km square, with 346 things:
+  - a connected road network (a ring road, a street grid, a street for each pair of house rows, and a road or driveway to every building), 48 houses facing their streets, apartments, glass towers, shops and cafés, a school, a hospital, a station and a factory;
   - a park with a fountain, a lake with boats and a ship, a farm, woods, an airport and a launch pad;
   - people walking between buildings;
   - cars, taxis, a police car, buses, trucks, bikes and motorbikes driving;
   - planes, a small plane, a helicopter, a balloon and a drone flying;
   - a rocket taking its crew of three to a station in orbit and back.
-- **universe (Pg1-Universe):** a 12 km × 8 km world of sea and four island countries, plus the space above it (626 things at the start):
+- **universe (Pg1-Universe):** a 12 km × 8 km world of sea and four island countries, plus the space above it (627 things at the start, and a road network on each island):
   - **Aurelia,** the town above on its island, with a harbour, a beach, a hotel, a cinema, a theatre, a bar, a stadium, an amusement park and an airport terminal;
-  - **Maravia** (tropical, ruled by a council, with an airstrip), **Nordheim** (cold, a monarchy, with an airstrip) and **Saltreach** (maritime, a democracy), each with its own houses, harbour, hotel, people, names and money;
+  - **Maravia** (tropical, ruled by a council, with an airstrip), **Nordheim** (cold, a monarchy, with an airstrip) and **Saltreach** (maritime, a democracy, with an airstrip), each with its own houses, harbour, hotel, people, names and money;
   - ferries (Sea Swallow, Northern Star, Coral Queen) and an airliner (Maravia Air 7) between them; army trucks and navy patrols;
   - a star, four planets (one ringed, one with clouds), moons, an asteroid belt, a station and a shuttle;
   - two far worlds of other civilisations (the Vel and the Oru) at the very edge of the sky, hard to reach.
@@ -101,7 +126,7 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
   - **In a 20,000-step run:** the leading countries reach fission, robotics-era industry, computers and missiles; the slower ones are still burning coal and polluting.
   - The Society tab shows each branch's discovery and the next, pollution, accidents and arms spending. Every discovery and accident is in the black box.
 - **Between countries:** tourism and trade warm relations; ambitious, dishonest leaders and disputes strain them; good relations become alliances. At -60 the two stand off and their armies mobilise. Talks, an ally of both mediating, or the passing of a few days usually end it in a peace treaty. **War is possible but the last resort:** only when relations are at their worst (-85), the talks have run out, a leader is a hawk, both sides have soldiers, and a dice roll goes that way (half as likely where either side is a democracy). A war is a few clashes between soldiers: some die, both treasuries pay, tourism stops, and weariness grows until an armistice, after which the side that lost more pays reparations and relations stay cold. Civilians are not targeted. In a 20,000-step run of the universe there were three standoffs and no war.
-- **Other civilisations:** hard to meet. Contact needs an expedition to reach a far world (or, very rarely, at high technology, a visiting craft lands; the army goes to meet it, weapons lowered).
+- **Other civilisations:** never met before the people are ready. First contact needs their own deep-space expedition to reach a far world, which they launch only at interstellar travel (technology level 6); a craft that merely passes by (one the world started with, or one not on an expedition) meets no one. Very rarely their ships come calling, but only to a people at space colonies (level 5) who have founded a colony; the army goes to meet it, weapons lowered. `tests/sandbox-contact.test.mjs` checks each rule.
 - **Working out what their world is (a scripted event, not intelligence):** rare and slow. Evidence comes from reaching the edge of the sea and the roof of the sky, and from scientists' work. A hypothesis needs both seen, plenty of evidence and a very curious, well-educated scientist; a test needs interstellar technology. Then they leave a message for whoever watches (at most five), on a monument, the Listening Stone. The **Society** tab shows it under **Messages from inside**.
 
 ## The black box
@@ -190,7 +215,8 @@ Open it from the `/sandbox` or `/world <id>` reply. It is a full-screen view in 
   - lakes with ripples, drifting clouds;
   - the black of space above the space altitude.
 - **Drawn by the viewer, not world data:** the ground, sky, water ripples, grass tufts, clouds and scenery woods. They come from the world's size and seed, stay clear of every entity, and nothing in the world can use them.
-- **Between steps,** everything glides from where it was to where the engine put it.
+- **Between steps,** everything glides from where it was to where the engine put it, along a curve through its recent steps (Catmull-Rom), not a straight line: cars round corners and turn their front wheels, planes bank into turns and pitch on the climb and descent, and wheels stay on the ground through the take-off roll.
+- **The coast and the roads** come from the world's data: the same terrain module as the engine, and the road network drawn from the road graph.
 - **The camera:**
   - drag to turn, pinch or scroll to zoom, two fingers or right-drag to move;
   - tap something to follow it; its details show under the view;
@@ -293,12 +319,24 @@ Every blind run, its world and its outputs are labelled **"SIMULATION — blind 
 - the audit log;
 - the server logs.
 
+## Upgrading a world
+
+`/sandbox upgrade <world-id> [confirm]` (`lib/sandbox/upgrade.mjs`), for PG1's own worlds (never a blind copy):
+
+- Without `confirm` it only describes what it would add.
+- With `confirm`, in place, it adds a connected road network to each island (its existing streets joined up, a ring road, a way in to every place) and a runway, with a heading, to each island country without one.
+- It never removes, renames or moves a building, person or animal: a new road goes round an existing building instead. Vehicles that are not on a road are moved onto the nearest one (it says how many), since vehicles keep strictly to the roads.
+- It keeps the world id, tick, state, society, research, relations and treasuries, and writes one `upgrade_world` record on the black box long chain (who, when, what was added).
+- It must fit the world's entity and size limits; if it cannot, it refuses and says what to delete first.
+- `tests/sandbox-upgrade.test.mjs` upgrades a universe made by the earlier template (`tests/fixtures/sandbox-universe-v1.json`) after 1,200 ticks and checks that nothing else changed (only off-road vehicles moved, each onto a road), then that every vehicle position in 2,000 more steps is on a road.
+
 ## Commands (operator only)
 
 | command | what it does |
 |---|---|
 | `/sandbox` | worlds, quota use and experiments, with the viewer button |
 | `/world <id>` | one world: its rules in plain words, opened in the viewer |
+| `/sandbox upgrade <world-id> [confirm]` | adds the road network and any missing runways to one of PG1's worlds, in place (see below) |
 | `/sandbox create "<name>" [universe\|town\|meadow\|empty]` | a PG1 world from a template (universe by default) |
 | `/sandbox invite <name>` | an access key for an invited agent (shown once) |
 | `/sandbox consent <agent> <world> "<who agreed>" [on YYYY-MM-DD]` | records that agent's operator's opt-in to blind experiments in that world |

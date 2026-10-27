@@ -16,6 +16,7 @@
 import { Kit } from './kit.js';
 import { createWaterMaterial } from './water.js';
 import { applyTerrain } from './materials.js';
+import { roadMesh, roadCells } from './road-graph.js';
 
 const SKY_VERT = `
 varying vec3 vDir;
@@ -161,7 +162,7 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
   scene.fog = new THREE.FogExp2(0xbcd9f2, 0.00012);
 
   env.sky = sky; env.sky2 = sky2; env.stars = stars; env.sun = sun; env.hemi = hemi; env.moonLight = moonLight; env.skyU = skyU;
-  env.ground = null; env.lakes = []; env.clouds = null; env.grass = null; env.forest = null;
+  env.ground = null; env.lakes = []; env.clouds = null; env.grass = null; env.forest = null; env.roads = null;
 
   // A tile of grass detail, multiplied over the ground's colours.
   const detail = (() => {
@@ -181,8 +182,8 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
 
   // The ground for a world: rebuilt when the world's size, seed or lakes change.
   env.buildGround = (world) => {
-    for (const o of [env.ground, env.grass, env.clouds, env.forest, ...env.lakes]) if (o) { scene.remove(o); o.traverse((m) => { if (m.geometry) m.geometry.dispose(); if (m.material) [].concat(m.material).forEach((x) => x.dispose()); }); }
-    env.lakes = [];
+    for (const o of [env.ground, env.grass, env.clouds, env.forest, env.roads, ...env.lakes]) if (o) { scene.remove(o); o.traverse((m) => { if (m.geometry) m.geometry.dispose(); if (m.material) [].concat(m.material).forEach((x) => x.dispose()); }); }
+    env.lakes = []; env.roads = null;
     const W = world.size.x; const D = world.size.y; const span = Math.max(W, D);
     const noise = makeNoise(world.seed || 1);
     const lakes = world.entities.filter((e) => e.base === 'lake');
@@ -203,7 +204,11 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     // Islands (countries): land inside each, beaches at the shore, the sea
     // everywhere else, deepening away from the coast.
     const islands = world.islands || [];
-    const landEdge = (x, z) => { let best = -Infinity; let isl = null; for (const i of islands) { const e = i.r - Math.hypot(x - i.sx, z - i.sz); if (e > best) { best = e; isl = i; } } return { edge: best, isl }; };
+    // The coast is the world's own (terrain.js, the engine's terrain.mjs to
+    // the byte): the distance to it decides land, beach and sea.
+    const T = world.terrain || null;
+    const landEdge = (x, z) => { let best = -Infinity; let isl = null; for (const i of islands) { const e = i.r - Math.hypot(x - i.sx, z - i.sz); if (e > best) { best = e; isl = i; } } if (T) best = T.coastDistance(x + W / 2, -z + D / 2); return { edge: best, isl }; };
+    env.landEdge = landEdge;
     const heightAt = (x, z) => {
       if (islands.length) {
         const { edge } = landEdge(x, z);
@@ -363,6 +368,12 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
       env.lakes.push(water);
     }
 
+    // The road network (road-graph.js), unless a more detailed street layer draws it.
+    if (world.roads && !env.detailedRoads) {
+      const rm = roadMesh(THREE, world.roads, world.size, islands.length ? heightAt : null, env.setupMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })));
+      if (rm) { scene.add(rm); env.roads = rm; }
+    }
+
     // Grass tufts, scattered over the world (not on roads or water).
     const count = Math.round((coarse ? 2500 : 7000) * (qual.grass ?? 1));
     const tuft = new THREE.ConeGeometry(0.35, 1.1, 4);
@@ -371,7 +382,8 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     const m = new THREE.Matrix4(); const q = new THREE.Quaternion(); const sc3 = new THREE.Vector3(); const p3 = new THREE.Vector3(); const e = new THREE.Euler();
     let placed = 0; let tries = 0; let ss = (world.seed || 1) * 7919;
     const rr2 = () => { ss = (Math.imul(ss, 1664525) + 1013904223) >>> 0; return ss / 4294967296; };
-    const onRoad = (x, z) => roads.some((rd) => { const dx = x - rd.sx; const dz = z - rd.sz; const h = -(rd.heading || 0) * Math.PI / 180; const lx = dx * Math.cos(h) - dz * Math.sin(h); const lz = dx * Math.sin(h) + dz * Math.cos(h); return Math.abs(lx) < rd.length / 2 && Math.abs(lz) < rd.width / 2 + 2; });
+    const rcells = roadCells(world.roads, world.size, 20);
+    const onRoad = (x, z) => rcells.has(`${Math.floor(x / 20)},${Math.floor(z / 20)}`) || roads.some((rd) => { const dx = x - rd.sx; const dz = z - rd.sz; const h = -(rd.heading || 0) * Math.PI / 180; const lx = dx * Math.cos(h) - dz * Math.sin(h); const lz = dx * Math.sin(h) + dz * Math.cos(h); return Math.abs(lx) < rd.length / 2 && Math.abs(lz) < rd.width / 2 + 2; });
     while (placed < count && tries < count * 4) {
       tries++;
       const x = (rr2() - 0.5) * W; const z = (rr2() - 0.5) * D;
@@ -540,7 +552,7 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     if (env.normals) env.normals.dispose();
     if (csm) { csm.remove(); csm.dispose(); }
     if (sky2) { sky2.geometry.dispose(); sky2.material.dispose(); }
-    for (const o of [sky, stars, env.ground, env.grass, env.clouds, env.forest, ...env.lakes]) if (o) o.traverse((m) => { if (m.geometry) m.geometry.dispose(); if (m.material) [].concat(m.material).forEach((x) => x.dispose()); });
+    for (const o of [sky, stars, env.ground, env.grass, env.clouds, env.forest, env.roads, ...env.lakes]) if (o) o.traverse((m) => { if (m.geometry) m.geometry.dispose(); if (m.material) [].concat(m.material).forEach((x) => x.dispose()); });
   };
   return env;
 }
