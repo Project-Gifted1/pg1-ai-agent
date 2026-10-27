@@ -32,8 +32,8 @@
 
 import { buildModel, modelKey, baseKind, classOf, FIXED_KINDS, AIR_KINDS, HOME_KINDS, celestialSize, furnitureFor } from './models.js';
 import { createEnvironment } from './environment.js';
-import { createEffects } from './effects.js';
 import { createControls } from './controls.js';
+import { createEffects } from './effects.js';
 import { TIERS, TIER_SETTINGS, QUALITY_KEY, pickTier, createGovernor } from './quality.js';
 import { createPost } from './post.js';
 import { loadTextures, addSurfaceDetail } from './materials.js';
@@ -783,8 +783,9 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       // Listening: a slight lean in and a nod now and then.
       if (e.cls === 'person' && !flyer) m.inner.rotation.z = partner && !e.props.saying ? -0.05 + Math.max(0, Math.sin(now / 520 + m.phase)) * 0.06 : 0;
       // Far away, small things are not drawn (they would be under a pixel).
-      const camD = camera.position.distanceTo(m.group.position);
-      if (!m.celestial) m.group.visible = !held.has(m.id) && camD < Math.max(600, (m.size || 2) * 420);
+      // A crater waits for its meteorite (effects.js): not drawn until then.
+      const camD = held.has(m.id) ? Infinity : camera.position.distanceTo(m.group.position);
+      if (!m.celestial) m.group.visible = camD < Math.max(600, (m.size || 2) * 420);
     }
     // Orbit paths follow their centres.
     for (const l of orbitLines.values()) {
@@ -900,9 +901,9 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       if (ss !== staticSig) { staticSig = ss; rebuildStatic(); }
       tickFrom = firstWorld ? world.tick : prevTick; tickTo = world.tick;
       syncMovers(duration);
-      syncOrbits();
       if (world.id !== prevId) effects.reset();
       effects.onWorld(next);
+      syncOrbits();
       if (firstWorld) {
         firstWorld = false;
         const span = Math.max(world.size.x, world.size.y);
@@ -934,8 +935,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       env.dispose();
       scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); }); });
       for (const m of geoCache.values()) { for (const k of ['body', 'glow', 'glass']) m[k] && m[k].dispose(); for (const p of m.parts) for (const k of ['body', 'glow', 'glass']) p.geo[k] && p.geo[k].dispose(); }
-      if (post) post.dispose();
       effects.dispose();
+      if (post) post.dispose();
       glow.dispose(); renderer.dispose(); canvas.remove(); hud.remove();
     }
   };
