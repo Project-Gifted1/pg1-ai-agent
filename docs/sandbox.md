@@ -147,7 +147,7 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
   - Offshore, two anchorages where a Portuguese merchant ship calls. Its traders are visitors aboard, not a country with a home here.
   - One Nok heritage site (fired-clay finds), labelled with its date range, far older than the world. Benin's people can come upon it (a `discovery` event); no Nok people live here.
   - The terrain module (`lib/sandbox/terrain.mjs`): rivers and creeks are water, mangrove is land of its own type, forest is land.
-- **Period things only:** walking, porters (between the palace and Ughoton), canoes on the creeks and rivers, and the sailing ship at sea. No cars, bikes, planes, rockets or space.
+- **Period things only:** walking, porters (between the palace and Ughoton), canoes on the creeks and rivers, and the sailing ship at sea. No cars, bikes, planes, rockets or space. Nothing flies or goes to space, and a home gains things of its time (a woven mat, a carved stool, clay pots, a calabash, cloth, a wooden chest, a water jar, a basket), never a sofa or a television.
 - **No church and no resident priest** in 1610: the sources found say there was none (see the doc).
 - **Two kingdoms:** Benin (the Oba, with chiefs at the palace) and Warri (the Olu), each with a royal house. The Urhobo and the Ijaw are each led by a head of the elders: a simulation mechanic, not a historical claim.
 - **The life rule** has two fields for a period world:
