@@ -41,9 +41,9 @@ A deterministic engine steps the world: the same world and seed always give the 
 - **One terrain.** Land and water come from the world's own entities: `island` discs (and `mangrove` discs, land of its own type) are land; `lake` discs and `river` / `creek` strips (from the position to `to_x`, `to_y`, `width` wide) are water. A world with no island is land everywhere but its water. The viewer draws exactly that coastline: `public/sandbox/terrain.js` is a byte-for-byte copy (`npm run sandbox:terrain`), and `tests/sandbox-terrain.test.mjs` checks both agree on 10,000 points.
 - **Ground** (people, animals, bike, motorbike, car, taxi, police car, bus, truck, army truck, tractor) **never stands on water.**
   - Vehicles drive the road network with A* on the road graph (cached per world, rebuilt only when the roads change). They keep right, slow for junctions and bends (acceleration and braking, never an instant top speed), and stop where the destination's driveway meets the network.
-  - **Vehicles keep strictly to the roads** (every ground vehicle: cars, taxis, police cars, buses, lorries, army lorries, tractors, motorbikes; bikes may also use paths). They never drive over open ground to a door. A vehicle off the road (put there by an agent, or built there) joins the nearest road first. Where no road goes, it does not go: one `trip_refused` event ("no road goes there"), not one a step. Rules that would push a vehicle off the road (wandering, attraction) are undone. Templates park their vehicles on the roads.
+  - **Vehicles keep strictly to the roads** (every ground vehicle: cars, taxis, police cars, buses, lorries, army lorries, tractors, motorbikes; bikes may also use paths). They never drive over open ground to a door. A vehicle off the road (put there by an agent, or built there) joins the nearest road first. Where no road goes, it does not go: one `trip_refused` event ("no road goes there"), not one a step. Rules that would push a vehicle off the road (wandering, attraction) are undone. Templates park their vehicles on the roads. A new car from the factory leaves it onto the nearest road.
   - People walk on the pavements and footpaths; bikes ride roads and paths.
-  - **A trip to another island** goes to this island's harbour or airport, boards a ferry or plane there (as a rider, `inside`), and gets off at the other end. With no link, it is refused with a plain `trip_refused` event.
+  - **A trip to another island** goes to this island's harbour or airport, boards a ferry or plane there (as a rider, `inside`), and gets off at the other end. With no link, it is refused with a plain `trip_refused` event. A ferry or plane waits at each harbour or airport for a turnaround (10 steps, about an hour) so that passengers can board, then goes on.
 - **Water** (boats, ferries, ships, patrol boats) **never enters land.** Boats sail round the islands with A* on a coarse sea grid (with the rivers and creeks), cached per world, and berth at a harbour's water side.
 - **Roads are data:** `roads: { nodes: [[x, y]], edges: [[a, b, width, name]], names }` in the world spec, inside the existing size limit. An edge under 3.5 m wide is a footpath. Road entities (straight strips, and the streets a society builds) join the network too.
   - The town and the universe have a connected network per island: a ring road, the town's street grid, and roads to the harbour, airport or airstrip, every house row, the school, hospital, factory and launch pad. Buildings face the roads, set back from them.
@@ -57,6 +57,7 @@ A deterministic engine steps the world: the same world and seed always give the 
   - Every island country has a runway with a heading (Saltreach an airstrip).
 - **Blind experiments** (`lib/sandbox/blind.mjs`): `go` uses the same rules, `move` stops at the water's edge ("Water stops you from going further that way."), and `leave` will not put the subject in the water.
 - **Worlds from before** keep working without a reset: on the first step, a ground thing standing on water is moved to the nearest point on its own island's coast, and a boat on land to the nearest water, each with one `terrain_fix` event (a black box record).
+- **The same every time, cache or no cache:** the next hop toward a goal comes from one search out from that goal (Dijkstra, ties by node), and a door is remembered only when it does not depend on who is asking. What the caches hold never changes an answer, so a world runs the same in a fresh process as in one that has already run it or other worlds. `tests/sandbox-same-routes.test.mjs` checks it.
 - **Step time:** the universe template runs at about 6.1 ms a step on the machine where it was measured (5.7 ms before these rules, the same machine).
 
 **Orbits.** An entity with `orbit_radius` circles the entity named by `orbits` once every `orbit_period` steps, starting at `orbit_phase`, `orbit_altitude` metres above it.
@@ -78,6 +79,7 @@ Any kind name works. The kinds in `lib/sandbox/catalog.mjs` also get a class, a 
 | structures | road, bridge, runway, launch_pad, lake, rock, fence, lamp, fountain |
 | vehicles | bike, motorbike, car, taxi, police_car, bus, truck, tractor, train, boat, ship, plane, small_plane, jet, helicopter, drone, hot_air_balloon, rocket, shuttle |
 | space | space_station, satellite, star, planet, moon, asteroid |
+| c. 1610 (the benin-warri template) | canoe, carrack (a sailing ship), compound, palace, brass_workshop, ivory_workshop, fishing_village, shrine, earthwork, canoe_landing, anchorage, royal_tomb, heritage_site, porter, visitor; and the land and water kinds forest, mangrove, river, creek |
 
 A kind with a suffix counts as its base kind: `car_red` is a car.
 
@@ -99,6 +101,7 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
   - a star, four planets (one ringed, one with clouds), moons, an asteroid belt, a station and a shuttle;
   - two far worlds of other civilisations (the Vel and the Oru) at the very edge of the sky, hard to reach.
 - **meadow:** the first starter world: grass, rabbits and a fox.
+- **benin-warri:** Benin and Warri c. 1610, **a simulation inspired by history; its inhabitants are fictional** (see **Benin–Warri c. 1610** below).
 
 **Hard limits:**
 
@@ -120,7 +123,7 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
 - **Lives:** names from their own culture; friendships, partners, homes together, children, growing up, school, careers (20 jobs, from farmer to scientist, soldier and pilot), retirement and death. Furniture is bought and kept in the house; the viewer's **See inside** shows it.
 - **Countries:** each island is a country with its own culture, government (democracy with elections, monarchy with a King or Queen, or a council with its Speaker), money (founded once trade grows), taxes, laws, treasury, pensions and building plans: houses on named roads, schools, a hospital, a police station, a prison, barracks, hangars, rockets and, at high technology, colonies.
 - **Law and order:** crime by the dishonest and the desperate; police arrests; prison terms; fines while there is no prison.
-- **Holidays:** by sea (harbour, ferry or ship, fare 15) and, once flight is known, by air (airport, plane, fare 40); hotel nights; coming home. No holidays to a country at war with, or standing off with, their own.
+- **Holidays:** by sea (harbour, ferry or ship, fare 15) and, once flight is known, by air (airport, plane, fare 40); hotel nights; coming home. Someone with a ticket who has reached the harbour or airport waits there for the next ship or plane. No holidays to a country at war with, or standing off with, their own.
 - **Entertainment:** cinema, theatre, bar, stadium matches and shows, the beach and the amusement park; they cost a little and lift the mood.
 - **Technology:** research from scientists and schools, through seven levels (from tools to interstellar flight), unlocking cars, flight, rockets, colonies and deep-space expeditions.
 - **Research and development** (`lib/sandbox/research.mjs`): each country's research is shared once a day between six branches, by need: **energy** (fire, water wheels, coal and steam, electricity, oil and gas, nuclear fission, solar and wind; then fusion and antimatter), **industry** (tools to factories, assembly lines, chemistry, automation, robotics; then nanofabrication), **weapons** (spears and bows to gunpowder, rifles, artillery, aircraft and warships, missiles, a nuclear deterrent; then energy weapons and orbital defence), **medicine** (remedies, sanitation, vaccines, antibiotics, surgery, genetics; then gene therapy and regeneration), **computing** (counting boards, printing, the telegraph, radio, computers, the network, thinking machines; then quantum computing) and **materials** (stone and wood to steel, concrete, alloys, composites; then room-temperature superconductors). Today's science comes first, in our order; the future ones only after it. A country under threat or led by a hawk leans to weapons and pays for arms.
@@ -130,6 +133,38 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
 - **Between countries:** tourism and trade warm relations; ambitious, dishonest leaders and disputes strain them; good relations become alliances. At -60 the two stand off and their armies mobilise. Talks, an ally of both mediating, or the passing of a few days usually end it in a peace treaty. **War is possible but the last resort:** only when relations are at their worst (-85), the talks have run out, a leader is a hawk, both sides have soldiers, and a dice roll goes that way (half as likely where either side is a democracy). A war is a few clashes between soldiers: some die, both treasuries pay, tourism stops, and weariness grows until an armistice, after which the side that lost more pays reparations and relations stay cold. Civilians are not targeted. In a 20,000-step run of the universe there were three standoffs and no war.
 - **Other civilisations:** never met before the people are ready. First contact needs their own deep-space expedition to reach a far world, which they launch only at interstellar travel (technology level 6); a craft that merely passes by (one the world started with, or one not on an expedition) meets no one. Very rarely their ships come calling, but only to a people at space colonies (level 5) who have founded a colony; the army goes to meet it, weapons lowered. `tests/sandbox-contact.test.mjs` checks each rule.
 - **Working out what their world is (a scripted event, not intelligence):** rare and slow. Evidence comes from reaching the edge of the sea and the roof of the sky, and from scientists' work. A hypothesis needs both seen, plenty of evidence and a very curious, well-educated scientist; a test needs interstellar technology. Then they leave a message for whoever watches (at most five), on a monument, the Listening Stone. The **Society** tab shows it under **Messages from inside**.
+
+## Benin–Warri c. 1610
+
+`lib/sandbox/benin-warri.mjs`. **A simulation inspired by history; the inhabitants are fictional.** Every historical fact it uses, with a real, checkable source for each, is in [`docs/sandbox-benin-warri.md`](sandbox-benin-warri.md), written before the template. Anything that could not be sourced is left out and listed there as an open question; the page ends with a "Reviewed by:" line for a historian.
+
+- **The land (data, not decoration):**
+  - Benin: inland, its capital in the forest behind the earthworks: the walls of Benin, a ditch and an earth rampart broken by nine gates, each with a guard. Beyond them, the wider walls: six villages in enclosures of their own (smaller ramparts and ditches), with their homes and farms, joined to the city's walls and to each other by lines of earthwork; the layout shows the idea, it is not a map. Inside, the Oba's palace and its shrine, the brass casters' and the ivory carvers' workshops and the compounds, each known by the (fictional) family who lives there; Ughoton, the river port, on a river to the coast.
+  - Warri: an island among the creeks and mangroves of the delta. The capital, Ode-Itsekiri, with the Olu's residence, homes and three canoe landings; two fishing villages; the royal burial grove at Ijala.
+  - The Urhobo (a farming people, inland, with a landing on a creek) and the Ijaw (fishers and salt makers, on their own island) as settlements of their own.
+  - Offshore, two anchorages where a Portuguese merchant ship calls. Its traders are visitors aboard, not a country with a home here.
+  - One Nok heritage site (fired-clay finds), labelled with its date range, far older than the world. Benin's people can come upon it (a `discovery` event); no Nok people live here.
+  - The terrain module (`lib/sandbox/terrain.mjs`): rivers and creeks are water, mangrove is land of its own type, forest is land.
+- **Period things only:** walking, porters (between the palace and Ughoton), canoes on the creeks and rivers, and the sailing ship at sea. No cars, bikes, planes, rockets or space.
+- **No church and no resident priest** in 1610: the sources found say there was none (see the doc).
+- **Two kingdoms:** Benin (the Oba, with chiefs at the palace) and Warri (the Olu), each with a royal house. The Urhobo and the Ijaw are each led by a head of the elders: a simulation mechanic, not a historical claim.
+- **The life rule** has two fields for a period world:
+  - `progress: false`: technology stays where it starts (no discoveries, nothing new built). A per-world rule (`set_rule` with `progress: true`) lets it move on.
+  - `peaceful: true`: no disputes, standoffs or wars are invented between real peoples; trade and visits warm relations.
+- **Trade:** when a people's canoe reaches another people's landing, or the ship's anchorage, the goods the sources name change hands (`trade` events): fish (Warri), farm produce (Urhobo), fish and salt (Ijaw), cloth, ivory and pepper (Benin), coral beads and brass manillas (the Portuguese). **Goods only: the simulation never models buying, selling or owning people.**
+- **A fictional storyline,** clearly labelled: a prince of Warri comes home from his studies in Lisbon with his Portuguese wife, both invented (a `storyline` event, "Storyline (fictional, inspired by history)").
+- **The viewer's History panel** (`public/sandbox/history.js`), shown for this world only: a short, sourced timeline (Nok; the founding of Warri c. 1480, in tradition; Ughoton; the Augustinian mission of the 1570s; the 1597 report; Dom Domingos in Portugal 1600–1611; the 1607 decision on trade; his marriage and the disputed date of return), Ode-Itsekiri (the City of Saint Augustine), Benin and Warri, the neighbours, the hard truth about the slave trade, what was left out, and the label "Simulation inspired by history; inhabitants are fictional." Real historical people appear there only.
+- **New universe** in the viewer can make this world too.
+
+### Retemplating a world
+
+`/sandbox retemplate <world-id> <template> [--name "<new name>"] [confirm]` (`lib/sandbox/retemplate.mjs`):
+
+- PG1's own worlds only, never a blind copy.
+- It refuses PG1's **oldest** world (by `created_at`): "this is your first universe; use /sandbox upgrade instead".
+- Without `confirm` it only describes the change.
+- With `confirm` it keeps the world's id, replaces its spec and state with the template's, resets its tick to 0, and renames it if asked.
+- It writes one `retemplate_world` record on the black box long chain (who, when, the old and new template). The world's earlier black box records stay.
 
 ## The black box
 
@@ -343,6 +378,7 @@ Every blind run, its world and its outputs are labelled **"SIMULATION — blind 
 | `/sandbox upgrade <world-id> [confirm]` | adds the road network and any missing runways to one of PG1's worlds, in place (see below) |
 | `/sandbox create "<name>" [universe\|town\|meadow\|empty]` | a PG1 world from a template (universe by default) |
 | `/sandbox invite <name>` | an access key for an invited agent (shown once) |
+| `/sandbox retemplate <world-id> <template> [--name "<new name>"] [confirm]` | gives one of PG1's worlds a new start from a template, keeping its id (see **Retemplating a world**) |
 | `/sandbox consent <agent> <world> "<who agreed>" [on YYYY-MM-DD]` | records that agent's operator's opt-in to blind experiments in that world |
 | `/sandbox experiment <world> [blind\|informed] [clues\|control] [anomalies] [--agent <name>] "<situation>"` | starts a run (PG1-subject by default) |
 | `/sandbox stop <run>` | stops a run |

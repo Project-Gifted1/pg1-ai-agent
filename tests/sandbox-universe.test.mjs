@@ -101,7 +101,7 @@ test('roam keeps a town moving; a rocket carries its crew to space and back; rid
 });
 
 test('templates: the town and the universe are valid, under every limit, and alive (people, cars, planes, a rocket and orbits all move)', () => {
-  assert.deepEqual([...TEMPLATE_NAMES], ['meadow', 'town', 'universe']);
+  assert.deepEqual([...TEMPLATE_NAMES], ['meadow', 'town', 'universe', 'benin-warri']);
   const town = templateSpec('town');
   const uni = templateSpec('universe');
   for (const s of [town, uni]) {
