@@ -508,8 +508,10 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         const r = sb ? Math.max(3, Math.min(14, (sb.box.max.x - sb.box.min.x) / 2.5)) : 5;
         const g = new THREE.Group(); toScene(e, g.position);
         const flames = []; const smoke = [];
-        for (let i = 0; i < (coarse ? 6 : 12); i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: i % 3 ? 0xff7a1a : 0xffd54f, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })); sp.userData.base = new THREE.Vector3((Math.random() - 0.5) * r * 1.6, top + Math.random() * 2, (Math.random() - 0.5) * r * 1.6); sp.userData.ph = Math.random() * 6; g.add(sp); flames.push(sp); }
-        for (let i = 0; i < (coarse ? 8 : 16); i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, color: 0x3a3a3a, transparent: true, depthWrite: false })); sp.userData.ph = i / (coarse ? 8 : 16); g.add(sp); smoke.push(sp); }
+        // Tongues of flame in layers: wide and red-orange at the roof, narrow and yellow higher up.
+        const nF = coarse ? 12 : 26;
+        for (let i = 0; i < nF; i++) { const lay = i / nF; const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: lay < 0.4 ? 0xff4a10 : lay < 0.75 ? 0xff8c1a : 0xffd54f, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })); sp.userData.base = new THREE.Vector3((Math.random() - 0.5) * r * 1.8 * (1 - lay * 0.6), top - 1 + lay * r * 1.6, (Math.random() - 0.5) * r * 1.8 * (1 - lay * 0.6)); sp.userData.size = 1.6 - lay * 0.8; sp.userData.ph = Math.random() * 6; g.add(sp); flames.push(sp); }
+        for (let i = 0; i < (coarse ? 10 : 22); i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, color: i % 2 ? 0x2b2b2b : 0x474747, transparent: true, depthWrite: false })); sp.userData.ph = i / (coarse ? 10 : 22); g.add(sp); smoke.push(sp); }
         const light = new THREE.PointLight(0xff7a1a, 2, r * 8, 2); light.position.set(0, top + 3, 0); g.add(light);
         scene.add(g);
         F = { g, flames, smoke, top, r, light };
@@ -522,8 +524,9 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   function animateFires(now) {
     for (const F of fires.values()) {
       const L = 0.4 + 0.6 * (F.level || 0);
-      for (const sp of F.flames) { const k = 0.7 + 0.3 * Math.sin(now / 90 + sp.userData.ph * 5); sp.position.copy(sp.userData.base).add(tmpA.set(0, Math.sin(now / 140 + sp.userData.ph) * 0.8, 0)); sp.scale.setScalar(F.r * 1.2 * L * k); sp.material.opacity = 0.85 * k; }
-      for (const sp of F.smoke) { const t = ((now / 9000) + sp.userData.ph) % 1; sp.position.set(Math.sin(sp.userData.ph * 20) * F.r * 0.4 + t * 6, F.top + 2 + t * 40 * L, Math.cos(sp.userData.ph * 20) * F.r * 0.4); sp.scale.setScalar(F.r * (1 + t * 3)); sp.material.opacity = 0.55 * (1 - t) * L; }
+      for (const sp of F.flames) { const k = 0.65 + 0.35 * Math.sin(now / 80 + sp.userData.ph * 5); sp.position.copy(sp.userData.base).add(tmpA.set(Math.sin(now / 230 + sp.userData.ph) * 0.4, Math.abs(Math.sin(now / 120 + sp.userData.ph)) * F.r * 0.3 * L, 0)); sp.scale.set(F.r * 1.3 * L * k * sp.userData.size, F.r * 2.2 * L * k * sp.userData.size, 1); sp.material.opacity = 0.9 * k; }
+      // Smoke: a thick column that rises, spreads and drifts downwind.
+      for (const sp of F.smoke) { const t = ((now / 7000) + sp.userData.ph) % 1; sp.position.set(Math.sin(sp.userData.ph * 20) * F.r * 0.5 + t * t * 25, F.top + F.r + t * 70 * L, Math.cos(sp.userData.ph * 20) * F.r * 0.5); sp.scale.setScalar(F.r * (1.6 + t * 5)); sp.material.opacity = 0.8 * Math.min(1, t * 6) * (1 - t) * (0.5 + 0.5 * L); }
       F.light.intensity = 1.5 + Math.sin(now / 70) * 0.5;
     }
   }

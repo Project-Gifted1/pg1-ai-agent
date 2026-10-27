@@ -52,10 +52,38 @@ A deterministic engine steps the world: the same world and seed always give the 
   - not lined up, too high or too long: a go-around, and another approach;
   - speed changes gradually; never steeper than 8% up or down.
   - Helicopters, drones and balloons climb and come down vertically, smoothly.
+  - **Never into a building:** a helicopter or drone flies at least 30 m above the tallest building along its way (towers are as tall as the viewer draws them: about 3.6 m a floor plus the roof and mast), climbs straight up to that height before going across, and comes down only once it is over where it is going, never below it (no overshoot). A helicopter lands on a hospital's or a tower's roof pad, and the universe's helicopter starts on the hospital roof. Universe and town, 2,000 steps: no helicopter or drone inside a building (main had drones flying into towers).
   - Every island country has a runway with a heading (Saltreach an airstrip).
 - **Blind experiments** (`lib/sandbox/blind.mjs`): `go` uses the same rules, `move` stops at the water's edge ("Water stops you from going further that way."), and `leave` will not put the subject in the water.
 - **Worlds from before** keep working without a reset: on the first step, a ground thing standing on water is moved to the nearest point on its own island's coast, and a boat on land to the nearest water, each with one `terrain_fix` event (a black box record).
 - **Step time:** the universe template runs at about 6.1 ms a step on the machine where it was measured (5.7 ms before these rules, the same machine).
+
+### Emergencies and the beach (`lib/sandbox/emergency.mjs`)
+
+Runs with the life rule, deterministically, with whatever a world has.
+
+- **Fires:** now and then a building catches fire (the life rule's `fire_rate`: the chance a building catches fire in a day, 0.0012 by default; three times that for factories).
+  - Everyone in it gets out, some hurt.
+  - The nearest free **fire engine on the same island** is called out: lights flashing and siren on, along the roads to the nearest point of the road to the fire. Its crew fight it from beside it, or with hose lines up to 300 m from where the road ends. Then it goes back to its station.
+  - With no fire engine (a period world, or none built yet), **the neighbours** come and fight it.
+  - A fire nobody reaches in time **badly damages** the building; it goes back to being built, and the builders rebuild it.
+- **Ambulances:** the nearest free ambulance on the same island collects someone hurt, lights and siren on, and drives them to hospital, where they are treated. With no ambulance they walk to the hospital, or rest at home for a day.
+- **Services:** the town has a fire station with two fire engines and an ambulance at its hospital. A country with 30 people and industrial technology builds a fire station; every fire station gets a fire engine and every hospital an ambulance. Firefighters and lifeguards are jobs.
+- **A day at the beach:** someone near a beach (within 800 m: a holidaymaker in the beach hotels, or a local), in daylight and outside working hours, may go for the day. They walk straight across open ground to a beach, a fountain or a monument, and keep to the plan unless something urgent comes up. There they:
+  - swim in the shallows (in the water on purpose, so the land and water rules leave them be);
+  - surf, sunbathe on a towel under an umbrella, play beach volleyball, build a sandcastle (children) or stroll by the water.
+- **Rescues:** now and then a swimmer gets into trouble. A lifeguard (or, with none, someone on the beach) swims out and brings them back, and some need a check-up from the ambulance. With nobody to help, they struggle back to shore exhausted.
+- **On the water:** every beach in the universe has a lifeguard tower, and kayaks, a sailing boat and a jet ski off it; a yacht sails between Aurelia Harbour and the beaches.
+- **In a period world** (Benin–Warri): no fire engines, ambulances, umbrellas or jet skis. Fires are fought by neighbours; at the water people stroll or swim.
+- **Every fire, call-out, rescue and treatment** is an event, in the black box.
+- **In the viewer:**
+  - fire stations, fire engines (a ladder on the roof), ambulances and lifeguard towers;
+  - kayaks, sailing boats, jet skis and yachts;
+  - light bars flash red and blue while on a call;
+  - a burning building has flames over its roof, a column of smoke and a glow;
+  - people at the beach are posed: swimming (head and shoulders above the water, arms stroking), waving for help, lying on a towel, kneeling at a sandcastle, jumping for the ball, standing on a surfboard;
+  - someone hurt lies on the ground until help comes.
+- `tests/sandbox-emergency.test.mjs`.
 
 **Orbits.** An entity with `orbit_radius` circles the entity named by `orbits` once every `orbit_period` steps, starting at `orbit_phase`, `orbit_altitude` metres above it.
 
