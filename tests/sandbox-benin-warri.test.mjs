@@ -204,3 +204,25 @@ test('/sandbox retemplate: refuses other owners\' worlds, blind copies and PG1\'
   const made = await say(store, '/sandbox create "Delta" benin-warri');
   assert.match(made.reply, /from the benin-warri template/);
 });
+
+test('the walls of Benin: nine gates on the ring, each with a guard; village enclosures beyond, joined by lines of earthwork (B7)', () => {
+  const spec = validateSpec(templateSpec('benin-warri'));
+  const by = (id) => spec.entities.find((e) => e.id === id);
+  const wall = by('earthwork-benin');
+  assert.equal(wall.properties.gates, 9, 'nine gates (the Met)');
+  const gates = spec.entities.filter((e) => e.kind === 'gate');
+  assert.equal(gates.length, 9);
+  for (const g of gates) {
+    assert.ok(Math.abs(Math.hypot(g.position.x - wall.position.x, g.position.y - wall.position.y) - wall.properties.radius) < 1, `${g.id} stands on the ring`);
+    assert.ok(spec.entities.some((p) => p.kind === 'person' && p.properties.job === 'guard' && p.properties.work === g.id), `${g.id} has a guard`);
+  }
+  const villages = spec.entities.filter((e) => e.kind === 'earthwork' && e.properties.size === 'small' && e.properties.radius);
+  const lines = spec.entities.filter((e) => e.kind === 'earthwork' && e.properties.shape === 'line');
+  assert.ok(villages.length >= 4, 'village enclosures');
+  assert.ok(lines.length >= villages.length, 'joined by lines of earthwork');
+  for (const v of villages) {
+    assert.ok(Math.hypot(v.position.x - wall.position.x, v.position.y - wall.position.y) > wall.properties.radius + v.properties.radius, `${v.id} lies outside the city's walls`);
+    assert.ok(spec.entities.some((c) => c.kind === 'compound' && Math.hypot(c.position.x - v.position.x, c.position.y - v.position.y) < v.properties.radius), `${v.id} has homes inside`);
+  }
+  assert.ok(readFileSync(new URL('../docs/sandbox-benin-warri.md', import.meta.url), 'utf8').includes('| B7 |'), 'the doc sources it');
+});

@@ -10,11 +10,11 @@
 //   periodModel(T, Kit, kind, p, seed) -> a model, or null for kinds not here
 
 export const PERIOD_CLASS = Object.freeze({
-  canoe: 'vehicle', carrack: 'vehicle', compound: 'building', palace: 'building', brass_workshop: 'building', ivory_workshop: 'building', fishing_village: 'building',
+  canoe: 'vehicle', carrack: 'vehicle', gate: 'structure', compound: 'building', palace: 'building', brass_workshop: 'building', ivory_workshop: 'building', fishing_village: 'building',
   shrine: 'structure', earthwork: 'structure', canoe_landing: 'structure', anchorage: 'structure', royal_tomb: 'structure', heritage_site: 'structure',
   mangrove: 'structure', forest: 'structure', river: 'structure', creek: 'structure', chronicle: 'structure', porter: 'person', visitor: 'person'
 });
-export const PERIOD_FIXED = Object.freeze(['compound', 'palace', 'brass_workshop', 'ivory_workshop', 'fishing_village', 'shrine', 'earthwork', 'canoe_landing', 'anchorage', 'royal_tomb', 'heritage_site', 'mangrove', 'forest', 'river', 'creek', 'chronicle']);
+export const PERIOD_FIXED = Object.freeze(['gate', 'compound', 'palace', 'brass_workshop', 'ivory_workshop', 'fishing_village', 'shrine', 'earthwork', 'canoe_landing', 'anchorage', 'royal_tomb', 'heritage_site', 'mangrove', 'forest', 'river', 'creek', 'chronicle']);
 // Drawn by waterways.js (or not at all), not as a model.
 export const PERIOD_GROUND = Object.freeze(['mangrove', 'forest', 'river', 'creek', 'chronicle', 'anchorage']);
 
@@ -156,17 +156,42 @@ export function periodModel(T, Kit, kind, p = {}, seed = 0) {
       return out(k, { size: 12 });
     }
     case 'earthwork': {
-      // A ring of rampart (sloped earth) and ditch, with gaps for the gates.
-      const R = Math.max(50, Math.min(3000, Number(p.radius) || 650)); const gates = Math.max(0, Math.min(12, Math.round(Number(p.gates) || 6)));
-      const n = Math.max(24, Math.round((2 * Math.PI * R) / 25));
+      // Rampart (sloped earth) and ditch: a ring with gaps for its gates, or
+      // a straight run (shape 'line', a length) joining enclosures. A city's
+      // is taller and deeper than a village's (size 'small').
+      const f = p.size === 'small' ? 0.55 : 1;
+      const bank = [[-6 * f, 0], [6 * f, 0], [2.2 * f, 6.5 * f], [-2.2 * f, 6.5 * f]]; const ditch = [[-5 * f, 0], [5 * f, 0], [3 * f, -3 * f], [-3 * f, -3 * f]];
+      const piece = (x, z, ry, L, i) => {
+        const c = Math.cos(ry); const s2 = Math.sin(ry);
+        k.prism(bank, L, i % 2 ? '#8a5a32' : '#83552f', x, 0, z, { ry, jitter: 0.08 });
+        k.prism(ditch, L, '#4e3420', x + c * 11 * f, 0.05, z - s2 * 11 * f, { ry });
+        if (i % 3 === 0) k.ico(0.9 * f, 0, '#5d7a34', x + c * 4 * f, 1.0 * f, z - s2 * 4 * f, { jitter: 0.3 });   // growth on the bank
+      };
+      if (p.shape === 'line') {
+        const len = Math.max(20, Math.min(3000, Number(p.length) || 200)); const n = Math.max(2, Math.round(len / 12));
+        for (let i = 0; i < n; i++) piece(-len / 2 + (i + 0.5) * (len / n), 0, Math.PI / 2, len / n + 0.4, i);
+        return out(k, { size: len });
+      }
+      const R = Math.max(50, Math.min(3000, Number(p.radius) || 650)); const gates = Math.max(0, Math.min(12, Math.round(Number(p.gates) || 0)));
+      const n = Math.max(24, Math.round((2 * Math.PI * R) / 12));
+      const gap = 8 / R;   // a gateway about 16 m wide
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2;
-        if (gates && Array.from({ length: gates }, (_, g) => (g / gates) * Math.PI * 2).some((ga) => Math.abs(Math.atan2(Math.sin(a - ga), Math.cos(a - ga))) < 0.025)) continue;
-        const L = (2 * Math.PI * R) / n + 0.5;
-        k.prism([[-6, 0], [6, 0], [2.2, 6.5], [-2.2, 6.5]], L, i % 2 ? '#8a5a32' : '#83552f', Math.cos(a) * R, 0, -Math.sin(a) * R, { ry: a, jitter: 0.08 });
-        k.prism([[-5, 0], [5, 0], [3, -3], [-3, -3]], L, '#4e3420', Math.cos(a) * (R + 11), 0.05, -Math.sin(a) * (R + 11), { ry: a });
+        if (gates && Array.from({ length: gates }, (_, g) => (g / gates) * Math.PI * 2).some((ga) => Math.abs(Math.atan2(Math.sin(a - ga), Math.cos(a - ga))) < gap)) continue;
+        piece(Math.cos(a) * R, -Math.sin(a) * R, a, (2 * Math.PI * R) / n + 0.4, i);
       }
       return out(k, { size: R * 2 });
+    }
+    case 'gate': {
+      // A gateway through the rampart: posts and a lintel of timber, a
+      // thatched roof over the way, a guard's shelter beside it.
+      for (const z of [-7, 7]) { k.cyl(0.45, 0.55, 6.5, 10, WOOD_D, 0, 3.25, z); k.box(6, 6.5 * 0.85, 1.2, EARTH, 0, 2.8, z + Math.sign(z) * 1.2, { jitter: 0.05 }); }
+      k.box(1.2, 0.8, 16, WOOD_D, 0, 6.8, 0);
+      k.prism([[-4, 0], [4, 0], [0, 2.4]], 17, THATCH, 0, 7.2, 0, { jitter: 0.08 });
+      for (const z of [-3.6, 3.6]) k.box(0.25, 5, 7, WOOD, 0.4, 2.5, z * 0.98, { ry: z > 0 ? -1.2 : 1.2 });   // the doors, open
+      for (const [x, z] of [[-3, 10], [-3, 12.5], [-5.5, 10], [-5.5, 12.5]]) k.cyl(0.1, 0.1, 2.4, 6, WOOD_D, x, 1.2, z);
+      k.prism([[-1.8, 0], [1.8, 0], [0, 1.1]], 3.6, THATCH, -4.25, 2.4, 11.25, { ry: Math.PI / 2 });
+      return out(k, { size: 18 });
     }
     case 'canoe': {
       // A dugout: a hull cut from one trunk, thwarts, paddles laid across.
