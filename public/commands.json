@@ -546,7 +546,7 @@
     {
       "command": "/sandbox create",
       "area": "Lab",
-      "description": "Create a PG1 world (a simulation): universe (a living town and space), town, meadow or empty",
+      "description": "Create a PG1 world (a simulation): universe (a living town and space), town, meadow, benin-warri (c. 1610, inspired by history) or empty",
       "args": [
         {
           "name": "name",
@@ -561,6 +561,7 @@
             "universe",
             "town",
             "meadow",
+            "benin-warri",
             "empty"
           ]
         }
@@ -578,6 +579,29 @@
           "name": "name",
           "placeholder": "agent name",
           "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/sandbox retemplate",
+      "area": "Lab",
+      "description": "Give one of PG1's worlds a new start from a template, keeping its id (not its first universe); without confirm it only describes the change",
+      "args": [
+        {
+          "name": "details",
+          "placeholder": "<world-id> <template> [--name \"<new name>\"]",
+          "required": true
+        },
+        {
+          "name": "confirm",
+          "placeholder": "confirm",
+          "required": false,
+          "choices": [
+            "confirm"
+          ]
         }
       ],
       "operatorOnly": true,

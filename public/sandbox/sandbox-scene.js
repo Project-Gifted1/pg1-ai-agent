@@ -36,11 +36,12 @@ import { createControls } from './controls.js';
 import { TIERS, TIER_SETTINGS, QUALITY_KEY, pickTier, createGovernor } from './quality.js';
 import { createPost } from './post.js';
 import { loadTextures, addSurfaceDetail } from './materials.js';
+import { buildWaterways, waterwaysSignature } from './waterways.js';
 
 const MAX_ENTITIES = 1000;
 const CLASS_COLOR = { person: 0xf3c623, animal: 0xff9b7a, plant: 0x3ddc84, building: 0xcfd8dc, structure: 0x9e9e9e, vehicle: 0x36d1c4, space: 0x8f86ff, celestial: 0xd98cff, thing: 0x7cc4ff };
 const PALETTE = [0xf3c623, 0x36d1c4, 0x8f86ff, 0x3ddc84, 0xff9b7a, 0x7cc4ff, 0xffb300, 0xd98cff];
-const KEEP_PROPS = ['climate', 'culture', 'government', 'country', 'abroad', 'trip', 'text', 'color', 'roof', 'floors', 'heading', 'length', 'width', 'radius', 'size', 'inside', 'target', 'at', 'name', 'family', 'rings', 'clouds', 'shirt', 'livery', 'awning', 'lattice', 'orbit_radius', 'orbits', 'orbit_altitude', 'stages', 'energy', 'hunger', 'hygiene', 'social', 'mood', 'home', 'sex', 'age', 'job', 'work', 'education', 'money', 'partner', 'children', 'mother', 'father', 'saying', 'talking_to', 'built', 'furniture', 'owner', 'civ', 'jail_until', 'honesty', 'ambition', 'sociability', 'curiosity', 'crimes'];
+const KEEP_PROPS = ['to_x', 'to_y', 'gates', 'small', 'history', 'climate', 'culture', 'government', 'country', 'abroad', 'trip', 'text', 'color', 'roof', 'floors', 'heading', 'length', 'width', 'radius', 'size', 'inside', 'target', 'at', 'name', 'family', 'rings', 'clouds', 'shirt', 'livery', 'awning', 'lattice', 'orbit_radius', 'orbits', 'orbit_altitude', 'stages', 'energy', 'hunger', 'hygiene', 'social', 'mood', 'home', 'sex', 'age', 'job', 'work', 'education', 'money', 'partner', 'children', 'mother', 'father', 'saying', 'talking_to', 'built', 'furniture', 'owner', 'civ', 'jail_until', 'honesty', 'ambition', 'sociability', 'curiosity', 'crimes'];
 
 export function kindColor(kind) {
   const c = CLASS_COLOR[classOf(kind)];
@@ -110,9 +111,10 @@ function create2d(container, { onSelect } = {}) {
     const ox = (w - world.size.x * k) / 2; const oy = (h - world.size.y * k) / 2;
     view = { k, ox, oy, dpr };
     const X = (e) => ox + e.x * k; const Y = (e) => oy + (world.size.y - e.y) * k;
-    const isl = world.entities.filter((e) => e.base === 'island');
+    const isl = world.entities.filter((e) => e.base === 'island' || e.base === 'forest' || e.base === 'mangrove');
     g.fillStyle = isl.length ? '#1f5f86' : '#26402a'; g.fillRect(ox, oy, world.size.x * k, world.size.y * k);
-    for (const e of isl) { g.fillStyle = e.props.climate === 'tropical' ? '#3f7d34' : e.props.climate === 'cold' ? '#7d8a7a' : '#2f5a2a'; g.beginPath(); g.arc(X(e), Y(e), (Number(e.props.radius) || 500) * k, 0, Math.PI * 2); g.fill(); }
+    for (const e of isl) { g.fillStyle = e.base === 'mangrove' ? '#2f4f2a' : e.base === 'forest' ? '#2f6b2a' : e.props.climate === 'tropical' ? '#3f7d34' : e.props.climate === 'cold' ? '#7d8a7a' : '#2f5a2a'; g.beginPath(); g.arc(X(e), Y(e), (Number(e.props.radius) || (e.base === 'forest' ? 1000 : e.base === 'mangrove' ? 200 : 500)) * k, 0, Math.PI * 2); g.fill(); }
+    for (const e of world.entities) if (e.base === 'river' || e.base === 'creek') { g.strokeStyle = '#1f5f86'; g.lineWidth = Math.max(1.5 * dpr, (Number(e.props.width) || 20) * k); g.lineCap = 'round'; g.beginPath(); g.moveTo(X(e), Y(e)); g.lineTo(ox + (Number(e.props.to_x) || e.x) * k, oy + (world.size.y - (Number(e.props.to_y) || e.y)) * k); g.stroke(); }
     for (const e of world.entities) if (e.base === 'lake') { g.fillStyle = '#1d5d8c'; g.beginPath(); g.arc(X(e), Y(e), (Number(e.props.radius) || 50) * k, 0, Math.PI * 2); g.fill(); }
     for (const e of world.entities) if (e.base === 'road' || e.base === 'runway' || e.base === 'bridge') {
       const len = (Number(e.props.length) || 100) * k; const wd = Math.max(1.5 * dpr, (Number(e.props.width) || 12) * k);
@@ -319,6 +321,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   let world = normalizeWorld(null);
   let groundSig = '';
   let staticSig = '';
+  let waterSig = ''; let waterGroup = null;
   const staticGroup = new THREE.Group();
   scene.add(staticGroup);
   // (furnitureGroup is added below, once the materials exist.)
@@ -576,7 +579,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     const k = (W - 12) / Math.max(world.size.x, world.size.y);
     const ox = (W - world.size.x * k) / 2; const oy = (H - world.size.y * k) / 2;
     const X = (e) => ox + e.x * k; const Y = (e) => oy + (world.size.y - e.y) * k;
-    const isl = world.entities.filter((e) => e.base === 'island');
+    const isl = world.entities.filter((e) => e.base === 'island' || e.base === 'forest' || e.base === 'mangrove');
     g.fillStyle = isl.length ? '#1f5f86' : '#25402a'; g.fillRect(ox, oy, world.size.x * k, world.size.y * k);
     for (const e of isl) { g.fillStyle = e.props.climate === 'tropical' ? '#3f7d34' : e.props.climate === 'cold' ? '#7d8a7a' : '#3a6a30'; g.beginPath(); g.arc(X(e), Y(e), (Number(e.props.radius) || 500) * k, 0, 7); g.fill(); }
     for (const e of world.entities) {
@@ -805,12 +808,16 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       if (gs !== groundSig) {
         groundSig = gs;
         const lakeEntities = world.entities.filter((e) => e.base === 'lake' || e.base === 'road' || e.base === 'runway').map((e) => ({ ...e, sx: e.x - world.size.x / 2, sz: -(e.y - world.size.y / 2), radius: Number(e.props.radius) || 60, heading: -(Number(e.props.heading) || 0), length: Number(e.props.length) || 100, width: Number(e.props.width) || 12 }));
-        const islands = world.entities.filter((e) => e.base === 'island').map((e) => ({ sx: e.x - world.size.x / 2, sz: -(e.y - world.size.y / 2), r: Number(e.props.radius) || 500, climate: e.props.climate || 'temperate', name: e.props.name || e.id }));
+        // Land: islands, and the forest and mangrove discs of a coast (the terrain's land).
+        const islands = world.entities.filter((e) => e.base === 'island' || e.base === 'forest' || e.base === 'mangrove').map((e) => ({ sx: e.x - world.size.x / 2, sz: -(e.y - world.size.y / 2), r: Number(e.props.radius) || (e.base === 'island' ? 500 : e.base === 'forest' ? 1000 : 200), climate: e.props.climate || (e.base === 'island' ? 'temperate' : 'tropical'), name: e.props.name || e.id }));
         const avoid = world.entities.filter((e) => e.z < 5).map((e) => ({ x: e.x - world.size.x / 2, z: -(e.y - world.size.y / 2), r: e.base === 'lake' ? (Number(e.props.radius) || 60) : e.cls === 'building' ? 25 : 0 }));
         env.buildGround({ size: world.size, seed: world.seed, entities: lakeEntities, avoid, islands });
       }
       const ss = world.entities.filter((e) => FIXED_KINDS.has(e.base)).map((e) => `${e.id}:${modelKey(e.kind, e.props, e.id)}:${e.x}:${e.y}:${e.props.heading || 0}`).join(',');
       if (ss !== staticSig) { staticSig = ss; rebuildStatic(); }
+      // Rivers, creeks and mangroves (waterways.js).
+      const ws = waterwaysSignature(world);
+      if (ws !== waterSig) { waterSig = ws; if (waterGroup) { scene.remove(waterGroup); waterGroup.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); } waterGroup = buildWaterways(THREE, world, env.setupMaterial); if (waterGroup) scene.add(waterGroup); }
       tickFrom = firstWorld ? world.tick : prevTick; tickTo = world.tick;
       syncMovers(duration);
       syncOrbits();
