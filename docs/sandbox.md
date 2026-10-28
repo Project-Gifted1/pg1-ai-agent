@@ -66,13 +66,42 @@ A deterministic engine steps the world: the same world and seed always give the 
   - climb out at about 7% (4 degrees) and cruise (airliners at 600 m, small planes 350 m, jets 1,200 m; always below the space altitude, and lower when the trip is short);
   - turn with a limited rate (and bank, in the viewer); join a straight final lined up with the destination runway; descend on a 3-degree glide path; touch down near the threshold (a `touchdown` event); roll out braking; taxi off to a stand beside the runway;
   - not lined up, too high or too long: a go-around, and another approach;
+  - an approach starts inside the world: from the end of the runway whose approach fits, slowing near the approach fix so the plane can turn onto it rather than circle it, and turning back before the edge of the world;
   - speed changes gradually; never steeper than 8% up or down.
   - Helicopters, drones and balloons climb and come down vertically, smoothly.
+  - **Never into a building:** a helicopter or drone flies at least 30 m above the tallest building along its way (towers are as tall as the viewer draws them: about 3.6 m a floor plus the roof and mast), climbs straight up to that height before going across, and comes down only once it is over where it is going, never below it (no overshoot). A helicopter lands on a hospital's or a tower's roof pad, and the universe's helicopter starts on the hospital roof. Universe and town, 2,000 steps: no helicopter or drone inside a building (main had drones flying into towers).
   - Every island country has a runway with a heading (Saltreach an airstrip).
 - **Blind experiments** (`lib/sandbox/blind.mjs`): `go` uses the same rules, `move` stops at the water's edge ("Water stops you from going further that way."), and `leave` will not put the subject in the water.
 - **Worlds from before** keep working without a reset: on the first step, a ground thing standing on water is moved to the nearest point on its own island's coast, and a boat on land to the nearest water, each with one `terrain_fix` event (a black box record).
 - **The same every time, cache or no cache:** the next hop toward a goal comes from one search out from that goal (Dijkstra, ties by node), and a door is remembered only when it does not depend on who is asking. What the caches hold never changes an answer, so a world runs the same in a fresh process as in one that has already run it or other worlds. `tests/sandbox-same-routes.test.mjs` checks it.
 - **Step time:** the universe template runs at about 6.1 ms a step on the machine where it was measured (5.7 ms before these rules, the same machine).
+
+### Emergencies and the beach (`lib/sandbox/emergency.mjs`)
+
+Runs with the life rule, deterministically, with whatever a world has.
+
+- **Fires:** now and then a building catches fire (the life rule's `fire_rate`: the chance a building catches fire in a day, 0.0012 by default; three times that for factories).
+  - Everyone in it gets out, some hurt.
+  - The nearest free **fire engine on the same island** is called out: lights flashing and siren on, along the roads to the nearest point of the road to the fire. Its crew fight it from beside it, or with hose lines up to 300 m from where the road ends. Then it goes back to its station.
+  - With no fire engine (a period world, or none built yet), **the neighbours** come and fight it.
+  - A fire nobody reaches in time **badly damages** the building; it goes back to being built, and the builders rebuild it.
+- **Ambulances:** the nearest free ambulance on the same island collects someone hurt, lights and siren on, and drives them to hospital, where they are treated. With no ambulance they walk to the hospital, or rest at home for a day.
+- **Services:** the town has a fire station with two fire engines and an ambulance at its hospital. A country with 30 people and industrial technology builds a fire station; every fire station gets a fire engine and every hospital an ambulance. Firefighters and lifeguards are jobs.
+- **A day at the beach:** someone near a beach (within 800 m: a holidaymaker in the beach hotels, or a local), in daylight and outside working hours, may go for the day. They walk straight across open ground to a beach, a fountain or a monument, and keep to the plan unless something urgent comes up. There they:
+  - swim in the shallows (in the water on purpose, so the land and water rules leave them be);
+  - surf, sunbathe on a towel under an umbrella, play beach volleyball, build a sandcastle (children) or stroll by the water.
+- **Rescues:** now and then a swimmer gets into trouble. A lifeguard (or, with none, someone on the beach) swims out and brings them back, and some need a check-up from the ambulance. With nobody to help, they struggle back to shore exhausted. The rescuer is swimming only once in the water, stops whatever they were doing on the beach, and gives up after 60 steps if they cannot reach the swimmer (who then struggles in alone). Someone called away from the beach comes out of the water and the activity ends.
+- **On the water:** every beach in the universe has a lifeguard tower, and kayaks, a sailing boat and a jet ski off it; a yacht sails between Aurelia Harbour and the beaches.
+- **In a period world** (Benin–Warri): no fire engines, ambulances, umbrellas or jet skis. Fires are fought by neighbours; at the water people stroll or swim.
+- **Every fire, call-out, rescue and treatment** is an event, in the black box.
+- **In the viewer:**
+  - fire stations, fire engines (a ladder on the roof), ambulances and lifeguard towers;
+  - kayaks, sailing boats, jet skis and yachts;
+  - light bars flash red and blue while on a call;
+  - a burning building has flames over its roof, a column of smoke and a glow;
+  - people at the beach are posed: swimming (head and shoulders above the water, arms stroking), waving for help, lying on a towel, kneeling at a sandcastle, jumping for the ball, standing on a surfboard;
+  - someone hurt lies on the ground until help comes.
+- `tests/sandbox-emergency.test.mjs`.
 
 **Orbits.** An entity with `orbit_radius` circles the entity named by `orbits` once every `orbit_period` steps, starting at `orbit_phase`, `orbit_altitude` metres above it.
 
@@ -378,10 +407,16 @@ Every blind run, its world and its outputs are labelled **"SIMULATION — blind 
 
 - Without `confirm` it only describes what it would add.
 - With `confirm`, in place, it adds a connected road network to each island (its existing streets joined up, a ring road, a way in to every place) and a runway, with a heading, to each island country without one.
+- For a world made from a template (the universe or the town), it also adds what that template has gained since the world was made (`lib/sandbox/template-sync.mjs`), so an early world looks and behaves like a new one:
+  - every thing in the template that the world lacks, when the world has nothing of that kind (a fire station, lifeguard towers, kayaks), or when it is a fixture of the sky (another far world). Never a person or an animal: the inhabitants are the world's own;
+  - a new building that would stand where the world has built something since goes to the nearest clear spot on the same land, and what belongs to it moves with it. A thing whose beach, station or orbit the world lacks is left out;
+  - details the sky's fixtures lack (a far world's technology, a planet's radiation belt), never changing one they have;
+  - new rules, and the template's version of a travel rule that has changed (where helicopters may land).
+  The road network is planned again round everything, and every vehicle plans its route again. Running it again adds nothing.
 - It never removes, renames or moves a building, person or animal: a new road goes round an existing building instead. Vehicles that are not on a road are moved onto the nearest one (it says how many), since vehicles keep strictly to the roads.
 - It keeps the world id, tick, state, society, research, relations and treasuries, and writes one `upgrade_world` record on the black box long chain (who, when, what was added).
 - It must fit the world's entity and size limits; if it cannot, it refuses and says what to delete first.
-- `tests/sandbox-upgrade.test.mjs` upgrades a universe made by the earlier template (`tests/fixtures/sandbox-universe-v1.json`) after 1,200 ticks and checks that nothing else changed (only off-road vehicles moved, each onto a road), then that every vehicle position in 2,000 more steps is on a road.
+- `tests/sandbox-upgrade.test.mjs` upgrades a universe made by the earlier template (`tests/fixtures/sandbox-universe-v1.json`) after 1,200 ticks and checks that nothing else changed (only off-road vehicles moved, each onto a road), then that every vehicle position in 2,000 more steps is on a road. `tests/sandbox-template-sync.test.mjs` checks what a template adds.
 
 ## Commands (operator only)
 

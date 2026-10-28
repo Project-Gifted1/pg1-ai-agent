@@ -10,6 +10,7 @@
 //
 // Models are cached per kind and colours, so a hundred houses share a
 // handful of geometries.
+import { RESCUE_CLASS, RESCUE_FIXED, rescueModel } from './rescue-models.js';
 
 import { Kit } from './kit.js';
 import { PERIOD_CLASS, PERIOD_FIXED, periodModel } from './period-models.js';
@@ -36,6 +37,9 @@ for (const k of PERIOD_FIXED) FIXED_KINDS.add(k);
 // Homes whose insides the viewer furnishes (see furnitureFor).
 export const HOME_KINDS = new Set(['house', 'cabin', 'apartment']);
 
+// Emergency services and the beach (rescue-models.js).
+Object.assign(KIND_CLASS, RESCUE_CLASS);
+for (const k of RESCUE_FIXED) FIXED_KINDS.add(k);
 // "car_red" and "house-2" are a car and a house.
 export function baseKind(kind) {
   const k = String(kind || '');
@@ -908,6 +912,8 @@ PROP_KEYS.push('radius', 'gates', 'shape', 'small');
 
 export function buildModel(T, kind, p = {}, id = '') {
   const b = baseKind(kind);
+  // Emergency services and the beach (rescue-models.js); a building going up is a scaffold.
+  if (!(typeof p.built === 'number' && p.built < 100)) { const rescue = rescueModel(T, Kit, b, p, hashOf(id || kind), { partOf, wheelPair }); if (rescue) return rescue; }
   const seed = hashOf(id || kind);
   if (typeof p.built === 'number' && p.built < 100) return scaffold(T, b, p.built);
   if (b === 'porter' || b === 'visitor') return person(T, p, seed);
