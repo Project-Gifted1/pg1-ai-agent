@@ -53,6 +53,8 @@ A historian should check every **cited** and **secondary** entry against the ori
 | Law | "African Cavalry" (lrgaf.org), on horses in West Africa's forest zone | **search**, **secondary** |
 | FAO shorthorn | FAO, *The Dwarf West African Shorthorn* (fao.org/4/x5468e); O. A. Adebambo, "The Muturu: a rare sacred breed of cattle in Nigeria" (funaab.edu.ng) | **search** |
 | Wikipedia | Wikipedia articles "Kingdom of Warri", "Ijala", "Atorongboye", "Olu Atuwatse I", "Benin Moat", "Igbesanmwan" (accessed October 2026) | **secondary**, used only where noted |
+| MFA plaques | Museum of Fine Arts, Boston, collection records of Benin palace plaques: "Relief plaque showing a junior court official", "Relief plaque showing three officials", "Relief plaque showing a war chief with two attendants" (c. 1530–1570; commissioned under Oba Esigie or Oba Orhogbua) | **search** |
+| Read & Dalton 1899 | C. H. Read and O. M. Dalton, *Antiquities from the City of Benin*, British Museum, 1899, quoted in Digital Benin for BM Af1898,0115.1; with BM Af1898,0115.2 (a Portuguese figure with long hair and beard; 16th–17th century) | **search**, **cited** |
 
 ## The facts used
 
@@ -112,6 +114,17 @@ Not found, so not in the world: livestock or a market at Warri, among the Urhobo
 | # | fact | used in the world as | source |
 |---|---|---|---|
 | D1 | The Nok culture of central Nigeria, known for its terracotta sculptures, began c. 1500 BCE (radiocarbon dates on plant remains and the pottery sequence) and lasted into the last centuries BCE; older work dated it from c. 500 BCE to c. 200 CE. | one Nok heritage site (terracotta finds), labelled "c. 1500 BCE – the last centuries BCE", far older than the world's time; inhabitants can discover it; no Nok people live in the world | Nok (record; dates cited in Breunig's project summary and Franke 2015) |
+
+### Dress
+
+What the viewer draws people wearing. The plaques are earlier than 1610 (16th century) and show the court, not everyone.
+
+| # | fact | used in the world as | source |
+|---|---|---|---|
+| C1 | Benin's plaques show officials in wrappers of patterned cloth tied with a belt; a collar of coral beads (odigba) was given by the Oba to high-ranking members of the court, a single strand to lower-ranking courtiers. | the template's people wear a cloth wrapper (men from the waist, women from the chest) and go barefoot; the royal family wear a coral collar | MFA plaques |
+| C2 | Benin's plaques show Portuguese men with long hair and beards, in a hat with raised rings, a cord round the rim and feathers. | the Portuguese visitors: bearded, in a brimmed hat with rings and feathers | Read & Dalton 1899 (cited); BM Af1898,0115.2 |
+
+**Not found, so generic:** how ordinary people, women and children dressed at Benin c. 1610, and how the Itsekiri, Urhobo and Ịjọ dressed. The wrapper on everyone outside the court is a generic drawing of cloth worn at the time, not a claim about each people; it should be reviewed. The visitors' doublet, breeches and hose are generic European dress of the time, not from these sources.
 
 ## The hard truth
 
