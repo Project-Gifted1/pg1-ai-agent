@@ -214,9 +214,9 @@ async function exploreShore(page, n = 25) {
 async function expectShotButton(page) {
   const btn = page.locator('#sandbox-shot');
   assert.equal(await btn.isVisible(), true, 'the screenshot button shows in 3D');
-  // Clicked without Playwright's wait for the button to hold still over
-  // animation frames: in Cinematic on CI's software GPU a frame takes seconds.
-  const [download] = await Promise.all([page.waitForEvent('download', { timeout: 600000 }), btn.dispatchEvent('click')]);
+  // Clicked in the page, without Playwright's waits on the button (they time
+  // out while a Cinematic frame on CI's software GPU takes seconds).
+  const [download] = await Promise.all([page.waitForEvent('download', { timeout: 600000 }), page.evaluate(() => document.getElementById('sandbox-shot').click())]);
   assert.match(download.suggestedFilename(), /^simulation-.+-step-\d+\.png$/);
   const stamped = await page.evaluate(() => {
     const url = sandboxScene.screenshot();

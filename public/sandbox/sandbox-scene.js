@@ -1138,6 +1138,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       const prevTick = world.tick;
       const prevId = world.id;
       world = normalizeWorld(next);
+      // A scene rebuilt for another tier shows the clock before its first frame.
+      if (!clockEl.textContent) { const c = clockOf(world); clockEl.textContent = `Simulation · day ${c.day} · ${c.hh}:${c.mm}`; }
       // Another world: start afresh (camera, things, selection, clock).
       if (!firstWorld && world.id !== prevId) {
         for (const m of movers.values()) scene.remove(m.group);
