@@ -55,4 +55,9 @@ test('quality tiers: Cinematic is the top tier, by hand only; every tier says wh
   const g = createGovernor({ tier: 'cinematic', budgetMs: 33, window: 10, onChange: (t) => changes.push(t) });
   for (let i = 0; i < 25; i++) g.sample(80);
   assert.equal(changes[0], 'ultra', 'too slow: one step down');
+  // A device drawing a frame a second steps down within seconds, not after 120 frames.
+  const slow = [];
+  const g2 = createGovernor({ tier: 'medium', onChange: (t) => slow.push(t) });
+  for (let i = 0; i < 3; i++) g2.sample(1250);
+  assert.deepEqual(slow, ['low']);
 });

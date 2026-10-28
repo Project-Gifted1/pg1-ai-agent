@@ -48,28 +48,32 @@ export function pickTier({ coarse = false, memory = 0, cores = 0, saved = null }
   return cores >= 8 ? 'ultra' : 'high';
 }
 
-// Frame times in; a lower tier out when the frame budget is missed for
-// `window` frames on average (by 20%). Never raises the tier on its own
-// (that would flicker); a manual choice resets it.
+// Frame times in; a lower tier out when the frame budget is missed (by 20%)
+// on average over `window` frames, or over as long as `window` frames at
+// the budget would take, so a device drawing a frame a second steps down in
+// seconds, not minutes. Never raises the tier on its own (that would
+// flicker); a manual choice resets it.
 export function createGovernor({ tier = 'high', budgetMs = 1000 / 60, window = 120, onChange = () => {} } = {}) {
   let current = tier; let auto = true; const samples = [];
+  const span = window * budgetMs;
   let cooldown = 0;
   return {
     get tier() { return current; },
     get auto() { return auto; },
-    set(t, { manual = true } = {}) { if (!TIERS.includes(t)) return; current = t; auto = !manual; samples.length = 0; cooldown = window; onChange(current, { manual }); },
+    set(t, { manual = true } = {}) { if (!TIERS.includes(t)) return; current = t; auto = !manual; samples.length = 0; cooldown = span; onChange(current, { manual }); },
     setAuto(on) { auto = !!on; samples.length = 0; },
-    // The time between two rendered frames, in ms (the scene skips gaps
+    // The time between two rendered frames, in ms (the scene starts afresh
     // after a hidden tab, so only real slowness counts).
     sample(ms, budget = budgetMs) {
       if (!auto || !(ms >= 0)) return current;
-      if (cooldown > 0) { cooldown--; return current; }
+      if (cooldown > 0) { cooldown -= ms; return current; }
       samples.push(ms); if (samples.length > window) samples.shift();
-      if (samples.length < window) return current;
-      const avg = samples.reduce((a, b) => a + b, 0) / samples.length;
+      const sum = samples.reduce((a, b) => a + b, 0);
+      if (samples.length < window && (samples.length < 3 || sum < span)) return current;
+      const avg = sum / samples.length;
       if (avg > budget * 1.2) {
         const i = TIERS.indexOf(current);
-        if (i > 0) { current = TIERS[i - 1]; samples.length = 0; cooldown = window; onChange(current, { manual: false, avgMs: avg }); }
+        if (i > 0) { current = TIERS[i - 1]; samples.length = 0; cooldown = span; onChange(current, { manual: false, avgMs: avg }); }
       }
       return current;
     }

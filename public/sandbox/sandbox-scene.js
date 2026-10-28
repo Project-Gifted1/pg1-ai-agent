@@ -174,7 +174,6 @@ function create2d(container, { onSelect } = {}) {
     update(next) { world = normalizeWorld(next); container.dataset.markers = String(world.entities.length); draw(); },
     setView() {}, setXray() {}, setNames() {}, xray: () => false, names: () => false, select(id) { sel = id; draw(); }, selected: () => sel,
     clock: () => clockOf(world),
-    screenshot,
     destroy() { if (ro) ro.disconnect(); canvas.removeEventListener('click', onClick); canvas.remove(); }
   };
 }
@@ -1028,10 +1027,11 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     if (!running()) return;
     const dt = Math.min(0.1, (now - last) / 1000);
     acc += dt; last = now;
-    schedule();
+    // The next frame, keeping lastRender (schedule() starts afresh after a pause).
+    raf = requestAnimationFrame(frame);
     if (acc < 1 / targetFps - 0.002) return;
     const step = acc; acc = 0;
-    if (lastRender && now - lastRender < 250) governor.sample(now - lastRender);
+    if (lastRender) governor.sample(Math.min(1000, now - lastRender));
     lastRender = now;
     const tickF = animate(step, now);
 
